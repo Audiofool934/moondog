@@ -830,8 +830,9 @@ test("TUI can select a Pi model and use the rebuilt runtime", async () => {
     provider: "openai-codex",
     model: "gpt-5.6-terra",
   });
-  assert.match(terminal.output, /conversation ready/u);
-  assert.match(terminal.output, /Using Pi model openai-codex\/gpt-5\.6-terra/u);
+  const selectedModelOutput = stripVTControlCharacters(terminal.output);
+  assert.match(selectedModelOutput, /conversation ready/u);
+  assert.match(selectedModelOutput, /Using Pi model openai-codex\/gpt-5\.6-terra/u);
 
   terminal.send("hello selected model");
   terminal.send("\r");
