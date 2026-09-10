@@ -1,0 +1,1066 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:moondog:contract:tool-receipt:1",
+  "title": "Moondog ToolReceipt v1",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/schema_version"
+    },
+    "receipt_id": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/uuid"
+    },
+    "invocation_id": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/uuid"
+    },
+    "subject_id": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/uuid"
+    },
+    "capability_id": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/namespaced_key"
+    },
+    "capability_version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "invocation_semantic_digest": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/sha256"
+    },
+    "attempt": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "status": {
+      "enum": [
+        "simulated",
+        "denied",
+        "awaiting_confirmation",
+        "accepted",
+        "succeeded",
+        "failed",
+        "timed_out",
+        "partial",
+        "unknown",
+        "cancelled",
+        "requires_human"
+      ]
+    },
+    "recorded_at": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/utc_timestamp"
+    },
+    "started_at": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/utc_timestamp"
+    },
+    "finished_at": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/utc_timestamp"
+    },
+    "policy_decision": {
+      "type": "object",
+      "properties": {
+        "decision": {
+          "enum": [
+            "allow",
+            "deny",
+            "require_confirmation",
+            "escalate"
+          ]
+        },
+        "policy_ref": {
+          "$ref": "urn:moondog:contract:definitions:1#/$defs/policy_ref"
+        },
+        "capability_registry_version": {
+          "$ref": "urn:moondog:contract:definitions:1#/$defs/non_empty_string"
+        },
+        "reason_codes": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "urn:moondog:contract:definitions:1#/$defs/namespaced_key"
+          },
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "decision",
+        "policy_ref",
+        "capability_registry_version",
+        "reason_codes"
+      ],
+      "additionalProperties": false
+    },
+    "confirmation": {
+      "type": "object",
+      "properties": {
+        "grant_id": {
+          "$ref": "urn:moondog:contract:definitions:1#/$defs/uuid"
+        },
+        "verified_at": {
+          "$ref": "urn:moondog:contract:definitions:1#/$defs/utc_timestamp"
+        },
+        "consumed_at": {
+          "$ref": "urn:moondog:contract:definitions:1#/$defs/utc_timestamp"
+        },
+        "scope_digest": {
+          "$ref": "urn:moondog:contract:definitions:1#/$defs/sha256"
+        }
+      },
+      "required": [
+        "grant_id",
+        "verified_at",
+        "scope_digest"
+      ],
+      "additionalProperties": false
+    },
+    "idempotency": {
+      "type": "object",
+      "properties": {
+        "key_digest": {
+          "$ref": "urn:moondog:contract:definitions:1#/$defs/sha256"
+        },
+        "semantic_digest": {
+          "$ref": "urn:moondog:contract:definitions:1#/$defs/sha256"
+        },
+        "disposition": {
+          "enum": [
+            "new",
+            "replayed",
+            "conflict"
+          ]
+        }
+      },
+      "required": [
+        "key_digest",
+        "semantic_digest",
+        "disposition"
+      ],
+      "additionalProperties": false
+    },
+    "executor_ref": {
+      "type": "object",
+      "properties": {
+        "executor_id": {
+          "$ref": "urn:moondog:contract:definitions:1#/$defs/namespaced_key"
+        },
+        "version": {
+          "$ref": "urn:moondog:contract:definitions:1#/$defs/non_empty_string"
+        },
+        "external_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "urn:moondog:contract:definitions:1#/$defs/external_ref"
+          },
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "executor_id",
+        "version"
+      ],
+      "additionalProperties": false
+    },
+    "effects": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "effect_type": {
+            "$ref": "urn:moondog:contract:definitions:1#/$defs/effect_kind"
+          },
+          "resource_ref": {
+            "$ref": "urn:moondog:contract:definitions:1#/$defs/entity_ref"
+          },
+          "status": {
+            "enum": [
+              "planned",
+              "applied",
+              "rolled_back",
+              "unknown"
+            ]
+          },
+          "reversible": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "effect_type",
+          "status",
+          "reversible"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "usage": {
+      "type": "array",
+      "items": {
+        "$ref": "urn:moondog:contract:definitions:1#/$defs/budget_amount"
+      },
+      "uniqueItems": true
+    },
+    "budget_reservation": {
+      "type": "object",
+      "properties": {
+        "reservation_id": {
+          "$ref": "urn:moondog:contract:definitions:1#/$defs/uuid"
+        },
+        "state": {
+          "enum": [
+            "none",
+            "reserved",
+            "held",
+            "reconciled",
+            "released"
+          ]
+        },
+        "reserved": {
+          "type": "array",
+          "items": {
+            "$ref": "urn:moondog:contract:definitions:1#/$defs/budget_amount"
+          },
+          "uniqueItems": true
+        },
+        "actual": {
+          "type": "array",
+          "items": {
+            "$ref": "urn:moondog:contract:definitions:1#/$defs/budget_amount"
+          },
+          "uniqueItems": true
+        },
+        "recorded_at": {
+          "$ref": "urn:moondog:contract:definitions:1#/$defs/utc_timestamp"
+        },
+        "reconciled_at": {
+          "$ref": "urn:moondog:contract:definitions:1#/$defs/utc_timestamp"
+        }
+      },
+      "required": [
+        "state",
+        "reserved",
+        "actual",
+        "recorded_at"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "none"
+              }
+            },
+            "required": [
+              "state"
+            ]
+          },
+          "then": {
+            "properties": {
+              "reserved": {
+                "type": "array",
+                "maxItems": 0
+              },
+              "actual": {
+                "type": "array",
+                "maxItems": 0
+              }
+            },
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "reservation_id"
+                  ]
+                },
+                {
+                  "required": [
+                    "reconciled_at"
+                  ]
+                }
+              ]
+            }
+          },
+          "else": {
+            "required": [
+              "reservation_id"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "enum": [
+                  "reconciled",
+                  "released"
+                ]
+              }
+            },
+            "required": [
+              "state"
+            ]
+          },
+          "then": {
+            "required": [
+              "reconciled_at"
+            ]
+          }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "privacy_egress": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "data_class": {
+            "$ref": "urn:moondog:contract:definitions:1#/$defs/data_class"
+          },
+          "destination": {
+            "$ref": "urn:moondog:contract:definitions:1#/$defs/external_destination"
+          },
+          "retained_until": {
+            "$ref": "urn:moondog:contract:definitions:1#/$defs/utc_timestamp"
+          }
+        },
+        "required": [
+          "data_class",
+          "destination"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "$ref": "urn:moondog:contract:definitions:1#/$defs/artifact_ref"
+      },
+      "uniqueItems": true
+    },
+    "result_summary": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000,
+      "pattern": "\\S"
+    },
+    "error": {
+      "type": "object",
+      "properties": {
+        "category": {
+          "enum": [
+            "validation",
+            "authorization",
+            "policy",
+            "timeout",
+            "rate_limit",
+            "external_service",
+            "internal",
+            "unknown"
+          ]
+        },
+        "code": {
+          "$ref": "urn:moondog:contract:definitions:1#/$defs/namespaced_key"
+        },
+        "safe_message": {
+          "$ref": "urn:moondog:contract:definitions:1#/$defs/non_empty_string"
+        },
+        "retryable": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "category",
+        "code",
+        "safe_message",
+        "retryable"
+      ],
+      "additionalProperties": false
+    },
+    "recovery": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "enum": [
+            "none",
+            "retry",
+            "reconcile",
+            "rollback",
+            "request_confirmation",
+            "human_handoff"
+          ]
+        },
+        "safe_summary": {
+          "$ref": "urn:moondog:contract:definitions:1#/$defs/non_empty_string"
+        }
+      },
+      "required": [
+        "action",
+        "safe_summary"
+      ],
+      "additionalProperties": false
+    },
+    "deduplicated_from_receipt_id": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/uuid"
+    },
+    "extensions": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/extensions"
+    }
+  },
+  "required": [
+    "schema_version",
+    "receipt_id",
+    "invocation_id",
+    "subject_id",
+    "capability_id",
+    "capability_version",
+    "invocation_semantic_digest",
+    "attempt",
+    "status",
+    "recorded_at",
+    "policy_decision",
+    "effects",
+    "usage",
+    "budget_reservation",
+    "privacy_egress",
+    "artifacts"
+  ],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "enum": [
+              "failed",
+              "timed_out",
+              "partial",
+              "unknown"
+            ]
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "then": {
+        "required": [
+          "error"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "denied"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "policy_decision": {
+            "type": "object",
+            "properties": {
+              "decision": {
+                "const": "deny"
+              }
+            }
+          },
+          "effects": {
+            "type": "array",
+            "maxItems": 0
+          },
+          "usage": {
+            "type": "array",
+            "maxItems": 0
+          },
+          "privacy_egress": {
+            "type": "array",
+            "maxItems": 0
+          },
+          "artifacts": {
+            "type": "array",
+            "maxItems": 0
+          },
+          "budget_reservation": {
+            "type": "object",
+            "properties": {
+              "state": {
+                "const": "none"
+              }
+            }
+          }
+        },
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "started_at"
+              ]
+            },
+            {
+              "required": [
+                "executor_ref"
+              ]
+            },
+            {
+              "properties": {
+                "confirmation": {
+                  "type": "object",
+                  "properties": {
+                    "consumed_at": {
+                      "$ref": "urn:moondog:contract:definitions:1#/$defs/utc_timestamp"
+                    }
+                  },
+                  "required": [
+                    "consumed_at"
+                  ]
+                }
+              },
+              "required": [
+                "confirmation"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "enum": [
+              "awaiting_confirmation",
+              "requires_human"
+            ]
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "effects": {
+            "type": "array",
+            "maxItems": 0
+          },
+          "usage": {
+            "type": "array",
+            "maxItems": 0
+          },
+          "privacy_egress": {
+            "type": "array",
+            "maxItems": 0
+          },
+          "budget_reservation": {
+            "type": "object",
+            "properties": {
+              "state": {
+                "const": "none"
+              }
+            }
+          }
+        },
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "started_at"
+              ]
+            },
+            {
+              "required": [
+                "executor_ref"
+              ]
+            },
+            {
+              "required": [
+                "idempotency"
+              ]
+            },
+            {
+              "properties": {
+                "confirmation": {
+                  "type": "object",
+                  "properties": {
+                    "consumed_at": {
+                      "$ref": "urn:moondog:contract:definitions:1#/$defs/utc_timestamp"
+                    }
+                  },
+                  "required": [
+                    "consumed_at"
+                  ]
+                }
+              },
+              "required": [
+                "confirmation"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "denied"
+          },
+          "idempotency": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "status",
+          "idempotency"
+        ]
+      },
+      "then": {
+        "properties": {
+          "idempotency": {
+            "type": "object",
+            "properties": {
+              "disposition": {
+                "const": "conflict"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "awaiting_confirmation"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "then": {
+        "required": [
+          "recovery"
+        ],
+        "properties": {
+          "policy_decision": {
+            "type": "object",
+            "properties": {
+              "decision": {
+                "const": "require_confirmation"
+              }
+            }
+          },
+          "recovery": {
+            "type": "object",
+            "properties": {
+              "action": {
+                "const": "request_confirmation"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "requires_human"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "then": {
+        "required": [
+          "recovery"
+        ],
+        "properties": {
+          "policy_decision": {
+            "type": "object",
+            "properties": {
+              "decision": {
+                "const": "escalate"
+              }
+            }
+          },
+          "recovery": {
+            "type": "object",
+            "properties": {
+              "action": {
+                "const": "human_handoff"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "enum": [
+              "accepted",
+              "succeeded",
+              "failed",
+              "timed_out",
+              "partial",
+              "unknown"
+            ]
+          },
+          "confirmation": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "status",
+          "confirmation"
+        ]
+      },
+      "then": {
+        "properties": {
+          "confirmation": {
+            "type": "object",
+            "properties": {
+              "consumed_at": {
+                "$ref": "urn:moondog:contract:definitions:1#/$defs/utc_timestamp"
+              }
+            },
+            "required": [
+              "consumed_at"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "idempotency": {
+            "type": "object",
+            "properties": {
+              "disposition": {
+                "const": "conflict"
+              }
+            },
+            "required": [
+              "disposition"
+            ]
+          }
+        },
+        "required": [
+          "idempotency"
+        ]
+      },
+      "then": {
+        "properties": {
+          "status": {
+            "const": "denied"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "simulated"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "effects": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "status": {
+                  "const": "planned"
+                }
+              }
+            }
+          },
+          "usage": {
+            "type": "array",
+            "maxItems": 0
+          },
+          "privacy_egress": {
+            "type": "array",
+            "maxItems": 0
+          },
+          "budget_reservation": {
+            "type": "object",
+            "properties": {
+              "state": {
+                "const": "none"
+              }
+            }
+          }
+        },
+        "not": {
+          "required": [
+            "executor_ref"
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "accepted"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "effects": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "status": {
+                  "const": "planned"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "succeeded"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "effects": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "status": {
+                  "enum": [
+                    "applied",
+                    "rolled_back"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "error"
+              ]
+            },
+            {
+              "properties": {
+                "effects": {
+                  "type": "array",
+                  "contains": {
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "const": "unknown"
+                      }
+                    },
+                    "required": [
+                      "status"
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "effects"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "enum": [
+              "simulated",
+              "accepted",
+              "succeeded",
+              "failed",
+              "timed_out",
+              "partial",
+              "unknown",
+              "cancelled"
+            ]
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "policy_decision": {
+            "type": "object",
+            "properties": {
+              "decision": {
+                "const": "allow"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "effects": {
+            "type": "array",
+            "contains": {
+              "type": "object",
+              "properties": {
+                "effect_type": {
+                  "enum": [
+                    "write_local",
+                    "write_external",
+                    "send_message",
+                    "spend",
+                    "publish",
+                    "delete"
+                  ]
+                },
+                "status": {
+                  "const": "applied"
+                }
+              },
+              "required": [
+                "effect_type",
+                "status"
+              ]
+            }
+          }
+        },
+        "required": [
+          "effects"
+        ]
+      },
+      "then": {
+        "required": [
+          "executor_ref",
+          "idempotency"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "idempotency": {
+            "type": "object",
+            "properties": {
+              "disposition": {
+                "const": "replayed"
+              }
+            },
+            "required": [
+              "disposition"
+            ]
+          }
+        },
+        "required": [
+          "idempotency"
+        ]
+      },
+      "then": {
+        "required": [
+          "deduplicated_from_receipt_id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "unknown"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "then": {
+        "required": [
+          "recovery"
+        ],
+        "properties": {
+          "error": {
+            "type": "object",
+            "properties": {
+              "retryable": {
+                "const": false
+              }
+            }
+          },
+          "recovery": {
+            "type": "object",
+            "properties": {
+              "action": {
+                "enum": [
+                  "reconcile",
+                  "human_handoff"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "enum": [
+              "simulated",
+              "denied",
+              "succeeded",
+              "failed",
+              "timed_out",
+              "partial",
+              "unknown",
+              "cancelled",
+              "requires_human"
+            ]
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "then": {
+        "required": [
+          "finished_at"
+        ]
+      }
+    }
+  ],
+  "additionalProperties": false
+}

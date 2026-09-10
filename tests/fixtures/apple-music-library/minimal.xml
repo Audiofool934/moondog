@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Major Version</key><integer>1</integer>
+  <key>Minor Version</key><integer>1</integer>
+  <key>Date</key><date>2026-08-25T04:37:31Z</date>
+  <key>Library Persistent ID</key><string>AAAABBBBCCCCDDDD</string>
+  <key>Music Folder</key><string>file:///Users/synthetic/private/</string>
+  <key>Tracks</key>
+  <dict>
+    <key>1</key>
+    <dict>
+      <key>Track ID</key><integer>1</integer>
+      <key>Name</key><string>Synthetic Alpha</string>
+      <key>Artist</key><string>Example Artist</string>
+      <key>Album Artist</key><string>Example Ensemble</string>
+      <key>Album</key><string>Example Release</string>
+      <key>Genre</key><string>Synthetic Genre</string>
+      <key>Composer</key><string>Example Composer</string>
+      <key>Total Time</key><integer>123000</integer>
+      <key>Release Date</key><date>2024-01-02T00:00:00Z</date>
+      <key>Year</key><integer>2024</integer>
+      <key>Persistent ID</key><string>1111222233334444</string>
+      <key>Play Count</key><integer>99</integer>
+      <key>Play Date</key><integer>123456</integer>
+      <key>Play Date UTC</key><date>2026-08-20T12:00:00Z</date>
+      <key>Skip Count</key><integer>3</integer>
+      <key>Skip Date</key><date>2026-08-21T12:00:00Z</date>
+      <key>Rating</key><integer>80</integer>
+      <key>Rating Computed</key><true/>
+      <key>Album Rating</key><integer>60</integer>
+      <key>Loved</key><true/>
+      <key>Favorited</key><true/>
+      <key>Apple Music</key><true/>
+      <key>Date Added</key><date>2026-08-01T12:00:00Z</date>
+      <key>Date Modified</key><date>2026-08-02T12:00:00Z</date>
+      <key>Location</key><string>file:///Users/synthetic/private/alpha.m4a</string>
+      <key>Comments</key><string>PRIVATE_COMMENT_SENTINEL</string>
+      <key>Grouping</key><string>PRIVATE_GROUPING_SENTINEL</string>
+    </dict>
+    <key>2</key>
+    <dict>
+      <key>Track ID</key><integer>2</integer>
+      <key>Name</key><string>Synthetic Alpha</string>
+      <key>Artist</key><string>Example Artist</string>
+      <key>Album</key><string>Example Release</string>
+      <key>Total Time</key><integer>123000</integer>
+      <key>Release Date</key><date>2024-01-02T00:00:00Z</date>
+      <key>Persistent ID</key><string>5555666677778888</string>
+      <key>Playlist Only</key><true/>
+    </dict>
+    <key>3</key>
+    <dict>
+      <key>Track ID</key><integer>3</integer>
+      <key>Name</key><string>No Stable ID</string>
+      <key>Album Artist</key><string>Fallback Ensemble</string>
+      <key>Album</key><string>Fallback Release</string>
+      <key>Total Time</key><integer>1000</integer>
+      <key>Play Date</key><integer>789012</integer>
+      <key>Playlist Only</key><true/>
+    </dict>
+  </dict>
+  <key>Playlists</key>
+  <array>
+    <dict>
+      <key>Name</key><string>Private Synthetic Playlist</string>
+      <key>Playlist Persistent ID</key><string>99990000AAAABBBB</string>
+      <key>Playlist Items</key>
+      <array>
+        <dict><key>Track ID</key><integer>1</integer></dict>
+        <dict><key>Track ID</key><integer>3</integer></dict>
+      </array>
+    </dict>
+  </array>
+</dict>
+</plist>

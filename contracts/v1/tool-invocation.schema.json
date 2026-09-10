@@ -1,0 +1,318 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:moondog:contract:tool-invocation:1",
+  "title": "Moondog ToolInvocation v1",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/schema_version"
+    },
+    "invocation_id": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/uuid"
+    },
+    "subject_id": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/uuid"
+    },
+    "actor": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/actor_ref"
+    },
+    "surface": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/namespaced_key"
+    },
+    "capability_id": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/namespaced_key"
+    },
+    "capability_version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "tool_ref": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/tool_ref"
+    },
+    "execution_mode": {
+      "enum": [
+        "plan",
+        "dry_run",
+        "execute"
+      ]
+    },
+    "account_ref": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/external_ref"
+    },
+    "target": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/entity_ref"
+    },
+    "arguments": {
+      "type": "object",
+      "maxProperties": 128
+    },
+    "purpose": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/non_empty_string"
+    },
+    "purpose_id": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/namespaced_key"
+    },
+    "declared_effects": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "urn:moondog:contract:definitions:1#/$defs/effect_kind"
+      },
+      "uniqueItems": true
+    },
+    "declared_risk_flags": {
+      "type": "array",
+      "items": {
+        "$ref": "urn:moondog:contract:definitions:1#/$defs/risk_domain"
+      },
+      "uniqueItems": true
+    },
+    "data_manifest": {
+      "type": "object",
+      "properties": {
+        "source_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "urn:moondog:contract:definitions:1#/$defs/typed_record_ref"
+          },
+          "uniqueItems": true
+        },
+        "data_classes": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "urn:moondog:contract:definitions:1#/$defs/data_class"
+          },
+          "uniqueItems": true
+        },
+        "planned_destinations": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "urn:moondog:contract:definitions:1#/$defs/external_destination"
+          },
+          "uniqueItems": true
+        },
+        "raw_data_included": {
+          "type": "boolean"
+        },
+        "minimization_summary": {
+          "$ref": "urn:moondog:contract:definitions:1#/$defs/non_empty_string"
+        }
+      },
+      "required": [
+        "source_refs",
+        "data_classes",
+        "planned_destinations",
+        "raw_data_included",
+        "minimization_summary"
+      ],
+      "additionalProperties": false
+    },
+    "rights_basis_refs": {
+      "type": "array",
+      "items": {
+        "$ref": "urn:moondog:contract:definitions:1#/$defs/namespaced_key"
+      },
+      "uniqueItems": true
+    },
+    "budget_request": {
+      "type": "array",
+      "items": {
+        "$ref": "urn:moondog:contract:definitions:1#/$defs/budget_amount"
+      },
+      "uniqueItems": true
+    },
+    "policy_ref": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/policy_ref"
+    },
+    "confirmation_grant_ref": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/uuid"
+    },
+    "idempotency_key": {
+      "type": "string",
+      "minLength": 16,
+      "maxLength": 256,
+      "pattern": "\\S"
+    },
+    "semantic_digest": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/sha256"
+    },
+    "requested_at": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/utc_timestamp"
+    },
+    "expires_at": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/utc_timestamp"
+    },
+    "correlation_id": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/uuid"
+    },
+    "parent_invocation_id": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/uuid"
+    },
+    "extensions": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/extensions"
+    }
+  },
+  "required": [
+    "schema_version",
+    "invocation_id",
+    "subject_id",
+    "actor",
+    "surface",
+    "capability_id",
+    "capability_version",
+    "tool_ref",
+    "execution_mode",
+    "arguments",
+    "purpose_id",
+    "purpose",
+    "declared_effects",
+    "declared_risk_flags",
+    "data_manifest",
+    "rights_basis_refs",
+    "budget_request",
+    "policy_ref",
+    "semantic_digest",
+    "requested_at",
+    "expires_at"
+  ],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "execution_mode": {
+            "enum": [
+              "plan",
+              "dry_run"
+            ]
+          }
+        },
+        "required": [
+          "execution_mode"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data_manifest": {
+            "type": "object",
+            "not": {
+              "allOf": [
+                {
+                  "properties": {
+                    "raw_data_included": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "raw_data_included"
+                  ]
+                },
+                {
+                  "properties": {
+                    "planned_destinations": {
+                      "type": "array",
+                      "contains": {
+                        "type": "object",
+                        "properties": {
+                          "destination_type": {
+                            "const": "external"
+                          }
+                        },
+                        "required": [
+                          "destination_type"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "planned_destinations"
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "declared_effects": {
+            "type": "array",
+            "contains": {
+              "enum": [
+                "write_local",
+                "write_external",
+                "send_message",
+                "spend",
+                "publish",
+                "delete"
+              ]
+            }
+          }
+        },
+        "required": [
+          "declared_effects"
+        ]
+      },
+      "then": {
+        "required": [
+          "idempotency_key"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "declared_effects": {
+            "type": "array",
+            "contains": {
+              "const": "spend"
+            }
+          }
+        },
+        "required": [
+          "declared_effects"
+        ]
+      },
+      "then": {
+        "properties": {
+          "budget_request": {
+            "type": "array",
+            "minItems": 1
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "declared_effects": {
+            "type": "array",
+            "contains": {
+              "enum": [
+                "write_external",
+                "send_message",
+                "spend",
+                "publish",
+                "delete",
+                "use_credentials"
+              ]
+            }
+          }
+        },
+        "required": [
+          "declared_effects"
+        ]
+      },
+      "then": {
+        "required": [
+          "account_ref",
+          "confirmation_grant_ref"
+        ]
+      }
+    }
+  ],
+  "additionalProperties": false
+}

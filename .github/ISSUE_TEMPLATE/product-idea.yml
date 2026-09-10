@@ -1,0 +1,59 @@
+name: Product idea
+description: Propose a listener outcome or workflow improvement with explicit evidence boundaries.
+title: "[Idea] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Moondog prioritizes listener outcomes over feature volume.
+        Describe the problem and observable result before prescribing an implementation.
+        Do not include private listening data, credentials, personal Tasteprints, or unsanitized logs.
+  - type: textarea
+    id: listener_problem
+    attributes:
+      label: Listener problem
+      description: What is difficult, unclear, unsafe, or impossible today?
+    validations:
+      required: true
+  - type: textarea
+    id: scenario
+    attributes:
+      label: Concrete scenario
+      description: Describe who is using Moondog, what authorized data is available, and what they are trying to accomplish.
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome
+      description: What observable result would make this useful?
+    validations:
+      required: true
+  - type: textarea
+    id: boundaries
+    attributes:
+      label: Evidence, privacy, and action boundaries
+      description: State what Moondog may infer, what must remain local, and which actions require explicit confirmation.
+    validations:
+      required: true
+  - type: textarea
+    id: completion_evidence
+    attributes:
+      label: Completion evidence
+      description: What test, artifact, user path, or human evaluation would prove the outcome works?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Optional approaches, existing tools, or intentional non-solutions that clarify the tradeoff.
+    validations:
+      required: false
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy check
+      options:
+        - label: This proposal contains no private listening history, credentials, personal Tasteprint, or unsanitized local data.
+          required: true

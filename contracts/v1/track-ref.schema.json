@@ -1,0 +1,275 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:moondog:contract:track-ref:1",
+  "title": "Moondog TrackRef v1",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/schema_version"
+    },
+    "track_ref_id": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/uuid"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "identity_status": {
+      "enum": [
+        "provisional",
+        "resolved",
+        "ambiguous",
+        "merged"
+      ]
+    },
+    "display_label": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/non_empty_string"
+    },
+    "title": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/non_empty_string"
+    },
+    "artist_credits": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "$ref": "urn:moondog:contract:definitions:1#/$defs/non_empty_string"
+          },
+          "artist_ref_id": {
+            "$ref": "urn:moondog:contract:definitions:1#/$defs/uuid"
+          },
+          "role": {
+            "enum": [
+              "primary",
+              "featured",
+              "remixer",
+              "composer",
+              "performer",
+              "unknown"
+            ]
+          },
+          "external_refs": {
+            "type": "array",
+            "items": {
+              "$ref": "urn:moondog:contract:definitions:1#/$defs/external_ref"
+            },
+            "uniqueItems": true
+          }
+        },
+        "required": [
+          "name",
+          "role"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "release": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "$ref": "urn:moondog:contract:definitions:1#/$defs/non_empty_string"
+        },
+        "release_ref_id": {
+          "$ref": "urn:moondog:contract:definitions:1#/$defs/uuid"
+        },
+        "release_date": {
+          "oneOf": [
+            {
+              "type": "string",
+              "format": "date"
+            },
+            {
+              "type": "string",
+              "pattern": "^[0-9]{4}-(?:0[1-9]|1[0-2])$"
+            },
+            {
+              "type": "string",
+              "pattern": "^[0-9]{4}$"
+            }
+          ]
+        }
+      },
+      "required": [
+        "title"
+      ],
+      "additionalProperties": false
+    },
+    "duration_ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "isrc": {
+      "type": "string",
+      "pattern": "^[A-Z]{2}[A-Z0-9]{3}[0-9]{7}$"
+    },
+    "external_refs": {
+      "type": "array",
+      "items": {
+        "$ref": "urn:moondog:contract:definitions:1#/$defs/external_ref"
+      },
+      "uniqueItems": true
+    },
+    "candidate_track_ref_ids": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "$ref": "urn:moondog:contract:definitions:1#/$defs/uuid"
+      },
+      "uniqueItems": true
+    },
+    "supersedes": {
+      "type": "object",
+      "properties": {
+        "track_ref_id": {
+          "$ref": "urn:moondog:contract:definitions:1#/$defs/uuid"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "track_ref_id",
+        "revision"
+      ],
+      "additionalProperties": false
+    },
+    "merged_into": {
+      "type": "object",
+      "properties": {
+        "track_ref_id": {
+          "$ref": "urn:moondog:contract:definitions:1#/$defs/uuid"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "track_ref_id",
+        "revision"
+      ],
+      "additionalProperties": false
+    },
+    "created_at": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/utc_timestamp"
+    },
+    "resolved_at": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/utc_timestamp"
+    },
+    "extensions": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/extensions"
+    }
+  },
+  "required": [
+    "schema_version",
+    "track_ref_id",
+    "revision",
+    "identity_status",
+    "display_label",
+    "external_refs",
+    "created_at"
+  ],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "identity_status": {
+            "const": "resolved"
+          }
+        },
+        "required": [
+          "identity_status"
+        ]
+      },
+      "then": {
+        "required": [
+          "title",
+          "artist_credits",
+          "resolved_at"
+        ],
+        "properties": {
+          "artist_credits": {
+            "type": "array",
+            "minItems": 1
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "identity_status": {
+            "const": "ambiguous"
+          }
+        },
+        "required": [
+          "identity_status"
+        ]
+      },
+      "then": {
+        "required": [
+          "candidate_track_ref_ids"
+        ]
+      },
+      "else": {
+        "not": {
+          "required": [
+            "candidate_track_ref_ids"
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "identity_status": {
+            "const": "merged"
+          }
+        },
+        "required": [
+          "identity_status"
+        ]
+      },
+      "then": {
+        "required": [
+          "merged_into"
+        ]
+      },
+      "else": {
+        "not": {
+          "required": [
+            "merged_into"
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "minimum": 2
+          }
+        },
+        "required": [
+          "revision"
+        ]
+      },
+      "then": {
+        "required": [
+          "supersedes"
+        ]
+      },
+      "else": {
+        "not": {
+          "required": [
+            "supersedes"
+          ]
+        }
+      }
+    }
+  ],
+  "additionalProperties": false
+}

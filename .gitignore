@@ -1,0 +1,63 @@
+# System and editor files
+.DS_Store
+._*
+*.swp
+*.swo
+
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+.spotify_token.json
+.spotify_pkce.json
+auth-profiles.json
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node
+node_modules/
+.npm/
+.pnpm-store/
+.playwright-cli/
+
+# Browser automation state
+browser-profile/
+browser-artifacts/
+output/playwright/
+
+# Local personal data and state
+data/private/
+data/imports/
+Library.xml
+*.musiclibrary/
+*.db
+*.sqlite
+*.sqlite3
+*.db-*
+*.sqlite-*
+*.sqlite3-*
+
+# Private internal planning and legacy provenance
+/docs/DJ_CLAW_LINEAGE_AND_MIGRATION.md
+/docs/DJ_CLAW_MIGRATION_MANIFEST.md
+/docs/NEXT_PHASE_AGENT_DEVELOPMENT.md
+/docs/NEXT_PHASE_PROFILE_FOUNDATION.md
+
+# Generated artifacts
+.lavish/
+outputs/
+runs/
+coverage/
+dist/
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp

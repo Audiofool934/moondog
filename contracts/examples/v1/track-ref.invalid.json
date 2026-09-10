@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "track_ref_id": "22222222-2222-4222-8222-222222222222",
+  "revision": 1,
+  "identity_status": "resolved",
+  "display_label": "Provider-Specific Field Must Fail",
+  "title": "Provider-Specific Field Must Fail",
+  "artist_credits": [
+    {
+      "name": "Example Ensemble",
+      "role": "primary"
+    }
+  ],
+  "external_refs": [],
+  "created_at": "2026-08-23T09:00:00Z",
+  "resolved_at": "2026-08-23T09:00:00Z",
+  "spotify_uri": "provider-specific-fields-are-not-core"
+}

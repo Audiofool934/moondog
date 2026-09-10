@@ -1,0 +1,258 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:moondog:contract:taste-event:1",
+  "title": "Moondog TasteEvent v1",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/schema_version"
+    },
+    "taste_event_id": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/uuid"
+    },
+    "subject_id": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/uuid"
+    },
+    "operation": {
+      "enum": [
+        "assert",
+        "retract"
+      ]
+    },
+    "occurred_at": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/utc_timestamp"
+    },
+    "recorded_at": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/utc_timestamp"
+    },
+    "target": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/entity_ref"
+    },
+    "signal_type": {
+      "enum": [
+        "preference",
+        "avoidance",
+        "rating",
+        "curation_action",
+        "recommendation_response",
+        "creative_feedback"
+      ]
+    },
+    "polarity": {
+      "enum": [
+        "positive",
+        "negative",
+        "mixed",
+        "neutral"
+      ]
+    },
+    "strength": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "explicitness": {
+      "const": "explicit"
+    },
+    "basis_refs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "record_type": {
+            "const": "listening_event"
+          },
+          "record_id": {
+            "$ref": "urn:moondog:contract:definitions:1#/$defs/uuid"
+          }
+        },
+        "required": [
+          "record_type",
+          "record_id"
+        ],
+        "additionalProperties": false
+      },
+      "uniqueItems": true
+    },
+    "rating": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "number"
+        },
+        "scale_min": {
+          "type": "number"
+        },
+        "scale_max": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "value",
+        "scale_min",
+        "scale_max"
+      ],
+      "additionalProperties": false
+    },
+    "context": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/context"
+    },
+    "note": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000,
+      "pattern": "\\S"
+    },
+    "supersedes_taste_event_id": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/uuid"
+    },
+    "retracts_taste_event_id": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/uuid"
+    },
+    "provenance": {
+      "allOf": [
+        {
+          "$ref": "urn:moondog:contract:definitions:1#/$defs/provenance"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "source_kind": {
+              "enum": [
+                "user_input",
+                "import",
+                "tool"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "extensions": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/extensions"
+    }
+  },
+  "required": [
+    "schema_version",
+    "taste_event_id",
+    "subject_id",
+    "operation",
+    "occurred_at",
+    "recorded_at",
+    "provenance"
+  ],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "assert"
+          }
+        },
+        "required": [
+          "operation"
+        ]
+      },
+      "then": {
+        "required": [
+          "target",
+          "signal_type",
+          "polarity",
+          "strength",
+          "explicitness"
+        ],
+        "not": {
+          "required": [
+            "retracts_taste_event_id"
+          ]
+        }
+      },
+      "else": {
+        "required": [
+          "retracts_taste_event_id"
+        ],
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "target"
+              ]
+            },
+            {
+              "required": [
+                "signal_type"
+              ]
+            },
+            {
+              "required": [
+                "polarity"
+              ]
+            },
+            {
+              "required": [
+                "strength"
+              ]
+            },
+            {
+              "required": [
+                "explicitness"
+              ]
+            },
+            {
+              "required": [
+                "rating"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "assert"
+          },
+          "signal_type": {
+            "const": "rating"
+          }
+        },
+        "required": [
+          "operation",
+          "signal_type"
+        ]
+      },
+      "then": {
+        "required": [
+          "rating"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "assert"
+          },
+          "signal_type": {
+            "not": {
+              "const": "rating"
+            }
+          }
+        },
+        "required": [
+          "operation",
+          "signal_type"
+        ]
+      },
+      "then": {
+        "not": {
+          "required": [
+            "rating"
+          ]
+        }
+      }
+    }
+  ],
+  "additionalProperties": false
+}

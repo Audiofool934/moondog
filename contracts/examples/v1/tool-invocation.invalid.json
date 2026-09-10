@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "invocation_id": "77777777-7777-4777-8777-777777777777",
+  "subject_id": "11111111-1111-4111-8111-111111111111",
+  "actor": {
+    "actor_type": "agent",
+    "actor_id": "99999999-9999-4999-8999-999999999999"
+  },
+  "surface": "surface.chat",
+  "capability_id": "profile.preview",
+  "capability_version": 1,
+  "tool_ref": {
+    "tool_id": "playlist.curator",
+    "contract_version": 1
+  },
+  "execution_mode": "dry_run",
+  "arguments": {},
+  "purpose_id": "purpose.raw_analysis",
+  "purpose": "A dry run must not request an external write.",
+  "declared_effects": [
+    "read_external"
+  ],
+  "declared_risk_flags": [
+    "privacy"
+  ],
+  "data_manifest": {
+    "source_refs": [],
+    "data_classes": [
+      "raw_listening_history"
+    ],
+    "planned_destinations": [
+      {
+        "destination_type": "external",
+        "system": "synthetic-analysis",
+        "purpose_id": "purpose.raw_analysis",
+        "purpose": "This raw dry-run egress must be rejected."
+      }
+    ],
+    "raw_data_included": true,
+    "minimization_summary": "This fixture intentionally violates the dry-run privacy boundary."
+  },
+  "rights_basis_refs": [],
+  "budget_request": [],
+  "policy_ref": {
+    "policy_id": "66666666-6666-4666-8666-666666666666",
+    "policy_version": 1
+  },
+  "semantic_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "requested_at": "2026-08-23T09:25:00Z",
+  "expires_at": "2026-08-23T09:35:00Z"
+}

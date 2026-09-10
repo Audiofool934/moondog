@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "track_ref_id": "12121212-1212-4121-8121-121212121212",
+  "revision": 1,
+  "identity_status": "provisional",
+  "display_label": "Unresolved synthetic local audio file",
+  "external_refs": [
+    {
+      "system": "synthetic-local-library",
+      "entity_type": "file.audio",
+      "external_id": "sha256-example-unresolved-001"
+    }
+  ],
+  "created_at": "2026-08-23T09:00:00Z"
+}

@@ -1,0 +1,31 @@
+{
+  "schema": "moondog.tui-public-media.v1",
+  "captured_on": "2026-09-10",
+  "source": "Actual Pi TuiMainScreen ANSI output replayed in a terminal emulator",
+  "terminal": {
+    "columns": 100,
+    "rows": 34,
+    "theme": "charcoal"
+  },
+  "fixture": "src/demo/fictional-spotify-history.mjs",
+  "fictional_label": "FICTIONAL DEMO DATA",
+  "private_history_read": false,
+  "model_requests": 0,
+  "provider_actions": 0,
+  "files": [
+    {
+      "path": "moondog-tui-home.png",
+      "width": 956,
+      "height": 800,
+      "bytes": 83026,
+      "sha256": "effc9e5d31b2683143e43c394e07af0fb4d58289773ab6d829db988635833368"
+    },
+    {
+      "path": "moondog-tui-profile.png",
+      "width": 956,
+      "height": 800,
+      "bytes": 121719,
+      "sha256": "54657fa9d7353ed9ca4adc52825506606a976379516534fe9932aa453c241ee7"
+    }
+  ]
+}

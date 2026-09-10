@@ -1,0 +1,1488 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; base-uri 'none'; form-action 'none'; object-src 'none'; img-src 'self'; style-src 'unsafe-inline'">
+  <meta name="color-scheme" content="light">
+  <meta name="description" content="Moondog turns private listening history into evidence-backed taste, grounded discovery, and playlist collaboration.">
+  <link rel="icon" href="../assets/brand/moondog-lunar-record/moondog-logo-1x1.png" type="image/png">
+  <title>Moondog - Your listening history, made useful</title>
+  <style>
+    :root {
+      --paper: #eee8de;
+      --paper-deep: #e2d8ca;
+      --card: #f8f4ed;
+      --ink: #1b1b19;
+      --night: #1b1b19;
+      --night-soft: #282825;
+      --muted: #6d665d;
+      --line: #c8bdaf;
+      --line-strong: #94887a;
+      --blue: #8eb4d4;
+      --blue-soft: #d8e5ef;
+      --green: #4f735f;
+      --shadow: 0 24px 70px rgba(45, 35, 26, 0.11);
+      color: var(--ink);
+      background: var(--paper);
+      font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    html {
+      min-width: 320px;
+      scroll-behavior: smooth;
+    }
+
+    body {
+      min-height: 100vh;
+      margin: 0;
+      background:
+        radial-gradient(circle at 8% -5%, rgba(255, 255, 255, 0.82), transparent 32rem),
+        linear-gradient(180deg, var(--paper) 0%, #e7ddd0 100%);
+    }
+
+    a { color: inherit; }
+
+    img {
+      display: block;
+      max-width: 100%;
+    }
+
+    .shell {
+      width: min(1180px, calc(100% - 40px));
+      margin: 0 auto;
+      padding: 24px 0 64px;
+    }
+
+    .topbar {
+      display: flex;
+      min-width: 0;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+      padding: 0 4px 18px;
+    }
+
+    .brand {
+      display: flex;
+      min-width: 0;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+    }
+
+    .brand-mark {
+      width: 42px;
+      height: 42px;
+      flex: 0 0 auto;
+      overflow: hidden;
+      border: 1px solid #aaa093;
+      border-radius: 50%;
+      background: #f7f3ec;
+    }
+
+    .brand-mark img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .brand-name {
+      margin: 0;
+      font-family: Iowan Old Style, Baskerville, "Times New Roman", serif;
+      font-size: 22px;
+      font-weight: 650;
+      letter-spacing: -0.02em;
+      line-height: 1;
+    }
+
+    .brand-subtitle {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 760;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+    }
+
+    .nav {
+      display: flex;
+      min-width: 0;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 6px;
+    }
+
+    .nav a {
+      padding: 9px 12px;
+      border-radius: 999px;
+      color: #514b44;
+      font-size: 12px;
+      font-weight: 720;
+      text-decoration: none;
+    }
+
+    .nav a:hover,
+    .nav a:focus-visible {
+      background: rgba(248, 244, 237, 0.82);
+      outline: 1px solid var(--line);
+    }
+
+    .hero {
+      position: relative;
+      isolation: isolate;
+      display: grid;
+      min-width: 0;
+      grid-template-columns: minmax(0, 0.86fr) minmax(360px, 1.14fr);
+      gap: clamp(30px, 5vw, 72px);
+      overflow: hidden;
+      padding: clamp(36px, 5vw, 68px);
+      border: 1px solid #0e0e0d;
+      border-radius: 28px;
+      color: #f5f0e8;
+      background: var(--night);
+      box-shadow: var(--shadow);
+    }
+
+    .hero::before,
+    .hero::after {
+      position: absolute;
+      z-index: -1;
+      border: 1px solid rgba(142, 180, 212, 0.17);
+      border-radius: 50%;
+      content: "";
+    }
+
+    .hero::before {
+      right: -210px;
+      bottom: -360px;
+      width: 760px;
+      height: 760px;
+    }
+
+    .hero::after {
+      right: -94px;
+      bottom: -245px;
+      width: 520px;
+      height: 520px;
+    }
+
+    .eyebrow,
+    .section-label,
+    .metric-label,
+    .boundary-label {
+      margin: 0;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 10px;
+      font-weight: 760;
+      letter-spacing: 0.17em;
+      text-transform: uppercase;
+    }
+
+    .eyebrow {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: #d3cbc0;
+    }
+
+    .eyebrow::before {
+      width: 10px;
+      height: 10px;
+      flex: 0 0 auto;
+      border: 5px solid rgba(142, 180, 212, 0.18);
+      border-radius: 50%;
+      background: var(--blue);
+      content: "";
+    }
+
+    h1,
+    h2,
+    h3 {
+      font-family: Iowan Old Style, Baskerville, "Times New Roman", serif;
+    }
+
+    h1 {
+      max-width: 700px;
+      margin: 28px 0 22px;
+      font-size: clamp(54px, 7vw, 94px);
+      font-weight: 560;
+      letter-spacing: -0.062em;
+      line-height: 0.89;
+    }
+
+    .hero-copy {
+      max-width: 610px;
+      margin: 0;
+      color: #c8c1b8;
+      font-size: clamp(17px, 1.7vw, 21px);
+      line-height: 1.56;
+    }
+
+    .hero-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 32px;
+    }
+
+    .action {
+      display: inline-flex;
+      min-height: 48px;
+      align-items: center;
+      justify-content: center;
+      padding: 13px 18px;
+      border: 1px solid rgba(255, 255, 255, 0.23);
+      border-radius: 999px;
+      color: #f5f0e8;
+      font-size: 13px;
+      font-weight: 760;
+      text-decoration: none;
+    }
+
+    .action.is-primary {
+      border-color: #f5f0e8;
+      color: var(--night);
+      background: #f5f0e8;
+    }
+
+    .action:hover,
+    .action:focus-visible {
+      border-color: var(--blue);
+      outline: 2px solid transparent;
+    }
+
+    .hero-visual {
+      min-width: 0;
+      align-self: center;
+      padding: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.17);
+      border-radius: 22px;
+      background: rgba(255, 255, 255, 0.055);
+      transform: rotate(1.2deg);
+    }
+
+    .hero-visual img {
+      width: 100%;
+      height: auto;
+      border-radius: 15px;
+    }
+
+    .hero-caption {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin: 12px 4px 2px;
+      color: #b9b1a7;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 9px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .proof-strip {
+      display: grid;
+      min-width: 0;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      margin-top: 20px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: rgba(248, 244, 237, 0.72);
+    }
+
+    .metric {
+      min-width: 0;
+      padding: 18px 20px;
+    }
+
+    .metric + .metric { border-left: 1px solid var(--line); }
+
+    .metric strong {
+      display: block;
+      margin-bottom: 6px;
+      font-family: Iowan Old Style, Baskerville, "Times New Roman", serif;
+      font-size: 22px;
+      font-weight: 620;
+    }
+
+    .metric-label { color: var(--muted); }
+
+    .section {
+      margin-top: 82px;
+    }
+
+    .section-head {
+      display: grid;
+      min-width: 0;
+      grid-template-columns: minmax(0, 0.78fr) minmax(280px, 1.22fr);
+      gap: clamp(28px, 6vw, 88px);
+      align-items: end;
+      margin-bottom: 28px;
+    }
+
+    .section-label { color: #526e85; }
+
+    h2 {
+      margin: 10px 0 0;
+      font-size: clamp(38px, 5vw, 66px);
+      font-weight: 560;
+      letter-spacing: -0.045em;
+      line-height: 0.98;
+    }
+
+    .section-lede {
+      max-width: 720px;
+      margin: 0;
+      color: var(--muted);
+      font-size: 18px;
+      line-height: 1.65;
+    }
+
+    .feature-grid {
+      display: grid;
+      min-width: 0;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      background: var(--card);
+      box-shadow: 0 18px 50px rgba(45, 35, 26, 0.06);
+    }
+
+    .feature {
+      min-width: 0;
+      padding: clamp(24px, 3vw, 38px);
+    }
+
+    .feature + .feature { border-left: 1px solid var(--line); }
+
+    .feature-index {
+      color: #6f91ac;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 11px;
+      font-weight: 760;
+      letter-spacing: 0.12em;
+    }
+
+    h3 {
+      margin: 28px 0 12px;
+      font-size: 27px;
+      font-weight: 620;
+      letter-spacing: -0.025em;
+    }
+
+    .feature p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.66;
+    }
+
+    .continuity-proof {
+      display: grid;
+      min-width: 0;
+      grid-template-columns: minmax(0, 0.86fr) minmax(0, 1.14fr);
+      gap: clamp(28px, 5vw, 68px);
+      margin-top: 18px;
+      overflow: hidden;
+      padding: clamp(28px, 4vw, 48px);
+      border: 1px solid #0e0e0d;
+      border-radius: 22px;
+      color: #f5f0e8;
+      background:
+        radial-gradient(circle at 8% 120%, rgba(142, 180, 212, 0.2), transparent 22rem),
+        var(--night);
+      box-shadow: var(--shadow);
+    }
+
+    .continuity-copy,
+    .continuity-turnover { min-width: 0; }
+
+    .continuity-copy .section-label,
+    .continuity-turnover .section-label { color: #a9bfd3; }
+
+    .continuity-copy h3 {
+      max-width: 440px;
+      margin: 14px 0 16px;
+      font-size: clamp(35px, 4.4vw, 56px);
+      line-height: 0.98;
+    }
+
+    .continuity-copy > p:last-of-type {
+      margin: 0;
+      color: #bbb5ad;
+      line-height: 1.62;
+    }
+
+    .era-list {
+      display: grid;
+      min-width: 0;
+      gap: 8px;
+      margin-top: 24px;
+    }
+
+    .era-artist {
+      display: grid;
+      min-width: 0;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 18px;
+      align-items: baseline;
+      padding: 11px 13px;
+      border: 1px solid #44433e;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.035);
+    }
+
+    .era-artist strong { overflow-wrap: anywhere; }
+
+    .era-artist span {
+      color: #a9bfd3;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 10px;
+      text-align: right;
+    }
+
+    .continuity-turnover {
+      padding: 24px;
+      border: 1px solid #44433e;
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.045);
+    }
+
+    .continuity-turnover h4 {
+      margin: 10px 0 24px;
+      font-family: Iowan Old Style, Baskerville, "Times New Roman", serif;
+      font-size: 28px;
+      font-weight: 620;
+      letter-spacing: -0.025em;
+    }
+
+    .continuity-transition {
+      display: grid;
+      min-width: 0;
+      grid-template-columns: 72px minmax(0, 1fr) auto;
+      gap: 14px;
+      align-items: center;
+      padding: 15px 0;
+      border-top: 1px solid #3b3b37;
+    }
+
+    .continuity-transition strong {
+      color: #dceaf4;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12px;
+    }
+
+    .continuity-meter {
+      min-width: 0;
+      height: 7px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: #40403c;
+    }
+
+    .continuity-meter span {
+      display: block;
+      height: 100%;
+      border-radius: inherit;
+      background: var(--blue);
+    }
+
+    .continuity-meter .is-60 { width: 60%; }
+    .continuity-meter .is-70 { width: 70%; }
+    .continuity-meter .is-50 { width: 50%; }
+
+    .continuity-transition small {
+      color: #bbb5ad;
+      white-space: nowrap;
+    }
+
+    .continuity-note {
+      margin: 18px 0 0;
+      color: #928d85;
+      font-size: 11px;
+      line-height: 1.55;
+    }
+
+    .return-proof {
+      display: grid;
+      min-width: 0;
+      grid-template-columns: minmax(0, 0.78fr) minmax(0, 1.22fr);
+      margin-top: 18px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      background: var(--card);
+      box-shadow: var(--shadow);
+    }
+
+    .return-copy,
+    .return-list {
+      min-width: 0;
+      padding: clamp(28px, 4vw, 48px);
+    }
+
+    .return-copy {
+      color: #f5f0e8;
+      background:
+        radial-gradient(circle at 5% 105%, rgba(142, 180, 212, 0.24), transparent 22rem),
+        var(--night);
+    }
+
+    .return-copy .section-label { color: #a9bfd3; }
+
+    .return-copy h3 {
+      max-width: 430px;
+      margin: 14px 0 16px;
+      font-size: clamp(35px, 4.4vw, 56px);
+      line-height: 0.98;
+    }
+
+    .return-copy > p:last-of-type {
+      margin: 0;
+      color: #bbb5ad;
+      line-height: 1.62;
+    }
+
+    .return-action {
+      display: inline-block;
+      margin-top: 28px;
+      padding-bottom: 5px;
+      border-bottom: 1px solid rgba(169, 191, 211, 0.7);
+      color: #dceaf4;
+      font-size: 12px;
+      font-weight: 760;
+      letter-spacing: 0.03em;
+      text-decoration: none;
+    }
+
+    .return-list {
+      background:
+        linear-gradient(rgba(120, 151, 179, 0.07), rgba(120, 151, 179, 0.07)),
+        var(--card);
+    }
+
+    .return-list h4 {
+      margin: 10px 0 24px;
+      font-family: Iowan Old Style, Baskerville, "Times New Roman", serif;
+      font-size: 28px;
+      font-weight: 620;
+      letter-spacing: -0.025em;
+    }
+
+    .return-track {
+      min-width: 0;
+      padding: 17px 0;
+      border-top: 1px solid var(--line);
+    }
+
+    .return-track-head {
+      display: grid;
+      min-width: 0;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 18px;
+      align-items: baseline;
+    }
+
+    .return-track-title { min-width: 0; }
+    .return-track-title strong { display: block; overflow-wrap: anywhere; }
+    .return-track-title span { display: block; margin-top: 4px; color: var(--muted); font-size: 12px; }
+
+    .return-gap {
+      color: #526e85;
+      font: 760 10px ui-monospace, SFMono-Regular, Menlo, monospace;
+      letter-spacing: 0.05em;
+      text-align: right;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .return-line {
+      display: grid;
+      min-width: 0;
+      grid-template-columns: 8px minmax(0, 1fr) 8px;
+      gap: 8px;
+      align-items: center;
+      margin-top: 15px;
+    }
+
+    .return-line::before,
+    .return-line::after {
+      width: 8px;
+      height: 8px;
+      border: 2px solid #7897b3;
+      border-radius: 50%;
+      content: "";
+    }
+
+    .return-line span {
+      display: block;
+      min-width: 0;
+      height: 1px;
+      background: linear-gradient(90deg, rgba(120, 151, 179, 0.7), rgba(120, 151, 179, 0.18));
+    }
+
+    .return-note {
+      margin: 18px 0 0;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.55;
+    }
+
+    .patterns-proof {
+      display: grid;
+      min-width: 0;
+      grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+      margin-top: 18px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      background: var(--card);
+      box-shadow: var(--shadow);
+    }
+
+    .patterns-session,
+    .patterns-releases {
+      min-width: 0;
+      padding: clamp(28px, 4vw, 48px);
+    }
+
+    .patterns-session {
+      background:
+        radial-gradient(circle at 0% 100%, rgba(142, 180, 212, 0.26), transparent 23rem),
+        #e8eef2;
+    }
+
+    .patterns-session h3 {
+      max-width: 430px;
+      margin: 14px 0 16px;
+      font-size: clamp(35px, 4.4vw, 56px);
+      line-height: 0.98;
+    }
+
+    .patterns-session > p:last-of-type {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.62;
+    }
+
+    .patterns-metrics {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 9px;
+      margin-top: 26px;
+    }
+
+    .patterns-metric {
+      min-width: 0;
+      padding: 15px;
+      border: 1px solid rgba(86, 112, 134, 0.24);
+      border-radius: 13px;
+      background: rgba(255, 255, 255, 0.45);
+    }
+
+    .patterns-metric strong {
+      display: block;
+      overflow-wrap: anywhere;
+      font: 620 clamp(24px, 3vw, 34px) Iowan Old Style, Baskerville, "Times New Roman", serif;
+      letter-spacing: -0.03em;
+    }
+
+    .patterns-metric span {
+      display: block;
+      margin-top: 7px;
+      color: var(--muted);
+      font-size: 9px;
+      font-weight: 780;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .patterns-releases h4 {
+      margin: 10px 0 24px;
+      font-family: Iowan Old Style, Baskerville, "Times New Roman", serif;
+      font-size: 28px;
+      font-weight: 620;
+      letter-spacing: -0.025em;
+    }
+
+    .patterns-release {
+      display: grid;
+      min-width: 0;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 16px;
+      align-items: baseline;
+      padding: 15px 0;
+      border-top: 1px solid var(--line);
+    }
+
+    .patterns-release > div { min-width: 0; }
+    .patterns-release strong { display: block; overflow-wrap: anywhere; }
+    .patterns-release p { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
+    .patterns-release span { color: #6f91ac; font: 760 10px ui-monospace, SFMono-Regular, Menlo, monospace; white-space: nowrap; }
+
+    .patterns-note { margin: 18px 0 0; color: var(--muted); font-size: 11px; line-height: 1.55; }
+
+    .catalog-proof {
+      display: grid;
+      min-width: 0;
+      grid-template-columns: minmax(320px, 0.82fr) minmax(0, 1.18fr);
+      overflow: hidden;
+      border: 1px solid #0e0e0d;
+      border-radius: 22px;
+      background: var(--card);
+      box-shadow: var(--shadow);
+    }
+
+    .catalog-transcript {
+      min-width: 0;
+      padding: clamp(28px, 4vw, 48px);
+      color: #f5f0e8;
+      background:
+        radial-gradient(circle at 110% -10%, rgba(142, 180, 212, 0.22), transparent 20rem),
+        var(--night);
+    }
+
+    .catalog-transcript .section-label { color: #a9bfd3; }
+
+    .catalog-prompt {
+      margin: 30px 0 0;
+      padding: 0;
+      border: 0;
+    }
+
+    .catalog-role {
+      display: block;
+      margin-bottom: 10px;
+      color: #aaa49c;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 10px;
+      font-weight: 760;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+    }
+
+    .catalog-prompt p {
+      margin: 0;
+      font-family: Iowan Old Style, Baskerville, "Times New Roman", serif;
+      font-size: clamp(27px, 3.4vw, 43px);
+      font-weight: 560;
+      letter-spacing: -0.03em;
+      line-height: 1.18;
+    }
+
+    .catalog-answer {
+      margin-top: 34px;
+      padding: 20px 0 2px 22px;
+      border-left: 3px solid var(--blue);
+    }
+
+    .catalog-answer-meta {
+      display: block;
+      color: #a9bfd3;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 10px;
+      font-weight: 760;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .catalog-answer strong {
+      display: block;
+      margin-top: 13px;
+      font-family: Iowan Old Style, Baskerville, "Times New Roman", serif;
+      font-size: clamp(30px, 4vw, 48px);
+      font-weight: 590;
+      letter-spacing: -0.035em;
+    }
+
+    .catalog-answer small {
+      display: block;
+      margin-top: 7px;
+      color: #c3bbb1;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .catalog-details {
+      min-width: 0;
+      padding: clamp(30px, 4.5vw, 54px);
+    }
+
+    .catalog-details h2 {
+      margin-top: 12px;
+      font-size: clamp(39px, 4.8vw, 61px);
+    }
+
+    .catalog-lede {
+      max-width: 660px;
+      margin: 20px 0 0;
+      color: var(--muted);
+      font-size: 16px;
+      line-height: 1.68;
+    }
+
+    .catalog-command {
+      margin-top: 24px;
+      padding: 18px 20px;
+      border: 1px solid #30302c;
+      box-shadow: none;
+    }
+
+    .catalog-command code {
+      color: #eef4f8;
+      font-size: clamp(12px, 1.55vw, 15px);
+      line-height: 1.65;
+    }
+
+    .catalog-command code span {
+      display: block;
+      white-space: nowrap;
+    }
+
+    .catalog-command p {
+      color: #b9c8d3;
+    }
+
+    .catalog-route {
+      margin: 30px 0 0;
+      padding: 0;
+      border-top: 1px solid var(--line);
+      list-style: none;
+    }
+
+    .catalog-route li {
+      display: grid;
+      min-width: 0;
+      grid-template-columns: minmax(150px, 0.72fr) minmax(0, 1.28fr);
+      gap: 22px;
+      padding: 17px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .catalog-route code {
+      color: #526e85;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 11px;
+      font-weight: 760;
+      overflow-wrap: anywhere;
+    }
+
+    .catalog-route span {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+    .catalog-boundary {
+      display: flex;
+      min-width: 0;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 22px;
+    }
+
+    .catalog-boundary span {
+      padding: 8px 10px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: #514b44;
+      background: #eee8de;
+      font-size: 10px;
+      font-weight: 760;
+      letter-spacing: 0.04em;
+    }
+
+    .media-grid {
+      display: grid;
+      min-width: 0;
+      grid-template-columns: minmax(0, 1.26fr) minmax(300px, 0.74fr);
+      gap: 18px;
+    }
+
+    .media-card {
+      min-width: 0;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      background: var(--card);
+      box-shadow: 0 18px 50px rgba(45, 35, 26, 0.06);
+    }
+
+    .media-card img {
+      width: 100%;
+      height: auto;
+      aspect-ratio: 1240 / 840;
+      background: var(--paper-deep);
+    }
+
+    .media-copy {
+      padding: 22px 24px 24px;
+    }
+
+    .media-copy h3 { margin: 0 0 8px; }
+
+    .media-copy p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    .loop {
+      display: grid;
+      min-width: 0;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      overflow: hidden;
+      border: 1px solid #0e0e0d;
+      border-radius: 22px;
+      color: #f5f0e8;
+      background: var(--night);
+    }
+
+    .loop-step {
+      min-width: 0;
+      padding: 28px 24px 30px;
+    }
+
+    .loop-step + .loop-step { border-left: 1px solid #3b3b37; }
+
+    .loop-step code {
+      color: var(--blue);
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12px;
+      font-weight: 740;
+      overflow-wrap: anywhere;
+    }
+
+    .loop-step strong {
+      display: block;
+      margin: 22px 0 10px;
+      font-size: 17px;
+    }
+
+    .loop-step p {
+      margin: 0;
+      color: #bdb5ab;
+      font-size: 13px;
+      line-height: 1.58;
+    }
+
+    .boundary {
+      display: grid;
+      min-width: 0;
+      grid-template-columns: minmax(260px, 0.72fr) minmax(0, 1.28fr);
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      background: var(--card);
+    }
+
+    .boundary-intro {
+      padding: clamp(28px, 4vw, 48px);
+      color: #f5f0e8;
+      background: var(--night-soft);
+    }
+
+    .boundary-intro h2 {
+      margin-top: 18px;
+      font-size: clamp(37px, 4.5vw, 56px);
+    }
+
+    .boundary-intro p {
+      margin: 24px 0 0;
+      color: #c3bbb1;
+      font-size: 15px;
+      line-height: 1.65;
+    }
+
+    .boundary-list {
+      display: grid;
+      min-width: 0;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .boundary-item {
+      min-width: 0;
+      padding: 30px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .boundary-item:nth-child(odd) { border-right: 1px solid var(--line); }
+
+    .boundary-item:nth-last-child(-n + 2) { border-bottom: 0; }
+
+    .boundary-label { color: #526e85; }
+
+    .boundary-item strong {
+      display: block;
+      margin: 14px 0 8px;
+      font-size: 17px;
+    }
+
+    .boundary-item p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    .start {
+      display: grid;
+      min-width: 0;
+      grid-template-columns: minmax(0, 1fr) minmax(320px, 0.78fr);
+      gap: clamp(28px, 6vw, 88px);
+      align-items: center;
+      padding: clamp(32px, 5vw, 58px);
+      border: 1px solid var(--line-strong);
+      border-radius: 22px;
+      background: var(--paper-deep);
+    }
+
+    .start h2 { margin-top: 10px; }
+
+    .start-copy {
+      margin: 18px 0 0;
+      color: var(--muted);
+      font-size: 16px;
+      line-height: 1.65;
+    }
+
+    .command {
+      min-width: 0;
+      padding: 22px 24px;
+      border-radius: 16px;
+      color: #f5f0e8;
+      background: var(--night);
+      box-shadow: 0 16px 40px rgba(27, 27, 25, 0.12);
+    }
+
+    .command code {
+      display: block;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: clamp(14px, 2vw, 17px);
+      font-weight: 720;
+      overflow-wrap: anywhere;
+    }
+
+    .command p {
+      margin: 12px 0 0;
+      color: #bdb5ab;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .footnote {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+      margin-top: 28px;
+      padding: 0 4px;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.55;
+    }
+
+    .footnote p { margin: 0; }
+
+    @media (max-width: 900px) {
+      .hero,
+      .section-head,
+      .catalog-proof,
+      .media-grid,
+      .boundary,
+      .start {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .hero-visual { transform: none; }
+
+      .feature-grid { grid-template-columns: minmax(0, 1fr); }
+
+      .continuity-proof { grid-template-columns: minmax(0, 1fr); }
+
+      .return-proof { grid-template-columns: minmax(0, 1fr); }
+
+      .patterns-proof { grid-template-columns: minmax(0, 1fr); }
+
+      .feature + .feature {
+        border-top: 1px solid var(--line);
+        border-left: 0;
+      }
+
+      .loop { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+      .loop-step:nth-child(3) { border-left: 0; }
+
+      .loop-step:nth-child(n + 3) { border-top: 1px solid #3b3b37; }
+    }
+
+    @media (max-width: 620px) {
+      .shell {
+        width: min(100% - 24px, 1180px);
+        padding-top: 12px;
+      }
+
+      .topbar {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 12px;
+      }
+
+      .brand-subtitle { display: none; }
+
+      .nav {
+        width: 100%;
+        gap: 0;
+        justify-content: space-between;
+        padding-top: 4px;
+        border-top: 1px solid var(--line);
+      }
+
+      .nav a {
+        min-width: 0;
+        flex: 1 1 25%;
+        padding: 8px 4px;
+        font-size: 11px;
+        text-align: center;
+      }
+
+      .hero {
+        padding: 30px 24px;
+        border-radius: 22px;
+      }
+
+      h1 { font-size: clamp(51px, 16vw, 70px); }
+
+      .action { width: 100%; }
+
+      .hero-caption { align-items: flex-start; }
+
+      .proof-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+      .metric:nth-child(3) { border-left: 0; }
+
+      .metric:nth-child(n + 3) { border-top: 1px solid var(--line); }
+
+      .section { margin-top: 64px; }
+
+      .loop { grid-template-columns: minmax(0, 1fr); }
+
+      .loop-step + .loop-step {
+        border-top: 1px solid #3b3b37;
+        border-left: 0;
+      }
+
+      .boundary-list { grid-template-columns: minmax(0, 1fr); }
+
+      .catalog-route li {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 7px;
+      }
+
+      .boundary-item:nth-child(odd) { border-right: 0; }
+
+      .boundary-item:nth-last-child(2) { border-bottom: 1px solid var(--line); }
+
+      .era-artist {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 5px;
+      }
+
+      .era-artist span { text-align: left; }
+
+      .continuity-turnover { padding: 18px; }
+
+      .continuity-transition {
+        grid-template-columns: 62px minmax(0, 1fr);
+        gap: 10px;
+      }
+
+      .continuity-transition small {
+        grid-column: 1 / -1;
+        white-space: normal;
+      }
+
+      .return-track-head {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 6px;
+      }
+
+      .return-gap { text-align: left; }
+
+      .patterns-metrics { grid-template-columns: minmax(0, 1fr); }
+
+      .patterns-release {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 5px;
+      }
+
+      .patterns-release span { white-space: normal; }
+
+      .footnote {
+        display: block;
+      }
+
+      .footnote p + p { margin-top: 6px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <a class="brand" href="#top" aria-label="Moondog home">
+        <span class="brand-mark"><img src="../assets/brand/moondog-lunar-record/moondog-logo-1x1.png" alt=""></span>
+        <span>
+          <span class="brand-name">Moondog</span>
+          <span class="brand-subtitle">Personal music intelligence</span>
+        </span>
+      </a>
+      <nav class="nav" aria-label="Showcase">
+        <a href="#product">Product</a>
+        <a href="#catalog">Answer</a>
+        <a href="#evidence">Evidence</a>
+        <a href="#privacy">Privacy</a>
+      </nav>
+    </header>
+
+    <section class="hero" id="top" aria-labelledby="hero-title">
+      <div>
+        <p class="eyebrow">Local-first personal AI music agent</p>
+        <h1 id="hero-title">Your listening history, made useful.</h1>
+        <p class="hero-copy">Moondog turns years of authorized listening history into an evidence-backed Tasteprint, grounded discovery, and playlist collaboration you can inspect before anything acts.</p>
+        <div class="hero-actions">
+          <a class="action is-primary" href="../assets/demo/moondog-tasteprint-demo.html#time-machine">Explore the Time Machine</a>
+          <a class="action" href="#start">Run the zero-data tour</a>
+        </div>
+      </div>
+      <figure class="hero-visual">
+        <img src="../assets/demo/moondog-time-machine-preview.png" width="1240" height="840" alt="Fictional Moondog Listening Time Machine with four chronological year landmarks">
+        <figcaption class="hero-caption"><span>Production renderer</span><span>Fictional public data</span></figcaption>
+      </figure>
+    </section>
+
+    <section class="proof-strip" aria-label="Verified product boundaries">
+      <div class="metric"><strong>Zero data</strong><span class="metric-label">Visual first run</span></div>
+      <div class="metric"><strong>Local</strong><span class="metric-label">History processing</span></div>
+      <div class="metric"><strong>Grounded</strong><span class="metric-label">Candidate planning</span></div>
+      <div class="metric"><strong>Explicit</strong><span class="metric-label">Provider actions</span></div>
+    </section>
+
+    <section class="section" id="product" aria-labelledby="product-title">
+      <div class="section-head">
+        <div>
+          <p class="section-label">What exists today</p>
+          <h2 id="product-title">More than another stats dashboard.</h2>
+        </div>
+        <p class="section-lede">The history is not the product endpoint. Moondog turns private evidence into a profile you can challenge, a route through your listening life, and trusted candidates an agent can plan from.</p>
+      </div>
+      <div class="feature-grid">
+        <article class="feature">
+          <span class="feature-index">01 / Remember</span>
+          <h3>See the long arc</h3>
+          <p>Account Data, Extended Streaming History, and ListenBrainz listens join one provider-neutral identity without exposing raw provider identifiers to the model.</p>
+        </article>
+        <article class="feature">
+          <span class="feature-index">02 / Explain</span>
+          <h3>Inspect the evidence</h3>
+          <p>Familiarity, direct preference, recent movement, skips, and uncertainty stay distinct. Your correction overrides an inference without rewriting what happened.</p>
+        </article>
+        <article class="feature">
+          <span class="feature-index">03 / Act</span>
+          <h3>Plan before writing</h3>
+          <p>The agent selects only from host-returned candidates. Playlist order is validated locally, and connected-service effects remain behind explicit authorization.</p>
+        </article>
+      </div>
+      <article class="continuity-proof" aria-labelledby="continuity-proof-title">
+        <div class="continuity-copy">
+          <p class="section-label">Artists across eras</p>
+          <h3 id="continuity-proof-title">What stayed. What changed.</h3>
+          <p>Moondog separates artists that keep returning across your retained years from the turnover inside each year's listening-time leaders.</p>
+          <div class="era-list" aria-label="Artists across eras">
+            <div class="era-artist"><strong>Mara Vale</strong><span>4 active years · 2023-2026</span></div>
+            <div class="era-artist"><strong>Ash Meridian</strong><span>4 active years · 2023-2026</span></div>
+            <div class="era-artist"><strong>North Window</strong><span>3 active years · 2024-2026</span></div>
+          </div>
+        </div>
+        <div class="continuity-turnover">
+          <p class="section-label">Listening-time top 10</p>
+          <h4>Year-to-year turnover</h4>
+          <div class="continuity-transition"><strong>2023→24</strong><span class="continuity-meter" aria-label="60% carried forward"><span class="is-60"></span></span><small>60% carried forward</small></div>
+          <div class="continuity-transition"><strong>2024→25</strong><span class="continuity-meter" aria-label="70% carried forward"><span class="is-70"></span></span><small>70% carried forward</small></div>
+          <div class="continuity-transition"><strong>2025→26</strong><span class="continuity-meter" aria-label="50% carried forward"><span class="is-50"></span></span><small>50% carried forward</small></div>
+          <p class="continuity-note">Artists across eras and Top 10 overlap describe this retained fictional archive. They are evidence, not a personality verdict.</p>
+        </div>
+      </article>
+      <article class="return-proof" aria-labelledby="return-proof-title">
+        <div class="return-copy">
+          <p class="section-label">Long-gap recurrence</p>
+          <h3 id="return-proof-title">Some songs find their way back.</h3>
+          <p>Moondog notices when the same track reappears after a long absence, then gives the agent a bounded listen-again path without turning recurrence into a story about your feelings.</p>
+          <a class="return-action" href="../assets/demo/moondog-tasteprint-demo.html#tracks-that-stay">Open the full return evidence <span aria-hidden="true">→</span></a>
+        </div>
+        <div class="return-list">
+          <p class="section-label">Music that came back</p>
+          <h4>Three returns from one fictional archive</h4>
+          <div class="return-track">
+            <div class="return-track-head"><div class="return-track-title"><strong>Quiet Coordinates</strong><span>Sable Arcade · Night Survey</span></div><span class="return-gap">421-day longest gap · 2 returns</span></div>
+            <div class="return-line" aria-hidden="true"><span></span></div>
+          </div>
+          <div class="return-track">
+            <div class="return-track-head"><div class="return-track-title"><strong>Glass Highway</strong><span>North Window · Pale Signals</span></div><span class="return-gap">318-day longest gap · 2 returns</span></div>
+            <div class="return-line" aria-hidden="true"><span></span></div>
+          </div>
+          <div class="return-track">
+            <div class="return-track-head"><div class="return-track-title"><strong>Midnight Lines</strong><span>Mara Vale · Night Transit</span></div><span class="return-gap">732-day gap · 1 return</span></div>
+            <div class="return-line" aria-hidden="true"><span></span></div>
+          </div>
+          <p class="return-note">Each return clears a gap of at least 180 days, the minimum listening-evidence thresholds, and the active avoid boundary. Recurrence is not proof of liking, nostalgia, or intentional absence.</p>
+        </div>
+      </article>
+      <article class="patterns-proof" aria-labelledby="patterns-proof-title">
+        <div class="patterns-session">
+          <p class="section-label">Approximate sessions</p>
+          <h3 id="patterns-proof-title">The shape of a listening stretch.</h3>
+          <p>Track-stop timestamps become bounded listening stretches when a gap longer than 30 minutes starts a new one.</p>
+          <div class="patterns-metrics" aria-label="Fictional listening stretch summary">
+            <div class="patterns-metric"><strong>2,500</strong><span>stretches</span></div>
+            <div class="patterns-metric"><strong>5</strong><span>median plays</span></div>
+            <div class="patterns-metric"><strong>42%</strong><span>5+ plays</span></div>
+          </div>
+        </div>
+        <div class="patterns-releases">
+          <p class="section-label">Multi-track release depth</p>
+          <h4>Records explored in depth</h4>
+          <div class="patterns-release"><div><strong>Night Transit</strong><p>Mara Vale</p></div><span>11 tracks · 4 years</span></div>
+          <div class="patterns-release"><div><strong>Pale Signals</strong><p>North Window</p></div><span>10 tracks · 3 years</span></div>
+          <div class="patterns-release"><div><strong>Afterimage</strong><p>Ash Meridian</p></div><span>9 tracks · 4 years</span></div>
+          <p class="patterns-note">The 30-minute grouping is an approximation, and multi-track depth does not claim full-album playback, completion, or preference. All names and counts shown here are fictional.</p>
+        </div>
+      </article>
+    </section>
+
+    <section class="section catalog-proof" id="catalog" aria-labelledby="catalog-title">
+      <div class="catalog-transcript">
+        <p class="section-label">The question that started it.</p>
+        <blockquote class="catalog-prompt">
+          <span class="catalog-role">You</span>
+          <p lang="zh-Hans">刘森最新的单曲是哪首？</p>
+        </blockquote>
+        <div class="catalog-answer">
+          <span class="catalog-answer-meta">Captured 2026-09-03 · Apple Music US</span>
+          <strong lang="zh-Hans">《天长地久》</strong>
+          <small>Released 2026-05-09 · Single</small>
+        </div>
+      </div>
+      <div class="catalog-details">
+        <p class="section-label">Grounded music-world evidence</p>
+        <h2 id="catalog-title">Latest without guessing.</h2>
+        <p class="catalog-lede">A live read-only probe returned four exact-name candidates, then resolved the intended artist from one displayed public artist page before separating released titles from upcoming ones. The CLI can consume that returned page directly, or use an explicitly supplied Spotify history ZIP without a model or persistent import.</p>
+        <div class="command catalog-command" aria-label="Run: moondog catalog latest-single --artist 刘森 --artist-page candidate-page">
+          <code><span>moondog catalog \</span><span>&nbsp;&nbsp;latest-single \</span><span>&nbsp;&nbsp;--artist 刘森 \</span><span>&nbsp;&nbsp;--artist-page candidate-page</span></code>
+          <p>No model. The returned public page is name-checked before releases load.<br>Private alternative: use --from spotify-history.zip; the archive and its hints stay local.</p>
+        </div>
+        <ol class="catalog-route" aria-label="Grounded latest-release path">
+          <li><code>music.catalog.artist_search</code><span>Return up to four validated exact-name public artist pages without guessing between them.</span></li>
+          <li><code>music.catalog.artist_identity</code><span>Extract the selected page's public ID, look it up directly, and stop if its artist name differs. The optional local.history.hint path remains host-only.</span></li>
+          <li><code>music.catalog.artist_releases</code><span>Reuse the cached lookup and compute the latest released single before the general list is truncated.</span></li>
+          <li><code>host.cite</code><span>Attach a validated public catalog page, retrieval date, and storefront limitation outside model prose.</span></li>
+        </ol>
+        <div class="catalog-boundary" aria-label="Catalog evidence boundaries">
+          <span>No model</span>
+          <span>Archive stays local</span>
+          <span>Same-name safe</span>
+          <span>Returned page can be selected</span>
+          <span>Released ≠ upcoming</span>
+          <span>One storefront, not every platform.</span>
+          <span>Public music-world evidence stays separate from private listening evidence.</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="evidence" aria-labelledby="evidence-title">
+      <div class="section-head">
+        <div>
+          <p class="section-label">Runnable proof</p>
+          <h2 id="evidence-title">The demo is the product path.</h2>
+        </div>
+        <p class="section-lede">Every public visual below uses deterministic fictional data and the same production renderers or grounded capability sequence used by Moondog itself.</p>
+      </div>
+      <div class="media-grid">
+        <article class="media-card">
+          <img src="../assets/demo/moondog-offline-demo.gif" width="1240" height="840" loading="lazy" alt="Terminal recording of the deterministic six-track Moondog agent walkthrough">
+          <div class="media-copy">
+            <h3>Grounded six-track walkthrough</h3>
+            <p>Profile summary, evidence explanation, library search, and playlist planning run in order with no model, OAuth credential, personal data, or provider write.</p>
+          </div>
+        </article>
+        <article class="media-card">
+          <a href="../assets/demo/moondog-tasteprint-card-demo.html">
+            <img src="../assets/demo/moondog-tasteprint-card-preview.png" width="1240" height="840" loading="lazy" alt="Fictional one-screen Moondog Tasteprint recap card">
+          </a>
+          <div class="media-copy">
+            <h3>Bounded Tasteprint recap</h3>
+            <p>A compact local artifact uses only selected artists, tracks, dates, and aggregates, with an in-frame reminder to review every visible field before sharing.</p>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="loop-title">
+      <div class="section-head">
+        <div>
+          <p class="section-label">One grounded loop</p>
+          <h2 id="loop-title">The agent can show its work.</h2>
+        </div>
+        <p class="section-lede">The deterministic showcase exposes the exact capability sequence instead of presenting an unexplained playlist as intelligence.</p>
+      </div>
+      <div class="loop" aria-label="Grounded agent capability sequence">
+        <article class="loop-step"><code>profile.summary</code><strong>Read the listener</strong><p>Project a bounded music profile from trusted local evidence.</p></article>
+        <article class="loop-step"><code>profile.explain</code><strong>Inspect one claim</strong><p>Show which observation or direct signal supports the profile.</p></article>
+        <article class="loop-step"><code>library.search</code><strong>Find trusted options</strong><p>Register only candidates returned by the host for this prompt.</p></article>
+        <article class="loop-step"><code>playlist.plan</code><strong>Validate the order</strong><p>Bind the exact candidate set, count, and sequence before any action.</p></article>
+      </div>
+    </section>
+
+    <section class="section boundary" id="privacy" aria-labelledby="privacy-title">
+      <div class="boundary-intro">
+        <p class="section-label">Privacy is architecture</p>
+        <h2 id="privacy-title">Keep the raw history out of the pitch.</h2>
+        <p>Moondog treats personal listening data as local evidence, not content that must be uploaded to make the product useful.</p>
+      </div>
+      <div class="boundary-list">
+        <article class="boundary-item"><span class="boundary-label">Import</span><strong>Local and explicit</strong><p>Studio binds to loopback, accepts a file only after a button press, and removes its temporary working copy.</p></article>
+        <article class="boundary-item"><span class="boundary-label">Model</span><strong>Bounded context</strong><p>Profile tools omit raw history, source paths, private provider IDs, and correction notes from model-visible context.</p></article>
+        <article class="boundary-item"><span class="boundary-label">Action</span><strong>Preview first</strong><p>Planning is not a write. Spotify playback and playlist effects require the configured authorization and confirmation boundary.</p></article>
+        <article class="boundary-item"><span class="boundary-label">Demo</span><strong>Unmistakably fictional</strong><p>The public tour reads no private store, rejects history imports, and discards every correction when its process stops.</p></article>
+      </div>
+    </section>
+
+    <section class="section start" id="start" aria-labelledby="start-title">
+      <div>
+        <p class="section-label">Next: your private history</p>
+        <h2 id="start-title">Bring one ZIP. Leave no trace.</h2>
+        <p class="start-copy">The static showcase itself needs no dependency installation. Install the locked dependencies once, then open your Spotify history as a Session-only private profile with the complete Tasteprint, Listening Time Machine, continuity map, approximate listening stretches, and multi-track release depth, no persistent import, and no model, provider, cloud, or network request.</p>
+      </div>
+      <div class="command" aria-label="Install and open one Spotify history ZIP as a session-only Studio">
+        <code>npm install --ignore-scripts<br>npm run studio -- <br>&nbsp;&nbsp;--from spotify-history.zip</code>
+        <p>Node.js 22.19.0 or newer. Stopping Studio discards the in-memory profile and corrections. Your original ZIP remains unchanged.</p>
+      </div>
+    </section>
+
+    <footer class="footnote">
+      <p>Tasteprint, Time Machine, historical-return, continuity, session-shape, and release-depth names, tracks, dates, and counts are fictional demonstration data.</p>
+      <p>The dated catalog proof uses public Apple Music US metadata.</p>
+      <p>Both ZIP commands above are inert showcase text and never read a ZIP.</p>
+      <p>No analytics, scripts, external fonts, or network resources.</p>
+    </footer>
+  </main>
+</body>
+</html>

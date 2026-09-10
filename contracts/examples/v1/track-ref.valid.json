@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "track_ref_id": "22222222-2222-4222-8222-222222222222",
+  "revision": 1,
+  "identity_status": "resolved",
+  "display_label": "Synthetic Night Signal by Example Ensemble",
+  "title": "Synthetic Night Signal",
+  "artist_credits": [
+    {
+      "name": "Example Ensemble",
+      "artist_ref_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "role": "primary",
+      "external_refs": [
+        {
+          "system": "synthetic-catalog",
+          "entity_type": "artist.credit",
+          "external_id": "artist-example-001"
+        }
+      ]
+    }
+  ],
+  "release": {
+    "title": "Contract Test Recordings",
+    "release_date": "2026-08-23"
+  },
+  "duration_ms": 214000,
+  "isrc": "USZZZ2600001",
+  "external_refs": [
+    {
+      "system": "synthetic-catalog",
+      "entity_type": "recording.track",
+      "external_id": "track-example-001",
+      "url": "https://example.invalid/tracks/track-example-001"
+    }
+  ],
+  "created_at": "2026-08-23T09:00:00Z",
+  "resolved_at": "2026-08-23T09:00:00Z"
+}

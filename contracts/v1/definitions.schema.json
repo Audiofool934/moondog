@@ -1,0 +1,365 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:moondog:contract:definitions:1",
+  "title": "Moondog Contract Definitions v1",
+  "$defs": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "utc_timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]+)?Z$"
+    },
+    "non_empty_string": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "\\S"
+    },
+    "namespaced_key": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 128,
+      "pattern": "^[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*)+$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "extensions": {
+      "type": "object",
+      "maxProperties": 32,
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9_]*(?:\\.[a-z0-9][a-z0-9_-]*)+$"
+      },
+      "additionalProperties": true
+    },
+    "external_ref": {
+      "type": "object",
+      "properties": {
+        "system": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "entity_type": {
+          "$ref": "#/$defs/namespaced_key"
+        },
+        "external_id": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^[^?#]+$"
+        }
+      },
+      "required": [
+        "system",
+        "entity_type",
+        "external_id"
+      ],
+      "additionalProperties": false
+    },
+    "typed_record_ref": {
+      "type": "object",
+      "properties": {
+        "record_type": {
+          "enum": [
+            "track_ref",
+            "listening_event",
+            "taste_event",
+            "profile_evidence",
+            "capability_policy",
+            "tool_invocation",
+            "tool_receipt"
+          ]
+        },
+        "record_id": {
+          "$ref": "#/$defs/uuid"
+        }
+      },
+      "required": [
+        "record_type",
+        "record_id"
+      ],
+      "additionalProperties": false
+    },
+    "entity_ref": {
+      "type": "object",
+      "properties": {
+        "entity_type": {
+          "enum": [
+            "track",
+            "artist",
+            "release",
+            "playlist",
+            "genre",
+            "scene",
+            "era",
+            "musical_attribute",
+            "creative_artifact"
+          ]
+        },
+        "entity_id": {
+          "$ref": "#/$defs/uuid"
+        },
+        "entity_revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "entity_key": {
+          "$ref": "#/$defs/namespaced_key"
+        },
+        "label": {
+          "$ref": "#/$defs/non_empty_string"
+        }
+      },
+      "required": [
+        "entity_type"
+      ],
+      "anyOf": [
+        {
+          "required": [
+            "entity_id"
+          ]
+        },
+        {
+          "required": [
+            "entity_key"
+          ]
+        }
+      ],
+      "additionalProperties": false
+    },
+    "actor_ref": {
+      "type": "object",
+      "properties": {
+        "actor_type": {
+          "enum": [
+            "user",
+            "agent",
+            "service"
+          ]
+        },
+        "actor_id": {
+          "$ref": "#/$defs/uuid"
+        }
+      },
+      "required": [
+        "actor_type",
+        "actor_id"
+      ],
+      "additionalProperties": false
+    },
+    "context": {
+      "type": "object",
+      "properties": {
+        "context_type": {
+          "enum": [
+            "album",
+            "playlist",
+            "artist",
+            "search",
+            "queue",
+            "radio",
+            "recommendation",
+            "external",
+            "unknown"
+          ]
+        },
+        "entity_ref": {
+          "$ref": "#/$defs/entity_ref"
+        }
+      },
+      "required": [
+        "context_type"
+      ],
+      "additionalProperties": false
+    },
+    "provenance": {
+      "type": "object",
+      "properties": {
+        "source_kind": {
+          "enum": [
+            "user_input",
+            "import",
+            "tool",
+            "derived",
+            "system"
+          ]
+        },
+        "captured_at": {
+          "$ref": "#/$defs/utc_timestamp"
+        },
+        "external_ref": {
+          "$ref": "#/$defs/external_ref"
+        },
+        "import_batch_id": {
+          "$ref": "#/$defs/uuid"
+        },
+        "source_record_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/typed_record_ref"
+          },
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "source_kind",
+        "captured_at"
+      ],
+      "additionalProperties": false
+    },
+    "data_class": {
+      "enum": [
+        "public_metadata",
+        "personal_profile",
+        "raw_listening_history",
+        "user_content",
+        "generated_content",
+        "credentials"
+      ]
+    },
+    "effect_kind": {
+      "enum": [
+        "read_external",
+        "write_local",
+        "write_external",
+        "send_message",
+        "spend",
+        "publish",
+        "delete",
+        "use_credentials"
+      ]
+    },
+    "risk_domain": {
+      "enum": [
+        "privacy",
+        "account",
+        "copyright",
+        "spend"
+      ]
+    },
+    "budget_amount": {
+      "type": "object",
+      "properties": {
+        "resource": {
+          "$ref": "#/$defs/namespaced_key"
+        },
+        "quantity": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unit": {
+          "$ref": "#/$defs/non_empty_string"
+        }
+      },
+      "required": [
+        "resource",
+        "quantity",
+        "unit"
+      ],
+      "additionalProperties": false
+    },
+    "policy_ref": {
+      "type": "object",
+      "properties": {
+        "policy_id": {
+          "$ref": "#/$defs/uuid"
+        },
+        "policy_version": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "policy_id",
+        "policy_version"
+      ],
+      "additionalProperties": false
+    },
+    "tool_ref": {
+      "type": "object",
+      "properties": {
+        "tool_id": {
+          "$ref": "#/$defs/namespaced_key"
+        },
+        "contract_version": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "tool_id",
+        "contract_version"
+      ],
+      "additionalProperties": false
+    },
+    "artifact_ref": {
+      "type": "object",
+      "properties": {
+        "artifact_id": {
+          "$ref": "#/$defs/uuid"
+        },
+        "media_type": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9!#$&^_.+-]+/[A-Za-z0-9!#$&^_.+-]+$"
+        },
+        "uri": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^(?:https://[^?#]+|urn:moondog:artifact:[A-Za-z0-9._~-]+)$"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "external_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/external_ref"
+          },
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "artifact_id",
+        "media_type",
+        "sha256"
+      ],
+      "additionalProperties": false
+    },
+    "external_destination": {
+      "type": "object",
+      "properties": {
+        "destination_type": {
+          "enum": [
+            "local",
+            "external"
+          ]
+        },
+        "system": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "purpose_id": {
+          "$ref": "#/$defs/namespaced_key"
+        },
+        "purpose": {
+          "$ref": "#/$defs/non_empty_string"
+        }
+      },
+      "required": [
+        "destination_type",
+        "system",
+        "purpose_id",
+        "purpose"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

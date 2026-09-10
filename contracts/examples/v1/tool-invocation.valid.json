@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "invocation_id": "77777777-7777-4777-8777-777777777777",
+  "subject_id": "11111111-1111-4111-8111-111111111111",
+  "actor": {
+    "actor_type": "agent",
+    "actor_id": "99999999-9999-4999-8999-999999999999"
+  },
+  "surface": "surface.chat",
+  "capability_id": "playlist.write",
+  "capability_version": 1,
+  "tool_ref": {
+    "tool_id": "playlist.curator",
+    "contract_version": 1
+  },
+  "execution_mode": "execute",
+  "account_ref": {
+    "system": "synthetic-stream",
+    "entity_type": "account.music",
+    "external_id": "account-example-001"
+  },
+  "target": {
+    "entity_type": "playlist",
+    "entity_key": "playlist.synthetic_night",
+    "label": "Synthetic Night Study"
+  },
+  "arguments": {
+    "playlist_name": "Synthetic Night Study",
+    "track_ref_ids": [
+      "22222222-2222-4222-8222-222222222222"
+    ]
+  },
+  "purpose_id": "purpose.playlist_curation",
+  "purpose": "Create the playlist approved by the user.",
+  "declared_effects": [
+    "write_external",
+    "use_credentials"
+  ],
+  "declared_risk_flags": [
+    "privacy",
+    "account"
+  ],
+  "data_manifest": {
+    "source_refs": [
+      {
+        "record_type": "profile_evidence",
+        "record_id": "55555555-5555-4555-8555-555555555555"
+      }
+    ],
+    "data_classes": [
+      "public_metadata",
+      "personal_profile"
+    ],
+    "planned_destinations": [
+      {
+        "destination_type": "external",
+        "system": "synthetic-stream",
+        "purpose_id": "purpose.playlist_write",
+        "purpose": "Write one approved playlist."
+      }
+    ],
+    "raw_data_included": false,
+    "minimization_summary": "Only track identifiers and the playlist title leave the local system."
+  },
+  "rights_basis_refs": [
+    "rights.user_authorization"
+  ],
+  "budget_request": [],
+  "policy_ref": {
+    "policy_id": "66666666-6666-4666-8666-666666666666",
+    "policy_version": 1
+  },
+  "confirmation_grant_ref": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+  "idempotency_key": "playlist-write-example-001",
+  "semantic_digest": "4d3eda21fbb782f643b4b13fc4b266fe79b990ad914d6205a1bdd1e971493893",
+  "requested_at": "2026-08-23T09:25:00Z",
+  "expires_at": "2026-08-23T09:35:00Z",
+  "correlation_id": "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+}

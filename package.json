@@ -1,0 +1,101 @@
+{
+  "name": "@ruc-aimusic-lab/moondog",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Local-first personal AI music agent from RUC AI Music Lab.",
+  "keywords": [
+    "ai-agent",
+    "listenbrainz",
+    "local-first",
+    "music",
+    "music-discovery",
+    "personal-ai",
+    "spotify",
+    "taste-profile"
+  ],
+  "bin": {
+    "moondog": "./scripts/moondog"
+  },
+  "files": [
+    "assets/brand/moondog-lunar-record/moondog-logo-1x1.png",
+    "contracts/v1",
+    "contracts/v2",
+    "scripts/contract-lib.mjs",
+    "scripts/contract-semantics.mjs",
+    "scripts/moondog",
+    "scripts/moondog.mjs",
+    "scripts/demo-studio.mjs",
+    "src/core",
+    "src/demo/moondog-interactive-tasteprint-demo.mjs",
+    "src/demo/moondog-demo.mjs",
+    "src/demo/fictional-spotify-history.mjs",
+    "src/demo/moondog-tasteprint-demo.mjs",
+    "src/importers",
+    "src/integrations",
+    "src/memory",
+    "src/profile",
+    "src/runtime",
+    "src/surfaces"
+  ],
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "os": [
+    "darwin",
+    "linux"
+  ],
+  "packageManager": "npm@11.16.0",
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning scripts/moondog.mjs",
+    "moondog": "node --disable-warning=ExperimentalWarning scripts/moondog.mjs",
+    "studio": "node --disable-warning=ExperimentalWarning scripts/moondog.mjs studio",
+    "demo:studio": "node --disable-warning=ExperimentalWarning scripts/demo-studio.mjs",
+    "generate:demo-history": "node --disable-warning=ExperimentalWarning scripts/moondog.mjs demo-history",
+    "showcase": "node --disable-warning=ExperimentalWarning scripts/showcase.mjs",
+    "export:showcase": "node --disable-warning=ExperimentalWarning scripts/export-showcase.mjs",
+    "demo": "node --disable-warning=ExperimentalWarning scripts/moondog.mjs demo --offline",
+    "generate:tasteprint-demo": "node --disable-warning=ExperimentalWarning scripts/generate-tasteprint-demo.mjs",
+    "generate:studio-tour": "node --disable-warning=ExperimentalWarning scripts/capture-studio-tour.mjs",
+    "verify:showcase": "node --disable-warning=ExperimentalWarning scripts/verify-showcase.mjs",
+    "verify:showcase-export": "node --test tests/core/showcase-export.test.mjs",
+    "verify:demo-history": "node --test tests/runtime/moondog-demo-history.test.mjs",
+    "verify:demo": "node --disable-warning=ExperimentalWarning scripts/verify-public-demo.mjs",
+    "verify:demo-media": "node --disable-warning=ExperimentalWarning scripts/verify-demo-media.mjs",
+    "verify:community": "node --disable-warning=ExperimentalWarning scripts/verify-community.mjs",
+    "verify:package": "node --disable-warning=ExperimentalWarning scripts/verify-package.mjs",
+    "verify:release-tree": "node --disable-warning=ExperimentalWarning scripts/verify-release-tree.mjs",
+    "verify:clean-source": "node --disable-warning=ExperimentalWarning scripts/verify-clean-source.mjs",
+    "verify:clean-linux": "node --disable-warning=ExperimentalWarning scripts/verify-clean-source.mjs --linux-container",
+    "export:public-source": "node --disable-warning=ExperimentalWarning scripts/export-public-source.mjs",
+    "verify": "npm run verify:release-tree && npm run verify:showcase && npm run verify:showcase-export && npm run verify:demo-history && npm run verify:demo && npm run verify:demo-media && npm run verify:community && npm run verify:package && npm run validate:contracts && npm test",
+    "doctor": "node --disable-warning=ExperimentalWarning scripts/moondog.mjs doctor",
+    "inspect:apple-library": "node scripts/import-apple-music-library.mjs inspect",
+    "import:apple-library": "node scripts/import-apple-music-library.mjs import",
+    "rebuild:apple-projection": "node --disable-warning=ExperimentalWarning scripts/rebuild-apple-music-projection.mjs",
+    "eval:discovery": "node --disable-warning=ExperimentalWarning scripts/evaluate-discovery.mjs",
+    "eval:review": "node --disable-warning=ExperimentalWarning scripts/review-discovery.mjs",
+    "eval:usability": "node --disable-warning=ExperimentalWarning scripts/evaluate-usability.mjs",
+    "validate:contracts": "node scripts/validate-contracts.mjs",
+    "test": "node --test tests/contracts/*.test.mjs tests/core/*.test.mjs tests/importers/*.test.mjs tests/runtime/*.test.mjs"
+  },
+  "dependencies": {
+    "@earendil-works/pi-agent-core": "0.84.3",
+    "@earendil-works/pi-ai": "0.84.3",
+    "@earendil-works/pi-tui": "0.84.3",
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1",
+    "plist": "5.0.0"
+  },
+  "devDependencies": {
+    "yaml": "2.9.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Audiofool934/moondog.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Audiofool934/moondog/issues"
+  },
+  "homepage": "https://github.com/Audiofool934/moondog#readme"
+}

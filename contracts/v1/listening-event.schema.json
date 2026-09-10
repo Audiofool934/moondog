@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:moondog:contract:listening-event:1",
+  "title": "Moondog ListeningEvent v1",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/schema_version"
+    },
+    "listening_event_id": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/uuid"
+    },
+    "subject_id": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/uuid"
+    },
+    "track_ref_id": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/uuid"
+    },
+    "track_ref_revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "event_type": {
+      "enum": [
+        "play_observed",
+        "play_started",
+        "play_progress",
+        "play_completed",
+        "play_skipped"
+      ]
+    },
+    "occurred_at": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/utc_timestamp"
+    },
+    "ingested_at": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/utc_timestamp"
+    },
+    "interaction_mode": {
+      "enum": [
+        "active",
+        "passive",
+        "unknown"
+      ]
+    },
+    "played_ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "position_ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "completion_ratio": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "context": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/context"
+    },
+    "provenance": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/provenance"
+    },
+    "deduplication_key": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 256,
+      "pattern": "\\S"
+    },
+    "supersedes_listening_event_id": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/uuid"
+    },
+    "extensions": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/extensions"
+    }
+  },
+  "required": [
+    "schema_version",
+    "listening_event_id",
+    "subject_id",
+    "track_ref_id",
+    "track_ref_revision",
+    "event_type",
+    "occurred_at",
+    "ingested_at",
+    "interaction_mode",
+    "provenance"
+  ],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "const": "play_started"
+          }
+        },
+        "required": [
+          "event_type"
+        ]
+      },
+      "then": {
+        "not": {
+          "required": [
+            "completion_ratio"
+          ]
+        }
+      }
+    }
+  ],
+  "additionalProperties": false
+}

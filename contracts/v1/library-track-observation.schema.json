@@ -1,0 +1,138 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:moondog:contract:library-track-observation:1",
+  "title": "Moondog LibraryTrackObservation v1",
+  "type": "object",
+  "$defs": {
+    "rating": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "computed": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "properties": {
+    "schema_version": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/schema_version"
+    },
+    "library_track_observation_id": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/uuid"
+    },
+    "subject_id": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/uuid"
+    },
+    "track_ref_id": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/uuid"
+    },
+    "track_ref_revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "observed_at": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/utc_timestamp"
+    },
+    "source_kind": {
+      "const": "provider_library_snapshot"
+    },
+    "source_batch_ref": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/uuid"
+    },
+    "source_record_digest": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/sha256"
+    },
+    "aggregate_state": {
+      "type": "object",
+      "properties": {
+        "play_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "last_played_at": {
+          "$ref": "urn:moondog:contract:definitions:1#/$defs/utc_timestamp"
+        },
+        "skip_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "last_skipped_at": {
+          "$ref": "urn:moondog:contract:definitions:1#/$defs/utc_timestamp"
+        },
+        "rating": {
+          "$ref": "#/$defs/rating"
+        },
+        "album_rating": {
+          "$ref": "#/$defs/rating"
+        },
+        "loved": {
+          "type": "boolean"
+        },
+        "favorited": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "library_state": {
+      "type": "object",
+      "properties": {
+        "date_added": {
+          "$ref": "urn:moondog:contract:definitions:1#/$defs/utc_timestamp"
+        },
+        "date_modified": {
+          "$ref": "urn:moondog:contract:definitions:1#/$defs/utc_timestamp"
+        },
+        "subscription_catalog_item": {
+          "type": "boolean"
+        },
+        "purchased": {
+          "type": "boolean"
+        },
+        "playlist_only": {
+          "type": "boolean"
+        },
+        "compilation": {
+          "type": "boolean"
+        },
+        "unplayed": {
+          "type": "boolean"
+        },
+        "disabled": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "provenance": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/provenance"
+    },
+    "extensions": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/extensions"
+    }
+  },
+  "required": [
+    "schema_version",
+    "library_track_observation_id",
+    "subject_id",
+    "track_ref_id",
+    "track_ref_revision",
+    "observed_at",
+    "source_kind",
+    "source_batch_ref",
+    "source_record_digest",
+    "aggregate_state",
+    "library_state",
+    "provenance"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,52 @@
+#!/bin/sh
+
+set -eu
+
+is_compatible_node() {
+  "$1" -e '
+    const [major, minor] = process.versions.node.split(".").map(Number);
+    process.exit(major > 22 || (major === 22 && minor >= 19) ? 0 : 1);
+  ' >/dev/null 2>&1
+}
+
+node_executable=""
+
+if [ -n "${MOONDOG_NODE:-}" ]; then
+  if is_compatible_node "$MOONDOG_NODE"; then
+    node_executable=$MOONDOG_NODE
+  else
+    printf '%s\n' "moondog: MOONDOG_NODE must point to Node >=22.19.0." >&2
+    exit 1
+  fi
+else
+  saved_ifs=$IFS
+  IFS=:
+  for directory in ${PATH:-}; do
+    if [ -z "$directory" ]; then
+      directory=.
+    fi
+    candidate=$directory/node
+    if [ -x "$candidate" ] && is_compatible_node "$candidate"; then
+      node_executable=$candidate
+      break
+    fi
+  done
+  IFS=$saved_ifs
+fi
+
+if [ -z "$node_executable" ]; then
+  printf '%s\n' "moondog: Node >=22.19.0 was not found on PATH." >&2
+  exit 1
+fi
+
+launcher_path=$0
+while [ -L "$launcher_path" ]; do
+  link_target=$(readlink "$launcher_path")
+  case $link_target in
+    /*) launcher_path=$link_target ;;
+    *) launcher_path=$(dirname "$launcher_path")/$link_target ;;
+  esac
+done
+
+script_directory=$(CDPATH= cd -P "$(dirname "$launcher_path")" && pwd)
+exec "$node_executable" --disable-warning=ExperimentalWarning "$script_directory/moondog.mjs" "$@"

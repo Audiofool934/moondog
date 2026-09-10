@@ -1,0 +1,284 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:moondog:contract:profile-evidence:2",
+  "title": "Moondog ProfileEvidence v2",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 2
+    },
+    "profile_evidence_id": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/uuid"
+    },
+    "subject_id": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/uuid"
+    },
+    "claim": {
+      "type": "object",
+      "properties": {
+        "dimension": {
+          "$ref": "urn:moondog:contract:definitions:1#/$defs/namespaced_key"
+        },
+        "value": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "value_type": {
+                  "const": "entity"
+                },
+                "entity_ref": {
+                  "$ref": "urn:moondog:contract:definitions:1#/$defs/entity_ref"
+                }
+              },
+              "required": [
+                "value_type",
+                "entity_ref"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "value_type": {
+                  "const": "string"
+                },
+                "string_value": {
+                  "$ref": "urn:moondog:contract:definitions:1#/$defs/non_empty_string"
+                }
+              },
+              "required": [
+                "value_type",
+                "string_value"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "value_type": {
+                  "const": "number"
+                },
+                "number_value": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "value_type",
+                "number_value"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "value_type": {
+                  "const": "boolean"
+                },
+                "boolean_value": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "value_type",
+                "boolean_value"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "required": [
+        "dimension",
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "direction": {
+      "enum": [
+        "supports",
+        "contradicts"
+      ]
+    },
+    "strength": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "basis_refs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "properties": {
+          "record_type": {
+            "enum": [
+              "library_track_observation",
+              "listening_event",
+              "taste_event"
+            ]
+          },
+          "record_id": {
+            "$ref": "urn:moondog:contract:definitions:1#/$defs/uuid"
+          }
+        },
+        "required": [
+          "record_type",
+          "record_id"
+        ],
+        "additionalProperties": false
+      },
+      "uniqueItems": true
+    },
+    "derivation": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "enum": [
+            "direct",
+            "rule",
+            "aggregate",
+            "model"
+          ]
+        },
+        "name": {
+          "$ref": "urn:moondog:contract:definitions:1#/$defs/non_empty_string"
+        },
+        "version": {
+          "$ref": "urn:moondog:contract:definitions:1#/$defs/non_empty_string"
+        },
+        "parameters_digest": {
+          "$ref": "urn:moondog:contract:definitions:1#/$defs/sha256"
+        }
+      },
+      "required": [
+        "kind",
+        "name",
+        "version"
+      ],
+      "additionalProperties": false
+    },
+    "evidence_window": {
+      "type": "object",
+      "properties": {
+        "start_at": {
+          "$ref": "urn:moondog:contract:definitions:1#/$defs/utc_timestamp"
+        },
+        "end_at": {
+          "$ref": "urn:moondog:contract:definitions:1#/$defs/utc_timestamp"
+        }
+      },
+      "required": [
+        "start_at",
+        "end_at"
+      ],
+      "additionalProperties": false
+    },
+    "created_at": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/utc_timestamp"
+    },
+    "expires_at": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/utc_timestamp"
+    },
+    "supersedes_profile_evidence_id": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/uuid"
+    },
+    "extensions": {
+      "$ref": "urn:moondog:contract:definitions:1#/$defs/extensions"
+    }
+  },
+  "required": [
+    "schema_version",
+    "profile_evidence_id",
+    "subject_id",
+    "claim",
+    "direction",
+    "strength",
+    "confidence",
+    "basis_refs",
+    "derivation",
+    "created_at"
+  ],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "derivation": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "aggregate",
+                  "model"
+                ]
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          }
+        },
+        "required": [
+          "derivation"
+        ]
+      },
+      "then": {
+        "required": [
+          "evidence_window"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "basis_refs": {
+            "type": "array",
+            "contains": {
+              "type": "object",
+              "properties": {
+                "record_type": {
+                  "const": "library_track_observation"
+                }
+              },
+              "required": [
+                "record_type"
+              ]
+            }
+          }
+        },
+        "required": [
+          "basis_refs"
+        ]
+      },
+      "then": {
+        "properties": {
+          "derivation": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "rule",
+                  "aggregate"
+                ]
+              },
+              "parameters_digest": {
+                "$ref": "urn:moondog:contract:definitions:1#/$defs/sha256"
+              }
+            },
+            "required": [
+              "kind",
+              "parameters_digest"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "additionalProperties": false
+}

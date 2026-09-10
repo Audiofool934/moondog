@@ -1,0 +1,77 @@
+name: Bug report
+description: Report a reproducible Moondog product failure without sharing private music data.
+title: "[Bug] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve Moondog.
+        Do not attach listening-history exports, Apple Music Library XML, OAuth credentials, personal Tasteprints, raw databases, or unsanitized logs.
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Product surface
+      description: Where did the problem appear?
+      options:
+        - Deterministic demo
+        - Studio
+        - Tasteprint
+        - CLI command
+        - Interactive TUI
+        - Spotify connection or action
+        - Apple Music import
+        - Packaging or installation
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Include operating system, Node.js version, and Moondog version or commit when known.
+      placeholder: macOS 15, Node.js 22.19.0, commit abc1234
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      description: Give the smallest sequence that reproduces the problem using synthetic or sanitized data when possible.
+      placeholder: |
+        1. Run ...
+        2. Choose ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should the listener have seen or been able to do?
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: sanitized_evidence
+    attributes:
+      label: Sanitized evidence
+      description: Paste only bounded output with personal paths, music history, provider identifiers, and credentials removed.
+      render: shell
+    validations:
+      required: false
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy check
+      options:
+        - label: I removed private music data, credentials, personal paths, and provider identifiers from this report.
+          required: true
+        - label: I searched existing issues for the same observable failure.
+          required: true

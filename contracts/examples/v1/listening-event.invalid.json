@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "listening_event_id": "33333333-3333-4333-8333-333333333333",
+  "subject_id": "11111111-1111-4111-8111-111111111111",
+  "track_ref_id": "22222222-2222-4222-8222-222222222222",
+  "track_ref_revision": 1,
+  "event_type": "play_progress",
+  "occurred_at": "2026-08-23T09:10:00Z",
+  "ingested_at": "2026-08-23T09:15:00Z",
+  "interaction_mode": "active",
+  "completion_ratio": 1.2,
+  "provenance": {
+    "source_kind": "system",
+    "captured_at": "2026-08-23T09:15:00Z"
+  }
+}

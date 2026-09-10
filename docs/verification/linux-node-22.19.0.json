@@ -1,0 +1,50 @@
+{
+  "schema": "moondog.cross-platform-verification.v1",
+  "captured_on": "2026-09-04",
+  "execution_environment": {
+    "platform": "Linux",
+    "kernel": "6.10.14-linuxkit",
+    "architecture": "aarch64",
+    "node": "v22.19.0",
+    "npm": "11.16.0"
+  },
+  "node_distribution": {
+    "source": "docker.io/library/node",
+    "image": "node:22.19.0-bookworm-slim",
+    "manifest_digest": "sha256:4a4884e8a44826194dff92ba316264f392056cbe243dcc9fd3551e71cea02b90",
+    "pull_result": "passed"
+  },
+  "dependency_install": {
+    "command": "npm ci --ignore-scripts --no-audit --no-fund",
+    "registry": "https://registry.npmjs.org/",
+    "cache": "fresh-container",
+    "installed_packages": 105,
+    "result": "passed"
+  },
+  "source_boundary": {
+    "kind": "verified-public-source-snapshot",
+    "transfer_manifest_match": "passed",
+    "release_tree_files": 237,
+    "release_tree_sha256": "31ff67dd9291646856a68c82bc64de3bef65c06dcd9788c14bda80ea2e611925",
+    "git_metadata_included": false,
+    "private_local_state_included": false
+  },
+  "verification": {
+    "command": "npm run verify",
+    "result": "passed",
+    "tests": {
+      "total": 542,
+      "passed": 542,
+      "failed": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+    }
+  },
+  "boundaries": {
+    "canonical_github_actions_run": false,
+    "publication_performed": false,
+    "provider_write_performed": false,
+    "private_listener_data_read": false
+  }
+}
