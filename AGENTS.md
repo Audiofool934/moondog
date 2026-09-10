@@ -16,3 +16,11 @@
 - Use lightweight, targeted checks that confirm the primary user path works.
 - Prefer reusing Pi's existing capabilities over rebuilding baseline agent, model, authentication, and TUI functionality.
 - Add robustness and broader coverage when real usage exposes a need or before a public, destructive, costly, or otherwise high-impact release.
+
+## Git And Remote Maintenance
+
+- Maintain Git and the configured GitHub remote as part of ongoing Moondog work.
+- Inspect the current branch, working tree, and upstream before editing, and preserve unrelated changes.
+- After a coherent task is complete, run proportionate checks, commit only its scoped files, and push the intended branch to its configured remote unless the user requests local-only work.
+- Verify the remote commit and report synchronization status and any relevant pending or failed checks accurately.
+- Keep ignored personal data and local history backups out of public pushes; push the specific branch rather than all branches or a mirror.
