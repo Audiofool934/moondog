@@ -105,5 +105,3 @@ Read the [connection and data details](docs/TERMINAL_GUIDE.md) before setting up
 Moondog is in early development, with the Pi-based TUI as its current product surface.
 GUI and Studio development is paused; existing [browser prototypes](docs/TERMINAL_GUIDE.md#archived-gui-prototypes-paused) remain available for reference.
 A public license has not yet been selected.
-
-<p align="center"><sub>Built by RUC AI Music Lab under the 求索育研 program.</sub></p>
