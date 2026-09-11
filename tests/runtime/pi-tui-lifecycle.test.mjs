@@ -768,6 +768,67 @@ test("TUI reports a model failure and accepts the next prompt", async () => {
   await running;
 });
 
+for (const toolsExecuted of [false, true]) {
+  test(`TUI makes a connection failure recoverable after tools=${toolsExecuted}`, async (context) => {
+    const terminal = new FakeTerminal();
+    const signalTarget = new EventEmitter();
+    const prompts = [];
+    let failureReady;
+    const failedPrompt = new Promise((resolve) => { failureReady = resolve; });
+    const runtime = {
+      ...configuredFakeRuntime(prompts),
+      async prompt(text, callbacks) {
+        prompts.push(text);
+        if (prompts.length > 1) {
+          callbacks.onTextDelta("Recovered response.");
+          return { status: "completed", text: "Recovered response." };
+        }
+        if (toolsExecuted) {
+          const tool = { label: "Control Spotify playback", capabilityId: "spotify.player.control" };
+          callbacks.onToolStart(tool);
+          callbacks.onToolEnd(tool);
+        }
+        callbacks.onModelRetry?.({ attempt: 1, maxRetries: 2 });
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        failureReady();
+        throw Object.assign(new Error("Could not reach the model provider (ECONNRESET)."), {
+          code: "model_connection_failed",
+          toolsExecuted,
+        });
+      },
+    };
+    const running = runMoondogTui({ application: fakeApplication(), runtime, terminal, signalTarget });
+    context.after(async () => {
+      signalTarget.emit("SIGTERM");
+      await running;
+    });
+
+    await waitForStart(terminal);
+    terminal.send("Tell me about this song.");
+    terminal.send("\r");
+    await failedPrompt;
+    await waitFor(() => terminal.output.includes("ECONNRESET"));
+    const output = stripVTControlCharacters(terminal.output);
+    assert.match(output, /Retrying model connection 1\/2/u);
+    assert.doesNotMatch(output, /Runtime error:|The model request failed/u);
+    assert.equal(prompts.length, 1);
+    if (toolsExecuted) {
+      assert.match(output, /Check results before repeating/u);
+      assert.doesNotMatch(output, /recall your message/u);
+      terminal.send("Check the current state.");
+    } else {
+      assert.match(output, /recall your message/u);
+      terminal.send("\u001b[A");
+    }
+    terminal.send("\r");
+    await waitFor(() => terminal.output.includes("Recovered response."));
+    assert.deepEqual(prompts, [
+      "Tell me about this song.",
+      toolsExecuted ? "Check the current state." : "Tell me about this song.",
+    ]);
+  });
+}
+
 test("TUI can select a Pi model and use the rebuilt runtime", async () => {
   const terminal = new FakeTerminal();
   const signalTarget = new EventEmitter();

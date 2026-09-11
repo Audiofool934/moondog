@@ -1033,6 +1033,9 @@ export async function runMoondogTui({
           response.setText(streamedText);
           tui.requestRender();
         },
+        onModelRetry: ({ attempt, maxRetries }) => {
+          setFooter(`Retrying model connection ${attempt}/${maxRetries}... Ctrl+C cancels.`, yellow);
+        },
         onToolStart: (tool) => {
           const label = typeof tool === "string" ? tool : tool.label;
           setFooter(`Using capability: ${label}`, yellow);
@@ -1057,11 +1060,21 @@ export async function runMoondogTui({
         setFooter("Ready.", green);
       }
     } catch (error) {
-      const errorText = `Runtime error: ${sanitizeTerminalText(error.message)}`;
+      const connectionFailed = error.code === "model_connection_failed";
+      const errorText = connectionFailed
+        ? `${sanitizeTerminalText(error.message)}\n\n${error.toolsExecuted
+          ? "A capability already ran during this turn. Check results before repeating an action."
+          : "Press ↑ to recall your message and Enter to try again."}`
+        : `Runtime error: ${sanitizeTerminalText(error.message)}`;
+      const appendedError = connectionFailed ? errorText : `_${errorText}_`;
       response.setText(
-        streamedText.length > 0 ? `${streamedText}\n\n_${errorText}_` : errorText,
+        streamedText.length > 0 ? `${streamedText}\n\n${appendedError}` : errorText,
       );
-      setFooter("The model request failed.", red);
+      setFooter(connectionFailed
+        ? error.toolsExecuted
+          ? "Connection failed. Check results before repeating."
+          : "Connection failed. ↑ recalls your message."
+        : "The model request failed.", red);
     } finally {
       setBusy(false);
       editor.disableSubmit = false;

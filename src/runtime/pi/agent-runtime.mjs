@@ -3,6 +3,11 @@ import { Type } from "@earendil-works/pi-ai";
 
 import { projectWebResearchResult } from "../../integrations/web/codex-web.mjs";
 import { formatWebSources } from "../../surfaces/cli/web-command.mjs";
+import {
+  createModelConnectionError,
+  createModelFetch,
+  isModelConnectionFailure,
+} from "./model-transport.mjs";
 
 const maximumToolResultBytes = 32 * 1024;
 const maximumNestedProfileItems = 6;
@@ -5701,7 +5706,7 @@ async function trustedContextSnapshot(application, runtimeStatus, query) {
 }
 
 export class PiAgentRuntime {
-  constructor({ application, models, model, provider, modelId }) {
+  constructor({ application, models, model, provider, modelId, modelFetch, modelRetryDelay }) {
     this.application = application;
     this.models = models;
     this.model = model;
@@ -5859,7 +5864,23 @@ export class PiAgentRuntime {
         tools,
         messages: restoredMessages,
       },
-      streamFn: models.streamSimple.bind(models),
+      streamFn: (selectedModel, context, options) => {
+        const promptState = this.activePromptState;
+        return models.streamSimple(selectedModel, context, {
+          ...options,
+          // Retry this HTTP request only; never restart the agent's tool loop.
+          maxRetries: 0,
+          fetch: createModelFetch({
+            provider,
+            fetchImpl: modelFetch ?? options?.fetch,
+            wait: modelRetryDelay,
+            onRetry: (retry) => promptState?.onModelRetry?.(retry),
+            onFailure: (error) => {
+              if (promptState) promptState.modelConnectionFailure = error;
+            },
+          }),
+        });
+      },
       toolExecution: "parallel",
       transformContext: async (messages) => {
         const query = extractMessageText(
@@ -5912,6 +5933,8 @@ export class PiAgentRuntime {
       musicWorldCitations: [],
       webSources: [],
       toolExecutionStarted: false,
+      onModelRetry: callbacks.onModelRetry,
+      modelConnectionFailure: null,
       abortRequested: false,
       stagedMemoryMutations: [],
     };
@@ -6076,12 +6099,18 @@ export class PiAgentRuntime {
       }
 
       if (this.agent.state.errorMessage) {
-        throw new Error(
-          safeProviderErrorMessage(
-            this.agent.state.errorMessage,
-            this.runtimeStatus.provider,
-          ),
+        const providerMessage = safeProviderErrorMessage(
+          this.agent.state.errorMessage,
+          this.runtimeStatus.provider,
         );
+        if (promptState.modelConnectionFailure || isModelConnectionFailure(providerMessage)) {
+          throw createModelConnectionError({
+            provider: this.runtimeStatus.provider,
+            cause: promptState.modelConnectionFailure ?? new Error(providerMessage),
+            toolsExecuted: promptState.toolExecutionStarted,
+          });
+        }
+        throw new Error(providerMessage);
       }
 
       if (promptState.spotifyPlaylistEditPreview) {
