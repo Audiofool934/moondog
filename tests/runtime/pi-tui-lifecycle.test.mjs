@@ -113,11 +113,14 @@ async function waitForStart(terminal) {
 }
 
 async function waitFor(predicate) {
-  for (let attempt = 0; attempt < 100; attempt += 1) {
-    if (predicate()) return;
-    await new Promise((resolve) => setImmediate(resolve));
+  // Pi schedules renders with timers, so event-loop turns are not a timeout.
+  const deadline = performance.now() + 1_000;
+  while (!predicate()) {
+    if (performance.now() >= deadline) {
+      throw new Error("Timed out waiting for the TUI test condition.");
+    }
+    await new Promise((resolve) => setTimeout(resolve, 5));
   }
-  throw new Error("Timed out waiting for the TUI test condition.");
 }
 
 async function createSavedConversationFixture(context, histories = [], { configured = true } = {}) {
