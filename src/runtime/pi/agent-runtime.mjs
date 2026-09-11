@@ -4399,7 +4399,7 @@ function createToolFactories(
         name: descriptor.tool_name,
         label: descriptor.label,
         description:
-          "Perform exactly one Spotify playback action directly requested by the user. Never retry next, previous, or another write automatically.",
+          "Perform exactly one Spotify playback action directly requested by the user. Never retry next, previous, or another write automatically. volume requires percent; seek requires position_ms; shuffle requires a boolean state; repeat requires state off, track, or context. Only resume accepts uri, context_uri, or track_refs, with optional position_ms. pause, next, and previous accept only action and an optional device_id. device_id is optional for every action.",
         parameters: Type.Union([
           Type.Object(
             {
@@ -4640,7 +4640,7 @@ function createToolFactories(
         name: descriptor.tool_name,
         label: descriptor.label,
         description:
-          "List or inspect connected-account-owned private, non-collaborative Spotify playlists. Returned playlist and item references are opaque and expire at prompt end. Use list before inspect.",
+          "List or inspect connected-account-owned private, non-collaborative Spotify playlists. Returned playlist and item references are opaque and expire at prompt end. Use list before inspect. list accepts optional limit and offset; inspect requires playlist_ref_id and accepts no pagination fields.",
         parameters: Type.Union([
           Type.Object(
             {
@@ -4748,7 +4748,7 @@ function createToolFactories(
         name: descriptor.tool_name,
         label: descriptor.label,
         description:
-          "Create one private Spotify playlist from an exact validated plan. For a direct create, save, or sync request, use track_refs from this prompt after resolution. When the user approves the pending plan from the previous turn with phrases such as yes, 可以, 就这个, or 保存它, set pending_plan to true and do not search or plan again.",
+          "Create one private Spotify playlist from an exact validated plan. For a direct create, save, or sync request, use track_refs from this prompt after resolution. When the user approves the pending plan from the previous turn with phrases such as yes, 可以, 就这个, or 保存它, set pending_plan to true and do not search or plan again. Provide exactly one of track_refs or pending_plan true.",
         parameters: Type.Union([
           Type.Object(
             {
@@ -5132,6 +5132,36 @@ function createAgentTools(application, runtimeStatus, descriptors, callbacks) {
     if (factory) tools.push(factory(descriptor));
   }
   return tools;
+}
+
+function toolForModel(tool) {
+  const variants = tool.parameters.anyOf;
+  if (!Array.isArray(variants) || !variants.length ||
+      !variants.every((variant) => variant.type === "object")) return tool;
+
+  // Model APIs require a root object with visible properties. Keep the original
+  // union on the Agent tool so Pi still validates each action before execution.
+  const properties = {};
+  const propertyNames = new Set(variants.flatMap((variant) => Object.keys(variant.properties)));
+  for (const name of propertyNames) {
+    const alternatives = new Map();
+    for (const variant of variants) {
+      const property = variant.properties[name];
+      if (property) alternatives.set(JSON.stringify(property), property);
+    }
+    const schemas = [...alternatives.values()];
+    properties[name] = schemas.length === 1 ? schemas[0] : { anyOf: schemas };
+  }
+  return {
+    ...tool,
+    parameters: {
+      type: "object",
+      properties,
+      required: (variants[0].required ?? []).filter((name) =>
+        variants.every((variant) => variant.required?.includes(name))),
+      additionalProperties: false,
+    },
+  };
 }
 
 function systemPrompt() {
@@ -5866,7 +5896,10 @@ export class PiAgentRuntime {
       },
       streamFn: (selectedModel, context, options) => {
         const promptState = this.activePromptState;
-        return models.streamSimple(selectedModel, context, {
+        return models.streamSimple(selectedModel, {
+          ...context,
+          tools: context.tools?.map(toolForModel),
+        }, {
           ...options,
           // Retry this HTTP request only; never restart the agent's tool loop.
           maxRetries: 0,
