@@ -831,6 +831,23 @@ test("Pi adapter redacts credential-bearing Codex provider failures", async () =
   );
 });
 
+test("Pi adapter redacts API key errors for every supported model family", async () => {
+  for (const provider of ["anthropic", "deepseek", "moonshotai", "openai", "xai", "zai"]) {
+    const { faux, runtime } = configuredRuntime(fakeApplication());
+    runtime.runtimeStatus.provider = provider;
+    faux.setResponses([
+      fauxAssistantMessage([], {
+        stopReason: "error",
+        errorMessage: "Incorrect API key provided: API_KEY_SENTINEL",
+      }),
+    ]);
+    await assert.rejects(runtime.prompt("Suggest a record."), (error) =>
+      error.message.includes(`auth login ${provider}`) &&
+      !error.message.includes("API_KEY_SENTINEL"),
+    );
+  }
+});
+
 test("Pi adapter returns an aborted outcome and preserves streamed text", async () => {
   const faux = fauxProvider({
     tokensPerSecond: 20,

@@ -9,6 +9,7 @@ import { createModels, createProvider } from "@earendil-works/pi-ai";
 
 import { createPiAuthentication } from "../../src/runtime/pi/authentication.mjs";
 import { PersistentCredentialStore } from "../../src/runtime/pi/persistent-credential-store.mjs";
+import { apiKeyPiProviderIds } from "../../src/runtime/pi/provider-registry.mjs";
 
 const providerId = "openai-codex";
 
@@ -162,9 +163,89 @@ test("authentication rejects providers outside the explicit allowlist", async (c
     new PersistentCredentialStore({ authFile: fixture.authFile }),
   );
 
-  await assert.rejects(authentication.status("openai"), {
+  await assert.rejects(authentication.status("unsupported-provider"), {
     code: "auth_provider_unsupported",
   });
+});
+
+test("native API providers save keys privately and logout preserves other providers", async (context) => {
+  const fixture = await authFixture(context);
+  const store = new PersistentCredentialStore({ authFile: fixture.authFile });
+  const authentication = await createPiAuthentication({
+    credentials: store,
+    environment: {},
+  });
+  context.mock.method(globalThis, "fetch", () => {
+    throw new Error("API key login and local status must not make network requests");
+  });
+
+  for (const provider of apiKeyPiProviderIds) {
+    assert.deepEqual(await authentication.status(provider), {
+      provider,
+      state: "not_configured",
+      type: null,
+    });
+    const status = await authentication.login(provider, {
+      prompt: async (prompt) => {
+        assert.equal(prompt.type, "secret");
+        return `API_KEY_SENTINEL_${provider}`;
+      },
+      notify() {},
+    });
+    assert.deepEqual(status, { provider, state: "stored", type: "api_key" });
+    assert.doesNotMatch(JSON.stringify(status), /SENTINEL/u);
+  }
+
+  const reloaded = await createPiAuthentication({
+    credentials: new PersistentCredentialStore({ authFile: fixture.authFile }),
+    environment: {},
+  });
+  assert.deepEqual(await reloaded.status("zai"), {
+    provider: "zai",
+    state: "stored",
+    type: "api_key",
+  });
+  await reloaded.logout("zai");
+  assert.equal(await store.read("zai"), undefined);
+  assert.equal((await store.read("deepseek")).key, "API_KEY_SENTINEL_deepseek");
+  assert.equal((await store.list()).length, apiKeyPiProviderIds.length - 1);
+});
+
+test("API status uses supplied environment and saved keys take precedence", async (context) => {
+  const fixture = await authFixture(context);
+  const store = new PersistentCredentialStore({ authFile: fixture.authFile });
+  const authentication = await createPiAuthentication({
+    credentials: store,
+    environment: { DEEPSEEK_API_KEY: "ENV_API_KEY_SENTINEL" },
+  });
+  const environmentStatus = {
+    provider: "deepseek",
+    state: "environment",
+    type: "api_key",
+    source: "DEEPSEEK_API_KEY",
+  };
+  assert.deepEqual(await authentication.status("deepseek"), environmentStatus);
+  await store.modify("deepseek", async () => ({ type: "api_key", key: "SAVED_API_KEY_SENTINEL" }));
+  assert.deepEqual(await authentication.status("deepseek"), {
+    provider: "deepseek",
+    state: "stored",
+    type: "api_key",
+  });
+  assert.deepEqual(await authentication.logout("deepseek"), environmentStatus);
+
+  const previous = process.env.DEEPSEEK_API_KEY;
+  process.env.DEEPSEEK_API_KEY = "AMBIENT_API_KEY_SENTINEL";
+  try {
+    const isolated = await createPiAuthentication({ credentials: store, environment: {} });
+    assert.deepEqual(await isolated.status("deepseek"), {
+      provider: "deepseek",
+      state: "not_configured",
+      type: null,
+    });
+  } finally {
+    if (previous === undefined) delete process.env.DEEPSEEK_API_KEY;
+    else process.env.DEEPSEEK_API_KEY = previous;
+  }
 });
 
 test("Pi refreshes one expired OAuth credential once across store instances", async (context) => {

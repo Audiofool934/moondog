@@ -21,6 +21,32 @@ test("model picker catalog exposes Pi's full built-in provider set", () => {
     "modelCount",
     "name",
   ]);
+  for (const id of [
+    "anthropic",
+    "deepseek",
+    "moonshotai",
+    "moonshotai-cn",
+    "openai",
+    "xai",
+    "zai",
+  ]) {
+    assert.ok(
+      providers.some((provider) => provider.id === id && provider.modelCount > 0),
+    );
+  }
+  assert.equal(
+    providers.find((provider) => provider.id === "zai").name,
+    "Z.AI (GLM API)",
+  );
+  for (const [id, family] of [
+    ["anthropic", "Claude"],
+    ["moonshotai", "Kimi"],
+    ["moonshotai-cn", "Kimi"],
+    ["openai", "GPT"],
+    ["xai", "Grok"],
+  ]) {
+    assert.ok(providers.find((provider) => provider.id === id).name.includes(family));
+  }
 });
 
 test("model picker catalog returns normalized Pi model metadata", () => {

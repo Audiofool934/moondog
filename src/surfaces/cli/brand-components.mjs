@@ -185,7 +185,7 @@ export function listeningHelp() {
 ## 01 / Listen and discover
 
 Type a request to talk with Moondog, build a playlist, or explore music.
-Use \`/model\` to choose a model and \`/auth\` to sign in.
+Use \`/auth [provider]\` to connect an API key or sign in, then \`/model\` to choose a model.
 
 - \`/taste\` - select tracks or artists, inspect evidence, and shape your preferences
 - \`/taste report\` - the full Tasteprint, Time Machine, and listening patterns

@@ -102,6 +102,38 @@ test("credential store persists Spotify OAuth without exposing tokens in metadat
   assert.doesNotMatch(JSON.stringify(await fixture.store.list()), /SENTINEL/u);
 });
 
+test("API keys coexist with OAuth and reject unexpected credential fields", async (context) => {
+  const fixture = await credentialFixture(context);
+  await fixture.store.modify("openai-codex", async () => oauthCredential());
+  await fixture.store.modify("spotify", async () => spotifyCredential());
+  await fixture.store.modify("openai", async () => ({
+    type: "api_key",
+    key: "API_KEY_SENTINEL",
+  }));
+
+  const reloaded = new PersistentCredentialStore({ authFile: fixture.authFile });
+  assert.deepEqual(await reloaded.list(), [
+    { providerId: "openai", type: "api_key" },
+    { providerId: "openai-codex", type: "oauth" },
+    { providerId: "spotify", type: "oauth" },
+  ]);
+  for (const credential of [
+    { type: "api_key", key: "" },
+    { type: "api_key", key: " " },
+    { type: "api_key", key: "KEY\nINJECTION" },
+    { type: "api_key", key: "API_KEY_SENTINEL", extra: "unsupported" },
+    { type: "oauth", key: "API_KEY_SENTINEL" },
+  ]) {
+    await assert.rejects(reloaded.modify("openai", async () => credential), {
+      code: "credential_store_corrupt",
+    });
+  }
+  assert.equal((await reloaded.read("openai")).key, "API_KEY_SENTINEL");
+  await reloaded.delete("openai");
+  assert.equal((await reloaded.read("spotify")).refreshToken, "SPOTIFY_REFRESH_TOKEN_SENTINEL");
+  assert.equal((await reloaded.read("openai-codex")).refresh, "REFRESH_TOKEN_SENTINEL");
+});
+
 test("credential store serializes refresh-like modifications across instances", async (context) => {
   const fixture = await credentialFixture(context);
   await fixture.store.modify(providerId, async () => oauthCredential());

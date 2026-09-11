@@ -12,6 +12,7 @@ import {
   listPiModels,
   listPiProviders,
 } from "../../runtime/pi/model-catalog.mjs";
+import { supportedAuthProviderIds } from "../../runtime/pi/authentication.mjs";
 import {
   formatLocalResult,
   helpText,
@@ -48,7 +49,7 @@ const slashCommands = [
   { name: "tools", description: "Inspect capability states" },
   { name: "doctor", description: "Run local environment checks" },
   { name: "model", description: "Choose a Pi provider and model" },
-  { name: "auth", description: "Sign in to OpenAI Codex" },
+  { name: "auth", description: "Connect a model provider with an API key or Codex sign-in" },
   { name: "web", description: "Search or read public music sources with Codex" },
   { name: "spotify", description: "Set up and control Spotify" },
   { name: "reload", description: "Reload model settings and authentication" },
@@ -101,7 +102,7 @@ export function parseTuiArguments(text) {
 function offlineReply(runtimeStatus) {
   const authenticationStep =
     runtimeStatus.reason === "provider_authentication_required"
-      ? "\n\n运行 `/auth` 完成 OpenAI Codex 登录。"
+      ? `\n\n运行 \`/auth ${runtimeStatus.provider ?? "openai-codex"}\` 配置模型认证。`
       : "";
   return `Moondog 的本地 CLI 已经运行，但自由对话尚未连接模型。
 
@@ -600,7 +601,7 @@ export async function runMoondogTui({
         ? `Using Pi model \`${providerId}/${modelId}\`. The current conversation and memory were retained.`
         : `Saved \`${providerId}/${modelId}\`, but the runtime is offline: \`${status.reason}\`.${
             status.reason === "provider_authentication_required"
-              ? " Run `/auth` to sign in."
+              ? ` Run \`/auth ${providerId}\` to connect this provider.`
               : ""
           }`,
     );
@@ -611,28 +612,53 @@ export async function runMoondogTui({
   };
 
   const authenticate = async (args) => {
-    if (args.length > 1 || (args[0] && args[0] !== "openai-codex")) {
-      throw new Error("Usage: /auth [openai-codex].");
+    if (args.length > 1) {
+      throw new Error("Usage: /auth [provider]. Enter API keys only in the hidden prompt.");
     }
     if (typeof runAuth !== "function") {
       throw new Error("Authentication is unavailable in this launch mode.");
     }
 
-    setFooter("Opening OpenAI Codex authentication...", yellow);
+    const availableProviders = providers().filter((provider) =>
+      supportedAuthProviderIds.includes(provider.id),
+    );
+    let providerId = args[0]?.toLowerCase() ?? runtimeStatus.provider;
+    if (!providerId || !supportedAuthProviderIds.includes(providerId)) {
+      if (args[0]) throw new Error("Unsupported authentication provider. Use /auth to choose one.");
+      const selectedProvider = await choose(
+        availableProviders.map((provider) => ({
+          value: provider.id,
+          label: provider.name,
+          description: `${provider.id} - ${provider.id === "openai-codex" ? "ChatGPT sign-in" : "API key"}`,
+        })),
+        runtimeStatus.provider ?? "openai-codex",
+        "Connect a model provider. Enter selects; Esc returns.",
+      );
+      if (!selectedProvider) {
+        setFooter("Authentication cancelled.", yellow);
+        return;
+      }
+      providerId = selectedProvider.value;
+    }
+
+    setFooter(`Opening ${providerId} authentication...`, yellow);
     tui.stop({ preserveScreen: true });
     try {
-      await runAuth();
+      await runAuth(providerId);
     } finally {
       if (!cleanedUp) tui.start();
     }
     if (cleanedUp) return;
 
     if (typeof rebuildRuntime === "function") {
-      const status = await replaceRuntime();
+      const currentSelection = runtimeStatus.provider && runtimeStatus.model
+        ? { provider: runtimeStatus.provider, model: runtimeStatus.model }
+        : undefined;
+      const status = await replaceRuntime(currentSelection);
       addMoondogMessage(
         status.state === "configured"
           ? `Authentication complete. Using \`${status.provider}/${status.model}\`.`
-          : "Authentication complete. Run `/model` to choose a model.",
+          : `Authentication complete. Run \`/model ${providerId}\` to choose a model.`,
       );
     } else {
       addMoondogMessage("Authentication complete. Restart Moondog to load it.");
@@ -957,7 +983,7 @@ export async function runMoondogTui({
       }
       try {
         if (!["home", "theme", "art", "motion", "model", "resume", "new", "taste", "profile"].includes(command)) enterConversation();
-        editor.addToHistory(value);
+        if (command !== "auth") editor.addToHistory(value);
         setBusy(true);
         localCommandController = command === "web" ? new AbortController() : null;
         editor.disableSubmit = true;

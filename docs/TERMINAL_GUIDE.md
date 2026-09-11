@@ -458,37 +458,71 @@ Web evidence does not become personal listening evidence or a trusted playlist c
 
 ## Enable agent conversation
 
-To enable free-text conversation, start Moondog and use the Pi-backed model and authentication flows inside the TUI:
+Start Moondog, connect a provider, and choose a model in the same terminal session:
 
 ```bash
 moondog
-# Then run /auth and /model inside the TUI.
+# /auth opens the provider picker and a hidden API key prompt.
+# /model opens the provider and model picker.
 ```
 
-Use `moondog auth login openai-codex --device-code` in a headless terminal.
+When a model is already selected, `/auth` connects that provider.
+You can also name the provider directly, for example `/auth deepseek` followed by `/model deepseek`.
+Switch providers at any time with `/model`; your conversation and listening profile remain available.
+Selections are saved for the next launch.
+A model without credentials stays offline and shows the matching authentication command.
 
-For scripts and other non-interactive launches, `MOONDOG_PROVIDER` and `MOONDOG_MODEL` remain available as environment overrides.
+| Model family | Provider ID | Environment variable instead of a saved API key |
+| --- | --- | --- |
+| GLM | `zai` | `ZAI_API_KEY` |
+| Kimi, global API | `moonshotai` | `MOONSHOT_API_KEY` |
+| Kimi, China API | `moonshotai-cn` | `MOONSHOT_API_KEY` |
+| DeepSeek | `deepseek` | `DEEPSEEK_API_KEY` |
+| Grok | `xai` | `XAI_API_KEY` |
+| GPT, OpenAI API | `openai` | `OPENAI_API_KEY` |
+| Claude | `anthropic` | `ANTHROPIC_API_KEY` |
+| Gemini | `google` | `GEMINI_API_KEY` |
+| OpenRouter | `openrouter` | `OPENROUTER_API_KEY` |
 
-This is a separate Moondog OAuth authorization.
+The model picker reads Pi's bundled model catalog, so available model IDs follow the pinned Pi dependency.
+Models still depend on provider availability and your account's access.
+Moondog's `zai` provider uses the [standard Z.AI API endpoint](https://docs.z.ai/guides/develop/http/introduction), `https://api.z.ai/api/paas/v4`, for music conversation.
+This differs from Pi's coding-plan default; use a standard API account and key for this entry.
+Other Pi providers remain in the model picker and use their native environment-based authentication where available.
 
-It does not read, copy, modify, or log out the Codex CLI or ChatGPT desktop credential cache.
-
-Moondog stores only its own `openai-codex` OAuth credential in `auth.json` under `MOONDOG_CONFIG_HOME`, `$XDG_CONFIG_HOME/moondog`, or the default `~/.config/moondog` directory, in that order.
-
-On POSIX systems, Moondog creates or requires mode `0700` on the directory and `0600` on the credential file.
-
-The file contains bearer credentials and must be protected like a password.
-
-Remove only Moondog's authorization with:
+The same credential commands work outside the TUI:
 
 ```bash
-moondog auth logout openai-codex
+moondog auth login deepseek
+moondog auth status deepseek
+moondog auth logout deepseek
 ```
 
-The model picker reads Pi's built-in provider and model catalog instead of maintaining a separate Moondog model allowlist.
+API key login requires an interactive terminal and hides the pasted key.
+Enter only the provider ID in commands; paste the key at the separate prompt.
+Saving a key and checking its status make no model request; the provider validates it on your first conversation request.
+Status distinguishes saved credentials from environment credentials, and never prints keys.
+A saved key takes precedence over the corresponding environment variable.
+Logout removes only that provider's saved credential; an environment key remains active until you unset it.
 
-Other provider authentication is resolved by Pi from that provider's environment or credential mechanism.
+For scripts, set the provider's API key variable together with `MOONDOG_PROVIDER` and `MOONDOG_MODEL`.
+Those two model variables override the saved selection at launch and on `/reload`.
+An explicit `/model` selection takes effect immediately in the current session, including after authentication.
 
+ChatGPT sign-in remains available separately from OpenAI API keys:
+
+```bash
+moondog auth login openai-codex
+# Use --device-code in a headless terminal.
+```
+
+Inside the TUI, use `/auth openai-codex` and `/model openai-codex`.
+This is a separate Moondog OAuth authorization.
+It does not read, copy, modify, or log out the Codex CLI or ChatGPT desktop credential cache.
+
+Moondog stores its API keys and OAuth credentials in `auth.json` under `MOONDOG_CONFIG_HOME`, `$XDG_CONFIG_HOME/moondog`, or the default `~/.config/moondog` directory, in that order.
+On POSIX systems, Moondog creates or requires mode `0700` on the directory and `0600` on the credential file.
+The file contains credentials and must be protected like a password.
 Do not put credentials in this repository.
 
 ## Local music data control

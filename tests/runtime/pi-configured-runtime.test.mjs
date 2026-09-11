@@ -10,6 +10,7 @@ import {
 } from "../../src/runtime/pi/configured-runtime.mjs";
 import { PersistentCredentialStore } from "../../src/runtime/pi/persistent-credential-store.mjs";
 import { writePiRuntimeSelection } from "../../src/runtime/pi/runtime-settings.mjs";
+import { listPiModels } from "../../src/runtime/pi/model-catalog.mjs";
 
 const provider = "openai-codex";
 const model = "gpt-5.6-terra";
@@ -21,6 +22,37 @@ function applicationStub() {
     },
   };
 }
+
+test("all six API providers require a key and retain selection for authentication", async (context) => {
+  const credentials = await credentialFixture(context);
+  const providers = {
+    anthropic: "ANTHROPIC_API_KEY",
+    deepseek: "DEEPSEEK_API_KEY",
+    moonshotai: "MOONSHOT_API_KEY",
+    openai: "OPENAI_API_KEY",
+    xai: "XAI_API_KEY",
+    zai: "ZAI_API_KEY",
+  };
+  for (const [provider, variable] of Object.entries(providers)) {
+    const model = listPiModels(provider)[0].id;
+    const environment = { MOONDOG_PROVIDER: provider, MOONDOG_MODEL: model };
+    const offline = await createConfiguredRuntime(applicationStub(), environment, { credentials });
+    assert.equal(offline.publicStatus().reason, "provider_authentication_required");
+    assert.equal(offline.publicStatus().provider, provider);
+    assert.equal(offline.publicStatus().model, model);
+
+    const fromEnvironment = await createConfiguredRuntime(applicationStub(), {
+      ...environment,
+      [variable]: "RUNTIME_API_KEY_SENTINEL",
+    }, { credentials });
+    assert.equal(fromEnvironment.publicStatus().state, "configured", provider);
+
+    await credentials.modify(provider, () => ({ type: "api_key", key: "STORED_API_KEY_SENTINEL" }));
+    const fromStore = await createConfiguredRuntime(applicationStub(), environment, { credentials });
+    assert.equal(fromStore.publicStatus().state, "configured", provider);
+    assert.doesNotMatch(JSON.stringify(fromStore.publicStatus()), /SENTINEL/);
+  }
+});
 
 async function credentialFixture(context) {
   const root = await mkdtemp(path.join(tmpdir(), "moondog-runtime-auth-"));
@@ -100,9 +132,9 @@ test("openai-codex model validation does not require a login or network call", a
 test("runtime uses a persisted Pi provider and model when env overrides are absent", async (context) => {
   const root = await mkdtemp(path.join(tmpdir(), "moondog-runtime-settings-"));
   context.after(() => rm(root, { recursive: true, force: true }));
-  const environment = { MOONDOG_CONFIG_HOME: root };
+  const environment = { MOONDOG_CONFIG_HOME: root, DEEPSEEK_API_KEY: "TEST_KEY" };
   await writePiRuntimeSelection(
-    { provider: "github-copilot", model: "claude-haiku-4.5" },
+    { provider: "deepseek", model: "deepseek-v4-flash" },
     environment,
   );
 
@@ -112,8 +144,8 @@ test("runtime uses a persisted Pi provider and model when env overrides are abse
   );
 
   assert.equal(runtime.publicStatus().state, "configured");
-  assert.equal(runtime.publicStatus().provider, "github-copilot");
-  assert.equal(runtime.publicStatus().model, "claude-haiku-4.5");
+  assert.equal(runtime.publicStatus().provider, "deepseek");
+  assert.equal(runtime.publicStatus().model, "deepseek-v4-flash");
 });
 
 test("explicit model selection takes precedence over env and stored selection", async (context) => {
@@ -123,9 +155,10 @@ test("explicit model selection takes precedence over env and stored selection", 
     MOONDOG_CONFIG_HOME: root,
     MOONDOG_PROVIDER: "xai",
     MOONDOG_MODEL: "grok-4.6",
+    ZAI_API_KEY: "TEST_KEY",
   };
   await writePiRuntimeSelection(
-    { provider: "github-copilot", model: "claude-haiku-4.5" },
+    { provider: "deepseek", model: "deepseek-v4-flash" },
     environment,
   );
 
@@ -162,9 +195,9 @@ test("configured runtime can reuse model resolution through a dedicated runtime 
   const marker = { kind: "memory-runtime" };
   const runtime = await createConfiguredRuntime(
     applicationStub(),
-    {},
+    { DEEPSEEK_API_KEY: "TEST_KEY" },
     {
-      selection: { provider: "github-copilot", model: "claude-haiku-4.5" },
+      selection: { provider: "deepseek", model: "deepseek-v4-flash" },
       runtimeFactory(configuration) {
         received = configuration;
         return marker;
@@ -173,8 +206,8 @@ test("configured runtime can reuse model resolution through a dedicated runtime 
   );
 
   assert.equal(runtime, marker);
-  assert.equal(received.provider, "github-copilot");
-  assert.equal(received.modelId, "claude-haiku-4.5");
-  assert.equal(received.model.id, "claude-haiku-4.5");
+  assert.equal(received.provider, "deepseek");
+  assert.equal(received.modelId, "deepseek-v4-flash");
+  assert.equal(received.model.id, "deepseek-v4-flash");
   assert.equal(typeof received.models.streamSimple, "function");
 });

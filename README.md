@@ -79,7 +79,9 @@ Choose `/theme paper` or `/theme charcoal`, switch to `/art ascii`, or turn anim
 
 ## Add an agent when you want one
 
-Use `/auth` and `/model` to enable conversation through Pi.
+Use `/auth` to connect GLM, Kimi, DeepSeek, Grok, GPT, Claude, Gemini, or OpenRouter with an API key, then `/model` to choose a model through Pi.
+ChatGPT OAuth remains available as `openai-codex`.
+Switch models in the same conversation; see the [model setup guide](docs/TERMINAL_GUIDE.md#enable-agent-conversation) for provider IDs and environment variables.
 Ask for a path through your listening history, revise the proposed order, or look beyond your library.
 Moondog validates selected tracks against tool-provided candidates and keeps public catalog evidence separate from personal listening evidence.
 

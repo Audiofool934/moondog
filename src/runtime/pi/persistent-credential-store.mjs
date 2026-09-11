@@ -12,11 +12,17 @@ import { homedir } from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
+import { apiKeyPiProviderIds } from "./provider-registry.mjs";
+
 const AUTH_DOCUMENT_VERSION = 1;
 const MAX_AUTH_FILE_BYTES = 64 * 1024;
 const LOCK_TIMEOUT_MS = 30_000;
 const CORRUPT_LOCK_GRACE_MS = 5 * 60_000;
-const SUPPORTED_CREDENTIAL_PROVIDERS = new Set(["openai-codex", "spotify"]);
+const SUPPORTED_CREDENTIAL_PROVIDERS = new Set([
+  "openai-codex",
+  "spotify",
+  ...apiKeyPiProviderIds,
+]);
 const POSIX_PERMISSIONS_APPLY = process.platform !== "win32";
 
 function safeError(code, message, cause) {
@@ -154,6 +160,22 @@ function validateCredential(providerId, value) {
   }
   if (providerId === "spotify") {
     return validateSpotifyCredential(value);
+  }
+  if (apiKeyPiProviderIds.includes(providerId)) {
+    assertPlainRecord(value, `${providerId} credential`);
+    assertExactKeys(value, ["type", "key"], `${providerId} credential shape`);
+    if (
+      value.type !== "api_key" ||
+      typeof value.key !== "string" ||
+      value.key.length === 0 ||
+      /[\u0000-\u0020\u007f]/u.test(value.key)
+    ) {
+      throw safeError(
+        "credential_store_corrupt",
+        `Moondog ${providerId} credentials must contain a nonempty API key without whitespace or control characters.`,
+      );
+    }
+    return structuredClone(value);
   }
   throw safeError(
     "credential_provider_unsupported",

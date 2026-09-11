@@ -873,7 +873,7 @@ test("TUI can start OAuth and resume with reloaded authentication", async () => 
   });
 
   await waitForStart(terminal);
-  terminal.send("/auth");
+  terminal.send("/auth openai-codex");
   terminal.send("\r");
   await waitFor(() => terminal.output.includes("Authentication complete."));
 
@@ -886,6 +886,71 @@ test("TUI can start OAuth and resume with reloaded authentication", async () => 
   terminal.send("\r");
   await running;
   assert.equal(terminal.stopCount, 2);
+});
+
+test("TUI connects the selected API provider and keeps that model through authentication", async (context) => {
+  const terminal = new FakeTerminal();
+  const signalTarget = new EventEmitter();
+  const selections = [];
+  const authProviders = [];
+  let connected = false;
+  const running = runMoondogTui({
+    application: fakeApplication(),
+    runtime: fakeRuntime(),
+    terminal,
+    signalTarget,
+    providers: () => [{ id: "deepseek", name: "DeepSeek", modelCount: 1 }],
+    models: () => [{ id: "deepseek-v4-flash", name: "DeepSeek V4 Flash" }],
+    async runAuth(provider) { authProviders.push(provider); connected = true; },
+    async rebuildRuntime(selection) {
+      selections.push(selection);
+      return {
+        ...fakeRuntime(),
+        publicStatus: () => ({
+          state: connected ? "configured" : "offline",
+          reason: connected ? undefined : "provider_authentication_required",
+          provider: selection.provider,
+          model: selection.model,
+        }),
+      };
+    },
+  });
+  context.after(async () => { signalTarget.emit("SIGTERM"); await running; });
+  await waitForStart(terminal);
+  terminal.send("/model deepseek deepseek-v4-flash");
+  terminal.send("\r");
+  await waitFor(() => terminal.output.includes("Model saved; runtime offline."));
+  assert.match(stripVTControlCharacters(terminal.output), /auth deepseek/);
+  terminal.send("/auth");
+  terminal.send("\r");
+  await waitFor(() => terminal.output.includes("Authentication complete."));
+  assert.deepEqual(authProviders, ["deepseek"]);
+  assert.deepEqual(selections, [
+    { provider: "deepseek", model: "deepseek-v4-flash" },
+    { provider: "deepseek", model: "deepseek-v4-flash" },
+  ]);
+  assert.equal(terminal.stopCount, 1);
+  assert.equal(terminal.startCount, 2);
+});
+
+test("TUI offers API providers before any model is selected", async (context) => {
+  const terminal = new FakeTerminal();
+  const signalTarget = new EventEmitter();
+  const authProviders = [];
+  const running = runMoondogTui({
+    application: fakeApplication(), runtime: fakeRuntime(), terminal,
+    signalTarget,
+    providers: () => [{ id: "moonshotai", name: "Moonshot AI (Kimi)", modelCount: 1 }],
+    async runAuth(provider) { authProviders.push(provider); },
+  });
+  context.after(async () => { signalTarget.emit("SIGTERM"); await running; });
+  await waitForStart(terminal);
+  terminal.send("/auth"); terminal.send("\r");
+  await waitFor(() => stripVTControlCharacters(terminal.output).includes("Connect a model provider"));
+  assert.match(stripVTControlCharacters(terminal.output), /Moonshot AI \(Kimi\)/);
+  terminal.send("\r");
+  await waitFor(() => terminal.output.includes("Authentication complete."));
+  assert.deepEqual(authProviders, ["moonshotai"]);
 });
 
 test("TUI can authorize Spotify and reload Spotify agent tools", async () => {

@@ -23,6 +23,12 @@ const providerLoaders = {
     );
     return moonshotaiProvider();
   },
+  "moonshotai-cn": async () => {
+    const { moonshotaiCnProvider } = await import(
+      "@earendil-works/pi-ai/providers/moonshotai-cn"
+    );
+    return moonshotaiCnProvider();
+  },
   openai: async () => {
     const { openaiProvider } = await import(
       "@earendil-works/pi-ai/providers/openai"
@@ -41,10 +47,24 @@ const providerLoaders = {
     );
     return openrouterProvider();
   },
+  xai: async () => {
+    const { xaiProvider } = await import(
+      "@earendil-works/pi-ai/providers/xai"
+    );
+    return xaiProvider();
+  },
+  zai: async () => {
+    const { zaiApiProvider } = await import("./model-catalog.mjs");
+    return zaiApiProvider();
+  },
 };
 
 export const supportedPiProviderIds = Object.freeze(
   Object.keys(providerLoaders),
+);
+
+export const apiKeyPiProviderIds = Object.freeze(
+  supportedPiProviderIds.filter((providerId) => providerId !== "openai-codex"),
 );
 
 export async function loadPiProvider(providerId) {

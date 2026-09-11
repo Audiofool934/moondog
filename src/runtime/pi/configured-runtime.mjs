@@ -1,12 +1,13 @@
-import { builtinModels } from "@earendil-works/pi-ai/providers/all";
-
 import { PiAgentRuntime } from "./agent-runtime.mjs";
+import { createPiAuthContext } from "./authentication.mjs";
+import { createPiModels } from "./model-catalog.mjs";
 import { createPersistentCredentialStore } from "./persistent-credential-store.mjs";
 import { readPiRuntimeSelection } from "./runtime-settings.mjs";
 
 export class OfflineAgentRuntime {
-  constructor(reason = "model_not_configured") {
+  constructor(reason = "model_not_configured", selection) {
     this.reason = reason;
+    this.selection = selection;
   }
 
   publicStatus() {
@@ -15,6 +16,7 @@ export class OfflineAgentRuntime {
       adapter: "pi_agent_core",
       pi_version: "0.84.3",
       reason: this.reason,
+      ...this.selection,
       session_persistence: "none",
       external_effects: "disabled",
     };
@@ -38,7 +40,7 @@ export async function createConfiguredRuntime(
   environment = process.env,
   {
     credentials,
-    modelsFactory = builtinModels,
+    modelsFactory = createPiModels,
     runtimeFactory = (configuration) => new PiAgentRuntime(configuration),
     selection,
     settingsReader = readPiRuntimeSelection,
@@ -68,7 +70,10 @@ export async function createConfiguredRuntime(
 
   const credentialStore =
     credentials ?? createPersistentCredentialStore(environment);
-  const models = modelsFactory({ credentials: credentialStore });
+  const models = modelsFactory({
+    credentials: credentialStore,
+    authContext: createPiAuthContext(environment),
+  });
   if (!models.getProvider(provider)) {
     return new OfflineAgentRuntime("provider_not_found_in_pi_catalog");
   }
@@ -76,8 +81,11 @@ export async function createConfiguredRuntime(
   if (!model) {
     return new OfflineAgentRuntime("model_not_found_in_pi_catalog");
   }
-  if (provider === "openai-codex" && !(await models.checkAuth(provider))) {
-    return new OfflineAgentRuntime("provider_authentication_required");
+  if (!(await models.checkAuth(provider))) {
+    return new OfflineAgentRuntime("provider_authentication_required", {
+      provider,
+      model: modelId,
+    });
   }
 
   return runtimeFactory({

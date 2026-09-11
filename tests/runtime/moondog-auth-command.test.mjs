@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
-import { mkdtemp, rm, stat } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { PassThrough } from "node:stream";
@@ -163,6 +163,97 @@ test("browser login receives manual fallback input without echoing it", async ()
   );
 });
 
+test("native API login accepts hidden input and saves only to the private store", async (context) => {
+  const root = await mkdtemp(path.join(tmpdir(), "moondog-api-key-cli-"));
+  context.after(() => rm(root, { recursive: true, force: true }));
+  const input = inputStream();
+  const output = captureStream();
+  const progressOutput = captureStream();
+  let entered = false;
+  progressOutput.on("data", (chunk) => {
+    if (!entered && chunk.includes("Input is hidden")) {
+      entered = true;
+      setImmediate(() => input.write("CLI_API_KEY_SENTINEL\n"));
+    }
+  });
+
+  await runAuthCommand({
+    args: ["login", "deepseek"],
+    environment: { MOONDOG_CONFIG_HOME: root },
+    input,
+    output,
+    progressOutput,
+    signalTarget: new EventEmitter(),
+    interactive: true,
+  });
+
+  const stored = JSON.parse(await readFile(path.join(root, "auth.json"), "utf8"));
+  assert.deepEqual(stored.credentials.deepseek, {
+    type: "api_key",
+    key: "CLI_API_KEY_SENTINEL",
+  });
+  assert.match(output.value(), /deepseek: stored api_key credential/u);
+  assert.match(output.value(), /API key saved locally/u);
+  assert.doesNotMatch(output.value() + progressOutput.value(), /CLI_API_KEY_SENTINEL/u);
+});
+
+test("API login rejects headless input and OAuth options before provider setup", async () => {
+  const fixture = commandFixture();
+  for (const args of [
+    ["login", "deepseek"],
+    ["login", "deepseek", "--device-code"],
+    ["login", "deepseek", "--browser"],
+  ]) {
+    await assert.rejects(
+      runAuthCommand({ args, interactive: false, ...fixture }),
+      /interactive terminal|only to openai-codex/iu,
+    );
+  }
+  assert.equal(fixture.state.factoryCalls, 0);
+});
+
+test("auth rejects command-line keys without repeating them in errors", async () => {
+  const fixture = commandFixture();
+  for (const args of [
+    ["login", "deepseek", "CLI_API_KEY_SENTINEL"],
+    ["login", "CLI_API_KEY_SENTINEL"],
+    ["login", "deepseek", "--key=CLI_API_KEY_SENTINEL"],
+    ["CLI_API_KEY_SENTINEL"],
+  ]) {
+    await assert.rejects(
+      runAuthCommand({ args, interactive: true, ...fixture }),
+      (error) => !inspect(error, { depth: null }).includes("CLI_API_KEY_SENTINEL"),
+    );
+  }
+  assert.equal(fixture.state.factoryCalls, 0);
+});
+
+test("API login failure is provider-specific without exposing error secrets", async () => {
+  const fixture = commandFixture({
+    loginError: new Error("provider leaked API_KEY_SENTINEL"),
+  });
+  await assert.rejects(
+    runAuthCommand({ args: ["login", "deepseek"], interactive: true, ...fixture }),
+    (error) =>
+      /deepseek login failed/u.test(error.message) &&
+      !inspect(error, { depth: null }).includes("API_KEY_SENTINEL"),
+  );
+});
+
+test("API logout reports environment credentials still configured", async (context) => {
+  const root = await mkdtemp(path.join(tmpdir(), "moondog-api-key-logout-"));
+  context.after(() => rm(root, { recursive: true, force: true }));
+  const output = captureStream();
+  await runAuthCommand({
+    args: ["logout", "deepseek"],
+    environment: { MOONDOG_CONFIG_HOME: root, DEEPSEEK_API_KEY: "ENV_API_KEY_SENTINEL" },
+    output,
+  });
+  assert.match(output.value(), /deepseek: configured through DEEPSEEK_API_KEY/u);
+  assert.match(output.value(), /Environment credentials remain available until unset/u);
+  assert.doesNotMatch(output.value(), /ENV_API_KEY_SENTINEL/u);
+});
+
 test("auth status JSON exposes only non-secret metadata", async () => {
   const fixture = commandFixture({ stored: true });
   await runAuthCommand({
@@ -239,7 +330,7 @@ test("auth login hides provider error details that may contain credentials", asy
 test("auth command rejects unknown providers, actions, and extra arguments", async () => {
   const fixture = commandFixture();
   await assert.rejects(
-    runAuthCommand({ args: ["status", "openai"], ...fixture }),
+    runAuthCommand({ args: ["status", "unsupported-provider"], ...fixture }),
     /unsupported auth provider/iu,
   );
   await assert.rejects(

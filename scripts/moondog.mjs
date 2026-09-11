@@ -774,7 +774,7 @@ async function main() {
       if (runtimeStatus.state !== "configured") {
         if (runtimeStatus.reason === "provider_authentication_required") {
           throw new Error(
-            "The openai-codex provider requires authentication. Run moondog auth login openai-codex first.",
+            `The ${runtimeStatus.provider} provider requires authentication. Run moondog auth login ${runtimeStatus.provider} first.`,
           );
         }
         throw new Error(
@@ -806,9 +806,9 @@ async function main() {
         if (selection) await writePiRuntimeSelection(selection);
         return createConfiguredRuntime(application, process.env, { selection });
       },
-      runAuth: () =>
+      runAuth: (provider) =>
         runAuthCommand({
-          args: ["login", "openai-codex"],
+          args: ["login", provider],
         }),
       runWeb: (args, options) => runWebCommand({ args, webResearch, ...options }),
       runProfileAction: (args) => runProfileCommand({

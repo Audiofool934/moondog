@@ -6,7 +6,7 @@ import { formatWebSources } from "../../surfaces/cli/web-command.mjs";
 
 const maximumToolResultBytes = 32 * 1024;
 const maximumNestedProfileItems = 6;
-const credentialBearingErrorPattern = /(?:access|refresh|id)[_ -]?token|authorization\s*[:=]\s*bearer|oauth\s+(?:auth|refresh|token)|credential\s+store/iu;
+const credentialBearingErrorPattern = /(?:access|refresh|id)[_ -]?token|api[_ -]?key|authorization\s*[:=]\s*bearer|oauth\s+(?:auth|refresh|token)|credential\s+store/iu;
 const safeCapabilityEffects = new Set([
   "read_local",
   "read_runtime",
@@ -39,11 +39,8 @@ function safeProviderErrorMessage(value, provider) {
     typeof value === "string" && value.trim()
       ? value.trim()
       : "The model provider request failed.";
-  if (
-    provider === "openai-codex" &&
-    credentialBearingErrorPattern.test(message)
-  ) {
-    return "OpenAI Codex authentication failed. Run moondog auth login openai-codex and try again.";
+  if (credentialBearingErrorPattern.test(message)) {
+    return `${provider === "openai-codex" ? "OpenAI Codex" : provider} authentication failed. Run moondog auth login ${provider} and try again.`;
   }
   return message;
 }

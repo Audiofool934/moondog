@@ -1,7 +1,10 @@
 import { createInterface } from "node:readline/promises";
 import { Writable } from "node:stream";
 
-import { createPiAuthentication } from "../../runtime/pi/authentication.mjs";
+import {
+  createPiAuthentication,
+  supportedAuthProviderIds,
+} from "../../runtime/pi/authentication.mjs";
 import { sanitizeTerminalText } from "./format-output.mjs";
 
 const DEFAULT_AUTH_PROVIDER = "openai-codex";
@@ -13,10 +16,14 @@ Commands:
 
 - \`moondog auth login openai-codex\` - start a browser OAuth login
 - \`moondog auth login openai-codex --device-code\` - use headless device login
-- \`moondog auth status [openai-codex] [--json]\` - inspect local credential storage
-- \`moondog auth logout openai-codex [--json]\` - remove Moondog's credential
+- \`moondog auth login <provider>\` - save an API key using hidden terminal input
+- \`moondog auth status [provider] [--json]\` - inspect saved or environment credentials
+- \`moondog auth logout <provider> [--json]\` - remove that provider's saved credential
 
-Moondog keeps this credential in its own private local store.
+API key providers: ${supportedAuthProviderIds.filter((id) => id !== DEFAULT_AUTH_PROVIDER).join(", ")}.
+Use zai for GLM, moonshotai or moonshotai-cn for Kimi, xai for Grok, openai for GPT, and anthropic for Claude.
+Moondog keeps credentials in its own private local store.
+API keys are entered interactively, never as command arguments.
 It does not read, modify, or log out the Codex CLI or ChatGPT desktop session.`;
 }
 
@@ -45,7 +52,9 @@ function parseAuthArguments(args) {
   }
   const unknownOption = values.find((value) => value.startsWith("-"));
   if (unknownOption) {
-    throw new Error(`Unknown auth option: ${unknownOption}`);
+    throw new Error(
+      "Unknown auth option. API keys must be entered at the hidden prompt, never as command arguments.",
+    );
   }
   return {
     action: values[0],
@@ -60,6 +69,9 @@ function writeLine(stream, value = "") {
 }
 
 function formatStatus(value) {
+  if (value.state === "environment") {
+    return `${value.provider}: configured through ${value.source ?? "environment"}`;
+  }
   if (value.state === "stored") {
     return `${value.provider}: stored ${value.type} credential`;
   }
@@ -88,14 +100,16 @@ function createReadlineOutput(output) {
   };
 }
 
-function createOAuthInteraction({
+function createAuthInteraction({
   input,
   output,
   loginMethod,
   signal,
   interactive,
+  apiKeyLogin,
 }) {
   const readlineOutput = createReadlineOutput(output);
+  readlineOutput.setMuted(apiKeyLogin);
   const readline = createInterface({
     input,
     output: readlineOutput.stream,
@@ -120,32 +134,34 @@ function createOAuthInteraction({
           }
           return selected.id;
         }
-        if (prompt.type === "secret") {
+        if (prompt.type === "secret" && !interactive) {
           throw new Error(
-            "Moondog will not echo a secret credential prompt to the terminal.",
+            "API key login requires an interactive terminal with hidden input.",
           );
         }
         const placeholder = prompt.placeholder
           ? ` (${sanitizeTerminalText(prompt.placeholder)})`
           : "";
         const question = `${sanitizeTerminalText(prompt.message)}${placeholder}: `;
-        const questionOptions = prompt.signal
-          ? { signal: prompt.signal }
-          : undefined;
-        if (prompt.type !== "manual_code") {
+        const questionOptions = { signal: prompt.signal ?? signal };
+        if (prompt.type !== "manual_code" && prompt.type !== "secret") {
           return readline.question(question, questionOptions);
         }
 
+        writeLine(output);
         writeLine(output, question);
         writeLine(
           output,
-          "Paste the authorization response. Input is hidden for safety.",
+          prompt.type === "secret"
+            ? "Paste the API key. Input is hidden."
+            : "Paste the authorization response. Input is hidden for safety.",
         );
         readlineOutput.setMuted(true);
         try {
-          return await readline.question("", questionOptions);
+          const answer = await readline.question("", questionOptions);
+          return prompt.type === "secret" ? answer.trim() : answer;
         } finally {
-          readlineOutput.setMuted(false);
+          readlineOutput.setMuted(apiKeyLogin);
           writeLine(output);
         }
       },
@@ -181,9 +197,10 @@ function createOAuthInteraction({
   };
 }
 
-function wrapLoginError(error) {
+function wrapLoginError(error, provider) {
+  const name = provider === DEFAULT_AUTH_PROVIDER ? "OpenAI Codex" : provider;
   if (error?.name === "AbortError" || error?.code === "ABORT_ERR") {
-    return new Error("OpenAI Codex login was cancelled.");
+    return new Error(`${name} login was cancelled.`);
   }
   if (
     typeof error?.code === "string" &&
@@ -193,7 +210,7 @@ function wrapLoginError(error) {
     return error;
   }
   const safe = new Error(
-    "OpenAI Codex login failed before a usable credential was saved.",
+    `${name} login failed before a credential was saved.`,
   );
   safe.code = "auth_login_failed";
   return safe;
@@ -223,7 +240,7 @@ export async function runAuthCommand({
     throw new Error("Too many arguments for the auth command.");
   }
   if (!["login", "status", "logout"].includes(options.action)) {
-    throw new Error(`Unknown auth command: ${options.action}`);
+    throw new Error("Unknown auth command. Use login, status, logout, or help.");
   }
   if (
     options.action !== "login" &&
@@ -237,8 +254,19 @@ export async function runAuthCommand({
   if (!provider) {
     throw new Error(`The auth ${options.action} command requires a provider.`);
   }
-  if (provider !== DEFAULT_AUTH_PROVIDER) {
-    throw new Error(`Unsupported auth provider: ${provider}`);
+  if (!supportedAuthProviderIds.includes(provider)) {
+    throw new Error(
+      `Unsupported auth provider. Choose ${supportedAuthProviderIds.join(", ")}.`,
+    );
+  }
+  const apiKeyLogin = provider !== DEFAULT_AUTH_PROVIDER;
+  if (
+    apiKeyLogin &&
+    (args.includes("--device-code") || args.includes("--browser"))
+  ) {
+    throw new Error(
+      "Browser and device-code options apply only to openai-codex OAuth login.",
+    );
   }
 
   if (options.action === "status") {
@@ -250,7 +278,7 @@ export async function runAuthCommand({
       writeLine(output, formatStatus(status));
       writeLine(
         output,
-        "Status reports stored metadata only and does not refresh the token.",
+        "Status reports local configuration only. It does not verify the credential with the provider or refresh tokens.",
       );
     }
     return;
@@ -265,7 +293,9 @@ export async function runAuthCommand({
       writeLine(output, formatStatus(status));
       writeLine(
         output,
-        "Moondog's local credential was removed. Codex CLI and ChatGPT desktop login were not changed.",
+        apiKeyLogin
+          ? "Moondog's saved API key was removed. Environment credentials remain available until unset."
+          : "Moondog's local credential was removed. Codex CLI and ChatGPT desktop login were not changed.",
       );
     }
     return;
@@ -274,7 +304,12 @@ export async function runAuthCommand({
   if (json) {
     throw new Error("The auth login command does not support --json.");
   }
-  if (options.loginMethod === "browser" && !interactive) {
+  if (apiKeyLogin && !interactive) {
+    throw new Error(
+      "API key login requires an interactive terminal with hidden input. For headless use, set the provider's API key environment variable.",
+    );
+  }
+  if (!apiKeyLogin && options.loginMethod === "browser" && !interactive) {
     throw new Error(
       "Browser OAuth login requires an interactive terminal. Use --device-code for a headless session.",
     );
@@ -284,28 +319,37 @@ export async function runAuthCommand({
   const controller = new AbortController();
   const handleSigint = () => controller.abort();
   signalTarget.once("SIGINT", handleSigint);
-  const oauth = createOAuthInteraction({
+  const login = createAuthInteraction({
     input,
     output: progressOutput,
     loginMethod: options.loginMethod,
     signal: controller.signal,
     interactive,
+    apiKeyLogin,
   });
   try {
     let status;
     try {
-      status = await authentication.login(provider, oauth.interaction);
+      status = await authentication.login(provider, login.interaction);
     } catch (error) {
-      throw wrapLoginError(error);
+      throw wrapLoginError(error, provider);
     }
     writeLine(output, formatStatus(status));
+    if (apiKeyLogin) {
+      writeLine(
+        output,
+        "API key saved locally. It will be checked by the provider when you send a request.",
+      );
+    }
     writeLine(output, "Next, return to Moondog and run /model.");
-    writeLine(output, "For a non-interactive launch, use environment overrides:");
-    writeLine(output, "  export MOONDOG_PROVIDER=openai-codex");
-    writeLine(output, "  export MOONDOG_MODEL=gpt-5.6-terra");
-    writeLine(output, "  moondog");
+    if (!apiKeyLogin) {
+      writeLine(output, "For a non-interactive launch, use environment overrides:");
+      writeLine(output, "  export MOONDOG_PROVIDER=openai-codex");
+      writeLine(output, "  export MOONDOG_MODEL=gpt-5.6-terra");
+      writeLine(output, "  moondog");
+    }
   } finally {
     signalTarget.removeListener("SIGINT", handleSigint);
-    oauth.close();
+    login.close();
   }
 }

@@ -760,9 +760,9 @@ Shell commands:
 - \`moondog studio --from <spotify-history.zip>\` - open one supplied Spotify history ZIP as a session-only private Tasteprint without persistent import
 - \`moondog studio --from <account-data.zip> --from <extended-history.zip>\` - reconcile one or two supplied Spotify history ZIPs as a session-only private Tasteprint without persistent import
 - \`moondog demo-history --output <absolute-file.zip> [--json]\` - generate deterministic fictional Spotify history for the real importer
-- \`moondog auth login openai-codex\` - sign in with ChatGPT OAuth
-- \`moondog auth status openai-codex\` - inspect stored auth metadata
-- \`moondog auth logout openai-codex\` - remove Moondog's OAuth credential
+- \`moondog auth login <provider>\` - save an API key with hidden input; openai-codex uses ChatGPT OAuth
+- \`moondog auth status [provider]\` - inspect saved or environment credential metadata
+- \`moondog auth logout <provider>\` - remove that provider's saved credential
 - \`moondog spotify help\` - configure and control Spotify Connect
 - \`moondog spotify login [client-id]\` - authorize Spotify with browser OAuth
 - \`moondog spotify now|devices|queue\` - inspect Spotify player state
@@ -807,7 +807,7 @@ Interactive slash commands:
 - \`/doctor\` - run local environment checks
 - \`/model\` - choose and persist a Pi provider and model
 - \`/model <provider> <model>\` - switch directly by ID
-- \`/auth\` - start OpenAI Codex OAuth from the TUI
+- \`/auth [provider]\` - connect a model API key or sign in to OpenAI Codex from the TUI
 - \`/web status|search|read\` - research public music sources using the local Codex CLI
 - \`/spotify\` - show Spotify setup and control commands
 - \`/spotify login [client-id]\` - authorize Spotify from the TUI
@@ -823,7 +823,8 @@ Interactive slash commands:
 - \`/quit\` - exit
 
 Free text is sent to the model selected with \`/model\` or the \`MOONDOG_PROVIDER\` and \`MOONDOG_MODEL\` environment overrides.
-The \`openai-codex\` provider also requires \`/auth\` or \`moondog auth login openai-codex\`.
+Use \`/auth [provider]\` or the provider's API key environment variable to connect.
+The \`openai-codex\` provider uses ChatGPT OAuth with \`/auth openai-codex\`.
 When the local projection is ready, the A1 runtime can search the imported library, inspect bounded profile evidence, and derive an in-memory playlist plan.
 Spotify playback writes are enabled only after \`moondog spotify login\`. Publishing, messaging, deletion, and paid generation remain disabled.`;
 }
