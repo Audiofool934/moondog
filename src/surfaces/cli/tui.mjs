@@ -176,6 +176,7 @@ export async function runMoondogTui({
   let profileReturnHome = false;
   let profileSnapshot = null;
   let profileNeedsRefresh = false;
+  let profileDiscoveryDraft = null;
   let homeFocused = false;
   let homeSelected = 0;
   let busy = false;
@@ -416,9 +417,9 @@ export async function runMoondogTui({
   signalTarget.once("SIGHUP", handleSighup);
   signalTarget.once("uncaughtExceptionMonitor", handleUncaughtFailure);
 
-  const choose = async (items, currentValue, footerText) => {
+  const choose = async (items, currentValue, title) => {
     if (items.length === 0) return undefined;
-    const menu = new ListeningMenu({ items, currentValue, title: footerText.split(".")[0], getTheme, getRows: () => terminal.rows });
+    const menu = new ListeningMenu({ items, currentValue, title, getTheme, getRows: () => terminal.rows });
     return await new Promise((resolve) => {
       let overlay;
       const finish = (value) => {
@@ -481,6 +482,9 @@ export async function runMoondogTui({
     const evidenceItems = subject.evidence?.length ? subject.evidence
       : subject.evidenceId ? [{ id: subject.evidenceId, source: "Profile evidence" }] : [];
     const selected = await choose([
+      ...(subject.target?.entityType === "track" && application.musicSimilarityReady?.() ? [{
+        value: "discover", label: "Discover around this", description: "Start an editable request from this track",
+      }] : []),
       ...(evidenceItems.length ? [{ value: "evidence", label: "Why this reading", description: "See the source, basis, and limits" }] : []),
       ...(typeof runProfileAction === "function" ? [
         { value: "like", label: "Like", description: "An explicit preference for this " + subject.kind },
@@ -490,6 +494,27 @@ export async function runMoondogTui({
       { value: "back", label: "Back to profile", description: "Keep exploring your listening" },
     ], undefined, subject.label);
     if (!selected || selected.value === "back" || cleanedUp || !profileView) return;
+    if (selected.value === "discover") {
+      const draft = editor.getText();
+      if (draft.trimStart().startsWith("/")) {
+        setFooter("Command draft kept. Finish it before starting discovery.", yellow);
+        return;
+      }
+      const target = subject.target;
+      const context = `Track: ${JSON.stringify(sanitizeTerminalText(target.label))}\nArtist: ${JSON.stringify(sanitizeTerminalText(target.artistCredit))}`;
+      const text = profileDiscoveryDraft && draft.includes(profileDiscoveryDraft.context)
+        ? draft.replace(profileDiscoveryDraft.context, () => context)
+        : `${draft || "Find 3 songs to explore from this track, and explain each recommendation."}\n\n${context}`;
+      profileDiscoveryDraft = { context, target: { ...target } };
+      editor.setText(text);
+      profileReturnHome = false;
+      closeProfile();
+      enterConversation();
+      setFooter(runtimeStatus.state === "configured"
+        ? "Discovery draft ready · edit, then Enter."
+        : "Draft ready · /model connects a model before sending.", runtimeStatus.state === "configured" ? green : yellow);
+      return;
+    }
     if (selected.value === "evidence") {
       let evidence = evidenceItems[0];
       if (evidenceItems.length > 1) {
@@ -621,7 +646,7 @@ export async function runMoondogTui({
             description: `${provider.name} - ${provider.modelCount} models`,
           })),
           runtimeStatus.provider,
-          "Choose a Pi provider. Enter selects; Esc returns.",
+          "Choose a Pi provider",
         );
         if (!selectedProvider) {
           setFooter("Model selection cancelled.", yellow);
@@ -641,7 +666,7 @@ export async function runMoondogTui({
             description: `${model.name}${model.reasoning ? " - reasoning" : ""}`,
           })),
           runtimeStatus.provider === providerId ? runtimeStatus.model : undefined,
-          `Choose a model for ${providerId}. Enter selects; Esc returns.`,
+          `Choose a model for ${providerId}`,
         );
         if (!selectedModel) {
           if (!args[0] && availableModels.length && !cleanedUp) {
@@ -694,7 +719,7 @@ export async function runMoondogTui({
           description: `${provider.id} - ${provider.id === "openai-codex" ? "ChatGPT sign-in" : "API key"}`,
         })),
         runtimeStatus.provider ?? "openai-codex",
-        "Connect a model provider. Enter selects; Esc returns.",
+        "Connect a model provider",
       );
       if (!selectedProvider) {
         setFooter("Authentication cancelled.", yellow);
@@ -1035,7 +1060,7 @@ export async function runMoondogTui({
           { value: "charcoal", label: "Charcoal", description: "A quiet room, warm light" },
           { value: "terminal", label: "Terminal", description: "Keep your terminal's colors" },
           { value: "auto", label: "Auto", description: "Use MOONDOG_THEME or the terminal hint" },
-        ], theme.mode, "Choose a Moondog theme. Enter selects; Esc cancels.");
+        ], theme.mode, "Choose a Moondog theme");
         mode = selected?.value;
       }
       if (!mode) { setFooter("Theme unchanged."); return; }
@@ -1151,6 +1176,7 @@ export async function runMoondogTui({
       if (args.length) throw new Error("Usage: /new.");
       application.startNewSession?.("user_new");
       activeRuntime.reset();
+      profileDiscoveryDraft = null;
       transcript.clear();
       homeVisible = true;
       homeFocused = false;
@@ -1237,6 +1263,15 @@ export async function runMoondogTui({
       return;
     }
 
+    const profileSeed = profileDiscoveryDraft && value.includes(profileDiscoveryDraft.context)
+      ? profileDiscoveryDraft.target : undefined;
+    if (profileSeed && runtimeStatus.state !== "configured") {
+      editor.setText(rawValue);
+      setFooter("Draft kept · /model connects a model before sending.", yellow);
+      return;
+    }
+    // Retain the binding for history recall, only while its exact metadata is visible.
+    if (!profileSeed) profileDiscoveryDraft = null;
     enterConversation();
     editor.addToHistory(value);
     addUserMessage(value);
@@ -1274,6 +1309,7 @@ export async function runMoondogTui({
 
     try {
       const result = await activeRuntime.prompt(value, {
+        ...(profileSeed ? { profileSeed } : {}),
         onTextDelta: (delta) => {
           if (cleanedUp) return;
           streamedText += sanitizeTerminalText(delta);

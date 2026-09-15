@@ -10,6 +10,32 @@ import { createSyntheticDomainServices } from "../../src/core/synthetic-domain-s
 
 const batchId = "11111111-2222-4333-8444-555555555555";
 
+test("a selected profile discovery seed belongs to one active prompt and never becomes a playlist candidate", () => {
+  const domainServices = createSyntheticDomainServices({ subjectScope: "profile-discovery-seed" });
+  const application = new MoondogApplication({ domainServices });
+  const selection = { entityType: "track", label: '返程 "现场" - Live', artistCredit: "Mara Vale" };
+  try {
+    assert.throws(() => application.setProfileDiscoverySeed(selection), /active prompt/u);
+    application.beginPrompt();
+    assert.throws(() => application.setProfileDiscoverySeed({ ...selection, artistCredit: "" }), /invalid/u);
+    application.setProfileDiscoverySeed(selection);
+    const seed = application.profileDiscoverySeedContext();
+    assert.equal(seed.title, selection.label);
+    assert.throws(() => domainServices.getTrustedTracks([seed.track_ref_id]));
+    seed.title = "Changed caller copy";
+    assert.equal(application.profileDiscoverySeedContext().title, selection.label);
+    application.resetPromptState();
+    assert.equal(application.profileDiscoverySeedContext(), null);
+    application.beginPrompt();
+    assert.equal(application.profileDiscoverySeedContext(), null);
+    application.setProfileDiscoverySeed(selection);
+    application.endPrompt();
+    assert.equal(application.profileDiscoverySeedContext(), null);
+  } finally {
+    application.close();
+  }
+});
+
 function syntheticManifest() {
   return {
     schema_version: "apple-music-library-import-manifest/1",

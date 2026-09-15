@@ -51,6 +51,7 @@ Saved ListenBrainz history and Apple Music library XML are also supported throug
 | **See why** | Read the observed listening, evidence limits, and your explicit choices separately. |
 | **Make a choice** | Mark a track or artist Like or Avoid and see the profile update. |
 | **Change your mind** | Retract a choice while preserving the original listening history. |
+| **Discover around a track** | With external discovery ready, prepare an editable three-song request from a selected track. |
 
 <p align="center">
   <img src="assets/demo/moondog-tui-profile.png" width="1000" alt="Moondog interactive listening profile showing fictional track Midnight Lines, observed listening evidence, and the limits of that evidence">

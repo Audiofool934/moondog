@@ -59,7 +59,7 @@ async function waitFor(condition, description, terminal) {
   assert.fail(`Timed out waiting for ${description}.\n${terminal?.text.slice(-2_000) ?? ""}`);
 }
 
-async function createTasteFixture(context, { imported = true, configured = false } = {}) {
+async function createTasteFixture(context, { imported = true, configured = false, discoveryReady = false } = {}) {
   const root = await mkdtemp(path.join(tmpdir(), "moondog-tui-taste-loop-"));
   const environment = {
     MOONDOG_STATE_HOME: path.join(root, "state"),
@@ -103,6 +103,8 @@ async function createTasteFixture(context, { imported = true, configured = false
   const profileActions = [];
   const spotifyActions = [];
   const prompts = [];
+  const promptOptions = [];
+  if (discoveryReady) context.mock.method(application, "musicSimilarityReady", () => true);
   const runtime = {
     publicStatus() {
       return configured
@@ -111,7 +113,13 @@ async function createTasteFixture(context, { imported = true, configured = false
     },
     abort() {},
     reset() {},
-    async prompt(value) { prompts.push(value); throw new Error("The local taste loop must not prompt a model."); },
+    async prompt(value, options) {
+      prompts.push(value);
+      promptOptions.push(options);
+      if (!discoveryReady) throw new Error("The local taste loop must not prompt a model.");
+      options.onTextDelta("Discovery request received.");
+      return { status: "completed" };
+    },
   };
 
   // Observe complete component frames, so UI assertions cannot pass on stale scrollback.
@@ -127,7 +135,7 @@ async function createTasteFixture(context, { imported = true, configured = false
   const waitBody = async (text) => waitFor(() => terminal.body.includes(text), `visible ${text}`, terminal);
   const waitOutput = async (text) => waitFor(() => terminal.text.includes(text), text, terminal);
   const fixture = {
-    application, terminal, profileActions, spotifyActions, prompts,
+    application, runtime, terminal, profileActions, spotifyActions, prompts, promptOptions,
     waitBody, waitOutput,
     async summary() { return application.getProfileSummary({ maxItems: 10 }); },
     async persistedCorrections({ includeInactive = false } = {}) {
@@ -239,6 +247,116 @@ test("native taste track Avoid persists, remains selectable after refresh, and r
   const restored = await fixture.summary();
   assert.deepEqual(restored.listening_behavior.time_capsule_tracks, before.listening_behavior.time_capsule_tracks);
   assert.deepEqual(fixture.prompts, []);
+});
+
+test("profile discovery keeps an editable draft, survives palette navigation, and sends the exact selected track once", async (context) => {
+  const fixture = await createTasteFixture(context, { configured: true, discoveryReady: true });
+  const { terminal } = fixture;
+  await fixture.launch();
+  const draft = 'Keep "this" request: a quiet evening.';
+  terminal.send(draft);
+  await fixture.waitBody(draft);
+  await fixture.openFromDraft();
+  terminal.send("Midnight Lines");
+  await fixture.waitBody("Midnight Lines");
+  await fixture.chooseAction("Discover around this", "Discovery draft ready");
+  await fixture.waitBody('Artist: "Mara Vale"');
+  assert.match(terminal.body, /Keep "this" request: a quiet evening\./u);
+  assert.match(terminal.body, /Track: "Midnight Lines"/u);
+  assert.ok(!terminal.body.includes("Your listening profile"));
+  assert.deepEqual(fixture.prompts, []);
+  assert.deepEqual(await fixture.persistedCorrections(), []);
+
+  await fixture.resize(44, 14);
+  await fixture.resize(100, 34);
+  await fixture.openFromDraft();
+  terminal.send("Midnight Lines");
+  await fixture.waitBody("Midnight Lines");
+  await fixture.chooseAction("Discover around this", "Discovery draft ready");
+  assert.equal(terminal.body.split('Track: "Midnight Lines"').length - 1, 1);
+  terminal.output = "";
+  terminal.send("\x10");
+  await fixture.waitOutput("Commands");
+  terminal.send("\x1b");
+  await fixture.waitBody('Artist: "Mara Vale"');
+  terminal.send("\x1b[A");
+  terminal.send("\x1b[A");
+  terminal.send("\x1b[A");
+  terminal.send("\x05");
+  terminal.send(" Prefer acoustic songs.");
+  await fixture.waitBody("Prefer acoustic songs.");
+  terminal.send("\r");
+  await fixture.waitBody("Discovery request received.");
+  assert.deepEqual(fixture.prompts, [`${draft} Prefer acoustic songs.\n\nTrack: "Midnight Lines"\nArtist: "Mara Vale"`]);
+  assert.deepEqual(fixture.promptOptions[0].profileSeed, {
+    entityType: "track", label: "Midnight Lines", artistCredit: "Mara Vale",
+  });
+  terminal.send("Make the next three brighter.");
+  terminal.send("\r");
+  await waitFor(() => fixture.prompts.length === 2, "follow-up prompt", terminal);
+  assert.equal(fixture.promptOptions[1].profileSeed, undefined);
+});
+
+test("editing a discovery track removes the original host handoff", async (context) => {
+  const fixture = await createTasteFixture(context, { configured: true, discoveryReady: true });
+  const { terminal } = fixture;
+  await fixture.launch();
+  await fixture.submit("/taste", "Your listening profile");
+  terminal.send("Midnight Lines");
+  await fixture.waitBody("Midnight Lines");
+  await fixture.chooseAction("Discover around this", "Discovery draft ready");
+  await fixture.waitBody("Find 3 songs");
+  terminal.send("\x05");
+  terminal.send("\x15");
+  terminal.send('Artist: "Aster Field"');
+  terminal.send("\r");
+  await fixture.waitBody("Discovery request received.");
+  assert.match(fixture.prompts[0], /Artist: "Aster Field"/u);
+  assert.equal(fixture.promptOptions[0].profileSeed, undefined);
+});
+
+test("offline discovery keeps its request until a model is connected", async (context) => {
+  const fixture = await createTasteFixture(context, { discoveryReady: true });
+  const { terminal } = fixture;
+  await fixture.launch();
+  await fixture.submit("/taste", "Your listening profile");
+  terminal.send("Midnight Lines");
+  await fixture.waitBody("Midnight Lines");
+  await fixture.chooseAction("Discover around this", "Draft ready");
+  await fixture.waitBody('Track: "Midnight Lines"');
+  terminal.send("\r");
+  await fixture.waitBody("Draft kept");
+  assert.match(terminal.body, /Find 3 songs/u);
+  assert.match(terminal.body, /Artist: "Mara Vale"/u);
+  assert.deepEqual(fixture.prompts, []);
+});
+
+test("recalling a discovery request after connection failure retains the visible selected track", async (context) => {
+  const fixture = await createTasteFixture(context, { configured: true, discoveryReady: true });
+  const { terminal } = fixture;
+  const prompt = fixture.runtime.prompt.bind(fixture.runtime);
+  let failed = false;
+  context.mock.method(fixture.runtime, "prompt", async (value, options) => {
+    if (!failed) {
+      failed = true;
+      throw Object.assign(new Error("Connection interrupted."), { code: "model_connection_failed", toolsExecuted: false });
+    }
+    return prompt(value, options);
+  });
+  await fixture.launch();
+  await fixture.submit("/taste", "Your listening profile");
+  terminal.send("Midnight Lines");
+  await fixture.waitBody("Midnight Lines");
+  await fixture.chooseAction("Discover around this", "Discovery draft ready");
+  terminal.send("\r");
+  await fixture.waitBody("Connection interrupted.");
+  terminal.send("\x1b[A");
+  await fixture.waitBody('Track: "Midnight Lines"');
+  terminal.send("\r");
+  await fixture.waitBody("Discovery request received.");
+  assert.deepEqual(fixture.promptOptions[0].profileSeed, {
+    entityType: "track", label: "Midnight Lines", artistCredit: "Mara Vale",
+  });
 });
 
 test("artist Like uses artist semantics and restores the exact draft after profile navigation and resize", async (context) => {

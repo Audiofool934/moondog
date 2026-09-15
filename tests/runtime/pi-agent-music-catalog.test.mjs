@@ -663,7 +663,10 @@ test("Pi agent plans from bounded external catalog candidates without a library 
   application.close();
 });
 
-test("Pi agent branches from a trusted library seed through open artist similarity", async () => {
+for (const seedOrigin of ["library", "profile"]) {
+test(`Pi agent branches from a trusted ${seedOrigin} seed through open artist similarity`, async () => {
+  const profileSeed = { entityType: "track", label: 'Uncatalogued "返程" - Live', artistCredit: "Mara Vale" };
+  let profileSeedRef;
   const domainServices = createSyntheticDomainServices({
     subjectScope: "open-similarity-test",
   });
@@ -741,7 +744,22 @@ test("Pi agent branches from a trusted library seed through open artist similari
   const faux = fauxProvider();
   const models = createModels();
   models.setProvider(faux.provider);
-  faux.setResponses([
+  const seedResponses = seedOrigin === "profile" ? [
+    (context) => {
+      const seed = trustedProductContext(context).selected_profile_track;
+      assert.equal(seed.title, profileSeed.label);
+      assert.equal(seed.artist_credit, profileSeed.artistCredit);
+      assert.equal(seed.source, "user_selected_profile_track");
+      assert.equal(seed.expires_on, "prompt_end");
+      assert.throws(() => domainServices.getTrustedTracks([seed.track_ref_id]));
+      profileSeedRef = seed.track_ref_id;
+      return fauxAssistantMessage([
+        fauxToolCall("moondog_music_artist_similarity", {
+          seed_track_ref_id: seed.track_ref_id, mode: "medium", limit: 2,
+        }),
+      ], { stopReason: "toolUse" });
+    },
+  ] : [
     fauxAssistantMessage(
       [
         fauxToolCall("moondog_library_search", {
@@ -765,6 +783,9 @@ test("Pi agent branches from a trusted library seed through open artist similari
         { stopReason: "toolUse" },
       );
     },
+  ];
+  faux.setResponses([
+    ...seedResponses,
     (context) => {
       const [similarity] = toolResults(
         context,
@@ -774,6 +795,10 @@ test("Pi agent branches from a trusted library seed through open artist similari
       assert.equal(similarity.result_count, 2);
       assert.equal(similarity.source.provider, "listenbrainz");
       assert.equal(similarity.source.identity_provider, "wikidata");
+      if (seedOrigin === "profile") {
+        assert.equal(similarity.seed.title, profileSeed.label);
+        assert.equal(similarity.seed.release, undefined);
+      }
       assert.equal(
         similarity.tracks[0].discovery_basis.kind,
         "listenbrainz_collaborative_artist_similarity",
@@ -812,20 +837,31 @@ test("Pi agent branches from a trusted library seed through open artist similari
   const result = await runtime.prompt(
     "从 Midnight Lines 出发，给我 2 首协同相邻候选。",
     {
+      ...(seedOrigin === "profile" ? { profileSeed } : {}),
       onToolStart: (tool) => started.push(tool.capabilityId),
     },
   );
 
   assert.deepEqual(started, [
-    "library.search",
+    ...(seedOrigin === "library" ? ["library.search"] : []),
     "music.discovery.artist_similarity",
     "playlist.plan",
   ]);
   assert.equal(result.playlist_plan.candidate_scope, "external_catalog");
   assert.equal(result.playlist_plan.track_count, 2);
   assert.match(result.text, /不代表你从未听过/u);
+  assert.equal(application.profileDiscoverySeedContext(), null);
+  if (profileSeedRef) {
+    await assert.rejects(application.discoverSimilarMusic({ seedTrackRefId: profileSeedRef }));
+    faux.setResponses([(context) => {
+      assert.equal(trustedProductContext(context).selected_profile_track, null);
+      return fauxAssistantMessage([fauxText("The selected profile seed has expired.")]);
+    }]);
+    await runtime.prompt("What is the next step?");
+  }
   application.close();
 });
+}
 
 test("Pi agent never renders external discovery candidates without local planning", async () => {
   const domainServices = createSyntheticDomainServices({

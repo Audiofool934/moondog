@@ -132,6 +132,16 @@ The explicit `/profile correct` and `/profile retract` commands also return to t
 Quote titles, artists, notes, and paths that contain spaces.
 These are command arguments, not shell expressions.
 
+When external discovery is ready, a track's Enter menu also offers **Discover around this**.
+It returns to the conversation with an editable request for three songs and their recommendation reasons.
+Your existing draft stays intact, with the selected title and artist added; choosing another track replaces that selection.
+Press Enter to send, or keep editing first.
+Without a connected model, the draft stays in the editor while you use `/model` to connect one.
+The selected profile track can come from Spotify history even when it is absent from your Apple library.
+Changing or removing its displayed title or artist removes the automatic handoff of the original selection.
+External discovery currently requires an imported Apple Music library to validate candidates; a history-only profile retains its local evidence and correction actions.
+Recommendations use listening-derived artist adjacency, with model-written reasons, rather than audio similarity or proof that a song is new to you.
+
 To add a saved Spotify archive from inside the TUI, use `/spotify import-history "/path/to/spotify-history.zip"`.
 Every successful import keeps its receipt and full cumulative report in the conversation, then opens the interactive listening profile in the same TUI session.
 This also happens for a repeated archive, without adding duplicate listening events.

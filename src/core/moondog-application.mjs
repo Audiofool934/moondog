@@ -143,6 +143,7 @@ export class MoondogApplication {
     this.pendingSpotifyPlaylistEdit = null;
     this.pendingPlaylistRevisionCandidateSet = null;
     this.promptDiscoverySources = [];
+    this.promptProfileSeed = null;
     this.pendingPlaylistPromptTransaction = null;
   }
 
@@ -1432,7 +1433,9 @@ export class MoondogApplication {
 
   async discoverSimilarMusic({ seedTrackRefId, mode, limit } = {}) {
     const { similarity, domainServices } = this.requireMusicSimilarity();
-    const [seedTrack] = domainServices.getTrustedTracks([seedTrackRefId]);
+    const seedTrack = this.promptProfileSeed?.track_ref_id === seedTrackRefId
+      ? this.promptProfileSeed
+      : domainServices.getTrustedTracks([seedTrackRefId])[0];
     const result = await similarity.discoverSimilarTracks({
       artistName: seedTrack.artist_credit,
       mode,
@@ -1479,6 +1482,34 @@ export class MoondogApplication {
 
   async getProfileSummary(input) {
     return this.requireProfileServices().getProfileSummary(input);
+  }
+
+  // Host-only handoff from a track selected in the local profile, never a model tool.
+  setProfileDiscoverySeed(selection) {
+    if (!this.pendingPlaylistPromptTransaction) {
+      throw new Error("A selected profile track requires an active prompt.");
+    }
+    const clean = (value) => typeof value === "string"
+      ? value.replace(/[\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069]/gu, " ")
+        .replace(/\s+/gu, " ").trim()
+      : "";
+    const title = clean(selection?.label);
+    const artist = clean(selection?.artistCredit);
+    if (selection?.entityType !== "track" || !title || !artist ||
+        Array.from(title).length > 512 || Array.from(artist).length > 512) {
+      throw new TypeError("The selected profile track is invalid.");
+    }
+    this.promptProfileSeed = {
+      track_ref_id: randomUUID(),
+      title,
+      artist_credit: artist,
+      source: "user_selected_profile_track",
+      expires_on: "prompt_end",
+    };
+  }
+
+  profileDiscoverySeedContext() {
+    return structuredClone(this.promptProfileSeed);
   }
 
   async getRediscoveryCandidates(input) {
@@ -1568,6 +1599,7 @@ export class MoondogApplication {
     };
     this.resetSpotifyResolutions();
     this.resetSpotifyPlaylistInspection();
+    this.promptProfileSeed = null;
     this.pendingPlaylistRevisionCandidateSet = null;
     this.promptDiscoverySources = structuredClone(
       this.pendingSpotifyPlaylist?.discoverySources ?? [],
@@ -1605,6 +1637,7 @@ export class MoondogApplication {
     } finally {
       this.pendingPlaylistRevisionCandidateSet = null;
       this.promptDiscoverySources = [];
+      this.promptProfileSeed = null;
     }
   }
 
@@ -1618,6 +1651,7 @@ export class MoondogApplication {
       this.rollbackPendingPlaylistPrompt();
       this.pendingPlaylistRevisionCandidateSet = null;
       this.promptDiscoverySources = [];
+      this.promptProfileSeed = null;
     }
   }
 
@@ -1629,6 +1663,7 @@ export class MoondogApplication {
       this.pendingPlaylistRevisionCandidateSet = null;
       this.resetSpotifyPlaylistInspection();
       this.promptDiscoverySources = [];
+      this.promptProfileSeed = null;
       this.pendingPlaylistPromptTransaction = null;
     } finally {
       this.memoryStore?.close?.();
