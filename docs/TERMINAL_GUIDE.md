@@ -527,10 +527,11 @@ Do not put credentials in this repository.
 
 ### Recover from a model connection failure
 
-Temporary connection failures before a model HTTP response arrives are retried up to twice, with progress shown in the TUI footer.
+For providers other than Gemini and Google Vertex, temporary connection failures before a model HTTP response arrives are retried up to twice, with progress shown in the TUI footer.
 Press Ctrl+C to cancel the retry.
 This recovery retries the model request without repeating completed tool calls or restarting the conversation turn.
 Service rejections and interruptions after a response begins are reported without automatic replay.
+Gemini and Google Vertex use Pi's native connection handling and do not display Moondog's two-attempt retry indicator.
 
 If the connection still fails, Moondog names the selected provider and shows a connection code when one is available.
 Press ↑ to recall your message and Enter to try again.

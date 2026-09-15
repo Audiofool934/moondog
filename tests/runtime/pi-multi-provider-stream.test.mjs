@@ -21,8 +21,11 @@ const finalText = "Try Bird's Lament by Moondog.";
 const providers = [
   ["anthropic", "claude-haiku-4-5", "anthropic-messages", "https://api.anthropic.com/v1/messages"],
   ["deepseek", "deepseek-v4-flash", "openai-completions", "https://api.deepseek.com/chat/completions"],
+  ["google", "gemini-3.5-flash-lite", "google-generative-ai", "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:streamGenerateContent?alt=sse"],
   ["moonshotai", "kimi-k2.5", "openai-completions", "https://api.moonshot.ai/v1/chat/completions"],
+  ["moonshotai-cn", "kimi-k2.5", "openai-completions", "https://api.moonshot.cn/v1/chat/completions"],
   ["openai", "gpt-5.4-mini", "openai-responses", "https://api.openai.com/v1/responses"],
+  ["openrouter", "openai/gpt-5.4-mini", "openai-completions", "https://openrouter.ai/api/v1/chat/completions"],
   ["xai", "grok-4.6", "openai-responses", "https://api.x.ai/v1/responses"],
   ["zai", "glm-4.7", "openai-completions", "https://api.z.ai/api/paas/v4/chat/completions"],
 ];
@@ -35,10 +38,21 @@ const conditionalToolFields = {
 const schemaProviders = [
   ...providers,
   ["openai-codex", "gpt-5.6-luna", "openai-codex-responses", "https://chatgpt.com/backend-api/codex/responses"],
+  ["google-vertex", "gemini-3.5-flash-lite", "google-vertex", "https://aiplatform.googleapis.com/v1/publishers/google/models/gemini-3.5-flash-lite:streamGenerateContent?alt=sse"],
 ];
 
 function isResponsesApi(api) {
   return api === "openai-responses" || api === "openai-codex-responses";
+}
+
+function isGoogleApi(api) {
+  return api === "google-generative-ai" || api === "google-vertex";
+}
+
+function assertAuthenticationHeader(request, api, key) {
+  const name = api === "anthropic-messages" ? "x-api-key"
+    : isGoogleApi(api) ? "x-goog-api-key" : "authorization";
+  assert.equal(request.headers.get(name), name === "authorization" ? `Bearer ${key}` : key);
 }
 
 function productionToolApplication() {
@@ -60,11 +74,27 @@ function productionToolApplication() {
 }
 
 function outboundToolSchemas(body, api) {
+  if (isGoogleApi(api)) {
+    return body.tools.flatMap((tool) => tool.functionDeclarations)
+      .map((tool) => ({ name: tool.name, parameters: tool.parametersJsonSchema }));
+  }
   return body.tools.map((tool) => api === "anthropic-messages"
     ? { name: tool.name, parameters: tool.input_schema }
     : isResponsesApi(api)
       ? { name: tool.name, parameters: tool.parameters }
       : { name: tool.function.name, parameters: tool.function.parameters });
+}
+
+function googleEvents(followUp) {
+  return [{
+    candidates: [{
+      content: { role: "model", parts: followUp
+        ? [{ text: finalText }]
+        : [{ functionCall: { name: toolName, args: toolArguments } }] },
+      finishReason: "STOP", index: 0,
+    }],
+    usageMetadata: { promptTokenCount: 12, candidatesTokenCount: 10, totalTokenCount: 22 },
+  }];
 }
 
 function completionEvents(model, followUp) {
@@ -128,9 +158,10 @@ function anthropicEvents(model, followUp) {
 function streamResponse(api, model, followUp) {
   const events = api === "anthropic-messages"
     ? anthropicEvents(model, followUp)
-    : isResponsesApi(api)
-      ? responseEvents(followUp)
-      : completionEvents(model, followUp);
+    : isGoogleApi(api) ? googleEvents(followUp)
+      : isResponsesApi(api)
+        ? responseEvents(followUp)
+        : completionEvents(model, followUp);
   const body = events.map((event) =>
     `${event.type ? `event: ${event.type}\n` : ""}data: ${JSON.stringify(event)}\n\n`,
   ).join("");
@@ -138,6 +169,18 @@ function streamResponse(api, model, followUp) {
 }
 
 function assertRequestBody(body, api, model, followUp) {
+  if (isGoogleApi(api)) {
+    assert.equal(outboundToolSchemas(body, api)[0].name, toolName);
+    assert.equal(outboundToolSchemas(body, api)[0].parameters.properties.artist.type, "string");
+    if (!followUp) return;
+    const parts = body.contents.flatMap((content) => content.parts);
+    const call = parts.find((part) => part.functionCall)?.functionCall;
+    const result = parts.find((part) => part.functionResponse)?.functionResponse;
+    assert.deepEqual(call.args, toolArguments);
+    assert.equal(result.name, call.name);
+    assert.equal(result.response.output, toolOutput);
+    return;
+  }
   assert.equal(body.model, model);
   assert.equal(body.stream, true);
   if (api === "anthropic-messages") {
@@ -188,6 +231,26 @@ for (const [provider, modelId, api, endpoint] of schemaProviders) {
     });
     const requests = [];
     const toolStarts = [];
+    const fetch = async (input, init) => {
+      const request = new Request(input, init);
+      assert.equal(request.url, endpoint);
+      assertAuthenticationHeader(request, api, key);
+      if (codex) assert.equal(request.headers.get("content-encoding"), "zstd");
+      const body = codex
+        ? JSON.parse(zstdDecompressSync(Buffer.from(await request.arrayBuffer())).toString())
+        : await request.json();
+      requests.push(body);
+      const invalid = outboundToolSchemas(body, api).find((tool) => tool.parameters.type !== "object");
+      if (invalid) {
+        return new Response(JSON.stringify({ error: {
+          message: `Invalid schema for function '${invalid.name}': schema must be a JSON Schema of 'type: "object"', got 'type: "${invalid.parameters.type ?? "None"}"'.`,
+          type: "invalid_request_error", code: "invalid_function_parameters",
+        } }), { status: 400, headers: { "content-type": "application/json" } });
+      }
+      return streamResponse(api, modelId, true);
+    };
+    // Google uses the SDK's global fetch; the scoped mock also forbids live traffic.
+    if (isGoogleApi(api)) context.mock.method(globalThis, "fetch", fetch);
     const runtime = new PiAgentRuntime({
       application: productionToolApplication(), provider, modelId,
       models: codex ? {
@@ -197,25 +260,7 @@ for (const [provider, modelId, api, endpoint] of schemaProviders) {
         },
       } : models,
       model: models.getModel(provider, modelId),
-      modelFetch: async (input, init) => {
-        const request = new Request(input, init);
-        assert.equal(request.url, endpoint);
-        assert.equal(request.headers.get(api === "anthropic-messages" ? "x-api-key" : "authorization"),
-          api === "anthropic-messages" ? key : `Bearer ${key}`);
-        if (codex) assert.equal(request.headers.get("content-encoding"), "zstd");
-        const body = codex
-          ? JSON.parse(zstdDecompressSync(Buffer.from(await request.arrayBuffer())).toString())
-          : await request.json();
-        requests.push(body);
-        const invalid = outboundToolSchemas(body, api).find((tool) => tool.parameters.type !== "object");
-        if (invalid) {
-          return new Response(JSON.stringify({ error: {
-            message: `Invalid schema for function '${invalid.name}': schema must be a JSON Schema of 'type: "object"', got 'type: "${invalid.parameters.type ?? "None"}"'.`,
-            type: "invalid_request_error", code: "invalid_function_parameters",
-          } }), { status: 400, headers: { "content-type": "application/json" } });
-        }
-        return streamResponse(api, modelId, true);
-      },
+      modelFetch: fetch,
     });
     context.after(() => runtime.abort());
     const result = await runtime.prompt("What music can you help me explore?", {
@@ -270,8 +315,7 @@ for (const [provider, modelId, api, endpoint] of providers) {
       const request = new Request(input, init);
       assert.equal(request.url, endpoint);
       assert.equal(request.method, "POST");
-      assert.equal(request.headers.get(api === "anthropic-messages" ? "x-api-key" : "authorization"),
-        api === "anthropic-messages" ? key : `Bearer ${key}`);
+      assertAuthenticationHeader(request, api, key);
       const body = await request.json();
       assert.ok(requests.length < 2, "Expected only a tool request and its follow-up");
       const followUp = requests.length === 1;
@@ -279,6 +323,7 @@ for (const [provider, modelId, api, endpoint] of providers) {
       requests.push(body);
       return streamResponse(api, modelId, followUp);
     };
+    if (isGoogleApi(api)) context.mock.method(globalThis, "fetch", fetch);
     const agent = new Agent({
       initialState: {
         model,
@@ -295,7 +340,7 @@ for (const [provider, modelId, api, endpoint] of providers) {
         }],
       },
       streamFn: (selectedModel, streamContext, options) => models.streamSimple(selectedModel, streamContext, {
-        ...options, fetch, maxRetries: 0,
+        ...options, fetch: isGoogleApi(api) ? undefined : fetch, maxRetries: 0,
       }),
     });
     const unsubscribe = agent.subscribe((event) => events.push(event));

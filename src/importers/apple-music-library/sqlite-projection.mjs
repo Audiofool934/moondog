@@ -1029,6 +1029,33 @@ class AppleMusicSqliteProjection {
     };
   }
 
+  resolveTrackLabel({ label, artistCredit } = {}) {
+    this.#assertOpen();
+    if (typeof label !== "string" || typeof artistCredit !== "string") return null;
+    const canonical = this.#database.prepare(`
+      SELECT title, artist_credit
+      FROM library_search
+      WHERE subject_id = ? AND title_norm = ? AND artist_credit_norm = ?
+      LIMIT 1
+    `).get(this.#subjectId, normalizedText(label), normalizedText(artistCredit));
+    if (canonical) return { ...canonical, match: "canonical_title" };
+    const aliases = this.#database.prepare(`
+      SELECT MIN(s.title) AS title, MIN(s.artist_credit) AS artist_credit
+      FROM profile_summary_items i
+      JOIN profile_evidence e
+        ON e.subject_id = i.subject_id AND e.evidence_id = i.evidence_id
+      JOIN library_search s
+        ON s.subject_id = e.subject_id AND s.track_ref_id = e.track_ref_id
+      WHERE i.subject_id = ? AND s.artist_credit_norm = ?
+        AND json_extract(i.item_json, '$.label') = ?
+      GROUP BY s.title_norm, s.artist_credit_norm
+      LIMIT 2
+    `).all(this.#subjectId, normalizedText(artistCredit), label);
+    return aliases.length === 1
+      ? { ...aliases[0], match: "legacy_display_label" }
+      : null;
+  }
+
   getProfileSummary({ maxItems } = {}) {
     this.#assertOpen();
     const bounded = boundedLimit(
@@ -1045,6 +1072,7 @@ class AppleMusicSqliteProjection {
             i.dimension,
             i.strength,
             i.evidence_id,
+            s.title,
             s.artist_credit,
             s.genre_label,
             s.composer,
@@ -1079,6 +1107,7 @@ class AppleMusicSqliteProjection {
       .all(this.#subjectId, bounded)
       .map((row) => {
         const item = JSON.parse(row.item_json);
+        item.label = row.title;
         item.artist_credit = row.artist_credit || null;
         item.labels = {};
         if (row.genre_label) item.labels.provider_genre = row.genre_label;

@@ -952,6 +952,36 @@ test("TUI can start OAuth and resume with reloaded authentication", async () => 
   assert.equal(terminal.stopCount, 2);
 });
 
+for (const command of ["/auth deepseek", "/spotify login"]) {
+  test(`${command} redraws immediately after an asynchronous login cancellation`, async (context) => {
+    const terminal = new FakeTerminal();
+    const signalTarget = new EventEmitter();
+    let cancelLogin;
+    const login = new Promise((resolve, reject) => { cancelLogin = reject; });
+    const running = runMoondogTui({
+      application: fakeApplication(), runtime: fakeRuntime(), terminal, signalTarget,
+      runAuth: () => login,
+      runSpotify: () => login,
+      environment: { TERM: "xterm-256color", MOONDOG_MOTION: "off" },
+    });
+    context.after(async () => { signalTarget.emit("SIGTERM"); await running; });
+    await waitFor(() => terminal.output.includes("New conversation"));
+    terminal.send(command);
+    terminal.send("\r");
+    await waitFor(() => terminal.stopCount === 1);
+    // A real login waits outside the TUI while its queued render is cancelled.
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    terminal.output = "";
+    cancelLogin(new Error("Fixture login was cancelled."));
+    await waitFor(() => terminal.output.includes("Fixture login was cancelled."));
+    assert.equal(terminal.startCount, 2);
+    assert.match(terminal.output, /Command failed\./u);
+    terminal.send("/help");
+    terminal.send("\r");
+    await waitFor(() => terminal.output.includes("Find a command here"));
+  });
+}
+
 test("TUI connects the selected API provider and keeps that model through authentication", async (context) => {
   const terminal = new FakeTerminal();
   const signalTarget = new EventEmitter();

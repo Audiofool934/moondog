@@ -15,6 +15,8 @@ import { fileURLToPath } from "node:url";
 
 import { canonicalizeJson } from "../../scripts/contract-semantics.mjs";
 import { openAppleProjectionDomainServices } from "../../src/core/apple-projection-domain-services.mjs";
+import { openListeningHistoryStore } from "../../src/profile/listening-history-store.mjs";
+import { buildTasteProfileModel } from "../../src/surfaces/cli/taste-profile-model.mjs";
 import {
   AppleMusicImportError,
   normalizeAppleMusicLibrary,
@@ -368,6 +370,96 @@ test("SQLite projection rebuild, search, profile, and digest stay bounded", asyn
   });
   assert.equal(projection.logicalDigest(), first.logical_digest);
   projection.close();
+});
+
+test("imported Apple track corrections use canonical titles and remain retractable", async (t) => {
+  const parsed = parsedFixture();
+  parsed.root.Tracks["1"].Name = "Shared - Title";
+  parsed.root.Tracks["1"].Artist = "Artist - One";
+  parsed.root.Tracks["2"].Name = "Shared - Title";
+  parsed.root.Tracks["2"].Artist = "Artist Two";
+  parsed.root.Tracks["2"].Loved = true;
+  const records = await normalizeAppleMusicLibrary(parsed, { subjectId });
+  const { root, importsRoot } = await privateImports(t, records);
+  const databasePath = path.join(root, "projection.sqlite");
+  await rebuildAppleMusicSqliteProjection({ importsRoot, databasePath, boundaryRoot: root });
+  const store = await openListeningHistoryStore({ databasePath: path.join(root, "history.sqlite") });
+  store.localSubjectId({ preferredSubjectId: subjectId, create: true });
+  const services = await openAppleProjectionDomainServices({
+    importsRoot, databasePath, subjectId, listeningHistoryStore: store,
+  });
+  try {
+    const before = await services.getProfileSummary({ maxItems: 10 });
+    const profileModel = buildTasteProfileModel(before);
+    const first = profileModel.subjects.find((item) =>
+      item.kind === "track" && item.target.artistCredit === "Artist - One",
+    );
+    assert.deepEqual(first.target, {
+      entityType: "track", label: "Shared - Title", artistCredit: "Artist - One",
+    });
+    assert.equal(profileModel.subjects.filter((item) => item.kind === "track").length, 2);
+    const correction = store.recordListenerCorrection({ subjectId, ...first.target, stance: "avoid" });
+    const corrected = await services.getProfileSummary({ maxItems: 10 });
+    assert.deepEqual(corrected.strong_preferences.map((item) => item.artist_credit), ["Artist Two"]);
+    assert.equal(corrected.familiarity[0].label, "Shared - Title");
+    assert.equal(corrected.familiarity[0].play_count, 99);
+    const correctedModel = buildTasteProfileModel(corrected);
+    const avoided = correctedModel.subjects.find((item) => item.target.artistCredit === "Artist - One");
+    assert.equal(avoided.stance, "avoid");
+    assert.equal(avoided.correctionId, correction.correction_id);
+    assert.equal(correctedModel.subjects.filter((item) => item.kind === "track").length, 2);
+    assert.ok((await services.explainProfileEvidence({ evidenceId: first.evidenceId })).claim);
+
+    store.retractListenerCorrection({ subjectId, correctionId: correction.correction_id });
+    const restored = await services.getProfileSummary({ maxItems: 10 });
+    assert.deepEqual(restored.strong_preferences, before.strong_preferences);
+    assert.deepEqual(restored.familiarity, before.familiarity);
+    assert.equal(restored.coverage.effective_listening_events, 0);
+  } finally {
+    services.close();
+  }
+});
+
+test("persisted Apple display-label corrections resolve without rewriting and exact titles win", async (t) => {
+  for (const canonicalCollision of [false, true]) {
+    const parsed = parsedFixture();
+    if (canonicalCollision) {
+      parsed.root.Tracks["2"].Name = "Synthetic Alpha - Example Artist";
+      parsed.root.Tracks["2"].Loved = true;
+    }
+    const records = await normalizeAppleMusicLibrary(parsed, { subjectId });
+    const { root, importsRoot } = await privateImports(t, records);
+    const databasePath = path.join(root, "projection.sqlite");
+    const historyPath = path.join(root, "history.sqlite");
+    await rebuildAppleMusicSqliteProjection({ importsRoot, databasePath, boundaryRoot: root });
+    let store = await openListeningHistoryStore({ databasePath: historyPath });
+    store.localSubjectId({ preferredSubjectId: subjectId, create: true });
+    const oldTarget = {
+      entityType: "track", label: "Synthetic Alpha - Example Artist", artistCredit: "Example Artist",
+    };
+    const correction = store.recordListenerCorrection({ subjectId, ...oldTarget, stance: "avoid" });
+    store.close();
+    store = await openListeningHistoryStore({ databasePath: historyPath });
+    const services = await openAppleProjectionDomainServices({
+      importsRoot, databasePath, subjectId, listeningHistoryStore: store,
+    });
+    try {
+      const profile = await services.getProfileSummary({ maxItems: 10 });
+      assert.deepEqual(profile.strong_preferences.map((item) => item.label), canonicalCollision ? ["Synthetic Alpha"] : []);
+      assert.equal(profile.listener_assertions.avoids[0].label, canonicalCollision ? oldTarget.label : "Synthetic Alpha");
+      assert.equal(profile.listener_assertions.avoids[0].correction_id, correction.correction_id);
+      const model = buildTasteProfileModel(profile);
+      const avoided = model.subjects.find((item) => item.correctionId === correction.correction_id);
+      assert.equal(avoided.stance, "avoid");
+      assert.equal(avoided.label, canonicalCollision ? oldTarget.label : "Synthetic Alpha");
+      assert.equal(store.listListenerCorrections({ subjectId })[0].label, oldTarget.label);
+      store.retractListenerCorrection({ subjectId, correctionId: correction.correction_id });
+      const restored = await services.getProfileSummary({ maxItems: 10 });
+      assert.equal(restored.strong_preferences.length, canonicalCollision ? 2 : 1);
+    } finally {
+      services.close();
+    }
+  }
 });
 
 test("SQLite projection refuses inferred rebuilds across subjects", async (t) => {

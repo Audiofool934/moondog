@@ -5896,6 +5896,9 @@ export class PiAgentRuntime {
       },
       streamFn: (selectedModel, context, options) => {
         const promptState = this.activePromptState;
+        // Pi's Google SDK adapters reject custom fetch implementations.
+        const nativeGoogleTransport = selectedModel.api === "google-generative-ai" ||
+          selectedModel.api === "google-vertex";
         return models.streamSimple(selectedModel, {
           ...context,
           tools: context.tools?.map(toolForModel),
@@ -5903,7 +5906,7 @@ export class PiAgentRuntime {
           ...options,
           // Retry this HTTP request only; never restart the agent's tool loop.
           maxRetries: 0,
-          fetch: createModelFetch({
+          fetch: nativeGoogleTransport ? undefined : createModelFetch({
             provider,
             fetchImpl: modelFetch ?? options?.fetch,
             wait: modelRetryDelay,

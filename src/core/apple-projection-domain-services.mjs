@@ -989,6 +989,36 @@ function listenerAssertionAvoids(
   });
 }
 
+function normalizeAppleCorrectionLabels(listening, projection) {
+  if (!listening || typeof projection.resolveTrackLabel !== "function") return listening;
+  const resolved = new Map();
+  function normalize(item) {
+    if (item?.entity_type !== "track" || !item.correction_id) return item;
+    if (!resolved.has(item.correction_id)) {
+      const match = projection.resolveTrackLabel({
+        label: item.label,
+        artistCredit: item.artist_credit,
+      });
+      resolved.set(item.correction_id, match?.match === "legacy_display_label" ? match.title : null);
+    }
+    const title = resolved.get(item.correction_id);
+    return title === null ? item : { ...item, label: title };
+  }
+  return {
+    ...listening,
+    listener_assertions: {
+      ...listening.listener_assertions,
+      active: (listening.listener_assertions?.active ?? []).map(normalize),
+      preferences: (listening.listener_assertions?.preferences ?? []).map(normalize),
+      avoids: (listening.listener_assertions?.avoids ?? []).map(normalize),
+    },
+    curated_preferences: {
+      ...listening.curated_preferences,
+      avoids: (listening.curated_preferences?.avoids ?? []).map(normalize),
+    },
+  };
+}
+
 function facetItems(preferences, field, maximum) {
   const facets = new Map();
   for (const item of preferences) {
@@ -1856,10 +1886,13 @@ export class AppleProjectionDomainServices {
       "invalid_profile_limit",
     );
     const raw = this.#projection.getProfileSummary({ maxItems: 50 });
-    const listening = this.#listeningHistoryStore?.profileSummary({
-      subjectId: this.#subjectId,
-      maxItems: bounded,
-    });
+    const listening = normalizeAppleCorrectionLabels(
+      this.#listeningHistoryStore?.profileSummary({
+        subjectId: this.#subjectId,
+        maxItems: bounded,
+      }),
+      this.#projection,
+    );
     const preferenceItems = (raw.preference ?? [])
       .filter(
         (item) =>

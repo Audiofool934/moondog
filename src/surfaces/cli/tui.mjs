@@ -646,7 +646,11 @@ export async function runMoondogTui({
     try {
       await runAuth(providerId);
     } finally {
-      if (!cleanedUp) tui.start();
+      if (!cleanedUp) {
+        tui.start();
+        // Pi may retain a queued render from before the authentication pause.
+        tui.requestRender(true);
+      }
     }
     if (cleanedUp) return;
 
@@ -696,7 +700,10 @@ export async function runMoondogTui({
     try {
       markdown = await runSpotify(args);
     } finally {
-      if (leavesTui && !cleanedUp) tui.start();
+      if (leavesTui && !cleanedUp) {
+        tui.start();
+        tui.requestRender(true);
+      }
     }
     if (cleanedUp) return;
 
