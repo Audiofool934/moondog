@@ -905,12 +905,14 @@ test("TUI renders trusted capability labels for tool lifecycle events", async ()
   terminal.send("plan from my library");
   terminal.send("\r");
   await promptCompleted;
+  await waitFor(() => stripVTControlCharacters(terminal.output).includes("Tools · 1 completed, 1 failed"));
 
   assert.equal(replacementCallbackSeen, true);
-  assert.match(terminal.output, /Using capability: Search your music library/);
-  assert.match(terminal.output, /Capability finished: Search your music library/);
-  assert.match(terminal.output, /Using capability: Explain profile evidence/);
-  assert.match(terminal.output, /Capability failed: Explain profile evidence/);
+  assert.match(terminal.output, /Search your music library\.\.\./);
+  assert.match(terminal.output, /Preparing your answer/);
+  assert.match(terminal.output, /Explain profile evidence\.\.\./);
+  assert.match(terminal.output, /Explain profile evidence failed/);
+  assert.match(stripVTControlCharacters(terminal.output), /Tools · 1 completed, 1 failed/);
   assert.doesNotMatch(
     terminal.output,
     /PRIVATE_MACHINE_TOOL_NAME|PRIVATE_SECOND_TOOL_NAME/,
@@ -1091,7 +1093,7 @@ test("TUI can select a Pi model and use the rebuilt runtime", async () => {
     model: "gpt-5.6-terra",
   });
   const selectedModelOutput = stripVTControlCharacters(terminal.output);
-  assert.match(selectedModelOutput, /conversation ready/u);
+  assert.match(selectedModelOutput, /openai-codex \/ gpt-5\.6-terra/u);
   assert.match(selectedModelOutput, /Using Pi model openai-codex\/gpt-5\.6-terra/u);
 
   terminal.send("hello selected model");
@@ -1408,7 +1410,7 @@ test("the actual home viewport stays filled through resize and multiline draft r
     assert.equal(frame.previousViewportTop, 0, "home must not push its header into scrollback");
     const lines = frame.previousLines.map(stripVTControlCharacters);
     assert.match(lines[0], /^ MOONDOG/u);
-    assert.match(lines[1], terminal.columns < 60 ? /model ready/u : /conversation ready/u);
+    assert.match(lines[1], /faux-1/u);
     assert.match(lines.at(-1), hasDraft ? /enter send|commands/u : /tab explore|\/resume history/u);
     assert.ok(lines.some((line) => line.includes(" YOU ")), "the input border must remain visible");
     const footerRows = terminal.rows >= 20 ? 2 : 1;

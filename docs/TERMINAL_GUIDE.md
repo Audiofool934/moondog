@@ -64,6 +64,19 @@ Press Ctrl+P anywhere while idle to search commands.
 Menus filter by name and description as you type, scroll to keep the selection visible, and preserve the conversation draft when cancelled.
 Escape from model selection returns to the provider list.
 
+Command arguments complete as you type, including `/theme`, `/art`, `/motion`, `/web`, `/spotify`, `/auth`, and provider/model choices in `/model`.
+Use Tab or Enter to accept a partial suggestion; a fully typed legal command executes on the first Enter.
+File paths retain Pi's Tab completion and quoting behavior.
+The header identifies the current provider and model when configured, giving the model priority on narrow terminals.
+
+During a model request, the footer tracks the active tool, concurrent tool count, and elapsed time.
+A short tool receipt remains below the answer in the current conversation, with completed, failed, or unconfirmed counts.
+Unconfirmed means a tool started without a completion event, including interrupted work; cancellation does not undo actions that already completed.
+These display receipts are not added to model context or restored with saved conversation history.
+You can keep editing your next thought while work runs.
+Ctrl+C cancels model and web requests; local commands that cannot be cancelled here show a waiting hint and finish their current step.
+Import and profile views show a finishing hint while their local step is running.
+
 ```text
 /home
 /resume

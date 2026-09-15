@@ -5,7 +5,9 @@ import {
   matchesKey,
   ProcessTerminal,
   Text,
+  truncateToWidth,
   TuiMainScreen,
+  visibleWidth,
 } from "@earendil-works/pi-tui";
 
 import {
@@ -24,6 +26,7 @@ import { LOGO_MOTION_INTERVAL_MS } from "./terminal-art.mjs";
 import { buildTasteProfileModel } from "./taste-profile-model.mjs";
 import { TasteProfileView } from "./taste-profile-view.mjs";
 import { HistoryImportView } from "./history-import-view.mjs";
+import { withCommandCompletions } from "./command-completions.mjs";
 import {
   BrandSurface,
   ListeningEditor,
@@ -113,6 +116,13 @@ function offlineReply(runtimeStatus) {
 在此之前，\`/status\`、\`/profile\`、\`/memory\`、\`/tools\` 和 \`/doctor\` 都可以正常使用。`;
 }
 
+function elapsedTime(startedAt) {
+  const seconds = Math.max(0, Math.floor((performance.now() - startedAt) / 1000));
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  return minutes < 60 ? `${minutes}m${seconds % 60}s` : `${Math.floor(minutes / 60)}h${minutes % 60}m`;
+}
+
 export async function runMoondogTui({
   application,
   runtime,
@@ -169,6 +179,9 @@ export async function runMoondogTui({
   let homeFocused = false;
   let homeSelected = 0;
   let busy = false;
+  let cancelWork = null;
+  let cancellationRequested = false;
+  let workStartedAt = 0;
   let indicator = null;
   let homeMotion = null;
   let motionEnabled = environment.MOONDOG_MOTION !== "off";
@@ -188,6 +201,8 @@ export async function runMoondogTui({
   const header = new ListeningHeader(getTheme, () => ({
     profileReady: application.profileServicesReady?.() ?? false,
     modelReady: runtimeStatus.state === "configured",
+    provider: runtimeStatus.provider,
+    model: runtimeStatus.model,
     spotifyReady: application.spotifyReady?.() ?? false,
   }));
   const renderHeader = () => { header.invalidate(); tui.requestRender(); };
@@ -249,6 +264,13 @@ export async function runMoondogTui({
         else if (footerText.startsWith("Evidence opened.")) statusText = "Evidence · PgUp/PgDn scroll · Enter";
         else if (footerText.startsWith("Import complete.")) statusText = "Import complete · Enter reviews";
       }
+      if (busy && !profileView && !importView && width >= 20) {
+        const elapsed = ` · ${elapsedTime(workStartedAt)}`;
+        statusText = truncateToWidth(statusText, width - 3 - visibleWidth(elapsed)) + elapsed;
+      }
+      if (terminal.rows < 20 && !busy && !profileView && !importView && editor.isShowingAutocomplete()) {
+        statusText = "↑↓ choose · Tab/Enter complete";
+      }
       const lines = [paintBrandLine(` ${theme.faint(marker)} ${footerColor(statusText)}`, width, theme)];
       if (terminal.rows >= 20) {
         const keys = importView
@@ -258,8 +280,12 @@ export async function runMoondogTui({
             ? "paste a path · tab completes · enter inspects · esc back"
             : "↑↓ choose · enter select · PgUp/PgDn read · esc back"
           : profileView
-          ? width >= 76 ? "type filter · ↑↓ select · enter actions · tab views · esc back" : "↑↓ select · enter actions · tab views · esc back"
-          : busy ? "draft stays here · ctrl+c cancel" : homeFocused
+          ? busy ? "Finishing the current profile step..."
+            : width >= 76 ? "type filter · ↑↓ select · enter actions · tab views · esc back" : "↑↓ select · enter actions · tab views · esc back"
+          : busy ? cancellationRequested ? "cancelling · draft stays here"
+            : cancelWork ? "draft stays here · ctrl+c cancel"
+            : "draft stays here · waiting for command"
+          : editor.isShowingAutocomplete() ? "↑↓ choose · tab/enter complete · esc dismiss" : homeFocused
           ? "↑ ↓ choose · enter open · esc type"
           : homeVisible && !editor.getText()
             ? width >= 60 ? "tab explore · ctrl+p commands       enter send · shift+enter newline" : "tab explore · ctrl+p commands"
@@ -270,22 +296,29 @@ export async function runMoondogTui({
     },
   });
   editor.setAutocompleteProvider(
-    new CombinedAutocompleteProvider(slashCommands, process.cwd(), null),
+    new CombinedAutocompleteProvider(withCommandCompletions(slashCommands, {
+      providers, models, authProviderIds: supportedAuthProviderIds,
+    }), process.cwd(), null),
   );
   tui.setFocus(editor);
 
-  const setBusy = (value) => {
+  const setBusy = (value, cancel = null) => {
     busy = value;
+    cancelWork = value ? cancel : null;
+    cancellationRequested = false;
+    if (value) workStartedAt = performance.now();
     clearInterval(indicator);
     indicator = null;
     phase = 0;
-    if (busy && !theme.plain && motionEnabled) {
-      indicator = setInterval(() => { phase += 1; tui.requestRender(); }, 220);
+    if (busy && !cleanedUp) {
+      const animate = !theme.plain && motionEnabled;
+      indicator = setInterval(() => { if (animate) phase += 1; tui.requestRender(); }, animate ? 220 : 1000);
       indicator.unref?.();
     }
-    tui.requestRender();
+    if (!cleanedUp) tui.requestRender();
   };
   const setFooter = (text, color = dim) => {
+    if (cleanedUp) return;
     footerText = sanitizeTerminalText(text);
     footerColor = color;
     tui.requestRender();
@@ -1178,8 +1211,10 @@ export async function runMoondogTui({
       try {
         if (!["home", "theme", "art", "motion", "model", "resume", "new", "taste", "profile", "import"].includes(command)) enterConversation();
         if (command !== "auth") editor.addToHistory(value);
-        setBusy(true);
         localCommandController = command === "web" ? new AbortController() : null;
+        const controller = localCommandController;
+        setBusy(true, controller ? () => controller.abort() : null);
+        setFooter(`Running /${command}...`, yellow);
         editor.disableSubmit = true;
         const argumentText = value.slice(1).trim().slice(rawCommand.length).trim();
         const parsedArgs = command === "import" ? argumentText ? [argumentText] : []
@@ -1188,6 +1223,7 @@ export async function runMoondogTui({
           : args;
         await runLocalCommand(command, parsedArgs);
       } catch (error) {
+        if (cleanedUp) return;
         enterConversation();
         const cancelled = localCommandController?.signal.aborted;
         addMoondogMessage(cancelled ? "Web research cancelled." : `Local command failed: ${error.message}`);
@@ -1196,7 +1232,7 @@ export async function runMoondogTui({
         localCommandController = null;
         setBusy(false);
         editor.disableSubmit = false;
-        tui.requestRender();
+        if (!cleanedUp) tui.requestRender();
       }
       return;
     }
@@ -1209,43 +1245,54 @@ export async function runMoondogTui({
       return;
     }
 
-    setBusy(true);
+    setBusy(true, () => activeRuntime.abort());
     editor.disableSubmit = true;
-    setFooter("Thinking... Press Ctrl+C to cancel.", yellow);
+    setFooter("Thinking...", yellow);
     addLabel("Moondog");
     const response = new Markdown("", 1, 1, markdownTheme, textStyle);
     transcript.addChild(response);
     let streamedText = "";
+    const toolCalls = new Map();
+    let legacyToolId = 0;
+    const updateTool = (tool, state) => {
+      if (cleanedUp) return;
+      const label = sanitizeTerminalText(typeof tool === "string" ? tool : tool?.label ?? "Music tool")
+        .replace(/\s+/gu, " ").trim() || "Music tool";
+      // Runtime events carry call IDs; retain support for older label-only callbacks.
+      const key = tool?.toolCallId ?? (state !== "running"
+        ? [...toolCalls].find(([, call]) => call.state === "running" && call.label === label)?.[0]
+        : undefined) ?? `label-${++legacyToolId}`;
+      toolCalls.set(key, { label, state });
+      if (cancellationRequested) return;
+      const pending = [...toolCalls.values()].filter((call) => call.state === "running");
+      if (pending.length) {
+        setFooter(pending.length > 1 ? `${pending.length} running · ${pending[0].label}` : `${pending[0].label}...`, yellow);
+      } else {
+        setFooter(state === "failed" ? `${label} failed · continuing...` : "Preparing your answer...", state === "failed" ? yellow : dim);
+      }
+    };
 
     try {
       const result = await activeRuntime.prompt(value, {
         onTextDelta: (delta) => {
+          if (cleanedUp) return;
           streamedText += sanitizeTerminalText(delta);
           response.setText(streamedText);
           tui.requestRender();
         },
         onTextReplace: (replacement) => {
+          if (cleanedUp) return;
           streamedText = sanitizeTerminalText(replacement);
           response.setText(streamedText);
           tui.requestRender();
         },
         onModelRetry: ({ attempt, maxRetries }) => {
-          setFooter(`Retrying model connection ${attempt}/${maxRetries}... Ctrl+C cancels.`, yellow);
+          if (!cancellationRequested) setFooter(`Retrying model connection ${attempt}/${maxRetries}...`, yellow);
         },
-        onToolStart: (tool) => {
-          const label = typeof tool === "string" ? tool : tool.label;
-          setFooter(`Using capability: ${label}`, yellow);
-        },
-        onToolEnd: (tool) => {
-          const label = typeof tool === "string" ? tool : tool.label;
-          setFooter(
-            tool?.isError
-              ? `Capability failed: ${label}`
-              : `Capability finished: ${label}`,
-            tool?.isError ? red : green,
-          );
-        },
+        onToolStart: (tool) => updateTool(tool, "running"),
+        onToolEnd: (tool) => updateTool(tool, tool?.isError ? "failed" : "completed"),
       });
+      if (cleanedUp) return;
       if (result.status === "aborted") {
         if (streamedText.length === 0 && result.text) {
           streamedText = sanitizeTerminalText(result.text);
@@ -1256,6 +1303,7 @@ export async function runMoondogTui({
         setFooter("Ready.", green);
       }
     } catch (error) {
+      if (cleanedUp) return;
       const connectionFailed = error.code === "model_connection_failed";
       const errorText = connectionFailed
         ? `${sanitizeTerminalText(error.message)}\n\n${error.toolsExecuted
@@ -1272,9 +1320,24 @@ export async function runMoondogTui({
           : "Connection failed. ↑ recalls your message."
         : "The model request failed.", red);
     } finally {
+      if (toolCalls.size && !cleanedUp) {
+        const calls = [...toolCalls.values()];
+        const counts = ["completed", "failed", "running"].flatMap((state) => {
+          const count = calls.filter((call) => call.state === state).length;
+          return count ? [`${count} ${state === "running" ? "unconfirmed" : state}`] : [];
+        });
+        const summary = `Tools · ${counts.join(", ")} · ${elapsedTime(workStartedAt)}`;
+        const labels = [...new Set(calls.map((call) => call.label))].join(" · ");
+        transcript.addChild({
+          invalidate() {},
+          render(width) {
+            return new Text(theme.faint(truncateToWidth(`${summary} · ${labels}`, Math.max(1, width - 2))), 1, 0).render(width);
+          },
+        });
+      }
       setBusy(false);
       editor.disableSubmit = false;
-      tui.requestRender();
+      if (!cleanedUp) tui.requestRender();
     }
   };
 
@@ -1331,9 +1394,15 @@ export async function runMoondogTui({
     }
     if (!matchesKey(data, "ctrl+c")) return undefined;
     if (busy) {
-      if (localCommandController) localCommandController.abort();
-      else activeRuntime.abort();
-      setFooter("Cancelling the active response...", yellow);
+      if (cancelWork) {
+        if (!cancellationRequested) {
+          cancellationRequested = true;
+          setFooter("Cancelling the active request...", yellow);
+          cancelWork();
+        }
+      } else {
+        setFooter("This command cannot be cancelled here. Waiting for completion.", yellow);
+      }
     } else {
       shutdown();
     }

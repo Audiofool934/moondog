@@ -1,4 +1,6 @@
 import { CURSOR_MARKER, Editor, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { stripVTControlCharacters } from "node:util";
+import { sanitizeTerminalText } from "./format-output.mjs";
 import { LOGO_MOTION_FRAMES, renderLunarRecord, renderMoondogWordmark } from "./terminal-art.mjs";
 export { ListeningMenu } from "./listening-menu.mjs";
 
@@ -39,14 +41,29 @@ export class ListeningHeader {
   invalidate() {}
   render(width) {
     const theme = this.getTheme();
-    const { profileReady, modelReady, spotifyReady } = this.getStatus();
+    const { profileReady, modelReady, spotifyReady, provider, model } = this.getStatus();
     const title = theme.bold("MOONDOG") + (width >= 46 ? theme.muted("  /  your listening room") : "");
     const compact = width < 60;
-    const status = [
-      profileReady ? compact ? "profile ready" : "local profile" : compact ? "no history" : "bring your history",
-      modelReady ? compact ? "model ready" : "conversation ready" : "model offline",
-      ...(spotifyReady && width >= 60 ? ["Spotify connected"] : []),
-    ].join("  ·  ");
+    const clean = (value) => sanitizeTerminalText(stripVTControlCharacters(String(value ?? "")))
+      .replace(/\s+/gu, " ").trim();
+    const modelName = clean(model);
+    const providerName = clean(provider);
+    const profileLabel = profileReady
+      ? compact ? "profile ready" : "local profile"
+      : compact ? "no history" : "bring your history";
+    const modelLabel = modelReady ? modelName || (compact ? "model ready" : "conversation ready") : "model offline";
+    const identity = modelReady && providerName ? `${providerName} / ${modelLabel}` : modelLabel;
+    const available = Math.max(1, width - 1);
+    // Keep the active model readable before spending space on optional status.
+    const candidates = [
+      [profileLabel, identity, ...(spotifyReady && !compact ? ["Spotify connected"] : [])],
+      [profileLabel, identity],
+      [profileLabel, modelLabel],
+      [identity],
+      [modelLabel],
+    ].map((parts) => parts.join("  ·  "));
+    const status = candidates.find((candidate) => visibleWidth(candidate) <= available)
+      ?? truncateToWidth(modelLabel, available, "…");
     return [
       paintBrandLine(` ${title}`, width, theme),
       paintBrandLine(` ${theme.faint(status)}`, width, theme),
@@ -217,7 +234,12 @@ Use \`/auth [provider]\` to connect an API key or sign in, then \`/model\` to ch
 - \`/quit\` - leave Moondog
 
 Tab explores the home actions. Ctrl+P opens the searchable command palette.
-Escape returns to typing. Enter sends. Shift+Enter adds a line. Ctrl+C cancels work or exits when idle.
+Escape returns to typing. Enter sends. Shift+Enter adds a line.
+Argument suggestions support appearance, web, Spotify, authentication, and model commands.
+Tab or Enter accepts a suggestion; a fully typed command sends with Enter.
+The header shows the current model, and the footer tracks active work and elapsed time.
+Ctrl+C cancels a model or web request, or exits when idle.
+Local commands without cancellation finish their current step; the draft stays available.
 Profile viewing and correction work without a model.
 In the profile, type to filter, Tab switches views, and Enter opens actions.
 Escape returns with your draft kept; Ctrl+R refreshes and Ctrl+O opens the full report.

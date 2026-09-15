@@ -24,7 +24,7 @@ const repositoryRoot = path.resolve(
   "..",
 );
 const maximumPackedBytes = 2_500_000;
-const maximumUnpackedBytes = 3_850_000;
+const maximumUnpackedBytes = 3_900_000;
 const maximumEntries = 100;
 const packageOnlyPrivateSentinelPattern = new RegExp(
   ["PRIVATE", "(?:IP|PLATFORM)", "SENTINEL"].join("_"),
