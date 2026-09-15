@@ -488,6 +488,202 @@ for (const failure of ["import", "profile"]) {
   });
 }
 
+async function createGuidedImportFixture(context, options = {}) {
+  const terminal = new FakeTerminal();
+  const signalTarget = new EventEmitter();
+  const prompts = [];
+  let frame;
+  const doRender = TuiMainScreen.prototype.doRender;
+  context.mock.method(TuiMainScreen.prototype, "doRender", function () {
+    const result = doRender.call(this);
+    frame = this.captureRenderState();
+    return result;
+  });
+  const calls = { paths: [], commits: 0, closes: 0, refreshes: 0, profiles: 0 };
+  const profile = {
+    coverage: { effective_listening_events: 2, listening_tracks: 1, listening_hours: 0.1 },
+    listening_source: { providers: ["spotify"] },
+  };
+  const prepared = {
+    preview: {
+      sourceLabel: "Spotify history", fileName: "Chosen History.zip",
+      listeningEvents: 2, tracks: 1, eventsWithPlayedMs: 2, profileEvidence: 0,
+      earliestListeningAt: "2026-09-01T00:00:00.000Z",
+      latestListeningAt: "2026-09-02T00:00:00.000Z",
+      scopeNote: "Two synthetic listening events, not a complete listening history.",
+    },
+    async commit() {
+      calls.commits += 1;
+      return options.commit ? await options.commit() : { inserted_events: 2, duplicate_events: 0 };
+    },
+    close() { calls.closes += 1; },
+  };
+  const running = runMoondogTui({
+    application: {
+      ...fakeApplication(),
+      profileServicesReady: () => calls.commits > 0,
+      async runLocalCommand(command) { assert.equal(command, "taste"); return profile; },
+      async getProfileSummary() { calls.profiles += 1; return profile; },
+    },
+    runtime: configuredFakeRuntime(prompts), terminal, signalTarget,
+    rebuildRuntime: async () => configuredFakeRuntime(prompts),
+    environment: { TERM: "xterm-256color", MOONDOG_ART: "ascii", MOONDOG_MOTION: "off" },
+    async prepareImport(filePath) {
+      calls.paths.push(filePath);
+      return options.prepareImport ? await options.prepareImport(filePath, prepared) : prepared;
+    },
+    async refreshImportedData() {
+      calls.refreshes += 1;
+      if (options.refreshError && calls.refreshes === 1) throw new Error("Fixture profile refresh unavailable");
+    },
+  });
+  context.after(async () => { signalTarget.emit("SIGTERM"); await running; });
+  await waitFor(() => terminal.output.includes("New conversation"));
+  const outputIncludes = (expected) => waitFor(() => stripVTControlCharacters(terminal.output).includes(expected));
+  return {
+    terminal, signalTarget, running, prompts, calls, prepared, outputIncludes,
+    screen: () => frame.previousLines.map(stripVTControlCharacters).join("\n"),
+    async submit(value, expected) {
+      terminal.output = "";
+      terminal.send(value);
+      terminal.send("\r");
+      await outputIncludes(expected);
+    },
+  };
+}
+
+test("guided import from the command palette keeps a multiline draft when cancelled", async (context) => {
+  const fixture = await createGuidedImportFixture(context);
+  const { terminal, calls, prompts } = fixture;
+  const draft = "A quiet listening thought\nfor the train ride";
+  terminal.send(`\x1b[200~${draft}\x1b[201~`);
+  terminal.send("\x10");
+  await fixture.outputIncludes("Commands");
+  terminal.send("import");
+  terminal.send("\r");
+  await fixture.outputIncludes("Get Spotify history");
+  terminal.output = "";
+  terminal.send("\x1b");
+  await fixture.outputIncludes("for the train ride");
+  assert.match(stripVTControlCharacters(terminal.output), /M O O N D O G/u);
+  assert.match(stripVTControlCharacters(terminal.output), /A quiet listening thought/u);
+  assert.deepEqual(calls.paths, []);
+  assert.equal(calls.commits, 0);
+  terminal.send("\r");
+  await fixture.outputIncludes("Recorded listening request.");
+  assert.deepEqual(prompts, [draft]);
+});
+
+test("guided import inspection failure retains the editable path for a corrected retry", async (context) => {
+  const fixture = await createGuidedImportFixture(context, {
+    async prepareImport(filePath, prepared) {
+      if (filePath.endsWith("Missing.zip")) throw new Error("Choose an existing history file.");
+      return prepared;
+    },
+  });
+  const { terminal, calls } = fixture;
+  await fixture.submit("/import", "Get Spotify history");
+  terminal.send("\r");
+  await fixture.outputIncludes("Choose your history file");
+  terminal.send("/tmp/Missing.zip");
+  terminal.send("\r");
+  await fixture.outputIncludes("Choose an existing history file.");
+  assert.match(fixture.screen(), /\/tmp\/Missing\.zip/u);
+  assert.match(fixture.screen(), /Nothing imported/u);
+  assert.equal(calls.commits, 0);
+  terminal.send("\x05");
+  terminal.send("\x15");
+  terminal.send("/tmp/Chosen History.zip");
+  terminal.send("\r");
+  await fixture.outputIncludes("Review this import");
+  assert.deepEqual(calls.paths, ["/tmp/Missing.zip", "/tmp/Chosen History.zip"]);
+  assert.equal(calls.commits, 0);
+});
+
+test("guided import preview cancellation closes the inspected handle without committing", async (context) => {
+  const fixture = await createGuidedImportFixture(context);
+  const { terminal, calls } = fixture;
+  await fixture.submit("/import /tmp/Chosen History.zip", "Review this import");
+  assert.match(stripVTControlCharacters(terminal.output), /Nothing added yet/u);
+  assert.match(stripVTControlCharacters(terminal.output), /2 plays · 1 tracks/u);
+  terminal.output = "";
+  terminal.send("\x1b");
+  await fixture.outputIncludes("Choose your history file");
+  assert.match(fixture.screen(), /\/tmp\/Chosen History\.zip/u);
+  assert.equal(calls.closes, 1);
+  terminal.send("\x1b");
+  await fixture.outputIncludes("Get Spotify history");
+  terminal.send("\x1b");
+  await fixture.outputIncludes("Import closed");
+  assert.equal(calls.closes, 1);
+  assert.equal(calls.commits, 0);
+  assert.equal(calls.refreshes, 0);
+  assert.deepEqual(fixture.prompts, []);
+});
+
+for (const refreshError of [false, true]) {
+  test(`guided import confirmation commits once and ${refreshError ? "retains its receipt when refresh fails" : "opens the native Profile immediately"}`, async (context) => {
+    let finishCommit;
+    const commit = new Promise((resolve) => { finishCommit = resolve; });
+    const fixture = await createGuidedImportFixture(context, { commit: () => commit, refreshError });
+    const { terminal, calls } = fixture;
+    context.after(() => finishCommit({ inserted_events: 2, duplicate_events: 0 }));
+    await fixture.submit("/import /tmp/Chosen History.zip", "Review this import");
+    terminal.output = "";
+    terminal.send("\r");
+    terminal.send("\r");
+    await fixture.outputIncludes("Saving listening history locally");
+    assert.equal(calls.commits, 1);
+    assert.equal(calls.refreshes, 0);
+    finishCommit({ inserted_events: 2, duplicate_events: 0 });
+    await fixture.outputIncludes(refreshError ? "History saved; profile refresh" : "Your listening profile");
+    assert.equal(calls.commits, 1);
+    assert.equal(calls.closes, 1);
+    assert.equal(calls.refreshes, 1);
+    assert.equal(calls.profiles, refreshError ? 0 : 1);
+    if (!refreshError) {
+      assert.match(stripVTControlCharacters(terminal.output), /Import complete/u);
+      terminal.output = "";
+      terminal.send("\x1b");
+      await fixture.outputIncludes("Listening history imported");
+    }
+    const transcript = stripVTControlCharacters(terminal.output);
+    assert.match(transcript, /2 new listening records · 0 already present/u);
+    assert.match(transcript, /Chosen History\.zip/u);
+    if (refreshError) {
+      assert.ok(transcript.indexOf("2 new listening records") < transcript.indexOf("Your history was saved"));
+      assert.match(transcript, /\/reload.*\/taste/su);
+      assert.doesNotMatch(transcript, /Import was not saved/u);
+      await fixture.submit("/reload", "Runtime reloaded.");
+      assert.equal(calls.refreshes, 2, "reload retries the saved import's data refresh");
+      await fixture.submit("/taste", "Your listening profile");
+      assert.equal(calls.commits, 1, "profile recovery must not repeat the import");
+    }
+    assert.deepEqual(fixture.prompts, []);
+  });
+}
+
+test("guided import closes a late inspection handle after shutdown without committing or redrawing", async (context) => {
+  let finishInspection;
+  const inspection = new Promise((resolve) => { finishInspection = resolve; });
+  const fixture = await createGuidedImportFixture(context, { prepareImport: () => inspection });
+  const { terminal, calls, prepared } = fixture;
+  terminal.send("/import /tmp/Chosen History.zip");
+  terminal.send("\r");
+  await fixture.outputIncludes("Inspecting the file");
+  assert.equal(calls.paths.length, 1);
+  fixture.signalTarget.emit("SIGTERM");
+  await fixture.running;
+  const stoppedOutput = terminal.output;
+  finishInspection(prepared);
+  await waitFor(() => calls.closes === 1);
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  assert.equal(calls.commits, 0);
+  assert.equal(calls.refreshes, 0);
+  assert.equal(terminal.stopCount, 1);
+  assert.equal(terminal.output, stoppedOutput);
+});
+
 for (const [signal, exitCode] of [
   ["SIGTERM", 143],
   ["SIGHUP", 129],
@@ -1266,7 +1462,7 @@ test("plain terminal styling preserves Pi's cursor marker", () => {
   assert.doesNotMatch(line, /\x1b\[[\d;]*m/u);
 });
 
-test("home, appearance controls, and import preparation never call a model or discard conversation", async (context) => {
+test("home, appearance controls, and the import guide never call a model or discard conversation", async (context) => {
   const terminal = new FakeTerminal();
   const signalTarget = new EventEmitter();
   let modelCalls = 0;
@@ -1291,18 +1487,18 @@ test("home, appearance controls, and import preparation never call a model or di
   await submit("/home", "M O O N D O G");
   await submit("/theme paper", "Paper theme.");
   await submit("/theme charcoal", "Charcoal theme.");
-  await submit("/import", "Paste the ZIP path between the quotes");
-  assert.match(terminal.output, /Retained listening request/u);
-  assert.match(terminal.output, /spotify import-history/u);
-  // Clear the prepared command before checking that errors remain visible on home.
-  terminal.send("\x05");
-  terminal.send("\x15");
-  await submit("/home", "M O O N D O G");
+  await submit("/import", "Get Spotify history");
+  assert.match(terminal.output, /Choose a file/u);
+  assert.doesNotMatch(terminal.output, /spotify import-history/u);
+  terminal.output = "";
+  terminal.send("\x1b");
+  await waitFor(() => terminal.output.includes("M O O N D O G"));
   await submit("/theme nonexistent", "Usage: /theme");
+  assert.match(terminal.output, /Retained listening request/u);
   assert.equal(modelCalls, 0);
 });
 
-test("Tab focuses home actions and Down then Enter prepares Import without a model call", async (context) => {
+test("Tab focuses home actions and Down then Enter opens the import guide without a model call", async (context) => {
   const terminal = new FakeTerminal();
   const signalTarget = new EventEmitter();
   const prompts = [];
@@ -1320,10 +1516,14 @@ test("Tab focuses home actions and Down then Enter prepares Import without a mod
   terminal.send("\t");
   terminal.send("\x1b[B");
   terminal.send("\r");
-  await waitFor(() => terminal.output.includes("Paste the ZIP path between the quotes"));
-  assert.match(terminal.output, /spotify import-history/u);
+  await waitFor(() => terminal.output.includes("Get Spotify history"));
+  assert.match(terminal.output, /Choose a file/u);
+  assert.doesNotMatch(terminal.output, /spotify import-history/u);
   assert.deepEqual(prompts, []);
-  assert.equal(imports, 0, "choosing Import prepares a command before a file is supplied");
+  assert.equal(imports, 0, "choosing Import must not import before a file is inspected and confirmed");
+  terminal.output = "";
+  terminal.send("\x1b");
+  await waitFor(() => terminal.output.includes("M O O N D O G"));
 });
 
 test("Esc returns from home actions to the editor and the next request reaches the model intact", async (context) => {

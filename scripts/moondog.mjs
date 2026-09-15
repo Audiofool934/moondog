@@ -1,5 +1,8 @@
 #!/usr/bin/env node
 
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+
 import { MoondogApplication } from "../src/core/moondog-application.mjs";
 import { openLocalMemoryStore } from "../src/memory/local-memory-store.mjs";
 import {
@@ -34,6 +37,7 @@ import {
 import { runSpotifyCommand } from "../src/surfaces/cli/spotify-command.mjs";
 import { runListenBrainzCommand } from "../src/surfaces/cli/listenbrainz-command.mjs";
 import { openListeningHistoryStore } from "../src/profile/listening-history-store.mjs";
+import { prepareHistoryImport } from "../src/profile/history-import.mjs";
 import { runMoondogTui } from "../src/surfaces/cli/tui.mjs";
 import { createAppleMusicCatalog } from "../src/integrations/apple-music/catalog.mjs";
 import {
@@ -289,6 +293,60 @@ async function runListenBrainzSurface(options) {
   } finally {
     historyStore.close();
   }
+}
+
+async function prepareTuiHistoryImport(filePath) {
+  const historyStore = await openListeningHistoryStore();
+  try {
+    const appleSubjectId = await optionalAppleMusicSubjectId();
+    const subjectId = historyStore.localSubjectId({
+      ...(appleSubjectId ? { preferredSubjectId: appleSubjectId } : {}),
+      create: true,
+    });
+    const prepared = await prepareHistoryImport({
+      filePath, subjectId, capturedAt: new Date().toISOString(),
+    });
+    let closed = false;
+    let committed = false;
+    return {
+      preview: prepared.preview,
+      async commit() {
+        if (closed || committed) throw new Error("Inspect the file again before importing it.");
+        const options = { args: ["import-history", filePath], stdout: { write() {} }, subjectId };
+        // Commit the exact inspected bundle, even if the source file later changes.
+        const receipt = prepared.provider === "spotify"
+          ? await runSpotifyCommand({
+              ...options, recentActivityStore: historyStore,
+              historyArchiveImporter: async () => prepared.bundle,
+            })
+          : await runListenBrainzCommand({
+              ...options, historyStore,
+              historyFileImporter: async () => prepared.bundle,
+            });
+        committed = true;
+        return receipt;
+      },
+      close() {
+        if (closed) return;
+        closed = true;
+        historyStore.close();
+      },
+    };
+  } catch (error) {
+    historyStore.close();
+    throw error;
+  }
+}
+
+async function openImportHelp(destination) {
+  const url = {
+    spotify: "https://www.spotify.com/account/privacy/",
+    apple: "https://support.apple.com/guide/music/mus27cd5060f/mac",
+  }[destination];
+  if (!url) throw new Error("Unknown import guide.");
+  await promisify(execFile)(process.platform === "darwin" ? "open" : "xdg-open", [url], {
+    timeout: 10_000,
+  });
 }
 
 function tasteCoverage(profile) {
@@ -802,6 +860,15 @@ async function main() {
     await runMoondogTui({
       application,
       runtime,
+      prepareImport: prepareTuiHistoryImport,
+      openImportHelp,
+      refreshImportedData: async () => {
+        const next = await loadDomainServices();
+        const previous = application.domainServices;
+        application.domainServices = next.domainServices;
+        application.domainServicesError = next.domainServicesError;
+        previous?.close?.();
+      },
       rebuildRuntime: async (selection) => {
         if (selection) await writePiRuntimeSelection(selection);
         return createConfiguredRuntime(application, process.env, { selection });

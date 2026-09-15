@@ -23,6 +23,7 @@ import { createMoondogTheme } from "./brand-theme.mjs";
 import { LOGO_MOTION_INTERVAL_MS } from "./terminal-art.mjs";
 import { buildTasteProfileModel } from "./taste-profile-model.mjs";
 import { TasteProfileView } from "./taste-profile-view.mjs";
+import { HistoryImportView } from "./history-import-view.mjs";
 import {
   BrandSurface,
   ListeningEditor,
@@ -36,7 +37,7 @@ import {
 
 const slashCommands = [
   { name: "home", description: "Return to the Moondog record sleeve" },
-  { name: "import", description: "Bring a saved Spotify history ZIP" },
+  { name: "import", description: "Get your listening data or inspect a saved file" },
   { name: "theme", description: "Paper, charcoal, or your terminal colors" },
   { name: "art", description: "Braille, ASCII, or a minimal opening" },
   { name: "motion", description: "Turn character animation on or off" },
@@ -123,6 +124,9 @@ export async function runMoondogTui({
   runProfile,
   runProfileAction,
   runWeb,
+  prepareImport,
+  refreshImportedData,
+  openImportHelp,
   providers = listPiProviders,
   models = listPiModels,
   environment = process.env,
@@ -154,6 +158,11 @@ export async function runMoondogTui({
   const transcript = new Container();
   let homeVisible = true;
   let profileView = null;
+  let importView = null;
+  let importPage = "start";
+  let importReturnHome = false;
+  let preparedImport = null;
+  let importNeedsRefresh = false;
   let profileReturnHome = false;
   let profileSnapshot = null;
   let profileNeedsRefresh = false;
@@ -184,7 +193,7 @@ export async function runMoondogTui({
   const renderHeader = () => { header.invalidate(); tui.requestRender(); };
   const synchronizeHomeMotion = () => {
     const shouldRun = startAttempted && !cleanedUp && motionEnabled && !theme.plain &&
-      !busy && !profileView && homeVisible && !homeFocused && !tui.hasOverlay() && !editor.getText() && sleeve.canAnimate;
+      !busy && !profileView && !importView && homeVisible && !homeFocused && !tui.hasOverlay() && !editor.getText() && sleeve.canAnimate;
     if (!shouldRun) {
       clearInterval(homeMotion);
       homeMotion = null;
@@ -197,6 +206,10 @@ export async function runMoondogTui({
   tui.addChild(header);
   tui.addChild({
     render: (width) => {
+      if (importView) {
+        synchronizeHomeMotion();
+        return importView.render(width);
+      }
       if (profileView) {
         synchronizeHomeMotion();
         return profileView.render(width);
@@ -209,19 +222,27 @@ export async function runMoondogTui({
       synchronizeHomeMotion();
       return lines;
     },
-    invalidate: () => { sleeve.invalidate(); transcript.invalidate(); profileView?.invalidate(); },
+    invalidate: () => { sleeve.invalidate(); transcript.invalidate(); profileView?.invalidate(); importView?.invalidate(); },
   });
   const composer = new BrandSurface(editor, getTheme);
-  tui.addChild({ render: (width) => profileView ? [] : composer.render(width), invalidate: () => composer.invalidate() });
+  tui.addChild({ render: (width) => profileView || importView ? [] : composer.render(width), invalidate: () => composer.invalidate() });
   tui.addChild({
     invalidate() {},
     render(width) {
       const marker = theme.plain ? "." : busy && !tui.hasOverlay() ? ["◴", "◷", "◶", "◵"][phase % 4] : "◎";
-      const compactHint = terminal.rows < 20 && homeVisible && !busy && !profileView;
+      const compactHint = terminal.rows < 20 && homeVisible && !busy && !profileView && !importView;
       let statusText = compactHint && homeFocused ? "↑ ↓ choose · enter open · esc type"
         : compactHint && editor.getText() ? "enter send · ctrl+p commands"
         : compactHint && footerText === "Ready." ? "tab explore · type to talk" : footerText;
-      if (profileView && width < 60) {
+      if (importView && width < 64) {
+        if (busy) statusText = footerText.startsWith("Inspecting") ? "Reading file; nothing added."
+          : footerText.startsWith("History saved") ? "Saved; refreshing profile..." : "Saving history locally...";
+        else if (importView.state.error) statusText = "See the message above.";
+        else if (footerText.startsWith("Guide opened")) statusText = "Guide opened in browser.";
+        else statusText = importPage === "preview" ? "File ready; nothing added."
+          : importPage === "file" ? "Choose one history file." : "Choose a step; Esc goes back.";
+      }
+      if (profileView && !importView && width < 60) {
         statusText = footerText.replace(/\. Profile refreshed\.$/u, "");
         if (tui.hasOverlay()) statusText = "Enter chooses · Esc back";
         else if (footerText.startsWith("Select a reading.")) statusText = "Enter actions · Tab views · Esc back";
@@ -230,7 +251,13 @@ export async function runMoondogTui({
       }
       const lines = [paintBrandLine(` ${theme.faint(marker)} ${footerColor(statusText)}`, width, theme)];
       if (terminal.rows >= 20) {
-        const keys = profileView
+        const keys = importView
+          ? width < 64 ? busy ? "Finishing the current step..." : importPage === "file"
+            ? "Tab path · ↵ inspect · Esc back" : "↑↓ ↵ · PgUp/Dn read · Esc back"
+          : busy ? "Finishing the current import step..." : importPage === "file"
+            ? "paste a path · tab completes · enter inspects · esc back"
+            : "↑↓ choose · enter select · PgUp/PgDn read · esc back"
+          : profileView
           ? width >= 76 ? "type filter · ↑↓ select · enter actions · tab views · esc back" : "↑↓ select · enter actions · tab views · esc back"
           : busy ? "draft stays here · ctrl+c cancel" : homeFocused
           ? "↑ ↓ choose · enter open · esc type"
@@ -304,6 +331,8 @@ export async function runMoondogTui({
     clearInterval(homeMotion);
     homeMotion = null;
     localCommandController?.abort();
+    preparedImport?.close?.();
+    preparedImport = null;
     removeLifecycleListeners();
     try {
       if (startAttempted) tui.stop();
@@ -688,6 +717,167 @@ export async function runMoondogTui({
     }
   };
 
+  const discardPreparedImport = () => {
+    preparedImport?.close?.();
+    preparedImport = null;
+  };
+
+  const setImportPage = (page, details = {}) => {
+    importPage = page;
+    importView?.setState({ page, ...details });
+    tui.requestRender(true);
+  };
+
+  const closeImport = ({ restore = true } = {}) => {
+    discardPreparedImport();
+    importView = null;
+    if (restore) homeVisible = importReturnHome;
+    homeFocused = false;
+    tui.setFocus(profileView ?? editor);
+    setFooter("Import closed. Your listening profile is unchanged.");
+    tui.requestRender(true);
+  };
+
+  const inspectImport = async (filePath) => {
+    discardPreparedImport();
+    const view = importView;
+    view.setPath(filePath);
+    setBusy(true);
+    setImportPage("working", { message: "Reading your file and checking its listening history..." });
+    setFooter("Inspecting the file. No listening history has been added.", yellow);
+    try {
+      if (typeof prepareImport !== "function") throw new Error("File inspection is unavailable in this launch mode.");
+      const prepared = await prepareImport(filePath);
+      if (cleanedUp || importView !== view) { prepared.close?.(); return; }
+      preparedImport = prepared;
+      setImportPage("preview", { preview: prepared.preview });
+      setFooter("File ready. Review what it contains before importing.", green);
+    } catch (error) {
+      if (!cleanedUp && importView === view) {
+        setImportPage("file", { error: sanitizeTerminalText(error.message) });
+        setFooter("Nothing imported. Your path is kept so you can fix it.", yellow);
+      }
+    } finally {
+      setBusy(false);
+      if (!cleanedUp && importView === view) tui.setFocus(view);
+    }
+  };
+
+  const commitInspectedImport = async () => {
+    if (!preparedImport) return;
+    const pending = preparedImport;
+    const preview = pending.preview;
+    const view = importView;
+    let saved = false;
+    setBusy(true);
+    setImportPage("working", { message: "Adding the inspected history to your local profile..." });
+    setFooter("Saving listening history locally...", yellow);
+    try {
+      const receipt = await pending.commit();
+      saved = true;
+      importNeedsRefresh = true;
+      discardPreparedImport();
+      if (cleanedUp) return;
+      const counts = receipt.already_imported
+        ? "This file is already in your profile. No duplicate listening records were added."
+        : `${receipt.inserted_events ?? 0} new listening records · ${receipt.duplicate_events ?? 0} already present.`;
+      // Keep the durable result visible even if refreshing the runtime later fails.
+      addMoondogMessage([
+        "## Listening history imported",
+        `${preview.sourceLabel} · ${preview.fileName}`,
+        counts,
+        ...(receipt.superseded_events ? [`${receipt.superseded_events} overlapping records were reconciled with richer history.`] : []),
+        "Your previous history and explicit preferences are kept. You can bring another file through `/import` whenever it is ready.",
+      ].join("\n\n"));
+      setImportPage("working", { message: "History saved. Preparing your listening profile..." });
+      setFooter("History saved. Refreshing your profile...", yellow);
+      await refreshImportedData?.();
+      if (cleanedUp) return;
+      if (typeof rebuildRuntime === "function") await replaceRuntime();
+      if (cleanedUp) return;
+      importNeedsRefresh = false;
+      importView = null;
+      homeVisible = false;
+      await showImportedListeningProfile();
+    } catch (error) {
+      if (cleanedUp) return;
+      if (saved) {
+        importView = null;
+        homeVisible = false;
+        profileView = null;
+        tui.setFocus(editor);
+        addMoondogMessage(`Your history was saved, but the profile could not refresh: ${sanitizeTerminalText(error.message)}\n\nThe import receipt is kept above. Use \`/reload\` and \`/taste\` to try the profile again.`);
+        setFooter("History saved; profile refresh needs another try.", yellow);
+      } else {
+        setImportPage("preview", { preview, error: sanitizeTerminalText(error.message) });
+        setFooter("Import was not saved. Review the error before trying again.", yellow);
+      }
+    } finally {
+      setBusy(false);
+      if (!cleanedUp) tui.setFocus(importView === view ? view : profileView ?? editor);
+    }
+  };
+
+  const handleImportAction = async ({ type, path: filePath } = {}) => {
+    if (busy || cleanedUp || !importView) return;
+    if (type === "inspect") { await inspectImport(filePath); return; }
+    if (type === "commit") { await commitInspectedImport(); return; }
+    if (type === "close") { closeImport(); return; }
+    if (type === "profile") {
+      closeImport();
+      await openProfile();
+      return;
+    }
+    if (type === "openSpotify" || type === "openAppleHelp") {
+      const destination = type === "openSpotify" ? "spotify" : "apple";
+      const url = destination === "spotify" ? "https://www.spotify.com/account/privacy/"
+        : "https://support.apple.com/guide/music/mus27cd5060f/mac";
+      try {
+        if (typeof openImportHelp !== "function") throw new Error("Browser opening is unavailable.");
+        await openImportHelp(destination);
+        setFooter("Guide opened in your browser. Your import stays here.");
+      } catch {
+        setImportPage(importPage, { error: `Open this page in your browser: ${url}` });
+      }
+      return;
+    }
+    if (type === "back") {
+      if (importPage === "start") { closeImport(); return; }
+      if (importPage === "preview") {
+        discardPreparedImport();
+        setImportPage("file");
+      } else setImportPage(importPage === "waiting" ? "spotify" : "start");
+    } else if (["start", "file", "spotify", "waiting", "other"].includes(type)) {
+      discardPreparedImport();
+      setImportPage(type);
+    }
+    setFooter(importPage === "file"
+      ? "Paste or drag one file path. Tab completes it; Enter inspects it."
+      : "Choose the next step for your listening history.");
+    tui.setFocus(importView);
+  };
+
+  const openImport = async (filePath) => {
+    if (!importView) {
+      importReturnHome = homeVisible;
+      homeFocused = false;
+      importView = new HistoryImportView({
+        tui, getTheme,
+        getRows: () => Math.max(1, terminal.rows - 2 - (terminal.rows >= 20 ? 2 : 1)),
+        profileReady: application.profileServicesReady?.() ?? false,
+        onAction: (action) => {
+          void handleImportAction(action).catch((error) => {
+            if (!cleanedUp) setFooter(`Import action failed: ${error.message}`, red);
+          });
+        },
+      });
+    }
+    setImportPage("start");
+    tui.setFocus(importView);
+    setFooter("Have a file, or need help getting one? Start here.");
+    if (filePath) await inspectImport(filePath);
+  };
+
   const runSpotifyCommand = async (args) => {
     if (typeof runSpotify !== "function") {
       throw new Error("Spotify control is unavailable in this launch mode.");
@@ -839,12 +1029,7 @@ export async function runMoondogTui({
       return;
     }
     if (command === "import") {
-      if (args.length > 1) throw new Error('Usage: /import ["/path/to/spotify-history.zip"].');
-      if (args[0]) { await runSpotifyCommand(["import-history", args[0]]); return; }
-      addMoondogMessage('## Bring your listening history\n\nPaste the path to your saved Spotify history ZIP between the quotes below, then press Enter.\n\nThe archive is imported into your local cumulative profile. Your listening profile appears here immediately afterward.');
-      editor.setText('/spotify import-history ""');
-      editor.handleInput("\u001b[D");
-      setFooter("Paste the ZIP path between the quotes, then press Enter.");
+      await openImport(args[0]);
       return;
     }
     if (command === "help") {
@@ -883,7 +1068,9 @@ export async function runMoondogTui({
       return;
     }
     if (command === "reload") {
+      if (importNeedsRefresh) await refreshImportedData?.();
       const status = await replaceRuntime();
+      importNeedsRefresh = false;
       addMoondogMessage(
         status.state === "configured"
           ? `Reloaded \`${status.provider}/${status.model}\`. The current conversation and memory were retained.`
@@ -959,8 +1146,8 @@ export async function runMoondogTui({
       }
       return;
     }
-    if (selected.value === "import" && editor.getText()) {
-      setFooter("Draft kept. Use /import after sending it.");
+    if (selected.value === "import") {
+      await openImport();
       return;
     }
     if (selected.value !== "commands") await editor.onSubmit(`/${selected.value}`);
@@ -989,13 +1176,15 @@ export async function runMoondogTui({
         return;
       }
       try {
-        if (!["home", "theme", "art", "motion", "model", "resume", "new", "taste", "profile"].includes(command)) enterConversation();
+        if (!["home", "theme", "art", "motion", "model", "resume", "new", "taste", "profile", "import"].includes(command)) enterConversation();
         if (command !== "auth") editor.addToHistory(value);
         setBusy(true);
         localCommandController = command === "web" ? new AbortController() : null;
         editor.disableSubmit = true;
-        const parsedArgs = ["profile", "spotify", "web", "import"].includes(command)
-          ? parseTuiArguments(value.slice(1).trim().slice(rawCommand.length))
+        const argumentText = value.slice(1).trim().slice(rawCommand.length).trim();
+        const parsedArgs = command === "import" ? argumentText ? [argumentText] : []
+          : ["profile", "spotify", "web"].includes(command)
+          ? parseTuiArguments(argumentText)
           : args;
         await runLocalCommand(command, parsedArgs);
       } catch (error) {
@@ -1091,6 +1280,14 @@ export async function runMoondogTui({
 
   tui.addInputListener((data) => {
     if (tui.hasOverlay()) return undefined;
+    if (importView) {
+      if (busy) return { consume: true };
+      if (matchesKey(data, "ctrl+c")) {
+        closeImport();
+        return { consume: true };
+      }
+      return undefined;
+    }
     if (!busy && matchesKey(data, "ctrl+p")) {
       void openCommandPalette();
       return { consume: true };

@@ -88,7 +88,8 @@ The animation clock stops during typing, navigation, menus, conversation, and mi
 `MOONDOG_MOTION=off` or `/motion off` disables animation.
 `NO_COLOR` preserves monochrome character art, and `TERM=dumb` selects ASCII without styling or animation.
 The layout reduces artwork before sacrificing room for the input, and works without Kitty or iTerm image support.
-`/import` prepares a quoted Spotify archive path, or accepts the path directly, and uses the same local importer as `/spotify import-history`.
+`/import` opens a native guide for getting your listening data or inspecting a saved Spotify ZIP or ListenBrainz JSON.
+`/import "/path/to/history.zip"` opens the file preview directly.
 `/help` shows the terminal guide; `/help all` includes the complete CLI reference.
 
 The TUI reads the configured local profile and never loads fictional listening history automatically.
@@ -178,24 +179,50 @@ Keep the generated ZIP under the ignored `outputs/` directory rather than adding
 
 ## Import and inspect listening history
 
-For Spotify Account Data or Extended Streaming History, run this inside Moondog:
+Start with `/import`, or choose **Bring your history** from the home screen.
+The guide offers a saved-file path, Spotify data-request instructions, and the current ListenBrainz and Apple Music import routes.
+It works without a model or Spotify sign-in.
+
+If you need Spotify data, open the account privacy page from the guide and use **Download your data**.
+Extended Streaming History provides the longer listening history, while Account Data contains past-year history plus supported library and profile snapshots.
+Both ZIP formats work; keep the downloaded ZIP intact.
+The [Spotify download instructions](https://support.spotify.com/us/article/data-rights-and-privacy-settings/) and [data descriptions](https://support.spotify.com/us/article/understanding-your-data/) explain the available packages.
+If Spotify is still preparing the export, return to `/import` when it is ready; an existing local profile remains usable meanwhile.
+Spotify login and recent-play reads do not reconstruct the full exported history.
+
+Choose **Choose a file**, then paste or drag one file path into the terminal.
+Tab completes paths, including quoted paths with spaces.
+Plain paths, quoted paths, Finder-escaped paths, `~/` paths, and local `file://` URLs are accepted.
+The original source is kept unchanged.
+Missing files and unsupported inputs leave the path in place so you can fix it.
+
+Enter inspects the file and shows its source, listening-record and track counts, retained listening dates, actual-duration coverage, and supported profile evidence.
+This describes the selected file, not a prediction of its net contribution to existing history.
+No listening history is added until you choose **Import into my profile**.
+Back or Escape leaves the preview without importing.
+
+To open a saved file directly, run this inside Moondog:
 
 ```text
 /import "/path/to/spotify-history.zip"
 ```
 
-The archive is imported into the cumulative private local profile, then the interactive profile opens in the same terminal session.
-The receipt and full report remain in the conversation.
-Use `moondog spotify import-history "/path/to/spotify-history.zip"` for the same persistent import from the shell.
-A Spotify login is not required for a saved archive.
+The inspected data is imported into the cumulative private local profile, then the interactive profile opens in the same terminal session.
+The receipt shows newly stored and already-present listening records, including reconciled overlaps when applicable.
+The receipt and full cumulative report remain in the conversation, even if a later profile refresh needs another try.
+Return to `/import` for later files; repeated files do not add duplicate listening events, and existing history and explicit corrections are kept.
+Reading, saving, and profile refresh are shown as separate stages; this first version does not interrupt an active read or save step.
+Use `/spotify import-history "/path/to/spotify-history.zip"` or `moondog spotify import-history "/path/to/spotify-history.zip"` for the existing direct persistent import without the guided preview.
 
 ## Bring independent ListenBrainz history
 
-Moondog can also build the same persistent provider-neutral profile from an official saved ListenBrainz GET-listens response or `single` or `import` submission JSON:
+Moondog can also build the same persistent provider-neutral profile from an official saved ListenBrainz GET-listens response or `single` or `import` submission JSON.
+Choose that JSON in `/import` to inspect it, import it, and review the profile without leaving the terminal session.
+The direct shell route remains available:
 
 ```bash
 moondog listenbrainz import-history /path/to/listen-history.json
-moondog taste --html
+moondog taste
 ```
 
 The same JSON can be dropped directly into `moondog studio` alongside Spotify ZIPs.

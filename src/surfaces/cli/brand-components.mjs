@@ -82,7 +82,7 @@ export class ListeningEditor extends Editor {
 
 export const homeActions = [
   { command: "taste", label: "Listening profile", short: "Profile", description: "Explore the evidence. Make it yours." },
-  { command: "import", label: "Bring your history", short: "Import history", description: "A saved Spotify archive. A profile to explore." },
+  { command: "import", label: "Bring your history", short: "Import history", description: "Get your data. See what it brings." },
   { command: "theme", label: "Change the mood", short: "Appearance", description: "Paper, charcoal, or your terminal colors." },
   { command: "help", label: "Find your way", short: "Guide", description: "A few commands. Everything within reach." },
 ];
@@ -189,7 +189,7 @@ Use \`/auth [provider]\` to connect an API key or sign in, then \`/model\` to ch
 
 - \`/taste\` - select tracks or artists, inspect evidence, and shape your preferences
 - \`/taste report\` - the full Tasteprint, Time Machine, and listening patterns
-- \`/import\` - prepare a saved Spotify history ZIP import
+- \`/import\` - get your listening data or inspect a saved Spotify ZIP / ListenBrainz JSON
 - \`/spotify\` - connected playback, queues, and playlists
 - \`/web search <query>\` or \`/web read <url>\` - public music sources
 

@@ -809,6 +809,7 @@ Interactive slash commands:
 - \`/model <provider> <model>\` - switch directly by ID
 - \`/auth [provider]\` - connect a model API key or sign in to OpenAI Codex from the TUI
 - \`/web status|search|read\` - research public music sources using the local Codex CLI
+- \`/import [path]\` - get listening-data guidance or inspect a Spotify ZIP / ListenBrainz JSON before importing
 - \`/spotify\` - show Spotify setup and control commands
 - \`/spotify login [client-id]\` - authorize Spotify from the TUI
 - \`/spotify now|devices|queue\` - inspect the current Spotify player
