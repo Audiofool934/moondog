@@ -11,6 +11,10 @@ import {
 
 const maximumToolResultBytes = 32 * 1024;
 const maximumNestedProfileItems = 6;
+const discoveryConnectionFailures = new Map([
+  ["music.discovery.artist_similarity", /^(?:wikidata|listenbrainz)_request_failed:/u],
+  ["music.catalog.track_search", /^apple_music_catalog_request_failed:/u],
+]);
 const credentialBearingErrorPattern = /(?:access|refresh|id)[_ -]?token|api[_ -]?key|authorization\s*[:=]\s*bearer|oauth\s+(?:auth|refresh|token)|credential\s+store/iu;
 const safeCapabilityEffects = new Set([
   "read_local",
@@ -5200,6 +5204,7 @@ Grounding and evidence rules:
 - A playlist plan may contain only track refs from active candidate_set_ids returned in this prompt or from the pending plan's revision candidate set in trusted product context, whether their candidate_scope is private_library, private_history, or external_catalog. Use moondog_playlist_plan to validate the final order and reasons.
 - A resolved moondog_music_catalog_search or moondog_music_artist_similarity result is an intermediate candidate set, never a final answer. You must call moondog_playlist_plan before naming or listing any returned external tracks. Do not end the turn directly after either discovery tool.
 - Copy the user's explicit track count into requested_track_count when calling moondog_playlist_plan.
+- Refer to songs by title and artist in selection reasons and ordering notes, never by internal track refs or shortened IDs.
 - Treat source coverage and limitations as part of the answer. The Apple Music library remains the trusted source for library membership, while the effective Spotify event set supplies bounded listening behavior.
 
 Playlist revision rules:
@@ -5239,6 +5244,7 @@ Current music catalog rules:
 - Use easy for a more popular on-ramp, medium as the default, and hard for a lower-popularity branch. These modes do not prove obscurity, novelty, quality, or personal fit.
 - The open similarity path requests only basic artist, recording, and release metadata. It does not use MusicBrainz tags or search indexes. Preserve the returned CC0 and coverage boundary when explaining the source.
 - If seed identity resolution is unavailable or ambiguous, do not guess an artist identity. Fall back to bounded Apple catalog keyword search when useful, or ask the user for a different trusted seed.
+- If discovery services cannot be reached, explain the immediate limitation briefly and give one practical next step. Do not narrate internal tool rules or promise that changing the seed bypasses the same unavailable provider. Retrying a selected profile track requires resubmitting its original request, since its seed ref expires at the end of the prompt.
 - Explain a similarity candidate only as a listening-derived branch from the seed plus its returned title, artist, and release metadata. Never invent shared mood, tempo, instrumentation, genre, or sonic properties.
 
 Spotify control and catalog rules:
@@ -5433,6 +5439,22 @@ function appendMusicWorldCitations(answer, citations, promptText) {
   return answer ? `${answer.trimEnd()}\n\n${rendered}` : rendered;
 }
 
+function renderPlaylistRationale(text, tracks) {
+  const names = new Map();
+  for (const track of tracks) {
+    const ref = track.track_ref_id.toLowerCase();
+    const name = `${track.title} - ${track.artist_credit}`;
+    names.set(ref, name);
+    const prefix = ref.slice(0, 8);
+    // An abbreviated ref is useful only when it identifies one selected track.
+    names.set(prefix, names.has(prefix) ? null : name);
+  }
+  return text.replace(
+    /(?<![\w-])[0-9a-f]{8}(?:-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})?(?![\w-])/giu,
+    (ref) => names.get(ref.toLowerCase()) ?? ref,
+  );
+}
+
 function renderValidatedPlaylistPlan(
   plan,
   promptText,
@@ -5500,14 +5522,14 @@ function renderValidatedPlaylistPlan(
     lines.push(
       `${track.position}. ${yearPrefix}${track.title} - ${track.artist_credit}`,
       chinese
-        ? `   策展判断：${track.selection_reason}`
-        : `   Curatorial rationale: ${track.selection_reason}`,
+        ? `   策展判断：${renderPlaylistRationale(track.selection_reason, plan.tracks)}`
+        : `   Curatorial rationale: ${renderPlaylistRationale(track.selection_reason, plan.tracks)}`,
     );
   }
   lines.push(
     chinese
-      ? `排序逻辑：${plan.ordering_rationale}`
-      : `Ordering rationale: ${plan.ordering_rationale}`,
+      ? `排序逻辑：${renderPlaylistRationale(plan.ordering_rationale, plan.tracks)}`
+      : `Ordering rationale: ${renderPlaylistRationale(plan.ordering_rationale, plan.tracks)}`,
   );
   if (spotifyWrite?.playlist) {
     lines.push(
@@ -5966,6 +5988,7 @@ export class PiAgentRuntime {
       spotifyPlaylistEditPreview: null,
       spotifyPlaylistEditWrite: null,
       externalCandidateSetCreated: false,
+      discoveryConnections: new Map(),
       discoverySources: [],
       musicWorldCitations: [],
       webSources: [],
@@ -5976,6 +5999,11 @@ export class PiAgentRuntime {
       stagedMemoryMutations: [],
     };
     this.activePromptState = promptState;
+    const profileDiscoveryUnavailable = () => Boolean(callbacks.profileSeed) &&
+      !promptState.externalCandidateSetCreated &&
+      [...discoveryConnectionFailures.keys()].every(
+        (capabilityId) => promptState.discoveryConnections.get(capabilityId) === true,
+      );
     let streamedText = "";
     let finalText = "";
     let finalStopReason;
@@ -6075,6 +6103,7 @@ export class PiAgentRuntime {
             replaceableStreaming &&
             !promptState.validatedPlaylistPlan &&
             !promptState.playlistPlanAttempted &&
+            !profileDiscoveryUnavailable() &&
             !promptState.spotifyPlaylistEditPreview &&
             !promptState.spotifyPlaylistEditWrite
           ) {
@@ -6102,6 +6131,14 @@ export class PiAgentRuntime {
 
         if (event.type === "tool_execution_end") {
           const descriptor = this.capabilityByToolName.get(event.toolName);
+          const connectionFailure = discoveryConnectionFailures.get(descriptor?.capability_id);
+          if (connectionFailure) {
+            promptState.discoveryConnections.set(descriptor.capability_id,
+              event.isError === true && event.result?.content?.some(
+                (block) => block.type === "text" && connectionFailure.test(block.text),
+              ) === true,
+            );
+          }
           callbacks.onToolEnd?.({
             toolCallId: event.toolCallId,
             toolName: event.toolName,
@@ -6250,6 +6287,14 @@ export class PiAgentRuntime {
             promptState.musicWorldCitations,
           ),
         });
+      }
+
+      if (profileDiscoveryUnavailable()) {
+        const failureText = /\p{Script=Han}/u.test(text)
+          ? "音乐发现服务暂时无法连接，这次没有生成推荐。请重新提交这条请求再试。"
+          : "I couldn't reach the music discovery services, so this request produced no recommendations. Please resend this request to try again.";
+        replaceRenderedText(failureText);
+        return completedResult(failureText);
       }
 
       if (!textWasRendered && finalText.length > 0) {

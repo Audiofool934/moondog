@@ -722,7 +722,7 @@ test(`Pi agent branches from a trusted ${seedOrigin} seed through open artist si
               raw_provider_payload: "must not reach the model",
             },
             {
-              track_ref_id: "51000000-0000-4000-8000-000000000002",
+              track_ref_id: "52000000-0000-4000-8000-000000000002",
               title: "Second Estuary",
               artist_credit: "North Geometry",
               release: "Water Table",
@@ -813,9 +813,9 @@ test(`Pi agent branches from a trusted ${seedOrigin} seed through open artist si
             candidate_set_ids: [similarity.candidate_set_id],
             track_refs: similarity.tracks.map((track) => ({
               track_ref_id: track.track_ref_id,
-              selection_reason: `ListenBrainz listening-derived branch through ${track.artist_credit}.`,
+              selection_reason: `${track.track_ref_id} is a ListenBrainz listening-derived branch through ${track.artist_credit}.`,
             })),
-            ordering_notes: "先 Aster Field，再 North Geometry。",
+            ordering_notes: "先 51000000，再 52000000-0000-4000-8000-000000000002。Keep unknown deadbeef and longer 51000000abcd unchanged.",
           }),
         ],
         { stopReason: "toolUse" },
@@ -850,6 +850,10 @@ test(`Pi agent branches from a trusted ${seedOrigin} seed through open artist si
   assert.equal(result.playlist_plan.candidate_scope, "external_catalog");
   assert.equal(result.playlist_plan.track_count, 2);
   assert.match(result.text, /不代表你从未听过/u);
+  assert.match(result.text, /Open Current - Aster Field is a ListenBrainz/u);
+  assert.match(result.text, /先 Open Current - Aster Field，再 Second Estuary - North Geometry/u);
+  assert.doesNotMatch(result.text, /51000000-0000|52000000-0000/u);
+  assert.match(result.text, /unknown deadbeef and longer 51000000abcd unchanged/u);
   assert.equal(application.profileDiscoverySeedContext(), null);
   if (profileSeedRef) {
     await assert.rejects(application.discoverSimilarMusic({ seedTrackRefId: profileSeedRef }));
@@ -860,6 +864,73 @@ test(`Pi agent branches from a trusted ${seedOrigin} seed through open artist si
     await runtime.prompt("What is the next step?");
   }
   application.close();
+});
+}
+
+for (const scenario of [
+  { name: "English transport failure", prompt: "Find three songs from this track.", code: "wikidata_request_failed", concise: true },
+  { name: "Chinese transport failure", prompt: "从这首歌出发推荐三首。", code: "listenbrainz_request_failed", concise: true },
+  { name: "invalid seed", prompt: "Find three songs from this track.", code: "seed_track_invalid", concise: false },
+]) {
+test(`Pi profile discovery handles ${scenario.name} without hiding other outcomes`, async (context) => {
+  const application = new MoondogApplication({
+    importsRoot: "/private/moondog-synthetic-missing-source",
+    domainServices: createSyntheticDomainServices({ subjectScope: "discovery-failure-test" }),
+    musicSimilarity: {
+      async discoverSimilarTracks() {
+        throw Object.assign(new Error("Similarity lookup failed."), { code: scenario.code });
+      },
+    },
+    musicCatalog: {
+      async findArtistReleases() { throw new Error("Not requested"); },
+      async searchTracks() {
+        throw Object.assign(new Error("Catalog lookup failed."), { code: "apple_music_catalog_request_failed" });
+      },
+    },
+  });
+  context.after(() => application.close());
+  const faux = fauxProvider();
+  const models = createModels();
+  models.setProvider(faux.provider);
+  const explanation = "Detailed model explanation of the failed discovery request.";
+  faux.setResponses([
+    (modelContext) => fauxAssistantMessage([
+      fauxToolCall("moondog_music_artist_similarity", {
+        seed_track_ref_id: trustedProductContext(modelContext).selected_profile_track.track_ref_id,
+      }),
+    ], { stopReason: "toolUse" }),
+    (modelContext) => {
+      const failure = modelContext.messages.find((message) => message.role === "toolResult");
+      assert.equal(failure.isError, true);
+      assert.match(failure.content[0].text, new RegExp(scenario.code));
+      return fauxAssistantMessage([
+        fauxToolCall("moondog_music_catalog_search", { queries: ["Mara Vale"], limit: 3 }),
+      ], { stopReason: "toolUse" });
+    },
+    fauxAssistantMessage([fauxText(explanation)]),
+  ]);
+  const runtime = new PiAgentRuntime({ application, models, model: faux.getModel(), provider: "faux", modelId: "faux-1" });
+  let rendered = "";
+  const deltas = [];
+  const result = await runtime.prompt(scenario.prompt, {
+    profileSeed: { entityType: "track", label: "Midnight Lines", artistCredit: "Mara Vale" },
+    onTextDelta(text) { deltas.push(text); rendered += text; },
+    onTextReplace(text) { rendered = text; },
+  });
+  assert.equal(result.playlist_plan, undefined);
+  if (scenario.concise) {
+    assert.match(result.text, /resend this request|重新提交这条请求/u);
+    assert.ok(result.text.length < 220);
+    assert.doesNotMatch(result.text, /Detailed model|wikidata|listenbrainz|apple_music|candidate_set/iu);
+    assert.ok(!deltas.join("").includes(explanation), "do not flash the model's discarded failure essay");
+  } else {
+    assert.equal(result.text, explanation, "an invalid seed is not a connection failure");
+  }
+  assert.equal(rendered, result.text);
+  assert.equal(runtime.agent.state.messages.at(-1).content[0].text, result.text);
+  faux.setResponses([fauxAssistantMessage([fauxText("Ready for another request.")])]);
+  const followup = await runtime.prompt("Let's continue.");
+  assert.equal(followup.text, "Ready for another request.");
 });
 }
 
