@@ -2774,6 +2774,28 @@ function projectPlaylistPlan(value) {
         optional: true,
       });
       if (duration !== undefined) result.duration_ms = duration;
+      if (track.discovery_evidence !== undefined) {
+        const evidence = track.discovery_evidence;
+        if (result.candidate_scope !== "external_catalog" || !isPlainObject(evidence)) {
+          throw new Error("domain_result_invalid:playlist_discovery_evidence");
+        }
+        if (evidence.provider === "listenbrainz") {
+          result.discovery_evidence = {
+            provider: "listenbrainz",
+            seed_artist: cleanOutputText(evidence.seed_artist, 512, "discovery_seed_artist"),
+            adjacent_artist: cleanOutputText(evidence.adjacent_artist, 512, "discovery_adjacent_artist"),
+          };
+        } else if (evidence.provider === "apple_music") {
+          result.discovery_evidence = {
+            provider: "apple_music",
+            matched_queries: safeStringArray(evidence.matched_queries, 3, 256, "discovery_matched_query"),
+          };
+          const genre = optionalOutputText(evidence.primary_genre, 128, "discovery_genre");
+          if (genre) result.discovery_evidence.primary_genre = genre;
+        } else {
+          throw new Error("domain_result_invalid:playlist_discovery_provider");
+        }
+      }
       if (track.history_context !== undefined) {
         if (
           result.candidate_scope !== "private_history" ||
@@ -5205,6 +5227,7 @@ Grounding and evidence rules:
 - A resolved moondog_music_catalog_search or moondog_music_artist_similarity result is an intermediate candidate set, never a final answer. You must call moondog_playlist_plan before naming or listing any returned external tracks. Do not end the turn directly after either discovery tool.
 - Copy the user's explicit track count into requested_track_count when calling moondog_playlist_plan.
 - Refer to songs by title and artist in selection reasons and ordering notes, never by internal track refs or shortened IDs.
+- Use product.playlist_response_language for playlist reasons and ordering notes, keeping titles and artist names in their original language. The host displays external-track reasons from registered discovery evidence; it does not use model descriptions as evidence of tempo, instrumentation, genre, or sound.
 - Treat source coverage and limitations as part of the answer. The Apple Music library remains the trusted source for library membership, while the effective Spotify event set supplies bounded listening behavior.
 
 Playlist revision rules:
@@ -5408,9 +5431,59 @@ function escapeMarkdownLinkLabel(value) {
     .replace(/([\\[\]`*_<>])/gu, "\\$1");
 }
 
+function responseLanguage(promptText) {
+  // The profile action appends quoted metadata; its script does not set the reply language.
+  const prose = promptText
+    .replace(/^(?:Track|Artist): "(?:[^"\\\n]|\\.)*"[ \t]*$/gmu, "")
+    .replace(/"(?:[^"\\]|\\.)*"|“[^”]*”|「[^」]*」|《[^》]*》/gu, "");
+  const explicit = [...prose.matchAll(
+    /\b(?:reply|respond|answer|write|explain)(?:\s+(?:to me|this|it))?\s+in\s+(English|Chinese|Mandarin)\b|(?:用|使用|以)\s*(英文|英语|中文|汉语|普通话)\s*(?:回答|回复|解释|说明|输出)/giu,
+  )].at(-1);
+  if (explicit) return /^(?:English|英文|英语)$/iu.test(explicit[1] ?? explicit[2]) ? "en" : "zh";
+  return /\p{Script=Han}/u.test(prose) ? "zh" : "en";
+}
+
+function groundedPlaylistPresentation(plan, promptText) {
+  if (!plan.tracks?.some((track) => track.candidate_scope === "external_catalog")) return plan;
+  const result = structuredClone(plan);
+  const chinese = responseLanguage(promptText) === "zh";
+  for (const track of result.tracks) {
+    if (track.candidate_scope !== "external_catalog") continue;
+    const evidence = track.discovery_evidence;
+    if (evidence?.provider === "listenbrainz") {
+      track.selection_reason = chinese
+        ? `ListenBrainz 收听数据将 ${evidence.adjacent_artist} 与 ${evidence.seed_artist} 关联；选自《${track.release}》。`
+        : `ListenBrainz listening data connects ${evidence.adjacent_artist} with ${evidence.seed_artist}; from "${track.release}".`;
+    } else if (evidence?.provider === "apple_music") {
+      const queries = evidence.matched_queries.map((query) => JSON.stringify(query)).join(", ");
+      track.selection_reason = chinese
+        ? `Apple Music 目录${queries ? `匹配检索词 ${queries}` : "候选"}；选自《${track.release}》${evidence.primary_genre ? `，目录流派为 ${evidence.primary_genre}` : ""}。`
+        : `Apple Music catalog ${queries ? `match for ${queries}` : "candidate"}; from "${track.release}"${evidence.primary_genre ? `, catalog genre: ${evidence.primary_genre}` : ""}.`;
+    } else {
+      track.selection_reason = chinese
+        ? `来自已检索的外部目录，选自《${track.release}》。`
+        : `From the retrieved external catalog, on "${track.release}".`;
+    }
+    track.selection_reason = cleanOutputText(track.selection_reason, 256, "selection_reason");
+  }
+  const path = result.tracks.map((track) => track.artist_credit).join(" → ");
+  result.ordering_rationale = cleanOutputText(
+    chinese ? `依次试听：${path}。` : `Explore in this order: ${path}.`,
+    500,
+    "ordering_rationale",
+  );
+  return result;
+}
+
+function pendingPlaylistPresentation(application, promptText) {
+  const status = application.pendingSpotifyPlaylistStatus?.() ?? { state: "none" };
+  if (status.revision?.tracks) status.revision = groundedPlaylistPresentation(status.revision, promptText);
+  return status;
+}
+
 function renderMusicWorldCitations(citations, promptText) {
   if (citations.length === 0) return "";
-  const chinese = /\p{Script=Han}/u.test(promptText);
+  const chinese = responseLanguage(promptText) === "zh";
   const lines = [
     chinese
       ? "公开音乐来源（与私人听歌证据分开）："
@@ -5462,7 +5535,7 @@ function renderValidatedPlaylistPlan(
   spotifyPartialEffect = null,
   discoverySources = [],
 ) {
-  const chinese = /\p{Script=Han}/u.test(promptText);
+  const chinese = responseLanguage(promptText) === "zh";
   const candidateScope = plan.candidate_scope ?? "private_library";
   const timeCapsulePlan =
     candidateScope === "private_history" &&
@@ -5522,12 +5595,12 @@ function renderValidatedPlaylistPlan(
     lines.push(
       `${track.position}. ${yearPrefix}${track.title} - ${track.artist_credit}`,
       chinese
-        ? `   策展判断：${renderPlaylistRationale(track.selection_reason, plan.tracks)}`
-        : `   Curatorial rationale: ${renderPlaylistRationale(track.selection_reason, plan.tracks)}`,
+        ? `   ${track.candidate_scope === "external_catalog" ? "推荐依据" : "策展判断"}：${renderPlaylistRationale(track.selection_reason, plan.tracks)}`
+        : `   ${track.candidate_scope === "external_catalog" ? "Recommendation basis" : "Curatorial rationale"}: ${renderPlaylistRationale(track.selection_reason, plan.tracks)}`,
     );
   }
   lines.push(
-    chinese
+    hasExternalCandidates ? plan.ordering_rationale : chinese
       ? `排序逻辑：${renderPlaylistRationale(plan.ordering_rationale, plan.tracks)}`
       : `Ordering rationale: ${renderPlaylistRationale(plan.ordering_rationale, plan.tracks)}`,
   );
@@ -5584,7 +5657,11 @@ function renderValidatedPlaylistPlan(
     );
   }
   lines.push(
-    chinese
+    hasExternalCandidates
+      ? chinese
+        ? "校验范围：曲目身份、候选集归属、数量和顺序已校验；推荐依据来自检索元数据，选曲和顺序供试听参考。"
+        : "Validation scope: track identity, candidate-set membership, count, and order were checked. Recommendation bases come from retrieved metadata; selection and order are suggestions for listening."
+      : chinese
       ? "校验范围：本地 planner 校验了曲目身份、候选集归属、数量和输出顺序；策展理由与情境适配度仍是基于现有元数据的模型判断。"
       : "Validation scope: the local planner validates track identity, candidate-set membership, count, and output order; curatorial reasons and situational fit remain model judgments based on available metadata.",
   );
@@ -5592,7 +5669,7 @@ function renderValidatedPlaylistPlan(
 }
 
 function renderSpotifyPlaylistEditPreview(preview, promptText) {
-  const chinese = /\p{Script=Han}/u.test(promptText);
+  const chinese = responseLanguage(promptText) === "zh";
   const playlist = preview.playlist;
   const lines = [
     chinese
@@ -5627,7 +5704,7 @@ function renderSpotifyPlaylistEditPreview(preview, promptText) {
 }
 
 function renderSpotifyPlaylistEditReceipt(receipt, promptText) {
-  const chinese = /\p{Script=Han}/u.test(promptText);
+  const chinese = responseLanguage(promptText) === "zh";
   const before = Number.isSafeInteger(receipt.previous_track_count)
     ? receipt.previous_track_count
     : null;
@@ -5638,7 +5715,7 @@ function renderSpotifyPlaylistEditReceipt(receipt, promptText) {
 }
 
 function renderUnvalidatedPlaylistPlan(promptText) {
-  return /\p{Script=Han}/u.test(promptText)
+  return responseLanguage(promptText) === "zh"
     ? "我无法验证这次 playlist plan，因此不会返回未经可信候选集校验的曲目列表。请缩小或扩大搜索范围后重试。"
     : "I could not validate this playlist plan, so I will not return a track list that was not checked against trusted candidates. Please refine or broaden the search and try again.";
 }
@@ -5694,12 +5771,13 @@ async function trustedContextSnapshot(application, runtimeStatus, query) {
           ? "spotify_control"
           : "disabled",
         pending_spotify_playlist:
-          application.pendingSpotifyPlaylistStatus?.() ?? { state: "none" },
+          pendingPlaylistPresentation(application, query),
         pending_spotify_playlist_edit:
           application.pendingSpotifyPlaylistEditStatus?.() ?? {
             state: "none",
           },
         selected_profile_track: application.profileDiscoverySeedContext?.() ?? null,
+        playlist_response_language: responseLanguage(query),
       },
       profile: { state: profile.state },
       memory: {
@@ -5738,12 +5816,13 @@ async function trustedContextSnapshot(application, runtimeStatus, query) {
           ? "spotify_control"
           : "disabled",
         pending_spotify_playlist:
-          application.pendingSpotifyPlaylistStatus?.() ?? { state: "none" },
+          pendingPlaylistPresentation(application, query),
         pending_spotify_playlist_edit:
           application.pendingSpotifyPlaylistEditStatus?.() ?? {
             state: "none",
           },
         selected_profile_track: application.profileDiscoverySeedContext?.() ?? null,
+        playlist_response_language: responseLanguage(query),
       },
       profile: { state: "unavailable" },
       memory: { state: "unavailable" },
@@ -5822,7 +5901,7 @@ export class PiAgentRuntime {
                   this.activePromptState.discoverySources,
                 ),
               );
-            const publicPlan = structuredClone(plan);
+            const publicPlan = groundedPlaylistPresentation(structuredClone(plan), this.activePromptState.promptText);
             for (const track of publicPlan.tracks) {
               delete track.public_catalog_reference;
             }
@@ -5981,6 +6060,7 @@ export class PiAgentRuntime {
     this.promptInFlight = true;
     const historyStartIndex = this.agent.state.messages.length;
     const promptState = {
+      promptText: text,
       validatedPlaylistPlan: null,
       playlistPlanAttempted: false,
       spotifyPlaylistWrite: null,
@@ -6059,7 +6139,7 @@ export class PiAgentRuntime {
       } catch {
         this.runtimeStatus.memory_state = "degraded";
         if (promptState.stagedMemoryMutations.length > 0) {
-          const note = /\p{Script=Han}/u.test(text)
+          const note = responseLanguage(text) === "zh"
             ? "\n\n这条回复已经完成，但记忆没有成功保存。"
             : "\n\nThe response completed, but the memory was not saved.";
           finalResultText = `${finalResultText}${note}`;
@@ -6290,7 +6370,7 @@ export class PiAgentRuntime {
       }
 
       if (profileDiscoveryUnavailable()) {
-        const failureText = /\p{Script=Han}/u.test(text)
+        const failureText = responseLanguage(text) === "zh"
           ? "音乐发现服务暂时无法连接，这次没有生成推荐。请重新提交这条请求再试。"
           : "I couldn't reach the music discovery services, so this request produced no recommendations. Please resend this request to try again.";
         replaceRenderedText(failureText);

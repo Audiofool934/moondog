@@ -560,9 +560,9 @@ test("Pi agent plans from bounded external catalog candidates without a library 
             candidate_set_ids: [catalog.candidate_set_id],
             track_refs: catalog.tracks.map((track) => ({
               track_ref_id: track.track_ref_id,
-              selection_reason: `${track.primary_genre} catalog metadata matches one requested direction.`,
+              selection_reason: "Invented slow tempo with soft piano and a warm vocal.",
             })),
-            ordering_notes: "从 Electronic 过渡到 Jazz。",
+            ordering_notes: "Invented crescendo from acoustic guitar into brass.",
           }),
         ],
         { stopReason: "toolUse" },
@@ -598,6 +598,10 @@ test("Pi agent plans from bounded external catalog candidates without a library 
     false,
   );
   assert.match(result.text, /来自曲库外 catalog 候选/u);
+  assert.match(result.text, /ambient piano/u);
+  assert.match(result.text, /Electronic/u);
+  assert.doesNotMatch(result.text, /Invented|slow tempo|soft piano|crescendo|brass/u);
+  assert.doesNotMatch(JSON.stringify(result.playlist_plan), /Invented|slow tempo|soft piano|crescendo|brass/u);
   assert.match(result.text, /不代表你从未听过/u);
   assert.match(result.text, /公开音乐来源（与私人听歌证据分开）/u);
   assert.deepEqual(
@@ -625,6 +629,8 @@ test("Pi agent plans from bounded external catalog candidates without a library 
       assert.equal(revision.candidate_scope, "external_catalog");
       assert.equal(revision.discovery_sources.length, 1);
       assert.equal(revision.discovery_sources[0].provider, "apple_music");
+      assert.equal(product.playlist_response_language, "zh");
+      assert.doesNotMatch(JSON.stringify(revision), /Invented|slow tempo|soft piano|crescendo|brass/u);
       return fauxAssistantMessage(
         [
           fauxToolCall("moondog_playlist_plan", {
@@ -659,6 +665,9 @@ test("Pi agent plans from bounded external catalog candidates without a library 
     ],
   );
   assert.match(revised.text, /发现来源：Apple Music US storefront/u);
+  assert.match(revised.text, /late night jazz/u);
+  assert.match(revised.text, /After Hours/u);
+  assert.doesNotMatch(revised.text, /Invented|slow tempo|soft piano|crescendo|brass/u);
   assert.doesNotMatch(revised.text, /without checking the source/u);
   application.close();
 });
@@ -747,6 +756,7 @@ test(`Pi agent branches from a trusted ${seedOrigin} seed through open artist si
   const seedResponses = seedOrigin === "profile" ? [
     (context) => {
       const seed = trustedProductContext(context).selected_profile_track;
+      assert.equal(trustedProductContext(context).playlist_response_language, "en");
       assert.equal(seed.title, profileSeed.label);
       assert.equal(seed.artist_credit, profileSeed.artistCredit);
       assert.equal(seed.source, "user_selected_profile_track");
@@ -813,9 +823,9 @@ test(`Pi agent branches from a trusted ${seedOrigin} seed through open artist si
             candidate_set_ids: [similarity.candidate_set_id],
             track_refs: similarity.tracks.map((track) => ({
               track_ref_id: track.track_ref_id,
-              selection_reason: `${track.track_ref_id} is a ListenBrainz listening-derived branch through ${track.artist_credit}.`,
+              selection_reason: "Invented mid-tempo guitar-band frame and Mandarin R&B songcraft.",
             })),
-            ordering_notes: "先 51000000，再 52000000-0000-4000-8000-000000000002。Keep unknown deadbeef and longer 51000000abcd unchanged.",
+            ordering_notes: "Invented progression from stripped live mood to an energetic climax.",
           }),
         ],
         { stopReason: "toolUse" },
@@ -835,7 +845,9 @@ test(`Pi agent branches from a trusted ${seedOrigin} seed through open artist si
   });
   const started = [];
   const result = await runtime.prompt(
-    "从 Midnight Lines 出发，给我 2 首协同相邻候选。",
+    seedOrigin === "profile"
+      ? `Find 2 songs from this track.\n\nTrack: ${JSON.stringify(profileSeed.label)}\nArtist: ${JSON.stringify(profileSeed.artistCredit)}`
+      : "从 Midnight Lines 出发，给我 2 首协同相邻候选。",
     {
       ...(seedOrigin === "profile" ? { profileSeed } : {}),
       onToolStart: (tool) => started.push(tool.capabilityId),
@@ -849,11 +861,17 @@ test(`Pi agent branches from a trusted ${seedOrigin} seed through open artist si
   ]);
   assert.equal(result.playlist_plan.candidate_scope, "external_catalog");
   assert.equal(result.playlist_plan.track_count, 2);
-  assert.match(result.text, /不代表你从未听过/u);
-  assert.match(result.text, /Open Current - Aster Field is a ListenBrainz/u);
-  assert.match(result.text, /先 Open Current - Aster Field，再 Second Estuary - North Geometry/u);
+  if (seedOrigin === "profile") {
+    assert.match(result.text, /2-track plan from external catalog candidates/u);
+    assert.doesNotMatch(result.text, /策展判断|排序逻辑|新颖性边界/u);
+  } else {
+    assert.match(result.text, /不代表你从未听过/u);
+  }
+  assert.match(result.text, /Mara Vale/u);
+  assert.match(result.text, /Tidal Rooms/u);
+  assert.doesNotMatch(JSON.stringify(result.playlist_plan), /Invented|mid-tempo|guitar-band|R&B|climax/u);
+  assert.doesNotMatch(result.text, /Invented|mid-tempo|guitar-band|R&B|climax/u);
   assert.doesNotMatch(result.text, /51000000-0000|52000000-0000/u);
-  assert.match(result.text, /unknown deadbeef and longer 51000000abcd unchanged/u);
   assert.equal(application.profileDiscoverySeedContext(), null);
   if (profileSeedRef) {
     await assert.rejects(application.discoverSimilarMusic({ seedTrackRefId: profileSeedRef }));
@@ -868,7 +886,9 @@ test(`Pi agent branches from a trusted ${seedOrigin} seed through open artist si
 }
 
 for (const scenario of [
-  { name: "English transport failure", prompt: "Find three songs from this track.", code: "wikidata_request_failed", concise: true },
+  { name: "English transport failure", prompt: 'Find three songs from this track.\n\nTrack: "返程"\nArtist: "Mara Vale"', code: "wikidata_request_failed", concise: true },
+  { name: "English override", prompt: "推荐三首歌。Please answer in English.", code: "wikidata_request_failed", concise: true },
+  { name: "Chinese override", prompt: "Find three songs. 请用中文回答。", code: "wikidata_request_failed", concise: true },
   { name: "Chinese transport failure", prompt: "从这首歌出发推荐三首。", code: "listenbrainz_request_failed", concise: true },
   { name: "invalid seed", prompt: "Find three songs from this track.", code: "seed_track_invalid", concise: false },
 ]) {
@@ -920,6 +940,8 @@ test(`Pi profile discovery handles ${scenario.name} without hiding other outcome
   assert.equal(result.playlist_plan, undefined);
   if (scenario.concise) {
     assert.match(result.text, /resend this request|重新提交这条请求/u);
+    if (scenario.name.startsWith("English")) assert.match(result.text, /^I couldn/u);
+    if (scenario.name.startsWith("Chinese")) assert.match(result.text, /^音乐发现服务/u);
     assert.ok(result.text.length < 220);
     assert.doesNotMatch(result.text, /Detailed model|wikidata|listenbrainz|apple_music|candidate_set/iu);
     assert.ok(!deltas.join("").includes(explanation), "do not flash the model's discarded failure essay");

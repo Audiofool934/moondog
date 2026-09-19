@@ -141,7 +141,9 @@ If discovery services cannot be reached, press ↑ to recall the request and Ent
 The selected profile track can come from Spotify history even when it is absent from your Apple library.
 Changing or removing its displayed title or artist removes the automatic handoff of the original selection.
 External discovery currently requires an imported Apple Music library to validate candidates; a history-only profile retains its local evidence and correction actions.
-Recommendations use listening-derived artist adjacency, with model-written reasons, rather than audio similarity or proof that a song is new to you.
+Recommendations show their listening-derived artist connections and release metadata.
+The model proposes the selection and order; these connections do not establish audio similarity or prove that a song is new to you.
+English and Chinese explanations follow your request text or explicit language instruction, while track and artist names retain their original language.
 
 To add a saved Spotify archive from inside the TUI, use `/spotify import-history "/path/to/spotify-history.zip"`.
 Every successful import keeps its receipt and full cumulative report in the conversation, then opens the interactive listening profile in the same TUI session.
@@ -739,7 +741,9 @@ Open-ended discovery plans select at most one track per release and two per arti
 
 Apple search is lexical catalog retrieval, not semantic similarity or audio analysis.
 
-Selection reasons may use returned artist, release, genre, date, duration, and personal profile evidence, but they must not invent sonic properties or present a keyword match as proof of contextual fit.
+External recommendation bases show the returned artist connection or catalog search terms, release, and catalog genre when available.
+Search terms remain labeled as search terms and are not treated as sonic properties.
+Those bases are retained when you reorder the draft, and unsupported model descriptions of tempo, instrumentation, or sound are omitted from the recommendation explanation.
 
 For requests framed as similar to, adjacent to, or branching from a known track, Moondog can start from one trusted prompt-local library TrackRef and use a second read-only path:
 

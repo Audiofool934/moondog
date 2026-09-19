@@ -1107,10 +1107,10 @@ test("rediscovery tool creates a safe private-history candidate set and authorit
             track_refs: [
               {
                 track_ref_id: rediscovery.tracks[0].track_ref_id,
-                selection_reason: "过去投入明显，并已超过有边界的安静窗口。",
+                selection_reason: "70000000-0000-4000-8000-000000000001 过去投入明显，并已超过有边界的安静窗口。",
               },
             ],
-            ordering_notes: "单曲重逢，不需要额外过渡。",
+            ordering_notes: "70000000 单曲重逢。Keep unknown deadbeef and longer 70000000abcd unchanged.",
           }),
         ],
         { stopReason: "toolUse" },
@@ -1131,6 +1131,10 @@ test("rediscovery tool creates a safe private-history candidate set and authorit
   ]);
   assert.equal(result.playlist_plan.candidate_scope, "private_history");
   assert.match(result.text, /历史重逢方案/u);
+  assert.match(result.text, /Old Signal - Archive Artist 过去投入明显/u);
+  assert.match(result.text, /排序逻辑：Old Signal - Archive Artist 单曲重逢/u);
+  assert.match(result.text, /unknown deadbeef and longer 70000000abcd unchanged/u);
+  assert.doesNotMatch(result.text, /70000000-0000/u);
   assert.match(result.text, /尚未写入 Spotify/u);
   assert.doesNotMatch(result.text, /新颖性边界/u);
   assert.doesNotMatch(result.text, /PRIVATE_|spotify:/u);

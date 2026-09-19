@@ -1543,6 +1543,28 @@ export class MoondogApplication {
           validatedPlaylistTrackRefs,
         )
       : null;
+    if (trustedTracks) {
+      const byRef = new Map(trustedTracks.map((track) => [track.track_ref_id, track]));
+      for (const track of plan.tracks) {
+        // Presentation evidence comes from registered candidates, never model prose.
+        delete track.discovery_evidence;
+        const trusted = byRef.get(track.track_ref_id);
+        if (track.candidate_scope !== "external_catalog" || trusted?.candidate_scope !== "external_catalog") continue;
+        if (trusted.catalog_provider === "listenbrainz" && trusted.discovery_basis) {
+          track.discovery_evidence = {
+            provider: "listenbrainz",
+            seed_artist: trusted.discovery_basis.seed_artist,
+            adjacent_artist: trusted.discovery_basis.adjacent_artist,
+          };
+        } else if (trusted.catalog_provider === "apple_music") {
+          track.discovery_evidence = {
+            provider: "apple_music",
+            matched_queries: [...(trusted.matched_queries ?? [])],
+            ...(trusted.primary_genre ? { primary_genre: trusted.primary_genre } : {}),
+          };
+        }
+      }
+    }
     this.validatedPlaylistTrackRefs = validatedPlaylistTrackRefs;
     this.pendingSpotifyPlaylist = validatedPlaylistTrackRefs
       ? {
