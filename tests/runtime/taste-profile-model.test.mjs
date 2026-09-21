@@ -97,6 +97,9 @@ test("real listening projection keeps artist Avoid and track Like independent ac
   const services = createListeningProfileDomainServices({ listeningHistoryStore: store, subjectId });
   const refresh = async () => buildTasteProfileModel(await services.getProfileSummary({ maxItems: 10 }));
   const initial = await refresh();
+  assert.match(initial.summaryLines.join("\n"), /1 listening events.*1 tracks/u);
+  assert.match(initial.summaryLines.join("\n"), /Listening time is unavailable/u);
+  assert.doesNotMatch(initial.summaryLines.join("\n"), /0 h/u);
   const initialTrack = initial.subjects.find((item) => item.kind === "track");
   const avoided = store.recordListenerCorrection({
     subjectId, entityType: "artist", label: "North Window", stance: "avoid", occurredAt: "2026-09-02T01:00:00Z",

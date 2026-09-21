@@ -5,9 +5,28 @@ It starts before the listener has a file and ends with an inspectable listening 
 
 ## First slice: getting started
 
-`/import` is the shared entry for three situations: a file is ready, the listener needs to request Spotify data, or the platform is still preparing the download.
+`/import` starts with two Spotify paths: **Quick start** and **Add past listening history**.
 The home action and command palette open that same guide.
 An unfinished conversation draft remains available after leaving the guide.
+
+Quick start reads up to 50 recent Spotify plays and previews the retained dates and track count before saving.
+It needs a Spotify connection, but no model or downloaded history archive.
+The connection step requests only `user-read-recently-played`; playback and playlist permissions remain part of the separate full Spotify login.
+This source does not include actual played duration, and it does not reconstruct older listening.
+Empty results, expired authorization, app access denial, and quota failures keep the archive path available.
+Repeated recent imports use the existing event fingerprints and do not duplicate the same recent observations.
+
+This release uses a configured Spotify client ID rather than a shared public app.
+The guide explains the one-time developer-app setup, opens Spotify Dashboard, and accepts the public Client ID in the TUI.
+No client secret is requested.
+Spotify currently limits new development apps to five allowlisted users and requires Premium for the app owner.
+These platform prerequisites remain visible; the guide does not promise universal one-click connection.
+
+Add past listening history supports an existing ZIP, a data-request guide, and a waiting screen that links back to Quick start.
+Account Data contains past-year history and supported profile observations; Extended Streaming History provides longer coverage and more playback details.
+Spotify prepares the archive asynchronously, so requesting it is separate from importing it.
+Both routes open the cumulative Profile immediately after saving and preserve prior listening and explicit corrections.
+Recent API observations and archive streams can overlap; their different timestamp semantics do not support a blanket cross-format deduplication claim.
 
 The file step accepts the existing Spotify ZIP and ListenBrainz JSON formats.
 It uses Pi's editor and path completion, accepts pasted or dragged local paths, and retains the input when a file cannot be read.

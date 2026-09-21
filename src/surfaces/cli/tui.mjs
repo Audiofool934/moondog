@@ -135,6 +135,7 @@ export async function runMoondogTui({
   runProfileAction,
   runWeb,
   prepareImport,
+  prepareRecentImport,
   refreshImportedData,
   openImportHelp,
   providers = listPiProviders,
@@ -173,6 +174,8 @@ export async function runMoondogTui({
   let importReturnHome = false;
   let preparedImport = null;
   let importNeedsRefresh = false;
+  let importOrigin = "file";
+  let importAuthController = null;
   let profileReturnHome = false;
   let profileSnapshot = null;
   let profileNeedsRefresh = false;
@@ -255,7 +258,7 @@ export async function runMoondogTui({
           : footerText.startsWith("History saved") ? "Saved; refreshing profile..." : "Saving history locally...";
         else if (importView.state.error) statusText = "See the message above.";
         else if (footerText.startsWith("Guide opened")) statusText = "Guide opened in browser.";
-        else statusText = importPage === "preview" ? "File ready; nothing added."
+        else statusText = importPage === "preview" ? "Ready; nothing added."
           : importPage === "file" ? "Choose one history file." : "Choose a step; Esc goes back.";
       }
       if (profileView && !importView && width < 60) {
@@ -365,6 +368,7 @@ export async function runMoondogTui({
     clearInterval(homeMotion);
     homeMotion = null;
     localCommandController?.abort();
+    importAuthController?.abort();
     preparedImport?.close?.();
     preparedImport = null;
     removeLifecycleListeners();
@@ -761,7 +765,7 @@ export async function runMoondogTui({
     try {
       const profile = await application.runLocalCommand("taste", runtimeStatus);
       addMoondogMessage([
-        "This is your cumulative local profile after this import, including previously imported history. The import receipt above reports this file's contribution.",
+        "This is your cumulative local profile, including previously imported history. The receipt above reports what this import added.",
         formatLocalResult("taste", profile),
         "Use `/taste` to select a track or artist, inspect its evidence, and adjust your preferences. `/taste report` reopens this full report.",
       ].join("\n\n"));
@@ -782,7 +786,7 @@ export async function runMoondogTui({
 
   const setImportPage = (page, details = {}) => {
     importPage = page;
-    importView?.setState({ page, ...details });
+    importView?.setState({ page, origin: importOrigin, spotify: application.spotifyStatus?.(), ...details });
     tui.requestRender(true);
   };
 
@@ -798,6 +802,7 @@ export async function runMoondogTui({
 
   const inspectImport = async (filePath) => {
     discardPreparedImport();
+    importOrigin = "file";
     const view = importView;
     view.setPath(filePath);
     setBusy(true);
@@ -821,6 +826,71 @@ export async function runMoondogTui({
     }
   };
 
+  const inspectRecentListening = async () => {
+    discardPreparedImport();
+    importOrigin = "quick";
+    const view = importView;
+    setBusy(true);
+    setImportPage("working", { message: "Reading your recent Spotify listening..." });
+    setFooter("Reading Spotify. Nothing has been added to your profile.", yellow);
+    try {
+      if (typeof prepareRecentImport !== "function") throw new Error("Recent listening is unavailable in this launch mode. You can import a history ZIP instead.");
+      const prepared = await prepareRecentImport();
+      if (cleanedUp || importView !== view) { prepared.close?.(); return; }
+      if (!prepared.preview.listeningEvents) {
+        prepared.close?.();
+        setImportPage("empty");
+        setFooter("Nothing imported. Try recent listening again or bring a ZIP.");
+      } else {
+        preparedImport = prepared;
+        setImportPage("preview", { preview: prepared.preview });
+        setFooter("Recent listening ready. Review it before importing.", green);
+      }
+    } catch (error) {
+      if (cleanedUp || importView !== view) return;
+      const messages = {
+        spotify_action_forbidden: "Spotify denied access. Check that this account is listed in your app's User Management and the app owner has Premium. You can also import a history ZIP.",
+        spotify_scope_insufficient: "Reconnect Spotify to grant access to recent listening.",
+        spotify_authentication_required: "Your Spotify connection needs to be renewed. Choose Reconnect Spotify.",
+        spotify_quota_exceeded: "Spotify's app quota is exhausted. You can still add a downloaded history ZIP.",
+        spotify_rate_limited: "Spotify is limiting requests. Wait before retrying, or add a downloaded history ZIP.",
+      };
+      setImportPage("quick", { error: messages[error.code] ?? sanitizeTerminalText(error.message) });
+      setFooter("Nothing imported. Your existing profile is unchanged.", yellow);
+    } finally {
+      setBusy(false);
+      if (!cleanedUp && importView === view) tui.setFocus(view);
+    }
+  };
+
+  const connectImportSpotify = async (clientId) => {
+    const view = importView;
+    const configuring = clientId !== undefined;
+    setBusy(true);
+    setImportPage("working", { message: configuring ? "Saving your Spotify app connection..." : "Complete Spotify authorization in your browser. Ctrl+C cancels." });
+    importAuthController = new AbortController();
+    if (!configuring) tui.stop({ preserveScreen: true });
+    try {
+      if (typeof runSpotify !== "function") throw new Error("Spotify connection is unavailable in this launch mode.");
+      await runSpotify(configuring ? ["configure", clientId] : ["login", "--history-only"], { signal: importAuthController.signal });
+      if (cleanedUp || importView !== view) return;
+      if (typeof rebuildRuntime === "function") await replaceRuntime();
+      if (cleanedUp || importView !== view) return;
+      setImportPage("quick", { message: configuring ? "App configured. Connect Spotify to continue." : "Spotify connected. Preview your recent listening to continue." });
+      setFooter("Connection ready. Listening history has not been imported.", green);
+    } catch (error) {
+      if (!cleanedUp && importView === view) {
+        setImportPage(configuring ? "client" : "quick", { error: sanitizeTerminalText(error.message) });
+        setFooter("Nothing imported. You can retry or add a history ZIP.", yellow);
+      }
+    } finally {
+      importAuthController = null;
+      if (!configuring && !cleanedUp) { tui.start(); tui.requestRender(true); }
+      setBusy(false);
+      if (!cleanedUp && importView === view) tui.setFocus(view);
+    }
+  };
+
   const commitInspectedImport = async () => {
     if (!preparedImport) return;
     const pending = preparedImport;
@@ -836,16 +906,16 @@ export async function runMoondogTui({
       importNeedsRefresh = true;
       discardPreparedImport();
       if (cleanedUp) return;
-      const counts = receipt.already_imported
-        ? "This file is already in your profile. No duplicate listening records were added."
+      const counts = receipt.already_imported || (receipt.inserted_events === 0 && !receipt.inserted_profile_evidence && !receipt.superseded_events)
+        ? "Your profile is already up to date with this import. No new listening records were added."
         : `${receipt.inserted_events ?? 0} new listening records · ${receipt.duplicate_events ?? 0} already present.`;
       // Keep the durable result visible even if refreshing the runtime later fails.
       addMoondogMessage([
         "## Listening history imported",
-        `${preview.sourceLabel} · ${preview.fileName}`,
+        [preview.sourceLabel, preview.fileName].filter(Boolean).join(" · "),
         counts,
         ...(receipt.superseded_events ? [`${receipt.superseded_events} overlapping records were reconciled with richer history.`] : []),
-        "Your previous history and explicit preferences are kept. You can bring another file through `/import` whenever it is ready.",
+        "Your previous history and explicit preferences are kept. Use `/import` to refresh recent listening or add past history from a ZIP.",
       ].join("\n\n"));
       setImportPage("working", { message: "History saved. Preparing your listening profile..." });
       setFooter("History saved. Refreshing your profile...", yellow);
@@ -876,20 +946,25 @@ export async function runMoondogTui({
     }
   };
 
-  const handleImportAction = async ({ type, path: filePath } = {}) => {
+  const handleImportAction = async ({ type, path: filePath, clientId } = {}) => {
     if (busy || cleanedUp || !importView) return;
     if (type === "inspect") { await inspectImport(filePath); return; }
     if (type === "commit") { await commitInspectedImport(); return; }
+    if (type === "recent") { await inspectRecentListening(); return; }
+    if (type === "connectSpotify" || type === "configureSpotify") {
+      await connectImportSpotify(type === "configureSpotify" ? clientId : undefined);
+      return;
+    }
     if (type === "close") { closeImport(); return; }
     if (type === "profile") {
       closeImport();
       await openProfile();
       return;
     }
-    if (type === "openSpotify" || type === "openAppleHelp") {
-      const destination = type === "openSpotify" ? "spotify" : "apple";
+    if (["openSpotify", "openSpotifySetup", "openAppleHelp"].includes(type)) {
+      const destination = type === "openSpotify" ? "spotify" : type === "openSpotifySetup" ? "spotifySetup" : "apple";
       const url = destination === "spotify" ? "https://www.spotify.com/account/privacy/"
-        : "https://support.apple.com/guide/music/mus27cd5060f/mac";
+        : destination === "spotifySetup" ? "https://developer.spotify.com/dashboard" : "https://support.apple.com/guide/music/mus27cd5060f/mac";
       try {
         if (typeof openImportHelp !== "function") throw new Error("Browser opening is unavailable.");
         await openImportHelp(destination);
@@ -903,9 +978,9 @@ export async function runMoondogTui({
       if (importPage === "start") { closeImport(); return; }
       if (importPage === "preview") {
         discardPreparedImport();
-        setImportPage("file");
-      } else setImportPage(importPage === "waiting" ? "spotify" : "start");
-    } else if (["start", "file", "spotify", "waiting", "other"].includes(type)) {
+        setImportPage(importOrigin === "quick" ? "quick" : "file");
+      } else setImportPage({ waiting: "spotify", file: "spotify", setup: "quick", client: "setup", empty: "quick" }[importPage] ?? "start");
+    } else if (["start", "file", "spotify", "waiting", "other", "quick", "setup", "client"].includes(type)) {
       discardPreparedImport();
       setImportPage(type);
     }
@@ -932,7 +1007,7 @@ export async function runMoondogTui({
     }
     setImportPage("start");
     tui.setFocus(importView);
-    setFooter("Have a file, or need help getting one? Start here.");
+    setFooter("Start with recent listening, or add past history from a ZIP.");
     if (filePath) await inspectImport(filePath);
   };
 

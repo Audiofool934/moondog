@@ -44,6 +44,7 @@ One-time setup:
 
 Commands:
 
+- \`moondog spotify login [client-id] [--history-only]\`
 - \`moondog spotify status [--json]\`
 - \`moondog spotify logout [--json]\`
 - \`moondog spotify account|now|devices|queue [--json]\`
@@ -178,7 +179,7 @@ function parseRecentFlags(action, rest, { cursors = true } = {}) {
   };
 }
 
-function publicAuthStatus(status, clientIdConfigured) {
+function publicAuthStatus(status, clientIdConfigured, requiredScopes = SPOTIFY_DEFAULT_SCOPES) {
   const stored = status?.state === "stored";
   const result = {
     provider: "spotify",
@@ -200,7 +201,7 @@ function publicAuthStatus(status, clientIdConfigured) {
       typeof status?.scopes === "string"
         ? status.scopes.split(/\s+/u).filter(Boolean).sort()
         : [];
-    const missingScopes = SPOTIFY_DEFAULT_SCOPES.filter(
+    const missingScopes = requiredScopes.filter(
       (scope) => !grantedScopes.includes(scope),
     );
     result.scopes_sufficient = missingScopes.length === 0;
@@ -257,10 +258,11 @@ function formatPlain(action, value) {
       `Redirect URI: ${SPOTIFY_DEFAULT_REDIRECT_URI}`,
     ];
     if (value.state === "stored") {
+      const scopeLabel = value.scope_purpose === "recent_listening" ? "recent-listening" : "connected-action";
       lines.push(
         value.scopes_sufficient
-          ? "Spotify connected-action scopes: ready"
-          : `Spotify connected-action scopes: re-login required (${value.missing_scopes.join(", ")})`,
+          ? `Spotify ${scopeLabel} scopes: ready`
+          : `Spotify ${scopeLabel} scopes: re-login required (${value.missing_scopes.join(", ")})`,
       );
     }
     return lines.join("\n");
@@ -415,6 +417,7 @@ function createRuntimeResolver({
   openBrowser,
   credentialStore,
   spotify,
+  historyOnly = false,
 }) {
   let scopedStore;
   let configuration;
@@ -470,6 +473,7 @@ function createRuntimeResolver({
       }
       authentication = createSpotifyAuthentication({
         clientId: current.clientId,
+        ...(historyOnly ? { scopes: ["user-read-recently-played"] } : {}),
         credentialStore: resolveStore(),
         fetchImpl,
         ...(openBrowser ? { openBrowser } : {}),
@@ -609,6 +613,7 @@ export async function runSpotifyCommand({
   historyArchiveImporter = readSpotifyHistoryArchive,
   spotify,
   signalTarget = process,
+  signal,
 } = {}) {
   const options = parseArguments(args, json);
   const action = options.action;
@@ -676,6 +681,7 @@ export async function runSpotifyCommand({
     openBrowser,
     credentialStore,
     spotify,
+    historyOnly: action === "login" && options.rest.includes("--history-only"),
   });
 
   if (action === "configure") {
@@ -695,18 +701,22 @@ export async function runSpotifyCommand({
   }
 
   if (action === "login") {
-    if (options.rest.length > 1) {
-      throw commandError("Usage: moondog spotify login [client-id].");
+    const historyOnly = options.rest.includes("--history-only");
+    const loginArgs = options.rest.filter((arg) => arg !== "--history-only");
+    if (loginArgs.length > 1 || options.rest.length - loginArgs.length > 1 || loginArgs.some((arg) => arg.startsWith("--"))) {
+      throw commandError("Usage: moondog spotify login [client-id] [--history-only].");
     }
-    if (options.rest[0]) {
+    if (loginArgs[0]) {
       await externalCall(
-        () => runtime.configure(options.rest[0]),
+        () => runtime.configure(loginArgs[0]),
         "Spotify configuration could not be saved.",
       );
     }
     const authentication = await runtime.authentication();
     const controller = new AbortController();
     const onSigint = () => controller.abort();
+    if (signal?.aborted) controller.abort();
+    signal?.addEventListener("abort", onSigint, { once: true });
     signalTarget.once("SIGINT", onSigint);
     try {
       const status = await externalCall(
@@ -721,11 +731,13 @@ export async function runSpotifyCommand({
           }),
         "Spotify login failed before a usable credential was saved.",
       );
-      const result = publicAuthStatus(status, true);
+      const result = publicAuthStatus(status, true, historyOnly ? ["user-read-recently-played"] : SPOTIFY_DEFAULT_SCOPES);
+      if (historyOnly) result.scope_purpose = "recent_listening";
       emit(stdout, action, result, options.json);
       return result;
     } finally {
       signalTarget.removeListener("SIGINT", onSigint);
+      signal?.removeEventListener("abort", onSigint);
     }
   }
 

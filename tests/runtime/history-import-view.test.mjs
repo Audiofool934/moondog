@@ -37,7 +37,7 @@ test("import actions remain host-owned and the profile shortcut follows readines
   const { view, actions } = fixture();
   assert.doesNotMatch(screen(view), /View my profile/u);
   view.handleInput("\r");
-  assert.deepEqual(actions.pop(), { type: "file" });
+  assert.deepEqual(actions.pop(), { type: "quick" });
   assert.equal(view.state.page, "start");
   view.handleInput("\x1b[B");
   view.handleInput("\r");
@@ -140,12 +140,12 @@ test("every page fits wide and narrow body viewports with an intact file cursor 
     view.setPath("/tmp/listener/Downloads/a long listening history file.zip");
     for (const [width, rows] of [[80, 20], [40, 14], [40, 12], [26, 8], [8, 3], [1, 1], [40, 0]]) {
       resize(rows);
-      for (const page of ["start", "spotify", "waiting", "other", "file", "preview", "working"]) {
+      for (const page of ["start", "spotify", "waiting", "other", "quick", "setup", "client", "empty", "file", "preview", "working"]) {
         view.setState({ page, preview, ...(page === "file" ? { error: "Choose a supported file; your path is still here." } : {}) });
         const lines = view.render(width);
         assert.equal(lines.length, rows, `${page} height at ${width}x${rows}`);
         assert.ok(lines.every((line) => visibleWidth(line) === width), `${page} width at ${width}x${rows}`);
-        if (page === "file" && width >= 40 && rows >= 12) assert.ok(lines.some((line) => line.includes(CURSOR_MARKER)));
+        if (["file", "client"].includes(page) && width >= 40 && rows >= 12) assert.ok(lines.some((line) => line.includes(CURSOR_MARKER)));
         if (page === "preview" && width >= 40 && rows >= 12) assert.match(lines.join("\n"), /Import into my profile/u);
         if (options.environment?.NO_COLOR) assert.ok(lines.every((line) => !/\x1b\[[\d;:]*m/u.test(line)));
       }
@@ -161,6 +161,7 @@ test("short guides scroll while actions remain visible and external text cannot 
   view.handleInput("\x1b[6~");
   assert.notEqual(screen(view, 40), first);
   assert.match(screen(view, 40), /Open Spotify privacy/u);
+  view.handleInput("\x1b[B");
   view.handleInput("\r");
   assert.deepEqual(actions.pop(), { type: "openSpotify" });
   view.setState({ page: "preview", preview: { ...preview, fileName: "history\x1b[2J\u202ezip" }, error: "failed\x1b]52;c;payload\x07\u2066" });

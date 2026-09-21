@@ -92,16 +92,24 @@ export class HistoryImportView {
       this.editor.setText(text);
       this.emit("inspect", { path: this.getPath() });
     };
+    this.clientEditor = new Editor(tui, {
+      borderColor: (text) => this.getTheme().faint(text), selectList,
+    }, { paddingX: 1 });
+    this.clientEditor.onSubmit = (text) => {
+      this.clientEditor.setText(text);
+      this.emit("configureSpotify", { clientId: text.trim() });
+    };
   }
 
   get focused() { return this._focused; }
   set focused(value) {
     this._focused = Boolean(value);
     this.editor.focused = this._focused && this.state.page === "file";
+    this.clientEditor.focused = this._focused && this.state.page === "client";
     if (!value) this.editor.setText(this.getPath());
   }
 
-  invalidate() { this.editor.invalidate(); }
+  invalidate() { this.editor.invalidate(); this.clientEditor.invalidate(); }
   getPath() { return this.editor.getExpandedText(); }
   setPath(value) { this.editor.setText(String(value ?? "")); }
 
@@ -117,6 +125,7 @@ export class HistoryImportView {
     this.state = next;
     if (typeof state?.profileReady === "boolean") this.profileReady = state.profileReady;
     this.editor.focused = this._focused && next.page === "file";
+    this.clientEditor.focused = this._focused && next.page === "client";
   }
 
   emit(type, detail = {}) { this.onAction?.({ type, ...detail }); }
@@ -126,28 +135,74 @@ export class HistoryImportView {
     const file = { type: "file", label: "Choose a file" };
     const back = { type: "back", label: "Back" };
     switch (this.state.page) {
-      case "spotify": return {
-        title: "Get your Spotify history",
+      case "quick": {
+        const status = this.state.spotify ?? {};
+        const ready = status.state === "ready" && status.scopes?.granted?.includes("user-read-recently-played");
+        const configured = status.client_id_configured;
+        return {
+          title: "Quick start with Spotify",
+          paragraphs: [
+            "Start a listening profile from up to 50 recent plays.",
+            "Preview before saving. No model or history download needed.",
+            "Older listening can be added later with a history ZIP.",
+            ready ? "Spotify is connected. Read your recent listening when you are ready."
+              : configured ? "Connect Spotify to allow reading your recent listening."
+                : "Spotify connection needs one-time app setup on this installation. You can also start with a downloaded ZIP.",
+          ],
+          actions: [
+            { type: ready ? "recent" : configured ? "connectSpotify" : "setup", label: ready ? "Preview recent listening" : configured ? "Connect Spotify" : "Set up Spotify connection" },
+            ...(ready ? [{ type: "connectSpotify", label: "Reconnect Spotify" }] : []),
+            { type: "spotify", label: "Add past listening history" }, back,
+          ],
+        };
+      }
+      case "setup": return {
+        title: "Set up Spotify connection",
         paragraphs: [
-          "Open account privacy > Download your data.",
-          "Extended history is best for years of listening.",
-          "Account Data also works: past-year history and library evidence.",
-          "Download the ZIP when Spotify says it is ready.",
+          "This release uses your own Spotify developer app.",
+          "In Spotify Dashboard, create an app with Web API enabled.",
+          "Add redirect URI: http://127.0.0.1:43821/callback",
+          "Copy the Client ID from its settings. No client secret is needed.",
+          "Development apps require Premium for the app owner and allow up to 5 listed users. Add your listener under User Management if needed.",
         ],
         actions: [
+          { type: "openSpotifySetup", label: "Open Spotify Dashboard" },
+          { type: "client", label: "Enter my Client ID" },
+          { type: "spotify", label: "Use a history ZIP instead" }, back,
+        ],
+      };
+      case "empty": return {
+        title: "No recent listening returned",
+        paragraphs: [
+          "Spotify returned no recent tracks. Nothing was imported.",
+          "Listen in Spotify, then try again, or add an existing history ZIP.",
+          "An empty recent snapshot does not mean your account has no listening history.",
+        ],
+        actions: [{ type: "recent", label: "Try recent listening again" }, { type: "spotify", label: "Add past listening history" }, back],
+      };
+      case "spotify": return {
+        title: "Add past listening history",
+        paragraphs: [
+          "Already have a Spotify ZIP? Choose it below, without extracting it.",
+          "To request one: account privacy > Download your data.",
+          "Extended Streaming History covers years of listening. Account Data includes past-year history and library evidence.",
+          "Complete Spotify's confirmation steps and wait for its download email. Extended history can take around 30 days.",
+          "No Spotify developer app or Moondog connection is needed for file import.",
+        ],
+        actions: [
+          { type: "file", label: "Choose my Spotify ZIP" },
           { type: "openSpotify", label: "Open Spotify privacy" },
-          { type: "file", label: "I have the download" },
           { type: "waiting", label: "I'm waiting for my download" }, back,
         ],
       };
       case "waiting": return {
         title: "Come back with your download",
         paragraphs: [
-          "When the file is ready, return to /import and choose it.",
+          "When the file is ready, return to /import > Add past listening history.",
           this.profileReady ? "Your existing profile is still ready to explore." : "You can keep exploring music while you wait.",
           "Connecting Spotify enables live features; it does not reconstruct your full listening history.",
         ],
-        actions: [file, ...profile, back],
+        actions: [{ type: "quick", label: "Quick start while I wait" }, file, ...profile, back],
       };
       case "other": return {
         title: "Other listening sources",
@@ -159,34 +214,37 @@ export class HistoryImportView {
       };
       case "preview": {
         const preview = this.state.preview ?? {};
+        const recent = this.state.origin === "quick";
         const first = day(preview.earliestListeningAt);
         const last = day(preview.latestListeningAt);
         return {
-          title: "Review this import",
+          title: recent ? "Review recent listening" : "Review this import",
           notice: "Nothing added yet.",
           paragraphs: [
             clean(preview.sourceLabel) || "Listening history",
             clean(preview.fileName),
             `${count(preview.listeningEvents)} plays · ${count(preview.tracks)} tracks`,
             first && last ? `${first} to ${last}` : "Listening dates not included.",
-            `Actual played duration: ${count(preview.eventsWithPlayedMs)} of ${count(preview.listeningEvents)} records`,
+            recent
+              ? "Listening time is not supplied by Spotify."
+              : `Actual played duration: ${count(preview.eventsWithPlayedMs)} of ${count(preview.listeningEvents)} records`,
             ...(preview.profileEvidence > 0 ? [`Other music observations: ${count(preview.profileEvidence)}`] : []),
             clean(preview.scopeNote),
           ].filter(Boolean),
           actions: [
             { type: "commit", label: "Import into my profile" },
-            { type: "file", label: "Choose another file" }, back,
+            recent ? { type: "recent", label: "Refresh recent listening" } : { type: "file", label: "Choose another file" }, back,
           ],
         };
       }
       default: return {
-        title: this.profileReady ? "Add listening history" : "Bring your listening history",
+        title: "Import from Spotify",
         paragraphs: [
-          "Choose a Spotify ZIP or saved ListenBrainz JSON.",
-          this.profileReady ? "Add a newer file to update your listening profile." : "See your listening patterns, then refine your profile.",
-          "Need a download first? Start with Spotify history.",
+          "Quick start: connect Spotify and preview recent listening.",
+          "Past history: bring a downloaded ZIP for a deeper picture.",
+          this.profileReady ? "Both paths add to your existing profile and keep your choices." : "Start with what is available. Add more history whenever you are ready.",
         ],
-        actions: [file, { type: "spotify", label: "Get Spotify history" }, { type: "other", label: "Other sources" }, ...profile],
+        actions: [{ type: "quick", label: "Quick start" }, { type: "spotify", label: "Add past listening history" }, { type: "other", label: "Other sources" }, ...profile],
       };
     }
   }
@@ -196,6 +254,7 @@ export class HistoryImportView {
     if (data.includes("\x1b[200~")) this.pasteActive = true;
     if (this.pasteActive) {
       if (this.state.page === "file") this.editor.handleInput(data);
+      if (this.state.page === "client") this.clientEditor.handleInput(data);
       const paste = this.pasteTail + data;
       this.pasteActive = !paste.includes("\x1b[201~");
       this.pasteTail = this.pasteActive ? paste.slice(-5) : "";
@@ -212,6 +271,10 @@ export class HistoryImportView {
       } else this.editor.handleInput(data);
       return;
     }
+    if (this.state.page === "client") {
+      this.clientEditor.handleInput(data);
+      return;
+    }
     const { actions } = this.pageContent();
     if (keys.matches(data, "tui.select.up") || keys.matches(data, "tui.select.down")) {
       this.selected = (this.selected + (keys.matches(data, "tui.select.up") ? -1 : 1) + actions.length) % actions.length;
@@ -225,17 +288,21 @@ export class HistoryImportView {
   }
 
   renderFile(width, height, theme) {
+    const client = this.state.page === "client";
+    const input = client ? this.clientEditor : this.editor;
     const error = clean(this.state.error?.message ?? this.state.error);
     const errorLines = error ? wrapTextWithAnsi(error, width).slice(0, Math.min(3, Math.max(1, height - 6))).map(theme.error) : [];
-    const header = [theme.bold("Choose your history file"), theme.muted("Spotify ZIP or ListenBrainz JSON"), theme.text("File path")];
-    const hint = theme.muted(width >= 64 ? "Paste or drag one path · Tab completes · Enter inspect · Esc back"
+    const header = client
+      ? [theme.bold("Enter your Spotify Client ID"), theme.muted("From your app settings. No client secret."), theme.text("Client ID")]
+      : [theme.bold("Choose your history file"), theme.muted("Spotify ZIP or ListenBrainz JSON"), theme.text("File path")];
+    const hint = client ? theme.muted("Enter save · Esc back") : theme.muted(width >= 64 ? "Paste or drag one path · Tab completes · Enter inspect · Esc back"
       : width >= 38 ? "Paste/drag · Tab path · ↵ inspect · Esc" : "Tab path · ↵ inspect · Esc");
     const budget = Math.max(1, height - header.length - errorLines.length - 1);
-    this.editor.setAutocompleteMaxVisible(Math.max(1, Math.min(4, budget - 8)));
-    let editor = this.editor.render(width);
+    input.setAutocompleteMaxVisible(Math.max(1, Math.min(4, budget - 8)));
+    let editor = input.render(width);
     if (editor.length > budget) {
-      const tailSize = this.editor.isShowingAutocomplete()
-        ? Math.min(this.editor.getAutocompleteMaxVisible() + 1, Math.max(0, budget - 1)) : 0;
+      const tailSize = input.isShowingAutocomplete()
+        ? Math.min(input.getAutocompleteMaxVisible() + 1, Math.max(0, budget - 1)) : 0;
       const tail = tailSize ? editor.slice(-tailSize) : [];
       const core = tailSize ? editor.slice(0, -tailSize) : editor;
       const available = budget - tail.length;
@@ -255,7 +322,7 @@ export class HistoryImportView {
     const inner = Math.max(1, columns - inset * 2);
     const theme = this.getTheme();
     let lines;
-    if (this.state.page === "file") {
+    if (["file", "client"].includes(this.state.page)) {
       lines = this.renderFile(inner, height, theme);
     } else if (this.state.page === "working") {
       const message = clean(this.state.message) || "Working on your history file…";

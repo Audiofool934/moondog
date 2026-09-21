@@ -37,7 +37,7 @@ import {
 import { runSpotifyCommand } from "../src/surfaces/cli/spotify-command.mjs";
 import { runListenBrainzCommand } from "../src/surfaces/cli/listenbrainz-command.mjs";
 import { openListeningHistoryStore } from "../src/profile/listening-history-store.mjs";
-import { prepareHistoryImport } from "../src/profile/history-import.mjs";
+import { prepareHistoryImport, prepareSpotifyRecentImport } from "../src/profile/history-import.mjs";
 import { runMoondogTui } from "../src/surfaces/cli/tui.mjs";
 import { createAppleMusicCatalog } from "../src/integrations/apple-music/catalog.mjs";
 import {
@@ -295,7 +295,7 @@ async function runListenBrainzSurface(options) {
   }
 }
 
-async function prepareTuiHistoryImport(filePath) {
+async function prepareTuiHistoryImport(filePath, { recentPage } = {}) {
   const historyStore = await openListeningHistoryStore();
   try {
     const appleSubjectId = await optionalAppleMusicSubjectId();
@@ -303,7 +303,7 @@ async function prepareTuiHistoryImport(filePath) {
       ...(appleSubjectId ? { preferredSubjectId: appleSubjectId } : {}),
       create: true,
     });
-    const prepared = await prepareHistoryImport({
+    const prepared = recentPage ? prepareSpotifyRecentImport({ page: recentPage, subjectId }) : await prepareHistoryImport({
       filePath, subjectId, capturedAt: new Date().toISOString(),
     });
     let closed = false;
@@ -311,10 +311,12 @@ async function prepareTuiHistoryImport(filePath) {
     return {
       preview: prepared.preview,
       async commit() {
-        if (closed || committed) throw new Error("Inspect the file again before importing it.");
+        if (closed || committed) throw new Error("Preview the listening data again before importing it.");
         const options = { args: ["import-history", filePath], stdout: { write() {} }, subjectId };
         // Commit the exact inspected bundle, even if the source file later changes.
-        const receipt = prepared.provider === "spotify"
+        const receipt = prepared.provider === "spotify-recent"
+          ? historyStore.ingest(prepared.bundle)
+          : prepared.provider === "spotify"
           ? await runSpotifyCommand({
               ...options, recentActivityStore: historyStore,
               historyArchiveImporter: async () => prepared.bundle,
@@ -341,6 +343,7 @@ async function prepareTuiHistoryImport(filePath) {
 async function openImportHelp(destination) {
   const url = {
     spotify: "https://www.spotify.com/account/privacy/",
+    spotifySetup: "https://developer.spotify.com/dashboard",
     apple: "https://support.apple.com/guide/music/mus27cd5060f/mac",
   }[destination];
   if (!url) throw new Error("Unknown import guide.");
@@ -861,6 +864,11 @@ async function main() {
       application,
       runtime,
       prepareImport: prepareTuiHistoryImport,
+      prepareRecentImport: async () => prepareTuiHistoryImport(undefined, {
+        recentPage: await runSpotifySurface({
+          args: ["recent", "--limit", "50"], stdout: { write() {} },
+        }),
+      }),
       openImportHelp,
       refreshImportedData: async () => {
         const next = await loadDomainServices();
@@ -898,7 +906,7 @@ async function main() {
         });
         return json ? `\`\`\`json\n${output.trim()}\n\`\`\`` : output.trim();
       },
-      runSpotify: async (args) => {
+      runSpotify: async (args, { signal } = {}) => {
         let output = "";
         const capture = {
           write(value) {
@@ -907,6 +915,7 @@ async function main() {
         };
         await runSpotifySurface({
           args,
+          signal,
           stdout: capture,
           stderr: args[0] === "login" ? process.stderr : capture,
           resolutionCache: await spotifyResolutionCacheIfConfigured(),

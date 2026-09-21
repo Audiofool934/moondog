@@ -35,7 +35,10 @@ To try the grounded agent loop with fictional data and no credentials, run `npm 
 
 ## Bring your history. Correct the reading.
 
-Import a saved Spotify Account Data or Extended Streaming History ZIP from inside Moondog:
+Open `/import` for two Spotify paths: **Quick start** previews recent listening from a connected account, and **Add past listening history** imports a downloaded ZIP.
+Quick start currently requires a configured Spotify developer app; the guide walks through setup when needed.
+File import needs no Spotify connection.
+You can also open a saved Spotify Account Data or Extended Streaming History ZIP directly:
 
 ```text
 /import "/path/to/spotify-history.zip"

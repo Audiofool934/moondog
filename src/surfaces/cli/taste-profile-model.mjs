@@ -87,11 +87,13 @@ function metrics(item) {
 function overview(profile) {
   const coverage = profile?.coverage ?? {};
   const lines = [];
+  const durationUnavailable = coverage.effective_listening_events > 0 && coverage.events_with_played_duration === 0;
   const listening = [
     [count(coverage.effective_listening_events), "listening events"],
-    [amount(coverage.listening_hours), "h"],
+    [durationUnavailable ? undefined : amount(coverage.listening_hours), "h"],
     [count(coverage.listening_tracks), "tracks"],
   ].filter(([value]) => value !== undefined).map(([value, label]) => `${value} ${label}`);
+  if (durationUnavailable) listening.push("Listening time is unavailable");
   if (listening.length) lines.push(listening.join(" · "));
   if (Number.isSafeInteger(coverage.tracks_observed) && coverage.tracks_observed > 0) {
     const loved = count(coverage.loved_or_favorited);

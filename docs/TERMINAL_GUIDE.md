@@ -206,8 +206,16 @@ Keep the generated ZIP under the ignored `outputs/` directory rather than adding
 ## Import and inspect listening history
 
 Start with `/import`, or choose **Bring your history** from the home screen.
-The guide offers a saved-file path, Spotify data-request instructions, and the current ListenBrainz and Apple Music import routes.
-It works without a model or Spotify sign-in.
+The guide starts with **Quick start** and **Add past listening history** for Spotify.
+Both paths work without a model and open the cumulative Profile after import.
+Other existing sources remain available under **Other sources**.
+
+**Quick start** connects Spotify and previews up to 50 recent plays before you choose **Import into my profile**.
+It requests only permission to read recent listening, and does not control playback or change your Spotify library.
+Recent listening has playback timestamps but no actual played duration, and cannot reconstruct the full history.
+This release needs a configured Spotify developer app; the guide provides setup instructions and a Client ID input if needed.
+New development apps require Premium for the app owner and support at most five allowlisted users, as described in [Spotify's quota rules](https://developer.spotify.com/documentation/web-api/concepts/quota-modes).
+File import remains available without Spotify authorization or developer-app setup.
 
 If you need Spotify data, open the account privacy page from the guide and use **Download your data**.
 Extended Streaming History provides the longer listening history, while Account Data contains past-year history plus supported library and profile snapshots.
@@ -216,7 +224,7 @@ The [Spotify download instructions](https://support.spotify.com/us/article/data-
 If Spotify is still preparing the export, return to `/import` when it is ready; an existing local profile remains usable meanwhile.
 Spotify login and recent-play reads do not reconstruct the full exported history.
 
-Choose **Choose a file**, then paste or drag one file path into the terminal.
+Choose **Add past listening history**, then **Choose my Spotify ZIP**, and paste or drag one file path into the terminal.
 Tab completes paths, including quoted paths with spaces.
 Plain paths, quoted paths, Finder-escaped paths, `~/` paths, and local `file://` URLs are accepted.
 The original source is kept unchanged.

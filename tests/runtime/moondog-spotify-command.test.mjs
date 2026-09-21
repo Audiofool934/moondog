@@ -289,6 +289,34 @@ test("Spotify login prints the authorization URL and callback without exposing c
   assert.equal(JSON.parse(setup.stdout.value()).state, "stored");
 });
 
+test("history-only login reports its granted scope as ready without requesting full login again", async () => {
+  for (const json of [true, false]) {
+    const setup = fixture(fakeSpotify({ scopes: "user-read-recently-played" }));
+    const result = await runSpotifyCommand({ args: ["login", "--history-only"], json, ...setup });
+    assert.equal(result.scope_purpose, "recent_listening");
+    assert.equal(result.scopes_sufficient, true);
+    assert.deepEqual(result.missing_scopes, []);
+    assert.doesNotMatch(setup.stdout.value(), /re-login required/u);
+    if (!json) assert.match(setup.stdout.value(), /recent-listening scopes: ready/u);
+  }
+});
+
+test("history-only login requests just recent listening and releases its callback on cancellation", async () => {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const controller = new AbortController();
+    let requestedScope;
+    await assert.rejects(runSpotifyCommand({
+      args: ["login", "--history-only"],
+      spotify: { configuration: { clientId: "test_client_123456" } },
+      credentialStore: { async read() {}, async delete() {}, async write() { assert.fail("Cancelled login must not save credentials"); } },
+      stdout: captureStream(), stderr: captureStream(), signalTarget: new EventEmitter(),
+      signal: controller.signal,
+      async openBrowser(url) { requestedScope = new URL(url).searchParams.get("scope"); controller.abort(); },
+    }), { code: "spotify_auth_aborted" });
+    assert.equal(requestedScope, "user-read-recently-played");
+  }
+});
+
 test("Spotify status and account JSON whitelist away token-shaped fields", async () => {
   const status = fixture();
   await runSpotifyCommand({ args: ["status", "--json"], ...status });

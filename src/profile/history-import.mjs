@@ -5,6 +5,25 @@ import { fileURLToPath } from "node:url";
 
 import { readSpotifyHistoryArchive } from "../integrations/spotify/history-archive.mjs";
 import { readListenBrainzHistoryFile } from "../integrations/listenbrainz/history-file.mjs";
+import { projectSpotifyRecentActivity } from "../integrations/spotify/recent-activity.mjs";
+
+export function prepareSpotifyRecentImport({ page, subjectId, capturedAt = new Date().toISOString() }) {
+  const bundle = projectSpotifyRecentActivity({ page, subjectId, capturedAt });
+  const dates = bundle.listening_events.map((event) => event.occurred_at).sort();
+  return {
+    provider: "spotify-recent",
+    bundle,
+    preview: {
+      sourceLabel: "Spotify recent listening",
+      listeningEvents: bundle.listening_events.length,
+      tracks: bundle.track_refs.length,
+      earliestListeningAt: dates[0],
+      latestListeningAt: dates.at(-1),
+      eventsWithPlayedMs: 0,
+      scopeNote: "A recent snapshot, up to 50 plays. Spotify does not supply actual played duration here. Add a history ZIP later for older listening.",
+    },
+  };
+}
 
 function fail(code, message) {
   const error = new Error(message);

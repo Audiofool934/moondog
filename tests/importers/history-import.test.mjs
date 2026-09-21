@@ -8,7 +8,8 @@ import { promisify } from "node:util";
 import test from "node:test";
 
 import { createFictionalSpotifyHistoryArchive } from "../../src/demo/fictional-spotify-history.mjs";
-import { prepareHistoryImport } from "../../src/profile/history-import.mjs";
+import { prepareHistoryImport, prepareSpotifyRecentImport } from "../../src/profile/history-import.mjs";
+import { openListeningHistoryStore } from "../../src/profile/listening-history-store.mjs";
 
 const exec = promisify(execFile);
 const subjectId = "11111111-1111-4111-8111-111111111111";
@@ -21,6 +22,25 @@ async function fixture(t) {
   return { root, zip };
 }
 const prepare = (filePath) => prepareHistoryImport({ filePath, subjectId, capturedAt });
+
+test("recent listening preview keeps unknown durations and repeated saves add no duplicate events", async (t) => {
+  const { root } = await fixture(t);
+  const store = await openListeningHistoryStore({ environment: { MOONDOG_STATE_HOME: root } });
+  t.after(() => store.close());
+  store.localSubjectId({ preferredSubjectId: subjectId, create: true });
+  const prepared = prepareSpotifyRecentImport({ subjectId, capturedAt, page: {
+    provider: "spotify", items: [{ played_at: "2026-09-01T10:00:00.000Z", track: {
+      id: "synthetic-track", name: "Synthetic song", artists: ["Synthetic artist"], album: "Synthetic album", duration_ms: 240000,
+    } }],
+  } });
+  assert.equal(prepared.preview.listeningEvents, 1);
+  assert.equal(prepared.preview.eventsWithPlayedMs, 0);
+  assert.equal(prepared.bundle.listening_events[0].played_ms, undefined);
+  assert.equal(store.status().listening_events, 0);
+  assert.equal(store.ingest(prepared.bundle).inserted_events, 1);
+  assert.equal(store.ingest(prepared.bundle).duplicate_events, 1);
+  assert.equal(store.status().listening_events, 1);
+});
 
 test("Spotify preparation describes the retained bundle and leaves source/state untouched", async (t) => {
   const { root, zip } = await fixture(t);
