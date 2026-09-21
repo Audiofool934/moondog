@@ -206,8 +206,8 @@ Keep the generated ZIP under the ignored `outputs/` directory rather than adding
 ## Import and inspect listening history
 
 Start with `/import`, or choose **Bring your history** from the home screen.
-The guide starts with **Quick start** and **Add past listening history** for Spotify.
-Both paths work without a model and open the cumulative Profile after import.
+Choose **Spotify** or **Apple Music** first, then choose quick start or the past-history guide.
+All file imports work without a model and open the cumulative Profile after confirmation.
 Other existing sources remain available under **Other sources**.
 
 **Quick start** connects Spotify and previews up to 50 recent plays before you choose **Import into my profile**.
@@ -217,14 +217,15 @@ This release needs a configured Spotify developer app; the guide provides setup 
 New development apps require Premium for the app owner and support at most five allowlisted users, as described in [Spotify's quota rules](https://developer.spotify.com/documentation/web-api/concepts/quota-modes).
 File import remains available without Spotify authorization or developer-app setup.
 
-If you need Spotify data, open the account privacy page from the guide and use **Download your data**.
+If you need Spotify data, choose **Spotify > Add past listening history**, open [Spotify's account privacy page](https://www.spotify.com/account/privacy/) from the guide and use **Download your data**.
 Extended Streaming History provides the longer listening history, while Account Data contains past-year history plus supported library and profile snapshots.
 Both ZIP formats work; keep the downloaded ZIP intact.
 The [Spotify download instructions](https://support.spotify.com/us/article/data-rights-and-privacy-settings/) and [data descriptions](https://support.spotify.com/us/article/understanding-your-data/) explain the available packages.
 If Spotify is still preparing the export, return to `/import` when it is ready; an existing local profile remains usable meanwhile.
 Spotify login and recent-play reads do not reconstruct the full exported history.
 
-Choose **Add past listening history**, then **Choose my Spotify ZIP**, and paste or drag one file path into the terminal.
+Save the downloaded ZIP on your computer, usually in the browser's Downloads folder or the location you choose.
+Choose **Spotify > Add past listening history**, then **Choose my Spotify ZIP**, and paste or drag one file path into the terminal.
 Tab completes paths, including quoted paths with spaces.
 Plain paths, quoted paths, Finder-escaped paths, `~/` paths, and local `file://` URLs are accepted.
 The original source is kept unchanged.
@@ -276,6 +277,15 @@ Client-submitted MBIDs inside `additional_info` remain unvalidated source contex
 The accepted envelope and identity boundary follow ListenBrainz's official [JSON documentation](https://github.com/metabrainz/listenbrainz-server/blob/master/docs/users/json.rst) and [GET-listens API](https://listenbrainz.readthedocs.io/en/latest/users/api/core.html#get-1-user-user-name-listens).
 
 ### Apple Music library
+
+Choose `/import > Apple Music > Quick start with library XML`.
+In Music on Mac, use **File > Library > Export Library**, save the XML somewhere easy to find, then choose that file in Moondog.
+After preview and confirmation, Moondog saves the library snapshot, rebuilds its local profile and opens Profile immediately.
+The direct `/import "/path/to/Library.xml"` shortcut also works.
+
+For older detailed activity, choose **Apple Music > Past listening history guide**.
+It opens [Apple Data & Privacy](https://privacy.apple.com/) and explains how to request Apple Media Services information, wait for the ready notification and download the prepared files.
+Apple privacy archives cannot be imported by this release; the guide makes this clear and links back to the usable library XML route.
 
 Follow [Apple Music Library Import](APPLE_MUSIC_LIBRARY_IMPORT.md) to inspect and import a private library XML.
 Then run `npm run rebuild:apple-projection` to create the disposable local SQLite projection.

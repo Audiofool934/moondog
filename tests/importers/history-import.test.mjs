@@ -10,6 +10,9 @@ import test from "node:test";
 import { createFictionalSpotifyHistoryArchive } from "../../src/demo/fictional-spotify-history.mjs";
 import { prepareHistoryImport, prepareSpotifyRecentImport } from "../../src/profile/history-import.mjs";
 import { openListeningHistoryStore } from "../../src/profile/listening-history-store.mjs";
+import { persistAppleLibraryImport, refreshAppleLibraryImport } from "../../src/profile/apple-library-import.mjs";
+import { openAppleProjectionDomainServices } from "../../src/core/apple-projection-domain-services.mjs";
+import { runSpotifyCommand } from "../../src/surfaces/cli/spotify-command.mjs";
 
 const exec = promisify(execFile);
 const subjectId = "11111111-1111-4111-8111-111111111111";
@@ -22,6 +25,47 @@ async function fixture(t) {
   return { root, zip };
 }
 const prepare = (filePath) => prepareHistoryImport({ filePath, subjectId, capturedAt });
+
+test("Apple XML preview retains the exact snapshot, merges with existing history and reimports idempotently", async (t) => {
+  const { root, zip } = await fixture(t);
+  const environment = {
+    MOONDOG_STATE_HOME: path.join(root, "state"),
+    MOONDOG_APPLE_IMPORTS_ROOT: path.join(root, "apple-imports"),
+    MOONDOG_APPLE_PROJECTION_PATH: path.join(root, "apple", "projection.sqlite"),
+  };
+  const store = await openListeningHistoryStore({ environment });
+  t.after(() => store.close());
+  store.localSubjectId({ preferredSubjectId: subjectId, create: true });
+  await runSpotifyCommand({ args: ["import-history", zip], subjectId, recentActivityStore: store, stdout: { write() {} } });
+  const source = await readFile(new URL("../fixtures/apple-music-library/minimal.xml", import.meta.url));
+  const file = path.join(root, "Library.xml");
+  await writeFile(file, source);
+  const prepared = await prepare(file);
+  assert.equal(prepared.provider, "apple-music-library");
+  assert.equal(prepared.preview.kind, "library");
+  assert.ok(prepared.preview.tracks > 0);
+  assert.equal(prepared.preview.listeningEvents, undefined);
+  assert.equal(prepared.bundle.manifest.counts.core_listening_events, 0);
+  assert.equal((await readdir(root)).includes("apple-imports"), false);
+  // A subsequent file edit must not change what the listener confirmed.
+  await writeFile(file, "replaced after preview");
+  const receipt = await persistAppleLibraryImport(prepared.bundle, { environment });
+  assert.equal(receipt.already_imported, false);
+  await refreshAppleLibraryImport({ environment });
+  const services = await openAppleProjectionDomainServices({
+    databasePath: environment.MOONDOG_APPLE_PROJECTION_PATH,
+    importsRoot: environment.MOONDOG_APPLE_IMPORTS_ROOT,
+    listeningHistoryStore: store, subjectId,
+  });
+  t.after(() => services.close());
+  const profile = await services.getProfileSummary({ maxItems: 10 });
+  assert.ok(profile.coverage.tracks_observed > 0);
+  assert.equal(profile.coverage.effective_listening_events, 52);
+  assert.equal(store.localSubjectId(), subjectId);
+  assert.equal((await persistAppleLibraryImport(prepared.bundle, { environment })).already_imported, true);
+  assert.equal((await readdir(environment.MOONDOG_APPLE_IMPORTS_ROOT)).length, 1);
+  assert.equal(await readFile(file, "utf8"), "replaced after preview");
+});
 
 test("recent listening preview keeps unknown durations and repeated saves add no duplicate events", async (t) => {
   const { root } = await fixture(t);
@@ -137,14 +181,14 @@ test("Spotify Account Data distinguishes listening dates from saved-library evid
   assert.match(result.preview.scopeNote, /profile snapshots/u);
 });
 
-test("missing paths, folders, Apple snapshots, unsupported files and ambiguous archives explain the boundary", async (t) => {
+test("missing paths, folders, malformed Apple snapshots, unsupported files and ambiguous archives explain the boundary", async (t) => {
   const { root } = await fixture(t);
   await assert.rejects(prepare(path.join(root, "missing.zip")), { code: "history_import_file_missing" });
-  await assert.rejects(prepare(root), /original Spotify ZIP/u);
+  await assert.rejects(prepare(root), /folder.*Spotify ZIP, Apple Music library XML, or saved ListenBrainz JSON/u);
   for (const extension of ["xml", "csv"]) {
     const file = path.join(root, `history.${extension}`);
     await writeFile(file, "example");
-    await assert.rejects(prepare(file), extension === "xml" ? /import:apple-library/u : /not supported/u);
+    await assert.rejects(prepare(file), extension === "xml" ? /XML|plist|library/iu : /not supported/u);
   }
   const invalid = path.join(root, "invalid.zip");
   await writeFile(invalid, "not a ZIP");

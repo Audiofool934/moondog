@@ -10,6 +10,14 @@ It is not a complete listening-history source.
 
 The importer is local-only and does not contact Apple, Spotify, a private legacy host, or any other network service.
 
+## Guided terminal import
+
+Use `/import > Apple Music > Quick start with library XML` in the Pi TUI.
+The guide explains Music on Mac's File > Library > Export Library command and accepts the resulting XML file.
+You can also enter `/import "/absolute/path/to/Library.xml"` directly.
+Moondog previews the library before saving, imports the exact inspected snapshot, automatically rebuilds the projection, and opens the cumulative Profile in the same terminal.
+The lower-level inspect, import and rebuild commands below remain available separately.
+
 ## Safe Inspection
 
 Export `Library.xml` from Apple Music, keep it outside the repository, and run:

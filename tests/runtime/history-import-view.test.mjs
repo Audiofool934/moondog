@@ -37,11 +37,11 @@ test("import actions remain host-owned and the profile shortcut follows readines
   const { view, actions } = fixture();
   assert.doesNotMatch(screen(view), /View my profile/u);
   view.handleInput("\r");
-  assert.deepEqual(actions.pop(), { type: "quick" });
+  assert.deepEqual(actions.pop(), { type: "spotify" });
   assert.equal(view.state.page, "start");
   view.handleInput("\x1b[B");
   view.handleInput("\r");
-  assert.deepEqual(actions.pop(), { type: "spotify" });
+  assert.deepEqual(actions.pop(), { type: "apple" });
   view.handleInput("\x1b[B");
   view.handleInput("\r");
   assert.deepEqual(actions.pop(), { type: "other" });
@@ -140,7 +140,7 @@ test("every page fits wide and narrow body viewports with an intact file cursor 
     view.setPath("/tmp/listener/Downloads/a long listening history file.zip");
     for (const [width, rows] of [[80, 20], [40, 14], [40, 12], [26, 8], [8, 3], [1, 1], [40, 0]]) {
       resize(rows);
-      for (const page of ["start", "spotify", "waiting", "other", "quick", "setup", "client", "empty", "file", "preview", "working"]) {
+      for (const page of ["start", "spotify", "spotifyHistory", "apple", "appleQuick", "appleHistory", "waiting", "other", "quick", "setup", "client", "empty", "file", "preview", "working"]) {
         view.setState({ page, preview, ...(page === "file" ? { error: "Choose a supported file; your path is still here." } : {}) });
         const lines = view.render(width);
         assert.equal(lines.length, rows, `${page} height at ${width}x${rows}`);
@@ -155,12 +155,12 @@ test("every page fits wide and narrow body viewports with an intact file cursor 
 
 test("short guides scroll while actions remain visible and external text cannot issue terminal controls", () => {
   const { view, actions } = fixture({ rows: 12 });
-  view.setState({ page: "spotify" });
+  view.setState({ page: "spotifyHistory" });
   const first = screen(view, 40);
-  assert.match(first, /Open Spotify privacy/u);
+  assert.match(first, /Open Spotify data export/u);
   view.handleInput("\x1b[6~");
   assert.notEqual(screen(view, 40), first);
-  assert.match(screen(view, 40), /Open Spotify privacy/u);
+  assert.match(screen(view, 40), /Open Spotify data export/u);
   view.handleInput("\x1b[B");
   view.handleInput("\r");
   assert.deepEqual(actions.pop(), { type: "openSpotify" });

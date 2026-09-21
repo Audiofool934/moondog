@@ -511,6 +511,7 @@ async function createGuidedImportFixture(context, options = {}) {
       earliestListeningAt: "2026-09-01T00:00:00.000Z",
       latestListeningAt: "2026-09-02T00:00:00.000Z",
       scopeNote: "Two synthetic listening events, not a complete listening history.",
+      ...options.preview,
     },
     async commit() {
       calls.commits += 1;
@@ -535,8 +536,10 @@ async function createGuidedImportFixture(context, options = {}) {
     },
     prepareRecentImport: () => options.prepareRecentImport ? options.prepareRecentImport(prepared) : prepared,
     runSpotify: options.runSpotify,
-    async refreshImportedData() {
+    openImportHelp: options.openImportHelp,
+    async refreshImportedData(receipt) {
       calls.refreshes += 1;
+      calls.refreshReceipt = receipt;
       if (options.refreshError && calls.refreshes === 1) throw new Error("Fixture profile refresh unavailable");
     },
   });
@@ -558,7 +561,9 @@ async function createGuidedImportFixture(context, options = {}) {
 test("Spotify quick start previews without saving, returns to quick start on cancel, and opens Profile after confirmation", async (context) => {
   const fixture = await createGuidedImportFixture(context);
   const { terminal, calls } = fixture;
-  await fixture.submit("/import", "Quick start");
+  await fixture.submit("/import", "Bring your music");
+  fixture.terminal.send("\r");
+  await fixture.outputIncludes("Import from Spotify");
   terminal.send("\r");
   await fixture.outputIncludes("Preview recent listening");
   terminal.send("\r");
@@ -587,7 +592,9 @@ for (const condition of ["empty", "forbidden"]) {
       },
     });
     const { terminal, calls } = fixture;
-    await fixture.submit("/import", "Quick start");
+    await fixture.submit("/import", "Bring your music");
+  fixture.terminal.send("\r");
+  await fixture.outputIncludes("Import from Spotify");
     terminal.send("\r");
     await fixture.outputIncludes("Preview recent listening");
     terminal.send("\r");
@@ -606,7 +613,9 @@ test("Spotify quick start authorizes for history only and resumes the guide with
     spotifyStatus: () => ({ client_id_configured: true, state: connected ? "ready" : "not_authenticated", scopes: { granted: connected ? ["user-read-recently-played"] : [] } }),
     async runSpotify(args) { commands.push(args); connected = true; },
   });
-  await fixture.submit("/import", "Quick start");
+  await fixture.submit("/import", "Bring your music");
+  fixture.terminal.send("\r");
+  await fixture.outputIncludes("Import from Spotify");
   fixture.terminal.send("\r");
   await fixture.outputIncludes("Connect Spotify");
   fixture.terminal.send("\r");
@@ -631,7 +640,9 @@ test("Spotify setup keeps the client ID after failure and returns to connection 
       configured = true;
     },
   });
-  await fixture.submit("/import", "Quick start");
+  await fixture.submit("/import", "Bring your music");
+  fixture.terminal.send("\r");
+  await fixture.outputIncludes("Import from Spotify");
   fixture.terminal.send("\r");
   await fixture.outputIncludes("Set up Spotify connection");
   fixture.terminal.send("\r");
@@ -652,6 +663,66 @@ test("Spotify setup keeps the client ID after failure and returns to connection 
   assert.deepEqual(fixture.prompts, []);
 });
 
+test("Apple selection opens its XML path, saves a library receipt, and refreshes the profile immediately", async (context) => {
+  const receipt = { provider: "apple-music-library", library_tracks: 12 };
+  const fixture = await createGuidedImportFixture(context, {
+    preview: { kind: "library", sourceLabel: "Apple Music library", fileName: "Library.xml", tracks: 12 },
+    commit: () => receipt,
+  });
+  const { terminal, calls } = fixture;
+  await fixture.submit("/import", "Bring your music");
+  terminal.send("\x1b[B");
+  terminal.send("\r");
+  await fixture.outputIncludes("Import from Apple Music");
+  terminal.send("\r");
+  await fixture.outputIncludes("Choose my Library.xml");
+  terminal.send("\r");
+  await fixture.outputIncludes("Choose your music file");
+  assert.match(fixture.screen(), /Apple Music library XML/u);
+  terminal.send("/tmp/Library.xml");
+  terminal.send("\r");
+  await fixture.outputIncludes("Review your Apple Music library");
+  assert.match(fixture.screen(), /12 library tracks/u);
+  assert.doesNotMatch(fixture.screen(), /2 plays|Actual played duration/u);
+  assert.equal(calls.commits, 0);
+  terminal.send("\r");
+  await fixture.outputIncludes("Your listening profile");
+  assert.deepEqual(calls.refreshReceipt, receipt);
+  terminal.send("\x1b");
+  await fixture.outputIncludes("Apple Music library imported");
+  assert.match(fixture.screen(), /No individual listening events were\s+created/u);
+  assert.deepEqual(fixture.prompts, []);
+});
+
+for (const provider of ["spotify", "apple"]) {
+  test(`${provider} history guide opens the correct website, preserves navigation, and exposes the URL if opening fails`, async (context) => {
+    const destinations = [];
+    const fixture = await createGuidedImportFixture(context, {
+      async openImportHelp(destination) { destinations.push(destination); throw new Error("No browser"); },
+    });
+    const { terminal, calls } = fixture;
+    await fixture.submit("/import", "Bring your music");
+    if (provider === "apple") terminal.send("\x1b[B");
+    terminal.send("\r");
+    await fixture.outputIncludes(provider === "apple" ? "Import from Apple Music" : "Import from Spotify");
+    terminal.send("\x1b[B");
+    terminal.send("\r");
+    await fixture.outputIncludes(provider === "apple" ? "Apple Music: past listening history" : "Spotify: past listening history");
+    if (provider === "spotify") terminal.send("\x1b[B");
+    terminal.send("\r");
+    await fixture.outputIncludes("Open this page in your browser:");
+    assert.deepEqual(destinations, [provider === "apple" ? "applePrivacy" : "spotify"]);
+    assert.match(fixture.screen(), provider === "apple" ? /privacy\.apple\.com/u : /spotify\.com\/account\/privacy/u);
+    terminal.output = "";
+    terminal.send("\x1b");
+    await fixture.outputIncludes(provider === "apple" ? "Import from Apple Music" : "Import from Spotify");
+    terminal.send("\x1b");
+    await fixture.outputIncludes("Bring your music");
+    assert.equal(calls.commits, 0);
+    assert.deepEqual(fixture.prompts, []);
+  });
+}
+
 test("guided import from the command palette keeps a multiline draft when cancelled", async (context) => {
   const fixture = await createGuidedImportFixture(context);
   const { terminal, calls, prompts } = fixture;
@@ -661,7 +732,7 @@ test("guided import from the command palette keeps a multiline draft when cancel
   await fixture.outputIncludes("Commands");
   terminal.send("import");
   terminal.send("\r");
-  await fixture.outputIncludes("Import from Spotify");
+  await fixture.outputIncludes("Bring your music");
   terminal.output = "";
   terminal.send("\x1b");
   await fixture.outputIncludes("for the train ride");
@@ -682,12 +753,14 @@ test("guided import inspection failure retains the editable path for a corrected
     },
   });
   const { terminal, calls } = fixture;
-  await fixture.submit("/import", "Import from Spotify");
+  await fixture.submit("/import", "Bring your music");
+  terminal.send("\r");
+  await fixture.outputIncludes("Import from Spotify");
   terminal.send("\x1b[B");
   terminal.send("\r");
   await fixture.outputIncludes("Choose my Spotify ZIP");
   terminal.send("\r");
-  await fixture.outputIncludes("Choose your history file");
+  await fixture.outputIncludes("Choose your music file");
   terminal.send("/tmp/Missing.zip");
   terminal.send("\r");
   await fixture.outputIncludes("Choose an existing history file.");
@@ -711,13 +784,15 @@ test("guided import preview cancellation closes the inspected handle without com
   assert.match(stripVTControlCharacters(terminal.output), /2 plays · 1 tracks/u);
   terminal.output = "";
   terminal.send("\x1b");
-  await fixture.outputIncludes("Choose your history file");
+  await fixture.outputIncludes("Choose your music file");
   assert.match(fixture.screen(), /\/tmp\/Chosen History\.zip/u);
   assert.equal(calls.closes, 1);
   terminal.send("\x1b");
-  await fixture.outputIncludes("Add past listening history");
+  await fixture.outputIncludes("Spotify: past listening history");
   terminal.send("\x1b");
   await fixture.outputIncludes("Import from Spotify");
+  terminal.send("\x1b");
+  await fixture.outputIncludes("Bring your music");
   terminal.send("\x1b");
   await fixture.outputIncludes("Import closed");
   assert.equal(calls.closes, 1);
@@ -1594,8 +1669,8 @@ test("home, appearance controls, and the import guide never call a model or disc
   await submit("/home", "M O O N D O G");
   await submit("/theme paper", "Paper theme.");
   await submit("/theme charcoal", "Charcoal theme.");
-  await submit("/import", "Import from Spotify");
-  assert.match(terminal.output, /Quick start/u);
+  await submit("/import", "Bring your music");
+  assert.match(terminal.output, /Apple Music/u);
   assert.doesNotMatch(terminal.output, /spotify import-history/u);
   terminal.output = "";
   terminal.send("\x1b");
@@ -1623,8 +1698,8 @@ test("Tab focuses home actions and Down then Enter opens the import guide withou
   terminal.send("\t");
   terminal.send("\x1b[B");
   terminal.send("\r");
-  await waitFor(() => terminal.output.includes("Import from Spotify"));
-  assert.match(terminal.output, /Quick start/u);
+  await waitFor(() => terminal.output.includes("Bring your music"));
+  assert.match(terminal.output, /Apple Music/u);
   assert.doesNotMatch(terminal.output, /spotify import-history/u);
   assert.deepEqual(prompts, []);
   assert.equal(imports, 0, "choosing Import must not import before a file is inspected and confirmed");

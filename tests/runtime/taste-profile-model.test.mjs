@@ -174,6 +174,12 @@ test("Apple-only summaries preserve correction identity and distinct artists for
   assert.match(tracks[0].detailLines.join("\n"), /Apple Music library preference: Loved.*confidence 90%/u);
   assert.match(tracks[0].detailLines.join("\n"), /Apple Music aggregate play count: 42 plays/u);
   assert.match(model.summaryLines.join("\n"), /Apple Music library: 2 tracks/u);
+  const libraryOnly = buildTasteProfileModel({
+    ...profile,
+    coverage: { ...profile.coverage, effective_listening_events: 0, listening_hours: 0, listening_tracks: 0 },
+  });
+  assert.match(libraryOnly.summaryLines[0], /Apple Music library: 2 tracks/u);
+  assert.doesNotMatch(libraryOnly.summaryLines.join("\n"), /0 listening events|0 h|0 tracks/u);
 });
 
 test("taste review tolerates an empty profile and bounds every input ranking", () => {

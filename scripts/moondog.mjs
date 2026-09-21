@@ -38,6 +38,8 @@ import { runSpotifyCommand } from "../src/surfaces/cli/spotify-command.mjs";
 import { runListenBrainzCommand } from "../src/surfaces/cli/listenbrainz-command.mjs";
 import { openListeningHistoryStore } from "../src/profile/listening-history-store.mjs";
 import { prepareHistoryImport, prepareSpotifyRecentImport } from "../src/profile/history-import.mjs";
+import { persistAppleLibraryImport, refreshAppleLibraryImport } from "../src/profile/apple-library-import.mjs";
+import { IMPORT_GUIDE_URLS } from "../src/surfaces/cli/import-guides.mjs";
 import { runMoondogTui } from "../src/surfaces/cli/tui.mjs";
 import { createAppleMusicCatalog } from "../src/integrations/apple-music/catalog.mjs";
 import {
@@ -309,6 +311,7 @@ async function prepareTuiHistoryImport(filePath, { recentPage } = {}) {
     let closed = false;
     let committed = false;
     return {
+      provider: prepared.provider,
       preview: prepared.preview,
       async commit() {
         if (closed || committed) throw new Error("Preview the listening data again before importing it.");
@@ -316,6 +319,8 @@ async function prepareTuiHistoryImport(filePath, { recentPage } = {}) {
         // Commit the exact inspected bundle, even if the source file later changes.
         const receipt = prepared.provider === "spotify-recent"
           ? historyStore.ingest(prepared.bundle)
+          : prepared.provider === "apple-music-library"
+          ? await persistAppleLibraryImport(prepared.bundle)
           : prepared.provider === "spotify"
           ? await runSpotifyCommand({
               ...options, recentActivityStore: historyStore,
@@ -341,11 +346,7 @@ async function prepareTuiHistoryImport(filePath, { recentPage } = {}) {
 }
 
 async function openImportHelp(destination) {
-  const url = {
-    spotify: "https://www.spotify.com/account/privacy/",
-    spotifySetup: "https://developer.spotify.com/dashboard",
-    apple: "https://support.apple.com/guide/music/mus27cd5060f/mac",
-  }[destination];
+  const url = IMPORT_GUIDE_URLS[destination];
   if (!url) throw new Error("Unknown import guide.");
   await promisify(execFile)(process.platform === "darwin" ? "open" : "xdg-open", [url], {
     timeout: 10_000,
@@ -870,7 +871,8 @@ async function main() {
         }),
       }),
       openImportHelp,
-      refreshImportedData: async () => {
+      refreshImportedData: async (receipt) => {
+        if (receipt?.provider === "apple-music-library") await refreshAppleLibraryImport();
         const next = await loadDomainServices();
         const previous = application.domainServices;
         application.domainServices = next.domainServices;

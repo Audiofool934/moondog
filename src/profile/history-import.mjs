@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { readSpotifyHistoryArchive } from "../integrations/spotify/history-archive.mjs";
 import { readListenBrainzHistoryFile } from "../integrations/listenbrainz/history-file.mjs";
 import { projectSpotifyRecentActivity } from "../integrations/spotify/recent-activity.mjs";
+import { buildAppleMusicLibraryImport } from "../importers/apple-music-library/index.mjs";
 
 export function prepareSpotifyRecentImport({ page, subjectId, capturedAt = new Date().toISOString() }) {
   const bundle = projectSpotifyRecentActivity({ page, subjectId, capturedAt });
@@ -33,7 +34,7 @@ function fail(code, message) {
 
 function literalPath(input) {
   if (typeof input !== "string" || !input.trim()) {
-    fail("history_import_path_required", "Paste the path to one Spotify ZIP or ListenBrainz JSON file.");
+    fail("history_import_path_required", "Paste the path to one Spotify ZIP, Apple Music XML, or ListenBrainz JSON file.");
   }
   let value = input.trim();
   if (/[\u0000-\u001f\u007f]/u.test(value)) {
@@ -94,15 +95,27 @@ export async function prepareHistoryImport({ filePath, subjectId, capturedAt = n
     fail("history_import_file_unreadable", `Could not read ${resolvedPath}. Check that the file is accessible.`);
   }
   if (file.isDirectory()) {
-    fail("history_import_directory", "This is a folder. Choose the original Spotify ZIP, or one saved ListenBrainz JSON file.");
+    fail("history_import_directory", "This is a folder. Choose one Spotify ZIP, Apple Music library XML, or saved ListenBrainz JSON file.");
   }
-  if (!file.isFile()) fail("history_import_file_invalid", "Choose a regular Spotify ZIP or ListenBrainz JSON file.");
+  if (!file.isFile()) fail("history_import_file_invalid", "Choose a regular Spotify ZIP, Apple Music XML, or ListenBrainz JSON file.");
   const extension = path.extname(resolvedPath).toLowerCase();
   if (extension === ".xml") {
-    fail("history_import_apple_library", "Apple Music XML is a library snapshot. Use npm run import:apple-library -- --input /path/to/Library.xml, then npm run rebuild:apple-projection.");
+    const bundle = await buildAppleMusicLibraryImport(resolvedPath, { subjectId });
+    return {
+      provider: "apple-music-library",
+      bundle,
+      preview: {
+        kind: "library",
+        sourceLabel: "Apple Music library",
+        fileName: path.basename(resolvedPath),
+        tracks: bundle.trackRefs.length,
+        capturedAt: bundle.manifest.source.captured_at,
+        scopeNote: "Library snapshot with any supplied favorites, ratings, play counts and last-played dates. Individual listening events are not included.",
+      },
+    };
   }
   if (![".zip", ".json"].includes(extension)) {
-    fail("history_import_format_unsupported", "Choose a Spotify history ZIP or saved ListenBrainz JSON. Other file formats are not supported here.");
+    fail("history_import_format_unsupported", "Choose a Spotify history ZIP, Apple Music library XML or saved ListenBrainz JSON. Other file formats are not supported here.");
   }
   const provider = extension === ".zip" ? "spotify" : "listenbrainz";
   let bundle;

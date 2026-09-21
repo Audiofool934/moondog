@@ -35,9 +35,11 @@ To try the grounded agent loop with fictional data and no credentials, run `npm 
 
 ## Bring your history. Correct the reading.
 
-Open `/import` for two Spotify paths: **Quick start** previews recent listening from a connected account, and **Add past listening history** imports a downloaded ZIP.
-Quick start currently requires a configured Spotify developer app; the guide walks through setup when needed.
-File import needs no Spotify connection.
+Open `/import`, choose **Spotify** or **Apple Music**, then choose quick start or the past-history guide.
+Spotify quick start previews recent listening from a connected account; Apple Music quick start previews a library XML exported from Music on Mac.
+Each service's history guide shows its official data-request website, what to request, and where to find the downloaded files.
+Spotify history ZIPs can be imported now; Apple privacy archives are not supported yet.
+Spotify connection currently requires a configured developer app; local file import needs no streaming-service sign-in.
 You can also open a saved Spotify Account Data or Extended Streaming History ZIP directly:
 
 ```text

@@ -94,7 +94,9 @@ function overview(profile) {
     [count(coverage.listening_tracks), "tracks"],
   ].filter(([value]) => value !== undefined).map(([value, label]) => `${value} ${label}`);
   if (durationUnavailable) listening.push("Listening time is unavailable");
-  if (listening.length) lines.push(listening.join(" · "));
+  if (listening.length && !(coverage.effective_listening_events === 0 && coverage.tracks_observed > 0)) {
+    lines.push(listening.join(" · "));
+  }
   if (Number.isSafeInteger(coverage.tracks_observed) && coverage.tracks_observed > 0) {
     const loved = count(coverage.loved_or_favorited);
     lines.push(`Apple Music library: ${count(coverage.tracks_observed)} tracks${

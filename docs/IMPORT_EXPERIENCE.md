@@ -5,11 +5,11 @@ It starts before the listener has a file and ends with an inspectable listening 
 
 ## First slice: getting started
 
-`/import` starts with two Spotify paths: **Quick start** and **Add past listening history**.
+`/import` first asks for **Spotify** or **Apple Music**, then offers quick start and a past-history path for that service.
 The home action and command palette open that same guide.
 An unfinished conversation draft remains available after leaving the guide.
 
-Quick start reads up to 50 recent Spotify plays and previews the retained dates and track count before saving.
+Spotify quick start reads up to 50 recent plays and previews the retained dates and track count before saving.
 It needs a Spotify connection, but no model or downloaded history archive.
 The connection step requests only `user-read-recently-played`; playback and playlist permissions remain part of the separate full Spotify login.
 This source does not include actual played duration, and it does not reconstruct older listening.
@@ -23,15 +23,30 @@ Spotify currently limits new development apps to five allowlisted users and requ
 These platform prerequisites remain visible; the guide does not promise universal one-click connection.
 
 Add past listening history supports an existing ZIP, a data-request guide, and a waiting screen that links back to Quick start.
+The Spotify guide displays `https://www.spotify.com/account/privacy/` and opens that site from a dedicated action.
+It directs the listener to Download your data and Extended Streaming History, explains the email confirmation and download, and returns them to `/import > Spotify > Add past listening history`.
+Downloads normally go to the browser's Downloads folder or the location chosen by the listener.
 Account Data contains past-year history and supported profile observations; Extended Streaming History provides longer coverage and more playback details.
 Spotify prepares the archive asynchronously, so requesting it is separate from importing it.
 Both routes open the cumulative Profile immediately after saving and preserve prior listening and explicit corrections.
 Recent API observations and archive streams can overlap; their different timestamp semantics do not support a blanket cross-format deduplication claim.
 
-The file step accepts the existing Spotify ZIP and ListenBrainz JSON formats.
+Apple Music quick start uses Music on Mac's File > Library > Export Library to produce a local XML.
+The same preview and confirmation flow imports the exact retained snapshot, rebuilds its shared Apple projection, and opens the cumulative Profile in the current terminal.
+Favorites, ratings and aggregate play counts remain library observations; the importer creates no fabricated listening events.
+An identical XML is an idempotent import, and an existing Spotify profile keeps its local subject and listening events.
+If rebuilding the projection fails after the library was saved, the receipt is retained and `/reload` retries that rebuild.
+
+The Apple past-history guide displays and opens `https://privacy.apple.com/`.
+It explains Request a copy of your data, Apple Media Services information, the ready notification, downloading from Data & Privacy within 14 days, and locating the saved files.
+It explicitly states that Apple privacy archive import is not implemented and offers the working XML route instead.
+Opening either website does not submit a request, download a file, or import data automatically.
+If browser opening fails, the guide keeps its place and displays the exact URL for manual use.
+
+The file step accepts Spotify ZIP, Apple Music library XML and ListenBrainz JSON formats.
 It uses Pi's editor and path completion, accepts pasted or dragged local paths, and retains the input when a file cannot be read.
 Extracted Spotify folders or individual Spotify JSON files receive guidance to use the original ZIP.
-Apple Music XML remains a separate library-import workflow and is described as a library snapshot rather than streaming history.
+ListenBrainz remains available under Other sources.
 
 Inspection shows the source, file name, record and track counts, listening dates, supplied played durations, and other supported music observations.
 The dates describe listening retained in the selected file, not when the file was imported or how current the listener's complete profile is.

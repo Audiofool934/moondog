@@ -10,6 +10,7 @@ import {
 } from "@earendil-works/pi-tui";
 
 import { sanitizeTerminalText } from "./format-output.mjs";
+import { IMPORT_GUIDE_URLS } from "./import-guides.mjs";
 
 function clean(value) {
   return sanitizeTerminalText(stripVTControlCharacters(String(value ?? "")))
@@ -135,6 +136,47 @@ export class HistoryImportView {
     const file = { type: "file", label: "Choose a file" };
     const back = { type: "back", label: "Back" };
     switch (this.state.page) {
+      case "spotify": return {
+        title: "Import from Spotify",
+        paragraphs: [
+          "Quick start: connect Spotify and preview recent listening.",
+          "Past history: request or import a downloaded history ZIP.",
+          "Both paths add to the same listening profile.",
+        ],
+        actions: [{ type: "quick", label: "Quick start" }, { type: "spotifyHistory", label: "Add past listening history" }, back],
+      };
+      case "apple": return {
+        title: "Import from Apple Music",
+        paragraphs: [
+          "Quick start: export your library from Music on Mac and import its XML.",
+          "Past history: follow Apple's data-request guide. Privacy archive import is not available yet.",
+        ],
+        actions: [{ type: "appleQuick", label: "Quick start with library XML" }, { type: "appleHistory", label: "Past listening history guide" }, back],
+      };
+      case "appleQuick": return {
+        title: "Quick start with Apple Music",
+        paragraphs: [
+          "1. In Music on Mac, choose File > Library > Export Library.",
+          "2. Save Library.xml somewhere easy to find, such as Downloads.",
+          "3. Choose the XML below. Preview it before adding it to your profile.",
+          "This reads your library locally, including any supplied favorites, ratings and play counts. No sign-in to Moondog is needed.",
+          "A library snapshot is not a log of every play. Apple privacy ZIPs are a different format.",
+        ],
+        actions: [{ type: "file", label: "Choose my Library.xml" }, { type: "openAppleHelp", label: "Open Apple XML export guide" }, back],
+      };
+      case "appleHistory": return {
+        title: "Apple Music: past listening history",
+        paragraphs: [
+          `Website: ${IMPORT_GUIDE_URLS.applePrivacy}`,
+          "1. Sign in to Apple's Data & Privacy website and choose Request a copy of your data.",
+          "2. Select Apple Media Services information, which includes Apple Music activity, then complete the request.",
+          "3. Apple notifies you when it is ready. Return to Data & Privacy to download the prepared files within 14 days.",
+          "4. Save the download on your computer. Your browser usually uses Downloads, or asks you to choose a folder.",
+          "Availability and included records vary by account and region. Opening this link does not export or import anything automatically.",
+          "Moondog cannot import Apple's privacy archive yet. Keep the original download; use Library.xml to start your profile now.",
+        ],
+        actions: [{ type: "openApplePrivacy", label: "Open privacy.apple.com" }, { type: "appleQuick", label: "Start with library XML" }, back],
+      };
       case "quick": {
         const status = this.state.spotify ?? {};
         const ready = status.state === "ready" && status.scopes?.granted?.includes("user-read-recently-played");
@@ -152,7 +194,7 @@ export class HistoryImportView {
           actions: [
             { type: ready ? "recent" : configured ? "connectSpotify" : "setup", label: ready ? "Preview recent listening" : configured ? "Connect Spotify" : "Set up Spotify connection" },
             ...(ready ? [{ type: "connectSpotify", label: "Reconnect Spotify" }] : []),
-            { type: "spotify", label: "Add past listening history" }, back,
+            { type: "spotifyHistory", label: "Add past listening history" }, back,
           ],
         };
       }
@@ -168,7 +210,7 @@ export class HistoryImportView {
         actions: [
           { type: "openSpotifySetup", label: "Open Spotify Dashboard" },
           { type: "client", label: "Enter my Client ID" },
-          { type: "spotify", label: "Use a history ZIP instead" }, back,
+          { type: "spotifyHistory", label: "Use a history ZIP instead" }, back,
         ],
       };
       case "empty": return {
@@ -178,27 +220,31 @@ export class HistoryImportView {
           "Listen in Spotify, then try again, or add an existing history ZIP.",
           "An empty recent snapshot does not mean your account has no listening history.",
         ],
-        actions: [{ type: "recent", label: "Try recent listening again" }, { type: "spotify", label: "Add past listening history" }, back],
+        actions: [{ type: "recent", label: "Try recent listening again" }, { type: "spotifyHistory", label: "Add past listening history" }, back],
       };
-      case "spotify": return {
-        title: "Add past listening history",
+      case "spotifyHistory": return {
+        title: "Spotify: past listening history",
         paragraphs: [
           "Already have a Spotify ZIP? Choose it below, without extracting it.",
-          "To request one: account privacy > Download your data.",
-          "Extended Streaming History covers years of listening. Account Data includes past-year history and library evidence.",
-          "Complete Spotify's confirmation steps and wait for its download email. Extended history can take around 30 days.",
-          "No Spotify developer app or Moondog connection is needed for file import.",
+          `Website: ${IMPORT_GUIDE_URLS.spotify}`,
+          "1. Sign in, find Download your data, and select Extended Streaming History for older, detailed listening records.",
+          "2. Complete Spotify's confirmation steps. Wait for its download email; extended history can take around 30 days.",
+          "3. Download the ZIP from Spotify. Your browser usually saves it in Downloads, or asks you to choose a folder.",
+          "4. Return to /import > Spotify > Add past listening history and choose the original ZIP.",
+          "Account Data also works, with past-year history and library evidence. File import needs no Spotify developer app or Moondog connection.",
+          "Opening the website does not request, download or import your data automatically.",
         ],
         actions: [
           { type: "file", label: "Choose my Spotify ZIP" },
-          { type: "openSpotify", label: "Open Spotify privacy" },
+          { type: "openSpotify", label: "Open Spotify data export website" },
           { type: "waiting", label: "I'm waiting for my download" }, back,
         ],
       };
       case "waiting": return {
         title: "Come back with your download",
         paragraphs: [
-          "When the file is ready, return to /import > Add past listening history.",
+          "When Spotify's download email arrives, save the original ZIP on your computer, usually in Downloads.",
+          "Return to /import > Spotify > Add past listening history and choose that ZIP.",
           this.profileReady ? "Your existing profile is still ready to explore." : "You can keep exploring music while you wait.",
           "Connecting Spotify enables live features; it does not reconstruct your full listening history.",
         ],
@@ -208,24 +254,24 @@ export class HistoryImportView {
         title: "Other listening sources",
         paragraphs: [
           "ListenBrainz: choose saved official GET-listens JSON or single/import JSON.",
-          "Apple Music library XML uses the separate Apple importer. It is a library snapshot, not streaming history.",
         ],
-        actions: [file, { type: "openAppleHelp", label: "How to export Apple XML" }, back],
+        actions: [file, back],
       };
       case "preview": {
         const preview = this.state.preview ?? {};
         const recent = this.state.origin === "quick";
+        const library = preview.kind === "library";
         const first = day(preview.earliestListeningAt);
         const last = day(preview.latestListeningAt);
         return {
-          title: recent ? "Review recent listening" : "Review this import",
+          title: library ? "Review your Apple Music library" : recent ? "Review recent listening" : "Review this import",
           notice: "Nothing added yet.",
           paragraphs: [
             clean(preview.sourceLabel) || "Listening history",
             clean(preview.fileName),
-            `${count(preview.listeningEvents)} plays · ${count(preview.tracks)} tracks`,
-            first && last ? `${first} to ${last}` : "Listening dates not included.",
-            recent
+            library ? `${count(preview.tracks)} library tracks` : `${count(preview.listeningEvents)} plays · ${count(preview.tracks)} tracks`,
+            library ? `Library snapshot: ${day(preview.capturedAt) ?? "date not supplied"}` : first && last ? `${first} to ${last}` : "Listening dates not included.",
+            library ? "No individual listening events will be created." : recent
               ? "Listening time is not supplied by Spotify."
               : `Actual played duration: ${count(preview.eventsWithPlayedMs)} of ${count(preview.listeningEvents)} records`,
             ...(preview.profileEvidence > 0 ? [`Other music observations: ${count(preview.profileEvidence)}`] : []),
@@ -238,13 +284,12 @@ export class HistoryImportView {
         };
       }
       default: return {
-        title: "Import from Spotify",
+        title: "Bring your music",
         paragraphs: [
-          "Quick start: connect Spotify and preview recent listening.",
-          "Past history: bring a downloaded ZIP for a deeper picture.",
-          this.profileReady ? "Both paths add to your existing profile and keep your choices." : "Start with what is available. Add more history whenever you are ready.",
+          "Choose your music service, then start quickly or explore past listening history.",
+          this.profileReady ? "Imports add to your existing profile and keep your choices." : "Preview your data before adding it to a local listening profile.",
         ],
-        actions: [{ type: "quick", label: "Quick start" }, { type: "spotify", label: "Add past listening history" }, { type: "other", label: "Other sources" }, ...profile],
+        actions: [{ type: "spotify", label: "Spotify" }, { type: "apple", label: "Apple Music" }, { type: "other", label: "Other sources" }, ...profile],
       };
     }
   }
@@ -294,7 +339,7 @@ export class HistoryImportView {
     const errorLines = error ? wrapTextWithAnsi(error, width).slice(0, Math.min(3, Math.max(1, height - 6))).map(theme.error) : [];
     const header = client
       ? [theme.bold("Enter your Spotify Client ID"), theme.muted("From your app settings. No client secret."), theme.text("Client ID")]
-      : [theme.bold("Choose your history file"), theme.muted("Spotify ZIP or ListenBrainz JSON"), theme.text("File path")];
+      : [theme.bold("Choose your music file"), theme.muted(this.state.provider === "apple" ? "Apple Music library XML" : this.state.provider === "spotify" ? "Original Spotify history ZIP" : this.state.provider === "other" ? "ListenBrainz JSON" : "Spotify ZIP, Apple Music XML or ListenBrainz JSON"), theme.text("File path")];
     const hint = client ? theme.muted("Enter save · Esc back") : theme.muted(width >= 64 ? "Paste or drag one path · Tab completes · Enter inspect · Esc back"
       : width >= 38 ? "Paste/drag · Tab path · ↵ inspect · Esc" : "Tab path · ↵ inspect · Esc");
     const budget = Math.max(1, height - header.length - errorLines.length - 1);
