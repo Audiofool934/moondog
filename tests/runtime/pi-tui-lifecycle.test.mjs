@@ -1084,14 +1084,14 @@ test("TUI renders trusted capability labels for tool lifecycle events", async ()
         toolCallId: "tool-2",
         toolName: "PRIVATE_SECOND_TOOL_NAME",
         capabilityId: "profile.explain",
-        label: "Explain profile evidence",
+        label: "Look at why it's in your profile",
       });
       await new Promise((resolve) => setTimeout(resolve, 20));
       callbacks.onToolEnd({
         toolCallId: "tool-2",
         toolName: "PRIVATE_SECOND_TOOL_NAME",
         capabilityId: "profile.explain",
-        label: "Explain profile evidence",
+        label: "Look at why it's in your profile",
         isError: true,
       });
       await new Promise((resolve) => setTimeout(resolve, 20));
@@ -1124,8 +1124,8 @@ test("TUI renders trusted capability labels for tool lifecycle events", async ()
   assert.equal(replacementCallbackSeen, true);
   assert.match(terminal.output, /Search your music library\.\.\./);
   assert.match(terminal.output, /Putting it together/);
-  assert.match(terminal.output, /Explain profile evidence\.\.\./);
-  assert.match(terminal.output, /Explain profile evidence didn't work/);
+  assert.match(terminal.output, /Look at why it's in your profile\.\.\./);
+  assert.match(terminal.output, /Look at why it's in your profile didn't work/);
   assert.match(stripVTControlCharacters(terminal.output), /Tools · 1 done, 1 failed/);
   assert.doesNotMatch(
     terminal.output,

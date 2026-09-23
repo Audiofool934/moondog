@@ -19,7 +19,7 @@ const catalog = [
     description: "Inspect aggregate Apple Music import readiness.",
     agent_tool: {
       name: "moondog_source_status",
-      label: "Inspect music source status",
+      label: "Check your music sources",
     },
   },
   {
@@ -30,7 +30,7 @@ const catalog = [
     description: "Inspect evidence-backed profile readiness.",
     agent_tool: {
       name: "moondog_profile_status",
-      label: "Inspect profile status",
+      label: "Check your profile",
     },
   },
   {
@@ -41,7 +41,7 @@ const catalog = [
     description: "Inspect conversation and long-term memory readiness.",
     agent_tool: {
       name: "moondog_memory_status",
-      label: "Inspect memory status",
+      label: "Check what I remember",
     },
   },
   {
@@ -52,7 +52,7 @@ const catalog = [
     description: "Inspect the Moondog capability registry.",
     agent_tool: {
       name: "moondog_capability_status",
-      label: "Inspect capability registry",
+      label: "Check what I can do",
     },
   },
   {
@@ -63,7 +63,7 @@ const catalog = [
     description: "Inspect the configured model runtime.",
     agent_tool: {
       name: "moondog_runtime_status",
-      label: "Inspect agent runtime",
+      label: "Check the model connection",
     },
   },
   {
@@ -126,7 +126,7 @@ const catalog = [
     requires_time_capsule_services: true,
     agent_tool: {
       name: "moondog_time_capsule_candidates",
-      label: "Build a Listening Time Machine",
+      label: "Travel through your years",
     },
   },
   {
@@ -151,7 +151,7 @@ const catalog = [
     requires_profile_services: true,
     agent_tool: {
       name: "moondog_profile_explain",
-      label: "Explain profile evidence",
+      label: "Look at why it's in your profile",
     },
   },
   {
@@ -202,7 +202,7 @@ const catalog = [
     requires_music_similarity: true,
     agent_tool: {
       name: "moondog_music_artist_similarity",
-      label: "Discover adjacent music",
+      label: "Find music nearby",
     },
   },
   {
@@ -214,7 +214,7 @@ const catalog = [
     requires_memory: true,
     agent_tool: {
       name: "moondog_memory_recall",
-      label: "Recall relevant memories",
+      label: "Remember what you've told me",
     },
   },
   {
@@ -227,7 +227,7 @@ const catalog = [
     requires_memory: true,
     agent_tool: {
       name: "moondog_memory_remember",
-      label: "Remember an explicit user memory",
+      label: "Remember something you said",
     },
   },
   {
@@ -239,7 +239,7 @@ const catalog = [
     requires_memory: true,
     agent_tool: {
       name: "moondog_memory_forget",
-      label: "Forget an explicit memory",
+      label: "Forget something",
     },
   },
   {
@@ -259,7 +259,7 @@ const catalog = [
     requires_spotify: true,
     agent_tool: {
       name: "moondog_spotify_player_status",
-      label: "Inspect Spotify playback",
+      label: "Check what Spotify is playing",
     },
   },
   {
@@ -295,7 +295,7 @@ const catalog = [
     requires_spotify: true,
     agent_tool: {
       name: "moondog_spotify_device_transfer",
-      label: "Transfer Spotify playback",
+      label: "Move Spotify playback",
     },
   },
   {
@@ -309,7 +309,7 @@ const catalog = [
     requires_playlist_services: true,
     agent_tool: {
       name: "moondog_spotify_resolve_tracks",
-      label: "Resolve library tracks on Spotify",
+      label: "Find your songs on Spotify",
     },
   },
   {
@@ -348,7 +348,7 @@ const catalog = [
     requires_spotify: true,
     agent_tool: {
       name: "moondog_spotify_playlist_read",
-      label: "Inspect Spotify playlists",
+      label: "Look at your Spotify playlists",
     },
   },
   {
@@ -361,7 +361,7 @@ const catalog = [
     requires_spotify: true,
     agent_tool: {
       name: "moondog_spotify_playlist_edit_preview",
-      label: "Preview Spotify playlist edit",
+      label: "Preview a playlist change",
     },
   },
   {
@@ -374,7 +374,7 @@ const catalog = [
     requires_spotify: true,
     agent_tool: {
       name: "moondog_spotify_playlist_edit_apply",
-      label: "Apply Spotify playlist edit",
+      label: "Change a Spotify playlist",
     },
   },
   {
@@ -388,7 +388,7 @@ const catalog = [
     requires_playlist_services: true,
     agent_tool: {
       name: "moondog_spotify_playlist_write",
-      label: "Write playlist to Spotify",
+      label: "Save the playlist to Spotify",
     },
   },
   {

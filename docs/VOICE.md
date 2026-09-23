@@ -43,6 +43,11 @@ Rules for the layer:
 - Keep it earned.
   A reference should fit what the listener is doing, not decorate it.
 
+## The agent
+
+The agent's system prompt carries a short version of these rules in its Voice section.
+It may nod to Pink Floyd at most once in a conversation, and only when the moment fits.
+
 ## Floyd map
 
 These are the current placements.
@@ -57,7 +62,6 @@ Add new ones sparingly and record them here.
 | One track for each year | *Time* | The years, one track each |
 | Quiet songs worth revisiting | *Wish You Were Here* | Quiet for a while, worth another listen |
 | Waiting for a Spotify export | *Wish You Were Here* | Come back when the download arrives |
-| No recent plays from Spotify | Silence, as in the quiet before *Speak to Me* | Nothing came back, nothing imported |
 | Songs that returned after long gaps | *Coming Back to Life* | Songs that found their way back |
 | Songs played several times in a row | *Echoes* | Played again, right away |
 | What the reading can't see | *The Dark Side of the Moon* | The limits of the evidence |
