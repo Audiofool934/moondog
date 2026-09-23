@@ -105,6 +105,8 @@ export const homeActions = [
 ];
 
 const sleeveNotes = [
+  // Welcome to the Machine: https://www.pinkfloyd.com/albums/wish-you-were-here/
+  "Where have you been?",
   // https://www.pinkfloyd.com/albums/the-wall/
   "Is there anybody out there?",
   // https://www.pinkfloyd.com/albums/wish-you-were-here/
