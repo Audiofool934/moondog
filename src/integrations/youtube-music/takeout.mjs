@@ -138,6 +138,6 @@ export async function readYouTubeMusicTakeout({ filePath, subjectId, capturedAt 
   return prepareMusicBundle({ provider: "youtube_music", subjectId, capturedAt, rows,
     digest: musicHash(bytes), size: bytes.length, members: sources.map((source) => source.name), skipped,
     fileName: path.basename(filePath),
-    scopeNote: "Saved library songs and identifiable YouTube Music watch records only. English and Chinese watched entries are recognized; ordinary YouTube activity and other actions are skipped. Listening duration is not supplied; library songs create no plays. Deleted or paused history cannot be recovered.",
+    scopeNote: "Your library songs and YouTube Music plays, read in English or Chinese. Regular YouTube videos are left out. Google doesn't say how long you listened, and history you deleted or paused can't come back.",
   });
 }

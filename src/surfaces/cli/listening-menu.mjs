@@ -144,7 +144,7 @@ export class ListeningMenu {
       // The title owns the item count; omit SelectList's additional scroll-info row.
       const candidates = this.filteredItems.length
         ? this.select.render(inner).slice(0, this.capacity)
-        : [theme.muted("No matches. Backspace to broaden.")];
+        : [theme.muted("Nothing matches. Backspace to widen the search.")];
       let labels = [heading, search];
       if (compactBox) {
         const labelWidth = Math.max(1, Math.floor(inner / 2));

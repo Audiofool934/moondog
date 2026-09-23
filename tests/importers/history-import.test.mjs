@@ -178,7 +178,7 @@ test("Spotify Account Data distinguishes listening dates from saved-library evid
   assert.equal(result.preview.tracks, 2);
   assert.equal(result.preview.earliestListeningAt, "2025-10-01T12:00:00.000Z");
   assert.equal(result.preview.latestListeningAt, "2025-10-01T12:00:00.000Z");
-  assert.match(result.preview.scopeNote, /profile snapshots/u);
+  assert.match(result.preview.scopeNote, /plus your library and playlists/u);
 });
 
 test("missing paths, folders, malformed Apple snapshots, unsupported files and ambiguous archives explain the boundary", async (t) => {

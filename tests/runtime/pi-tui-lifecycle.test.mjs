@@ -284,7 +284,7 @@ test("resume cancellation and an unmatched filter preserve the current conversat
   terminal.send(draft);
   await fixture.openResumeFromDraft();
   terminal.send("no_synthetic_session_matches_this_query");
-  await fixture.outputIncludes("No matches");
+  await fixture.outputIncludes("Nothing matches");
   terminal.send("\r");
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(application.ensureMemorySession().session_id, currentId);
@@ -599,7 +599,7 @@ for (const condition of ["empty", "forbidden"]) {
     terminal.send("\r");
     await fixture.outputIncludes("Preview recent listening");
     terminal.send("\r");
-    await fixture.outputIncludes(condition === "empty" ? "No recent listening returned" : "Spotify said no");
+    await fixture.outputIncludes(condition === "empty" ? "Silence from Spotify" : "Spotify said no");
     assert.equal(calls.commits, 0);
     assert.equal(calls.refreshes, 0);
     assert.match(fixture.screen(), /Add past listening history/u);
@@ -683,8 +683,8 @@ test("Apple selection opens its XML path, saves a library receipt, and refreshes
   terminal.send("/tmp/Library.xml");
   terminal.send("\r");
   await fixture.outputIncludes("Review your Apple Music library");
-  assert.match(fixture.screen(), /12 library tracks/u);
-  assert.doesNotMatch(fixture.screen(), /2 plays|Actual played duration/u);
+  assert.match(fixture.screen(), /12 songs/u);
+  assert.doesNotMatch(fixture.screen(), /2 plays|Listening time is known/u);
   assert.equal(calls.commits, 0);
   terminal.send("\r");
   await fixture.outputIncludes("Your listening profile");
@@ -715,7 +715,7 @@ for (const [provider, moves] of [["youtube_music", 2], ["qq_music", 3], ["neteas
     const input = provider === "youtube_music" ? "/tmp/music-library-songs.csv" : "https://music.163.com/playlist?id=1234";
     fixture.terminal.send(input); fixture.terminal.send("\r");
     await fixture.outputIncludes("Review this import");
-    assert.match(fixture.screen(), /3 collection tracks/u);
+    assert.match(fixture.screen(), /3 songs/u);
     assert.equal(fixture.calls.commits, 0);
     assert.deepEqual(fixture.calls.importOptions, { provider });
     fixture.terminal.send("\r");
@@ -814,8 +814,8 @@ test("guided import preview cancellation closes the inspected handle without com
   const fixture = await createGuidedImportFixture(context);
   const { terminal, calls } = fixture;
   await fixture.submit("/import /tmp/Chosen History.zip", "Review this import");
-  assert.match(stripVTControlCharacters(terminal.output), /Nothing added yet/u);
-  assert.match(stripVTControlCharacters(terminal.output), /2 plays · 1 tracks/u);
+  assert.match(stripVTControlCharacters(terminal.output), /Nothing is added until you import it/u);
+  assert.match(stripVTControlCharacters(terminal.output), /2 plays · 1 track\b/u);
   terminal.output = "";
   terminal.send("\x1b");
   await fixture.outputIncludes("Choose your music file");

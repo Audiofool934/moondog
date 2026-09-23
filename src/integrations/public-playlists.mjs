@@ -96,7 +96,7 @@ export async function readPublicPlaylist({ input, subjectId, capturedAt, provide
   const bytes = Buffer.from(JSON.stringify({ provider: identity.provider, id: identity.id, name, rows }));
   const prepared = prepareMusicBundle({ provider: identity.provider, subjectId, capturedAt, rows,
     digest: musicHash(bytes), size: bytes.length, members: ["public-playlist.json"], fileName: name, skipped: songs.length - rows.length,
-    scopeNote: `${rows.length} of ${total ?? "an unknown number of"} listed songs available. Only this selected playlist is imported. It is a collection signal, not evidence that you created the playlist or played these songs. Unavailable songs may be omitted by the service.`,
+    scopeNote: `${rows.length} of ${total ?? "an unknown number of"} songs could be read; the service hides some. Only this playlist is added. It shows what you keep, not what you played, and it may not be one you made.`,
   });
   prepared.preview.availableTracks = rows.length;
   prepared.preview.totalTracks = total;

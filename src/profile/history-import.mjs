@@ -23,7 +23,7 @@ export function prepareSpotifyRecentImport({ page, subjectId, capturedAt = new D
       earliestListeningAt: dates[0],
       latestListeningAt: dates.at(-1),
       eventsWithPlayedMs: 0,
-      scopeNote: "A recent snapshot, up to 50 plays. Spotify does not supply actual played duration here. Add a history ZIP later for older listening.",
+      scopeNote: "Your latest plays, up to 50. Spotify doesn't say how long you listened here. A history ZIP can add the older ones later.",
     },
   };
 }
@@ -119,7 +119,7 @@ export async function prepareHistoryImport({ filePath, subjectId, provider: sele
         fileName: path.basename(resolvedPath),
         tracks: bundle.trackRefs.length,
         capturedAt: bundle.manifest.source.captured_at,
-        scopeNote: "Library snapshot with any supplied favorites, ratings, play counts and last-played dates. Individual listening events are not included.",
+        scopeNote: "Your library with loves, ratings, play counts and when you last played each song. It doesn't list every play.",
       },
     };
   }
@@ -154,10 +154,10 @@ export async function prepareHistoryImport({ filePath, subjectId, provider: sele
       eventsWithPlayedMs: bundle.listening_events.filter((event) => Number.isSafeInteger(event.played_ms)).length,
       profileEvidence: bundle.profile_evidence?.length ?? 0,
       scopeNote: provider === "listenbrainz"
-        ? "Saved listens. Records without actual played duration do not add listening minutes."
+        ? "Your saved listens. Some don't say how long you listened, so they count as plays without minutes."
         : extended
-          ? "Music listening history with Spotify track identity and playback details. The dates describe this archive's coverage."
-          : "Music listening history and any supported library or profile snapshots. Extended playback details are not included.",
+          ? "Every play in this file, with how long you listened and how each song started and ended."
+          : "Your plays from the past year, plus your library and playlists. For older plays and listening time, use Extended streaming history.",
     },
   };
 }

@@ -124,7 +124,7 @@ test("preview exposes human facts and requires explicit commit; working ignores 
   const { view, actions } = fixture();
   view.setState({ page: "preview", preview });
   const text = screen(view);
-  assert.match(text, /Nothing added yet/u);
+  assert.match(text, /Nothing is added until you import it/u);
   assert.match(text, /12,450 plays · 420 tracks/u);
   assert.match(text, /2016-01-01 to 2026-09-01/u);
   assert.doesNotMatch(text, /private_schema_marker|private_scope_marker/u);
@@ -150,7 +150,7 @@ test("every page fits wide and narrow body viewports with an intact file cursor 
         assert.equal(lines.length, rows, `${page} height at ${width}x${rows}`);
         assert.ok(lines.every((line) => visibleWidth(line) === width), `${page} width at ${width}x${rows}`);
         if (["file", "client"].includes(page) && width >= 40 && rows >= 12) assert.ok(lines.some((line) => line.includes(CURSOR_MARKER)));
-        if (page === "preview" && width >= 40 && rows >= 12) assert.match(lines.join("\n"), /Import into my profile/u);
+        if (page === "preview" && width >= 40 && rows >= 12) assert.match(lines.join("\n"), /Add to my profile/u);
         if (options.environment?.NO_COLOR) assert.ok(lines.every((line) => !/\x1b\[[\d;:]*m/u.test(line)));
       }
     }

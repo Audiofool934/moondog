@@ -271,48 +271,44 @@ export function listeningHelp() {
 
 ## 01 / Listen and discover
 
-Type a request to talk with Moondog, build a playlist, or explore music.
-Use \`/auth [provider]\` to connect an API key or sign in, then \`/model\` to choose a model.
+Just type to talk about music, ask for a playlist, or go exploring.
+To talk, Moondog needs a model: \`/auth\` signs you in, then \`/model\` picks one.
 
-- \`/taste\` - select tracks or artists, inspect evidence, and shape your preferences
-- \`/lyrics\` - inspect the local lyric library; \`/lyrics sync\` checks more profile songs
-- \`/taste report\` - the full Tasteprint, Time Machine, and listening patterns
-- \`/import\` - get your listening data or inspect a saved Spotify ZIP / ListenBrainz JSON
-- \`/spotify\` - connected playback, queues, and playlists
-- \`/web search <query>\` or \`/web read <url>\` - public music sources
+- \`/taste\` - your profile: open any song or artist to see why it's there
+- \`/taste report\` - the whole picture on one page
+- \`/import\` - bring in your history, your library, or a playlist
+- \`/lyrics\` - the lyrics on the sleeve; \`/lyrics sync\` finds more
+- \`/spotify\` - play, queue, and make playlists in Spotify
+- \`/web search <query>\` or \`/web read <url>\` - look things up on public music sites
 
 ## 02 / Make it yours
 
-- \`/profile\` - open the interactive listening profile
-- \`/profile help\` - advanced correction commands
-- \`/profile corrections\` - inspect your explicit choices
-- \`/profile retract <id>\` - retract a correction
-- \`/remember <text>\`, \`/memory\`, \`/forget <id>\` - revisable conversation memory
+- \`/profile\` - the same profile as \`/taste\`
+- \`/profile corrections\` - everything you've told me
+- \`/profile retract <id>\` - undo one of those
+- \`/profile help\` - the full set of profile commands
+- \`/remember <text>\`, \`/memory\`, \`/forget <id>\` - what I remember between conversations
 
 ## 03 / Around the room
 
-- \`/home\` - return to the record sleeve without clearing the conversation
-- \`/theme paper|charcoal|terminal|auto\` - change this session's appearance
-- \`/art braille|ascii|off\` - choose the character artwork style
-- \`/motion on|off\` - turn character animation on or off
-- \`/commands\` or Ctrl+P - search commands without losing your draft
-- \`/resume\` - find and continue a saved conversation; type to filter, Enter opens, Esc returns
-- \`/resume <session-id>\` - restore a saved conversation directly
-- \`/new\` - start a new conversation
-- \`/status\`, \`/sources\`, \`/tools\`, \`/doctor\` - inspect readiness
-- \`/reload\` - reload model settings and authentication
-- \`/help all\` - the complete CLI and TUI command reference
-- \`/quit\` - leave Moondog
+- \`/home\` - back to the record sleeve; the conversation stays
+- \`/theme paper|charcoal|terminal|auto\` - change the look
+- \`/art braille|ascii|off\` - change the artwork
+- \`/motion on|off\` - turn the animation on or off
+- \`/commands\` or Ctrl+P - search every command; your message stays put
+- \`/resume\` - pick up a saved conversation (type to filter, Enter opens)
+- \`/new\` - start fresh; this conversation stays saved
+- \`/status\`, \`/sources\`, \`/tools\`, \`/doctor\` - see what's connected and working
+- \`/reload\` - reload model settings and sign-ins
+- \`/help all\` - every command, including the ones for the shell
+- \`/quit\` - leave
 
-Tab explores the home actions. Ctrl+P opens the searchable command palette.
-Escape returns to typing. Enter sends. Shift+Enter adds a line.
-Argument suggestions support appearance, web, Spotify, authentication, and model commands.
-Tab or Enter accepts a suggestion; a fully typed command sends with Enter.
-The header shows the current model, and the footer tracks active work and elapsed time.
-Ctrl+C cancels a model or web request, or exits when idle.
-Local commands without cancellation finish their current step; the draft stays available.
-Profile viewing and correction work without a model.
-In the profile, type to filter, Tab switches views, and Enter opens actions.
-Escape returns with your draft kept; Ctrl+R refreshes and Ctrl+O opens the full report.
-Quote paths, titles, and artist names that contain spaces.`;
+Tab moves to the menu on the home screen. Esc goes back to typing.
+Enter sends, and Shift+Enter starts a new line.
+Tab or Enter accepts a suggestion.
+Ctrl+C stops a model or web request, or leaves when nothing is running.
+In the profile, type to filter, Tab switches lists, and Enter shows what you can do.
+Ctrl+R refreshes it and Ctrl+O opens the full report.
+Your profile works without a model.
+Put quotes around paths, titles, and names that have spaces.`;
 }

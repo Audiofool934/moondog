@@ -1350,6 +1350,7 @@ export async function runMoondogTui({
     }
     const result = await application.runLocalCommand(command, runtimeStatus);
     addMoondogMessage(formatLocalResult(command, result));
+    setFooter("Ready.");
   };
 
   const openCommandPalette = async () => {
