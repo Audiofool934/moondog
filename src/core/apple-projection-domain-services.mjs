@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { collectionCoverage } from "../profile/music-providers.mjs";
 import { lstat } from "node:fs/promises";
 import path from "node:path";
 
@@ -1944,7 +1945,7 @@ export class AppleProjectionDomainServices {
             entity_type: "track",
             artist_credit: item.artist_credit,
             track_ref_id: item.track_ref_id,
-            signal: "Saved in Spotify library",
+            signal: `Saved in ${item.source_label ?? "Spotify"} library`,
             evidence_id: item.evidence_id,
           }))
       : [];
@@ -2050,13 +2051,7 @@ export class AppleProjectionDomainServices {
                 listening.coverage.cross_format_ambiguous_tracks,
               cross_format_ambiguous_events:
                 listening.coverage.cross_format_ambiguous_events,
-              spotify_profile_evidence:
-                listening.coverage.profile_evidence_records,
-              spotify_saved_tracks: listening.coverage.saved_tracks,
-              spotify_saved_albums: listening.coverage.saved_albums,
-              spotify_followed_artists: listening.coverage.followed_artists,
-              spotify_playlist_memberships:
-                listening.coverage.playlist_memberships,
+              ...collectionCoverage(listening.coverage),
               verified_search_interactions:
                 listening.coverage.verified_search_interactions,
               listener_assertion_events:

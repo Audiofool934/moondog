@@ -136,6 +136,39 @@ export class HistoryImportView {
     const file = { type: "file", label: "Choose a file" };
     const back = { type: "back", label: "Back" };
     switch (this.state.page) {
+      case "youtube_music": return {
+        title: "Import from YouTube Music",
+        paragraphs: ["Start with saved library songs, then add past listening from Google Takeout.", "Already have an export? Import it now. Requesting a new export takes time; no developer app is needed."],
+        actions: [{ type: "youtubeQuick", label: "Start with my music library" }, { type: "youtubeHistory", label: "Add past listening history" }, back],
+      };
+      case "youtubeQuick":
+      case "youtubeHistory": return {
+        title: this.state.page === "youtubeQuick" ? "YouTube Music: saved library" : "YouTube Music: past listening",
+        paragraphs: [
+          `Website: ${IMPORT_GUIDE_URLS.youtube}`,
+          "1. In Google Takeout, deselect all products, then select YouTube and YouTube Music.",
+          "2. Under included data, select music library songs and history. In format options, set history to JSON (not HTML).",
+          "3. Create a one-time ZIP export with a download link. Google emails you when it is ready; save it in Downloads.",
+          "4. Return here and choose the ZIP, or an extracted music-library-songs.csv or watch-history.json.",
+          "Library songs are collection signals. Only identifiable YouTube Music watch records become plays; ordinary YouTube viewing is skipped. Listening duration is not supplied.",
+          "General YouTube playlist CSVs and uploaded audio files are not supported. If the ZIP is over 256 MB, extract and import the supported music files separately.",
+        ],
+        actions: [{ type: "file", label: "Choose my Takeout file" }, { type: "openYouTube", label: "Open Google Takeout" }, back],
+      };
+      case "qq_music":
+      case "netease": {
+        const qq = this.state.page === "qq_music";
+        return {
+          title: `Import from ${qq ? "QQ Music / QQ 音乐" : "NetEase / 网易云音乐"}`,
+          paragraphs: [
+            "Quick start: open a playlist you want reflected in your profile, choose Share > Copy link, then paste it below.",
+            "Moondog reads public song information without signing in. Preview the playlist name, songs and available count before importing.",
+            "Private playlists cannot be read. Unavailable songs may be omitted; the preview shows coverage. Your selection is a collection signal, not a record of plays or proof you created the playlist.",
+            "Past listening: importing a complete account listening history is not available for this service yet. There is no verified full-history export guide to offer here.",
+          ],
+          actions: [{ type: "file", label: "Paste a playlist share link" }, { type: qq ? "openQQ" : "openNetEase", label: "Open my music service" }, back],
+        };
+      }
       case "spotify": return {
         title: "Import from Spotify",
         paragraphs: [
@@ -261,6 +294,7 @@ export class HistoryImportView {
         const preview = this.state.preview ?? {};
         const recent = this.state.origin === "quick";
         const library = preview.kind === "library";
+        const collection = preview.kind === "collection";
         const first = day(preview.earliestListeningAt);
         const last = day(preview.latestListeningAt);
         return {
@@ -269,17 +303,19 @@ export class HistoryImportView {
           paragraphs: [
             clean(preview.sourceLabel) || "Listening history",
             clean(preview.fileName),
-            library ? `${count(preview.tracks)} library tracks` : `${count(preview.listeningEvents)} plays · ${count(preview.tracks)} tracks`,
-            library ? `Library snapshot: ${day(preview.capturedAt) ?? "date not supplied"}` : first && last ? `${first} to ${last}` : "Listening dates not included.",
-            library ? "No individual listening events will be created." : recent
+            library ? `${count(preview.tracks)} library tracks` : collection ? `${count(preview.tracks)} collection tracks` : `${count(preview.listeningEvents)} plays · ${count(preview.tracks)} tracks`,
+            library || collection ? `${library ? "Library snapshot" : "Snapshot"}: ${day(preview.capturedAt) ?? "date not supplied"}` : first && last ? `${first} to ${last}` : "Listening dates not included.",
+            library || collection ? "No individual listening events will be created." : recent
               ? "Listening time is not supplied by Spotify."
               : `Actual played duration: ${count(preview.eventsWithPlayedMs)} of ${count(preview.listeningEvents)} records`,
             ...(preview.profileEvidence > 0 ? [`Other music observations: ${count(preview.profileEvidence)}`] : []),
+            ...(preview.skippedRecords > 0 ? [`Skipped: ${count(preview.skippedRecords)} non-music, unavailable or incomplete records`] : []),
             clean(preview.scopeNote),
+            ...(preview.sampleTracks ?? []).map((track) => `  ${clean(track)}`),
           ].filter(Boolean),
           actions: [
             { type: "commit", label: "Import into my profile" },
-            recent ? { type: "recent", label: "Refresh recent listening" } : { type: "file", label: "Choose another file" }, back,
+            recent ? { type: "recent", label: "Refresh recent listening" } : { type: "file", label: "Choose another file or link" }, back,
           ],
         };
       }
@@ -289,7 +325,7 @@ export class HistoryImportView {
           "Choose your music service, then start quickly or explore past listening history.",
           this.profileReady ? "Imports add to your existing profile and keep your choices." : "Preview your data before adding it to a local listening profile.",
         ],
-        actions: [{ type: "spotify", label: "Spotify" }, { type: "apple", label: "Apple Music" }, { type: "other", label: "Other sources" }, ...profile],
+        actions: [{ type: "spotify", label: "Spotify" }, { type: "apple", label: "Apple Music" }, { type: "youtube_music", label: "YouTube Music" }, { type: "qq_music", label: "QQ Music / QQ 音乐" }, { type: "netease", label: "NetEase / 网易云音乐" }, { type: "other", label: "Other sources" }, ...profile],
       };
     }
   }
@@ -334,13 +370,15 @@ export class HistoryImportView {
 
   renderFile(width, height, theme) {
     const client = this.state.page === "client";
+    const playlist = ["qq_music", "netease"].includes(this.state.provider);
     const input = client ? this.clientEditor : this.editor;
     const error = clean(this.state.error?.message ?? this.state.error);
     const errorLines = error ? wrapTextWithAnsi(error, width).slice(0, Math.min(3, Math.max(1, height - 6))).map(theme.error) : [];
     const header = client
       ? [theme.bold("Enter your Spotify Client ID"), theme.muted("From your app settings. No client secret."), theme.text("Client ID")]
-      : [theme.bold("Choose your music file"), theme.muted(this.state.provider === "apple" ? "Apple Music library XML" : this.state.provider === "spotify" ? "Original Spotify history ZIP" : this.state.provider === "other" ? "ListenBrainz JSON" : "Spotify ZIP, Apple Music XML or ListenBrainz JSON"), theme.text("File path")];
-    const hint = client ? theme.muted("Enter save · Esc back") : theme.muted(width >= 64 ? "Paste or drag one path · Tab completes · Enter inspect · Esc back"
+      : playlist ? [theme.bold("Paste your playlist share link"), theme.muted(this.state.provider === "qq_music" ? "QQ Music public playlist" : "NetEase Cloud Music public playlist"), theme.text("Link (or the copied share text)")]
+      : [theme.bold("Choose your music file"), theme.muted(this.state.provider === "apple" ? "Apple Music library XML" : this.state.provider === "spotify" ? "Original Spotify history ZIP" : this.state.provider === "youtube_music" ? "Takeout ZIP, music library CSV or watch-history JSON" : this.state.provider === "other" ? "ListenBrainz JSON" : "Music export file or public playlist link"), theme.text("File path")];
+    const hint = client ? theme.muted("Enter save · Esc back") : playlist ? theme.muted("Paste link · Enter preview · Esc back") : theme.muted(width >= 64 ? "Paste or drag one path · Tab completes · Enter inspect · Esc back"
       : width >= 38 ? "Paste/drag · Tab path · ↵ inspect · Esc" : "Tab path · ↵ inspect · Esc");
     const budget = Math.max(1, height - header.length - errorLines.length - 1);
     input.setAutocompleteMaxVisible(Math.max(1, Math.min(4, budget - 8)));

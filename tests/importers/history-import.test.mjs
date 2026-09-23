@@ -184,7 +184,7 @@ test("Spotify Account Data distinguishes listening dates from saved-library evid
 test("missing paths, folders, malformed Apple snapshots, unsupported files and ambiguous archives explain the boundary", async (t) => {
   const { root } = await fixture(t);
   await assert.rejects(prepare(path.join(root, "missing.zip")), { code: "history_import_file_missing" });
-  await assert.rejects(prepare(root), /folder.*Spotify ZIP, Apple Music library XML, or saved ListenBrainz JSON/u);
+  await assert.rejects(prepare(root), /folder.*music export file.*original ZIP/u);
   for (const extension of ["xml", "csv"]) {
     const file = path.join(root, `history.${extension}`);
     await writeFile(file, "example");

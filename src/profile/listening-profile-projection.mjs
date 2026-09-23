@@ -1,4 +1,5 @@
 import { uuidV5 } from "../core/uuid-v5.mjs";
+import { musicProviderLabel } from "./music-providers.mjs";
 
 export const LISTENING_PROFILE_SCHEMA_VERSION = "listening-profile/1";
 export const LISTENING_PROFILE_EVIDENCE_NAMESPACE =
@@ -118,6 +119,7 @@ function trackFields(track) {
       track?.identity_status === "resolved" ? "resolved" : "provisional",
     title,
     artist,
+    artistKnown: Boolean(track?.artist_credits?.[0]?.name?.trim()),
     release,
   };
 }
@@ -156,7 +158,7 @@ function aggregateHistoryArc(rows) {
     };
     artist.playCount += 1;
     artist.playedMs += row.playedMs;
-    aggregate.artists.set(artistKey, artist);
+    if (metadata.artistKnown) aggregate.artists.set(artistKey, artist);
     years.set(year, aggregate);
   }
 
@@ -289,7 +291,7 @@ function aggregateListeningSeasons(subjectId, eventAnalysis, explanations) {
     if (!row.skipped) artist.engagedPlayCount += 1;
     artist.playedMs += row.playedMs;
     artist.trackRefs.add(trackKey);
-    aggregate.artists.set(artistKey, artist);
+    if (metadata.artistKnown) aggregate.artists.set(artistKey, artist);
 
     const track = aggregate.tracks.get(trackKey) ?? {
       ...metadata,
@@ -645,7 +647,7 @@ function aggregateEvents(subjectId, eventRows, explanations) {
       }
       if (occurredAt < artist.firstPlayedAt) artist.firstPlayedAt = occurredAt;
       if (occurredAt > artist.lastPlayedAt) artist.lastPlayedAt = occurredAt;
-      artists.set(artistKey, artist);
+      if (metadata.artistKnown) artists.set(artistKey, artist);
     }
 
     const rankedArtists = [...artists.entries()]
@@ -879,7 +881,9 @@ function yearlyArtistTransitions(subjectId, eventAnalysis, explanations) {
   for (const row of eventAnalysis.eligible) {
     const year = Number(row.event?.occurred_at?.slice(0, 4));
     if (!Number.isInteger(year)) continue;
-    const artistName = trackFields(row.track).artist;
+    const metadata = trackFields(row.track);
+    if (!metadata.artistKnown) continue;
+    const artistName = metadata.artist;
     const artistKey = normalizedText(artistName);
     const artists = years.get(year) ?? new Map();
     const artist = artists.get(artistKey) ?? {
@@ -1311,16 +1315,17 @@ function deduplicateProfileEvidence(records) {
 }
 
 function persistedExplanation(record) {
+  const provider = musicProviderLabel(record.provenance?.source_system);
   const label = record.entity?.label ?? "Unresolved provider entity";
   const attributes = record.attributes ?? {};
   const source = record.provenance?.source_member ?? "Spotify account data";
   const basisByKind = {
-    library_track_saved: `The track appears in the saved Spotify library snapshot captured at ${record.provenance.captured_at}.`,
-    library_album_saved: `The album appears in the saved Spotify library snapshot captured at ${record.provenance.captured_at}.`,
+    library_track_saved: `The track appears in the saved ${provider} library snapshot captured at ${record.provenance.captured_at}.`,
+    library_album_saved: `The album appears in the saved ${provider} library snapshot captured at ${record.provenance.captured_at}.`,
     library_artist_followed: `The artist appears in the followed-artists snapshot captured at ${record.provenance.captured_at}.`,
     library_track_banned: `The track appears in the explicitly banned-tracks snapshot captured at ${record.provenance.captured_at}.`,
     library_artist_banned: `The artist appears in the explicitly banned-artists snapshot captured at ${record.provenance.captured_at}.`,
-    playlist_track_added: `The track appears in the private playlist named ${JSON.stringify(attributes.playlist_name)} at position ${attributes.playlist_position}.`,
+    playlist_track_added: `The track appears in the ${provider} playlist named ${JSON.stringify(attributes.playlist_name)} at position ${attributes.playlist_position}.` + (attributes.selected_public_playlist ? " You selected this public playlist; ownership and listening are not established." : ""),
     search_result_interacted: `A Spotify search for ${JSON.stringify(label)} led to an interaction with a ${attributes.result_entity_type} result at ${record.observed_at}.`,
     wrapped_track_ranked: `Spotify Wrapped ranked this track at position ${attributes.rank} for ${attributes.period}.`,
     wrapped_artist_ranked: `Spotify Wrapped ranked this artist at position ${attributes.rank} for ${attributes.period}.`,
@@ -1376,7 +1381,7 @@ function persistedExplanation(record) {
     value: label,
     direction: record.direction,
     basis: basisByKind[record.evidence_kind] ?? `The evidence came from ${source}.`,
-    name: `spotify-account-${record.evidence_kind}`,
+    name: `${record.provenance.source_system}-${record.evidence_kind}`,
     confidence: confidenceByClass[record.strength_class] ?? 0.5,
     limitation:
       limitationByClass[record.strength_class] ??
@@ -1404,6 +1409,7 @@ function evidenceGroups(records, eventAnalysis, explanations) {
       evidenceId: record.profile_evidence_id,
       playlists: new Set(),
       lastAddedAt: record.observed_at,
+      sourceLabel: musicProviderLabel(record.provenance.source_system),
     };
     group.playlists.add(record.attributes.playlist_name);
     if (record.observed_at > group.lastAddedAt) {
@@ -1429,6 +1435,7 @@ function evidenceGroups(records, eventAnalysis, explanations) {
     })
     .map(({ record, metric }) => ({
       track_ref_id: record.entity.track_ref_id,
+      source_label: musicProviderLabel(record.provenance.source_system),
       label: record.entity.label,
       artist_credit: record.entity.artist_credit,
       ...(record.entity.release ? { release: record.entity.release } : {}),
@@ -1449,6 +1456,7 @@ function evidenceGroups(records, eventAnalysis, explanations) {
     })
     .map((group) => ({
       track_ref_id: group.entity.track_ref_id,
+      source_label: group.sourceLabel,
       label: group.entity.label,
       artist_credit: group.entity.artist_credit,
       ...(group.entity.release ? { release: group.entity.release } : {}),
@@ -2294,6 +2302,7 @@ export function projectListeningProfile({
           if (typeof system !== "string") return null;
           if (system.startsWith("spotify")) return "spotify";
           if (system.startsWith("listenbrainz")) return "listenbrainz";
+          if (system === "youtube_music") return "youtube_music";
           return "other";
         })
         .filter(Boolean),
@@ -2324,6 +2333,15 @@ export function projectListeningProfile({
         earliest_played_at: events.earliest,
         latest_played_at: events.latest,
         profile_evidence_records: deduplicatedEvidence.length,
+        collection_tracks: new Set(deduplicatedEvidence.filter((record) => ["library_track_saved", "playlist_track_added"].includes(record.evidence_kind)).map((record) => record.entity.track_ref_id)).size,
+        collection_sources: [...new Set(deduplicatedEvidence.map((record) => record.provenance.source_system))].sort().map((system) => {
+          const records = deduplicatedEvidence.filter((record) => record.provenance.source_system === system);
+          const count = (kind) => records.filter((record) => record.evidence_kind === kind).length;
+          return { system, label: musicProviderLabel(system), evidence_records: records.length,
+            tracks: new Set(records.filter((record) => ["library_track_saved", "playlist_track_added"].includes(record.evidence_kind)).map((record) => record.entity.track_ref_id)).size,
+            saved_tracks: count("library_track_saved"), saved_albums: count("library_album_saved"),
+            followed_artists: count("library_artist_followed"), playlist_memberships: count("playlist_track_added") };
+        }),
         listener_assertion_events: direct.total_assertions,
         active_listener_assertions: direct.active.length,
         listener_retractions: direct.retractions,

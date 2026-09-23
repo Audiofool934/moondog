@@ -57,7 +57,7 @@ function subjectKey(target) {
   ]);
 }
 
-function metrics(item) {
+function itemMetrics(item) {
   const values = [];
   for (const [field, label] of [
     ["play_count", "plays"],
@@ -93,8 +93,8 @@ function overview(profile) {
     [durationUnavailable ? undefined : amount(coverage.listening_hours), "h"],
     [count(coverage.listening_tracks), "tracks"],
   ].filter(([value]) => value !== undefined).map(([value, label]) => `${value} ${label}`);
-  if (durationUnavailable) listening.push("Listening time is unavailable");
-  if (listening.length && !(coverage.effective_listening_events === 0 && coverage.tracks_observed > 0)) {
+  if (durationUnavailable) listening.push("Time unavailable");
+  if (listening.length && !(coverage.effective_listening_events === 0 && (coverage.tracks_observed > 0 || coverage.collection_tracks > 0))) {
     lines.push(listening.join(" · "));
   }
   if (Number.isSafeInteger(coverage.tracks_observed) && coverage.tracks_observed > 0) {
@@ -104,11 +104,17 @@ function overview(profile) {
     }`);
   }
   const source = profile?.listening_source ?? {};
+  const collections = items(coverage.collection_sources).filter((collection) => collection.tracks > 0);
+  if (collections.length > 1) lines.push(`${count(coverage.collection_tracks)} collection tracks · ${collections.length} services`);
+  for (const collection of collections) {
+    if (collection.tracks > 0) lines.push(`${inline(collection.label)} collection: ${count(collection.tracks)} tracks`);
+  }
   const providers = items(source.providers).map(inline).filter(Boolean).map((provider) => ({
     spotify: "Spotify",
     listenbrainz: "ListenBrainz",
     lastfm: "Last.fm",
     apple_music: "Apple Music",
+    youtube_music: "YouTube Music",
   })[provider] ?? provider);
   const earliest = date(source.listening_range?.earliest);
   const latest = date(source.listening_range?.latest);
@@ -133,6 +139,8 @@ function explicitKind(item) {
 
 /** Build a private, bounded review view from structured profile evidence. */
 export function buildTasteProfileModel(profile = {}) {
+  const metrics = (item) => itemMetrics(profile.coverage?.events_with_played_duration === 0
+    ? { ...item, listening_minutes: undefined } : item);
   const subjects = new Map();
   const seenDetails = new Map();
   const assertions = profile?.listener_assertions ?? {};
@@ -229,7 +237,8 @@ export function buildTasteProfileModel(profile = {}) {
   ]) {
     for (const item of items(curated[field])) {
       const details = metrics(item);
-      add(item, kind, source, `${source}${details.length ? `: ${details.join(" · ")}` : ""}`);
+      const label = source.replace("Spotify", inline(item.source_label) || "Spotify");
+      add(item, kind, label, `${label}${details.length ? `: ${details.join(" · ")}` : ""}`);
     }
   }
   for (const item of items(curated.avoids)) {

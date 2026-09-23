@@ -297,7 +297,7 @@ async function runListenBrainzSurface(options) {
   }
 }
 
-async function prepareTuiHistoryImport(filePath, { recentPage } = {}) {
+async function prepareTuiHistoryImport(filePath, { recentPage, provider } = {}) {
   const historyStore = await openListeningHistoryStore();
   try {
     const appleSubjectId = await optionalAppleMusicSubjectId();
@@ -306,7 +306,7 @@ async function prepareTuiHistoryImport(filePath, { recentPage } = {}) {
       create: true,
     });
     const prepared = recentPage ? prepareSpotifyRecentImport({ page: recentPage, subjectId }) : await prepareHistoryImport({
-      filePath, subjectId, capturedAt: new Date().toISOString(),
+      filePath, subjectId, provider, capturedAt: new Date().toISOString(),
     });
     let closed = false;
     let committed = false;
@@ -326,10 +326,10 @@ async function prepareTuiHistoryImport(filePath, { recentPage } = {}) {
               ...options, recentActivityStore: historyStore,
               historyArchiveImporter: async () => prepared.bundle,
             })
-          : await runListenBrainzCommand({
+          : prepared.provider === "listenbrainz" ? await runListenBrainzCommand({
               ...options, historyStore,
               historyFileImporter: async () => prepared.bundle,
-            });
+            }) : { ...historyStore.ingestImport(prepared.bundle), provider: prepared.provider };
         committed = true;
         return receipt;
       },

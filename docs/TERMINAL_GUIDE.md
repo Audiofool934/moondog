@@ -101,7 +101,7 @@ The animation clock stops during typing, navigation, menus, conversation, and mi
 `MOONDOG_MOTION=off` or `/motion off` disables animation.
 `NO_COLOR` preserves monochrome character art, and `TERM=dumb` selects ASCII without styling or animation.
 The layout reduces artwork before sacrificing room for the input, and works without Kitty or iTerm image support.
-`/import` opens a native guide for getting your listening data or inspecting a saved Spotify ZIP or ListenBrainz JSON.
+`/import` opens a native guide for music-service exports and public playlist links, with preview and confirmation before saving.
 `/import "/path/to/history.zip"` opens the file preview directly.
 `/help` shows the terminal guide; `/help all` includes the complete CLI reference.
 
@@ -206,9 +206,41 @@ Keep the generated ZIP under the ignored `outputs/` directory rather than adding
 ## Import and inspect listening history
 
 Start with `/import`, or choose **Bring your history** from the home screen.
-Choose **Spotify** or **Apple Music** first, then choose quick start or the past-history guide.
-All file imports work without a model and open the cumulative Profile after confirmation.
+Choose **Spotify**, **Apple Music**, **YouTube Music**, **QQ Music** or **NetEase Cloud Music** first.
+The guide explains the available quick-start and past-history routes for that service.
+All imports work without a model and open the cumulative Profile after confirmation.
 Other existing sources remain available under **Other sources**.
+
+| Service | Start with | Past listening |
+| --- | --- | --- |
+| Spotify | Connect for up to 50 recent plays, with current developer-app setup requirements | Account Data or Extended Streaming History ZIP |
+| Apple Music | Export Library.xml from Music on Mac | Privacy-request guide only; archive parsing is not available |
+| YouTube Music | Takeout music-library-songs.csv or a ZIP containing it | Takeout watch-history.json or a ZIP containing it |
+| QQ Music | Paste a public playlist share link | Account history import is not available |
+| NetEase Cloud Music | Paste a public playlist share link | Account history import is not available |
+
+**YouTube Music:** open [Google Takeout](https://takeout.google.com/), deselect other products and select YouTube and YouTube Music.
+Include music library songs and history, and set the history format to JSON.
+Request a one-time ZIP download, wait for Google's email, and save the result in Downloads or a folder you choose.
+Return to the YouTube Music guide and select the ZIP, or an extracted `music-library-songs.csv` or `watch-history.json`.
+The library CSV uses Google's Video ID, Song Title, Artist Name and optional Album Title columns.
+History requires a music-specific header or music.youtube.com watch URL, a valid video ID and timestamp, and an English or Chinese watched-action title.
+Ordinary YouTube viewing, unrecognized action titles and incomplete entries are skipped and counted in the preview.
+Channel names are not assumed to be recording artists, and missing played duration stays unknown.
+General YouTube playlist CSVs, HTML history and uploaded audio files are not imported.
+Limits are 256 MB per ZIP, 64 MB per selected file, 100 selected members and 100,000 music records per import.
+For large exports, extract just the supported files and import them separately.
+Google's [music export schema](https://developers.google.com/data-portability/schema-reference/youtube) and [activity schema](https://developers.google.com/data-portability/schema-reference/my_activity) describe the source fields.
+
+**QQ Music and NetEase Cloud Music:** in the service, open a playlist you want represented in your profile and choose Share > Copy link.
+Paste the link or copied share text into the corresponding Moondog guide.
+The preview shows the playlist name, sample songs and the available count compared with the service's reported total, when supplied.
+Only public metadata is read, without account passwords or cookies; private playlists require another supported source.
+If a short link cannot be resolved, open it in your browser and copy the full playlist page URL.
+These adapters use the services' public website metadata responses, which can change or limit results; availability is checked on each preview.
+Importing a selected playlist does not imply you created it, liked every song or played any of its songs.
+Collections and history keep their platform labels in the same cumulative profile, and repeating an identical import adds no duplicate evidence.
+These imports add observations; they do not synchronize later playlist removals or replace existing preferences.
 
 **Quick start** connects Spotify and previews up to 50 recent plays before you choose **Import into my profile**.
 It requests only permission to read recent listening, and does not control playback or change your Spotify library.

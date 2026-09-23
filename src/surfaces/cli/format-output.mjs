@@ -255,7 +255,7 @@ function appendTasteSection(lines, title, values, formatter) {
 }
 
 function formatBehaviorContextLine(value, total, label, coverageLabel) {
-  if (!Number.isInteger(value)) return null;
+  if (!Number.isInteger(value) || total === 0) return null;
   const validTotal = Number.isInteger(total) && total >= value && total > 0;
   const share = validTotal ? Math.round((value / total) * 1_000) / 10 : null;
   return `- ${label}: ${formatInteger(value)}${
@@ -267,6 +267,8 @@ function formatBehaviorContextLine(value, total, label, coverageLabel) {
 
 function formatTaste(profile) {
   const coverage = profile.coverage ?? {};
+  const durationUnavailable = coverage.events_with_played_duration === 0;
+  const listeningSignal = (formatter) => (item) => formatter(durationUnavailable ? { ...item, listening_minutes: undefined } : item);
   const behavior = profile.listening_behavior ?? {};
   const context = behavior.context ?? {};
   const listeningRange = profile.listening_source?.listening_range;
@@ -286,7 +288,7 @@ function formatTaste(profile) {
       coverage.effective_listening_events,
     )}`,
     `- Listening time: ${
-      Number.isFinite(coverage.listening_hours)
+      !durationUnavailable && Number.isFinite(coverage.listening_hours)
         ? `${coverage.listening_hours.toLocaleString("en-US")} h`
         : "unknown"
     }`,
@@ -313,11 +315,14 @@ function formatTaste(profile) {
           )} effective events`,
         ]
       : []),
-    `- Spotify saved tracks: ${formatInteger(coverage.spotify_saved_tracks)}`,
+    `- Saved library tracks: ${formatInteger(coverage.saved_tracks ?? coverage.spotify_saved_tracks)}`,
     `- Playlist memberships: ${formatInteger(
-      coverage.spotify_playlist_memberships,
+      coverage.playlist_memberships ?? coverage.spotify_playlist_memberships,
     )}`,
   ];
+  for (const source of coverage.collection_sources ?? []) {
+    if (source.tracks > 0) lines.push(`- ${safeInlineText(source.label)} collection: ${formatInteger(source.tracks)} tracks`);
+  }
   if (range) lines.push(`- Listening range: ${range}`);
   if (Number.isInteger(context.incognito_events_excluded)) {
     lines.push(
@@ -338,7 +343,7 @@ function formatTaste(profile) {
     lines,
     "Long arc",
     behavior.enduring_artists,
-    formatArtistSignal,
+    listeningSignal(formatArtistSignal),
   );
   appendTasteSection(
     lines,
@@ -348,20 +353,20 @@ function formatTaste(profile) {
         : ""
     }`,
     behavior.recent_artists,
-    formatArtistSignal,
+    listeningSignal(formatArtistSignal),
   );
   appendTasteSection(
     lines,
     "Listening through time (UTC)",
     behavior.history_arc,
-    formatHistoryArc,
+    listeningSignal(formatHistoryArc),
   );
   const listeningSeasons = behavior.listening_seasons?.seasons;
   appendTasteSection(
     lines,
     "Listening Seasons (fixed UTC calendar quarters)",
     Array.isArray(listeningSeasons) ? listeningSeasons.slice(-12) : [],
-    formatListeningSeason,
+    listeningSignal(formatListeningSeason),
   );
   if (Array.isArray(listeningSeasons) && listeningSeasons.length > 0) {
     lines.push(
@@ -415,13 +420,13 @@ function formatTaste(profile) {
     lines,
     "Tracks you return to",
     behavior.repeat_tracks,
-    formatTrackSignal,
+    listeningSignal(formatTrackSignal),
   );
   appendTasteSection(
     lines,
     "Recent tracks",
     behavior.recent_tracks,
-    formatTrackSignal,
+    listeningSignal(formatTrackSignal),
   );
 
   const behaviorContextLines = [

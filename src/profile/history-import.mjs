@@ -7,6 +7,8 @@ import { readSpotifyHistoryArchive } from "../integrations/spotify/history-archi
 import { readListenBrainzHistoryFile } from "../integrations/listenbrainz/history-file.mjs";
 import { projectSpotifyRecentActivity } from "../integrations/spotify/recent-activity.mjs";
 import { buildAppleMusicLibraryImport } from "../importers/apple-music-library/index.mjs";
+import { readYouTubeMusicTakeout } from "../integrations/youtube-music/takeout.mjs";
+import { readPublicPlaylist } from "../integrations/public-playlists.mjs";
 
 export function prepareSpotifyRecentImport({ page, subjectId, capturedAt = new Date().toISOString() }) {
   const bundle = projectSpotifyRecentActivity({ page, subjectId, capturedAt });
@@ -34,7 +36,7 @@ function fail(code, message) {
 
 function literalPath(input) {
   if (typeof input !== "string" || !input.trim()) {
-    fail("history_import_path_required", "Paste the path to one Spotify ZIP, Apple Music XML, or ListenBrainz JSON file.");
+    fail("history_import_path_required", "Paste one music export file path or a QQ Music / NetEase playlist share link.");
   }
   let value = input.trim();
   if (/[\u0000-\u001f\u007f]/u.test(value)) {
@@ -83,7 +85,10 @@ function literalPath(input) {
   return path.resolve(decoded);
 }
 
-export async function prepareHistoryImport({ filePath, subjectId, capturedAt = new Date().toISOString() } = {}) {
+export async function prepareHistoryImport({ filePath, subjectId, provider: selectedProvider, capturedAt = new Date().toISOString(), fetchImpl } = {}) {
+  if (/https?:\/\//iu.test(filePath ?? "") && !String(filePath).startsWith("file:")) {
+    return readPublicPlaylist({ input: filePath, subjectId, capturedAt, provider: selectedProvider, fetchImpl });
+  }
   const resolvedPath = literalPath(filePath);
   let file;
   try {
@@ -95,10 +100,14 @@ export async function prepareHistoryImport({ filePath, subjectId, capturedAt = n
     fail("history_import_file_unreadable", `Could not read ${resolvedPath}. Check that the file is accessible.`);
   }
   if (file.isDirectory()) {
-    fail("history_import_directory", "This is a folder. Choose one Spotify ZIP, Apple Music library XML, or saved ListenBrainz JSON file.");
+    fail("history_import_directory", "This is a folder. Choose the downloaded music export file inside it, or the original ZIP.");
   }
-  if (!file.isFile()) fail("history_import_file_invalid", "Choose a regular Spotify ZIP, Apple Music XML, or ListenBrainz JSON file.");
+  if (!file.isFile()) fail("history_import_file_invalid", "Choose a regular music export file.");
   const extension = path.extname(resolvedPath).toLowerCase();
+  if (selectedProvider === "youtube_music" || extension === ".csv" || /^(?:watch-history|takeout)[-.]/iu.test(path.basename(resolvedPath))) {
+    if (![".csv", ".json", ".zip"].includes(extension)) fail("history_import_format_unsupported", "Choose your Takeout ZIP, music-library-songs.csv or watch-history.json. For history, select JSON in Takeout instead of HTML.");
+    return readYouTubeMusicTakeout({ filePath: resolvedPath, subjectId, capturedAt });
+  }
   if (extension === ".xml") {
     const bundle = await buildAppleMusicLibraryImport(resolvedPath, { subjectId });
     return {
@@ -115,7 +124,7 @@ export async function prepareHistoryImport({ filePath, subjectId, capturedAt = n
     };
   }
   if (![".zip", ".json"].includes(extension)) {
-    fail("history_import_format_unsupported", "Choose a Spotify history ZIP, Apple Music library XML or saved ListenBrainz JSON. Other file formats are not supported here.");
+    fail("history_import_format_unsupported", "This format is not supported. Choose a Spotify history ZIP, Apple Music library XML, YouTube Music Takeout ZIP/CSV/JSON or saved ListenBrainz JSON.");
   }
   const provider = extension === ".zip" ? "spotify" : "listenbrainz";
   let bundle;

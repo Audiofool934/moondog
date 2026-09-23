@@ -44,7 +44,11 @@ test("import actions remain host-owned and the profile shortcut follows readines
   assert.deepEqual(actions.pop(), { type: "apple" });
   view.handleInput("\x1b[B");
   view.handleInput("\r");
-  assert.deepEqual(actions.pop(), { type: "other" });
+  assert.deepEqual(actions.pop(), { type: "youtube_music" });
+  for (const type of ["qq_music", "netease", "other"]) {
+    view.handleInput("\x1b[B"); view.handleInput("\r");
+    assert.deepEqual(actions.pop(), { type });
+  }
   view.handleInput("\x1b");
   assert.deepEqual(actions.pop(), { type: "close" });
   view.setState({ page: "start", profileReady: true });
@@ -140,7 +144,7 @@ test("every page fits wide and narrow body viewports with an intact file cursor 
     view.setPath("/tmp/listener/Downloads/a long listening history file.zip");
     for (const [width, rows] of [[80, 20], [40, 14], [40, 12], [26, 8], [8, 3], [1, 1], [40, 0]]) {
       resize(rows);
-      for (const page of ["start", "spotify", "spotifyHistory", "apple", "appleQuick", "appleHistory", "waiting", "other", "quick", "setup", "client", "empty", "file", "preview", "working"]) {
+      for (const page of ["start", "spotify", "spotifyHistory", "apple", "appleQuick", "appleHistory", "youtube_music", "youtubeQuick", "youtubeHistory", "qq_music", "netease", "waiting", "other", "quick", "setup", "client", "empty", "file", "preview", "working"]) {
         view.setState({ page, preview, ...(page === "file" ? { error: "Choose a supported file; your path is still here." } : {}) });
         const lines = view.render(width);
         assert.equal(lines.length, rows, `${page} height at ${width}x${rows}`);

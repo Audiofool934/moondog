@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { collectionCoverage } from "./music-providers.mjs";
 
 import { readSpotifyHistoryArchive } from "../integrations/spotify/history-archive.mjs";
 import { openEphemeralListeningHistoryStore } from "./listening-history-store.mjs";
@@ -87,7 +88,7 @@ function strongPreferences(listening, maximum) {
         )
         .map((item) => ({
           ...item,
-          signal: "Saved in Spotify library",
+          signal: `Saved in ${item.source_label ?? "Spotify"} library`,
         })),
       ...(curated.followed_artists ?? [])
         .filter(
@@ -124,7 +125,7 @@ function strongPreferences(listening, maximum) {
         )
         .map((item) => ({
           ...item,
-          signal: "Playlist anchor",
+          signal: `${item.source_label ?? "Spotify"} playlist anchor`,
         })),
     ],
     maximum,
@@ -192,11 +193,7 @@ function createListeningProfileProjection(
       cross_format_linked_events: coverage.cross_format_linked_events,
       cross_format_ambiguous_tracks: coverage.cross_format_ambiguous_tracks,
       cross_format_ambiguous_events: coverage.cross_format_ambiguous_events,
-      spotify_profile_evidence: coverage.profile_evidence_records,
-      spotify_saved_tracks: coverage.saved_tracks,
-      spotify_saved_albums: coverage.saved_albums,
-      spotify_followed_artists: coverage.followed_artists,
-      spotify_playlist_memberships: coverage.playlist_memberships,
+      ...collectionCoverage(coverage),
       verified_search_interactions: coverage.verified_search_interactions,
       listener_assertion_events: coverage.listener_assertion_events,
       active_listener_assertions: coverage.active_listener_assertions,

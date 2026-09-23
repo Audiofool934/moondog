@@ -44,9 +44,32 @@ Missing timestamps or played duration remain unknown; a collection of songs does
 
 For each new service, ship a usable end-to-end import slice and update its visible support description together.
 
-## First slice: getting started
+## Implemented service coverage
 
-`/import` first asks for **Spotify** or **Apple Music**, then offers quick start and a past-history path for that service.
+`/import` starts with **Spotify**, **Apple Music**, **YouTube Music**, **QQ Music** and **NetEase Cloud Music**, plus Other sources for ListenBrainz.
+Spotify and Apple retain the paths described below.
+YouTube Music offers saved-library and past-listening entrypoints with a Google Takeout request/download guide.
+Its importer accepts the original ZIP or extracted music-library-songs CSV and watch-history JSON.
+Library songs become saved-library evidence; only recognizable YouTube Music watched records become listening events, with no inferred duration or artist from a channel name.
+Current action-title recognition covers English and Chinese; other actions, ordinary YouTube viewing and incomplete rows are skipped with a visible count.
+General YouTube playlist exports, uploaded audio and HTML history are outside this slice.
+ZIP parsing reads a bounded private snapshot, selects only supported music members and removes the temporary snapshot after inspection.
+
+QQ Music and NetEase Cloud Music offer a working public-playlist share-link import, including a bounded official-host redirect path for share links.
+Their guides state that complete account listening-history import is unavailable.
+The preview names the playlist, shows sample songs and available/total coverage, and identifies it as a selected collection rather than listening or proof of ownership.
+No credentials, cookies, creator profiles, comments or audio are persisted.
+The public website metadata responses are compatibility adapters rather than a guaranteed public developer API, so network, private-playlist and format failures leave the input available for recovery.
+The current QQ and NetEase responses were checked live against public playlists; Takeout parsing was validated against official schemas and synthetic fixtures rather than a private user export.
+
+All three new paths retain the inspected bundle, require confirmation, commit into the shared private subject and open the cumulative profile in the same session.
+Repeated identical imports are idempotent, and overlapping YouTube observations use stable provider/video/time fingerprints across ZIP and extracted files.
+Snapshots add observations without claiming to synchronize removed playlist entries.
+Collection evidence and profile summaries carry their real source labels; Spotify-specific counters remain specific to Spotify.
+
+## Getting started and adding history
+
+Each service page describes the data it can actually supply and the available next action.
 The home action and command palette open that same guide.
 An unfinished conversation draft remains available after leaving the guide.
 
@@ -84,7 +107,8 @@ It explicitly states that Apple privacy archive import is not implemented and of
 Opening either website does not submit a request, download a file, or import data automatically.
 If browser opening fails, the guide keeps its place and displays the exact URL for manual use.
 
-The file step accepts Spotify ZIP, Apple Music library XML and ListenBrainz JSON formats.
+The file step accepts Spotify ZIP, Apple Music library XML, YouTube Music Takeout ZIP/CSV/JSON and ListenBrainz JSON formats.
+QQ Music and NetEase use the same preview/confirmation journey with a share-link input.
 It uses Pi's editor and path completion, accepts pasted or dragged local paths, and retains the input when a file cannot be read.
 Extracted Spotify folders or individual Spotify JSON files receive guidance to use the original ZIP.
 ListenBrainz remains available under Other sources.

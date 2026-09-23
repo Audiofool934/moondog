@@ -351,7 +351,9 @@ function normalizedProfileInput(value, batch) {
       !isUuid(record.entity.entity_ref_id) ||
       !isPlainObject(record.provenance) ||
       record.provenance.source_kind !== "import" ||
-      record.provenance.source_system !== "spotify_account_data" ||
+      !(record.provenance.source_system === "spotify_account_data" ||
+        (["youtube_music", "qq_music", "netease"].includes(record.provenance.source_system) &&
+          profileImport.source_key === `${record.provenance.source_system}.music_import`)) ||
       !profileImport.member_names.includes(record.provenance.source_member) ||
       record.provenance.profile_import_id?.toLowerCase() !== profileImportId ||
       record.provenance.captured_at !== importedAt

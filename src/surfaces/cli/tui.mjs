@@ -569,7 +569,7 @@ export async function runMoondogTui({
 
   const openProfile = async ({ imported = false } = {}) => {
     if (application.profileServicesReady?.() === false) {
-      addMoondogMessage("## Start your listening profile\n\nBring a saved Spotify history ZIP with `/import`, or import your Apple Music library. Then select a track or artist here to inspect the evidence and shape your preferences.\n\nYour profile works locally without a model or Spotify sign-in.");
+      addMoondogMessage("## Start your listening profile\n\nOpen `/import` and choose your music service to bring listening history, library songs or a public playlist. Then select a track or artist here to inspect the evidence and shape your preferences.\n\nYour profile works locally without a model or Spotify sign-in.");
       setFooter("No local profile yet. /import brings your listening history.");
       return;
     }
@@ -809,15 +809,15 @@ export async function runMoondogTui({
     const view = importView;
     view.setPath(filePath);
     setBusy(true);
-    setImportPage("working", { message: "Reading your music file and preparing a preview..." });
+    setImportPage("working", { message: "Reading your music data and preparing a preview..." });
     setFooter("Inspecting the file. No listening history has been added.", yellow);
     try {
       if (typeof prepareImport !== "function") throw new Error("File inspection is unavailable in this launch mode.");
-      const prepared = await prepareImport(filePath);
+      const prepared = await prepareImport(filePath, { provider: importProvider });
       if (cleanedUp || importView !== view) { prepared.close?.(); return; }
       if (!importProvider) {
-        importProvider = prepared.preview.kind === "library" ? "apple" : prepared.provider === "listenbrainz" ? "other" : "spotify";
-        importFileReturn = importProvider === "apple" ? "appleQuick" : importProvider === "other" ? "other" : "spotifyHistory";
+        importProvider = prepared.preview.kind === "library" ? "apple" : prepared.provider === "listenbrainz" ? "other" : ["youtube_music", "qq_music", "netease"].includes(prepared.provider) ? prepared.provider : "spotify";
+        importFileReturn = { apple: "appleQuick", other: "other", youtube_music: "youtube_music", qq_music: "qq_music", netease: "netease" }[importProvider] ?? "spotifyHistory";
       }
       preparedImport = prepared;
       setImportPage("preview", { preview: prepared.preview });
@@ -918,10 +918,10 @@ export async function runMoondogTui({
           : `${receipt.library_tracks ?? preview.tracks} library tracks saved as a snapshot. No individual listening events were created.`
         : receipt.already_imported || (receipt.inserted_events === 0 && !receipt.inserted_profile_evidence && !receipt.superseded_events)
         ? "Your profile is already up to date with this import. No new listening records were added."
-        : `${receipt.inserted_events ?? 0} new listening records · ${receipt.duplicate_events ?? 0} already present.`;
+        : `${receipt.inserted_events ?? 0} new listening records · ${receipt.duplicate_events ?? 0} already present.${receipt.inserted_profile_evidence ? ` ${receipt.inserted_profile_evidence} collection or profile observations added.` : ""}`;
       // Keep the durable result visible even if refreshing the runtime later fails.
       addMoondogMessage([
-        preview.kind === "library" ? "## Apple Music library imported" : "## Listening history imported",
+        preview.kind === "library" ? "## Apple Music library imported" : preview.kind === "collection" ? "## Music collection imported" : "## Listening history imported",
         [preview.sourceLabel, preview.fileName].filter(Boolean).join(" · "),
         counts,
         ...(receipt.superseded_events ? [`${receipt.superseded_events} overlapping records were reconciled with richer history.`] : []),
@@ -971,8 +971,8 @@ export async function runMoondogTui({
       await openProfile();
       return;
     }
-    if (["openSpotify", "openSpotifySetup", "openAppleHelp", "openApplePrivacy"].includes(type)) {
-      const destination = { openSpotify: "spotify", openSpotifySetup: "spotifySetup", openAppleHelp: "apple", openApplePrivacy: "applePrivacy" }[type];
+    if (["openSpotify", "openSpotifySetup", "openAppleHelp", "openApplePrivacy", "openYouTube", "openQQ", "openNetEase"].includes(type)) {
+      const destination = { openSpotify: "spotify", openSpotifySetup: "spotifySetup", openAppleHelp: "apple", openApplePrivacy: "applePrivacy", openYouTube: "youtube", openQQ: "qq", openNetEase: "netease" }[type];
       const url = IMPORT_GUIDE_URLS[destination];
       try {
         if (typeof openImportHelp !== "function") throw new Error("Browser opening is unavailable.");
@@ -988,10 +988,10 @@ export async function runMoondogTui({
       if (importPage === "preview") {
         discardPreparedImport();
         setImportPage(importOrigin === "quick" ? "quick" : "file");
-      } else setImportPage({ waiting: "spotifyHistory", file: importFileReturn, setup: "quick", client: "setup", empty: "quick", quick: "spotify", spotifyHistory: "spotify", appleQuick: "apple", appleHistory: "apple" }[importPage] ?? "start");
-    } else if (["start", "file", "spotify", "waiting", "other", "quick", "setup", "client", "spotifyHistory", "apple", "appleQuick", "appleHistory"].includes(type)) {
+      } else setImportPage({ waiting: "spotifyHistory", file: importFileReturn, setup: "quick", client: "setup", empty: "quick", quick: "spotify", spotifyHistory: "spotify", appleQuick: "apple", appleHistory: "apple", youtubeQuick: "youtube_music", youtubeHistory: "youtube_music" }[importPage] ?? "start");
+    } else if (["start", "file", "spotify", "waiting", "other", "quick", "setup", "client", "spotifyHistory", "apple", "appleQuick", "appleHistory", "youtube_music", "youtubeQuick", "youtubeHistory", "qq_music", "netease"].includes(type)) {
       discardPreparedImport();
-      if (["spotify", "apple", "other"].includes(type)) importProvider = type;
+      if (["spotify", "apple", "other", "youtube_music", "qq_music", "netease"].includes(type)) importProvider = type;
       if (type === "file" && !["preview", "file"].includes(importPage)) importFileReturn = importPage;
       setImportPage(type);
     }
@@ -1020,7 +1020,7 @@ export async function runMoondogTui({
     }
     setImportPage("start");
     tui.setFocus(importView);
-    setFooter("Choose Spotify or Apple Music, then choose how to start.");
+    setFooter("Choose your music service, then choose how to start.");
     if (filePath) await inspectImport(filePath);
   };
 

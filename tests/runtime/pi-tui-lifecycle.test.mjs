@@ -530,8 +530,9 @@ async function createGuidedImportFixture(context, options = {}) {
     runtime: configuredFakeRuntime(prompts), terminal, signalTarget,
     rebuildRuntime: async () => configuredFakeRuntime(prompts),
     environment: { TERM: "xterm-256color", MOONDOG_ART: "ascii", MOONDOG_MOTION: "off" },
-    async prepareImport(filePath) {
+    async prepareImport(filePath, importOptions) {
       calls.paths.push(filePath);
+      calls.importOptions = importOptions;
       return options.prepareImport ? await options.prepareImport(filePath, prepared) : prepared;
     },
     prepareRecentImport: () => options.prepareRecentImport ? options.prepareRecentImport(prepared) : prepared,
@@ -693,6 +694,39 @@ test("Apple selection opens its XML path, saves a library receipt, and refreshes
   assert.match(fixture.screen(), /No individual listening events were\s+created/u);
   assert.deepEqual(fixture.prompts, []);
 });
+
+for (const [provider, moves] of [["youtube_music", 2], ["qq_music", 3], ["netease", 4]]) {
+  test(`${provider} selection passes its identity, previews a collection and opens the profile after confirmation`, async (context) => {
+    const receipt = { provider, inserted_events: 0, inserted_profile_evidence: 3 };
+    const fixture = await createGuidedImportFixture(context, {
+      preview: { kind: "collection", sourceLabel: provider, fileName: "Selected music", tracks: 3, listeningEvents: 0, profileEvidence: 3 },
+      commit: () => receipt,
+    });
+    await fixture.submit("/import", "Bring your music");
+    for (let index = 0; index < moves; index += 1) fixture.terminal.send("\x1b[B");
+    fixture.terminal.send("\r");
+    await fixture.outputIncludes(provider === "youtube_music" ? "Import from YouTube Music" : "Paste a playlist share link");
+    fixture.terminal.send("\r");
+    if (provider === "youtube_music") {
+      await fixture.outputIncludes("Choose my Takeout file");
+      fixture.terminal.send("\r");
+    }
+    await fixture.outputIncludes(provider === "youtube_music" ? "Choose your music file" : "Paste your playlist share link");
+    const input = provider === "youtube_music" ? "/tmp/music-library-songs.csv" : "https://music.163.com/playlist?id=1234";
+    fixture.terminal.send(input); fixture.terminal.send("\r");
+    await fixture.outputIncludes("Review this import");
+    assert.match(fixture.screen(), /3 collection tracks/u);
+    assert.equal(fixture.calls.commits, 0);
+    assert.deepEqual(fixture.calls.importOptions, { provider });
+    fixture.terminal.send("\r");
+    await fixture.outputIncludes("Your listening profile");
+    assert.deepEqual(fixture.calls.refreshReceipt, receipt);
+    fixture.terminal.send("\x1b");
+    await fixture.outputIncludes("Music collection imported");
+    assert.match(fixture.screen(), /3 collection or profile\s+observations added/u);
+    assert.deepEqual(fixture.prompts, []);
+  });
+}
 
 for (const provider of ["spotify", "apple"]) {
   test(`${provider} history guide opens the correct website, preserves navigation, and exposes the URL if opening fails`, async (context) => {

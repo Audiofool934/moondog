@@ -3,6 +3,19 @@ import test from "node:test";
 
 import { formatLocalResult } from "../../src/surfaces/cli/format-output.mjs";
 
+test("music imports retain platform labels and do not display missing duration or playback context as measured zero", () => {
+  const output = formatLocalResult("taste", {
+    coverage: { effective_listening_events: 1, events_with_played_duration: 0, listening_hours: 0,
+      collection_sources: [{ label: "YouTube Music", tracks: 2 }] },
+    listening_behavior: { repeat_tracks: [{ label: "Moon", play_count: 1, listening_minutes: 0 }],
+      context: { direct_selection_starts: 0, start_reason_events: 0 } },
+  });
+  assert.match(output, /Listening time: unknown/u);
+  assert.match(output, /YouTube Music collection: 2 tracks/u);
+  assert.match(output, /Moon - 1 plays/u);
+  assert.doesNotMatch(output, /0 min|Playback flow|Spotify supplied/u);
+});
+
 test("taste output makes behavioral evidence readable without provider prose", () => {
   const evidenceId = "11111111-2222-4333-8444-555555555555";
   const output = formatLocalResult("taste", {

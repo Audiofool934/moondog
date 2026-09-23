@@ -10,6 +10,18 @@ import { buildTasteProfileModel } from "../../src/surfaces/cli/taste-profile-mod
 const subjectId = "11111111-1111-4111-8111-111111111111";
 const evidence = (number) => `20000000-0000-4000-8000-${String(number).padStart(12, "0")}`;
 
+test("collection-only profile reports useful coverage and preserves the actual provider", () => {
+  const model = buildTasteProfileModel({
+    coverage: { effective_listening_events: 0, listening_hours: 0, listening_tracks: 0, collection_tracks: 1,
+      collection_sources: [{ label: "QQ Music", tracks: 1 }] },
+    curated_preferences: { playlist_anchors: [{ label: "Song", artist_credit: "Artist", source_label: "QQ Music", evidence_id: evidence(1) }] },
+  });
+  const text = JSON.stringify(model);
+  assert.match(text, /QQ Music collection: 1 tracks/u);
+  assert.match(text, /QQ Music playlist membership/u);
+  assert.doesNotMatch(text, /Spotify|0 listening events/u);
+});
+
 test("taste review merges structured identities and retains every evidence source", () => {
   const profile = {
     coverage: { effective_listening_events: 12, listening_hours: 1.5, listening_tracks: 3 },
@@ -98,7 +110,7 @@ test("real listening projection keeps artist Avoid and track Like independent ac
   const refresh = async () => buildTasteProfileModel(await services.getProfileSummary({ maxItems: 10 }));
   const initial = await refresh();
   assert.match(initial.summaryLines.join("\n"), /1 listening events.*1 tracks/u);
-  assert.match(initial.summaryLines.join("\n"), /Listening time is unavailable/u);
+  assert.match(initial.summaryLines.join("\n"), /Time unavailable/u);
   assert.doesNotMatch(initial.summaryLines.join("\n"), /0 h/u);
   const initialTrack = initial.subjects.find((item) => item.kind === "track");
   const avoided = store.recordListenerCorrection({

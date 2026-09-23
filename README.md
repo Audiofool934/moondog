@@ -35,10 +35,11 @@ To try the grounded agent loop with fictional data and no credentials, run `npm 
 
 ## Bring your history. Correct the reading.
 
-Open `/import`, choose **Spotify** or **Apple Music**, then choose quick start or the past-history guide.
-Spotify quick start previews recent listening from a connected account; Apple Music quick start previews a library XML exported from Music on Mac.
-Each service's history guide shows its official data-request website, what to request, and where to find the downloaded files.
-Spotify history ZIPs can be imported now; Apple privacy archives are not supported yet.
+Open `/import` and choose **Spotify**, **Apple Music**, **YouTube Music**, **QQ Music** or **NetEase Cloud Music**.
+Preview recent Spotify listening, an Apple library XML, YouTube Music Takeout files, or a public QQ / NetEase playlist share link before adding it to your local profile.
+The Spotify and YouTube guides link to their official export websites and explain how to request and download the supported files.
+Collections remain distinct from actual listening events, and the cumulative profile opens after confirmation.
+Apple privacy archives and QQ / NetEase account listening-history imports are not supported yet; the guide states those limits.
 Spotify connection currently requires a configured developer app; local file import needs no streaming-service sign-in.
 You can also open a saved Spotify Account Data or Extended Streaming History ZIP directly:
 
