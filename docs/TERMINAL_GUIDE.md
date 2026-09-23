@@ -154,21 +154,21 @@ Provider availability and coverage vary, so the default opening remains availabl
 ```
 
 `/taste` opens an interactive listening profile; `/profile` is an alias.
-Type to filter tracks and artists, use the arrow keys to select a reading, and press Enter for evidence, Like, Avoid, or Retract my choice.
+Type to filter tracks and artists, use the arrow keys to pick one, and press Enter for **Why it's here**, **I like this**, **Keep it out**, or **Undo my choice**.
 Tab switches between All, Tracks, Artists, and Your choices.
-The selected reading shows observed listening separately from your explicit preference, and Avoid targets stay accessible for later revision.
+The selected song or artist shows what you played separately from what you told Moondog, and anything you kept out stays in the list so you can change your mind.
 Every change refreshes the profile in place without a model request or music-service connection.
 Escape returns to the previous screen with your conversation draft preserved.
 Ctrl+R refreshes local evidence, Page Up and Page Down scroll the selected detail, and Ctrl+O opens the full report.
-`/taste report` retains the full Tasteprint, Listening Time Machine, and listening-pattern report.
+`/taste report` shows the full report: your years one song at a time (*Time*), songs gone quiet (*Wish You Were Here*), songs that came back (*Coming Back to Life*), songs played again right away (*Echoes*), and what the data can't see (*The dark side of the moon*).
 The interactive list is a bounded selection of profile evidence, not a search of every historical play.
 A correction records only the explicit stance you chose and preserves the original listening history.
-An artist Avoid still applies when an individual track is marked Like; retract the artist choice separately to change that.
+Keeping an artist out still applies when you like one of their tracks; undo the artist choice separately to change that.
 The explicit `/profile correct` and `/profile retract` commands also return to the refreshed profile.
 Quote titles, artists, notes, and paths that contain spaces.
 These are command arguments, not shell expressions.
 
-When external discovery is ready, a track's Enter menu also offers **Discover around this**.
+When external discovery is ready, a track's Enter menu also offers **Find more like this**.
 It returns to the conversation with an editable request for three songs and their recommendation reasons.
 Your existing draft stays intact, with the selected title and artist added; choosing another track replaces that selection.
 Press Enter to send, or keep editing first.
@@ -403,11 +403,11 @@ Replace `--card` with `--html` when you want the complete evidence-backed Tastep
 
 ## Read the evidence
 
-The complete Tasteprint now includes **Worth another listen**, a ranked set of tracks with meaningful historical attention that have not appeared inside a bounded 90-day quiet window.
+The complete Tasteprint now includes **Worth another listen** (*Wish You Were Here* in the terminal report), a ranked set of tracks with meaningful historical attention that have not appeared inside a bounded 90-day quiet window.
 The quiet window is measured against the latest retained listening event rather than today's date, so an older export is never presented as current activity.
 Active artist or track avoidances are excluded, while play count and listening time remain evidence of attention rather than proof of liking.
 
-The same projection includes **Music that came back**, a bounded set of tracks that reappeared after one or more gaps of at least 180 days in retained effective history.
+The same projection includes **Music that came back** (*Coming Back to Life* in the terminal report), a bounded set of tracks that reappeared after one or more gaps of at least 180 days in retained effective history.
 Each candidate requires at least three effective plays, three plays without an explicit skip signal, ten listening minutes, and no active artist or track avoidance.
 This is a recurrence pattern in the archive, not proof of liking, nostalgia, intentional absence, or current preference.
 
@@ -435,11 +435,11 @@ Spotify Extended Streaming History can also expose tracks that appear in immedia
 moondog ask "Build a short path from tracks I played back to back."
 ```
 
-The **Played back to back** view requires at least two adjacent retained plays of the same exact track, with each play lasting at least 30 seconds, no explicit skip signal, and no gap longer than 30 minutes.
+The **Played back to back** view (*Echoes* in the terminal report) requires at least two adjacent retained plays of the same exact track, with each play lasting at least 30 seconds, no explicit skip signal, and no gap longer than 30 minutes.
 The `moondog_back_to_back_candidates` tool returns only bounded sequence counts and opaque track references to the model, while provider identity stays inside the host.
 This is evidence of adjacent retained playback, not proof that repeat mode was active or that the listener intended, liked, or preferred the track.
 
-The complete Tasteprint also includes a **Listening Time Machine** when at least two retained calendar years have enough listening evidence.
+The complete Tasteprint also includes a **Listening Time Machine** (*Time* in the terminal report) when at least two retained calendar years have enough listening evidence.
 It chooses one representative track from evenly spaced years across the available span, keeps the stops chronological, prefers a different artist per year when the evidence permits, and excludes active artist or track avoidances.
 Each selected year requires at least two engaged plays and five listening minutes, and the result is explicitly a bounded landmark rather than proof that one track defines that year.
 The complete Tasteprint shows represented-year coverage, names retained years without a selected landmark, and explains the strongest-year, active-avoidance, and minimum-attention rules beside the route.
@@ -509,7 +509,7 @@ Raw timestamps, source paths, evidence identifiers, Spotify track identities, ac
 Listening time proves familiarity, not preference.
 When the projection gets that distinction wrong, record a direct listener assertion instead of editing or deleting history:
 
-Inside the TUI, open `/taste` and press Enter on a track or artist to inspect its evidence or choose Like, Avoid, or Retract my choice.
+Inside the TUI, open `/taste` and press Enter on a track or artist to see **Why it's here**, or choose **I like this**, **Keep it out**, or **Undo my choice**.
 Explicit `/profile correct` and `/profile retract` commands also return to the refreshed profile.
 Use `/profile help` for options and quote names that contain spaces.
 The existing **Correct the reading** panel in `moondog studio` remains a paused prototype.

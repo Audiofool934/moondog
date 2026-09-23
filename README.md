@@ -53,11 +53,11 @@ Saved ListenBrainz history and Apple Music library XML are also supported throug
 
 | In your profile | What you can do |
 | --- | --- |
-| **Find a reading** | Filter tracks and artists, then inspect the selected item. |
-| **See why** | Read the observed listening, evidence limits, and your explicit choices separately. |
-| **Make a choice** | Mark a track or artist Like or Avoid and see the profile update. |
-| **Change your mind** | Retract a choice while preserving the original listening history. |
-| **Discover around a track** | With external discovery ready, prepare an editable three-song request from a selected track. |
+| **Find a song or artist** | Type to filter, then open the one you want. |
+| **See why it's there** | Read what you played, what that can't prove, and what you told Moondog, each on its own. |
+| **Make a choice** | Choose **I like this** or **Keep it out** and watch the profile update. |
+| **Change your mind** | **Undo my choice** at any time; your listening history never changes. |
+| **Find more like this** | With discovery ready, start an editable request for three songs from a track. |
 
 <p align="center">
   <img src="assets/demo/moondog-tui-profile.png" width="1000" alt="Moondog interactive listening profile showing fictional track Midnight Lines, observed listening evidence, and the limits of that evidence">
@@ -65,7 +65,7 @@ Saved ListenBrainz history and Apple Music library XML are also supported throug
 
 <p align="center"><sub>Actual profile view with fictional data. Listening time establishes familiarity; it does not establish liking.</sub></p>
 
-The full Tasteprint adds a chronological Listening Time Machine, listening patterns, and bounded rediscovery candidates.
+The full report walks through your years one song at a time, finds songs that went quiet or came back, and ends with the dark side of the moon: what your listening data can't tell anyone.
 Open it with `/taste report`, or export a private self-contained HTML report from the CLI.
 
 ## Stay in the listening room
@@ -108,6 +108,7 @@ Read the [connection and data details](docs/TERMINAL_GUIDE.md) before setting up
 - [Terminal guide](docs/TERMINAL_GUIDE.md): import formats, commands, appearance, models, Spotify, memory, and local data controls.
 - [Private Tasteprint](docs/PRIVATE_TASTEPRINT.md): what the evidence supports and what a report reveals.
 - [Product charter](docs/PRODUCT_CHARTER.md) and [public roadmap](docs/ROADMAP.md): direction and current boundaries.
+- [Voice](docs/VOICE.md): how Moondog talks, and where Pink Floyd shows up.
 - [Runtime architecture](docs/ADR_0001_AGENT_RUNTIME_AND_CLI.md) and [data contracts](contracts/README.md): how the parts fit together.
 - [Contribution guide](CONTRIBUTING.md) and [release readiness](docs/PUBLIC_RELEASE_READINESS.md): local setup, verification, and private-data boundaries.
 
