@@ -106,9 +106,9 @@ export const homeActions = [
 
 const sleeveNotes = [
   // https://www.pinkfloyd.com/albums/the-wall/
-  { text: "Is there anybody out there?", album: "The Wall" },
+  "Is there anybody out there?",
   // https://www.pinkfloyd.com/albums/wish-you-were-here/
-  { text: "Wish you were here.", album: "Wish You Were Here" },
+  "Wish you were here.",
 ];
 
 /** A character-native listening room; it never transmits image protocols. */
@@ -119,8 +119,8 @@ export class RecordSleeve {
     this.getState = getState;
     this.environment = environment;
     this.artMode = environment.MOONDOG_ART ?? "auto";
-    // A liner note in one third of sessions; never reroll during redraws or animation.
-    this.sleeveNote = sleeveNotes[Math.floor(random() * sleeveNotes.length * 3)] ?? null;
+    // Pick once per session; never reroll during redraws or animation.
+    this.sleeveNote = sleeveNotes[Math.floor(random() * sleeveNotes.length)];
     this.phase = 0;
     this.canAnimate = false;
     this.cache = new Map();
@@ -147,24 +147,21 @@ export class RecordSleeve {
       return prefix + (active ? theme.inverse(theme.bold(` ${label} `)) : theme.text(` ${label} `));
     });
     const pixelTitle = rightWidth >= 41 && rows >= 20 && !["ascii", "text"].includes(this.artMode) && this.environment.TERM !== "dumb";
-    const noteLines = roomy && this.sleeveNote ? [
-      "",
-      theme.muted(`"${this.sleeveNote.text}"`),
-      theme.faint(`Pink Floyd · ${this.sleeveNote.album}`),
-    ] : [];
-    const copy = [
+    const withNote = (lines, columns) => {
+      const noteLines = ["", ...wrapDescription(`"${this.sleeveNote}"`, columns).map(theme.muted)];
+      return lines.length + noteLines.length <= rows ? [...lines, ...noteLines] : lines;
+    };
+    const copy = withNote([
       ...(pixelTitle ? renderMoondogWordmark().map(theme.text) : [theme.bold(roomy ? "M O O N D O G" : "MOONDOG")]),
       ...(rows >= 12 ? [...wrapDescription("Your personal music agent.", rightWidth).map(theme.muted), ""] : [""]),
       ...actionLines,
       ...(roomy ? ["", ...wrapDescription(homeActions[selected].description, rightWidth).map(theme.muted)] : []),
-      ...noteLines,
-    ];
+    ], rightWidth);
     if (rows < 7 || width < 34 || this.artMode === "off") {
-      const compact = [theme.bold(" MOONDOG  ◎"),
-        ...(rows >= 9 && width >= 30 ? [theme.muted(" Your personal music agent."), ""] : []),
-        ...actionLines.map((line) => ` ${line}`),
-        ...noteLines.map((line) => ` ${line}`),
-      ];
+      const compact = withNote([theme.bold("MOONDOG  ◎"),
+        ...(rows >= 9 && width >= 30 ? [theme.muted("Your personal music agent."), ""] : []),
+        ...actionLines,
+      ], Math.max(1, width - 1)).map((line) => ` ${line}`);
       const top = Math.max(0, Math.floor((rows - compact.length) / 2));
       return Array.from({ length: rows }, (_, row) => paint(compact[row - top] ?? ""));
     }
