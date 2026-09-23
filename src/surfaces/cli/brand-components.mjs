@@ -141,7 +141,6 @@ export class RecordSleeve {
     const copy = [
       ...(pixelTitle ? renderMoondogWordmark().map(theme.text) : [theme.bold(roomy ? "M O O N D O G" : "MOONDOG")]),
       ...(rows >= 12 ? [...wrapDescription("Your personal music agent.", rightWidth).map(theme.muted), ""] : [""]),
-      ...(roomy ? [...wrapDescription("Bring a song. I'll bring a point of view.", rightWidth).map(theme.text), ""] : []),
       ...actionLines,
       ...(roomy ? ["", ...wrapDescription(homeActions[selected].description, rightWidth).map(theme.muted)] : []),
     ];
@@ -149,7 +148,6 @@ export class RecordSleeve {
       const compact = [theme.bold(" MOONDOG  ◎"),
         ...(rows >= 9 && width >= 30 ? [theme.muted(" Your personal music agent."), ""] : []),
         ...actionLines.map((line) => ` ${line}`),
-        ...(rows >= 13 && width >= 42 ? ["", theme.text(" Bring a song. I'll bring a point of view.")] : []),
       ];
       const top = Math.max(0, Math.floor((rows - compact.length) / 2));
       return Array.from({ length: rows }, (_, row) => paint(compact[row - top] ?? ""));
