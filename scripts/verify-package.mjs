@@ -24,8 +24,9 @@ const repositoryRoot = path.resolve(
   "..",
 );
 const maximumPackedBytes = 2_500_000;
-const maximumUnpackedBytes = 3_900_000;
-const maximumEntries = 100;
+// Multi-service imports currently pack 103 source/assets entries, about 3.92 MB.
+const maximumUnpackedBytes = 4_000_000;
+const maximumEntries = 110;
 const packageOnlyPrivateSentinelPattern = new RegExp(
   ["PRIVATE", "(?:IP|PLATFORM)", "SENTINEL"].join("_"),
   "u",
@@ -47,6 +48,10 @@ const requiredPackagePaths = new Set([
   "src/demo/moondog-tasteprint-demo.mjs",
   "src/integrations/cross-catalog-artist-identity.mjs",
   "src/integrations/listenbrainz/history-file.mjs",
+  "src/integrations/public-playlists.mjs",
+  "src/integrations/youtube-music/takeout.mjs",
+  "src/profile/music-import-bundle.mjs",
+  "src/profile/music-providers.mjs",
   "src/profile/listener-corrections.mjs",
   "src/profile/local-music-data.mjs",
   "src/profile/spotify-archive-catalog-hints.mjs",
