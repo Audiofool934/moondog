@@ -1555,6 +1555,59 @@ test("TUI web commands work without a model and Ctrl+C cancels only the local re
 });
 
 
+test("personal home lyrics load without waiting for network, stay stable, and stop fetching on exit", async (context) => {
+  const terminal = new FakeTerminal();
+  terminal.columns = 120;
+  const signalTarget = new EventEmitter();
+  const track = { title: "Fixture song", artist: "Fixture artist" };
+  let selections = 0;
+  let aborted = false;
+  let ready = false;
+  let makeAvailable;
+  const line = "A small fixture room with a blue ceiling";
+  const application = { ...fakeApplication(), async getLyricSeeds() { return { subjectId: "fixture", tracks: [track] }; } };
+  const { lyricTrackKey } = await import("../../src/core/lyric-profile.mjs");
+  const lyrics = {
+    selectHome() { selections++; return ready ? { text: line, trackKey: lyricTrackKey(track) } : null; },
+    async refresh(seeds, { signal, onUpdate }) {
+      await new Promise((resolve) => {
+        makeAvailable = () => { ready = true; onUpdate(); };
+        signal.addEventListener("abort", () => { aborted = true; resolve(); }, { once: true });
+      });
+    },
+  };
+  const running = runMoondogTui({ application, runtime: fakeRuntime(), terminal, signalTarget, lyrics });
+  context.after(async () => { signalTarget.emit("SIGTERM"); await running; });
+  await waitForStart(terminal);
+  await waitFor(() => makeAvailable);
+  assert.equal(ready, false, "the terminal starts while the fetch is still pending");
+  makeAvailable();
+  await waitFor(() => terminal.output.includes(line));
+  const count = selections;
+  terminal.send("/home");
+  terminal.send("\r");
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  assert.equal(selections, count, "returning home must not pick another lyric");
+  signalTarget.emit("SIGTERM");
+  await running;
+  assert.equal(aborted, true);
+  assert.equal(terminal.stopCount, 1);
+});
+
+test("record sleeve wraps original-language lyrics without overflowing narrow terminals", () => {
+  const environment = { TERM: "xterm-256color" };
+  const theme = createMoondogTheme({ environment });
+  const terminal = new FakeTerminal();
+  terminal.rows = 24;
+  const sleeve = new RecordSleeve({ terminal, environment, getTheme: () => theme });
+  const line = "这是一段用于检查终端换行的原创测试文字，保留中文标点。";
+  sleeve.setLyric(line);
+  const rendered = sleeve.render(52);
+  assert.ok(rendered.every((row) => visibleWidth(row) === 52));
+  const text = stripVTControlCharacters(rendered.join("\n"));
+  for (const character of line) assert.ok(text.includes(character));
+});
+
 test("record sleeve uses terminal characters and fits the opening at every supported terminal size", () => {
   const previous = getCapabilities();
   const environment = { TERM: "xterm-256color", COLORTERM: "truecolor" };

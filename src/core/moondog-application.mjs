@@ -1484,6 +1484,12 @@ export class MoondogApplication {
     return this.requireProfileServices().getProfileSummary(input);
   }
 
+  // Host-only personalization; lyric text is not injected into model context.
+  async getLyricSeeds() {
+    if (!this.profileServicesReady()) return { subjectId: null, tracks: [] };
+    return this.requireProfileServices().getLyricSeeds?.() ?? { subjectId: null, tracks: [] };
+  }
+
   // Host-only handoff from a track selected in the local profile, never a model tool.
   setProfileDiscoverySeed(selection) {
     if (!this.pendingPlaylistPromptTransaction) {

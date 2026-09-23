@@ -529,6 +529,9 @@ test("real projection wrapper shapes bounded profile facets and evidence", async
     false,
   );
   assert.equal(summary.coverage.non_computed_rating, 1);
+  const lyricSeeds = await services.getLyricSeeds();
+  assert.ok(lyricSeeds.tracks.some((track) => track.artist === "Mara Vale"));
+  assert.equal(lyricSeeds.tracks.some((track) => track.title === "Unexpected Exit"), false);
   assert.equal(JSON.stringify(summary).includes("PRIVATE_"), false);
 
   const search = await services.searchLibrary({ query: "", limit: 3 });

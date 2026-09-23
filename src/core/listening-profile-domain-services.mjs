@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { lyricSeedsFromProfile } from "./lyric-profile.mjs";
 
 import { isUuid } from "./uuid-v5.mjs";
 import { createListeningHistoryProfileProjection } from "../profile/spotify-archive-taste.mjs";
@@ -509,6 +510,13 @@ export class ListeningProfileDomainServices {
       ),
     );
     return { candidateSetId, tracks: prepared };
+  }
+
+  async getLyricSeeds() {
+    return {
+      subjectId: this.#subjectId,
+      tracks: lyricSeedsFromProfile(this.#store.lyricProfile({ subjectId: this.#subjectId })),
+    };
   }
 
   async getProfileSummary(argumentsValue) {

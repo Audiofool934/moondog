@@ -29,6 +29,22 @@ function extendedRecord(ts, msPlayed) {
   };
 }
 
+test("home lyric seeds honor artist Avoid beyond the bounded profile display", async (context) => {
+  const root = await mkdtemp(path.join(tmpdir(), "moondog-lyric-seeds-"));
+  const store = await openListeningHistoryStore({ databasePath: path.join(root, "history.sqlite") });
+  const services = createListeningProfileDomainServices({ listeningHistoryStore: store, subjectId });
+  context.after(async () => { services.close(); await rm(root, { recursive: true, force: true }); });
+  for (let index = 0; index < 60; index++) {
+    store.recordListenerCorrection({ subjectId, entityType: "artist", label: index ? `Other ${index}` : "Blocked artist", stance: "avoid",
+      occurredAt: new Date(Date.UTC(2026, 8, 1, 0, index)).toISOString() });
+  }
+  store.recordListenerCorrection({ subjectId, entityType: "track", label: "Liked fixture", artistCredit: "Blocked artist", stance: "like",
+    occurredAt: "2026-09-02T00:00:00.000Z" });
+  const summary = await services.getProfileSummary({ maxItems: 10 });
+  assert.equal(summary.listener_assertions.avoids.some((item) => item.label === "Blocked artist"), false);
+  assert.equal((await services.getLyricSeeds()).tracks.some((track) => track.title === "Liked fixture"), false);
+});
+
 test("persistent listening history enables profile tools without pretending to be a library", async (context) => {
   const root = await mkdtemp(path.join(tmpdir(), "moondog-spotify-profile-"));
   context.after(() => rm(root, { recursive: true, force: true }));

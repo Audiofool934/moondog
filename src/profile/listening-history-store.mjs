@@ -1527,6 +1527,11 @@ export class ListeningHistoryStore {
     });
   }
 
+  lyricProfile({ subjectId } = {}) {
+    const value = this.#profileProjection({ subjectId, maxItems: 50 });
+    return structuredClone({ ...value.summary, lyric_exclusions: value.lyricExclusions });
+  }
+
   profileSummary({ subjectId, maxItems = 10 } = {}) {
     return structuredClone(
       this.#profileProjection({ subjectId, maxItems }).summary,

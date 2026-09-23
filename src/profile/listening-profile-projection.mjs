@@ -2493,5 +2493,7 @@ export function projectListeningProfile({
       ],
     },
     explanations,
+    // Host-only consumers need every exclusion, not the bounded display sample.
+    lyricExclusions: combinedAvoids(direct.avoids, evidence.avoids),
   };
 }

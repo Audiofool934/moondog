@@ -25,6 +25,7 @@ import { createMoondogTheme } from "./brand-theme.mjs";
 import { LOGO_MOTION_INTERVAL_MS } from "./terminal-art.mjs";
 import { buildTasteProfileModel } from "./taste-profile-model.mjs";
 import { TasteProfileView } from "./taste-profile-view.mjs";
+import { lyricTrackKey } from "../../core/lyric-profile.mjs";
 import { HistoryImportView } from "./history-import-view.mjs";
 import { IMPORT_GUIDE_URLS } from "./import-guides.mjs";
 import { withCommandCompletions } from "./command-completions.mjs";
@@ -41,6 +42,7 @@ import {
 
 const slashCommands = [
   { name: "home", description: "Return to the Moondog record sleeve" },
+  { name: "lyrics", description: "Inspect or sync your local lyric library" },
   { name: "import", description: "Get your listening data or inspect a saved file" },
   { name: "theme", description: "Paper, charcoal, or your terminal colors" },
   { name: "art", description: "Braille, ASCII, or a minimal opening" },
@@ -135,6 +137,7 @@ export async function runMoondogTui({
   runProfile,
   runProfileAction,
   runWeb,
+  lyrics,
   prepareImport,
   prepareRecentImport,
   refreshImportedData,
@@ -191,6 +194,11 @@ export async function runMoondogTui({
   let workStartedAt = 0;
   let indicator = null;
   let homeMotion = null;
+  let lyricController = null;
+  let lyricTask = Promise.resolve();
+  let homeLyric = null;
+  let lyricSubject = null;
+  let lyricError = null;
   let motionEnabled = environment.MOONDOG_MOTION !== "off";
   let phase = 0;
   let footerText = "Ready.";
@@ -205,6 +213,35 @@ export async function runMoondogTui({
     focused: homeFocused, selected: homeSelected,
     editorRows: editor.render(terminal.columns).length,
   }) });
+  const updateHomeLyrics = ({ sync = true, signal } = {}) => {
+    if (!lyrics || typeof application.getLyricSeeds !== "function" || cleanedUp) return Promise.resolve();
+    lyricController?.abort();
+    const controller = new AbortController();
+    lyricController = controller;
+    const taskSignal = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
+    // Serialize replacements so a profile change cannot leave an old fetch writing afterward.
+    lyricTask = lyricTask.then(async () => {
+      taskSignal.throwIfAborted();
+      const seeds = await application.getLyricSeeds();
+      taskSignal.throwIfAborted();
+      if (lyricSubject !== seeds.subjectId || (homeLyric && !seeds.tracks.some((track) => lyricTrackKey(track) === homeLyric.trackKey))) {
+        homeLyric = null;
+        sleeve.setLyric(null);
+      }
+      lyricSubject = seeds.subjectId;
+      const chooseCached = () => {
+        if (taskSignal.aborted || cleanedUp || homeLyric) return;
+        homeLyric = lyrics.selectHome(seeds);
+        if (homeLyric) { sleeve.setLyric(homeLyric.text); tui.requestRender(); }
+      };
+      chooseCached();
+      lyricError = null;
+      if (sync) await lyrics.refresh(seeds, { signal: taskSignal, onUpdate: chooseCached });
+    }).catch((error) => {
+      if (!taskSignal.aborted) lyricError = sanitizeTerminalText(error.message);
+    });
+    return lyricTask;
+  };
   const header = new ListeningHeader(getTheme, () => ({
     profileReady: application.profileServicesReady?.() ?? false,
     modelReady: runtimeStatus.state === "configured",
@@ -372,6 +409,7 @@ export async function runMoondogTui({
     homeMotion = null;
     localCommandController?.abort();
     importAuthController?.abort();
+    lyricController?.abort();
     preparedImport?.close?.();
     preparedImport = null;
     removeLifecycleListeners();
@@ -464,6 +502,7 @@ export async function runMoondogTui({
     profileSnapshot = snapshot;
     profileView.setModel(buildTasteProfileModel(snapshot));
     profileNeedsRefresh = false;
+    void updateHomeLyrics();
     renderHeader();
   };
 
@@ -765,6 +804,7 @@ export async function runMoondogTui({
   };
 
   const showImportedListeningProfile = async () => {
+    void updateHomeLyrics();
     try {
       const profile = await application.runLocalCommand("taste", runtimeStatus);
       addMoondogMessage([
@@ -1110,6 +1150,24 @@ export async function runMoondogTui({
   };
 
   const runLocalCommand = async (command, args = []) => {
+    if (command === "lyrics") {
+      if (args.length > 1 || (args[0] && args[0] !== "sync")) throw new Error("Usage: /lyrics [sync].");
+      if (!lyrics) throw new Error("The local lyric library is unavailable in this launch.");
+      if (args[0] === "sync") await updateHomeLyrics({ signal: localCommandController?.signal });
+      if (cleanedUp) return;
+      const status = lyrics.status();
+      addMoondogMessage([
+        "## Your lyric library", "",
+        `${status.ready} songs with lyrics · ${status.instrumental} instrumentals · ${status.entries} lookups cached`,
+        `Local database: ${status.path}`,
+        `Background sync: ${status.refresh.state}`,
+        ...(lyricError ? [`Last update: ${lyricError}`] : []),
+        ...(homeLyric ? ["", `Home selection: ${homeLyric.title} · ${homeLyric.artist}`, `Source: ${homeLyric.sourceUrl}`] : []),
+        "", "Use `/lyrics sync` to check more songs from your profile. `/home` returns to the listening room.",
+      ].join("\n"));
+      setFooter("Lyric library · /home to return.");
+      return;
+    }
     if (command === "taste" || (command === "profile" && !args.length)) {
       if (args.length > 1 || (args[0] && args[0] !== "report")) throw new Error("Usage: /taste [report].");
       if (args[0] === "report") {
@@ -1201,6 +1259,7 @@ export async function runMoondogTui({
         throw new Error("Profile corrections are unavailable in this launch mode.");
       }
       addMoondogMessage(await runProfile(args));
+      void updateHomeLyrics();
       if (["correct", "retract"].includes(args[0])) {
         try {
           await openProfile();
@@ -1325,7 +1384,7 @@ export async function runMoondogTui({
       try {
         if (!["home", "theme", "art", "motion", "model", "resume", "new", "taste", "profile", "import"].includes(command)) enterConversation();
         if (command !== "auth") editor.addToHistory(value);
-        localCommandController = command === "web" ? new AbortController() : null;
+        localCommandController = ["web", "lyrics"].includes(command) ? new AbortController() : null;
         const controller = localCommandController;
         setBusy(true, controller ? () => controller.abort() : null);
         setFooter(`Running /${command}...`, yellow);
@@ -1340,7 +1399,7 @@ export async function runMoondogTui({
         if (cleanedUp) return;
         enterConversation();
         const cancelled = localCommandController?.signal.aborted;
-        addMoondogMessage(cancelled ? "Web research cancelled." : `Local command failed: ${error.message}`);
+        addMoondogMessage(cancelled ? command === "web" ? "Web research cancelled." : "Lyric sync cancelled." : `Local command failed: ${error.message}`);
         setFooter(cancelled ? "Cancelled." : "Command failed.", cancelled ? yellow : red);
       } finally {
         localCommandController = null;
@@ -1537,8 +1596,10 @@ export async function runMoondogTui({
   try {
     startAttempted = true;
     tui.start();
+    void updateHomeLyrics();
     await stoppedPromise;
   } finally {
     cleanup();
+    await lyricTask;
   }
 }

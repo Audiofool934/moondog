@@ -1,4 +1,4 @@
-import { CURSOR_MARKER, Editor, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { CURSOR_MARKER, Editor, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { stripVTControlCharacters } from "node:util";
 import { sanitizeTerminalText } from "./format-output.mjs";
 import { LOGO_MOTION_FRAMES, renderLunarRecord, renderMoondogWordmark } from "./terminal-art.mjs";
@@ -123,11 +123,16 @@ export class RecordSleeve {
     this.artMode = environment.MOONDOG_ART ?? "auto";
     // Pick once per session; never reroll during redraws or animation.
     this.sleeveNote = sleeveNotes[Math.floor(random() * sleeveNotes.length)];
+    this.defaultSleeveNote = this.sleeveNote;
     this.phase = 0;
     this.canAnimate = false;
     this.cache = new Map();
   }
   invalidate() { this.cache.clear(); }
+  setLyric(text) {
+    this.sleeveNote = text ? sanitizeTerminalText(text).replace(/\s+/gu, " ").trim() : this.defaultSleeveNote;
+    this.invalidate();
+  }
   setArtMode(mode) { this.artMode = mode; this.invalidate(); }
   advance() { this.phase = (this.phase + 1) % LOGO_MOTION_FRAMES; }
   render(width) {
@@ -150,7 +155,7 @@ export class RecordSleeve {
     });
     const pixelTitle = rightWidth >= 41 && rows >= 20 && !["ascii", "text"].includes(this.artMode) && this.environment.TERM !== "dumb";
     const withNote = (lines, columns) => {
-      const noteLines = ["", ...wrapDescription(`"${this.sleeveNote}"`, columns).map(theme.muted)];
+      const noteLines = ["", ...wrapTextWithAnsi(`"${this.sleeveNote}"`, columns).map(theme.muted)];
       return lines.length + noteLines.length <= rows ? [...lines, ...noteLines] : lines;
     };
     const copy = withNote([
@@ -223,6 +228,7 @@ Type a request to talk with Moondog, build a playlist, or explore music.
 Use \`/auth [provider]\` to connect an API key or sign in, then \`/model\` to choose a model.
 
 - \`/taste\` - select tracks or artists, inspect evidence, and shape your preferences
+- \`/lyrics\` - inspect the local lyric library; \`/lyrics sync\` checks more profile songs
 - \`/taste report\` - the full Tasteprint, Time Machine, and listening patterns
 - \`/import\` - get your listening data or inspect a saved Spotify ZIP / ListenBrainz JSON
 - \`/spotify\` - connected playback, queues, and playlists

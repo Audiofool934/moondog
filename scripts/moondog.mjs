@@ -41,6 +41,7 @@ import { prepareHistoryImport, prepareSpotifyRecentImport } from "../src/profile
 import { persistAppleLibraryImport, refreshAppleLibraryImport } from "../src/profile/apple-library-import.mjs";
 import { IMPORT_GUIDE_URLS } from "../src/surfaces/cli/import-guides.mjs";
 import { runMoondogTui } from "../src/surfaces/cli/tui.mjs";
+import { createLyricService } from "../src/core/lyric-service.mjs";
 import { createAppleMusicCatalog } from "../src/integrations/apple-music/catalog.mjs";
 import {
   createOpenMusicSimilarity,
@@ -782,6 +783,7 @@ async function main() {
     artistIdentityResolver,
   });
 
+  let lyrics = null;
   try {
     const runtime = await createConfiguredRuntime(application);
     const runtimeStatus = runtime.publicStatus();
@@ -861,9 +863,11 @@ async function main() {
         "Interactive mode requires a TTY. Use moondog status --json for a non-interactive check.",
       );
     }
+    lyrics = await createLyricService().catch(() => null);
     await runMoondogTui({
       application,
       runtime,
+      lyrics,
       prepareImport: prepareTuiHistoryImport,
       prepareRecentImport: async () => prepareTuiHistoryImport(undefined, {
         recentPage: await runSpotifySurface({
@@ -934,6 +938,7 @@ async function main() {
       },
     });
   } finally {
+    lyrics?.close();
     application.close();
   }
 }

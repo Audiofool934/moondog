@@ -10,6 +10,7 @@ For the predecessor's relationship to this project, see the public [DJ Claw line
 - [Try fictional history](#try-fictional-history)
 - [Import and inspect listening history](#import-and-inspect-listening-history)
 - [Read the evidence](#read-the-evidence)
+- [Personal lyric library](#personal-lyric-library)
 - [Public web research](#public-web-research-in-the-tui)
 - [Enable agent conversation](#enable-agent-conversation)
 - [Local music data control](#local-music-data-control)
@@ -108,6 +109,35 @@ The layout reduces artwork before sacrificing room for the input, and works with
 The TUI reads the configured local profile and never loads fictional listening history automatically.
 Profile viewing and correction work without a model or music-service connection.
 Use `/auth` and `/model` only when you want agent conversation.
+
+## Personal lyric library
+
+The home opening can come from music in your listening profile.
+Explicit likes and imported preferences have the most weight; saved songs, playlist anchors, and repeated listening also supply candidates.
+Track and artist Avoid choices exclude songs, including exclusions beyond the profile's visible summary.
+Repeated listening is a familiarity signal, not an explicit Like.
+
+Moondog queries [LRCLIB](https://lrclib.net/docs) in the background using the selected song's title and artist.
+It does not send your profile, listening events, credentials, or conversation to the lyric provider.
+The library stores provider text, synchronized LRC when available, parsed timed lines, source identifiers, matched metadata, and retrieval times in `lyrics.sqlite` beside the local listening-history database.
+It uses the same `MOONDOG_STATE_HOME` / `MOONDOG_CONFIG_HOME` state-directory rules.
+An exact normalized title and artist match is required; missing lyrics, instrumentals, and mismatched versions do not supply home text.
+When a trusted album or track duration is available through the library API, these also constrain the match.
+
+Each startup reads cached lyrics first and checks up to twelve uncached or stale candidates in the background, with a thirty-second budget.
+Successful entries remain fresh for thirty days; unavailable matches are checked again after seven days.
+Requests are sequential and respect the provider's retry delay.
+The home uses one short, original-language line, omits the byline, and avoids recent lines and consecutive songs when the pool permits.
+It keeps that line for the session unless a profile change removes the song from the eligible pool.
+On an empty cache, the existing opening remains until the first suitable personal lyric arrives.
+No model is used to invent, translate, or rewrite lyrics.
+
+Use `/lyrics` for library counts and the current home line's song and source, or `/lyrics sync` to check the next batch.
+Ctrl+C cancels a manual sync, and quitting cancels background work.
+Set `MOONDOG_LYRICS=off` to disable online fetching while retaining cached home lyrics.
+Profile import, correction, and refresh update the eligible songs.
+The lyric library is separate from listening/profile export and reset scopes; those operations leave this cache intact.
+Provider availability and coverage vary, so the default opening remains available offline or without a match.
 
 ```text
 /taste

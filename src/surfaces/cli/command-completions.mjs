@@ -74,6 +74,7 @@ export function withCommandCompletions(commands, {
     theme: { argumentHint: "[paper|charcoal|terminal|auto]", choices: firstArgument(themeChoices) },
     art: { argumentHint: "[braille|ascii|off|auto]", choices: firstArgument(artChoices) },
     motion: { argumentHint: "[on|off]", choices: firstArgument(motionChoices) },
+    lyrics: { argumentHint: "[sync]", choices: firstArgument(choices([["sync", "Check profile songs for lyrics"]])) },
     web: { argumentHint: "search <query> | read <url> | status", choices: firstArgument(webChoices) },
     spotify: {
       argumentHint: "<command> [arguments]",

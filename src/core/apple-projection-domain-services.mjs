@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { lyricSeedsFromProfile } from "./lyric-profile.mjs";
 import { collectionCoverage } from "../profile/music-providers.mjs";
 import { lstat } from "node:fs/promises";
 import path from "node:path";
@@ -1876,6 +1877,19 @@ export class AppleProjectionDomainServices {
       results.push(track);
     }
     return structuredClone(results);
+  }
+
+  async getLyricSeeds() {
+    const profile = await this.getProfileSummary({ maxItems: 10 });
+    const listening = this.#listeningHistoryStore?.lyricProfile({ subjectId: this.#subjectId });
+    return {
+      subjectId: this.#subjectId,
+      tracks: lyricSeedsFromProfile({
+        ...profile, ...listening,
+        strong_preferences: profile.strong_preferences,
+        familiarity: profile.familiarity,
+      }),
+    };
   }
 
   async getProfileSummary(argumentsValue) {

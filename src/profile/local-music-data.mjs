@@ -37,6 +37,7 @@ export const LOCAL_MUSIC_DATA_LIMITS = Object.freeze({
 });
 
 const excludedState = Object.freeze([
+  "lyric_library",
   "conversation_memory",
   "model_settings",
   "oauth_credentials",
