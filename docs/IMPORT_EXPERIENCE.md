@@ -3,6 +3,47 @@
 The import journey should help a listener bring useful evidence into Moondog, understand what arrived, and return when more history becomes available.
 It starts before the listener has a file and ends with an inspectable listening profile in the same Pi TUI session.
 
+## Product direction: bring music from the services people use
+
+Import is a user-facing product journey, and broad music-service coverage is an active product priority.
+The target service set includes Spotify, Apple Music, YouTube Music, QQ Music and NetEase Cloud Music, with room for additional services.
+This target list describes the direction; the implemented paths below describe what listeners can use today.
+
+Start with the service name the listener recognizes, then explain what they can bring and how to bring it.
+File formats, account setup and provider-specific requirements belong in the relevant step, after the listener understands the outcome.
+Manual developer-app setup is a limitation of the current Spotify connection path, not the desired experience for ordinary listeners.
+
+Keep two user goals across services:
+
+- **Quick start:** build an initial profile from the easiest useful data available, such as favorite songs, playlists, a library snapshot or recent listening.
+- **Add past listening:** bring older listening records where a verified export or authorized connection provides them.
+
+A service does not need complete historical access before its useful library or playlist import can ship.
+Label those imports by what they actually contain, and keep favorites, playlist membership, aggregate play counts and timestamped listening events distinct.
+Missing timestamps or played duration remain unknown; a collection of songs does not become a fabricated play history.
+
+## Acceptance for each service
+
+- A listener can find their service and understand which data is supported before signing in or requesting a download.
+- Each guide identifies the exact official website or app path, the data to select, any waiting or notification step, where the resulting file is saved and how to return to Moondog.
+- The guide follows the provider's actual acquisition flow; some services may require an app or a support request instead of an export website.
+- Every selectable import route has a verified path from source data through preview, explicit confirmation and cumulative-profile review.
+- A guide-only route is clearly labeled before the listener spends time requesting data, and does not imply that its files can already be imported.
+- A failed or unsupported import explains what happened and offers the next usable action while retaining the listener's input.
+- Multiple services contribute to the same local profile, with source coverage and uncertain track matches kept visible.
+- Keyboard navigation, narrow terminals and returning from the export website work throughout the journey.
+
+## Expansion sequence
+
+1. Add YouTube Music through official exported files, validating actual library, playlist and activity samples before declaring the corresponding data types supported.
+   Separate music activity from ordinary YouTube viewing and retain only the listening facts supplied by the source.
+2. Validate QQ Music and NetEase Cloud Music favorites and playlist acquisition, then ship the simplest reliable user path for each service.
+   Confirm link accessibility, file contents and song identity with representative samples instead of assuming a shared export format.
+3. Extend historical coverage as actual provider exports become available, including the Apple privacy archive path currently limited to guidance.
+   A personal-information copy request alone does not establish that complete listening history will be supplied.
+
+For each new service, ship a usable end-to-end import slice and update its visible support description together.
+
 ## First slice: getting started
 
 `/import` first asks for **Spotify** or **Apple Music**, then offers quick start and a past-history path for that service.
@@ -83,7 +124,8 @@ Large-file optimization should follow measurements of representative archives.
 
 The return path should make the next useful step obvious: inspect an unexpected profile reading, correct one preference, or explore a grounded listening plan.
 Later history can then add evidence to the same profile and improve the next listening session.
-An automatic recent-play collector, broader source support, and per-import undo are separate product decisions rather than implied promises of the first-import guide.
+Broader service support follows the expansion sequence above.
+An automatic recent-play collector and per-import undo remain separate product decisions rather than implied promises of the first-import guide.
 
 ## Source guidance
 
