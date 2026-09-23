@@ -115,10 +115,7 @@ const sleeveNotes = [
 
 const lyricSegments = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 
-function scrollingLyric(text, columns, ticks) {
-  const distance = Math.max(0, ticks - 12); // Hold the opening for 1.5 seconds before moving.
-  const cycle = columns + visibleWidth(text) + 8;
-  let position = columns - ((columns + distance) % cycle);
+function scrollingLyric(text, columns, position) {
   let line = "";
   let filled = 0;
   for (const { segment } of lyricSegments.segment(text)) {
@@ -136,31 +133,45 @@ function scrollingLyric(text, columns, ticks) {
 
 /** A character-native listening room; it never transmits image protocols. */
 export class RecordSleeve {
-  constructor({ terminal, getTheme, environment = process.env, getState = () => ({}), random = Math.random }) {
+  constructor({ terminal, getTheme, environment = process.env, getState = () => ({}), random = Math.random, getNextLyric = () => null }) {
     this.terminal = terminal;
     this.getTheme = getTheme;
     this.getState = getState;
     this.environment = environment;
+    this.random = random;
+    this.getNextLyric = getNextLyric;
     this.artMode = environment.MOONDOG_ART ?? "auto";
-    // Pick once per session; never reroll during redraws or animation.
+    // Redraws preserve the line; only a completed passage asks for another.
     this.sleeveNote = sleeveNotes[Math.floor(random() * sleeveNotes.length)];
     this.defaultSleeveNote = this.sleeveNote;
     this.phase = 0;
-    this.lyricTicks = 0;
+    this.lyricPosition = 0;
+    this.lyricHold = 12; // Give the opening 1.5 seconds before it starts moving.
+    this.lyricColumns = 0;
     this.canAnimate = false;
     this.cache = new Map();
   }
   invalidate() { this.cache.clear(); }
-  setLyric(text) {
+  setLyric(text, { enterFromRight = false } = {}) {
     const note = text ? sanitizeTerminalText(text).replace(/\s+/gu, " ").trim() : this.defaultSleeveNote;
-    if (note !== this.sleeveNote) this.lyricTicks = 0;
+    if (note !== this.sleeveNote || enterFromRight) {
+      this.lyricPosition = enterFromRight ? this.lyricColumns : 0;
+      this.lyricHold = enterFromRight ? 0 : 12;
+    }
     this.sleeveNote = note;
     this.invalidate();
   }
   setArtMode(mode) { this.artMode = mode; this.invalidate(); }
   advance() {
     this.phase = (this.phase + 1) % LOGO_MOTION_FRAMES;
-    this.lyricTicks += 1;
+    if (!this.lyricColumns) return;
+    if (this.lyricHold > 0) { this.lyricHold--; return; }
+    this.lyricPosition--;
+    if (this.lyricPosition <= -visibleWidth(`"${this.sleeveNote}"`) - 8) {
+      const fallback = sleeveNotes.filter((note) => note !== this.sleeveNote);
+      const next = this.getNextLyric() ?? fallback[Math.floor(this.random() * fallback.length)];
+      this.setLyric(next, { enterFromRight: true });
+    }
   }
   render(width) {
     const theme = this.getTheme();
@@ -170,6 +181,7 @@ export class RecordSleeve {
     const rows = Math.max(1, this.terminal.rows - 2 - editorRows - (this.terminal.rows >= 20 ? 2 : 1));
     const paint = (line) => paintBrandLine(line, width, theme);
     this.canAnimate = false;
+    this.lyricColumns = 0;
     const roomy = width >= 76 && rows >= 14;
     const narrow = width < 54;
     const available = Math.max(1, width - 4);
@@ -185,9 +197,10 @@ export class RecordSleeve {
     const withNote = (lines, columns) => {
       const scrolling = motionEnabled && !theme.plain;
       const text = `"${this.sleeveNote}"`;
-      const noteLines = ["", ...(scrolling ? [scrollingLyric(text, columns, this.lyricTicks)] : wrapTextWithAnsi(text, columns)).map(theme.muted)];
+      const noteLines = ["", ...(scrolling ? [scrollingLyric(text, columns, this.lyricPosition)] : wrapTextWithAnsi(text, columns)).map(theme.muted)];
       if (lines.length + noteLines.length > rows) return lines;
       this.canAnimate ||= scrolling;
+      this.lyricColumns = scrolling ? columns : 0;
       return [...lines, ...noteLines];
     };
     const copy = withNote([
@@ -198,6 +211,7 @@ export class RecordSleeve {
     ], rightWidth);
     if (rows < 7 || width < 34 || this.artMode === "off") {
       this.canAnimate = false;
+      this.lyricColumns = 0;
       const compact = withNote([theme.bold("MOONDOG  ◎"),
         ...(rows >= 9 && width >= 30 ? [theme.muted("Your personal music agent."), ""] : []),
         ...actionLines,

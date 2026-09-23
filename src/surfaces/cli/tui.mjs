@@ -197,6 +197,7 @@ export async function runMoondogTui({
   let lyricController = null;
   let lyricTask = Promise.resolve();
   let homeLyric = null;
+  let homeLyricSeeds = null;
   let lyricSubject = null;
   let lyricError = null;
   let motionEnabled = environment.MOONDOG_MOTION !== "off";
@@ -212,7 +213,14 @@ export async function runMoondogTui({
   const sleeve = new RecordSleeve({ terminal, getTheme, environment, getState: () => ({
     focused: homeFocused, selected: homeSelected, motionEnabled,
     editorRows: editor.render(terminal.columns).length,
-  }) });
+  }), getNextLyric: () => {
+    try {
+      homeLyric = homeLyricSeeds ? lyrics.selectHome(homeLyricSeeds) : null;
+    } catch (error) {
+      lyricError = sanitizeTerminalText(error.message);
+    }
+    return homeLyric?.text ?? null;
+  } });
   const updateHomeLyrics = ({ sync = true, signal } = {}) => {
     if (!lyrics || typeof application.getLyricSeeds !== "function" || cleanedUp) return Promise.resolve();
     lyricController?.abort();
@@ -224,6 +232,7 @@ export async function runMoondogTui({
       taskSignal.throwIfAborted();
       const seeds = await application.getLyricSeeds();
       taskSignal.throwIfAborted();
+      homeLyricSeeds = seeds;
       if (lyricSubject !== seeds.subjectId || (homeLyric && !seeds.tracks.some((track) => lyricTrackKey(track) === homeLyric.trackKey))) {
         homeLyric = null;
         sleeve.setLyric(null);

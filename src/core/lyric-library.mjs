@@ -95,8 +95,10 @@ export async function openLyricLibrary({ environment = process.env, databasePath
         });
         if (!candidates.length) return null;
         const recent = db.prepare("SELECT track_key, line_hash FROM home_selections WHERE subject_id = ? ORDER BY id DESC LIMIT 12").all(subjectId);
-        const fresh = candidates.map((item) => ({ ...item, lines: item.lines.filter((line) => !recent.some((seen) => seen.line_hash === hash(line))) })).filter((item) => item.lines.length);
-        const available = fresh.length ? fresh : candidates;
+        const different = candidates.map((item) => ({ ...item, lines: item.lines.filter((line) => hash(line) !== recent[0]?.line_hash) })).filter((item) => item.lines.length);
+        const eligible = different.length ? different : candidates;
+        const fresh = eligible.map((item) => ({ ...item, lines: item.lines.filter((line) => !recent.some((seen) => seen.line_hash === hash(line))) })).filter((item) => item.lines.length);
+        const available = fresh.length ? fresh : eligible;
         const otherTracks = available.filter((item) => item.record.key !== recent[0]?.track_key);
         const pool = otherTracks.length ? otherTracks : available;
         const total = pool.reduce((sum, item) => sum + (item.track.weight ?? 1), 0);

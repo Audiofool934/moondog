@@ -52,6 +52,15 @@ test("timed lyric parsing supports repeated timestamps and excludes credits from
   ]);
 });
 
+test("a small lyric pool keeps rotating without immediate repeats after recent history fills", async (t) => {
+  const library = await openLyricLibrary({ databasePath: ":memory:" });
+  t.after(() => library.close());
+  library.put(track, record);
+  const selections = Array.from({ length: 30 }, () => library.selectHome({ tracks: [track], subjectId: "one", random: () => 0 }).text);
+  assert.equal(new Set(selections).size, 2);
+  for (let index = 1; index < selections.length; index++) assert.notEqual(selections[index], selections[index - 1]);
+});
+
 test("profile seed selection prioritizes likes, does not mistake albums for songs, and applies every exclusion", () => {
   const item = (label, artist_credit = "A") => ({ label, artist_credit, entity_type: "track" });
   const profile = {

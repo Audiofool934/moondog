@@ -1555,7 +1555,7 @@ test("TUI web commands work without a model and Ctrl+C cancels only the local re
 });
 
 
-test("personal home lyrics load without waiting for network, stay stable, and stop fetching on exit", async (context) => {
+test("personal home lyrics load without waiting for network, survive redraws, and stop fetching on exit", async (context) => {
   const terminal = new FakeTerminal();
   terminal.columns = 120;
   const signalTarget = new EventEmitter();
@@ -1594,6 +1594,41 @@ test("personal home lyrics load without waiting for network, stay stable, and st
   assert.equal(terminal.stopCount, 1);
 });
 
+test("the idle home rotates cached lyrics without another fetch and freezes selection while typing", async (context) => {
+  const terminal = new FakeTerminal();
+  const signalTarget = new EventEmitter();
+  const track = { title: "Fixture song", artist: "Fixture artist" };
+  const { lyricTrackKey } = await import("../../src/core/lyric-profile.mjs");
+  const lines = ["Blue test room", "Quiet test window", "New test morning"];
+  let selections = 0;
+  let refreshes = 0;
+  const setInterval = globalThis.setInterval;
+  context.mock.method(globalThis, "setInterval", (callback, ms, ...args) => setInterval(callback, ms === 125 ? 5 : ms, ...args));
+  const render = context.mock.method(RecordSleeve.prototype, "render");
+  const running = runMoondogTui({
+    application: { ...fakeApplication(), async getLyricSeeds() { return { subjectId: "one", tracks: [track] }; } },
+    runtime: fakeRuntime(), terminal, signalTarget,
+    environment: { TERM: "xterm-256color", MOONDOG_MOTION: "on" },
+    lyrics: {
+      selectHome() { return { text: lines[selections++ % lines.length], trackKey: lyricTrackKey(track) }; },
+      async refresh() { refreshes++; },
+    },
+  });
+  context.after(async () => { signalTarget.emit("SIGTERM"); await running; });
+  await waitForStart(terminal);
+  await waitFor(() => terminal.output.includes(lines[0]));
+  await waitFor(() => terminal.output.includes(lines[1]));
+  await waitFor(() => terminal.output.includes(lines[2]));
+  assert.equal(refreshes, 1, "each new line uses the cache without another network refresh");
+  terminal.send("A listening draft");
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  const count = selections;
+  const renders = render.mock.callCount();
+  await new Promise((resolve) => setTimeout(resolve, 450));
+  assert.equal(selections, count);
+  assert.equal(render.mock.callCount(), renders);
+});
+
 test("record sleeve wraps original-language lyrics without overflowing narrow terminals", () => {
   const environment = { TERM: "xterm-256color", MOONDOG_MOTION: "off" };
   const theme = createMoondogTheme({ environment });
@@ -1614,7 +1649,7 @@ test("home lyrics scroll left, loop intact, and clip wide graphemes without shif
   const terminal = new FakeTerminal();
   terminal.rows = 24;
   let motionEnabled = true;
-  const sleeve = new RecordSleeve({ terminal, environment, getTheme: () => theme, getState: () => ({ motionEnabled }) });
+  const sleeve = new RecordSleeve({ terminal, environment, getTheme: () => theme, getState: () => ({ motionEnabled }), getNextLyric: () => line });
   const line = "夜色里 e\u0301 👩🏽‍🚀 音乐慢慢经过，沿着窗边继续向前。";
   sleeve.setLyric(line);
   const frame = () => sleeve.render(32).map(stripVTControlCharacters);
@@ -1646,6 +1681,34 @@ test("home lyrics scroll left, loop intact, and clip wide graphemes without shif
   for (let tick = 0; tick < 20; tick++) sleeve.advance();
   assert.deepEqual(frame(), still, "motion off restores static wrapped lyrics");
   for (const character of line) assert.ok(still.join("\n").includes(character));
+});
+
+test("the next lyric waits until the current line exits, enters from the right, and fallback notes also rotate", () => {
+  const environment = { TERM: "xterm-256color", MOONDOG_ART: "off" };
+  const terminal = new FakeTerminal();
+  const theme = createMoondogTheme({ environment });
+  let calls = 0;
+  const sleeve = new RecordSleeve({ terminal, environment, getTheme: () => theme,
+    getNextLyric: () => { calls++; return "Another fixture line"; },
+  });
+  sleeve.setLyric("First fixture line");
+  const frame = () => sleeve.render(40).map(stripVTControlCharacters);
+  frame();
+  for (let tick = 0; tick < 12 + visibleWidth('"First fixture line"') + 7; tick++) { sleeve.advance(); frame(); }
+  assert.equal(calls, 0, "the current line finishes and leaves a gap before selection");
+  sleeve.advance();
+  assert.equal(calls, 1);
+  assert.equal(sleeve.sleeveNote, "Another fixture line");
+  assert.equal(sleeve.lyricPosition, 39, "the next line starts beyond the right edge");
+  frame();
+  sleeve.advance();
+  assert.ok(frame().some((row) => row.endsWith('"')), "the opening quote enters from the right");
+  assert.equal(calls, 1, "redraws do not select additional lines");
+
+  const fallback = new RecordSleeve({ terminal, environment, getTheme: () => theme, random: () => 0 });
+  const initial = fallback.sleeveNote;
+  for (let tick = 0; tick < 100; tick++) { fallback.render(40); fallback.advance(); }
+  assert.notEqual(fallback.sleeveNote, initial, "an empty lyric library still rotates the default pool");
 });
 
 test("record sleeve uses terminal characters and fits the opening at every supported terminal size", () => {

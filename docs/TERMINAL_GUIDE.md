@@ -128,9 +128,12 @@ When a trusted album or track duration is available through the library API, the
 Each startup reads cached lyrics first and checks up to twelve uncached or stale candidates in the background, with a thirty-second budget.
 Successful entries remain fresh for thirty days; unavailable matches are checked again after seven days.
 Requests are sequential and respect the provider's retry delay.
-The home uses one short, original-language line, omits the byline, and avoids recent lines and consecutive songs when the pool permits.
-It keeps that line for the session unless a profile change removes the song from the eligible pool.
-The line pauses briefly on arrival, then scrolls from right to left in a single row and loops with a small gap.
+The home shows one short, original-language line at a time and omits the byline.
+The opening pauses briefly, then scrolls from right to left in a single row.
+After the line leaves the screen, another is picked at random from the eligible cached lyrics and enters from the right after a small gap.
+Selections avoid recent lines and consecutive songs when possible, and never immediately repeat a line when another is available.
+With no eligible cached lyrics, the default opening lines rotate instead.
+Rotation uses the local library without starting new network requests; profile changes update the eligible pool.
 Typing and menu navigation pause its movement; `/motion off` restores a static, wrapped line, as do plain terminals.
 On an empty cache, the existing opening remains until the first suitable personal lyric arrives.
 No model is used to invent, translate, or rewrite lyrics.
