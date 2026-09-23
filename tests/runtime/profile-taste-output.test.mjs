@@ -10,10 +10,10 @@ test("music imports retain platform labels and do not display missing duration o
     listening_behavior: { repeat_tracks: [{ label: "Moon", play_count: 1, listening_minutes: 0 }],
       context: { direct_selection_starts: 0, start_reason_events: 0 } },
   });
-  assert.match(output, /Listening time: unknown/u);
-  assert.match(output, /YouTube Music collection: 2 tracks/u);
-  assert.match(output, /Moon - 1 plays/u);
-  assert.doesNotMatch(output, /0 min|Playback flow|Spotify supplied/u);
+  assert.match(output, /- 1 play\n/u);
+  assert.match(output, /YouTube Music: 2 tracks/u);
+  assert.match(output, /Moon · 1 play\n/u);
+  assert.doesNotMatch(output, /0 min|How you listen|unknown|skip/u);
 });
 
 test("taste output makes behavioral evidence readable without provider prose", () => {
@@ -190,58 +190,29 @@ test("taste output makes behavioral evidence readable without provider prose", (
     },
   });
 
-  assert.match(output, /Your Moondog tasteprint/u);
-  assert.match(output, /Long arc/u);
-  assert.match(output, /Recent movement \(90 days\)/u);
-  assert.match(output, /Listening through time \(UTC\)/u);
-  assert.match(output, /2026 - 39 h, 620 events, 190 tracks, 75 first observed/u);
-  assert.match(output, /most heard artist: North Window/u);
-  assert.match(output, /Listening Seasons \(fixed UTC calendar quarters\)/u);
-  assert.match(output, /2026 Q1 \(2026-01 to 2026-03 UTC\)/u);
-  assert.match(output, /55 first observed, 20 seen earlier/u);
-  assert.match(output, /leading artist: North Window/u);
-  assert.match(output, /signature track: Seasonal Signal - North Window/u);
-  assert.match(output, /2026 Q2 \(2026-04 to 2026-06 UTC\) - no retained eligible events/u);
-  assert.match(output, /do not infer preference, mood, or life events/u);
-  assert.match(output, /Tracks you return to/u);
-  assert.match(output, /Worth another listen \(quiet 90\+ days\)/u);
-  assert.match(output, /Quiet Coordinates - Sable Arcade/u);
-  assert.match(output, /240 days quiet, strongest year 2024, basis: saved-library state/u);
-  assert.match(output, /Music that came back \(gaps 180\+ days\)/u);
-  assert.match(output, /Recurring Light - North Window/u);
-  assert.match(
-    output,
-    /3 observed returns, longest gap 730 days, latest return after 365 days/u,
-  );
-  assert.match(output, /Listening Time Machine/u);
-  assert.match(output, /2024: First Light - Early Artist/u);
-  assert.match(output, /8 plays in year, 32 min in year/u);
-  assert.match(output, /Played back to back \(2\+ adjacent plays\)/u);
-  assert.match(output, /Fictional Echo - Sequence Study/u);
-  assert.match(
-    output,
-    /4 plays in longest adjacent sequence, 2 bounded sequences, 7 plays across sequences, 28 min across sequences/u,
-  );
-  assert.match(output, /do not prove repeat mode, intentional replay, or liking/u);
-  assert.match(output, /Playback flow/u);
-  assert.match(output, /Direct starts: 300 of 1,000 start-reason events \(30%\)/u);
-  assert.match(output, /Continued playback: 600 of 1,000 start-reason events \(60%\)/u);
-  assert.match(output, /Reached track end: 800 of 1,000 end-reason events \(80%\)/u);
-  assert.match(output, /Explicit skips: 100 of 1,000 skip-state events \(10%\)/u);
-  assert.match(output, /Shuffle active: 250 of 1,000 shuffle-state events \(25%\)/u);
-  assert.match(output, /Offline playback: 20 of 1,000 offline-state events \(2%\)/u);
-  assert.match(output, /not proof of taste, attention, satisfaction, personality, location, or device use/u);
-  assert.match(output, /Deliberate choices/u);
-  assert.match(output, /1,200/u);
-  assert.match(
-    output,
-    /Cross-format track links: 14 provisional identities across 22 effective events/u,
-  );
-  assert.match(
-    output,
-    /Ambiguous cross-format identities kept separate: 3 across 5 effective events/u,
-  );
-  assert.match(output, /Incognito events excluded from taste inference: 3/u);
+  assert.match(output, /# Your listening, so far/u);
+  assert.match(output, /- 1,200 plays · 75 h · 340 tracks/u);
+  assert.match(output, /14 tracks matched across your two Spotify exports/u);
+  assert.match(output, /3 tracks kept apart because the match was unclear/u);
+  assert.match(output, /3 private-session plays left out/u);
+  assert.match(output, /## Shine On\n\n\*Artists who stayed with you across the years\*/u);
+  assert.match(output, /Who you.ve played most in the last 90 days/u);
+  assert.match(output, /2026 · 39 h, 620 plays, 190 tracks, 75 new, mostly North Window/u);
+  assert.match(output, /2026 Q1 · 4.9 h, 126 plays, 55 new, mostly North Window, top song Seasonal Signal - North Window/u);
+  assert.match(output, /2026 Q2 · nothing in your history/u);
+  assert.match(output, /## Time\n\n\*The years, one track each\*\n\n- 2024  First Light - Early Artist · 8 plays that year/u);
+  assert.match(output, /## Wish You Were Here/u);
+  assert.match(output, /Quiet Coordinates - Sable Arcade · 18 plays, 92 min · quiet for 240 days, biggest in 2024, saved in your library/u);
+  assert.match(output, /## Coming Back to Life/u);
+  assert.match(output, /Recurring Light - North Window · 8 plays, 32 min · came back 3 times, longest time away 730 days/u);
+  assert.match(output, /## Echoes/u);
+  assert.match(output, /Fictional Echo - Sequence Study · 9 plays · up to 4 in a row, 2 separate runs/u);
+  assert.match(output, /## Most played/u);
+  assert.match(output, /Songs you picked yourself: 30% \(300 of 1,000\)/u);
+  assert.match(output, /Offline: 2% \(20 of 1,000\)/u);
+  assert.match(output, /## Kept on purpose\n\n- Mara Vale · favorited/u);
+  assert.match(output, /## The dark side of the moon/u);
+  assert.match(output, /Plays show attention, not love/u);
   assert.doesNotMatch(output, new RegExp(evidenceId, "u"));
   assert.doesNotMatch(output, /PROVIDER_PROSE_MUST_NOT_APPEAR/u);
 });

@@ -126,10 +126,10 @@ test("listening continuity separates artists that stayed from year-to-year turno
     relationshipEvidence.claim.dimension,
     "taste.artist_continuity",
   );
-  assert.match(relationshipEvidence.basis_summary, /3 retained UTC calendar years/u);
+  assert.match(relationshipEvidence.basis_summary, /shows up in 3 years of your history/u);
   const transitionEvidence = explanations.get(
     summary.listening_behavior.year_transitions[0].evidence_id,
   );
   assert.equal(transitionEvidence.claim.dimension, "taste.artist_turnover");
-  assert.match(transitionEvidence.interpretation_limit, /does not measure genre breadth/u);
+  assert.match(transitionEvidence.interpretation_limit, /doesn't measure how wide your taste is/u);
 });

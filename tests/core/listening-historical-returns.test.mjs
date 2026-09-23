@@ -131,6 +131,6 @@ test("historical returns expose repeated long-gap recurrence without claiming pr
 
   const explanation = projected.explanations.get(returns[0].evidence_id);
   assert.equal(explanation.claim.dimension, "listening.historical_return");
-  assert.match(explanation.basis_summary, /2 observed return gaps/iu);
-  assert.match(explanation.interpretation_limit, /not proof of liking/iu);
+  assert.match(explanation.basis_summary, /came back 2 times after/iu);
+  assert.match(explanation.interpretation_limit, /doesn't prove you like it/iu);
 });

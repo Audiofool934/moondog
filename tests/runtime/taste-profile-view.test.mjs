@@ -82,7 +82,7 @@ test("profile categories, filtering, refresh replacement and callbacks preserve 
   view.handleInput("\x1b[A");
   view.handleInput("\r");
   assert.equal(selected, replacement.subjects[2]);
-  assert.match(view.render(40).map(stripVTControlCharacters).join("\n"), /No matching readings/u);
+  assert.match(view.render(40).map(stripVTControlCharacters).join("\n"), /Nothing matches that/u);
 });
 
 test("profile reading pages scroll independently and split pastes cannot select a subject", () => {

@@ -17,9 +17,9 @@ test("collection-only profile reports useful coverage and preserves the actual p
     curated_preferences: { playlist_anchors: [{ label: "Song", artist_credit: "Artist", source_label: "QQ Music", evidence_id: evidence(1) }] },
   });
   const text = JSON.stringify(model);
-  assert.match(text, /QQ Music collection: 1 tracks/u);
-  assert.match(text, /QQ Music playlist membership/u);
-  assert.doesNotMatch(text, /Spotify|0 listening events/u);
+  assert.match(text, /QQ Music: 1 song/u);
+  assert.match(text, /On your QQ Music playlists/u);
+  assert.doesNotMatch(text, /Spotify|0 plays/u);
 });
 
 test("taste review merges structured identities and retains every evidence source", () => {
@@ -53,11 +53,11 @@ test("taste review merges structured identities and retains every evidence sourc
   assert.equal(track.correctionId, undefined);
   assert.deepEqual(track.evidence.map((item) => item.id), [evidence(1), evidence(2), evidence(4)]);
   assert.equal(track.evidenceId, evidence(1));
-  assert.match(track.detailLines.join("\n"), /12 plays.*9 engaged plays.*40 min/u);
+  assert.match(track.detailLines.join("\n"), /12 plays.*9 heard properly.*40 min/u);
   assert.match(track.detailLines.join("\n"), /2 plays.*last played 2026-09-01/u);
-  assert.match(track.detailLines.join("\n"), /Saved in Spotify library/u);
+  assert.match(track.detailLines.join("\n"), /Saved in your Spotify library/u);
   assert.doesNotMatch(track.detailLines.join("\n"), /confidence|Like/u);
-  assert.match(model.summaryLines.join("\n"), /12 listening events.*1.5 h/u);
+  assert.match(model.summaryLines.join("\n"), /12 plays.*1.5 h/u);
   assert.match(model.summaryLines.join("\n"), /2024-01-01 to 2026-09-01/u);
 });
 
@@ -87,7 +87,7 @@ test("taste review shows imported Avoid without exposing an own correction to re
   assert.equal(model.subjects.length, 1);
   assert.equal(model.subjects[0].stance, undefined);
   assert.equal(model.subjects[0].correctionId, undefined);
-  assert.match(model.subjects[0].detailLines.join("\n"), /Imported provider Avoid/u);
+  assert.match(model.subjects[0].detailLines.join("\n"), /You disliked this in your music service/u);
 });
 
 test("real listening projection keeps artist Avoid and track Like independent across refresh and reset", async (context) => {
@@ -109,8 +109,8 @@ test("real listening projection keeps artist Avoid and track Like independent ac
   const services = createListeningProfileDomainServices({ listeningHistoryStore: store, subjectId });
   const refresh = async () => buildTasteProfileModel(await services.getProfileSummary({ maxItems: 10 }));
   const initial = await refresh();
-  assert.match(initial.summaryLines.join("\n"), /1 listening events.*1 tracks/u);
-  assert.match(initial.summaryLines.join("\n"), /Time unavailable/u);
+  assert.match(initial.summaryLines.join("\n"), /1 play · 1 track/u);
+  assert.match(initial.summaryLines.join("\n"), /listening time unknown/u);
   assert.doesNotMatch(initial.summaryLines.join("\n"), /0 h/u);
   const initialTrack = initial.subjects.find((item) => item.kind === "track");
   const avoided = store.recordListenerCorrection({
@@ -123,8 +123,8 @@ test("real listening projection keeps artist Avoid and track Like independent ac
   assert.equal(track.key, initialTrack.key);
   assert.equal(track.correctionId, undefined);
   assert.equal(track.stance, undefined);
-  assert.match(track.detailLines.join("\n"), /Artist correction: Avoid applies to North Window/u);
-  assert.ok(track.evidence.some((item) => item.id === avoided.correction_id && item.source === "Your artist Avoid"));
+  assert.match(track.detailLines.join("\n"), /You asked me to keep North Window out/u);
+  assert.ok(track.evidence.some((item) => item.id === avoided.correction_id && item.source === "Your choice for the artist"));
   const liked = store.recordListenerCorrection({
     subjectId, ...track.target, stance: "like", occurredAt: "2026-09-02T02:00:00Z",
   });
@@ -134,8 +134,8 @@ test("real listening projection keeps artist Avoid and track Like independent ac
   assert.equal(track.stance, "like");
   assert.equal(track.correctionId, liked.correction_id);
   assert.equal(track.evidenceId, liked.correction_id);
-  assert.match(track.detailLines.join("\n"), /track Like does not override the artist Avoid/u);
-  assert.match(track.detailLines.join("\n"), /1 plays/u);
+  assert.match(track.detailLines.join("\n"), /That still applies, even though you like this track/u);
+  assert.match(track.detailLines.join("\n"), /1 play\b/u);
   for (const item of track.evidence) {
     const explanation = await services.explainProfileEvidence({ evidenceId: item.id });
     assert.equal(explanation.evidence_id, item.id);
@@ -146,7 +146,7 @@ test("real listening projection keeps artist Avoid and track Like independent ac
   assert.equal(track.key, initialTrack.key);
   assert.equal(track.stance, undefined);
   assert.equal(track.correctionId, undefined);
-  assert.match(track.detailLines.join("\n"), /Artist correction: Avoid applies/u);
+  assert.match(track.detailLines.join("\n"), /You asked me to keep/u);
   assert.ok(track.evidence.every((item) => item.id !== liked.correction_id));
   store.retractListenerCorrection({ subjectId, correctionId: avoided.correction_id, occurredAt: "2026-09-02T04:00:00Z" });
   track = (await refresh()).subjects.find((item) => item.kind === "track");
@@ -183,8 +183,8 @@ test("Apple-only summaries preserve correction identity and distinct artists for
   assert.deepEqual(tracks[0].target, { entityType: "track", label: "Shared - Title", artistCredit: "Artist - One" });
   assert.equal(tracks[0].stance, undefined);
   assert.deepEqual(tracks[0].evidence.map((item) => item.id), [evidence(1), evidence(3)]);
-  assert.match(tracks[0].detailLines.join("\n"), /Apple Music library preference: Loved.*confidence 90%/u);
-  assert.match(tracks[0].detailLines.join("\n"), /Apple Music aggregate play count: 42 plays/u);
+  assert.match(tracks[0].detailLines.join("\n"), /In your Apple Music library: Loved.*90% sure/u);
+  assert.match(tracks[0].detailLines.join("\n"), /Apple Music play count: 42 plays/u);
   assert.match(model.summaryLines.join("\n"), /Apple Music library: 2 tracks/u);
   const libraryOnly = buildTasteProfileModel({
     ...profile,
@@ -197,7 +197,7 @@ test("Apple-only summaries preserve correction identity and distinct artists for
 test("taste review tolerates an empty profile and bounds every input ranking", () => {
   assert.deepEqual(buildTasteProfileModel(null).subjects, []);
   assert.deepEqual(buildTasteProfileModel({}).summaryLines, []);
-  assert.match(buildTasteProfileModel({}).emptyLines.join("\n"), /Import listening history/u);
+  assert.match(buildTasteProfileModel({}).emptyLines.join("\n"), /Import your history or library/u);
   const model = buildTasteProfileModel({
     listening_behavior: { repeat_tracks: Array.from({ length: 20 }, (_, index) => ({ label: `Track ${index}`, artist_credit: "Artist" })) },
   });

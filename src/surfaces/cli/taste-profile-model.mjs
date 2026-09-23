@@ -57,29 +57,31 @@ function subjectKey(target) {
   ]);
 }
 
+function plural(value, one, many = `${one}s`) {
+  return `${count(value)} ${value === 1 ? one : many}`;
+}
+
 function itemMetrics(item) {
   const values = [];
-  for (const [field, label] of [
-    ["play_count", "plays"],
-    ["engaged_play_count", "engaged plays"],
-    ["distinct_tracks", "tracks"],
-    ["explicit_skips", "explicit skips"],
-    ["playlist_count", "playlists"],
-    ["quiet_days", "days since last play in this archive"],
-    ["return_count", "historical returns"],
-    ["longest_gap_days", "days in longest return gap"],
-    ["maximum_consecutive_plays", "maximum consecutive plays"],
-    ["burst_count", "repeat bursts"],
-  ]) {
-    const value = count(item?.[field]);
-    if (value !== undefined) values.push(`${value} ${label}`);
+  const known = (field) => count(item?.[field]) !== undefined;
+  if (known("play_count")) values.push(plural(item.play_count, "play"));
+  if (known("engaged_play_count") && item.engaged_play_count !== item.play_count) {
+    values.push(`${count(item.engaged_play_count)} heard properly`);
   }
+  if (known("distinct_tracks")) values.push(plural(item.distinct_tracks, "track"));
+  if (known("explicit_skips") && item.explicit_skips > 0) values.push(`skipped ${plural(item.explicit_skips, "time")}`);
+  if (known("playlist_count")) values.push(`on ${plural(item.playlist_count, "playlist")}`);
+  if (known("quiet_days")) values.push(`quiet for ${plural(item.quiet_days, "day")}`);
+  if (known("return_count")) values.push(`came back ${item.return_count === 1 ? "once" : `${count(item.return_count)} times`}`);
+  if (known("longest_gap_days")) values.push(`longest time away ${plural(item.longest_gap_days, "day")}`);
+  if (known("maximum_consecutive_plays")) values.push(`up to ${count(item.maximum_consecutive_plays)} in a row`);
+  if (known("burst_count") && item.burst_count > 1) values.push(`${count(item.burst_count)} separate runs`);
   const minutes = amount(item?.listening_minutes);
-  if (minutes !== undefined) values.push(`${minutes} min with supplied duration`);
+  if (minutes !== undefined) values.push(`${minutes} min`);
   const lastPlayed = date(item?.last_played_at);
   if (lastPlayed) values.push(`last played ${lastPlayed}`);
   if (Number.isFinite(item?.confidence) && item.confidence >= 0 && item.confidence <= 1) {
-    values.push(`confidence ${Math.round(item.confidence * 100)}%`);
+    values.push(`${Math.round(item.confidence * 100)}% sure`);
   }
   return values;
 }
@@ -89,25 +91,25 @@ function overview(profile) {
   const lines = [];
   const durationUnavailable = coverage.effective_listening_events > 0 && coverage.events_with_played_duration === 0;
   const listening = [
-    [count(coverage.effective_listening_events), "listening events"],
+    [count(coverage.effective_listening_events), coverage.effective_listening_events === 1 ? "play" : "plays"],
     [durationUnavailable ? undefined : amount(coverage.listening_hours), "h"],
-    [count(coverage.listening_tracks), "tracks"],
+    [count(coverage.listening_tracks), coverage.listening_tracks === 1 ? "track" : "tracks"],
   ].filter(([value]) => value !== undefined).map(([value, label]) => `${value} ${label}`);
-  if (durationUnavailable) listening.push("Time unavailable");
+  if (durationUnavailable) listening.push("listening time unknown");
   if (listening.length && !(coverage.effective_listening_events === 0 && (coverage.tracks_observed > 0 || coverage.collection_tracks > 0))) {
     lines.push(listening.join(" · "));
   }
   if (Number.isSafeInteger(coverage.tracks_observed) && coverage.tracks_observed > 0) {
     const loved = count(coverage.loved_or_favorited);
-    lines.push(`Apple Music library: ${count(coverage.tracks_observed)} tracks${
-      loved === undefined ? "" : ` · ${loved} loved or favorited`
+    lines.push(`Apple Music library: ${plural(coverage.tracks_observed, "track")}${
+      loved === undefined ? "" : ` · ${loved} loved`
     }`);
   }
   const source = profile?.listening_source ?? {};
   const collections = items(coverage.collection_sources).filter((collection) => collection.tracks > 0);
-  if (collections.length > 1) lines.push(`${count(coverage.collection_tracks)} collection tracks · ${collections.length} services`);
+  if (collections.length > 1) lines.push(`${count(coverage.collection_tracks)} songs across ${collections.length} services`);
   for (const collection of collections) {
-    if (collection.tracks > 0) lines.push(`${inline(collection.label)} collection: ${count(collection.tracks)} tracks`);
+    if (collection.tracks > 0) lines.push(`${inline(collection.label)}: ${plural(collection.tracks, "song")}`);
   }
   const providers = items(source.providers).map(inline).filter(Boolean).map((provider) => ({
     spotify: "Spotify",
@@ -120,15 +122,20 @@ function overview(profile) {
   const latest = date(source.listening_range?.latest);
   const range = earliest && latest ? `${earliest} to ${latest}` : earliest || latest;
   if (providers.length || range) {
-    lines.push([providers.length ? `History: ${providers.join(", ")}` : "History", range]
+    lines.push([providers.length ? `${providers.join(", ")} history` : "History", range]
       .filter(Boolean).join(" · "));
   }
   const captured = date(profile?.source?.captured_at);
-  if (captured) lines.push(`Library snapshot: ${captured}`);
+  if (captured) lines.push(`Library as of ${captured}`);
   const active = count(coverage.active_listener_assertions);
-  if (active !== undefined) lines.push(`Your corrections: ${active} active`);
+  if (coverage.active_listener_assertions > 0) lines.push(`${plural(coverage.active_listener_assertions, "choice")} you've made`);
   return lines;
 }
+
+const sourceNames = {
+  "Apple Music library preference": "In your Apple Music library",
+  "Apple Music aggregate play count": "Apple Music play count",
+};
 
 function explicitKind(item) {
   if (["artist", "track"].includes(item?.entity_type)) return item.entity_type;
@@ -197,21 +204,21 @@ export function buildTasteProfileModel(profile = {}) {
     seenAssertions.add(key);
     const when = date(item.asserted_at);
     const note = inline(item.note);
-    add(item, item.entity_type, "Your correction", `Your correction: ${
-      item.stance === "like" ? "Like" : "Avoid"
-    }${when ? ` · ${when}` : ""}${note ? ` · ${note}` : ""}`, { assertion: true });
+    add(item, item.entity_type, "Your choice", `You said: ${
+      item.stance === "like" ? "I like this" : "keep this out"
+    }${when ? ` · ${when}` : ""}${note ? ` · "${note}"` : ""}`, { assertion: true });
   }
 
   const recentDays = count(behavior.context?.recent_window_days);
-  const recentSource = recentDays ? `Recent listening (${recentDays}-day archive window)` : "Recent listening";
+  const recentSource = recentDays ? `Lately (last ${recentDays} days)` : "Lately";
   for (const [field, kind, source] of [
-    ["repeat_tracks", "track", "Repeated listening"],
-    ["enduring_artists", "artist", "Artist listening history"],
+    ["repeat_tracks", "track", "Most played"],
+    ["enduring_artists", "artist", "Across the years"],
     ["recent_tracks", "track", recentSource],
     ["recent_artists", "artist", recentSource],
-    ["rediscovery_tracks", "track", "Rediscovery evidence"],
-    ["historical_return_tracks", "track", "Historical return evidence"],
-    ["back_to_back_tracks", "track", "Consecutive listening"],
+    ["rediscovery_tracks", "track", "Gone quiet"],
+    ["historical_return_tracks", "track", "Came back"],
+    ["back_to_back_tracks", "track", "Played in a row"],
   ]) {
     for (const item of items(behavior[field])) {
       const details = metrics(item);
@@ -226,13 +233,13 @@ export function buildTasteProfileModel(profile = {}) {
       listening_minutes: item?.year_listening_minutes,
       explicit_skips: item?.year_explicit_skips,
     });
-    add(item, "track", "Time capsule", `Time capsule${year ? ` (${item.capsule_year})` : ""}${
+    add(item, "track", "Song of the year", `${year ? `Your song of ${item.capsule_year}` : "Song of the year"}${
       details.length ? `: ${details.join(" · ")}` : ""
     }`);
   }
   for (const [field, kind, source] of [
-    ["saved_tracks", "track", "Saved in Spotify library"],
-    ["playlist_anchors", "track", "Spotify playlist membership"],
+    ["saved_tracks", "track", "Saved in your Spotify library"],
+    ["playlist_anchors", "track", "On your Spotify playlists"],
     ["followed_artists", "artist", "Followed on Spotify"],
   ]) {
     for (const item of items(curated[field])) {
@@ -244,17 +251,17 @@ export function buildTasteProfileModel(profile = {}) {
   for (const item of items(curated.avoids)) {
     const target = targetFor(item, item?.entity_type);
     if (target && !seenAssertions.has(subjectKey(target))) {
-      add(item, item.entity_type, "Imported provider Avoid", "Imported provider Avoid; this is not a Moondog correction.");
+      add(item, item.entity_type, "Disliked in your music service", "You disliked this in your music service. You can still change it here.");
     }
   }
   for (const [field, kind] of [["artists", "artist"], ["tracks", "track"]]) {
     for (const item of items(profile?.provider_signals?.[field])) {
       const rank = count(item?.best_rank);
-      const details = [...(rank ? [`best rank ${rank}`] : []), ...metrics(item)];
-      add(item, kind, "Provider ranking", `Provider ranking${details.length ? `: ${details.join(" · ")}` : ""}`);
+      const details = [...(rank ? [`best at #${rank}`] : []), ...metrics(item)];
+      add(item, kind, "Service top list", `In your service's top list${details.length ? `: ${details.join(" · ")}` : ""}`);
     }
   }
-  for (const [field, fallback] of [["strong_preferences", "Imported preference signal"], ["familiarity", "Imported familiarity"]]) {
+  for (const [field, fallback] of [["strong_preferences", "From your library"], ["familiarity", "Familiar from your library"]]) {
     for (const item of items(profile?.[field])) {
       const kind = explicitKind(item);
       if (!kind) continue;
@@ -262,9 +269,9 @@ export function buildTasteProfileModel(profile = {}) {
       if (!target) continue;
       const existing = subjects.get(subjectKey(target));
       if (item.evidence_id && existing?.evidence.some((evidence) => evidence.id === item.evidence_id)) continue;
-      const source = inline(item.source) || fallback;
+      const source = sourceNames[inline(item.source)] ?? (inline(item.source) || fallback);
       const observed = date(item.observed_at);
-      const details = [inline(item.signal), ...metrics(item), ...(observed ? [`observed ${observed}`] : [])].filter(Boolean);
+      const details = [inline(item.signal).replace(/,? non-computed rating/u, ", rated"), ...metrics(item), ...(observed ? [`as of ${observed}`] : [])].filter(Boolean);
       add(item, kind, source, `${source}${details.length ? `: ${details.join(" · ")}` : ""}`);
     }
   }
@@ -273,18 +280,18 @@ export function buildTasteProfileModel(profile = {}) {
     if (!target) continue;
     const existing = subjects.get(subjectKey(target));
     if (item.evidence_id && existing?.evidence.some((evidence) => evidence.id === item.evidence_id)) continue;
-    add(item, "artist", "Artist facet", "Artist appears in the profile; its supporting evidence may concern a track.");
+    add(item, "artist", "Through a track", "Shows up through one of their tracks.");
   }
 
   for (const subject of subjects.values()) {
     if (subject.kind !== "track") continue;
     const artist = subjects.get(subjectKey({ entityType: "artist", label: subject.target.artistCredit }));
     if (artist?.stance !== "avoid") continue;
-    subject.detailLines.unshift(`Artist correction: Avoid applies to ${artist.label}.${
-      subject.stance === "like" ? " Your track Like does not override the artist Avoid." : ""
+    subject.detailLines.unshift(`You asked me to keep ${artist.label} out.${
+      subject.stance === "like" ? " That still applies, even though you like this track." : ""
     }`);
     if (artist.evidenceId && !subject.evidence.some((evidence) => evidence.id === artist.evidenceId)) {
-      subject.evidence.push({ id: artist.evidenceId, source: "Your artist Avoid" });
+      subject.evidence.push({ id: artist.evidenceId, source: "Your choice for the artist" });
     }
   }
 
@@ -292,8 +299,8 @@ export function buildTasteProfileModel(profile = {}) {
     summaryLines: overview(profile),
     subjects: [...subjects.values()],
     emptyLines: [
-      "No tracks or artists are available to review yet.",
-      "Import listening history or a music library to build your profile.",
+      "Nothing to look at yet.",
+      "Import your history or library and it will show up here.",
     ],
   };
 }

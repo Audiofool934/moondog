@@ -179,7 +179,7 @@ async function createTasteFixture(context, { imported = true, configured = false
       terminal.send(command);
       terminal.send("\r");
       await waitOutput(expected);
-      assert.doesNotMatch(terminal.text, /Local command failed|Profile action failed/u);
+      assert.doesNotMatch(terminal.text, /That didn't work/u);
     },
     async openFromDraft() {
       terminal.output = "";
@@ -224,7 +224,7 @@ test("native taste track Avoid persists, remains selectable after refresh, and r
   await fixture.submit("/taste", "Your listening profile");
   terminal.send("Midnight Lines");
   await fixture.waitBody("Midnight Lines");
-  await fixture.chooseAction("Avoid", "Saved: Avoid");
+  await fixture.chooseAction("Keep it out", "Kept out:");
 
   assert.deepEqual(profileActions[0].args, ["correct", "--track", "Midnight Lines", "--by", "Mara Vale", "--avoid"]);
   const [assertion] = await fixture.persistedCorrections();
@@ -238,7 +238,7 @@ test("native taste track Avoid persists, remains selectable after refresh, and r
 
   await fixture.resize(80, 24);
   await fixture.waitBody("Midnight Lines");
-  await fixture.chooseAction("Retract my choice", "Retracted:");
+  await fixture.chooseAction("Undo my choice", "Undone:");
   assert.deepEqual(profileActions[1].args, ["retract", assertion.correction_id]);
   assert.deepEqual(await fixture.persistedCorrections(), []);
   const history = await fixture.persistedCorrections({ includeInactive: true });
@@ -259,7 +259,7 @@ test("profile discovery keeps an editable draft, survives palette navigation, an
   await fixture.openFromDraft();
   terminal.send("Midnight Lines");
   await fixture.waitBody("Midnight Lines");
-  await fixture.chooseAction("Discover around this", "Discovery draft ready");
+  await fixture.chooseAction("Find more like this", "Request ready · edit");
   await fixture.waitBody('Artist: "Mara Vale"');
   assert.match(terminal.body, /Keep "this" request: a quiet evening\./u);
   assert.match(terminal.body, /Track: "Midnight Lines"/u);
@@ -272,7 +272,7 @@ test("profile discovery keeps an editable draft, survives palette navigation, an
   await fixture.openFromDraft();
   terminal.send("Midnight Lines");
   await fixture.waitBody("Midnight Lines");
-  await fixture.chooseAction("Discover around this", "Discovery draft ready");
+  await fixture.chooseAction("Find more like this", "Request ready · edit");
   assert.equal(terminal.body.split('Track: "Midnight Lines"').length - 1, 1);
   terminal.output = "";
   terminal.send("\x10");
@@ -304,8 +304,8 @@ test("editing a discovery track removes the original host handoff", async (conte
   await fixture.submit("/taste", "Your listening profile");
   terminal.send("Midnight Lines");
   await fixture.waitBody("Midnight Lines");
-  await fixture.chooseAction("Discover around this", "Discovery draft ready");
-  await fixture.waitBody("Find 3 songs");
+  await fixture.chooseAction("Find more like this", "Request ready · edit");
+  await fixture.waitBody("Find me 3 songs");
   terminal.send("\x05");
   terminal.send("\x15");
   terminal.send('Artist: "Aster Field"');
@@ -322,11 +322,11 @@ test("offline discovery keeps its request until a model is connected", async (co
   await fixture.submit("/taste", "Your listening profile");
   terminal.send("Midnight Lines");
   await fixture.waitBody("Midnight Lines");
-  await fixture.chooseAction("Discover around this", "Draft ready");
+  await fixture.chooseAction("Find more like this", "Request ready · /model");
   await fixture.waitBody('Track: "Midnight Lines"');
   terminal.send("\r");
-  await fixture.waitBody("Draft kept");
-  assert.match(terminal.body, /Find 3 songs/u);
+  await fixture.waitBody("Your request is still here");
+  assert.match(terminal.body, /Find me 3 songs/u);
   assert.match(terminal.body, /Artist: "Mara Vale"/u);
   assert.deepEqual(fixture.prompts, []);
 });
@@ -347,7 +347,7 @@ test("recalling a discovery request after connection failure retains the visible
   await fixture.submit("/taste", "Your listening profile");
   terminal.send("Midnight Lines");
   await fixture.waitBody("Midnight Lines");
-  await fixture.chooseAction("Discover around this", "Discovery draft ready");
+  await fixture.chooseAction("Find more like this", "Request ready · edit");
   terminal.send("\r");
   await fixture.waitBody("Connection interrupted.");
   terminal.send("\x1b[A");
@@ -379,14 +379,14 @@ test("artist Like uses artist semantics and restores the exact draft after profi
   assert.match(terminal.body, /Mara Vale/u);
   await fixture.resize(44, 14);
   await fixture.resize(100, 34);
-  await fixture.chooseAction("Like", "Saved: Like");
+  await fixture.chooseAction("I like this", "Liked:");
   assert.deepEqual(profileActions[0].args, ["correct", "--artist", "Mara Vale", "--like"]);
   const [assertion] = await fixture.persistedCorrections();
   assert.equal(assertion.entity_type, "artist");
   assert.equal(assertion.label, "Mara Vale");
   assert.equal(assertion.stance, "like");
   await fixture.leaveProfile(draft);
-  assert.match(terminal.body, /Saved: Like/u);
+  assert.match(terminal.body, /Noted\. You like/u);
   assert.deepEqual(fixture.prompts, []);
 });
 
@@ -402,12 +402,12 @@ test("a saved choice survives refresh failure and retry does not write it twice"
     if (failRefresh) { failRefresh = false; throw new Error("Temporary profile read failure"); }
     return getSummary(input);
   });
-  await fixture.chooseAction("Avoid", "Refresh failed");
+  await fixture.chooseAction("Keep it out", "didn't refresh");
   assert.equal((await fixture.persistedCorrections())[0].stance, "avoid");
   fixture.terminal.output = "";
   fixture.terminal.send("\r");
-  await fixture.waitOutput("Profile refreshed. Select a reading");
-  await fixture.waitBody("You avoid this");
+  await fixture.waitOutput("Profile updated. Pick a song or artist");
+  await fixture.waitBody("You asked me to keep this out");
   assert.equal(fixture.profileActions.length, 1);
   assert.deepEqual(fixture.prompts, []);
 });
@@ -424,7 +424,7 @@ test("escaping profile actions returns to browsing, then home with the draft; ta
   await fixture.waitBody("Midnight Lines");
   terminal.output = "";
   terminal.send("\r");
-  await fixture.waitOutput("Why this reading");
+  await fixture.waitOutput("Why it's here");
   terminal.send("\x1b");
   await new Promise((resolve) => setImmediate(resolve));
   await fixture.waitBody("Your listening profile");
@@ -436,8 +436,8 @@ test("escaping profile actions returns to browsing, then home with the draft; ta
   assert.deepEqual(await fixture.persistedCorrections(), []);
   terminal.send("\x05");
   terminal.send("\x15");
-  await fixture.submit("/taste report", "Your Moondog tasteprint");
-  assert.match(terminal.body, /Listening Time Machine/u);
+  await fixture.submit("/taste report", "Your listening, so far");
+  assert.match(terminal.body, /The years, one track each/u);
   assert.deepEqual(fixture.prompts, []);
 });
 
@@ -446,13 +446,13 @@ test("a completed history import opens the cumulative native profile and preserv
   const { terminal } = fixture;
   await fixture.launch();
   await fixture.submit('/spotify import-history "/tmp/Fictional Music History.zip"', "Your listening profile");
-  await fixture.waitBody("cumulative local profile");
+  await fixture.waitBody("Imported. Here");
   assert.match(terminal.body, /Midnight Lines/u);
   const firstImport = await fixture.summary();
   assert.ok(firstImport.coverage.effective_listening_events > 0);
   await fixture.leaveProfile("Spotify history import completed.");
-  assert.match(terminal.body, /Your Moondog tasteprint/u);
-  assert.match(terminal.body, /Listening Time Machine/u);
+  assert.match(terminal.body, /Your listening, so far/u);
+  assert.match(terminal.body, /The years, one track each/u);
   await fixture.submit('/spotify import-history "/tmp/Fictional Music History.zip"', "Your listening profile");
   const repeatedImport = await fixture.summary();
   assert.equal(repeatedImport.coverage.effective_listening_events, firstImport.coverage.effective_listening_events);

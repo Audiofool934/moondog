@@ -124,7 +124,7 @@ test("listener corrections supersede, retract, and visibly update the next profi
       subjectId,
       evidenceId: avoided.correction_id,
     }).basis_summary,
-    /explicitly marked/iu,
+    /You said to keep/iu,
   );
 
   const liked = store.recordListenerCorrection({

@@ -193,7 +193,7 @@ async function createSavedConversationFixture(context, histories = [], { configu
       terminal.send("\r");
       await outputIncludes(expected);
     },
-    async openResumeFromDraft(expected = "Resume conversation") {
+    async openResumeFromDraft(expected = "Pick up where you left off") {
       terminal.output = "";
       terminal.send("\x10");
       await outputIncludes("Commands");
@@ -245,14 +245,14 @@ for (const selection of ["filtered picker", "exact session ID"]) {
     const { application, memoryStore, runtime, terminal, saved } = fixture;
     await fixture.launch();
     if (selection === "filtered picker") {
-      await fixture.submit("/resume", "Resume conversation");
+      await fixture.submit("/resume", "Pick up where you left off");
       terminal.send("Amber");
       await fixture.outputIncludes("Amber jazz");
       terminal.output = "";
       terminal.send("\r");
-      await fixture.outputIncludes("Resumed:");
+      await fixture.outputIncludes("Back in:");
     } else {
-      await fixture.submit(`/resume ${saved[0].session_id}`, "Resumed:");
+      await fixture.submit(`/resume ${saved[0].session_id}`, "Back in:");
     }
     assert.equal(application.ensureMemorySession().session_id, saved[0].session_id);
     assert.equal(runtime.restoreCount, 1);
@@ -292,12 +292,12 @@ test("resume cancellation and an unmatched filter preserve the current conversat
   assert.equal(runtime.restoreCount, 0);
   terminal.output = "";
   terminal.send("\x1b");
-  await fixture.outputIncludes("Resume cancelled. Conversation kept.");
+  await fixture.outputIncludes("Staying here.");
 
   await fixture.openResumeFromDraft();
   terminal.output = "";
   terminal.send("\x1b");
-  await fixture.outputIncludes("Resume cancelled. Conversation kept.");
+  await fixture.outputIncludes("Staying here.");
   assert.equal(application.ensureMemorySession().session_id, currentId);
   assert.deepEqual(application.currentSessionTurns(), currentTurns);
   assert.equal(runtime.restoreCount, 0);
@@ -330,8 +330,8 @@ test("/new clears the resumed runtime and starts a separate conversation without
   ]);
   const { application, memoryStore, runtime, terminal, saved } = fixture;
   await fixture.launch();
-  await fixture.submit(`/resume ${saved[0].session_id}`, "Resumed:");
-  await fixture.submit("/new", "Started a new conversation.");
+  await fixture.submit(`/resume ${saved[0].session_id}`, "Back in:");
+  await fixture.submit("/new", "A fresh start.");
   const newId = application.ensureMemorySession().session_id;
   assert.notEqual(newId, saved[0].session_id);
   assert.deepEqual(application.currentSessionTurns(), []);
@@ -403,7 +403,7 @@ test("TUI shows the listening profile after each import, then supports correctio
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
     assert.ok(terminal.output.includes(expected), terminal.output);
-    assert.doesNotMatch(terminal.output, /Local command failed/);
+    assert.doesNotMatch(terminal.output, /That didn't work/);
   };
   const submit = async (command, expected) => {
     terminal.output = "";
@@ -417,9 +417,9 @@ test("TUI shows the listening profile after each import, then supports correctio
     await waitForOutput(expected);
   };
   await submit('/spotify import-history "/tmp/Fictional Music History.zip"', "Your listening profile");
-  await leaveProfile("Your Moondog tasteprint");
-  assert.match(terminal.output, /Listening Time Machine/);
-  assert.match(terminal.output, /cumulative local profile/);
+  await leaveProfile("Your listening, so far");
+  assert.match(terminal.output, /The years, one track each/);
+  assert.match(terminal.output, /everything I can read/);
   assert.match(terminal.output, /Midnight Lines/);
   const before = await application.runLocalCommand("taste");
   await submit('/profile correct --track "Midnight Lines" --by "Mara Vale" --avoid', "Your listening profile");
@@ -432,16 +432,16 @@ test("TUI shows the listening profile after each import, then supports correctio
   assert.equal(corrected.coverage.effective_listening_events, before.coverage.effective_listening_events);
   assert.ok(terminal.output.includes("/profile retract"));
   await submit("/profile corrections", "Listener corrections");
-  await submit("/taste report", "Your explicit corrections");
+  await submit("/taste report", "What you told me");
   await submit(`/profile retract ${assertion.correction_id}`, "Your listening profile");
   await leaveProfile("Retracted the active listener correction.");
   const restored = await application.runLocalCommand("taste");
   assert.equal(restored.listener_assertions.active.length, 0);
   assert.deepEqual(restored.listening_behavior.time_capsule_tracks, before.listening_behavior.time_capsule_tracks);
-  await submit("/taste report", "Listening Time Machine");
+  await submit("/taste report", "The years, one track each");
   await submit('/spotify import-history "/tmp/Fictional Music History.zip"', "Your listening profile");
   assert.equal((await application.runLocalCommand("taste")).coverage.effective_listening_events, before.coverage.effective_listening_events);
-  await leaveProfile("Your Moondog tasteprint");
+  await leaveProfile("Your listening, so far");
   terminal.send("/quit");
   terminal.send("\r");
   await running;
@@ -471,16 +471,16 @@ for (const failure of ["import", "profile"]) {
     await waitForStart(terminal);
     terminal.send('/spotify import-history "/tmp/Fictional Music History.zip"');
     terminal.send("\r");
-    await waitFor(() => terminal.output.includes(failure === "import" ? "Command failed." : "profile review unavailable"));
+    await waitFor(() => terminal.output.includes(failure === "import" ? "didn't work." : "The profile didn't open"));
     if (failure === "import") {
       assert.equal(profileReads, 0);
       assert.match(terminal.output, /Invalid history ZIP/);
-      assert.doesNotMatch(terminal.output, /Your Moondog tasteprint/);
+      assert.doesNotMatch(terminal.output, /Your listening, so far/);
     } else {
       assert.equal(profileReads, 1);
       assert.match(terminal.output, /Spotify history import completed/);
       assert.match(terminal.output, /\/taste/);
-      assert.doesNotMatch(terminal.output, /Local command failed/);
+      assert.doesNotMatch(terminal.output, /That didn't work/);
     }
     terminal.send("/quit");
     terminal.send("\r");
@@ -599,7 +599,7 @@ for (const condition of ["empty", "forbidden"]) {
     terminal.send("\r");
     await fixture.outputIncludes("Preview recent listening");
     terminal.send("\r");
-    await fixture.outputIncludes(condition === "empty" ? "No recent listening returned" : "Spotify denied access");
+    await fixture.outputIncludes(condition === "empty" ? "No recent listening returned" : "Spotify said no");
     assert.equal(calls.commits, 0);
     assert.equal(calls.refreshes, 0);
     assert.match(fixture.screen(), /Add past listening history/u);
@@ -620,7 +620,7 @@ test("Spotify quick start authorizes for history only and resumes the guide with
   fixture.terminal.send("\r");
   await fixture.outputIncludes("Connect Spotify");
   fixture.terminal.send("\r");
-  await fixture.outputIncludes("Spotify connected.");
+  await fixture.outputIncludes("Spotify is connected.");
   assert.deepEqual(commands, [["login", "--history-only"]]);
   assert.equal(fixture.calls.commits, 0);
   assert.match(fixture.screen(), /Preview recent listening/u);
@@ -656,7 +656,7 @@ test("Spotify setup keeps the client ID after failure and returns to connection 
   await fixture.outputIncludes("Fixture could not save app settings.");
   assert.match(fixture.screen(), new RegExp(clientId, "u"));
   fixture.terminal.send("\r");
-  await fixture.outputIncludes("App configured. Connect Spotify to continue.");
+  await fixture.outputIncludes("App saved. Now connect Spotify.");
   assert.deepEqual(commands, [["configure", clientId], ["configure", clientId]]);
   assert.match(fixture.screen(), /Connect Spotify/u);
   assert.equal(fixture.calls.commits, 0);
@@ -690,8 +690,8 @@ test("Apple selection opens its XML path, saves a library receipt, and refreshes
   await fixture.outputIncludes("Your listening profile");
   assert.deepEqual(calls.refreshReceipt, receipt);
   terminal.send("\x1b");
-  await fixture.outputIncludes("Apple Music library imported");
-  assert.match(fixture.screen(), /No individual listening events were\s+created/u);
+  await fixture.outputIncludes("Your Apple Music library is in");
+  assert.match(fixture.screen(), /no plays were\s+added/u);
   assert.deepEqual(fixture.prompts, []);
 });
 
@@ -722,8 +722,8 @@ for (const [provider, moves] of [["youtube_music", 2], ["qq_music", 3], ["neteas
     await fixture.outputIncludes("Your listening profile");
     assert.deepEqual(fixture.calls.refreshReceipt, receipt);
     fixture.terminal.send("\x1b");
-    await fixture.outputIncludes("Music collection imported");
-    assert.match(fixture.screen(), /3 collection or profile\s+observations added/u);
+    await fixture.outputIncludes("Your collection is in");
+    assert.match(fixture.screen(), /3 saved songs, follows, or\s+playlist entries/u);
     assert.deepEqual(fixture.prompts, []);
   });
 }
@@ -744,7 +744,7 @@ for (const provider of ["spotify", "apple"]) {
     await fixture.outputIncludes(provider === "apple" ? "Apple Music: past listening history" : "Spotify: past listening history");
     if (provider === "spotify") terminal.send("\x1b[B");
     terminal.send("\r");
-    await fixture.outputIncludes("Open this page in your browser:");
+    await fixture.outputIncludes("Here's the link:");
     assert.deepEqual(destinations, [provider === "apple" ? "applePrivacy" : "spotify"]);
     assert.match(fixture.screen(), provider === "apple" ? /privacy\.apple\.com/u : /spotify\.com\/account\/privacy/u);
     terminal.output = "";
@@ -846,29 +846,29 @@ for (const refreshError of [false, true]) {
     terminal.output = "";
     terminal.send("\r");
     terminal.send("\r");
-    await fixture.outputIncludes("Saving listening history locally");
+    await fixture.outputIncludes("Saving your history on this machine");
     assert.equal(calls.commits, 1);
     assert.equal(calls.refreshes, 0);
     finishCommit({ inserted_events: 2, duplicate_events: 0 });
-    await fixture.outputIncludes(refreshError ? "History saved; profile refresh" : "Your listening profile");
+    await fixture.outputIncludes(refreshError ? "History saved. The profile needs another try" : "Your listening profile");
     assert.equal(calls.commits, 1);
     assert.equal(calls.closes, 1);
     assert.equal(calls.refreshes, 1);
     assert.equal(calls.profiles, refreshError ? 0 : 1);
     if (!refreshError) {
-      assert.match(stripVTControlCharacters(terminal.output), /Import complete/u);
+      assert.match(stripVTControlCharacters(terminal.output), /Imported\./u);
       terminal.output = "";
       terminal.send("\x1b");
-      await fixture.outputIncludes("Listening history imported");
+      await fixture.outputIncludes("Your history is in");
     }
     const transcript = stripVTControlCharacters(terminal.output);
-    assert.match(transcript, /2 new listening records · 0 already present/u);
+    assert.match(transcript, /2 new plays\./u);
     assert.match(transcript, /Chosen History\.zip/u);
     if (refreshError) {
-      assert.ok(transcript.indexOf("2 new listening records") < transcript.indexOf("Your history was saved"));
+      assert.ok(transcript.indexOf("2 new plays") < transcript.indexOf("Your history is saved"));
       assert.match(transcript, /\/reload.*\/taste/su);
-      assert.doesNotMatch(transcript, /Import was not saved/u);
-      await fixture.submit("/reload", "Runtime reloaded.");
+      assert.doesNotMatch(transcript, /Not saved\. See the message/u);
+      await fixture.submit("/reload", "Reloaded.");
       assert.equal(calls.refreshes, 2, "reload retries the saved import's data refresh");
       await fixture.submit("/taste", "Your listening profile");
       assert.equal(calls.commits, 1, "profile recovery must not repeat the import");
@@ -884,7 +884,7 @@ test("guided import closes a late inspection handle after shutdown without commi
   const { terminal, calls, prepared } = fixture;
   terminal.send("/import /tmp/Chosen History.zip");
   terminal.send("\r");
-  await fixture.outputIncludes("Inspecting the file");
+  await fixture.outputIncludes("Reading the file");
   assert.equal(calls.paths.length, 1);
   fixture.signalTarget.emit("SIGTERM");
   await fixture.running;
@@ -1039,7 +1039,7 @@ test("Ctrl+C preserves streamed text and reports cancellation instead of failure
 
   assert.equal(runtime.abortCount, 1);
   assert.match(terminal.output, /partial answer/);
-  assert.doesNotMatch(terminal.output, /Runtime error|model request failed/i);
+  assert.doesNotMatch(terminal.output, /Something went wrong|model couldn't answer/i);
 
   terminal.send("/quit");
   terminal.send("\r");
@@ -1119,14 +1119,14 @@ test("TUI renders trusted capability labels for tool lifecycle events", async ()
   terminal.send("plan from my library");
   terminal.send("\r");
   await promptCompleted;
-  await waitFor(() => stripVTControlCharacters(terminal.output).includes("Tools · 1 completed, 1 failed"));
+  await waitFor(() => stripVTControlCharacters(terminal.output).includes("Tools · 1 done, 1 failed"));
 
   assert.equal(replacementCallbackSeen, true);
   assert.match(terminal.output, /Search your music library\.\.\./);
-  assert.match(terminal.output, /Preparing your answer/);
+  assert.match(terminal.output, /Putting it together/);
   assert.match(terminal.output, /Explain profile evidence\.\.\./);
-  assert.match(terminal.output, /Explain profile evidence failed/);
-  assert.match(stripVTControlCharacters(terminal.output), /Tools · 1 completed, 1 failed/);
+  assert.match(terminal.output, /Explain profile evidence didn't work/);
+  assert.match(stripVTControlCharacters(terminal.output), /Tools · 1 done, 1 failed/);
   assert.doesNotMatch(
     terminal.output,
     /PRIVATE_MACHINE_TOOL_NAME|PRIVATE_SECOND_TOOL_NAME/,
@@ -1170,8 +1170,8 @@ test("TUI reports a model failure and accepts the next prompt", async () => {
   await waitForStart(terminal);
   terminal.send("first prompt");
   terminal.send("\r");
-  await waitFor(() => terminal.output.includes("The model request failed."));
-  assert.match(terminal.output, /Runtime error: Synthetic provider outage/);
+  await waitFor(() => terminal.output.includes("The model couldn't answer."));
+  assert.match(terminal.output, /Something went wrong: Synthetic provider outage/);
 
   terminal.send("second prompt");
   terminal.send("\r");
@@ -1224,15 +1224,15 @@ for (const toolsExecuted of [false, true]) {
     await failedPrompt;
     await waitFor(() => terminal.output.includes("ECONNRESET"));
     const output = stripVTControlCharacters(terminal.output);
-    assert.match(output, /Retrying model connection 1\/2/u);
-    assert.doesNotMatch(output, /Runtime error:|The model request failed/u);
+    assert.match(output, /Trying again \(1\/2\)/u);
+    assert.doesNotMatch(output, /Something went wrong:|The model couldn't answer/u);
     assert.equal(prompts.length, 1);
     if (toolsExecuted) {
-      assert.match(output, /Check results before repeating/u);
-      assert.doesNotMatch(output, /recall your message/u);
+      assert.match(output, /Check what happened/u);
+      assert.doesNotMatch(output, /bring your message\s+back/u);
       terminal.send("Check the current state.");
     } else {
-      assert.match(output, /recall your message/u);
+      assert.match(output, /bring your message\s+back/u);
       terminal.send("\u001b[A");
     }
     terminal.send("\r");
@@ -1289,12 +1289,12 @@ test("TUI can select a Pi model and use the rebuilt runtime", async () => {
   await waitForStart(terminal);
   terminal.send("/model");
   terminal.send("\r");
-  await waitFor(() => terminal.output.includes("Choose a Pi provider"));
+  await waitFor(() => terminal.output.includes("Choose a model provider"));
   terminal.send("\r");
   await waitFor(() => terminal.output.includes("Choose a model for openai-codex"));
   terminal.output = "";
   terminal.send("\x1b");
-  await waitFor(() => terminal.output.includes("Choose a Pi provider"));
+  await waitFor(() => terminal.output.includes("Choose a model provider"));
   assert.equal(selected, undefined, "returning to providers must not rebuild the runtime");
   terminal.output = "";
   terminal.send("\r");
@@ -1308,7 +1308,7 @@ test("TUI can select a Pi model and use the rebuilt runtime", async () => {
   });
   const selectedModelOutput = stripVTControlCharacters(terminal.output);
   assert.match(selectedModelOutput, /openai-codex \/ gpt-5\.6-terra/u);
-  assert.match(selectedModelOutput, /Using Pi model openai-codex\/gpt-5\.6-terra/u);
+  assert.match(selectedModelOutput, /Now talking through openai-codex\/gpt-5\.6-terra/u);
 
   terminal.send("hello selected model");
   terminal.send("\r");
@@ -1351,7 +1351,7 @@ test("TUI can start OAuth and resume with reloaded authentication", async () => 
   await waitForStart(terminal);
   terminal.send("/auth openai-codex");
   terminal.send("\r");
-  await waitFor(() => terminal.output.includes("Authentication complete."));
+  await waitFor(() => terminal.output.includes("Signed in."));
 
   assert.equal(authCount, 1);
   assert.equal(terminal.startCount, 2);
@@ -1387,10 +1387,10 @@ for (const command of ["/auth deepseek", "/spotify login"]) {
     cancelLogin(new Error("Fixture login was cancelled."));
     await waitFor(() => terminal.output.includes("Fixture login was cancelled."));
     assert.equal(terminal.startCount, 2);
-    assert.match(terminal.output, /Command failed\./u);
+    assert.match(terminal.output, /didn't work\./u);
     terminal.send("/help");
     terminal.send("\r");
-    await waitFor(() => terminal.output.includes("Find a command here"));
+    await waitFor(() => terminal.output.includes("Type / to browse every command"));
   });
 }
 
@@ -1425,11 +1425,11 @@ test("TUI connects the selected API provider and keeps that model through authen
   await waitForStart(terminal);
   terminal.send("/model deepseek deepseek-v4-flash");
   terminal.send("\r");
-  await waitFor(() => terminal.output.includes("Model saved; runtime offline."));
-  assert.match(stripVTControlCharacters(terminal.output), /auth deepseek/);
+  await waitFor(() => terminal.output.includes("Model saved, not connected yet."));
+  assert.match(stripVTControlCharacters(terminal.output), /auth\s+deepseek/);
   terminal.send("/auth");
   terminal.send("\r");
-  await waitFor(() => terminal.output.includes("Authentication complete."));
+  await waitFor(() => terminal.output.includes("Signed in."));
   assert.deepEqual(authProviders, ["deepseek"]);
   assert.deepEqual(selections, [
     { provider: "deepseek", model: "deepseek-v4-flash" },
@@ -1452,10 +1452,10 @@ test("TUI offers API providers before any model is selected", async (context) =>
   context.after(async () => { signalTarget.emit("SIGTERM"); await running; });
   await waitForStart(terminal);
   terminal.send("/auth"); terminal.send("\r");
-  await waitFor(() => stripVTControlCharacters(terminal.output).includes("Connect a model provider"));
+  await waitFor(() => stripVTControlCharacters(terminal.output).includes("Sign in to a model provider"));
   assert.match(stripVTControlCharacters(terminal.output), /Moonshot AI \(Kimi\)/);
   terminal.send("\r");
-  await waitFor(() => terminal.output.includes("Authentication complete."));
+  await waitFor(() => terminal.output.includes("Signed in."));
   assert.deepEqual(authProviders, ["moonshotai"]);
 });
 
@@ -1508,7 +1508,7 @@ test("TUI can authorize Spotify and reload Spotify agent tools", async () => {
   await waitForStart(terminal);
   terminal.send("/spotify login client_id_12345678");
   terminal.send("\r");
-  await waitFor(() => terminal.output.includes("Spotify login complete."));
+  await waitFor(() => terminal.output.includes("Spotify login: done."));
 
   assert.deepEqual(calls, [["login", "client_id_12345678"]]);
   assert.equal(terminal.startCount, 2);
@@ -1542,7 +1542,7 @@ test("TUI web commands work without a model and Ctrl+C cancels only the local re
   await waitFor(() => webSignal !== undefined);
   assert.deepEqual(received, ["search", "Artist interview"]);
   terminal.send("\u0003");
-  await waitFor(() => terminal.output.includes("Web research cancelled."));
+  await waitFor(() => terminal.output.includes("Stopped the lookup."));
   assert.equal(webSignal.aborted, true);
   assert.equal(runtime.abortCount, 0);
   terminal.send('/web status');
@@ -1866,15 +1866,15 @@ test("home, appearance controls, and the import guide never call a model or disc
   };
   await submit("Retained listening request", "Retained listening request");
   await submit("/home", "M O O N D O G");
-  await submit("/theme paper", "Paper theme.");
-  await submit("/theme charcoal", "Charcoal theme.");
+  await submit("/theme paper", "Paper theme,");
+  await submit("/theme charcoal", "Charcoal theme,");
   await submit("/import", "Bring your music");
   assert.match(terminal.output, /Apple Music/u);
   assert.doesNotMatch(terminal.output, /spotify import-history/u);
   terminal.output = "";
   terminal.send("\x1b");
   await waitFor(() => terminal.output.includes("M O O N D O G"));
-  await submit("/theme nonexistent", "Usage: /theme");
+  await submit("/theme nonexistent", "Use /theme");
   assert.match(terminal.output, /Retained listening request/u);
   assert.equal(modelCalls, 0);
 });

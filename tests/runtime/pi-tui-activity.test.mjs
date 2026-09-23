@@ -82,11 +82,11 @@ test("a pending local command has truthful cancellation hints and keeps the draf
   assert.doesNotMatch(fixture.footer(), /ctrl\+c cancel/);
   fixture.send("my next listening thought");
   fixture.send("\x03");
-  await until(() => fixture.footer().includes("cannot be cancelled"));
+  await until(() => fixture.footer().includes("can't be stopped halfway"));
   assert.equal(fixture.runtime.aborts, 0, "a local command must not abort an unrelated model runtime");
   assert.match(fixture.body(), /my next listening thought/);
   gate.resolve();
-  await until(() => fixture.footer().includes("Spotify status complete."));
+  await until(() => fixture.footer().includes("Spotify status: done."));
   assert.match(fixture.body(), /Local status result/);
   assert.match(fixture.body(), /my next listening thought/);
 });
@@ -119,7 +119,7 @@ test("overlapping calls retain the active identity and leave one compact outcome
   callbacks.onTextDelta("A grounded result.");
   gate.resolve({ status: "completed", text: "A grounded result." });
   await until(() => fixture.footer().includes("Ready."));
-  assert.match(fixture.body(), /Tools · 1 completed, 1 failed/);
+  assert.match(fixture.body(), /Tools · 1 done, 1 failed/);
   assert.doesNotMatch(fixture.body(), /PRIVATE_TOOL/);
   assert.equal(fixture.lines.filter((line) => line.includes("Tools ·")).length, 1);
   fixture.terminal.columns = 100;
@@ -143,12 +143,12 @@ test("cancel during tools is idempotent and does not label unconfirmed work succ
   fixture.send("\x03");
   fixture.send("\x03");
   callbacks.onToolStart({ toolCallId: "two", label: "Read public music sources" });
-  await until(() => fixture.footer().includes("Cancelling the active request"));
+  await until(() => fixture.footer().includes("Stopping..."));
   assert.equal(fixture.runtime.aborts, 1);
   callbacks.onToolEnd({ toolCallId: "one", label: "Search your music library", isError: false });
   gate.resolve({ status: "aborted", text: "" });
   await until(() => fixture.footer().includes("Cancelled."));
-  assert.match(fixture.body(), /Tools · 1 completed, 1 unconfirmed/);
+  assert.match(fixture.body(), /Tools · 1 done, 1 unfinished/);
   assert.doesNotMatch(fixture.body(), /2 completed/);
 });
 

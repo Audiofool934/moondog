@@ -176,8 +176,8 @@ test("rediscovery projection turns dormant attention into bounded listen-again p
 
   const explanation = projected.explanations.get(candidates[0].evidence_id);
   assert.equal(explanation.claim.dimension, "listening.rediscovery_candidate");
-  assert.match(explanation.basis_summary, /quiet for [0-9]+ days/iu);
-  assert.match(explanation.interpretation_limit, /not proof of liking/iu);
+  assert.match(explanation.basis_summary, /nothing for [0-9]+ days/iu);
+  assert.match(explanation.interpretation_limit, /not proof you liked it/iu);
 });
 
 test("time capsule projection selects diverse landmarks across retained years", () => {
@@ -267,5 +267,5 @@ test("time capsule projection selects diverse landmarks across retained years", 
     explanation.claim.dimension,
     "listening.time_capsule_representative",
   );
-  assert.match(explanation.interpretation_limit, /not proof that it defined/iu);
+  assert.match(explanation.interpretation_limit, /doesn't mean it defined the year/iu);
 });

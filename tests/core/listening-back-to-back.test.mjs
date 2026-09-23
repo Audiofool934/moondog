@@ -131,8 +131,8 @@ test("back-to-back tracks expose adjacent repeat bursts without claiming intent"
 
   const explanation = first.explanations.get(tracks[0].evidence_id);
   assert.equal(explanation.claim.dimension, "listening.back_to_back");
-  assert.match(explanation.basis_summary, /5 retained plays form 2 adjacent/iu);
-  assert.match(explanation.interpretation_limit, /do not prove.*intentional/iu);
+  assert.match(explanation.basis_summary, /played it again right away 2 times, 5 plays in all/iu);
+  assert.match(explanation.interpretation_limit, /can't tell which/iu);
   assert.ok(
     first.summary.limitations.some((item) =>
       item.includes("Played back to back requires"),

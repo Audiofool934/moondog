@@ -298,12 +298,12 @@ test("listening patterns expose monthly pulse, multi-track release depth, and bo
     summary.listening_behavior.release_depth[0].evidence_id,
   );
   assert.equal(releaseEvidence.claim.dimension, "taste.release_depth");
-  assert.match(releaseEvidence.interpretation_limit, /does not prove full-album/u);
+  assert.match(releaseEvidence.interpretation_limit, /doesn't mean you played the whole album/u);
   const sessionEvidence = explanations.get(
     summary.listening_behavior.session_summary.evidence_id,
   );
   assert.equal(sessionEvidence.claim.dimension, "listening.session_shape");
-  assert.match(sessionEvidence.interpretation_limit, /approximation/u);
+  assert.match(sessionEvidence.interpretation_limit, /estimated/u);
   const pulseEvidence = explanations.get(
     summary.listening_behavior.monthly_activity.evidence_id,
   );
@@ -313,8 +313,8 @@ test("listening patterns expose monthly pulse, multi-track release depth, and bo
     summary.listening_behavior.listening_seasons.evidence_id,
   );
   assert.equal(seasonEvidence.claim.dimension, "listening.seasons");
-  assert.match(seasonEvidence.interpretation_limit, /not discovery/u);
-  assert.match(seasonEvidence.interpretation_limit, /not establish preference/u);
+  assert.match(seasonEvidence.interpretation_limit, /not always when you found it/u);
+  assert.match(seasonEvidence.interpretation_limit, /describes that season only/u);
 
   const longSeasonRows = Array.from({ length: 82 }, (_, index) => {
     const year = 2000 + Math.floor(index / 4);

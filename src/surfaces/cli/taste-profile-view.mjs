@@ -42,7 +42,7 @@ function ends(left, right, width) {
 }
 
 function stanceLabel(subject) {
-  return subject?.stance === "like" ? "You like this" : subject?.stance === "avoid" ? "You avoid this" : "";
+  return subject?.stance === "like" ? "You like this" : subject?.stance === "avoid" ? "You asked me to keep this out" : "";
 }
 
 /** A terminal-native, searchable profile with a live reading beside its subjects. */
@@ -183,7 +183,7 @@ export class TasteProfileView {
     if (height <= 0) return [];
     const subject = this.getSelectedItem();
     if (!subject) return Array(height).fill("");
-    const heading = theme.bold(inline(subject.label) || "Selected reading");
+    const heading = theme.bold(inline(subject.label) || "Selected");
     const subtitle = inline(subject.subtitle);
     const stance = stanceLabel(subject);
     const prefix = [heading];
@@ -192,7 +192,7 @@ export class TasteProfileView {
     if (height >= 8) prefix.push("");
     const sourceLines = Array.isArray(subject.detailLines) && subject.detailLines.length
       ? subject.detailLines
-      : ["No additional evidence for this reading yet."];
+      : ["Nothing more to show for this one yet."];
     const detail = sourceLines.flatMap((line) => wrapTextWithAnsi(clean(line), Math.max(1, width)));
     const available = Math.max(0, height - prefix.length);
     const scrolls = detail.length > available;
@@ -204,7 +204,7 @@ export class TasteProfileView {
     const lines = [...prefix, ...visible];
     if (scrolls && available >= 2) {
       const range = `${this.detailOffset + 1}–${Math.min(detail.length, this.detailOffset + contentHeight)}/${detail.length}`;
-      lines.push(theme.faint(ends("PgUp/PgDn reading", range, width)));
+      lines.push(theme.faint(ends("PgUp/PgDn to scroll", range, width)));
     }
     return Array.from({ length: height }, (_, index) => lines[index] ?? "");
   }
@@ -214,10 +214,10 @@ export class TasteProfileView {
     this.detailMaxOffset = 0;
     const filtered = this.entries.length > 0;
     const lines = filtered
-      ? ["No matching readings.", "", "Try fewer search words, or Tab to another category."]
+      ? ["Nothing matches that.", "", "Try fewer words, or press Tab for another list."]
       : (Array.isArray(this.model.emptyLines) && this.model.emptyLines.length
         ? this.model.emptyLines
-        : ["Your listening profile starts with your history.", "", "Import a saved archive to explore artists and tracks here."]);
+        : ["Nothing to look at yet.", "", "Import your history or library and it will show up here."]);
     const wrapped = lines.flatMap((line) => wrapTextWithAnsi(clean(line), width));
     return Array.from({ length: height }, (_, index) => index === 0
       ? theme.bold(wrapped[index] ?? "") : theme.muted(wrapped[index] ?? ""));

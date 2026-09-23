@@ -82,19 +82,23 @@ function formatListeningTime(minutes) {
   return `${Math.round((minutes / 60) * 10) / 10} h`;
 }
 
+function plural(value, one, many = `${one}s`) {
+  return `${formatInteger(value)} ${value === 1 ? one : many}`;
+}
+
 function formatArtistSignal(item) {
   const details = [];
   if (Number.isInteger(item.play_count)) {
-    details.push(`${formatInteger(item.play_count)} plays`);
+    details.push(plural(item.play_count, "play"));
   }
   if (Number.isFinite(item.listening_minutes)) {
     details.push(formatListeningTime(item.listening_minutes));
   }
   if (Number.isInteger(item.distinct_tracks)) {
-    details.push(`${formatInteger(item.distinct_tracks)} tracks`);
+    details.push(plural(item.distinct_tracks, "track"));
   }
   return `- ${safeInlineText(item.name)}${
-    details.length > 0 ? ` - ${details.join(", ")}` : ""
+    details.length > 0 ? ` · ${details.join(", ")}` : ""
   }`;
 }
 
@@ -103,87 +107,80 @@ function formatTrackSignal(item) {
   const artist = safeInlineText(item.artist_credit);
   const details = [];
   if (Number.isInteger(item.play_count)) {
-    details.push(`${formatInteger(item.play_count)} plays`);
+    details.push(plural(item.play_count, "play"));
   }
   if (Number.isFinite(item.listening_minutes)) {
     details.push(formatListeningTime(item.listening_minutes));
   }
   return `- ${label}${artist ? ` - ${artist}` : ""}${
-    details.length > 0 ? ` - ${details.join(", ")}` : ""
+    details.length > 0 ? ` · ${details.join(", ")}` : ""
   }`;
 }
 
+// Attention alone is the default reading, so only stronger evidence is worth naming.
+const signalPhrases = {
+  "historical attention only": null,
+  "saved-library state": "saved in your library",
+  "private playlist curation": "on one of your playlists",
+  "explicit listener preference": "you said you like it",
+};
+
+function signalPhrase(value) {
+  const text = safeInlineText(value);
+  if (!text) return null;
+  return Object.hasOwn(signalPhrases, text) ? signalPhrases[text] : text;
+}
+
+function withDetails(base, details) {
+  const present = details.filter(Boolean);
+  return `${base}${present.length > 0 ? ` · ${present.join(", ")}` : ""}`;
+}
+
 function formatRediscoveryTrack(item) {
-  const base = formatTrackSignal(item);
-  const details = [
+  return withDetails(formatTrackSignal(item), [
     Number.isInteger(item.quiet_days)
-      ? `${formatInteger(item.quiet_days)} days quiet`
+      ? `quiet for ${plural(item.quiet_days, "day")}`
       : null,
-    Number.isInteger(item.peak_year)
-      ? `strongest year ${item.peak_year}`
-      : null,
-    safeInlineText(item.rediscovery_signal)
-      ? `basis: ${safeInlineText(item.rediscovery_signal)}`
-      : null,
-  ].filter(Boolean);
-  return `${base}${details.length > 0 ? ` - ${details.join(", ")}` : ""}`;
+    Number.isInteger(item.peak_year) ? `biggest in ${item.peak_year}` : null,
+    signalPhrase(item.rediscovery_signal),
+  ]);
 }
 
 function formatHistoricalReturnTrack(item) {
-  const base = formatTrackSignal(item);
-  const details = [
+  return withDetails(formatTrackSignal(item), [
     Number.isInteger(item.return_count)
-      ? `${formatInteger(item.return_count)} observed ${item.return_count === 1 ? "return" : "returns"}`
+      ? `came back ${item.return_count === 1 ? "once" : `${formatInteger(item.return_count)} times`}`
       : null,
     Number.isInteger(item.longest_gap_days)
-      ? `longest gap ${formatInteger(item.longest_gap_days)} days`
+      ? `longest time away ${plural(item.longest_gap_days, "day")}`
       : null,
-    Number.isInteger(item.latest_return_gap_days)
-      ? `latest return after ${formatInteger(item.latest_return_gap_days)} days`
-      : null,
-    safeInlineText(item.historical_return_signal)
-      ? `basis: ${safeInlineText(item.historical_return_signal)}`
-      : null,
-  ].filter(Boolean);
-  return `${base}${details.length > 0 ? ` - ${details.join(", ")}` : ""}`;
+    signalPhrase(item.historical_return_signal),
+  ]);
 }
 
 function formatBackToBackTrack(item) {
-  const base = formatTrackSignal(item);
-  const details = [
+  return withDetails(formatTrackSignal(item), [
     Number.isInteger(item.maximum_consecutive_plays)
-      ? `${formatInteger(item.maximum_consecutive_plays)} plays in longest adjacent sequence`
+      ? `up to ${formatInteger(item.maximum_consecutive_plays)} in a row`
       : null,
-    Number.isInteger(item.burst_count)
-      ? `${formatInteger(item.burst_count)} bounded ${item.burst_count === 1 ? "sequence" : "sequences"}`
+    Number.isInteger(item.burst_count) && item.burst_count > 1
+      ? `${formatInteger(item.burst_count)} separate runs`
       : null,
-    Number.isInteger(item.plays_in_bursts)
-      ? `${formatInteger(item.plays_in_bursts)} plays across sequences`
-      : null,
-    Number.isFinite(item.listening_minutes_in_bursts)
-      ? `${formatListeningTime(item.listening_minutes_in_bursts)} across sequences`
-      : null,
-  ].filter(Boolean);
-  return `${base}${details.length > 0 ? ` - ${details.join(", ")}` : ""}`;
+  ]);
 }
 
 function formatTimeCapsuleTrack(item) {
   const label = safeInlineText(item.label);
   const artist = safeInlineText(item.artist_credit);
-  const details = [
-    Number.isInteger(item.year_play_count)
-      ? `${formatInteger(item.year_play_count)} plays in year`
-      : null,
-    Number.isFinite(item.year_listening_minutes)
-      ? `${formatListeningTime(item.year_listening_minutes)} in year`
-      : null,
-    safeInlineText(item.representative_signal)
-      ? `basis: ${safeInlineText(item.representative_signal)}`
-      : null,
-  ].filter(Boolean);
-  return `- ${Number.isInteger(item.capsule_year) ? item.capsule_year : "Unknown year"}: ${label}${artist ? ` - ${artist}` : ""}${
-    details.length > 0 ? ` - ${details.join(", ")}` : ""
-  }`;
+  return withDetails(
+    `- ${Number.isInteger(item.capsule_year) ? item.capsule_year : "Unknown year"}  ${label}${artist ? ` - ${artist}` : ""}`,
+    [
+      Number.isInteger(item.year_play_count)
+        ? `${plural(item.year_play_count, "play")} that year`
+        : null,
+      signalPhrase(item.representative_signal),
+    ],
+  );
 }
 
 function formatHistoryArc(item) {
@@ -192,49 +189,43 @@ function formatHistoryArc(item) {
     details.push(formatListeningTime(item.listening_minutes));
   }
   if (Number.isInteger(item.event_count)) {
-    details.push(`${formatInteger(item.event_count)} events`);
+    details.push(plural(item.event_count, "play"));
   }
   if (Number.isInteger(item.distinct_tracks)) {
-    details.push(`${formatInteger(item.distinct_tracks)} tracks`);
+    details.push(plural(item.distinct_tracks, "track"));
   }
-  if (Number.isInteger(item.first_observed_tracks)) {
-    details.push(`${formatInteger(item.first_observed_tracks)} first observed`);
+  if (Number.isInteger(item.first_observed_tracks) && item.first_observed_tracks > 0) {
+    details.push(`${formatInteger(item.first_observed_tracks)} new`);
   }
   const topArtist = safeInlineText(item.top_artist?.name);
-  if (topArtist) details.push(`most heard artist: ${topArtist}`);
+  if (topArtist) details.push(`mostly ${topArtist}`);
   return `- ${Number.isInteger(item.year) ? item.year : "Unknown year"}${
-    details.length > 0 ? ` - ${details.join(", ")}` : ""
+    details.length > 0 ? ` · ${details.join(", ")}` : ""
   }`;
 }
 
 function formatListeningSeason(item) {
   const key = safeInlineText(item.key).replace("-", " ");
-  const range = [safeInlineText(item.start_month), safeInlineText(item.end_month)]
-    .filter(Boolean)
-    .join(" to ");
   if (!Number.isInteger(item.event_count) || item.event_count === 0) {
-    return `- ${key || "Unknown season"}${range ? ` (${range} UTC)` : ""} - no retained eligible events`;
+    return `- ${key || "Unknown season"} · nothing in your history`;
   }
-  const details = [
+  const signature = safeInlineText(item.signature_track?.label);
+  const signatureArtist = safeInlineText(item.signature_track?.artist_credit);
+  return withDetails(`- ${key || "Unknown season"}`, [
     Number.isFinite(item.listening_minutes)
       ? formatListeningTime(item.listening_minutes)
       : null,
-    `${formatInteger(item.event_count)} events`,
-    `${formatInteger(item.distinct_tracks)} tracks`,
-    `${formatInteger(item.first_observed_tracks)} first observed`,
-    `${formatInteger(item.returning_tracks)} seen earlier`,
+    plural(item.event_count, "play"),
+    Number.isInteger(item.first_observed_tracks) && item.first_observed_tracks > 0
+      ? `${formatInteger(item.first_observed_tracks)} new`
+      : null,
     safeInlineText(item.leading_artist?.name)
-      ? `leading artist: ${safeInlineText(item.leading_artist.name)}`
+      ? `mostly ${safeInlineText(item.leading_artist.name)}`
       : null,
-    safeInlineText(item.signature_track?.label)
-      ? `signature track: ${safeInlineText(item.signature_track.label)}${
-          safeInlineText(item.signature_track?.artist_credit)
-            ? ` - ${safeInlineText(item.signature_track.artist_credit)}`
-            : ""
-        }`
+    signature
+      ? `top song ${signature}${signatureArtist ? ` - ${signatureArtist}` : ""}`
       : null,
-  ].filter(Boolean);
-  return `- ${key || "Unknown season"}${range ? ` (${range} UTC)` : ""} - ${details.join(", ")}`;
+  ]);
 }
 
 function formatListenerAssertion(item) {
@@ -242,27 +233,23 @@ function formatListenerAssertion(item) {
   const artist = safeInlineText(item.artist_credit);
   const target = artist ? `${label} - ${artist}` : label;
   const note = safeInlineText(item.note);
-  return `- ${item.stance === "avoid" ? "Avoid" : "Like"} ${safeInlineText(
-    item.entity_type,
-  )}: ${target} - correction ${safeInlineText(item.correction_id)}${
-    note ? ` - ${note}` : ""
-  }`;
+  const entity = safeInlineText(item.entity_type);
+  return `- ${item.stance === "avoid" ? "Keep out" : "Like"}${entity ? ` (${entity})` : ""}: ${target}${
+    note ? ` · "${note}"` : ""
+  } · ${safeInlineText(item.correction_id)}`;
 }
 
-function appendTasteSection(lines, title, values, formatter) {
+function appendTasteSection(lines, title, values, formatter, subtitle) {
   if (!Array.isArray(values) || values.length === 0) return;
-  lines.push("", `## ${title}`, "", ...values.map(formatter));
+  lines.push("", `## ${title}`, "", ...(subtitle ? [`*${subtitle}*`, ""] : []), ...values.map(formatter));
 }
 
-function formatBehaviorContextLine(value, total, label, coverageLabel) {
+function formatBehaviorContextLine(value, total, label) {
   if (!Number.isInteger(value) || total === 0) return null;
   const validTotal = Number.isInteger(total) && total >= value && total > 0;
-  const share = validTotal ? Math.round((value / total) * 1_000) / 10 : null;
-  return `- ${label}: ${formatInteger(value)}${
-    validTotal
-      ? ` of ${formatInteger(total)} ${coverageLabel} (${share.toLocaleString("en-US")}%)`
-      : ""
-  }`;
+  if (!validTotal) return `- ${label}: ${formatInteger(value)}`;
+  const share = Math.round((value / total) * 100);
+  return `- ${label}: ${share}% (${formatInteger(value)} of ${formatInteger(total)})`;
 }
 
 function formatTaste(profile) {
@@ -277,205 +264,140 @@ function formatTaste(profile) {
     typeof listeningRange?.latest === "string"
       ? `${listeningRange.earliest.slice(0, 10)} to ${listeningRange.latest.slice(0, 10)}`
       : null;
+  const oneOff = profile.preview_source?.persistent_import === false;
+  const hours = !durationUnavailable && Number.isFinite(coverage.listening_hours)
+    ? `${coverage.listening_hours.toLocaleString("en-US")} h`
+    : null;
   const lines = [
-    "# Your Moondog tasteprint",
+    "# Your listening, so far",
     "",
-    "A private, local projection of what your music data can support today.",
+    oneOff
+      ? "A one-off reading of the file you chose. Nothing was saved to your profile."
+      : "Read from your own files. It stays on this machine.",
     "",
-    "## Coverage",
+    "## What I'm reading from",
     "",
-    `- Effective listening events: ${formatInteger(
-      coverage.effective_listening_events,
-    )}`,
-    `- Listening time: ${
-      !durationUnavailable && Number.isFinite(coverage.listening_hours)
-        ? `${coverage.listening_hours.toLocaleString("en-US")} h`
-        : "unknown"
-    }`,
-    `- Events with supplied played duration: ${formatInteger(
-      coverage.events_with_played_duration,
-    )}`,
-    `- Distinct listened tracks: ${formatInteger(coverage.listening_tracks)}`,
-    ...(Number.isInteger(coverage.cross_format_track_links)
-      ? [
-          `- Cross-format track links: ${formatInteger(
-            coverage.cross_format_track_links,
-          )} provisional identities across ${formatInteger(
-            coverage.cross_format_linked_events,
-          )} effective events`,
-        ]
-      : []),
-    ...(Number.isInteger(coverage.cross_format_ambiguous_tracks) &&
-    coverage.cross_format_ambiguous_tracks > 0
-      ? [
-          `- Ambiguous cross-format identities kept separate: ${formatInteger(
-            coverage.cross_format_ambiguous_tracks,
-          )} across ${formatInteger(
-            coverage.cross_format_ambiguous_events,
-          )} effective events`,
-        ]
-      : []),
-    `- Saved library tracks: ${formatInteger(coverage.saved_tracks ?? coverage.spotify_saved_tracks)}`,
-    `- Playlist memberships: ${formatInteger(
-      coverage.playlist_memberships ?? coverage.spotify_playlist_memberships,
-    )}`,
   ];
+  const summary = [
+    Number.isInteger(coverage.effective_listening_events) ? plural(coverage.effective_listening_events, "play") : null,
+    hours,
+    Number.isInteger(coverage.listening_tracks) ? plural(coverage.listening_tracks, "track") : null,
+  ].filter(Boolean);
+  if (summary.length > 0) lines.push(`- ${summary.join(" · ")}`);
+  if (range) lines.push(`- ${range}`);
+  const saved = coverage.saved_tracks ?? coverage.spotify_saved_tracks;
+  if (Number.isInteger(saved) && saved > 0) lines.push(`- ${plural(saved, "saved track")}`);
+  const memberships = coverage.playlist_memberships ?? coverage.spotify_playlist_memberships;
+  if (Number.isInteger(memberships) && memberships > 0) lines.push(`- ${plural(memberships, "song", "songs")} on your playlists`);
   for (const source of coverage.collection_sources ?? []) {
-    if (source.tracks > 0) lines.push(`- ${safeInlineText(source.label)} collection: ${formatInteger(source.tracks)} tracks`);
+    if (source.tracks > 0) lines.push(`- ${safeInlineText(source.label)}: ${plural(source.tracks, "track")}`);
   }
-  if (range) lines.push(`- Listening range: ${range}`);
-  if (Number.isInteger(context.incognito_events_excluded)) {
-    lines.push(
-      `- Incognito events excluded from taste inference: ${formatInteger(
-        context.incognito_events_excluded,
-      )}`,
-    );
+  if (!durationUnavailable && Number.isInteger(coverage.events_with_played_duration) &&
+    Number.isInteger(coverage.effective_listening_events) &&
+    coverage.events_with_played_duration < coverage.effective_listening_events) {
+    lines.push(`- Listening time is known for ${formatInteger(coverage.events_with_played_duration)} of those plays`);
+  }
+  if (Number.isInteger(coverage.cross_format_track_links) && coverage.cross_format_track_links > 0) {
+    lines.push(`- ${plural(coverage.cross_format_track_links, "track")} matched across your two Spotify exports`);
+  }
+  if (Number.isInteger(coverage.cross_format_ambiguous_tracks) && coverage.cross_format_ambiguous_tracks > 0) {
+    lines.push(`- ${plural(coverage.cross_format_ambiguous_tracks, "track")} kept apart because the match was unclear`);
+  }
+  if (Number.isInteger(context.incognito_events_excluded) && context.incognito_events_excluded > 0) {
+    lines.push(`- ${plural(context.incognito_events_excluded, "private-session play")} left out`);
   }
 
   appendTasteSection(
     lines,
-    "Your explicit corrections",
+    "What you told me",
     profile.listener_assertions?.active,
     formatListenerAssertion,
   );
-
   appendTasteSection(
     lines,
-    "Long arc",
+    "Shine On",
     behavior.enduring_artists,
     listeningSignal(formatArtistSignal),
+    "Artists who stayed with you across the years",
   );
   appendTasteSection(
     lines,
-    `Recent movement${
-      Number.isInteger(context.recent_window_days)
-        ? ` (${context.recent_window_days} days)`
-        : ""
-    }`,
+    "Lately",
     behavior.recent_artists,
     listeningSignal(formatArtistSignal),
+    Number.isInteger(context.recent_window_days)
+      ? `Who you've played most in the last ${context.recent_window_days} days`
+      : "Who you've played most recently",
   );
   appendTasteSection(
     lines,
-    "Listening through time (UTC)",
+    "Year by year",
     behavior.history_arc,
     listeningSignal(formatHistoryArc),
   );
   const listeningSeasons = behavior.listening_seasons?.seasons;
   appendTasteSection(
     lines,
-    "Listening Seasons (fixed UTC calendar quarters)",
+    "Seasons",
     Array.isArray(listeningSeasons) ? listeningSeasons.slice(-12) : [],
     listeningSignal(formatListeningSeason),
+    "Your last twelve quarters. \"New\" means new to your history, not necessarily new to you.",
   );
-  if (Array.isArray(listeningSeasons) && listeningSeasons.length > 0) {
-    lines.push(
-      "Listening Seasons boundary: first observed means first appearance in retained history, not discovery. Leading artists and signature tracks describe only their fixed window and do not infer preference, mood, or life events.",
-      "",
-    );
-  }
   appendTasteSection(
     lines,
-    "Listening Time Machine",
+    "Time",
     behavior.time_capsule_tracks,
     formatTimeCapsuleTrack,
+    "The years, one track each",
   );
   appendTasteSection(
     lines,
-    `Worth another listen${
-      Number.isInteger(context.rediscovery_quiet_days)
-        ? ` (quiet ${context.rediscovery_quiet_days}+ days)`
-        : ""
-    }`,
+    "Wish You Were Here",
     behavior.rediscovery_tracks,
     formatRediscoveryTrack,
+    Number.isInteger(context.rediscovery_quiet_days)
+      ? `Songs you used to play a lot that have gone quiet for ${context.rediscovery_quiet_days}+ days`
+      : "Songs you used to play a lot that have gone quiet",
   );
   appendTasteSection(
     lines,
-    `Music that came back${
-      Number.isInteger(context.historical_return_minimum_gap_days)
-        ? ` (gaps ${context.historical_return_minimum_gap_days}+ days)`
-        : ""
-    }`,
+    "Coming Back to Life",
     behavior.historical_return_tracks,
     formatHistoricalReturnTrack,
+    Number.isInteger(context.historical_return_minimum_gap_days)
+      ? `Songs that found their way back after ${context.historical_return_minimum_gap_days}+ days away`
+      : "Songs that found their way back after long gaps",
   );
   appendTasteSection(
     lines,
-    `Played back to back${
-      Number.isInteger(context.back_to_back_minimum_consecutive_plays)
-        ? ` (${context.back_to_back_minimum_consecutive_plays}+ adjacent plays)`
-        : ""
-    }`,
+    "Echoes",
     behavior.back_to_back_tracks,
     formatBackToBackTrack,
+    "Songs you played again right away",
   );
-  if ((behavior.back_to_back_tracks ?? []).length > 0) {
-    lines.push(
-      "Back-to-back boundary: adjacent retained playback events do not prove repeat mode, intentional replay, or liking.",
-      "",
-    );
-  }
   appendTasteSection(
     lines,
-    "Tracks you return to",
+    "Most played",
     behavior.repeat_tracks,
     listeningSignal(formatTrackSignal),
   );
   appendTasteSection(
     lines,
-    "Recent tracks",
+    "Recently",
     behavior.recent_tracks,
     listeningSignal(formatTrackSignal),
   );
 
   const behaviorContextLines = [
-    formatBehaviorContextLine(
-      context.direct_selection_starts,
-      context.start_reason_events,
-      "Direct starts",
-      "start-reason events",
-    ),
-    formatBehaviorContextLine(
-      context.trackdone_starts,
-      context.start_reason_events,
-      "Continued playback",
-      "start-reason events",
-    ),
-    formatBehaviorContextLine(
-      context.trackdone_endings,
-      context.end_reason_events,
-      "Reached track end",
-      "end-reason events",
-    ),
-    formatBehaviorContextLine(
-      context.explicit_skips,
-      context.skip_state_events,
-      "Explicit skips",
-      "skip-state events",
-    ),
-    formatBehaviorContextLine(
-      context.shuffle_events,
-      context.shuffle_state_events,
-      "Shuffle active",
-      "shuffle-state events",
-    ),
-    formatBehaviorContextLine(
-      context.offline_events,
-      context.offline_state_events,
-      "Offline playback",
-      "offline-state events",
-    ),
+    formatBehaviorContextLine(context.direct_selection_starts, context.start_reason_events, "Songs you picked yourself"),
+    formatBehaviorContextLine(context.trackdone_starts, context.start_reason_events, "Songs that followed on"),
+    formatBehaviorContextLine(context.trackdone_endings, context.end_reason_events, "Played to the end"),
+    formatBehaviorContextLine(context.explicit_skips, context.skip_state_events, "Skipped"),
+    formatBehaviorContextLine(context.shuffle_events, context.shuffle_state_events, "On shuffle"),
+    formatBehaviorContextLine(context.offline_events, context.offline_state_events, "Offline"),
   ].filter(Boolean);
   if (behaviorContextLines.length > 0) {
-    lines.push(
-      "",
-      "## Playback flow",
-      "",
-      ...behaviorContextLines,
-      "",
-      "Percentages use only events where Spotify supplied the corresponding field. These are playback-context signals, not proof of taste, attention, satisfaction, personality, location, or device use.",
-    );
+    lines.push("", "## How you listen", "", ...behaviorContextLines);
   }
 
   if (
@@ -484,30 +406,32 @@ function formatTaste(profile) {
   ) {
     lines.push(
       "",
-      "## Deliberate choices",
+      "## Kept on purpose",
       "",
       ...profile.strong_preferences.map(
         (item) =>
-          `- ${safeInlineText(item.label)} - ${safeInlineText(item.signal)}`,
+          `- ${safeInlineText(item.label)} · ${safeInlineText(item.signal).toLowerCase()}`,
       ),
     );
   }
 
-  if (Array.isArray(profile.limitations) && profile.limitations.length > 0) {
-    lines.push(
-      "",
-      "## Reading boundaries",
-      "",
-      ...profile.limitations.slice(0, 5).map(
-        (limitation) => `- ${safeInlineText(limitation)}`,
-      ),
-    );
-  }
   lines.push(
     "",
-    profile.preview_source?.persistent_import === false
-      ? "This one-off preview did not change Moondog's persistent listening history. Add `--json` to the same `--from` command for the complete bounded projection."
-      : "Use `moondog taste --json` for the complete bounded projection, including evidence IDs and source coverage.",
+    "## The dark side of the moon",
+    "",
+    "*What this reading can't see*",
+    "",
+    "- Plays show attention, not love. A song can be on repeat because it was stuck in your head.",
+    ...(behaviorContextLines.length > 0 ? ["- A skip is a moment, not a verdict."] : []),
+    ...((behavior.history_arc ?? []).length > 0 || (listeningSeasons ?? []).length > 0
+      ? ["- Years and seasons follow UTC, so a late night can land on the next day.",
+        "- A quiet stretch means no history was kept, not that you stopped listening."]
+      : []),
+    "- If something here is wrong, open the song or artist in /taste and tell me.",
+    "",
+    oneOff
+      ? "Add `--json` to the same `--from` command for the full data."
+      : "For the full data with evidence IDs, run `moondog taste --json`.",
   );
   return lines.join("\n");
 }

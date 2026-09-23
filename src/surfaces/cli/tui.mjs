@@ -41,31 +41,31 @@ import {
 } from "./brand-components.mjs";
 
 const slashCommands = [
-  { name: "home", description: "Return to the Moondog record sleeve" },
-  { name: "lyrics", description: "Inspect or sync your local lyric library" },
-  { name: "import", description: "Get your listening data or inspect a saved file" },
+  { name: "home", description: "Back to the record sleeve" },
+  { name: "lyrics", description: "Your lyric library, or sync more songs" },
+  { name: "import", description: "Bring in your listening history or library" },
   { name: "theme", description: "Paper, charcoal, or your terminal colors" },
-  { name: "art", description: "Braille, ASCII, or a minimal opening" },
-  { name: "motion", description: "Turn character animation on or off" },
+  { name: "art", description: "Braille, ASCII, or a quiet opening" },
+  { name: "motion", description: "Turn the animation on or off" },
   { name: "commands", description: "Search every command" },
-  { name: "status", description: "Inspect Moondog readiness" },
-  { name: "sources", description: "Inspect local data sources" },
-  { name: "profile", description: "Inspect, correct, or retract profile readings" },
-  { name: "taste", description: "Explore evidence and shape your listening profile" },
-  { name: "memory", description: "Inspect memory ownership" },
-  { name: "tools", description: "Inspect capability states" },
-  { name: "doctor", description: "Run local environment checks" },
-  { name: "model", description: "Choose a Pi provider and model" },
-  { name: "auth", description: "Connect a model provider with an API key or Codex sign-in" },
-  { name: "web", description: "Search or read public music sources with Codex" },
-  { name: "spotify", description: "Set up and control Spotify" },
-  { name: "reload", description: "Reload model settings and authentication" },
-  { name: "remember", description: "Save an explicit durable memory" },
+  { name: "status", description: "See what's connected and ready" },
+  { name: "sources", description: "See where your music data comes from" },
+  { name: "profile", description: "Review, change, or undo your choices" },
+  { name: "taste", description: "Your listening profile and the evidence behind it" },
+  { name: "memory", description: "See what Moondog remembers" },
+  { name: "tools", description: "See which music tools are available" },
+  { name: "doctor", description: "Check your setup" },
+  { name: "model", description: "Choose the model Moondog talks through" },
+  { name: "auth", description: "Sign in to a model provider" },
+  { name: "web", description: "Look things up on public music sites" },
+  { name: "spotify", description: "Connect and control Spotify" },
+  { name: "reload", description: "Reload model settings and sign-ins" },
+  { name: "remember", description: "Ask Moondog to remember something" },
   { name: "forget", description: "Forget one memory by ID" },
-  { name: "resume", description: "Find and continue a saved conversation" },
-  { name: "new", description: "Start a new conversation and keep this one saved" },
-  { name: "help", description: "Show commands" },
-  { name: "quit", description: "Exit Moondog" },
+  { name: "resume", description: "Pick up a saved conversation" },
+  { name: "new", description: "Start fresh; this conversation stays saved" },
+  { name: "help", description: "Commands and shortcuts" },
+  { name: "quit", description: "Leave Moondog" },
 ];
 
 // Parse command arguments as text only. Never evaluate shell substitutions.
@@ -107,16 +107,17 @@ export function parseTuiArguments(text) {
 }
 
 function offlineReply(runtimeStatus) {
-  const authenticationStep =
-    runtimeStatus.reason === "provider_authentication_required"
-      ? `\n\n运行 \`/auth ${runtimeStatus.provider ?? "openai-codex"}\` 配置模型认证。`
-      : "";
-  return `Moondog 的本地 CLI 已经运行，但自由对话尚未连接模型。
+  const provider = runtimeStatus.provider ?? "openai-codex";
+  const [why, next] = runtimeStatus.reason === "provider_authentication_required"
+    ? [`you're not signed in to ${provider}`, `Sign in with \`/auth ${provider}\`.`]
+    : runtimeStatus.reason === "model_not_configured" || !runtimeStatus.reason
+      ? ["no model is connected", "Type `/model` to pick one."]
+      : [`I can't reach the model (\`${runtimeStatus.reason}\`)`, "Type `/model` to pick another, or `/reload` to try again."];
+  return `Obscured by clouds. I can't talk yet because ${why}.
 
-当前原因：\`${runtimeStatus.reason}\`。
+${next}
 
-运行 \`/model\` 选择 Pi provider 和 model。${authenticationStep}
-在此之前，\`/status\`、\`/profile\`、\`/memory\`、\`/tools\` 和 \`/doctor\` 都可以正常使用。`;
+Your profile doesn't need a model. \`/taste\`, \`/import\`, and \`/help\` all work right now.`;
 }
 
 function elapsedTime(startedAt) {
@@ -303,7 +304,7 @@ export async function runMoondogTui({
         : compactHint && editor.getText() ? "enter send · ctrl+p commands"
         : compactHint && footerText === "Ready." ? "tab explore · type to talk" : footerText;
       if (importView && width < 64) {
-        if (busy) statusText = footerText.startsWith("Inspecting") ? "Reading file; nothing added."
+        if (busy) statusText = footerText.startsWith("Reading the file") ? "Reading; nothing added yet."
           : footerText.startsWith("History saved") ? "Saved; refreshing profile..." : "Saving history locally...";
         else if (importView.state.error) statusText = "See the message above.";
         else if (footerText.startsWith("Guide opened")) statusText = "Guide opened in browser.";
@@ -313,9 +314,9 @@ export async function runMoondogTui({
       if (profileView && !importView && width < 60) {
         statusText = footerText.replace(/\. Profile refreshed\.$/u, "");
         if (tui.hasOverlay()) statusText = "Enter chooses · Esc back";
-        else if (footerText.startsWith("Select a reading.")) statusText = "Enter actions · Tab views · Esc back";
-        else if (footerText.startsWith("Evidence opened.")) statusText = "Evidence · PgUp/PgDn scroll · Enter";
-        else if (footerText.startsWith("Import complete.")) statusText = "Import complete · Enter reviews";
+        else if (footerText.startsWith("Pick a song or artist.")) statusText = "Enter actions · Tab views · Esc back";
+        else if (footerText.startsWith("Here's the evidence.")) statusText = "Evidence · PgUp/PgDn scroll · Enter";
+        else if (footerText.startsWith("Imported.")) statusText = "Imported · Enter to review";
       }
       if (busy && !profileView && !importView && width >= 20) {
         const elapsed = ` · ${elapsedTime(workStartedAt)}`;
@@ -327,13 +328,13 @@ export async function runMoondogTui({
       const lines = [paintBrandLine(` ${theme.faint(marker)} ${footerColor(statusText)}`, width, theme)];
       if (terminal.rows >= 20) {
         const keys = importView
-          ? width < 64 ? busy ? "Finishing the current step..." : importPage === "file"
+          ? width < 64 ? busy ? "One moment..." : importPage === "file"
             ? "Tab path · ↵ inspect · Esc back" : "↑↓ ↵ · PgUp/Dn read · Esc back"
-          : busy ? "Finishing the current import step..." : importPage === "file"
+          : busy ? "One moment..." : importPage === "file"
             ? "paste a path · tab completes · enter inspects · esc back"
             : "↑↓ choose · enter select · PgUp/PgDn read · esc back"
           : profileView
-          ? busy ? "Finishing the current profile step..."
+          ? busy ? "One moment..."
             : width >= 76 ? "type filter · ↑↓ select · enter actions · tab views · esc back" : "↑↓ select · enter actions · tab views · esc back"
           : busy ? cancellationRequested ? "cancelling · draft stays here"
             : cancelWork ? "draft stays here · ctrl+c cancel"
@@ -439,6 +440,10 @@ export async function runMoondogTui({
 
   const shutdown = () => {
     cleanup();
+    // The spoken line that closes Eclipse, the last thing on The Dark Side of the Moon.
+    try {
+      terminal.write(`\n ${theme.faint("\"There is no dark side of the moon, really. Matter of fact, it's all dark.\"")}\n\n`);
+    } catch {}
   };
 
   const terminate = (exitCode) => {
@@ -501,7 +506,7 @@ export async function runMoondogTui({
     homeVisible = profileReturnHome;
     homeFocused = false;
     tui.setFocus(editor);
-    setFooter("Profile kept · /taste to return.");
+    setFooter("Profile closed · /taste opens it again.");
     tui.requestRender(true);
   };
 
@@ -521,7 +526,7 @@ export async function runMoondogTui({
     try {
       await action();
     } catch (error) {
-      if (!cleanedUp) setFooter(`Profile action failed: ${error.message}`, red);
+      if (!cleanedUp) setFooter(`That didn't work: ${error.message}`, red);
     } finally {
       setBusy(false);
       if (!cleanedUp && profileView && !tui.hasOverlay()) tui.setFocus(profileView);
@@ -531,67 +536,67 @@ export async function runMoondogTui({
   const inspectProfileSubject = async (subject) => {
     if (profileNeedsRefresh) {
       await refreshProfile();
-      setFooter("Profile refreshed. Select a reading to continue.", green);
+      setFooter("Profile updated. Pick a song or artist.", green);
       return;
     }
     const evidenceItems = subject.evidence?.length ? subject.evidence
-      : subject.evidenceId ? [{ id: subject.evidenceId, source: "Profile evidence" }] : [];
+      : subject.evidenceId ? [{ id: subject.evidenceId, source: "From your profile" }] : [];
     const selected = await choose([
       ...(subject.target?.entityType === "track" && application.musicSimilarityReady?.() ? [{
-        value: "discover", label: "Discover around this", description: "Start an editable request from this track",
+        value: "discover", label: "Find more like this", description: "Start a request from this track that you can edit",
       }] : []),
-      ...(evidenceItems.length ? [{ value: "evidence", label: "Why this reading", description: "See the source, basis, and limits" }] : []),
+      ...(evidenceItems.length ? [{ value: "evidence", label: "Why it's here", description: "Where this comes from and what it can't tell me" }] : []),
       ...(typeof runProfileAction === "function" ? [
-        { value: "like", label: "Like", description: "An explicit preference for this " + subject.kind },
-        { value: "avoid", label: "Avoid", description: "Keep this " + subject.kind + " out of suggestions" },
-        ...(subject.correctionId ? [{ value: "retract", label: "Retract my choice", description: "Remove your current stance; retain listening history" }] : []),
+        { value: "like", label: "I like this", description: "Tell Moondog you like this " + subject.kind },
+        { value: "avoid", label: "Keep it out", description: "Leave this " + subject.kind + " out of suggestions" },
+        ...(subject.correctionId ? [{ value: "retract", label: "Undo my choice", description: "Go back to what your listening says" }] : []),
       ] : []),
-      { value: "back", label: "Back to profile", description: "Keep exploring your listening" },
+      { value: "back", label: "Back", description: "Keep looking around" },
     ], undefined, subject.label);
     if (!selected || selected.value === "back" || cleanedUp || !profileView) return;
     if (selected.value === "discover") {
       const draft = editor.getText();
       if (draft.trimStart().startsWith("/")) {
-        setFooter("Command draft kept. Finish it before starting discovery.", yellow);
+        setFooter("You have a command half-typed. Finish or clear it first.", yellow);
         return;
       }
       const target = subject.target;
       const context = `Track: ${JSON.stringify(sanitizeTerminalText(target.label))}\nArtist: ${JSON.stringify(sanitizeTerminalText(target.artistCredit))}`;
       const text = profileDiscoveryDraft && draft.includes(profileDiscoveryDraft.context)
         ? draft.replace(profileDiscoveryDraft.context, () => context)
-        : `${draft || "Find 3 songs to explore from this track, and explain each recommendation."}\n\n${context}`;
+        : `${draft || "Find me 3 songs to go to from here, and tell me why each one."}\n\n${context}`;
       profileDiscoveryDraft = { context, target: { ...target } };
       editor.setText(text);
       profileReturnHome = false;
       closeProfile();
       enterConversation();
       setFooter(runtimeStatus.state === "configured"
-        ? "Discovery draft ready · edit, then Enter."
-        : "Draft ready · /model connects a model before sending.", runtimeStatus.state === "configured" ? green : yellow);
+        ? "Request ready · edit it, then press Enter."
+        : "Request ready · /model connects a model first.", runtimeStatus.state === "configured" ? green : yellow);
       return;
     }
     if (selected.value === "evidence") {
       let evidence = evidenceItems[0];
       if (evidenceItems.length > 1) {
         const choice = await choose(evidenceItems.map((item) => ({
-          value: item.id, label: item.source, description: "Local profile evidence",
-        })), undefined, "Choose listening evidence");
+          value: item.id, label: item.source, description: "From your profile",
+        })), undefined, "Which evidence?");
         if (!choice || cleanedUp) return;
         evidence = evidenceItems.find((item) => item.id === choice.value);
       }
       const explanation = await application.explainProfileEvidence({ evidenceId: evidence.id });
       if (cleanedUp || !profileView) return;
       const detailLines = [
-        "Why this reading", evidence.source, "",
+        "Why it's here", evidence.source, "",
         explanation.basis_summary,
-        "", "What this tells us", explanation.interpretation_limit,
-        ...(Number.isFinite(explanation.confidence) ? ["", `Evidence confidence: ${Math.round(explanation.confidence * 100)}%`] : []),
+        "", "What it can't tell me", explanation.interpretation_limit,
+        ...(Number.isFinite(explanation.confidence) ? ["", `How sure: ${Math.round(explanation.confidence * 100)}%`] : []),
         "", ...subject.detailLines,
       ].filter((line) => typeof line === "string").map(sanitizeTerminalText);
       const model = buildTasteProfileModel(profileSnapshot);
       model.subjects = model.subjects.map((item) => item.key === subject.key ? { ...item, detailLines } : item);
       profileView.setModel(model);
-      setFooter("Evidence opened. PgUp/PgDn scroll the detail; Enter returns to actions.");
+      setFooter("Here's the evidence. PgUp/PgDn to scroll, Enter for actions.");
       return;
     }
     const target = subject.target;
@@ -599,26 +604,31 @@ export async function runMoondogTui({
       : ["correct", ...(target.entityType === "track"
         ? ["--track", target.label, "--by", target.artistCredit]
         : ["--artist", target.label]), `--${selected.value}`];
-    setFooter("Saving your choice locally...", yellow);
+    setFooter("Saving your choice...", yellow);
     await runProfileAction(args);
     if (cleanedUp || !profileView) return;
-    const receipt = selected.value === "retract" ? `Retracted: ${subject.label}`
-      : `Saved: ${selected.value === "like" ? "Like" : "Avoid"} · ${subject.label}`;
-    addMoondogMessage(`${receipt}${subject.kind === "track" ? ` (${target.artistCredit})` : ""}.\n\nYour explicit preference is updated. Listening history is unchanged.`);
+    const receipt = selected.value === "retract" ? `Undone: ${subject.label}`
+      : `${selected.value === "like" ? "Liked" : "Kept out"}: ${subject.label}`;
+    const named = `${subject.label}${subject.kind === "track" ? ` by ${target.artistCredit}` : ""}`;
+    addMoondogMessage(selected.value === "retract"
+      ? `Done. I'll read ${named} from your listening again, without your earlier choice.`
+      : selected.value === "like"
+        ? `Noted. You like ${named}.\n\nYour listening history stays as it was.`
+        : `Noted. I'll leave ${named} out of suggestions.\n\nYour listening history stays as it was.`);
     profileReturnHome = false;
     profileNeedsRefresh = true;
     try {
       await refreshProfile();
-      setFooter(`${receipt}. Profile refreshed.`, green);
+      setFooter(`${receipt}.`, green);
     } catch (error) {
-      setFooter(`${receipt}. Refresh failed; Ctrl+R retries: ${error.message}`, yellow);
+      setFooter(`${receipt}. The profile didn't refresh; Ctrl+R tries again.`, yellow);
     }
   };
 
   const openProfile = async ({ imported = false } = {}) => {
     if (application.profileServicesReady?.() === false) {
-      addMoondogMessage("## Start your listening profile\n\nOpen `/import` and choose your music service to bring listening history, library songs or a public playlist. Then select a track or artist here to inspect the evidence and shape your preferences.\n\nYour profile works locally without a model or Spotify sign-in.");
-      setFooter("No local profile yet. /import brings your listening history.");
+      addMoondogMessage("## Is there anybody out there?\n\nNot yet. Your profile starts with your listening history.\n\nType `/import`, pick your music service, and bring in your history, your library, or a public playlist. Then come back here to see what it says about you, and tell me what I got wrong.\n\nEverything stays on this machine. You don't need a model or a Spotify sign-in.");
+      setFooter("No profile yet. /import brings in your history.");
       return;
     }
     if (typeof application.getProfileSummary !== "function") {
@@ -638,17 +648,17 @@ export async function runMoondogTui({
     profileView.onClose = closeProfile;
     profileView.onRefresh = () => { void profileTask(async () => {
       await refreshProfile();
-      setFooter("Profile refreshed from local listening evidence.", green);
+      setFooter("Profile updated.", green);
     }); };
     profileView.onReport = () => {
       const snapshot = profileSnapshot;
       closeProfile();
       addMoondogMessage(formatLocalResult("taste", snapshot));
-      setFooter("Full tasteprint. /taste returns to the interactive profile.");
+      setFooter("Full report above. /taste opens the profile again.");
     };
     homeFocused = false;
     tui.setFocus(profileView);
-    setFooter(imported ? "Import complete. Review your cumulative local profile." : "Select a reading. Enter opens evidence and your choices.", green);
+    setFooter(imported ? "Imported. Here's your profile with everything so far." : "Pick a song or artist. Enter shows why it's here.", green);
     tui.requestRender(true);
   };
 
@@ -701,10 +711,10 @@ export async function runMoondogTui({
             description: `${provider.name} - ${provider.modelCount} models`,
           })),
           runtimeStatus.provider,
-          "Choose a Pi provider",
+          "Choose a model provider",
         );
         if (!selectedProvider) {
-          setFooter("Model selection cancelled.", yellow);
+          setFooter("Model unchanged.", yellow);
           return;
         }
         providerId = selectedProvider.value;
@@ -728,7 +738,7 @@ export async function runMoondogTui({
             providerId = undefined;
             continue;
           }
-          setFooter("Model selection cancelled.", yellow);
+          setFooter("Model unchanged.", yellow);
           return;
         }
         modelId = selectedModel.value;
@@ -740,25 +750,23 @@ export async function runMoondogTui({
     const status = await replaceRuntime({ provider: providerId, model: modelId });
     addMoondogMessage(
       status.state === "configured"
-        ? `Using Pi model \`${providerId}/${modelId}\`. The current conversation and memory were retained.`
-        : `Saved \`${providerId}/${modelId}\`, but the runtime is offline: \`${status.reason}\`.${
-            status.reason === "provider_authentication_required"
-              ? ` Run \`/auth ${providerId}\` to connect this provider.`
-              : ""
-          }`,
+        ? `Now talking through \`${providerId}/${modelId}\`. This conversation and what I remember carry over.`
+        : status.reason === "provider_authentication_required"
+          ? `Saved \`${providerId}/${modelId}\`, but you're not signed in yet. Run \`/auth ${providerId}\` to connect it.`
+          : `Saved \`${providerId}/${modelId}\`, but I can't reach it yet (\`${status.reason}\`).`,
     );
     setFooter(
-      status.state === "configured" ? "Model ready." : "Model saved; runtime offline.",
+      status.state === "configured" ? "Model ready." : "Model saved, not connected yet.",
       status.state === "configured" ? green : yellow,
     );
   };
 
   const authenticate = async (args) => {
     if (args.length > 1) {
-      throw new Error("Usage: /auth [provider]. Enter API keys only in the hidden prompt.");
+      throw new Error("Use /auth or /auth <provider>. Type API keys only into the hidden prompt that follows.");
     }
     if (typeof runAuth !== "function") {
-      throw new Error("Authentication is unavailable in this launch mode.");
+      throw new Error("Sign-in isn't available when Moondog is started this way.");
     }
 
     const availableProviders = providers().filter((provider) =>
@@ -766,7 +774,7 @@ export async function runMoondogTui({
     );
     let providerId = args[0]?.toLowerCase() ?? runtimeStatus.provider;
     if (!providerId || !supportedAuthProviderIds.includes(providerId)) {
-      if (args[0]) throw new Error("Unsupported authentication provider. Use /auth to choose one.");
+      if (args[0]) throw new Error("I can't sign in to that provider. Type /auth to see the ones I can.");
       const selectedProvider = await choose(
         availableProviders.map((provider) => ({
           value: provider.id,
@@ -774,16 +782,16 @@ export async function runMoondogTui({
           description: `${provider.id} - ${provider.id === "openai-codex" ? "ChatGPT sign-in" : "API key"}`,
         })),
         runtimeStatus.provider ?? "openai-codex",
-        "Connect a model provider",
+        "Sign in to a model provider",
       );
       if (!selectedProvider) {
-        setFooter("Authentication cancelled.", yellow);
+        setFooter("Sign-in cancelled.", yellow);
         return;
       }
       providerId = selectedProvider.value;
     }
 
-    setFooter(`Opening ${providerId} authentication...`, yellow);
+    setFooter(`Opening ${providerId} sign-in...`, yellow);
     tui.stop({ preserveScreen: true });
     try {
       await runAuth(providerId);
@@ -803,13 +811,13 @@ export async function runMoondogTui({
       const status = await replaceRuntime(currentSelection);
       addMoondogMessage(
         status.state === "configured"
-          ? `Authentication complete. Using \`${status.provider}/${status.model}\`.`
-          : `Authentication complete. Run \`/model ${providerId}\` to choose a model.`,
+          ? `Signed in. Talking through \`${status.provider}/${status.model}\`.`
+          : `Signed in. Run \`/model ${providerId}\` to pick a model.`,
       );
     } else {
-      addMoondogMessage("Authentication complete. Restart Moondog to load it.");
+      addMoondogMessage("Signed in. Restart Moondog to use it.");
     }
-    setFooter("Authentication complete.", green);
+    setFooter("Signed in.", green);
   };
 
   const showImportedListeningProfile = async () => {
@@ -817,17 +825,17 @@ export async function runMoondogTui({
     try {
       const profile = await application.runLocalCommand("taste", runtimeStatus);
       addMoondogMessage([
-        "This is your cumulative local profile, including previously imported history. The receipt above reports what this import added.",
+        "Here's everything I can read so far, including anything you imported before.",
         formatLocalResult("taste", profile),
-        "Use `/taste` to select a track or artist, inspect its evidence, and adjust your preferences. `/taste report` reopens this full report.",
+        "Type `/taste` to open any song or artist and see why it's here. `/taste report` brings this report back.",
       ].join("\n\n"));
       if (typeof application.getProfileSummary === "function") await openProfile({ imported: true });
-      else setFooter("Import complete. Profile ready to review; /taste to explore.", green);
+      else setFooter("Imported. /taste opens your profile.", green);
     } catch (error) {
       addMoondogMessage(
-        `The import completed, but its listening profile could not be displayed: ${error.message}\n\nThe imported history is retained. Use \`/taste\` to retry the profile view.`,
+        `Your history was imported, but I couldn't show the profile: ${error.message}\n\nNothing was lost. Type \`/taste\` to try again.`,
       );
-      setFooter("Import complete; profile review unavailable.", yellow);
+      setFooter("Imported. The profile didn't open; try /taste.", yellow);
     }
   };
 
@@ -848,7 +856,7 @@ export async function runMoondogTui({
     if (restore) homeVisible = importReturnHome;
     homeFocused = false;
     tui.setFocus(profileView ?? editor);
-    setFooter("Import closed. Your listening profile is unchanged.");
+    setFooter("Import closed. Nothing changed.");
     tui.requestRender(true);
   };
 
@@ -858,10 +866,10 @@ export async function runMoondogTui({
     const view = importView;
     view.setPath(filePath);
     setBusy(true);
-    setImportPage("working", { message: "Reading your music data and preparing a preview..." });
-    setFooter("Inspecting the file. No listening history has been added.", yellow);
+    setImportPage("working", { message: "Reading your file..." });
+    setFooter("Reading the file. Nothing is added until you say so.", yellow);
     try {
-      if (typeof prepareImport !== "function") throw new Error("File inspection is unavailable in this launch mode.");
+      if (typeof prepareImport !== "function") throw new Error("Reading files isn't available when Moondog is started this way.");
       const prepared = await prepareImport(filePath, { provider: importProvider });
       if (cleanedUp || importView !== view) { prepared.close?.(); return; }
       if (!importProvider) {
@@ -870,11 +878,11 @@ export async function runMoondogTui({
       }
       preparedImport = prepared;
       setImportPage("preview", { preview: prepared.preview });
-      setFooter("File ready. Review what it contains before importing.", green);
+      setFooter("Here's what's inside. Nothing is added until you import it.", green);
     } catch (error) {
       if (!cleanedUp && importView === view) {
         setImportPage("file", { error: sanitizeTerminalText(error.message) });
-        setFooter("Nothing imported. Your path is kept so you can fix it.", yellow);
+        setFooter("Nothing imported. Your path is still there to fix.", yellow);
       }
     } finally {
       setBusy(false);
@@ -887,32 +895,32 @@ export async function runMoondogTui({
     importOrigin = "quick";
     const view = importView;
     setBusy(true);
-    setImportPage("working", { message: "Reading your recent Spotify listening..." });
-    setFooter("Reading Spotify. Nothing has been added to your profile.", yellow);
+    setImportPage("working", { message: "Asking Spotify for your recent listening..." });
+    setFooter("Reading from Spotify. Nothing is added until you say so.", yellow);
     try {
-      if (typeof prepareRecentImport !== "function") throw new Error("Recent listening is unavailable in this launch mode. You can import a history ZIP instead.");
+      if (typeof prepareRecentImport !== "function") throw new Error("Recent listening isn't available when Moondog is started this way. A history ZIP still works.");
       const prepared = await prepareRecentImport();
       if (cleanedUp || importView !== view) { prepared.close?.(); return; }
       if (!prepared.preview.listeningEvents) {
         prepared.close?.();
         setImportPage("empty");
-        setFooter("Nothing imported. Try recent listening again or bring a ZIP.");
+        setFooter("Nothing to import yet. Try again later, or bring a ZIP.");
       } else {
         preparedImport = prepared;
         setImportPage("preview", { preview: prepared.preview });
-        setFooter("Recent listening ready. Review it before importing.", green);
+        setFooter("Here's your recent listening. Nothing is added until you import it.", green);
       }
     } catch (error) {
       if (cleanedUp || importView !== view) return;
       const messages = {
-        spotify_action_forbidden: "Spotify denied access. Check that this account is listed in your app's User Management and the app owner has Premium. You can also import a history ZIP.",
-        spotify_scope_insufficient: "Reconnect Spotify to grant access to recent listening.",
-        spotify_authentication_required: "Your Spotify connection needs to be renewed. Choose Reconnect Spotify.",
-        spotify_quota_exceeded: "Spotify's app quota is exhausted. You can still add a downloaded history ZIP.",
-        spotify_rate_limited: "Spotify is limiting requests. Wait before retrying, or add a downloaded history ZIP.",
+        spotify_action_forbidden: "Spotify said no. Make sure this account is listed under User Management in your Spotify app, and that the app owner has Premium. A history ZIP works either way.",
+        spotify_scope_insufficient: "Spotify needs one more permission. Reconnect Spotify to allow recent listening.",
+        spotify_authentication_required: "Your Spotify sign-in has expired. Choose Reconnect Spotify.",
+        spotify_quota_exceeded: "Your Spotify app has used up its quota for now. A downloaded history ZIP still works.",
+        spotify_rate_limited: "Spotify wants us to slow down. Wait a minute and try again, or use a history ZIP.",
       };
       setImportPage("quick", { error: messages[error.code] ?? sanitizeTerminalText(error.message) });
-      setFooter("Nothing imported. Your existing profile is unchanged.", yellow);
+      setFooter("Nothing imported. Your profile is unchanged.", yellow);
     } finally {
       setBusy(false);
       if (!cleanedUp && importView === view) tui.setFocus(view);
@@ -923,21 +931,21 @@ export async function runMoondogTui({
     const view = importView;
     const configuring = clientId !== undefined;
     setBusy(true);
-    setImportPage("working", { message: configuring ? "Saving your Spotify app connection..." : "Complete Spotify authorization in your browser. Ctrl+C cancels." });
+    setImportPage("working", { message: configuring ? "Saving your Spotify app..." : "Finish signing in to Spotify in your browser. Ctrl+C cancels." });
     importAuthController = new AbortController();
     if (!configuring) tui.stop({ preserveScreen: true });
     try {
-      if (typeof runSpotify !== "function") throw new Error("Spotify connection is unavailable in this launch mode.");
+      if (typeof runSpotify !== "function") throw new Error("Spotify isn't available when Moondog is started this way.");
       await runSpotify(configuring ? ["configure", clientId] : ["login", "--history-only"], { signal: importAuthController.signal });
       if (cleanedUp || importView !== view) return;
       if (typeof rebuildRuntime === "function") await replaceRuntime();
       if (cleanedUp || importView !== view) return;
-      setImportPage("quick", { message: configuring ? "App configured. Connect Spotify to continue." : "Spotify connected. Preview your recent listening to continue." });
-      setFooter("Connection ready. Listening history has not been imported.", green);
+      setImportPage("quick", { message: configuring ? "App saved. Now connect Spotify." : "Spotify is connected. Next, preview your recent listening." });
+      setFooter("Connected. Nothing imported yet.", green);
     } catch (error) {
       if (!cleanedUp && importView === view) {
         setImportPage(configuring ? "client" : "quick", { error: sanitizeTerminalText(error.message) });
-        setFooter("Nothing imported. You can retry or add a history ZIP.", yellow);
+        setFooter("Nothing imported. Try again, or use a history ZIP.", yellow);
       }
     } finally {
       importAuthController = null;
@@ -954,8 +962,8 @@ export async function runMoondogTui({
     const view = importView;
     let saved = false;
     setBusy(true);
-    setImportPage("working", { message: "Adding the inspected history to your local profile..." });
-    setFooter("Saving listening history locally...", yellow);
+    setImportPage("working", { message: "Adding it to your profile..." });
+    setFooter("Saving your history on this machine...", yellow);
     try {
       const receipt = await pending.commit();
       saved = true;
@@ -963,21 +971,21 @@ export async function runMoondogTui({
       discardPreparedImport();
       if (cleanedUp) return;
       const counts = preview.kind === "library"
-        ? receipt.already_imported ? "This library snapshot is already in your profile. No duplicate snapshot was added."
-          : `${receipt.library_tracks ?? preview.tracks} library tracks saved as a snapshot. No individual listening events were created.`
+        ? receipt.already_imported ? "You've imported this library before, so nothing changed."
+          : `Saved ${receipt.library_tracks ?? preview.tracks} songs from your library. A library shows what you keep, not when you played it, so no plays were added.`
         : receipt.already_imported || (receipt.inserted_events === 0 && !receipt.inserted_profile_evidence && !receipt.superseded_events)
-        ? "Your profile is already up to date with this import. No new listening records were added."
-        : `${receipt.inserted_events ?? 0} new listening records · ${receipt.duplicate_events ?? 0} already present.${receipt.inserted_profile_evidence ? ` ${receipt.inserted_profile_evidence} collection or profile observations added.` : ""}`;
+        ? "Already up to date. There was nothing new in this one."
+        : `${receipt.inserted_events ?? 0} new ${receipt.inserted_events === 1 ? "play" : "plays"}${receipt.duplicate_events ? `, ${receipt.duplicate_events} I already had` : ""}.${receipt.inserted_profile_evidence ? ` Also ${receipt.inserted_profile_evidence} saved songs, follows, or playlist entries.` : ""}`;
       // Keep the durable result visible even if refreshing the runtime later fails.
       addMoondogMessage([
-        preview.kind === "library" ? "## Apple Music library imported" : preview.kind === "collection" ? "## Music collection imported" : "## Listening history imported",
+        preview.kind === "library" ? "## Your Apple Music library is in" : preview.kind === "collection" ? "## Your collection is in" : "## Your history is in",
         [preview.sourceLabel, preview.fileName].filter(Boolean).join(" · "),
         counts,
-        ...(receipt.superseded_events ? [`${receipt.superseded_events} overlapping records were reconciled with richer history.`] : []),
-        "Your previous listening data and explicit preferences are kept. Use `/import` to add another source or update your profile.",
+        ...(receipt.superseded_events ? [`${receipt.superseded_events} plays you already had were replaced with more detailed versions.`] : []),
+        "Everything from before is still here, including your choices. `/import` adds another source any time.",
       ].join("\n\n"));
-      setImportPage("working", { message: "History saved. Preparing your listening profile..." });
-      setFooter("History saved. Refreshing your profile...", yellow);
+      setImportPage("working", { message: "Saved. Reading it..." });
+      setFooter("History saved. Updating your profile...", yellow);
       await refreshImportedData?.(importNeedsRefresh);
       if (cleanedUp) return;
       if (typeof rebuildRuntime === "function") await replaceRuntime();
@@ -993,11 +1001,11 @@ export async function runMoondogTui({
         homeVisible = false;
         profileView = null;
         tui.setFocus(editor);
-        addMoondogMessage(`Your history was saved, but the profile could not refresh: ${sanitizeTerminalText(error.message)}\n\nThe import receipt is kept above. Use \`/reload\` and \`/taste\` to try the profile again.`);
-        setFooter("History saved; profile refresh needs another try.", yellow);
+        addMoondogMessage(`Your history is saved, but I couldn't update the profile: ${sanitizeTerminalText(error.message)}\n\nNothing was lost. Try \`/reload\`, then \`/taste\`.`);
+        setFooter("History saved. The profile needs another try.", yellow);
       } else {
         setImportPage("preview", { preview, error: sanitizeTerminalText(error.message) });
-        setFooter("Import was not saved. Review the error before trying again.", yellow);
+        setFooter("Not saved. See the message above.", yellow);
       }
     } finally {
       setBusy(false);
@@ -1024,11 +1032,11 @@ export async function runMoondogTui({
       const destination = { openSpotify: "spotify", openSpotifySetup: "spotifySetup", openAppleHelp: "apple", openApplePrivacy: "applePrivacy", openYouTube: "youtube", openQQ: "qq", openNetEase: "netease" }[type];
       const url = IMPORT_GUIDE_URLS[destination];
       try {
-        if (typeof openImportHelp !== "function") throw new Error("Browser opening is unavailable.");
+        if (typeof openImportHelp !== "function") throw new Error("Can't open a browser from here.");
         await openImportHelp(destination);
-        setFooter("Website opened. Follow the steps there; Moondog stays here.");
+        setFooter("Opened in your browser. Moondog will be here when you're back.");
       } catch {
-        setImportPage(importPage, { error: `Open this page in your browser: ${url}` });
+        setImportPage(importPage, { error: `I couldn't open your browser. Here's the link: ${url}` });
       }
       return;
     }
@@ -1045,8 +1053,8 @@ export async function runMoondogTui({
       setImportPage(type);
     }
     setFooter(importPage === "file"
-      ? "Paste or drag one file path. Tab completes it; Enter inspects it."
-      : "Choose the next step for your listening history.");
+      ? "Paste or drag in a file. Tab completes the path, Enter reads it."
+      : "Pick a step.");
     tui.setFocus(importView);
   };
 
@@ -1062,20 +1070,20 @@ export async function runMoondogTui({
         profileReady: application.profileServicesReady?.() ?? false,
         onAction: (action) => {
           void handleImportAction(action).catch((error) => {
-            if (!cleanedUp) setFooter(`Import action failed: ${error.message}`, red);
+            if (!cleanedUp) setFooter(`That didn't work: ${error.message}`, red);
           });
         },
       });
     }
     setImportPage("start");
     tui.setFocus(importView);
-    setFooter("Choose your music service, then choose how to start.");
+    setFooter("Welcome to the machine. Pick your music service.");
     if (filePath) await inspectImport(filePath);
   };
 
   const runSpotifyCommand = async (args) => {
     if (typeof runSpotify !== "function") {
-      throw new Error("Spotify control is unavailable in this launch mode.");
+      throw new Error("Spotify isn't available when Moondog is started this way.");
     }
     const action = args[0]?.toLowerCase() ?? "help";
     const leavesTui = action === "login";
@@ -1100,20 +1108,20 @@ export async function runMoondogTui({
     } else {
       renderHeader();
     }
-    addMoondogMessage(markdown || "Spotify command completed.");
+    addMoondogMessage(markdown || "Done.");
     if (action === "import-history") {
       await showImportedListeningProfile();
       return;
     }
-    setFooter(`Spotify ${action} complete.`, green);
+    setFooter(`Spotify ${action}: done.`, green);
   };
 
   const resumeConversation = async (args) => {
-    if (args.length > 1) throw new Error("Usage: /resume [session-id].");
+    if (args.length > 1) throw new Error("Use /resume, or /resume <conversation-id>.");
     if (typeof application.listSavedSessions !== "function" ||
         typeof application.resumeSession !== "function" ||
         typeof activeRuntime.restoreSession !== "function") {
-      throw new Error("Saved conversations are unavailable in this launch mode.");
+      throw new Error("Saved conversations aren't available when Moondog is started this way.");
     }
     const currentId = application.ensureMemorySession?.()?.session_id;
     let selected = args[0] ? { value: args[0] } : undefined;
@@ -1128,18 +1136,18 @@ export async function runMoondogTui({
       });
       const items = sessions.map((session) => ({
         value: session.session_id,
-        label: sanitizeTerminalText(session.title).replace(/\s+/gu, " ").trim() || "Untitled conversation",
-        description: `${formatTime.format(new Date(session.updated_at))} · ${session.turn_count} messages${session.session_id === currentId ? " · open" : ""}`,
+        label: sanitizeTerminalText(session.title).replace(/\s+/gu, " ").trim() || "Untitled",
+        description: `${formatTime.format(new Date(session.updated_at))} · ${session.turn_count} ${session.turn_count === 1 ? "message" : "messages"}${session.session_id === currentId ? " · open now" : ""}`,
       }));
-      selected = await choose(items, currentId, "Resume conversation");
+      selected = await choose(items, currentId, "Pick up where you left off");
       if (cleanedUp) return;
       if (!selected) {
-        setFooter("Resume cancelled. Conversation kept.");
+        setFooter("Staying here.");
         return;
       }
     }
     if (selected.value === currentId) {
-      setFooter("This conversation is already open.");
+      setFooter("You're already in that one.");
       return;
     }
     application.resumeSession(selected.value);
@@ -1154,34 +1162,34 @@ export async function runMoondogTui({
       if (turn.role === "assistant") addMoondogMessage(turn.text);
     }
     const title = selected.label ?? turns.find((turn) => turn.role === "user")?.text ?? "Saved conversation";
-    setFooter(`Resumed: ${title.replace(/\s+/gu, " ")}`, green);
+    setFooter(`Back in: ${title.replace(/\s+/gu, " ")}`, green);
     tui.requestRender(true);
   };
 
   const runLocalCommand = async (command, args = []) => {
     if (command === "lyrics") {
-      if (args.length > 1 || (args[0] && args[0] !== "sync")) throw new Error("Usage: /lyrics [sync].");
-      if (!lyrics) throw new Error("The local lyric library is unavailable in this launch.");
+      if (args.length > 1 || (args[0] && args[0] !== "sync")) throw new Error("Use /lyrics, or /lyrics sync.");
+      if (!lyrics) throw new Error("The lyric library isn't available when Moondog is started this way.");
       if (args[0] === "sync") await updateHomeLyrics({ signal: localCommandController?.signal });
       if (cleanedUp) return;
       const status = lyrics.status();
       addMoondogMessage([
         "## Your lyric library", "",
-        `${status.ready} songs with lyrics · ${status.instrumental} instrumentals · ${status.entries} lookups cached`,
-        `Local database: ${status.path}`,
-        `Background sync: ${status.refresh.state}`,
-        ...(lyricError ? [`Last update: ${lyricError}`] : []),
-        ...(homeLyric ? ["", `Home selection: ${homeLyric.title} · ${homeLyric.artist}`, `Source: ${homeLyric.sourceUrl}`] : []),
-        "", "Use `/lyrics sync` to check more songs from your profile. `/home` returns to the listening room.",
+        `${status.ready} ${status.ready === 1 ? "song" : "songs"} with lyrics · ${status.instrumental} ${status.instrumental === 1 ? "instrumental" : "instrumentals"} · ${status.entries} looked up`,
+        `Stored at ${status.path}`,
+        `Syncing: ${status.refresh.state}`,
+        ...(lyricError ? [`Last problem: ${lyricError}`] : []),
+        ...(homeLyric ? ["", `On the sleeve now: ${homeLyric.title} · ${homeLyric.artist}`, `Lyrics from ${homeLyric.sourceUrl}`] : []),
+        "", "`/lyrics sync` looks up more songs from your profile. `/home` takes you back to the sleeve.",
       ].join("\n"));
-      setFooter("Lyric library · /home to return.");
+      setFooter("Lyric library · /home to go back.");
       return;
     }
     if (command === "taste" || (command === "profile" && !args.length)) {
-      if (args.length > 1 || (args[0] && args[0] !== "report")) throw new Error("Usage: /taste [report].");
+      if (args.length > 1 || (args[0] && args[0] !== "report")) throw new Error("Use /taste, or /taste report.");
       if (args[0] === "report") {
         addMoondogMessage(formatLocalResult("taste", await application.runLocalCommand("taste", runtimeStatus)));
-        setFooter("Full tasteprint. /taste opens the interactive profile.");
+        setFooter("Full report above. /taste opens the profile.");
       } else await openProfile();
       return;
     }
@@ -1190,23 +1198,23 @@ export async function runMoondogTui({
       return;
     }
     if (command === "web") {
-      if (typeof runWeb !== "function") throw new Error("Web research is unavailable in this launch mode.");
-      setFooter("Codex web research... Press Ctrl+C to cancel.", yellow);
+      if (typeof runWeb !== "function") throw new Error("Web lookups aren't available when Moondog is started this way.");
+      setFooter("Looking it up with Codex... Ctrl+C cancels.", yellow);
       addMoondogMessage(await runWeb(args, { signal: localCommandController.signal }));
-      setFooter("Web command complete.", green);
+      setFooter("Done.", green);
       return;
     }
     if (command === "home") {
-      if (args.length) throw new Error("Usage: /home.");
+      if (args.length) throw new Error("/home doesn't take anything after it.");
       homeVisible = true;
       homeFocused = false;
       sleeve.invalidate();
-      setFooter("Type a thought, or press Tab to explore.");
+      setFooter("Say anything, or press Tab to look around.");
       return;
     }
     if (command === "theme") {
       if (args.length > 1 || (args[0] && !["auto", "paper", "charcoal", "terminal"].includes(args[0]))) {
-        throw new Error("Usage: /theme [paper|charcoal|terminal|auto].");
+        throw new Error("Use /theme, or /theme paper, charcoal, terminal, or auto.");
       }
       let mode = args[0];
       if (!mode) {
@@ -1214,31 +1222,31 @@ export async function runMoondogTui({
           { value: "paper", label: "Paper", description: "Warm ivory and charcoal ink" },
           { value: "charcoal", label: "Charcoal", description: "A quiet room, warm light" },
           { value: "terminal", label: "Terminal", description: "Keep your terminal's colors" },
-          { value: "auto", label: "Auto", description: "Use MOONDOG_THEME or the terminal hint" },
-        ], theme.mode, "Choose a Moondog theme");
+          { value: "auto", label: "Auto", description: "Follow MOONDOG_THEME, or guess from your terminal" },
+        ], theme.mode, "Pick a look");
         mode = selected?.value;
       }
       if (!mode) { setFooter("Theme unchanged."); return; }
       theme = createMoondogTheme({ mode, environment });
       transcript.invalidate();
       sleeve.invalidate();
-      setFooter(`${theme.mode === "paper" ? "Paper" : theme.mode === "charcoal" ? "Charcoal" : "Terminal"} theme. Applied to this session.`);
+      setFooter(`${theme.mode === "paper" ? "Paper" : theme.mode === "charcoal" ? "Charcoal" : "Terminal"} theme, for this session.`);
       tui.requestRender(true);
       return;
     }
     if (command === "art") {
       if (args.length > 1 || (args[0] && !["auto", "braille", "ascii", "off", "text"].includes(args[0]))) {
-        throw new Error("Usage: /art [braille|ascii|off|auto].");
+        throw new Error("Use /art, or /art braille, ascii, off, or auto.");
       }
       sleeve.setArtMode(args[0] ?? (sleeve.artMode === "ascii" ? "braille" : "ascii"));
       homeVisible = true;
-      setFooter(sleeve.artMode === "off" ? "Minimal opening." : `${sleeve.artMode === "ascii" || sleeve.artMode === "text" ? "ASCII" : "Braille"} character artwork.`);
+      setFooter(sleeve.artMode === "off" ? "A quiet opening, no artwork." : `${sleeve.artMode === "ascii" || sleeve.artMode === "text" ? "ASCII" : "Braille"} artwork.`);
       return;
     }
     if (command === "motion") {
-      if (args.length > 1 || (args[0] && !["on", "off"].includes(args[0]))) throw new Error("Usage: /motion [on|off].");
+      if (args.length > 1 || (args[0] && !["on", "off"].includes(args[0]))) throw new Error("Use /motion, or /motion on or off.");
       motionEnabled = args[0] ? args[0] === "on" : !motionEnabled;
-      setFooter(motionEnabled ? "Character motion on." : "Character motion off.");
+      setFooter(motionEnabled ? "Animation on." : "Animation off.");
       return;
     }
     if (command === "import") {
@@ -1246,9 +1254,9 @@ export async function runMoondogTui({
       return;
     }
     if (command === "help") {
-      if (args.length > 1 || (args[0] && args[0] !== "all")) throw new Error("Usage: /help [all].");
+      if (args.length > 1 || (args[0] && args[0] !== "all")) throw new Error("Use /help, or /help all.");
       addMoondogMessage(args[0] === "all" ? helpText() : listeningHelp());
-      setFooter("Find a command here, or type / to browse.");
+      setFooter("Type / to browse every command.");
       return;
     }
     if (command === "model") {
@@ -1265,7 +1273,7 @@ export async function runMoondogTui({
     }
     if (command === "profile" && args.length > 0) {
       if (typeof runProfile !== "function") {
-        throw new Error("Profile corrections are unavailable in this launch mode.");
+        throw new Error("Changing your profile isn't available when Moondog is started this way.");
       }
       addMoondogMessage(await runProfile(args));
       void updateHomeLyrics();
@@ -1273,12 +1281,12 @@ export async function runMoondogTui({
         try {
           await openProfile();
         } catch (error) {
-          addMoondogMessage(`Your choice was saved, but the profile could not refresh: ${error.message}\n\nUse \`/taste\` to retry.`);
-          setFooter("Choice saved; profile refresh unavailable.", yellow);
+          addMoondogMessage(`Your choice is saved, but I couldn't update the profile: ${error.message}\n\nType \`/taste\` to try again.`);
+          setFooter("Choice saved. The profile needs another try.", yellow);
           return;
         }
       }
-      setFooter("Profile command complete.", green);
+      setFooter("Done.", green);
       return;
     }
     if (command === "reload") {
@@ -1287,10 +1295,10 @@ export async function runMoondogTui({
       importNeedsRefresh = false;
       addMoondogMessage(
         status.state === "configured"
-          ? `Reloaded \`${status.provider}/${status.model}\`. The current conversation and memory were retained.`
-          : `Reloaded model settings. Runtime is offline: \`${status.reason}\`.`,
+          ? `Reloaded \`${status.provider}/${status.model}\`. This conversation and what I remember carry over.`
+          : `Reloaded, but no model is connected (\`${status.reason}\`). Your profile still works.`,
       );
-      setFooter("Runtime reloaded.", status.state === "configured" ? green : yellow);
+      setFooter("Reloaded.", status.state === "configured" ? green : yellow);
       return;
     }
     if (command === "remember") {
@@ -1307,29 +1315,29 @@ export async function runMoondogTui({
         .trim();
       if (!text) {
         throw new Error(
-          "Usage: /remember [fact|preference|constraint|goal] <text>.",
+          "Tell me what to remember, like /remember preference no live albums.",
         );
       }
       const memory = application.rememberMemory({ text, kind });
       addMoondogMessage(
-        `${memory.created ? "Remembered" : "Already remembered"}: ${memory.text}\n\nMemory ID: \`${memory.memory_id}\``,
+        `${memory.created ? "I'll remember that" : "I already knew that"}: ${memory.text}\n\nTo forget it later: \`/forget ${memory.memory_id}\``,
       );
-      setFooter("Memory saved.", green);
+      setFooter("Remembered.", green);
       return;
     }
     if (command === "forget") {
-      if (args.length !== 1) throw new Error("Usage: /forget <memory-id>.");
+      if (args.length !== 1) throw new Error("Tell me which memory, like /forget <memory-id>.");
       const result = application.forgetMemory(args[0]);
       addMoondogMessage(
         result.forgotten
-          ? `Forgot memory \`${result.memory_id}\`.`
-          : `No active memory found for \`${result.memory_id}\`.`,
+          ? `Forgotten: \`${result.memory_id}\`.`
+          : `I don't have a memory called \`${result.memory_id}\`.`,
       );
-      setFooter(result.forgotten ? "Memory forgotten." : "Memory not found.", yellow);
+      setFooter(result.forgotten ? "Forgotten." : "No such memory.", yellow);
       return;
     }
     if (command === "new") {
-      if (args.length) throw new Error("Usage: /new.");
+      if (args.length) throw new Error("/new doesn't take anything after it.");
       application.startNewSession?.("user_new");
       activeRuntime.reset();
       profileDiscoveryDraft = null;
@@ -1337,7 +1345,7 @@ export async function runMoondogTui({
       homeVisible = true;
       homeFocused = false;
       sleeve.invalidate();
-      setFooter("Started a new conversation. /resume keeps your history.", green);
+      setFooter("A fresh start. /resume brings back the last one.", green);
       return;
     }
     const result = await application.runLocalCommand(command, runtimeStatus);
@@ -1354,10 +1362,10 @@ export async function runMoondogTui({
     editor.focused = true;
     if (["web", "remember", "forget", "spotify", "art", "motion"].includes(selected.value)) {
       if (editor.getText()) {
-        setFooter(`Draft kept. Use /${selected.value} after sending it.`);
+        setFooter(`Your message is still here. Send or clear it, then use /${selected.value}.`);
       } else {
         editor.setText(`/${selected.value} `);
-        setFooter("Complete the command, then press Enter.");
+        setFooter("Finish the command, then press Enter.");
       }
       return;
     }
@@ -1382,11 +1390,11 @@ export async function runMoondogTui({
       }
       if (!slashCommands.some((entry) => entry.name === command)) {
         enterConversation();
-        addMoondogMessage(`Unknown command: \`/${command}\`. Use \`/help\`.`);
+        addMoondogMessage(`I don't know \`/${command}\`. Type \`/help\` to see what I do know.`);
         return;
       }
       if (command === "commands") {
-        if (args.length) { addMoondogMessage("Usage: /commands."); return; }
+        if (args.length) { addMoondogMessage("`/commands` doesn't take anything after it."); return; }
         await openCommandPalette();
         return;
       }
@@ -1396,7 +1404,7 @@ export async function runMoondogTui({
         localCommandController = ["web", "lyrics"].includes(command) ? new AbortController() : null;
         const controller = localCommandController;
         setBusy(true, controller ? () => controller.abort() : null);
-        setFooter(`Running /${command}...`, yellow);
+        setFooter(`/${command}...`, yellow);
         editor.disableSubmit = true;
         const argumentText = value.slice(1).trim().slice(rawCommand.length).trim();
         const parsedArgs = command === "import" ? argumentText ? [argumentText] : []
@@ -1408,8 +1416,8 @@ export async function runMoondogTui({
         if (cleanedUp) return;
         enterConversation();
         const cancelled = localCommandController?.signal.aborted;
-        addMoondogMessage(cancelled ? command === "web" ? "Web research cancelled." : "Lyric sync cancelled." : `Local command failed: ${error.message}`);
-        setFooter(cancelled ? "Cancelled." : "Command failed.", cancelled ? yellow : red);
+        addMoondogMessage(cancelled ? command === "web" ? "Stopped the lookup." : "Stopped the lyric sync." : `That didn't work: ${error.message}`);
+        setFooter(cancelled ? "Cancelled." : `/${command} didn't work.`, cancelled ? yellow : red);
       } finally {
         localCommandController = null;
         setBusy(false);
@@ -1423,7 +1431,7 @@ export async function runMoondogTui({
       ? profileDiscoveryDraft.target : undefined;
     if (profileSeed && runtimeStatus.state !== "configured") {
       editor.setText(rawValue);
-      setFooter("Draft kept · /model connects a model before sending.", yellow);
+      setFooter("Your request is still here · /model connects a model first.", yellow);
       return;
     }
     // Retain the binding for history recall, only while its exact metadata is visible.
@@ -1459,7 +1467,7 @@ export async function runMoondogTui({
       if (pending.length) {
         setFooter(pending.length > 1 ? `${pending.length} running · ${pending[0].label}` : `${pending[0].label}...`, yellow);
       } else {
-        setFooter(state === "failed" ? `${label} failed · continuing...` : "Preparing your answer...", state === "failed" ? yellow : dim);
+        setFooter(state === "failed" ? `${label} didn't work · carrying on...` : "Putting it together...", state === "failed" ? yellow : dim);
       }
     };
 
@@ -1479,7 +1487,7 @@ export async function runMoondogTui({
           tui.requestRender();
         },
         onModelRetry: ({ attempt, maxRetries }) => {
-          if (!cancellationRequested) setFooter(`Retrying model connection ${attempt}/${maxRetries}...`, yellow);
+          if (!cancellationRequested) setFooter(`Can't reach the model. Trying again (${attempt}/${maxRetries})...`, yellow);
         },
         onToolStart: (tool) => updateTool(tool, "running"),
         onToolEnd: (tool) => updateTool(tool, tool?.isError ? "failed" : "completed"),
@@ -1499,24 +1507,24 @@ export async function runMoondogTui({
       const connectionFailed = error.code === "model_connection_failed";
       const errorText = connectionFailed
         ? `${sanitizeTerminalText(error.message)}\n\n${error.toolsExecuted
-          ? "A capability already ran during this turn. Check results before repeating an action."
-          : "Press ↑ to recall your message and Enter to try again."}`
-        : `Runtime error: ${sanitizeTerminalText(error.message)}`;
+          ? "Something already ran before the connection dropped. Check what happened before you ask again."
+          : "Press ↑ to bring your message back, then Enter to try again."}`
+        : `Something went wrong: ${sanitizeTerminalText(error.message)}`;
       const appendedError = connectionFailed ? errorText : `_${errorText}_`;
       response.setText(
         streamedText.length > 0 ? `${streamedText}\n\n${appendedError}` : errorText,
       );
       setFooter(connectionFailed
         ? error.toolsExecuted
-          ? "Connection failed. Check results before repeating."
-          : "Connection failed. ↑ recalls your message."
-        : "The model request failed.", red);
+          ? "Lost the model. Check what ran before retrying."
+          : "Lost the model. ↑ brings your message back."
+        : "The model couldn't answer.", red);
     } finally {
       if (toolCalls.size && !cleanedUp) {
         const calls = [...toolCalls.values()];
         const counts = ["completed", "failed", "running"].flatMap((state) => {
           const count = calls.filter((call) => call.state === state).length;
-          return count ? [`${count} ${state === "running" ? "unconfirmed" : state}`] : [];
+          return count ? [`${count} ${{ completed: "done", failed: "failed", running: "unfinished" }[state]}`] : [];
         });
         const summary = `Tools · ${counts.join(", ")} · ${elapsedTime(workStartedAt)}`;
         const labels = [...new Set(calls.map((call) => call.label))].join(" · ");
@@ -1589,11 +1597,11 @@ export async function runMoondogTui({
       if (cancelWork) {
         if (!cancellationRequested) {
           cancellationRequested = true;
-          setFooter("Cancelling the active request...", yellow);
+          setFooter("Stopping...", yellow);
           cancelWork();
         }
       } else {
-        setFooter("This command cannot be cancelled here. Waiting for completion.", yellow);
+        setFooter("This can't be stopped halfway. Almost there...", yellow);
       }
     } else {
       shutdown();

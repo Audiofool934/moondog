@@ -63,6 +63,29 @@ function hours(milliseconds) {
   return Math.round(milliseconds / 360_000) / 10;
 }
 
+function plural(count, one, many = `${one}s`) {
+  return `${count} ${count === 1 ? one : many}`;
+}
+
+function day(timestamp) {
+  return typeof timestamp === "string" ? timestamp.slice(0, 10) : timestamp;
+}
+
+const signalPhrases = {
+  "historical attention only": "how much you played it",
+  "saved-library state": "that it is saved in your library",
+  "private playlist curation": "that it is on one of your playlists",
+  "explicit listener preference": "that you said you like it",
+};
+
+function signalPhrase(value) {
+  return signalPhrases[value] ?? value;
+}
+
+function signalNote(value) {
+  return value === "historical attention only" ? "" : ` It helps ${signalPhrase(value)}.`;
+}
+
 function aggregateEvidenceId(subjectId, kind, key) {
   return uuidV5(
     `${subjectId}\0${kind}\0${key}`,
@@ -420,11 +443,11 @@ function aggregateListeningSeasons(subjectId, eventAnalysis, explanations) {
       evidenceId,
       dimension: "listening.seasons",
       value: `${activeSeasonCount} active retained UTC calendar quarters`,
-      basis: `${eventAnalysis.eligible.length} eligible effective events are grouped into ${activeSeasonCount} active fixed UTC calendar quarters from ${seasonKey(retainedFirstSeasonIndex)} through ${seasonKey(lastSeasonIndex)}. The bounded projection represents ${seasons.length} of ${retainedSeasonCount} quarters.`,
+      basis: `${plural(eventAnalysis.eligible.length, "play")} across ${plural(activeSeasonCount, "active quarter")} from ${seasonKey(retainedFirstSeasonIndex)} to ${seasonKey(lastSeasonIndex)}. Showing ${seasons.length} of ${retainedSeasonCount} quarters.`,
       name: "listening-seasons",
       confidence: confidenceForCount(eventAnalysis.eligible.length, 0.65, 0.95),
       limitation:
-        "Listening Seasons are fixed three-month UTC windows. First observed means first appearance in retained eligible history, not discovery. Empty windows mean no retained eligible event appears there, not proof of no listening. A leading artist or signature track describes only that window and does not establish preference, mood, or a life event.",
+        "Seasons are fixed three-month windows in UTC. A song counts as new the first time it shows up in your history, which is not always when you found it. An empty season means no history was kept, not that you stopped listening. The top artist or song describes that season only, not your mood or what was happening in your life.",
     }),
   );
 
@@ -513,11 +536,11 @@ function aggregateMonthlyActivity(subjectId, eventAnalysis, explanations) {
       evidenceId,
       dimension: "listening.monthly_activity",
       value: `${activeMonths.length} active retained UTC months`,
-      basis: `${eventAnalysis.eligible.length} eligible effective events are grouped into ${activeMonths.length} active retained UTC months from ${firstMonth} through ${lastMonth}. The bounded grid represents ${months.length} of ${retainedSpanMonths} calendar months in that span.`,
+      basis: `${plural(eventAnalysis.eligible.length, "play")} across ${plural(activeMonths.length, "active month")} from ${firstMonth} to ${lastMonth}. Showing ${months.length} of the ${retainedSpanMonths} months in that span.`,
       name: "listening-monthly-activity",
       confidence: confidenceForCount(eventAnalysis.eligible.length, 0.65, 0.95),
       limitation:
-        "Monthly activity is a UTC aggregate of retained eligible events. A blank month means no retained eligible event appears in that month, not proof that no listening occurred.",
+        "Months follow UTC. A blank month means no history was kept for it, not that you stopped listening.",
     }),
   );
   return {
@@ -670,11 +693,11 @@ function aggregateEvents(subjectId, eventRows, explanations) {
             evidenceId,
             dimension: "taste.artist_familiarity",
             value: item.name,
-            basis: `${item.playCount} effective plays across ${item.trackRefs.size} tracks, totaling ${minutes(item.playedMs)} listening minutes${windowKind === "recent" ? ` in the ${recentWindowDays}-day window ending ${latest}` : ` from ${item.firstPlayedAt} through ${item.lastPlayedAt}`}.`,
+            basis: `${plural(item.playCount, "play")} across ${plural(item.trackRefs.size, "track")}, ${minutes(item.playedMs)} minutes in all${windowKind === "recent" ? `, in the ${recentWindowDays} days up to ${day(latest)}` : `, from ${day(item.firstPlayedAt)} to ${day(item.lastPlayedAt)}`}.`,
             name: `listening-artist-${windowKind}`,
             confidence: confidenceForCount(item.playCount),
             limitation:
-              "Repeated or long listening supports familiarity and attention, not a permanent preference. Explicit skips remain contextual.",
+              "Playing an artist a lot shows you know them well, not that you always will love them. A skip is a moment, not a verdict.",
           }),
         );
         return {
@@ -710,11 +733,11 @@ function aggregateEvents(subjectId, eventRows, explanations) {
             evidenceId,
             dimension: "taste.track_familiarity",
             value: `${item.title} - ${item.artist}`,
-            basis: `${item.playCount} effective plays totaling ${minutes(item.playedMs)} listening minutes${windowKind === "recent" ? ` in the ${recentWindowDays}-day window ending ${latest}` : ` from ${item.firstPlayedAt} through ${item.lastPlayedAt}`}; ${item.skippedCount} events carry an explicit provider skip signal.`,
+            basis: `${plural(item.playCount, "play")}, ${minutes(item.playedMs)} minutes in all${windowKind === "recent" ? `, in the ${recentWindowDays} days up to ${day(latest)}` : `, from ${day(item.firstPlayedAt)} to ${day(item.lastPlayedAt)}`}. ${item.skippedCount === 0 ? "Never skipped" : `Skipped ${plural(item.skippedCount, "time")}`}.`,
             name: `listening-track-${windowKind}`,
             confidence: confidenceForCount(item.playCount),
             limitation:
-              "This is behavioral familiarity evidence. Listening duration and repeats do not by themselves prove liking.",
+              "This shows how well you know the song. Playing something a lot doesn't prove you like it.",
           }),
         );
         return {
@@ -856,11 +879,11 @@ function artistRelationships(subjectId, eventAnalysis, explanations) {
           evidenceId,
           dimension: "taste.artist_continuity",
           value: artist.name,
-          basis: `${artist.name} appears in ${activeYears} retained UTC calendar years from ${firstYear} through ${lastYear}, across ${artist.playCount} effective plays and ${minutes(artist.playedMs)} listening minutes.`,
+          basis: `${artist.name} shows up in ${plural(activeYears, "year")} of your history, from ${firstYear} to ${lastYear}: ${plural(artist.playCount, "play")}, ${minutes(artist.playedMs)} minutes in all.`,
           name: "listening-artist-continuity",
           confidence: confidenceForCount(artist.playCount),
           limitation:
-            "This describes continuity in retained history, not uninterrupted affinity, current preference, or the listener's identity.",
+            "This says they kept coming back in your history. It doesn't say you never drifted apart, or how you feel about them now.",
         }),
       );
       return {
@@ -938,13 +961,13 @@ function yearlyArtistTransitions(subjectId, eventAnalysis, explanations) {
         evidenceId,
         dimension: "taste.artist_turnover",
         value: `${previous.year} to ${current.year}`,
-        basis: `Among the ${current.artists.length} artists with the most retained listening time in ${current.year}, ${retained.length} also ranked in ${previous.year} and ${introduced.length} did not.`,
+        basis: `Of your ${current.artists.length} most played artists in ${current.year}, ${retained.length} were also near the top in ${previous.year} and ${introduced.length} were not.`,
         name: "listening-yearly-artist-turnover",
         confidence: confidenceForCount(
           Math.min(previous.artists.length, current.artists.length),
         ),
         limitation:
-          "Year-to-year top-artist overlap describes this retained archive. It does not measure genre breadth, discovery, identity, or permanent taste change.",
+          "This compares your top artists year to year. It doesn't measure how wide your taste is, or whether it has really changed.",
       }),
     );
     return {
@@ -1020,11 +1043,11 @@ function releaseDepth(subjectId, eventAnalysis, explanations) {
           evidenceId,
           dimension: "taste.release_depth",
           value: `${release.title} - ${release.artist}`,
-          basis: `${release.trackRefs.size} distinct retained tracks from ${release.title} appear across ${release.playCount} effective plays totaling ${minutes(release.playedMs)} listening minutes${years.length > 0 ? ` in ${years.length} UTC calendar ${years.length === 1 ? "year" : "years"}` : ""}.`,
+          basis: `You played ${plural(release.trackRefs.size, "different track")} from ${release.title}: ${plural(release.playCount, "play")}, ${minutes(release.playedMs)} minutes in all${years.length > 0 ? `, across ${plural(years.length, "year")}` : ""}.`,
           name: "listening-release-depth",
           confidence: confidenceForCount(release.engagedPlayCount),
           limitation:
-            "Multi-track listening describes release-level depth in retained history. It does not prove full-album listening, track order, completion, ownership, or liking.",
+            "Playing several tracks from a record shows you went deeper than one song. It doesn't mean you played the whole album in order, own it, or like it.",
         }),
       );
       return {
@@ -1115,11 +1138,11 @@ function listeningSessionSummary(subjectId, eventAnalysis, explanations) {
       evidenceId,
       dimension: "listening.session_shape",
       value: `${sessions.length} approximate listening sessions`,
-      basis: `${rows.length} eligible Spotify Extended History events form ${sessions.length} approximate sessions when a gap longer than ${sessionGapMinutes} minutes starts a new session. The median session contains ${median(sessionPlayCounts)} plays and ${median(sessionListeningMinutes)} listening minutes.`,
+      basis: `${plural(rows.length, "play")} fall into about ${plural(sessions.length, "session")}, counting a new session after a break of more than ${sessionGapMinutes} minutes. A typical session is ${median(sessionPlayCounts)} plays and ${median(sessionListeningMinutes)} minutes.`,
       name: "listening-session-shape",
       confidence: confidenceForCount(rows.length),
       limitation:
-        "This is an approximation from UTC track-stop timestamps, not a provider session log. It does not establish activity, attention, mood, location, or intent.",
+        "Sessions are estimated from when each song stopped. They say nothing about what you were doing, where you were, or how you felt.",
     }),
   );
   return {
@@ -1264,7 +1287,7 @@ function backToBackTracks(
           evidenceId,
           dimension: "listening.back_to_back",
           value: `${item.title} - ${item.artist}`,
-          basis: `${item.playsInBursts} retained plays form ${item.burstCount} adjacent same-track ${item.burstCount === 1 ? "sequence" : "sequences"}; the longest contains ${item.maximumConsecutivePlays} consecutive plays. Every counted event is a non-skipped Spotify Extended History row with at least ${backToBackMinimumPlayedMs / 1_000} seconds played, and no adjacent gap exceeds ${backToBackMaximumGapMinutes} minutes.`,
+          basis: `You played it again right away ${item.burstCount === 1 ? "once" : `${item.burstCount} times`}, ${plural(item.playsInBursts, "play")} in all, with up to ${item.maximumConsecutivePlays} in a row. Each counted play lasted at least ${backToBackMinimumPlayedMs / 1_000} seconds, wasn't skipped, and started within ${backToBackMaximumGapMinutes} minutes of the last.`,
           name: "listening-track-back-to-back",
           confidence: confidenceForCount(
             item.playsInBursts,
@@ -1272,7 +1295,7 @@ function backToBackTracks(
             0.9,
           ),
           limitation:
-            "Adjacent same-track events describe retained playback sequence. They do not prove that repeat mode was active, that the replay was intentional, or that the listener liked the track.",
+            "Playing a song twice in a row could be love, or repeat mode, or falling asleep. This can't tell which.",
         }),
       );
       return {
@@ -1713,13 +1736,11 @@ function listenerAssertions(subjectId, records, explanations) {
           }`,
           value,
           direction: "supports",
-          basis: `The listener explicitly marked ${JSON.stringify(value)} as ${
-            stance === "avoid" ? "something to avoid" : "something they like"
-          } at ${record.occurred_at}.`,
+          basis: `You said ${stance === "avoid" ? `to keep ${JSON.stringify(value)} out` : `you like ${JSON.stringify(value)}`} on ${day(record.occurred_at)}.`,
           name: "explicit-listener-correction",
           confidence: 1,
           limitation:
-            "This is a current direct listener assertion. It can be superseded or retracted and does not rewrite behavioral history.",
+            "This is your own choice. You can change or undo it any time, and it doesn't rewrite your listening history.",
         }),
       );
       return {
@@ -1875,14 +1896,14 @@ function rediscoveryTracks(
           evidenceId,
           dimension: "listening.rediscovery_candidate",
           value: `${track.title} - ${track.artist}`,
-          basis: `${track.playCount} effective plays, ${track.engagedPlayCount} without an explicit skip signal, and ${minutes(track.playedMs)} listening minutes from ${track.firstPlayedAt} through ${track.lastPlayedAt}; the track has been quiet for ${quietDays} days relative to the latest retained event. Its strongest supporting signal is ${signal.value}.`,
+          basis: `${plural(track.playCount, "play")} (${track.engagedPlayCount} not skipped), ${minutes(track.playedMs)} minutes in all, from ${day(track.firstPlayedAt)} to ${day(track.lastPlayedAt)}. Then nothing for ${plural(quietDays, "day")}, up to the latest play in your history. The strongest reason to bring it back is ${signalPhrase(signal.value)}.`,
           name: "listening-track-rediscovery",
           confidence:
             signal.rank === 4
               ? 0.95
               : confidenceForCount(track.engagedPlayCount, 0.58, 0.88),
           limitation:
-            "This is a bounded listen-again prompt, not proof of liking or that the absence was intentional. Missing provider history can make the quiet period look longer than it was.",
+            "This is a nudge to listen again, not proof you liked it or stopped on purpose. Gaps in your history can make the quiet look longer than it was.",
         }),
       );
       return {
@@ -1993,7 +2014,7 @@ function historicalReturnTracks(
           evidenceId,
           dimension: "listening.historical_return",
           value: `${track.title} - ${track.artist}`,
-          basis: `${track.playCount} effective plays, ${track.engagedPlayCount} without an explicit skip signal, and ${minutes(track.playedMs)} listening minutes from ${track.firstPlayedAt} through ${track.lastPlayedAt}; ${returns.length} observed return ${returns.length === 1 ? "gap" : "gaps"} reached at least ${historicalReturnMinimumGapDays} days, with a longest gap of ${longestGapDays} days. Its strongest supporting context is ${signal.value}.`,
+          basis: `${plural(track.playCount, "play")} (${track.engagedPlayCount} not skipped), ${minutes(track.playedMs)} minutes in all, from ${day(track.firstPlayedAt)} to ${day(track.lastPlayedAt)}. It came back ${returns.length === 1 ? "once" : `${returns.length} times`} after ${historicalReturnMinimumGapDays}+ days away; the longest time away was ${plural(longestGapDays, "day")}.${signalNote(signal.value)}`,
           name: "listening-track-historical-return",
           confidence: confidenceForCount(
             track.engagedPlayCount + returns.length,
@@ -2001,7 +2022,7 @@ function historicalReturnTracks(
             0.9,
           ),
           limitation:
-            "A long gap followed by another retained play is a historical return pattern, not proof of liking, nostalgia, or an intentional absence. Missing history and changed provider metadata can lengthen or split the pattern.",
+            "A song coming back after a long time is a pattern. It doesn't prove you like it, miss it, or left it on purpose. Gaps in your history or renamed tracks can stretch or split the pattern.",
         }),
       );
       return {
@@ -2127,11 +2148,11 @@ function timeCapsuleTracks(
         evidenceId,
         dimension: "listening.time_capsule_representative",
         value: `${track.title} - ${track.artist}`,
-        basis: `${year} is this track's strongest retained calendar year, with ${peak.play_count} effective plays, ${peak.engaged_play_count} without an explicit skip signal, and ${peak.listening_minutes} listening minutes. The deterministic year representative excludes active avoid signals and its strongest supporting context is ${signal.value}.`,
+        basis: `${year} is this song's biggest year in your history: ${plural(peak.play_count, "play")} (${peak.engaged_play_count} not skipped), ${peak.listening_minutes} minutes in all. Songs you asked me to keep out are never picked.${signalNote(signal.value)}`,
         name: "listening-time-capsule",
         confidence: confidenceForCount(peak.engaged_play_count, 0.55, 0.88),
         limitation:
-          "This track is a bounded representative of retained listening in one UTC calendar year, not proof that it defined the year, was first discovered then, or remains preferred now. Missing history can change the selection.",
+          "One song stands in for the year. That doesn't mean it defined the year, that you found it then, or that you still love it. Gaps in your history can change the pick.",
       }),
     );
     return {
