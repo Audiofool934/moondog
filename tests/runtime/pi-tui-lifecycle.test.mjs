@@ -1602,8 +1602,7 @@ test("the idle home rotates cached lyrics without another fetch and freezes sele
   const lines = ["Blue test room", "Quiet test window", "New test morning"];
   let selections = 0;
   let refreshes = 0;
-  const setInterval = globalThis.setInterval;
-  context.mock.method(globalThis, "setInterval", (callback, ms, ...args) => setInterval(callback, ms === 125 ? 5 : ms, ...args));
+  context.mock.timers.enable({ apis: ["setInterval"] });
   const render = context.mock.method(RecordSleeve.prototype, "render");
   const running = runMoondogTui({
     application: { ...fakeApplication(), async getLyricSeeds() { return { subjectId: "one", tracks: [track] }; } },
@@ -1617,14 +1616,24 @@ test("the idle home rotates cached lyrics without another fetch and freezes sele
   context.after(async () => { signalTarget.emit("SIGTERM"); await running; });
   await waitForStart(terminal);
   await waitFor(() => terminal.output.includes(lines[0]));
-  await waitFor(() => terminal.output.includes(lines[1]));
-  await waitFor(() => terminal.output.includes(lines[2]));
+  const advanceToLine = async (line) => {
+    // Advance animation time explicitly, letting Pi paint each group of frames.
+    // A busy CI worker must not have to squeeze a whole passage into one second.
+    for (let step = 0; step < 40 && !terminal.output.includes(line); step++) {
+      context.mock.timers.tick(125 * 4);
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    assert.ok(terminal.output.includes(line), "the next cached lyric must visibly enter the viewport");
+  };
+  await advanceToLine(lines[1]);
+  await advanceToLine(lines[2]);
   assert.equal(refreshes, 1, "each new line uses the cache without another network refresh");
   terminal.send("A listening draft");
   await new Promise((resolve) => setTimeout(resolve, 30));
   const count = selections;
   const renders = render.mock.callCount();
-  await new Promise((resolve) => setTimeout(resolve, 450));
+  context.mock.timers.tick(30_000);
+  await new Promise((resolve) => setTimeout(resolve, 30));
   assert.equal(selections, count);
   assert.equal(render.mock.callCount(), renders);
 });
