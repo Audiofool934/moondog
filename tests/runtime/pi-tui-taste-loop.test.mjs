@@ -431,7 +431,7 @@ test("escaping profile actions returns to browsing, then home with the draft; ta
   terminal.send("\x1b[B");
   terminal.send("\x1b[A");
   await fixture.leaveProfile(draft);
-  assert.match(terminal.body, /Bring your history/u);
+  assert.match(terminal.body, /Import your music/u);
   assert.deepEqual(fixture.profileActions, []);
   assert.deepEqual(await fixture.persistedCorrections(), []);
   terminal.send("\x05");

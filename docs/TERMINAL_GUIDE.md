@@ -205,7 +205,7 @@ Keep the generated ZIP under the ignored `outputs/` directory rather than adding
 
 ## Import and inspect listening history
 
-Start with `/import`, or choose **Bring your history** from the home screen.
+Start with `/import`, or choose **Import your music** from the home screen.
 Choose **Spotify**, **Apple Music**, **YouTube Music**, **QQ Music** or **NetEase Cloud Music** first.
 The guide explains the available quick-start and past-history routes for that service.
 All imports work without a model and open the cumulative Profile after confirmation.

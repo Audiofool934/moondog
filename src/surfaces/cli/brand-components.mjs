@@ -89,7 +89,7 @@ export class ListeningEditor extends Editor {
         : theme.faint("─".repeat(width));
     }
     if (!busy && !this.getText() && lines.length === 3 && width >= 28) {
-      const hint = homeFocused ? "Esc returns to your next thought." : homeVisible ? "What does tonight sound like?" : "Keep the conversation going...";
+      const hint = homeFocused ? "Esc returns to your next thought." : homeVisible ? "What have you been listening to?" : "Keep the conversation going...";
       const text = truncateToWidth(hint, width - 2, "");
       lines[1] = " " + (this.focused ? CURSOR_MARKER + theme.inverse(text[0]) : theme.faint(text[0])) + theme.faint(text.slice(1));
     }
@@ -98,10 +98,10 @@ export class ListeningEditor extends Editor {
 }
 
 export const homeActions = [
-  { command: "taste", label: "Listening profile", short: "Profile", description: "Explore the evidence. Make it yours." },
-  { command: "import", label: "Bring your history", short: "Import history", description: "Get your data. See what it brings." },
-  { command: "theme", label: "Change the mood", short: "Appearance", description: "Paper, charcoal, or your terminal colors." },
-  { command: "help", label: "Find your way", short: "Guide", description: "A few commands. Everything within reach." },
+  { command: "taste", label: "Listening profile", short: "Profile", description: "See what your listening reveals. Tell me what I missed." },
+  { command: "import", label: "Import your music", short: "Import music", description: "Bring songs, playlists or listening history." },
+  { command: "theme", label: "Appearance", short: "Appearance", description: "Paper, charcoal, or your terminal colors." },
+  { command: "help", label: "Help & commands", short: "Help", description: "Commands, connections and keyboard shortcuts." },
 ];
 
 /** A character-native listening room; it never transmits image protocols. */
@@ -140,12 +140,17 @@ export class RecordSleeve {
     const pixelTitle = rightWidth >= 41 && rows >= 20 && !["ascii", "text"].includes(this.artMode) && this.environment.TERM !== "dumb";
     const copy = [
       ...(pixelTitle ? renderMoondogWordmark().map(theme.text) : [theme.bold(roomy ? "M O O N D O G" : "MOONDOG")]),
-      ...(rows >= 12 ? [theme.muted(roomy ? "A little music. A different orbit." : "Find your next orbit."), ""] : [""]),
+      ...(rows >= 12 ? [...wrapDescription("Your personal music agent.", rightWidth).map(theme.muted), ""] : [""]),
+      ...(roomy ? [...wrapDescription("Bring a song. I'll bring a point of view.", rightWidth).map(theme.text), ""] : []),
       ...actionLines,
-      ...(roomy ? ["", theme.faint("TYPE A THOUGHT. FOLLOW A SOUND."), "", ...wrapDescription(homeActions[selected].description, rightWidth).map(theme.muted)] : []),
+      ...(roomy ? ["", ...wrapDescription(homeActions[selected].description, rightWidth).map(theme.muted)] : []),
     ];
     if (rows < 7 || width < 34 || this.artMode === "off") {
-      const compact = [theme.bold(" MOONDOG  ◎"), ...actionLines.map((line) => ` ${line}`)];
+      const compact = [theme.bold(" MOONDOG  ◎"),
+        ...(rows >= 9 && width >= 30 ? [theme.muted(" Your personal music agent."), ""] : []),
+        ...actionLines.map((line) => ` ${line}`),
+        ...(rows >= 13 && width >= 42 ? ["", theme.text(" Bring a song. I'll bring a point of view.")] : []),
+      ];
       const top = Math.max(0, Math.floor((rows - compact.length) / 2));
       return Array.from({ length: rows }, (_, row) => paint(compact[row - top] ?? ""));
     }
