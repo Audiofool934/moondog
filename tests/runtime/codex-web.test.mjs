@@ -62,7 +62,7 @@ test("CLI reader opens the supplied URL and shows attributable summaries", async
   const fake = fakeCodex();
   const web = await service(fake);
   const output = await runWebCommand({ args: ["read", "https://example.com/interview#part"], webResearch: web });
-  assert.match(output, /Codex summary of public web evidence/);
+  assert.match(output, /A Codex summary of public pages/);
   assert.match(output, /https:\/\/example.com\/interview/);
   assert.equal(JSON.parse(fake.calls.at(-1).options.input.split("\n").at(-1)).url, "https://example.com/interview");
   await assert.rejects(runWebCommand({ args: ["read", "https://example.com", "extra"], webResearch: web }), /Usage/);
@@ -72,7 +72,7 @@ test("CLI reader opens the supplied URL and shows attributable summaries", async
 test("login is reported without making model calls and unavailable credentials block research", async () => {
   const fake = fakeCodex({ authCode: 1 });
   const web = await service(fake);
-  assert.match(await runWebCommand({ args: ["status"], webResearch: web }), /codex_login_required/);
+  assert.match(await runWebCommand({ args: ["status"], webResearch: web }), /codex login required/);
   await assert.rejects(web.search({ query: "music" }), { code: "web_codex_unavailable" });
   assert.equal(fake.calls.length, 2);
 });

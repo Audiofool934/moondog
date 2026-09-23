@@ -17,7 +17,7 @@ export function formatWebResearch(result) {
     `# Web ${result.kind}: ${result.status}`,
     "",
     `Retrieved: ${result.retrieved_at}${result.from_cache ? " (cached)" : ""}`,
-    "Codex summary of public web evidence. Dates below are source metadata, not necessarily event dates.",
+    "A Codex summary of public pages. The dates are when each page was published, which may not be when things happened.",
     "",
     sanitizeTerminalText(result.summary),
     "",
@@ -35,10 +35,10 @@ export async function runWebCommand({ args = [], webResearch, json = false, sign
   if (action === "help" || action === "--help") {
     return "# Moondog public web\n\n- `/web status` - inspect Codex CLI readiness without a model request\n- `/web search <query>` - search reviews, news, interviews or concert information\n- `/web read <https://public-page>` - read and summarize a public page\n\nThese commands use your existing Codex login and usage allowance. Results stay in the TUI. A 5-minute process-local cache avoids repeat requests. Ctrl+C cancels a request. No music-profile import is needed.\n\nShell equivalents: `moondog web status|search|read [arguments] [--json]`.";
   }
-  if (!webResearch) throw new Error("Codex web research is unavailable.");
+  if (!webResearch) throw new Error("Web lookups aren't available right now.");
   if (action === "status" && values.length === 0) {
     const status = webResearch.publicStatus();
-    return json ? JSON.stringify(status, null, 2) : `Codex web research: ${status.state}${status.reason ? ` (${status.reason})` : ""}. This readiness check made no live search request.`;
+    return json ? JSON.stringify(status, null, 2) : `Web lookups through Codex: ${status.state.replaceAll("_", " ")}${status.reason ? ` (${status.reason.replaceAll("_", " ")})` : ""}. Checking this didn't search anything.`;
   }
   if (action === "search" && values.length > 0) {
     const result = await webResearch.search({ query: values.join(" ") }, { signal });

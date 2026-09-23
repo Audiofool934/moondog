@@ -54,19 +54,15 @@ function exactArguments(action, rest, count, usage) {
 
 function formatImport(value) {
   return [
-    "# ListenBrainz history import",
-    `- Input listens: ${value.input_records ?? 0}`,
-    `- New listening events: ${value.inserted_events ?? 0}`,
-    `- Duplicates: ${value.duplicate_events ?? 0}`,
-    `- New track references: ${value.inserted_track_refs ?? 0}`,
-    `- Server-mapped MusicBrainz tracks in input: ${value.mapped_track_refs ?? 0}`,
-    `- Events with played duration: ${value.events_with_played_ms ?? 0}`,
-    `- Event range: ${value.earliest_occurred_at ?? "none"} to ${value.latest_occurred_at ?? "none"}`,
-    `- File SHA-256: ${value.archive_sha256 ?? "unavailable"}`,
-    `- Import batch: ${value.already_imported ? "already present" : "recorded"}`,
-    `- Profile effects: ${value.profile_effects ?? "unchanged"}`,
-    "- Source JSON copied by Moondog: no",
-    "- Direct account identifiers retained: none",
+    "# Your ListenBrainz history is in",
+    `- ${value.input_records ?? 0} listens in the file, from ${value.earliest_occurred_at?.slice(0, 10) ?? "an unknown date"} to ${value.latest_occurred_at?.slice(0, 10) ?? "an unknown date"}`,
+    value.already_imported
+      ? "- You imported this file before, so nothing new was added"
+      : `- ${value.inserted_events ?? 0} new${value.duplicate_events ? `, ${value.duplicate_events} I already had` : ""}`,
+    `- ${value.inserted_track_refs ?? 0} songs new to your profile; ListenBrainz matched ${value.mapped_track_refs ?? 0} to MusicBrainz`,
+    `- Listening time is known for ${value.events_with_played_ms ?? 0} of them`,
+    "- The file itself wasn't copied, and no account details were kept",
+    `- File fingerprint: ${value.archive_sha256 ?? "unavailable"}`,
   ].join("\n");
 }
 
