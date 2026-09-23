@@ -7,18 +7,18 @@ import {
 import { sanitizeTerminalText } from "./format-output.mjs";
 
 export function profileCorrectionHelpText(commandPrefix = "moondog profile") {
-  return `# Moondog profile corrections
+  return `# Telling Moondog what it got wrong
 
 Commands:
 
-- \`${commandPrefix} corrections [--all] [--json]\` - list active corrections, or include superseded and retracted history
-- \`${commandPrefix} correct --artist <name> (--like|--avoid) [--note <text>] [--json]\` - record an explicit artist stance
-- \`${commandPrefix} correct --track <title> --by <artist> (--like|--avoid) [--note <text>] [--json]\` - record an explicit track stance
-- \`${commandPrefix} retract <correction-id> [--json]\` - retract one active correction
+- \`${commandPrefix} corrections [--all] [--json]\` - everything you've told me; add --all to include earlier choices
+- \`${commandPrefix} correct --artist <name> (--like|--avoid) [--note <text>] [--json]\` - like an artist, or keep them out
+- \`${commandPrefix} correct --track <title> --by <artist> (--like|--avoid) [--note <text>] [--json]\` - like a track, or keep it out
+- \`${commandPrefix} retract <correction-id> [--json]\` - undo one of your choices
 
-Corrections are direct, typed, local TasteEvent records.
-They outrank ambiguous behavioral and provider signals without rewriting listening history.
-Every correction is inspectable, supersedable, and retractable.`;
+What you tell me counts for more than what your play counts suggest.
+Your listening history stays exactly as it was.
+You can see, change, or undo any choice at any time, and they stay on this machine.`;
 }
 
 function optionValue(values, option) {
@@ -74,16 +74,16 @@ function parseProfileArguments(args) {
       throw new Error(`Unknown profile correction option: ${values[0]}`);
     }
     if (Boolean(artist) === Boolean(track)) {
-      throw new Error("Choose exactly one correction target: --artist or --track.");
+      throw new Error("Tell me one thing to change: --artist or --track.");
     }
     if (track && !by) {
-      throw new Error("A --track correction requires --by <artist>.");
+      throw new Error("Add --by <artist> so I know which track you mean.");
     }
     if (artist && by) {
-      throw new Error("The --by option is valid only with --track.");
+      throw new Error("--by only goes with --track.");
     }
     if (like === avoid) {
-      throw new Error("Choose exactly one listener stance: --like or --avoid.");
+      throw new Error("Choose one: --like or --avoid.");
     }
     return {
       action,
@@ -109,27 +109,24 @@ function writeLine(output, value = "") {
 
 function formatCorrections(value) {
   const lines = [
-    "# Listener corrections",
+    "# What you've told me",
     "",
-    `- Active: ${value.active}`,
-    `- Shown: ${value.corrections.length}`,
-    "- Listening history changed: no",
+    `${value.active} ${value.active === 1 ? "choice" : "choices"} in effect.`,
   ];
   if (value.corrections.length === 0) {
-    lines.push("", "No listener corrections match this view.");
+    lines.push("", "Nothing yet. Open a song or artist in /taste to like it or keep it out.");
     return lines.join("\n");
   }
-  lines.push("", "## Corrections", "");
+  lines.push("");
   for (const item of value.corrections) {
     const target = item.artist_credit
       ? `${item.label} - ${item.artist_credit}`
       : item.label;
     lines.push(
-      `- [${item.state}] ${item.stance} ${item.entity_type}: ${target}`,
-      `  ID: ${item.correction_id}`,
-      `  Asserted: ${item.occurred_at}`,
+      `- ${item.stance === "avoid" ? "Keep out" : "Like"} ${item.entity_type}: ${target}${item.state === "active" ? "" : ` (${item.state})`}`,
+      `  ${String(item.occurred_at).slice(0, 10)} · \`${item.correction_id}\``,
     );
-    if (item.note) lines.push(`  Note: ${item.note}`);
+    if (item.note) lines.push(`  "${item.note}"`);
   }
   return lines.join("\n");
 }
@@ -139,27 +136,17 @@ function formatCorrection(value, commandPrefix) {
     ? `${value.label} - ${value.artist_credit}`
     : value.label;
   return [
-    "Recorded an explicit listener correction.",
-    `Correction: ${value.correction_id}`,
-    `Target: ${value.entity_type} - ${target}`,
-    `Stance: ${value.stance}`,
-    ...(value.superseded_correction_id
-      ? [`Superseded: ${value.superseded_correction_id}`]
-      : []),
-    "Next profile and Tasteprint: updated",
-    "Listening history changed: no",
-    `Retract with: ${commandPrefix} retract ${value.correction_id}`,
+    value.stance === "avoid" ? `Noted. I'll keep ${target} out.` : `Noted. You like ${target}.`,
+    ...(value.superseded_correction_id ? ["This replaces what you told me before about it."] : []),
+    "Your profile is updated. Your listening history stays as it was.",
+    `To undo it: ${commandPrefix} retract ${value.correction_id}`,
   ].join("\n");
 }
 
 function formatRetraction(value) {
   return [
-    "Retracted the active listener correction.",
-    `Correction: ${value.correction_id}`,
-    `Retraction: ${value.retraction_id}`,
-    `Target: ${value.entity_type} - ${value.label}`,
-    "Next profile and Tasteprint: updated",
-    "Listening history changed: no",
+    `Undone. I'll read ${value.label} from your listening again.`,
+    "Your profile is updated. Your listening history stays as it was.",
   ].join("\n");
 }
 
@@ -210,7 +197,7 @@ export async function runProfileCommand({
     return empty;
   }
   if (options.action === "retract" && !databasePresent) {
-    throw new Error("No local listener corrections are available to retract.");
+    throw new Error("There's nothing to undo yet.");
   }
   if (
     options.action === "correct" &&
@@ -219,7 +206,7 @@ export async function runProfileCommand({
     preferredSubjectId = await resolvePreferredSubjectId();
     if (!preferredSubjectId) {
       throw new Error(
-        "No local music identity is available. Import Apple or Spotify music data before recording a profile correction.",
+        "There's no profile to change yet. Bring in your music with /import first.",
       );
     }
   }
@@ -249,7 +236,7 @@ export async function runProfileCommand({
     }
     if (!subjectId) {
       throw new Error(
-        "No local music identity is available. Import Apple or Spotify music data before recording a profile correction.",
+        "There's no profile to change yet. Bring in your music with /import first.",
       );
     }
     let value;

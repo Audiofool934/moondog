@@ -296,8 +296,8 @@ test("history-only login reports its granted scope as ready without requesting f
     assert.equal(result.scope_purpose, "recent_listening");
     assert.equal(result.scopes_sufficient, true);
     assert.deepEqual(result.missing_scopes, []);
-    assert.doesNotMatch(setup.stdout.value(), /re-login required/u);
-    if (!json) assert.match(setup.stdout.value(), /recent-listening scopes: ready/u);
+    assert.doesNotMatch(setup.stdout.value(), /sign in again/u);
+    if (!json) assert.match(setup.stdout.value(), /Permissions for reading recent plays: all set/u);
   }
 });
 
@@ -489,8 +489,7 @@ test("Spotify account-data import explains cross-format reconciliation", async (
     },
   });
 
-  assert.match(stdout.value(), /Reconciled Extended-history overlaps: 2/u);
-  assert.match(stdout.value(), /Effective event delta: 1/u);
+  assert.match(stdout.value(), /2 plays you already had were replaced with more detailed versions/u);
   assert.doesNotMatch(stdout.value(), /\/private\//u);
 });
 
@@ -600,7 +599,7 @@ test("Spotify status recognizes complete connected-action authorization scopes",
 
   await runSpotifyCommand({ args: ["status"], ...setup });
 
-  assert.match(setup.stdout.value(), /Spotify connected-action scopes: ready/u);
+  assert.match(setup.stdout.value(), /Permissions for playback and playlists: all set/u);
 });
 
 test("Spotify resolve command reports deterministic catalog matches", async () => {
@@ -666,7 +665,7 @@ test("Spotify resolve command reports deterministic catalog matches", async () =
   ]);
   assert.match(
     setup.stdout.value(),
-    /Midnight Lines - Mara Vale \(exact\)/u,
+    /Midnight Lines - Mara Vale \(exact match\)/u,
   );
   assert.doesNotMatch(setup.stdout.value(), /spotify:track/u);
 });

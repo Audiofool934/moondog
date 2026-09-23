@@ -87,10 +87,10 @@ test("taste --from creates a private one-off Tasteprint without Apple setup or p
 
   const html = await readFile(outputPath, "utf8");
   const mode = (await stat(outputPath)).mode & 0o777;
-  assert.match(stdout, /Created a private local Moondog Tasteprint/u);
-  assert.match(stdout, /Coverage: 2 effective events/u);
-  assert.match(stdout, /one-off Spotify Extended Streaming History preview/u);
-  assert.match(stdout, /not added to persistent history/u);
+  assert.match(stdout, /Your listening report is ready/u);
+  assert.match(stdout, /Read from 2 plays/u);
+  assert.match(stdout, /From the Spotify Extended Streaming History you chose/u);
+  assert.match(stdout, /Nothing was saved to your profile/u);
   assert.doesNotMatch(stderr, /PRIVATE_/u);
   assert.equal(mode, 0o600);
   assert.match(html, /Private Moondog Tasteprint/u);

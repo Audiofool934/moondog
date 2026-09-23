@@ -315,7 +315,7 @@ async function prepareTuiHistoryImport(filePath, { recentPage, provider } = {}) 
       provider: prepared.provider,
       preview: prepared.preview,
       async commit() {
-        if (closed || committed) throw new Error("Preview the listening data again before importing it.");
+        if (closed || committed) throw new Error("That preview is gone. Open it again before importing.");
         const options = { args: ["import-history", filePath], stdout: { write() {} }, subjectId };
         // Commit the exact inspected bundle, even if the source file later changes.
         const receipt = prepared.provider === "spotify-recent"
@@ -395,26 +395,26 @@ async function emitTasteprintArtifact(
   } else {
     const lines = [
       format === "card"
-        ? "Created a private local Moondog Tasteprint card."
-        : "Created a private local Moondog Tasteprint.",
-      `Artifact: ${artifact.path}`,
-      `Coverage: ${(result.coverage.effective_listening_events ?? 0).toLocaleString("en-US")} effective events, ${(result.coverage.listening_hours ?? 0).toLocaleString("en-US")} listening hours, ${(result.coverage.distinct_tracks ?? 0).toLocaleString("en-US")} distinct tracks.`,
+        ? "Your recap card is ready."
+        : "Your listening report is ready.",
+      `Saved to ${artifact.path}`,
+      `Read from ${(result.coverage.effective_listening_events ?? 0).toLocaleString("en-US")} plays, ${(result.coverage.listening_hours ?? 0).toLocaleString("en-US")} hours, ${(result.coverage.distinct_tracks ?? 0).toLocaleString("en-US")} tracks.`,
     ];
     if (source?.persistent_import === false) {
       lines.push(
-        `Source: one-off ${tasteSourceLabel(source)} preview, not added to persistent history.`,
+        `From the ${tasteSourceLabel(source)} you chose. Nothing was saved to your profile.`,
       );
     } else if (source?.persistent_import === true) {
       lines.push(
-        `Source: ${tasteSourceLabel(source)} imported into Moondog's private persistent history.`,
+        `The ${tasteSourceLabel(source)} is now saved in your profile.`,
       );
     }
     lines.push(
-      "Open the HTML file directly in a browser. It has no scripts, external assets, or network requests.",
+      "Open it in any browser. It works offline and loads nothing from the internet.",
     );
     if (format === "card") {
       lines.push(
-        "Review every visible artist, track, date, and aggregate before sharing it.",
+        "Read it over before you share it. Everything on it is about you.",
       );
     }
     process.stdout.write(`${lines.join("\n")}\n`);
@@ -497,12 +497,12 @@ async function main() {
     } else {
       process.stdout.write(
         [
-          "Created a fictional Spotify Extended Streaming History ZIP.",
+          "Made a fictional Spotify history ZIP.",
           `Archive: ${sanitizeTerminalText(result.archive_path)}`,
-          `Records: ${result.record_count} across ${result.years.join(", ")}.`,
+          `${result.record_count} plays across ${result.years.join(", ")}.`,
           `SHA-256: ${result.archive_sha256}`,
-          "Boundary: no private listening data was read, and no network, provider action, or persistent profile write occurred.",
-          "Next: pass the ZIP to moondog taste --from <archive.zip> --html, or drop it into moondog studio.",
+          "None of your own data was read, and nothing was saved or sent anywhere.",
+          "Next: run moondog, type /import, and choose this ZIP under Spotify > Add past listening history.",
         ].join("\n") + "\n",
       );
     }
@@ -812,7 +812,7 @@ async function main() {
 
     if (options.command === "remember") {
       const text = options.rest.join(" ").trim();
-      if (!text) throw new Error("The remember command requires text.");
+      if (!text) throw new Error("Tell me what to remember, like moondog remember no live albums.");
       const value = application.rememberMemory({ text, kind: "fact" });
       process.stdout.write(
         `${options.json ? JSON.stringify(value, null, 2) : `Remembered ${value.memory_id}: ${value.text}`}\n`,
@@ -827,22 +827,22 @@ async function main() {
       }
       const value = application.forgetMemory(memoryId);
       process.stdout.write(
-        `${options.json ? JSON.stringify(value, null, 2) : value.forgotten ? `Forgot ${memoryId}.` : `No active memory found for ${memoryId}.`}\n`,
+        `${options.json ? JSON.stringify(value, null, 2) : value.forgotten ? `Forgot ${memoryId}.` : `I don't have a memory called ${memoryId}.`}\n`,
       );
       return;
     }
 
     if (options.command === "ask") {
       const prompt = options.rest.join(" ").trim();
-      if (!prompt) throw new Error("The ask command requires a prompt.");
+      if (!prompt) throw new Error("Ask me something, like moondog ask \"what should I play tonight?\"");
       if (runtimeStatus.state !== "configured") {
         if (runtimeStatus.reason === "provider_authentication_required") {
           throw new Error(
-            `The ${runtimeStatus.provider} provider requires authentication. Run moondog auth login ${runtimeStatus.provider} first.`,
+            `You're not signed in to ${runtimeStatus.provider} yet. Run moondog auth login ${runtimeStatus.provider} first.`,
           );
         }
         throw new Error(
-          "The model runtime is offline. Set MOONDOG_PROVIDER and MOONDOG_MODEL first.",
+          "No model is connected. Run moondog and use /model, or set MOONDOG_PROVIDER and MOONDOG_MODEL.",
         );
       }
       const result = await runtime.prompt(prompt);
@@ -860,7 +860,7 @@ async function main() {
 
     if (!process.stdin.isTTY || !process.stdout.isTTY) {
       throw new Error(
-        "Interactive mode requires a TTY. Use moondog status --json for a non-interactive check.",
+        "The listening room needs an interactive terminal. For a quick check without one, try moondog status.",
       );
     }
     lyrics = await createLyricService().catch(() => null);

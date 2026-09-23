@@ -57,7 +57,7 @@ test("profile correction listing is read-only before a music identity exists", a
       environment,
     ),
     (error) => {
-      assert.match(error.stderr, /No local music identity/iu);
+      assert.match(error.stderr, /no profile to change yet/iu);
       return true;
     },
   );

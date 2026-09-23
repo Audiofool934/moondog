@@ -423,7 +423,7 @@ test("TUI shows the listening profile after each import, then supports correctio
   assert.match(terminal.output, /Midnight Lines/);
   const before = await application.runLocalCommand("taste");
   await submit('/profile correct --track "Midnight Lines" --by "Mara Vale" --avoid', "Your listening profile");
-  await leaveProfile("Recorded an explicit listener correction.");
+  await leaveProfile("Noted. I'll keep");
   const corrected = await application.runLocalCommand("taste");
   const assertion = corrected.listener_assertions.active[0];
   assert.equal(assertion.label, "Midnight Lines");
@@ -431,10 +431,10 @@ test("TUI shows the listening profile after each import, then supports correctio
   assert.ok(!corrected.listening_behavior.time_capsule_tracks.some((track) => track.title === "Midnight Lines"));
   assert.equal(corrected.coverage.effective_listening_events, before.coverage.effective_listening_events);
   assert.ok(terminal.output.includes("/profile retract"));
-  await submit("/profile corrections", "Listener corrections");
+  await submit("/profile corrections", "What you've told me");
   await submit("/taste report", "What you told me");
   await submit(`/profile retract ${assertion.correction_id}`, "Your listening profile");
-  await leaveProfile("Retracted the active listener correction.");
+  await leaveProfile("Undone.");
   const restored = await application.runLocalCommand("taste");
   assert.equal(restored.listener_assertions.active.length, 0);
   assert.deepEqual(restored.listening_behavior.time_capsule_tracks, before.listening_behavior.time_capsule_tracks);

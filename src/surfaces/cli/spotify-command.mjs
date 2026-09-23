@@ -244,25 +244,27 @@ function itemLabel(item) {
 }
 
 function formatPlain(action, value) {
+  const plays = (count) => `${count ?? 0} ${count === 1 ? "play" : "plays"}`;
+  const day = (timestamp) => typeof timestamp === "string" ? timestamp.slice(0, 10) : "an unknown date";
   if (action === "configure") {
     return [
-      "Spotify client: configured",
+      "Spotify app saved.",
       `Redirect URI: ${SPOTIFY_DEFAULT_REDIRECT_URI}`,
       "Next: moondog spotify login",
     ].join("\n");
   }
   if (["status", "login", "logout"].includes(action)) {
     const lines = [
-      `Spotify client: ${value.client_id_configured ? "configured" : "not configured"}`,
-      `Spotify authorization: ${value.state === "stored" ? "stored" : "not configured"}`,
+      `Spotify app: ${value.client_id_configured ? "saved" : "not set up yet"}`,
+      `Signed in: ${value.state === "stored" ? "yes" : "no"}`,
       `Redirect URI: ${SPOTIFY_DEFAULT_REDIRECT_URI}`,
     ];
     if (value.state === "stored") {
-      const scopeLabel = value.scope_purpose === "recent_listening" ? "recent-listening" : "connected-action";
+      const purpose = value.scope_purpose === "recent_listening" ? "reading recent plays" : "playback and playlists";
       lines.push(
         value.scopes_sufficient
-          ? `Spotify ${scopeLabel} scopes: ready`
-          : `Spotify ${scopeLabel} scopes: re-login required (${value.missing_scopes.join(", ")})`,
+          ? `Permissions for ${purpose}: all set`
+          : `Permissions for ${purpose}: sign in again to allow ${value.missing_scopes.join(", ")}`,
       );
     }
     return lines.join("\n");
@@ -272,48 +274,50 @@ function formatPlain(action, value) {
       ? value.resolutions
       : [];
     const lines = [
-      `Spotify catalog resolution: ${value.resolved_count ?? 0}/${value.requested ?? resolutions.length} resolved`,
+      `Found ${value.resolved_count ?? 0} of ${value.requested ?? resolutions.length} on Spotify`,
     ];
     for (const resolution of resolutions) {
       if (resolution.status !== "resolved") {
-        lines.push(`- ${resolution.track_ref_id}: not found`);
+        lines.push(`- ${resolution.track_ref_id}: not on Spotify`);
         continue;
       }
       const artists = Array.isArray(resolution.matched?.artists)
         ? resolution.matched.artists.join(", ")
         : "Unknown artist";
       lines.push(
-        `- ${resolution.track_ref_id}: ${resolution.matched?.title ?? "Unknown track"} - ${artists} (${resolution.match_quality ?? "standard"})`,
+        `- ${resolution.track_ref_id}: ${resolution.matched?.title ?? "Unknown track"} - ${artists} (${resolution.match_quality ?? "standard"} match)`,
       );
     }
     return lines.join("\n");
   }
   if (writeCommands.has(action)) {
-    return `Spotify accepted: ${value.action}`;
+    return `Spotify: ${value.action}, done.`;
   }
   if (action === "account") {
-    const lines = ["# Spotify account"];
+    const lines = ["# Your Spotify account"];
     if (value.display_name) lines.push(`- Name: ${value.display_name}`);
     if (value.account_id) lines.push(`- ID: ${value.account_id}`);
-    if (value.product) lines.push(`- Product: ${value.product}`);
+    if (value.product) lines.push(`- Plan: ${value.product}`);
     if (value.country) lines.push(`- Country: ${value.country}`);
     return lines.join("\n");
   }
   if (action === "now") {
-    if (value.state !== "available") return "Spotify playback: inactive";
+    if (value.state !== "available") return "Nothing is playing on Spotify.";
     const lines = [
-      `Spotify playback: ${value.is_playing ? "playing" : "paused"}`,
-      `Item: ${itemLabel(value.item)}`,
+      `${value.is_playing ? "Playing" : "Paused"}: ${itemLabel(value.item)}`,
     ];
-    if (value.device?.name) lines.push(`Device: ${value.device.name} (${value.device.id})`);
-    if (Number.isInteger(value.progress_ms)) lines.push(`Position: ${value.progress_ms} ms`);
+    if (value.device?.name) lines.push(`On: ${value.device.name} (${value.device.id})`);
+    if (Number.isInteger(value.progress_ms)) {
+      const seconds = Math.floor(value.progress_ms / 1000);
+      lines.push(`At: ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`);
+    }
     return lines.join("\n");
   }
   if (action === "devices") {
     const devices = Array.isArray(value.devices) ? value.devices : [];
-    if (devices.length === 0) return "Spotify devices: none available";
+    if (devices.length === 0) return "No Spotify devices are available. Open Spotify somewhere first.";
     return [
-      "# Spotify devices",
+      "# Your Spotify devices",
       ...devices.map(
         (device) =>
           `- ${device.is_active ? "*" : "-"} ${device.name} (${device.type}) - ${device.id}`,
@@ -322,17 +326,17 @@ function formatPlain(action, value) {
   }
   if (action === "queue") {
     const queue = Array.isArray(value.queue) ? value.queue : [];
-    const lines = ["# Spotify queue"];
+    const lines = ["# Up next on Spotify"];
     if (value.currently_playing) lines.push(`Now: ${itemLabel(value.currently_playing)}`);
-    if (queue.length === 0) lines.push("Queue: empty");
+    if (queue.length === 0) lines.push("Nothing queued.");
     else lines.push(...queue.map((item, index) => `${index + 1}. ${itemLabel(item)}`));
     return lines.join("\n");
   }
   if (action === "recent") {
     const items = Array.isArray(value.items) ? value.items : [];
-    if (items.length === 0) return "Spotify recent activity: no tracks returned";
+    if (items.length === 0) return "Spotify didn't return any recent plays.";
     return [
-      `# Spotify recent activity (${items.length})`,
+      `# What you played lately (${items.length})`,
       ...items.map(
         (item) =>
           `- ${item.played_at}: ${itemLabel(item.track)}${item.context_type ? ` [${item.context_type}]` : ""}`,
@@ -341,49 +345,32 @@ function formatPlain(action, value) {
   }
   if (action === "sync-recent") {
     return [
-      "# Spotify recent activity sync",
-      `- Fetched: ${value.fetched_events ?? 0}`,
-      `- New listening events: ${value.inserted_events ?? 0}`,
-      `- Duplicates: ${value.duplicate_events ?? 0}`,
-      `- New track references: ${value.inserted_track_refs ?? 0}`,
-      `- Profile effects: ${value.profile_effects ?? "none"}`,
+      "# Your latest plays are in",
+      `- ${plays(value.fetched_events)} from Spotify`,
+      `- ${value.inserted_events ?? 0} new, ${value.duplicate_events ?? 0} I already had`,
+      `- ${value.inserted_track_refs ?? 0} songs new to your profile`,
     ].join("\n");
   }
   if (action === "import-history") {
     const extended =
       value.data_scope === "lifetime_extended_streaming_history";
-    if (extended) {
-      return [
-        "# Spotify Extended Streaming History import",
-        `- Music streams: ${value.input_records ?? 0}`,
-        `- New listening events: ${value.inserted_events ?? 0}`,
-        `- Reconciled standard-history events: ${value.superseded_events ?? 0}`,
-        `- Effective event delta: ${value.effective_event_delta ?? 0}`,
-        `- New resolved track references: ${value.inserted_track_refs ?? 0}`,
-        `- Event range: ${value.earliest_occurred_at ?? "none"} to ${value.latest_occurred_at ?? "none"}`,
-        `- Archive SHA-256: ${value.archive_sha256 ?? "unavailable"}`,
-        `- Import batch: ${value.already_imported ? "already present" : "recorded"}`,
-        `- Profile effects: ${value.profile_effects ?? "none"}`,
-        "- Direct identifiers retained: none",
-      ].join("\n");
+    const lines = [
+      extended ? "# Your Spotify history is in" : "# Your Spotify account data is in",
+      `- ${plays(value.input_records)} in the file, from ${day(value.earliest_occurred_at)} to ${day(value.latest_occurred_at)}`,
+      value.already_imported
+        ? "- You imported this file before, so nothing new was added"
+        : `- ${value.inserted_events ?? 0} new${value.duplicate_events ? `, ${value.duplicate_events} I already had` : ""}`,
+    ];
+    if (value.superseded_events > 0) {
+      lines.push(`- ${plays(value.superseded_events)} you already had were replaced with more detailed versions`);
     }
-    return [
-      "# Spotify account-data music history import",
-      `- Scope: ${value.data_scope ?? "past_year_account_data"}`,
-      `- Input music streams: ${value.input_records ?? 0}`,
-      `- New listening events: ${value.inserted_events ?? 0}`,
-      `- Duplicates: ${value.duplicate_events ?? 0}`,
-      `- Reconciled Extended-history overlaps: ${value.superseded_events ?? 0}`,
-      `- Effective event delta: ${value.effective_event_delta ?? 0}`,
-      `- New track references: ${value.inserted_track_refs ?? 0}`,
-      `- Music-profile evidence: ${value.profile_input_records ?? 0}`,
-      `- New music-profile evidence: ${value.inserted_profile_evidence ?? 0}`,
-      `- Event range: ${value.earliest_occurred_at ?? "none"} to ${value.latest_occurred_at ?? "none"}`,
-      `- Archive SHA-256: ${value.archive_sha256 ?? "unavailable"}`,
-      `- Import batch: ${value.already_imported ? "already present" : "recorded"}`,
-      `- Profile effects: ${value.profile_effects ?? "unchanged"}`,
-      "- Extended playback fields: not included in this account-data format",
-    ].join("\n");
+    if (value.inserted_track_refs > 0) lines.push(`- ${value.inserted_track_refs} songs new to your profile`);
+    if (!extended && value.inserted_profile_evidence > 0) {
+      lines.push(`- ${value.inserted_profile_evidence} saved songs, follows, and playlist entries`);
+    }
+    if (!extended) lines.push("- This format doesn't include listening time. Extended streaming history does.");
+    lines.push(`- File fingerprint: ${value.archive_sha256 ?? "unavailable"}`);
+    return lines.join("\n");
   }
   return JSON.stringify(value, null, 2);
 }
