@@ -98,7 +98,8 @@ Auto uses the terminal's `COLORFGBG` hint when available and otherwise selects c
 `/art text` is an alias for ASCII.
 The character logo animates on the idle home screen: lunar marks rotate around the record, a small highlight follows the groove, and the needle contact pulses.
 The 64-frame loop lasts eight seconds, while the dog silhouette and wordmark stay still.
-The animation clock stops during typing, navigation, menus, conversation, and minimal layouts, then resumes when the idle artwork is visible again.
+The animation clock stops during typing, navigation, menus, and conversation, then resumes on the idle home screen.
+Minimal layouts can still scroll the lyric when there is room to display it.
 `MOONDOG_MOTION=off` or `/motion off` disables animation.
 `NO_COLOR` preserves monochrome character art, and `TERM=dumb` selects ASCII without styling or animation.
 The layout reduces artwork before sacrificing room for the input, and works without Kitty or iTerm image support.
@@ -129,6 +130,8 @@ Successful entries remain fresh for thirty days; unavailable matches are checked
 Requests are sequential and respect the provider's retry delay.
 The home uses one short, original-language line, omits the byline, and avoids recent lines and consecutive songs when the pool permits.
 It keeps that line for the session unless a profile change removes the song from the eligible pool.
+The line pauses briefly on arrival, then scrolls from right to left in a single row and loops with a small gap.
+Typing and menu navigation pause its movement; `/motion off` restores a static, wrapped line, as do plain terminals.
 On an empty cache, the existing opening remains until the first suitable personal lyric arrives.
 No model is used to invent, translate, or rewrite lyrics.
 

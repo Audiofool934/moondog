@@ -210,7 +210,7 @@ export async function runMoondogTui({
   const stoppedPromise = new Promise((resolve) => { resolveStopped = resolve; });
   const editor = new ListeningEditor(tui, editorTheme, getTheme, () => ({ busy, homeVisible, homeFocused }));
   const sleeve = new RecordSleeve({ terminal, getTheme, environment, getState: () => ({
-    focused: homeFocused, selected: homeSelected,
+    focused: homeFocused, selected: homeSelected, motionEnabled,
     editorRows: editor.render(terminal.columns).length,
   }) });
   const updateHomeLyrics = ({ sync = true, signal } = {}) => {

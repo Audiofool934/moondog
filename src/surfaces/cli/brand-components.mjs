@@ -113,6 +113,27 @@ const sleeveNotes = [
   "Wish you were here.",
 ];
 
+const lyricSegments = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
+function scrollingLyric(text, columns, ticks) {
+  const distance = Math.max(0, ticks - 12); // Hold the opening for 1.5 seconds before moving.
+  const cycle = columns + visibleWidth(text) + 8;
+  let position = columns - ((columns + distance) % cycle);
+  let line = "";
+  let filled = 0;
+  for (const { segment } of lyricSegments.segment(text)) {
+    const width = visibleWidth(segment);
+    // A terminal cannot draw half a wide character; leave its clipped cell blank.
+    if (position >= 0 && position + width <= columns) {
+      line += " ".repeat(Math.max(0, position - filled)) + segment;
+      filled = position + width;
+    }
+    position += width;
+    if (position >= columns) break;
+  }
+  return line;
+}
+
 /** A character-native listening room; it never transmits image protocols. */
 export class RecordSleeve {
   constructor({ terminal, getTheme, environment = process.env, getState = () => ({}), random = Math.random }) {
@@ -125,19 +146,26 @@ export class RecordSleeve {
     this.sleeveNote = sleeveNotes[Math.floor(random() * sleeveNotes.length)];
     this.defaultSleeveNote = this.sleeveNote;
     this.phase = 0;
+    this.lyricTicks = 0;
     this.canAnimate = false;
     this.cache = new Map();
   }
   invalidate() { this.cache.clear(); }
   setLyric(text) {
-    this.sleeveNote = text ? sanitizeTerminalText(text).replace(/\s+/gu, " ").trim() : this.defaultSleeveNote;
+    const note = text ? sanitizeTerminalText(text).replace(/\s+/gu, " ").trim() : this.defaultSleeveNote;
+    if (note !== this.sleeveNote) this.lyricTicks = 0;
+    this.sleeveNote = note;
     this.invalidate();
   }
   setArtMode(mode) { this.artMode = mode; this.invalidate(); }
-  advance() { this.phase = (this.phase + 1) % LOGO_MOTION_FRAMES; }
+  advance() {
+    this.phase = (this.phase + 1) % LOGO_MOTION_FRAMES;
+    this.lyricTicks += 1;
+  }
   render(width) {
     const theme = this.getTheme();
-    const { focused = false, selected = 0, editorRows = 3 } = this.getState();
+    const { focused = false, selected = 0, editorRows = 3,
+      motionEnabled = this.environment.MOONDOG_MOTION !== "off" } = this.getState();
     // Fill the viewport between the header and composer, independently of art size.
     const rows = Math.max(1, this.terminal.rows - 2 - editorRows - (this.terminal.rows >= 20 ? 2 : 1));
     const paint = (line) => paintBrandLine(line, width, theme);
@@ -155,8 +183,12 @@ export class RecordSleeve {
     });
     const pixelTitle = rightWidth >= 41 && rows >= 20 && !["ascii", "text"].includes(this.artMode) && this.environment.TERM !== "dumb";
     const withNote = (lines, columns) => {
-      const noteLines = ["", ...wrapTextWithAnsi(`"${this.sleeveNote}"`, columns).map(theme.muted)];
-      return lines.length + noteLines.length <= rows ? [...lines, ...noteLines] : lines;
+      const scrolling = motionEnabled && !theme.plain;
+      const text = `"${this.sleeveNote}"`;
+      const noteLines = ["", ...(scrolling ? [scrollingLyric(text, columns, this.lyricTicks)] : wrapTextWithAnsi(text, columns)).map(theme.muted)];
+      if (lines.length + noteLines.length > rows) return lines;
+      this.canAnimate ||= scrolling;
+      return [...lines, ...noteLines];
     };
     const copy = withNote([
       ...(pixelTitle ? renderMoondogWordmark().map(theme.text) : [theme.bold(roomy ? "M O O N D O G" : "MOONDOG")]),
@@ -165,6 +197,7 @@ export class RecordSleeve {
       ...(roomy ? ["", ...wrapDescription(homeActions[selected].description, rightWidth).map(theme.muted)] : []),
     ], rightWidth);
     if (rows < 7 || width < 34 || this.artMode === "off") {
+      this.canAnimate = false;
       const compact = withNote([theme.bold("MOONDOG  ◎"),
         ...(rows >= 9 && width >= 30 ? [theme.muted("Your personal music agent."), ""] : []),
         ...actionLines,
@@ -174,7 +207,7 @@ export class RecordSleeve {
     }
     const height = Math.min(22, rows - (roomy ? 2 : 0));
     const mode = this.artMode === "ascii" || this.artMode === "text" || this.environment.TERM === "dumb" ? "ascii" : "braille";
-    this.canAnimate = !theme.plain && artWidth >= 20 && height >= 9;
+    this.canAnimate ||= !theme.plain && artWidth >= 20 && height >= 9;
     const phase = theme.plain ? 0 : this.phase;
     const key = `${artWidth}:${height}:${mode}:${phase}`;
     if (!this.cache.has(key)) {

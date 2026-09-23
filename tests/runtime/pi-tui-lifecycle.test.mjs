@@ -1595,7 +1595,7 @@ test("personal home lyrics load without waiting for network, stay stable, and st
 });
 
 test("record sleeve wraps original-language lyrics without overflowing narrow terminals", () => {
-  const environment = { TERM: "xterm-256color" };
+  const environment = { TERM: "xterm-256color", MOONDOG_MOTION: "off" };
   const theme = createMoondogTheme({ environment });
   const terminal = new FakeTerminal();
   terminal.rows = 24;
@@ -1606,6 +1606,46 @@ test("record sleeve wraps original-language lyrics without overflowing narrow te
   assert.ok(rendered.every((row) => visibleWidth(row) === 52));
   const text = stripVTControlCharacters(rendered.join("\n"));
   for (const character of line) assert.ok(text.includes(character));
+});
+
+test("home lyrics scroll left, loop intact, and clip wide graphemes without shifting other content", () => {
+  const environment = { TERM: "xterm-256color", MOONDOG_ART: "off" };
+  const theme = createMoondogTheme({ environment });
+  const terminal = new FakeTerminal();
+  terminal.rows = 24;
+  let motionEnabled = true;
+  const sleeve = new RecordSleeve({ terminal, environment, getTheme: () => theme, getState: () => ({ motionEnabled }) });
+  const line = "夜色里 e\u0301 👩🏽‍🚀 音乐慢慢经过，沿着窗边继续向前。";
+  sleeve.setLyric(line);
+  const frame = () => sleeve.render(32).map(stripVTControlCharacters);
+  const opening = frame();
+  const lyricRow = opening.findIndex((row) => row.includes("夜色里"));
+  assert.ok(lyricRow >= 0);
+  for (let tick = 0; tick < 12; tick++) sleeve.advance();
+  assert.deepEqual(frame(), opening, "the opening gives the reader a short pause");
+  sleeve.advance();
+  assert.ok(frame()[lyricRow].startsWith(" 夜色里"), "the opening quote moves off the left edge first");
+  sleeve.advance();
+  assert.ok(frame()[lyricRow].startsWith("  色里"), "a clipped wide character leaves its remaining cell empty");
+  const frames = [frame()];
+  for (let tick = 0; tick < 130; tick++) {
+    sleeve.advance();
+    frames.push(frame());
+  }
+  for (const rows of frames) {
+    assert.ok(rows.every((row) => visibleWidth(row) === 32));
+    assert.deepEqual(rows.filter((_, index) => index !== lyricRow), opening.filter((_, index) => index !== lyricRow));
+  }
+  const passage = frames.map((rows) => rows[lyricRow]).join("\n");
+  for (const { segment } of new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(line)) {
+    assert.ok(passage.includes(segment), `the complete grapheme ${segment} must pass through the viewport`);
+  }
+  assert.ok(frames.some((rows) => rows[lyricRow] === opening[lyricRow]), "the complete line loops without rerolling");
+  motionEnabled = false;
+  const still = frame();
+  for (let tick = 0; tick < 20; tick++) sleeve.advance();
+  assert.deepEqual(frame(), still, "motion off restores static wrapped lyrics");
+  for (const character of line) assert.ok(still.join("\n").includes(character));
 });
 
 test("record sleeve uses terminal characters and fits the opening at every supported terminal size", () => {
@@ -1852,7 +1892,7 @@ test("Ctrl+P filters Commands and Esc preserves the complete input draft for sub
   assert.equal(localCommands, 0, "cancelling the palette must not execute /taste");
 });
 
-test("the home artwork visibly animates, pauses during interaction, and stops when motion or art is off", async (context) => {
+test("home artwork and lyrics animate, pause during interaction, and stop with motion off or exit", async (context) => {
   const terminal = new FakeTerminal();
   const signalTarget = new EventEmitter();
   const render = context.mock.method(RecordSleeve.prototype, "render");
@@ -1908,7 +1948,10 @@ test("the home artwork visibly animates, pauses during interaction, and stops wh
   await submit("/motion on");
   await expectMotion("motion restored");
   await submit("/art off");
-  await expectStill("art off");
+  await delay(1500); // Include the initial reading pause before checking lyric-only movement.
+  await expectMotion("lyrics with art off");
+  await submit("/help");
+  await expectStill("conversation");
 
   await submit("/quit");
   await running;
