@@ -1229,7 +1229,7 @@ function metricCard(value, label, note = "") {
 }
 
 function artistRows(items, { recent = false } = {}) {
-  if (items.length === 0) return '<p class="empty">No bounded artist signal is available.</p>';
+  if (items.length === 0) return '<p class="empty">Nothing here yet.</p>';
   const maximum = Math.max(
     1,
     ...items.map((item) => item.listening_minutes ?? item.play_count ?? 0),
@@ -1243,15 +1243,15 @@ function artistRows(items, { recent = false } = {}) {
           Number.isFinite(item.listening_minutes)
             ? listeningTime(item.listening_minutes)
             : null,
-          Number.isInteger(item.play_count) ? `${number(item.play_count)} events` : null,
+          Number.isInteger(item.play_count) ? `${number(item.play_count)} ${item.play_count === 1 ? "play" : "plays"}` : null,
           Number.isInteger(item.distinct_tracks)
-            ? `${number(item.distinct_tracks)} tracks`
+            ? `${number(item.distinct_tracks)} ${item.distinct_tracks === 1 ? "track" : "tracks"}`
             : null,
         ].filter(Boolean);
         const orbit = recent
           ? Number.isInteger(item.long_arc_rank)
-            ? `also long arc #${item.long_arc_rank}`
-            : "recent-only top signal"
+            ? `#${item.long_arc_rank} across the years`
+            : "new lately"
           : "";
         return `<li>
           <div class="rank-number">${String(index + 1).padStart(2, "0")}</div>
@@ -1268,7 +1268,7 @@ function artistRows(items, { recent = false } = {}) {
 
 function historyArcRows(items) {
   if (items.length === 0) {
-    return '<p class="empty">No bounded calendar-year history is available.</p>';
+    return '<p class="empty">No year-by-year history yet.</p>';
   }
   const maximum = Math.max(
     1,
@@ -1281,26 +1281,26 @@ function historyArcRows(items) {
         const width = Math.max(3, Math.round((signal / maximum) * 1000) / 10);
         const details = [
           Number.isInteger(item.event_count)
-            ? `${number(item.event_count)} events`
+            ? `${number(item.event_count)} ${item.event_count === 1 ? "play" : "plays"}`
             : null,
           Number.isInteger(item.distinct_tracks)
             ? `${number(item.distinct_tracks)} tracks`
             : null,
           Number.isInteger(item.first_observed_tracks)
-            ? `${number(item.first_observed_tracks)} first observed`
+            ? `${number(item.first_observed_tracks)} new`
             : null,
         ].filter(Boolean);
         const topArtistTime = listeningTime(item.top_artist?.listening_minutes);
         const topArtistDetails = [
           topArtistTime,
           Number.isInteger(item.top_artist?.play_count)
-            ? `${number(item.top_artist.play_count)} events`
+            ? `${number(item.top_artist.play_count)} ${item.top_artist.play_count === 1 ? "play" : "plays"}`
             : null,
         ].filter(Boolean);
         return `<li>
-          <div class="arc-year"><strong>${escapeHtml(item.year)}</strong><span>UTC year</span></div>
+          <div class="arc-year"><strong>${escapeHtml(item.year)}</strong><span>UTC</span></div>
           <div class="arc-body">
-            <div class="arc-heading"><strong>${escapeHtml(listeningTime(item.listening_minutes) ?? "Unknown time")}</strong><span>eligible listening</span></div>
+            <div class="arc-heading"><strong>${escapeHtml(listeningTime(item.listening_minutes) ?? "Unknown time")}</strong><span>listened</span></div>
             <div class="bar" aria-hidden="true"><i style="width:${width}%"></i></div>
             ${details.length > 0 ? `<small>${escapeHtml(details.join(" / "))}</small>` : ""}
           </div>
@@ -1311,63 +1311,71 @@ function historyArcRows(items) {
   </ol>`;
 }
 
+// Play counts are the default reason, so only stronger evidence gets named.
+const signalPhrases = {
+  "historical attention only": null,
+  "adjacent retained plays": null,
+  "saved-library state": "saved in your library",
+  "private playlist curation": "on one of your playlists",
+  "explicit listener preference": "you said you like it",
+};
+
+function signalPhrase(value) {
+  if (typeof value !== "string" || !value) return null;
+  return Object.hasOwn(signalPhrases, value) ? signalPhrases[value] : value;
+}
+
 function trackRows(items) {
-  if (items.length === 0) return '<p class="empty">No bounded track signal is available.</p>';
+  if (items.length === 0) return '<p class="empty">Nothing here yet.</p>';
   return `<ol class="track-list">
     ${items
       .map((item, index) => {
         const details = [
-          Number.isInteger(item.play_count) ? `${number(item.play_count)} events` : null,
+          Number.isInteger(item.play_count) ? `${number(item.play_count)} ${item.play_count === 1 ? "play" : "plays"}` : null,
           listeningTime(item.listening_minutes),
           Number.isInteger(item.playlist_count)
-            ? `${number(item.playlist_count)} playlists`
+            ? `on ${number(item.playlist_count)} ${item.playlist_count === 1 ? "playlist" : "playlists"}`
             : null,
           Number.isInteger(item.quiet_days)
-            ? `${number(item.quiet_days)} days quiet`
+            ? `quiet for ${number(item.quiet_days)} days`
             : null,
           Number.isInteger(item.peak_year)
-            ? `strongest year ${item.peak_year}`
+            ? `biggest in ${item.peak_year}`
             : null,
-          item.rediscovery_signal
-            ? `basis: ${item.rediscovery_signal}`
-            : null,
+          signalPhrase(item.rediscovery_signal),
           Number.isInteger(item.return_count)
-            ? `${number(item.return_count)} observed ${item.return_count === 1 ? "return" : "returns"}`
+            ? `came back ${item.return_count === 1 ? "once" : `${number(item.return_count)} times`}`
             : null,
           Number.isInteger(item.longest_gap_days)
-            ? `longest gap ${number(item.longest_gap_days)} days`
+            ? `longest time away ${number(item.longest_gap_days)} days`
             : null,
           Number.isInteger(item.latest_return_gap_days)
-            ? `latest return after ${number(item.latest_return_gap_days)} days`
+            ? `last back after ${number(item.latest_return_gap_days)} days`
             : null,
-          item.historical_return_signal
-            ? `basis: ${item.historical_return_signal}`
-            : null,
+          signalPhrase(item.historical_return_signal),
           Number.isInteger(item.capsule_year)
-            ? `${item.capsule_year} landmark`
+            ? `your song of ${item.capsule_year}`
             : null,
           Number.isInteger(item.year_play_count)
-            ? `${number(item.year_play_count)} events that year`
+            ? `${number(item.year_play_count)} ${item.year_play_count === 1 ? "play" : "plays"} that year`
             : null,
           Number.isFinite(item.year_listening_minutes)
             ? `${listeningTime(item.year_listening_minutes)} that year`
             : null,
-          item.representative_signal
-            ? `basis: ${item.representative_signal}`
-            : null,
+          signalPhrase(item.representative_signal),
           Number.isInteger(item.maximum_consecutive_plays)
-            ? `${number(item.maximum_consecutive_plays)} plays in the longest adjacent sequence`
+            ? `up to ${number(item.maximum_consecutive_plays)} in a row`
             : null,
           Number.isInteger(item.burst_count)
-            ? `${number(item.burst_count)} bounded ${item.burst_count === 1 ? "sequence" : "sequences"}`
+            ? `${number(item.burst_count)} ${item.burst_count === 1 ? "run" : "runs"}`
             : null,
           Number.isInteger(item.plays_in_bursts)
-            ? `${number(item.plays_in_bursts)} plays across sequences`
+            ? `${number(item.plays_in_bursts)} plays in those runs`
             : null,
           Number.isFinite(item.listening_minutes_in_bursts)
-            ? `${listeningTime(item.listening_minutes_in_bursts)} across sequences`
+            ? `${listeningTime(item.listening_minutes_in_bursts)} in those runs`
             : null,
-          item.sequence_signal ? `basis: ${item.sequence_signal}` : null,
+          signalPhrase(item.sequence_signal),
         ].filter(Boolean);
         return `<li>
           <span class="track-index">${String(index + 1).padStart(2, "0")}</span>
@@ -1383,12 +1391,12 @@ function trackRows(items) {
 }
 
 function tagCloud(items) {
-  if (items.length === 0) return '<p class="empty">No bounded facets are available.</p>';
+  if (items.length === 0) return '<p class="empty">No artists or genres yet.</p>';
   return `<ul class="tags">${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`;
 }
 
 function signalList(items) {
-  if (items.length === 0) return '<p class="empty">No bounded deliberate signal is available.</p>';
+  if (items.length === 0) return '<p class="empty">No choices yet.</p>';
   return `<ul class="signal-list">${items
     .map(
       (item) => `<li><strong>${escapeHtml(item.label)}</strong>${
@@ -1400,14 +1408,14 @@ function signalList(items) {
 
 function correctionSignalList(items, stance) {
   if (items.length === 0) {
-    return `<p class="empty">No explicit ${escapeHtml(stance)} correction is active.</p>`;
+    return `<p class="empty">${stance === "avoid" ? "You have not kept anything out." : "You have not marked anything as a like."}</p>`;
   }
   return signalList(
     items.map((item) => {
       const target = [item.label, item.artist_credit].filter(Boolean).join(" / ");
       const details = [
         item.entity_type,
-        item.asserted_at ? `asserted ${dateLabel(item.asserted_at)}` : null,
+        item.asserted_at ? dateLabel(item.asserted_at) : null,
         item.note,
       ].filter(Boolean);
       return { label: target, signal: details.join(" / ") };
@@ -1416,7 +1424,7 @@ function correctionSignalList(items, stance) {
 }
 
 function nameRows(items) {
-  if (items.length === 0) return '<p class="empty">No bounded artist signal is available.</p>';
+  if (items.length === 0) return '<p class="empty">Nothing here yet.</p>';
   return `<ul class="compact-list">${items
     .map((item) => {
       const detail = listeningTime(item.listening_minutes);
@@ -1426,12 +1434,12 @@ function nameRows(items) {
 }
 
 function searchRows(items) {
-  if (items.length === 0) return '<p class="empty">No verified music-result interaction is available.</p>';
+  if (items.length === 0) return '<p class="empty">No music searches yet.</p>';
   return `<ul class="compact-list">${items
     .map((item) => {
       const details = [
         Number.isInteger(item.interactions)
-          ? `${number(item.interactions)} interactions`
+          ? `${number(item.interactions)} ${item.interactions === 1 ? "time" : "times"}`
           : null,
         Array.isArray(item.result_entity_types)
           ? item.result_entity_types.join(", ")
@@ -1456,15 +1464,15 @@ function behaviorCard(value, total, label, boundary, coverageLabel) {
 }
 
 function providerRows(items, type) {
-  if (items.length === 0) return '<p class="empty">No bounded provider ranking is available.</p>';
+  if (items.length === 0) return '<p class="empty">Spotify did not rank anything here.</p>';
   return `<ol class="provider-list">${items
     .map((item, index) => {
       const label = type === "artist" ? item.name : item.label;
       const detail = type === "artist" ? "" : item.artist_credit;
-      const rank = Number.isInteger(item.best_rank) ? `best rank #${item.best_rank}` : "ranked signal";
+      const rank = Number.isInteger(item.best_rank) ? `best at #${item.best_rank}` : "ranked";
       const periods = Array.isArray(item.periods) && item.periods.length > 0
         ? item.periods.join(", ")
-        : "exported snapshot";
+        : "from your export";
       return `<li><span>${String(index + 1).padStart(2, "0")}</span><div><strong>${escapeHtml(label)}</strong>${detail ? `<p>${escapeHtml(detail)}</p>` : ""}<small>${escapeHtml(`${rank} / ${periods}`)}</small></div></li>`;
     })
     .join("")}</ol>`;
@@ -1473,7 +1481,7 @@ function providerRows(items, type) {
 function snapshotCards(view) {
   const highlights = view.provider_snapshot.highlights.map((item) => {
     const detail = [item.kind, item.related_label].filter(Boolean).join(" / ");
-    return `<article><span>Provider highlight</span><strong>${escapeHtml(item.label)}</strong>${detail ? `<p>${escapeHtml(detail)}</p>` : ""}</article>`;
+    return `<article><span>From Spotify</span><strong>${escapeHtml(item.label)}</strong>${detail ? `<p>${escapeHtml(detail)}</p>` : ""}</article>`;
   });
   const metrics = view.provider_snapshot.metrics.map((item) => {
     const value = Number.isFinite(item.value)
@@ -1483,7 +1491,7 @@ function snapshotCards(view) {
         : Number.isInteger(item.played_seconds)
           ? listeningTime(item.played_seconds / 60)
           : "Recorded metric";
-    return `<article><span>${escapeHtml(item.period || "Provider metric")}</span><strong>${escapeHtml(value)}</strong><p>${escapeHtml(item.name)}</p></article>`;
+    return `<article><span>${escapeHtml(item.period || "From Spotify")}</span><strong>${escapeHtml(value)}</strong><p>${escapeHtml(item.name)}</p></article>`;
   });
   const cards = [...highlights, ...metrics].slice(0, 8);
   return cards.length > 0
@@ -1519,28 +1527,28 @@ function timeMachineSelectionNote(view) {
   );
   const retainedNoun = retainedYears.length === 1 ? "year" : "years";
   const landmarkPhrase = representedYears.length === 1
-    ? "has a landmark"
-    : "have landmarks";
-  const coverageCopy = `${number(representedYears.length)} of ${number(retainedYears.length)} retained ${retainedNoun} ${landmarkPhrase}.`;
+    ? "has a song"
+    : "have a song";
+  const coverageCopy = `${number(representedYears.length)} of ${number(retainedYears.length)} ${retainedNoun} ${landmarkPhrase}.`;
   const unrepresentedCopy = unrepresentedYears.length === 0
-    ? "Every retained year is represented."
+    ? "Every year has one."
     : unrepresentedYears.length === 1
-      ? `${unrepresentedYears[0]} stays visible in the listening arc but has no selected landmark.`
-      : `${naturalList(unrepresentedYears.map(String))} stay visible in the listening arc but have no selected landmarks.`;
+      ? `${unrepresentedYears[0]} is still in Year by year, but no song stood out enough to pick.`
+      : `${naturalList(unrepresentedYears.map(String))} are still in Year by year, but no song stood out enough to pick.`;
   const minimumEngagedPlays =
     view.behavior.context.time_capsule_minimum_engaged_plays;
   const minimumListeningMinutes =
     view.behavior.context.time_capsule_minimum_listening_minutes;
   const thresholdCopy = Number.isFinite(minimumEngagedPlays) &&
     Number.isFinite(minimumListeningMinutes)
-    ? `Candidates must come from the track's strongest retained year, clear active avoids, and reach at least ${number(minimumEngagedPlays)} engaged plays and ${number(minimumListeningMinutes, 1)} listening minutes.`
-    : "Candidates must come from the track's strongest retained year and clear active avoids.";
-  return `<aside class="time-machine-selection" aria-label="Time Machine year coverage"><strong>${escapeHtml(coverageCopy)}</strong><span>${escapeHtml(`${unrepresentedCopy} The route is bounded and evenly spaced. ${thresholdCopy}`)}</span></aside>`;
+    ? `Each song comes from its own biggest year, with at least ${number(minimumEngagedPlays)} plays not skipped and ${number(minimumListeningMinutes, 1)} minutes, and never one you asked to keep out.`
+    : "Each song comes from its own biggest year, and never one you asked to keep out.";
+  return `<aside class="time-machine-selection" aria-label="Which years have a song"><strong>${escapeHtml(coverageCopy)}</strong><span>${escapeHtml(`${unrepresentedCopy} The years are spread evenly across your history. ${thresholdCopy}`)}</span></aside>`;
 }
 
 function artistRelationshipRows(items) {
   if (items.length === 0) {
-    return '<p class="empty">No artist appears across enough retained years and the latest retained year.</p>';
+    return '<p class="empty">No artist has shown up across enough years yet.</p>';
   }
   return `<ol class="relationship-list">${items
     .map((item) => {
@@ -1549,14 +1557,14 @@ function artistRelationshipRows(items) {
         : item.last_year - item.first_year + 1;
       const details = [
         Number.isInteger(item.play_count)
-          ? `${number(item.play_count)} effective plays`
+          ? `${number(item.play_count)} ${item.play_count === 1 ? "play" : "plays"}`
           : null,
         Number.isFinite(item.listening_minutes)
           ? listeningTime(item.listening_minutes)
           : null,
       ].filter(Boolean);
       return `<li>
-        <div class="relationship-head"><strong>${escapeHtml(item.name)}</strong><span>${escapeHtml(`${number(activeYears)} active years across ${item.first_year}-${item.last_year}`)}</span></div>
+        <div class="relationship-head"><strong>${escapeHtml(item.name)}</strong><span>${escapeHtml(`${number(activeYears)} years, ${item.first_year} to ${item.last_year}`)}</span></div>
         ${details.length > 0 ? `<small>${escapeHtml(details.join(" / "))}</small>` : ""}
       </li>`;
     })
@@ -1565,7 +1573,7 @@ function artistRelationshipRows(items) {
 
 function yearTransitionRows(items, fallbackArtistLimit) {
   if (items.length === 0) {
-    return '<p class="empty">At least two retained years are needed to compare top-artist continuity.</p>';
+    return '<p class="empty">This needs at least two years of history.</p>';
   }
   return `<ol class="transition-list">${items
     .map((item) => {
@@ -1582,15 +1590,15 @@ function yearTransitionRows(items, fallbackArtistLimit) {
       const retainedArtists = item.retained_artists ?? [];
       const newArtists = item.new_artists ?? [];
       const retainedNames = retainedArtists.length > 0
-        ? `Carried forward: ${naturalList(retainedArtists)}.`
+        ? `Stayed: ${naturalList(retainedArtists)}.`
         : "";
       const introducedNames = newArtists.length > 0
-        ? `New in the later top set: ${naturalList(newArtists)}.`
+        ? `New: ${naturalList(newArtists)}.`
         : "";
       return `<li>
-        <div class="transition-head"><strong>${escapeHtml(`${item.from_year} to ${item.to_year}`)}</strong><span>${escapeHtml(`${number(continuity, 1)}% carried forward`)}</span></div>
+        <div class="transition-head"><strong>${escapeHtml(`${item.from_year} to ${item.to_year}`)}</strong><span>${escapeHtml(`${number(continuity, 1)}% stayed`)}</span></div>
         <div class="transition-bar" aria-label="${escapeHtml(`${number(continuity, 1)} percent of ${item.to_year}'s top artists also ranked in ${item.from_year}`)}"><span style="width:${escapeHtml(String(continuity))}%"></span></div>
-        <p>${escapeHtml(`${number(introduced)} new to ${item.to_year}'s top ${number(artistLimit)}. ${number(retained)} carried forward from ${item.from_year}.`)}</p>
+        <p>${escapeHtml(`${number(introduced)} new in ${item.to_year}'s top ${number(artistLimit)}, ${number(retained)} still there from ${item.from_year}.`)}</p>
         ${retainedNames || introducedNames ? `<small>${escapeHtml(`${retainedNames} ${introducedNames}`.trim())}</small>` : ""}
       </li>`;
     })
@@ -1599,7 +1607,7 @@ function yearTransitionRows(items, fallbackArtistLimit) {
 
 function releaseDepthRows(items) {
   if (items.length === 0) {
-    return '<p class="empty">No release has enough retained multi-track coverage.</p>';
+    return '<p class="empty">No record has enough tracks played yet.</p>';
   }
   return `<ol class="release-depth-list">${items
     .map((item, index) => {
@@ -1611,14 +1619,14 @@ function releaseDepthRows(items) {
         : null;
       const details = [
         Number.isInteger(item.distinct_tracks)
-          ? `${number(item.distinct_tracks)} distinct tracks`
+          ? `${number(item.distinct_tracks)} tracks`
           : null,
         Number.isInteger(item.play_count)
-          ? `${number(item.play_count)} effective plays`
+          ? `${number(item.play_count)} ${item.play_count === 1 ? "play" : "plays"}`
           : null,
         listeningTime(item.listening_minutes),
         Number.isInteger(item.active_years) && years
-          ? `${number(item.active_years)} active ${item.active_years === 1 ? "year" : "years"} across ${years}`
+          ? `${number(item.active_years)} ${item.active_years === 1 ? "year" : "years"}, ${years}`
           : years,
       ].filter(Boolean);
       return `<li>
@@ -1631,7 +1639,7 @@ function releaseDepthRows(items) {
 
 function sessionShape(summary) {
   if (!summary) {
-    return '<p class="empty">No bounded Spotify Extended History session signal is available.</p>';
+    return '<p class="empty">This needs Spotify extended streaming history.</p>';
   }
   const total = summary.session_count;
   const minimumPlays = summary.extended_sequence_minimum_plays ?? 5;
@@ -1644,9 +1652,9 @@ function sessionShape(summary) {
   return `<div class="session-shape">
     <p class="session-lede"><strong>${escapeHtml(`${number(total)} listening stretches`)}</strong><span>${escapeHtml(`${number(summary.extended_sequence_percent, 1)}% contain ${number(minimumPlays)} or more plays`)}</span></p>
     <div class="session-stats">
-      <div><strong>${escapeHtml(number(summary.median_plays, 1))}</strong><span>median plays</span></div>
-      <div><strong>${escapeHtml(medianMinutes ?? "Unknown")}</strong><span>median listening</span></div>
-      <div><strong>${escapeHtml(number(summary.event_count))}</strong><span>eligible events</span></div>
+      <div><strong>${escapeHtml(number(summary.median_plays, 1))}</strong><span>plays in a typical stretch</span></div>
+      <div><strong>${escapeHtml(medianMinutes ?? "Unknown")}</strong><span>a typical stretch lasts</span></div>
+      <div><strong>${escapeHtml(number(summary.event_count))}</strong><span>plays</span></div>
     </div>
     <ol class="session-mix">${mix
       .map((item) => {
@@ -1654,7 +1662,7 @@ function sessionShape(summary) {
         return `<li><div><strong>${escapeHtml(item.label)}</strong><span>${escapeHtml(`${number(item.value)} stretches / ${number(share, 1)}%`)}</span></div><div class="session-bar" aria-hidden="true"><span style="width:${escapeHtml(String(share))}%"></span></div></li>`;
       })
       .join("")}</ol>
-    <p class="session-boundary">A gap longer than ${escapeHtml(number(summary.gap_minutes))} minutes begins a new stretch. This uses UTC track-stop timestamps and remains an approximation.</p>
+    <p class="session-boundary">A break of more than ${escapeHtml(number(summary.gap_minutes))} minutes starts a new stretch. Stretches are estimated from when each song stopped.</p>
   </div>`;
 }
 
@@ -1704,8 +1712,8 @@ function monthlyActivityGrid(activity) {
         activity.peak_listening_minutes,
       );
       const description = month.event_count > 0
-        ? `${long} ${year}: ${number(month.event_count)} eligible events, ${number(month.listening_minutes)} listening minutes, ${number(month.distinct_tracks)} distinct tracks.`
-        : `${long} ${year}: no retained eligible events.`;
+        ? `${long} ${year}: ${number(month.event_count)} ${month.event_count === 1 ? "play" : "plays"}, ${number(month.listening_minutes)} minutes, ${number(month.distinct_tracks)} ${month.distinct_tracks === 1 ? "track" : "tracks"}.`
+        : `${long} ${year}: nothing in your history.`;
       return `<span class="pulse-cell level-${level}" role="gridcell" title="${escapeHtml(description)}" aria-label="${escapeHtml(description)}"></span>`;
     }).join("");
     rows.push(
@@ -1713,15 +1721,15 @@ function monthlyActivityGrid(activity) {
     );
   }
   const boundedCopy = activity.omitted_earlier_month_count > 0
-    ? `The latest ${number(activity.represented_month_count)} of ${number(activity.retained_span_months)} retained calendar months are shown; ${number(activity.omitted_earlier_month_count)} earlier months remain outside this bounded view.`
-    : `All ${number(activity.represented_month_count)} calendar months in the retained span are represented.`;
+    ? `Showing the latest ${number(activity.represented_month_count)} of ${number(activity.retained_span_months)} months; ${number(activity.omitted_earlier_month_count)} earlier months are left out here.`
+    : `Showing all ${number(activity.represented_month_count)} months.`;
   return `<div class="listening-pulse">
-    <div class="pulse-summary"><strong>${escapeHtml(`${number(activity.active_month_count)} active retained months`)}</strong><span>${escapeHtml(`${activity.first_month} to ${activity.last_month} UTC`)}</span></div>
-    <div class="listening-pulse-grid" role="grid" aria-label="Monthly retained listening activity in UTC">
+    <div class="pulse-summary"><strong>${escapeHtml(`${number(activity.active_month_count)} months with listening`)}</strong><span>${escapeHtml(`${activity.first_month} to ${activity.last_month} UTC`)}</span></div>
+    <div class="listening-pulse-grid" role="grid" aria-label="Listening by month, in UTC">
       <span class="pulse-corner" aria-hidden="true">UTC</span>${monthHeaders}${rows.join("")}
     </div>
-    <div class="pulse-legend" aria-label="Listening-minute intensity scale"><span>Less retained time</span><i class="pulse-cell level-1"></i><i class="pulse-cell level-2"></i><i class="pulse-cell level-3"></i><i class="pulse-cell level-4"></i><span>More</span></div>
-    <p class="pulse-boundary">${escapeHtml(`${boundedCopy} Color reflects listening minutes within this profile only. A blank cell means no eligible retained event appears in that UTC month, not proof that no listening occurred.`)}</p>
+    <div class="pulse-legend" aria-label="Listening-minute intensity scale"><span>Less</span><i class="pulse-cell level-1"></i><i class="pulse-cell level-2"></i><i class="pulse-cell level-3"></i><i class="pulse-cell level-4"></i><span>More</span></div>
+    <p class="pulse-boundary">${escapeHtml(`${boundedCopy} Darker means more minutes, compared with your own busiest month. A blank cell means no history was kept for that month, not that you stopped listening.`)}</p>
   </div>`;
 }
 
@@ -1742,13 +1750,13 @@ function listeningSeasonsPanel(activity) {
       const quarter = Number(season.key.slice(6));
       const heading = season.key.replace("-", " ");
       const partial = season.retained_month_count < 3
-        ? `${number(season.retained_month_count)} of 3 months retained`
-        : "complete calendar quarter";
+        ? `${number(season.retained_month_count)} of 3 months in your history`
+        : "a full quarter";
       if (season.event_count === 0) {
         return `<article class="listening-season-card is-empty quarter-${quarter}">
           <header><strong>${escapeHtml(heading)}</strong><span>${escapeHtml(listeningSeasonMonthRange(season))}</span></header>
           <div class="season-empty-mark" aria-hidden="true"></div>
-          <p>No retained eligible events appear in this window.</p>
+          <p>Nothing in your history for these months.</p>
           <small>${escapeHtml(partial)}</small>
         </article>`;
       }
@@ -1760,30 +1768,30 @@ function listeningSeasonsPanel(activity) {
       const leading = season.leading_artist;
       return `<article class="listening-season-card quarter-${quarter}">
         <header><strong>${escapeHtml(heading)}</strong><span>${escapeHtml(listeningSeasonMonthRange(season))}</span></header>
-        <div class="season-total"><strong>${escapeHtml(listeningTime(season.listening_minutes) ?? "Unknown time")}</strong><span>${escapeHtml(`${number(season.event_count)} events / ${number(season.distinct_tracks)} tracks`)}</span></div>
-        <div class="season-mix" aria-label="${escapeHtml(`${number(season.first_observed_tracks)} tracks first observed in retained history and ${number(season.returning_tracks)} seen in an earlier retained season`)}">
+        <div class="season-total"><strong>${escapeHtml(listeningTime(season.listening_minutes) ?? "Unknown time")}</strong><span>${escapeHtml(`${number(season.event_count)} ${season.event_count === 1 ? "play" : "plays"} / ${number(season.distinct_tracks)} ${season.distinct_tracks === 1 ? "track" : "tracks"}`)}</span></div>
+        <div class="season-mix" aria-label="${escapeHtml(`${number(season.first_observed_tracks)} tracks new to your history and ${number(season.returning_tracks)} heard in an earlier season`)}">
           <span style="width:${escapeHtml(String(firstObservedShare))}%"></span>
         </div>
-        <p class="season-mix-label"><span>${escapeHtml(`${number(season.first_observed_tracks)} first observed`)}</span><span>${escapeHtml(`${number(season.returning_tracks)} seen earlier`)}</span></p>
+        <p class="season-mix-label"><span>${escapeHtml(`${number(season.first_observed_tracks)} new`)}</span><span>${escapeHtml(`${number(season.returning_tracks)} heard before`)}</span></p>
         <dl class="season-anchors">
-          <div><dt>Leading artist</dt><dd>${escapeHtml(leading.name)}</dd></div>
-          <div><dt>Signature track</dt><dd>${escapeHtml(signature.label)}<span>${escapeHtml(signature.artist_credit)}</span></dd></div>
+          <div><dt>Most played artist</dt><dd>${escapeHtml(leading.name)}</dd></div>
+          <div><dt>Top song</dt><dd>${escapeHtml(signature.label)}<span>${escapeHtml(signature.artist_credit)}</span></dd></div>
         </dl>
-        <small>${escapeHtml(`${number(season.active_month_count)} active of ${number(season.retained_month_count)} retained months / ${partial}`)}</small>
+        <small>${escapeHtml(`${number(season.active_month_count)} of ${number(season.retained_month_count)} months with listening / ${partial}`)}</small>
       </article>`;
     })
     .join("");
   const previewCopy = activity.preview_omitted_season_count > 0
-    ? `The latest ${number(activity.preview_season_count)} of ${number(activity.represented_season_count)} represented seasons are shown; ${number(activity.preview_omitted_active_season_count)} earlier active represented seasons remain outside this panel.`
-    : `All ${number(activity.represented_season_count)} represented seasons are shown.`;
+    ? `Showing the latest ${number(activity.preview_season_count)} of ${number(activity.represented_season_count)} seasons; ${number(activity.preview_omitted_active_season_count)} earlier seasons with listening are left out here.`
+    : `Showing all ${number(activity.represented_season_count)} seasons.`;
   const projectionCopy = activity.omitted_earlier_season_count > 0
-    ? ` ${number(activity.omitted_earlier_season_count)} still-earlier retained seasons, including ${number(activity.omitted_earlier_active_season_count)} active seasons, sit outside the 80-season projection.`
+    ? ` ${number(activity.omitted_earlier_season_count)} even earlier seasons, ${number(activity.omitted_earlier_active_season_count)} of them with listening, go back further than Moondog keeps (80 seasons).`
     : "";
   return `<article class="panel listening-seasons-panel" id="listening-seasons">
-    <div class="listening-seasons-heading"><div><span class="panel-label">Fixed three-month UTC windows</span><h3>Listening Seasons</h3></div><strong>${escapeHtml(`${number(activity.active_season_count)} active seasons`)}</strong></div>
-    <p class="panel-intro">A chronological view of what occupied each calendar quarter. Leading artists and signature tracks describe only their window. They are not mood, identity, or life-event claims.</p>
+    <div class="listening-seasons-heading"><div><span class="panel-label">Three months at a time, in UTC</span><h3>Listening Seasons</h3></div><strong>${escapeHtml(`${number(activity.active_season_count)} seasons with listening`)}</strong></div>
+    <p class="panel-intro">What filled each quarter of the year. The top artist and song describe those months only, not your mood or what was happening in your life.</p>
     <div class="listening-seasons-grid">${cards}</div>
-    <p class="listening-seasons-boundary">${escapeHtml(`${previewCopy}${projectionCopy} First observed means first appearance in retained eligible history, not discovery. An empty season is an archive observation, not proof of no listening.`)}</p>
+    <p class="listening-seasons-boundary">${escapeHtml(`${previewCopy}${projectionCopy} New means new to your history, which is not always when you found it. An empty season means no history was kept, not that you stopped listening.`)}</p>
   </article>`;
 }
 
@@ -1797,30 +1805,27 @@ function crossFormatIdentityCoverage(coverage) {
     ? ambiguousTracks
     : 0;
   if (appliedLinks < 1 && withheldTracks < 1) return "";
-  const linkNoun = appliedLinks === 1 ? "identity" : "identities";
   const summary = appliedLinks > 0
-    ? `${number(appliedLinks)} provisional track ${linkNoun} joined to resolved Spotify identities.`
-    : `${number(withheldTracks)} ambiguous provisional track ${withheldTracks === 1 ? "identity remains" : "identities remain"} separate.`;
+    ? `${number(appliedLinks)} ${appliedLinks === 1 ? "track" : "tracks"} matched across your two Spotify exports.`
+    : `${number(withheldTracks)} ${withheldTracks === 1 ? "track was" : "tracks were"} kept apart because the match was unclear.`;
   const detail = [];
   if (appliedLinks > 0) {
-    const linkedEventNoun = events === 1 ? "event" : "events";
+    const linkedEventNoun = events === 1 ? "play" : "plays";
     detail.push(
-      `Exact overlapping plays support behavioral aggregation across ${number(events)} effective ${linkedEventNoun}.`,
+      `Plays that appear in both exports line up exactly, so ${number(events)} ${linkedEventNoun} now count toward the same songs.`,
     );
   }
   if (withheldTracks > 0) {
-    const ambiguousTrackNoun = withheldTracks === 1
-      ? "provisional identity"
-      : "provisional identities";
-    const ambiguousEventNoun = ambiguousEvents === 1 ? "event" : "events";
+    const ambiguousTrackNoun = withheldTracks === 1 ? "track" : "tracks";
+    const ambiguousEventNoun = ambiguousEvents === 1 ? "play" : "plays";
     detail.push(
-      `Multi-target cases stay separate: ${number(withheldTracks)} ${ambiguousTrackNoun} across ${number(ambiguousEvents)} effective ${ambiguousEventNoun} were not joined because exact overlaps point to multiple resolved Spotify identities.`,
+      `${number(withheldTracks)} ${ambiguousTrackNoun} with ${number(ambiguousEvents)} ${ambiguousEventNoun} could match more than one song, so they stay apart.`,
     );
   } else {
-    detail.push("Multi-target cases stay separate.");
+    detail.push("Anything unclear stays apart.");
   }
-  detail.push("Original records remain intact.");
-  return `<aside class="identity-coverage" aria-label="Cross-format track identity coverage"><strong>${escapeHtml(summary)}</strong><span>${escapeHtml(detail.join(" "))}</span></aside>`;
+  detail.push("Your original history is unchanged.");
+  return `<aside class="identity-coverage" aria-label="Matching across Spotify exports"><strong>${escapeHtml(summary)}</strong><span>${escapeHtml(detail.join(" "))}</span></aside>`;
 }
 
 export function renderTasteprintHtml(profile, options = {}) {
@@ -1837,7 +1842,7 @@ export function renderTasteprintHtml(profile, options = {}) {
   const generatedLabel = dateLabel(view.generated_at);
   const rangeLabel = view.timeline.earliest && view.timeline.latest
     ? `${dateLabel(view.timeline.earliest)} to ${dateLabel(view.timeline.latest)}`
-    : "Bounded local profile range";
+    : "Your history";
   const recentWindow = context.recent_window_days ?? 90;
   const rediscoveryQuietDays =
     context.rediscovery_quiet_days ?? recentWindow;
@@ -1868,121 +1873,121 @@ export function renderTasteprintHtml(profile, options = {}) {
     view.behavior.session_summary !== null ||
     view.behavior.back_to_back_tracks.length > 0;
   const heroDimensions = [
-    "familiarity",
-    hasDeliberateChoiceSignals ? "deliberate choices" : null,
-    "recent movement",
+    "what you know by heart",
+    hasDeliberateChoiceSignals ? "what you chose to keep" : null,
+    "what you play lately",
     view.behavior.time_capsule_tracks.length > 0
-      ? "listening-year landmarks"
+      ? "one song for each year"
       : null,
-    view.behavior.monthly_activity ? "monthly listening pulse" : null,
-    view.behavior.listening_seasons ? "listening seasons" : null,
+    view.behavior.monthly_activity ? "your months" : null,
+    view.behavior.listening_seasons ? "your seasons" : null,
     view.behavior.artist_relationships.length > 0 ||
     view.behavior.year_transitions.length > 0
-      ? "taste continuity"
+      ? "who stayed and who changed"
       : null,
-    hasListeningPatterns ? "listening patterns" : null,
+    hasListeningPatterns ? "how you listen in a stretch" : null,
     view.behavior.rediscovery_tracks.length > 0
-      ? "listen-again prompts"
+      ? "songs worth another listen"
       : null,
-    hasProviderSnapshot ? "provider context" : "listening context",
+    hasProviderSnapshot ? "what Spotify says about you" : null,
   ].filter(Boolean);
-  const heroCopy = `A bounded reading of ${naturalList(heroDimensions)}. No single number pretends to define your taste.`;
+  const heroCopy = `A reading of ${naturalList(heroDimensions)}. No single number gets to define your taste.`;
   const sectionLinks = [
-    { href: "#taste-shape", label: "Taste shape" },
+    { href: "#taste-shape", label: "Shine On" },
     ...(view.behavior.monthly_activity
-      ? [{ href: "#listening-pulse", label: "Listening pulse" }]
+      ? [{ href: "#listening-pulse", label: "Months" }]
       : []),
     ...(view.behavior.listening_seasons
-      ? [{ href: "#listening-seasons", label: "Listening seasons" }]
+      ? [{ href: "#listening-seasons", label: "Seasons" }]
       : []),
-    { href: "#listening-arc", label: "Listening arc" },
+    { href: "#listening-arc", label: "Year by year" },
     ...(view.behavior.artist_relationships.length > 0 ||
     view.behavior.year_transitions.length > 0
-      ? [{ href: "#continuity", label: "Continuity and change" }]
+      ? [{ href: "#continuity", label: "Stayed and changed" }]
       : []),
     ...(hasListeningPatterns
-      ? [{ href: "#listening-patterns", label: "Listening patterns" }]
+      ? [{ href: "#listening-patterns", label: "Stretches" }]
       : []),
-    { href: "#tracks-that-stay", label: "Tracks and returns" },
+    { href: "#tracks-that-stay", label: "Quiet and back" },
     ...(listenerCorrectionCount > 0
-      ? [{ href: "#listener-corrections", label: "Your corrections" }]
+      ? [{ href: "#listener-corrections", label: "What you told me" }]
       : []),
     ...(hasProfileChoiceSignals || hasFacetSignals
-      ? [{ href: "#profile-evidence", label: "Choices and facets" }]
+      ? [{ href: "#profile-evidence", label: hasProfileChoiceSignals ? "Kept on purpose" : "Artists and genres" }]
       : []),
-    { href: "#playback-flow", label: "Playback flow" },
+    { href: "#playback-flow", label: "How you listen" },
     ...(hasProviderSnapshot
-      ? [{ href: "#provider-snapshot", label: "Provider snapshot" }]
+      ? [{ href: "#provider-snapshot", label: "Spotify's view" }]
       : []),
-    { href: "#interpretation-boundaries", label: "Boundaries" },
+    { href: "#interpretation-boundaries", label: "The dark side" },
   ];
   const sectionNavigator = `<nav class="section-nav" aria-label="Tasteprint sections">
-      <span class="section-nav-label">Explore this Tasteprint</span>
+      <span class="section-nav-label">In this report</span>
       <div class="section-nav-links">${sectionLinks.map((item) => `<a href="${item.href}">${item.label}</a>`).join("")}</div>
     </nav>`;
 
   const choicePanels = [
     view.deliberate.strong_preferences.length > 0
-      ? `<article class="panel"><span class="panel-label">Explicit and curated signals</span><h3>Strong preferences</h3>${signalList(view.deliberate.strong_preferences)}</article>`
+      ? `<article class="panel"><span class="panel-label">Loved, rated, or saved</span><h3>Favorites</h3>${signalList(view.deliberate.strong_preferences)}</article>`
       : "",
     view.deliberate.saved_tracks.length > 0
-      ? `<article class="panel"><span class="panel-label">Saved library</span><h3>Saved tracks</h3>${trackRows(view.deliberate.saved_tracks)}</article>`
+      ? `<article class="panel"><span class="panel-label">Your library</span><h3>Saved songs</h3>${trackRows(view.deliberate.saved_tracks)}</article>`
       : "",
     view.deliberate.playlist_anchors.length > 0
-      ? `<article class="panel"><span class="panel-label">Playlist curation</span><h3>Playlist anchors</h3>${trackRows(view.deliberate.playlist_anchors)}</article>`
+      ? `<article class="panel"><span class="panel-label">Your playlists</span><h3>On your playlists</h3>${trackRows(view.deliberate.playlist_anchors)}</article>`
       : "",
     view.deliberate.followed_artists.length > 0
-      ? `<article class="panel"><span class="panel-label">Explicit state</span><h3>Followed artists</h3>${nameRows(view.deliberate.followed_artists)}</article>`
+      ? `<article class="panel"><span class="panel-label">Your follows</span><h3>Artists you follow</h3>${nameRows(view.deliberate.followed_artists)}</article>`
       : "",
     view.deliberate.saved_albums.length > 0
-      ? `<article class="panel"><span class="panel-label">Saved library</span><h3>Saved albums</h3>${trackRows(view.deliberate.saved_albums)}</article>`
+      ? `<article class="panel"><span class="panel-label">Your library</span><h3>Saved albums</h3>${trackRows(view.deliberate.saved_albums)}</article>`
       : "",
     view.search_intent.length > 0
-      ? `<article class="panel"><span class="panel-label">Verified interaction</span><h3>Music search intent</h3>${searchRows(view.search_intent)}</article>`
+      ? `<article class="panel"><span class="panel-label">Searches you acted on</span><h3>What you searched for</h3>${searchRows(view.search_intent)}</article>`
       : "",
   ].filter(Boolean);
   const facetBlocks = [
     view.facets.artists.length > 0
-      ? `<div class="facet-block"><h3>Artist facets</h3>${tagCloud(view.facets.artists)}</div>`
+      ? `<div class="facet-block"><h3>Artists</h3>${tagCloud(view.facets.artists)}</div>`
       : "",
     view.facets.genres.length > 0
-      ? `<div class="facet-block"><h3>Genre labels</h3>${tagCloud(view.facets.genres)}</div>`
+      ? `<div class="facet-block"><h3>Genres</h3>${tagCloud(view.facets.genres)}</div>`
       : "",
   ].filter(Boolean);
   const profileEvidenceHeading = hasProfileChoiceSignals
     ? hasFacetSignals
-      ? "Deliberate choices and profile facets"
-      : "Deliberate choices"
-    : "Profile facets";
+      ? "Kept on purpose"
+      : "Kept on purpose"
+    : "Artists and genres";
   const profileEvidenceCopy = hasProfileChoiceSignals
     ? hasFacetSignals
-      ? "Saved state, favorites, follows, playlist placement, and verified search interactions stay distinct from profile facets, which summarize the profile without proving choice."
-      : "Saved state, favorites, follows, playlist placement, and verified search interactions are kept separate from passive or ambiguous listening behavior."
-    : "These bounded artist and genre labels summarize the profile without turning listening behavior into a direct preference claim.";
+      ? "Songs you saved, loved, followed, put on playlists, or searched for. These are choices you made, kept apart from what you only played. The artist and genre summary sits apart too, because it is a summary, not a choice."
+      : "Songs you saved, loved, followed, put on playlists, or searched for. These are choices you made, kept apart from what you only played."
+    : "A short summary of the artists and genres in your profile. It describes your listening, not a choice you made.";
   const profileEvidenceSection =
     hasProfileChoiceSignals || hasFacetSignals
       ? `<section class="section" id="profile-evidence">
       <div class="section-heading"><h2>${profileEvidenceHeading}</h2><p>${profileEvidenceCopy}</p></div>
-      ${facetBlocks.length > 0 ? `<article class="panel profile-facets"><span class="panel-label">Profile summary, not direct choice</span>${facetBlocks.join("")}</article>` : ""}
+      ${facetBlocks.length > 0 ? `<article class="panel profile-facets"><span class="panel-label">A summary, not a choice</span>${facetBlocks.join("")}</article>` : ""}
       ${choicePanels.length > 0 ? `<div class="adaptive-grid"${facetBlocks.length > 0 ? ' style="margin-top:18px"' : ""}>${choicePanels.join("")}</div>` : ""}
     </section>`
       : "";
 
   const providerPanels = [
     view.provider_snapshot.artists.length > 0
-      ? `<article class="panel"><span class="panel-label">Provider-derived</span><h3>Ranked artists</h3>${providerRows(view.provider_snapshot.artists, "artist")}</article>`
+      ? `<article class="panel"><span class="panel-label">Spotify's ranking</span><h3>Top artists</h3>${providerRows(view.provider_snapshot.artists, "artist")}</article>`
       : "",
     view.provider_snapshot.tracks.length > 0
-      ? `<article class="panel"><span class="panel-label">Provider-derived</span><h3>Ranked tracks</h3>${providerRows(view.provider_snapshot.tracks, "track")}</article>`
+      ? `<article class="panel"><span class="panel-label">Spotify's ranking</span><h3>Top songs</h3>${providerRows(view.provider_snapshot.tracks, "track")}</article>`
       : "",
   ].filter(Boolean);
   const providerCards = snapshotCards(view);
   const providerSection = hasProviderSnapshot
     ? `<section class="section" id="provider-snapshot">
-      <div class="section-heading"><h2>The provider's snapshot</h2><p>Wrapped, Taste Profile, and Sound Capsule are preserved as quoted provider-derived context. They are not treated as user assertions or instructions.</p></div>
-      <p class="provider-intro">This layer stays visibly separate from Moondog's behavioral and deliberate evidence. Rankings can summarize a period, but they do not replace the underlying history.</p>
+      <div class="section-heading"><h2>Spotify's view</h2><p>What Wrapped, Taste Profile, and Sound Capsule say about you, quoted as Spotify wrote it. Moondog does not treat it as something you said.</p></div>
+      <p class="provider-intro">It stays apart from your own history and choices. A ranking can sum up a period, but it cannot stand in for what you actually played.</p>
       ${providerPanels.length > 0 ? `<div class="adaptive-grid">${providerPanels.join("")}</div>` : ""}
-      ${view.provider_snapshot.genres.length > 0 ? `<div class="facet-block"${providerPanels.length > 0 ? ' style="margin-top:18px"' : ""}><h3>Provider-ranked genres</h3>${tagCloud(view.provider_snapshot.genres.map((item) => `${item.name}${Number.isInteger(item.rank) ? ` #${item.rank}` : ""}`))}</div>` : ""}
+      ${view.provider_snapshot.genres.length > 0 ? `<div class="facet-block"${providerPanels.length > 0 ? ' style="margin-top:18px"' : ""}><h3>Spotify's genres</h3>${tagCloud(view.provider_snapshot.genres.map((item) => `${item.name}${Number.isInteger(item.rank) ? ` #${item.rank}` : ""}`))}</div>` : ""}
       ${providerCards}
     </section>`
     : "";
@@ -2976,26 +2981,26 @@ export function renderTasteprintHtml(profile, options = {}) {
 <body>
   <main class="shell">
     <header class="hero">
-      <p class="eyebrow">${syntheticDemo ? "Moondog synthetic tasteprint demo" : "Moondog private tasteprint"}</p>
+      <p class="eyebrow">${syntheticDemo ? "Moondog listening report, fictional demo" : "Moondog listening report, private"}</p>
       <h1>${escapeHtml(spanLabel(view.timeline.days))}, seen clearly.</h1>
       <p class="hero-copy">${escapeHtml(heroCopy)}</p>
       <div class="hero-meta" aria-label="Tasteprint snapshot metadata">
-        <div><span>Listening range</span><strong>${escapeHtml(rangeLabel)}</strong></div>
-        <div><span>Generated</span><strong>${escapeHtml(generatedLabel)}</strong></div>
-        <div><span>Profile</span><strong>${escapeHtml(view.profile_version)}</strong></div>
+        <div><span>Your history</span><strong>${escapeHtml(rangeLabel)}</strong></div>
+        <div><span>Made</span><strong>${escapeHtml(generatedLabel)}</strong></div>
+        <div><span>Version</span><strong>${escapeHtml(view.profile_version)}</strong></div>
       </div>
     </header>
 
     <aside class="privacy" aria-label="${syntheticDemo ? "Synthetic demo boundary" : "Privacy boundary"}">
       <span class="privacy-mark" aria-hidden="true">L</span>
-      <div><strong>${syntheticDemo ? "Synthetic public demo" : "Private and local"}</strong><p>${syntheticDemo ? "Every artist, track, and aggregate on this page is fictional demonstration data. The page has no scripts, external assets, or network requests." : "This page contains personal music context. It has no scripts, external assets, or network requests. Share only if you are comfortable revealing the visible artists, tracks, and aggregates."}</p></div>
+      <div><strong>${syntheticDemo ? "A fictional demo" : "Private, made on this machine"}</strong><p>${syntheticDemo ? "Every artist, track, and number on this page is made up. The page loads nothing from the internet." : "This page is about you. It loads nothing from the internet. Share it only if you are happy for others to see the artists, tracks, and numbers on it."}</p></div>
     </aside>
 
     <section class="overview" aria-label="Listening coverage">
-      ${metricCard(number(coverage.effective_listening_events), "effective events", `${number(coverage.profiled_listening_events)} eligible for ranking`)}
+      ${metricCard(number(coverage.effective_listening_events), "plays", `${number(coverage.profiled_listening_events)} counted in rankings`)}
       ${metricCard(number(coverage.listening_hours), "listening hours", rangeLabel)}
-      ${metricCard(number(coverage.listening_tracks), "distinct tracks", resolvedShare === null ? "resolution coverage unknown" : `${number(resolvedShare, 1)}% resolved identities`)}
-      ${metricCard(number(coverage.spotify_playlist_memberships), "playlist placements", `${number(coverage.spotify_saved_tracks)} saved tracks`)}
+      ${metricCard(number(coverage.listening_tracks), "tracks", resolvedShare === null ? "matching unknown" : `${number(resolvedShare, 1)}% matched to a known song`)}
+      ${metricCard(number(coverage.spotify_playlist_memberships), "songs on playlists", `${number(coverage.spotify_saved_tracks)} saved songs`)}
     </section>
 
     ${crossFormatIdentityCoverage(coverage)}
@@ -3004,80 +3009,80 @@ export function renderTasteprintHtml(profile, options = {}) {
 
     <section class="section dark" id="taste-shape">
       ${syntheticDemo ? '<p class="demo-chip">Fictional public profile</p>' : ""}
-      <div class="section-heading"><h2>The shape of your listening</h2><p>Long arc ranks the complete effective history. Recent orbit uses the last ${escapeHtml(number(recentWindow))} days. Bar lengths are relative only within each displayed list.</p></div>
+      <div class="section-heading"><h2>Shine On</h2><p>The artists who stayed with you across the years, and the ones you have played in the last ${escapeHtml(number(recentWindow))} days. Bars compare within each list only.</p></div>
       <div class="two-column">
-        <article class="panel"><span class="panel-label">Lifetime signal</span><h3>Long arc</h3>${artistRows(view.behavior.enduring_artists)}</article>
-        <article class="panel"><span class="panel-label">Last ${escapeHtml(number(recentWindow))} days</span><h3>Recent orbit</h3>${artistRows(view.behavior.recent_artists, { recent: true })}</article>
+        <article class="panel"><span class="panel-label">All of your history</span><h3>Across the years</h3>${artistRows(view.behavior.enduring_artists)}</article>
+        <article class="panel"><span class="panel-label">Last ${escapeHtml(number(recentWindow))} days</span><h3>Lately</h3>${artistRows(view.behavior.recent_artists, { recent: true })}</article>
       </div>
     </section>
 
     <section class="section" id="listening-arc">
-      <div class="section-heading"><h2>Listening through time</h2><p>Each row groups eligible events by UTC calendar year. First observed means the track's first appearance in retained history, not proof that it was newly discovered then.</p></div>
-      ${view.behavior.monthly_activity ? `<article class="panel listening-pulse-panel" id="listening-pulse"><span class="panel-label">Retained UTC activity</span><h3>Listening Pulse</h3><p class="panel-intro">Monthly cells preserve the archive's changing density without exposing a raw timestamp or claiming that an empty month means silence.</p>${monthlyActivityGrid(view.behavior.monthly_activity)}</article>` : ""}
+      <div class="section-heading"><h2>Year by year</h2><p>Each row is one calendar year, in UTC. A song counts as new the first time it shows up in your history, which is not always when you found it.</p></div>
+      ${view.behavior.monthly_activity ? `<article class="panel listening-pulse-panel" id="listening-pulse"><span class="panel-label">Every month in your history</span><h3>Listening Pulse</h3><p class="panel-intro">Each cell is a month. A blank month means no history was kept for it, not that you stopped listening.</p>${monthlyActivityGrid(view.behavior.monthly_activity)}</article>` : ""}
       ${listeningSeasonsPanel(view.behavior.listening_seasons)}
       ${historyArcRows(view.behavior.history_arc)}
-      ${view.behavior.time_capsule_tracks.length > 0 ? `<article class="panel time-capsule-panel" id="time-machine"><span class="panel-label">${escapeHtml(number(view.behavior.time_capsule_tracks.length))} chronological landmarks</span><h3>Listening Time Machine</h3><p class="panel-intro">One deterministic representative from each selected peak listening year, balanced across the retained span and cleared of active avoid signals. These tracks are a route through the archive, not claims that they defined a year or remain favorites today.</p>${timeMachineSelectionNote(view)}${trackRows(view.behavior.time_capsule_tracks)}</article>` : ""}
+      ${view.behavior.time_capsule_tracks.length > 0 ? `<article class="panel time-capsule-panel" id="time-machine"><span class="panel-label">${escapeHtml(number(view.behavior.time_capsule_tracks.length))} years, one song each</span><h3>Time</h3><p class="panel-intro">Your Listening Time Machine: for each year, a song you played most that year, never one you asked to keep out. It is a route through your history, not a claim that the song defined the year or that you still love it.</p>${timeMachineSelectionNote(view)}${trackRows(view.behavior.time_capsule_tracks)}</article>` : ""}
     </section>
 
     ${view.behavior.artist_relationships.length > 0 || view.behavior.year_transitions.length > 0 ? `<section class="section" id="continuity">
-      <div class="section-heading"><h2>What stayed. What changed.</h2><p>Cross-year appearances show continuity in this retained archive. Top-artist turnover compares listening-time rankings between retained UTC years without turning either pattern into a personality claim.</p></div>
+      <div class="section-heading"><h2>What stayed. What changed.</h2><p>Which artists kept coming back across the years, and how much your top artists changed from one year to the next. Neither is a verdict on who you are.</p></div>
       <div class="two-column continuity-grid">
-        <article class="panel"><span class="panel-label">Present in the latest retained year</span><h3>Artists across eras</h3><p class="panel-intro">Each artist appears in at least ${escapeHtml(number(context.relationship_minimum_years ?? 2))} retained years and is still present in the latest retained year.</p>${artistRelationshipRows(view.behavior.artist_relationships)}</article>
-        <article class="panel"><span class="panel-label">Listening-time top sets</span><h3>Year-to-year turnover</h3><p class="panel-intro">Each comparison asks how many of the later year's top ${escapeHtml(number(context.continuity_artist_limit ?? 10))} artists also ranked in the preceding retained year.</p>${yearTransitionRows(view.behavior.year_transitions, context.continuity_artist_limit ?? 10)}</article>
+        <article class="panel"><span class="panel-label">Still there in your latest year</span><h3>Artists across the years</h3><p class="panel-intro">Each artist shows up in at least ${escapeHtml(number(context.relationship_minimum_years ?? 2))} years of your history, including the latest one.</p>${artistRelationshipRows(view.behavior.artist_relationships)}</article>
+        <article class="panel"><span class="panel-label">Top artists by listening time</span><h3>Year to year</h3><p class="panel-intro">How many of each year's top ${escapeHtml(number(context.continuity_artist_limit ?? 10))} artists were also near the top the year before.</p>${yearTransitionRows(view.behavior.year_transitions, context.continuity_artist_limit ?? 10)}</article>
       </div>
     </section>` : ""}
 
     ${hasListeningPatterns ? `<section class="section pattern-section" id="listening-patterns">
       ${syntheticDemo ? '<p class="pattern-demo-chip">Fictional archive preview</p>' : ""}
-      <div class="section-heading"><h2>The shape of a listening stretch</h2><p>Spotify Extended History can show how plays cluster, when the same track appears back to back, and which multi-track releases recur. These are bounded archive patterns, not claims about mood, routine, intention, liking, or album completion.</p></div>
+      <div class="section-heading"><h2>Inside a listening stretch</h2><p>Spotify's extended history shows how plays cluster, which songs you played again right away, and which records you went deep on. These are patterns, not a read on your mood, routine, or taste.</p></div>
       <div class="two-column pattern-grid">
-        ${view.behavior.session_summary ? `<article class="panel session-panel"><span class="panel-label">${escapeHtml(number(view.behavior.session_summary.gap_minutes))}-minute gap method</span><h3>Approximate sessions</h3><p class="panel-intro">Track-stop timestamps are grouped until a longer gap begins a new listening stretch.</p>${sessionShape(view.behavior.session_summary)}</article>` : ""}
-        ${view.behavior.back_to_back_tracks.length > 0 ? `<article class="panel" id="back-to-back"><span class="panel-label">At least ${escapeHtml(number(context.back_to_back_minimum_consecutive_plays ?? 2))} adjacent plays</span><h3>Played back to back</h3><p class="panel-intro">Each sequence uses adjacent non-skipped Spotify Extended History rows for the same track, with at least ${escapeHtml(number(context.back_to_back_minimum_played_seconds ?? 30))} seconds played per event and no gap over ${escapeHtml(number(context.back_to_back_maximum_gap_minutes ?? 30))} minutes. This does not prove repeat mode, intention, or liking.</p>${trackRows(view.behavior.back_to_back_tracks)}</article>` : ""}
-        ${view.behavior.release_depth.length > 0 ? `<article class="panel"><span class="panel-label">At least ${escapeHtml(number(context.release_minimum_distinct_tracks ?? 3))} distinct tracks</span><h3>Records explored in depth</h3><p class="panel-intro">Artist and release metadata are paired so same-titled records from different artists stay separate.</p>${releaseDepthRows(view.behavior.release_depth)}</article>` : ""}
+        ${view.behavior.session_summary ? `<article class="panel session-panel"><span class="panel-label">${escapeHtml(number(view.behavior.session_summary.gap_minutes))}-minute breaks</span><h3>Listening stretches</h3><p class="panel-intro">Plays are grouped together until a longer break starts a new stretch.</p>${sessionShape(view.behavior.session_summary)}</article>` : ""}
+        ${view.behavior.back_to_back_tracks.length > 0 ? `<article class="panel" id="back-to-back"><span class="panel-label">${escapeHtml(number(context.back_to_back_minimum_consecutive_plays ?? 2))} or more in a row</span><h3>Echoes</h3><p class="panel-intro">Songs you played back to back. Each play lasted at least ${escapeHtml(number(context.back_to_back_minimum_played_seconds ?? 30))} seconds, was not skipped, and started within ${escapeHtml(number(context.back_to_back_maximum_gap_minutes ?? 30))} minutes of the last. It could be love, or repeat mode, or falling asleep.</p>${trackRows(view.behavior.back_to_back_tracks)}</article>` : ""}
+        ${view.behavior.release_depth.length > 0 ? `<article class="panel"><span class="panel-label">${escapeHtml(number(context.release_minimum_distinct_tracks ?? 3))} or more tracks</span><h3>Records you went deep on</h3><p class="panel-intro">Records are matched by title and artist, so albums with the same name by different artists stay apart.</p>${releaseDepthRows(view.behavior.release_depth)}</article>` : ""}
       </div>
     </section>` : ""}
 
     <section class="section" id="tracks-that-stay">
-      <div class="section-heading"><h2>Tracks that stay, disappear, and return</h2><p>Repetition and listening time show familiarity and attention. Current rediscovery adds a recent quiet window, while historical returns mark long gaps followed by another retained play. None of these patterns proves permanent preference.</p></div>
-      ${view.behavior.rediscovery_tracks.length > 0 ? `<article class="panel rediscovery-panel"><span class="panel-label">Quiet for at least ${escapeHtml(number(rediscoveryQuietDays))} days</span><h3>Worth another listen</h3><p class="panel-intro">Meaningful historical attention, no recent appearance, and no active listener or provider avoid signal. The quiet period is measured against the latest retained event, not today's date.</p>${trackRows(view.behavior.rediscovery_tracks)}</article>` : ""}
-      ${view.behavior.historical_return_tracks.length > 0 ? `<article class="panel rediscovery-panel"><span class="panel-label">Gaps of at least ${escapeHtml(number(context.historical_return_minimum_gap_days ?? 180))} days</span><h3>Music that came back</h3><p class="panel-intro">Each track reappeared after one or more long gaps in retained effective history and clears the active avoid boundary. A return is recurrence in the archive, not proof of liking, nostalgia, or an intentional absence.</p>${trackRows(view.behavior.historical_return_tracks)}</article>` : ""}
+      <div class="section-heading"><h2>Tracks that stay, go quiet, and come back</h2><p>Playing something a lot shows you know it well. It does not prove you love it, now or forever.</p></div>
+      ${view.behavior.rediscovery_tracks.length > 0 ? `<article class="panel rediscovery-panel"><span class="panel-label">Quiet for ${escapeHtml(number(rediscoveryQuietDays))}+ days</span><h3>Wish You Were Here</h3><p class="panel-intro">Worth another listen: songs you used to play a lot that have gone quiet, leaving out anything you asked to keep out. Quiet is measured up to the last play in your history, not today.</p>${trackRows(view.behavior.rediscovery_tracks)}</article>` : ""}
+      ${view.behavior.historical_return_tracks.length > 0 ? `<article class="panel rediscovery-panel"><span class="panel-label">Back after ${escapeHtml(number(context.historical_return_minimum_gap_days ?? 180))}+ days away</span><h3>Coming Back to Life</h3><p class="panel-intro">Music that came back: songs that found their way back after long gaps. That is a pattern, not proof you missed them or left them on purpose.</p>${trackRows(view.behavior.historical_return_tracks)}</article>` : ""}
       <div class="two-column">
-        <article class="panel"><span class="panel-label">Lifetime return</span><h3>Tracks you come back to</h3>${trackRows(view.behavior.repeat_tracks)}</article>
-        <article class="panel"><span class="panel-label">Current movement</span><h3>Recent tracks</h3>${trackRows(view.behavior.recent_tracks)}</article>
+        <article class="panel"><span class="panel-label">All of your history</span><h3>Most played</h3>${trackRows(view.behavior.repeat_tracks)}</article>
+        <article class="panel"><span class="panel-label">Your latest plays</span><h3>Recently</h3>${trackRows(view.behavior.recent_tracks)}</article>
       </div>
     </section>
 
     ${listenerCorrectionCount > 0 ? `<section class="section" id="listener-corrections">
-      <div class="section-heading"><h2>Your corrections</h2><p>These are your direct, retractable assertions. They outrank ambiguous behavioral and provider signals in the current projection without rewriting listening history.</p></div>
+      <div class="section-heading"><h2>What you told me</h2><p>Your own choices. They count for more than play counts, you can undo them any time, and they never rewrite your history.</p></div>
       <div class="two-column">
-        <article class="panel"><span class="panel-label">Explicit current preference</span><h3>You said you like</h3>${correctionSignalList(view.deliberate.listener_preferences, "like")}</article>
-        <article class="panel"><span class="panel-label">Explicit current boundary</span><h3>You said to avoid</h3>${correctionSignalList(view.deliberate.listener_avoids, "avoid")}</article>
+        <article class="panel"><span class="panel-label">Your choice</span><h3>You like</h3>${correctionSignalList(view.deliberate.listener_preferences, "like")}</article>
+        <article class="panel"><span class="panel-label">Your choice</span><h3>Keep out</h3>${correctionSignalList(view.deliberate.listener_avoids, "avoid")}</article>
       </div>
     </section>` : ""}
 
     ${profileEvidenceSection}
 
     <section class="section dark" id="playback-flow">
-      <div class="section-heading"><h2>How your listening flows</h2><p>These fields describe sequence and playback controls only. Their categories can overlap, and none of them establishes taste, attention, satisfaction, or personality.</p></div>
+      <div class="section-heading"><h2>How you listen</h2><p>How songs started, ended, and played. These overlap, and none of them says what you like.</p></div>
       <div class="behavior-grid">
-        ${behaviorCard(context.direct_selection_starts, context.start_reason_events, "Direct starts", "A provider start reason grouped as direct interaction, not proof of attention or preference.", "events with a recorded start reason")}
-        ${behaviorCard(context.trackdone_starts, context.start_reason_events, "Continued playback", "Started because the previous track ended. This describes sequence flow, not passivity.", "events with a recorded start reason")}
-        ${behaviorCard(context.trackdone_endings, context.end_reason_events, "Reached track end", "Spotify marked these events trackdone. This is not a universal completion guarantee.", "events with a recorded end reason")}
-        ${behaviorCard(context.explicit_skips, context.skip_state_events, "Explicit skips", "Contextual navigation evidence, not a durable avoidance claim.", "events with supplied skip state")}
-        ${behaviorCard(context.shuffle_events, context.shuffle_state_events, "Shuffle active", "Playback context that can explain sequence without judging preference.", "events with supplied shuffle state")}
-        ${behaviorCard(context.offline_events, context.offline_state_events, "Offline playback", "Playback context only. It does not establish location, travel, or connection quality.", "events with supplied offline state")}
+        ${behaviorCard(context.direct_selection_starts, context.start_reason_events, "Picked yourself", "Songs you started directly. A choice in the moment, not a measure of how much you cared.", "plays with a start reason")}
+        ${behaviorCard(context.trackdone_starts, context.start_reason_events, "Followed on", "Started because the song before ended. That is flow, not indifference.", "plays with a start reason")}
+        ${behaviorCard(context.trackdone_endings, context.end_reason_events, "Played to the end", "Spotify marked them finished, which is not quite the same as heard all the way through.", "plays with an end reason")}
+        ${behaviorCard(context.explicit_skips, context.skip_state_events, "Skipped", "A skip is a moment, not a verdict.", "plays with skip data")}
+        ${behaviorCard(context.shuffle_events, context.shuffle_state_events, "On shuffle", "Shuffle explains the order, not your taste.", "plays with shuffle data")}
+        ${behaviorCard(context.offline_events, context.offline_state_events, "Offline", "Played without a connection. Nothing more than that.", "plays with offline data")}
       </div>
-      <p class="context-note">Percentages use only rows where Spotify supplied the corresponding field. ${escapeHtml(number(context.incognito_events_excluded))} incognito events were counted as excluded coverage and did not affect rankings.</p>
+      <p class="context-note">Percentages only count plays where Spotify recorded that detail. ${escapeHtml(number(context.incognito_events_excluded))} private-session plays were left out of the rankings.</p>
     </section>
 
     ${providerSection}
 
     <section class="section" id="interpretation-boundaries">
-      <div class="section-heading"><h2>Read with boundaries</h2><p>Moondog keeps uncertainty visible so a beautiful summary does not harden weak evidence into a false identity.</p></div>
+      <div class="section-heading"><h2>The dark side of the moon</h2><p>What this reading cannot see. Moondog keeps the doubt in view, so a nice summary never hardens into a false picture of you.</p></div>
       <div class="limitations">${view.limitations.map((item) => `<p>${escapeHtml(item)}</p>`).join("")}</div>
     </section>
 
-    <footer><span>Moondog tasteprint v1 / ${syntheticDemo ? "synthetic public demo" : "private local artifact"} / no network requests</span><span>Generated ${escapeHtml(view.generated_at)}</span></footer>
+    <footer><span>Moondog listening report / ${syntheticDemo ? "fictional demo" : "private, made on this machine"} / works offline</span><span>Generated ${escapeHtml(view.generated_at)}</span></footer>
   </main>
 </body>
 </html>
@@ -3100,11 +3105,10 @@ export function renderTasteprintCardHtml(profile, options = {}) {
     : "Bounded local profile range";
   const topArtist = enduringArtists[0]?.name;
   const headline = topArtist
-    ? `${topArtist} anchors your long arc.`
-    : "Your listening, in orbit.";
+    ? `${topArtist}, shining on.`
+    : "Your listening, so far.";
   const boundary =
-    view.limitations[0] ||
-    "Listening history shows familiarity and context, not identity or preference by itself.";
+    "Plays show attention, not love. What you played is not the same as who you are.";
 
   const artistItems = (items, { recent = false } = {}) =>
     items.length > 0
@@ -3113,21 +3117,21 @@ export function renderTasteprintCardHtml(profile, options = {}) {
             const details = [
               listeningTime(item.listening_minutes),
               Number.isInteger(item.play_count)
-                ? `${number(item.play_count)} events`
+                ? `${number(item.play_count)} ${item.play_count === 1 ? "play" : "plays"}`
                 : null,
               Number.isInteger(item.distinct_tracks)
-                ? `${number(item.distinct_tracks)} tracks`
+                ? `${number(item.distinct_tracks)} ${item.distinct_tracks === 1 ? "track" : "tracks"}`
                 : null,
             ].filter(Boolean);
             const relationship = recent
               ? Number.isInteger(item.long_arc_rank)
-                ? `long arc #${item.long_arc_rank}`
-                : "new to the recent orbit"
-              : `long arc #${index + 1}`;
+                ? `#${item.long_arc_rank} across the years`
+                : "new lately"
+              : `#${index + 1} across the years`;
             return `<li><span class="rank">${String(index + 1).padStart(2, "0")}</span><div><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml([relationship, ...details].join(" / "))}</small></div></li>`;
           })
           .join("")}</ol>`
-      : '<p class="empty-card">No bounded artist signal is available.</p>';
+      : '<p class="empty-card">Nothing here yet.</p>';
 
   const trackItems = repeatTracks.length > 0
     ? `<ol class="track-card-list">${repeatTracks
@@ -3135,14 +3139,14 @@ export function renderTasteprintCardHtml(profile, options = {}) {
           const details = [
             item.artist_credit,
             Number.isInteger(item.play_count)
-              ? `${number(item.play_count)} returns`
+              ? `${number(item.play_count)} ${item.play_count === 1 ? "play" : "plays"}`
               : null,
             listeningTime(item.listening_minutes),
           ].filter(Boolean);
           return `<li><span>${String(index + 1).padStart(2, "0")}</span><div><strong>${escapeHtml(item.label)}</strong><small>${escapeHtml(details.join(" / "))}</small></div></li>`;
         })
         .join("")}</ol>`
-    : '<p class="empty-card">No bounded repeat-track signal is available.</p>';
+    : '<p class="empty-card">Nothing here yet.</p>';
 
   return `<!doctype html>
 <html lang="en">
@@ -3516,14 +3520,14 @@ export function renderTasteprintCardHtml(profile, options = {}) {
 <body>
   <main class="taste-card" data-artifact="moondog-tasteprint-card/1">
     <section class="identity" aria-labelledby="card-title">
-      <div class="brand-row"><span>Moondog</span><span>${syntheticDemo ? "Synthetic demo" : "Private recap"}</span></div>
-      <p class="card-kicker">Tasteprint card / long arc</p>
+      <div class="brand-row"><span>Moondog</span><span>${syntheticDemo ? "Fictional demo" : "Private recap"}</span></div>
+      <p class="card-kicker">Tasteprint card / across the years</p>
       <h1 id="card-title">${escapeHtml(headline)}</h1>
-      <p class="span">${escapeHtml(spanLabel(view.timeline.days))}, read from your bounded listening history.</p>
+      <p class="span">${escapeHtml(spanLabel(view.timeline.days))}, read from your own listening history.</p>
       <div class="metrics" aria-label="Listening coverage">
         <div class="metric"><strong>${escapeHtml(number(coverage.listening_hours))}</strong><span>hours</span></div>
         <div class="metric"><strong>${escapeHtml(number(coverage.listening_tracks))}</strong><span>tracks</span></div>
-        <div class="metric"><strong>${escapeHtml(number(coverage.effective_listening_events))}</strong><span>events</span></div>
+        <div class="metric"><strong>${escapeHtml(number(coverage.effective_listening_events))}</strong><span>plays</span></div>
       </div>
     </section>
 
@@ -3534,19 +3538,19 @@ export function renderTasteprintCardHtml(profile, options = {}) {
       </header>
 
       <section class="long-arc" aria-labelledby="long-arc-title">
-        <h2 id="long-arc-title">The artists that stay</h2>
+        <h2 id="long-arc-title">Shine On</h2>
         ${artistItems(enduringArtists)}
       </section>
 
       <div class="signal-grid">
         <section class="signal-panel" aria-labelledby="recent-title">
           <span class="panel-label">Last ${escapeHtml(number(recentWindow))} days</span>
-          <h2 id="recent-title">Recent movement</h2>
+          <h2 id="recent-title">Lately</h2>
           ${artistItems(recentArtists, { recent: true })}
         </section>
         <section class="signal-panel" aria-labelledby="tracks-title">
-          <span class="panel-label">Lifetime return</span>
-          <h2 id="tracks-title">Tracks you revisit</h2>
+          <span class="panel-label">All of your history</span>
+          <h2 id="tracks-title">Most played</h2>
           ${trackItems}
         </section>
       </div>
@@ -3555,13 +3559,13 @@ export function renderTasteprintCardHtml(profile, options = {}) {
         <aside class="boundary" aria-label="Interpretation and privacy boundary">
           <span class="boundary-mark" aria-hidden="true">L</span>
           <div>
-            <strong>${syntheticDemo ? "Synthetic public demo" : "Review before sharing"}</strong>
-            <p>${syntheticDemo ? "Every artist, track, date, and aggregate on this card is fictional demonstration data." : "This card contains personal listening context. Review every visible artist, track, date, and aggregate before sharing."}</p>
+            <strong>${syntheticDemo ? "A fictional demo" : "Read it before you share it"}</strong>
+            <p>${syntheticDemo ? "Every artist, track, date, and number on this card is made up." : "This card is about you. Check every artist, track, date, and number on it before you share it."}</p>
             <p>${escapeHtml(boundary)}</p>
-            ${correctionCount > 0 ? `<span class="direct-signal">${escapeHtml(number(correctionCount))} direct listener ${correctionCount === 1 ? "correction" : "corrections"} applied to the full profile</span>` : ""}
+            ${correctionCount > 0 ? `<span class="direct-signal">${escapeHtml(number(correctionCount))} of your own ${correctionCount === 1 ? "choice" : "choices"} applied</span>` : ""}
           </div>
         </aside>
-        <footer class="card-footer"><span>Moondog tasteprint card v1</span><span>No scripts / no external assets / no network requests</span></footer>
+        <footer class="card-footer"><span>Moondog recap card</span><span>Works offline / loads nothing from the internet</span></footer>
       </div>
     </section>
   </main>

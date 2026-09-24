@@ -70,27 +70,15 @@ npm run generate:tasteprint-demo
 
 `moondog-tasteprint-card-preview.png` captures the entire recap card at the same viewport and appears later in the README beside the private-sharing boundary.
 
-One reproducible browser workflow is:
+Regenerate all four previews, together with the two README terminal screenshots, with Chrome or Chromium and tmux available:
 
 ```bash
-python3 -m http.server 4173 --bind 127.0.0.1 --directory assets/demo
-
-playwright-cli open http://127.0.0.1:4173 --headed
-playwright-cli resize 1240 840
-playwright-cli goto 'http://127.0.0.1:4173/moondog-tasteprint-demo.html?capture=1#taste-shape'
-playwright-cli screenshot --filename assets/demo/moondog-tasteprint-preview.png
-
-playwright-cli goto 'http://127.0.0.1:4173/moondog-tasteprint-demo.html#time-machine'
-playwright-cli screenshot --filename assets/demo/moondog-time-machine-preview.png
-
-playwright-cli goto 'http://127.0.0.1:4173/moondog-tasteprint-demo.html#listening-patterns'
-playwright-cli screenshot --filename assets/demo/moondog-listening-patterns-preview.png
-
-playwright-cli goto 'http://127.0.0.1:4173/moondog-tasteprint-card-demo.html'
-playwright-cli screenshot --filename assets/demo/moondog-tasteprint-card-preview.png
+npm run generate:tasteprint-demo
+npm run generate:demo-screens
 ```
 
-Run the local server and browser commands in separate terminals.
+The command loads each committed HTML file in headless Chrome at 1240 by 840 CSS pixels.
+Pages that open at a section are shown inside a full-size frame, because one-shot headless screenshots render blank when the address carries a fragment.
 
 The `#taste-shape` target applies the intended top margin and hides the browser scrollbar for the capture without adding JavaScript.
 
@@ -99,3 +87,10 @@ All four committed PNGs should be visually inspected at desktop size, and both H
 The media verifier regenerates both expected HTML artifacts in memory, requires exact matches, scans them for private identifiers and external resources, and checks the Studio tour plus all four PNG signatures, dimensions, frame count, and size bounds.
 
 Browser rasterization can vary across operating systems, so PNG bytes are not pinned to one checksum.
+
+## Terminal screenshots
+
+`moondog-tui-home.png` and `moondog-tui-profile.png` show the real listening room at 100 by 34 cells in the charcoal theme.
+`npm run generate:demo-screens` starts Moondog in a private tmux server with a temporary home and state directory, imports the fictional 52-play history, opens the evidence behind one track, then returns to the record sleeve.
+Each screen is captured with its colors and redrawn cell by cell in headless Chrome, so nothing personal, no model, and no music service is involved.
+`moondog-tui-captures.json` records the capture date, dimensions, sizes, and SHA-256 values; inspect both images before committing them.

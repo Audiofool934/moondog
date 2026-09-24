@@ -105,7 +105,7 @@ test("persistent listening history enables profile tools without pretending to b
   assert.deepEqual(status.listening_sources, ["spotify"]);
   assert.deepEqual(profile.listening_source.providers, ["spotify"]);
   assert.equal(profile.listening_behavior.repeat_tracks[0].label, "Roads");
-  assert.match(profile.limitations[0], /provider-neutral/iu);
+  assert.match(profile.limitations[0], /saved on this machine/iu);
 
   const explanation = await application.explainProfileEvidence({
     evidenceId: profile.listening_behavior.repeat_tracks[0].evidence_id,

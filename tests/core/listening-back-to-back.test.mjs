@@ -135,7 +135,7 @@ test("back-to-back tracks expose adjacent repeat bursts without claiming intent"
   assert.match(explanation.interpretation_limit, /can't tell which/iu);
   assert.ok(
     first.summary.limitations.some((item) =>
-      item.includes("Played back to back requires"),
+      item.includes("Played back to back means"),
     ),
   );
 });

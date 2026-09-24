@@ -403,11 +403,11 @@ Replace `--card` with `--html` when you want the complete evidence-backed Tastep
 
 ## Read the evidence
 
-The complete Tasteprint now includes **Worth another listen** (*Wish You Were Here* in the terminal report), a ranked set of tracks with meaningful historical attention that have not appeared inside a bounded 90-day quiet window.
+The complete Tasteprint now includes **Worth another listen** (*Wish You Were Here* in the report), a ranked set of tracks with meaningful historical attention that have not appeared inside a bounded 90-day quiet window.
 The quiet window is measured against the latest retained listening event rather than today's date, so an older export is never presented as current activity.
 Active artist or track avoidances are excluded, while play count and listening time remain evidence of attention rather than proof of liking.
 
-The same projection includes **Music that came back** (*Coming Back to Life* in the terminal report), a bounded set of tracks that reappeared after one or more gaps of at least 180 days in retained effective history.
+The same projection includes **Music that came back** (*Coming Back to Life* in the report), a bounded set of tracks that reappeared after one or more gaps of at least 180 days in retained effective history.
 Each candidate requires at least three effective plays, three plays without an explicit skip signal, ten listening minutes, and no active artist or track avoidance.
 This is a recurrence pattern in the archive, not proof of liking, nostalgia, intentional absence, or current preference.
 
@@ -435,11 +435,11 @@ Spotify Extended Streaming History can also expose tracks that appear in immedia
 moondog ask "Build a short path from tracks I played back to back."
 ```
 
-The **Played back to back** view (*Echoes* in the terminal report) requires at least two adjacent retained plays of the same exact track, with each play lasting at least 30 seconds, no explicit skip signal, and no gap longer than 30 minutes.
+The **Played back to back** view (*Echoes* in the report) requires at least two adjacent retained plays of the same exact track, with each play lasting at least 30 seconds, no explicit skip signal, and no gap longer than 30 minutes.
 The `moondog_back_to_back_candidates` tool returns only bounded sequence counts and opaque track references to the model, while provider identity stays inside the host.
 This is evidence of adjacent retained playback, not proof that repeat mode was active or that the listener intended, liked, or preferred the track.
 
-The complete Tasteprint also includes a **Listening Time Machine** (*Time* in the terminal report) when at least two retained calendar years have enough listening evidence.
+The complete Tasteprint also includes a **Listening Time Machine** (*Time* in the report) when at least two retained calendar years have enough listening evidence.
 It chooses one representative track from evenly spaced years across the available span, keeps the stops chronological, prefers a different artist per year when the evidence permits, and excludes active artist or track avoidances.
 Each selected year requires at least two engaged plays and five listening minutes, and the result is explicitly a bounded landmark rather than proof that one track defines that year.
 The complete Tasteprint shows represented-year coverage, names retained years without a selected landmark, and explains the strongest-year, active-avoidance, and minimum-attention rules beside the route.

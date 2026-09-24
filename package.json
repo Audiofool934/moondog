@@ -57,6 +57,7 @@
     "demo": "node --disable-warning=ExperimentalWarning scripts/moondog.mjs demo --offline",
     "generate:tasteprint-demo": "node --disable-warning=ExperimentalWarning scripts/generate-tasteprint-demo.mjs",
     "generate:studio-tour": "node --disable-warning=ExperimentalWarning scripts/capture-studio-tour.mjs",
+    "generate:demo-screens": "node --disable-warning=ExperimentalWarning scripts/capture-demo-screens.mjs",
     "verify:showcase": "node --disable-warning=ExperimentalWarning scripts/verify-showcase.mjs",
     "verify:showcase-export": "node --test tests/core/showcase-export.test.mjs",
     "verify:demo-history": "node --test tests/runtime/moondog-demo-history.test.mjs",

@@ -53,10 +53,10 @@ const cardHtml = renderTasteprintCardHtml(profile, {
   generatedAt: PUBLIC_TASTEPRINT_DEMO_GENERATED_AT,
   syntheticDemo: true,
 });
-if (!html.includes("Synthetic public demo")) {
+if (!html.includes("A fictional demo")) {
   throw new Error("Synthetic Tasteprint boundary is missing from the output.");
 }
-if (!cardHtml.includes("Synthetic public demo")) {
+if (!cardHtml.includes("A fictional demo")) {
   throw new Error("Synthetic Tasteprint card boundary is missing from the output.");
 }
 

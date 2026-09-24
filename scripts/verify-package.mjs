@@ -1096,31 +1096,31 @@ async function verifyInstalledPackage({ consumerRoot, tarballPath }) {
     const demoTasteprint = await demoTasteprintResponse.text();
     assert(demoTasteprintResponse.status === 200, "The installed Studio demo Tasteprint did not load.");
     assert(demoTasteprint.includes("Moondog Synthetic Tasteprint Demo"), "The installed Studio demo Tasteprint is incomplete.");
-    assert(demoTasteprint.includes("Synthetic public demo"), "The installed Studio demo is not labeled synthetic.");
+    assert(demoTasteprint.includes("A fictional demo"), "The installed Studio demo is not labeled synthetic.");
     assert(
-      demoTasteprint.includes("4 of 4 retained years have landmarks"),
+      demoTasteprint.includes("4 of 4 years have a song"),
       "The installed Studio demo Tasteprint does not explain Time Machine year coverage.",
     );
     assert(
       demoTasteprint.includes("Listening Seasons") &&
-        demoTasteprint.includes("Fixed three-month UTC windows"),
+        demoTasteprint.includes("Three months at a time, in UTC"),
       "The installed Studio demo Tasteprint does not expose fixed-quarter Listening Seasons.",
     );
     assert(
       demoTasteprint.includes("What stayed. What changed.") &&
-        demoTasteprint.includes("Year-to-year turnover"),
+        demoTasteprint.includes("Year to year"),
       "The installed Studio demo Tasteprint does not expose continuity and change.",
     );
     assert(
-      demoTasteprint.includes("The shape of a listening stretch") &&
-        demoTasteprint.includes("Approximate sessions") &&
-        demoTasteprint.includes("Records explored in depth"),
+      demoTasteprint.includes("Inside a listening stretch") &&
+        demoTasteprint.includes("Listening stretches") &&
+        demoTasteprint.includes("Records you went deep on"),
       "The installed Studio demo Tasteprint does not expose listening patterns.",
     );
     assert(
-      demoTasteprint.includes("Played back to back") &&
-        demoTasteprint.includes("At least 2 adjacent plays") &&
-        demoTasteprint.includes("does not prove repeat mode, intention, or liking"),
+      demoTasteprint.includes("<h3>Echoes</h3>") &&
+        demoTasteprint.includes("2 or more in a row") &&
+        demoTasteprint.includes("could be love, or repeat mode, or falling asleep"),
       "The installed Studio demo Tasteprint does not expose bounded played-back-to-back evidence.",
     );
     assert(!/<script/iu.test(demoTasteprint), "The installed Studio demo Tasteprint contains a script.");
@@ -1252,7 +1252,7 @@ async function verifyInstalledPackage({ consumerRoot, tarballPath }) {
     );
     const interactiveTasteprint = await interactiveTasteprintResponse.text();
     assert(interactiveTasteprintResponse.status === 200, "The installed Studio did not render its corrected fictional Tasteprint.");
-    assert(interactiveTasteprint.includes("Synthetic public demo"), "The corrected fictional Tasteprint lost its synthetic label.");
+    assert(interactiveTasteprint.includes("A fictional demo"), "The corrected fictional Tasteprint lost its synthetic label.");
     assert(interactiveTasteprint.includes("Installed fictional correction signal."), "The corrected fictional Tasteprint omitted its direct signal.");
 
     const demoRetractionResponse = await studioProfileRequest(
@@ -1363,9 +1363,9 @@ async function verifyInstalledPackage({ consumerRoot, tarballPath }) {
     const tasteprint = await tasteprintResponse.text();
     assert(tasteprintResponse.status === 200, "The installed Studio did not serve the Tasteprint.");
     assert(tasteprint.includes("Private Moondog Tasteprint"), "The installed Tasteprint is incomplete.");
-    assert(tasteprint.includes("1 provisional track identity joined to resolved Spotify identities."), "The installed Tasteprint omitted cross-format identity coverage.");
-    assert(tasteprint.includes("Multi-target cases stay separate"), "The installed Tasteprint omitted the ambiguous-link boundary.");
-    assert(tasteprint.includes("Original records remain intact."), "The installed Tasteprint omitted the immutable-evidence boundary.");
+    assert(tasteprint.includes("1 track matched across your two Spotify exports."), "The installed Tasteprint omitted cross-format identity coverage.");
+    assert(tasteprint.includes("Anything unclear stays apart"), "The installed Tasteprint omitted the ambiguous-link boundary.");
+    assert(tasteprint.includes("Your original history is unchanged."), "The installed Tasteprint omitted the immutable-evidence boundary.");
     assert(!/<script/iu.test(tasteprint), "The installed Tasteprint contains a script.");
     assert(!/https?:\/\//iu.test(tasteprint), "The installed Tasteprint contains an external URL.");
     const tasteprintCardResponse = await fetch(
@@ -1374,7 +1374,7 @@ async function verifyInstalledPackage({ consumerRoot, tarballPath }) {
     const tasteprintCard = await tasteprintCardResponse.text();
     assert(tasteprintCardResponse.status === 200, "The installed Studio did not serve the recap card.");
     assert(tasteprintCard.includes("Private Moondog Tasteprint Card"), "The installed recap card is incomplete.");
-    assert(tasteprintCard.includes("Review before sharing"), "The installed recap card omitted its privacy review boundary.");
+    assert(tasteprintCard.includes("Read it before you share it"), "The installed recap card omitted its privacy review boundary.");
     assert(!tasteprintCard.includes("Installed Studio verification signal."), "The installed recap card exposed a private correction note.");
     assert(!/<script/iu.test(tasteprintCard), "The installed recap card contains a script.");
     assert(!/https?:\/\//iu.test(tasteprintCard), "The installed recap card contains an external URL.");
@@ -1447,7 +1447,7 @@ async function verifyInstalledPackage({ consumerRoot, tarballPath }) {
     const multiSourceStudioTasteprint =
       await multiSourceStudioTasteprintResponse.text();
     assert(multiSourceStudioTasteprintResponse.status === 200, "The installed Studio did not serve its multi-source Tasteprint.");
-    assert(multiSourceStudioTasteprint.includes("Cross-provider events are combined"), "The installed Studio Tasteprint lost its multi-source boundary.");
+    assert(multiSourceStudioTasteprint.includes("Plays from different services are combined"), "The installed Studio Tasteprint lost its multi-source boundary.");
     assert(!multiSourceStudioTasteprint.includes("PRIVATE_LISTENBRAINZ_STUDIO_PACKAGE_SENTINEL"), "The installed Studio Tasteprint exposed a ListenBrainz username.");
     assert(!multiSourceStudioTasteprint.includes("private.example"), "The installed Studio Tasteprint exposed a source URL.");
     const studioListenBrainzAfter = await stat(studioListenBrainzPath);
@@ -1532,7 +1532,7 @@ async function verifyInstalledPackage({ consumerRoot, tarballPath }) {
     },
   );
   const correctedTasteprint = await readFile(correctedTasteprintPath, "utf8");
-  assert(correctedTasteprint.includes("Your corrections"), "The installed Tasteprint did not expose listener corrections.");
+  assert(correctedTasteprint.includes("What you told me"), "The installed Tasteprint did not expose listener corrections.");
   assert(correctedTasteprint.includes("Portishead"), "The installed Tasteprint omitted the correction target.");
 
   const correctedTasteprintCardPath = path.join(
@@ -1568,7 +1568,7 @@ async function verifyInstalledPackage({ consumerRoot, tarballPath }) {
     "The installed Tasteprint card is incomplete.",
   );
   assert(
-    correctedTasteprintCard.includes("Review before sharing"),
+    correctedTasteprintCard.includes("Read it before you share it"),
     "The installed Tasteprint card omitted its privacy boundary.",
   );
   assert(

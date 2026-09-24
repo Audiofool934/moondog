@@ -212,10 +212,10 @@ function createListeningProfileProjection(
     listening_source: listening.source ?? {},
     limitations: [
       persistent
-        ? "This projection is derived from Moondog's private persistent provider-neutral listening-history store."
+        ? "Read from the listening history saved on this machine."
         : archiveCount === 1
-          ? "This is a one-off projection from the selected Spotify ZIP and was not added to Moondog's persistent listening-history store."
-          : `This is a one-off projection from ${archiveCount} selected Spotify ZIP archives reconciled in memory and was not added to Moondog's persistent listening-history store.`,
+          ? "A one-off reading of the Spotify ZIP you chose. Nothing was saved to your profile."
+          : `A one-off reading of the ${archiveCount} Spotify ZIPs you chose, combined. Nothing was saved to your profile.`,
       ...(listening.limitations ?? []),
     ].slice(0, 8),
   };

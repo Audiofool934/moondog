@@ -259,9 +259,9 @@ test("Studio page is loopback-only, token-protected, and carries no cross-origin
   assert.match(html, /<link rel="icon" href="\/brand\.png\?session=[A-Za-z0-9_-]+" type="image\/png">/u);
   assert.match(html, /id="result-card-link"/u);
   assert.match(html, /id="profile-historical-returns"/u);
-  assert.match(html, /Music that came back/u);
+  assert.match(html, /Coming Back to Life/u);
   assert.match(html, /id="profile-listening-seasons"/u);
-  assert.match(html, /First observed means first appearance in retained history/u);
+  assert.match(html, /New means new to your history/u);
   assert.match(html, /id="result-card-download-link"/u);
   assert.match(html, /Download private HTML/u);
   assert.match(html, /not automatically safe to share/u);
@@ -274,9 +274,9 @@ test("Studio page is loopback-only, token-protected, and carries no cross-origin
   assert.match(html, /id="profile-time-machine"/u);
   assert.match(html, /id="profile-time-machine-coverage"/u);
   assert.match(html, /id="profile-identity-link-coverage"/u);
-  assert.match(html, /Multi-target cases stay separate/u);
-  assert.match(html, /retained " \+ retainedNoun \+ " represented/u);
-  assert.match(html, /remains in the listening arc but has no selected landmark/u);
+  assert.match(html, /Anything unclear stays apart/u);
+  assert.match(html, /" \+ retainedNoun \+ " have a song/u);
+  assert.match(html, /is still in your history, but no song stood out enough to pick/u);
   assert.match(html, /id="profile-time-machine-link"/u);
   assert.match(
     html,
@@ -320,7 +320,7 @@ test("Studio page is loopback-only, token-protected, and carries no cross-origin
     /connect-src 'none'/u,
   );
   assert.match(demoHtml, /Moondog Synthetic Tasteprint Demo/u);
-  assert.match(demoHtml, /Synthetic public demo/u);
+  assert.match(demoHtml, /A fictional demo/u);
   assert.match(demoHtml, /Fictional public profile/u);
   assert.doesNotMatch(demoHtml, /<script/iu);
   assert.doesNotMatch(demoHtml, /https?:\/\//iu);
@@ -343,7 +343,7 @@ test("Studio page is loopback-only, token-protected, and carries no cross-origin
     /connect-src 'none'/u,
   );
   assert.match(demoCardHtml, /Moondog Synthetic Tasteprint Card Demo/u);
-  assert.match(demoCardHtml, /Synthetic public demo/u);
+  assert.match(demoCardHtml, /A fictional demo/u);
   assert.match(demoCardHtml, /Fictional public profile/u);
   assert.match(demoCardHtml, /data-artifact="moondog-tasteprint-card\/1"/u);
   assert.doesNotMatch(demoCardHtml, /<script/iu);
@@ -704,9 +704,9 @@ test("Studio runs the fictional correction loop only in process memory", async (
   );
   const tasteprint = await tasteprintResponse.text();
   assert.equal(tasteprintResponse.status, 200);
-  assert.match(tasteprint, /Synthetic public demo/u);
+  assert.match(tasteprint, /A fictional demo/u);
   assert.match(tasteprint, /Fictional public profile/u);
-  assert.match(tasteprint, /Your corrections/u);
+  assert.match(tasteprint, /What you told me/u);
   assert.match(tasteprint, /Mara Vale/u);
   assert.match(tasteprint, /Fictional correction for the guided demo\./u);
   assert.match(tasteprint, /only in this Studio process/u);
@@ -719,9 +719,9 @@ test("Studio runs the fictional correction loop only in process memory", async (
   );
   const tasteprintCard = await tasteprintCardResponse.text();
   assert.equal(tasteprintCardResponse.status, 200);
-  assert.match(tasteprintCard, /Synthetic public demo/u);
+  assert.match(tasteprintCard, /A fictional demo/u);
   assert.match(tasteprintCard, /data-artifact="moondog-tasteprint-card\/1"/u);
-  assert.match(tasteprintCard, /1 direct listener correction applied to the full profile/u);
+  assert.match(tasteprintCard, /1 of your own choice applied/u);
   assert.doesNotMatch(
     tasteprintCard,
     /Fictional correction for the guided demo\./u,
@@ -1333,10 +1333,10 @@ test("Studio and Tasteprint explain a retained year without a selected landmark"
   );
   const tasteprint = await tasteprintResponse.text();
   assert.equal(tasteprintResponse.status, 200);
-  assert.match(tasteprint, /3 of 4 retained years have landmarks/u);
+  assert.match(tasteprint, /3 of 4 years have a song/u);
   assert.match(
     tasteprint,
-    /2024 stays visible in the listening arc but has no selected landmark/u,
+    /2024 is still in Year by year, but no song stood out enough to pick/u,
   );
 });
 
@@ -1367,7 +1367,7 @@ test("Studio refreshes both artifacts after a correction from another local proc
   const html = await (await fetch(new URL(refreshed.tasteprint_url, studio.origin))).text();
   assert.match(html, /Recorded outside the browser\./u);
   const card = await (await fetch(new URL(refreshed.tasteprint_card_url, studio.origin))).text();
-  assert.match(card, /1 direct listener correction applied/u);
+  assert.match(card, /1 of your own choice applied/u);
   assert.doesNotMatch(card, /Recorded outside the browser\./u);
   assert.equal((await fetch(new URL(initial.tasteprint_url, studio.origin))).status, 404);
   const unchanged = await (await getProfile(studio)).json();
@@ -1461,7 +1461,7 @@ test("Studio persistently imports a real ZIP, removes its working copy, and serv
   const tasteprint = await tasteprintResponse.text();
   assert.equal(tasteprintResponse.status, 200);
   assert.match(tasteprint, /Private Moondog Tasteprint/u);
-  assert.match(tasteprint, /Listening through time/u);
+  assert.match(tasteprint, /Year by year/u);
   assert.match(tasteprint, /2024/u);
   assert.match(tasteprint, /2026/u);
   assert.doesNotMatch(tasteprint, /<script/iu);
@@ -1475,7 +1475,7 @@ test("Studio persistently imports a real ZIP, removes its working copy, and serv
   assert.equal(tasteprintCardResponse.status, 200);
   assert.match(tasteprintCard, /Private Moondog Tasteprint Card/u);
   assert.match(tasteprintCard, /data-artifact="moondog-tasteprint-card\/1"/u);
-  assert.match(tasteprintCard, /Review before sharing/u);
+  assert.match(tasteprintCard, /Read it before you share it/u);
   assert.match(tasteprintCard, /Private listening recap/u);
   assert.doesNotMatch(tasteprintCard, /<script/iu);
   assert.doesNotMatch(tasteprintCard, /https?:\/\//iu);
@@ -1549,14 +1549,14 @@ test("Studio persistently imports a real ZIP, removes its working copy, and serv
   assert.equal(linkedTasteprintResponse.status, 200);
   assert.match(
     linkedTasteprint,
-    /1 provisional track identity joined to resolved Spotify identities/u,
+    /1 track matched across your two Spotify exports/u,
   );
   assert.match(
     linkedTasteprint,
-    /Exact overlapping plays support behavioral aggregation across 1 effective event/u,
+    /1 plays now count toward the same songs|1 play now counts toward the same songs|so 1 play/u,
   );
-  assert.match(linkedTasteprint, /Multi-target cases stay separate/u);
-  assert.match(linkedTasteprint, /Original records remain intact/u);
+  assert.match(linkedTasteprint, /Anything unclear stays apart/u);
+  assert.match(linkedTasteprint, /Your original history is unchanged/u);
   assert.doesNotMatch(linkedTasteprint, /spotify:track:|PRIVATE_/u);
 
   const correctionResponse = await postProfileJson(
@@ -1604,8 +1604,8 @@ test("Studio persistently imports a real ZIP, removes its working copy, and serv
   );
   const correctedTasteprint = await correctedTasteprintResponse.text();
   assert.equal(correctedTasteprintResponse.status, 200);
-  assert.match(correctedTasteprint, /Your corrections/u);
-  assert.match(correctedTasteprint, /You said you like/u);
+  assert.match(correctedTasteprint, /What you told me/u);
+  assert.match(correctedTasteprint, /<h3>You like<\/h3>/u);
   assert.match(correctedTasteprint, /Roads/u);
   assert.match(correctedTasteprint, /Keep this as a direct anchor\./u);
   assert.doesNotMatch(correctedTasteprint, /spotify:track:|PRIVATE_/u);
@@ -1617,7 +1617,7 @@ test("Studio persistently imports a real ZIP, removes its working copy, and serv
   assert.equal(correctedTasteprintCardResponse.status, 200);
   assert.match(
     correctedTasteprintCard,
-    /1 direct listener correction applied to the full profile/u,
+    /1 of your own choice applied/u,
   );
   assert.doesNotMatch(correctedTasteprintCard, /Keep this as a direct anchor\./u);
   assert.doesNotMatch(correctedTasteprintCard, /spotify:track:|PRIVATE_/u);
@@ -1759,7 +1759,7 @@ test("Studio adds ListenBrainz JSON to the same private profile without retainin
   );
   const tasteprint = await tasteprintResponse.text();
   assert.equal(tasteprintResponse.status, 200);
-  assert.match(tasteprint, /Cross-provider events are combined/u);
+  assert.match(tasteprint, /Plays from different services are combined/u);
   assert.doesNotMatch(
     tasteprint,
     /PRIVATE_LISTENBRAINZ_STUDIO_SENTINEL|private\.example/u,
@@ -1771,7 +1771,7 @@ test("Studio adds ListenBrainz JSON to the same private profile without retainin
   const tasteprintCard = await tasteprintCardResponse.text();
   assert.equal(tasteprintCardResponse.status, 200);
   assert.match(tasteprintCard, /Private listening recap/u);
-  assert.match(tasteprintCard, /Review before sharing/u);
+  assert.match(tasteprintCard, /Read it before you share it/u);
   assert.doesNotMatch(
     tasteprintCard,
     /PRIVATE_LISTENBRAINZ_STUDIO_SENTINEL|private\.example/u,

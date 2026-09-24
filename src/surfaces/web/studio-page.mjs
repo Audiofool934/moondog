@@ -2301,7 +2301,7 @@ export function renderStudioPage({
           </div>
           <div class="privacy-item">
             <span class="privacy-icon">3</span>
-            <div><strong>Evidence stays bounded</strong><p>Private URIs and raw context do not enter the Tasteprint.</p></div>
+            <div><strong>Only what is needed</strong><p>Spotify IDs and raw details never reach the Tasteprint.</p></div>
           </div>
         </div>
       </aside>
@@ -2361,7 +2361,7 @@ export function renderStudioPage({
       <div class="tuner-intro">
         <p class="section-label">Your word beats inference</p>
         <h2 id="tuner-title">Correct the reading.</h2>
-        <p class="tuner-lede">Listening history is evidence, not destiny. Tell Moondog what you actually like or want to avoid. The direct signal updates the next Tasteprint without rewriting a single play.</p>
+        <p class="tuner-lede">Your history is evidence, not destiny. Tell Moondog what you actually like, or what to keep out. Your choice shapes the next Tasteprint without rewriting a single play.</p>
 
         <div class="profile-state" id="profile-state">
           <div class="profile-state-head">
@@ -2407,7 +2407,7 @@ export function renderStudioPage({
               <strong id="profile-time-machine-coverage-summary"></strong>
               <span id="profile-time-machine-coverage-detail"></span>
             </p>
-            <ol class="time-machine-route" id="profile-time-machine-route" aria-label="Chronological listening landmarks"></ol>
+            <ol class="time-machine-route" id="profile-time-machine-route" aria-label="One song for each year"></ol>
             <a class="profile-artifact-link time-machine-action" id="profile-time-machine-link" href="#">Open the chronological route <span aria-hidden="true">→</span></a>
           </section>
           <section class="listening-pulse-preview" id="profile-listening-pulse" aria-labelledby="profile-listening-pulse-title" hidden>
@@ -2416,7 +2416,7 @@ export function renderStudioPage({
               <span class="time-machine-count" id="profile-listening-pulse-count">0 active months</span>
             </div>
             <p class="listening-pulse-summary" id="profile-listening-pulse-summary"></p>
-            <div class="studio-pulse-grid" id="profile-listening-pulse-grid" role="grid" aria-label="Monthly retained listening activity in UTC"></div>
+            <div class="studio-pulse-grid" id="profile-listening-pulse-grid" role="grid" aria-label="Listening by month, in UTC"></div>
             <p class="listening-pulse-boundary" id="profile-listening-pulse-boundary"></p>
             <a class="profile-artifact-link time-machine-action" id="profile-listening-pulse-link" href="#">Open the full monthly view <span aria-hidden="true">→</span></a>
           </section>
@@ -2426,26 +2426,26 @@ export function renderStudioPage({
               <span class="time-machine-count" id="profile-listening-seasons-count">0 active seasons</span>
             </div>
             <p class="listening-seasons-summary" id="profile-listening-seasons-summary"></p>
-            <div class="studio-seasons-grid" id="profile-listening-seasons-grid" aria-label="Recent fixed three-month UTC listening windows"></div>
+            <div class="studio-seasons-grid" id="profile-listening-seasons-grid" aria-label="Recent seasons, three months at a time, in UTC"></div>
             <p class="listening-seasons-boundary" id="profile-listening-seasons-boundary"></p>
             <a class="profile-artifact-link time-machine-action" id="profile-listening-seasons-link" href="#">Open the full seasonal view <span aria-hidden="true">→</span></a>
           </section>
           <section class="continuity-preview historical-returns-preview" id="profile-historical-returns" aria-labelledby="profile-historical-returns-title" hidden>
             <div class="time-machine-preview-head">
-              <strong id="profile-historical-returns-title">Music that came back</strong>
+              <strong id="profile-historical-returns-title">Coming Back to Life</strong>
               <span class="time-machine-count" id="profile-historical-returns-count">0 returns</span>
             </div>
             <p class="continuity-summary" id="profile-historical-returns-summary"></p>
-            <ol class="continuity-relationships" id="profile-historical-returns-tracks" aria-label="Tracks that reappeared after a long gap"></ol>
+            <ol class="continuity-relationships" id="profile-historical-returns-tracks" aria-label="Songs that came back after a long gap"></ol>
             <a class="profile-artifact-link time-machine-action" id="profile-historical-returns-link" href="#">Open the return story <span aria-hidden="true">→</span></a>
           </section>
           <section class="continuity-preview back-to-back-preview" id="profile-back-to-back" aria-labelledby="profile-back-to-back-title" hidden>
             <div class="time-machine-preview-head">
-              <strong id="profile-back-to-back-title">Played back to back</strong>
+              <strong id="profile-back-to-back-title">Echoes</strong>
               <span class="time-machine-count" id="profile-back-to-back-count">0 tracks</span>
             </div>
             <p class="continuity-summary" id="profile-back-to-back-summary"></p>
-            <ol class="continuity-relationships" id="profile-back-to-back-tracks" aria-label="Tracks played in adjacent retained sequences"></ol>
+            <ol class="continuity-relationships" id="profile-back-to-back-tracks" aria-label="Songs you played again right away"></ol>
             <a class="profile-artifact-link time-machine-action" id="profile-back-to-back-link" href="#">Open the sequence evidence <span aria-hidden="true">→</span></a>
           </section>
           <section class="continuity-preview" id="profile-continuity" aria-labelledby="profile-continuity-title" hidden>
@@ -2454,12 +2454,12 @@ export function renderStudioPage({
               <span class="time-machine-count" id="profile-continuity-count">0 across eras</span>
             </div>
             <p class="continuity-summary" id="profile-continuity-summary"></p>
-            <ol class="continuity-relationships" id="profile-continuity-relationships" aria-label="Artists present across retained listening years"></ol>
+            <ol class="continuity-relationships" id="profile-continuity-relationships" aria-label="Artists who stayed across your years"></ol>
             <a class="profile-artifact-link time-machine-action" id="profile-continuity-link" href="#">Open continuity and change <span aria-hidden="true">→</span></a>
           </section>
           <section class="listening-patterns-preview" id="profile-listening-patterns" aria-labelledby="profile-listening-patterns-title" hidden>
             <div class="time-machine-preview-head">
-              <strong id="profile-listening-patterns-title">The shape of a listening stretch</strong>
+              <strong id="profile-listening-patterns-title">Inside a listening stretch</strong>
               <span class="time-machine-count" id="profile-listening-patterns-count">Extended History</span>
             </div>
             <p class="listening-patterns-summary" id="profile-listening-patterns-summary"></p>
@@ -2468,7 +2468,7 @@ export function renderStudioPage({
               <div class="listening-patterns-metric"><strong id="profile-session-median">0</strong><span>median plays</span></div>
               <div class="listening-patterns-metric"><strong id="profile-session-extended">0%</strong><span id="profile-session-extended-label">5+ play stretches</span></div>
             </div>
-            <ol class="listening-pattern-releases" id="profile-listening-pattern-releases" aria-label="Multi-track releases in retained listening history"></ol>
+            <ol class="listening-pattern-releases" id="profile-listening-pattern-releases" aria-label="Records you went deep on"></ol>
             <a class="profile-artifact-link time-machine-action" id="profile-listening-patterns-link" href="#">Open listening patterns <span aria-hidden="true">→</span></a>
           </section>
           <div class="profile-artifact-links">
@@ -2482,7 +2482,7 @@ export function renderStudioPage({
       <div class="tuner-workbench">
         <form id="correction-form" aria-label="Correct a listening preference">
           <fieldset class="correction-fieldset" id="correction-fields" disabled>
-            <legend class="section-label">One direct signal</legend>
+            <legend class="section-label">One choice</legend>
 
             <div class="control-block">
               <span class="control-label">Correct an</span>
@@ -2518,7 +2518,7 @@ export function renderStudioPage({
             <label class="field control-block">
               <span class="control-label" id="correction-note-label">Private note - optional</span>
               <textarea class="text-input" id="correction-note" name="note" maxlength="2000" placeholder="Why this signal matters to you"></textarea>
-              <p class="field-hint" id="correction-note-hint">The note stays local and can appear in your Tasteprint. It is not sent as model profile context.</p>
+              <p class="field-hint" id="correction-note-hint">The note stays on this Mac and can appear in your Tasteprint. It is never sent to a model.</p>
             </label>
 
             <div class="correction-actions">
@@ -2543,7 +2543,7 @@ export function renderStudioPage({
             <h3 id="active-corrections-title">Active corrections</h3>
             <span class="correction-count" id="correction-count">0 active</span>
           </div>
-          <p class="correction-empty" id="correction-empty">No direct corrections yet. Add a signal to guide the reading. Your listening history stays intact.</p>
+          <p class="correction-empty" id="correction-empty">No choices yet. Add one to guide the reading. Your listening history stays as it is.</p>
           <div class="correction-list" id="correction-list"></div>
         </section>
       </div>
@@ -2749,7 +2749,7 @@ export function renderStudioPage({
           }
           correctionNote.value = "";
           syncTargetFields();
-          setProfileStatus("Choose like or avoid for this track, then apply. Nothing has changed yet.");
+          setProfileStatus("Choose like or keep out for this track, then apply. Nothing has changed yet.");
         }
         correctionForm.scrollIntoView({ block: "start", behavior: "instant" });
         (track ? document.querySelector("#stance-like") : correctionLabel).focus({ preventScroll: true });
@@ -2872,24 +2872,23 @@ export function renderStudioPage({
         const details = [];
         if (links > 0) {
           details.push(
-            "Exact overlapping plays support behavioral aggregation across " +
-              formatNumber(events) + " effective " +
-              (events === 1 ? "event." : "events."),
+            "Plays that appear in both exports line up exactly, so " +
+              formatNumber(events) + " " +
+              (events === 1 ? "play now counts" : "plays now count") + " toward the same songs.",
           );
         }
         if (ambiguousTracks > 0) {
           details.push(
-            "Multi-target cases stay separate: " +
-              formatNumber(ambiguousTracks) + " provisional " +
-              (ambiguousTracks === 1 ? "identity" : "identities") +
-              " across " + formatNumber(ambiguousEvents) + " effective " +
-              (ambiguousEvents === 1 ? "event" : "events") +
-              " were not joined because exact overlaps point to multiple resolved Spotify identities.",
+            formatNumber(ambiguousTracks) + " " +
+              (ambiguousTracks === 1 ? "track" : "tracks") +
+              " with " + formatNumber(ambiguousEvents) + " " +
+              (ambiguousEvents === 1 ? "play" : "plays") +
+              " could match more than one song, so they stay apart.",
           );
         } else if (links > 0) {
-          details.push("Multi-target cases stay separate.");
+          details.push("Anything unclear stays apart.");
         }
-        if (visible) details.push("Original records remain intact.");
+        if (visible) details.push("Your original history is unchanged.");
         profileIdentityLinkCoverage.hidden = !visible;
         profileIdentityLinkSummary.textContent = !visible
           ? ""
@@ -2927,18 +2926,18 @@ export function renderStudioPage({
         if (retainedYearCount > 0) {
           const retainedNoun = retainedYearCount === 1 ? "year" : "years";
           const coverageCopy = formatNumber(representedYearCount) + " of " +
-            formatNumber(retainedYearCount) + " retained " + retainedNoun + " represented.";
+            formatNumber(retainedYearCount) + " " + retainedNoun + " have a song.";
           const omittedCopy = unrepresentedYears.length === 0
-            ? "Every retained year has a selected landmark."
+            ? "Every year has a song."
             : unrepresentedYears.length === 1
-              ? unrepresentedYears[0] + " remains in the listening arc but has no selected landmark."
-              : formatNaturalList(unrepresentedYears) + " remain in the listening arc but have no selected landmarks.";
+              ? unrepresentedYears[0] + " is still in your history, but no song stood out enough to pick."
+              : formatNaturalList(unrepresentedYears) + " are still in your history, but no song stood out enough to pick.";
           const engagedPlays = Number(timeMachine.minimum_engaged_plays);
           const listeningMinutes = Number(timeMachine.minimum_listening_minutes);
           const thresholdCopy = engagedPlays >= 1 && listeningMinutes >= 1
-            ? " Candidates come from a track's strongest retained year, clear active avoids, and need at least " +
-              formatNumber(engagedPlays) + " engaged plays and " + formatNumber(listeningMinutes, 1) + " listening minutes."
-            : " Candidates come from a track's strongest retained year and clear active avoids.";
+            ? " Each song comes from its own biggest year, with at least " +
+              formatNumber(engagedPlays) + " plays not skipped and " + formatNumber(listeningMinutes, 1) + " minutes, and never one you asked to keep out."
+            : " Each song comes from its own biggest year, and never one you asked to keep out.";
           profileTimeMachineCoverageSummary.textContent = coverageCopy;
           profileTimeMachineCoverageDetail.textContent = omittedCopy + thresholdCopy;
           profileTimeMachineCoverage.hidden = false;
@@ -3070,19 +3069,19 @@ export function renderStudioPage({
         const boundedNotes = [];
         if (previewOmitted > 0) {
           boundedNotes.push(
-            "Studio shows the latest " + formatNumber(previewMonthCount) +
-              " represented months; " + formatNumber(previewOmitted) +
-              " earlier represented months remain in the full Tasteprint.",
+            "Showing the latest " + formatNumber(previewMonthCount) +
+              " months; " + formatNumber(previewOmitted) +
+              " earlier months are in the full Tasteprint.",
           );
         }
         if (projectionOmitted > 0) {
           boundedNotes.push(
             formatNumber(projectionOmitted) +
-              " still-earlier months sit outside the 240-month projection limit.",
+              " even earlier months go back further than Moondog keeps (240 months).",
           );
         }
         boundedNotes.push(
-          "A blank cell means no eligible retained event appears in that UTC month, not proof that no listening occurred.",
+          "A blank cell means no history was kept for that month, not that you stopped listening.",
         );
         profileListeningPulseBoundary.textContent = boundedNotes.join(" ");
         profileListeningPulseLink.href = tasteprintUrl + "#listening-pulse";
@@ -3146,10 +3145,10 @@ export function renderStudioPage({
             card.classList.add("is-empty");
             const empty = document.createElement("p");
             empty.className = "studio-season-empty";
-            empty.textContent = "No retained eligible events in this window.";
+            empty.textContent = "Nothing in your history for these months.";
             const retained = document.createElement("small");
             retained.textContent = formatNumber(season.retained_month_count) +
-              " of 3 months retained";
+              " of 3 months in your history";
             card.append(empty, retained);
             profileListeningSeasonsGrid.append(card);
             continue;
@@ -3241,19 +3240,19 @@ export function renderStudioPage({
         if (previewOmitted > 0) {
           notes.push(
             formatNumber(previewOmitted) +
-              " earlier represented seasons, including " +
+              " earlier seasons, " +
               formatNumber(previewOmittedActive) +
-              " active seasons, remain in the full Tasteprint.",
+              " of them with listening, are in the full Tasteprint.",
           );
         }
         if (projectionOmitted > 0) {
           notes.push(
             formatNumber(projectionOmitted) +
-              " still-earlier seasons sit outside the 80-season projection.",
+              " even earlier seasons go back further than Moondog keeps (80 seasons).",
           );
         }
         notes.push(
-          "First observed means first appearance in retained history, not discovery. These fixed windows do not infer mood or life events.",
+          "New means new to your history, which is not always when you found it. These windows say nothing about your mood or your life.",
         );
         profileListeningSeasonsBoundary.textContent = notes.join(" ");
         profileListeningSeasonsLink.href = tasteprintUrl + "#listening-seasons";
@@ -3282,12 +3281,12 @@ export function renderStudioPage({
           : null;
         profileHistoricalReturnsCount.textContent =
           formatNumber(returnTrackCount) +
-          (returnTrackCount === 1 ? " return track" : " return tracks");
+          (returnTrackCount === 1 ? " song came back" : " songs came back");
         profileHistoricalReturnsSummary.textContent = minimumGapDays
-          ? "Each track reappeared after at least " +
+          ? "Each song came back after at least " +
             formatNumber(minimumGapDays) +
-            " quiet days. This is an observed return pattern, not a claim of nostalgia or current preference."
-          : "These tracks reappeared after a long gap. This is an observed return pattern, not a claim of nostalgia or current preference.";
+            " days away. That is a pattern, not proof you missed it."
+          : "These songs came back after a long gap. That is a pattern, not proof you missed them.";
         for (const track of tracks.slice(0, 4)) {
           const item = document.createElement("li");
           item.className = "continuity-relationship";
@@ -3339,11 +3338,11 @@ export function renderStudioPage({
           ? backToBack.maximum_gap_minutes
           : 30;
         profileBackToBackSummary.textContent =
-          "Each result has at least " + formatNumber(minimumPlays) +
-          " adjacent non-skipped plays, at least " +
-          formatNumber(minimumSeconds) + " seconds per event, and no gap over " +
+          "Each song was played at least " + formatNumber(minimumPlays) +
+          " times in a row, each play at least " +
+          formatNumber(minimumSeconds) + " seconds, not skipped, and within " +
           formatNumber(maximumGap) +
-          " minutes. This does not prove repeat mode, intention, or liking.";
+          " minutes of the last. It could be love, or repeat mode, or falling asleep.";
         for (const track of tracks.slice(0, 4)) {
           const item = document.createElement("li");
           item.className = "continuity-relationship";
@@ -3390,11 +3389,11 @@ export function renderStudioPage({
         ) {
           profileContinuitySummary.textContent =
             formatNumber(latest.continuity_percent, 1) + "% of " + latest.to_year +
-            "'s top artists carried forward from " + latest.from_year + ". " +
-            formatNumber(latest.new_artist_count) + " entered the later top set.";
+            "'s top artists were also near the top in " + latest.from_year + ". " +
+            formatNumber(latest.new_artist_count) + " were new.";
         } else {
           profileContinuitySummary.textContent =
-            "These artists appear across retained years and remain present in the latest retained year.";
+            "These artists show up across your years and are still there in the latest one.";
         }
         for (const relationship of relationships.slice(0, 3)) {
           const item = document.createElement("li");
@@ -3439,7 +3438,7 @@ export function renderStudioPage({
             formatNumber(session.median_listening_minutes, 1) +
             " listening minutes.";
           profileSessionCount.textContent = formatCompactNumber(session.session_count);
-          profileSessionCount.title = formatNumber(session.session_count) + " approximate listening sessions";
+          profileSessionCount.title = formatNumber(session.session_count) + " listening stretches";
           profileSessionMedian.textContent = formatNumber(session.median_plays, 1);
           profileSessionExtended.textContent =
             formatNumber(session.extended_sequence_percent, 1) + "%";
@@ -3448,7 +3447,7 @@ export function renderStudioPage({
           profileListeningPatternsMetrics.hidden = false;
         } else {
           profileListeningPatternsSummary.textContent =
-            "These releases each contain listening across multiple retained track identities.";
+            "You played several tracks from each of these records.";
         }
 
         for (const release of releases.slice(0, 3)) {
@@ -3579,7 +3578,7 @@ export function renderStudioPage({
             ? archiveCount === 1
               ? "The supplied ZIP is unchanged. This profile and every correction disappear when Studio stops."
               : "Both supplied ZIPs are unchanged. Their reconciled profile and every correction disappear when Studio stops."
-            : "Direct signals update the projection. Your listening record stays factual and intact.";
+            : "Your choices shape the reading. Your listening history stays exactly as it was.";
         demoProfileBadge.textContent = sessionOnlyMode
           ? "Session-only private profile"
           : realImporterDemo

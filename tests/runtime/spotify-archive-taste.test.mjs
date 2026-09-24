@@ -94,10 +94,10 @@ test("taste --from creates a private one-off Tasteprint without Apple setup or p
   assert.doesNotMatch(stderr, /PRIVATE_/u);
   assert.equal(mode, 0o600);
   assert.match(html, /Private Moondog Tasteprint/u);
-  assert.match(html, /Listening through time/u);
+  assert.match(html, /Year by year/u);
   assert.match(html, /2024/u);
   assert.match(html, /2026/u);
-  assert.match(html, /one-off projection from the selected Spotify ZIP/u);
+  assert.match(html, /one-off reading of the Spotify ZIP you chose/u);
   assert.doesNotMatch(html, /<script/iu);
   assert.doesNotMatch(html, /https?:\/\//iu);
   assert.doesNotMatch(html, /PRIVATE_/u);
@@ -133,8 +133,8 @@ test("taste --from creates a private one-off Tasteprint without Apple setup or p
   assert.equal(cardArtifact.source.persistent_import, false);
   assert.equal((await stat(cardPath)).mode & 0o777, 0o600);
   assert.match(cardHtml, /Private listening recap/u);
-  assert.match(cardHtml, /Review before sharing/u);
-  assert.match(cardHtml, /Portishead anchors your long arc/u);
+  assert.match(cardHtml, /Read it before you share it/u);
+  assert.match(cardHtml, /Portishead, shining on/u);
   assert.doesNotMatch(cardHtml, /<script/iu);
   assert.doesNotMatch(cardHtml, /https?:\/\//iu);
   assert.doesNotMatch(cardHtml, /PRIVATE_/u);

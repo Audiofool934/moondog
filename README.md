@@ -4,24 +4,25 @@
 
 <h1 align="center">Moondog</h1>
 
-<p align="center"><strong>A personal music agent that can show its work.</strong></p>
+<p align="center"><strong>A personal music agent that shows its work.</strong></p>
 
-<p align="center">Your listening history. Your corrections. A new way through the music.</p>
+<p align="center">Your listening history. Your say in what it means.</p>
 
 <p align="center">
-  <img src="assets/demo/moondog-tui-home.png" width="1000" alt="Moondog terminal listening room with a character-drawn lunar record, dog silhouette, and conversation input">
+  <img src="assets/demo/moondog-tui-home.png" width="1000" alt="Moondog's terminal listening room: a lunar record drawn in characters, a short menu, a Pink Floyd lyric, and a message box">
 </p>
 
-<p align="center"><sub>The real terminal interface, shown with fictional local listening data.</sub></p>
+<p align="center"><sub>The real terminal app, shown with fictional listening data.</sub></p>
 
-Moondog turns your listening history into a profile you can inspect and correct.
-Explore the evidence, shape a playlist with an agent, and keep the distinction between what you played and what you like.
+Moondog reads the history your music services already keep and turns it into a profile you can open, question, and correct.
+It tells you what it found, shows the evidence behind every reading, and is honest about what play counts can never know.
+When you want company, an agent can use that profile to talk music, find songs you haven't heard, and shape a playlist with you.
 
-Built around [Pi](https://github.com/earendil-works/pi), with local profile storage and a keyboard-first listening room.
+It runs in your terminal, keeps your data on your machine, and is built on [Pi](https://github.com/earendil-works/pi).
 
 ## Start listening
 
-Requires Node.js **22.19.0 or newer** on macOS or Linux.
+You need Node.js **22.19.0 or newer** on macOS or Linux.
 
 ```bash
 git clone https://github.com/Audiofool934/moondog.git
@@ -30,88 +31,95 @@ npm ci
 npm start
 ```
 
-Profile review and corrections work locally without a model, API key, or music-service login.
-To try the grounded agent loop with fictional data and no credentials, run `npm run demo`.
+Your profile works without a model, an API key, or a music-service login.
+To see the agent at work with fictional data and no sign-in at all, run `npm run demo`.
 
-## Bring your history. Correct the reading.
+## Bring your history
 
-Open `/import` and choose **Spotify**, **Apple Music**, **YouTube Music**, **QQ Music** or **NetEase Cloud Music**.
-Preview recent Spotify listening, an Apple library XML, YouTube Music Takeout files, or a public QQ / NetEase playlist share link before adding it to your local profile.
-The Spotify and YouTube guides link to their official export websites and explain how to request and download the supported files.
-Collections remain distinct from actual listening events, and the cumulative profile opens after confirmation.
-Apple privacy archives and QQ / NetEase account listening-history imports are not supported yet; the guide states those limits.
-Spotify connection currently requires a configured developer app; local file import needs no streaming-service sign-in.
-You can also open a saved Spotify Account Data or Extended Streaming History ZIP directly:
+Type `/import` and pick **Spotify**, **Apple Music**, **YouTube Music**, **QQ Music**, or **NetEase Cloud Music**.
+Moondog walks you through getting your data, then shows you what's inside before anything is added.
+
+- **Spotify:** your latest plays in a minute, or your whole history from the ZIP Spotify emails you.
+- **Apple Music:** the `Library.xml` you export from Music on a Mac.
+- **YouTube Music:** a Google Takeout export.
+- **QQ Music and NetEase:** any public playlist, from its share link.
+- **ListenBrainz:** a saved listens file.
+
+A Spotify ZIP can also go straight in:
 
 ```text
 /import "/path/to/spotify-history.zip"
 ```
 
-The import opens your listening profile immediately, with the receipt and full report kept in the conversation.
-Repeated imports are deduplicated, and the original archive stays unchanged.
-Saved ListenBrainz history and Apple Music library XML are also supported through the [terminal guide](docs/TERMINAL_GUIDE.md#import-and-inspect-listening-history).
+When the import finishes, your profile opens right there in the same TUI session, with the full report kept in the conversation above it.
+Importing the same file twice changes nothing, and your original files are never touched.
+Some sources aren't supported yet, such as Apple's privacy download and full QQ or NetEase listening history; the import guide says so where it matters.
+The [terminal guide](docs/TERMINAL_GUIDE.md#import-and-inspect-listening-history) covers every format in detail.
+
+## See what it says, and tell it what it got wrong
 
 | In your profile | What you can do |
 | --- | --- |
 | **Find a song or artist** | Type to filter, then open the one you want. |
 | **See why it's there** | Read what you played, what that can't prove, and what you told Moondog, each on its own. |
-| **Make a choice** | Choose **I like this** or **Keep it out** and watch the profile update. |
-| **Change your mind** | **Undo my choice** at any time; your listening history never changes. |
-| **Find more like this** | With discovery ready, start an editable request for three songs from a track. |
+| **Make a choice** | Choose **I like this** (Like) or **Keep it out** (Avoid), and watch the profile update. |
+| **Change your mind** | **Undo my choice** at any time; you can retract anything, and the original listening history never changes. |
+| **Find more like this** | Start an editable request for three songs, seeded from the track you picked. |
 
 <p align="center">
-  <img src="assets/demo/moondog-tui-profile.png" width="1000" alt="Moondog interactive listening profile showing fictional track Midnight Lines, observed listening evidence, and the limits of that evidence">
+  <img src="assets/demo/moondog-tui-profile.png" width="1000" alt="Moondog's listening profile showing the fictional track Midnight Lines, why it is there, and what that evidence cannot tell">
 </p>
 
-<p align="center"><sub>Actual profile view with fictional data. Listening time establishes familiarity; it does not establish liking.</sub></p>
+<p align="center"><sub>The profile with fictional data. Playing a song a lot shows you know it, not that you love it.</sub></p>
 
-The full report walks through your years one song at a time, finds songs that went quiet or came back, and ends with the dark side of the moon: what your listening data can't tell anyone.
-Open it with `/taste report`, or export a private self-contained HTML report from the CLI.
+Type `/taste report` for the whole picture on one page.
+It walks through your years one song at a time, finds songs that went quiet and songs that came back, and ends with the dark side of the moon: what your listening data can't tell anyone.
+You can also save it as a private web page that works offline.
 
-## Stay in the listening room
+## Getting around
 
-| Command or key | Action |
+| Command or key | What it does |
 | --- | --- |
-| `/taste` | Open your interactive listening profile. |
-| Type, ↑ ↓, Enter | Filter, select, and inspect evidence or make a choice. |
+| `/taste` | Open your profile. |
+| Type, ↑ ↓, Enter | Filter, pick, and see why something is there, or make a choice. |
 | Tab in the profile | Switch between All, Tracks, Artists, and Your choices. |
-| Esc | Return with your conversation draft preserved. |
-| Ctrl+P | Search commands. |
-| `/resume` · `/new` | Continue a saved conversation or start another. |
-| `/home` | Revisit the listening room without clearing the conversation. |
+| Esc | Go back; whatever you were typing stays put. |
+| Ctrl+P | Search every command. |
+| `/resume` · `/new` | Pick up a saved conversation, or start a fresh one. |
+| `/home` | Back to the record sleeve, without clearing the conversation. |
 
-Every launch starts a fresh conversation; your profile and durable memories carry across sessions.
-The home screen uses animated character art and adapts to the terminal size.
-Choose `/theme paper` or `/theme charcoal`, switch to `/art ascii`, or turn animation off with `/motion off`.
+Each launch starts a new conversation, while your profile and anything Moondog remembers carry over.
+Change the look with `/theme paper` or `/theme charcoal`, switch the artwork with `/art ascii`, or keep it still with `/motion off`.
 
 ## Add an agent when you want one
 
-Use `/auth` to connect GLM, Kimi, DeepSeek, Grok, GPT, Claude, Gemini, or OpenRouter with an API key, then `/model` to choose a model through Pi.
-ChatGPT OAuth remains available as `openai-codex`.
-Switch models in the same conversation; see the [model setup guide](docs/TERMINAL_GUIDE.md#enable-agent-conversation) for provider IDs and environment variables.
-Ask for a path through your listening history, revise the proposed order, or look beyond your library.
-Moondog validates selected tracks against tool-provided candidates and keeps public catalog evidence separate from personal listening evidence.
+Sign in with `/auth` to GLM, Kimi, DeepSeek, Grok, GPT, Claude, Gemini, or OpenRouter, then pick a model with `/model`.
+`openai-codex` uses your ChatGPT sign-in.
+You can switch models mid-conversation; the [model setup guide](docs/TERMINAL_GUIDE.md#enable-agent-conversation) lists provider IDs and environment variables.
+
+Ask for a route through your own history, reshuffle what it suggests, or reach past your library.
+Every song the agent picks has to come from a real list it looked up, and what it read about the wider music world stays separate from what it knows about you.
 
 | Optional connection | What it adds |
 | --- | --- |
-| **A Pi model** | Conversation, grounded discovery, and playlist collaboration. |
-| **Codex CLI** | `/web` research with source links, using an installed and signed-in Codex CLI. |
-| **Spotify OAuth** | Playback control and explicit, guarded private-playlist actions. |
+| **A model through Pi** | Conversation, discovery, and building playlists together. |
+| **Codex CLI** | `/web` lookups with links to their sources, using your own signed-in Codex CLI. |
+| **Spotify sign-in** | Playback control, and private playlists made only when you ask. |
 
-Local profile review makes no network request.
-Agent conversation and connected features use their configured remote services; `/web` sends the requested public query or URL without automatically attaching your profile, history, or local files.
-Spotify archive import is independent of Spotify OAuth.
-Read the [connection and data details](docs/TERMINAL_GUIDE.md) before setting up an integration.
+Your profile never touches the network.
+The agent and connected features talk to the services you set up; `/web` sends only the question or link you give it, never your profile, history, or files.
+Importing a Spotify ZIP doesn't need a Spotify sign-in.
+Read the [connection and data details](docs/TERMINAL_GUIDE.md) before you connect anything.
 
 ## Explore further
 
-- [Terminal guide](docs/TERMINAL_GUIDE.md): import formats, commands, appearance, models, Spotify, memory, and local data controls.
-- [Private Tasteprint](docs/PRIVATE_TASTEPRINT.md): what the evidence supports and what a report reveals.
-- [Product charter](docs/PRODUCT_CHARTER.md) and [public roadmap](docs/ROADMAP.md): direction and current boundaries.
+- [Terminal guide](docs/TERMINAL_GUIDE.md): import formats, commands, appearance, models, Spotify, memory, and your local data.
+- [Private Tasteprint](docs/PRIVATE_TASTEPRINT.md): what the evidence can support, and what a report reveals about you.
+- [Product charter](docs/PRODUCT_CHARTER.md) and [public roadmap](docs/ROADMAP.md): where Moondog is headed, and what it won't do.
 - [Voice](docs/VOICE.md): how Moondog talks, and where Pink Floyd shows up.
-- [Runtime architecture](docs/ADR_0001_AGENT_RUNTIME_AND_CLI.md) and [data contracts](contracts/README.md): how the parts fit together.
-- [Contribution guide](CONTRIBUTING.md) and [release readiness](docs/PUBLIC_RELEASE_READINESS.md): local setup, verification, and private-data boundaries.
+- [Runtime architecture](docs/ADR_0001_AGENT_RUNTIME_AND_CLI.md) and [data contracts](contracts/README.md): how the pieces fit together.
+- [Contribution guide](CONTRIBUTING.md) and [release readiness](docs/PUBLIC_RELEASE_READINESS.md): local setup, checks, and how private data is kept out.
 
-Moondog is in early development, with the Pi-based TUI as its current product surface.
-GUI and Studio development is paused; existing [browser prototypes](docs/TERMINAL_GUIDE.md#archived-gui-prototypes-paused) remain available for reference.
-A public license has not yet been selected.
+Moondog is early, and the Pi-based TUI is where the work happens.
+GUI and Studio development is paused; the earlier [browser prototypes](docs/TERMINAL_GUIDE.md#archived-gui-prototypes-paused) are still there for reference.
+There is no open-source license yet.

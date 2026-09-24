@@ -2462,55 +2462,55 @@ export function projectListeningProfile({
         profile_captured_at: latestProfileCapture,
       },
       limitations: [
-        "Listening duration and repetition support familiarity and attention, not liking by themselves.",
+        "Plays and listening time show attention, not love. A song can be on repeat because it was stuck in your head.",
         ...(listeningProviders.includes("spotify")
           ? [
-              "Spotify skip flags are contextual navigation evidence, while incognito events are excluded from taste rankings.",
+              "A skip is a moment, not a verdict. Private-session plays are left out of the rankings.",
             ]
           : []),
         ...(listeningProviders.includes("listenbrainz")
           ? [
-              "ListenBrainz timestamps mark playback start, listens without duration_played affect counts but not listening-time totals, and only server-resolved MusicBrainz mappings become resolved identity.",
+              "ListenBrainz records when a song started. Listens without a duration count as plays but add no minutes, and a song is only matched when ListenBrainz linked it to MusicBrainz.",
             ]
           : []),
         ...(listeningProviders.length > 1
           ? [
-              "Cross-provider events are combined, but provider-specific track identities are not automatically merged without a shared canonical recording identity.",
+              "Plays from different services are combined, but the same song on two services stays two songs unless both point to the same recording.",
             ]
           : []),
-        "Calendar-year listening arcs use UTC boundaries.",
+        "Years follow UTC, so a late night can land on the next day.",
         ...(monthlyActivity
           ? [
-              "Listening Pulse groups eligible effective events by retained UTC calendar month, caps the rendered window at 240 months, and treats blank months as missing retained activity rather than proof of no listening.",
+              "Months follow UTC, and at most 240 are shown. A blank month means no history was kept, not that you stopped listening.",
             ]
           : []),
         ...(listeningSeasons
           ? [
-              "Listening Seasons groups eligible effective events into fixed UTC calendar quarters, caps the represented window at 80 quarters, and treats leading artists and signature tracks as within-window descriptions rather than preference, mood, or life-event claims.",
+              "Seasons are three-month windows in UTC, up to 80 of them. The top artist and song describe those months only, not your mood or what was happening in your life.",
             ]
           : []),
-        "A track's first appearance in retained history does not prove that it was newly discovered then.",
-        "Rediscovery candidates require at least 3 effective plays, 2 plays without an explicit skip signal, 10 listening minutes, and no appearance in the recent 90-day window. They are listen-again prompts, not preference claims.",
-        "Historical returns require at least 3 effective plays, 3 plays without an explicit skip signal, 10 listening minutes, and one observed gap of at least 180 days. They describe recurrence in retained history, not liking, nostalgia, or intentional absence.",
-        "Listening Time Machine representatives require at least two qualifying calendar years and select at most one track per represented peak year. They are deterministic history landmarks, not claims that a track defined a year or remains preferred now.",
-        "Artist relationships require appearances in at least two retained UTC years including the latest retained year, while year-to-year top-artist overlap describes continuity and turnover without claiming permanent taste change.",
-        "Release depth requires at least three distinct retained tracks from the same artist and release metadata pair. It does not establish full-album playback, track order, completion, ownership, or liking.",
+        "A song counts as new the first time it shows up in your history, which is not always when you found it.",
+        "Songs worth another listen need at least 3 plays, 2 of them not skipped, 10 minutes in all, and nothing in the last 90 days. They are nudges to listen again, not claims that you love them.",
+        "Songs that came back need at least 3 plays, none skipped, 10 minutes in all, and one gap of at least 180 days. That is a pattern, not proof you missed them or left them on purpose.",
+        "The Time Machine needs at least two years with enough listening and picks at most one song per year. A pick does not mean the song defined that year, or that you still love it.",
+        "An artist counts as staying with you after at least two years in your history, including the latest. How much your top artists change year to year says nothing about whether your taste really changed.",
+        "A record counts as one you went deep on after at least three of its tracks. That does not mean you played the whole album, in order, or that you own or like it.",
         ...(sessions
           ? [
-              "Approximate listening sessions use only eligible Spotify Extended History track-stop timestamps and begin after gaps longer than 30 minutes. They are not provider session logs or evidence of activity, mood, location, or intent.",
+              "Listening stretches are estimated from when each Spotify song stopped, with a new one after 30 quiet minutes. They say nothing about what you were doing, where you were, or how you felt.",
             ]
           : []),
         ...(backToBack.length > 0
           ? [
-              "Played back to back requires at least two adjacent non-skipped Spotify Extended History events for the same track, at least 30 seconds played per event, and no gap over 30 minutes. It does not prove repeat mode, intention, or liking.",
+              "Played back to back means the same song twice or more in a row, each play at least 30 seconds, not skipped, and within 30 minutes of the last. It could be love, or repeat mode, or falling asleep.",
             ]
           : []),
         ...(deduplicatedEvidence.length > 0
           ? [
-              "Spotify-generated Taste Profile, Wrapped, and Sound Capsule fields are provider interpretations, not user instructions or direct assertions.",
+              "Taste Profile, Wrapped, and Sound Capsule are Spotify's reading of you, not something you said.",
             ]
           : []),
-        "Direct listener assertions outrank ambiguous behavioral and provider signals but remain retractable and do not rewrite source history.",
+        "What you tell Moondog counts for more than what the data suggests, you can undo it any time, and it never rewrites your history.",
       ],
     },
     explanations,

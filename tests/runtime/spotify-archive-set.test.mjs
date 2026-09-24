@@ -127,7 +127,7 @@ test("two Spotify archives reconcile in memory independently of selection order"
   assert.equal(forward.profile.coverage.cross_format_linked_events, 1);
   assert.match(
     forward.profile.limitations[0],
-    /2 selected Spotify ZIP archives reconciled in memory/u,
+    /2 Spotify ZIPs you chose, combined/u,
   );
 });
 

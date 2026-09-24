@@ -603,9 +603,9 @@ test("tasteprint HTML is static, self-contained, escaped, and visually complete"
 
   assert.match(html, /Content-Security-Policy/u);
   assert.match(html, /connect-src 'none'/u);
-  assert.match(html, /The shape of your listening/u);
+  assert.match(html, /Shine On/u);
   assert.match(html, /aria-label="Tasteprint sections"/u);
-  assert.match(html, /Explore this Tasteprint/u);
+  assert.match(html, /In this report/u);
   assert.match(html, /href="#taste-shape"/u);
   assert.match(html, /href="#listening-arc"/u);
   assert.match(html, /href="#listening-seasons"/u);
@@ -615,104 +615,106 @@ test("tasteprint HTML is static, self-contained, escaped, and visually complete"
   assert.match(html, /href="#playback-flow"/u);
   assert.match(html, /href="#provider-snapshot"/u);
   assert.match(html, /href="#interpretation-boundaries"/u);
-  assert.match(html, /Listening through time/u);
+  assert.match(html, /Year by year/u);
   assert.match(html, /What stayed\. What changed\./u);
-  assert.match(html, /Artists across eras/u);
+  assert.match(html, /Artists across the years/u);
   assert.match(html, /Mara Vale/u);
-  assert.match(html, /3 active years across 2024-2026/u);
-  assert.match(html, /Year-to-year turnover/u);
-  assert.match(html, /40% carried forward/u);
-  assert.match(html, /6 new to 2026&#39;s top 10/u);
+  assert.match(html, /3 years, 2024 to 2026/u);
+  assert.match(html, /Year to year/u);
+  assert.match(html, /40% stayed/u);
+  assert.match(html, /6 new in 2026&#39;s top 10/u);
   assert.match(html, /href="#continuity"/u);
   assert.match(html, /href="#listening-patterns"/u);
-  assert.match(html, /The shape of a listening stretch/u);
-  assert.match(html, /Approximate sessions/u);
-  assert.match(html, /Played back to back/u);
+  assert.match(html, /Inside a listening stretch/u);
+  assert.match(html, /Listening stretches/u);
+  assert.match(html, /<h3>Echoes<\/h3>/u);
   assert.match(html, /id="back-to-back"/u);
-  assert.match(html, /4 plays in the longest adjacent sequence/u);
-  assert.match(html, /2 bounded sequences/u);
-  assert.match(html, /does not prove repeat mode, intention, or liking/u);
+  assert.match(html, /up to 4 in a row/u);
+  assert.match(html, /2 runs/u);
+  assert.match(html, /could be love, or repeat mode, or falling asleep/u);
   assert.match(html, /180 listening stretches/u);
   assert.match(html, /44\.4% contain 5 or more plays/u);
-  assert.match(html, /Records explored in depth/u);
+  assert.match(html, /Records you went deep on/u);
   assert.match(html, /Night Transit/u);
-  assert.match(html, /8 distinct tracks/u);
+  assert.match(html, /8 tracks/u);
   assert.doesNotMatch(html, /Fictional archive preview/u);
   assert.match(
     html,
-    /14 provisional track identities joined to resolved Spotify identities/u,
+    /14 tracks matched across your two Spotify exports/u,
   );
   assert.match(
     html,
-    /Exact overlapping plays support behavioral aggregation across 22 effective events/u,
+    /22 plays now count toward the same songs/u,
   );
   assert.match(
     html,
-    /Multi-target cases stay separate: 3 provisional identities across 5 effective events were not joined/u,
+    /3 tracks with 5 plays could match more than one song, so they stay apart/u,
   );
-  assert.match(html, /Original records remain intact/u);
-  assert.match(html, /first appearance in retained history/u);
+  assert.match(html, /Your original history is unchanged/u);
+  assert.match(html, /not always when you found it/u);
   assert.match(html, /Listening Pulse/u);
   assert.match(html, /id="listening-pulse"/u);
-  assert.match(html, /2 active retained months/u);
-  assert.match(html, /January 2026: 80 eligible events/u);
-  assert.match(html, /February 2026: no retained eligible events/u);
-  assert.match(html, /not proof that no listening occurred/u);
+  assert.match(html, /2 months with listening/u);
+  assert.match(html, /January 2026: 80 plays/u);
+  assert.match(html, /February 2026: nothing in your history/u);
+  assert.match(html, /not that you stopped listening/u);
   assert.match(html, /Listening Seasons/u);
   assert.match(html, /id="listening-seasons"/u);
-  assert.match(html, /Fixed three-month UTC windows/u);
+  assert.match(html, /Three months at a time, in UTC/u);
   assert.match(
     html,
     /\.listening-seasons-panel \.panel-intro \{ margin: 12px 0 24px; \}/u,
   );
   assert.match(html, /Seasonal Signal/u);
-  assert.match(html, /55 first observed/u);
-  assert.match(html, /20 seen earlier/u);
-  assert.match(html, /not mood, identity, or life-event claims/u);
-  assert.match(html, /Tracks that stay, disappear, and return/u);
+  assert.match(html, /55 new/u);
+  assert.match(html, /20 heard before/u);
+  assert.match(html, /not your mood or what was happening in your life/u);
+  assert.match(html, /Tracks that stay, go quiet, and come back/u);
+  assert.match(html, /Wish You Were Here/u);
   assert.match(html, /Worth another listen/u);
+  assert.match(html, /<h3>Time<\/h3>/u);
   assert.match(html, /Listening Time Machine/u);
   assert.match(html, /id="time-machine"/u);
-  assert.match(html, /1 of 2 retained years has a landmark/u);
+  assert.match(html, /1 of 2 years has a song/u);
   assert.match(
     html,
-    /2026 stays visible in the listening arc but has no selected landmark/u,
+    /2026 is still in Year by year, but no song stood out enough to pick/u,
   );
-  assert.match(html, /at least 2 engaged plays and 5 listening minutes/u);
-  assert.match(html, /2024 landmark/u);
+  assert.match(html, /at least 2 plays not skipped and 5 minutes/u);
+  assert.match(html, /your song of 2024/u);
   assert.doesNotMatch(html, /PRIVATE_PROVIDER_ID/u);
-  assert.match(html, /strongest year 2024/u);
-  assert.doesNotMatch(html, /strongest year 2,024/u);
-  assert.match(html, /Quiet for at least 90 days/u);
+  assert.match(html, /biggest in 2024/u);
+  assert.doesNotMatch(html, /biggest in 2,024/u);
+  assert.match(html, /Quiet for 90\+ days/u);
   assert.match(html, /Quiet Coordinates/u);
-  assert.match(html, /242 days quiet/u);
-  assert.match(html, /basis: saved-library state/u);
-  assert.match(html, /latest retained event, not today's date/u);
-  assert.match(html, /Music that came back/u);
-  assert.match(html, /Gaps of at least 180 days/u);
+  assert.match(html, /quiet for 242 days/u);
+  assert.match(html, /saved in your library/u);
+  assert.match(html, /last play in your history, not today/u);
+  assert.match(html, /Coming Back to Life/u);
+  assert.match(html, /Back after 180\+ days away/u);
   assert.match(html, /Recurring Light/u);
-  assert.match(html, /3 observed returns/u);
-  assert.match(html, /longest gap 730 days/u);
-  assert.match(html, /latest return after 365 days/u);
+  assert.match(html, /came back 3 times/u);
+  assert.match(html, /longest time away 730 days/u);
+  assert.match(html, /last back after 365 days/u);
   assert.doesNotMatch(html, /PRIVATE_RETURN_PROVIDER_ID/u);
-  assert.match(html, /Your corrections/u);
+  assert.match(html, /What you told me/u);
   assert.match(html, /id="listener-corrections"/u);
-  assert.match(html, /direct, retractable assertions/u);
-  assert.match(html, /You said you like/u);
-  assert.match(html, /You said to avoid/u);
+  assert.match(html, /you can undo them any time/u);
+  assert.match(html, /<h3>You like<\/h3>/u);
+  assert.match(html, /<h3>Keep out<\/h3>/u);
   assert.match(html, /&lt;Context-only track&gt;/u);
   assert.match(html, /Played for someone else &lt;not mine&gt;/u);
-  assert.match(html, /Deliberate choices/u);
-  assert.match(html, /How your listening flows/u);
-  assert.match(html, /Direct starts/u);
-  assert.match(html, /Continued playback/u);
-  assert.match(html, /Reached track end/u);
+  assert.match(html, /Kept on purpose/u);
+  assert.match(html, /How you listen/u);
+  assert.match(html, /Picked yourself/u);
+  assert.match(html, /Followed on/u);
+  assert.match(html, /Played to the end/u);
   assert.match(html, /30%/u);
   assert.match(html, /60%/u);
-  assert.match(html, /1,000 events with a recorded start reason/u);
-  assert.match(html, /Percentages use only rows where Spotify supplied/u);
-  assert.match(html, /The provider's snapshot/u);
-  assert.match(html, /Read with boundaries/u);
+  assert.match(html, /1,000 plays with a start reason/u);
+  assert.match(html, /Percentages only count plays where Spotify recorded/u);
+  assert.match(html, /Spotify&#39;s view|Spotify's view/u);
+  assert.match(html, /The dark side of the moon/u);
   assert.match(html, /Mara Vale/u);
   assert.match(html, /&lt;\/strong&gt;&lt;script&gt;alert\(1\)&lt;\/script&gt;/u);
   assert.doesNotMatch(html, /<script/u);
@@ -730,16 +732,16 @@ test("tasteprint card is bounded, static, and explicit about review before shari
   assert.match(html, /connect-src 'none'/u);
   assert.match(html, /data-artifact="moondog-tasteprint-card\/1"/u);
   assert.match(html, /Private listening recap/u);
-  assert.match(html, /Mara Vale anchors your long arc\./u);
-  assert.match(html, /The artists that stay/u);
-  assert.match(html, /Recent movement/u);
+  assert.match(html, /Mara Vale, shining on\./u);
+  assert.match(html, /Shine On/u);
+  assert.match(html, /Lately/u);
   assert.match(html, /North Window/u);
-  assert.match(html, /Tracks you revisit/u);
+  assert.match(html, /Most played/u);
   assert.match(html, /&lt;\/strong&gt;&lt;script&gt;alert\(1\)&lt;\/script&gt;/u);
-  assert.match(html, /Review before sharing/u);
-  assert.match(html, /Review every visible artist, track, date, and aggregate/u);
-  assert.match(html, /2 direct listener corrections applied to the full profile/u);
-  assert.match(html, /Play count supports familiarity, not liking\./u);
+  assert.match(html, /Read it before you share it/u);
+  assert.match(html, /Check every artist, track, date, and number/u);
+  assert.match(html, /2 of your own choices applied/u);
+  assert.match(html, /Plays show attention, not love\./u);
   assert.doesNotMatch(html, /<script/u);
   assert.doesNotMatch(html, /https?:\/\//u);
   assert.doesNotMatch(html, /Context-only track/u);
@@ -787,22 +789,21 @@ test("history-only Tasteprint labels facets honestly and omits empty evidence se
 
   assert.match(
     html,
-    /A bounded reading of familiarity, recent movement, listening-year landmarks, monthly listening pulse, listening seasons, taste continuity, listening patterns, listen-again prompts, and listening context\./u,
+    /A reading of what you know by heart, what you play lately, one song for each year, your months, your seasons, who stayed and who changed, how you listen in a stretch, and songs worth another listen\./u,
   );
-  assert.match(html, /<h2>Profile facets<\/h2>/u);
-  assert.match(html, /Profile summary, not direct choice/u);
-  assert.match(html, /Artist facets/u);
+  assert.match(html, /<h2>Artists and genres<\/h2>/u);
+  assert.match(html, /A summary, not a choice/u);
+  assert.match(html, /<h3>Artists<\/h3>/u);
   assert.match(html, /Mara Vale/u);
   assert.match(html, /Tracks that stay/u);
-  assert.doesNotMatch(html, /Deliberate choices/u);
-  assert.doesNotMatch(html, /No bounded deliberate signal/u);
-  assert.doesNotMatch(html, /No bounded facets/u);
-  assert.doesNotMatch(html, /Saved tracks<\/h3>/u);
-  assert.doesNotMatch(html, /Playlist anchors/u);
-  assert.doesNotMatch(html, /The provider's snapshot/u);
+  assert.doesNotMatch(html, /Kept on purpose/u);
+  assert.doesNotMatch(html, /No choices yet|No artists or genres yet/u);
+  assert.doesNotMatch(html, /Saved songs<\/h3>/u);
+  assert.doesNotMatch(html, /On your playlists<\/h3>/u);
+  assert.doesNotMatch(html, /Spotify&#39;s view|Spotify's view/u);
   assert.doesNotMatch(html, /href="#listener-corrections"/u);
   assert.doesNotMatch(html, /href="#provider-snapshot"/u);
-  assert.doesNotMatch(html, /No bounded provider/u);
+  assert.doesNotMatch(html, /Spotify did not rank anything here/u);
 });
 
 test("partial provider snapshots render only populated provider panels", () => {
@@ -816,12 +817,12 @@ test("partial provider snapshots render only populated provider panels", () => {
     generatedAt: "2026-09-02T12:00:00.000Z",
   });
 
-  assert.match(html, /The provider's snapshot/u);
-  assert.match(html, /Provider highlight/u);
+  assert.match(html, /Spotify&#39;s view|Spotify's view/u);
+  assert.match(html, /<span>From Spotify<\/span>/u);
   assert.match(html, /Provider Highlight/u);
-  assert.doesNotMatch(html, /<h3>Ranked artists<\/h3>/u);
-  assert.doesNotMatch(html, /<h3>Ranked tracks<\/h3>/u);
-  assert.doesNotMatch(html, /No bounded provider/u);
+  assert.doesNotMatch(html, /<h3>Top artists<\/h3>/u);
+  assert.doesNotMatch(html, /<h3>Top songs<\/h3>/u);
+  assert.doesNotMatch(html, /Spotify did not rank anything here/u);
 });
 
 test("public Tasteprint demo is deterministic and unmistakably synthetic", () => {
@@ -864,31 +865,31 @@ test("public Tasteprint demo is deterministic and unmistakably synthetic", () =>
   assert.equal(view.behavior.session_summary.session_count, 2_500);
   assert.equal(first, second);
   assert.equal(firstCard, secondCard);
-  assert.match(first, /Synthetic public demo/u);
-  assert.match(first, /fictional demonstration data/u);
+  assert.match(first, /A fictional demo/u);
+  assert.match(first, /is made up/u);
   assert.match(first, /Mara Vale/u);
-  assert.match(first, /Worth another listen/u);
-  assert.match(first, /Music that came back/u);
+  assert.match(first, /Wish You Were Here/u);
+  assert.match(first, /Coming Back to Life/u);
   assert.match(first, /Listening Pulse/u);
-  assert.match(first, /36 active retained months/u);
+  assert.match(first, /36 months with listening/u);
   assert.match(first, /Listening Seasons/u);
-  assert.match(first, /13 active seasons/u);
-  assert.match(first, /latest 12 of 13 represented seasons/u);
+  assert.match(first, /13 seasons with listening/u);
+  assert.match(first, /latest 12 of 13 seasons/u);
   assert.match(first, /Blue Hour Index/u);
-  assert.match(first, /not proof of liking, nostalgia/u);
+  assert.match(first, /not proof you missed them/u);
   assert.match(first, /Quiet Coordinates/u);
-  assert.match(first, /The shape of a listening stretch/u);
-  assert.match(first, /Records explored in depth/u);
+  assert.match(first, /Inside a listening stretch/u);
+  assert.match(first, /Records you went deep on/u);
   assert.match(first, /Fictional archive preview/u);
-  assert.doesNotMatch(first, /Private and local/u);
+  assert.doesNotMatch(first, /Private, made on this machine/u);
   assert.doesNotMatch(first, /evidence[_-]?id/iu);
   assert.doesNotMatch(first, /track[_-]?ref/iu);
   assert.doesNotMatch(first, /\/Users\//u);
-  assert.match(firstCard, /Synthetic public demo/u);
+  assert.match(firstCard, /A fictional demo/u);
   assert.match(firstCard, /Fictional public profile/u);
-  assert.match(firstCard, /fictional demonstration data/u);
+  assert.match(firstCard, /is made up/u);
   assert.doesNotMatch(firstCard, /Private recap/u);
-  assert.doesNotMatch(firstCard, /Review before sharing/u);
+  assert.doesNotMatch(firstCard, /Read it before you share it/u);
   assert.doesNotMatch(firstCard, /evidence[_-]?id/iu);
   assert.doesNotMatch(firstCard, /track[_-]?ref/iu);
   assert.doesNotMatch(firstCard, /\/Users\//u);
