@@ -49,17 +49,19 @@ If earlier verified Apple batches already exist, the import reuses their subject
 
 `--subject-id <uuid>` remains an advanced explicit override and must agree with both existing sources.
 
-The command writes one private batch under:
+The command writes one private batch into Moondog's local state directory, next to your listening history (`~/.local/state/moondog` unless `MOONDOG_STATE_HOME` or `XDG_STATE_HOME` says otherwise):
 
 ```text
-data/imports/apple-music-library/<import-batch-id>/
+apple-music-library/imports/<import-batch-id>/
   manifest.json
   track-refs.ndjson
   track-snapshots.ndjson
   warnings.ndjson
 ```
 
-`data/imports/`, `data/private/`, `Library.xml`, and Apple Music library bundles are ignored by Git.
+Nothing is written inside the source checkout.
+Earlier versions kept this data in the checkout's `data/imports/` and `data/private/` folders; Moondog copies it into the state directory once and leaves the original in place.
+Those folders, `Library.xml`, and Apple Music library bundles stay ignored by Git.
 
 Batch directories use mode `0700`, and files use mode `0600`.
 
@@ -153,7 +155,7 @@ An optional `--subject-id` value can explicitly select one subject when multiple
 
 The command does not print subject identifiers, provider identifiers, track metadata, or private paths.
 
-The projection is written to `data/private/apple-music-library/projection.sqlite` with file mode `0600` inside private directories.
+The projection is written to `apple-music-library/projection.sqlite` in the same state directory, with file mode `0600` inside private directories.
 
 Runtime reads and local-data control can point at an isolated existing import root and disposable projection with `MOONDOG_APPLE_IMPORTS_ROOT` and `MOONDOG_APPLE_PROJECTION_PATH`.
 Both overrides must be absolute paths.
@@ -175,7 +177,7 @@ Node currently marks its built-in `node:sqlite` module as experimental, so the l
 
 ## Removing an Import
 
-Removing one batch means deleting only its exact UUID-named directory under `data/imports/apple-music-library/`.
+Removing one batch means deleting only its exact UUID-named directory under `apple-music-library/imports/` in the state directory.
 
 The original Apple Music XML export is not copied or changed by Moondog.
 

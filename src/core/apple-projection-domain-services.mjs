@@ -10,6 +10,7 @@ import {
 import {
   computeAppleProjectionInputDigest,
   defaultAppleMusicProjectionPath,
+  defaultAppleMusicProjectionPathFor,
   isUuid,
   listAppleMusicImportBatches,
   openAppleMusicSqliteProjection,
@@ -19,7 +20,7 @@ export { defaultAppleMusicProjectionPath };
 
 export function resolveAppleMusicProjectionPath(environment = process.env) {
   const configured = environment.MOONDOG_APPLE_PROJECTION_PATH?.trim();
-  if (!configured) return defaultAppleMusicProjectionPath;
+  if (!configured) return defaultAppleMusicProjectionPathFor(environment);
   if (!path.isAbsolute(configured)) {
     throw new TypeError("MOONDOG_APPLE_PROJECTION_PATH must be an absolute path");
   }

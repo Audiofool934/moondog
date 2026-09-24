@@ -1,10 +1,13 @@
 #!/usr/bin/env node
 
-import { repositoryRoot } from "./contract-lib.mjs";
-import { defaultAppleMusicImportsRoot } from "../src/core/apple-library-source-status.mjs";
+import { mkdir } from "node:fs/promises";
+import path from "node:path";
+
+import { migrateLegacyAppleMusicData } from "../src/core/apple-data-migration.mjs";
+import { resolveAppleMusicImportsRoot } from "../src/core/apple-library-source-status.mjs";
+import { resolveAppleMusicProjectionPath } from "../src/core/apple-projection-domain-services.mjs";
 import {
   AppleMusicImportError,
-  defaultAppleMusicProjectionPath,
   rebuildAppleMusicSqliteProjection,
 } from "../src/importers/apple-music-library/index.mjs";
 import { isUuid } from "../src/importers/apple-music-library/stable-ids.mjs";
@@ -54,11 +57,15 @@ async function main() {
       "Projection rebuild subject override must be a valid UUID",
     );
   }
-  const databasePath = defaultAppleMusicProjectionPath;
+  await migrateLegacyAppleMusicData();
+  const databasePath = resolveAppleMusicProjectionPath();
+  // The writer requires its output to sit below an existing boundary.
+  const boundaryRoot = path.dirname(path.dirname(databasePath));
+  await mkdir(boundaryRoot, { recursive: true, mode: 0o700 });
   const result = await rebuildAppleMusicSqliteProjection({
-    importsRoot: defaultAppleMusicImportsRoot,
+    importsRoot: resolveAppleMusicImportsRoot(),
     databasePath,
-    boundaryRoot: repositoryRoot,
+    boundaryRoot,
     subjectId: options.subjectId,
   });
   process.stdout.write(

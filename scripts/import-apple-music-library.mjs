@@ -1,14 +1,15 @@
 #!/usr/bin/env node
 
+import { mkdir } from "node:fs/promises";
 import path from "node:path";
 
-import { repositoryRoot } from "./contract-lib.mjs";
 import {
   AppleMusicImportError,
   importAppleMusicLibraryFile,
   inspectAppleMusicLibraryFile,
 } from "../src/importers/apple-music-library/index.mjs";
-import { readAppleMusicSourceStatus } from "../src/core/apple-library-source-status.mjs";
+import { readAppleMusicSourceStatus, resolveAppleMusicImportsRoot } from "../src/core/apple-library-source-status.mjs";
+import { migrateLegacyAppleMusicData } from "../src/core/apple-data-migration.mjs";
 import { resolveAppleMusicSubjectId } from "../src/core/apple-projection-domain-services.mjs";
 import { openListeningHistoryStore } from "../src/profile/listening-history-store.mjs";
 
@@ -17,7 +18,7 @@ const usage = `Usage:
   npm run import:apple-library -- --input /path/to/Library.xml [--subject-id <uuid>]
 
 The inspect command never writes files.
-The import command writes a private, Git-ignored batch under data/imports.`;
+The import command writes a private batch into Moondog's local state directory.`;
 
 function parseArguments(argv) {
   const [mode, ...args] = argv;
@@ -58,10 +59,7 @@ function safeImportSummary(result) {
     mode: "import",
     status: result.status,
     import_batch_id: result.manifest.import_batch_id,
-    output_directory: path.posix.join(
-      "data/imports/apple-music-library",
-      result.batchDirectoryName,
-    ),
+    output_directory: path.posix.join("apple-music-library/imports", result.batchDirectoryName),
     counts: result.manifest.counts,
     semantics: result.manifest.semantics,
   };
@@ -143,17 +141,15 @@ async function main() {
     return;
   }
 
+  await migrateLegacyAppleMusicData();
   const subjectId = await resolveImportSubject(options.subjectId);
-  const outputRoot = path.join(
-    repositoryRoot,
-    "data",
-    "imports",
-    "apple-music-library",
-  );
+  const outputRoot = resolveAppleMusicImportsRoot();
+  const outputBoundary = path.dirname(outputRoot);
+  await mkdir(outputBoundary, { recursive: true, mode: 0o700 });
   const result = await importAppleMusicLibraryFile(options.input, {
     subjectId,
     outputRoot,
-    outputBoundary: repositoryRoot,
+    outputBoundary,
   });
   process.stdout.write(`${JSON.stringify(safeImportSummary(result), null, 2)}\n`);
 }

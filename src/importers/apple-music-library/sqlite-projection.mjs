@@ -15,6 +15,7 @@ import {
   canonicalizeJson,
   sha256Hex,
 } from "../../../scripts/contract-semantics.mjs";
+import { resolveMoondogStateDirectory } from "../../core/state-directory.mjs";
 import { AppleMusicImportError } from "./parse-plist.mjs";
 import { listAppleMusicImportBatches } from "./read-batch.mjs";
 import { promoteAppleMusicImportBatches } from "./projection-records.mjs";
@@ -24,12 +25,19 @@ export const APPLE_SQLITE_PROJECTION_VERSION = 1;
 export const APPLE_LIBRARY_SEARCH_HARD_LIMIT = 25;
 export const APPLE_LIBRARY_SEARCH_HARD_OFFSET = 10_000;
 export const APPLE_PROFILE_SUMMARY_HARD_LIMIT = 50;
-export const defaultAppleMusicProjectionPath = fileURLToPath(
+// Earlier versions kept the projection inside the source checkout.
+export const legacyAppleMusicProjectionPath = fileURLToPath(
   new URL(
     "../../../data/private/apple-music-library/projection.sqlite",
     import.meta.url,
   ),
 );
+
+export function defaultAppleMusicProjectionPathFor(environment = process.env) {
+  return path.join(resolveMoondogStateDirectory(environment), "apple-music-library", "projection.sqlite");
+}
+
+export const defaultAppleMusicProjectionPath = defaultAppleMusicProjectionPathFor();
 
 const projectionSchema = `
   PRAGMA foreign_keys = ON;

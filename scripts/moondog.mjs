@@ -23,6 +23,7 @@ import {
 } from "../src/surfaces/cli/format-output.mjs";
 import { runAuthCommand } from "../src/surfaces/cli/auth-command.mjs";
 import { runDataCommand } from "../src/surfaces/cli/data-command.mjs";
+import { migrateLegacyAppleMusicData } from "../src/core/apple-data-migration.mjs";
 import { runCatalogCommand } from "../src/surfaces/cli/catalog-command.mjs";
 import { runProfileCommand } from "../src/surfaces/cli/profile-command.mjs";
 import { createCodexWebResearch } from "../src/integrations/web/codex-web.mjs";
@@ -151,6 +152,7 @@ function projectionErrorCode(error) {
 }
 
 async function loadDomainServices() {
+  await migrateLegacyAppleMusicData();
   const listeningHistoryStore = await openListeningHistoryStore();
   let domainServicesError = null;
   let subjectId = null;
@@ -541,6 +543,7 @@ async function main() {
   }
 
   if (options.command === "data") {
+    await migrateLegacyAppleMusicData();
     if (
       options.dryRun ||
       options.offline ||

@@ -32,6 +32,8 @@ export {
   APPLE_SQLITE_PROJECTION_VERSION,
   computeAppleSqliteLogicalDigest,
   defaultAppleMusicProjectionPath,
+  defaultAppleMusicProjectionPathFor,
+  legacyAppleMusicProjectionPath,
   openAppleMusicSqliteProjection,
   rebuildAppleMusicSqliteProjection,
 } from "./sqlite-projection.mjs";

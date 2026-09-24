@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { chmod, mkdir } from "node:fs/promises";
-import { homedir } from "node:os";
 import path from "node:path";
 
+import { resolveMoondogStateDirectory } from "../core/state-directory.mjs";
 import { isUuid } from "../core/uuid-v5.mjs";
 import {
   createListenerCorrection,
@@ -13,38 +13,7 @@ import { projectListeningProfile } from "./listening-profile-projection.mjs";
 export const LISTENING_HISTORY_SCHEMA_VERSION = 6;
 
 export function resolveListeningHistoryPath(environment = process.env) {
-  const configuredState = environment.MOONDOG_STATE_HOME?.trim();
-  if (configuredState) {
-    if (!path.isAbsolute(configuredState)) {
-      throw new TypeError("MOONDOG_STATE_HOME must be an absolute path");
-    }
-    return path.join(path.resolve(configuredState), "listening-history.sqlite");
-  }
-
-  const configuredConfig = environment.MOONDOG_CONFIG_HOME?.trim();
-  if (configuredConfig) {
-    if (!path.isAbsolute(configuredConfig)) {
-      throw new TypeError("MOONDOG_CONFIG_HOME must be an absolute path");
-    }
-    return path.join(path.resolve(configuredConfig), "listening-history.sqlite");
-  }
-
-  const xdgState = environment.XDG_STATE_HOME?.trim();
-  if (xdgState && path.isAbsolute(xdgState)) {
-    return path.join(
-      path.resolve(xdgState),
-      "moondog",
-      "listening-history.sqlite",
-    );
-  }
-
-  return path.join(
-    homedir(),
-    ".local",
-    "state",
-    "moondog",
-    "listening-history.sqlite",
-  );
+  return path.join(resolveMoondogStateDirectory(environment), "listening-history.sqlite");
 }
 
 export const defaultListeningHistoryPath = resolveListeningHistoryPath();
