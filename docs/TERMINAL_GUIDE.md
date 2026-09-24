@@ -69,6 +69,10 @@ Command arguments complete as you type, including `/theme`, `/art`, `/motion`, `
 Use Tab or Enter to accept a partial suggestion; a fully typed legal command executes on the first Enter.
 File paths retain Pi's Tab completion and quoting behavior.
 The header identifies the current provider and model when configured, giving the model priority on narrow terminals.
+The listening room is one fixed screen.
+The header, your draft, and the status line stay in place while the conversation scrolls behind them.
+Page Up and Page Down move through that conversation, Home jumps to the beginning, and End returns to the latest line.
+The mouse wheel scrolls it too.
 
 During a model request, the footer tracks the active tool, concurrent tool count, and elapsed time.
 A short tool receipt remains below the answer in the current conversation, with completed, failed, or unconfirmed counts.

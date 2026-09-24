@@ -23,13 +23,30 @@ export class BrandSurface {
     this.getTheme = getTheme;
     this.padding = padding;
   }
-  invalidate() { this.component.invalidate?.(); }
   handleInput(data) { this.component.handleInput?.(data); }
+  invalidate() {
+    this.paintCache = undefined;
+    this.component.invalidate?.();
+  }
   render(width) {
+    const theme = this.getTheme();
     const padding = Math.min(this.padding, Math.max(0, Math.floor((width - 1) / 2)));
-    return this.component.render(Math.max(1, width - padding * 2)).map(
-      (line) => paintBrandLine(" ".repeat(padding) + line, width, this.getTheme()),
-    );
+    const lines = this.component.render(Math.max(1, width - padding * 2));
+    if (this.paintTheme !== theme || this.paintWidth !== width || this.paintPadding !== padding) {
+      this.paintCache = new Map();
+      this.paintTheme = theme;
+      this.paintWidth = width;
+      this.paintPadding = padding;
+    }
+    const prefix = " ".repeat(padding);
+    return lines.map((line) => {
+      const painted = this.paintCache.get(line);
+      if (painted !== undefined) return painted;
+      const next = paintBrandLine(prefix + line, width, theme);
+      if (this.paintCache.size > 4000) this.paintCache.clear();
+      this.paintCache.set(line, next);
+      return next;
+    });
   }
 }
 
@@ -77,10 +94,36 @@ export class ListeningEditor extends Editor {
     super(tui, theme, { paddingX: 1, autocompleteMaxVisible: 5 });
     this.getTheme = getTheme;
     this.getState = getState;
+    this.rowCount = 3;
+  }
+  // The sleeve measures this during the same frame. The signature is taken again
+  // after painting because the editor can adjust its own scroll while rendering.
+  renderSignature() {
+    const { busy, homeVisible, homeFocused } = this.getState();
+    const list = this.autocompleteState ? this.autocompleteList : null;
+    const items = list?.filteredItems ?? [];
+    return [
+      this.focused ? 1 : 0,
+      this.disableSubmit ? 1 : 0,
+      busy ? 1 : 0,
+      homeVisible ? 1 : 0,
+      homeFocused ? 1 : 0,
+      this.state.cursorLine,
+      this.state.cursorCol,
+      this.scrollOffset,
+      this.state.lines.join("\n"),
+      list ? list.selectedIndex : "",
+      items.map((item) => `${item.value ?? ""}\t${item.label ?? ""}`).join("\n"),
+    ].join("\0");
   }
   render(width) {
-    const lines = super.render(width).map((line) => this.focused ? line : line.replace(/\x1b\[7m([\s\S]*?)\x1b\[0m/g, "$1"));
     const theme = this.getTheme();
+    const signature = `${width}\0${this.renderSignature()}`;
+    if (this.renderCache?.signature === signature && this.renderCache.theme === theme) {
+      this.rowCount = this.renderCache.lines.length;
+      return this.renderCache.lines;
+    }
+    const lines = super.render(width).map((line) => this.focused ? line : line.replace(/\x1b\[7m([\s\S]*?)\x1b\[0m/g, "$1"));
     const { busy, homeVisible, homeFocused } = this.getState();
     if (!/[↑↓]/u.test(lines[0])) {
       const label = busy ? " DRAFT " : homeFocused ? " TAB TO TYPE " : " YOU ";
@@ -93,6 +136,8 @@ export class ListeningEditor extends Editor {
       const text = truncateToWidth(hint, width - 2, "");
       lines[1] = " " + (this.focused ? CURSOR_MARKER + theme.inverse(text[0]) : theme.faint(text[0])) + theme.faint(text.slice(1));
     }
+    this.rowCount = lines.length;
+    this.renderCache = { signature: `${width}\0${this.renderSignature()}`, theme, lines };
     return lines;
   }
 }
@@ -150,8 +195,14 @@ export class RecordSleeve {
     this.lyricColumns = 0;
     this.canAnimate = false;
     this.cache = new Map();
+    this.colored = new Map();
   }
-  invalidate() { this.cache.clear(); }
+  invalidate() {
+    this.cache.clear();
+    this.colored.clear();
+    this.frame = undefined;
+    this.colorTheme = undefined;
+  }
   setLyric(text, { enterFromRight = false } = {}) {
     const note = text ? sanitizeTerminalText(text).replace(/\s+/gu, " ").trim() : this.defaultSleeveNote;
     if (note !== this.sleeveNote || enterFromRight) {
@@ -179,6 +230,19 @@ export class RecordSleeve {
       motionEnabled = this.environment.MOONDOG_MOTION !== "off" } = this.getState();
     // Fill the viewport between the header and composer, independently of art size.
     const rows = Math.max(1, this.terminal.rows - 2 - editorRows - (this.terminal.rows >= 20 ? 2 : 1));
+    const frameKey = [
+      width, rows, this.phase, this.lyricPosition, this.sleeveNote, focused ? 1 : 0, selected,
+      motionEnabled ? 1 : 0, this.artMode, this.environment.TERM ?? "", theme.plain ? 1 : 0,
+    ].join("\0");
+    if (this.frame?.key === frameKey && this.frame.theme === theme) {
+      this.canAnimate = this.frame.canAnimate;
+      this.lyricColumns = this.frame.lyricColumns;
+      return this.frame.lines;
+    }
+    const finish = (lines) => {
+      this.frame = { key: frameKey, theme, lines, canAnimate: this.canAnimate, lyricColumns: this.lyricColumns };
+      return lines;
+    };
     const paint = (line) => paintBrandLine(line, width, theme);
     this.canAnimate = false;
     this.lyricColumns = 0;
@@ -217,7 +281,7 @@ export class RecordSleeve {
         ...actionLines,
       ], Math.max(1, width - 1)).map((line) => ` ${line}`);
       const top = Math.max(0, Math.floor((rows - compact.length) / 2));
-      return Array.from({ length: rows }, (_, row) => paint(compact[row - top] ?? ""));
+      return finish(Array.from({ length: rows }, (_, row) => paint(compact[row - top] ?? "")));
     }
     const height = Math.min(22, rows - (roomy ? 2 : 0));
     const mode = this.artMode === "ascii" || this.artMode === "text" || this.environment.TERM === "dumb" ? "ascii" : "braille";
@@ -229,29 +293,40 @@ export class RecordSleeve {
       this.cache.set(key, renderLunarRecord({ columns: artWidth, rows: height, style: mode, phase }));
     }
     const art = this.cache.get(key);
+    if (this.colorTheme !== theme) {
+      this.colored.clear();
+      this.colorTheme = theme;
+    }
+    let colored = this.colored.get(key);
+    if (!colored) {
+      colored = art.map((ink) => {
+        let run = "";
+        let foreground = false;
+        let left = "";
+        for (const character of ink) {
+          const mask = character.codePointAt(0) - 0x2800;
+          const density = mask >= 0 && mask <= 255 ? mask.toString(2).replaceAll("0", "").length : 1;
+          const next = density >= 4;
+          if (next !== foreground && run) {
+            left += (foreground ? theme.text : theme.muted)(run);
+            run = "";
+          }
+          foreground = next;
+          run += character;
+        }
+        return left + (foreground ? theme.text : theme.muted)(run);
+      });
+      if (this.colored.size > LOGO_MOTION_FRAMES * 4) this.colored.clear();
+      this.colored.set(key, colored);
+    }
     const count = rows;
     const copyTop = Math.max(0, Math.floor((count - copy.length) / 2));
-    const artTop = Math.max(0, Math.floor((count - art.length) / 2));
+    const artTop = Math.max(0, Math.floor((count - colored.length) / 2));
     const lines = Array.from({ length: count }, (_, row) => {
-      const ink = art[row - artTop] ?? "";
-      let run = "";
-      let foreground = false;
-      let left = "";
-      for (const character of ink) {
-        const mask = character.codePointAt(0) - 0x2800;
-        const density = mask >= 0 && mask <= 255 ? mask.toString(2).replaceAll("0", "").length : 1;
-        const next = density >= 4;
-        if (next !== foreground && run) {
-          left += (foreground ? theme.text : theme.muted)(run);
-          run = "";
-        }
-        foreground = next;
-        run += character;
-      }
-      left += (foreground ? theme.text : theme.muted)(run);
+      const left = colored[row - artTop] ?? "";
       return `  ${pad(left, artWidth)}   ${copy[row - copyTop] ?? ""}`;
     });
-    return lines.map(paint);
+    return finish(lines.map(paint));
   }
 }
 
@@ -296,6 +371,7 @@ To talk, Moondog needs a model: \`/auth\` signs you in, then \`/model\` picks on
 - \`/art braille|ascii|off\` - change the artwork
 - \`/motion on|off\` - turn the animation on or off
 - \`/commands\` or Ctrl+P - search every command; your message stays put
+- Page Up and Page Down scroll the conversation. The header and your draft stay put
 - \`/resume\` - pick up a saved conversation (type to filter, Enter opens)
 - \`/new\` - start fresh; this conversation stays saved
 - \`/status\`, \`/sources\`, \`/tools\`, \`/doctor\` - see what's connected and working

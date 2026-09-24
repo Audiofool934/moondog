@@ -4,10 +4,12 @@ import {
   Markdown,
   matchesKey,
   ProcessTerminal,
+  ScrollView,
   Text,
   truncateToWidth,
-  TuiMainScreen,
+  TuiAltScreen,
   visibleWidth,
+  VStack,
 } from "@earendil-works/pi-tui";
 
 import {
@@ -39,6 +41,46 @@ import {
   listeningHelp,
   paintBrandLine,
 } from "./brand-components.mjs";
+
+const LAYOUT_NODE = Symbol.for("@earendil-works/pi-tui/layout-node");
+
+/** Full-screen listening room. The conversation scrolls; the header and draft stay put. */
+class ListeningRoom extends TuiAltScreen {
+  constructor(terminal, { mouse = true } = {}) {
+    super(terminal, false, undefined, { mouse, wheelScrollLines: 3 });
+    this.passViewportKeys = () => false;
+    this.cursorRow = 0;
+  }
+
+  extractCursorPosition(lines, height) {
+    const position = super.extractCursorPosition(lines, height);
+    this.cursorRow = position?.row ?? 0;
+    return position;
+  }
+
+  handleViewportInput(data) {
+    if (this.passViewportKeys()) return undefined;
+    return super.handleViewportInput(data);
+  }
+
+  doRender() {
+    super.doRender();
+    if (this.pendingReveal == null || this.conversationVisible?.() === false) return;
+    const line = this.pendingReveal;
+    this.pendingReveal = null;
+    this.revealScroll?.(line);
+  }
+
+  captureRenderState() {
+    return {
+      previousLines: this.previousScreen ?? [],
+      previousWidth: this.previousScreenWidth,
+      previousHeight: this.previousScreenHeight,
+      previousViewportTop: 0,
+      hardwareCursorRow: this.cursorRow,
+    };
+  }
+}
 
 const slashCommands = [
   { name: "home", description: "Back to the record sleeve" },
@@ -151,7 +193,10 @@ export async function runMoondogTui({
   application.startNewSession?.("tui_start");
   activeRuntime.reset();
   let runtimeStatus = activeRuntime.publicStatus();
-  await application.sourceStatus();
+  const sourceStatusTask = Promise.resolve().then(() => application.sourceStatus?.()).then(
+    () => null,
+    (error) => error,
+  );
   let theme = createMoondogTheme({ environment });
   const getTheme = () => theme;
   const color = (name) => (text) => theme[name](text);
@@ -169,7 +214,7 @@ export async function runMoondogTui({
     Object.keys(theme.markdownTheme).map((key) => [key, (text) => theme.markdownTheme[key](text)]),
   );
   const textStyle = { color: color("text") };
-  const tui = new TuiMainScreen(terminal);
+  const tui = new ListeningRoom(terminal, { mouse: environment.TERM !== "dumb" });
   if (theme.plain) tui.setShowHardwareCursor(true);
   const transcript = new Container();
   let homeVisible = true;
@@ -213,7 +258,7 @@ export async function runMoondogTui({
   const editor = new ListeningEditor(tui, editorTheme, getTheme, () => ({ busy, homeVisible, homeFocused }));
   const sleeve = new RecordSleeve({ terminal, getTheme, environment, getState: () => ({
     focused: homeFocused, selected: homeSelected, motionEnabled,
-    editorRows: editor.render(terminal.columns).length,
+    editorRows: editor.rowCount || 3,
   }), getNextLyric: () => {
     try {
       homeLyric = homeLyricSeeds ? lyrics.selectHome(homeLyricSeeds) : null;
@@ -272,30 +317,56 @@ export async function runMoondogTui({
     }
   };
   const conversation = new BrandSurface(transcript, getTheme);
-  tui.addChild(header);
-  tui.addChild({
-    render: (width) => {
-      if (importView) {
-        synchronizeHomeMotion();
-        return importView.render(width);
-      }
-      if (profileView) {
-        synchronizeHomeMotion();
-        return profileView.render(width);
-      }
-      const lines = homeVisible ? sleeve.render(width) : conversation.render(width);
-      if (!homeVisible) {
-        const bodyRows = terminal.rows - 2 - editor.render(width).length - (terminal.rows >= 20 ? 2 : 1);
-        while (lines.length < bodyRows) lines.push(paintBrandLine("", width, theme));
-      }
+  const transcriptPane = {
+    invalidate() { conversation.invalidate(); },
+    render(width) {
+      const lines = conversation.render(width);
+      const footerRows = terminal.rows >= 20 ? 2 : 1;
+      const bodyRows = Math.max(1, terminal.rows - 2 - footerRows - (editor.rowCount || 3));
+      while (lines.length < bodyRows) lines.push(paintBrandLine("", width, theme));
+      return lines;
+    },
+  };
+  const transcriptScroll = new ScrollView(transcriptPane, {
+    follow: "end",
+    primary: true,
+    scrollbar: "auto",
+    scrollbarStyle: (text) => getTheme().faint(text),
+  });
+  const stage = {
+    invalidate() {
+      sleeve.invalidate();
+      transcript.invalidate();
+      profileView?.invalidate();
+      importView?.invalidate();
+    },
+    render(width) {
+      // Measure the draft before the sleeve asks, so one frame uses the real height.
+      if (!profileView && !importView) editor.rowCount = editor.render(width).length;
+      const lines = importView ? importView.render(width)
+        : profileView ? profileView.render(width)
+          : homeVisible ? sleeve.render(width)
+            : transcriptPane.render(width);
       synchronizeHomeMotion();
       return lines;
     },
-    invalidate: () => { sleeve.invalidate(); transcript.invalidate(); profileView?.invalidate(); importView?.invalidate(); },
-  });
+    [LAYOUT_NODE]() {
+      if (!homeVisible && !profileView && !importView) return transcriptScroll[LAYOUT_NODE]();
+      return undefined;
+    },
+  };
   const composer = new BrandSurface(editor, getTheme);
-  tui.addChild({ render: (width) => profileView || importView ? [] : composer.render(width), invalidate: () => composer.invalidate() });
-  tui.addChild({
+  const composerSlot = {
+    invalidate() { composer.invalidate(); },
+    render: (width) => profileView || importView ? [] : composer.render(width),
+  };
+  const shell = new VStack();
+  shell.addChild(header, { shrink: 0 });
+  shell.addChild(stage, { grow: 1, shrink: 1, minSize: 1 });
+  shell.addChild(composerSlot, { shrink: 0 });
+  tui.passViewportKeys = () => Boolean(profileView || importView);
+  tui.setLayoutRoot(shell);
+  shell.addChild({
     invalidate() {},
     render(width) {
       const marker = theme.plain ? "." : busy && !tui.hasOverlay() ? ["◴", "◷", "◶", "◵"][phase % 4] : "◎";
@@ -343,12 +414,12 @@ export async function runMoondogTui({
           ? "↑ ↓ choose · enter open · esc type"
           : homeVisible && !editor.getText()
             ? width >= 60 ? "tab explore · ctrl+p commands       enter send · shift+enter newline" : "tab explore · ctrl+p commands"
-            : width >= 60 ? "ctrl+p commands · /home       enter send · shift+enter newline" : "ctrl+p commands · /home";
+            : width >= 72 ? "pgup history · ctrl+p · /home    enter send · shift+enter newline" : "pgup history · /home";
         lines.push(paintBrandLine(` ${theme.faint(keys)}`, width, theme));
       }
       return lines;
     },
-  });
+  }, { shrink: 0 });
   editor.setAutocompleteProvider(
     new CombinedAutocompleteProvider(withCommandCompletions(slashCommands, {
       providers, models, authProviderIds: supportedAuthProviderIds,
@@ -394,10 +465,25 @@ export async function runMoondogTui({
     addLabel("You");
     transcript.addChild(new Text(text, 1, 1));
   };
+  // A finished local message is read from the top. Several messages added before
+  // the next frame share the first anchor, once that frame has measured them.
+  tui.conversationVisible = () => !homeVisible && !profileView && !importView;
+  tui.revealScroll = (added) => {
+    transcriptScroll.scrollToEnd();
+    const hiddenAbove = added - transcriptScroll.viewportHeight;
+    if (hiddenAbove > 0) transcriptScroll.scrollBy(-hiddenAbove);
+    tui.requestRender();
+  };
+  const revealMessageStart = (added) => {
+    tui.pendingReveal = (tui.pendingReveal ?? 0) + added;
+  };
   const addMoondogMessage = (markdown) => {
     enterConversation();
+    const width = Math.max(1, transcriptScroll.getContentWidth(terminal.columns));
+    const before = conversation.render(width).length;
     addLabel("Moondog");
     transcript.addChild(new Markdown(sanitizeTerminalText(markdown), 1, 1, markdownTheme, textStyle));
+    revealMessageStart(Math.max(0, conversation.render(width).length - before));
     tui.requestRender();
   };
 
@@ -1448,6 +1534,7 @@ export async function runMoondogTui({
     setBusy(true, () => activeRuntime.abort());
     editor.disableSubmit = true;
     setFooter("Thinking...", yellow);
+    transcriptScroll.scrollToEnd();
     addLabel("Moondog");
     const response = new Markdown("", 1, 1, markdownTheme, textStyle);
     transcript.addChild(response);
@@ -1611,6 +1698,10 @@ export async function runMoondogTui({
   });
 
   setFooter("New conversation · /resume history");
+  void sourceStatusTask.then((error) => {
+    if (cleanedUp || !error || footerText !== "New conversation · /resume history") return;
+    setFooter(`Couldn't read the music library: ${sanitizeTerminalText(error.message)}`, yellow);
+  });
   try {
     startAttempted = true;
     tui.start();

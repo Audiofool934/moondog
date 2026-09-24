@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import test from "node:test";
 import { stripVTControlCharacters } from "node:util";
-import { TuiMainScreen, visibleWidth } from "@earendil-works/pi-tui";
+import { TuiAltScreen, visibleWidth } from "@earendil-works/pi-tui";
 import { runMoondogTui } from "../../src/surfaces/cli/tui.mjs";
 
 function deferred() {
@@ -31,11 +31,10 @@ function launch(context, { runtime: customRuntime, ...options } = {}) {
   };
   const signalTarget = new EventEmitter();
   const fixture = { terminal, lines: [] };
-  const render = TuiMainScreen.prototype.render;
-  context.mock.method(TuiMainScreen.prototype, "render", function (width) {
-    const lines = render.call(this, width);
-    fixture.lines = lines.map(stripVTControlCharacters);
-    return lines;
+  const doRender = TuiAltScreen.prototype.doRender;
+  context.mock.method(TuiAltScreen.prototype, "doRender", function () {
+    doRender.call(this);
+    fixture.lines = (this.previousScreen ?? []).map(stripVTControlCharacters);
   });
   fixture.body = () => fixture.lines.join("\n");
   fixture.footer = () => fixture.lines.slice(-2).join("\n");
@@ -168,4 +167,26 @@ test("elapsed work stays readable without animation and stops rendering after sh
   const output = fixture.terminal.output;
   await new Promise((resolve) => setTimeout(resolve, 1050));
   assert.equal(fixture.terminal.output, output);
+});
+
+test("page up scrolls the conversation while the header and draft stay put", async (context) => {
+  const answer = Array.from({ length: 40 }, (_, index) => `Marker ${index}`).join("\n\n");
+  const fixture = launch(context, { runtime: {
+    async prompt(_value, options) {
+      options.onTextDelta(answer);
+      return { status: "completed", text: answer };
+    },
+  } });
+  const markers = () => fixture.lines.flatMap((line) => [...line.matchAll(/Marker (\d+)/g)].map((match) => Number(match[1])));
+  await until(() => fixture.body().includes("New conversation"));
+  fixture.submit("Tell me about the quiet songs");
+  await until(() => markers().includes(39));
+  fixture.send("hold this draft");
+  await until(() => fixture.body().includes("hold this draft"));
+  const topBefore = Math.min(...markers());
+  assert.match(fixture.lines[0], /MOONDOG/);
+  fixture.send("\x1b[5~");
+  await until(() => markers().length > 0 && Math.min(...markers()) < topBefore);
+  assert.match(fixture.lines[0], /MOONDOG/);
+  assert.match(fixture.body(), /hold this draft/);
 });

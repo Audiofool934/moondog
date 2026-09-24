@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { stripVTControlCharacters } from "node:util";
-import { CURSOR_MARKER, TuiMainScreen, getCapabilities, setCapabilities, visibleWidth } from "@earendil-works/pi-tui";
+import { CURSOR_MARKER, TuiAltScreen, getCapabilities, setCapabilities, visibleWidth } from "@earendil-works/pi-tui";
 import { createMoondogTheme } from "../../src/surfaces/cli/brand-theme.mjs";
 import { RecordSleeve, paintBrandLine } from "../../src/surfaces/cli/brand-components.mjs";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -405,6 +405,16 @@ test("TUI shows the listening profile after each import, then supports correctio
     assert.ok(terminal.output.includes(expected), terminal.output);
     assert.doesNotMatch(terminal.output, /That didn't work/);
   };
+  const pageUntil = async (expected) => {
+    for (let step = 0; step < 40 && !terminal.output.includes(expected); step += 1) {
+      const before = terminal.output.length;
+      terminal.send("\x1b[6~");
+      const painted = performance.now() + 40;
+      while (terminal.output.length === before && performance.now() < painted) {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+    }
+  };
   const submit = async (command, expected) => {
     terminal.output = "";
     terminal.send(command);
@@ -418,8 +428,8 @@ test("TUI shows the listening profile after each import, then supports correctio
   };
   await submit('/spotify import-history "/tmp/Fictional Music History.zip"', "Your listening profile");
   await leaveProfile("Your listening, so far");
-  assert.match(terminal.output, /The years, one track each/);
   assert.match(terminal.output, /everything I can read/);
+  await pageUntil("Midnight Lines");
   assert.match(terminal.output, /Midnight Lines/);
   const before = await application.runLocalCommand("taste");
   await submit('/profile correct --track "Midnight Lines" --by "Mara Vale" --avoid', "Your listening profile");
@@ -438,7 +448,9 @@ test("TUI shows the listening profile after each import, then supports correctio
   const restored = await application.runLocalCommand("taste");
   assert.equal(restored.listener_assertions.active.length, 0);
   assert.deepEqual(restored.listening_behavior.time_capsule_tracks, before.listening_behavior.time_capsule_tracks);
-  await submit("/taste report", "The years, one track each");
+  await submit("/taste report", "Your listening, so far");
+  await pageUntil("The years, one track each");
+  assert.match(terminal.output, /The years, one track each/);
   await submit('/spotify import-history "/tmp/Fictional Music History.zip"', "Your listening profile");
   assert.equal((await application.runLocalCommand("taste")).coverage.effective_listening_events, before.coverage.effective_listening_events);
   await leaveProfile("Your listening, so far");
@@ -493,11 +505,10 @@ async function createGuidedImportFixture(context, options = {}) {
   const signalTarget = new EventEmitter();
   const prompts = [];
   let frame;
-  const doRender = TuiMainScreen.prototype.doRender;
-  context.mock.method(TuiMainScreen.prototype, "doRender", function () {
-    const result = doRender.call(this);
+  const doRender = TuiAltScreen.prototype.doRender;
+  context.mock.method(TuiAltScreen.prototype, "doRender", function () {
+    doRender.call(this);
     frame = this.captureRenderState();
-    return result;
   });
   const calls = { paths: [], commits: 0, closes: 0, refreshes: 0, profiles: 0 };
   const profile = {
@@ -1762,11 +1773,10 @@ test("the actual home viewport stays filled through resize and multiline draft r
   const signalTarget = new EventEmitter();
   const prompts = [];
   const frames = [];
-  const doRender = TuiMainScreen.prototype.doRender;
-  context.mock.method(TuiMainScreen.prototype, "doRender", function () {
-    const result = doRender.call(this);
+  const doRender = TuiAltScreen.prototype.doRender;
+  context.mock.method(TuiAltScreen.prototype, "doRender", function () {
+    doRender.call(this);
     frames.push(this.captureRenderState());
-    return result;
   });
   const running = runMoondogTui({
     application: fakeApplication(), runtime: configuredFakeRuntime(prompts), terminal, signalTarget,
@@ -1786,7 +1796,7 @@ test("the actual home viewport stays filled through resize and multiline draft r
     assert.equal(frame.previousWidth, terminal.columns);
     assert.equal(frame.previousHeight, terminal.rows);
     assert.equal(frame.previousLines.length, terminal.rows, "home must paint every viewport row");
-    assert.equal(frame.previousViewportTop, 0, "home must not push its header into scrollback");
+    assert.equal(frame.previousViewportTop, 0, "home keeps the header on the fixed screen");
     const lines = frame.previousLines.map(stripVTControlCharacters);
     assert.match(lines[0], /^ MOONDOG/u);
     assert.match(lines[1], /faux-1/u);

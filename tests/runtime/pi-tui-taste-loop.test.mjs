@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { stripVTControlCharacters } from "node:util";
-import { TuiMainScreen, visibleWidth } from "@earendil-works/pi-tui";
+import { TuiAltScreen, visibleWidth } from "@earendil-works/pi-tui";
 
 import { MoondogApplication } from "../../src/core/moondog-application.mjs";
 import { createListeningProfileDomainServices } from "../../src/core/listening-profile-domain-services.mjs";
@@ -122,14 +122,13 @@ async function createTasteFixture(context, { imported = true, configured = false
     },
   };
 
-  // Observe complete component frames, so UI assertions cannot pass on stale scrollback.
-  const render = TuiMainScreen.prototype.render;
-  context.mock.method(TuiMainScreen.prototype, "render", function (width) {
-    const lines = render.call(this, width);
-    terminal.rendered = [...lines];
-    terminal.renderedColumns = width;
-    terminal.renderedRows = terminal.rows;
-    return lines;
+  // Observe the visible screen, so UI assertions cannot pass on a line that has scrolled away.
+  const doRender = TuiAltScreen.prototype.doRender;
+  context.mock.method(TuiAltScreen.prototype, "doRender", function () {
+    doRender.call(this);
+    terminal.rendered = [...(this.previousScreen ?? [])];
+    terminal.renderedColumns = this.previousScreenWidth;
+    terminal.renderedRows = this.previousScreenHeight;
   });
 
   const waitBody = async (text) => waitFor(() => terminal.body.includes(text), `visible ${text}`, terminal);
@@ -188,7 +187,7 @@ async function createTasteFixture(context, { imported = true, configured = false
       terminal.send("taste");
       await waitOutput("/taste");
       terminal.send("\r");
-      await waitBody("Your listening profile");
+      await waitBody("Pick a song or artist");
     },
     async chooseAction(label, expected) {
       terminal.output = "";
@@ -209,7 +208,14 @@ async function createTasteFixture(context, { imported = true, configured = false
     async leaveProfile(expected) {
       terminal.output = "";
       terminal.send("\x1b");
-      await waitBody(expected);
+      const deadline = performance.now() + 1000;
+      let previous = "";
+      while (!terminal.body.includes(expected)) {
+        assert.ok(performance.now() < deadline, `visible ${expected}`);
+        if (terminal.body === previous && terminal.body) terminal.send("\x1b[5~");
+        previous = terminal.body;
+        await new Promise((resolve) => setTimeout(resolve, 8));
+      }
       assert.ok(!terminal.body.includes("Your listening profile"));
     },
   };
@@ -437,7 +443,15 @@ test("escaping profile actions returns to browsing, then home with the draft; ta
   terminal.send("\x05");
   terminal.send("\x15");
   await fixture.submit("/taste report", "Your listening, so far");
-  assert.match(terminal.body, /The years, one track each/u);
+  for (let step = 0; step < 40 && !terminal.text.includes("The years, one track each"); step += 1) {
+    const before = terminal.output.length;
+    terminal.send("\x1b[6~");
+    const painted = performance.now() + 40;
+    while (terminal.output.length === before && performance.now() < painted) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+  }
+  assert.match(terminal.text, /The years, one track each/u);
   assert.deepEqual(fixture.prompts, []);
 });
 
@@ -452,7 +466,15 @@ test("a completed history import opens the cumulative native profile and preserv
   assert.ok(firstImport.coverage.effective_listening_events > 0);
   await fixture.leaveProfile("Spotify history import completed.");
   assert.match(terminal.body, /Your listening, so far/u);
-  assert.match(terminal.body, /The years, one track each/u);
+  for (let step = 0; step < 40 && !terminal.text.includes("The years, one track each"); step += 1) {
+    const before = terminal.output.length;
+    terminal.send("\x1b[6~");
+    const painted = performance.now() + 40;
+    while (terminal.output.length === before && performance.now() < painted) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+  }
+  assert.match(terminal.text, /The years, one track each/u);
   await fixture.submit('/spotify import-history "/tmp/Fictional Music History.zip"', "Your listening profile");
   const repeatedImport = await fixture.summary();
   assert.equal(repeatedImport.coverage.effective_listening_events, firstImport.coverage.effective_listening_events);
