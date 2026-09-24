@@ -16,7 +16,7 @@ The release-tree verifier checks the exported allowlist and content markers; thi
 Run `npm run verify:release-tree` to inspect that boundary directly.
 
 The source is public, but no project license has been selected and no open-source license is granted yet.
-`package.json` remains `private: true`; this publication does not publish an npm package.
+`@audiofool/moondog` is the public npm package name. Version 0.1.0 is the first registry release.
 Maintainer and contribution information is linked from [CONTRIBUTING.md](../CONTRIBUTING.md).
 
 ## Validation and limits
@@ -112,7 +112,7 @@ Passing it does not guarantee GitHub growth, but failing a required gate means M
 - The recording tape and complete verification gate passed after a locked install in an isolated source copy without Git metadata, private imports, generated runs, or local databases.
 - The repository still has no configured Git remote, public CI run evidence, selected project license, security policy, or code of conduct.
 - The current local Git history still contains internal operational material, so a public launch must begin from the verified clean snapshot or use a separately approved history rewrite.
-- `package.json` remains private, so npm publication is intentionally disabled.
+- `@audiofool/moondog` can be published to the public npm registry. The package is not marked private.
 
 ### Required owner decisions
 
@@ -138,7 +138,7 @@ These decisions must not be inferred from implementation details or made implici
 - [x] Add structured bug and product-idea forms with explicit private-data boundaries.
 - [x] Classify internal operational notes and keep private predecessor infrastructure, source hashes, personal-data measurements, and superseded internal sequencing outside the release tree.
 - [ ] Verify every README command from a clean checkout on macOS and one additional supported platform.
-- [ ] Decide whether `private: true` remains appropriate or whether npm publication metadata should be added.
+- [x] Publish the public package as `@audiofool/moondog` with `publishConfig.access` set to `public`.
 
 ### Product proof gates
 

@@ -41,7 +41,7 @@ moondog
 
 The commands below use this linked executable.
 Without a link, use `npm run moondog -- <command>` from the checkout.
-This is a source installation; the package is not published to the npm registry.
+The same app is also published as the public npm package `@audiofool/moondog`.
 
 The launcher selects the first Node executable on `PATH` that satisfies Node `>=22.19.0`.
 Set `MOONDOG_NODE` to an explicit compatible Node executable when an override is needed.

@@ -459,7 +459,7 @@ async function verifyInstalledPackage({ consumerRoot, tarballPath }) {
   const installedPackage = JSON.parse(
     await readFile(path.join(installedRoot, "package.json"), "utf8"),
   );
-  assert(installedPackage.private === true, "The package publication gate changed unexpectedly.");
+  assert(installedPackage.private !== true, "The published package must not be marked private.");
   assert(
     JSON.stringify(installedPackage.os) === JSON.stringify(["darwin", "linux"]),
     "The package platform boundary changed unexpectedly.",
