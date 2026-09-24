@@ -345,6 +345,54 @@ test("/new clears the resumed runtime and starts a separate conversation without
   assert.deepEqual(new Set(application.listSavedSessions().map((session) => session.session_id)), new Set([saved[0].session_id, newId]));
 });
 
+test("up and down recall lines from the open conversation only", async (context) => {
+  const fixture = await createSavedConversationFixture(context, [
+    { user: "Saved amber session line", assistant: "Saved amber reply." },
+  ]);
+  const { application, runtime, terminal, saved } = fixture;
+  await fixture.launch();
+  await fixture.submit("Fresh session line", "Fixture response: Fresh session line");
+  const freshId = application.ensureMemorySession().session_id;
+  await fixture.submit("/new", "A fresh start.");
+  await fixture.submit("Second session line", "Fixture response: Second session line");
+  const secondId = application.ensureMemorySession().session_id;
+  await fixture.submit("/new", "A fresh start.");
+
+  const untouched = runtime.prompts.length;
+  terminal.send("\x1b[A");
+  terminal.send("\r");
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(runtime.prompts.length, untouched);
+
+  const recall = async (steps, expected, session) => {
+    const before = runtime.prompts.length;
+    for (let index = 0; index < steps; index += 1) terminal.send("\x1b[A");
+    terminal.send("\r");
+    const deadline = performance.now() + 1_000;
+    while (runtime.prompts.length === before) {
+      if (performance.now() >= deadline) {
+        throw new Error(`Expected Up to recall "${expected}".`);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    assert.equal(runtime.prompts.at(-1).text, expected);
+    assert.equal(runtime.prompts.at(-1).sessionId, session);
+  };
+
+  await fixture.submit(`/resume ${saved[0].session_id}`, "Back in:");
+  const seeded = runtime.prompts.length;
+  terminal.send("\x1b[A");
+  terminal.send("\x1b[B");
+  terminal.send("\r");
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(runtime.prompts.length, seeded);
+  await recall(1, "Saved amber session line", saved[0].session_id);
+  await fixture.submit(`/resume ${freshId}`, "Back in:");
+  await recall(2, "Fresh session line", freshId);
+  await fixture.submit(`/resume ${secondId}`, "Back in:");
+  await recall(2, "Second session line", secondId);
+});
+
 test("structured TUI arguments preserve quoted identities and never expand shell text", () => {
   assert.deepEqual(
     parseTuiArguments('correct --track "L’été  Again" --by \'Artist Name\' --note "$(whoami); `date` $HOME" --avoid'),

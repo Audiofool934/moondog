@@ -96,6 +96,22 @@ export class ListeningEditor extends Editor {
     this.getState = getState;
     this.rowCount = 3;
   }
+  recallEntries() {
+    return this.history.slice(0, 100);
+  }
+  replaceRecall(entries) {
+    const next = [];
+    for (const entry of entries ?? []) {
+      if (typeof entry !== "string") continue;
+      const text = entry.trim();
+      if (!text || next.at(-1) === text) continue;
+      next.push(text);
+      if (next.length === 100) break;
+    }
+    this.history = next;
+    this.exitHistoryBrowsing();
+    return next.slice();
+  }
   // The sleeve measures this during the same frame. The signature is taken again
   // after painting because the editor can adjust its own scroll while rendering.
   renderSignature() {
@@ -373,6 +389,7 @@ To talk, Moondog needs a model: \`/auth\` signs you in, then \`/model\` picks on
 - \`/motion on|off\` - turn the animation on or off
 - \`/commands\` or Ctrl+P - search every command; your message stays put
 - Page Up and Page Down scroll the conversation. The header and your draft stay put
+- Up and Down in the draft recall what you typed in this conversation
 - \`/resume\` - pick up a saved conversation (type to filter, Enter opens)
 - \`/new\` - start fresh; this conversation stays saved
 - \`/status\`, \`/sources\`, \`/tools\`, \`/doctor\` - see what's connected and working

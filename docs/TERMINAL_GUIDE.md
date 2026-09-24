@@ -678,6 +678,7 @@ Gemini and Google Vertex use Pi's native connection handling and do not display 
 
 If the connection still fails, Moondog names the selected provider and shows a connection code when one is available.
 Press ↑ to recall your message and Enter to try again.
+Up and Down stay inside the conversation you are in.
 If a capability already ran during the failed turn, check its result before repeating an action, especially playback or playlist changes.
 Your earlier completed conversation remains available.
 

@@ -256,6 +256,28 @@ export async function runMoondogTui({
   let resolveStopped;
   const stoppedPromise = new Promise((resolve) => { resolveStopped = resolve; });
   const editor = new ListeningEditor(tui, editorTheme, getTheme, () => ({ busy, homeVisible, homeFocused }));
+  const recallBySession = new Map();
+  const sessionId = () => application.ensureMemorySession?.()?.session_id ?? null;
+  const storeRecall = () => {
+    const id = sessionId();
+    if (id) recallBySession.set(id, editor.recallEntries());
+  };
+  const recallFromTurns = () => {
+    const turns = application.currentSessionTurns?.({ limit: 100 }) ?? [];
+    const history = [];
+    for (let index = turns.length - 1; index >= 0 && history.length < 100; index -= 1) {
+      const turn = turns[index];
+      if (turn?.role !== "user" || typeof turn.text !== "string") continue;
+      const text = turn.text.trim();
+      if (!text || history.at(-1) === text) continue;
+      history.push(text);
+    }
+    return history;
+  };
+  const installRecall = (id, entries) => {
+    const history = editor.replaceRecall(entries);
+    if (id) recallBySession.set(id, history);
+  };
   const sleeve = new RecordSleeve({ terminal, getTheme, environment, getState: () => ({
     focused: homeFocused, selected: homeSelected, motionEnabled,
     editorRows: editor.rowCount || 3,
@@ -1236,7 +1258,12 @@ export async function runMoondogTui({
       setFooter("You're already in that one.");
       return;
     }
+    storeRecall();
     application.resumeSession(selected.value);
+    if (!recallBySession.has(selected.value)) {
+      recallBySession.set(selected.value, recallFromTurns());
+    }
+    editor.replaceRecall(recallBySession.get(selected.value));
     activeRuntime.restoreSession();
     const turns = application.currentSessionTurns({ limit: 40 });
     transcript.clear();
@@ -1424,7 +1451,9 @@ export async function runMoondogTui({
     }
     if (command === "new") {
       if (args.length) throw new Error("/new doesn't take anything after it.");
+      storeRecall();
       application.startNewSession?.("user_new");
+      installRecall(sessionId(), []);
       activeRuntime.reset();
       profileDiscoveryDraft = null;
       transcript.clear();
