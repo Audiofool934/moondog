@@ -293,7 +293,8 @@ export class MoondogApplication {
   musicDiscoveryReady() {
     return (
       this.musicCatalogReady() &&
-      this.domainServicesReady() &&
+      this.profileServicesReady() &&
+      this.playlistServicesReady() &&
       typeof this.musicCatalog.searchTracks === "function" &&
       typeof this.domainServices.registerExternalCandidateSet === "function"
     );
@@ -314,7 +315,8 @@ export class MoondogApplication {
   musicSimilarityReady() {
     return (
       this.musicSimilarity !== null &&
-      this.domainServicesReady() &&
+      this.profileServicesReady() &&
+      this.playlistServicesReady() &&
       requiredMusicSimilarityMethods.every(
         (method) => typeof this.musicSimilarity[method] === "function",
       ) &&

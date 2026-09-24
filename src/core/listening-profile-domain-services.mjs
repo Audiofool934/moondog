@@ -3,6 +3,12 @@ import { lyricSeedsFromProfile } from "./lyric-profile.mjs";
 
 import { isUuid } from "./uuid-v5.mjs";
 import { createListeningHistoryProfileProjection } from "../profile/spotify-archive-taste.mjs";
+import {
+  assertExternalPlanDiversity,
+  exactTitleArtistMatch,
+  safeExternalSource,
+  safeExternalTrack,
+} from "./apple-projection-domain-services.mjs";
 
 const PROFILE_DEFAULT_ITEMS = 6;
 const PROFILE_MAX_ITEMS = 10;
@@ -512,6 +518,55 @@ export class ListeningProfileDomainServices {
     return { candidateSetId, tracks: prepared };
   }
 
+  registerExternalCandidateSet({ tracks, source } = {}) {
+    if (!Array.isArray(tracks) || tracks.length < 1 || tracks.length > HISTORY_MAX_ITEMS) {
+      throw new TypeError("External catalog candidates are invalid");
+    }
+    if (this.#candidateSets.size >= CANDIDATE_SETS_MAX) {
+      throw new Error("The prompt has reached its candidate set limit");
+    }
+    const trustedSource = safeExternalSource(source);
+    const prepared = tracks.map(safeExternalTrack);
+    if (new Set(prepared.map((track) => track.track_ref_id)).size !== prepared.length) {
+      throw new TypeError("External catalog candidates are duplicated");
+    }
+    // Outside suggestions should be new to the listener, so drop anything already played.
+    const listened = typeof this.#store.listenedTracks === "function"
+      ? this.#store.listenedTracks({ subjectId: this.#subjectId })
+      : [];
+    const accepted = [];
+    let excludedHistoryMatches = 0;
+    for (const track of prepared) {
+      if (listened.some((heard) => exactTitleArtistMatch(track, heard))) {
+        excludedHistoryMatches += 1;
+        continue;
+      }
+      accepted.push({
+        ...track,
+        knownness: {
+          imported_library: "not_imported",
+          listening_history: "not_found_by_exact_title_artist",
+        },
+      });
+    }
+    const registered = accepted.length > 0 ? randomUUID() : null;
+    if (registered) {
+      this.#candidateSets.set(
+        registered,
+        new Map(accepted.map((track) => [track.track_ref_id, structuredClone(track)])),
+      );
+    }
+    return {
+      candidate_set_id: registered,
+      candidate_scope: "external_catalog",
+      result_count: accepted.length,
+      excluded_library_matches: excludedHistoryMatches,
+      expires_on: "prompt_end",
+      source: trustedSource,
+      tracks: accepted.map((track) => structuredClone(track)),
+    };
+  }
+
   async getLyricSeeds() {
     return {
       subjectId: this.#subjectId,
@@ -847,26 +902,34 @@ export class ListeningProfileDomainServices {
       title: track.title,
       artist_credit: track.artist_credit,
       release: track.release,
-      candidate_scope: "private_history",
+      candidate_scope: track.candidate_scope ?? "private_history",
       selection_reason: selectionReason,
       ...(track.duration_ms !== undefined
         ? { duration_ms: track.duration_ms }
         : {}),
-      history_context: track.time_capsule
-        ? { kind: "time_capsule", year: track.time_capsule.year }
-        : track.historical_return
-          ? { kind: "historical_return" }
-          : track.back_to_back
-            ? { kind: "back_to_back" }
-            : { kind: "rediscovery" },
+      ...(track.candidate_scope === "external_catalog"
+        ? track.catalog_provider === "apple_music" && track.catalog_url
+          ? { public_catalog_reference: { provider: "apple_music", url: track.catalog_url } }
+          : {}
+        : {
+            history_context: track.time_capsule
+              ? { kind: "time_capsule", year: track.time_capsule.year }
+              : track.historical_return
+                ? { kind: "historical_return" }
+                : track.back_to_back
+                  ? { kind: "back_to_back" }
+                  : { kind: "rediscovery" },
+          }),
     }));
+    assertExternalPlanDiversity(tracks, intent);
+    const selectedScopes = new Set(tracks.map((track) => track.candidate_scope));
     return {
       plan_version: "playlist_plan/0",
       intent,
       requested_track_count: input.requestedTrackCount,
       track_count: tracks.length,
       tracks,
-      candidate_scope: "private_history",
+      candidate_scope: selectedScopes.size === 1 ? [...selectedScopes][0] : "mixed",
       ordering_rationale: orderingNotes,
       candidate_sets_validated: input.candidateSetIds.length,
       persistence: "none",

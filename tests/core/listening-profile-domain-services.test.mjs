@@ -370,3 +370,65 @@ test("Spotify-only history builds a private played-back-to-back plan", async (co
   assert.equal(explanation.claim.dimension, "listening.back_to_back");
   application.endPrompt();
 });
+
+test("history-only profiles can plan with outside music they have not played yet", async (context) => {
+  const root = await mkdtemp(path.join(tmpdir(), "moondog-history-discovery-"));
+  context.after(() => rm(root, { recursive: true, force: true }));
+  const store = await openListeningHistoryStore({
+    databasePath: path.join(root, "listening-history.sqlite"),
+  });
+  store.ingestImport(
+    projectSpotifyExtendedStreamingHistory({
+      subjectId,
+      capturedAt,
+      archiveSha256: "c".repeat(64),
+      archiveSizeBytes: 4096,
+      memberNames: ["Streaming_History_Audio_2026.json"],
+      records: [extendedRecord("2026-08-30T04:00:00Z", 305_000)],
+    }),
+  );
+  const application = new MoondogApplication({
+    importsRoot: path.join(root, "no-apple-imports"),
+    domainServices: createListeningProfileDomainServices({ listeningHistoryStore: store, subjectId }),
+    musicSimilarity: { async discoverSimilarTracks() { return { state: "resolved", tracks: [] }; } },
+  });
+  context.after(() => application.close());
+  assert.equal(application.domainServicesReady(), false);
+  assert.equal(application.musicSimilarityReady(), true);
+
+  const external = (id, title, artist) => ({
+    track_ref_id: id,
+    title,
+    artist_credit: artist,
+    release: `${title} Release`,
+    candidate_scope: "external_catalog",
+    catalog_provider: "apple_music",
+  });
+  application.beginPrompt();
+  const registered = application.domainServices.registerExternalCandidateSet({
+    tracks: [
+      external("22222222-2222-4222-8222-222222222222", "Roads", "Portishead"),
+      external("33333333-3333-4333-8333-333333333333", "Teardrop", "Massive Attack"),
+    ],
+    source: {
+      provider: "apple_music",
+      catalog: "itunes_search_api",
+      storefront: "US",
+      retrieved_at: capturedAt,
+      coverage: "Fictional test catalog.",
+    },
+  });
+  assert.equal(registered.excluded_library_matches, 1);
+  assert.deepEqual(registered.tracks.map((track) => track.title), ["Teardrop"]);
+
+  const plan = await application.buildPlaylistPlan({
+    intent: "Find 1 song near my listening.",
+    requestedTrackCount: 1,
+    candidateSetIds: [registered.candidate_set_id],
+    trackRefs: [{ trackRefId: "33333333-3333-4333-8333-333333333333", selectionReason: "Same late-night trip-hop air." }],
+    orderingNotes: "One step outward.",
+  });
+  assert.equal(plan.candidate_scope, "external_catalog");
+  assert.equal(plan.tracks[0].candidate_scope, "external_catalog");
+  assert.equal("history_context" in plan.tracks[0], false);
+});

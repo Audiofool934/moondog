@@ -1527,6 +1527,50 @@ export class ListeningHistoryStore {
     });
   }
 
+  /** Every track the subject has played, with its play count, most played first. */
+  listenedTracks({ subjectId } = {}) {
+    if (this.#closed) throw new Error("Listening history store is closed");
+    if (typeof subjectId !== "string" || !subjectId.trim()) {
+      throw new TypeError("A listening history subject ID is required");
+    }
+    const trackStatement = this.#database.prepare(
+      `SELECT record_json FROM track_refs
+      WHERE track_ref_id = ?
+      ORDER BY revision DESC
+      LIMIT 1`,
+    );
+    return this.#database
+      .prepare(
+        `SELECT track_ref_id, COUNT(*) AS play_count
+        FROM listening_events
+        WHERE subject_id = ?
+          AND NOT EXISTS (
+            SELECT 1 FROM listening_event_supersessions
+            WHERE superseded_event_id = listening_events.listening_event_id
+          )
+        GROUP BY track_ref_id
+        ORDER BY play_count DESC, track_ref_id`,
+      )
+      .all(subjectId.toLowerCase())
+      .flatMap((row) => {
+        const record = trackStatement.get(row.track_ref_id);
+        if (!record) return [];
+        const track = JSON.parse(record.record_json);
+        const artistCredit = track.artist_credits?.[0]?.name;
+        if (typeof track.title !== "string" || typeof artistCredit !== "string") return [];
+        return [{
+          track_ref_id: row.track_ref_id,
+          title: track.title,
+          artist_credit: artistCredit,
+          release: typeof track.release?.title === "string" && track.release.title.trim()
+            ? track.release.title
+            : "Unknown release",
+          play_count: row.play_count,
+          ...(Number.isInteger(track.duration_ms) ? { duration_ms: track.duration_ms } : {}),
+        }];
+      });
+  }
+
   lyricProfile({ subjectId } = {}) {
     const value = this.#profileProjection({ subjectId, maxItems: 50 });
     return structuredClone({ ...value.summary, lyric_exclusions: value.lyricExclusions });

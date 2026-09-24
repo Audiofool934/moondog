@@ -301,7 +301,7 @@ function safeExternalCatalogUrl(value, provider) {
   }
 }
 
-function safeExternalTrack(raw) {
+export function safeExternalTrack(raw) {
   const provider =
     isPlainObject(raw) && externalCatalogProviders.has(raw.catalog_provider)
       ? raw.catalog_provider
@@ -796,7 +796,7 @@ function normalizedArtistNames(value) {
     .filter(Boolean);
 }
 
-function exactTitleArtistMatch(left, right) {
+export function exactTitleArtistMatch(left, right) {
   const leftTitle = normalizeText(left.title);
   const rightTitle = normalizeText(right.title);
   const leftArtists = normalizedArtistNames(left.artist_credit);
@@ -807,7 +807,7 @@ function exactTitleArtistMatch(left, right) {
   );
 }
 
-function assertExternalPlanDiversity(tracks, intent) {
+export function assertExternalPlanDiversity(tracks, intent) {
   const externalTracks = tracks.filter(
     (track) => track.candidate_scope === "external_catalog",
   );
@@ -856,7 +856,7 @@ function assertExternalPlanDiversity(tracks, intent) {
   }
 }
 
-function safeExternalSource(raw) {
+export function safeExternalSource(raw) {
   if (!isPlainObject(raw) || !externalCatalogProviders.has(raw.provider)) {
     fail("external_candidate_invalid", "External catalog source metadata is invalid.");
   }
