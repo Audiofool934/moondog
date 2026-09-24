@@ -746,5 +746,6 @@ Inside the listening room:
 Anything you type that isn't a command goes to the model you picked with \`/model\`, or the one set in \`MOONDOG_PROVIDER\` and \`MOONDOG_MODEL\`.
 Sign in with \`/auth\`, or set the provider's API key in your environment. \`/auth openai-codex\` uses your ChatGPT sign-in.
 Once your profile is ready, I can search your library, explain what I see, and plan playlists with you.
-I can only control Spotify after \`moondog spotify login\`, and I never post, send messages, delete anything, or spend money.`;
+I can only control Spotify after \`moondog spotify login\`, and I never post, send messages, delete anything, or spend money.
+Ask me to move playback onto a device by name, such as your iPhone.`;
 }

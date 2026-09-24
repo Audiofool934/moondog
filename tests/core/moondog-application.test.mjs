@@ -736,6 +736,7 @@ test("a ready Spotify connection enables bounded player capabilities", async () 
     "spotify.player.status",
     "spotify.player.control",
     "spotify.queue.add",
+    "spotify.device.list",
     "spotify.device.transfer",
   ]) {
     assert.ok(

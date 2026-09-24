@@ -953,6 +953,9 @@ Control playback with `play`, `pause`, `next`, `previous`, `volume`, `seek`, `sh
 
 Use `moondog spotify transfer <device-id> --play` to move playback to a selected Connect device.
 
+In the listening room, ask to switch playback to a device by its ordinary name, such as iPhone.
+Moondog matches that name against the devices Spotify can see at that moment.
+
 Use `moondog spotify queue-add <spotify-uri>` to append a track or episode URI.
 
 Inspect deterministic catalog matching from the shell with:

@@ -354,6 +354,7 @@ To talk, Moondog needs a model: \`/auth\` signs you in, then \`/model\` picks on
 - \`/import\` - bring in your history, your library, or a playlist
 - \`/lyrics\` - the lyrics on the sleeve; \`/lyrics sync\` finds more
 - \`/spotify\` - play, queue, and make playlists in Spotify
+- Ask to move playback onto your iPhone, computer, or another Spotify device by name
 - \`/web search <query>\` or \`/web read <url>\` - look things up on public music sites
 
 ## 02 / Make it yours

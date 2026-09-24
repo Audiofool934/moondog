@@ -287,11 +287,25 @@ const catalog = [
     },
   },
   {
+    id: "spotify.device.list",
+    version: "1",
+    state: "enabled",
+    effect: "read_external",
+    description:
+      "List visible Spotify Connect devices by name and type, without device identifiers.",
+    requires_spotify: true,
+    agent_tool: {
+      name: "moondog_spotify_devices",
+      label: "See your Spotify devices",
+    },
+  },
+  {
     id: "spotify.device.transfer",
     version: "1",
     state: "enabled",
     effect: "write_external",
-    description: "Transfer Spotify playback to an explicit device ID.",
+    description:
+      "Transfer Spotify playback to a device the user named, or to a device ID the user pasted.",
     requires_spotify: true,
     agent_tool: {
       name: "moondog_spotify_device_transfer",

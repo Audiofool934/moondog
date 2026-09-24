@@ -34,6 +34,8 @@ const conditionalToolFields = {
   moondog_spotify_queue_add: { required: [], fields: ["track_ref_id", "uri", "device_id"] },
   moondog_spotify_playlist_read: { required: ["action"], fields: ["action", "limit", "offset", "playlist_ref_id"] },
   moondog_spotify_playlist_write: { required: ["name"], fields: ["name", "description", "track_refs", "pending_plan"] },
+  moondog_spotify_device_transfer: { required: [], fields: ["device_name", "device_id", "play"] },
+  moondog_spotify_devices: { required: [], fields: [] },
 };
 const schemaProviders = [
   ...providers,
@@ -391,6 +393,24 @@ test("production Spotify tools retain conditional validation before execution", 
     moondog_spotify_playlist_write: {
       valid: [{ name: "Fixture", track_refs: [{ track_ref_id: "fixture-track" }] }, { name: "Fixture", pending_plan: true }],
       invalid: [{ name: "Fixture" }, { name: "Fixture", track_refs: [] }, { name: "Fixture", pending_plan: false }, { name: "Fixture", pending_plan: true, track_refs: [{ track_ref_id: "fixture-track" }] }],
+    },
+    moondog_spotify_device_transfer: {
+      valid: [
+        { device_name: "iPhone" },
+        { device_name: "Living Room", play: true },
+        { device_id: "fixture-device", play: false },
+      ],
+      invalid: [
+        {},
+        { play: true },
+        { device_name: "iPhone", device_id: "fixture-device" },
+        { device_name: "" },
+        { device_id: "" },
+      ],
+    },
+    moondog_spotify_devices: {
+      valid: [{}],
+      invalid: [{ device_id: "fixture-device" }],
     },
   };
   for (const [name, { valid, invalid }] of Object.entries(cases)) {

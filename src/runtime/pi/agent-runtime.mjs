@@ -2991,7 +2991,42 @@ function projectSpotifyReceipt(value) {
       is_public: value.playlist.is_public === true,
     };
   }
+  if (isPlainObject(value.device)) {
+    result.device = {
+      name: cleanOutputText(value.device.name, 128, "spotify_device_name"),
+      type: cleanOutputText(value.device.type, 64, "spotify_device_type"),
+    };
+  }
   return result;
+}
+
+function projectSpotifyDevices(value) {
+  if (
+    !isPlainObject(value) ||
+    value.provider !== "spotify" ||
+    !Array.isArray(value.devices)
+  ) {
+    throw new Error("domain_result_invalid:spotify_devices");
+  }
+  return {
+    provider: "spotify",
+    devices: value.devices.slice(0, 20).map((device) => {
+      if (!isPlainObject(device)) {
+        throw new Error("domain_result_invalid:spotify_device");
+      }
+      return {
+        name: cleanOutputText(device.name, 128, "spotify_device_name"),
+        type: cleanOutputText(
+          device.type ?? "unknown",
+          64,
+          "spotify_device_type",
+        ),
+        is_active: device.is_active === true,
+        is_restricted: device.is_restricted === true,
+      };
+    }),
+    truncated: value.truncated === true,
+  };
 }
 
 function projectSpotifyResolutions(value) {
@@ -4848,25 +4883,51 @@ function createToolFactories(
       }),
     ],
     [
+      "spotify.device.list",
+      (descriptor) => ({
+        name: descriptor.tool_name,
+        label: descriptor.label,
+        description:
+          "List Spotify Connect devices visible right now. Each entry has a name, a type, and whether it is active or restricted. Device identifiers are withheld. Use this when the user asks which devices are connected.",
+        parameters: emptyParameters,
+        executionMode: "parallel",
+        execute: executeDomain(
+          async () => application.spotifyDevices(),
+          projectSpotifyDevices,
+        ),
+      }),
+    ],
+    [
       "spotify.device.transfer",
       (descriptor) => ({
         name: descriptor.tool_name,
         label: descriptor.label,
         description:
-          "Transfer Spotify playback to a device ID explicitly supplied by the user or host UI.",
-        parameters: Type.Object(
-          {
-            device_id: Type.String({ minLength: 1, maxLength: 256 }),
-            play: Type.Optional(Type.Boolean()),
-          },
-          { additionalProperties: false },
-        ),
+          "Move Spotify playback to a device the user named in ordinary words, such as iPhone, computer, or a speaker name. Pass that short device_name. The host matches a live Connect device and returns the chosen name. Set play to true when the music should continue there. Pass device_id only when the user pasted that exact ID. Never invent a device ID, and do not ask the user for one.",
+        parameters: Type.Union([
+          Type.Object(
+            {
+              device_name: Type.String({ minLength: 1, maxLength: 128 }),
+              play: Type.Optional(Type.Boolean()),
+            },
+            { additionalProperties: false },
+          ),
+          Type.Object(
+            {
+              device_id: Type.String({ minLength: 1, maxLength: 256 }),
+              play: Type.Optional(Type.Boolean()),
+            },
+            { additionalProperties: false },
+          ),
+        ]),
         executionMode: "sequential",
         execute: executeDomain(
           async (_toolCallId, parameters) =>
             application.spotifyTransfer({
-              deviceId: parameters.device_id,
-              play: parameters.play,
+              ...(parameters.device_id
+                ? { deviceId: parameters.device_id }
+                : { deviceName: parameters.device_name }),
+              play: parameters.play ?? true,
             }),
           projectSpotifyReceipt,
         ),
@@ -5283,10 +5344,12 @@ Spotify control and catalog rules:
 - When pending_spotify_playlist_edit.confirmable is true and the user explicitly approves that exact preview in a later prompt with yes, 可以, 就这个, 保存它, or equivalent wording, call moondog_spotify_playlist_edit_apply with no arguments. Do not list, inspect, resolve, re-plan, or reconstruct the item order again.
 - If the user asks to revise a pending existing-playlist preview, inspect the live playlist again and produce a new preview. Never infer or mutate the host-retained draft from prose alone.
 - Existing-playlist edits are full exact replacements guarded by a snapshot preflight. If Spotify reports that the playlist changed, do not retry. Tell the user to inspect and preview the latest version again.
-- Call other Spotify write tools only for a direct user request to control playback, save library items, add an explicit URI, or transfer to an explicit device ID.
+- Call other Spotify write tools only for a direct user request to control playback, save library items, add an explicit URI, or move playback onto a device the user named.
+- When the user asks to play on, switch to, or move playback to a device in ordinary words, such as iPhone, computer, or a speaker name, call moondog_spotify_device_transfer once with that short device_name and play set to true. The host matches a live Spotify Connect device. Do not ask the user to paste a device ID, and do not invent one.
+- If the transfer result names the device, confirm that name. If several devices match, or none do, tell the user the visible names from the tool result and ask which one, or ask them to open Spotify on that device. Use moondog_spotify_devices only when they ask what is connected, or when you need those names after a failed match.
 - Execute each requested state-changing action once. Never automatically retry next, previous, queue additions, or device transfers.
 - Before queueing, playing, saving, or writing a trusted candidate to Spotify, resolve it with moondog_spotify_resolve_tracks. Resolution is a deterministic host-side match; report match quality honestly and exclude unresolved tracks from Spotify actions.
-- Never invent Spotify URIs, track IDs, playlist IDs, playlist links, snapshot IDs, or device IDs. Use only opaque playlist_ref_id and playlist_item_ref_id values returned in the current prompt, and track_ref_id values from current trusted candidates and resolutions. URIs the user explicitly provided may be used only where a registered tool explicitly accepts them.
+- Never invent Spotify URIs, track IDs, playlist IDs, playlist links, snapshot IDs, or device IDs. Pass device_id only when the user pasted that exact ID. Otherwise pass device_name. Use only opaque playlist_ref_id and playlist_item_ref_id values returned in the current prompt, and track_ref_id values from current trusted candidates and resolutions. URIs the user explicitly provided may be used only where a registered tool explicitly accepts them.
 - moondog_spotify_playlist_write and moondog_spotify_library_save are for explicit user requests only. A playlist write must use the exact order from this prompt's validated moondog_playlist_plan, and playlists are always created private.
 - Spotify provider IDs, URIs, account details, device details, and live playback metadata must not enter profile or generic memory. Sanitized imported listening evidence may contribute only through the bounded Profile pipeline.
 

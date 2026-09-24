@@ -19,6 +19,7 @@ import {
   DomainServiceError,
 } from "../../src/core/synthetic-domain-services.mjs";
 import { openLocalMemoryStore } from "../../src/memory/local-memory-store.mjs";
+import { createSpotifyService } from "../../src/integrations/spotify/service.mjs";
 import { PiAgentRuntime } from "../../src/runtime/pi/agent-runtime.mjs";
 import { OfflineAgentRuntime } from "../../src/runtime/pi/configured-runtime.mjs";
 
@@ -786,6 +787,95 @@ test("Pi adapter exposes metadata-free Spotify status and one-shot controls when
   assert.equal(result.text, "Paused Spotify.");
   assert.equal(runtime.publicStatus().external_effects, "spotify_control");
   assert.deepEqual(calls, [{}]);
+});
+
+test("Pi adapter moves Spotify playback onto a named device without revealing its id", async () => {
+  const calls = [];
+  const service = createSpotifyService({
+    client: {
+      async getDevices() {
+        calls.push("devices");
+        return {
+          provider: "spotify",
+          devices: [
+            {
+              id: "SECRET_DEVICE_ID",
+              name: "Everett's iPhone",
+              type: "Smartphone",
+              is_active: false,
+              is_restricted: false,
+            },
+            {
+              id: "SECRET_COMPUTER_ID",
+              name: "Studio Mac",
+              type: "Computer",
+              is_active: true,
+              is_restricted: false,
+            },
+          ],
+        };
+      },
+      async transfer(input) {
+        calls.push(["transfer", input]);
+      },
+    },
+  });
+  const application = new MoondogApplication({
+    importsRoot: "/private/moondog-synthetic-missing-source",
+    spotifyConnection: {
+      ready: () => true,
+      publicStatus: () => ({
+        provider: "spotify",
+        state: "ready",
+        external_effects: "spotify_control",
+      }),
+      service,
+    },
+  });
+  const { faux, runtime } = configuredRuntime(application);
+  faux.setResponses([
+    fauxAssistantMessage(
+      [fauxToolCall("moondog_spotify_devices", {})],
+      { stopReason: "toolUse" },
+    ),
+    (context) => {
+      const [listed] = toolResults(context, "moondog_spotify_devices");
+      assert.equal(JSON.stringify(listed).includes("SECRET_"), false);
+      assert.deepEqual(
+        listed.devices.map((device) => device.name),
+        ["Everett's iPhone", "Studio Mac"],
+      );
+      return fauxAssistantMessage(
+        [fauxToolCall("moondog_spotify_device_transfer", { device_name: "iPhone" })],
+        { stopReason: "toolUse" },
+      );
+    },
+    (context) => {
+      const [receipt] = toolResults(context, "moondog_spotify_device_transfer");
+      assert.equal(JSON.stringify(receipt).includes("SECRET_"), false);
+      assert.deepEqual(receipt.device, {
+        name: "Everett's iPhone",
+        type: "Smartphone",
+      });
+      return fauxAssistantMessage([fauxText("Playing on your iPhone.")]);
+    },
+  ]);
+
+  const result = await runtime.prompt("Switch it to Spotify on my iPhone.");
+  const transferTool = runtime.agent.state.tools.find(
+    (tool) => tool.name === "moondog_spotify_device_transfer",
+  );
+
+  assert.equal(result.text, "Playing on your iPhone.");
+  assert.match(transferTool.description, /device_name/);
+  assert.doesNotMatch(transferTool.description, /explicitly supplied/);
+  assert.match(runtime.agent.state.systemPrompt, /short device_name/);
+  assert.doesNotMatch(runtime.agent.state.systemPrompt, /explicit device ID/);
+  assert.deepEqual(calls, [
+    "devices",
+    "devices",
+    ["transfer", { deviceId: "SECRET_DEVICE_ID", play: true }],
+  ]);
 });
 
 test("offline runtime fails explicitly instead of pretending to converse", async () => {

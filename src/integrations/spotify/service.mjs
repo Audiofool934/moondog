@@ -13,6 +13,7 @@ export const SPOTIFY_SERVICE_LIMITS = Object.freeze({
   libraryTracksMax: 20,
   recentlyPlayedDefault: 20,
   recentlyPlayedMax: 50,
+  deviceNameLengthMax: 128,
 });
 
 const repeatStates = new Set(["off", "track", "context"]);
@@ -306,6 +307,241 @@ function actionReceipt(action) {
     action,
     state: "accepted",
   };
+}
+
+const DEVICE_QUERY_FILLER = new Set([
+  "a",
+  "an",
+  "the",
+  "my",
+  "your",
+  "on",
+  "onto",
+  "to",
+  "from",
+  "over",
+  "spotify",
+  "device",
+  "devices",
+  "playback",
+  "play",
+  "playing",
+  "switch",
+  "transfer",
+  "move",
+  "moving",
+  "it",
+  "this",
+  "that",
+  "please",
+  "rn",
+  "now",
+  "there",
+  "here",
+]);
+
+const DEVICE_TYPE_ALIASES = new Map([
+  ["iphone", "smartphone"],
+  ["phone", "smartphone"],
+  ["smartphone", "smartphone"],
+  ["android", "smartphone"],
+  ["ipad", "tablet"],
+  ["tablet", "tablet"],
+  ["computer", "computer"],
+  ["desktop", "computer"],
+  ["laptop", "computer"],
+  ["mac", "computer"],
+  ["pc", "computer"],
+  ["speaker", "speaker"],
+  ["tv", "tv"],
+  ["television", "tv"],
+  ["car", "automobile"],
+  ["automobile", "automobile"],
+]);
+
+function clipText(value, maximum) {
+  const chars = Array.from(value);
+  if (chars.length <= maximum) return value;
+  return `${chars.slice(0, maximum).join("")}...`;
+}
+
+function normalizeDeviceLabel(value) {
+  return value
+    .toLocaleLowerCase("en-US")
+    .replace(/[\u2018\u2019\u201a\u201b\u2032\u02bc']/gu, "")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim()
+    .replace(/ +/gu, " ");
+}
+
+function deviceTokens(value) {
+  return value.split(" ").filter(Boolean);
+}
+
+function deviceQuery(value) {
+  if (typeof value !== "string") {
+    fail("invalid_device_query", "The Spotify device name is invalid.");
+  }
+  const trimmed = value.trim();
+  if (
+    !trimmed ||
+    Array.from(trimmed).length > SPOTIFY_SERVICE_LIMITS.deviceNameLengthMax
+  ) {
+    fail("invalid_device_query", "The Spotify device name is invalid.");
+  }
+  const normalized = normalizeDeviceLabel(trimmed);
+  if (!normalized) {
+    fail("invalid_device_query", "The Spotify device name is invalid.");
+  }
+  return { display: trimmed, normalized };
+}
+
+function meaningfulTokens(normalized) {
+  const tokens = deviceTokens(normalized).filter(
+    (token) => !DEVICE_QUERY_FILLER.has(token),
+  );
+  return tokens.length > 0 ? tokens : deviceTokens(normalized);
+}
+
+function tokenIsSpecific(token) {
+  return token.length >= 3 || /[^\u0000-\u007f]/u.test(token);
+}
+
+function tokenMatches(nameToken, queryToken) {
+  if (nameToken === queryToken) return true;
+  if (queryToken.length < 3) return false;
+  return nameToken.startsWith(queryToken) || nameToken.endsWith(queryToken);
+}
+
+function nameMatchScore(device, queryNormalized, tokens) {
+  const name = normalizeDeviceLabel(device.name ?? "");
+  if (!name) return 0;
+  if (name === queryNormalized) return 3;
+  const nameTokens = deviceTokens(name);
+  const matched =
+    tokens.length > 0 &&
+    tokens.every(
+      (token) =>
+        tokenIsSpecific(token) &&
+        nameTokens.some((nameToken) => tokenMatches(nameToken, token)),
+    );
+  return matched ? 2 : 0;
+}
+
+function sharedTypeAlias(tokens) {
+  let type = null;
+  if (tokens.length === 0) return null;
+  for (const token of tokens) {
+    const alias = DEVICE_TYPE_ALIASES.get(token);
+    if (!alias || (type && alias !== type)) return null;
+    type = alias;
+  }
+  return type;
+}
+
+function deviceListLabel(device) {
+  const details = [];
+  if (device.type && device.type !== "unknown") details.push(device.type);
+  if (device.is_active === true) details.push("active");
+  if (device.is_restricted === true) details.push("restricted");
+  const name = clipText(device.name, 48);
+  return details.length > 0 ? `${name} (${details.join(", ")})` : name;
+}
+
+function fitDeviceMessage(lead, devices, tail) {
+  const labels = [];
+  for (const device of devices) {
+    const candidate = `${lead}${[...labels, deviceListLabel(device)].join("; ")}${tail}`;
+    if (Array.from(candidate).length > 220 && labels.length > 0) break;
+    labels.push(deviceListLabel(device));
+  }
+  const hidden = devices.length - labels.length;
+  const hiddenNote = hidden > 0 ? ` +${hidden} more` : "";
+  const message = `${lead}${labels.join("; ")}${hiddenNote}${tail}`;
+  return Array.from(message).length > 240
+    ? Array.from(message).slice(0, 240).join("")
+    : message;
+}
+
+function listedDevices(result) {
+  return (Array.isArray(result?.devices) ? result.devices : []).filter(
+    (device) =>
+      typeof device?.id === "string" &&
+      device.id.length > 0 &&
+      typeof device?.name === "string" &&
+      device.name.trim().length > 0,
+  );
+}
+
+function requireTransferDevice(chosen, display) {
+  if (chosen.length === 1 && chosen[0].is_restricted === true) {
+    fail(
+      "spotify_device_restricted",
+      `Spotify will not take playback on ${clipText(chosen[0].name, 80)}. Leave its private session, or pick another device.`,
+    );
+  }
+  const controllable = chosen.filter((device) => device.is_restricted !== true);
+  if (controllable.length === 1 && chosen.length === 1) return controllable[0];
+  if (controllable.length === 0) {
+    fail(
+      "spotify_device_restricted",
+      fitDeviceMessage(
+        "Spotify will not take playback on the matching devices: ",
+        chosen,
+        ".",
+      ),
+    );
+  }
+  fail(
+    "spotify_device_ambiguous",
+    fitDeviceMessage(
+      `Several Spotify devices match "${display}": `,
+      chosen,
+      ". Say which one.",
+    ),
+  );
+}
+
+async function resolveNamedDevice(client, deviceName) {
+  const query = deviceQuery(deviceName);
+  const devices = listedDevices(await client.getDevices());
+  if (devices.length === 0) {
+    fail(
+      "spotify_device_not_found",
+      "No Spotify devices are visible. Open Spotify on that device and try again.",
+    );
+  }
+  const tokens = meaningfulTokens(query.normalized);
+  let bestScore = 0;
+  let named = [];
+  for (const device of devices) {
+    const score = nameMatchScore(device, query.normalized, tokens);
+    if (score === 0 || score < bestScore) continue;
+    if (score > bestScore) {
+      bestScore = score;
+      named = [device];
+    } else {
+      named.push(device);
+    }
+  }
+  const type = named.length === 0 ? sharedTypeAlias(tokens) : null;
+  const chosen = named.length > 0
+    ? named
+    : devices.filter(
+        (device) => (device.type ?? "").toLocaleLowerCase("en-US") === type,
+      );
+  if (chosen.length === 0) {
+    fail(
+      "spotify_device_not_found",
+      fitDeviceMessage(
+        `No Spotify device matches "${clipText(query.display, 40)}". Visible now: `,
+        devices,
+        ".",
+      ),
+    );
+  }
+  const display = clipText(query.display, 40);
+  return requireTransferDevice(chosen, display);
 }
 
 async function queueDeviceId(client, requestedDeviceId) {
@@ -607,15 +843,35 @@ export function createSpotifyService(options = {}) {
 
     async transfer(value) {
       const input = inputObject(value);
-      const deviceId = optionalDeviceId(input.deviceId);
-      if (!deviceId) {
-        fail("invalid_device_id", "A Spotify device identifier is required.");
-      }
       if (input.play !== undefined && typeof input.play !== "boolean") {
         fail("invalid_play_state", "Spotify transfer play state must be a boolean.");
       }
-      await client.transfer({ deviceId, play: input.play ?? false });
-      return actionReceipt("playback.transfer");
+      const deviceId =
+        input.deviceId === undefined ? undefined : optionalDeviceId(input.deviceId);
+      const hasName = input.deviceName !== undefined;
+      if (deviceId && hasName) {
+        fail(
+          "conflicting_device_target",
+          "Pass either a Spotify device ID or a device name.",
+        );
+      }
+      const play = input.play ?? false;
+      if (deviceId) {
+        await client.transfer({ deviceId, play });
+        return actionReceipt("playback.transfer");
+      }
+      if (!hasName) {
+        fail("invalid_device_id", "A Spotify device identifier is required.");
+      }
+      const device = await resolveNamedDevice(client, input.deviceName);
+      await client.transfer({ deviceId: device.id, play });
+      return {
+        ...actionReceipt("playback.transfer"),
+        device: {
+          name: device.name,
+          type: device.type || "unknown",
+        },
+      };
     },
 
     async addToQueue(value) {

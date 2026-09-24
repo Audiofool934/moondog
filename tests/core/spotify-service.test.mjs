@@ -712,3 +712,162 @@ test("Spotify service saves and checks library tracks with bounded inputs", asyn
     code: "invalid_library_tracks",
   });
 });
+
+function connectDevice(id, name, type, extras = {}) {
+  return {
+    id,
+    name,
+    type,
+    is_active: false,
+    is_restricted: false,
+    ...extras,
+  };
+}
+
+function deviceClient(devices) {
+  const calls = [];
+  const client = {
+    async getDevices() {
+      calls.push({ method: "getDevices" });
+      return { provider: "spotify", devices };
+    },
+    async transfer(input) {
+      calls.push({ method: "transfer", input });
+    },
+  };
+  return { client, calls };
+}
+
+test("Spotify transfer matches an iPhone by name and keeps the device id out of the receipt", async () => {
+  const fixture = deviceClient([
+    connectDevice("SECRET_PHONE_ID", "Everett’s iPhone", "Smartphone"),
+    connectDevice("SECRET_COMPUTER_ID", "Studio Mac", "Computer", { is_active: true }),
+  ]);
+  const service = createSpotifyService({ client: fixture.client });
+
+  const receipt = await service.transfer({
+    deviceName: "switch it to spotify on iphone rn",
+    play: true,
+  });
+
+  assert.deepEqual(receipt, {
+    provider: "spotify",
+    ok: true,
+    effect: "write_external",
+    action: "playback.transfer",
+    state: "accepted",
+    device: { name: "Everett’s iPhone", type: "Smartphone" },
+  });
+  assert.equal(JSON.stringify(receipt).includes("SECRET_"), false);
+  assert.deepEqual(fixture.calls, [
+    { method: "getDevices" },
+    { method: "transfer", input: { deviceId: "SECRET_PHONE_ID", play: true } },
+  ]);
+});
+
+test("Spotify transfer prefers the exact device name over a partial one", async () => {
+  const fixture = deviceClient([
+    connectDevice("work-phone", "Work iPhone", "Smartphone"),
+    connectDevice("exact-phone", "iPhone", "Smartphone"),
+  ]);
+  const service = createSpotifyService({ client: fixture.client });
+
+  const receipt = await service.transfer({ deviceName: "iPhone", play: true });
+
+  assert.equal(receipt.device.name, "iPhone");
+  assert.equal(fixture.calls.at(-1).input.deviceId, "exact-phone");
+});
+
+test("Spotify transfer uses the only phone when its name does not say iPhone", async () => {
+  const fixture = deviceClient([
+    connectDevice("pixel", "Pocket", "Smartphone"),
+    connectDevice("desk", "Studio Mac", "Computer"),
+  ]);
+  const service = createSpotifyService({ client: fixture.client });
+
+  const receipt = await service.transfer({ deviceName: "iphone" });
+
+  assert.deepEqual(receipt.device, { name: "Pocket", type: "Smartphone" });
+  assert.equal(fixture.calls.at(-1).input.deviceId, "pixel");
+  assert.equal(fixture.calls.at(-1).input.play, false);
+});
+
+test("Spotify transfer asks which device when several names match", async () => {
+  const fixture = deviceClient([
+    connectDevice("phone-a", "Everett's iPhone", "Smartphone"),
+    connectDevice("phone-b", "Work iPhone", "Smartphone"),
+  ]);
+  const service = createSpotifyService({ client: fixture.client });
+
+  await assert.rejects(service.transfer({ deviceName: "iPhone", play: true }), {
+    code: "spotify_device_ambiguous",
+    message:
+      'Several Spotify devices match "iPhone": Everett\'s iPhone (Smartphone); Work iPhone (Smartphone). Say which one.',
+  });
+  assert.deepEqual(fixture.calls, [{ method: "getDevices" }]);
+});
+
+test("Spotify transfer names the visible devices when nothing matches", async () => {
+  const fixture = deviceClient([
+    connectDevice("SECRET_PHONE_ID", "Everett's iPhone", "Smartphone", { is_active: true }),
+    connectDevice("SECRET_COMPUTER_ID", "Studio Mac", "Computer"),
+  ]);
+  const service = createSpotifyService({ client: fixture.client });
+
+  await assert.rejects(
+    service.transfer({ deviceName: "kitchen" }),
+    (error) => {
+      assert.equal(error.code, "spotify_device_not_found");
+      assert.equal(
+        error.message,
+        'No Spotify device matches "kitchen". Visible now: Everett\'s iPhone (Smartphone, active); Studio Mac (Computer).',
+      );
+      assert.equal(error.message.includes("SECRET_"), false);
+      return true;
+    },
+  );
+});
+
+test("Spotify transfer reports when no devices are visible", async () => {
+  const fixture = deviceClient([]);
+  const service = createSpotifyService({ client: fixture.client });
+
+  await assert.rejects(service.transfer({ deviceName: "iPhone" }), {
+    code: "spotify_device_not_found",
+    message: "No Spotify devices are visible. Open Spotify on that device and try again.",
+  });
+  assert.deepEqual(fixture.calls, [{ method: "getDevices" }]);
+});
+
+test("Spotify transfer refuses a matching device that will not accept playback", async () => {
+  const fixture = deviceClient([
+    connectDevice("SECRET_PHONE_ID", "Everett's iPhone", "Smartphone", {
+      is_restricted: true,
+    }),
+  ]);
+  const service = createSpotifyService({ client: fixture.client });
+
+  await assert.rejects(service.transfer({ deviceName: "iPhone" }), {
+    code: "spotify_device_restricted",
+    message:
+      "Spotify will not take playback on Everett's iPhone. Leave its private session, or pick another device.",
+  });
+  assert.deepEqual(fixture.calls, [{ method: "getDevices" }]);
+});
+
+test("Spotify transfer rejects a device name and a device id together", async () => {
+  const fixture = deviceClient([]);
+  const service = createSpotifyService({ client: fixture.client });
+
+  await assert.rejects(
+    service.transfer({ deviceId: "phone", deviceName: "iPhone" }),
+    { code: "conflicting_device_target" },
+  );
+  await assert.rejects(service.transfer({ deviceName: "   " }), {
+    code: "invalid_device_query",
+  });
+  await assert.rejects(service.transfer({ deviceName: "iPhone", play: "yes" }), {
+    code: "invalid_play_state",
+  });
+  assert.deepEqual(fixture.calls, []);
+});

@@ -677,6 +677,10 @@ export class MoondogApplication {
     return this.requireSpotifyService().addToQueue(input);
   }
 
+  spotifyDevices() {
+    return this.requireSpotifyService().devices();
+  }
+
   spotifyTransfer(input) {
     return this.requireSpotifyService().transfer(input);
   }
