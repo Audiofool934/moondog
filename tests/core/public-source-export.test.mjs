@@ -118,7 +118,7 @@ test("public-source command creates an exact private snapshot and relative audit
     const manifestText = await readFile(path.join(outputPath, "manifest.json"), "utf8");
     const manifest = JSON.parse(manifestText);
     assert.equal(manifest.schema, "moondog.public-source-snapshot.v1");
-    assert.equal(manifest.package.name, "@ruc-aimusic-lab/moondog");
+    assert.equal(manifest.package.name, "@audiofool/moondog");
     assert.equal(manifest.source_root, "source");
     assert.deepEqual(manifest.verification, {
       source_release_tree: "passed",

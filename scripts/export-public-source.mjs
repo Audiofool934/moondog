@@ -154,7 +154,7 @@ export async function exportPublicSource({ outputPath }) {
       await readFile(path.join(sourceRoot, "package.json"), "utf8"),
     );
     assert(
-      packageMetadata.name === "@ruc-aimusic-lab/moondog",
+      packageMetadata.name === "@audiofool/moondog",
       "snapshot package identity changed",
     );
     const releaseTree = await createReleaseTreeManifest({ sourceRoot, paths });

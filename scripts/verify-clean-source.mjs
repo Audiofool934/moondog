@@ -117,7 +117,7 @@ async function main() {
       paths,
     });
     const copiedPackage = JSON.parse(await readFile(path.join(sourceRoot, "package.json"), "utf8"));
-    assert(copiedPackage.name === "@ruc-aimusic-lab/moondog", "snapshot package identity changed");
+    assert(copiedPackage.name === "@audiofool/moondog", "snapshot package identity changed");
     await run(
       process.execPath,
       [path.join(sourceRoot, "scripts", "verify-release-tree.mjs")],

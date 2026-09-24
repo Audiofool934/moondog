@@ -145,7 +145,7 @@ function isAllowedPackagePath(filePath) {
 
 function validatePackManifest(pack) {
   assert(pack && typeof pack === "object", "npm pack returned no package record.");
-  assert(pack.name === "@ruc-aimusic-lab/moondog", "npm pack returned the wrong package name.");
+  assert(pack.name === "@audiofool/moondog", "npm pack returned the wrong package name.");
   assert(Number.isInteger(pack.size) && pack.size <= maximumPackedBytes, "The packed Moondog package is unexpectedly large.");
   assert(
     Number.isInteger(pack.unpackedSize) && pack.unpackedSize <= maximumUnpackedBytes,
@@ -453,7 +453,7 @@ async function verifyInstalledPackage({ consumerRoot, tarballPath }) {
   const installedRoot = path.join(
     consumerRoot,
     "node_modules",
-    "@ruc-aimusic-lab",
+    "@audiofool",
     "moondog",
   );
   const installedPackage = JSON.parse(

@@ -1,9 +1,9 @@
 {
-  "name": "@ruc-aimusic-lab/moondog",
+  "name": "@audiofool/moondog",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Local-first personal AI music agent from RUC AI Music Lab.",
+  "description": "Local-first personal AI music agent.",
   "keywords": [
     "ai-agent",
     "listenbrainz",
