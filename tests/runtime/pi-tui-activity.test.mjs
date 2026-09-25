@@ -105,10 +105,12 @@ test("overlapping calls retain the active identity and leave one compact outcome
   callbacks.onToolStart(first);
   callbacks.onToolStart(second);
   await until(() => fixture.footer().includes("2 running"));
+  await until(() => fixture.body().includes("Search your music library") && fixture.body().includes("Read public music sources"));
   fixture.send("keep it mostly instrumental");
   callbacks.onToolEnd({ ...first, isError: true });
   await until(() => fixture.footer().includes(second.label));
   assert.doesNotMatch(fixture.footer(), /Search your music library/);
+  assert.match(fixture.body(), /Search your music library/);
   assert.match(fixture.body(), /keep it mostly instrumental/);
   fixture.terminal.columns = 40;
   fixture.terminal.resize();
@@ -118,13 +120,16 @@ test("overlapping calls retain the active identity and leave one compact outcome
   callbacks.onTextDelta("A grounded result.");
   gate.resolve({ status: "completed", text: "A grounded result." });
   await until(() => fixture.footer().includes("Ready."));
-  assert.match(fixture.body(), /Tools · 1 done, 1 failed/);
+  assert.match(fixture.body(), /1 done, 1 didn't work/);
   assert.doesNotMatch(fixture.body(), /PRIVATE_TOOL/);
-  assert.equal(fixture.lines.filter((line) => line.includes("Tools ·")).length, 1);
+  assert.equal(fixture.lines.filter((line) => line.includes("1 didn't work")).length, 1);
+  assert.ok(fixture.lines.every((line) => visibleWidth(line) === 40));
   fixture.terminal.columns = 100;
   fixture.terminal.resize();
   await until(() => fixture.lines.every((line) => visibleWidth(line) === 100) && fixture.body().includes("keep it mostly instrumental"));
   assert.match(fixture.body(), /Search your music library/);
+  assert.match(fixture.lines[0], /Find a few related records/);
+  assert.doesNotMatch(fixture.lines[0], /your listening room/);
 });
 
 test("cancel during tools is idempotent and does not label unconfirmed work successful", async (context) => {
@@ -147,8 +152,8 @@ test("cancel during tools is idempotent and does not label unconfirmed work succ
   callbacks.onToolEnd({ toolCallId: "one", label: "Search your music library", isError: false });
   gate.resolve({ status: "aborted", text: "" });
   await until(() => fixture.footer().includes("Cancelled."));
-  assert.match(fixture.body(), /Tools · 1 done, 1 unfinished/);
-  assert.doesNotMatch(fixture.body(), /2 completed/);
+  assert.match(fixture.body(), /1 done, 1 not confirmed/);
+  assert.doesNotMatch(fixture.body(), /2 done/);
 });
 
 test("elapsed work stays readable without animation and stops rendering after shutdown", async (context) => {

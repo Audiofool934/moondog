@@ -32,6 +32,7 @@ import { HistoryImportView } from "./history-import-view.mjs";
 import { IMPORT_GUIDE_URLS } from "./import-guides.mjs";
 import { withCommandCompletions } from "./command-completions.mjs";
 import {
+  AgentWork,
   BrandSurface,
   ListeningEditor,
   ListeningHeader,
@@ -218,6 +219,7 @@ export async function runMoondogTui({
   if (theme.plain) tui.setShowHardwareCursor(true);
   const transcript = new Container();
   let homeVisible = true;
+  let conversationTitle = "";
   let profileView = null;
   let importView = null;
   let importPage = "start";
@@ -325,6 +327,7 @@ export async function runMoondogTui({
     provider: runtimeStatus.provider,
     model: runtimeStatus.model,
     spotifyReady: application.spotifyReady?.() ?? false,
+    place: homeVisible ? "" : conversationTitle,
   }));
   const renderHeader = () => { header.invalidate(); tui.requestRender(); };
   const synchronizeHomeMotion = () => {
@@ -484,6 +487,8 @@ export async function runMoondogTui({
     });
   };
   const addUserMessage = (text) => {
+    const title = text.replace(/\s+/gu, " ").trim();
+    if (!conversationTitle && title) conversationTitle = Array.from(title).slice(0, 160).join("");
     addLabel("You");
     transcript.addChild(new Text(text, 1, 1));
   };
@@ -1259,6 +1264,7 @@ export async function runMoondogTui({
       return;
     }
     storeRecall();
+    conversationTitle = "";
     application.resumeSession(selected.value);
     if (!recallBySession.has(selected.value)) {
       recallBySession.set(selected.value, recallFromTurns());
@@ -1274,8 +1280,12 @@ export async function runMoondogTui({
       if (turn.role === "user") addUserMessage(sanitizeTerminalText(turn.text));
       if (turn.role === "assistant") addMoondogMessage(turn.text);
     }
-    const title = selected.label ?? turns.find((turn) => turn.role === "user")?.text ?? "Saved conversation";
-    setFooter(`Back in: ${title.replace(/\s+/gu, " ")}`, green);
+    const savedTitle = selected.label ? undefined
+      : application.listSavedSessions({ limit: 200 }).find((session) => session.session_id === selected.value)?.title;
+    const title = selected.label ?? savedTitle ?? turns.find((turn) => turn.role === "user")?.text ?? "Saved conversation";
+    const resumed = String(title).replace(/\s+/gu, " ").trim();
+    if (resumed && resumed !== "Saved conversation") conversationTitle = Array.from(resumed).slice(0, 160).join("");
+    setFooter(`Back in: ${resumed || "Saved conversation"}`, green);
     tui.requestRender(true);
   };
 
@@ -1456,6 +1466,7 @@ export async function runMoondogTui({
       installRecall(sessionId(), []);
       activeRuntime.reset();
       profileDiscoveryDraft = null;
+      conversationTitle = "";
       transcript.clear();
       homeVisible = true;
       homeFocused = false;
@@ -1552,9 +1563,9 @@ export async function runMoondogTui({
     }
     // Retain the binding for history recall, only while its exact metadata is visible.
     if (!profileSeed) profileDiscoveryDraft = null;
-    enterConversation();
     editor.addToHistory(value);
     addUserMessage(value);
+    enterConversation();
     if (runtimeStatus.state !== "configured") {
       addMoondogMessage(offlineReply(runtimeStatus));
       return;
@@ -1565,6 +1576,8 @@ export async function runMoondogTui({
     setFooter("Thinking...", yellow);
     transcriptScroll.scrollToEnd();
     addLabel("Moondog");
+    const work = new AgentWork(getTheme, () => phase);
+    transcript.addChild(work);
     const response = new Markdown("", 1, 1, markdownTheme, textStyle);
     transcript.addChild(response);
     let streamedText = "";
@@ -1579,7 +1592,11 @@ export async function runMoondogTui({
         ? [...toolCalls].find(([, call]) => call.state === "running" && call.label === label)?.[0]
         : undefined) ?? `label-${++legacyToolId}`;
       toolCalls.set(key, { label, state });
-      if (cancellationRequested) return;
+      work.note(key, label, state);
+      if (cancellationRequested) {
+        tui.requestRender();
+        return;
+      }
       const pending = [...toolCalls.values()].filter((call) => call.state === "running");
       if (pending.length) {
         setFooter(pending.length > 1 ? `${pending.length} running · ${pending[0].label}` : `${pending[0].label}...`, yellow);
@@ -1593,6 +1610,7 @@ export async function runMoondogTui({
         ...(profileSeed ? { profileSeed } : {}),
         onTextDelta: (delta) => {
           if (cleanedUp) return;
+          work.quiet();
           streamedText += sanitizeTerminalText(delta);
           response.setText(streamedText);
           tui.requestRender();
@@ -1600,6 +1618,7 @@ export async function runMoondogTui({
         onTextReplace: (replacement) => {
           if (cleanedUp) return;
           streamedText = sanitizeTerminalText(replacement);
+          if (streamedText.trim()) work.quiet();
           response.setText(streamedText);
           tui.requestRender();
         },
@@ -1637,21 +1656,7 @@ export async function runMoondogTui({
           : "Lost the model. ↑ brings your message back."
         : "The model couldn't answer.", red);
     } finally {
-      if (toolCalls.size && !cleanedUp) {
-        const calls = [...toolCalls.values()];
-        const counts = ["completed", "failed", "running"].flatMap((state) => {
-          const count = calls.filter((call) => call.state === state).length;
-          return count ? [`${count} ${{ completed: "done", failed: "failed", running: "unfinished" }[state]}`] : [];
-        });
-        const summary = `Tools · ${counts.join(", ")} · ${elapsedTime(workStartedAt)}`;
-        const labels = [...new Set(calls.map((call) => call.label))].join(" · ");
-        transcript.addChild({
-          invalidate() {},
-          render(width) {
-            return new Text(theme.faint(truncateToWidth(`${summary} · ${labels}`, Math.max(1, width - 2))), 1, 0).render(width);
-          },
-        });
-      }
+      if (!cleanedUp && work.calls.length) work.settle(elapsedTime(workStartedAt));
       setBusy(false);
       editor.disableSubmit = false;
       if (!cleanedUp) tui.requestRender();

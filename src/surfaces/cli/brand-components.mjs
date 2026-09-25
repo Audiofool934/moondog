@@ -1,4 +1,4 @@
-import { CURSOR_MARKER, Editor, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { CURSOR_MARKER, Editor, Text, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { stripVTControlCharacters } from "node:util";
 import { sanitizeTerminalText } from "./format-output.mjs";
 import { LOGO_MOTION_FRAMES, renderLunarRecord, renderMoondogWordmark } from "./terminal-art.mjs";
@@ -58,13 +58,19 @@ export class ListeningHeader {
   invalidate() {}
   render(width) {
     const theme = this.getTheme();
-    const { profileReady, modelReady, spotifyReady, provider, model } = this.getStatus();
-    const title = theme.bold("MOONDOG") + (width >= 46 ? theme.muted("  /  your listening room") : "");
+    const { profileReady, modelReady, spotifyReady, provider, model, place } = this.getStatus();
     const compact = width < 60;
     const clean = (value) => sanitizeTerminalText(stripVTControlCharacters(String(value ?? "")))
       .replace(/\s+/gu, " ").trim();
     const modelName = clean(model);
     const providerName = clean(provider);
+    const placeName = clean(place);
+    const lead = "  /  ";
+    const placeRoom = width - (1 + visibleWidth("MOONDOG") + visibleWidth(lead));
+    const suffix = placeName && placeRoom >= 12
+      ? theme.muted(lead + truncateToWidth(placeName, placeRoom, "…"))
+      : !placeName && width >= 46 ? theme.muted(`${lead}your listening room`) : "";
+    const title = theme.bold("MOONDOG") + suffix;
     const profileLabel = profileReady
       ? compact ? "profile ready" : "local profile"
       : compact ? "no history" : "bring your history";
@@ -85,6 +91,71 @@ export class ListeningHeader {
       paintBrandLine(` ${title}`, width, theme),
       paintBrandLine(` ${theme.faint(status)}`, width, theme),
     ];
+  }
+}
+
+/**
+ * Steps taken while answering. They stay on screen for this visit and are not saved.
+ */
+export class AgentWork {
+  constructor(getTheme, getPhase = () => 0) {
+    this.getTheme = getTheme;
+    this.getPhase = getPhase;
+    this.calls = [];
+    this.live = true;
+    this.settled = false;
+    this.elapsed = "";
+  }
+  invalidate() {}
+  note(key, label, state) {
+    const text = sanitizeTerminalText(label).replace(/\s+/gu, " ").trim() || "Music tool";
+    const existing = this.calls.find((call) => call.key === key);
+    if (existing) {
+      existing.label = text;
+      existing.state = state;
+    } else {
+      this.calls.push({ key, label: text, state });
+    }
+  }
+  quiet() {
+    this.live = false;
+  }
+  settle(elapsed) {
+    this.live = false;
+    this.settled = true;
+    this.elapsed = elapsed;
+  }
+  summary() {
+    const count = (state) => this.calls.filter((call) => call.state === state).length;
+    const parts = [];
+    const done = count("completed");
+    const failed = count("failed");
+    const open = count("running");
+    if (done) parts.push(`${done} done`);
+    if (failed) parts.push(`${failed} didn't work`);
+    if (open) parts.push(`${open} not confirmed`);
+    return [parts.join(", "), this.elapsed].filter(Boolean).join(" · ");
+  }
+  render(width) {
+    const theme = this.getTheme();
+    const line = (text, ink) => new Text(ink(text), 3, 0).render(width);
+    if (!this.calls.length) return this.live ? line("…", theme.faint) : [];
+    const phase = this.getPhase() % 4;
+    const liveMarks = ["·", "•", "·", "∙"];
+    const shown = this.calls.slice(-8);
+    const earlier = this.calls.length - shown.length;
+    const lines = earlier ? line(`· ${earlier} earlier`, theme.faint) : [];
+    lines.push(...shown.flatMap((call) => {
+      const settledOpen = this.settled && call.state === "running";
+      const mark = call.state === "failed" ? "×"
+        : call.state === "completed" ? "✓"
+        : settledOpen ? "·"
+        : liveMarks[phase];
+      const ink = call.state === "failed" ? theme.error : call.state === "completed" ? theme.muted : theme.faint;
+      return line(`${mark} ${call.label}`, ink);
+    }));
+    if (this.settled) lines.push(...line(this.summary(), theme.faint));
+    return lines;
   }
 }
 
@@ -148,7 +219,7 @@ export class ListeningEditor extends Editor {
         : theme.faint("─".repeat(width));
     }
     if (!busy && !this.getText() && lines.length === 3 && width >= 28) {
-      const hint = homeFocused ? "Esc returns to your next thought." : homeVisible ? "What have you been listening to?" : "Keep the conversation going...";
+      const hint = homeFocused ? "Esc returns to your next thought." : homeVisible ? "What have you been listening to?" : "A song, a playlist, or what to play next.";
       const text = truncateToWidth(hint, width - 2, "");
       lines[1] = " " + (this.focused ? CURSOR_MARKER + theme.inverse(text[0]) : theme.faint(text[0])) + theme.faint(text.slice(1));
     }
@@ -364,6 +435,7 @@ export function listeningHelp() {
 
 Just type to talk about music, ask for a playlist, or go exploring.
 To talk, Moondog needs a model: \`/auth\` signs you in, then \`/model\` picks one.
+While an answer is coming, each step shows in the conversation, and the footer names the one in progress.
 
 - \`/taste\` - your profile: open any song or artist to see why it's there
 - \`/taste report\` - the whole picture on one page

@@ -1178,14 +1178,14 @@ test("TUI renders trusted capability labels for tool lifecycle events", async ()
   terminal.send("plan from my library");
   terminal.send("\r");
   await promptCompleted;
-  await waitFor(() => stripVTControlCharacters(terminal.output).includes("Tools · 1 done, 1 failed"));
+  await waitFor(() => stripVTControlCharacters(terminal.output).includes("1 done, 1 didn't work"));
 
   assert.equal(replacementCallbackSeen, true);
   assert.match(terminal.output, /Search your music library\.\.\./);
   assert.match(terminal.output, /Putting it together/);
   assert.match(terminal.output, /Look at why it's in your profile\.\.\./);
   assert.match(terminal.output, /Look at why it's in your profile didn't work/);
-  assert.match(stripVTControlCharacters(terminal.output), /Tools · 1 done, 1 failed/);
+  assert.match(stripVTControlCharacters(terminal.output), /1 done, 1 didn't work/);
   assert.doesNotMatch(
     terminal.output,
     /PRIVATE_MACHINE_TOOL_NAME|PRIVATE_SECOND_TOOL_NAME/,

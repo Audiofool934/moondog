@@ -69,14 +69,17 @@ Command arguments complete as you type, including `/theme`, `/art`, `/motion`, `
 Use Tab or Enter to accept a partial suggestion; a fully typed legal command executes on the first Enter.
 File paths retain Pi's Tab completion and quoting behavior.
 The header identifies the current provider and model when configured, giving the model priority on narrow terminals.
+Once you leave the opening, it names the conversation from the first thing you asked.
 The listening room is one fixed screen.
 The header, your draft, and the status line stay in place while the conversation scrolls behind them.
 Page Up and Page Down move through that conversation, Home jumps to the beginning, and End returns to the latest line.
 The mouse wheel scrolls it too.
 
-During a model request, the footer tracks the active tool, concurrent tool count, and elapsed time.
-A short tool receipt remains below the answer in the current conversation, with completed, failed, or unconfirmed counts.
-Unconfirmed means a tool started without a completion event, including interrupted work; cancellation does not undo actions that already completed.
+During a model request, each step appears in the conversation as it starts.
+The footer names the step in progress, how many are running, and the elapsed time.
+When the answer arrives, those steps stay above it, with a count of what finished, what failed, and what was not confirmed.
+Not confirmed means a step started without a completion event, including interrupted work.
+Cancellation does not undo actions that already completed.
 These display receipts are not added to model context or restored with saved conversation history.
 You can keep editing your next thought while work runs.
 Ctrl+C cancels model and web requests; local commands that cannot be cancelled here show a waiting hint and finish their current step.
