@@ -76,8 +76,12 @@ Page Up and Page Down move through that conversation, Home jumps to the beginnin
 The mouse wheel scrolls it too.
 
 During a model request, each step appears in the conversation as it starts.
-The footer names the step in progress, how many are running, and the elapsed time.
+While that request runs, the status row says Thinking or names the step in progress, and it shows the elapsed time.
+The hint says the draft stays, and it offers cancel when the work can be stopped.
 When the answer arrives, those steps stay above it, with a count of what finished, what failed, and what was not confirmed.
+The status row then says that Up recalls this conversation.
+On a tall terminal the hint names send.
+The home explore hint stays on the opening.
 Not confirmed means a step started without a completion event, including interrupted work.
 Cancellation does not undo actions that already completed.
 These display receipts are not added to model context or restored with saved conversation history.

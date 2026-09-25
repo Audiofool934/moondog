@@ -90,46 +90,80 @@ test("a pending local command has truthful cancellation hints and keeps the draf
   assert.match(fixture.body(), /my next listening thought/);
 });
 
-test("overlapping calls retain the active identity and leave one compact outcome receipt", async (context) => {
+test("one prompt grows one reply, settles one count, and keeps the room fixed", async (context) => {
   const gate = deferred();
   let callbacks;
   const fixture = launch(context, { runtime: {
     async prompt(_value, received) { callbacks = received; return await gate.promise; },
     abort() { gate.resolve({ status: "aborted", text: "" }); },
   } });
+  const answer = "A grounded result.";
+  const statusRow = () => fixture.lines.at(-2) ?? "";
+  const hintRow = () => fixture.lines.at(-1) ?? "";
+  const countLine = (text) => fixture.lines.filter((line) => line.includes(text)).length;
   await until(() => fixture.body().includes("New conversation"));
   fixture.submit("Find a few related records");
   await until(() => callbacks);
+  await until(() => /Thinking\.\.\. · \d+s/.test(statusRow()));
+  assert.match(hintRow(), /draft stays here/);
+  assert.match(hintRow(), /ctrl\+c cancel/);
+  assert.doesNotMatch(hintRow(), /tab explore/);
   const first = { toolCallId: "one", label: "Search your music library", toolName: "PRIVATE_TOOL" };
   const second = { toolCallId: "two", label: "Read public music sources", toolName: "PRIVATE_TOOL" };
   callbacks.onToolStart(first);
   callbacks.onToolStart(second);
-  await until(() => fixture.footer().includes("2 running"));
-  await until(() => fixture.body().includes("Search your music library") && fixture.body().includes("Read public music sources"));
+  await until(() => statusRow().includes(first.label) && /· \d+s/.test(statusRow()));
+  await until(() => fixture.body().includes(first.label) && fixture.body().includes(second.label));
+  assert.match(fixture.body(), /Find a few related records/);
+  assert.doesNotMatch(fixture.body(), /PRIVATE_TOOL/);
   fixture.send("keep it mostly instrumental");
+  await until(() => fixture.body().includes("keep it mostly instrumental"));
   callbacks.onToolEnd({ ...first, isError: true });
-  await until(() => fixture.footer().includes(second.label));
-  assert.doesNotMatch(fixture.footer(), /Search your music library/);
+  await until(() => statusRow().includes(second.label) && !statusRow().includes(first.label));
   assert.match(fixture.body(), /Search your music library/);
+  assert.match(hintRow(), /draft stays here/);
+  assert.match(hintRow(), /ctrl\+c cancel/);
+  callbacks.onTextDelta("A grounded ");
+  await until(() => fixture.body().includes("A grounded") && !fixture.body().includes(answer));
+  callbacks.onTextDelta("result.");
+  await until(() => fixture.body().includes(answer));
+  assert.equal(fixture.body().split(answer).length - 1, 1);
+  callbacks.onToolEnd({ ...second, isError: false });
+  gate.resolve({ status: "completed", text: answer });
+  await until(() => statusRow().includes("Up recalls this conversation."));
+  assert.doesNotMatch(statusRow(), /Ready\./);
+  assert.match(hintRow(), /send/);
+  assert.doesNotMatch(hintRow(), /tab explore/);
+  assert.equal(fixture.body().split(answer).length - 1, 1);
+  assert.equal(countLine("1 didn't work"), 1);
+  assert.match(fixture.body(), /1 done, 1 didn't work/);
+  assert.match(fixture.body(), /Find a few related records/);
+  assert.match(fixture.body(), /Search your music library/);
+  assert.match(fixture.body(), /Read public music sources/);
   assert.match(fixture.body(), /keep it mostly instrumental/);
+  assert.doesNotMatch(fixture.body(), /PRIVATE_TOOL/);
+  assert.match(fixture.lines[0], /^ MOONDOG/u);
+  assert.match(fixture.lines[0], /Find a few related records/);
+  assert.ok(fixture.lines.every((line) => visibleWidth(line) === 100));
   fixture.terminal.columns = 40;
   fixture.terminal.resize();
   await until(() => fixture.lines.every((line) => visibleWidth(line) === 40));
-  assert.match(fixture.footer(), /Read public music sources/);
-  callbacks.onToolEnd({ ...second, isError: false });
-  callbacks.onTextDelta("A grounded result.");
-  gate.resolve({ status: "completed", text: "A grounded result." });
-  await until(() => fixture.footer().includes("Ready."));
-  assert.match(fixture.body(), /1 done, 1 didn't work/);
-  assert.doesNotMatch(fixture.body(), /PRIVATE_TOOL/);
-  assert.equal(fixture.lines.filter((line) => line.includes("1 didn't work")).length, 1);
-  assert.ok(fixture.lines.every((line) => visibleWidth(line) === 40));
+  assert.match(fixture.lines[0], /^ MOONDOG/u);
+  assert.match(fixture.lines[0], /Find a few/);
+  assert.match(fixture.body(), /keep it mostly instrumental/);
+  assert.equal(fixture.body().split(answer).length - 1, 1);
+  assert.equal(countLine("1 didn't work"), 1);
   fixture.terminal.columns = 100;
   fixture.terminal.resize();
-  await until(() => fixture.lines.every((line) => visibleWidth(line) === 100) && fixture.body().includes("keep it mostly instrumental"));
-  assert.match(fixture.body(), /Search your music library/);
+  await until(() => fixture.lines.every((line) => visibleWidth(line) === 100));
+  assert.match(fixture.lines[0], /^ MOONDOG/u);
   assert.match(fixture.lines[0], /Find a few related records/);
-  assert.doesNotMatch(fixture.lines[0], /your listening room/);
+  assert.match(fixture.body(), /keep it mostly instrumental/);
+  assert.equal(fixture.body().split(answer).length - 1, 1);
+  assert.doesNotMatch(statusRow(), /Ready\./);
+  assert.match(statusRow(), /Up recalls this conversation/);
+  assert.match(hintRow(), /send/);
+  assert.doesNotMatch(hintRow(), /tab explore/);
 });
 
 test("cancel during tools is idempotent and does not label unconfirmed work successful", async (context) => {

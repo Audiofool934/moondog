@@ -439,7 +439,7 @@ export async function runMoondogTui({
           ? "↑ ↓ choose · enter open · esc type"
           : homeVisible && !editor.getText()
             ? width >= 60 ? "tab explore · ctrl+p commands       enter send · shift+enter newline" : "tab explore · ctrl+p commands"
-            : width >= 72 ? "pgup history · ctrl+p · /home    enter send · shift+enter newline" : "pgup history · /home";
+            : width >= 72 ? "enter send · shift+enter newline" : "enter send";
         lines.push(paintBrandLine(` ${theme.faint(keys)}`, width, theme));
       }
       return lines;
@@ -1601,7 +1601,7 @@ export async function runMoondogTui({
       if (pending.length) {
         setFooter(pending.length > 1 ? `${pending.length} running · ${pending[0].label}` : `${pending[0].label}...`, yellow);
       } else {
-        setFooter(state === "failed" ? `${label} didn't work · carrying on...` : "Putting it together...", state === "failed" ? yellow : dim);
+        setFooter(state === "failed" ? `${label} didn't work · carrying on...` : "Thinking...", state === "failed" ? yellow : dim);
       }
     };
 
@@ -1636,7 +1636,7 @@ export async function runMoondogTui({
         }
         setFooter("Cancelled.", yellow);
       } else {
-        setFooter("Ready.", green);
+        setFooter("Up recalls this conversation.", green);
       }
     } catch (error) {
       if (cleanedUp) return;
