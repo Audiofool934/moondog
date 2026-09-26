@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { stripVTControlCharacters } from "node:util";
-import { CURSOR_MARKER, TuiAltScreen, getCapabilities, setCapabilities, visibleWidth } from "@earendil-works/pi-tui";
+import { CURSOR_MARKER, TuiAltScreen, getCapabilities, getCellDimensions, setCapabilities, setCellDimensions, visibleWidth } from "@earendil-works/pi-tui";
 import { createMoondogTheme } from "../../src/surfaces/cli/brand-theme.mjs";
 import { RecordSleeve, paintBrandLine } from "../../src/surfaces/cli/brand-components.mjs";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -1812,6 +1812,24 @@ test("record sleeve uses terminal characters and fits the opening at every suppo
     }
     assert.equal(terminal.output, "", "character art must not write an image or deletion payload directly to the terminal");
   } finally { setCapabilities(previous); }
+});
+
+test("the record stays round when the terminal reports taller cells", () => {
+  const previous = getCellDimensions();
+  const environment = { TERM: "xterm-256color", COLORTERM: "truecolor", MOONDOG_MOTION: "off" };
+  const theme = createMoondogTheme({ mode: "charcoal", environment });
+  const terminal = new FakeTerminal();
+  terminal.rows = 34;
+  const sleeve = new RecordSleeve({ terminal, getTheme: () => theme, environment });
+  const inkedRows = () => sleeve.render(100).filter((row) => /[\u2801-\u28ff]/u.test(row)).length;
+  try {
+    setCellDimensions({ widthPx: 9, heightPx: 18 });
+    const square = inkedRows();
+    // Pi invalidates the tree when the cell-size reply arrives; the sleeve redraws from it.
+    setCellDimensions({ widthPx: 9, heightPx: 20 });
+    sleeve.invalidate();
+    assert.ok(inkedRows() < square, "taller cells need fewer rows for the same round record");
+  } finally { setCellDimensions(previous); }
 });
 
 test("the actual home viewport stays filled through resize and multiline draft reflow", async (context) => {

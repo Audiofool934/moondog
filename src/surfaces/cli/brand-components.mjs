@@ -1,4 +1,4 @@
-import { CURSOR_MARKER, Editor, Text, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { CURSOR_MARKER, Editor, Text, getCellDimensions, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { stripVTControlCharacters } from "node:util";
 import { sanitizeTerminalText } from "./format-output.mjs";
 import { LOGO_MOTION_FRAMES, renderLunarRecord, renderMoondogWordmark } from "./terminal-art.mjs";
@@ -317,8 +317,11 @@ export class RecordSleeve {
       motionEnabled = this.environment.MOONDOG_MOTION !== "off" } = this.getState();
     // Fill the viewport between the header and composer, independently of art size.
     const rows = Math.max(1, this.terminal.rows - 2 - editorRows - (this.terminal.rows >= 20 ? 2 : 1));
+    // Pi learns the real cell size from terminals that answer it; others keep the 1:2 default.
+    const { widthPx, heightPx } = getCellDimensions();
+    const cellAspect = heightPx / widthPx;
     const frameKey = [
-      width, rows, this.phase, this.lyricPosition, this.sleeveNote, focused ? 1 : 0, selected,
+      width, rows, cellAspect, this.phase, this.lyricPosition, this.sleeveNote, focused ? 1 : 0, selected,
       motionEnabled ? 1 : 0, this.artMode, this.environment.TERM ?? "", theme.plain ? 1 : 0,
     ].join("\0");
     if (this.frame?.key === frameKey && this.frame.theme === theme) {
@@ -369,10 +372,10 @@ export class RecordSleeve {
     const mode = this.artMode === "ascii" || this.artMode === "text" || this.environment.TERM === "dumb" ? "ascii" : "braille";
     this.canAnimate ||= !theme.plain && artWidth >= 20 && height >= 9;
     const phase = theme.plain ? 0 : this.phase;
-    const key = `${artWidth}:${height}:${mode}:${phase}`;
+    const key = `${artWidth}:${height}:${mode}:${phase}:${cellAspect}`;
     if (!this.cache.has(key)) {
       if (this.cache.size >= LOGO_MOTION_FRAMES * 2) this.cache.clear();
-      this.cache.set(key, renderLunarRecord({ columns: artWidth, rows: height, style: mode, phase }));
+      this.cache.set(key, renderLunarRecord({ columns: artWidth, rows: height, style: mode, phase, cellAspect }));
     }
     const art = this.cache.get(key);
     if (this.colorTheme !== theme) {

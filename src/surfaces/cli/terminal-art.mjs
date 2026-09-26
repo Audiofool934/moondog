@@ -94,20 +94,22 @@ function bezier(start, first, second, end) {
   });
 }
 
-function drawing(columns, rows) {
+function drawing(columns, rows, cellAspect) {
   const width = columns * 2;
   const height = rows * 4;
   const dots = new Uint8Array(width * height);
-  const radius = Math.min((width - 4) / 2.35, (height - 4) / 2.24);
+  // A Braille dot is as tall as a quarter cell and as wide as half of one.
+  const stretch = cellAspect / 2;
+  const radius = Math.min((width - 4) / 2.35, (height - 4) * stretch / 2.24);
   const centerX = (width - 1) / 2 - radius * 0.09;
-  const centerY = (height - 1) / 2 + radius * 0.045;
+  const centerY = (height - 1) / 2 + radius * 0.045 / stretch;
   const pixel = 1 / radius;
 
   function scan(left, top, right, bottom, predicate, ink) {
-    for (let y = Math.max(0, Math.floor(centerY + top * radius)); y <= Math.min(height - 1, Math.ceil(centerY + bottom * radius)); y += 1) {
+    for (let y = Math.max(0, Math.floor(centerY + top * radius / stretch)); y <= Math.min(height - 1, Math.ceil(centerY + bottom * radius / stretch)); y += 1) {
       for (let x = Math.max(0, Math.floor(centerX + left * radius)); x <= Math.min(width - 1, Math.ceil(centerX + right * radius)); x += 1) {
         const nx = (x - centerX) / radius;
-        const ny = (y - centerY) / radius;
+        const ny = (y - centerY) * stretch / radius;
         if (predicate(nx, ny, x, y)) dots[y * width + x] = ink ? 1 : 0;
       }
     }
@@ -148,8 +150,8 @@ function drawing(columns, rows) {
   return { dots, width, height, radius, pixel, circle, disc, line, polygon };
 }
 
-function braille(columns, rows, phase) {
-  const art = drawing(columns, rows);
+function braille(columns, rows, phase, cellAspect) {
+  const art = drawing(columns, rows, cellAspect);
   const { radius, pixel, circle, disc, line, polygon } = art;
   const detail = radius >= 39 ? 2 : radius >= 27 ? 1 : 0;
   const grooves = detail === 2
@@ -260,11 +262,12 @@ function ascii(columns, rows, phase) {
 
 /**
  * Original terminal drawing, composed from geometry and hand-lettered ASCII.
- * Braille uses a 2-by-4 dot grid with square dots for a typical 1:2 terminal cell.
+ * Braille uses a 2-by-4 dot grid; cellAspect (cell height over width) keeps the record round,
+ * and the default 2 suits a typical 1:2 terminal cell.
  * phase advances the moon surface and groove highlights through an eight-second loop.
  * The portrait and cartridge stay fixed; scheduling and motion preferences belong to the caller.
  */
-export function renderLunarRecord({ columns = 56, rows = 24, style = "braille", phase = 0 } = {}) {
+export function renderLunarRecord({ columns = 56, rows = 24, style = "braille", phase = 0, cellAspect = 2 } = {}) {
   const width = Number.isFinite(columns) ? Math.max(0, Math.floor(columns)) : 56;
   const height = Number.isFinite(rows) ? Math.max(0, Math.floor(rows)) : 24;
   if (!width || !height) return Array.from({ length: height }, () => "");
@@ -272,7 +275,8 @@ export function renderLunarRecord({ columns = 56, rows = 24, style = "braille", 
     ? ((Math.floor(phase) % LOGO_MOTION_FRAMES) + LOGO_MOTION_FRAMES) % LOGO_MOTION_FRAMES
     : 0;
   if (style === "ascii" || width < 20 || height < 9) return ascii(width, height, frame);
-  return braille(width, height, frame);
+  const aspect = Number.isFinite(cellAspect) ? Math.min(3, Math.max(1.5, cellAspect)) : 2;
+  return braille(width, height, frame, aspect);
 }
 
 /** Five-pixel letterforms, packed into three terminal rows without color or escapes. */
