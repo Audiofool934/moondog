@@ -6,6 +6,9 @@ const turn = Math.PI * 2;
 /** Record layers from faintest to strongest, matching the logo's fine grooves and solid dog. */
 export const RECORD_LAYERS = Object.freeze({ groove: 1, surface: 2, figure: 3 });
 
+// The dog's eye, in the record's unit coordinates; layouts line the title up with it.
+const eye = [0.22, -0.13];
+
 const dog = [
   [-0.62, 0.48], [-0.55, 0.29], [-0.47, 0.08], [-0.42, -0.16],
   [-0.4, -0.34], [-0.32, -0.47], [-0.18, -0.61], [-0.17, -0.44],
@@ -217,7 +220,7 @@ function braille(columns, rows, phase, cellAspect) {
   if (detail > 0) circle(earX, earY, earRadius * 0.35, pixel);
   else disc(earX, earY, pixel * 0.9);
   // A small eye and nose keep the dog readable before the hatch pattern resolves.
-  disc(0.22, -0.13, pixel * 1.05, false);
+  disc(eye[0], eye[1], pixel * 1.05, false);
   disc(0.53, 0.045, pixel * 0.85);
 
   line([[1.17, -1.095], [0.91, -0.8]], Math.max(pixel * 1.8, 0.03));
@@ -252,7 +255,9 @@ function braille(columns, rows, phase, cellAspect) {
     return line;
   });
   // The disc's own center in cells; the tonearm reaches past it, so layouts align on this.
-  return { lines, tones, center: [(art.centerX + 0.5) / 2, (art.centerY + 0.5) / 4] };
+  const stretch = cellAspect / 2;
+  const cell = (x, y) => [(art.centerX + x * radius + 0.5) / 2, (art.centerY + y * radius / stretch + 0.5) / 4];
+  return { lines, tones, center: cell(0, 0), eye: cell(...eye), radius: [radius / 2, radius / stretch / 4] };
 }
 
 function ascii(columns, rows, phase) {
@@ -283,8 +288,13 @@ function ascii(columns, rows, phase) {
     const content = animated[row - top]?.join("") ?? "";
     return (" ".repeat(left) + content).slice(0, columns).padEnd(columns);
   });
-  const [centerX, centerY] = selected?.orbit ?? [width / 2, template.length / 2];
-  return { lines, center: [left + centerX + 0.5, top + centerY + 0.5] };
+  const [centerX, centerY, radiusX, radiusY] = selected?.orbit ?? [width / 2, template.length / 2, width / 2, template.length / 2];
+  return {
+    lines,
+    center: [left + centerX + 0.5, top + centerY + 0.5],
+    eye: [left + centerX + eye[0] * radiusX + 0.5, top + centerY + eye[1] * radiusY + 0.5],
+    radius: [radiusX, radiusY],
+  };
 }
 
 /**
@@ -302,14 +312,17 @@ export function renderLunarRecord(options = {}) {
 export function renderLunarRecordLayers({ columns = 56, rows = 24, style = "braille", phase = 0, cellAspect = 2 } = {}) {
   const width = Number.isFinite(columns) ? Math.max(0, Math.floor(columns)) : 56;
   const height = Number.isFinite(rows) ? Math.max(0, Math.floor(rows)) : 24;
-  if (!width || !height) return { lines: Array.from({ length: height }, () => ""), tones: Array.from({ length: height }, () => []), center: [width / 2, height / 2] };
+  if (!width || !height) {
+    const center = [width / 2, height / 2];
+    return { lines: Array.from({ length: height }, () => ""), tones: Array.from({ length: height }, () => []), center, eye: center, radius: center };
+  }
   const frame = Number.isFinite(phase)
     ? ((Math.floor(phase) % LOGO_MOTION_FRAMES) + LOGO_MOTION_FRAMES) % LOGO_MOTION_FRAMES
     : 0;
   if (style === "ascii" || width < 20 || height < 9) {
     // Hand-lettered ASCII has no separable layers; it keeps one ink.
-    const { lines, center } = ascii(width, height, frame);
-    return { lines, center, tones: lines.map((line) => Array.from(line, (character) => character === " " ? 0 : RECORD_LAYERS.figure)) };
+    const { lines, ...geometry } = ascii(width, height, frame);
+    return { lines, ...geometry, tones: lines.map((line) => Array.from(line, (character) => character === " " ? 0 : RECORD_LAYERS.figure)) };
   }
   const aspect = Number.isFinite(cellAspect) ? Math.min(3, Math.max(1.5, cellAspect)) : 2;
   return braille(width, height, frame, aspect);

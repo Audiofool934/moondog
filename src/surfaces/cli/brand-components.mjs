@@ -356,12 +356,13 @@ export class RecordSleeve {
     }
     const mode = this.artMode === "ascii" || this.artMode === "text" || this.environment.TERM === "dumb" ? "ascii" : "braille";
     // Copy sits two columns in, so the tracklist's selection mark hangs in the gutter.
-    const copyBlock = (columns, budget, roomy) => withNote([
-      ...(columns >= 41 && budget >= 20 && mode === "braille"
-        ? renderMoondogWordmark().map(theme.text) : [theme.bold(roomy ? "M O O N D O G" : "MOONDOG")]).map(hang),
+    const title = (columns, budget, roomy) => columns >= 41 && budget >= 20 && mode === "braille"
+      ? renderMoondogWordmark().map(theme.text) : [theme.bold(roomy ? "M O O N D O G" : "MOONDOG")];
+    const copyBlock = (columns, budget, roomy, note = true, reserve = roomy) => (note ? withNote : (lines) => lines)([
+      ...title(columns, budget, roomy).map(hang),
       ...(budget >= 12 ? [...wrapDescription("Your personal music agent.", columns).map((line) => hang(theme.muted(line))), ""] : [""]),
       ...tracklist(theme, { focused, selected, columns: columns + 2 }),
-      ...(roomy ? ["", ...actionNote(focused ? homeActions[selected].description : "", columns).map((line) => hang(theme.muted(line)))] : []),
+      ...(reserve ? ["", ...actionNote(focused ? homeActions[selected].description : "", columns).map((line) => hang(theme.muted(line)))] : []),
     ], columns, budget);
     // Choose whichever arrangement gives the record the larger radius on this screen.
     const stretch = cellAspect / 2;
@@ -372,7 +373,8 @@ export class RecordSleeve {
     const sideArt = Math.min(64, Math.floor(available * (width < 54 ? 0.40 : 0.48)));
     const sideCopyWidth = Math.max(1, available - sideArt - 3);
     const sideRoomy = width >= 76 && rows >= 14;
-    const sideHeight = Math.min(30, rows - (sideRoomy ? 2 : 0));
+    // Side by side, the lyric runs beneath the whole group, so leave it a row and a gap.
+    const sideHeight = Math.min(30, rows - 3);
     const stackCopyWidth = Math.min(41, width - 6);
     const stackCopy = copyBlock(stackCopyWidth, Math.max(1, rows - 13), rows >= 34);
     const stackArt = Math.min(64, width - 4);
@@ -380,7 +382,7 @@ export class RecordSleeve {
     const stacked = stackHeight >= 9 && radius(stackArt, stackHeight) > radius(sideArt, sideHeight);
     const artWidth = stacked ? stackArt : sideArt;
     const height = stacked ? stackHeight : sideHeight;
-    const copy = stacked ? stackCopy : copyBlock(sideCopyWidth, rows, sideRoomy);
+    const copy = stacked ? stackCopy : copyBlock(sideCopyWidth, rows, sideRoomy, false);
     this.canAnimate ||= !theme.plain && artWidth >= 20 && height >= 9;
     const phase = theme.plain ? 0 : this.phase;
     const key = `${artWidth}:${height}:${mode}:${phase}:${cellAspect}`;
@@ -391,11 +393,11 @@ export class RecordSleeve {
     if (!this.cache.has(key)) {
       if (this.cache.size >= LOGO_MOTION_FRAMES * 2) this.cache.clear();
       const layers = renderLunarRecordLayers({ columns: artWidth, rows: height, style: mode, phase, cellAspect });
-      this.cache.set(key, { lines: toneRecord(layers, theme), center: layers.center });
+      this.cache.set(key, { ...layers, lines: toneRecord(layers, theme) });
     }
     const art = this.cache.get(key);
     // Everything aligns on the disc itself; the tonearm reaching up and right is left to hang free.
-    const [discColumn, discRow] = art.center;
+    const [discColumn] = art.center;
     if (stacked) {
       // The record is width-bound here, so drop the empty rows its box leaves above and below.
       const inked = art.lines.map((line) => stripVTControlCharacters(line).trim() !== "");
@@ -413,11 +415,54 @@ export class RecordSleeve {
       const top = Math.max(0, Math.floor((rows - stack.length) / 2));
       return finish(Array.from({ length: rows }, (_, row) => paint(stack[row - top] ?? "")));
     }
-    const artTop = Math.max(0, Math.floor((rows - art.lines.length) / 2));
-    const copyTop = Math.max(0, Math.min(rows - copy.length, Math.round(artTop + discRow - copy.length / 2)));
+    // Side by side, positions start at the art box's top-left corner.
+    const inked = art.lines.map((line) => stripVTControlCharacters(line).trim() !== "");
+    const artRows = [inked.indexOf(true), inked.lastIndexOf(true)];
+    // The wordmark's middle row sits level with the dog's eye.
+    const titleRows = title(sideCopyWidth, rows, sideRoomy).length;
+    const eyeTop = Math.floor(art.eye[1]) - Math.floor((titleRows - 1) / 2);
+    const scrolling = motionEnabled && !theme.plain;
+    const note = `"${this.sleeveNote}"`;
+    const arrange = (lines, below) => {
+      // Keep the copy on screen even when the eye sits low in a short sleeve.
+      const top = Math.min(eyeTop, artRows[0] + rows - lines.length);
+      const bodyTop = Math.min(artRows[0], top);
+      const bodyBottom = Math.max(artRows[1], top + lines.length - 1);
+      const groupRight = artWidth + 1 + Math.max(...lines.map((line) => visibleWidth(line)));
+      return { copy: lines, copyTop: top, bodyTop, bodyBottom, groupRight, below };
+    };
+    // Center the group from the disc's left edge to the copy's right edge; the arm hangs free.
+    const groupLeft = Math.max(0, Math.floor(discColumn - art.radius[0]));
+    // Prefer the lyric beneath the whole group, entering at the title's right edge and leaving past
+    // the disc's left edge; a short sleeve keeps it in the copy column instead.
+    // The action note's reserved rows give way first, since they are blank until Tab.
+    const lean = sideRoomy ? copyBlock(sideCopyWidth, rows, sideRoomy, false, false) : copy;
+    const fits = (candidate, lyricRows) => candidate.bodyBottom - candidate.bodyTop + 2 + lyricRows <= rows;
+    let layout = arrange(copy, true);
+    let span = layout.groupRight - groupLeft;
+    const lyricLines = (columns) => (scrolling ? [scrollingLyric(note, columns, this.lyricPosition)] : wrapTextWithAnsi(note, columns)).map(theme.muted);
+    let lyric = lyricLines(span);
+    if (!fits(layout, lyric.length)) {
+      layout = arrange(lean, true);
+      span = layout.groupRight - groupLeft;
+      lyric = lyricLines(span);
+    }
+    if (fits(layout, lyric.length)) {
+      this.canAnimate ||= scrolling;
+      this.lyricColumns = scrolling ? span : 0;
+    } else {
+      layout = arrange(withNote(lean, sideCopyWidth, rows - Math.max(0, eyeTop - artRows[0])), false);
+    }
+    const { copyTop, bodyTop, bodyBottom, below } = layout;
+    const groupBottom = below ? bodyBottom + 1 + lyric.length : bodyBottom;
+    const originRow = Math.max(0, Math.floor((rows - (groupBottom - bodyTop + 1)) / 2)) - bodyTop;
+    const originColumn = Math.max(0, Math.floor((width - (layout.groupRight - groupLeft)) / 2) - groupLeft);
     const lines = Array.from({ length: rows }, (_, row) => {
-      const left = art.lines[row - artTop] ?? "";
-      return `  ${pad(left, artWidth)} ${copy[row - copyTop] ?? ""}`;
+      const at = row - originRow;
+      if (below && at > bodyBottom + 1) return " ".repeat(originColumn + groupLeft) + (lyric[at - bodyBottom - 2] ?? "");
+      const left = art.lines[at] ?? "";
+      const right = layout.copy[at - copyTop] ?? "";
+      return " ".repeat(originColumn) + pad(left, artWidth) + " " + right;
     });
     return finish(lines.map(paint));
   }
