@@ -53,6 +53,7 @@ Every `moondog` or `npm start` launch starts a new conversation in the character
 The lunar record, dog silhouette, and needle are drawn with Braille dots and geometric lines, with hand-lettered ASCII available as an alternative.
 There are no embedded images or terminal image protocols.
 Moondog is black and white, like the moon: paper is black ink on white, and charcoal is moonlight on black.
+The only other colors are the six from the prism on The Dark Side of the Moon, used for meaning: red when something fails, orange for a caution, green to confirm, and the full spectrum on the status mark while Moondog works.
 Those colors carry through conversation, profile views, menus, input, and status details.
 The record is toned like the logo, with faint grooves, a grey surface, and the dog at full strength.
 On a wide terminal the record sits beside the title; on a tall or narrow one it stacks above it, whichever leaves the record larger.

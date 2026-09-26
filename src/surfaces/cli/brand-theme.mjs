@@ -2,7 +2,11 @@ import { stripVTControlCharacters } from "node:util";
 
 const escape = "\u001b[";
 const modes = new Set(["auto", "paper", "charcoal", "terminal"]);
-// Moondog is black and white, like the moon: neutral greys only, no tint in any ink.
+// Moondog is black and white, like the moon. The six prism colors from The Dark Side of the Moon
+// are the only hues, and they mark meaning rather than decoration: red fails, orange cautions,
+// green confirms, and the whole spectrum turns while Moondog works.
+// Charcoal uses the cover's colors exactly; paper darkens each hue until it reads on white.
+const prismOrder = ["red", "orange", "yellow", "green", "blue", "violet"];
 const palettes = {
   paper: {
     background: "#f4f4f4",
@@ -10,9 +14,12 @@ const palettes = {
     muted: "#585858",
     faint: "#8a8a8a",
     accent: "#000000",
-    success: "#141414",
-    warning: "#585858",
-    error: "#000000",
+    red: "#d33028",
+    orange: "#b25119",
+    yellow: "#787102",
+    green: "#3c7c3d",
+    blue: "#33768d",
+    violet: "#6e5c8c",
   },
   charcoal: {
     background: "#0c0c0c",
@@ -20,11 +27,15 @@ const palettes = {
     muted: "#9e9e9e",
     faint: "#666666",
     accent: "#ffffff",
-    success: "#e4e4e4",
-    warning: "#9e9e9e",
-    error: "#ffffff",
+    red: "#d93e37",
+    orange: "#e27231",
+    yellow: "#fcf040",
+    green: "#52a953",
+    blue: "#4ea2bf",
+    violet: "#6e5c8c",
   },
 };
+const semantic = { success: "green", warning: "orange", error: "red" };
 const ansi16 = [
   [0, 0, 0], [128, 0, 0], [0, 128, 0], [128, 128, 0],
   [0, 0, 128], [128, 0, 128], [0, 128, 128], [192, 192, 192],
@@ -151,15 +162,20 @@ export function createMoondogTheme({ mode = "auto", environment = process.env } 
     muted: light ? 30 : 37,
     faint: 90,
     accent: light ? 30 : 97,
-    success: light ? 30 : 37,
-    warning: 90,
-    error: light ? 30 : 97,
+    red: 31,
+    orange: 33,
+    yellow: 33,
+    green: 32,
+    blue: 36,
+    violet: 35,
   };
-  const foreground = (name) => {
+  const foreground = (requested) => {
+    const name = semantic[requested] ?? requested;
     if (depth === 0) return unstyled;
     if (terminal) {
-      // The terminal keeps its own colors; emphasis alone carries meaning.
-      if (name === "accent" || name === "error") return bold;
+      // The terminal keeps its own palette, including its own reading of each prism color.
+      if (name === "accent") return bold;
+      if (Object.hasOwn(fallback, name) && prismOrder.includes(name)) return style(fallback[name], 39);
       return plain;
     }
     if (depth === 24) return style(`38;2;${rgb(palette[name]).join(";")}`, 39);
@@ -173,6 +189,7 @@ export function createMoondogTheme({ mode = "auto", environment = process.env } 
   const success = foreground("success");
   const warning = foreground("warning");
   const error = foreground("error");
+  const prism = Object.freeze(prismOrder.map(foreground));
   let background = plain;
   if (depth === 0) background = unstyled;
   else if (!terminal) {
@@ -222,6 +239,7 @@ export function createMoondogTheme({ mode = "auto", environment = process.env } 
     success,
     warning,
     error,
+    prism,
     bold,
     italic,
     underline,
