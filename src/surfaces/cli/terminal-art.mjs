@@ -153,7 +153,7 @@ function drawing(columns, rows, cellAspect) {
   }
 
   const paintLayer = (value) => { layer = value; };
-  return { dots, width, height, radius, pixel, circle, disc, line, polygon, paintLayer };
+  return { dots, width, height, radius, centerX, centerY, pixel, circle, disc, line, polygon, paintLayer };
 }
 
 function braille(columns, rows, phase, cellAspect) {
@@ -251,7 +251,8 @@ function braille(columns, rows, phase, cellAspect) {
     tones.push(rowTones);
     return line;
   });
-  return { lines, tones };
+  // The disc's own center in cells; the tonearm reaches past it, so layouts align on this.
+  return { lines, tones, center: [(art.centerX + 0.5) / 2, (art.centerY + 0.5) / 4] };
 }
 
 function ascii(columns, rows, phase) {
@@ -278,10 +279,12 @@ function ascii(columns, rows, phase) {
       if (animated[y]?.[x] !== undefined) animated[y][x] = mark;
     }
   }
-  return Array.from({ length: rows }, (_, row) => {
+  const lines = Array.from({ length: rows }, (_, row) => {
     const content = animated[row - top]?.join("") ?? "";
     return (" ".repeat(left) + content).slice(0, columns).padEnd(columns);
   });
+  const [centerX, centerY] = selected?.orbit ?? [width / 2, template.length / 2];
+  return { lines, center: [left + centerX + 0.5, top + centerY + 0.5] };
 }
 
 /**
@@ -299,14 +302,14 @@ export function renderLunarRecord(options = {}) {
 export function renderLunarRecordLayers({ columns = 56, rows = 24, style = "braille", phase = 0, cellAspect = 2 } = {}) {
   const width = Number.isFinite(columns) ? Math.max(0, Math.floor(columns)) : 56;
   const height = Number.isFinite(rows) ? Math.max(0, Math.floor(rows)) : 24;
-  if (!width || !height) return { lines: Array.from({ length: height }, () => ""), tones: Array.from({ length: height }, () => []) };
+  if (!width || !height) return { lines: Array.from({ length: height }, () => ""), tones: Array.from({ length: height }, () => []), center: [width / 2, height / 2] };
   const frame = Number.isFinite(phase)
     ? ((Math.floor(phase) % LOGO_MOTION_FRAMES) + LOGO_MOTION_FRAMES) % LOGO_MOTION_FRAMES
     : 0;
   if (style === "ascii" || width < 20 || height < 9) {
     // Hand-lettered ASCII has no separable layers; it keeps one ink.
-    const lines = ascii(width, height, frame);
-    return { lines, tones: lines.map((line) => Array.from(line, (character) => character === " " ? 0 : RECORD_LAYERS.figure)) };
+    const { lines, center } = ascii(width, height, frame);
+    return { lines, center, tones: lines.map((line) => Array.from(line, (character) => character === " " ? 0 : RECORD_LAYERS.figure)) };
   }
   const aspect = Number.isFinite(cellAspect) ? Math.min(3, Math.max(1.5, cellAspect)) : 2;
   return braille(width, height, frame, aspect);

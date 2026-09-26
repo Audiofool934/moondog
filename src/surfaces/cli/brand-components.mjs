@@ -236,6 +236,9 @@ export const homeActions = [
   { command: "help", label: "Help & commands", short: "Help", description: "Commands, connections and keyboard shortcuts." },
 ];
 
+// Rows of air between a stacked record and the title beneath it.
+const STACK_GAP = 2;
+
 const sleeveNotes = [
   // Welcome to the Machine: https://www.pinkfloyd.com/albums/wish-you-were-here/
   "Where have you been?",
@@ -373,7 +376,7 @@ export class RecordSleeve {
     const stackCopyWidth = Math.min(41, width - 6);
     const stackCopy = copyBlock(stackCopyWidth, Math.max(1, rows - 13), rows >= 34);
     const stackArt = Math.min(64, width - 4);
-    const stackHeight = Math.min(30, rows - stackCopy.length - 1);
+    const stackHeight = Math.min(30, rows - stackCopy.length - STACK_GAP);
     const stacked = stackHeight >= 9 && radius(stackArt, stackHeight) > radius(sideArt, sideHeight);
     const artWidth = stacked ? stackArt : sideArt;
     const height = stacked ? stackHeight : sideHeight;
@@ -387,24 +390,33 @@ export class RecordSleeve {
     }
     if (!this.cache.has(key)) {
       if (this.cache.size >= LOGO_MOTION_FRAMES * 2) this.cache.clear();
-      this.cache.set(key, toneRecord(renderLunarRecordLayers({ columns: artWidth, rows: height, style: mode, phase, cellAspect }), theme));
+      const layers = renderLunarRecordLayers({ columns: artWidth, rows: height, style: mode, phase, cellAspect });
+      this.cache.set(key, { lines: toneRecord(layers, theme), center: layers.center });
     }
     const art = this.cache.get(key);
+    // Everything aligns on the disc itself; the tonearm reaching up and right is left to hang free.
+    const [discColumn, discRow] = art.center;
     if (stacked) {
       // The record is width-bound here, so drop the empty rows its box leaves above and below.
-      const inked = art.map((line) => stripVTControlCharacters(line).trim() !== "");
-      const record = art.slice(inked.indexOf(true), inked.lastIndexOf(true) + 1);
-      const artLeft = Math.floor((width - artWidth) / 2);
-      const copyWidth = Math.max(...copy.map((line) => visibleWidth(line)));
-      const copyLeft = Math.max(0, Math.floor((width - copyWidth) / 2));
-      const stack = [...record.map((line) => " ".repeat(artLeft) + line), "", ...copy.map((line) => " ".repeat(copyLeft) + line)];
+      const inked = art.lines.map((line) => stripVTControlCharacters(line).trim() !== "");
+      const record = art.lines.slice(inked.indexOf(true), inked.lastIndexOf(true) + 1);
+      const axis = width / 2;
+      const artLeft = Math.max(0, Math.min(width - artWidth, Math.round(axis - discColumn)));
+      // Center the copy's text on the same axis; the hanging selection mark sits outside it.
+      const textWidth = Math.max(...copy.map((line) => visibleWidth(line))) - 2;
+      const copyLeft = Math.max(0, Math.round(axis - textWidth / 2) - 2);
+      const stack = [
+        ...record.map((line) => " ".repeat(artLeft) + line),
+        ...Array(STACK_GAP).fill(""),
+        ...copy.map((line) => " ".repeat(copyLeft) + line),
+      ];
       const top = Math.max(0, Math.floor((rows - stack.length) / 2));
       return finish(Array.from({ length: rows }, (_, row) => paint(stack[row - top] ?? "")));
     }
-    const copyTop = Math.max(0, Math.floor((rows - copy.length) / 2));
-    const artTop = Math.max(0, Math.floor((rows - art.length) / 2));
+    const artTop = Math.max(0, Math.floor((rows - art.lines.length) / 2));
+    const copyTop = Math.max(0, Math.min(rows - copy.length, Math.round(artTop + discRow - copy.length / 2)));
     const lines = Array.from({ length: rows }, (_, row) => {
-      const left = art[row - artTop] ?? "";
+      const left = art.lines[row - artTop] ?? "";
       return `  ${pad(left, artWidth)} ${copy[row - copyTop] ?? ""}`;
     });
     return finish(lines.map(paint));
