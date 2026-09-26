@@ -20,10 +20,10 @@ const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url))
 const demoDirectory = path.join(repositoryRoot, "assets", "demo");
 const columns = 100;
 const rows = 34;
-const terminalSize = { width: 956, height: 800 };
+const terminalSize = { width: 956, height: 740 };
 const previewSize = { width: 1240, height: 840 };
 
-const palette = { background: "#222521", foreground: "#eee7d5", muted: "#a9ab9c" };
+const palette = { background: "#0c0c0c", foreground: "#e4e4e4", muted: "#9e9e9e" };
 
 async function executable(filePath) {
   try {
@@ -178,8 +178,9 @@ function framePage(screenHtml, caption) {
     body { width: ${terminalSize.width}px; height: ${terminalSize.height}px; overflow: hidden; font-family: Menlo, "SF Mono", monospace; }
     .bar { display: flex; justify-content: space-between; padding: 26px 28px 0; color: ${palette.muted}; font-size: 12px; letter-spacing: .08em; }
     .screen { margin: 16px 28px 0; }
-    .row { height: 20px; white-space: pre; font-size: 15px; line-height: 20px; }
-    .row span { display: inline-block; width: 9px; height: 20px; overflow: visible; vertical-align: top; }
+    /* 9 by 18 pixel cells match the 1:2 cell the TUI assumes inside tmux, so the record stays round. */
+    .row { height: 18px; white-space: pre; font-size: 15px; line-height: 18px; }
+    .row span { display: inline-block; width: 9px; height: 18px; overflow: visible; vertical-align: top; }
     .caption { position: absolute; left: 28px; bottom: 26px; color: ${palette.muted}; font-size: 12px; }
   </style></head><body>
     <div class="bar"><span>MOONDOG / LISTENING ROOM</span><span>FICTIONAL DEMO DATA</span></div>

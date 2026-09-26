@@ -2,26 +2,27 @@ import { stripVTControlCharacters } from "node:util";
 
 const escape = "\u001b[";
 const modes = new Set(["auto", "paper", "charcoal", "terminal"]);
+// Moondog is black and white, like the moon: neutral greys only, no tint in any ink.
 const palettes = {
   paper: {
-    background: "#eee7d5",
-    foreground: "#242722",
-    muted: "#606359",
-    faint: "#65685d",
-    accent: "#746044",
-    success: "#50644b",
-    warning: "#7c5d25",
-    error: "#a04136",
+    background: "#f4f4f4",
+    foreground: "#141414",
+    muted: "#585858",
+    faint: "#8a8a8a",
+    accent: "#000000",
+    success: "#141414",
+    warning: "#585858",
+    error: "#000000",
   },
   charcoal: {
-    background: "#222521",
-    foreground: "#eee7d5",
-    muted: "#a9ab9c",
-    faint: "#96988d",
-    accent: "#ccb995",
-    success: "#a8b497",
-    warning: "#d0ad73",
-    error: "#d39b8c",
+    background: "#0c0c0c",
+    foreground: "#e4e4e4",
+    muted: "#9e9e9e",
+    faint: "#666666",
+    accent: "#ffffff",
+    success: "#e4e4e4",
+    warning: "#9e9e9e",
+    error: "#ffffff",
   },
 };
 const ansi16 = [
@@ -148,19 +149,17 @@ export function createMoondogTheme({ mode = "auto", environment = process.env } 
   const fallback = {
     foreground: light ? 30 : 37,
     muted: light ? 30 : 37,
-    faint: light ? 30 : 90,
-    accent: light ? 30 : 33,
-    success: light ? 32 : 92,
-    warning: light ? 30 : 33,
-    error: light ? 31 : 91,
+    faint: 90,
+    accent: light ? 30 : 97,
+    success: light ? 30 : 37,
+    warning: 90,
+    error: light ? 30 : 97,
   };
   const foreground = (name) => {
     if (depth === 0) return unstyled;
     if (terminal) {
-      if (name === "accent") return bold;
-      if (name === "success") return style(32, 39);
-      if (name === "warning") return style(33, 39);
-      if (name === "error") return style(31, 39);
+      // The terminal keeps its own colors; emphasis alone carries meaning.
+      if (name === "accent" || name === "error") return bold;
       return plain;
     }
     if (depth === 24) return style(`38;2;${rgb(palette[name]).join(";")}`, 39);
@@ -182,10 +181,15 @@ export function createMoondogTheme({ mode = "auto", environment = process.env } 
       : depth === 8 ? `48;5;${nearestXterm(palette.background)}` : light ? 107 : 40;
     background = style(code, 49);
   }
-  const selected = (value) => inverse(bold(text(value)));
+  // One selection language everywhere: a moon mark and full-strength ink, never an inverse bar.
+  const selected = (value) => bold(accent(value));
+  const selectedRow = (value) => {
+    const row = String(value ?? "");
+    return row.startsWith("→ ") ? accent("◉ ") + selected(row.slice(2)) : selected(row);
+  };
   const selectListTheme = {
-    selectedPrefix: selected,
-    selectedText: selected,
+    selectedPrefix: selectedRow,
+    selectedText: selectedRow,
     description: muted,
     scrollInfo: muted,
     noMatch: muted,
@@ -222,6 +226,7 @@ export function createMoondogTheme({ mode = "auto", environment = process.env } 
     italic,
     underline,
     inverse,
+    selected,
     background,
     editorTheme,
     selectListTheme,

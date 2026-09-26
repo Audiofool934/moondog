@@ -3,6 +3,9 @@ export const LOGO_MOTION_INTERVAL_MS = 125;
 
 const turn = Math.PI * 2;
 
+/** Record layers from faintest to strongest, matching the logo's fine grooves and solid dog. */
+export const RECORD_LAYERS = Object.freeze({ groove: 1, surface: 2, figure: 3 });
+
 const dog = [
   [-0.62, 0.48], [-0.55, 0.29], [-0.47, 0.08], [-0.42, -0.16],
   [-0.4, -0.34], [-0.32, -0.47], [-0.18, -0.61], [-0.17, -0.44],
@@ -97,7 +100,9 @@ function bezier(start, first, second, end) {
 function drawing(columns, rows, cellAspect) {
   const width = columns * 2;
   const height = rows * 4;
+  // Each dot remembers which layer inked it, so callers can tone the record like the logo.
   const dots = new Uint8Array(width * height);
+  let layer = RECORD_LAYERS.figure;
   // A Braille dot is as tall as a quarter cell and as wide as half of one.
   const stretch = cellAspect / 2;
   const radius = Math.min((width - 4) / 2.35, (height - 4) * stretch / 2.24);
@@ -110,7 +115,7 @@ function drawing(columns, rows, cellAspect) {
       for (let x = Math.max(0, Math.floor(centerX + left * radius)); x <= Math.min(width - 1, Math.ceil(centerX + right * radius)); x += 1) {
         const nx = (x - centerX) / radius;
         const ny = (y - centerY) * stretch / radius;
-        if (predicate(nx, ny, x, y)) dots[y * width + x] = ink ? 1 : 0;
+        if (predicate(nx, ny, x, y)) dots[y * width + x] = ink ? layer : 0;
       }
     }
   }
@@ -147,18 +152,22 @@ function drawing(columns, rows, cellAspect) {
         && (!hatch || (dy % 4 < 2 && dx % 9 !== 0)), ink);
   }
 
-  return { dots, width, height, radius, pixel, circle, disc, line, polygon };
+  const paintLayer = (value) => { layer = value; };
+  return { dots, width, height, radius, pixel, circle, disc, line, polygon, paintLayer };
 }
 
 function braille(columns, rows, phase, cellAspect) {
   const art = drawing(columns, rows, cellAspect);
-  const { radius, pixel, circle, disc, line, polygon } = art;
+  const { radius, pixel, circle, disc, line, polygon, paintLayer } = art;
   const detail = radius >= 39 ? 2 : radius >= 27 ? 1 : 0;
   const grooves = detail === 2
     ? [1, 0.975, 0.935, 0.895, 0.85, 0.8, 0.74, 0.67, 0.59, 0.51]
     : detail === 1 ? [1, 0.955, 0.89, 0.82, 0.74, 0.64, 0.53]
       : [1, 0.91, 0.8, 0.66];
-  for (const groove of grooves) circle(0, 0, groove, pixel * 0.95);
+  paintLayer(RECORD_LAYERS.groove);
+  // A full dot keeps each ring continuous through its diagonals without merging neighbours.
+  for (const groove of grooves) circle(0, 0, groove, pixel);
+  paintLayer(RECORD_LAYERS.surface);
 
   const rotation = phase / LOGO_MOTION_FRAMES * turn;
   const cosine = Math.cos(rotation);
@@ -188,11 +197,15 @@ function braille(columns, rows, phase, cellAspect) {
     disc(Math.cos(angle) * groove, Math.sin(angle) * groove, pixel * 1.1);
   }
 
+  paintLayer(RECORD_LAYERS.figure);
+  // Like the logo, a clear halo separates the dog from the grooves around it.
+  const headband = bezier([-0.42, -0.03], [-0.47, -0.31], [-0.27, -0.58], [-0.18, -0.59]);
+  line([...dog, dog[0]], pixel * 4.5, false);
+  line(headband, Math.max(pixel * 7, 0.11), false);
   polygon(dog, false);
   polygon(dog, true, true);
   line([...dog, dog[0]], pixel * 0.8);
 
-  const headband = bezier([-0.42, -0.03], [-0.47, -0.31], [-0.27, -0.58], [-0.18, -0.59]);
   line(headband, Math.max(pixel * 3.5, 0.065));
   line(headband, Math.max(pixel * 1.2, 0.025), false);
   const earX = -0.365;
@@ -219,15 +232,26 @@ function braille(columns, rows, phase, cellAspect) {
   disc(contact[0], contact[1], pixel * (0.95 + pulse * 0.15));
 
   const bit = [[1, 8], [2, 16], [4, 32], [64, 128]];
-  return Array.from({ length: rows }, (_, row) => Array.from({ length: columns }, (_, column) => {
-    let mask = 0;
-    for (let y = 0; y < 4; y += 1) {
-      for (let x = 0; x < 2; x += 1) {
-        if (art.dots[(row * 4 + y) * art.width + column * 2 + x]) mask |= bit[y][x];
+  const tones = [];
+  const lines = Array.from({ length: rows }, (_, row) => {
+    const rowTones = [];
+    const line = Array.from({ length: columns }, (_, column) => {
+      let mask = 0;
+      let tone = 0;
+      for (let y = 0; y < 4; y += 1) {
+        for (let x = 0; x < 2; x += 1) {
+          const value = art.dots[(row * 4 + y) * art.width + column * 2 + x];
+          if (value) mask |= bit[y][x];
+          tone = Math.max(tone, value);
+        }
       }
-    }
-    return mask ? String.fromCodePoint(0x2800 + mask) : " ";
-  }).join(""));
+      rowTones.push(tone);
+      return mask ? String.fromCodePoint(0x2800 + mask) : " ";
+    }).join("");
+    tones.push(rowTones);
+    return line;
+  });
+  return { lines, tones };
 }
 
 function ascii(columns, rows, phase) {
@@ -267,14 +291,23 @@ function ascii(columns, rows, phase) {
  * phase advances the moon surface and groove highlights through an eight-second loop.
  * The portrait and cartridge stay fixed; scheduling and motion preferences belong to the caller.
  */
-export function renderLunarRecord({ columns = 56, rows = 24, style = "braille", phase = 0, cellAspect = 2 } = {}) {
+export function renderLunarRecord(options = {}) {
+  return renderLunarRecordLayers(options).lines;
+}
+
+/** The same drawing with a RECORD_LAYERS tone for every cell, so each layer can take its own ink. */
+export function renderLunarRecordLayers({ columns = 56, rows = 24, style = "braille", phase = 0, cellAspect = 2 } = {}) {
   const width = Number.isFinite(columns) ? Math.max(0, Math.floor(columns)) : 56;
   const height = Number.isFinite(rows) ? Math.max(0, Math.floor(rows)) : 24;
-  if (!width || !height) return Array.from({ length: height }, () => "");
+  if (!width || !height) return { lines: Array.from({ length: height }, () => ""), tones: Array.from({ length: height }, () => []) };
   const frame = Number.isFinite(phase)
     ? ((Math.floor(phase) % LOGO_MOTION_FRAMES) + LOGO_MOTION_FRAMES) % LOGO_MOTION_FRAMES
     : 0;
-  if (style === "ascii" || width < 20 || height < 9) return ascii(width, height, frame);
+  if (style === "ascii" || width < 20 || height < 9) {
+    // Hand-lettered ASCII has no separable layers; it keeps one ink.
+    const lines = ascii(width, height, frame);
+    return { lines, tones: lines.map((line) => Array.from(line, (character) => character === " " ? 0 : RECORD_LAYERS.figure)) };
+  }
   const aspect = Number.isFinite(cellAspect) ? Math.min(3, Math.max(1.5, cellAspect)) : 2;
   return braille(width, height, frame, aspect);
 }

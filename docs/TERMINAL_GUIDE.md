@@ -52,7 +52,10 @@ Run `moondog doctor` or `moondog status` to inspect the local runtime.
 Every `moondog` or `npm start` launch starts a new conversation in the character-native listening room.
 The lunar record, dog silhouette, and needle are drawn with Braille dots and geometric lines, with hand-lettered ASCII available as an alternative.
 There are no embedded images or terminal image protocols.
-Paper and charcoal colors carry through conversation, profile views, menus, input, and status details.
+Moondog is black and white, like the moon: paper is black ink on white, and charcoal is moonlight on black.
+Those colors carry through conversation, profile views, menus, input, and status details.
+The record is toned like the logo, with faint grooves, a grey surface, and the dog at full strength.
+On a wide terminal the record sits beside the title; on a tall or narrow one it stacks above it, whichever leaves the record larger.
 Use `/resume` to browse recent saved conversations, filter by title, and press Enter to continue one.
 The list shows each conversation's last activity and message count; Escape returns without switching.
 `/resume <session-id>` restores a conversation directly, and `/new` starts another while keeping the previous one saved.

@@ -1701,7 +1701,8 @@ test("record sleeve wraps original-language lyrics without overflowing narrow te
   const environment = { TERM: "xterm-256color", MOONDOG_MOTION: "off" };
   const theme = createMoondogTheme({ environment });
   const terminal = new FakeTerminal();
-  terminal.rows = 24;
+  // A tall, narrow terminal stacks the record above the copy, which keeps room for the note.
+  terminal.rows = 40;
   const sleeve = new RecordSleeve({ terminal, environment, getTheme: () => theme });
   const line = "这是一段用于检查终端换行的原创测试文字，保留中文标点。";
   sleeve.setLyric(line);

@@ -16,16 +16,16 @@
     {
       "path": "moondog-tui-profile.png",
       "width": 956,
-      "height": 800,
-      "bytes": 94221,
-      "sha256": "2bb33613622f3ed5aa85034b92232c4943c4806f0f41f205f2aa9a68519be53c"
+      "height": 740,
+      "bytes": 81188,
+      "sha256": "0a04a8e36aeef5dc3182b1c83c627bd6ebd31bf628dac0520503c663720051a8"
     },
     {
       "path": "moondog-tui-home.png",
       "width": 956,
-      "height": 800,
-      "bytes": 66264,
-      "sha256": "dc1d1d762cc6bb0224181b620e6f13a1dfc38d8a2d24e73f64c2d740f5656f41"
+      "height": 740,
+      "bytes": 59160,
+      "sha256": "596e03bb9ee24e230075023d5e14a95ef47988594936e6941dbed279d0a16eb7"
     }
   ]
 }

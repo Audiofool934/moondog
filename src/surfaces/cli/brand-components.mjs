@@ -1,7 +1,7 @@
 import { CURSOR_MARKER, Editor, Text, getCellDimensions, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { stripVTControlCharacters } from "node:util";
 import { sanitizeTerminalText } from "./format-output.mjs";
-import { LOGO_MOTION_FRAMES, renderLunarRecord, renderMoondogWordmark } from "./terminal-art.mjs";
+import { LOGO_MOTION_FRAMES, renderLunarRecordLayers, renderMoondogWordmark } from "./terminal-art.mjs";
 export { ListeningMenu } from "./listening-menu.mjs";
 
 export function paintBrandLine(line, width, theme) {
@@ -282,11 +282,9 @@ export class RecordSleeve {
     this.lyricColumns = 0;
     this.canAnimate = false;
     this.cache = new Map();
-    this.colored = new Map();
   }
   invalidate() {
     this.cache.clear();
-    this.colored.clear();
     this.frame = undefined;
     this.colorTheme = undefined;
   }
@@ -336,83 +334,101 @@ export class RecordSleeve {
     const paint = (line) => paintBrandLine(line, width, theme);
     this.canAnimate = false;
     this.lyricColumns = 0;
-    const roomy = width >= 76 && rows >= 14;
-    const narrow = width < 54;
-    const available = Math.max(1, width - 4);
-    const artWidth = Math.min(50, Math.floor(available * (narrow ? 0.40 : 0.48)));
-    const rightWidth = Math.max(1, available - artWidth - 3);
-    const pixelTitle = rightWidth >= 41 && rows >= 20 && !["ascii", "text"].includes(this.artMode) && this.environment.TERM !== "dumb";
-    const withNote = (lines, columns) => {
+    const withNote = (lines, columns, budget) => {
       const scrolling = motionEnabled && !theme.plain;
       const text = `"${this.sleeveNote}"`;
       const noteLines = ["", ...(scrolling ? [scrollingLyric(text, columns, this.lyricPosition)] : wrapTextWithAnsi(text, columns)).map((line) => hang(theme.muted(line)))];
-      if (lines.length + noteLines.length > rows) return lines;
+      if (lines.length + noteLines.length > budget) return lines;
       this.canAnimate ||= scrolling;
       this.lyricColumns = scrolling ? columns : 0;
       return [...lines, ...noteLines];
     };
-    // Copy sits two columns in, so the tracklist's selection mark hangs in the gutter.
-    const copy = withNote([
-      ...(pixelTitle ? renderMoondogWordmark().map(theme.text) : [theme.bold(roomy ? "M O O N D O G" : "MOONDOG")]).map(hang),
-      ...(rows >= 12 ? [...wrapDescription("Your personal music agent.", rightWidth).map((line) => hang(theme.muted(line))), ""] : [""]),
-      ...tracklist(theme, { focused, selected, columns: rightWidth + 2 }),
-      ...(roomy ? ["", ...actionNote(focused ? homeActions[selected].description : "", rightWidth).map((line) => hang(theme.muted(line)))] : []),
-    ], rightWidth);
     if (rows < 7 || width < 34 || this.artMode === "off") {
-      this.canAnimate = false;
-      this.lyricColumns = 0;
       const compact = withNote([hang(theme.bold("MOONDOG  ◎")),
         ...(rows >= 9 && width >= 30 ? [hang(theme.muted("Your personal music agent.")), ""] : []),
         ...tracklist(theme, { focused, selected, columns: width }),
-      ], Math.max(1, width - 2));
+      ], Math.max(1, width - 2), rows);
       const top = Math.max(0, Math.floor((rows - compact.length) / 2));
       return finish(Array.from({ length: rows }, (_, row) => paint(compact[row - top] ?? "")));
     }
-    const height = Math.min(22, rows - (roomy ? 2 : 0));
     const mode = this.artMode === "ascii" || this.artMode === "text" || this.environment.TERM === "dumb" ? "ascii" : "braille";
+    // Copy sits two columns in, so the tracklist's selection mark hangs in the gutter.
+    const copyBlock = (columns, budget, roomy) => withNote([
+      ...(columns >= 41 && budget >= 20 && mode === "braille"
+        ? renderMoondogWordmark().map(theme.text) : [theme.bold(roomy ? "M O O N D O G" : "MOONDOG")]).map(hang),
+      ...(budget >= 12 ? [...wrapDescription("Your personal music agent.", columns).map((line) => hang(theme.muted(line))), ""] : [""]),
+      ...tracklist(theme, { focused, selected, columns: columns + 2 }),
+      ...(roomy ? ["", ...actionNote(focused ? homeActions[selected].description : "", columns).map((line) => hang(theme.muted(line)))] : []),
+    ], columns, budget);
+    // Choose whichever arrangement gives the record the larger radius on this screen.
+    const stretch = cellAspect / 2;
+    const radius = (columns, height) => columns < 20 || height < 9 || mode === "ascii"
+      ? Math.min(columns, height * stretch * 2) / 4
+      : Math.min((columns * 2 - 4) / 2.35, (height * 4 - 4) * stretch / 2.24);
+    const available = Math.max(1, width - 4);
+    const sideArt = Math.min(64, Math.floor(available * (width < 54 ? 0.40 : 0.48)));
+    const sideCopyWidth = Math.max(1, available - sideArt - 3);
+    const sideRoomy = width >= 76 && rows >= 14;
+    const sideHeight = Math.min(30, rows - (sideRoomy ? 2 : 0));
+    const stackCopyWidth = Math.min(41, width - 6);
+    const stackCopy = copyBlock(stackCopyWidth, Math.max(1, rows - 13), rows >= 34);
+    const stackArt = Math.min(64, width - 4);
+    const stackHeight = Math.min(30, rows - stackCopy.length - 1);
+    const stacked = stackHeight >= 9 && radius(stackArt, stackHeight) > radius(sideArt, sideHeight);
+    const artWidth = stacked ? stackArt : sideArt;
+    const height = stacked ? stackHeight : sideHeight;
+    const copy = stacked ? stackCopy : copyBlock(sideCopyWidth, rows, sideRoomy);
     this.canAnimate ||= !theme.plain && artWidth >= 20 && height >= 9;
     const phase = theme.plain ? 0 : this.phase;
     const key = `${artWidth}:${height}:${mode}:${phase}:${cellAspect}`;
-    if (!this.cache.has(key)) {
-      if (this.cache.size >= LOGO_MOTION_FRAMES * 2) this.cache.clear();
-      this.cache.set(key, renderLunarRecord({ columns: artWidth, rows: height, style: mode, phase, cellAspect }));
-    }
-    const art = this.cache.get(key);
     if (this.colorTheme !== theme) {
-      this.colored.clear();
+      this.cache.clear();
       this.colorTheme = theme;
     }
-    let colored = this.colored.get(key);
-    if (!colored) {
-      colored = art.map((ink) => {
-        let run = "";
-        let foreground = false;
-        let left = "";
-        for (const character of ink) {
-          const mask = character.codePointAt(0) - 0x2800;
-          const density = mask >= 0 && mask <= 255 ? mask.toString(2).replaceAll("0", "").length : 1;
-          const next = density >= 4;
-          if (next !== foreground && run) {
-            left += (foreground ? theme.text : theme.muted)(run);
-            run = "";
-          }
-          foreground = next;
-          run += character;
-        }
-        return left + (foreground ? theme.text : theme.muted)(run);
-      });
-      if (this.colored.size > LOGO_MOTION_FRAMES * 4) this.colored.clear();
-      this.colored.set(key, colored);
+    if (!this.cache.has(key)) {
+      if (this.cache.size >= LOGO_MOTION_FRAMES * 2) this.cache.clear();
+      this.cache.set(key, toneRecord(renderLunarRecordLayers({ columns: artWidth, rows: height, style: mode, phase, cellAspect }), theme));
     }
-    const count = rows;
-    const copyTop = Math.max(0, Math.floor((count - copy.length) / 2));
-    const artTop = Math.max(0, Math.floor((count - colored.length) / 2));
-    const lines = Array.from({ length: count }, (_, row) => {
-      const left = colored[row - artTop] ?? "";
+    const art = this.cache.get(key);
+    if (stacked) {
+      // The record is width-bound here, so drop the empty rows its box leaves above and below.
+      const inked = art.map((line) => stripVTControlCharacters(line).trim() !== "");
+      const record = art.slice(inked.indexOf(true), inked.lastIndexOf(true) + 1);
+      const artLeft = Math.floor((width - artWidth) / 2);
+      const copyWidth = Math.max(...copy.map((line) => visibleWidth(line)));
+      const copyLeft = Math.max(0, Math.floor((width - copyWidth) / 2));
+      const stack = [...record.map((line) => " ".repeat(artLeft) + line), "", ...copy.map((line) => " ".repeat(copyLeft) + line)];
+      const top = Math.max(0, Math.floor((rows - stack.length) / 2));
+      return finish(Array.from({ length: rows }, (_, row) => paint(stack[row - top] ?? "")));
+    }
+    const copyTop = Math.max(0, Math.floor((rows - copy.length) / 2));
+    const artTop = Math.max(0, Math.floor((rows - art.length) / 2));
+    const lines = Array.from({ length: rows }, (_, row) => {
+      const left = art[row - artTop] ?? "";
       return `  ${pad(left, artWidth)} ${copy[row - copyTop] ?? ""}`;
     });
     return finish(lines.map(paint));
   }
+}
+
+/** Ink each record layer separately: faint grooves, a grey surface, and the dog at full strength. */
+function toneRecord({ lines, tones }, theme) {
+  const inks = [theme.faint, theme.faint, theme.muted, theme.accent];
+  return lines.map((line, row) => {
+    let result = "";
+    let run = "";
+    let current = 0;
+    Array.from(line).forEach((character, column) => {
+      const tone = character === " " ? current : tones[row][column] ?? 0;
+      if (tone !== current && run) {
+        result += inks[current](run);
+        run = "";
+      }
+      current = tone;
+      run += character;
+    });
+    return result + (run ? inks[current](run) : "");
+  });
 }
 
 /** The home actions as a sleeve tracklist: each row names the command that opens it. */
@@ -425,7 +441,7 @@ function tracklist(theme, { focused, selected, columns }) {
     const active = focused && selected === index;
     const label = action[key ?? "short"];
     const marker = active ? theme.accent("◉ ") : "  ";
-    const name = active ? theme.bold(theme.text(label)) : focused ? theme.muted(label) : theme.text(label);
+    const name = active ? theme.selected(label) : focused ? theme.muted(label) : theme.text(label);
     if (!key) return marker + name;
     const command = `/${action.command}`;
     const leader = "·".repeat(width - 4 - visibleWidth(label) - command.length);

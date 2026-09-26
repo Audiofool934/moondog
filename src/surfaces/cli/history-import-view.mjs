@@ -431,8 +431,8 @@ export class HistoryImportView {
       this.selected = Math.min(this.selected, page.actions.length - 1);
       const actions = page.actions.map(({ label }, index) => {
         const selected = index === this.selected;
-        const text = fit((selected ? "› " : "  ") + label, inner);
-        return selected ? theme.inverse(theme.bold(text)) : theme.text(text);
+        const text = fit((selected ? "◉ " : "  ") + label, inner);
+        return selected ? theme.selected(text) : theme.text(text);
       });
       const hint = this.contentMaxOffset > 0
         ? inner >= 36 ? "↑↓ ↵ choose · PgUp/Dn read · Esc back" : "↑↓ ↵ · PgUp/Dn read · Esc"

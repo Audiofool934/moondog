@@ -156,7 +156,7 @@ export class TasteProfileView {
     }
     return categories.map(({ id, label }) => {
       const text = width < 38 && id === "choices" ? "Choices" : label;
-      return id === this.category ? theme.inverse(theme.bold(` ${text} `)) : theme.muted(text);
+      return id === this.category ? theme.underline(theme.selected(text)) : theme.muted(text);
     }).join(width >= 34 ? "  " : " ");
   }
 
@@ -169,11 +169,11 @@ export class TasteProfileView {
     const lines = [];
     for (const subject of this.filtered.slice(start, start + capacity)) {
       const selected = subject.key === this.selectedKey;
-      const marker = selected ? "› " : "  ";
+      const marker = selected ? "◉ " : "  ";
       const label = inline(subject.label) || (subject.kind === "artist" ? "Artist" : "Track");
       const stance = subject.stance === "like" ? "+" : subject.stance === "avoid" ? "−" : "";
       const main = ends(marker + label, stance, width);
-      lines.push(selected ? theme.inverse(theme.bold(fit(main, width))) : theme.text(main));
+      lines.push(selected ? theme.selected(main) : theme.text(main));
       if (!compact && lines.length < height) lines.push(theme.muted(`  ${inline(subject.subtitle) || (subject.kind === "artist" ? "Artist" : "Track")}`));
     }
     return Array.from({ length: height }, (_, index) => lines[index] ?? "");

@@ -3,8 +3,8 @@ function choices(entries) {
 }
 
 const themeChoices = choices([
-  ["paper", "Warm ivory and charcoal ink"],
-  ["charcoal", "A quiet room, warm light"],
+  ["paper", "Black ink on white paper"],
+  ["charcoal", "Moonlight on a black sky"],
   ["terminal", "Keep your terminal's colors"],
   ["auto", "Follow MOONDOG_THEME, or guess from your terminal"],
 ]);

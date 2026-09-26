@@ -1342,8 +1342,8 @@ export async function runMoondogTui({
       let mode = args[0];
       if (!mode) {
         const selected = await choose([
-          { value: "paper", label: "Paper", description: "Warm ivory and charcoal ink" },
-          { value: "charcoal", label: "Charcoal", description: "A quiet room, warm light" },
+          { value: "paper", label: "Paper", description: "Black ink on white paper" },
+          { value: "charcoal", label: "Charcoal", description: "Moonlight on a black sky" },
           { value: "terminal", label: "Terminal", description: "Keep your terminal's colors" },
           { value: "auto", label: "Auto", description: "Follow MOONDOG_THEME, or guess from your terminal" },
         ], theme.mode, "Pick a look");
