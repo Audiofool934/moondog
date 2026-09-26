@@ -1727,9 +1727,9 @@ test("home lyrics scroll left, loop intact, and clip wide graphemes without shif
   for (let tick = 0; tick < 12; tick++) sleeve.advance();
   assert.deepEqual(frame(), opening, "the opening gives the reader a short pause");
   sleeve.advance();
-  assert.ok(frame()[lyricRow].startsWith(" 夜色里"), "the opening quote moves off the left edge first");
+  assert.ok(frame()[lyricRow].startsWith("  夜色里"), "the opening quote moves off the left edge first");
   sleeve.advance();
-  assert.ok(frame()[lyricRow].startsWith("  色里"), "a clipped wide character leaves its remaining cell empty");
+  assert.ok(frame()[lyricRow].startsWith("   色里"), "a clipped wide character leaves its remaining cell empty");
   const frames = [frame()];
   for (let tick = 0; tick < 130; tick++) {
     sleeve.advance();
@@ -1767,7 +1767,7 @@ test("the next lyric waits until the current line exits, enters from the right, 
   sleeve.advance();
   assert.equal(calls, 1);
   assert.equal(sleeve.sleeveNote, "Another fixture line");
-  assert.equal(sleeve.lyricPosition, 39, "the next line starts beyond the right edge");
+  assert.equal(sleeve.lyricPosition, 38, "the next line starts beyond the right edge");
   frame();
   sleeve.advance();
   assert.ok(frame().some((row) => row.endsWith('"')), "the opening quote enters from the right");

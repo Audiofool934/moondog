@@ -338,35 +338,30 @@ export class RecordSleeve {
     const available = Math.max(1, width - 4);
     const artWidth = Math.min(50, Math.floor(available * (narrow ? 0.40 : 0.48)));
     const rightWidth = Math.max(1, available - artWidth - 3);
-    const actionLines = homeActions.map((action, index) => {
-      const label = narrow ? action.short : action.label;
-      const active = focused && selected === index;
-      const prefix = active ? theme.accent("› ") : theme.faint(`${index + 1} `);
-      return prefix + (active ? theme.inverse(theme.bold(` ${label} `)) : theme.text(` ${label} `));
-    });
     const pixelTitle = rightWidth >= 41 && rows >= 20 && !["ascii", "text"].includes(this.artMode) && this.environment.TERM !== "dumb";
     const withNote = (lines, columns) => {
       const scrolling = motionEnabled && !theme.plain;
       const text = `"${this.sleeveNote}"`;
-      const noteLines = ["", ...(scrolling ? [scrollingLyric(text, columns, this.lyricPosition)] : wrapTextWithAnsi(text, columns)).map(theme.muted)];
+      const noteLines = ["", ...(scrolling ? [scrollingLyric(text, columns, this.lyricPosition)] : wrapTextWithAnsi(text, columns)).map((line) => hang(theme.muted(line)))];
       if (lines.length + noteLines.length > rows) return lines;
       this.canAnimate ||= scrolling;
       this.lyricColumns = scrolling ? columns : 0;
       return [...lines, ...noteLines];
     };
+    // Copy sits two columns in, so the tracklist's selection mark hangs in the gutter.
     const copy = withNote([
-      ...(pixelTitle ? renderMoondogWordmark().map(theme.text) : [theme.bold(roomy ? "M O O N D O G" : "MOONDOG")]),
-      ...(rows >= 12 ? [...wrapDescription("Your personal music agent.", rightWidth).map(theme.muted), ""] : [""]),
-      ...actionLines,
-      ...(roomy ? ["", ...wrapDescription(homeActions[selected].description, rightWidth).map(theme.muted)] : []),
+      ...(pixelTitle ? renderMoondogWordmark().map(theme.text) : [theme.bold(roomy ? "M O O N D O G" : "MOONDOG")]).map(hang),
+      ...(rows >= 12 ? [...wrapDescription("Your personal music agent.", rightWidth).map((line) => hang(theme.muted(line))), ""] : [""]),
+      ...tracklist(theme, { focused, selected, columns: rightWidth + 2 }),
+      ...(roomy ? ["", ...actionNote(focused ? homeActions[selected].description : "", rightWidth).map((line) => hang(theme.muted(line)))] : []),
     ], rightWidth);
     if (rows < 7 || width < 34 || this.artMode === "off") {
       this.canAnimate = false;
       this.lyricColumns = 0;
-      const compact = withNote([theme.bold("MOONDOG  ◎"),
-        ...(rows >= 9 && width >= 30 ? [theme.muted("Your personal music agent."), ""] : []),
-        ...actionLines,
-      ], Math.max(1, width - 1)).map((line) => ` ${line}`);
+      const compact = withNote([hang(theme.bold("MOONDOG  ◎")),
+        ...(rows >= 9 && width >= 30 ? [hang(theme.muted("Your personal music agent.")), ""] : []),
+        ...tracklist(theme, { focused, selected, columns: width }),
+      ], Math.max(1, width - 2));
       const top = Math.max(0, Math.floor((rows - compact.length) / 2));
       return finish(Array.from({ length: rows }, (_, row) => paint(compact[row - top] ?? "")));
     }
@@ -411,10 +406,39 @@ export class RecordSleeve {
     const artTop = Math.max(0, Math.floor((count - colored.length) / 2));
     const lines = Array.from({ length: count }, (_, row) => {
       const left = colored[row - artTop] ?? "";
-      return `  ${pad(left, artWidth)}   ${copy[row - copyTop] ?? ""}`;
+      return `  ${pad(left, artWidth)} ${copy[row - copyTop] ?? ""}`;
     });
     return finish(lines.map(paint));
   }
+}
+
+/** The home actions as a sleeve tracklist: each row names the command that opens it. */
+function tracklist(theme, { focused, selected, columns }) {
+  // Two columns hold the selection mark; the rest matches the pixel wordmark's width.
+  const width = Math.min(columns, 43);
+  const fits = (key) => homeActions.every((action) => visibleWidth(action[key]) + action.command.length + 8 <= width);
+  const key = fits("label") ? "label" : fits("short") ? "short" : null;
+  return homeActions.map((action, index) => {
+    const active = focused && selected === index;
+    const label = action[key ?? "short"];
+    const marker = active ? theme.accent("◉ ") : "  ";
+    const name = active ? theme.bold(theme.text(label)) : focused ? theme.muted(label) : theme.text(label);
+    if (!key) return marker + name;
+    const command = `/${action.command}`;
+    const leader = "·".repeat(width - 4 - visibleWidth(label) - command.length);
+    return `${marker}${name} ${(active ? theme.accent : theme.faint)(leader)} ${(active ? theme.accent : theme.muted)(command)}`;
+  });
+}
+
+/** Hold the tallest note's rows so moving through the list never shifts the sleeve. */
+function actionNote(text, width) {
+  const rows = Math.max(...homeActions.map((action) => wrapDescription(action.description, width).length));
+  const lines = wrapDescription(text, width);
+  return [...lines, ...Array(rows - lines.length).fill("")];
+}
+
+function hang(line) {
+  return `  ${line}`;
 }
 
 function wrapDescription(text, width) {

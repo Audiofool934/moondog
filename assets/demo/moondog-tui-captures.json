@@ -1,6 +1,6 @@
 {
   "schema": "moondog.tui-public-media.v1",
-  "captured_on": "2026-09-24",
+  "captured_on": "2026-09-26",
   "source": "Actual Moondog TUI output in a private tmux session, rendered cell by cell in headless Chrome",
   "terminal": {
     "columns": 100,
@@ -24,8 +24,8 @@
       "path": "moondog-tui-home.png",
       "width": 956,
       "height": 800,
-      "bytes": 68137,
-      "sha256": "e5d2e62388fe0b8a03414ebbb6e58e578b57150cf17b4973ae0ced9c52b4e406"
+      "bytes": 66264,
+      "sha256": "dc1d1d762cc6bb0224181b620e6f13a1dfc38d8a2d24e73f64c2d740f5656f41"
     }
   ]
 }
