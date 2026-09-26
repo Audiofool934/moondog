@@ -57,7 +57,7 @@ The only other colors are the six from the prism on The Dark Side of the Moon, u
 Those colors carry through conversation, profile views, menus, input, and status details.
 The record is toned like the logo, with faint grooves, a grey surface, and the dog at full strength.
 On a wide terminal the record sits beside the title; on a tall or narrow one it stacks above it, whichever leaves the record larger.
-Side by side, the group is centered on the screen, the MOONDOG wordmark sits level with the dog's eye, and the lyric scrolls beneath both, from the title's right edge to the record's left edge.
+Side by side, the group is centered on the screen, the MOONDOG wordmark sits level with the dog's eye, and the lyric scrolls midway between the record and the input box, from the title's right edge to the record's left edge.
 Use `/resume` to browse recent saved conversations, filter by title, and press Enter to continue one.
 The list shows each conversation's last activity and message count; Escape returns without switching.
 `/resume <session-id>` restores a conversation directly, and `/new` starts another while keeping the previous one saved.

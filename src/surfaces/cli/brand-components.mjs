@@ -454,12 +454,18 @@ export class RecordSleeve {
       layout = arrange(withNote(lean, sideCopyWidth, rows - Math.max(0, eyeTop - artRows[0])), false);
     }
     const { copyTop, bodyTop, bodyBottom, below } = layout;
-    const groupBottom = below ? bodyBottom + 1 + lyric.length : bodyBottom;
-    const originRow = Math.max(0, Math.floor((rows - (groupBottom - bodyTop + 1)) / 2)) - bodyTop;
+    // Center the record and copy on their own; the lyric then floats midway between the record's
+    // bottom and the input box, keeping a blank row above it when the sleeve is short.
+    const bodyHeight = bodyBottom - bodyTop + 1;
+    const needed = below ? lyric.length + 2 : 0;
+    const bodyRow = Math.max(0, Math.min(Math.floor((rows - bodyHeight) / 2), rows - bodyHeight - needed));
+    const originRow = bodyRow - bodyTop;
+    const space = rows - (bodyRow + bodyHeight);
+    const lyricRow = bodyRow + bodyHeight + Math.max(1, Math.floor((space - lyric.length) / 2));
     const originColumn = Math.max(0, Math.floor((width - (layout.groupRight - groupLeft)) / 2) - groupLeft);
     const lines = Array.from({ length: rows }, (_, row) => {
+      if (below && row >= lyricRow && row < lyricRow + lyric.length) return " ".repeat(originColumn + groupLeft) + lyric[row - lyricRow];
       const at = row - originRow;
-      if (below && at > bodyBottom + 1) return " ".repeat(originColumn + groupLeft) + (lyric[at - bodyBottom - 2] ?? "");
       const left = art.lines[at] ?? "";
       const right = layout.copy[at - copyTop] ?? "";
       return " ".repeat(originColumn) + pad(left, artWidth) + " " + right;
