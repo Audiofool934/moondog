@@ -125,6 +125,8 @@ Before saving, the listener can return to the file step or leave the guide.
 
 The completed receipt reports newly stored records, already-present records, and reconciled overlaps when applicable.
 Newly stored records are not presented as an equal increase in effective plays, because a richer record can replace an overlapping observation.
+When overlaps are reconciled, the receipt separates newly stored records from the actual change in the profile's play count, including an unchanged or reduced count.
+A previously imported history archive can still contribute new collection evidence; the receipt reports that evidence instead of claiming nothing changed.
 The receipt is kept before profile refresh, so a display failure cannot conceal a successful import.
 The cumulative profile then opens immediately for evidence inspection and Like, Avoid, or retraction.
 Repeated imports preserve existing history and explicit corrections.

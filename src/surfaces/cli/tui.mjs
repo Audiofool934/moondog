@@ -1087,18 +1087,29 @@ export async function runMoondogTui({
       importNeedsRefresh = receipt;
       discardPreparedImport();
       if (cleanedUp) return;
+      const insertedEvents = receipt.inserted_events ?? 0;
+      const supersededEvents = receipt.superseded_events ?? 0;
+      const playDelta = receipt.effective_event_delta ?? insertedEvents - supersededEvents;
+      const playCountChange = playDelta === 0 ? "The profile's play count is unchanged."
+        : playDelta > 0 ? `The profile has ${playDelta} more ${playDelta === 1 ? "play" : "plays"}.`
+        : `The profile has ${-playDelta} fewer ${playDelta === -1 ? "play" : "plays"} after reconciling overlaps.`;
       const counts = preview.kind === "library"
         ? receipt.already_imported ? "You've imported this library before, so nothing changed."
           : `Saved ${receipt.library_tracks ?? preview.tracks} songs from your library. A library shows what you keep, not when you played it, so no plays were added.`
-        : receipt.already_imported || (receipt.inserted_events === 0 && !receipt.inserted_profile_evidence && !receipt.superseded_events)
+        : insertedEvents === 0 && !receipt.inserted_profile_evidence && !supersededEvents
         ? "Already up to date. There was nothing new in this one."
-        : `${receipt.inserted_events ?? 0} new ${receipt.inserted_events === 1 ? "play" : "plays"}${receipt.duplicate_events ? `, ${receipt.duplicate_events} I already had` : ""}.${receipt.inserted_profile_evidence ? ` Also ${receipt.inserted_profile_evidence} saved songs, follows, or playlist entries.` : ""}`;
+        : [
+          supersededEvents
+            ? `Saved ${insertedEvents} new listening ${insertedEvents === 1 ? "record" : "records"}. ${playCountChange}`
+            : `${insertedEvents} new ${insertedEvents === 1 ? "play" : "plays"}${receipt.duplicate_events ? `, ${receipt.duplicate_events} I already had` : ""}.`,
+          ...(receipt.inserted_profile_evidence ? [`Also ${receipt.inserted_profile_evidence} saved songs, follows, or playlist entries.`] : []),
+        ].join(" ");
       // Keep the durable result visible even if refreshing the runtime later fails.
       addMoondogMessage([
         preview.kind === "library" ? "## Your Apple Music library is in" : preview.kind === "collection" ? "## Your collection is in" : "## Your history is in",
         [preview.sourceLabel, preview.fileName].filter(Boolean).join(" · "),
         counts,
-        ...(receipt.superseded_events ? [`${receipt.superseded_events} plays you already had were replaced with more detailed versions.`] : []),
+        ...(supersededEvents ? [`Reconciled ${supersededEvents} overlapping ${supersededEvents === 1 ? "record" : "records"}, keeping the more detailed listening evidence.`] : []),
         "Everything from before is still here, including your choices. `/import` adds another source any time.",
       ].join("\n\n"));
       setImportPage("working", { message: "Saved. Reading it..." });

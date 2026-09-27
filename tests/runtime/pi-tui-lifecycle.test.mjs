@@ -936,6 +936,33 @@ for (const refreshError of [false, true]) {
   });
 }
 
+for (const [label, receipt, expected] of [
+  ["richer replacements", { inserted_events: 2, superseded_events: 2, effective_event_delta: 0 }, "The profile's play count is unchanged."],
+  ["new records alongside replacements", { inserted_events: 3, superseded_events: 2, effective_event_delta: 1 }, "The profile has 1 more play."],
+  ["deferred overlap reconciliation", { inserted_events: 0, superseded_events: 1, effective_event_delta: -1, already_imported: true }, "The profile has 1 fewer play after reconciling overlaps."],
+  ["new collection evidence from a known history archive", { inserted_events: 0, inserted_profile_evidence: 3, already_imported: true }, "Also 3 saved songs, follows, or playlist entries."],
+  ["an unchanged repeat", { inserted_events: 0, duplicate_events: 2, already_imported: true }, "Already up to date. There was nothing new in this one."],
+]) {
+  test(`guided import receipt explains ${label}`, async (context) => {
+    const fixture = await createGuidedImportFixture(context, { commit: async () => receipt });
+    await fixture.submit("/import /tmp/Chosen History.zip", "Review this import");
+    fixture.terminal.send("\r");
+    await fixture.outputIncludes("Your listening profile");
+    fixture.terminal.output = "";
+    fixture.terminal.send("\x1b");
+    await fixture.outputIncludes("Your history is in");
+    const transcript = stripVTControlCharacters(fixture.terminal.output);
+    assert.ok(transcript.replace(/\s+/gu, " ").includes(expected), transcript);
+    if (receipt.superseded_events) {
+      assert.doesNotMatch(transcript, /\d+ new plays|Already up to date/u);
+      assert.match(transcript, /overlapping records?/u);
+    }
+    assert.equal(fixture.calls.commits, 1);
+    assert.equal(fixture.calls.profiles, 1);
+    assert.deepEqual(fixture.prompts, []);
+  });
+}
+
 test("guided import closes a late inspection handle after shutdown without committing or redrawing", async (context) => {
   let finishInspection;
   const inspection = new Promise((resolve) => { finishInspection = resolve; });
