@@ -292,7 +292,7 @@ test("Spotify-only history builds a private historical-return plan", async (cont
   application.endPrompt();
 });
 
-test("Spotify-only history builds a private played-back-to-back plan", async (context) => {
+test("Spotify-only history revises a played-back-to-back plan with outside music", async (context) => {
   const root = await mkdtemp(path.join(tmpdir(), "moondog-history-back-to-back-"));
   context.after(() => rm(root, { recursive: true, force: true }));
   const store = await openListeningHistoryStore({
@@ -369,9 +369,130 @@ test("Spotify-only history builds a private played-back-to-back plan", async (co
   });
   assert.equal(explanation.claim.dimension, "listening.back_to_back");
   application.endPrompt();
+
+  application.beginPrompt();
+  const retainedHistory = application.pendingSpotifyPlaylistStatus().revision;
+  const external = application.domainServices.registerExternalCandidateSet({
+    tracks: [{
+      track_ref_id: "22222222-2222-4222-8222-222222222222",
+      title: "Moonlit Glass",
+      artist_credit: "North Window",
+      release: "Fictional Horizon",
+      candidate_scope: "external_catalog",
+      catalog_provider: "apple_music",
+    }],
+    source: {
+      provider: "apple_music",
+      catalog: "itunes_search_api",
+      storefront: "US",
+      retrieved_at: capturedAt,
+      coverage: "Fictional test catalog.",
+    },
+  });
+  const mixedPlan = await application.buildPlaylistPlan({
+    intent: "Pair a familiar track with an outside discovery.",
+    requestedTrackCount: 2,
+    candidateSetIds: [retainedHistory.candidate_set_id, external.candidate_set_id],
+    trackRefs: [...plan.tracks, ...external.tracks].map((track) => ({
+      trackRefId: track.track_ref_id,
+      selectionReason: "Move from a familiar sequence to new music.",
+    })),
+    orderingNotes: "Start familiar, then step outside.",
+  });
+  application.endPrompt();
+
+  application.beginPrompt();
+  const retainedMixed = application.pendingSpotifyPlaylistStatus().revision;
+  assert.equal(retainedMixed.state, "ready");
+  assert.equal(retainedMixed.candidate_scope, "mixed");
+  assert.doesNotMatch(JSON.stringify(retainedMixed), /external_refs|6rqhFgbbKwnb9MLmUQDhG6/u);
+  const trusted = application.domainServices.getTrustedTracks(
+    mixedPlan.tracks.map((track) => track.track_ref_id),
+  );
+  assert.equal(trusted[0].external_refs[0].external_id, "6rqhFgbbKwnb9MLmUQDhG6");
+  assert.equal(trusted[0].identity_status, "resolved");
+  assert.deepEqual(trusted[0].back_to_back, candidates.tracks[0].back_to_back);
+  const revised = await application.buildPlaylistPlan({
+    intent: "Hear the discovery before the familiar track.",
+    requestedTrackCount: 2,
+    candidateSetIds: [retainedMixed.candidate_set_id],
+    trackRefs: [...mixedPlan.tracks].reverse().map((track) => ({
+      trackRefId: track.track_ref_id,
+      selectionReason: "The listener reversed the listening order.",
+    })),
+    orderingNotes: "Start outside, then return to the familiar sequence.",
+  });
+  assert.equal(revised.candidate_scope, "mixed");
+  assert.deepEqual(revised.tracks.map((track) => track.candidate_scope), ["external_catalog", "private_history"]);
+  assert.deepEqual(revised.tracks[1].history_context, { kind: "back_to_back" });
+  application.endPrompt();
 });
 
-test("history-only profiles can plan with outside music they have not played yet", async (context) => {
+test("retained history-profile candidates preserve validation, privacy, and prompt limits", () => {
+  const services = createListeningProfileDomainServices({
+    listeningHistoryStore: {
+      profileSummary() {},
+      explainProfileEvidence() {},
+      subjectDataStatus() {},
+      close() {},
+    },
+    subjectId,
+  });
+  const track = {
+    track_ref_id: "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+    title: "Moonlit Glass",
+    artist_credit: "North Window",
+    release: "Fictional Horizon",
+    candidate_scope: "external_catalog",
+    catalog_provider: "apple_music",
+    catalog_url: "https://music.apple.com/us/album/1700000002",
+    duration_ms: 180_000,
+    matched_queries: ["Fictional catalog query"],
+    external_refs: [{ system: "spotify", entity_type: "spotify.track", external_id: "1234567890123456789012" }],
+    observation_summary: { preference_signals: ["loved"] },
+    rediscovery: { evidence_id: subjectId },
+  };
+  try {
+    for (const invalid of [
+      [],
+      [null],
+      [{ ...track, candidate_scope: "private_library" }],
+      [{ ...track, candidate_scope: "private_history" }],
+      [{ ...track, catalog_provider: "unknown" }],
+      [{ ...track, catalog_provider: "listenbrainz" }],
+      [{ ...track, track_ref_id: "not-a-uuid" }],
+      [track, { ...track, track_ref_id: track.track_ref_id.toLowerCase() }],
+      Array(13).fill(track),
+    ]) {
+      assert.throws(() => services.registerRetainedPlaylistCandidateSet({ tracks: invalid }));
+    }
+    const retained = services.registerRetainedPlaylistCandidateSet({ tracks: [track] });
+    assert.equal(retained.source, "retained_validated_playlist");
+    assert.equal(retained.tracks[0].track_ref_id, track.track_ref_id.toLowerCase());
+    assert.equal(retained.tracks[0].catalog_url, track.catalog_url);
+    assert.equal(retained.tracks[0].duration_ms, track.duration_ms);
+    assert.deepEqual(retained.tracks[0].observation_summary.preference_signals, []);
+    assert.equal("rediscovery" in retained.tracks[0], false);
+    assert.equal("external_refs" in retained.tracks[0], false);
+    track.title = "Changed caller input";
+    retained.tracks[0].matched_queries.push("Changed caller output");
+    const trusted = services.getTrustedTracks([track.track_ref_id]);
+    assert.equal(trusted[0].title, "Moonlit Glass");
+    assert.deepEqual(trusted[0].matched_queries, ["Fictional catalog query"]);
+    trusted[0].title = "Changed trusted copy";
+    assert.equal(services.getTrustedTracks([track.track_ref_id])[0].title, "Moonlit Glass");
+    for (let index = 1; index < 8; index += 1) {
+      services.registerRetainedPlaylistCandidateSet({ tracks: [track] });
+    }
+    assert.throws(() => services.registerRetainedPlaylistCandidateSet({ tracks: [track] }), /candidate set limit/u);
+    assert.deepEqual(services.endPrompt(), { invalidated_candidate_sets: 8 });
+    assert.throws(() => services.getTrustedTracks([track.track_ref_id]), /unavailable/u);
+  } finally {
+    services.close();
+  }
+});
+
+test("history-only profiles can continue and revise plans with outside music", async (context) => {
   const root = await mkdtemp(path.join(tmpdir(), "moondog-history-discovery-"));
   context.after(() => rm(root, { recursive: true, force: true }));
   const store = await openListeningHistoryStore({
@@ -409,6 +530,16 @@ test("history-only profiles can plan with outside music they have not played yet
     tracks: [
       external("22222222-2222-4222-8222-222222222222", "Roads", "Portishead"),
       external("33333333-3333-4333-8333-333333333333", "Teardrop", "Massive Attack"),
+      {
+        ...external("44444444-4444-4444-8444-444444444444", "Moonlit Glass", "North Window"),
+        catalog_provider: "listenbrainz",
+        discovery_basis: {
+          kind: "listenbrainz_collaborative_artist_similarity",
+          mode: "easy",
+          seed_artist: "Fictional Seed",
+          adjacent_artist: "North Window",
+        },
+      },
     ],
     source: {
       provider: "apple_music",
@@ -419,16 +550,55 @@ test("history-only profiles can plan with outside music they have not played yet
     },
   });
   assert.equal(registered.excluded_library_matches, 1);
-  assert.deepEqual(registered.tracks.map((track) => track.title), ["Teardrop"]);
+  assert.deepEqual(registered.tracks.map((track) => track.title), ["Teardrop", "Moonlit Glass"]);
 
   const plan = await application.buildPlaylistPlan({
-    intent: "Find 1 song near my listening.",
-    requestedTrackCount: 1,
+    intent: "Find 2 songs near my listening.",
+    requestedTrackCount: 2,
     candidateSetIds: [registered.candidate_set_id],
-    trackRefs: [{ trackRefId: "33333333-3333-4333-8333-333333333333", selectionReason: "Same late-night trip-hop air." }],
+    trackRefs: registered.tracks.map((track) => ({
+      trackRefId: track.track_ref_id,
+      selectionReason: "One step outside the listening history.",
+    })),
     orderingNotes: "One step outward.",
   });
   assert.equal(plan.candidate_scope, "external_catalog");
   assert.equal(plan.tracks[0].candidate_scope, "external_catalog");
   assert.equal("history_context" in plan.tracks[0], false);
+  application.endPrompt();
+  assert.throws(() => application.domainServices.getTrustedTracks([plan.tracks[0].track_ref_id]), /unavailable/u);
+
+  application.beginPrompt();
+  const retained = application.pendingSpotifyPlaylistStatus().revision;
+  assert.equal(retained.state, "ready");
+  assert.equal(retained.candidate_scope, "external_catalog");
+  assert.equal(retained.expires_on, "prompt_end");
+  assert.notEqual(retained.candidate_set_id, registered.candidate_set_id);
+  const revisedArguments = {
+    intent: "Reverse the outside discoveries.",
+    requestedTrackCount: 2,
+    candidateSetIds: [retained.candidate_set_id],
+    trackRefs: [...plan.tracks].reverse().map((track) => ({
+      trackRefId: track.track_ref_id,
+      selectionReason: "The listener requested this order.",
+    })),
+    orderingNotes: "Reverse the validated plan.",
+  };
+  await assert.rejects(application.buildPlaylistPlan({
+    ...revisedArguments,
+    candidateSetIds: [registered.candidate_set_id],
+  }), /unavailable or expired/u);
+  const revised = await application.buildPlaylistPlan(revisedArguments);
+  assert.equal(revised.candidate_scope, "external_catalog");
+  assert.deepEqual(revised.tracks.map((track) => track.track_ref_id), [...plan.tracks].reverse().map((track) => track.track_ref_id));
+  assert.deepEqual(revised.tracks.map((track) => track.discovery_evidence), [...plan.tracks].reverse().map((track) => track.discovery_evidence));
+  const trusted = application.domainServices.getTrustedTracks(revised.tracks.map((track) => track.track_ref_id));
+  assert.ok(trusted.every((track) => track.observation_summary.familiarity.basis === "external_catalog_not_personal_evidence"));
+  assert.deepEqual(trusted[0].knownness, registered.tracks[0].knownness);
+  application.endPrompt();
+  await assert.rejects(application.domainServices.buildPlaylistPlan(revisedArguments), /unavailable or expired/u);
+
+  application.beginPrompt();
+  assert.deepEqual(application.pendingSpotifyPlaylistStatus().revision.tracks, revised.tracks);
+  application.endPrompt();
 });

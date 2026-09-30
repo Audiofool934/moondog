@@ -972,13 +972,41 @@ export class ListeningProfileDomainServices {
     ) {
       throw new TypeError("Retained playlist candidates are invalid");
     }
-    const registered = this.#registerHistoryTracks(tracks);
+    if (this.#candidateSets.size >= CANDIDATE_SETS_MAX) {
+      throw new Error("The prompt has reached its candidate set limit");
+    }
+    const prepared = tracks.map((track) =>
+      track?.candidate_scope === "external_catalog"
+        ? {
+            ...safeExternalTrack(track),
+            knownness: {
+              imported_library: "not_imported",
+              listening_history: "not_found_by_exact_title_artist",
+            },
+          }
+        : safeHistoryTrack(track),
+    );
+    if (
+      new Set(prepared.map((track) => track.track_ref_id)).size !==
+      prepared.length
+    ) {
+      throw new TypeError("Retained playlist candidates are duplicated");
+    }
+    const candidateSetId = randomUUID();
+    this.#candidateSets.set(
+      candidateSetId,
+      new Map(
+        prepared.map((track) => [track.track_ref_id, structuredClone(track)]),
+      ),
+    );
+    const scopes = new Set(prepared.map((track) => track.candidate_scope));
     return {
-      candidate_set_id: registered.candidateSetId,
-      candidate_scope: "private_history",
-      result_count: registered.tracks.length,
+      candidate_set_id: candidateSetId,
+      candidate_scope: scopes.size === 1 ? [...scopes][0] : "mixed",
+      result_count: prepared.length,
       expires_on: "prompt_end",
-      tracks: registered.tracks.map(publicHistoryTrack),
+      source: "retained_validated_playlist",
+      tracks: prepared.map(publicHistoryTrack),
     };
   }
 
