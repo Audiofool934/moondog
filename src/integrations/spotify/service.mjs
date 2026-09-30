@@ -683,18 +683,54 @@ export function createSpotifyService(options = {}) {
       const input = inputObject(value);
       const type = input.type ?? "tracks";
       const limit = input.limit ?? 10;
-      if (!["tracks", "albums", "shows"].includes(type) || !Number.isInteger(limit) || limit < 1 || limit > 20) {
-        fail("invalid_library_page", "Browse saved tracks, albums, or shows with a limit from 1 to 20.");
+      if (!["tracks", "albums", "shows", "playlists", "artists"].includes(type) || !Number.isInteger(limit) || limit < 1 || limit > 20) {
+        fail("invalid_library_page", "Browse saved tracks, albums, shows, playlists, or followed artists with a limit from 1 to 20.");
       }
+      if (type === "artists") {
+        if (input.offset !== undefined || input.after !== undefined && (typeof input.after !== "string" || !/^[A-Za-z0-9]{1,128}$/u.test(input.after))) fail("invalid_artist_cursor", "Use the returned after cursor for followed artists, not offset.");
+        return client.getFollowedArtists({ limit, after: input.after }, { signal });
+      }
+      if (input.after !== undefined) fail("invalid_library_cursor", "Use offset for this library type.");
       return client.getSavedItems({ type, limit, offset: playlistPageOffset(input.offset) }, { signal });
     },
 
     async searchTracks(value, { signal } = {}) {
       const input = inputObject(value);
+      const type = input.type ?? "track";
+      if (!["track", "album", "artist", "playlist", "show", "episode"].includes(type)) fail("invalid_search_type", "Choose track, album, artist, playlist, show, or episode.");
+      const offset = input.offset ?? 0;
+      if (!Number.isInteger(offset) || offset < 0 || offset > 1000) fail("invalid_search_offset", "Search offset must be from 0 to 1000.");
+      if (type !== "track" || offset !== 0) return client.searchItems({ query: searchQuery(input.query), type, limit: searchLimit(input.limit), offset }, { signal });
       return client.searchTracks({
         query: searchQuery(input.query),
         limit: searchLimit(input.limit),
       }, { signal });
+    },
+
+    async catalogChildren(value, { signal } = {}) {
+      signal?.throwIfAborted();
+      const input = inputObject(value);
+      if (!["album", "show"].includes(input.type) || typeof input.id !== "string" || !/^[A-Za-z0-9]{1,128}$/u.test(input.id)) fail("invalid_catalog_parent", "Choose a returned album or show reference.");
+      const limit = input.limit ?? 10;
+      if (!Number.isInteger(limit) || limit < 1 || limit > 20) fail("invalid_catalog_limit", "Read from 1 to 20 album tracks or episodes per page.");
+      return client.getCatalogChildren({ type: input.type, id: input.id, limit, offset: playlistPageOffset(input.offset) }, { signal });
+    },
+
+    async saveItems(value, { signal } = {}) {
+      signal?.throwIfAborted();
+      const uris = inputObject(value).uris;
+      if (!Array.isArray(uris) || uris.length < 1 || uris.length > 12 || uris.some((uri) => typeof uri !== "string" || !/^spotify:(?:track|album|episode|show|playlist):[A-Za-z0-9]{1,128}$/u.test(uri))) fail("invalid_library_items", "Choose from 1 to 12 returned Spotify items.");
+      const unique = [...new Set(uris)];
+      await client.saveTracks({ uris: unique }, { signal });
+      return { ...actionReceipt("library.save"), item_count: unique.length };
+    },
+
+    async removeSavedItem(value, { signal } = {}) {
+      signal?.throwIfAborted();
+      const uri = inputObject(value).uri;
+      if (typeof uri !== "string" || !/^spotify:(?:track|album|episode|show):[A-Za-z0-9]{1,128}$/u.test(uri)) fail("invalid_library_item", "Choose one returned saved item.");
+      await client.removeLibraryItems({ uris: [uri] }, { signal });
+      return { ...actionReceipt("library.remove"), item_count: 1 };
     },
 
     async editablePlaylists(value, { signal } = {}) {

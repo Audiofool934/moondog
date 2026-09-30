@@ -383,6 +383,16 @@ const catalog = [
     agent_tool: { name: "moondog_spotify_history_recent", label: "Read recent Spotify listening" },
   },
   {
+    id: "spotify.catalog.items", version: "1", state: "enabled", effect: "read_external", requires_spotify: true,
+    description: "Read bounded album tracks or podcast episodes from a selected host reference.",
+    agent_tool: { name: "moondog_spotify_catalog_items", label: "Browse album tracks or podcast episodes" },
+  },
+  {
+    id: "spotify.library.remove", version: "1", state: "enabled", effect: "write_external", requires_spotify: true,
+    description: "Confirm removal of one selected saved track, album, episode, show, or owned private playlist.",
+    agent_tool: { name: "moondog_spotify_library_remove", label: "Remove a saved Spotify item" },
+  },
+  {
     id: "spotify.search",
     version: "1",
     state: "enabled",

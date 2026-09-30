@@ -2,6 +2,8 @@
 
 ## Status
 
+The current Spotify priority is a smooth conversational listening experience and useful device control. Bounded track, album, playlist, podcast, and device metadata may be shown to the agent as untrusted data; metadata blindness is not a product goal. Credential safety, correct action authority, explicit destructive intent, cancellation, and truthful receipts remain required. Live results are conversation context rather than automatic durable preference assertions.
+
 As of 2026-09-05, the active product surface is the Pi-based TUI.
 GUI and Studio development is paused.
 Listening-history review, profile correction, and grounded discovery should be delivered and evaluated in the terminal.

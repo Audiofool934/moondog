@@ -318,7 +318,7 @@ function normalizeLibraryPage(payload, type, { limit, offset }) {
   const raw = Array.isArray(payload?.items) ? payload.items : [];
   const singular = type.slice(0, -1);
   const items = raw.slice(0, limit).map((entry) => {
-    const item = normalizeCatalogItem(entry?.[singular], singular);
+    const item = normalizeCatalogItem(["playlists", "artists"].includes(type) ? entry : entry?.[singular], singular);
     const addedAt = normalizedUtcTimestamp(entry?.added_at);
     return item ? { ...item, ...(addedAt ? { added_at: addedAt } : {}) } : null;
   }).filter(Boolean);
@@ -680,7 +680,7 @@ export function createSpotifyWebApiClient({
     },
 
     async getCurrentPlayback({ signal } = {}) {
-      return normalizePlayback(await request("/me/player", { signal }));
+      return normalizePlayback(await request("/me/player?additional_types=episode", { signal }));
     },
 
     async getDevices({ signal } = {}) {
@@ -700,9 +700,39 @@ export function createSpotifyWebApiClient({
     },
 
     async getSavedItems({ type = "tracks", limit = 20, offset = 0 } = {}, { signal } = {}) {
-      if (!["tracks", "albums", "shows"].includes(type) || !Number.isInteger(limit) || limit < 1 || limit > 20 ||
+      if (!["tracks", "albums", "shows", "playlists"].includes(type) || !Number.isInteger(limit) || limit < 1 || limit > 20 ||
           !Number.isInteger(offset) || offset < 0 || offset > 1_000_000) fail("invalid_library_page", "Choose a supported library type and bounded page.");
       return normalizeLibraryPage(await request(`/me/${type}${queryString({ limit, offset })}`, { signal }), type, { limit, offset });
+    },
+
+    async getFollowedArtists({ limit = 10, after } = {}, { signal } = {}) {
+      const payload = await request(`/me/following${queryString({ type: "artist", limit, after })}`, { signal });
+      const result = normalizeLibraryPage(payload?.artists, "artists", { limit, offset: 0 });
+      delete result.next_offset;
+      const cursor = payload?.artists?.cursors?.after;
+      if (typeof cursor === "string" && /^[A-Za-z0-9]{1,128}$/u.test(cursor)) result.next_after = cursor;
+      return result;
+    },
+
+    async searchItems({ query, type, limit, offset = 0 } = {}, { signal } = {}) {
+      const payload = await request(`/search${queryString({ q: query, type, limit, offset })}`, { signal });
+      const page = payload?.[`${type}s`];
+      const raw = Array.isArray(page?.items) ? page.items : [];
+      const items = raw.slice(0, limit).map((item) => normalizeCatalogItem(item, type)).filter(Boolean);
+      const hasMore = Boolean(page?.next) || Number.isInteger(page?.total) && offset + raw.length < page.total;
+      return { provider: "spotify", type, items, has_more: hasMore,
+        next_offset: hasMore && raw.length ? offset + Math.min(raw.length, limit) : null,
+        truncated: raw.length > items.length };
+    },
+
+    async getCatalogChildren({ type, id, limit, offset } = {}, { signal } = {}) {
+      const childType = type === "album" ? "track" : "episode";
+      const payload = await request(`/${type}s/${encodeURIComponent(id)}/${childType}s${queryString({ limit, offset })}`, { signal });
+      const raw = Array.isArray(payload?.items) ? payload.items : [];
+      const items = raw.slice(0, limit).map((item) => normalizeCatalogItem(item, childType)).filter(Boolean);
+      const hasMore = Boolean(payload?.next) || Number.isInteger(payload?.total) && offset + raw.length < payload.total;
+      return { provider: "spotify", items, limit, offset, has_more: hasMore,
+        next_offset: hasMore && raw.length ? offset + Math.min(raw.length, limit) : null, truncated: raw.length > items.length };
     },
 
     async searchTracks({ query, limit, market } = {}, { signal } = {}) {

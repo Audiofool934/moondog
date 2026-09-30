@@ -20,8 +20,8 @@ function spotifyResolutionError(code, message) {
 }
 
 // Only the host's current user message can grant a quick edit. Model tool
-// arguments and Spotify metadata never supply authorization. Keep grammar
-// deliberately exact; other phrasing uses the existing preview path.
+// arguments and Spotify metadata never supply authorization. Exact ordinary
+// commands and quoted names work; ambiguity uses the existing preview path.
 function explicitQuickPlaylistIntent(text) {
   if (typeof text !== "string" || text.length > 1000 || /[\n\r\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069]/u.test(text)) return null;
   const value = text.trim().replace(/[“”「」]/gu, '"');
@@ -29,6 +29,12 @@ function explicitQuickPlaylistIntent(text) {
   let match = value.match(new RegExp(`^${prefix}rename(?: (?:the|my))? (?:private |Spotify )?playlist "([^"\\n]{1,200})" to "([^"\\n]{1,100})"[.!?]?$`, "iu")) ??
     value.match(/^(?:请)?(?:把|将)?歌单\s*"([^"]{1,200})"\s*(?:重命名|改名|更名)为\s*"([^"]{1,100})"[。！]?$/u);
   if (match) return { action: "rename", playlistName: match[1], name: match[2] };
+  if (!/[";!?]|\b(?:and|then|also)\b/iu.test(value)) {
+    const plainRename = value.match(new RegExp(`^${prefix}rename(?: (?:the|my))? (?:private |Spotify )?playlist (.{1,200}?) to (.{1,100}?)[.]?$`, "iu"));
+    if (plainRename) return { action: "rename", playlistName: plainRename[1].trim(), name: plainRename[2].trim() };
+    const plainRemove = value.match(new RegExp(`^${prefix}remove (.{1,256}?) from(?: (?:the|my))? (?:private |Spotify )?playlist (.{1,200}?)[.]?$`, "iu"));
+    if (plainRemove) return { action: "remove_track", title: plainRemove[1].trim(), playlistName: plainRemove[2].trim() };
+  }
   match = value.match(new RegExp(`^${prefix}remove "([^"\\n]{1,256})"(?: by "([^"\\n]{1,256})")? from(?: (?:the|my))? (?:private |Spotify )?playlist "([^"\\n]{1,200})"[.!?]?$`, "iu"));
   if (match) return { action: "remove_track", title: match[1], artist: match[2], playlistName: match[3] };
   match = value.match(/^(?:请)?从歌单\s*"([^"]{1,200})"\s*中?(?:移除|删除)\s*"([^"]{1,256})"(?:\s*(?:歌手|作者)\s*"([^"]{1,256})")?[。！]?$/u);
@@ -777,7 +783,7 @@ export class MoondogApplication {
   }
 
   async spotifyBrowseLibrary(input, { signal } = {}) {
-    this.requireSpotifyScopes(["user-library-read"]);
+    this.requireSpotifyScopes([input?.type === "artists" ? "user-follow-read" : input?.type === "playlists" ? "playlist-read-private" : "user-library-read"]);
     this.transientSpotifyContext = true;
     const result = await this.requireSpotifyService().libraryBrowse(input, { signal });
     signal?.throwIfAborted();
@@ -801,11 +807,27 @@ export class MoondogApplication {
   }
 
   async spotifySearchTracks(input, { signal } = {}) {
+    this.transientSpotifyContext = true;
     const result = await this.requireSpotifyService().searchTracks(input, { signal });
     signal?.throwIfAborted();
     const raw = Array.isArray(result.items) ? result.items : [];
     return { ...result, items: this.#registerSpotifyReadItems("search", raw.slice(0, 10)),
       truncated: result.truncated === true || raw.length > 10 };
+  }
+
+  async spotifyCatalogChildren({ itemRefId, limit, offset } = {}, { signal } = {}) {
+    const item = this.requireSpotifyReadItem(itemRefId, ["album", "show"]);
+    this.transientSpotifyContext = true;
+    const result = await this.requireSpotifyService().catalogChildren({ type: item.type, id: item.uri.split(":")[2], limit, offset }, { signal });
+    signal?.throwIfAborted();
+    return { ...result, items: this.#registerSpotifyReadItems("catalog_children", result.items ?? []) };
+  }
+
+  spotifySaveLibraryItems({ itemRefs } = {}, { signal } = {}) {
+    if (!Array.isArray(itemRefs) || itemRefs.length < 1 || itemRefs.length > 12) throw spotifyResolutionError("spotify_library_selection_invalid", "Choose from 1 to 12 returned items.");
+    const items = itemRefs.map((ref) => this.requireSpotifyReadItem(ref, ["track", "album", "episode", "show", "playlist"]));
+    this.requireSpotifyWriteScopes([...new Set(items.map((item) => item.type === "playlist" ? "playlist-modify-public" : "user-library-modify"))]);
+    return this.requireSpotifyService().saveItems({ uris: items.map((item) => item.uri) }, { signal });
   }
 
   async spotifyQueueStatus({ signal } = {}) {
@@ -821,6 +843,11 @@ export class MoondogApplication {
 
   spotifyAddToQueue(input, { signal } = {}) {
     signal?.throwIfAborted();
+    if (input?.itemRefId !== undefined) {
+      if (input.trackRefId !== undefined || input.uri !== undefined) throw spotifyResolutionError("spotify_queue_selection_conflict", "Choose one queue item.");
+      const item = this.requireSpotifyReadItem(input.itemRefId, ["track", "episode"]);
+      return this.requireSpotifyService().addToQueue({ uri: item.uri, ...(input.deviceId ? { deviceId: input.deviceId } : {}) }, { signal });
+    }
     if (input?.trackRefId !== undefined) {
       const resolution = this.requireSpotifyResolution(input.trackRefId);
       return this.requireSpotifyService().addToQueue({
@@ -1262,24 +1289,32 @@ export class MoondogApplication {
 
   spotifyRemovalStatus() {
     const draft = this.pendingSpotifyRemoval;
-    return draft ? { state: "preview", name: draft.name, confirmation: draft.confirmation, confirmable: draft.confirmable } : { state: "none" };
+    return draft ? { state: "preview", type: draft.type ?? "playlist", name: draft.name, confirmation: draft.confirmation, confirmable: draft.confirmable } : { state: "none" };
   }
 
-  async spotifyRemovePlaylist({ action, playlistRefId, itemRefId } = {}, { signal } = {}) {
+  async spotifyRemovePlaylist({ action, playlistRefId, itemRefId, libraryItem = false } = {}, { signal } = {}) {
     signal?.throwIfAborted();
     this.transientSpotifyContext = true;
     const transaction = this.pendingPlaylistPromptTransaction;
     if (!transaction || transaction.removalAttempted) throw spotifyResolutionError("spotify_removal_unavailable", "Start a new explicit request before another playlist removal.");
-    this.requireSpotifyScopes(["user-read-private", "playlist-read-private"]);
     const service = this.requireSpotifyService();
     if (action === "preview") {
       if ((playlistRefId === undefined) === (itemRefId === undefined)) throw spotifyResolutionError("spotify_removal_target_required", "Select one inspected playlist reference.");
+      if (libraryItem && itemRefId !== undefined) {
+        const item = this.requireSpotifyReadItem(itemRefId, ["track", "album", "episode", "show", "playlist"]);
+        if (item.type !== "playlist") {
+          const confirmation = `Confirm removal of ${item.type} ${JSON.stringify(item.name)} from my library`;
+          this.pendingSpotifyRemoval = { type: item.type, uri: item.uri, name: item.name, confirmation, confirmable: false };
+          return { provider: "spotify", state: "preview", type: item.type, name: item.name, confirmation, effect: "Remove from your Spotify library; the catalog item remains available." };
+        }
+      }
+      this.requireSpotifyScopes(["user-read-private", "playlist-read-private"]);
       const playlistId = playlistRefId !== undefined ? this.requireSpotifyPlaylistTarget(playlistRefId).playlistId :
         this.requireSpotifyReadItem(itemRefId, ["playlist"]).uri.split(":")[2];
       const target = await service.playlistRemovalTarget({ playlistId }, { signal });
       signal?.throwIfAborted();
       const confirmation = `Confirm removal of playlist ${JSON.stringify(target.name)} from my library`;
-      this.pendingSpotifyRemoval = { ...target, confirmation, confirmable: false };
+      this.pendingSpotifyRemoval = { ...target, type: "playlist", confirmation, confirmable: false };
       return { provider: "spotify", state: "preview", name: target.name, confirmation,
         effect: "Remove this playlist from your Spotify library (unfollow). It may still exist for other listeners; this does not delete it globally." };
     }
@@ -1288,12 +1323,14 @@ export class MoondogApplication {
         transaction.userText?.trim().replace(/[.!。！]$/u, "") !== draft.confirmation) {
       throw spotifyResolutionError("spotify_removal_confirmation_required", "Confirm the exact displayed removal phrase in a later turn. No playlist was removed.");
     }
-    this.requireSpotifyWriteScopes(["playlist-modify-public"]);
+    this.requireSpotifyWriteScopes([draft.type === "playlist" ? "playlist-modify-public" : "user-library-modify"]);
     transaction.removalAttempted = true;
     // Consume the confirmation before dispatch; cancellation/uncertainty cannot replay it.
     this.pendingSpotifyRemoval = null;
     try {
-      const receipt = await service.removePlaylistFromLibrary({ playlistId: draft.playlistId, expectedName: draft.name, expectedSnapshotId: draft.snapshotId }, { signal });
+      const receipt = draft.type === "playlist" ?
+        await service.removePlaylistFromLibrary({ playlistId: draft.playlistId, expectedName: draft.name, expectedSnapshotId: draft.snapshotId }, { signal }) :
+        await service.removeSavedItem({ uri: draft.uri }, { signal });
       transaction.externalized = true;
       this.resetSpotifyPlaylistInspection();
       return receipt;

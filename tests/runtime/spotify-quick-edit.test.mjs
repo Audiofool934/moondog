@@ -198,3 +198,14 @@ for (const order of ["preview_first", "quick_first"]) test(`quick and preview ed
   if (order === "preview_first") assert.match(value.text, /Spotify has not changed/u);
   else { assert.equal(value.spotify_write_receipts[0].state, "accepted"); assert.doesNotMatch(value.text, /has not changed|Explicitly confirm/u); }
 });
+
+for (const prompt of ["Rename my playlist Night Drive to Late Lights", "Please rename playlist Night Drive to Late Lights."]) test(`ordinary exact rename needs no quoted-name ceremony: ${prompt}`, async (t) => {
+  const f = fixture(t); const refs = await f.prepare(prompt);
+  await f.application.spotifyQuickEditPlaylist({ action: "rename", playlistRefId: refs.playlistRefId });
+  assert.equal(f.writes[0].body.name, "Late Lights");
+});
+test("ordinary exact single-track removal is authorized without quotes", async (t) => {
+  const f = fixture(t); const refs = await f.prepare("Remove Midnight Lines from my playlist Night Drive");
+  await f.application.spotifyQuickEditPlaylist({ action: "remove_track", ...refs });
+  assert.equal(f.writes.length, 1);
+});
