@@ -302,6 +302,33 @@ function normalizeTrackSearch(payload) {
   };
 }
 
+function normalizeCatalogItem(raw, type) {
+  if (type === "track") return normalizeTrackSearchItem(raw);
+  if (!isPlainObject(raw) || !safeText(raw.name) ||
+      typeof raw.uri !== "string" || !new RegExp(`^spotify:${type}:[A-Za-z0-9]{1,128}$`, "u").test(raw.uri)) return null;
+  const item = { type, uri: raw.uri, name: safeText(raw.name), artists: normalizeArtistNames(raw.artists) };
+  for (const field of ["publisher", "release_date"]) if (safeText(raw[field])) item[field] = safeText(raw[field]);
+  const duration = safeInteger(raw.duration_ms, 0, 86_400_000);
+  if (duration !== undefined) item.duration_ms = duration;
+  if (typeof raw.explicit === "boolean") item.explicit = raw.explicit;
+  return item;
+}
+
+function normalizeLibraryPage(payload, type, { limit, offset }) {
+  const raw = Array.isArray(payload?.items) ? payload.items : [];
+  const singular = type.slice(0, -1);
+  const items = raw.slice(0, limit).map((entry) => {
+    const item = normalizeCatalogItem(entry?.[singular], singular);
+    const addedAt = normalizedUtcTimestamp(entry?.added_at);
+    return item ? { ...item, ...(addedAt ? { added_at: addedAt } : {}) } : null;
+  }).filter(Boolean);
+  const total = safeInteger(payload?.total, 0, 1_000_000);
+  const hasMore = Boolean(payload?.next) || (total !== undefined && offset + raw.length < total);
+  return { provider: "spotify", type, items, offset, limit, ...(total !== undefined ? { total } : {}),
+    has_more: hasMore, next_offset: hasMore && raw.length > 0 ? offset + Math.min(raw.length, limit) : null,
+    truncated: raw.length > items.length };
+}
+
 function normalizedUtcTimestamp(value) {
   if (typeof value !== "string") return undefined;
   const milliseconds = Date.parse(value);
@@ -354,6 +381,7 @@ function normalizeRecentlyPlayed(payload) {
     provider: "spotify",
     items,
     truncated: rawItems.length > items.length,
+    has_more: Boolean(payload?.next),
     ...(cursorAfterMs !== undefined
       ? { cursor_after_ms: cursorAfterMs }
       : {}),
@@ -460,7 +488,6 @@ function normalizePlaylistItemsPage(payload) {
     limit,
     offset,
     has_more: offset + rawItems.length < total || Boolean(payload?.next),
-    complete_for_name_selection: offset === 0 && rawItems.length === items.length && items.length === total && !payload?.next,
   };
 }
 
@@ -653,6 +680,12 @@ export function createSpotifyWebApiClient({
           `/me/player/recently-played${queryString({ limit, after, before })}`, { signal },
         ),
       );
+    },
+
+    async getSavedItems({ type = "tracks", limit = 20, offset = 0 } = {}, { signal } = {}) {
+      if (!["tracks", "albums", "shows"].includes(type) || !Number.isInteger(limit) || limit < 1 || limit > 20 ||
+          !Number.isInteger(offset) || offset < 0 || offset > 1_000_000) fail("invalid_library_page", "Choose a supported library type and bounded page.");
+      return normalizeLibraryPage(await request(`/me/${type}${queryString({ limit, offset })}`, { signal }), type, { limit, offset });
     },
 
     async searchTracks({ query, limit, market } = {}, { signal } = {}) {

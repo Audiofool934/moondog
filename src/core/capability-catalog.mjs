@@ -373,6 +373,16 @@ const catalog = [
     agent_tool: { name: "moondog_spotify_top", label: "Your Spotify top artists and tracks" },
   },
   {
+    id: "spotify.library.browse", version: "1", state: "enabled", effect: "read_external", requires_spotify: true,
+    description: "Browse bounded pages of saved Spotify tracks, albums, and shows.",
+    agent_tool: { name: "moondog_spotify_library_browse", label: "Browse your Spotify library" },
+  },
+  {
+    id: "spotify.history.recent", version: "1", state: "enabled", effect: "read_external", requires_spotify: true,
+    description: "Read a bounded page of recent Spotify listening with timestamps and cursors.",
+    agent_tool: { name: "moondog_spotify_history_recent", label: "Read recent Spotify listening" },
+  },
+  {
     id: "spotify.search",
     version: "1",
     state: "enabled",

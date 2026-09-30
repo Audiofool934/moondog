@@ -1470,3 +1470,9 @@ Duplicate playlist names (including public or followed names on that page), dupl
 Cancellation before dispatch stops the edit. A dispatched request settles into an accepted or uncertain receipt, even if the turn is cancelled. No 401, 429, transport failure or uncertain result triggers an automatic write replay. Inspect the playlist before a new explicit attempt after uncertainty. Quick-edit dialogue stays transient, with the same exception for verified explicit user preferences.
 
 API references: [change playlist details](https://developer.spotify.com/documentation/web-api/reference/change-playlist-details), [remove playlist items](https://developer.spotify.com/documentation/web-api/reference/remove-items-playlist).
+
+### Browse saved music and recent listening
+
+Ask “What have I saved lately?” or “Show my saved albums.” `moondog_spotify_library_browse` reads one page of tracks, albums, or shows (default 10, maximum 20), with save timestamps and an explicit next offset. An album's returned `item_ref_id` can start that album through the player tool's `context_ref_id`. Track references support explicit play, queue, and save requests in later turns.
+
+`moondog_spotify_history_recent` reads up to 50 recent tracks (default 20), their UTC play timestamps, and provider cursors. Specify either `after` or `before` in Unix milliseconds. This is the history Spotify currently exposes, not a complete day or lifetime archive. Neither browsing nor reading recent activity imports a profile or turns listening into an asserted preference. Results remain transient conversation context until replaced or reset.

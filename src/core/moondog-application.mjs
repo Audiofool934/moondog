@@ -668,24 +668,25 @@ export class MoondogApplication {
   }
 
   #registerSpotifyReadItems(source, values) {
-    const items = values.slice(0, 11).filter((item) => item && typeof item === "object").map((item) => {
-      const result = { type: ["track", "episode", "ad", "unknown"].includes(item.type) ? item.type : "track" };
+    const items = values.slice(0, 50).filter((item) => item && typeof item === "object").map((item) => {
+      const result = { type: ["track", "episode", "album", "artist", "playlist", "show", "ad", "unknown"].includes(item.type) ? item.type : "track" };
       const text = (value) => typeof value === "string" ? Array.from(value
         .replace(/[\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069]/gu, " ")
         .replace(/\s+/gu, " ").trim()).slice(0, 256).join("") : "";
-      for (const field of ["name", "album"]) if (text(item[field])) result[field] = text(item[field]);
+      for (const field of ["name", "album", "publisher", "release_date", "added_at", "played_at"]) if (text(item[field])) result[field] = text(item[field]);
       result.artists = (Array.isArray(item.artists) ? item.artists : []).slice(0, 5).map(text).filter(Boolean);
       if (Number.isInteger(item.duration_ms) && item.duration_ms >= 0 && item.duration_ms <= 86_400_000) result.duration_ms = item.duration_ms;
       if (Number.isInteger(item.popularity) && item.popularity >= 0 && item.popularity <= 100) result.popularity = item.popularity;
       if (typeof item.explicit === "boolean") result.explicit = item.explicit;
-      if (result.type === "track" && typeof item.uri === "string" && /^spotify:track:[A-Za-z0-9]{1,128}$/u.test(item.uri) && item.is_local !== true) {
-        result.track_ref_id = randomUUID();
+      if (["track", "episode", "album", "artist", "playlist", "show"].includes(result.type) && typeof item.uri === "string" &&
+          new RegExp(`^spotify:${result.type}:[A-Za-z0-9]{1,128}$`, "u").test(item.uri) && item.is_local !== true) {
+        result.item_ref_id = randomUUID();
+        if (result.type === "track") result.track_ref_id = result.item_ref_id;
         result.uri = item.uri;
       }
       return result;
     });
-    // Each read replaces its previous selection; at most 42 items across the
-    // four read surfaces remain actionable until this conversation ends.
+    // A fixed set of bounded read surfaces survives turns, never session reset.
     this.spotifyReadSelections.set(source, items);
     return items.map(({ uri: _uri, ...item }) => structuredClone(item));
   }
@@ -721,6 +722,13 @@ export class MoondogApplication {
   spotifyControl({ action, ...parameters }, { signal } = {}) {
     signal?.throwIfAborted();
     const service = this.requireSpotifyService();
+    if (parameters.contextRefId !== undefined) {
+      if (action !== "resume" || parameters.contextUri !== undefined || parameters.trackRefs !== undefined || parameters.uris !== undefined) {
+        throw spotifyResolutionError("spotify_playback_source_conflict", "Choose one playback source.");
+      }
+      const { contextRefId, ...rest } = parameters;
+      parameters = { ...rest, contextUri: this.requireSpotifyReadItem(contextRefId, ["album", "artist", "playlist"]).uri };
+    }
     if (action === "resume" && Array.isArray(parameters.trackRefs)) {
       const { trackRefs, ...playbackParameters } = parameters;
       const uris = this.requireSpotifyTrackUris(trackRefs);
@@ -762,6 +770,30 @@ export class MoondogApplication {
       raw.map((item) => ({ type: "artist", name: typeof item.name === "string" ? item.name.slice(0, 256) : "" }));
     return { ...result, items: items.map((item, index) => ({ ...item,
       affinity_rank: Number.isInteger(raw[index]?.affinity_rank) ? raw[index].affinity_rank : index + 1 })) };
+  }
+
+  async spotifyBrowseLibrary(input, { signal } = {}) {
+    this.requireSpotifyScopes(["user-library-read"]);
+    this.transientSpotifyContext = true;
+    const result = await this.requireSpotifyService().libraryBrowse(input, { signal });
+    signal?.throwIfAborted();
+    return { ...result, items: this.#registerSpotifyReadItems("library", result.items ?? []) };
+  }
+
+  async spotifyRecentHistory(input, { signal } = {}) {
+    this.requireSpotifyScopes(["user-read-recently-played"]);
+    this.transientSpotifyContext = true;
+    const result = await this.requireSpotifyService().recentActivity(input, { signal });
+    signal?.throwIfAborted();
+    const items = (result.items ?? []).slice(0, 50).map(({ track, played_at }) => ({ ...track, type: "track", played_at,
+      ...(/^[A-Za-z0-9]{1,128}$/u.test(track?.id ?? "") ? { uri: `spotify:track:${track.id}` } : {}) }));
+    return { ...result, items: this.#registerSpotifyReadItems("history", items) };
+  }
+
+  requireSpotifyReadItem(ref, types) {
+    const item = [...this.spotifyReadSelections.values()].flat().find((entry) => entry.item_ref_id === ref);
+    if (!item?.uri || !types.includes(item.type)) throw spotifyResolutionError("spotify_item_not_available", "That item reference is unavailable or unsuitable for this action. Read or search again.");
+    return item;
   }
 
   async spotifySearchTracks(input, { signal } = {}) {

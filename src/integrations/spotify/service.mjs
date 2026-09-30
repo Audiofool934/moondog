@@ -665,6 +665,17 @@ export function createSpotifyService(options = {}) {
         truncated: result?.truncated === true || items.length > limit };
     },
 
+    async libraryBrowse(value, { signal } = {}) {
+      signal?.throwIfAborted();
+      const input = inputObject(value);
+      const type = input.type ?? "tracks";
+      const limit = input.limit ?? 10;
+      if (!["tracks", "albums", "shows"].includes(type) || !Number.isInteger(limit) || limit < 1 || limit > 20) {
+        fail("invalid_library_page", "Browse saved tracks, albums, or shows with a limit from 1 to 20.");
+      }
+      return client.getSavedItems({ type, limit, offset: playlistPageOffset(input.offset) }, { signal });
+    },
+
     async searchTracks(value, { signal } = {}) {
       const input = inputObject(value);
       return client.searchTracks({
