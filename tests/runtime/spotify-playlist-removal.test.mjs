@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createModels, fauxProvider, fauxAssistantMessage, fauxToolCall, fauxText } from "@earendil-works/pi-ai";
 import { MoondogApplication } from "../../src/core/moondog-application.mjs";
+import { createSyntheticDomainServices } from "../../src/core/synthetic-domain-services.mjs";
 import { createSpotifyWebApiClient } from "../../src/integrations/spotify/web-api-client.mjs";
 import { createSpotifyService } from "../../src/integrations/spotify/service.mjs";
 import { PiAgentRuntime } from "../../src/runtime/pi/agent-runtime.mjs";
@@ -13,14 +14,19 @@ function fixture(t) {
     collaborative: state.collaborative, snapshot_id: state.snapshot, items: { total: 2 } });
   const client = createSpotifyWebApiClient({ tokenProvider: async () => "fictional", refreshAccessToken: async () => "new-fictional", fetchImpl: async (url, init) => {
     const u = new URL(url);
-    if (init.method !== "GET") { writes.push([init.method, u.pathname, u.searchParams.get("uris")]); state.onWrite?.(); if (state.status === "throw") throw new Error("fictional network error"); return u.pathname.endsWith("/items") && state.status === 200 ? Response.json({ snapshot_id: "second" }) : new Response(null, { status: state.status }); }
+    if (init.method !== "GET") { writes.push([init.method, u.pathname, u.searchParams.get("uris")]); state.onWrite?.(); if (state.status === "throw") throw new Error("fictional network error");
+      if (u.pathname === "/v1/me/playlists") return Response.json({ ...metadata(), id: "newfictionalplaylist", uri: "spotify:playlist:newfictionalplaylist", name: JSON.parse(init.body).name });
+      return u.pathname.endsWith("/items") && state.status === 200 ? Response.json({ snapshot_id: "second" }) : new Response(null, { status: state.status }); }
     if (u.pathname === "/v1/me") return Response.json({ id: "fictionalowner" });
     if (u.pathname === "/v1/me/playlists") return Response.json({ items: [metadata()], total: 1, offset: 0, next: null });
     if (u.pathname.endsWith("/items")) return Response.json({ items: ["First", "Second"].map((name) => ({ item: { type: "track", id: name,
       uri: `spotify:track:${name}`, name, artists: [{ name: "Fictional Artist" }], album: { name: "Fictional Album" }, is_local: false } })), total: 2, offset: 0, limit: 50 });
     return Response.json(metadata());
   } });
-  const application = new MoondogApplication({ importsRoot: "/tmp/moondog-fictional-no-imports", spotifyConnection: { ready: () => true, missingScopes: () => state.missing,
+  const application = new MoondogApplication({ importsRoot: "/tmp/moondog-fictional-no-imports",
+    domainServices: createSyntheticDomainServices({ subjectScope: { subjectId: "trusted-synthetic-subject" } }),
+    spotifyConnection: { ready: () => true, missingScopes: () => state.missing,
+    resolver: { async resolve(tracks) { return { resolutions: tracks.map((track, index) => ({ track_ref_id: track.track_ref_id, status: "resolved", spotify: { uri: `spotify:track:fictional${index}` } })) }; } },
     service: createSpotifyService({ client }), publicStatus: () => ({ provider: "spotify", state: "ready" }) } });
   t.after(() => application.close());
   const preview = async () => {
@@ -163,4 +169,70 @@ test("cancelling a replacement preview restores only the previously displayed fl
   f.application.resetPromptState();
   assert.equal(f.application.pendingSpotifyPlaylistEditStatus().confirmable, true);
   assert.equal(f.application.spotifyRemovalStatus().state, "none"); assert.equal(f.writes.length, 0);
+});
+
+const planResponses = () => [use("moondog_library_search", { query: "night", limit: 2 }), (input) => {
+  const search = lastResult(input);
+  return use("moondog_playlist_plan", { intent: "Two night songs for later.", requested_track_count: 2,
+    candidate_set_ids: [search.candidate_set_id], track_refs: search.tracks.map((track) => ({ track_ref_id: track.track_ref_id, selection_reason: "Matches the request." })),
+    ordering_notes: "Keep the selected order." });
+}];
+const removalResponses = () => [use("moondog_spotify_playlist_read", { action: "list" }), (input) =>
+  use("moondog_spotify_playlist_remove", { action: "preview", playlist_ref_id: lastResult(input).playlists[0].playlist_ref_id })];
+const endResponse = () => fauxAssistantMessage([fauxText("Done.")]);
+
+test("a removal preview replaces a retained new plan and its confirmation cannot create a playlist", async (t) => {
+  const f = fixture(t); f.faux.setResponses([...planResponses(), endResponse()]);
+  const plan = await f.runtime.prompt("Recommend two night songs. Do not save them."); assert.equal(plan.playlist_plan.track_count, 2);
+  f.faux.setResponses([...removalResponses(), endResponse()]); const removal = await f.runtime.prompt('Instead remove playlist "Night Drive".');
+  assert.equal(f.application.pendingSpotifyPlaylistStatus().state, "none");
+  f.faux.setResponses([use("moondog_spotify_playlist_write", { name: "Unrequested Playlist", pending_plan: true }), endResponse()]);
+  await f.runtime.prompt(removal.spotify_removal_preview.confirmation); assert.equal(f.writes.length, 0);
+  f.faux.setResponses([use("moondog_spotify_playlist_remove", { action: "confirm" }), endResponse()]);
+  const receipt = await f.runtime.prompt(removal.spotify_removal_preview.confirmation);
+  assert.match(receipt.text, /unfollowed/); assert.deepEqual(f.writes, [["DELETE", "/v1/me/library", "spotify:playlist:fictionalplaylist"]]);
+});
+
+for (const first of ["plan", "remove"]) test(`new-plan and removal previews are exclusive with ${first} first`, async (t) => {
+  const f = fixture(t);
+  f.faux.setResponses([...(first === "plan" ? [...planResponses(), ...removalResponses()] : [...removalResponses(), ...planResponses()]), endResponse()]);
+  const result = await f.runtime.prompt('Recommend two songs and preview removing playlist "Night Drive".');
+  assert.equal(Boolean(result.playlist_plan), first === "plan"); assert.equal(Boolean(result.spotify_removal_preview), first === "remove");
+  assert.equal(f.application.pendingSpotifyPlaylistStatus().state, first === "plan" ? "available" : "none");
+  assert.equal(f.application.spotifyRemovalStatus().state, first === "remove" ? "preview" : "none"); assert.equal(f.writes.length, 0);
+});
+
+test("a later new plan replaces removal authority and can be explicitly saved", async (t) => {
+  const f = fixture(t); f.faux.setResponses([...removalResponses(), endResponse()]); await f.runtime.prompt('Remove playlist "Night Drive".');
+  f.faux.setResponses([...planResponses(), endResponse()]); await f.runtime.prompt("Instead recommend two night songs.");
+  assert.equal(f.application.spotifyRemovalStatus().state, "none");
+  f.faux.setResponses([use("moondog_spotify_playlist_write", { name: "Requested Night Songs", pending_plan: true }), endResponse()]);
+  await f.runtime.prompt('Save the shown plan as "Requested Night Songs".');
+  assert.deepEqual(f.writes.map((write) => write.slice(0, 2)), [["POST", "/v1/me/playlists"], ["POST", "/v1/playlists/newfictionalplaylist/items"]]);
+});
+
+test("cancelled removal preview restores the prior displayed new plan without removal authority", async (t) => {
+  const f = fixture(t); f.faux.setResponses([...planResponses(), endResponse()]); await f.runtime.prompt("Recommend two night songs.");
+  await f.preview(); assert.equal(f.application.pendingSpotifyPlaylistStatus().state, "none"); f.application.resetPromptState();
+  assert.equal(f.application.pendingSpotifyPlaylistStatus().state, "available"); assert.equal(f.application.spotifyRemovalStatus().state, "none");
+  assert.equal(f.writes.length, 0);
+});
+
+test("exact removal confirmation cannot authorize any other Spotify write arm", async (t) => {
+  const f = fixture(t); await f.preview(); f.application.endPrompt(); f.application.beginPrompt({ text: removalConfirmation });
+  const item = { item_ref_id: "fictional-item-ref", type: "track", uri: "spotify:track:First", name: "First", artists: [] };
+  f.application.spotifyReadSelections.set("search", [item]);
+  const operations = [
+    () => f.application.spotifyControl({ action: "pause" }), () => f.application.spotifyTransfer({ deviceId: "fictionaldevice" }),
+    () => f.application.spotifyAddToQueue({ itemRefId: item.item_ref_id }), () => f.application.spotifyQueueSimilar(),
+    () => f.application.spotifyPlayPendingPlan(), () => f.application.spotifyQueuePendingPlan(),
+    () => f.application.spotifyCreatePlaylist({ name: "Wrong", trackRefs: [] }), () => f.application.spotifyCreatePendingPlaylist({ name: "Wrong" }),
+    () => f.application.writeSpotifyPlaylist({ name: "Wrong" }, [item.uri]),
+    () => f.application.spotifySaveLibraryTracks({ trackRefs: [] }), () => f.application.spotifySaveLibraryItems({ itemRefs: [item.item_ref_id] }),
+    () => f.application.buildPlaylistPlan({}),
+  ];
+  for (const operation of operations) await assert.rejects(async () => operation(), { code: "spotify_confirmation_flow_conflict" });
+  assert.equal(f.writes.length, 0);
+  assert.equal((await f.application.spotifyRemovePlaylist({ action: "confirm" })).action, "playlist.unfollow");
+  assert.equal(f.writes.length, 1);
 });

@@ -730,6 +730,7 @@ export class MoondogApplication {
 
   spotifyControl({ action, ...parameters }, { signal } = {}) {
     signal?.throwIfAborted();
+    this.requireSpotifyNonRemovalAction();
     const service = this.requireSpotifyService();
     if (parameters.contextRefId !== undefined) {
       if (action !== "resume" || parameters.contextUri !== undefined || parameters.trackRefs !== undefined || parameters.uris !== undefined) {
@@ -842,6 +843,7 @@ export class MoondogApplication {
 
   spotifyAddToQueue(input, { signal } = {}) {
     signal?.throwIfAborted();
+    this.requireSpotifyNonRemovalAction();
     if (input?.itemRefId !== undefined) {
       if (input.trackRefId !== undefined || input.uri !== undefined) throw spotifyResolutionError("spotify_queue_selection_conflict", "Choose one queue item.");
       const item = this.requireSpotifyReadItem(input.itemRefId, ["track", "episode"]);
@@ -859,6 +861,7 @@ export class MoondogApplication {
 
   async spotifyQueueSimilar({ count = 5 } = {}, { signal } = {}) {
     signal?.throwIfAborted();
+    this.requireSpotifyNonRemovalAction();
     if (!Number.isInteger(count) || count < 1 || count > 10) {
       throw spotifyResolutionError("invalid_similar_queue_count", "The similar queue count must be an integer from 1 to 10.");
     }
@@ -938,6 +941,7 @@ export class MoondogApplication {
 
   async spotifyTransfer(input, { signal } = {}) {
     signal?.throwIfAborted();
+    this.requireSpotifyNonRemovalAction();
     this.transientSpotifyContext = true;
     if (input.deviceRefId !== undefined) {
       const device = await this.spotifyDeviceTarget(input, { signal });
@@ -969,7 +973,22 @@ export class MoondogApplication {
     }
   }
 
-  requireSpotifyWriteScopes(requiredScopes) {
+  requireSpotifyNonRemovalAction() {
+    if (this.pendingPlaylistPromptTransaction?.removalConfirmationRequested) {
+      throw spotifyResolutionError("spotify_confirmation_flow_conflict", "This confirmation authorizes only the displayed library removal, not another Spotify action.");
+    }
+  }
+
+  requireSpotifyPlaylistCreationFlow() {
+    this.requireSpotifyNonRemovalAction();
+    const transaction = this.pendingPlaylistPromptTransaction;
+    if (this.pendingSpotifyRemoval || transaction?.removalPreviewAttempted || transaction?.removalAttempted || transaction?.playlistEditPreviewAttempted || transaction?.playlistEditAttempted || transaction?.quickEditAttempted) {
+      throw spotifyResolutionError("spotify_confirmation_flow_conflict", "Finish the displayed playlist action before creating a different playlist.");
+    }
+  }
+
+  requireSpotifyWriteScopes(requiredScopes, { removal = false } = {}) {
+    if (!removal) this.requireSpotifyNonRemovalAction();
     this.requireSpotifyScopes(requiredScopes, "spotify_write_scopes_missing");
   }
 
@@ -1245,7 +1264,7 @@ export class MoondogApplication {
     if (!intent || intent.action !== action) deny('Quick edits require an exact current request, such as Rename playlist "Old" to "New" or Remove "Track" by "Artist" from playlist "Name". Otherwise preview first.');
     if (transaction.removalPreviewAttempted || transaction.removalAttempted || transaction.removalConfirmationRequested) deny("Finish the current library removal flow before requesting a playlist edit.");
     if (transaction.quickEditAttempted) deny("A quick playlist edit was already attempted in this turn. Inspect its result before another explicit request.");
-    if (transaction.playlistEditPreviewAttempted) deny("A preview was already attempted in this turn. Finish that preview flow before another explicit edit request.");
+    if (transaction.playlistEditPreviewAttempted || transaction.playlistPlanAttempted || transaction.playlistWriteAttempted) deny("A preview was already attempted in this turn. Finish that preview flow before another explicit edit request.");
     this.requireSpotifyScopes(["user-read-private", "playlist-read-private"]);
     this.requireSpotifyWriteScopes(["playlist-modify-private"]);
     const target = this.requireSpotifyPlaylistTarget(playlistRefId);
@@ -1304,7 +1323,7 @@ export class MoondogApplication {
     if (!transaction || transaction.removalAttempted) throw spotifyResolutionError("spotify_removal_unavailable", "Start a new explicit request before another playlist removal.");
     const service = this.requireSpotifyService();
     if (action === "preview") {
-      if (transaction.playlistEditPreviewAttempted || transaction.playlistEditAttempted || transaction.quickEditAttempted) {
+      if (transaction.playlistEditPreviewAttempted || transaction.playlistEditAttempted || transaction.quickEditAttempted || transaction.playlistPlanAttempted || transaction.playlistWriteAttempted) {
         throw spotifyResolutionError("spotify_confirmation_flow_conflict", "Finish the current playlist edit flow before previewing library removal.");
       }
       transaction.removalPreviewAttempted = true;
@@ -1315,6 +1334,9 @@ export class MoondogApplication {
           const confirmation = `Confirm removal of ${item.type} ${JSON.stringify(item.name)} from my library`;
           this.pendingSpotifyRemoval = { type: item.type, uri: item.uri, name: item.name, confirmation, confirmable: false };
           this.pendingSpotifyPlaylistEdit = null;
+          this.pendingSpotifyPlaylist = null;
+          this.pendingPlaylistRevisionCandidateSet = null;
+          this.validatedPlaylistTrackRefs = null;
           return { provider: "spotify", state: "preview", type: item.type, name: item.name, confirmation, effect: "Remove from your Spotify library; the catalog item remains available." };
         }
       }
@@ -1326,6 +1348,9 @@ export class MoondogApplication {
       const confirmation = `Confirm removal of playlist ${JSON.stringify(target.name)} from my library`;
       this.pendingSpotifyRemoval = { ...target, type: "playlist", confirmation, confirmable: false };
       this.pendingSpotifyPlaylistEdit = null;
+      this.pendingSpotifyPlaylist = null;
+      this.pendingPlaylistRevisionCandidateSet = null;
+      this.validatedPlaylistTrackRefs = null;
       return { provider: "spotify", state: "preview", name: target.name, confirmation,
         effect: "Remove this playlist from your Spotify library (unfollow). It may still exist for other listeners; this does not delete it globally." };
     }
@@ -1334,12 +1359,16 @@ export class MoondogApplication {
         transaction.userText?.trim().replace(/[.!。！]$/u, "") !== draft.confirmation) {
       throw spotifyResolutionError("spotify_removal_confirmation_required", "Confirm the exact displayed removal phrase in a later turn. No playlist was removed.");
     }
-    this.requireSpotifyWriteScopes([draft.type === "playlist" ? "playlist-modify-public" : "user-library-modify"]);
+    this.requireSpotifyWriteScopes([draft.type === "playlist" ? "playlist-modify-public" : "user-library-modify"], { removal: true });
     transaction.removalAttempted = true;
     // Consume the confirmation before dispatch; cancellation/uncertainty cannot replay it.
     this.pendingSpotifyRemoval = null;
     this.pendingSpotifyPlaylistEdit = null;
+    this.pendingSpotifyPlaylist = null;
+    this.pendingPlaylistRevisionCandidateSet = null;
+    this.validatedPlaylistTrackRefs = null;
     transaction.editInvalidated = true;
+    transaction.planInvalidated = true;
     try {
       const receipt = draft.type === "playlist" ?
         await service.removePlaylistFromLibrary({ playlistId: draft.playlistId, expectedName: draft.name, expectedSnapshotId: draft.snapshotId }, { signal }) :
@@ -1355,7 +1384,7 @@ export class MoondogApplication {
 
   async spotifyPreviewPlaylistEdit({ playlistRefId, intent, items } = {}) {
     const transaction = this.pendingPlaylistPromptTransaction;
-    if (transaction?.removalPreviewAttempted || transaction?.removalAttempted || transaction?.removalConfirmationRequested) {
+    if (transaction?.removalPreviewAttempted || transaction?.removalAttempted || transaction?.removalConfirmationRequested || transaction?.playlistPlanAttempted || transaction?.playlistWriteAttempted) {
       throw spotifyResolutionError("spotify_confirmation_flow_conflict", "Finish the current library removal flow before previewing a playlist edit.");
     }
     if (this.pendingPlaylistPromptTransaction?.quickEditAttempted) {
@@ -1580,6 +1609,7 @@ export class MoondogApplication {
 
   async spotifyCreatePlaylist({ name, description, trackRefs } = {}, { signal } = {}) {
     signal?.throwIfAborted();
+    this.requireSpotifyPlaylistCreationFlow();
     if (
       !Array.isArray(trackRefs) ||
       !Array.isArray(this.validatedPlaylistTrackRefs) ||
@@ -1641,6 +1671,7 @@ export class MoondogApplication {
 
   async spotifyCreatePendingPlaylist({ name, description } = {}, { signal } = {}) {
     signal?.throwIfAborted();
+    this.requireSpotifyPlaylistCreationFlow();
     if (!this.pendingSpotifyPlaylist) {
       throw spotifyResolutionError(
         "spotify_pending_playlist_unavailable",
@@ -1679,6 +1710,7 @@ export class MoondogApplication {
 
   async spotifyPlayPendingPlan({ deviceId } = {}, { signal } = {}) {
     signal?.throwIfAborted();
+    this.requireSpotifyNonRemovalAction();
     if (!this.pendingSpotifyPlaylist?.plan) {
       throw spotifyResolutionError(
         "spotify_pending_playlist_unavailable",
@@ -1710,6 +1742,7 @@ export class MoondogApplication {
 
   async spotifyQueuePendingPlan({ deviceId } = {}, { signal } = {}) {
     signal?.throwIfAborted();
+    this.requireSpotifyNonRemovalAction();
     if (!this.pendingSpotifyPlaylist?.plan) {
       throw spotifyResolutionError(
         "spotify_pending_playlist_unavailable",
@@ -1783,6 +1816,8 @@ export class MoondogApplication {
 
   async writeSpotifyPlaylist(details, uris, { signal } = {}) {
     signal?.throwIfAborted();
+    this.requireSpotifyPlaylistCreationFlow();
+    if (this.pendingPlaylistPromptTransaction) this.pendingPlaylistPromptTransaction.playlistWriteAttempted = true;
     try {
       const receipt = await this.requireSpotifyService().createPlaylistWithTracks({
         ...details,
@@ -2074,6 +2109,11 @@ export class MoondogApplication {
   }
 
   async buildPlaylistPlan(input) {
+    const transaction = this.pendingPlaylistPromptTransaction;
+    if (transaction?.removalPreviewAttempted || transaction?.removalAttempted || transaction?.removalConfirmationRequested || transaction?.playlistEditPreviewAttempted || transaction?.playlistEditAttempted || transaction?.quickEditAttempted) {
+      throw spotifyResolutionError("spotify_confirmation_flow_conflict", "Finish the displayed playlist action before building a different playlist plan.");
+    }
+    if (transaction) transaction.playlistPlanAttempted = true;
     const plan = await this.requirePlaylistServices().buildPlaylistPlan(input);
     const validatedPlaylistTrackRefs = Array.isArray(plan?.tracks)
       ? plan.tracks.map((track) => track.track_ref_id)
@@ -2114,6 +2154,7 @@ export class MoondogApplication {
         }
       : null;
     this.pendingSpotifyPlaylistEdit = null;
+    this.pendingSpotifyRemoval = null;
     this.pendingPlaylistRevisionCandidateSet = null;
     return plan;
   }
@@ -2135,9 +2176,7 @@ export class MoondogApplication {
     }
     if (!transaction.removalAttempted && !transaction.removalInvalidated) this.pendingSpotifyRemoval = structuredClone(transaction.pendingSpotifyRemoval);
     if (!transaction.externalized) {
-      this.pendingSpotifyPlaylist = structuredClone(
-        transaction.pendingSpotifyPlaylist,
-      );
+      this.pendingSpotifyPlaylist = transaction.planInvalidated ? null : structuredClone(transaction.pendingSpotifyPlaylist);
       this.pendingSpotifyPlaylistEdit = transaction.editInvalidated
         ? null
         : structuredClone(transaction.pendingSpotifyPlaylistEdit);
