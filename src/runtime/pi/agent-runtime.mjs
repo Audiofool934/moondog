@@ -2951,6 +2951,82 @@ function projectSpotifyPlayerStatus(value) {
   };
 }
 
+function projectSpotifyNowPlaying(value) {
+  if (!isPlainObject(value) || value.provider !== "spotify") {
+    throw new Error("domain_result_invalid:spotify_playback");
+  }
+  if (value.state === "inactive") {
+    return { provider: "spotify", state: "inactive" };
+  }
+  if (value.state !== "available") {
+    throw new Error("domain_result_invalid:spotify_playback_state");
+  }
+  const result = {
+    provider: "spotify",
+    state: "available",
+    is_playing: value.is_playing === true,
+  };
+  if (Number.isFinite(value.progress_ms)) {
+    result.progress_ms = value.progress_ms;
+  }
+  if (isPlainObject(value.item)) {
+    const item = {};
+    if (typeof value.item.type === "string") {
+      item.type = cleanOutputText(value.item.type, 16, "spotify_now_playing_type");
+    }
+    if (typeof value.item.name === "string") {
+      item.name = cleanOutputText(
+        value.item.name,
+        256,
+        "spotify_now_playing_name",
+      );
+    }
+    if (Array.isArray(value.item.artists)) {
+      item.artists = value.item.artists
+        .slice(0, 6)
+        .map((artist) =>
+          cleanOutputText(artist, 256, "spotify_now_playing_artist"),
+        );
+    }
+    if (typeof value.item.album === "string") {
+      item.album = cleanOutputText(
+        value.item.album,
+        256,
+        "spotify_now_playing_album",
+      );
+    }
+    if (typeof value.item.uri === "string") {
+      item.uri = cleanOutputText(value.item.uri, 256, "spotify_now_playing_uri");
+    }
+    if (Number.isFinite(value.item.duration_ms)) {
+      item.duration_ms = value.item.duration_ms;
+    }
+    if (typeof value.item.explicit === "boolean") {
+      item.explicit = value.item.explicit;
+    }
+    result.item = item;
+  }
+  if (isPlainObject(value.device)) {
+    const device = {};
+    if (typeof value.device.name === "string") {
+      device.name = cleanOutputText(
+        value.device.name,
+        128,
+        "spotify_now_playing_device",
+      );
+    }
+    if (typeof value.device.type === "string") {
+      device.type = cleanOutputText(
+        value.device.type,
+        64,
+        "spotify_now_playing_device_type",
+      );
+    }
+    result.device = device;
+  }
+  return result;
+}
+
 function projectSpotifyReceipt(value) {
   if (
     !isPlainObject(value) ||
@@ -4518,6 +4594,21 @@ function createToolFactories(
         execute: executeDomain(
           async () => application.spotifyPlayerStatus(),
           projectSpotifyPlayerStatus,
+        ),
+      }),
+    ],
+    [
+      "spotify.player.now_playing",
+      (descriptor) => ({
+        name: descriptor.tool_name,
+        label: descriptor.label,
+        description:
+          "Read full Spotify now-playing metadata: track name, artists, album, progress, and device. Use this when the user asks what is playing.",
+        parameters: emptyParameters,
+        executionMode: "parallel",
+        execute: executeDomain(
+          async () => application.spotifyNowPlaying(),
+          projectSpotifyNowPlaying,
         ),
       }),
     ],

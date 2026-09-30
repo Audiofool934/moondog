@@ -616,6 +616,10 @@ export class MoondogApplication {
     return this.spotifyConnection.service;
   }
 
+  async spotifyNowPlaying() {
+    return this.requireSpotifyService().currentPlayer();
+  }
+
   async spotifyPlayerStatus() {
     const player = await this.requireSpotifyService().currentPlayer();
     if (player.state !== "available") {

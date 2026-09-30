@@ -263,6 +263,19 @@ const catalog = [
     },
   },
   {
+    id: "spotify.player.now_playing",
+    version: "1",
+    state: "enabled",
+    effect: "read_external",
+    description:
+      "Read full Spotify now-playing metadata: track, artists, album, progress, and device.",
+    requires_spotify: true,
+    agent_tool: {
+      name: "moondog_spotify_now_playing",
+      label: "See what's playing in detail",
+    },
+  },
+  {
     id: "spotify.player.control",
     version: "1",
     state: "enabled",
