@@ -30,7 +30,7 @@ const providers = [
   ["zai", "glm-4.7", "openai-completions", "https://api.z.ai/api/paas/v4/chat/completions"],
 ];
 const conditionalToolFields = {
-  moondog_spotify_player_control: { required: ["action"], fields: ["action", "device_id", "uri", "context_uri", "position_ms", "track_refs", "percent", "state"] },
+  moondog_spotify_player_control: { required: ["action"], fields: ["action", "device_id", "uri", "context_uri", "position_ms", "track_refs", "pending_plan", "percent", "state"] },
   moondog_spotify_queue_add: { required: [], fields: ["track_ref_id", "uri", "device_id", "pending_plan"] },
   moondog_spotify_playlist_read: { required: ["action"], fields: ["action", "limit", "offset", "playlist_ref_id"] },
   moondog_spotify_playlist_write: { required: ["name"], fields: ["name", "description", "track_refs", "pending_plan"] },

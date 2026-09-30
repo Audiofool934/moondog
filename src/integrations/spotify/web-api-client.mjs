@@ -490,9 +490,11 @@ export function createSpotifyWebApiClient({
 
   const request = async (
     path,
-    { method = "GET", body, responseMode = "json" } = {},
+    { method = "GET", body, responseMode = "json", signal } = {},
   ) => {
+    signal?.throwIfAborted();
     const token = normalizedToken(await tokenProvider());
+    signal?.throwIfAborted();
     const headers = {
       accept: "application/json",
       authorization: `Bearer ${token}`,
@@ -681,10 +683,10 @@ export function createSpotifyWebApiClient({
       return null;
     },
 
-    async resume(input = {}) {
+    async resume(input = {}, { signal } = {}) {
       await request(
         `/me/player/play${queryString({ device_id: input.deviceId })}`,
-        { method: "PUT", body: playbackBody(input), responseMode: "none" },
+        { method: "PUT", body: playbackBody(input), responseMode: "none", signal },
       );
     },
 
@@ -751,10 +753,10 @@ export function createSpotifyWebApiClient({
       });
     },
 
-    async addToQueue({ uri, deviceId }) {
+    async addToQueue({ uri, deviceId }, { signal } = {}) {
       await request(
         `/me/player/queue${queryString({ uri, device_id: deviceId })}`,
-        { method: "POST", responseMode: "none" },
+        { method: "POST", responseMode: "none", signal },
       );
     },
   });

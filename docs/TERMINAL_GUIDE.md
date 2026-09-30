@@ -1106,8 +1106,11 @@ If a turn ends with a validated plan but no write, that provider-neutral plan re
 
 A follow-up that asks to queue that pending plan, such as "add to my queue", queues the same order on Spotify.
 The host resolves each track by title and artist, adds the matches, and names anything it could not match.
-That request does not create a playlist.
-A request to play or queue one named song plays or queues that song.
+Queue-only requests leave the current playback state unchanged and do not create a playlist.
+A follow-up such as "play the pending plan now" instead starts the retained tracks in order, including when the active device is paused.
+The host resolves the entire plan before starting it; if any track cannot be matched, playback is left unchanged.
+Cancelling a pending-plan queue stops new additions. An already-dispatched Spotify request is allowed to settle, and any accepted additions are reported and remain in the queue; cancellation does not undo them.
+A request to play or queue one named song plays or queues that song. Catalog lookups may return multiple possible recordings, but the playback reply names only the trusted track actually accepted by Spotify; unrelated discovery lists still require plan validation.
 
 Before approval, a later prompt can reorder, remove, replace, or add tracks.
 The host exposes the prior draft as a one-prompt trusted candidate set, requires the complete revised order to pass `playlist.plan` again, and performs no provider write during a revision-only turn.

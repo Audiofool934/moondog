@@ -2907,7 +2907,7 @@ function executeDomain(operation, project, onSuccess) {
     try {
       const result = project(await operation(...args));
       const toolResult = jsonToolResult(result);
-      onSuccess?.(structuredClone(result));
+      onSuccess?.(structuredClone(result), ...args);
       return toolResult;
     } catch (error) {
       if (error?.message?.startsWith("domain_result_")) throw error;
@@ -3049,6 +3049,7 @@ function projectSpotifyQueuePlan(value) {
       value.not_added,
       "spotify_queue_not_added",
     ),
+    ...(value.cancelled === true ? { cancelled: true } : {}),
   };
   if (value.state === "partial") {
     if (!isPlainObject(value.stopped)) {
@@ -4462,7 +4463,7 @@ function createToolFactories(
             }),
           projectAppleMusicTrackSearch,
           (value) => {
-            if (value.candidate_set_id) onExternalCandidateSet?.(value);
+            if (value.candidate_set_id) onExternalCandidateSet?.(value, { playbackLookup: true });
           },
         ),
       }),
@@ -4526,7 +4527,7 @@ function createToolFactories(
         name: descriptor.tool_name,
         label: descriptor.label,
         description:
-          "Perform exactly one Spotify playback action directly requested by the user. Never retry next, previous, or another write automatically. volume requires percent; seek requires position_ms; shuffle requires a boolean state; repeat requires state off, track, or context. Only resume accepts uri, context_uri, or track_refs, with optional position_ms. pause, next, and previous accept only action and an optional device_id. device_id is optional for every action.",
+          "Perform exactly one Spotify playback action directly requested by the user. Never retry next, previous, or another write automatically. volume requires percent; seek requires position_ms; shuffle requires a boolean state; repeat requires state off, track, or context. Only resume accepts uri, context_uri, or track_refs, with optional position_ms. To play the exact pending plan now, use action resume with pending_plan true and no other source; the host resolves the retained plan and starts it in order. pause, next, and previous accept only action and an optional device_id. device_id is optional for every action.",
         parameters: Type.Union([
           Type.Object(
             {
@@ -4543,6 +4544,14 @@ function createToolFactories(
                     "Play tracks resolved in this prompt through moondog_spotify_resolve_tracks, in this order. They may come from the library, history, or an external catalog candidate.",
                 }),
               ),
+            },
+            { additionalProperties: false },
+          ),
+          Type.Object(
+            {
+              action: Type.Literal("resume"),
+              pending_plan: Type.Literal(true),
+              device_id: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
             },
             { additionalProperties: false },
           ),
@@ -4594,7 +4603,12 @@ function createToolFactories(
         ]),
         executionMode: "sequential",
         execute: executeDomain(
-          async (_toolCallId, parameters) => {
+          async (_toolCallId, parameters, signal) => {
+            if (parameters.pending_plan === true) {
+              return application.spotifyPlayPendingPlan({
+                ...(parameters.device_id ? { deviceId: parameters.device_id } : {}),
+              }, { signal });
+            }
             const result = await application.spotifyControl({
               action: parameters.action,
               ...(parameters.device_id ? { deviceId: parameters.device_id } : {}),
@@ -4609,17 +4623,17 @@ function createToolFactories(
                 : {}),
               ...(parameters.state !== undefined ? { state: parameters.state } : {}),
             });
-            if (
-              parameters.action === "resume" &&
-              (parameters.uri ||
-                parameters.context_uri ||
-                parameters.track_refs?.length > 0)
-            ) {
-              onSpotifyPlayback?.();
-            }
             return result;
           },
           projectSpotifyReceipt,
+          (_receipt, _toolCallId, parameters) => {
+            if (parameters.action === "resume" && parameters.track_refs?.length === 1) {
+              onSpotifyPlayback?.({
+                trackRefId: parameters.track_refs[0],
+                action: "playback.resume",
+              });
+            }
+          },
         ),
       }),
     ],
@@ -4661,15 +4675,15 @@ function createToolFactories(
         ]),
         executionMode: "sequential",
         execute: executeDomain(
-          async (_toolCallId, parameters) => {
+          async (_toolCallId, parameters, signal) => {
             if (parameters.pending_plan === true) {
               return application.spotifyQueuePendingPlan({
                 ...(parameters.device_id
                   ? { deviceId: parameters.device_id }
                   : {}),
-              });
+              }, { signal });
             }
-            return application.spotifyAddToQueue(
+            const receipt = await application.spotifyAddToQueue(
               parameters.track_ref_id !== undefined
                 ? {
                     trackRefId: parameters.track_ref_id,
@@ -4684,14 +4698,20 @@ function createToolFactories(
                       : {}),
                   },
             );
+            return receipt;
           },
           (value) =>
             Array.isArray(value?.queued)
               ? projectSpotifyQueuePlan(value)
               : projectSpotifyReceipt(value),
-          (receipt) => {
-            onSpotifyPlayback?.();
+          (receipt, _toolCallId, parameters) => {
             if (Array.isArray(receipt.queued)) onSpotifyQueuePlan?.(receipt);
+            if (parameters.track_ref_id) {
+              onSpotifyPlayback?.({
+                trackRefId: parameters.track_ref_id,
+                action: "playback.queue.add",
+              });
+            }
           },
         ),
       }),
@@ -5440,7 +5460,7 @@ Spotify control and catalog rules:
 - When Spotify is the only registered playlist-write provider, a direct playlist creation request that omits the platform defaults to Spotify.
 - For a direct playlist-write request, complete library search, validated planning, resolution of every planned track, and moondog_spotify_playlist_write in the same prompt. Do not stop after moondog_playlist_plan or ask for redundant confirmation.
 - When the user approves the pending validated plan from the previous turn with yes, 可以, 就这个, 保存它, or equivalent wording, and they are asking to save it, call moondog_spotify_playlist_write with pending_plan set to true. Do not search, resolve through the model, or build a different plan again.
-- When the user asks to queue or play the pending plan, including "add to my queue", "queue these", "put them on", "加入队列", or an approval that names the queue, call moondog_spotify_queue_add once with pending_plan set to true. The host resolves every retained track on Spotify and queues the matches. Do not search, resolve through the model, re-plan, or ask whether they meant a playlist. A playlist save stays a separate explicit create, save, or sync request.
+- When the user asks to queue the pending plan, including "add to my queue", "queue these", "加入队列", or an approval that names the queue, call moondog_spotify_queue_add once with pending_plan set to true. The host resolves every retained track on Spotify and queues the matches. Do not search, resolve through the model, re-plan, or ask whether they meant a playlist. A playlist save stays a separate explicit create, save, or sync request.
 - Existing-playlist editing uses a stricter two-turn boundary. A request to change an existing playlist authorizes inspection and an exact preview only, never a same-turn write.
 - To edit an existing playlist, call moondog_spotify_playlist_read with list, then inspect the chosen prompt-local playlist reference. Build the complete final order with inspected playlist_item_ref_id values and, for additions, track_ref_id values resolved in the same prompt. Then call moondog_spotify_playlist_edit_preview exactly once.
 - The existing-playlist slice supports only playlists owned by the connected account that are private, non-collaborative, contain at most 100 ordinary Spotify tracks, and contain no local, unavailable, episode, or other unsupported items. Do not attempt to bypass these limits.
@@ -5452,7 +5472,8 @@ Spotify control and catalog rules:
 - When the user asks to play on, switch to, or move playback to a device in ordinary words, such as iPhone, computer, or a speaker name, call moondog_spotify_device_transfer once with that short device_name and play set to true. The host matches a live Spotify Connect device. Do not ask the user to paste a device ID, and do not invent one.
 - If the transfer result names the device, confirm that name. If several devices match, or none do, tell the user the visible names from the tool result and ask which one, or ask them to open Spotify on that device. Use moondog_spotify_devices only when they ask what is connected, or when you need those names after a failed match.
 - Execute each requested state-changing action once. Never automatically retry next, previous, queue additions, or device transfers.
-- Before queueing, playing, saving, or writing one trusted candidate to Spotify, resolve it with moondog_spotify_resolve_tracks. Skip that call when moondog_spotify_queue_add uses pending_plan, because the host resolves the plan. Resolution matches title, artist, and release for library, history, and external catalog tracks. Report match quality honestly and leave unmatched tracks off the queue.
+- When the user asks to play the pending plan now, including "play these", "put them on", or "播放这个方案", call moondog_spotify_player_control with action resume and pending_plan true. This starts the retained tracks in order, including on a paused device. Queue-only requests must not resume or replace current playback. Do not resolve retained references through the model or create a playlist.
+- Before queueing, playing, saving, or writing one trusted candidate to Spotify, resolve it with moondog_spotify_resolve_tracks. Skip that call when the queue or player-control tool uses pending_plan, because the host resolves the plan. Resolution matches title, artist, and release for library, history, and external catalog tracks. Report match quality honestly and leave unmatched tracks off the queue.
 - Never invent Spotify URIs, track IDs, playlist IDs, playlist links, snapshot IDs, or device IDs. Pass device_id only when the user pasted that exact ID. Otherwise pass device_name. Use only opaque playlist_ref_id and playlist_item_ref_id values returned in the current prompt, and track_ref_id values from current trusted candidates and resolutions. URIs the user explicitly provided may be used only where a registered tool explicitly accepts them.
 - moondog_spotify_playlist_write and moondog_spotify_library_save are for explicit user requests only. A playlist write must use the exact order from this prompt's validated moondog_playlist_plan, and playlists are always created private.
 - Spotify provider IDs, URIs, account details, device details, and live playback metadata must not enter profile or generic memory. Sanitized imported listening evidence may contribute only through the bounded Profile pipeline.
@@ -5745,9 +5766,40 @@ function externalListeningNote(discoverySources, chinese) {
     : `From ${parts.join(", and ")}. ${limit}`;
 }
 
+function renderNamedSongPlayback(promptState, promptText) {
+  // Exempt only the named track actually played from one catalog lookup. Render
+  // its receipt ourselves; no other search results or model-authored list escape
+  // validation, even when the lookup returned several possible recordings.
+  const [playback] = promptState.spotifyPlayback;
+  const sets = promptState.externalCandidateSets;
+  if (promptState.spotifyPlayback.length !== 1 || sets.length !== 1 ||
+      !sets[0].playbackLookup) return null;
+  const track = sets[0].tracks.find((candidate) => candidate.track_ref_id === playback.trackRefId);
+  if (!track) return null;
+  const normalize = (value) => value.normalize("NFKC")
+    .toLocaleLowerCase("en-US").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  const prompt = normalize(promptText);
+  const title = normalize(track.title);
+  const playbackRequested = /\b(?:play|queue|put on)\b/u.test(prompt) ||
+    /播放|放一首|放一下|加入队列/u.test(promptText);
+  if (!title || !prompt.includes(title) || !playbackRequested) return null;
+  const chinese = responseLanguage(promptText) === "zh";
+  if (playback.action === "playback.queue.add") {
+    return chinese
+      ? `已加入队列：《${track.title}》- ${track.artist_credit}。`
+      : `Queued ${track.title} - ${track.artist_credit}.`;
+  }
+  return chinese
+    ? `已在 Spotify 开始播放《${track.title}》- ${track.artist_credit}。`
+    : `Started playback of ${track.title} - ${track.artist_credit} on Spotify.`;
+}
+
 function renderSpotifyQueuePlan(receipt, promptText) {
   const chinese = responseLanguage(promptText) === "zh";
   const lines = [];
+  if (receipt.cancelled) {
+    lines.push(chinese ? "已取消继续加入队列；已接受的歌曲仍在队列中。" : "Stopped queueing after cancellation; accepted tracks remain in the queue.");
+  }
   if (receipt.stopped) {
     lines.push(
       chinese
@@ -6175,9 +6227,13 @@ export class PiAgentRuntime {
             this.activePromptState.spotifyPlaylistEditWrite = receipt;
           }
         },
-        onExternalCandidateSet: (value) => {
+        onExternalCandidateSet: (value, { playbackLookup = false } = {}) => {
           if (this.activePromptState) {
             this.activePromptState.externalCandidateSetCreated = true;
+            this.activePromptState.externalCandidateSets.push({
+              playbackLookup,
+              tracks: structuredClone(value.tracks ?? []),
+            });
             const source = value?.source;
             if (
               isPlainObject(source) &&
@@ -6207,9 +6263,9 @@ export class PiAgentRuntime {
             this.activePromptState.spotifyQueuePlan = receipt;
           }
         },
-        onSpotifyPlayback: () => {
+        onSpotifyPlayback: (receipt) => {
           if (this.activePromptState) {
-            this.activePromptState.spotifyPlayback = true;
+            this.activePromptState.spotifyPlayback.push(receipt);
           }
         },
         onMemoryRemember: (parameters) => {
@@ -6325,8 +6381,9 @@ export class PiAgentRuntime {
       spotifyPlaylistEditPreview: null,
       spotifyPlaylistEditWrite: null,
       spotifyQueuePlan: null,
-      spotifyPlayback: false,
+      spotifyPlayback: [],
       externalCandidateSetCreated: false,
+      externalCandidateSets: [],
       discoveryConnections: new Map(),
       discoverySources: [],
       musicWorldCitations: [],
@@ -6499,15 +6556,20 @@ export class PiAgentRuntime {
       if (finalStopReason === "aborted" || promptState.abortRequested) {
         discardPromptHistory(this.agent, historyStartIndex);
         historyFinalized = true;
-        const abortedText = promptState.toolExecutionStarted
-          ? ""
-          : streamedText || finalText;
-        if (!textWasRendered && abortedText) {
+        const abortedText = promptState.spotifyQueuePlan
+          ? renderSpotifyQueuePlan(promptState.spotifyQueuePlan, text)
+          : promptState.toolExecutionStarted ? "" : streamedText || finalText;
+        if (promptState.spotifyQueuePlan) {
+          replaceRenderedText(abortedText);
+        } else if (!textWasRendered && abortedText) {
           callbacks.onTextDelta?.(abortedText);
         }
         return {
           status: "aborted",
           text: abortedText,
+          ...(promptState.spotifyQueuePlan
+            ? { spotify_queue_plan: structuredClone(promptState.spotifyQueuePlan) }
+            : {}),
           messages_in_process: this.agent.state.messages.length,
         };
       }
@@ -6615,9 +6677,13 @@ export class PiAgentRuntime {
 
       if (
         promptState.externalCandidateSetCreated &&
-        !promptState.playlistPlanAttempted &&
-        !promptState.spotifyPlayback
+        !promptState.playlistPlanAttempted
       ) {
+        const playbackText = renderNamedSongPlayback(promptState, text);
+        if (playbackText) {
+          replaceRenderedText(playbackText);
+          return completedResult(playbackText);
+        }
         const safeFailureText = renderUnvalidatedPlaylistPlan(text);
         replaceRenderedText(safeFailureText);
         return completedResult(safeFailureText);

@@ -640,3 +640,22 @@ test("Spotify client checks and saves library tracks", async () => {
   );
   assert.equal(requests[1].init.method, "PUT");
 });
+
+for (const action of ["addToQueue", "resume"]) {
+  test(`Spotify ${action} never dispatches after cancellation during token lookup`, async () => {
+    const controller = new AbortController();
+    let requests = 0;
+    const client = createSpotifyWebApiClient({
+      tokenProvider: async () => {
+        controller.abort();
+        return "synthetic-access-token";
+      },
+      fetchImpl: async () => { requests += 1; return noContentResponse(); },
+    });
+    await assert.rejects(
+      client[action]({ uri: "spotify:track:synthetic", uris: ["spotify:track:synthetic"] }, { signal: controller.signal }),
+      { name: "AbortError" },
+    );
+    assert.equal(requests, 0);
+  });
+}
