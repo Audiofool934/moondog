@@ -13,9 +13,11 @@ function fixture(t) {
     collaborative: state.collaborative, snapshot_id: state.snapshot, items: { total: 2 } });
   const client = createSpotifyWebApiClient({ tokenProvider: async () => "fictional", refreshAccessToken: async () => "new-fictional", fetchImpl: async (url, init) => {
     const u = new URL(url);
-    if (init.method !== "GET") { writes.push([init.method, u.pathname, u.searchParams.get("uris")]); state.onWrite?.(); if (state.status === "throw") throw new Error("fictional network error"); return new Response(null, { status: state.status }); }
+    if (init.method !== "GET") { writes.push([init.method, u.pathname, u.searchParams.get("uris")]); state.onWrite?.(); if (state.status === "throw") throw new Error("fictional network error"); return u.pathname.endsWith("/items") && state.status === 200 ? Response.json({ snapshot_id: "second" }) : new Response(null, { status: state.status }); }
     if (u.pathname === "/v1/me") return Response.json({ id: "fictionalowner" });
     if (u.pathname === "/v1/me/playlists") return Response.json({ items: [metadata()], total: 1, offset: 0, next: null });
+    if (u.pathname.endsWith("/items")) return Response.json({ items: ["First", "Second"].map((name) => ({ item: { type: "track", id: name,
+      uri: `spotify:track:${name}`, name, artists: [{ name: "Fictional Artist" }], album: { name: "Fictional Album" }, is_local: false } })), total: 2, offset: 0, limit: 50 });
     return Response.json(metadata());
   } });
   const application = new MoondogApplication({ importsRoot: "/tmp/moondog-fictional-no-imports", spotifyConnection: { ready: () => true, missingScopes: () => state.missing,
@@ -100,4 +102,65 @@ test("ordinary completed unfollow cannot claim global playlist deletion", async 
   const result = await f.runtime.prompt(preview.confirmation);
   assert.match(result.text, /unfollowed/); assert.match(result.text, /not globally deleted/);
   assert.doesNotMatch(result.text, /Globally deleted Night Drive for everyone/); assert.equal(f.writes.length, 1);
+});
+
+const removalConfirmation = 'Confirm removal of playlist "Night Drive" from my library';
+const lastResult = (input) => JSON.parse(input.messages.findLast((m) => m.role === "toolResult").content[0].text);
+function previewResponses(f, order) {
+  let ref, item;
+  const edit = () => use("moondog_spotify_playlist_edit_preview", { playlist_ref_id: ref,
+    intent: "Keep the second track", items: [{ playlist_item_ref_id: item }] });
+  const remove = () => use("moondog_spotify_playlist_remove", { action: "preview", playlist_ref_id: ref });
+  f.faux.setResponses([use("moondog_spotify_playlist_read", { action: "list" }), (input) => {
+    ref = lastResult(input).playlists[0].playlist_ref_id;
+    return use("moondog_spotify_playlist_read", { action: "inspect", playlist_ref_id: ref });
+  }, (input) => { item = lastResult(input).items[1].playlist_item_ref_id; return order[0] === "edit" ? edit() : remove(); },
+  ...order.slice(1).map((kind) => kind === "edit" ? edit : remove), fauxAssistantMessage([fauxText("Here is the preview.")])]);
+}
+
+for (const order of [["edit", "remove"], ["remove", "edit"]]) test(`runtime exposes and arms only the first confirmation flow: ${order.join(" then ")}`, async (t) => {
+  const f = fixture(t); previewResponses(f, order);
+  const result = await f.runtime.prompt("Preview removing the first track and removing the playlist from my library.");
+  assert.equal(Boolean(result.spotify_playlist_edit_preview), order[0] === "edit");
+  assert.equal(Boolean(result.spotify_removal_preview), order[0] === "remove");
+  assert.equal(f.application.pendingSpotifyPlaylistEditStatus().state, order[0] === "edit" ? "available" : "none");
+  assert.equal(f.application.spotifyRemovalStatus().state, order[0] === "remove" ? "preview" : "none");
+  assert.equal(f.writes.length, 0);
+  f.faux.setResponses([use("moondog_spotify_playlist_edit_apply"), fauxAssistantMessage([fauxText("No edit sent.")])]);
+  await f.runtime.prompt(removalConfirmation);
+  assert.equal(f.writes.length, 0, "the removal phrase must never authorize track replacement");
+});
+
+for (const outcome of ["accepted", "accepted_cancel", "unknown_cancel"]) test(`a later removal replaces the edit draft and cannot revive it after ${outcome}`, async (t) => {
+  const f = fixture(t); previewResponses(f, ["edit"]); await f.runtime.prompt("Preview keeping the second track.");
+  assert.equal(f.application.pendingSpotifyPlaylistEditStatus().confirmable, true);
+  previewResponses(f, ["remove"]); const result = await f.runtime.prompt('Remove playlist "Night Drive" from my library.');
+  assert.equal(f.application.pendingSpotifyPlaylistEditStatus().state, "none");
+  if (outcome.endsWith("cancel")) f.state.onWrite = () => f.runtime.abort();
+  if (outcome === "unknown_cancel") f.state.status = "throw";
+  f.faux.setResponses([use("moondog_spotify_playlist_remove", { action: "confirm" }), fauxAssistantMessage([fauxText("Done.")])]);
+  const receipt = await f.runtime.prompt(result.spotify_removal_preview.confirmation);
+  assert.match(receipt.text, outcome === "unknown_cancel" ? /not confirmed/ : /unfollowed/);
+  assert.equal(f.application.pendingSpotifyPlaylistEditStatus().state, "none");
+  assert.equal(f.application.spotifyRemovalStatus().state, "none");
+  assert.deepEqual(f.writes, [["DELETE", "/v1/me/library", "spotify:playlist:fictionalplaylist"]]);
+});
+
+test("a later edit replaces removal authority and still applies its own displayed preview", async (t) => {
+  const f = fixture(t); previewResponses(f, ["remove"]); await f.runtime.prompt('Remove playlist "Night Drive"');
+  previewResponses(f, ["edit"]); const preview = await f.runtime.prompt("Instead, preview keeping only the second track.");
+  assert.ok(preview.spotify_playlist_edit_preview); assert.equal(f.application.spotifyRemovalStatus().state, "none");
+  f.faux.setResponses([use("moondog_spotify_playlist_remove", { action: "confirm" }), fauxAssistantMessage([fauxText("No removal sent.")])]);
+  await f.runtime.prompt(removalConfirmation); assert.equal(f.writes.length, 0);
+  f.faux.setResponses([use("moondog_spotify_playlist_edit_apply"), fauxAssistantMessage([fauxText("Done.")])]);
+  const result = await f.runtime.prompt("Yes, apply the displayed track edit.");
+  assert.match(result.text, /exact confirmed preview/); assert.deepEqual(f.writes, [["PUT", "/v1/playlists/fictionalplaylist/items", null]]);
+});
+
+test("cancelling a replacement preview restores only the previously displayed flow", async (t) => {
+  const f = fixture(t); previewResponses(f, ["edit"]); await f.runtime.prompt("Preview keeping the second track.");
+  await f.preview(); assert.equal(f.application.pendingSpotifyPlaylistEditStatus().state, "none");
+  f.application.resetPromptState();
+  assert.equal(f.application.pendingSpotifyPlaylistEditStatus().confirmable, true);
+  assert.equal(f.application.spotifyRemovalStatus().state, "none"); assert.equal(f.writes.length, 0);
 });
