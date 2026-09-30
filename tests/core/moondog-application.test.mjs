@@ -747,7 +747,8 @@ test("a ready Spotify connection enables bounded player capabilities", async () 
   }
 
   const player = await application.spotifyPlayerStatus();
-  assert.deepEqual(player, {
+  const { item, device, ...state } = player;
+  assert.deepEqual(state, {
     provider: "spotify",
     state: "available",
     is_playing: true,
@@ -758,7 +759,11 @@ test("a ready Spotify connection enables bounded player capabilities", async () 
     restricted_device: false,
     item_available: true,
   });
-  assert.equal(JSON.stringify(player).includes("Private"), false);
+  assert.equal(item.name, "Private track title");
+  assert.equal(device.name, "Private speaker name");
+  assert.equal(item.uri, undefined);
+  assert.ok(item.track_ref_id);
+  assert.equal(application.transientSpotifyContext, true);
 
   await application.spotifyControl({ action: "pause" });
   await application.spotifyAddToQueue({ uri: "spotify:track:one" });
