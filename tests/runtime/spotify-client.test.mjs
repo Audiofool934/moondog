@@ -497,6 +497,105 @@ test("Spotify client never retries exhausted development quota, even on GETs", a
   assert.equal(callCount, 1);
 });
 
+test("Spotify client refreshes the token reactively on 401 and retries once", async () => {
+  const seenTokens = [];
+  let refreshCount = 0;
+  const responses = [
+    jsonResponse({ error: { status: 401, message: "Bad or expired token" } }, 401),
+    jsonResponse({ id: "account-1", display_name: "Listener" }),
+  ];
+  const client = createSpotifyWebApiClient({
+    tokenProvider: async () => "stale-token",
+    refreshAccessToken: async () => {
+      refreshCount += 1;
+      return "fresh-token";
+    },
+    fetchImpl: async (url, init) => {
+      seenTokens.push(init.headers.authorization);
+      return responses.shift();
+    },
+  });
+
+  const account = await client.getAccount();
+
+  assert.equal(account.account_id, "account-1");
+  assert.deepEqual(seenTokens, ["Bearer stale-token", "Bearer fresh-token"]);
+  assert.equal(refreshCount, 1);
+});
+
+test("Spotify client retries a 401 only once after refreshing", async () => {
+  let fetchCount = 0;
+  let refreshCount = 0;
+  const client = createSpotifyWebApiClient({
+    tokenProvider: async () => "stale-token",
+    refreshAccessToken: async () => {
+      refreshCount += 1;
+      return "fresh-token";
+    },
+    fetchImpl: async () => {
+      fetchCount += 1;
+      return jsonResponse({ error: { status: 401 } }, 401);
+    },
+  });
+
+  let error;
+  try {
+    await client.getAccount();
+  } catch (caught) {
+    error = caught;
+  }
+
+  assert.ok(error instanceof SpotifyWebApiError);
+  assert.equal(error.code, "spotify_authentication_required");
+  assert.equal(fetchCount, 2);
+  assert.equal(refreshCount, 1);
+});
+
+test("Spotify client fails fast on 401 without a refresh hook", async () => {
+  let fetchCount = 0;
+  const client = createSpotifyWebApiClient({
+    tokenProvider: async () => "stale-token",
+    fetchImpl: async () => {
+      fetchCount += 1;
+      return jsonResponse({ error: { status: 401 } }, 401);
+    },
+  });
+
+  let error;
+  try {
+    await client.getAccount();
+  } catch (caught) {
+    error = caught;
+  }
+
+  assert.ok(error instanceof SpotifyWebApiError);
+  assert.equal(error.code, "spotify_authentication_required");
+  assert.equal(fetchCount, 1);
+});
+
+test("Spotify client surfaces refresh failures after a 401", async () => {
+  const client = createSpotifyWebApiClient({
+    tokenProvider: async () => "stale-token",
+    refreshAccessToken: async () => {
+      throw new SpotifyWebApiError(
+        "spotify_auth_not_configured",
+        "Spotify is not authenticated.",
+      );
+    },
+    fetchImpl: async () => jsonResponse({ error: { status: 401 } }, 401),
+  });
+
+  let error;
+  try {
+    await client.getAccount();
+  } catch (caught) {
+    error = caught;
+  }
+
+  assert.ok(error instanceof SpotifyWebApiError);
+  assert.equal(error.code, "spotify_auth_not_configured");
+});
+
 test("Spotify client returns bounded normalized catalog search results", async () => {
   const requests = [];
   const items = Array.from({ length: 12 }, (_, index) => ({

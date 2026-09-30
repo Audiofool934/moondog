@@ -80,6 +80,7 @@ export async function openSpotifyConnection({
   const client = createSpotifyWebApiClient({
     fetchImpl,
     tokenProvider: () => authentication.getAccessToken(),
+    refreshAccessToken: () => authentication.refreshAccessToken(),
   });
   const service = createSpotifyService({ client });
   const resolver = createSpotifyCatalogResolver({

@@ -492,6 +492,7 @@ export function createSpotifyWebApiClient({
   tokenProvider,
   baseUrl = SPOTIFY_WEB_API_BASE_URL,
   sleepImpl = defaultSleep,
+  refreshAccessToken,
 } = {}) {
   if (typeof fetchImpl !== "function") {
     throw new TypeError("A fetch implementation is required.");
@@ -505,124 +506,154 @@ export function createSpotifyWebApiClient({
     path,
     { method = "GET", body, responseMode = "json", signal } = {},
   ) => {
-    signal?.throwIfAborted();
-    const token = normalizedToken(await tokenProvider());
-    signal?.throwIfAborted();
-    const headers = {
-      accept: "application/json",
-      authorization: `Bearer ${token}`,
+    const initForToken = (token) => {
+      const headers = {
+        accept: "application/json",
+        authorization: `Bearer ${token}`,
+      };
+      const init = { method, headers };
+      if (body !== undefined) {
+        headers["content-type"] = "application/json";
+        init.body = JSON.stringify(body);
+      }
+      return init;
     };
-    const init = { method, headers };
-    if (body !== undefined) {
-      headers["content-type"] = "application/json";
-      init.body = JSON.stringify(body);
-    }
 
-    // Only idempotent reads are retried: a repeated write (queue add,
-    // playlist edit, playback command) could apply twice, while a repeated
-    // GET is safe. Development-quota exhaustion is never retried.
-    const retryable = method === "GET";
-    const maxAttempts = retryable
-      ? SPOTIFY_WEB_API_LIMITS.rateLimitMaxAttempts
-      : 1;
-    for (let attempt = 1; ; attempt += 1) {
-      let response;
-      try {
-        response = await fetchImpl(`${normalizedBaseUrl}${path}`, init);
-      } catch {
-        fail("spotify_network_error", "Spotify could not be reached.");
-      }
-
-      if (response.ok && (response.status === 204 || responseMode === "none")) {
-        return null;
-      }
-      const text = await response.text();
-      if (text.length > SPOTIFY_WEB_API_LIMITS.responseBytesMax) {
-        fail("spotify_response_too_large", "Spotify returned too much data.", {
-          status: response.status,
-        });
-      }
-      let payload = null;
-      if (text) {
+    const send = async (init) => {
+      // Only idempotent reads are retried: a repeated write (queue add,
+      // playlist edit, playback command) could apply twice, while a repeated
+      // GET is safe. Development-quota exhaustion is never retried.
+      const retryable = method === "GET";
+      const maxAttempts = retryable
+        ? SPOTIFY_WEB_API_LIMITS.rateLimitMaxAttempts
+        : 1;
+      for (let attempt = 1; ; attempt += 1) {
+        let response;
         try {
-          payload = JSON.parse(text);
+          response = await fetchImpl(`${normalizedBaseUrl}${path}`, init);
         } catch {
+          fail("spotify_network_error", "Spotify could not be reached.");
+        }
+
+        if (response.ok && (response.status === 204 || responseMode === "none")) {
+          return null;
+        }
+        const text = await response.text();
+        if (text.length > SPOTIFY_WEB_API_LIMITS.responseBytesMax) {
+          fail("spotify_response_too_large", "Spotify returned too much data.", {
+            status: response.status,
+          });
+        }
+        let payload = null;
+        if (text) {
+          try {
+            payload = JSON.parse(text);
+          } catch {
+            fail(
+              "spotify_response_invalid",
+              "Spotify returned an invalid response.",
+              {
+                status: response.status,
+              },
+            );
+          }
+        }
+
+        if (response.ok) {
+          return payload;
+        }
+
+        const retryAfter = retryAfterSeconds(response.headers);
+        if (
+          retryable &&
+          response.status === 429 &&
+          quotaReason(payload) !== "QUOTA_EXCEEDED" &&
+          attempt < maxAttempts
+        ) {
+          const waitMs =
+            retryAfter === null
+              ? SPOTIFY_WEB_API_LIMITS.rateLimitDefaultWaitMs
+              : retryAfter * 1_000;
+          if (waitMs <= SPOTIFY_WEB_API_LIMITS.rateLimitMaxWaitMs) {
+            const jittered =
+              waitMs +
+              Math.floor(
+                Math.random() * SPOTIFY_WEB_API_LIMITS.rateLimitJitterMs,
+              );
+            await sleepImpl(jittered);
+            continue;
+          }
+        }
+
+        const options = {
+          status: response.status,
+          retryAfterSeconds: retryAfter,
+        };
+        if (response.status === 401) {
           fail(
-            "spotify_response_invalid",
-            "Spotify returned an invalid response.",
-            {
-              status: response.status,
-            },
+            "spotify_authentication_required",
+            "Spotify authentication must be refreshed.",
+            options,
           );
         }
-      }
-
-      if (response.ok) {
-        return payload;
-      }
-
-      const retryAfter = retryAfterSeconds(response.headers);
-      if (
-        retryable &&
-        response.status === 429 &&
-        quotaReason(payload) !== "QUOTA_EXCEEDED" &&
-        attempt < maxAttempts
-      ) {
-        const waitMs =
-          retryAfter === null
-            ? SPOTIFY_WEB_API_LIMITS.rateLimitDefaultWaitMs
-            : retryAfter * 1_000;
-        if (waitMs <= SPOTIFY_WEB_API_LIMITS.rateLimitMaxWaitMs) {
-          const jittered =
-            waitMs +
-            Math.floor(
-              Math.random() * SPOTIFY_WEB_API_LIMITS.rateLimitJitterMs,
+        if (response.status === 403) {
+          if (hasInsufficientClientScope(payload)) {
+            fail(
+              "spotify_scope_insufficient",
+              "Spotify authorization is missing a required scope. Run moondog spotify login again.",
+              options,
             );
-          await sleepImpl(jittered);
+          }
+          fail(
+            "spotify_action_forbidden",
+            "Spotify did not allow this action.",
+            options,
+          );
+        }
+        if (response.status === 429) {
+          if (quotaReason(payload) === "QUOTA_EXCEEDED") {
+            fail(
+              "spotify_quota_exceeded",
+              "Spotify development quota is exhausted.",
+              options,
+            );
+          }
+          fail(
+            "spotify_rate_limited",
+            "Spotify rate limited this request.",
+            options,
+          );
+        }
+        fail("spotify_api_error", "Spotify rejected this request.", options);
+      }
+    };
+
+    // Reactive token refresh: the cached token can be rejected (revoked,
+    // rotated, or clock-skewed) even before it reaches the proactive
+    // refresh window. On the first 401, force a refresh and retry the
+    // request once with the new token instead of failing.
+    const canRefresh = typeof refreshAccessToken === "function";
+    let refreshed = false;
+    for (;;) {
+      signal?.throwIfAborted();
+      const token = refreshed
+        ? normalizedToken(await refreshAccessToken())
+        : normalizedToken(await tokenProvider());
+      signal?.throwIfAborted();
+      try {
+        return await send(initForToken(token));
+      } catch (error) {
+        if (
+          !refreshed &&
+          canRefresh &&
+          error instanceof SpotifyWebApiError &&
+          error.code === "spotify_authentication_required"
+        ) {
+          refreshed = true;
           continue;
         }
+        throw error;
       }
-
-      const options = {
-        status: response.status,
-        retryAfterSeconds: retryAfter,
-      };
-      if (response.status === 401) {
-        fail(
-          "spotify_authentication_required",
-          "Spotify authentication must be refreshed.",
-          options,
-        );
-      }
-      if (response.status === 403) {
-        if (hasInsufficientClientScope(payload)) {
-          fail(
-            "spotify_scope_insufficient",
-            "Spotify authorization is missing a required scope. Run moondog spotify login again.",
-            options,
-          );
-        }
-        fail(
-          "spotify_action_forbidden",
-          "Spotify did not allow this action.",
-          options,
-        );
-      }
-      if (response.status === 429) {
-        if (quotaReason(payload) === "QUOTA_EXCEEDED") {
-          fail(
-            "spotify_quota_exceeded",
-            "Spotify development quota is exhausted.",
-            options,
-          );
-        }
-        fail(
-          "spotify_rate_limited",
-          "Spotify rate limited this request.",
-          options,
-        );
-      }
-      fail("spotify_api_error", "Spotify rejected this request.", options);
     }
   };
 

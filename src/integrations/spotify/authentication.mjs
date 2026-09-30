@@ -689,6 +689,28 @@ export function createSpotifyAuthentication({
     }
   };
 
+  const forceRefreshAccessToken = async ({ signal } = {}) => {
+    assertNotAborted(signal);
+    const credential = await readCredential({ signal });
+    if (!credential) {
+      throw safeError(
+        "spotify_auth_not_configured",
+        "Spotify is not authenticated.",
+      );
+    }
+    const refreshed = await refreshSpotifyAccessToken({
+      clientId,
+      refreshToken: credential.refreshToken,
+      refreshExpiresAt: credential.refreshExpiresAt,
+      scopes: credential.scope,
+      fetchImpl,
+      signal,
+      now,
+    });
+    await writeCredential(refreshed, { signal });
+    return refreshed.accessToken;
+  };
+
   return {
     async login({ signal, onAuthorizationUrl } = {}) {
       assertNotAborted(signal);
@@ -762,17 +784,14 @@ export function createSpotifyAuthentication({
       if (credential.accessExpiresAt > now() + ACCESS_TOKEN_REFRESH_WINDOW_MS) {
         return credential.accessToken;
       }
-      const refreshed = await refreshSpotifyAccessToken({
-        clientId,
-        refreshToken: credential.refreshToken,
-        refreshExpiresAt: credential.refreshExpiresAt,
-        scopes: credential.scope,
-        fetchImpl,
-        signal,
-        now,
-      });
-      await writeCredential(refreshed, { signal });
-      return refreshed.accessToken;
+      return forceRefreshAccessToken({ signal });
+    },
+
+    // Unconditional refresh: the cached token may be rejected (revoked,
+    // rotated, clock skew) before it reaches the proactive refresh window.
+    // The web API client calls this reactively after a 401.
+    async refreshAccessToken({ signal } = {}) {
+      return forceRefreshAccessToken({ signal });
     },
 
     async logout({ signal } = {}) {

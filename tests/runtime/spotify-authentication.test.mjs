@@ -381,6 +381,46 @@ test("access token retrieval refreshes expired OAuth and logout stays metadata-o
   assert.equal(credentialStore.snapshot(), undefined);
 });
 
+test("forced access token refresh bypasses the proactive refresh window", async () => {
+  const issuedAt = Date.UTC(2026, 7, 26, 4, 0, 0);
+  const refreshExpiresAt = Date.UTC(2027, 1, 26, 4, 0, 0);
+  const credentialStore = memoryCredentialStore({
+    type: "oauth",
+    accessToken: "STALE_ACCESS_TOKEN_SENTINEL",
+    refreshToken: "REFRESH_TOKEN_SENTINEL",
+    accessExpiresAt: issuedAt + 3_600_000,
+    refreshExpiresAt,
+    tokenType: "Bearer",
+    scope: "user-modify-playback-state user-read-playback-state",
+  });
+  const authentication = createSpotifyAuthentication({
+    clientId,
+    credentialStore,
+    now: () => issuedAt,
+    openBrowser: async () => {},
+    fetchImpl: async () =>
+      successfulResponse({
+        access_token: "ROTATED_ACCESS_TOKEN_SENTINEL",
+        expires_in: 3_600,
+        token_type: "Bearer",
+      }),
+  });
+
+  // The cached token is still valid, so getAccessToken returns it untouched.
+  assert.equal(
+    await authentication.getAccessToken(),
+    "STALE_ACCESS_TOKEN_SENTINEL",
+  );
+  // The forced refresh rotates it regardless of the remaining lifetime.
+  assert.equal(
+    await authentication.refreshAccessToken(),
+    "ROTATED_ACCESS_TOKEN_SENTINEL",
+  );
+  const status = await authentication.status();
+  assert.equal(status.accessExpiresAt, issuedAt + 3_600_000);
+  assert.equal(status.refreshExpiresAt, refreshExpiresAt);
+});
+
 test("token endpoint failures do not expose response credentials", async () => {
   await assert.rejects(
     exchangeSpotifyAuthorizationCode({
