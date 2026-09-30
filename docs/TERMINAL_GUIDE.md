@@ -193,7 +193,7 @@ Without a connected model, the draft stays in the editor while you use `/model` 
 If discovery services cannot be reached, press ↑ to recall the request and Enter to retry with the same selected track.
 The selected profile track can come from Spotify history even when it is absent from your Apple library.
 Changing or removing its displayed title or artist removes the automatic handoff of the original selection.
-External discovery currently requires an imported Apple Music library to validate candidates; a history-only profile retains its local evidence and correction actions.
+External discovery also works with a history-only profile; importing an Apple Music library is optional.
 Recommendations show their listening-derived artist connections and release metadata.
 The model proposes the selection and order; these connections do not establish audio similarity or prove that a song is new to you.
 English and Chinese explanations follow your request text or explicit language instruction, while track and artist names retain their original language.
