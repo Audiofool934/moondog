@@ -218,7 +218,7 @@ function normalizePlayback(payload) {
       : "off",
     currently_playing_type:
       safeText(payload.currently_playing_type, 32) ?? "unknown",
-    disallowed_actions: normalizeDisallowedActions(payload.actions?.disallows),
+    disallowed_actions: normalizeDisallowedActions(payload.actions?.disallows ?? payload.actions),
   };
   const progressMs = safeInteger(payload.progress_ms, 0, 86_400_000);
   const timestamp = safeInteger(payload.timestamp, 0, Number.MAX_SAFE_INTEGER);
@@ -526,6 +526,7 @@ export function createSpotifyWebApiClient({
   baseUrl = SPOTIFY_WEB_API_BASE_URL,
   sleepImpl = defaultSleep,
   refreshAccessToken,
+  writeTimeoutMs = 15_000,
 } = {}) {
   if (typeof fetchImpl !== "function") {
     throw new TypeError("A fetch implementation is required.");
@@ -534,6 +535,7 @@ export function createSpotifyWebApiClient({
     throw new TypeError("A Spotify token provider is required.");
   }
   const normalizedBaseUrl = String(baseUrl).replace(/\/+$/u, "");
+  if (!Number.isInteger(writeTimeoutMs) || writeTimeoutMs < 1 || writeTimeoutMs > 60_000) throw new TypeError("Invalid Spotify write settlement timeout.");
 
   const request = async (
     path,
@@ -574,9 +576,24 @@ export function createSpotifyWebApiClient({
       const init = initForToken(token);
       // Let a dispatched write settle so cancellation cannot hide its receipt.
       if (read && signal) init.signal = signal;
+      const deadline = Date.now() + writeTimeoutMs;
+      const transport = read ? null : new AbortController();
+      if (transport) init.signal = transport.signal;
+      const settle = async (operation) => {
+        if (read) return operation();
+        let timer;
+        try {
+          return await Promise.race([Promise.resolve(operation()), new Promise((_, reject) => {
+            timer = setTimeout(() => {
+              transport.abort();
+              reject(new Error("Spotify write settlement deadline exceeded."));
+            }, Math.max(0, deadline - Date.now()));
+          })]);
+        } finally { clearTimeout(timer); }
+      };
       let response;
       try {
-        response = await fetchImpl(`${normalizedBaseUrl}${path}`, init);
+        response = await settle(() => fetchImpl(`${normalizedBaseUrl}${path}`, init));
       } catch (error) {
         if (read) {
           signal?.throwIfAborted();
@@ -590,7 +607,7 @@ export function createSpotifyWebApiClient({
       if (response.ok && (response.status === 204 || responseMode === "none")) return null;
       let text;
       try {
-        text = await response.text();
+        text = await settle(() => response.text());
       } catch (error) {
         if (read) {
           signal?.throwIfAborted();

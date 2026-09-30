@@ -949,14 +949,14 @@ test("Spotify transfer prefers the exact device name over a partial one", async 
   assert.equal(fixture.calls.at(-1).input.deviceId, "exact-phone");
 });
 
-test("Spotify transfer uses the only phone when its name does not say iPhone", async () => {
+test("Spotify transfer uses a generic phone request when the name is different", async () => {
   const fixture = deviceClient([
     connectDevice("pixel", "Pocket", "Smartphone"),
     connectDevice("desk", "Studio Mac", "Computer"),
   ]);
   const service = createSpotifyService({ client: fixture.client });
 
-  const receipt = await service.transfer({ deviceName: "iphone" });
+  const receipt = await service.transfer({ deviceName: "phone" });
 
   assert.deepEqual(receipt.device, { name: "Pocket", type: "Smartphone" });
   assert.equal(fixture.calls.at(-1).input.deviceId, "pixel");
@@ -1021,7 +1021,7 @@ test("Spotify transfer refuses a matching device that will not accept playback",
   await assert.rejects(service.transfer({ deviceName: "iPhone" }), {
     code: "spotify_device_restricted",
     message:
-      "Spotify will not take playback on Everett's iPhone. Leave its private session, or pick another device.",
+      "Spotify does not allow Web API control on Everett's iPhone. Pick another device.",
   });
   assert.deepEqual(fixture.calls, [{ method: "getDevices" }]);
 });

@@ -376,17 +376,12 @@ const DEVICE_QUERY_FILLER = new Set([
 ]);
 
 const DEVICE_TYPE_ALIASES = new Map([
-  ["iphone", "smartphone"],
   ["phone", "smartphone"],
   ["smartphone", "smartphone"],
-  ["android", "smartphone"],
-  ["ipad", "tablet"],
   ["tablet", "tablet"],
   ["computer", "computer"],
   ["desktop", "computer"],
   ["laptop", "computer"],
-  ["mac", "computer"],
-  ["pc", "computer"],
   ["speaker", "speaker"],
   ["tv", "tv"],
   ["television", "tv"],
@@ -444,8 +439,8 @@ function tokenIsSpecific(token) {
 
 function tokenMatches(nameToken, queryToken) {
   if (nameToken === queryToken) return true;
-  if (queryToken.length < 3) return false;
-  return nameToken.startsWith(queryToken) || nameToken.endsWith(queryToken);
+  if (queryToken.length < 3 || DEVICE_TYPE_ALIASES.has(queryToken)) return false;
+  return nameToken.startsWith(queryToken);
 }
 
 function nameMatchScore(device, queryNormalized, tokens) {
@@ -512,7 +507,7 @@ function requireTransferDevice(chosen, display) {
   if (chosen.length === 1 && chosen[0].is_restricted === true) {
     fail(
       "spotify_device_restricted",
-      `Spotify will not take playback on ${clipText(chosen[0].name, 80)}. Leave its private session, or pick another device.`,
+      `Spotify does not allow Web API control on ${clipText(chosen[0].name, 80)}. Pick another device.`,
     );
   }
   const controllable = chosen.filter((device) => device.is_restricted !== true);
@@ -624,6 +619,24 @@ export function createSpotifyService(options = {}) {
 
     devices(options) {
       return client.getDevices(options);
+    },
+
+    async resolveDevice(value, { signal } = {}) {
+      signal?.throwIfAborted();
+      const input = inputObject(value);
+      if (input.deviceId !== undefined && input.deviceName !== undefined) fail("conflicting_device_target", "Choose one device target.");
+      let device;
+      if (input.deviceName !== undefined) device = await resolveNamedDevice(client, input.deviceName, { signal });
+      else {
+        const id = optionalDeviceId(input.deviceId);
+        const devices = listedDevices(await client.getDevices({ signal }));
+        signal?.throwIfAborted();
+        const matching = devices.filter((item) => id ? item.id === id : item.is_active === true);
+        if (matching.length === 0) fail("spotify_device_not_found", "That Spotify device is no longer available. List devices again or open Spotify on it.");
+        device = requireTransferDevice(matching, "selected device");
+      }
+      if (input.forVolume && device.supports_volume === false) fail("spotify_volume_unsupported", "Spotify cannot change this device's volume through the Web API. Use its hardware or Spotify app volume control.");
+      return device;
     },
 
     queue(options) {

@@ -3010,6 +3010,9 @@ function projectSpotifyNowPlaying(value) {
   if (value.state === "inactive") return { provider: "spotify", state: "inactive" };
   if (value.state !== "available") throw new Error("domain_result_invalid:spotify_playback_state");
   const result = { provider: "spotify", state: "available", is_playing: value.is_playing === true };
+  if (typeof value.shuffle_state === "boolean") result.shuffle_state = value.shuffle_state;
+  if (["off", "track", "context"].includes(value.repeat_state)) result.repeat_state = value.repeat_state;
+  result.disallowed_actions = safeStringArray(value.disallowed_actions, 12, 64, "spotify_disallowed_action");
   if (Number.isInteger(value.progress_ms) && value.progress_ms >= 0 && value.progress_ms <= 86_400_000) result.progress_ms = value.progress_ms;
   const item = projectSpotifyReadItem(value.item);
   if (item) result.item = item;
@@ -3018,6 +3021,9 @@ function projectSpotifyNowPlaying(value) {
     for (const [field, limit] of [["name", 128], ["type", 64]]) {
       if (typeof value.device[field] === "string") result.device[field] = cleanOutputText(value.device[field], limit, `spotify_device_${field}`);
     }
+    result.device.is_restricted = value.device.is_restricted === true;
+    if (typeof value.device.supports_volume === "boolean") result.device.supports_volume = value.device.supports_volume;
+    if (Number.isInteger(value.device.volume_percent) && value.device.volume_percent >= 0 && value.device.volume_percent <= 100) result.device.volume_percent = value.device.volume_percent;
   }
   return result;
 }
@@ -3164,6 +3170,9 @@ function projectSpotifyDevices(value) {
         ),
         is_active: device.is_active === true,
         is_restricted: device.is_restricted === true,
+        ...(typeof device.device_ref_id === "string" ? { device_ref_id: cleanOutputText(device.device_ref_id, 128, "spotify_device_ref") } : {}),
+        ...(typeof device.supports_volume === "boolean" ? { supports_volume: device.supports_volume } : {}),
+        ...(Number.isInteger(device.volume_percent) && device.volume_percent >= 0 && device.volume_percent <= 100 ? { volume_percent: device.volume_percent } : {}),
       };
     }),
     truncated: value.truncated === true,
@@ -4625,12 +4634,14 @@ function createToolFactories(
         name: descriptor.tool_name,
         label: descriptor.label,
         description:
-          "Perform exactly one Spotify playback action directly requested by the user. Never retry next, previous, or another write automatically. volume requires percent; seek requires position_ms; shuffle requires a boolean state; repeat requires state off, track, or context. Only resume accepts uri, context_uri, or track_refs, with optional position_ms. To play the exact pending plan now, use action resume with pending_plan true and no other source; the host resolves the retained plan and starts it in order. pause, next, and previous accept only action and an optional device_id. device_id is optional for every action.",
+          "Perform exactly one Spotify playback action directly requested by the user. Never retry next, previous, or another write automatically. volume requires percent; seek requires position_ms; shuffle requires a boolean state; repeat requires state off, track, or context. Only resume accepts uri, context_uri, or track_refs, with optional position_ms. To play the exact pending plan now, use action resume with pending_plan true and no other source; the host resolves the retained plan and starts it in order. pause, next, and previous accept only action and an optional device_id. Target any action with device_name or a listed device_ref_id (including duplicate-name devices); device_id is reserved for user-provided IDs. Choose only one selector. Album/artist/playlist item_ref_id values can be played with context_ref_id.",
         parameters: Type.Union([
           Type.Object(
             {
               action: Type.Literal("resume"),
               device_id: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
+              device_name: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
+              device_ref_id: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
               uri: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
               context_uri: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
               context_ref_id: Type.Optional(Type.String({ minLength: 1, maxLength: 128, description: "An album, artist, or playlist item_ref_id returned by Spotify reads. Plays that context without inventing a URI." })),
@@ -4651,6 +4662,8 @@ function createToolFactories(
               action: Type.Literal("resume"),
               pending_plan: Type.Literal(true),
               device_id: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
+              device_name: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
+              device_ref_id: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
             },
             { additionalProperties: false },
           ),
@@ -4659,6 +4672,8 @@ function createToolFactories(
               {
                 action: Type.Literal(action),
                 device_id: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
+              device_name: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
+              device_ref_id: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
               },
               { additionalProperties: false },
             ),
@@ -4668,6 +4683,8 @@ function createToolFactories(
               action: Type.Literal("volume"),
               percent: Type.Integer({ minimum: 0, maximum: 100 }),
               device_id: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
+              device_name: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
+              device_ref_id: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
             },
             { additionalProperties: false },
           ),
@@ -4676,6 +4693,8 @@ function createToolFactories(
               action: Type.Literal("seek"),
               position_ms: Type.Integer({ minimum: 0, maximum: 86_400_000 }),
               device_id: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
+              device_name: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
+              device_ref_id: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
             },
             { additionalProperties: false },
           ),
@@ -4684,6 +4703,8 @@ function createToolFactories(
               action: Type.Literal("shuffle"),
               state: Type.Boolean(),
               device_id: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
+              device_name: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
+              device_ref_id: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
             },
             { additionalProperties: false },
           ),
@@ -4696,6 +4717,8 @@ function createToolFactories(
                 Type.Literal("context"),
               ]),
               device_id: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
+              device_name: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
+              device_ref_id: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
             },
             { additionalProperties: false },
           ),
@@ -4703,14 +4726,15 @@ function createToolFactories(
         executionMode: "sequential",
         execute: executeDomain(
           async (_toolCallId, parameters, signal) => {
+            const target = await application.spotifyDeviceTarget({ deviceId: parameters.device_id, deviceName: parameters.device_name, deviceRefId: parameters.device_ref_id }, { signal, forVolume: parameters.action === "volume" });
             if (parameters.pending_plan === true) {
               return application.spotifyPlayPendingPlan({
-                ...(parameters.device_id ? { deviceId: parameters.device_id } : {}),
+                ...target,
               }, { signal });
             }
             const result = await application.spotifyControl({
               action: parameters.action,
-              ...(parameters.device_id ? { deviceId: parameters.device_id } : {}),
+              ...target,
               ...(parameters.uri ? { uris: [parameters.uri] } : {}),
               ...(parameters.context_uri ? { contextUri: parameters.context_uri } : {}),
               ...(parameters.context_ref_id ? { contextRefId: parameters.context_ref_id } : {}),
@@ -4753,6 +4777,8 @@ function createToolFactories(
               device_id: Type.Optional(
                 Type.String({ minLength: 1, maxLength: 256 }),
               ),
+              device_name: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
+              device_ref_id: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
             },
             { additionalProperties: false },
           ),
@@ -4762,6 +4788,8 @@ function createToolFactories(
               device_id: Type.Optional(
                 Type.String({ minLength: 1, maxLength: 256 }),
               ),
+              device_name: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
+              device_ref_id: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
             },
             { additionalProperties: false },
           ),
@@ -4771,6 +4799,8 @@ function createToolFactories(
               device_id: Type.Optional(
                 Type.String({ minLength: 1, maxLength: 256 }),
               ),
+              device_name: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
+              device_ref_id: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
             },
             { additionalProperties: false },
           ),
@@ -4778,26 +4808,21 @@ function createToolFactories(
         executionMode: "sequential",
         execute: executeDomain(
           async (_toolCallId, parameters, signal) => {
+            const target = await application.spotifyDeviceTarget({ deviceId: parameters.device_id, deviceName: parameters.device_name, deviceRefId: parameters.device_ref_id }, { signal, forVolume: parameters.action === "volume" });
             if (parameters.pending_plan === true) {
               return application.spotifyQueuePendingPlan({
-                ...(parameters.device_id
-                  ? { deviceId: parameters.device_id }
-                  : {}),
+                ...target,
               }, { signal });
             }
             const receipt = await application.spotifyAddToQueue(
               parameters.track_ref_id !== undefined
                 ? {
                     trackRefId: parameters.track_ref_id,
-                    ...(parameters.device_id
-                      ? { deviceId: parameters.device_id }
-                      : {}),
+                    ...target,
                   }
                 : {
                     uri: parameters.uri,
-                    ...(parameters.device_id
-                      ? { deviceId: parameters.device_id }
-                      : {}),
+                    ...target,
                   },
               { signal },
             );
@@ -5233,7 +5258,7 @@ function createToolFactories(
         name: descriptor.tool_name,
         label: descriptor.label,
         description:
-          "List Spotify Connect devices visible right now. Each entry has a name, a type, and whether it is active or restricted. Device identifiers are withheld. Use this when the user asks which devices are connected.",
+          "List Spotify Connect devices visible right now. Each entry has a name, a type, and whether it is active or restricted. Each device_ref_id selects that exact entry, including duplicate names, across turns until the next device listing or reset. Volume and support flags help choose supported controls.",
         parameters: emptyParameters,
         executionMode: "parallel",
         execute: executeDomain(
@@ -5250,6 +5275,7 @@ function createToolFactories(
         description:
           "Move Spotify playback to a device the user named in ordinary words, such as iPhone, computer, or a speaker name. Pass that short device_name. The host matches a live Connect device and returns the chosen name. Set play to true when the music should continue there. Pass device_id only when the user pasted that exact ID. Never invent a device ID, and do not ask the user for one.",
         parameters: Type.Union([
+          Type.Object({ device_ref_id: Type.String({ minLength: 1, maxLength: 128 }), play: Type.Optional(Type.Boolean()) }, { additionalProperties: false }),
           Type.Object(
             {
               device_name: Type.String({ minLength: 1, maxLength: 128 }),
@@ -5269,10 +5295,10 @@ function createToolFactories(
         execute: executeDomain(
           async (_toolCallId, parameters, signal) =>
             application.spotifyTransfer({
-              ...(parameters.device_id
+              ...(parameters.device_ref_id ? { deviceRefId: parameters.device_ref_id } : parameters.device_id
                 ? { deviceId: parameters.device_id }
                 : { deviceName: parameters.device_name }),
-              play: parameters.play ?? true,
+              play: parameters.play ?? false,
             }, { signal }),
           projectSpotifyReceipt,
           onSpotifyWriteReceipt,
@@ -5696,7 +5722,7 @@ Spotify control and catalog rules:
 - If the user asks to revise a pending existing-playlist preview, inspect the live playlist again and produce a new preview. Never infer or mutate the host-retained draft from prose alone.
 - Existing-playlist edits are full exact replacements guarded by a snapshot preflight. If Spotify reports that the playlist changed, do not retry. Tell the user to inspect and preview the latest version again.
 - Call other Spotify write tools only for a direct user request to control playback, save library items, add an explicit URI, or move playback onto a device the user named.
-- When the user asks to play on, switch to, or move playback to a device in ordinary words, such as iPhone, computer, or a speaker name, call moondog_spotify_device_transfer once with that short device_name and play set to true. The host matches a live Spotify Connect device. Do not ask the user to paste a device ID, and do not invent one.
+- When the user asks to play on, switch to, or move playback to a device in ordinary words, such as iPhone, computer, or a speaker name, call moondog_spotify_device_transfer with that short device_name, or a returned device_ref_id. Set play true only when the user asks to start or continue playing; omit it for a pure transfer to preserve playback state. The host matches a live Spotify Connect device. Do not ask the user to paste a device ID, and do not invent one.
 - If the transfer result names the device, confirm that name. If several devices match, or none do, tell the user the visible names from the tool result and ask which one, or ask them to open Spotify on that device. Use moondog_spotify_devices only when they ask what is connected, or when you need those names after a failed match.
 - For an explicit request to queue music like the current playback, call moondog_spotify_queue_similar once with count (1–10, default 5). Report the host receipt, including unknown or partial effects; never replay an uncertain queue write.
 - Execute each requested state-changing action once. Never automatically retry next, previous, queue additions, or device transfers.

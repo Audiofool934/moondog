@@ -153,6 +153,7 @@ export class MoondogApplication {
     this.webResearch = webResearch;
     this.spotifyResolutions = new Map();
     this.spotifyReadSelections = new Map();
+    this.spotifyDeviceSelections = new Map();
     this.recentSimilarQueueUris = new Map();
     this.transientSpotifyContext = false;
     this.spotifyPlaylistTargets = new Map();
@@ -656,12 +657,13 @@ export class MoondogApplication {
 
   resetSpotifyReadContext() {
     this.spotifyReadSelections.clear();
+    this.spotifyDeviceSelections.clear();
     this.recentSimilarQueueUris.clear();
     this.transientSpotifyContext = false;
   }
 
   spotifyReadContext() {
-    return [...this.spotifyReadSelections.entries()].map(([source, items]) => ({
+    return [...this.spotifyReadSelections.entries(), ...(this.spotifyDeviceSelections.size ? [["devices", [...this.spotifyDeviceSelections.values()].map(({ id: _id, ...device }) => device)]] : [])].map(([source, items]) => ({
       source,
       items: items.map(({ uri: _uri, ...item }) => structuredClone(item)),
     }));
@@ -877,14 +879,41 @@ export class MoondogApplication {
       seed_artist: seedArtist, queue_observation_truncated: observed.truncated === true };
   }
 
-  spotifyDevices({ signal } = {}) {
+  async spotifyDevices({ signal } = {}) {
     this.transientSpotifyContext = true;
-    return this.requireSpotifyService().devices({ signal });
+    const result = await this.requireSpotifyService().devices({ signal });
+    signal?.throwIfAborted();
+    this.spotifyDeviceSelections.clear();
+    const devices = (result.devices ?? []).slice(0, 20).map((device) => {
+      const ref = randomUUID();
+      this.spotifyDeviceSelections.set(ref, { ...device, device_ref_id: ref });
+      const { id: _id, ...visible } = this.spotifyDeviceSelections.get(ref);
+      return visible;
+    });
+    return { ...result, devices };
   }
 
-  spotifyTransfer(input, { signal } = {}) {
+  async spotifyDeviceTarget(input = {}, { signal, forVolume = false } = {}) {
+    const { deviceId, deviceName, deviceRefId } = input;
+    if ([deviceId, deviceName, deviceRefId].filter((v) => v !== undefined).length > 1) throw spotifyResolutionError("conflicting_device_target", "Choose one device target.");
+    let id = deviceId;
+    if (deviceRefId !== undefined) {
+      id = this.spotifyDeviceSelections.get(deviceRefId)?.id;
+      if (!id) throw spotifyResolutionError("spotify_device_reference_expired", "That device selection expired. List devices again.");
+    }
+    if (id === undefined && deviceName === undefined && !forVolume) return {};
+    const device = await this.requireSpotifyService().resolveDevice({ deviceId: id, deviceName, forVolume }, { signal });
+    signal?.throwIfAborted();
+    return { deviceId: device.id };
+  }
+
+  async spotifyTransfer(input, { signal } = {}) {
     signal?.throwIfAborted();
     this.transientSpotifyContext = true;
+    if (input.deviceRefId !== undefined) {
+      const device = await this.spotifyDeviceTarget(input, { signal });
+      return this.requireSpotifyService().transfer({ ...device, play: input.play }, { signal });
+    }
     return this.requireSpotifyService().transfer(input, { signal });
   }
 

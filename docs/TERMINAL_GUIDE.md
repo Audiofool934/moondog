@@ -1476,3 +1476,9 @@ API references: [change playlist details](https://developer.spotify.com/document
 Ask “What have I saved lately?” or “Show my saved albums.” `moondog_spotify_library_browse` reads one page of tracks, albums, or shows (default 10, maximum 20), with save timestamps and an explicit next offset. An album's returned `item_ref_id` can start that album through the player tool's `context_ref_id`. Track references support explicit play, queue, and save requests in later turns.
 
 `moondog_spotify_history_recent` reads up to 50 recent tracks (default 20), their UTC play timestamps, and provider cursors. Specify either `after` or `before` in Unix milliseconds. This is the history Spotify currently exposes, not a complete day or lifetime archive. Neither browsing nor reading recent activity imports a profile or turns listening into an asserted preference. Results remain transient conversation context until replaced or reset.
+
+### Select and control a Spotify device
+
+Device listings include an opaque `device_ref_id`, current volume, and volume support when Spotify provides them. Use a reference to select one of two devices with the same name. Playback, queue, and volume tools accept a device name or reference and recheck it before dispatch; disappeared or restricted devices require a new selection. A generic “phone” can select a Smartphone, while a request for “iPhone” must match a name rather than an unrelated phone brand. Spotify may restrict volume control on particular devices; use its app or hardware control in that case.
+
+A transfer preserves playback state unless the user asks to start or continue playback. Dispatched writes have a 15-second settlement deadline independent of caller cancellation. Accepted responses still produce receipts after cancellation. A timeout before a definite response produces an uncertain receipt, never an automatic replay. A definite HTTP rejection remains a known rejection even if its body stalls.

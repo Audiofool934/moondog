@@ -919,7 +919,8 @@ test("a dispatched accepted write keeps its receipt after cancellation", async (
   const client = createSpotifyWebApiClient({ tokenProvider: async () => "old-token",
     refreshAccessToken: async ({ signal }) => { assert.equal(signal, controller.signal); return "new-token"; },
     fetchImpl: async (_url, init) => {
-      assert.equal(init.signal, undefined);
+      assert.ok(init.signal instanceof AbortSignal);
+      assert.notEqual(init.signal, controller.signal);
       calls++;
       controller.abort();
       return noContentResponse();
