@@ -676,8 +676,10 @@ export class MoondogApplication {
     return { ...player, item: items[0] ?? null };
   }
 
-  async spotifyPlayerStatus() {
-    const player = await this.requireSpotifyService().currentPlayer();
+  async spotifyPlayerStatus({ signal } = {}) {
+    this.transientSpotifyContext = true;
+    const player = await this.requireSpotifyService().currentPlayer({ signal });
+    signal?.throwIfAborted();
     if (player.state !== "available") {
       return { provider: "spotify", state: "inactive" };
     }
@@ -814,6 +816,7 @@ export class MoondogApplication {
   }
 
   spotifyTransfer(input) {
+    this.transientSpotifyContext = true;
     return this.requireSpotifyService().transfer(input);
   }
 

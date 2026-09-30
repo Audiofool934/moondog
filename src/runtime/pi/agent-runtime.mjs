@@ -4550,7 +4550,7 @@ function createToolFactories(
         parameters: emptyParameters,
         executionMode: "parallel",
         execute: executeDomain(
-          async () => application.spotifyPlayerStatus(),
+          async (_toolCallId, _parameters, signal) => application.spotifyPlayerStatus({ signal }),
           projectSpotifyPlayerStatus,
         ),
       }),
@@ -4746,6 +4746,7 @@ function createToolFactories(
                       ? { deviceId: parameters.device_id }
                       : {}),
                   },
+              { signal },
             );
             return receipt;
           },
@@ -6483,7 +6484,7 @@ export class PiAgentRuntime {
             terminate: true,
           };
         }
-        if (["spotify.player.now_playing", "spotify.queue.status", "spotify.device.list", "spotify.queue.similar"].includes(descriptor.capability_id)) {
+        if (["spotify.player.status", "spotify.player.now_playing", "spotify.queue.status", "spotify.device.list", "spotify.device.transfer", "spotify.queue.similar"].includes(descriptor.capability_id)) {
           this.transientSpotifyContext = true;
         }
         return undefined;

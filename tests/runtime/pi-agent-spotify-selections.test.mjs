@@ -109,3 +109,33 @@ test("bounded selections retain metadata as data, reject non-track actions and p
   assert.equal(application.spotifyReadContext().some((value) => value.source === "queue"), false);
   assert.equal(writes.length, 0);
 });
+
+test("a selected-track queue cancelled during device lookup never dispatches", async (context) => {
+  const { application, client, runtime, faux, writes } = await fixture(context);
+  const selection = await application.spotifySearchTracks({ query: "Midnight Lines" });
+  client.getDevices = async ({ signal }) => {
+    assert.ok(signal);
+    runtime.abort();
+    return { devices: [{ id: "fictional-device", is_active: true }] };
+  };
+  faux.setResponses([toolUse("moondog_spotify_queue_add", { track_ref_id: selection.items[0].track_ref_id }),
+    fauxAssistantMessage([fauxText("Queued it.")])]);
+  assert.equal((await runtime.prompt("Queue that result")).status, "aborted");
+  assert.equal(writes.length, 0);
+});
+
+test("a live conversation discards staged new memory but still completes an explicit forget", async (context) => {
+  const { application, runtime, faux } = await fixture(context);
+  const old = application.rememberMemory({ text: "Prefers short answers", kind: "preference", horizon: "persistent" });
+  faux.setResponses([toolUse("moondog_memory_remember", { text: "New staged preference", kind: "preference" }),
+    toolUse("moondog_spotify_now_playing"),
+    fauxAssistantMessage([fauxText("Transient Song Sentinel is playing.")])]);
+  const result = await runtime.prompt("I prefer concise answers. What is playing?");
+  assert.match(result.text, /no new generic memory was saved/u);
+  assert.doesNotMatch(JSON.stringify(application.memoryContext("preference")), /New staged preference|Transient Song/u);
+  faux.setResponses([toolUse("moondog_memory_forget", { memory_id: old.memory_id }),
+    fauxAssistantMessage([fauxText("Forgot the saved preference.")])]);
+  await runtime.prompt(`Forget the saved preference ${old.memory_id}`);
+  assert.equal(application.memoryContext("short answers").durable_memories.length, 0);
+  assert.equal(application.currentSessionTurns().length, 0);
+});
