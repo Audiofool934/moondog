@@ -442,6 +442,11 @@ const catalog = [
     agent_tool: { name: "moondog_spotify_playlist_edit_quick", label: "Make an exact playlist edit" },
   },
   {
+    id: "spotify.playlist.remove", version: "1", state: "enabled", effect: "write_external", requires_spotify: true,
+    description: "Confirm and remove an owned private playlist from the current user's library without claiming global deletion.",
+    agent_tool: { name: "moondog_spotify_playlist_remove", label: "Remove a playlist from your library" },
+  },
+  {
     id: "spotify.playlist.edit.preview",
     version: "1",
     state: "enabled",

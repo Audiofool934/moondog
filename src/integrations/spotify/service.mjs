@@ -745,6 +745,31 @@ export function createSpotifyService(options = {}) {
       };
     },
 
+    async playlistRemovalTarget(value, { signal } = {}) {
+      signal?.throwIfAborted();
+      const input = inputObject(value);
+      const playlistId = requiredPlaylistId(input.playlistId);
+      const account = await client.getAccount({ signal });
+      signal?.throwIfAborted();
+      const playlist = await client.getPlaylist({ playlistId }, { signal });
+      signal?.throwIfAborted();
+      if (playlist?.id !== playlistId || playlist.owner_id !== accountId(account) || playlist.is_public !== false || playlist.collaborative !== false ||
+          typeof playlist.name !== "string" || !playlist.name || playlist.uri !== `spotify:playlist:${playlistId}`) {
+        fail("playlist_not_removable", "Remove only a verified owned private, non-collaborative playlist from your library.");
+      }
+      return { playlistId, name: playlist.name, snapshotId: requiredSnapshotId(playlist.snapshot_id) };
+    },
+
+    async removePlaylistFromLibrary(value, { signal } = {}) {
+      signal?.throwIfAborted();
+      const input = inputObject(value);
+      const current = await this.playlistRemovalTarget(input, { signal });
+      if (current.name !== input.expectedName || current.snapshotId !== input.expectedSnapshotId) fail("playlist_snapshot_changed", "The playlist changed since confirmation was prepared. Review it again.");
+      signal?.throwIfAborted();
+      await client.removeLibraryItems({ uris: [`spotify:playlist:${current.playlistId}`] }, { signal });
+      return { ...actionReceipt("playlist.unfollow"), playlist: { name: current.name, is_public: false } };
+    },
+
     async playlistSnapshot(value, { signal } = {}) {
       signal?.throwIfAborted();
       const input = inputObject(value);

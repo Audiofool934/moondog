@@ -3079,10 +3079,10 @@ function projectSpotifyReceipt(value) {
         200,
         "spotify_playlist_name",
       ),
-      track_count: safeNonnegativeInteger(
+      ...(value.action === "playlist.unfollow" ? {} : { track_count: safeNonnegativeInteger(
         value.playlist.track_count,
         "spotify_playlist_track_count",
-      ),
+      ) }),
       is_public: value.playlist.is_public === true,
     };
   }
@@ -4298,6 +4298,7 @@ function createToolFactories(
     onSpotifyPlaylistWrite,
     onSpotifyPlaylistPartialEffect,
     onSpotifyPlaylistEditPreview,
+    onSpotifyRemovalPreview,
     onSpotifyPlaylistEditWrite,
     onExternalCandidateSet,
     onMusicCatalogArtistReleases,
@@ -5079,6 +5080,22 @@ function createToolFactories(
                 }, { signal }),
           projectSpotifyPlaylistRead,
         ),
+      }),
+    ],
+    [
+      "spotify.playlist.remove",
+      (descriptor) => ({ name: descriptor.tool_name, label: descriptor.label,
+        description: 'Remove an owned private non-collaborative playlist from the Spotify library (unfollow), never globally delete it. First preview using a listed playlist_ref_id or a library/search playlist item_ref_id. The host displays the exact later-turn confirmation phrase. Call confirm without a target only after the user sends that exact phrase. Never imply the preview wrote anything, or automatically retry a removal. Public/shared/not-owned targets are refused.',
+        parameters: Type.Union([
+          Type.Object({ action: Type.Literal("preview"), playlist_ref_id: Type.String({ minLength: 1, maxLength: 128 }) }, { additionalProperties: false }),
+          Type.Object({ action: Type.Literal("preview"), item_ref_id: Type.String({ minLength: 1, maxLength: 128 }) }, { additionalProperties: false }),
+          Type.Object({ action: Type.Literal("confirm") }, { additionalProperties: false }),
+        ]), executionMode: "sequential",
+        execute: executeDomain(async (_id, parameters, signal) => application.spotifyRemovePlaylist({ action: parameters.action,
+          playlistRefId: parameters.playlist_ref_id, itemRefId: parameters.item_ref_id }, { signal }),
+          (value) => value.state === "preview" ? { provider: "spotify", state: "preview", name: cleanOutputText(value.name, 200, "spotify_removal_name"),
+            confirmation: cleanOutputText(value.confirmation, 512, "spotify_removal_confirmation"), effect: "Remove from your library (unfollow), not global deletion." } : projectSpotifyReceipt(value),
+          (value) => value.state === "preview" ? onSpotifyRemovalPreview?.(value) : onSpotifyWriteReceipt?.(value), retainUnknownSpotifyWrite("playlist.unfollow")),
       }),
     ],
     [
@@ -6129,12 +6146,16 @@ function renderSpotifyWriteReceipt(receipt, promptText) {
     "playlist.write": ["歌单创建请求", "playlist creation"],
     "playlist.edit": ["歌单更改请求", "playlist change"],
     "playlist.rename": ["歌单重命名", "playlist rename"],
+    "playlist.unfollow": ["歌单取消收藏", "playlist removal from library"],
     "playlist.remove_track": ["歌单曲目移除", "playlist track removal"],
   };
   const [zh, en] = actions[receipt.action] ?? ["更改请求", "requested change"];
   if (receipt.state === "unknown") return chinese
     ? `Spotify 的${zh}${receipt.target_name ? `（「${receipt.target_name}」）` : ""}结果尚未确认。请先检查，再决定是否重试。`
     : `Spotify's ${en}${receipt.target_name ? ` for "${receipt.target_name}"` : ""} was not confirmed. Check its state before deciding whether to retry.`;
+  if (receipt.action === "playlist.unfollow" && receipt.playlist) return chinese
+    ? `已从你的 Spotify 音乐库移除歌单「${receipt.playlist.name}」（取消收藏）。歌单可能仍对其他听众存在；这不是全局删除。`
+    : `Removed "${receipt.playlist.name}" from your Spotify library (unfollowed). The playlist may still exist for other listeners; it was not globally deleted.`;
   if (receipt.action === "playlist.rename" && receipt.playlist) return chinese
     ? `Spotify 已接受歌单重命名为「${receipt.playlist.name}」。`
     : `Spotify accepted the playlist rename to "${receipt.playlist.name}".`;
@@ -6377,6 +6398,7 @@ async function trustedContextSnapshot(application, runtimeStatus, query) {
           : "disabled",
         pending_spotify_playlist:
           pendingPlaylistPresentation(application, query),
+        pending_spotify_playlist_removal: application.spotifyRemovalStatus?.() ?? { state: "none" },
         pending_spotify_playlist_edit:
           application.pendingSpotifyPlaylistEditStatus?.() ?? {
             state: "none",
@@ -6423,6 +6445,7 @@ async function trustedContextSnapshot(application, runtimeStatus, query) {
           : "disabled",
         pending_spotify_playlist:
           pendingPlaylistPresentation(application, query),
+        pending_spotify_playlist_removal: application.spotifyRemovalStatus?.() ?? { state: "none" },
         pending_spotify_playlist_edit:
           application.pendingSpotifyPlaylistEditStatus?.() ?? {
             state: "none",
@@ -6525,6 +6548,9 @@ export class PiAgentRuntime {
           if (this.activePromptState) {
             this.activePromptState.spotifyPlaylistPartialEffect = effect;
           }
+        },
+        onSpotifyRemovalPreview: (preview) => {
+          if (this.activePromptState) this.activePromptState.spotifyRemovalPreview = preview;
         },
         onSpotifyPlaylistEditPreview: (preview) => {
           if (this.activePromptState) {
@@ -6947,6 +6973,15 @@ export class PiAgentRuntime {
           });
         }
         throw new Error(providerMessage);
+      }
+
+      if (promptState.spotifyRemovalPreview) {
+        const preview = promptState.spotifyRemovalPreview;
+        const authoritativeText = `Remove "${preview.name}" from your Spotify library (unfollow)? This does not delete the playlist globally. No removal has been sent.
+
+To confirm, reply: ${preview.confirmation}`;
+        replaceRenderedText(authoritativeText);
+        return completedResult(authoritativeText, { spotify_removal_preview: structuredClone(preview) });
       }
 
       if (promptState.spotifyPlaylistEditPreview) {

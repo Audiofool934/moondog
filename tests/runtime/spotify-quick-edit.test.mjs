@@ -150,7 +150,7 @@ for (const status of [401, 429, 500]) {
 for (const phase of ["preflight", "dispatch"]) test(`cancellation ${phase} preserves write truth`, async (t) => {
   const f = fixture(t); const refs = await f.prepare(); const controller = new AbortController();
   if (phase === "preflight") f.state.onRequest = () => controller.abort();
-  else f.state.writeHook = async (request) => { assert.equal(request.signal, undefined); controller.abort(); return new Response(null, { status: 200 }); };
+  else f.state.writeHook = async (request) => { assert.ok(request.signal instanceof AbortSignal); assert.notEqual(request.signal, controller.signal); controller.abort(); return new Response(null, { status: 200 }); };
   const pending = f.application.spotifyQuickEditPlaylist({ action: "rename", playlistRefId: refs.playlistRefId }, { signal: controller.signal });
   if (phase === "preflight") { await assert.rejects(pending); assert.equal(f.writes.length, 0); }
   else { assert.equal((await pending).state, "accepted"); assert.equal(f.writes.length, 1); }

@@ -818,6 +818,10 @@ export function createSpotifyWebApiClient({
       return null;
     },
 
+    async removeLibraryItems({ uris } = {}, { signal } = {}) {
+      await request(`/me/library${queryString({ uris: uris.join(",") })}`, { method: "DELETE", responseMode: "none", signal });
+    },
+
     async resume(input = {}, { signal } = {}) {
       await request(
         `/me/player/play${queryString({ device_id: input.deviceId })}`,

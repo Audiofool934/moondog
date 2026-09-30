@@ -22,6 +22,7 @@ export const SPOTIFY_DEFAULT_SCOPES = Object.freeze([
   "user-modify-playback-state",
   "playlist-read-private",
   "playlist-modify-private",
+  "playlist-modify-public",
   "user-library-read",
   "user-library-modify",
   "user-read-recently-played",
