@@ -13,6 +13,14 @@ export const SPOTIFY_WEB_API_LIMITS = Object.freeze({
   playlistEditTracksMax: 100,
   libraryItemsMax: 20,
   recentlyPlayedMax: 50,
+  // 429 retry budget for idempotent requests: total attempts (initial plus
+  // up to two retries). Retries are spaced by the server's Retry-After
+  // header when present, with a bounded default and jitter, and never wait
+  // longer than rateLimitMaxWaitMs for a single attempt.
+  rateLimitMaxAttempts: 3,
+  rateLimitDefaultWaitMs: 1_000,
+  rateLimitMaxWaitMs: 10_000,
+  rateLimitJitterMs: 250,
 });
 
 const playbackActions = new Set([
@@ -93,6 +101,10 @@ function retryAfterSeconds(headers) {
   const date = Date.parse(raw);
   if (!Number.isFinite(date)) return null;
   return Math.min(Math.max(0, Math.ceil((date - Date.now()) / 1_000)), 86_400);
+}
+
+function defaultSleep(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
 function quotaReason(payload) {
@@ -479,6 +491,7 @@ export function createSpotifyWebApiClient({
   fetchImpl = globalThis.fetch,
   tokenProvider,
   baseUrl = SPOTIFY_WEB_API_BASE_URL,
+  sleepImpl = defaultSleep,
 } = {}) {
   if (typeof fetchImpl !== "function") {
     throw new TypeError("A fetch implementation is required.");
@@ -505,37 +518,74 @@ export function createSpotifyWebApiClient({
       init.body = JSON.stringify(body);
     }
 
-    let response;
-    try {
-      response = await fetchImpl(`${normalizedBaseUrl}${path}`, init);
-    } catch {
-      fail("spotify_network_error", "Spotify could not be reached.");
-    }
-
-    if (response.ok && (response.status === 204 || responseMode === "none")) {
-      return null;
-    }
-    const text = await response.text();
-    if (text.length > SPOTIFY_WEB_API_LIMITS.responseBytesMax) {
-      fail("spotify_response_too_large", "Spotify returned too much data.", {
-        status: response.status,
-      });
-    }
-    let payload = null;
-    if (text) {
+    // Only idempotent reads are retried: a repeated write (queue add,
+    // playlist edit, playback command) could apply twice, while a repeated
+    // GET is safe. Development-quota exhaustion is never retried.
+    const retryable = method === "GET";
+    const maxAttempts = retryable
+      ? SPOTIFY_WEB_API_LIMITS.rateLimitMaxAttempts
+      : 1;
+    for (let attempt = 1; ; attempt += 1) {
+      let response;
       try {
-        payload = JSON.parse(text);
+        response = await fetchImpl(`${normalizedBaseUrl}${path}`, init);
       } catch {
-        fail("spotify_response_invalid", "Spotify returned an invalid response.", {
+        fail("spotify_network_error", "Spotify could not be reached.");
+      }
+
+      if (response.ok && (response.status === 204 || responseMode === "none")) {
+        return null;
+      }
+      const text = await response.text();
+      if (text.length > SPOTIFY_WEB_API_LIMITS.responseBytesMax) {
+        fail("spotify_response_too_large", "Spotify returned too much data.", {
           status: response.status,
         });
       }
-    }
+      let payload = null;
+      if (text) {
+        try {
+          payload = JSON.parse(text);
+        } catch {
+          fail(
+            "spotify_response_invalid",
+            "Spotify returned an invalid response.",
+            {
+              status: response.status,
+            },
+          );
+        }
+      }
 
-    if (!response.ok) {
+      if (response.ok) {
+        return payload;
+      }
+
+      const retryAfter = retryAfterSeconds(response.headers);
+      if (
+        retryable &&
+        response.status === 429 &&
+        quotaReason(payload) !== "QUOTA_EXCEEDED" &&
+        attempt < maxAttempts
+      ) {
+        const waitMs =
+          retryAfter === null
+            ? SPOTIFY_WEB_API_LIMITS.rateLimitDefaultWaitMs
+            : retryAfter * 1_000;
+        if (waitMs <= SPOTIFY_WEB_API_LIMITS.rateLimitMaxWaitMs) {
+          const jittered =
+            waitMs +
+            Math.floor(
+              Math.random() * SPOTIFY_WEB_API_LIMITS.rateLimitJitterMs,
+            );
+          await sleepImpl(jittered);
+          continue;
+        }
+      }
+
       const options = {
         status: response.status,
-        retryAfterSeconds: retryAfterSeconds(response.headers),
+        retryAfterSeconds: retryAfter,
       };
       if (response.status === 401) {
         fail(
@@ -574,7 +624,6 @@ export function createSpotifyWebApiClient({
       }
       fail("spotify_api_error", "Spotify rejected this request.", options);
     }
-    return payload;
   };
 
   return Object.freeze({

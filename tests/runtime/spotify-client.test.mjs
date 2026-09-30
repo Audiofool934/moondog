@@ -356,6 +356,147 @@ test("Spotify client distinguishes rate limits from exhausted quota and never re
   }
 });
 
+test("Spotify client retries idempotent GETs on 429 and honors Retry-After", async () => {
+  const sleeps = [];
+  const requests = [];
+  const responses = [
+    jsonResponse({ error: { status: 429 } }, 429, { "retry-after": "2" }),
+    jsonResponse({ id: "account-1", display_name: "Listener" }),
+  ];
+  const client = createSpotifyWebApiClient({
+    tokenProvider: async () => "token",
+    fetchImpl: async (url, init) => {
+      requests.push({ url, init });
+      return responses.shift();
+    },
+    sleepImpl: async (milliseconds) => {
+      sleeps.push(milliseconds);
+    },
+  });
+
+  const account = await client.getAccount();
+
+  assert.equal(account.account_id, "account-1");
+  assert.equal(requests.length, 2);
+  assert.equal(requests[0].init.method, "GET");
+  assert.equal(sleeps.length, 1);
+  assert.ok(
+    sleeps[0] >= 2_000 && sleeps[0] < 2_250,
+    `expected a ~2s wait, got ${sleeps[0]}ms`,
+  );
+});
+
+test("Spotify client uses a bounded default wait when Retry-After is absent", async () => {
+  const sleeps = [];
+  const responses = [
+    jsonResponse({ error: { status: 429 } }, 429),
+    jsonResponse({ id: "account-1" }),
+  ];
+  const client = createSpotifyWebApiClient({
+    tokenProvider: async () => "token",
+    fetchImpl: async () => responses.shift(),
+    sleepImpl: async (milliseconds) => {
+      sleeps.push(milliseconds);
+    },
+  });
+
+  await client.getAccount();
+
+  assert.equal(sleeps.length, 1);
+  assert.ok(
+    sleeps[0] >= 1_000 && sleeps[0] < 1_250,
+    `expected a ~1s wait, got ${sleeps[0]}ms`,
+  );
+});
+
+test("Spotify client gives up after the 429 retry budget on idempotent GETs", async () => {
+  const sleeps = [];
+  let callCount = 0;
+  const client = createSpotifyWebApiClient({
+    tokenProvider: async () => "token",
+    fetchImpl: async () => {
+      callCount += 1;
+      return jsonResponse({ error: { status: 429 } }, 429, {
+        "retry-after": "0",
+      });
+    },
+    sleepImpl: async (milliseconds) => {
+      sleeps.push(milliseconds);
+    },
+  });
+
+  let error;
+  try {
+    await client.getAccount();
+  } catch (caught) {
+    error = caught;
+  }
+
+  assert.ok(error instanceof SpotifyWebApiError);
+  assert.equal(error.code, "spotify_rate_limited");
+  assert.equal(callCount, 3);
+  assert.equal(sleeps.length, 2);
+});
+
+test("Spotify client does not wait out an unbounded Retry-After", async () => {
+  const sleeps = [];
+  let callCount = 0;
+  const client = createSpotifyWebApiClient({
+    tokenProvider: async () => "token",
+    fetchImpl: async () => {
+      callCount += 1;
+      return jsonResponse({ error: { status: 429 } }, 429, {
+        "retry-after": "3600",
+      });
+    },
+    sleepImpl: async (milliseconds) => {
+      sleeps.push(milliseconds);
+    },
+  });
+
+  let error;
+  try {
+    await client.getAccount();
+  } catch (caught) {
+    error = caught;
+  }
+
+  assert.ok(error instanceof SpotifyWebApiError);
+  assert.equal(error.code, "spotify_rate_limited");
+  assert.equal(error.retryAfterSeconds, 3600);
+  assert.equal(callCount, 1);
+  assert.equal(sleeps.length, 0);
+});
+
+test("Spotify client never retries exhausted development quota, even on GETs", async () => {
+  let callCount = 0;
+  const client = createSpotifyWebApiClient({
+    tokenProvider: async () => "token",
+    fetchImpl: async () => {
+      callCount += 1;
+      return jsonResponse(
+        { error: { status: 429, reason: "QUOTA_EXCEEDED" } },
+        429,
+        { "retry-after": "1" },
+      );
+    },
+    sleepImpl: async () => {
+      throw new Error("must not sleep before failing fast on quota");
+    },
+  });
+
+  let error;
+  try {
+    await client.getAccount();
+  } catch (caught) {
+    error = caught;
+  }
+
+  assert.ok(error instanceof SpotifyWebApiError);
+  assert.equal(error.code, "spotify_quota_exceeded");
+  assert.equal(callCount, 1);
+});
+
 test("Spotify client returns bounded normalized catalog search results", async () => {
   const requests = [];
   const items = Array.from({ length: 12 }, (_, index) => ({
