@@ -356,6 +356,246 @@ test("Spotify client distinguishes rate limits from exhausted quota and never re
   }
 });
 
+test("Spotify client retries idempotent GETs on 429 and honors Retry-After", async () => {
+  const sleeps = [];
+  const requests = [];
+  const responses = [
+    jsonResponse({ error: { status: 429 } }, 429, { "retry-after": "2" }),
+    jsonResponse({ id: "account-1", display_name: "Listener" }),
+  ];
+  const client = createSpotifyWebApiClient({
+    tokenProvider: async () => "token",
+    fetchImpl: async (url, init) => {
+      requests.push({ url, init });
+      return responses.shift();
+    },
+    sleepImpl: async (milliseconds) => {
+      sleeps.push(milliseconds);
+    },
+  });
+
+  const account = await client.getAccount();
+
+  assert.equal(account.account_id, "account-1");
+  assert.equal(requests.length, 2);
+  assert.equal(requests[0].init.method, "GET");
+  assert.equal(sleeps.length, 1);
+  assert.ok(
+    sleeps[0] >= 2_000 && sleeps[0] < 2_250,
+    `expected a ~2s wait, got ${sleeps[0]}ms`,
+  );
+});
+
+test("Spotify client uses a bounded default wait when Retry-After is absent", async () => {
+  const sleeps = [];
+  const responses = [
+    jsonResponse({ error: { status: 429 } }, 429),
+    jsonResponse({ id: "account-1" }),
+  ];
+  const client = createSpotifyWebApiClient({
+    tokenProvider: async () => "token",
+    fetchImpl: async () => responses.shift(),
+    sleepImpl: async (milliseconds) => {
+      sleeps.push(milliseconds);
+    },
+  });
+
+  await client.getAccount();
+
+  assert.equal(sleeps.length, 1);
+  assert.ok(
+    sleeps[0] >= 1_000 && sleeps[0] < 1_250,
+    `expected a ~1s wait, got ${sleeps[0]}ms`,
+  );
+});
+
+test("Spotify client gives up after the 429 retry budget on idempotent GETs", async () => {
+  const sleeps = [];
+  let callCount = 0;
+  const client = createSpotifyWebApiClient({
+    tokenProvider: async () => "token",
+    fetchImpl: async () => {
+      callCount += 1;
+      return jsonResponse({ error: { status: 429 } }, 429, {
+        "retry-after": "0",
+      });
+    },
+    sleepImpl: async (milliseconds) => {
+      sleeps.push(milliseconds);
+    },
+  });
+
+  let error;
+  try {
+    await client.getAccount();
+  } catch (caught) {
+    error = caught;
+  }
+
+  assert.ok(error instanceof SpotifyWebApiError);
+  assert.equal(error.code, "spotify_rate_limited");
+  assert.equal(callCount, 3);
+  assert.equal(sleeps.length, 2);
+});
+
+test("Spotify client does not wait out an unbounded Retry-After", async () => {
+  const sleeps = [];
+  let callCount = 0;
+  const client = createSpotifyWebApiClient({
+    tokenProvider: async () => "token",
+    fetchImpl: async () => {
+      callCount += 1;
+      return jsonResponse({ error: { status: 429 } }, 429, {
+        "retry-after": "3600",
+      });
+    },
+    sleepImpl: async (milliseconds) => {
+      sleeps.push(milliseconds);
+    },
+  });
+
+  let error;
+  try {
+    await client.getAccount();
+  } catch (caught) {
+    error = caught;
+  }
+
+  assert.ok(error instanceof SpotifyWebApiError);
+  assert.equal(error.code, "spotify_rate_limited");
+  assert.equal(error.retryAfterSeconds, 3600);
+  assert.equal(callCount, 1);
+  assert.equal(sleeps.length, 0);
+});
+
+test("Spotify client never retries exhausted development quota, even on GETs", async () => {
+  let callCount = 0;
+  const client = createSpotifyWebApiClient({
+    tokenProvider: async () => "token",
+    fetchImpl: async () => {
+      callCount += 1;
+      return jsonResponse(
+        { error: { status: 429, reason: "QUOTA_EXCEEDED" } },
+        429,
+        { "retry-after": "1" },
+      );
+    },
+    sleepImpl: async () => {
+      throw new Error("must not sleep before failing fast on quota");
+    },
+  });
+
+  let error;
+  try {
+    await client.getAccount();
+  } catch (caught) {
+    error = caught;
+  }
+
+  assert.ok(error instanceof SpotifyWebApiError);
+  assert.equal(error.code, "spotify_quota_exceeded");
+  assert.equal(callCount, 1);
+});
+
+test("Spotify client refreshes the token reactively on 401 and retries once", async () => {
+  const seenTokens = [];
+  let refreshCount = 0;
+  const responses = [
+    jsonResponse({ error: { status: 401, message: "Bad or expired token" } }, 401),
+    jsonResponse({ id: "account-1", display_name: "Listener" }),
+  ];
+  const client = createSpotifyWebApiClient({
+    tokenProvider: async () => "stale-token",
+    refreshAccessToken: async () => {
+      refreshCount += 1;
+      return "fresh-token";
+    },
+    fetchImpl: async (url, init) => {
+      seenTokens.push(init.headers.authorization);
+      return responses.shift();
+    },
+  });
+
+  const account = await client.getAccount();
+
+  assert.equal(account.account_id, "account-1");
+  assert.deepEqual(seenTokens, ["Bearer stale-token", "Bearer fresh-token"]);
+  assert.equal(refreshCount, 1);
+});
+
+test("Spotify client retries a 401 only once after refreshing", async () => {
+  let fetchCount = 0;
+  let refreshCount = 0;
+  const client = createSpotifyWebApiClient({
+    tokenProvider: async () => "stale-token",
+    refreshAccessToken: async () => {
+      refreshCount += 1;
+      return "fresh-token";
+    },
+    fetchImpl: async () => {
+      fetchCount += 1;
+      return jsonResponse({ error: { status: 401 } }, 401);
+    },
+  });
+
+  let error;
+  try {
+    await client.getAccount();
+  } catch (caught) {
+    error = caught;
+  }
+
+  assert.ok(error instanceof SpotifyWebApiError);
+  assert.equal(error.code, "spotify_authentication_required");
+  assert.equal(fetchCount, 2);
+  assert.equal(refreshCount, 1);
+});
+
+test("Spotify client fails fast on 401 without a refresh hook", async () => {
+  let fetchCount = 0;
+  const client = createSpotifyWebApiClient({
+    tokenProvider: async () => "stale-token",
+    fetchImpl: async () => {
+      fetchCount += 1;
+      return jsonResponse({ error: { status: 401 } }, 401);
+    },
+  });
+
+  let error;
+  try {
+    await client.getAccount();
+  } catch (caught) {
+    error = caught;
+  }
+
+  assert.ok(error instanceof SpotifyWebApiError);
+  assert.equal(error.code, "spotify_authentication_required");
+  assert.equal(fetchCount, 1);
+});
+
+test("Spotify client surfaces refresh failures after a 401", async () => {
+  const client = createSpotifyWebApiClient({
+    tokenProvider: async () => "stale-token",
+    refreshAccessToken: async () => {
+      throw new SpotifyWebApiError(
+        "spotify_auth_not_configured",
+        "Spotify is not authenticated.",
+      );
+    },
+    fetchImpl: async () => jsonResponse({ error: { status: 401 } }, 401),
+  });
+
+  let error;
+  try {
+    await client.getAccount();
+  } catch (caught) {
+    error = caught;
+  }
+
+  assert.ok(error instanceof SpotifyWebApiError);
+  assert.equal(error.code, "spotify_auth_not_configured");
+});
+
 test("Spotify client returns bounded normalized catalog search results", async () => {
   const requests = [];
   const items = Array.from({ length: 12 }, (_, index) => ({
@@ -639,6 +879,54 @@ test("Spotify client checks and saves library tracks", async () => {
     "https://api.spotify.com/v1/me/library?uris=spotify%3Atrack%3Aa%2Cspotify%3Atrack%3Ab",
   );
   assert.equal(requests[1].init.method, "PUT");
+});
+
+test("rate limits and authentication share three total GET attempts, including non-JSON errors", async () => {
+  const responses = [new Response("busy", { status: 429, headers: { "retry-after": "0" } }),
+    new Response("expired", { status: 401 }), new Response("busy again", { status: 429 })];
+  let calls = 0;
+  let refreshes = 0;
+  const client = createSpotifyWebApiClient({ tokenProvider: async () => "old-token",
+    refreshAccessToken: async ({ rejectedAccessToken }) => {
+      assert.equal(rejectedAccessToken, "old-token"); refreshes++; return "new-token";
+    },
+    fetchImpl: async () => { calls++; return responses.shift(); }, sleepImpl: async () => {} });
+  await assert.rejects(client.getQueue(), { code: "spotify_rate_limited" });
+  assert.equal(calls, 3);
+  assert.equal(refreshes, 1);
+});
+
+test("cancelling a real rate-limit backoff stops promptly without another request", async () => {
+  const controller = new AbortController();
+  let calls = 0;
+  const client = createSpotifyWebApiClient({
+    tokenProvider: async ({ signal }) => { assert.equal(signal, controller.signal); return "token"; },
+    fetchImpl: async (_url, init) => {
+      assert.equal(init.signal, controller.signal);
+      calls++;
+      setImmediate(() => controller.abort());
+      return new Response("busy", { status: 429, headers: { "retry-after": "10" } });
+    },
+  });
+  await assert.rejects(client.getQueue({ signal: controller.signal }), { name: "AbortError" });
+  assert.equal(calls, 1);
+});
+
+test("a definite 401 write rejection can refresh once; a dispatched write keeps its receipt", async () => {
+  const controller = new AbortController();
+  let calls = 0;
+  const client = createSpotifyWebApiClient({ tokenProvider: async () => "old-token",
+    refreshAccessToken: async ({ signal }) => { assert.equal(signal, controller.signal); return "new-token"; },
+    fetchImpl: async (_url, init) => {
+      assert.equal(init.signal, undefined);
+      calls++;
+      if (calls === 1) return new Response("expired", { status: 401 });
+      controller.abort();
+      return noContentResponse();
+    },
+  });
+  await client.addToQueue({ uri: "spotify:track:fictional" }, { signal: controller.signal });
+  assert.equal(calls, 2);
 });
 
 for (const action of ["addToQueue", "resume"]) {

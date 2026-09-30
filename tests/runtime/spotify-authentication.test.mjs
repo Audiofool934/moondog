@@ -381,6 +381,105 @@ test("access token retrieval refreshes expired OAuth and logout stays metadata-o
   assert.equal(credentialStore.snapshot(), undefined);
 });
 
+test("forced access token refresh bypasses the proactive refresh window", async () => {
+  const issuedAt = Date.UTC(2026, 7, 26, 4, 0, 0);
+  const refreshExpiresAt = Date.UTC(2027, 1, 26, 4, 0, 0);
+  const credentialStore = memoryCredentialStore({
+    type: "oauth",
+    accessToken: "STALE_ACCESS_TOKEN_SENTINEL",
+    refreshToken: "REFRESH_TOKEN_SENTINEL",
+    accessExpiresAt: issuedAt + 3_600_000,
+    refreshExpiresAt,
+    tokenType: "Bearer",
+    scope: "user-modify-playback-state user-read-playback-state",
+  });
+  const authentication = createSpotifyAuthentication({
+    clientId,
+    credentialStore,
+    now: () => issuedAt,
+    openBrowser: async () => {},
+    fetchImpl: async () =>
+      successfulResponse({
+        access_token: "ROTATED_ACCESS_TOKEN_SENTINEL",
+        expires_in: 3_600,
+        token_type: "Bearer",
+      }),
+  });
+
+  // The cached token is still valid, so getAccessToken returns it untouched.
+  assert.equal(
+    await authentication.getAccessToken(),
+    "STALE_ACCESS_TOKEN_SENTINEL",
+  );
+  // The forced refresh rotates it regardless of the remaining lifetime.
+  assert.equal(
+    await authentication.refreshAccessToken(),
+    "ROTATED_ACCESS_TOKEN_SENTINEL",
+  );
+  const status = await authentication.status();
+  assert.equal(status.accessExpiresAt, issuedAt + 3_600_000);
+  assert.equal(status.refreshExpiresAt, refreshExpiresAt);
+});
+
+function refreshFixture(fetchImpl) {
+  const now = Date.UTC(2026, 8, 1);
+  const store = memoryCredentialStore({ type: "oauth", accessToken: "old-token", refreshToken: "old-refresh",
+    accessExpiresAt: now - 1, refreshExpiresAt: now + 86_400_000, tokenType: "Bearer", scope: "user-read-playback-state" });
+  return { store, auth: createSpotifyAuthentication({ clientId, credentialStore: store, now: () => now,
+    openBrowser: async () => {}, fetchImpl }) };
+}
+
+test("concurrent and late rejected tokens share one rotating refresh; one caller can cancel", async () => {
+  let release;
+  let started;
+  const ready = new Promise((resolve) => { started = resolve; });
+  let calls = 0;
+  const { auth, store } = refreshFixture(async () => {
+    calls++; started();
+    await new Promise((resolve) => { release = resolve; });
+    return successfulResponse({ access_token: "new-token", refresh_token: "new-refresh", expires_in: 3600, token_type: "Bearer" });
+  });
+  const controller = new AbortController();
+  const cancelled = assert.rejects(auth.getAccessToken({ signal: controller.signal }), { code: "spotify_auth_aborted" });
+  const others = Array.from({ length: 12 }, () => auth.refreshAccessToken({ rejectedAccessToken: "old-token" }));
+  await ready;
+  controller.abort();
+  release();
+  await cancelled;
+  assert.deepEqual(await Promise.all(others), Array(12).fill("new-token"));
+  assert.equal(await auth.refreshAccessToken({ rejectedAccessToken: "old-token" }), "new-token");
+  assert.equal(calls, 1);
+  assert.equal(store.snapshot().refreshToken, "new-refresh");
+});
+
+for (const stop of ["cancel", "logout", "replace"]) {
+  test(`${stop} prevents a pending refresh from restoring stale credentials`, async () => {
+    let release;
+    let started;
+    let refreshSignal;
+    const ready = new Promise((resolve) => { started = resolve; });
+    const { auth, store } = refreshFixture(async (_url, options) => {
+      refreshSignal = options.signal; started();
+      // An uncooperative transport returning after cancellation must not persist.
+      await new Promise((resolve) => { release = resolve; });
+      return successfulResponse({ access_token: "stale-result", expires_in: 3600, token_type: "Bearer" });
+    });
+    const controller = new AbortController();
+    const result = assert.rejects(auth.getAccessToken({ signal: controller.signal }),
+      (error) => ["spotify_auth_aborted", "spotify_auth_changed"].includes(error.code));
+    await ready;
+    if (stop === "cancel") controller.abort();
+    if (stop === "logout") await auth.logout();
+    if (stop === "replace") await store.write({ ...store.snapshot(), accessToken: "replacement", refreshToken: "replacement-refresh" });
+    release();
+    await result;
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.notEqual(store.snapshot()?.accessToken, "stale-result");
+    if (stop === "logout") assert.equal(store.snapshot(), undefined);
+    if (stop !== "replace") assert.equal(refreshSignal.aborted, true);
+  });
+}
+
 test("token endpoint failures do not expose response credentials", async () => {
   await assert.rejects(
     exchangeSpotifyAuthorizationCode({

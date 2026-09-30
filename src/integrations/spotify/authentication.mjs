@@ -664,24 +664,37 @@ export function createSpotifyAuthentication({
   }
   const redirect = normalizeRedirectUri(redirectUri);
   const requestedScopes = normalizeScopes(scopes);
+  let generation = 0;
+  let refreshTask = null;
+  let mutationTail = Promise.resolve();
+  const mutateCredential = (operation) => {
+    const result = mutationTail.then(operation);
+    mutationTail = result.catch(() => {});
+    return result;
+  };
 
   const readCredential = async (options = {}) => {
+    assertNotAborted(options.signal);
     let value;
     try {
       value = await credentialStore.read(options);
     } catch {
+      assertNotAborted(options.signal);
       throw safeError(
         "spotify_credential_store_failed",
         "Spotify credential storage could not be read.",
       );
     }
+    assertNotAborted(options.signal);
     return value === undefined ? undefined : validateStoredCredential(value);
   };
 
   const writeCredential = async (credential, options = {}) => {
+    assertNotAborted(options.signal);
     try {
       await credentialStore.write(structuredClone(credential), options);
     } catch {
+      assertNotAborted(options.signal);
       throw safeError(
         "spotify_credential_store_failed",
         "Spotify credential storage could not be updated.",
@@ -689,9 +702,73 @@ export function createSpotifyAuthentication({
     }
   };
 
+  const forceRefreshAccessToken = async ({ signal, rejectedAccessToken, proactive = false } = {}) => {
+    assertNotAborted(signal);
+    const credential = await readCredential({ signal });
+    if (!credential) {
+      throw safeError(
+        "spotify_auth_not_configured",
+        "Spotify is not authenticated.",
+      );
+    }
+    if ((rejectedAccessToken && rejectedAccessToken !== credential.accessToken) ||
+        (proactive && credential.accessExpiresAt > now() + ACCESS_TOKEN_REFRESH_WINDOW_MS)) {
+      return credential.accessToken;
+    }
+    const sameCredential = (value) => value?.accessToken === credential.accessToken &&
+      value?.refreshToken === credential.refreshToken;
+    if (refreshTask && (refreshTask.controller.signal.aborted || refreshTask.generation !== generation || !sameCredential(refreshTask.credential))) {
+      refreshTask.controller.abort();
+      refreshTask = null;
+    }
+    if (!refreshTask) {
+      const task = { controller: new AbortController(), waiters: 0, generation, credential };
+      const sharedSignal = task.controller.signal;
+      task.promise = (async () => {
+        const refreshed = await refreshSpotifyAccessToken({
+          clientId, refreshToken: credential.refreshToken,
+          refreshExpiresAt: credential.refreshExpiresAt, scopes: credential.scope,
+          fetchImpl, signal: sharedSignal, now,
+        });
+        await mutateCredential(async () => {
+          assertNotAborted(sharedSignal);
+          if (generation !== task.generation || !sameCredential(await readCredential({ signal: sharedSignal }))) {
+            throw safeError("spotify_auth_changed", "Spotify authentication changed during refresh.");
+          }
+          await writeCredential(refreshed, { signal: sharedSignal });
+        });
+        return refreshed.accessToken;
+      })().finally(() => { if (refreshTask === task) refreshTask = null; });
+      refreshTask = task;
+    }
+    // One caller may cancel without cancelling another caller's refresh. When
+    // nobody is waiting, cancel the shared request and prevent a stale write.
+    const task = refreshTask;
+    task.waiters += 1;
+    return new Promise((resolve, reject) => {
+      let finished = false;
+      const finish = (error, value) => {
+        if (finished) return;
+        finished = true;
+        signal?.removeEventListener("abort", onAbort);
+        task.waiters -= 1;
+        if (error) reject(error); else resolve(value);
+      };
+      const onAbort = () => {
+        finish(abortError());
+        if (task.waiters === 0) task.controller.abort();
+      };
+      signal?.addEventListener("abort", onAbort, { once: true });
+      task.promise.then((value) => finish(null, value), (error) => finish(error));
+      if (signal?.aborted) onAbort();
+    });
+  };
+
   return {
     async login({ signal, onAuthorizationUrl } = {}) {
       assertNotAborted(signal);
+      const loginGeneration = ++generation;
+      refreshTask?.controller.abort();
       if (
         onAuthorizationUrl !== undefined &&
         typeof onAuthorizationUrl !== "function"
@@ -738,7 +815,12 @@ export function createSpotifyAuthentication({
           signal,
           now,
         });
-        await writeCredential(credential, { signal });
+        await mutateCredential(async () => {
+          if (generation !== loginGeneration) {
+            throw safeError("spotify_auth_changed", "Spotify authentication changed during login.");
+          }
+          await writeCredential(credential, { signal });
+        });
         return publicStatus(credential);
       } finally {
         await listener.close();
@@ -762,23 +844,20 @@ export function createSpotifyAuthentication({
       if (credential.accessExpiresAt > now() + ACCESS_TOKEN_REFRESH_WINDOW_MS) {
         return credential.accessToken;
       }
-      const refreshed = await refreshSpotifyAccessToken({
-        clientId,
-        refreshToken: credential.refreshToken,
-        refreshExpiresAt: credential.refreshExpiresAt,
-        scopes: credential.scope,
-        fetchImpl,
-        signal,
-        now,
-      });
-      await writeCredential(refreshed, { signal });
-      return refreshed.accessToken;
+      return forceRefreshAccessToken({ signal, proactive: true });
+    },
+
+    // A late 401 for an old token reuses the refresh that already replaced it.
+    async refreshAccessToken({ signal, rejectedAccessToken } = {}) {
+      return forceRefreshAccessToken({ signal, rejectedAccessToken });
     },
 
     async logout({ signal } = {}) {
       assertNotAborted(signal);
+      generation += 1;
+      refreshTask?.controller.abort();
       try {
-        await credentialStore.delete({ signal });
+        await mutateCredential(() => credentialStore.delete({ signal }));
       } catch {
         throw safeError(
           "spotify_credential_store_failed",

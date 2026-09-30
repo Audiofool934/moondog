@@ -578,20 +578,20 @@ export function createSpotifyService(options = {}) {
   }
 
   return Object.freeze({
-    account() {
-      return client.getAccount();
+    account(options) {
+      return client.getAccount(options);
     },
 
-    currentPlayer() {
-      return client.getCurrentPlayback();
+    currentPlayer(options) {
+      return client.getCurrentPlayback(options);
     },
 
-    devices() {
-      return client.getDevices();
+    devices(options) {
+      return client.getDevices(options);
     },
 
-    queue() {
-      return client.getQueue();
+    queue(options) {
+      return client.getQueue(options);
     },
 
     async recentActivity(value) {

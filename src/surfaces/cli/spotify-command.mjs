@@ -479,6 +479,7 @@ function createRuntimeResolver({
       client = createSpotifyWebApiClient({
         fetchImpl,
         tokenProvider: () => auth.getAccessToken(),
+        refreshAccessToken: () => auth.refreshAccessToken(),
       });
       return client;
     },

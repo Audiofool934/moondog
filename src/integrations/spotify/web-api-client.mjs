@@ -1,3 +1,5 @@
+import { setTimeout as delay } from "node:timers/promises";
+
 export const SPOTIFY_WEB_API_BASE_URL = "https://api.spotify.com/v1";
 
 export const SPOTIFY_WEB_API_LIMITS = Object.freeze({
@@ -13,6 +15,14 @@ export const SPOTIFY_WEB_API_LIMITS = Object.freeze({
   playlistEditTracksMax: 100,
   libraryItemsMax: 20,
   recentlyPlayedMax: 50,
+  // 429 retry budget for idempotent requests: total attempts (initial plus
+  // up to two retries). Retries are spaced by the server's Retry-After
+  // header when present, with a bounded default and jitter, and never wait
+  // longer than rateLimitMaxWaitMs for a single attempt.
+  rateLimitMaxAttempts: 3,
+  rateLimitDefaultWaitMs: 1_000,
+  rateLimitMaxWaitMs: 10_000,
+  rateLimitJitterMs: 250,
 });
 
 const playbackActions = new Set([
@@ -93,6 +103,10 @@ function retryAfterSeconds(headers) {
   const date = Date.parse(raw);
   if (!Number.isFinite(date)) return null;
   return Math.min(Math.max(0, Math.ceil((date - Date.now()) / 1_000)), 86_400);
+}
+
+function defaultSleep(milliseconds, { signal } = {}) {
+  return delay(milliseconds, undefined, { signal });
 }
 
 function quotaReason(payload) {
@@ -479,6 +493,8 @@ export function createSpotifyWebApiClient({
   fetchImpl = globalThis.fetch,
   tokenProvider,
   baseUrl = SPOTIFY_WEB_API_BASE_URL,
+  sleepImpl = defaultSleep,
+  refreshAccessToken,
 } = {}) {
   if (typeof fetchImpl !== "function") {
     throw new TypeError("A fetch implementation is required.");
@@ -492,146 +508,145 @@ export function createSpotifyWebApiClient({
     path,
     { method = "GET", body, responseMode = "json", signal } = {},
   ) => {
-    signal?.throwIfAborted();
-    const token = normalizedToken(await tokenProvider());
-    signal?.throwIfAborted();
-    const headers = {
-      accept: "application/json",
-      authorization: `Bearer ${token}`,
-    };
-    const init = { method, headers };
-    if (body !== undefined) {
-      headers["content-type"] = "application/json";
-      init.body = JSON.stringify(body);
-    }
-
-    let response;
-    try {
-      response = await fetchImpl(`${normalizedBaseUrl}${path}`, init);
-    } catch {
-      fail("spotify_network_error", "Spotify could not be reached.");
-    }
-
-    if (response.ok && (response.status === 204 || responseMode === "none")) {
-      return null;
-    }
-    const text = await response.text();
-    if (text.length > SPOTIFY_WEB_API_LIMITS.responseBytesMax) {
-      fail("spotify_response_too_large", "Spotify returned too much data.", {
-        status: response.status,
-      });
-    }
-    let payload = null;
-    if (text) {
-      try {
-        payload = JSON.parse(text);
-      } catch {
-        fail("spotify_response_invalid", "Spotify returned an invalid response.", {
-          status: response.status,
-        });
-      }
-    }
-
-    if (!response.ok) {
-      const options = {
-        status: response.status,
-        retryAfterSeconds: retryAfterSeconds(response.headers),
+    const initForToken = (token) => {
+      const headers = {
+        accept: "application/json",
+        authorization: `Bearer ${token}`,
       };
-      if (response.status === 401) {
-        fail(
-          "spotify_authentication_required",
-          "Spotify authentication must be refreshed.",
-          options,
-        );
+      const init = { method, headers };
+      if (body !== undefined) {
+        headers["content-type"] = "application/json";
+        init.body = JSON.stringify(body);
       }
-      if (response.status === 403) {
-        if (hasInsufficientClientScope(payload)) {
-          fail(
-            "spotify_scope_insufficient",
-            "Spotify authorization is missing a required scope. Run moondog spotify login again.",
-            options,
-          );
+      return init;
+    };
+
+    // Authentication and rate-limit retries share one request budget. Writes
+    // may only replay a definite 401 rejection, never an uncertain outcome.
+    const read = method === "GET";
+    const maxAttempts = read ? SPOTIFY_WEB_API_LIMITS.rateLimitMaxAttempts : 2;
+    signal?.throwIfAborted();
+    let token = normalizedToken(await tokenProvider({ signal }));
+    let refreshed = false;
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      signal?.throwIfAborted();
+      const init = initForToken(token);
+      // Let a dispatched write settle so cancellation cannot hide its receipt.
+      if (read && signal) init.signal = signal;
+      let response;
+      try {
+        response = await fetchImpl(`${normalizedBaseUrl}${path}`, init);
+      } catch (error) {
+        if (read) signal?.throwIfAborted();
+        if (error?.name === "AbortError") throw error;
+        fail("spotify_network_error", "Spotify could not be reached.");
+      }
+      if (read) signal?.throwIfAborted();
+      if (response.ok && (response.status === 204 || responseMode === "none")) return null;
+      const text = await response.text();
+      if (read) signal?.throwIfAborted();
+      if (Buffer.byteLength(text, "utf8") > SPOTIFY_WEB_API_LIMITS.responseBytesMax) {
+        fail("spotify_response_too_large", "Spotify returned too much data.", { status: response.status });
+      }
+      let payload = null;
+      if (text) {
+        try { payload = JSON.parse(text); } catch {
+          // Error responses can be plain text. Their HTTP status still decides
+          // whether authentication or a bounded read retry is appropriate.
+          if (response.ok) fail("spotify_response_invalid", "Spotify returned an invalid response.", { status: response.status });
         }
-        fail(
-          "spotify_action_forbidden",
-          "Spotify did not allow this action.",
-          options,
-        );
+      }
+      if (response.ok) return payload;
+      const retryAfter = retryAfterSeconds(response.headers);
+      const options = { status: response.status, retryAfterSeconds: retryAfter };
+      if (response.status === 401) {
+        if (!refreshed && typeof refreshAccessToken === "function" && attempt < maxAttempts) {
+          signal?.throwIfAborted();
+          token = normalizedToken(await refreshAccessToken({ signal, rejectedAccessToken: token }));
+          refreshed = true;
+          continue;
+        }
+        fail("spotify_authentication_required", "Spotify authentication must be refreshed.", options);
       }
       if (response.status === 429) {
         if (quotaReason(payload) === "QUOTA_EXCEEDED") {
-          fail(
-            "spotify_quota_exceeded",
-            "Spotify development quota is exhausted.",
-            options,
-          );
+          fail("spotify_quota_exceeded", "Spotify development quota is exhausted.", options);
         }
-        fail(
-          "spotify_rate_limited",
-          "Spotify rate limited this request.",
-          options,
-        );
+        const waitMs = retryAfter === null ? SPOTIFY_WEB_API_LIMITS.rateLimitDefaultWaitMs : retryAfter * 1_000;
+        if (read && attempt < maxAttempts && waitMs <= SPOTIFY_WEB_API_LIMITS.rateLimitMaxWaitMs) {
+          signal?.throwIfAborted();
+          const jittered = Math.min(SPOTIFY_WEB_API_LIMITS.rateLimitMaxWaitMs,
+            waitMs + Math.floor(Math.random() * SPOTIFY_WEB_API_LIMITS.rateLimitJitterMs));
+          await sleepImpl(jittered, { signal });
+          continue;
+        }
+        fail("spotify_rate_limited", "Spotify rate limited this request.", options);
+      }
+      if (response.status === 403) {
+        if (hasInsufficientClientScope(payload)) {
+          fail("spotify_scope_insufficient", "Spotify authorization is missing a required scope. Run moondog spotify login again.", options);
+        }
+        fail("spotify_action_forbidden", "Spotify did not allow this action.", options);
       }
       fail("spotify_api_error", "Spotify rejected this request.", options);
     }
-    return payload;
   };
 
   return Object.freeze({
-    async getAccount() {
-      return normalizeAccount(await request("/me"));
+    async getAccount({ signal } = {}) {
+      return normalizeAccount(await request("/me", { signal }));
     },
 
-    async getCurrentPlayback() {
-      return normalizePlayback(await request("/me/player"));
+    async getCurrentPlayback({ signal } = {}) {
+      return normalizePlayback(await request("/me/player", { signal }));
     },
 
-    async getDevices() {
-      return normalizeDevices(await request("/me/player/devices"));
+    async getDevices({ signal } = {}) {
+      return normalizeDevices(await request("/me/player/devices", { signal }));
     },
 
-    async getQueue() {
-      return normalizeQueue(await request("/me/player/queue"));
+    async getQueue({ signal } = {}) {
+      return normalizeQueue(await request("/me/player/queue", { signal }));
     },
 
-    async getRecentlyPlayed({ limit, after, before } = {}) {
+    async getRecentlyPlayed({ limit, after, before } = {}, { signal } = {}) {
       return normalizeRecentlyPlayed(
         await request(
-          `/me/player/recently-played${queryString({ limit, after, before })}`,
+          `/me/player/recently-played${queryString({ limit, after, before })}`, { signal },
         ),
       );
     },
 
-    async searchTracks({ query, limit, market } = {}) {
+    async searchTracks({ query, limit, market } = {}, { signal } = {}) {
       return normalizeTrackSearch(
         await request(
-          `/search${queryString({ q: query, type: "track", limit, market })}`,
+          `/search${queryString({ q: query, type: "track", limit, market })}`, { signal },
         ),
       );
     },
 
-    async getCurrentUserPlaylists({ limit, offset } = {}) {
+    async getCurrentUserPlaylists({ limit, offset } = {}, { signal } = {}) {
       return normalizePlaylistPage(
         await request(
-          `/me/playlists${queryString({ limit, offset })}`,
+          `/me/playlists${queryString({ limit, offset })}`, { signal },
         ),
       );
     },
 
-    async getPlaylist({ playlistId } = {}) {
+    async getPlaylist({ playlistId } = {}, { signal } = {}) {
       return normalizePlaylist(
-        await request(`/playlists/${encodeURIComponent(playlistId)}`),
+        await request(`/playlists/${encodeURIComponent(playlistId)}`, { signal }),
         { includeControlMetadata: true },
       );
     },
 
-    async getPlaylistItems({ playlistId, limit, offset } = {}) {
+    async getPlaylistItems({ playlistId, limit, offset } = {}, { signal } = {}) {
       return normalizePlaylistItemsPage(
         await request(
           `/playlists/${encodeURIComponent(playlistId)}/items${queryString({
             limit,
             offset,
-          })}`,
+          })}`, { signal },
         ),
       );
     },
@@ -667,10 +682,10 @@ export function createSpotifyWebApiClient({
       return snapshotId ? { snapshot_id: snapshotId } : {};
     },
 
-    async checkSavedTracks({ uris } = {}) {
+    async checkSavedTracks({ uris } = {}, { signal } = {}) {
       return normalizeSavedContains(
         await request(
-          `/me/library/contains${queryString({ uris: uris.join(",") })}`,
+          `/me/library/contains${queryString({ uris: uris.join(",") })}`, { signal },
         ),
       );
     },
