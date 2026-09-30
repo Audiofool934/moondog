@@ -1257,6 +1257,112 @@ export class MoondogApplication {
     return this.writeSpotifyPlaylist(details, uris);
   }
 
+  async spotifyPlayPendingPlan({ deviceId } = {}, { signal } = {}) {
+    signal?.throwIfAborted();
+    if (!this.pendingSpotifyPlaylist?.plan) {
+      throw spotifyResolutionError(
+        "spotify_pending_playlist_unavailable",
+        "There is no pending validated playlist plan to play. Create a playlist plan first.",
+      );
+    }
+    this.requireSpotifyScopes(["user-read-private"]);
+    const draft = this.pendingSpotifyPlaylist;
+    const result = await this.requireSpotifyResolver().resolve(draft.trustedTracks);
+    signal?.throwIfAborted();
+    const resolvedByRef = new Map(
+      (result.resolutions ?? [])
+        .filter((resolution) => resolution.status === "resolved" && resolution.spotify?.uri)
+        .map((resolution) => [resolution.track_ref_id, resolution.spotify.uri]),
+    );
+    const uris = draft.plan.tracks.map((track) => resolvedByRef.get(track.track_ref_id));
+    if (uris.some((uri) => typeof uri !== "string")) {
+      throw spotifyResolutionError(
+        "spotify_pending_playback_unresolved",
+        "The pending plan could not be fully resolved on Spotify, so playback was not changed.",
+      );
+    }
+    const receipt = await this.requireSpotifyService().resume({
+      uris,
+      ...(deviceId ? { deviceId } : {}),
+    }, { signal });
+    return { ...receipt, track_count: uris.length };
+  }
+
+  async spotifyQueuePendingPlan({ deviceId } = {}, { signal } = {}) {
+    signal?.throwIfAborted();
+    if (!this.pendingSpotifyPlaylist?.plan) {
+      throw spotifyResolutionError(
+        "spotify_pending_playlist_unavailable",
+        "There is no pending validated playlist plan to queue. Create a playlist plan first.",
+      );
+    }
+    this.requireSpotifyScopes(["user-read-private"]);
+    const draft = this.pendingSpotifyPlaylist;
+    const result = await this.requireSpotifyResolver().resolve(
+      draft.trustedTracks,
+    );
+    signal?.throwIfAborted();
+    const resolvedByRef = new Map();
+    for (const resolution of result.resolutions ?? []) {
+      if (resolution.status === "resolved" && resolution.spotify?.uri) {
+        resolvedByRef.set(resolution.track_ref_id, resolution.spotify.uri);
+      }
+    }
+    const label = (track) => ({
+      title: track.title,
+      artist_credit: track.artist_credit,
+    });
+    const queued = [];
+    const unmatched = [];
+    let stopped = null;
+    let stopIndex = -1;
+    for (const [index, track] of draft.plan.tracks.entries()) {
+      if (signal?.aborted) {
+        stopped = label(track);
+        stopIndex = index;
+        break;
+      }
+      const uri = resolvedByRef.get(track.track_ref_id);
+      if (typeof uri !== "string") {
+        unmatched.push(label(track));
+        continue;
+      }
+      try {
+        await this.requireSpotifyService().addToQueue({
+          uri,
+          ...(deviceId ? { deviceId } : {}),
+        }, { signal });
+        queued.push(label(track));
+      } catch (error) {
+        if (queued.length === 0) throw error;
+        stopped = label(track);
+        stopIndex = index;
+        break;
+      }
+    }
+    if (queued.length === 0) {
+      signal?.throwIfAborted();
+      throw spotifyResolutionError(
+        "spotify_pending_queue_unmatched",
+        "None of the pending tracks matched a Spotify track, so nothing was queued.",
+      );
+    }
+    return {
+      provider: "spotify",
+      ok: true,
+      effect: "write_external",
+      action: "playback.queue.add",
+      state: stopped ? "partial" : "accepted",
+      queued,
+      unmatched,
+      not_added: stopIndex >= 0
+        ? draft.plan.tracks.slice(stopIndex + 1).map(label)
+        : [],
+      ...(stopped ? { stopped } : {}),
+      ...(signal?.aborted ? { cancelled: true } : {}),
+    };
+  }
+
   async writeSpotifyPlaylist(details, uris) {
     try {
       const receipt = await this.requireSpotifyService().createPlaylistWithTracks({

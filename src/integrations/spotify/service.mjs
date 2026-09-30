@@ -748,7 +748,8 @@ export function createSpotifyService(options = {}) {
       };
     },
 
-    async resume(value) {
+    async resume(value, { signal } = {}) {
+      signal?.throwIfAborted();
       const input = inputObject(value);
       const contextUri = optionalContextUri(input.contextUri);
       const uris = optionalUris(input.uris);
@@ -771,7 +772,7 @@ export function createSpotifyService(options = {}) {
         offsetPosition,
         offsetUri,
         positionMs: optionalPosition(input.positionMs, "invalid_position"),
-      });
+      }, { signal });
       return actionReceipt("playback.resume");
     },
 
@@ -874,12 +875,15 @@ export function createSpotifyService(options = {}) {
       };
     },
 
-    async addToQueue(value) {
+    async addToQueue(value, { signal } = {}) {
+      signal?.throwIfAborted();
       const input = inputObject(value);
-      await client.addToQueue({
-        uri: requiredItemUri(input.uri),
-        deviceId: await queueDeviceId(client, input.deviceId),
-      });
+      const uri = requiredItemUri(input.uri);
+      const deviceId = await queueDeviceId(client, input.deviceId);
+      signal?.throwIfAborted();
+      // Let a dispatched write settle so cancellation can report accepted effects.
+      // Never dispatch the next write after the prompt has been cancelled.
+      await client.addToQueue({ uri, deviceId }, { signal });
       return actionReceipt("playback.queue.add");
     },
 

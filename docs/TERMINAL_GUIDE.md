@@ -1104,6 +1104,14 @@ When Spotify is the only connected playlist-write provider, a direct request to 
 
 If a turn ends with a validated plan but no write, that provider-neutral plan remains pending in the current process so a follow-up such as `可以`, `就这个`, or `保存它` writes the exact prior order instead of planning again.
 
+A follow-up that asks to queue that pending plan, such as "add to my queue", queues the same order on Spotify.
+The host resolves each track by title and artist, adds the matches, and names anything it could not match.
+Queue-only requests leave the current playback state unchanged and do not create a playlist.
+A follow-up such as "play the pending plan now" instead starts the retained tracks in order, including when the active device is paused.
+The host resolves the entire plan before starting it; if any track cannot be matched, playback is left unchanged.
+Cancelling a pending-plan queue stops new additions. An already-dispatched Spotify request is allowed to settle, and any accepted additions are reported and remain in the queue; cancellation does not undo them.
+A request to play or queue one named song plays or queues that song. Catalog lookups may return multiple possible recordings, but the playback reply names only the trusted track actually accepted by Spotify; unrelated discovery lists still require plan validation.
+
 Before approval, a later prompt can reorder, remove, replace, or add tracks.
 The host exposes the prior draft as a one-prompt trusted candidate set, requires the complete revised order to pass `playlist.plan` again, and performs no provider write during a revision-only turn.
 A failed or cancelled revision leaves the previous pending draft available, while a successful revision replaces it and becomes the only draft eligible for a later bare approval.
