@@ -4310,6 +4310,7 @@ function createToolFactories(
     onSpotifyPlaylistPartialEffect,
     onSpotifyPlaylistEditPreview,
     onSpotifyRemovalPreview,
+    onSpotifyRemovalFailure,
     onSpotifyPlaylistEditWrite,
     onExternalCandidateSet,
     onMusicCatalogArtistReleases,
@@ -5119,7 +5120,10 @@ function createToolFactories(
           playlistRefId: parameters.playlist_ref_id, itemRefId: parameters.item_ref_id }, { signal }),
           (value) => value.state === "preview" ? { provider: "spotify", state: "preview", type: value.type ?? "playlist", name: cleanOutputText(value.name, 200, "spotify_removal_name"),
             confirmation: cleanOutputText(value.confirmation, 512, "spotify_removal_confirmation"), effect: "Remove from your library, not global deletion." } : projectSpotifyReceipt(value),
-          (value) => value.state === "preview" ? onSpotifyRemovalPreview?.(value) : onSpotifyWriteReceipt?.(value), retainUnknownSpotifyWrite("playlist.unfollow")),
+          (value) => value.state === "preview" ? onSpotifyRemovalPreview?.(value) : onSpotifyWriteReceipt?.(value), (error) => {
+            retainUnknownSpotifyWrite("playlist.unfollow")(error);
+            onSpotifyRemovalFailure?.(safeDomainFailure(error).message);
+          }),
       }),
     ],
     [
@@ -5135,7 +5139,10 @@ function createToolFactories(
           playlistRefId: parameters.playlist_ref_id, itemRefId: parameters.item_ref_id, libraryItem: true }, { signal }),
           (value) => value.state === "preview" ? { provider: "spotify", state: "preview", type: value.type ?? "playlist", name: cleanOutputText(value.name, 200, "spotify_removal_name"),
             confirmation: cleanOutputText(value.confirmation, 512, "spotify_removal_confirmation"), effect: "Remove from your library, not global deletion." } : projectSpotifyReceipt(value),
-          (value) => value.state === "preview" ? onSpotifyRemovalPreview?.(value) : onSpotifyWriteReceipt?.(value), retainUnknownSpotifyWrite("library.remove")),
+          (value) => value.state === "preview" ? onSpotifyRemovalPreview?.(value) : onSpotifyWriteReceipt?.(value), (error) => {
+            retainUnknownSpotifyWrite("library.remove")(error);
+            onSpotifyRemovalFailure?.(safeDomainFailure(error).message);
+          }),
       }),
     ],
     [
@@ -6593,6 +6600,9 @@ export class PiAgentRuntime {
         onSpotifyRemovalPreview: (preview) => {
           if (this.activePromptState) this.activePromptState.spotifyRemovalPreview = preview;
         },
+        onSpotifyRemovalFailure: (message) => {
+          if (this.activePromptState) this.activePromptState.spotifyRemovalFailure = message;
+        },
         onSpotifyPlaylistEditPreview: (preview) => {
           if (this.activePromptState) {
             this.activePromptState.spotifyPlaylistEditPreview = preview;
@@ -6843,6 +6853,16 @@ export class PiAgentRuntime {
       return receipts;
     };
     const completedResult = (resultText, extra = {}) => {
+      const confirmation = this.application.spotifyRemovalConfirmationStatus?.();
+      if (confirmation?.requested && !promptState.spotifyRemovalPreview &&
+          !promptState.spotifyWriteReceipts.some((receipt) => ["playlist.unfollow", "library.remove"].includes(receipt.action))) {
+        const outcome = confirmation.attempted
+          ? "No library removal was confirmed. Request a new removal preview before trying again."
+          : "No library removal was sent. This confirmation authorizes only the displayed removal action.";
+        resultText = [outcome, promptState.spotifyRemovalFailure].filter(Boolean).join("\n\n");
+        replaceRenderedText(resultText);
+        extra = { ...extra, spotify_removal_confirmation: { state: confirmation.attempted ? "not_confirmed" : "not_sent" } };
+      }
       // One operation's normal rendering must never hide another operation's
       // partial or unknown effect in the same turn.
       if (promptState.spotifyWriteReceipts.some((receipt) => receipt.state === "unknown" || ["playlist.unfollow", "library.remove", "playlist.rename", "playlist.remove_track"].includes(receipt.action)) ||

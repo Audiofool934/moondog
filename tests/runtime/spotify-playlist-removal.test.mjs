@@ -187,7 +187,9 @@ test("a removal preview replaces a retained new plan and its confirmation cannot
   f.faux.setResponses([...removalResponses(), endResponse()]); const removal = await f.runtime.prompt('Instead remove playlist "Night Drive".');
   assert.equal(f.application.pendingSpotifyPlaylistStatus().state, "none");
   f.faux.setResponses([use("moondog_spotify_playlist_write", { name: "Unrequested Playlist", pending_plan: true }), endResponse()]);
-  await f.runtime.prompt(removal.spotify_removal_preview.confirmation); assert.equal(f.writes.length, 0);
+  const denied = await f.runtime.prompt(removal.spotify_removal_preview.confirmation); assert.equal(f.writes.length, 0);
+  assert.match(denied.text, /No library removal was sent/); assert.doesNotMatch(denied.text, /Done/);
+  assert.equal(denied.spotify_removal_confirmation.state, "not_sent");
   f.faux.setResponses([use("moondog_spotify_playlist_remove", { action: "confirm" }), endResponse()]);
   const receipt = await f.runtime.prompt(removal.spotify_removal_preview.confirmation);
   assert.match(receipt.text, /unfollowed/); assert.deepEqual(f.writes, [["DELETE", "/v1/me/library", "spotify:playlist:fictionalplaylist"]]);
@@ -235,4 +237,17 @@ test("exact removal confirmation cannot authorize any other Spotify write arm", 
   assert.equal(f.writes.length, 0);
   assert.equal((await f.application.spotifyRemovePlaylist({ action: "confirm" })).action, "playlist.unfollow");
   assert.equal(f.writes.length, 1);
+});
+
+for (const kind of ["no_tool", "missing_scope", "known_rejection"]) test(`a completed confirmation turn reports no removal truthfully after ${kind}`, async (t) => {
+  const f = fixture(t); await f.preview(); f.application.endPrompt();
+  if (kind === "missing_scope") f.state.missing = ["playlist-modify-public"];
+  if (kind === "known_rejection") f.state.status = 403;
+  f.faux.setResponses([...(kind === "no_tool" ? [] : [use("moondog_spotify_playlist_remove", { action: "confirm" })]),
+    fauxAssistantMessage([fauxText("Done. Globally deleted it.")])]);
+  const result = await f.runtime.prompt(removalConfirmation);
+  assert.match(result.text, kind === "known_rejection" ? /No library removal was confirmed/ : /No library removal was sent/);
+  assert.doesNotMatch(result.text, /Globally deleted|Done\./);
+  assert.equal(f.writes.length, kind === "known_rejection" ? 1 : 0);
+  if (kind === "missing_scope") assert.match(result.text, /login.*grant/);
 });

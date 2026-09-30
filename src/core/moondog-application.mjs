@@ -1316,6 +1316,11 @@ export class MoondogApplication {
     return draft ? { state: "preview", type: draft.type ?? "playlist", name: draft.name, confirmation: draft.confirmation, confirmable: draft.confirmable } : { state: "none" };
   }
 
+  spotifyRemovalConfirmationStatus() {
+    const transaction = this.pendingPlaylistPromptTransaction;
+    return { requested: transaction?.removalConfirmationRequested === true, attempted: transaction?.removalAttempted === true };
+  }
+
   async spotifyRemovePlaylist({ action, playlistRefId, itemRefId, libraryItem = false } = {}, { signal } = {}) {
     signal?.throwIfAborted();
     this.transientSpotifyContext = true;
