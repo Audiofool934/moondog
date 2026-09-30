@@ -213,7 +213,7 @@ export class ListeningEditor extends Editor {
     const lines = super.render(width).map((line) => this.focused ? line : line.replace(/\x1b\[7m([\s\S]*?)\x1b\[0m/g, "$1"));
     const { busy, homeVisible, homeFocused } = this.getState();
     if (!/[↑↓]/u.test(lines[0])) {
-      const label = busy ? " DRAFT " : homeFocused ? " TAB TO TYPE " : " YOU ";
+      const label = busy ? " NEXT " : homeFocused ? " TAB TO TYPE " : " YOU ";
       lines[0] = width >= label.length + 4
         ? theme.faint("─ ") + theme.muted(label) + theme.faint("─".repeat(width - label.length - 2))
         : theme.faint("─".repeat(width));

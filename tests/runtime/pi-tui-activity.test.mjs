@@ -105,7 +105,9 @@ test("one prompt grows one reply, settles one count, and keeps the room fixed", 
   fixture.submit("Find a few related records");
   await until(() => callbacks);
   await until(() => /Thinking\.\.\. · \d+s/.test(statusRow()));
-  assert.match(hintRow(), /draft stays here/);
+  assert.match(statusRow(), /◎/);
+  assert.doesNotMatch(statusRow(), /[◴◷◶◵]/u);
+  assert.match(hintRow(), /enter queues the next one/);
   assert.match(hintRow(), /ctrl\+c cancel/);
   assert.doesNotMatch(hintRow(), /tab explore/);
   const first = { toolCallId: "one", label: "Search your music library", toolName: "PRIVATE_TOOL" };
@@ -121,7 +123,7 @@ test("one prompt grows one reply, settles one count, and keeps the room fixed", 
   callbacks.onToolEnd({ ...first, isError: true });
   await until(() => statusRow().includes(second.label) && !statusRow().includes(first.label));
   assert.match(fixture.body(), /Search your music library/);
-  assert.match(hintRow(), /draft stays here/);
+  assert.match(hintRow(), /enter queues the next one/);
   assert.match(hintRow(), /ctrl\+c cancel/);
   callbacks.onTextDelta("A grounded ");
   await until(() => fixture.body().includes("A grounded") && !fixture.body().includes(answer));
@@ -164,6 +166,42 @@ test("one prompt grows one reply, settles one count, and keeps the room fixed", 
   assert.match(statusRow(), /Up recalls this conversation/);
   assert.match(hintRow(), /send/);
   assert.doesNotMatch(hintRow(), /tab explore/);
+});
+
+test("enter queues the next message, and up brings the last one back", async (context) => {
+  const gate = deferred();
+  const prompts = [];
+  const fixture = launch(context, { runtime: {
+    async prompt(value, received) {
+      prompts.push(value);
+      if (prompts.length === 1) return await gate.promise;
+      received.onTextDelta(`Heard ${value}`);
+      return { status: "completed", text: `Heard ${value}` };
+    },
+    abort() { gate.resolve({ status: "aborted", text: "" }); },
+  } });
+  const youLines = () => fixture.lines.filter((line) => line.includes("› You")).length;
+  await until(() => fixture.body().includes("New conversation"));
+  fixture.submit("Find a few related records");
+  await until(() => prompts.length === 1 && fixture.footer().includes("Thinking"));
+  fixture.submit("play the quiet ones next");
+  fixture.submit("then something slower");
+  await until(() => fixture.footer().includes("2 queued"));
+  assert.match(fixture.body(), /play the quiet ones next/);
+  assert.match(fixture.body(), /then something slower/);
+  assert.equal(prompts.length, 1);
+  assert.equal(youLines(), 1);
+  assert.ok(fixture.lines.every((line) => visibleWidth(line) === 100));
+  fixture.send("\x1b[A");
+  await until(() => fixture.footer().includes("1 queued"));
+  assert.doesNotMatch(fixture.footer(), /2 queued/);
+  assert.match(fixture.body(), /then something slower/);
+  gate.resolve({ status: "completed", text: "A grounded result." });
+  await until(() => prompts.length === 2 && fixture.body().includes("Heard play the quiet ones next"));
+  assert.equal(prompts[1], "play the quiet ones next");
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  assert.equal(prompts.length, 2);
+  assert.match(fixture.body(), /then something slower/);
 });
 
 test("cancel during tools is idempotent and does not label unconfirmed work successful", async (context) => {

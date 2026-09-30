@@ -157,6 +157,7 @@ Read the [connection and data details](docs/TERMINAL_GUIDE.md) before you connec
 | Ctrl+P | Search every command. |
 | Page Up, Page Down | Move through the conversation while the header, the draft, and the status line stay put. |
 | Up and Down in the draft | Recall what you typed in this conversation. |
+| Enter while Moondog is working | Queue the next message. It sends when this one finishes. |
 | `/resume`, `/new` | Pick up a saved conversation, or start a fresh one. |
 | `/home` | Back to the sleeve, without clearing the conversation. |
 | `/lyrics` | See which line is on the sleeve, and which song it came from. |

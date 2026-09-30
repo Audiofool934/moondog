@@ -238,6 +238,10 @@ export async function runMoondogTui({
   let homeFocused = false;
   let homeSelected = 0;
   let busy = false;
+  const messageQueue = [];
+  const queuedLineCount = () => messageQueue.length === 0
+    ? 0
+    : Math.min(messageQueue.length, 4) + (messageQueue.length > 4 ? 1 : 0);
   let cancelWork = null;
   let cancellationRequested = false;
   let workStartedAt = 0;
@@ -283,7 +287,7 @@ export async function runMoondogTui({
   };
   const sleeve = new RecordSleeve({ terminal, getTheme, environment, getState: () => ({
     focused: homeFocused, selected: homeSelected, motionEnabled,
-    editorRows: editor.rowCount || 3,
+    editorRows: (editor.rowCount || 3) + queuedLineCount(),
   }), getNextLyric: () => {
     try {
       homeLyric = homeLyricSeeds ? lyrics.selectHome(homeLyricSeeds) : null;
@@ -348,7 +352,7 @@ export async function runMoondogTui({
     render(width) {
       const lines = conversation.render(width);
       const footerRows = terminal.rows >= 20 ? 2 : 1;
-      const bodyRows = Math.max(1, terminal.rows - 2 - footerRows - (editor.rowCount || 3));
+      const bodyRows = Math.max(1, terminal.rows - 2 - footerRows - queuedLineCount() - (editor.rowCount || 3));
       while (lines.length < bodyRows) lines.push(paintBrandLine("", width, theme));
       return lines;
     },
@@ -384,7 +388,28 @@ export async function runMoondogTui({
   const composer = new BrandSurface(editor, getTheme);
   const composerSlot = {
     invalidate() { composer.invalidate(); },
-    render: (width) => profileView || importView ? [] : composer.render(width),
+    render(width) {
+      if (profileView || importView) return [];
+      const lines = [];
+      if (messageQueue.length) {
+        const hidden = Math.max(0, messageQueue.length - 4);
+        const shown = messageQueue.slice(-4);
+        const firstNumber = messageQueue.length - shown.length + 1;
+        if (hidden) lines.push(paintBrandLine(theme.faint(`  ${hidden} more queued`), width, theme));
+        shown.forEach((text, index) => {
+          const number = String(firstNumber + index);
+          const prefix = `  ${number}  `;
+          const message = text.replace(/\s+/gu, " ").trim();
+          lines.push(paintBrandLine(
+            theme.faint(prefix) + theme.muted(truncateToWidth(message, Math.max(1, width - visibleWidth(prefix)), "…")),
+            width,
+            theme,
+          ));
+        });
+      }
+      lines.push(...composer.render(width));
+      return lines;
+    },
   };
   const shell = new VStack();
   shell.addChild(header, { shrink: 0 });
@@ -396,8 +421,9 @@ export async function runMoondogTui({
     invalidate() {},
     render(width) {
       const spinning = !theme.plain && busy && !tui.hasOverlay();
-      const marker = theme.plain ? "." : spinning ? ["◴", "◷", "◶", "◵"][phase % 4] : "◎";
-      // While Moondog works, its mark turns through the prism; at rest it stays the moon.
+      // One moon mark in every frame. The prism walks its color while Moondog works.
+      // The clock glyphs sat on different baselines, so the mark jumped up and down.
+      const marker = theme.plain ? "." : "◎";
       const markerInk = spinning ? theme.prism[phase % theme.prism.length] : theme.faint;
       const compactHint = terminal.rows < 20 && homeVisible && !busy && !profileView && !importView;
       let statusText = compactHint && homeFocused ? "↑ ↓ choose · enter open · esc type"
@@ -436,9 +462,12 @@ export async function runMoondogTui({
           : profileView
           ? busy ? "One moment..."
             : width >= 76 ? "type filter · ↑↓ select · enter actions · tab views · esc back" : "↑↓ select · enter actions · tab views · esc back"
-          : busy ? cancellationRequested ? "cancelling · draft stays here"
-            : cancelWork ? "draft stays here · ctrl+c cancel"
-            : "draft stays here · waiting for command"
+          : busy ? cancellationRequested
+            ? messageQueue.length ? "stopping · the queue waits" : "stopping"
+            : messageQueue.length
+              ? `${messageQueue.length === 1 ? "1 queued" : `${messageQueue.length} queued`} · up edits the last${cancelWork ? " · ctrl+c cancel" : " · waiting for command"}`
+              : cancelWork ? "enter queues the next one · ctrl+c cancel"
+                : "enter queues the next one · waiting for command"
           : editor.isShowingAutocomplete() ? "↑↓ choose · tab/enter complete · esc dismiss" : homeFocused
           ? "↑ ↓ choose · enter open · esc type"
           : homeVisible && !editor.getText()
@@ -1518,8 +1547,13 @@ export async function runMoondogTui({
     if (selected.value !== "commands") await editor.onSubmit(`/${selected.value}`);
   };
 
-  editor.onSubmit = async (rawValue) => {
-    if (busy) return;
+  let releaseQueue = true;
+  const settleQueue = () => {
+    if (busy || cleanedUp || !releaseQueue || messageQueue.length === 0) return;
+    const next = messageQueue.shift();
+    void editor.onSubmit(next);
+  };
+  const submitListeningTurn = async (rawValue) => {
     const value = sanitizeTerminalText(rawValue).trim();
     if (!value) return;
 
@@ -1547,7 +1581,6 @@ export async function runMoondogTui({
         const controller = localCommandController;
         setBusy(true, controller ? () => controller.abort() : null);
         setFooter(`/${command}...`);
-        editor.disableSubmit = true;
         const argumentText = value.slice(1).trim().slice(rawCommand.length).trim();
         const parsedArgs = command === "import" ? argumentText ? [argumentText] : []
           : ["profile", "spotify", "web"].includes(command)
@@ -1563,7 +1596,6 @@ export async function runMoondogTui({
       } finally {
         localCommandController = null;
         setBusy(false);
-        editor.disableSubmit = false;
         if (!cleanedUp) tui.requestRender();
       }
       return;
@@ -1572,6 +1604,7 @@ export async function runMoondogTui({
     const profileSeed = profileDiscoveryDraft && value.includes(profileDiscoveryDraft.context)
       ? profileDiscoveryDraft.target : undefined;
     if (profileSeed && runtimeStatus.state !== "configured") {
+      releaseQueue = false;
       editor.setText(rawValue);
       setFooter("Your request is still here · /model connects a model first.", warning);
       return;
@@ -1587,7 +1620,6 @@ export async function runMoondogTui({
     }
 
     setBusy(true, () => activeRuntime.abort());
-    editor.disableSubmit = true;
     setFooter("Thinking...");
     transcriptScroll.scrollToEnd();
     addLabel("Moondog");
@@ -1673,8 +1705,28 @@ export async function runMoondogTui({
     } finally {
       if (!cleanedUp && work.calls.length) work.settle(elapsedTime(workStartedAt));
       setBusy(false);
-      editor.disableSubmit = false;
       if (!cleanedUp) tui.requestRender();
+    }
+  };
+  editor.onSubmit = async (rawValue) => {
+    const pending = sanitizeTerminalText(rawValue).trim();
+    if (busy) {
+      if (pending === "/quit" || pending === "/exit") {
+        shutdown();
+        return;
+      }
+      if (pending) {
+        if (messageQueue.length >= 30) editor.setText(pending);
+        else messageQueue.push(pending);
+      }
+      if (!cleanedUp) tui.requestRender();
+      return;
+    }
+    releaseQueue = true;
+    try {
+      await submitListeningTurn(rawValue);
+    } finally {
+      if (!busy && !cleanedUp && releaseQueue) settleQueue();
     }
   };
 
@@ -1728,6 +1780,11 @@ export async function runMoondogTui({
           editor.focused = true;
         }
       }
+    }
+    if (busy && !editor.isShowingAutocomplete() && matchesKey(data, "up") && !editor.getText() && messageQueue.length) {
+      editor.setText(messageQueue.pop());
+      tui.requestRender();
+      return { consume: true };
     }
     if (!matchesKey(data, "ctrl+c")) return undefined;
     if (busy) {

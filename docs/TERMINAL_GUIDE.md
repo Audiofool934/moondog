@@ -82,7 +82,9 @@ The mouse wheel scrolls it too.
 
 During a model request, each step appears in the conversation as it starts.
 While that request runs, the status row says Thinking or names the step in progress, and it shows the elapsed time.
-The hint says the draft stays, and it offers cancel when the work can be stopped.
+Enter adds the next message to a queue above the draft, and that message sends when the current one finishes.
+Up on an empty draft brings the last queued message back so you can change it.
+The hint offers cancel when the work can be stopped.
 When the answer arrives, those steps stay above it, with a count of what finished, what failed, and what was not confirmed.
 The status row then says that Up recalls this conversation.
 On a tall terminal the hint names send.
@@ -90,7 +92,6 @@ The home explore hint stays on the opening.
 Not confirmed means a step started without a completion event, including interrupted work.
 Cancellation does not undo actions that already completed.
 These display receipts are not added to model context or restored with saved conversation history.
-You can keep editing your next thought while work runs.
 Ctrl+C cancels model and web requests; local commands that cannot be cancelled here show a waiting hint and finish their current step.
 Import and profile views show a finishing hint while their local step is running.
 
