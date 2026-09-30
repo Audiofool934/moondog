@@ -690,10 +690,11 @@ export function createSpotifyWebApiClient({
       );
     },
 
-    async saveTracks({ uris } = {}) {
+    async saveTracks({ uris } = {}, { signal } = {}) {
       await request(`/me/library${queryString({ uris: uris.join(",") })}`, {
         method: "PUT",
         responseMode: "none",
+        signal,
       });
       return null;
     },

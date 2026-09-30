@@ -263,6 +263,19 @@ const catalog = [
     },
   },
   {
+    id: "spotify.player.now_playing",
+    version: "1",
+    state: "enabled",
+    effect: "read_external",
+    description:
+      "Read full Spotify now-playing metadata: track, artists, album, progress, and device.",
+    requires_spotify: true,
+    agent_tool: {
+      name: "moondog_spotify_now_playing",
+      label: "See what's playing in detail",
+    },
+  },
+  {
     id: "spotify.player.control",
     version: "1",
     state: "enabled",
@@ -285,6 +298,19 @@ const catalog = [
     agent_tool: {
       name: "moondog_spotify_queue_add",
       label: "Add to Spotify queue",
+    },
+  },
+  {
+    id: "spotify.queue.status",
+    version: "1",
+    state: "enabled",
+    effect: "read_external",
+    description:
+      "Inspect the current Spotify playback queue with track metadata.",
+    requires_spotify: true,
+    agent_tool: {
+      name: "moondog_spotify_queue_status",
+      label: "See what's queued on Spotify",
     },
   },
   {
@@ -328,13 +354,25 @@ const catalog = [
     },
   },
   {
+    id: "spotify.search",
+    version: "1",
+    state: "enabled",
+    effect: "read_external",
+    description:
+      "Search the Spotify catalog for tracks by free text, with bounded results.",
+    requires_spotify: true,
+    agent_tool: {
+      name: "moondog_spotify_search",
+      label: "Search Spotify",
+    },
+  },
+  {
     id: "spotify.library.check",
     version: "1",
     state: "enabled",
     effect: "read_external",
     description: "Check whether resolved tracks are already saved in the Spotify library.",
     requires_spotify: true,
-    requires_playlist_services: true,
     agent_tool: {
       name: "moondog_spotify_library_check",
       label: "Check Spotify saved tracks",
@@ -347,7 +385,6 @@ const catalog = [
     effect: "write_external",
     description: "Save explicitly requested resolved tracks to the Spotify library.",
     requires_spotify: true,
-    requires_playlist_services: true,
     agent_tool: {
       name: "moondog_spotify_library_save",
       label: "Save tracks to Spotify library",

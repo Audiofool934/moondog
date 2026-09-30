@@ -14,6 +14,9 @@ export const SPOTIFY_SERVICE_LIMITS = Object.freeze({
   recentlyPlayedDefault: 20,
   recentlyPlayedMax: 50,
   deviceNameLengthMax: 128,
+  searchQueryLengthMax: 256,
+  searchResultsDefault: 5,
+  searchResultsMax: 10,
 });
 
 const repeatStates = new Set(["off", "track", "context"]);
@@ -299,6 +302,37 @@ function recentLimit(value) {
   return value;
 }
 
+function searchQuery(value) {
+  if (typeof value !== "string" || !value.trim()) {
+    fail("invalid_search_query", "The Spotify search query must not be empty.");
+  }
+  const query = value.trim();
+  if (
+    Array.from(query).length > SPOTIFY_SERVICE_LIMITS.searchQueryLengthMax
+  ) {
+    fail(
+      "invalid_search_query",
+      `The Spotify search query must be at most ${SPOTIFY_SERVICE_LIMITS.searchQueryLengthMax} characters.`,
+    );
+  }
+  return query;
+}
+
+function searchLimit(value) {
+  if (value === undefined) return SPOTIFY_SERVICE_LIMITS.searchResultsDefault;
+  if (
+    !Number.isInteger(value) ||
+    value < 1 ||
+    value > SPOTIFY_SERVICE_LIMITS.searchResultsMax
+  ) {
+    fail(
+      "invalid_search_limit",
+      `Spotify search limit must be an integer from 1 to ${SPOTIFY_SERVICE_LIMITS.searchResultsMax}.`,
+    );
+  }
+  return value;
+}
+
 function actionReceipt(action) {
   return {
     provider: "spotify",
@@ -544,11 +578,11 @@ async function resolveNamedDevice(client, deviceName) {
   return requireTransferDevice(chosen, display);
 }
 
-async function queueDeviceId(client, requestedDeviceId) {
+async function queueDeviceId(client, requestedDeviceId, { signal } = {}) {
   const explicit = optionalDeviceId(requestedDeviceId);
   if (explicit) return explicit;
 
-  const result = await client.getDevices();
+  const result = await client.getDevices({ signal });
   const devices = Array.isArray(result?.devices) ? result.devices : [];
   const controllable = devices.filter(
     (device) =>
@@ -609,6 +643,14 @@ export function createSpotifyService(options = {}) {
         ...(after !== undefined ? { after } : {}),
         ...(before !== undefined ? { before } : {}),
       });
+    },
+
+    async searchTracks(value, { signal } = {}) {
+      const input = inputObject(value);
+      return client.searchTracks({
+        query: searchQuery(input.query),
+        limit: searchLimit(input.limit),
+      }, { signal });
     },
 
     async editablePlaylists(value) {
@@ -879,7 +921,7 @@ export function createSpotifyService(options = {}) {
       signal?.throwIfAborted();
       const input = inputObject(value);
       const uri = requiredItemUri(input.uri);
-      const deviceId = await queueDeviceId(client, input.deviceId);
+      const deviceId = await queueDeviceId(client, input.deviceId, { signal });
       signal?.throwIfAborted();
       // Let a dispatched write settle so cancellation can report accepted effects.
       // Never dispatch the next write after the prompt has been cancelled.
@@ -939,14 +981,15 @@ export function createSpotifyService(options = {}) {
       };
     },
 
-    async saveTracks(value) {
+    async saveTracks(value, { signal } = {}) {
+      signal?.throwIfAborted();
       const input = inputObject(value);
       const uris = requiredTrackUris(
         input.uris,
         "invalid_library_tracks",
         SPOTIFY_SERVICE_LIMITS.libraryTracksMax,
       );
-      await client.saveTracks({ uris });
+      await client.saveTracks({ uris }, { signal });
       return {
         ...actionReceipt("library.save"),
         track_count: uris.length,

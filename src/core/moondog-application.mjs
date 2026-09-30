@@ -135,6 +135,8 @@ export class MoondogApplication {
     this.artistIdentityResolver = artistIdentityResolver;
     this.webResearch = webResearch;
     this.spotifyResolutions = new Map();
+    this.spotifyReadSelections = new Map();
+    this.transientSpotifyContext = false;
     this.spotifyPlaylistTargets = new Map();
     this.spotifyPlaylistItems = new Map();
     this.spotifyPlaylistSnapshots = new Map();
@@ -522,6 +524,9 @@ export class MoondogApplication {
   }
 
   commitCompletedPrompt(user, assistant, memoryMutations = []) {
+    // Follow-up replies can paraphrase live results from the process-local
+    // conversation. Keep that conversation out of generic durable memory.
+    if (this.transientSpotifyContext) return this.commitTransientPrompt(memoryMutations);
     if (!this.memoryStore) return { recorded: false, memory_results: [] };
     const session = this.ensureMemorySession();
     return this.memoryStore.commitCompletedPrompt(session.session_id, {
@@ -535,7 +540,16 @@ export class MoondogApplication {
     return this.commitCompletedPrompt(user, assistant);
   }
 
+  commitTransientPrompt(memoryMutations = []) {
+    // Forget remains available without recording the live dialogue as a turn
+    // or feeding it to reflection. No new generic memory may derive from it.
+    const results = memoryMutations.filter((mutation) => mutation.type === "forget")
+      .map((mutation) => this.memoryStore?.forget(mutation.memoryId));
+    return { recorded: false, memory_results: results };
+  }
+
   #clearConversationState() {
+    this.resetSpotifyReadContext();
     this.pendingSpotifyPlaylist = null;
     this.pendingSpotifyPlaylistEdit = null;
     this.pendingPlaylistRevisionCandidateSet = null;
@@ -586,6 +600,7 @@ export class MoondogApplication {
   }
 
   setSpotifyConnection(connection) {
+    this.resetSpotifyReadContext();
     this.spotifyConnection = connection;
     return this.spotifyStatus();
   }
@@ -616,6 +631,49 @@ export class MoondogApplication {
     return this.spotifyConnection.service;
   }
 
+  resetSpotifyReadContext() {
+    this.spotifyReadSelections.clear();
+    this.transientSpotifyContext = false;
+  }
+
+  spotifyReadContext() {
+    return [...this.spotifyReadSelections.entries()].map(([source, items]) => ({
+      source,
+      items: items.map(({ uri: _uri, ...item }) => structuredClone(item)),
+    }));
+  }
+
+  #registerSpotifyReadItems(source, values) {
+    const items = values.slice(0, 11).filter((item) => item && typeof item === "object").map((item) => {
+      const result = { type: ["track", "episode", "ad", "unknown"].includes(item.type) ? item.type : "track" };
+      const text = (value) => typeof value === "string" ? Array.from(value
+        .replace(/[\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069]/gu, " ")
+        .replace(/\s+/gu, " ").trim()).slice(0, 256).join("") : "";
+      for (const field of ["name", "album"]) if (text(item[field])) result[field] = text(item[field]);
+      result.artists = (Array.isArray(item.artists) ? item.artists : []).slice(0, 5).map(text).filter(Boolean);
+      if (Number.isInteger(item.duration_ms) && item.duration_ms >= 0 && item.duration_ms <= 86_400_000) result.duration_ms = item.duration_ms;
+      if (Number.isInteger(item.popularity) && item.popularity >= 0 && item.popularity <= 100) result.popularity = item.popularity;
+      if (typeof item.explicit === "boolean") result.explicit = item.explicit;
+      if (result.type === "track" && typeof item.uri === "string" && /^spotify:track:[A-Za-z0-9]{1,128}$/u.test(item.uri) && item.is_local !== true) {
+        result.track_ref_id = randomUUID();
+        result.uri = item.uri;
+      }
+      return result;
+    });
+    // Each read replaces its previous selection; at most 32 items across the
+    // three read surfaces remain actionable until this conversation ends.
+    this.spotifyReadSelections.set(source, items);
+    return items.map(({ uri: _uri, ...item }) => structuredClone(item));
+  }
+
+  async spotifyNowPlaying({ signal } = {}) {
+    this.transientSpotifyContext = true;
+    const player = await this.requireSpotifyService().currentPlayer({ signal });
+    signal?.throwIfAborted();
+    const items = this.#registerSpotifyReadItems("now_playing", player.item ? [player.item] : []);
+    return { ...player, item: items[0] ?? null };
+  }
+
   async spotifyPlayerStatus() {
     const player = await this.requireSpotifyService().currentPlayer();
     if (player.state !== "available") {
@@ -634,7 +692,8 @@ export class MoondogApplication {
     };
   }
 
-  spotifyControl({ action, ...parameters }) {
+  spotifyControl({ action, ...parameters }, { signal } = {}) {
+    signal?.throwIfAborted();
     const service = this.requireSpotifyService();
     if (action === "resume" && Array.isArray(parameters.trackRefs)) {
       const { trackRefs, ...playbackParameters } = parameters;
@@ -642,11 +701,11 @@ export class MoondogApplication {
       return service.resume({
         ...playbackParameters,
         uris,
-      });
+      }, { signal });
     }
     switch (action) {
       case "resume":
-        return service.resume(parameters);
+        return service.resume(parameters, { signal });
       case "pause":
         return service.pause(parameters);
       case "next":
@@ -666,19 +725,40 @@ export class MoondogApplication {
     }
   }
 
-  spotifyAddToQueue(input) {
+  async spotifySearchTracks(input, { signal } = {}) {
+    const result = await this.requireSpotifyService().searchTracks(input, { signal });
+    signal?.throwIfAborted();
+    const raw = Array.isArray(result.items) ? result.items : [];
+    return { ...result, items: this.#registerSpotifyReadItems("search", raw.slice(0, 10)),
+      truncated: result.truncated === true || raw.length > 10 };
+  }
+
+  async spotifyQueueStatus({ signal } = {}) {
+    this.transientSpotifyContext = true;
+    const result = await this.requireSpotifyService().queue({ signal });
+    signal?.throwIfAborted();
+    const raw = Array.isArray(result.queue) ? result.queue : [];
+    const current = result.currently_playing;
+    const items = this.#registerSpotifyReadItems("queue", [...(current ? [current] : []), ...raw.slice(0, 10)]);
+    return { ...result, currently_playing: current ? items.shift() : null, queue: items,
+      queue_count: Math.min(50, raw.length), truncated: result.truncated === true || raw.length > 10 };
+  }
+
+  spotifyAddToQueue(input, { signal } = {}) {
+    signal?.throwIfAborted();
     if (input?.trackRefId !== undefined) {
       const resolution = this.requireSpotifyResolution(input.trackRefId);
       return this.requireSpotifyService().addToQueue({
         uri: resolution.uri,
         ...(input.deviceId ? { deviceId: input.deviceId } : {}),
-      });
+      }, { signal });
     }
-    return this.requireSpotifyService().addToQueue(input);
+    return this.requireSpotifyService().addToQueue(input, { signal });
   }
 
-  spotifyDevices() {
-    return this.requireSpotifyService().devices();
+  spotifyDevices({ signal } = {}) {
+    this.transientSpotifyContext = true;
+    return this.requireSpotifyService().devices({ signal });
   }
 
   spotifyTransfer(input) {
@@ -830,11 +910,12 @@ export class MoondogApplication {
   }
 
   requireSpotifyResolution(trackRefId) {
-    const resolution = this.spotifyResolutions.get(trackRefId);
+    const resolution = this.spotifyResolutions.get(trackRefId) ??
+      [...this.spotifyReadSelections.values()].flat().find((item) => item.track_ref_id === trackRefId && item.uri);
     if (!resolution) {
       throw spotifyResolutionError(
         "spotify_track_not_resolved",
-        "The track was not resolved to a Spotify catalog identity in this prompt. Resolve it with the Spotify resolve tool first.",
+        "This Spotify track reference is unavailable or expired. Read the selection again, or resolve a trusted catalog candidate first.",
       );
     }
     return resolution;
@@ -871,7 +952,8 @@ export class MoondogApplication {
     return uris;
   }
 
-  async spotifyResolveTracks({ trackRefs } = {}) {
+  async spotifyResolveTracks({ trackRefs } = {}, { signal } = {}) {
+    signal?.throwIfAborted();
     if (
       !Array.isArray(trackRefs) ||
       trackRefs.length < 1 ||
@@ -888,11 +970,18 @@ export class MoondogApplication {
         "Spotify resolution track references are invalid.",
       );
     }
-    this.requireSpotifyScopes(["user-read-private"]);
-    const domainServices = this.requirePlaylistServices();
-    const trustedTracks = domainServices.getTrustedTracks(trackRefs);
-    const resolver = this.requireSpotifyResolver();
-    const result = await resolver.resolve(trustedTracks);
+    const readItems = [...this.spotifyReadSelections.values()].flat();
+    const retained = trackRefs.map((ref) => readItems.find((item) => item.track_ref_id === ref && item.uri)).filter(Boolean);
+    const unresolved = trackRefs.filter((ref) => !retained.some((item) => item.track_ref_id === ref));
+    let result = { resolutions: [], resolved_count: 0, not_found_count: 0 };
+    if (unresolved.length > 0) {
+      this.requireSpotifyScopes(["user-read-private"]);
+      const trustedTracks = this.requirePlaylistServices().getTrustedTracks(unresolved);
+      result = await this.requireSpotifyResolver().resolve(trustedTracks, { signal });
+    }
+    signal?.throwIfAborted();
+    result.resolved_count += retained.length;
+    result.resolutions.push(...retained.map((item) => ({ track_ref_id: item.track_ref_id, status: "resolved" })));
     const resolutions = [];
     for (const resolution of result.resolutions) {
       if (resolution.status === "resolved" && resolution.spotify) {
@@ -1387,10 +1476,11 @@ export class MoondogApplication {
     }
   }
 
-  async spotifySaveLibraryTracks({ trackRefs } = {}) {
+  async spotifySaveLibraryTracks({ trackRefs } = {}, { signal } = {}) {
+    signal?.throwIfAborted();
     this.requireSpotifyWriteScopes(["user-library-modify"]);
     const uris = this.requireSpotifyTrackUris(trackRefs);
-    return this.requireSpotifyService().saveTracks({ uris });
+    return this.requireSpotifyService().saveTracks({ uris }, { signal });
   }
 
   async spotifyCheckLibraryTracks({ trackRefs } = {}) {
