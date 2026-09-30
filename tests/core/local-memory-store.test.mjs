@@ -26,6 +26,21 @@ async function withMemoryStore(callback, options = {}) {
   }
 }
 
+test("explicit mutations without a transcript commit together and roll back together", async () => {
+  await withMemoryStore(async ({ store }) => {
+    const session = store.startSession();
+    const old = store.remember({ text: "I prefer short answers", kind: "preference", sourceSessionId: session.session_id });
+    const remember = store.prepareRemember({ text: "I prefer examples", kind: "preference", sourceSessionId: session.session_id });
+    const forget = store.prepareForget(old.memory_id, { sourceSessionId: session.session_id });
+    assert.throws(() => store.commitMemoryMutations([forget.mutation, remember.mutation, { type: "invalid" }]));
+    assert.deepEqual(store.listMemories().map((memory) => memory.memory_id), [old.memory_id]);
+    const result = store.commitMemoryMutations([forget.mutation, remember.mutation]);
+    assert.equal(result[1].memory_id, remember.result.memory_id);
+    assert.deepEqual(store.listMemories().map((memory) => memory.text), ["I prefer examples"]);
+    assert.deepEqual(store.readSessionTurns(session.session_id), []);
+  });
+});
+
 test("local memory persists completed sessions and explicit durable memories", async () => {
   await withMemoryStore(async ({ store, reopen }) => {
     const first = store.startSession();

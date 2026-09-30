@@ -218,6 +218,10 @@ function cleanText(value, maximum, label) {
   return Array.from(cleaned).slice(0, maximum).join("");
 }
 
+export function normalizeMemoryContent(value) {
+  return cleanText(value, 2_000, "Memory");
+}
+
 function cleanKind(value) {
   const kind = value ?? "fact";
   if (!memoryKinds.has(kind)) throw new TypeError("Memory kind is invalid");
@@ -1030,6 +1034,24 @@ export class LocalMemoryStore {
     }
   }
 
+  commitMemoryMutations(memoryMutations) {
+    this.#assertOpen();
+    const timestamp = isoTimestamp(this.#clock);
+    this.#database.exec("BEGIN IMMEDIATE");
+    try {
+      const results = memoryMutations.map((mutation) => {
+        if (mutation?.type === "remember") return this.#applyPreparedRemember(mutation, { timestamp });
+        if (mutation?.type === "forget") return this.#applyPreparedForget(mutation, { timestamp });
+        throw new TypeError("Memory mutation is invalid");
+      });
+      this.#database.exec("COMMIT");
+      return results;
+    } catch (error) {
+      this.#database.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
   readSessionTurns(sessionId, { limit = 40 } = {}) {
     this.#assertOpen();
     const bounded = Math.max(1, Math.min(Number(limit) || 40, 100));
@@ -1058,7 +1080,7 @@ export class LocalMemoryStore {
     sourceSessionId,
   }) {
     this.#assertOpen();
-    const content = cleanText(text, 2_000, "Memory");
+    const content = normalizeMemoryContent(text);
     const normalizedContent = normalized(content);
     const existing = this.#database
       .prepare(`

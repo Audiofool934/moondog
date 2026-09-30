@@ -24,8 +24,9 @@ const repositoryRoot = path.resolve(
   "..",
 );
 const maximumPackedBytes = 2_500_000;
-// Multi-service imports currently pack 103 source/assets entries, about 3.92 MB.
-const maximumUnpackedBytes = 4_000_000;
+// The reviewed baseline packs 109 entries / 3,999,318 bytes. Allow measured
+// integration growth while retaining the independent path/content privacy gates.
+const maximumUnpackedBytes = 4_250_000;
 const maximumEntries = 110;
 const packageOnlyPrivateSentinelPattern = new RegExp(
   ["PRIVATE", "(?:IP|PLATFORM)", "SENTINEL"].join("_"),

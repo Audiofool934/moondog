@@ -1545,6 +1545,13 @@ export class ListeningHistoryStore {
     return structuredClone({ ...value.summary, lyric_exclusions: value.lyricExclusions });
   }
 
+  activeAvoidances({ subjectId } = {}) {
+    // Host-side filtering must include corrections outside the bounded display.
+    return structuredClone(
+      this.#profileProjection({ subjectId, maxItems: 1 }).lyricExclusions,
+    );
+  }
+
   profileSummary({ subjectId, maxItems = 10 } = {}) {
     return structuredClone(
       this.#profileProjection({ subjectId, maxItems }).summary,

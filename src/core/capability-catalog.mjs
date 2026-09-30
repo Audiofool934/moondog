@@ -255,11 +255,24 @@ const catalog = [
     version: "1",
     state: "enabled",
     effect: "read_external",
-    description: "Inspect metadata-free Spotify playback state.",
+    description: "Inspect bounded Spotify playback metadata, device capabilities, and state.",
     requires_spotify: true,
     agent_tool: {
       name: "moondog_spotify_player_status",
       label: "Check what Spotify is playing",
+    },
+  },
+  {
+    id: "spotify.player.now_playing",
+    version: "1",
+    state: "enabled",
+    effect: "read_external",
+    description:
+      "Read full Spotify now-playing metadata: track, artists, album, progress, and device.",
+    requires_spotify: true,
+    agent_tool: {
+      name: "moondog_spotify_now_playing",
+      label: "See what's playing in detail",
     },
   },
   {
@@ -285,6 +298,29 @@ const catalog = [
     agent_tool: {
       name: "moondog_spotify_queue_add",
       label: "Add to Spotify queue",
+    },
+  },
+  {
+    id: "spotify.queue.similar",
+    version: "1",
+    state: "enabled",
+    effect: "write_external",
+    description: "Queue a bounded artist-similarity selection from current Spotify playback, with filtering and partial receipts.",
+    requires_spotify: true,
+    requires_music_similarity: true,
+    agent_tool: { name: "moondog_spotify_queue_similar", label: "Queue more like this on Spotify" },
+  },
+  {
+    id: "spotify.queue.status",
+    version: "1",
+    state: "enabled",
+    effect: "read_external",
+    description:
+      "Inspect the current Spotify playback queue with track metadata.",
+    requires_spotify: true,
+    agent_tool: {
+      name: "moondog_spotify_queue_status",
+      label: "See what's queued on Spotify",
     },
   },
   {
@@ -328,13 +364,54 @@ const catalog = [
     },
   },
   {
+    id: "spotify.top",
+    version: "1",
+    state: "enabled",
+    effect: "read_external",
+    description: "Read bounded Spotify top artists or tracks as transient calculated-affinity evidence.",
+    requires_spotify: true,
+    agent_tool: { name: "moondog_spotify_top", label: "Your Spotify top artists and tracks" },
+  },
+  {
+    id: "spotify.library.browse", version: "1", state: "enabled", effect: "read_external", requires_spotify: true,
+    description: "Browse bounded pages of saved Spotify tracks, albums, and shows.",
+    agent_tool: { name: "moondog_spotify_library_browse", label: "Browse your Spotify library" },
+  },
+  {
+    id: "spotify.history.recent", version: "1", state: "enabled", effect: "read_external", requires_spotify: true,
+    description: "Read a bounded page of recent Spotify listening with timestamps and cursors.",
+    agent_tool: { name: "moondog_spotify_history_recent", label: "Read recent Spotify listening" },
+  },
+  {
+    id: "spotify.catalog.items", version: "1", state: "enabled", effect: "read_external", requires_spotify: true,
+    description: "Read bounded album tracks or podcast episodes from a selected host reference.",
+    agent_tool: { name: "moondog_spotify_catalog_items", label: "Browse album tracks or podcast episodes" },
+  },
+  {
+    id: "spotify.library.remove", version: "1", state: "enabled", effect: "write_external", requires_spotify: true,
+    description: "Confirm removal of one selected saved track, album, episode, show, or owned private playlist.",
+    agent_tool: { name: "moondog_spotify_library_remove", label: "Remove a saved Spotify item" },
+  },
+  {
+    id: "spotify.search",
+    version: "1",
+    state: "enabled",
+    effect: "read_external",
+    description:
+      "Search the Spotify catalog for tracks by free text, with bounded results.",
+    requires_spotify: true,
+    agent_tool: {
+      name: "moondog_spotify_search",
+      label: "Search Spotify",
+    },
+  },
+  {
     id: "spotify.library.check",
     version: "1",
     state: "enabled",
     effect: "read_external",
     description: "Check whether resolved tracks are already saved in the Spotify library.",
     requires_spotify: true,
-    requires_playlist_services: true,
     agent_tool: {
       name: "moondog_spotify_library_check",
       label: "Check Spotify saved tracks",
@@ -347,7 +424,6 @@ const catalog = [
     effect: "write_external",
     description: "Save explicitly requested resolved tracks to the Spotify library.",
     requires_spotify: true,
-    requires_playlist_services: true,
     agent_tool: {
       name: "moondog_spotify_library_save",
       label: "Save tracks to Spotify library",
@@ -365,6 +441,20 @@ const catalog = [
       name: "moondog_spotify_playlist_read",
       label: "Look at your Spotify playlists",
     },
+  },
+  {
+    id: "spotify.playlist.edit.quick",
+    version: "1",
+    state: "enabled",
+    effect: "write_external",
+    description: "Apply one exact user-authorized rename or unambiguous single-track removal to an inspected owned private playlist.",
+    requires_spotify: true,
+    agent_tool: { name: "moondog_spotify_playlist_edit_quick", label: "Make an exact playlist edit" },
+  },
+  {
+    id: "spotify.playlist.remove", version: "1", state: "enabled", effect: "write_external", requires_spotify: true,
+    description: "Confirm and remove an owned private playlist from the current user's library without claiming global deletion.",
+    agent_tool: { name: "moondog_spotify_playlist_remove", label: "Remove a playlist from your library" },
   },
   {
     id: "spotify.playlist.edit.preview",

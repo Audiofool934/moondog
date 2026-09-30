@@ -14,6 +14,9 @@ export const SPOTIFY_SERVICE_LIMITS = Object.freeze({
   recentlyPlayedDefault: 20,
   recentlyPlayedMax: 50,
   deviceNameLengthMax: 128,
+  searchQueryLengthMax: 256,
+  searchResultsDefault: 5,
+  searchResultsMax: 10,
 });
 
 const repeatStates = new Set(["off", "track", "context"]);
@@ -22,16 +25,17 @@ const trackUriPattern = /^spotify:track:[A-Za-z0-9]{1,128}$/u;
 const contextUriPattern = /^spotify:(?:album|artist|playlist):[A-Za-z0-9]{1,128}$/u;
 
 export class SpotifyServiceError extends Error {
-  constructor(code, message) {
+  constructor(code, message, { outcomeUnknown = false } = {}) {
     super(message);
     this.name = "SpotifyServiceError";
     this.code = code;
     this.provider = "spotify";
+    this.outcomeUnknown = outcomeUnknown;
   }
 }
 
-function fail(code, message) {
-  throw new SpotifyServiceError(code, message);
+function fail(code, message, options) {
+  throw new SpotifyServiceError(code, message, options);
 }
 
 function isPlainObject(value) {
@@ -187,8 +191,8 @@ function editablePlaylistReason(playlist, ownerId) {
     return "invalid";
   }
   if (playlist.owner_id !== ownerId) return "not_owned";
-  if (playlist.is_public === true) return "public";
-  if (playlist.collaborative === true) return "collaborative";
+  if (playlist.is_public !== false) return "public";
+  if (playlist.collaborative !== false) return "collaborative";
   if (playlist.tracks_total > SPOTIFY_SERVICE_LIMITS.playlistEditTracksMax) {
     return "over_track_limit";
   }
@@ -299,6 +303,37 @@ function recentLimit(value) {
   return value;
 }
 
+function searchQuery(value) {
+  if (typeof value !== "string" || !value.trim()) {
+    fail("invalid_search_query", "The Spotify search query must not be empty.");
+  }
+  const query = value.trim();
+  if (
+    Array.from(query).length > SPOTIFY_SERVICE_LIMITS.searchQueryLengthMax
+  ) {
+    fail(
+      "invalid_search_query",
+      `The Spotify search query must be at most ${SPOTIFY_SERVICE_LIMITS.searchQueryLengthMax} characters.`,
+    );
+  }
+  return query;
+}
+
+function searchLimit(value) {
+  if (value === undefined) return SPOTIFY_SERVICE_LIMITS.searchResultsDefault;
+  if (
+    !Number.isInteger(value) ||
+    value < 1 ||
+    value > SPOTIFY_SERVICE_LIMITS.searchResultsMax
+  ) {
+    fail(
+      "invalid_search_limit",
+      `Spotify search limit must be an integer from 1 to ${SPOTIFY_SERVICE_LIMITS.searchResultsMax}.`,
+    );
+  }
+  return value;
+}
+
 function actionReceipt(action) {
   return {
     provider: "spotify",
@@ -341,17 +376,12 @@ const DEVICE_QUERY_FILLER = new Set([
 ]);
 
 const DEVICE_TYPE_ALIASES = new Map([
-  ["iphone", "smartphone"],
   ["phone", "smartphone"],
   ["smartphone", "smartphone"],
-  ["android", "smartphone"],
-  ["ipad", "tablet"],
   ["tablet", "tablet"],
   ["computer", "computer"],
   ["desktop", "computer"],
   ["laptop", "computer"],
-  ["mac", "computer"],
-  ["pc", "computer"],
   ["speaker", "speaker"],
   ["tv", "tv"],
   ["television", "tv"],
@@ -409,8 +439,8 @@ function tokenIsSpecific(token) {
 
 function tokenMatches(nameToken, queryToken) {
   if (nameToken === queryToken) return true;
-  if (queryToken.length < 3) return false;
-  return nameToken.startsWith(queryToken) || nameToken.endsWith(queryToken);
+  if (queryToken.length < 3 || DEVICE_TYPE_ALIASES.has(queryToken)) return false;
+  return nameToken.startsWith(queryToken);
 }
 
 function nameMatchScore(device, queryNormalized, tokens) {
@@ -477,7 +507,7 @@ function requireTransferDevice(chosen, display) {
   if (chosen.length === 1 && chosen[0].is_restricted === true) {
     fail(
       "spotify_device_restricted",
-      `Spotify will not take playback on ${clipText(chosen[0].name, 80)}. Leave its private session, or pick another device.`,
+      `Spotify does not allow Web API control on ${clipText(chosen[0].name, 80)}. Pick another device.`,
     );
   }
   const controllable = chosen.filter((device) => device.is_restricted !== true);
@@ -502,9 +532,10 @@ function requireTransferDevice(chosen, display) {
   );
 }
 
-async function resolveNamedDevice(client, deviceName) {
+async function resolveNamedDevice(client, deviceName, { signal } = {}) {
   const query = deviceQuery(deviceName);
-  const devices = listedDevices(await client.getDevices());
+  const devices = listedDevices(await client.getDevices({ signal }));
+  signal?.throwIfAborted();
   if (devices.length === 0) {
     fail(
       "spotify_device_not_found",
@@ -544,11 +575,11 @@ async function resolveNamedDevice(client, deviceName) {
   return requireTransferDevice(chosen, display);
 }
 
-async function queueDeviceId(client, requestedDeviceId) {
+async function queueDeviceId(client, requestedDeviceId, { signal } = {}) {
   const explicit = optionalDeviceId(requestedDeviceId);
   if (explicit) return explicit;
 
-  const result = await client.getDevices();
+  const result = await client.getDevices({ signal });
   const devices = Array.isArray(result?.devices) ? result.devices : [];
   const controllable = devices.filter(
     (device) =>
@@ -578,23 +609,42 @@ export function createSpotifyService(options = {}) {
   }
 
   return Object.freeze({
-    account() {
-      return client.getAccount();
+    account(options) {
+      return client.getAccount(options);
     },
 
-    currentPlayer() {
-      return client.getCurrentPlayback();
+    currentPlayer(options) {
+      return client.getCurrentPlayback(options);
     },
 
-    devices() {
-      return client.getDevices();
+    devices(options) {
+      return client.getDevices(options);
     },
 
-    queue() {
-      return client.getQueue();
+    async resolveDevice(value, { signal } = {}) {
+      signal?.throwIfAborted();
+      const input = inputObject(value);
+      if (input.deviceId !== undefined && input.deviceName !== undefined) fail("conflicting_device_target", "Choose one device target.");
+      let device;
+      if (input.deviceName !== undefined) device = await resolveNamedDevice(client, input.deviceName, { signal });
+      else {
+        const id = optionalDeviceId(input.deviceId);
+        const devices = listedDevices(await client.getDevices({ signal }));
+        signal?.throwIfAborted();
+        const matching = devices.filter((item) => id ? item.id === id : item.is_active === true);
+        if (matching.length === 0) fail("spotify_device_not_found", "That Spotify device is no longer available. List devices again or open Spotify on it.");
+        device = requireTransferDevice(matching, "selected device");
+      }
+      if (input.forVolume && device.supports_volume === false) fail("spotify_volume_unsupported", "Spotify cannot change this device's volume through the Web API. Use its hardware or Spotify app volume control.");
+      return device;
     },
 
-    async recentActivity(value) {
+    queue(options) {
+      return client.getQueue(options);
+    },
+
+    async recentActivity(value, { signal } = {}) {
+      signal?.throwIfAborted();
       const input = inputObject(value);
       const after = recentCursor(input.after, "after");
       const before = recentCursor(input.before, "before");
@@ -608,16 +658,91 @@ export function createSpotifyService(options = {}) {
         limit: recentLimit(input.limit),
         ...(after !== undefined ? { after } : {}),
         ...(before !== undefined ? { before } : {}),
-      });
+      }, { signal });
     },
 
-    async editablePlaylists(value) {
+    async topItems(value, { signal } = {}) {
+      signal?.throwIfAborted();
+      const input = inputObject(value);
+      const type = input.type ?? "tracks";
+      const timeRange = input.timeRange ?? "medium_term";
+      if (!["artists", "tracks"].includes(type) || !["short_term", "medium_term", "long_term"].includes(timeRange)) {
+        fail("invalid_top_items", "Spotify top items require artists or tracks and short_term, medium_term, or long_term.");
+      }
+      const limit = searchLimit(input.limit);
+      const result = await client.getTopItems({ type, timeRange, limit }, { signal });
+      signal?.throwIfAborted();
+      const items = Array.isArray(result?.items) ? result.items : [];
+      return { provider: "spotify", type, time_range: timeRange,
+        evidence_basis: "spotify_calculated_affinity", items: items.slice(0, limit),
+        truncated: result?.truncated === true || items.length > limit };
+    },
+
+    async libraryBrowse(value, { signal } = {}) {
+      signal?.throwIfAborted();
+      const input = inputObject(value);
+      const type = input.type ?? "tracks";
+      const limit = input.limit ?? 10;
+      if (!["tracks", "albums", "shows", "playlists", "artists"].includes(type) || !Number.isInteger(limit) || limit < 1 || limit > 20) {
+        fail("invalid_library_page", "Browse saved tracks, albums, shows, playlists, or followed artists with a limit from 1 to 20.");
+      }
+      if (type === "artists") {
+        if (input.offset !== undefined || input.after !== undefined && (typeof input.after !== "string" || !/^[A-Za-z0-9]{1,128}$/u.test(input.after))) fail("invalid_artist_cursor", "Use the returned after cursor for followed artists, not offset.");
+        return client.getFollowedArtists({ limit, after: input.after }, { signal });
+      }
+      if (input.after !== undefined) fail("invalid_library_cursor", "Use offset for this library type.");
+      return client.getSavedItems({ type, limit, offset: playlistPageOffset(input.offset) }, { signal });
+    },
+
+    async searchTracks(value, { signal } = {}) {
+      const input = inputObject(value);
+      const type = input.type ?? "track";
+      if (!["track", "album", "artist", "playlist", "show", "episode"].includes(type)) fail("invalid_search_type", "Choose track, album, artist, playlist, show, or episode.");
+      const offset = input.offset ?? 0;
+      if (!Number.isInteger(offset) || offset < 0 || offset > 1000) fail("invalid_search_offset", "Search offset must be from 0 to 1000.");
+      if (type !== "track" || offset !== 0) return client.searchItems({ query: searchQuery(input.query), type, limit: searchLimit(input.limit), offset }, { signal });
+      return client.searchTracks({
+        query: searchQuery(input.query),
+        limit: searchLimit(input.limit),
+      }, { signal });
+    },
+
+    async catalogChildren(value, { signal } = {}) {
+      signal?.throwIfAborted();
+      const input = inputObject(value);
+      if (!["album", "show"].includes(input.type) || typeof input.id !== "string" || !/^[A-Za-z0-9]{1,128}$/u.test(input.id)) fail("invalid_catalog_parent", "Choose a returned album or show reference.");
+      const limit = input.limit ?? 10;
+      if (!Number.isInteger(limit) || limit < 1 || limit > 20) fail("invalid_catalog_limit", "Read from 1 to 20 album tracks or episodes per page.");
+      return client.getCatalogChildren({ type: input.type, id: input.id, limit, offset: playlistPageOffset(input.offset) }, { signal });
+    },
+
+    async saveItems(value, { signal } = {}) {
+      signal?.throwIfAborted();
+      const uris = inputObject(value).uris;
+      if (!Array.isArray(uris) || uris.length < 1 || uris.length > 12 || uris.some((uri) => typeof uri !== "string" || !/^spotify:(?:track|album|episode|show|playlist):[A-Za-z0-9]{1,128}$/u.test(uri))) fail("invalid_library_items", "Choose from 1 to 12 returned Spotify items.");
+      const unique = [...new Set(uris)];
+      await client.saveTracks({ uris: unique }, { signal });
+      return { ...actionReceipt("library.save"), item_count: unique.length };
+    },
+
+    async removeSavedItem(value, { signal } = {}) {
+      signal?.throwIfAborted();
+      const uri = inputObject(value).uri;
+      if (typeof uri !== "string" || !/^spotify:(?:track|album|episode|show):[A-Za-z0-9]{1,128}$/u.test(uri)) fail("invalid_library_item", "Choose one returned saved item.");
+      await client.removeLibraryItems({ uris: [uri] }, { signal });
+      return { ...actionReceipt("library.remove"), item_count: 1 };
+    },
+
+    async editablePlaylists(value, { signal } = {}) {
+      signal?.throwIfAborted();
       const input = inputObject(value);
       const limit = playlistPageLimit(input.limit);
       const offset = playlistPageOffset(input.offset);
-      const account = await client.getAccount();
+      const account = await client.getAccount({ signal });
+      signal?.throwIfAborted();
       const ownerId = accountId(account);
-      const page = await client.getCurrentUserPlaylists({ limit, offset });
+      const page = await client.getCurrentUserPlaylists({ limit, offset }, { signal });
+      signal?.throwIfAborted();
       const excluded = {
         public: 0,
         not_owned: 0,
@@ -626,6 +751,10 @@ export function createSpotifyService(options = {}) {
         invalid: 0,
       };
       const playlists = [];
+      const names = new Map();
+      for (const item of page?.items ?? []) {
+        if (typeof item?.name === "string") names.set(item.name, (names.get(item.name) ?? 0) + 1);
+      }
       for (const playlist of Array.isArray(page?.items) ? page.items : []) {
         const reason = editablePlaylistReason(playlist, ownerId);
         if (reason) {
@@ -644,24 +773,54 @@ export function createSpotifyService(options = {}) {
       return {
         provider: "spotify",
         playlists,
+        name_selection_complete: page?.complete_for_name_selection === true,
+        ambiguous_names: [...names].filter(([, count]) => count > 1).map(([name]) => name),
         excluded,
         has_more: hasMore,
         next_offset: hasMore ? pageOffset + pageLimit : null,
       };
     },
 
-    async playlistSnapshot(value) {
+    async playlistRemovalTarget(value, { signal } = {}) {
+      signal?.throwIfAborted();
       const input = inputObject(value);
       const playlistId = requiredPlaylistId(input.playlistId);
-      const account = await client.getAccount();
+      const account = await client.getAccount({ signal });
+      signal?.throwIfAborted();
+      const playlist = await client.getPlaylist({ playlistId }, { signal });
+      signal?.throwIfAborted();
+      if (playlist?.id !== playlistId || playlist.owner_id !== accountId(account) || playlist.is_public !== false || playlist.collaborative !== false ||
+          typeof playlist.name !== "string" || !playlist.name || playlist.uri !== `spotify:playlist:${playlistId}`) {
+        fail("playlist_not_removable", "Remove only a verified owned private, non-collaborative playlist from your library.");
+      }
+      return { playlistId, name: playlist.name, snapshotId: requiredSnapshotId(playlist.snapshot_id) };
+    },
+
+    async removePlaylistFromLibrary(value, { signal } = {}) {
+      signal?.throwIfAborted();
+      const input = inputObject(value);
+      const current = await this.playlistRemovalTarget(input, { signal });
+      if (current.name !== input.expectedName || current.snapshotId !== input.expectedSnapshotId) fail("playlist_snapshot_changed", "The playlist changed since confirmation was prepared. Review it again.");
+      signal?.throwIfAborted();
+      await client.removeLibraryItems({ uris: [`spotify:playlist:${current.playlistId}`] }, { signal });
+      return { ...actionReceipt("playlist.unfollow"), playlist: { name: current.name, is_public: false } };
+    },
+
+    async playlistSnapshot(value, { signal } = {}) {
+      signal?.throwIfAborted();
+      const input = inputObject(value);
+      const playlistId = requiredPlaylistId(input.playlistId);
+      const account = await client.getAccount({ signal });
+      signal?.throwIfAborted();
       const ownerId = accountId(account);
       const before = requireEditablePlaylist(
-        await client.getPlaylist({ playlistId }),
+        await client.getPlaylist({ playlistId }, { signal }),
         ownerId,
       );
       const tracks = [];
       let offset = 0;
       while (offset < before.tracks_total) {
+        signal?.throwIfAborted();
         const page = await client.getPlaylistItems({
           playlistId,
           limit: Math.min(
@@ -669,7 +828,7 @@ export function createSpotifyService(options = {}) {
             before.tracks_total - offset,
           ),
           offset,
-        });
+        }, { signal });
         if (
           !isPlainObject(page) ||
           page.total !== before.tracks_total ||
@@ -693,11 +852,15 @@ export function createSpotifyService(options = {}) {
           );
         }
       }
+      signal?.throwIfAborted();
       const after = requireEditablePlaylist(
-        await client.getPlaylist({ playlistId }),
+        await client.getPlaylist({ playlistId }, { signal }),
         ownerId,
       );
+      signal?.throwIfAborted();
       if (
+        before.id !== playlistId || after.id !== playlistId ||
+        after.name !== before.name ||
         after.snapshot_id !== before.snapshot_id ||
         after.tracks_total !== before.tracks_total ||
         tracks.length !== before.tracks_total
@@ -719,15 +882,49 @@ export function createSpotifyService(options = {}) {
       };
     },
 
-    async replacePlaylistItems(value) {
+    async quickEditPlaylist(value, { signal } = {}) {
+      signal?.throwIfAborted();
+      const input = inputObject(value);
+      const playlistId = requiredPlaylistId(input.playlistId);
+      const expectedSnapshotId = requiredSnapshotId(input.expectedSnapshotId);
+      if (!["rename", "remove_track"].includes(input.action)) fail("invalid_playlist_edit", "Unsupported quick playlist edit.");
+      const current = await this.playlistSnapshot({ playlistId }, { signal });
+      if (current.playlist.snapshot_id !== expectedSnapshotId || current.playlist.name !== input.expectedName ||
+          current.items.length !== input.expectedTrackCount) {
+        fail("playlist_snapshot_changed", "The playlist changed after inspection. Inspect it again before editing.");
+      }
+      let name = current.playlist.name;
+      let count = current.items.length;
+      if (input.action === "rename") {
+        name = cleanPlaylistText(input.name, 100, "invalid_playlist_name", "name");
+        if (name !== input.name || name === current.playlist.name) fail("invalid_playlist_name", "The exact new playlist name must be valid and different.");
+        signal?.throwIfAborted();
+        await client.renamePlaylist({ playlistId, name }, { signal });
+      } else {
+        const uri = requiredItemUri(input.uri);
+        if (!trackUriPattern.test(uri) || current.items.filter((item) => item.uri === uri).length !== 1) {
+          fail("playlist_removal_ambiguous", "Single-track removal requires exactly one occurrence. Preview the exact final order for duplicates or bulk edits.");
+        }
+        signal?.throwIfAborted();
+        await client.removePlaylistItem({ playlistId, uri, snapshotId: expectedSnapshotId }, { signal });
+        count -= 1;
+      }
+      return { ...actionReceipt(input.action === "rename" ? "playlist.rename" : "playlist.remove_track"),
+        playlist: { name, track_count: count, is_public: false }, previous_track_count: current.items.length,
+        ...(input.action === "remove_track" ? { track_count: 1 } : {}) };
+    },
+
+    async replacePlaylistItems(value, { signal } = {}) {
+      signal?.throwIfAborted();
       const input = inputObject(value);
       const playlistId = requiredPlaylistId(input.playlistId);
       const expectedSnapshotId = requiredSnapshotId(input.expectedSnapshotId);
       const uris = requiredPlaylistEditTrackUris(input.uris);
-      const account = await client.getAccount();
+      const account = await client.getAccount({ signal });
+      signal?.throwIfAborted();
       const ownerId = accountId(account);
       const playlist = requireEditablePlaylist(
-        await client.getPlaylist({ playlistId }),
+        await client.getPlaylist({ playlistId }, { signal }),
         ownerId,
       );
       if (playlist.snapshot_id !== expectedSnapshotId) {
@@ -736,7 +933,8 @@ export function createSpotifyService(options = {}) {
           "The Spotify playlist changed after preview. Inspect it again before editing.",
         );
       }
-      await client.replacePlaylistItems({ playlistId, uris });
+      signal?.throwIfAborted();
+      await client.replacePlaylistItems({ playlistId, uris }, { signal });
       return {
         ...actionReceipt("playlist.edit"),
         playlist: {
@@ -776,25 +974,29 @@ export function createSpotifyService(options = {}) {
       return actionReceipt("playback.resume");
     },
 
-    async pause(value) {
+    async pause(value, { signal } = {}) {
+      signal?.throwIfAborted();
       const input = inputObject(value);
-      await client.pause({ deviceId: optionalDeviceId(input.deviceId) });
+      await client.pause({ deviceId: optionalDeviceId(input.deviceId) }, { signal });
       return actionReceipt("playback.pause");
     },
 
-    async next(value) {
+    async next(value, { signal } = {}) {
+      signal?.throwIfAborted();
       const input = inputObject(value);
-      await client.next({ deviceId: optionalDeviceId(input.deviceId) });
+      await client.next({ deviceId: optionalDeviceId(input.deviceId) }, { signal });
       return actionReceipt("playback.next");
     },
 
-    async previous(value) {
+    async previous(value, { signal } = {}) {
+      signal?.throwIfAborted();
       const input = inputObject(value);
-      await client.previous({ deviceId: optionalDeviceId(input.deviceId) });
+      await client.previous({ deviceId: optionalDeviceId(input.deviceId) }, { signal });
       return actionReceipt("playback.previous");
     },
 
-    async setVolume(value) {
+    async setVolume(value, { signal } = {}) {
+      signal?.throwIfAborted();
       const input = inputObject(value);
       if (!Number.isInteger(input.percent) || input.percent < 0 || input.percent > 100) {
         fail("invalid_volume", "Spotify volume must be an integer from 0 to 100.");
@@ -802,11 +1004,12 @@ export function createSpotifyService(options = {}) {
       await client.setVolume({
         percent: input.percent,
         deviceId: optionalDeviceId(input.deviceId),
-      });
+      }, { signal });
       return actionReceipt("playback.volume.set");
     },
 
-    async seek(value) {
+    async seek(value, { signal } = {}) {
+      signal?.throwIfAborted();
       const input = inputObject(value);
       if (input.positionMs === undefined) {
         fail("invalid_position", "The Spotify playback position is invalid.");
@@ -814,11 +1017,12 @@ export function createSpotifyService(options = {}) {
       await client.seek({
         positionMs: optionalPosition(input.positionMs, "invalid_position"),
         deviceId: optionalDeviceId(input.deviceId),
-      });
+      }, { signal });
       return actionReceipt("playback.seek");
     },
 
-    async setShuffle(value) {
+    async setShuffle(value, { signal } = {}) {
+      signal?.throwIfAborted();
       const input = inputObject(value);
       if (typeof input.state !== "boolean") {
         fail("invalid_shuffle_state", "Spotify shuffle state must be a boolean.");
@@ -826,11 +1030,12 @@ export function createSpotifyService(options = {}) {
       await client.setShuffle({
         state: input.state,
         deviceId: optionalDeviceId(input.deviceId),
-      });
+      }, { signal });
       return actionReceipt("playback.shuffle.set");
     },
 
-    async setRepeat(value) {
+    async setRepeat(value, { signal } = {}) {
+      signal?.throwIfAborted();
       const input = inputObject(value);
       if (!repeatStates.has(input.state)) {
         fail("invalid_repeat_state", "Spotify repeat state is invalid.");
@@ -838,11 +1043,12 @@ export function createSpotifyService(options = {}) {
       await client.setRepeat({
         state: input.state,
         deviceId: optionalDeviceId(input.deviceId),
-      });
+      }, { signal });
       return actionReceipt("playback.repeat.set");
     },
 
-    async transfer(value) {
+    async transfer(value, { signal } = {}) {
+      signal?.throwIfAborted();
       const input = inputObject(value);
       if (input.play !== undefined && typeof input.play !== "boolean") {
         fail("invalid_play_state", "Spotify transfer play state must be a boolean.");
@@ -858,14 +1064,15 @@ export function createSpotifyService(options = {}) {
       }
       const play = input.play ?? false;
       if (deviceId) {
-        await client.transfer({ deviceId, play });
+        await client.transfer({ deviceId, play }, { signal });
         return actionReceipt("playback.transfer");
       }
       if (!hasName) {
         fail("invalid_device_id", "A Spotify device identifier is required.");
       }
-      const device = await resolveNamedDevice(client, input.deviceName);
-      await client.transfer({ deviceId: device.id, play });
+      const device = await resolveNamedDevice(client, input.deviceName, { signal });
+      signal?.throwIfAborted();
+      await client.transfer({ deviceId: device.id, play }, { signal });
       return {
         ...actionReceipt("playback.transfer"),
         device: {
@@ -879,7 +1086,7 @@ export function createSpotifyService(options = {}) {
       signal?.throwIfAborted();
       const input = inputObject(value);
       const uri = requiredItemUri(input.uri);
-      const deviceId = await queueDeviceId(client, input.deviceId);
+      const deviceId = await queueDeviceId(client, input.deviceId, { signal });
       signal?.throwIfAborted();
       // Let a dispatched write settle so cancellation can report accepted effects.
       // Never dispatch the next write after the prompt has been cancelled.
@@ -887,7 +1094,8 @@ export function createSpotifyService(options = {}) {
       return actionReceipt("playback.queue.add");
     },
 
-    async createPlaylistWithTracks(value) {
+    async createPlaylistWithTracks(value, { signal } = {}) {
+      signal?.throwIfAborted();
       const input = inputObject(value);
       const name = cleanPlaylistText(
         input.name,
@@ -912,16 +1120,28 @@ export function createSpotifyService(options = {}) {
       const playlist = await client.createPlaylist({
         name,
         ...(description ? { description } : {}),
-      });
+      }, { signal });
       if (!playlist?.id) {
         fail(
           "playlist_creation_failed",
           "Spotify did not return the created playlist.",
+          { outcomeUnknown: true },
         );
       }
       try {
-        await client.addPlaylistTracks({ playlistId: playlist.id, uris });
-      } catch {
+        signal?.throwIfAborted();
+        await client.addPlaylistTracks({ playlistId: playlist.id, uris }, { signal });
+      } catch (error) {
+        const rejected = error?.outcomeUnknown === false ||
+          (Number.isInteger(error?.status) && error.status >= 400 && error.status < 500) ||
+          (error?.name === "AbortError" && signal?.aborted);
+        if (error?.outcomeUnknown === true || !rejected) {
+          fail(
+            "playlist_created_tracks_unknown",
+            "Spotify created the private playlist, but did not confirm whether its tracks were added. Check the playlist before trying again.",
+            { outcomeUnknown: true },
+          );
+        }
         fail(
           "playlist_created_without_tracks",
           "Spotify created the private playlist but did not accept its tracks. Check the empty playlist before trying again.",
@@ -939,28 +1159,30 @@ export function createSpotifyService(options = {}) {
       };
     },
 
-    async saveTracks(value) {
+    async saveTracks(value, { signal } = {}) {
+      signal?.throwIfAborted();
       const input = inputObject(value);
       const uris = requiredTrackUris(
         input.uris,
         "invalid_library_tracks",
         SPOTIFY_SERVICE_LIMITS.libraryTracksMax,
       );
-      await client.saveTracks({ uris });
+      await client.saveTracks({ uris }, { signal });
       return {
         ...actionReceipt("library.save"),
         track_count: uris.length,
       };
     },
 
-    async checkSavedTracks(value) {
+    async checkSavedTracks(value, { signal } = {}) {
+      signal?.throwIfAborted();
       const input = inputObject(value);
       const uris = requiredTrackUris(
         input.uris,
         "invalid_library_tracks",
         SPOTIFY_SERVICE_LIMITS.libraryTracksMax,
       );
-      const saved = await client.checkSavedTracks({ uris });
+      const saved = await client.checkSavedTracks({ uris }, { signal });
       return {
         provider: "spotify",
         checked: uris.map((uri, index) => ({

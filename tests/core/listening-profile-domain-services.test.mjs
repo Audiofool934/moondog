@@ -5,12 +5,54 @@ import path from "node:path";
 import test from "node:test";
 
 import { createListeningProfileDomainServices } from "../../src/core/listening-profile-domain-services.mjs";
+import { createAppleProjectionDomainServices } from "../../src/core/apple-projection-domain-services.mjs";
 import { MoondogApplication } from "../../src/core/moondog-application.mjs";
 import { projectSpotifyExtendedStreamingHistory } from "../../src/integrations/spotify/extended-streaming-history.mjs";
 import { openListeningHistoryStore } from "../../src/profile/listening-history-store.mjs";
 
 const subjectId = "11111111-1111-4111-8111-111111111111";
 const capturedAt = "2026-09-02T06:00:00.000Z";
+
+for (const adapter of ["history", "apple"]) {
+  test(`${adapter} discovery honors all active Avoids, Undo, and corrections after selection`, async (context) => {
+    const root = await mkdtemp(path.join(tmpdir(), "moondog-discovery-avoid-"));
+    const store = await openListeningHistoryStore({ databasePath: path.join(root, "history.sqlite") });
+    const services = adapter === "history"
+      ? createListeningProfileDomainServices({ listeningHistoryStore: store, subjectId })
+      : createAppleProjectionDomainServices({
+        listeningHistoryStore: store, subjectId,
+        projection: { searchLibrary: () => ({ tracks: [] }), close() {} },
+      });
+    context.after(async () => { services.close(); await rm(root, { recursive: true, force: true }); });
+    const correction = store.recordListenerCorrection({
+      subjectId, entityType: "artist", label: "Blocked artist", stance: "avoid", occurredAt: capturedAt,
+    });
+    for (let index = 0; index < 60; index++) {
+      store.recordListenerCorrection({ subjectId, entityType: "artist", label: `Other ${index}`, stance: "avoid",
+        occurredAt: new Date(Date.UTC(2026, 8, 3, 0, index)).toISOString() });
+    }
+    const tracks = [{ track_ref_id: "22222222-2222-4222-8222-222222222222",
+      title: "Fictional Outside Song", artist_credit: "Blocked artist", release: "Fictional Album",
+      candidate_scope: "external_catalog", catalog_provider: "apple_music" }];
+    const source = { provider: "apple_music", catalog: "itunes_search_api", storefront: "US",
+      retrieved_at: capturedAt, coverage: "Fictional catalog." };
+    const blocked = services.registerExternalCandidateSet({ tracks, source });
+    assert.equal(blocked.result_count, 0);
+    assert.equal(blocked.excluded_avoided_matches, 1);
+    store.retractListenerCorrection({ subjectId, correctionId: correction.correction_id });
+    const candidates = services.registerExternalCandidateSet({ tracks, source });
+    assert.equal(candidates.result_count, 1);
+    const planInput = { intent: "Try 1 discovery.", requestedTrackCount: 1,
+      candidateSetIds: [candidates.candidate_set_id],
+      trackRefs: [{ trackRefId: tracks[0].track_ref_id, selectionReason: "Fictional suggestion." }],
+      orderingNotes: "One song." };
+    assert.equal((await services.buildPlaylistPlan(planInput)).tracks.length, 1);
+    store.recordListenerCorrection({ subjectId, entityType: "track", label: tracks[0].title,
+      artistCredit: tracks[0].artist_credit, stance: "avoid" });
+    await assert.rejects(services.buildPlaylistPlan(planInput), /currently marked Avoid/u);
+    assert.equal(services.filterDiscoveryTracks([{ ...tracks[0], artist_credit: "Different artist" }]).length, 1);
+  });
+}
 
 function extendedRecord(ts, msPlayed) {
   return {

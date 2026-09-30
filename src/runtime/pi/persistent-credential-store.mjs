@@ -4,6 +4,7 @@ import {
   lstat,
   mkdir,
   open,
+  readdir,
   rename,
   rmdir,
   unlink,
@@ -17,7 +18,6 @@ import { apiKeyPiProviderIds } from "./provider-registry.mjs";
 const AUTH_DOCUMENT_VERSION = 1;
 const MAX_AUTH_FILE_BYTES = 64 * 1024;
 const LOCK_TIMEOUT_MS = 30_000;
-const CORRUPT_LOCK_GRACE_MS = 5 * 60_000;
 const SUPPORTED_CREDENTIAL_PROVIDERS = new Set([
   "openai-codex",
   "spotify",
@@ -114,9 +114,18 @@ function validateSpotifyCredential(value) {
       "scope",
       "tokenType",
       "type",
+      ...(value.refreshAttempt === undefined ? [] : ["refreshAttempt"]),
     ],
     "spotify credential shape",
   );
+  if (value.refreshAttempt !== undefined) {
+    assertPlainRecord(value.refreshAttempt, "Spotify refresh attempt");
+    assertExactKeys(value.refreshAttempt, ["id", "startedAt"], "Spotify refresh attempt");
+    if (!/^[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/u.test(value.refreshAttempt.id) ||
+        !Number.isSafeInteger(value.refreshAttempt.startedAt) || value.refreshAttempt.startedAt <= 0) {
+      throw safeError("credential_store_corrupt", "Moondog Spotify refresh state is invalid.");
+    }
+  }
   if (value.type !== "oauth") {
     throw safeError(
       "credential_store_corrupt",
@@ -278,7 +287,6 @@ export class PersistentCredentialStore {
     this.authFile = path.resolve(authFile);
     this.directory = path.dirname(this.authFile);
     this.lockDirectory = `${this.authFile}.lock`;
-    this.lockOwnerFile = path.join(this.lockDirectory, "owner.json");
   }
 
   async ensureDirectory({ create }) {
@@ -442,8 +450,12 @@ export class PersistentCredentialStore {
   async readLockOwner() {
     let handle;
     try {
+      const names = await readdir(this.lockDirectory);
+      if (names.length !== 1) return undefined;
+      const [name] = names;
+      if (name !== "owner.json" && !/^owner-[\da-f-]{36}\.json$/u.test(name)) return undefined;
       handle = await open(
-        this.lockOwnerFile,
+        path.join(this.lockDirectory, name),
         safeOpenFlags(fsConstants.O_RDONLY),
       );
       const stat = await handle.stat();
@@ -462,7 +474,8 @@ export class PersistentCredentialStore {
       ) {
         return undefined;
       }
-      return parsed;
+      if (name !== "owner.json" && name !== `owner-${parsed.nonce}.json`) return undefined;
+      return { ...parsed, file: path.join(this.lockDirectory, name), legacy: name === "owner.json" };
     } catch (error) {
       if (isMissing(error) || error instanceof SyntaxError) return undefined;
       throw safeError(
@@ -505,22 +518,15 @@ export class PersistentCredentialStore {
     assertOwned(lockStat, "lock directory");
 
     const owner = await this.readLockOwner();
-    if (owner && this.processIsAlive(owner.pid)) return false;
-    if (
-      !owner &&
-      Date.now() - lockStat.mtimeMs < CORRUPT_LOCK_GRACE_MS
-    ) {
-      return false;
-    }
-
-    if (owner) {
-      const currentOwner = await this.readLockOwner();
-      if (!currentOwner || currentOwner.nonce !== owner.nonce) return false;
-    }
+    // An empty/partial owner can be a live creator. Legacy fixed filenames
+    // cannot be reclaimed without a reaper deleting a successor's owner.
+    if (!owner || owner.legacy || this.processIsAlive(owner.pid)) return false;
     try {
-      await unlink(this.lockOwnerFile);
+      await unlink(owner.file);
     } catch (error) {
-      if (!isMissing(error)) return false;
+      // Only the successful unlinker may remove the directory. A losing
+      // reaper must never remove a new owner's empty creation window.
+      return false;
     }
     try {
       await rmdir(this.lockDirectory);
@@ -542,12 +548,13 @@ export class PersistentCredentialStore {
         nonce: randomUUID(),
         createdAt: Date.now(),
       };
+      const ownerFile = path.join(this.lockDirectory, `owner-${owner.nonce}.json`);
       try {
         await mkdir(this.lockDirectory, { mode: 0o700 });
         let handle;
         try {
           handle = await open(
-            this.lockOwnerFile,
+            ownerFile,
             safeOpenFlags(
               fsConstants.O_CREAT |
                 fsConstants.O_EXCL |
@@ -561,7 +568,7 @@ export class PersistentCredentialStore {
           await handle.sync();
         } catch (error) {
           await handle?.close();
-          await unlink(this.lockOwnerFile).catch(() => {});
+          await unlink(ownerFile).catch(() => {});
           await rmdir(this.lockDirectory).catch(() => {});
           throw safeError(
             "credential_store_unsafe",
@@ -580,7 +587,7 @@ export class PersistentCredentialStore {
               "Moondog lost ownership of its credential lock.",
             );
           }
-          await unlink(this.lockOwnerFile);
+          await unlink(ownerFile);
           await rmdir(this.lockDirectory);
         };
       } catch (error) {
@@ -627,18 +634,38 @@ export class PersistentCredentialStore {
     const release = await this.acquireLock(options);
     try {
       const document = await this.readDocument(options);
-      const current = document.credentials[providerId];
-      const next = await fn(
-        current ? structuredClone(current) : undefined,
-      );
+      let current = document.credentials[providerId];
+      const persist = async (value) => {
+        const validated = validateCredential(providerId, value);
+        document.credentials[providerId] = validated;
+        await this.writeDocument(document, options);
+        current = validated;
+      };
+      let active = true;
+      let pending = Promise.resolve();
+      // A checkpoint is durable even if the callback later throws. Its
+      // lifetime is fenced to this transaction; all started writes drain
+      // before the lock is released, including accidentally unawaited ones.
+      const checkpoint = (value) => {
+        if (!active) throw safeError("credential_store_transaction_closed", "The credential transaction has ended.");
+        const validated = validateCredential(providerId, value);
+        pending = pending.then(() => persist(validated));
+        pending.catch(() => {});
+        return pending;
+      };
+      let next;
+      try {
+        next = await fn(current ? structuredClone(current) : undefined, { checkpoint });
+      } finally {
+        active = false;
+        await pending;
+      }
       assertNotAborted(options.signal);
       if (next === undefined) {
         return current ? structuredClone(current) : undefined;
       }
-      const validated = validateCredential(providerId, next);
-      document.credentials[providerId] = validated;
-      await this.writeDocument(document, options);
-      return structuredClone(validated);
+      await persist(next);
+      return structuredClone(current);
     } finally {
       await release();
     }

@@ -1100,6 +1100,14 @@ Playback control requires Spotify Premium and an available Spotify Connect devic
 
 The natural-language agent can resolve trusted tracks returned from the imported library, a prompt-local private-history rediscovery set, a long-gap historical-return set, a Spotify Extended History played-back-to-back set, or a chronological Listening Time Machine, check or save them in the Spotify library, queue or play them, and create a private Spotify playlist from the exact validated playlist plan.
 
+Spotify track search also works without an imported library. Ask for a song, then ask to play, queue, or save a returned result. Search shows at most ten tracks; host-owned references select the exact recordings and expire when that selection is replaced or the conversation is reset. Spotify identifiers stay in the host. Track, artist, album and device labels are untrusted display data, never instructions.
+
+Ask what is playing or what is queued to inspect bounded live metadata. Queue inspection shows up to ten upcoming items and marks truncation; its observed count is not a guaranteed full queue length. A current track or queue selection can be used for an explicit play, queue, or save request.
+
+An explicit request to queue more music like the current playback uses the current artist as a seed for open listening-derived artist similarity, with one to ten requested additions. Automatic outside discovery honors all active track and artist Avoid choices, including choices outside the displayed profile summary; Undo restores eligibility. Similar queueing rechecks Avoid before each addition, skips the current track and observed queued identities, and remembers up to 100 accepted similar additions for fifteen minutes in the current process to cover stale queue snapshots. It cannot guarantee deduplication against entries Spotify did not return. Cancellation stops new requests; known accepted additions and uncertain write outcomes receive distinct receipts, and an uncertain write is not automatically replayed.
+
+Spotify reads have at most three total API attempts shared between rate-limit recovery and one reactive token refresh, with at most ten seconds of cancellable backoff per retry. Each write is dispatched once and is never automatically replayed. After a definite authentication rejection, credentials can refresh for a later explicit request while the rejected action remains unapplied. Concurrent requests within one authentication instance coordinate token refresh; cancelling one caller does not cancel other callers, and logout prevents that instance's late refresh from restoring credentials. Separate processes do not share refresh coordination.
+
 When Spotify is the only connected playlist-write provider, a direct request to create, save, or sync a playlist defaults to one private Spotify write in the same turn.
 
 If a turn ends with a validated plan but no write, that provider-neutral plan remains pending in the current process so a follow-up such as `可以`, `就这个`, or `保存它` writes the exact prior order instead of planning again.
@@ -1155,6 +1163,8 @@ Run `/new` to start another conversation while keeping the previous one saved.
 Listening-profile state and durable memories remain available across conversations and model or authentication changes.
 
 Only completed user and assistant exchanges are recorded.
+
+Live Spotify top taste, playback, queue and device reads make the active conversation transient. Their replies and follow-up paraphrases remain usable in process but are excluded from generic transcript storage, recall and reflection until `/new` or a conversation reset. Explicit user preferences can still persist: the host verifies an exact quote from the current user message and saves that quote alone, without model paraphrases or Spotify output. Unverified staged claims are discarded. Forgetting an existing memory remains available. Search-only conversations can still be recorded because their results are public catalog metadata. Explicit local listening-profile corrections remain separate from generic conversation memory.
 
 Aborted turns, raw tool traces, and prompt-local candidate IDs are not persisted as the conversation transcript.
 
@@ -1224,7 +1234,7 @@ Conversation persistence and explicit durable claims are enabled locally.
 
 Durable playlist-draft persistence across process restarts, public or collaborative playlist editing, playlists above 100 tracks, Telegram, music generation, and revision-aware listening-data promotion are not enabled.
 
-Direct Spotify Connect playback control, explicit private-playlist creation, and two-turn existing private-playlist editing are enabled only after explicit local OAuth setup.
+Direct Spotify Connect playback control, explicit private-playlist creation, exact quick edits, and previewed existing private-playlist editing are enabled only after explicit local OAuth setup.
 
 ## Verify a checkout
 
@@ -1437,3 +1447,52 @@ After three unique independent newcomer sessions against one protocol, create th
 The public aggregate keeps task rates, time to first success, bounded observation task and category counts, environment counts, and repeated blocked tasks while omitting participant IDs, exact session timestamps, free text, paths, credentials, and music data.
 
 Read the complete setup, collection, privacy, validation, and interpretation contract in [First-run Usability Evaluation](FIRST_RUN_USABILITY.md).
+
+### Spotify top artists and tracks
+
+Ask for your top artists or tracks with `short_term` (about four weeks), `medium_term` (about six months, default), or `long_term` (about one year). Each read returns up to 10 items, default 5. This is Spotify-calculated affinity, not play counts, complete listening history, or an explicit preference. Top tracks have temporary references for later explicit play, queue, or save requests. All metadata stays untrusted and this conversation remains out of generic memory; an explicit quoted user preference can still be saved.
+
+This needs `user-top-read`. Existing credentials are not changed automatically. If Moondog reports the missing scope, run `/spotify login` yourself and approve it in Spotify; other authorized features remain available. The recent-listening-only import connection still requests only its existing scope. No reauthorization is performed by the top-items tool. See [Spotify's top-items API](https://developer.spotify.com/documentation/web-api/reference/get-users-top-artists-and-tracks).
+
+### Exact quick playlist edits
+
+One exact rename or unambiguous single-track removal can now complete in one turn:
+
+- `Rename playlist "Night Drive" to "Late Lights".`
+- `Remove "Midnight Lines" by "Mara Vale" from playlist "Night Drive".`
+- `请把歌单「Night Drive」重命名为「夜灯」`
+- `请从歌单「Night Drive」移除「Midnight Lines」歌手「Mara Vale」`
+
+The host reads the actual current user message, lists and inspects the target, and derives the exact edit itself. A model-provided name, intent claim, or instruction inside Spotify metadata cannot authorize a different edit. Playlist and occurrence references expire at prompt end. The target must be owned by the connected account, explicitly private and non-collaborative, with at most 100 ordinary available tracks. Quick name selection also requires a complete first playlist page (up to 50); larger or incomplete lists keep the preview flow.
+
+Duplicate playlist names (including public or followed names on that page), duplicate occurrences, ambiguous recordings, other request wording and bulk edits retain exact preview and a later confirmation. The quick tool performs at most one attempt per turn. A changed name, owner, privacy flag, item count, identity or snapshot blocks the write at preflight. Removal uses `DELETE /playlists/{id}/items` with one item URI and the inspected snapshot; rename uses `PUT /playlists/{id}` with only the exact name. Spotify's rename endpoint has no atomic compare-and-set, and its removal snapshot semantics can allow newer changes: these preflight checks cannot eliminate simultaneous edits from another client.
+
+Cancellation before dispatch stops the edit. A dispatched request settles into an accepted or uncertain receipt, even if the turn is cancelled. No 401, 429, transport failure or uncertain result triggers an automatic write replay. Inspect the playlist before a new explicit attempt after uncertainty. Quick-edit dialogue stays transient, with the same exception for verified explicit user preferences.
+
+API references: [change playlist details](https://developer.spotify.com/documentation/web-api/reference/change-playlist-details), [remove playlist items](https://developer.spotify.com/documentation/web-api/reference/remove-items-playlist).
+
+### Browse saved music and recent listening
+
+Ask “What have I saved lately?” or “Show my saved albums.” `moondog_spotify_library_browse` reads one page of tracks, albums, or shows (default 10, maximum 20), with save timestamps and an explicit next offset. An album's returned `item_ref_id` can start that album through the player tool's `context_ref_id`. Track references support explicit play, queue, and save requests in later turns.
+
+`moondog_spotify_history_recent` reads up to 50 recent tracks (default 20), their UTC play timestamps, and provider cursors. Specify either `after` or `before` in Unix milliseconds. This is the history Spotify currently exposes, not a complete day or lifetime archive. Neither browsing nor reading recent activity imports a profile or turns listening into an asserted preference. Results remain transient conversation context until replaced or reset.
+
+### Select and control a Spotify device
+
+Device listings include an opaque `device_ref_id`, current volume, and volume support when Spotify provides them. Use a reference to select one of two devices with the same name. Playback, queue, and volume tools accept a device name or reference and recheck it before dispatch; disappeared or restricted devices require a new selection. A generic “phone” can select a Smartphone, while a request for “iPhone” must match a name rather than an unrelated phone brand. Spotify may restrict volume control on particular devices; use its app or hardware control in that case.
+
+A transfer preserves playback state unless the user asks to start or continue playback. Dispatched writes have a 15-second settlement deadline independent of caller cancellation. Accepted responses still produce receipts after cancellation. A timeout before a definite response produces an uncertain receipt, never an automatic replay. A definite HTTP rejection remains a known rejection even if its body stalls.
+
+### Remove a playlist from your library
+
+Ask to remove a playlist and Moondog first displays the exact target and confirmation phrase. Send that phrase in a later turn to remove the owned private, non-collaborative playlist from your library. The current API operation is **unfollow/remove from library**, not global deletion; the playlist can continue to exist for other listeners. The host rechecks ownership, privacy, name and snapshot before the single DELETE request. Public, shared, changed, and unverified targets are refused. Cancellation, rejection, and uncertain results never cause an automatic repeat.
+
+Spotify's current `DELETE /me/library` reference lists `playlist-modify-public` for playlist removal, even though Moondog's removal feature accepts only owned private playlists. Login now requests this permission alongside `user-top-read`; older credentials remain usable for already-granted features and show a reauthorization message for missing permissions. Moondog does not launch login or grant new permissions automatically. See the [current endpoint](https://developer.spotify.com/documentation/web-api/reference/remove-library-items) and [deprecated unfollow endpoint](https://developer.spotify.com/documentation/web-api/reference/unfollow-playlist).
+
+### Albums, podcasts, playlists and followed artists
+
+`moondog_spotify_search` accepts one type per request: track, album, artist, playlist, show, or episode. Album/artist/playlist references start context playback. `moondog_spotify_catalog_items` lists bounded album tracks or show episodes. Episode references can be queued or saved; direct episode start via the playback `uris` field is not documented by Spotify and is not advertised as supported.
+
+Library browsing also lists playlists and followed artists. Artist pagination uses the returned `next_after` cursor rather than an offset and requires `user-follow-read`. Typed `item_refs` let the library-save tool save tracks, albums, episodes, shows or playlists. The library-remove tool previews one item and requires the exact later-turn confirmation phrase before unsaving it. Playlist removal retains the owned/private/non-collaborative checks. Catalog metadata is bounded untrusted data: it may be shown and used as selection evidence, but it cannot authorize an action or provide instructions. Names resembling paths are still names in these typed Spotify projections; credentials and raw provider payloads remain outside the tool result.
+
+Exact ordinary commands such as “Rename my playlist Night Drive to Late Lights” and “Remove Midnight Lines from my playlist Night Drive” can use the same guarded quick-edit path as quoted names. Ambiguous names, duplicate tracks, and bulk edits still use an inspectable preview.

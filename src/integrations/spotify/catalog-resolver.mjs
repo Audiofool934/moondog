@@ -523,17 +523,18 @@ export function createSpotifyCatalogResolver({ client, cache = null, now = Date.
     throw new TypeError("The Spotify resolution cache interface is invalid.");
   }
 
-  async function searchAndMatch(track) {
+  async function searchAndMatch(track, { signal } = {}) {
     const queries = [
       fieldedSearchQuery(track),
       plainSearchQuery(track),
     ];
     let fallback = null;
     for (const query of queries) {
+      signal?.throwIfAborted();
       const result = await client.searchTracks({
         query,
         limit: SPOTIFY_CATALOG_RESOLVER_LIMITS.searchResultsMax,
-      });
+      }, { signal });
       const items = Array.isArray(result?.items) ? result.items : [];
       const match = bestCandidate(track, items);
       if (!match) continue;
@@ -554,7 +555,8 @@ export function createSpotifyCatalogResolver({ client, cache = null, now = Date.
   }
 
   return Object.freeze({
-    async resolve(tracks) {
+    async resolve(tracks, { signal } = {}) {
+      signal?.throwIfAborted();
       if (!Array.isArray(tracks) || tracks.length < 1) {
         fail("invalid_tracks", "At least one track is required for resolution.");
       }
@@ -626,7 +628,8 @@ export function createSpotifyCatalogResolver({ client, cache = null, now = Date.
           }
           let entry = cache ? await cache.get(cacheKey) : null;
           if (!entry) {
-            entry = await searchAndMatch(track);
+            entry = await searchAndMatch(track, { signal });
+            signal?.throwIfAborted();
             if (entry.status === "resolved" && cache) {
               await cache.put(cacheKey, entry, now());
             }
@@ -635,6 +638,7 @@ export function createSpotifyCatalogResolver({ client, cache = null, now = Date.
         }),
       );
 
+      signal?.throwIfAborted();
       const resolutions = prepared.map((track) => {
         const entry = entriesByKey.get(resolutionKey(track));
         return {

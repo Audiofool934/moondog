@@ -1,3 +1,5 @@
+import { setTimeout as delay } from "node:timers/promises";
+
 export const SPOTIFY_WEB_API_BASE_URL = "https://api.spotify.com/v1";
 
 export const SPOTIFY_WEB_API_LIMITS = Object.freeze({
@@ -13,6 +15,14 @@ export const SPOTIFY_WEB_API_LIMITS = Object.freeze({
   playlistEditTracksMax: 100,
   libraryItemsMax: 20,
   recentlyPlayedMax: 50,
+  // 429 retry budget for idempotent requests: total attempts (initial plus
+  // up to two retries). Retries are spaced by the server's Retry-After
+  // header when present, with a bounded default and jitter, and never wait
+  // longer than rateLimitMaxWaitMs for a single attempt.
+  rateLimitMaxAttempts: 3,
+  rateLimitDefaultWaitMs: 1_000,
+  rateLimitMaxWaitMs: 10_000,
+  rateLimitJitterMs: 250,
 });
 
 const playbackActions = new Set([
@@ -29,13 +39,14 @@ const playbackActions = new Set([
 ]);
 
 export class SpotifyWebApiError extends Error {
-  constructor(code, message, { status = null, retryAfterSeconds = null } = {}) {
+  constructor(code, message, { status = null, retryAfterSeconds = null, outcomeUnknown = false } = {}) {
     super(message);
     this.name = "SpotifyWebApiError";
     this.code = code;
     this.provider = "spotify";
     this.status = status;
     this.retryAfterSeconds = retryAfterSeconds;
+    this.outcomeUnknown = outcomeUnknown;
   }
 }
 
@@ -93,6 +104,10 @@ function retryAfterSeconds(headers) {
   const date = Date.parse(raw);
   if (!Number.isFinite(date)) return null;
   return Math.min(Math.max(0, Math.ceil((date - Date.now()) / 1_000)), 86_400);
+}
+
+function defaultSleep(milliseconds, { signal } = {}) {
+  return delay(milliseconds, undefined, { signal });
 }
 
 function quotaReason(payload) {
@@ -203,7 +218,7 @@ function normalizePlayback(payload) {
       : "off",
     currently_playing_type:
       safeText(payload.currently_playing_type, 32) ?? "unknown",
-    disallowed_actions: normalizeDisallowedActions(payload.actions?.disallows),
+    disallowed_actions: normalizeDisallowedActions(payload.actions?.disallows ?? payload.actions),
   };
   const progressMs = safeInteger(payload.progress_ms, 0, 86_400_000);
   const timestamp = safeInteger(payload.timestamp, 0, Number.MAX_SAFE_INTEGER);
@@ -272,19 +287,49 @@ function normalizeTrackSearchItem(raw) {
   return item;
 }
 
-function normalizeTrackSearch(payload) {
+function normalizeTrackSearch(payload, { limit = SPOTIFY_WEB_API_LIMITS.searchResultsMax } = {}) {
   const rawItems = Array.isArray(payload?.tracks?.items)
     ? payload.tracks.items
     : [];
   const items = rawItems
     .map(normalizeTrackSearchItem)
     .filter(Boolean)
-    .slice(0, SPOTIFY_WEB_API_LIMITS.searchResultsMax);
+    .slice(0, limit);
+  const hasMore = Boolean(payload?.tracks?.next) || Number.isInteger(payload?.tracks?.total) && rawItems.length < payload.tracks.total;
   return {
     provider: "spotify",
     items,
+    has_more: hasMore,
+    next_offset: hasMore && rawItems.length ? Math.min(rawItems.length, limit) : null,
     truncated: rawItems.length > items.length,
   };
+}
+
+function normalizeCatalogItem(raw, type) {
+  if (type === "track") return normalizeTrackSearchItem(raw);
+  if (!isPlainObject(raw) || !safeText(raw.name) ||
+      typeof raw.uri !== "string" || !new RegExp(`^spotify:${type}:[A-Za-z0-9]{1,128}$`, "u").test(raw.uri)) return null;
+  const item = { type, uri: raw.uri, name: safeText(raw.name), artists: normalizeArtistNames(raw.artists) };
+  for (const field of ["publisher", "release_date"]) if (safeText(raw[field])) item[field] = safeText(raw[field]);
+  const duration = safeInteger(raw.duration_ms, 0, 86_400_000);
+  if (duration !== undefined) item.duration_ms = duration;
+  if (typeof raw.explicit === "boolean") item.explicit = raw.explicit;
+  return item;
+}
+
+function normalizeLibraryPage(payload, type, { limit, offset }) {
+  const raw = Array.isArray(payload?.items) ? payload.items : [];
+  const singular = type.slice(0, -1);
+  const items = raw.slice(0, limit).map((entry) => {
+    const item = normalizeCatalogItem(["playlists", "artists"].includes(type) ? entry : entry?.[singular], singular);
+    const addedAt = normalizedUtcTimestamp(entry?.added_at);
+    return item ? { ...item, ...(addedAt ? { added_at: addedAt } : {}) } : null;
+  }).filter(Boolean);
+  const total = safeInteger(payload?.total, 0, 1_000_000);
+  const hasMore = Boolean(payload?.next) || (total !== undefined && offset + raw.length < total);
+  return { provider: "spotify", type, items, offset, limit, ...(total !== undefined ? { total } : {}),
+    has_more: hasMore, next_offset: hasMore && raw.length > 0 ? offset + Math.min(raw.length, limit) : null,
+    truncated: raw.length > items.length };
 }
 
 function normalizedUtcTimestamp(value) {
@@ -339,6 +384,7 @@ function normalizeRecentlyPlayed(payload) {
     provider: "spotify",
     items,
     truncated: rawItems.length > items.length,
+    has_more: Boolean(payload?.next),
     ...(cursorAfterMs !== undefined
       ? { cursor_after_ms: cursorAfterMs }
       : {}),
@@ -358,10 +404,10 @@ function normalizePlaylist(payload, { includeControlMetadata = false } = {}) {
     id,
     uri,
     name,
-    is_public: payload.public === true,
+    is_public: typeof payload.public === "boolean" ? payload.public : null,
   };
   if (includeControlMetadata) {
-    playlist.collaborative = payload.collaborative === true;
+    playlist.collaborative = typeof payload.collaborative === "boolean" ? payload.collaborative : null;
     const ownerId = safeText(payload.owner?.id, 128);
     const snapshotId = safeText(payload.snapshot_id, 128);
     if (ownerId) playlist.owner_id = ownerId;
@@ -398,7 +444,9 @@ function normalizePlaylistPage(payload) {
     total,
     limit,
     offset,
-    has_more: offset + rawItems.length < total,
+    has_more: offset + rawItems.length < total || Boolean(payload?.next),
+    complete_for_name_selection: payload?.offset === 0 && safeInteger(payload?.total, 0, 1_000_000) !== undefined &&
+      rawItems.length === items.length && items.length === payload.total && payload?.next === null,
   };
 }
 
@@ -442,7 +490,7 @@ function normalizePlaylistItemsPage(payload) {
     total,
     limit,
     offset,
-    has_more: offset + rawItems.length < total,
+    has_more: offset + rawItems.length < total || Boolean(payload?.next),
   };
 }
 
@@ -479,6 +527,9 @@ export function createSpotifyWebApiClient({
   fetchImpl = globalThis.fetch,
   tokenProvider,
   baseUrl = SPOTIFY_WEB_API_BASE_URL,
+  sleepImpl = defaultSleep,
+  refreshAccessToken,
+  writeTimeoutMs = 15_000,
 } = {}) {
   if (typeof fetchImpl !== "function") {
     throw new TypeError("A fetch implementation is required.");
@@ -487,159 +538,261 @@ export function createSpotifyWebApiClient({
     throw new TypeError("A Spotify token provider is required.");
   }
   const normalizedBaseUrl = String(baseUrl).replace(/\/+$/u, "");
+  if (!Number.isInteger(writeTimeoutMs) || writeTimeoutMs < 1 || writeTimeoutMs > 60_000) throw new TypeError("Invalid Spotify write settlement timeout.");
 
   const request = async (
     path,
     { method = "GET", body, responseMode = "json", signal } = {},
   ) => {
-    signal?.throwIfAborted();
-    const token = normalizedToken(await tokenProvider());
-    signal?.throwIfAborted();
-    const headers = {
-      accept: "application/json",
-      authorization: `Bearer ${token}`,
+    const initForToken = (token) => {
+      const headers = {
+        accept: "application/json",
+        authorization: `Bearer ${token}`,
+      };
+      const init = { method, headers };
+      if (body !== undefined) {
+        headers["content-type"] = "application/json";
+        init.body = JSON.stringify(body);
+      }
+      return init;
     };
-    const init = { method, headers };
-    if (body !== undefined) {
-      headers["content-type"] = "application/json";
-      init.body = JSON.stringify(body);
-    }
 
-    let response;
-    try {
-      response = await fetchImpl(`${normalizedBaseUrl}${path}`, init);
-    } catch {
-      fail("spotify_network_error", "Spotify could not be reached.");
-    }
-
-    if (response.ok && (response.status === 204 || responseMode === "none")) {
-      return null;
-    }
-    const text = await response.text();
-    if (text.length > SPOTIFY_WEB_API_LIMITS.responseBytesMax) {
-      fail("spotify_response_too_large", "Spotify returned too much data.", {
-        status: response.status,
-      });
-    }
-    let payload = null;
-    if (text) {
+    // Read recovery shares one request budget. Every write gets one dispatch;
+    // a rejected token may be refreshed for a later explicitly requested action.
+    const read = method === "GET";
+    const maxAttempts = read ? SPOTIFY_WEB_API_LIMITS.rateLimitMaxAttempts : 1;
+    const accessToken = async (operation) => {
       try {
-        payload = JSON.parse(text);
-      } catch {
-        fail("spotify_response_invalid", "Spotify returned an invalid response.", {
+        return normalizedToken(await operation());
+      } catch (error) {
+        // Token lookup occurs before dispatch, or after a definite 401. Its
+        // failure cannot turn the protected write into an unknown effect.
+        if (!read && error && typeof error === "object") error.outcomeUnknown = false;
+        throw error;
+      }
+    };
+    signal?.throwIfAborted();
+    let token = await accessToken(() => tokenProvider({ signal }));
+    let refreshed = false;
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      signal?.throwIfAborted();
+      const init = initForToken(token);
+      // Let a dispatched write settle so cancellation cannot hide its receipt.
+      if (read && signal) init.signal = signal;
+      const deadline = Date.now() + writeTimeoutMs;
+      const transport = read ? null : new AbortController();
+      if (transport) init.signal = transport.signal;
+      const settle = async (operation) => {
+        if (read) return operation();
+        let timer;
+        try {
+          return await Promise.race([Promise.resolve(operation()), new Promise((_, reject) => {
+            timer = setTimeout(() => {
+              transport.abort();
+              reject(new Error("Spotify write settlement deadline exceeded."));
+            }, Math.max(0, deadline - Date.now()));
+          })]);
+        } finally { clearTimeout(timer); }
+      };
+      let response;
+      try {
+        response = await settle(() => fetchImpl(`${normalizedBaseUrl}${path}`, init));
+      } catch (error) {
+        if (read) {
+          signal?.throwIfAborted();
+          if (error?.name === "AbortError") throw error;
+        }
+        // Writes have no transport cancellation signal: a transport AbortError
+        // cannot prove that the dispatched action had no effect.
+        fail("spotify_network_error", "Spotify could not be reached.", { outcomeUnknown: !read });
+      }
+      if (read) signal?.throwIfAborted();
+      if (response.ok && (response.status === 204 || responseMode === "none")) return null;
+      let text;
+      try {
+        text = await settle(() => response.text());
+      } catch (error) {
+        if (read) {
+          signal?.throwIfAborted();
+          if (error?.name === "AbortError") throw error;
+        }
+        fail("spotify_network_error", "Spotify's response could not be read.", {
           status: response.status,
+          outcomeUnknown: !read && !(response.status >= 400 && response.status < 500),
         });
       }
-    }
-
-    if (!response.ok) {
-      const options = {
-        status: response.status,
-        retryAfterSeconds: retryAfterSeconds(response.headers),
-      };
-      if (response.status === 401) {
-        fail(
-          "spotify_authentication_required",
-          "Spotify authentication must be refreshed.",
-          options,
-        );
+      if (read) signal?.throwIfAborted();
+      if (Buffer.byteLength(text, "utf8") > SPOTIFY_WEB_API_LIMITS.responseBytesMax) {
+        fail("spotify_response_too_large", "Spotify returned too much data.", {
+          status: response.status,
+          outcomeUnknown: !read && !(response.status >= 400 && response.status < 500),
+        });
       }
-      if (response.status === 403) {
-        if (hasInsufficientClientScope(payload)) {
-          fail(
-            "spotify_scope_insufficient",
-            "Spotify authorization is missing a required scope. Run moondog spotify login again.",
-            options,
-          );
+      let payload = null;
+      if (text) {
+        try { payload = JSON.parse(text); } catch {
+          // Error responses can be plain text. Their HTTP status still decides
+          // whether authentication or a bounded read retry is appropriate.
+          if (response.ok) fail("spotify_response_invalid", "Spotify returned an invalid response.", { status: response.status, outcomeUnknown: !read });
         }
-        fail(
-          "spotify_action_forbidden",
-          "Spotify did not allow this action.",
-          options,
-        );
+      }
+      if (response.ok) return payload;
+      const retryAfter = retryAfterSeconds(response.headers);
+      const options = { status: response.status, retryAfterSeconds: retryAfter,
+        outcomeUnknown: !read && response.status >= 500 };
+      if (response.status === 401) {
+        if (!refreshed && typeof refreshAccessToken === "function" && (!read || attempt < maxAttempts)) {
+          signal?.throwIfAborted();
+          token = await accessToken(() => refreshAccessToken({ signal, rejectedAccessToken: token }));
+          refreshed = true;
+          if (!read) {
+            signal?.throwIfAborted();
+            fail("spotify_action_not_replayed", "Spotify rejected this action. Authentication was refreshed, but the action was not replayed. Submit a new request if you still want it.", options);
+          }
+          continue;
+        }
+        fail("spotify_authentication_required", "Spotify authentication must be refreshed.", options);
       }
       if (response.status === 429) {
         if (quotaReason(payload) === "QUOTA_EXCEEDED") {
-          fail(
-            "spotify_quota_exceeded",
-            "Spotify development quota is exhausted.",
-            options,
-          );
+          fail("spotify_quota_exceeded", "Spotify development quota is exhausted.", options);
         }
-        fail(
-          "spotify_rate_limited",
-          "Spotify rate limited this request.",
-          options,
-        );
+        const waitMs = retryAfter === null ? SPOTIFY_WEB_API_LIMITS.rateLimitDefaultWaitMs : retryAfter * 1_000;
+        if (read && attempt < maxAttempts && waitMs <= SPOTIFY_WEB_API_LIMITS.rateLimitMaxWaitMs) {
+          signal?.throwIfAborted();
+          const jittered = Math.min(SPOTIFY_WEB_API_LIMITS.rateLimitMaxWaitMs,
+            waitMs + Math.floor(Math.random() * SPOTIFY_WEB_API_LIMITS.rateLimitJitterMs));
+          await sleepImpl(jittered, { signal });
+          continue;
+        }
+        fail("spotify_rate_limited", "Spotify rate limited this request.", options);
+      }
+      if (response.status === 403) {
+        if (hasInsufficientClientScope(payload)) {
+          fail("spotify_scope_insufficient", "Spotify authorization is missing a required scope. Run moondog spotify login again.", options);
+        }
+        fail("spotify_action_forbidden", "Spotify did not allow this action.", options);
       }
       fail("spotify_api_error", "Spotify rejected this request.", options);
     }
-    return payload;
   };
 
   return Object.freeze({
-    async getAccount() {
-      return normalizeAccount(await request("/me"));
+    async getAccount({ signal } = {}) {
+      return normalizeAccount(await request("/me", { signal }));
     },
 
-    async getCurrentPlayback() {
-      return normalizePlayback(await request("/me/player"));
+    async getCurrentPlayback({ signal } = {}) {
+      return normalizePlayback(await request("/me/player?additional_types=episode", { signal }));
     },
 
-    async getDevices() {
-      return normalizeDevices(await request("/me/player/devices"));
+    async getDevices({ signal } = {}) {
+      return normalizeDevices(await request("/me/player/devices", { signal }));
     },
 
-    async getQueue() {
-      return normalizeQueue(await request("/me/player/queue"));
+    async getQueue({ signal } = {}) {
+      return normalizeQueue(await request("/me/player/queue", { signal }));
     },
 
-    async getRecentlyPlayed({ limit, after, before } = {}) {
+    async getRecentlyPlayed({ limit, after, before } = {}, { signal } = {}) {
       return normalizeRecentlyPlayed(
         await request(
-          `/me/player/recently-played${queryString({ limit, after, before })}`,
+          `/me/player/recently-played${queryString({ limit, after, before })}`, { signal },
         ),
       );
     },
 
-    async searchTracks({ query, limit, market } = {}) {
+    async getSavedItems({ type = "tracks", limit = 20, offset = 0 } = {}, { signal } = {}) {
+      if (!["tracks", "albums", "shows", "playlists"].includes(type) || !Number.isInteger(limit) || limit < 1 || limit > 20 ||
+          !Number.isInteger(offset) || offset < 0 || offset > 1_000_000) fail("invalid_library_page", "Choose a supported library type and bounded page.");
+      return normalizeLibraryPage(await request(`/me/${type}${queryString({ limit, offset })}`, { signal }), type, { limit, offset });
+    },
+
+    async getFollowedArtists({ limit = 10, after } = {}, { signal } = {}) {
+      const payload = await request(`/me/following${queryString({ type: "artist", limit, after })}`, { signal });
+      const result = normalizeLibraryPage(payload?.artists, "artists", { limit, offset: 0 });
+      delete result.next_offset;
+      result.has_more = Boolean(payload?.artists?.next);
+      const cursor = payload?.artists?.cursors?.after;
+      if (result.has_more && typeof cursor === "string" && cursor !== after && /^[A-Za-z0-9]{1,128}$/u.test(cursor)) result.next_after = cursor;
+      return result;
+    },
+
+    async searchItems({ query, type, limit, offset = 0 } = {}, { signal } = {}) {
+      const payload = await request(`/search${queryString({ q: query, type, limit, offset })}`, { signal });
+      const page = payload?.[`${type}s`];
+      const raw = Array.isArray(page?.items) ? page.items : [];
+      const items = raw.slice(0, limit).map((item) => normalizeCatalogItem(item, type)).filter(Boolean);
+      const hasMore = Boolean(page?.next) || Number.isInteger(page?.total) && offset + raw.length < page.total;
+      return { provider: "spotify", type, items, has_more: hasMore,
+        next_offset: hasMore && raw.length ? offset + Math.min(raw.length, limit) : null,
+        truncated: raw.length > items.length };
+    },
+
+    async getCatalogChildren({ type, id, limit, offset } = {}, { signal } = {}) {
+      const childType = type === "album" ? "track" : "episode";
+      const payload = await request(`/${type}s/${encodeURIComponent(id)}/${childType}s${queryString({ limit, offset })}`, { signal });
+      const raw = Array.isArray(payload?.items) ? payload.items : [];
+      const items = raw.slice(0, limit).map((item) => normalizeCatalogItem(item, childType)).filter(Boolean);
+      const hasMore = Boolean(payload?.next) || Number.isInteger(payload?.total) && offset + raw.length < payload.total;
+      return { provider: "spotify", source: "catalog", items, limit, offset, has_more: hasMore,
+        next_offset: hasMore && raw.length ? offset + Math.min(raw.length, limit) : null, truncated: raw.length > items.length };
+    },
+
+    async searchTracks({ query, limit, market } = {}, { signal } = {}) {
       return normalizeTrackSearch(
         await request(
-          `/search${queryString({ q: query, type: "track", limit, market })}`,
-        ),
+          `/search${queryString({ q: query, type: "track", limit, market })}`, { signal },
+        ), { limit },
       );
     },
 
-    async getCurrentUserPlaylists({ limit, offset } = {}) {
+    async getTopItems({ type = "tracks", timeRange = "medium_term", limit = 5 } = {}, { signal } = {}) {
+      if (!["artists", "tracks"].includes(type) || !["short_term", "medium_term", "long_term"].includes(timeRange) ||
+          !Number.isInteger(limit) || limit < 1 || limit > 10) {
+        fail("invalid_top_items", "Spotify top items require a supported type, time range, and limit from 1 to 10.");
+      }
+      const payload = await request(`/me/top/${type}${queryString({ time_range: timeRange, limit, offset: 0 })}`, { signal });
+      const raw = Array.isArray(payload?.items) ? payload.items : [];
+      const items = raw.slice(0, limit).map((item, index) => {
+        const normalized = type === "tracks" ? normalizeTrackSearchItem(item) :
+          (safeText(item?.name) ? { name: safeText(item.name), type: "artist" } : null);
+        return normalized ? { ...normalized, affinity_rank: index + 1 } : null;
+      }).filter(Boolean);
+      return { provider: "spotify", items, truncated: raw.length > items.length || Boolean(payload?.next) || payload?.total > raw.length };
+    },
+
+    async getCurrentUserPlaylists({ limit, offset } = {}, { signal } = {}) {
       return normalizePlaylistPage(
         await request(
-          `/me/playlists${queryString({ limit, offset })}`,
+          `/me/playlists${queryString({ limit, offset })}`, { signal },
         ),
       );
     },
 
-    async getPlaylist({ playlistId } = {}) {
+    async getPlaylist({ playlistId } = {}, { signal } = {}) {
       return normalizePlaylist(
-        await request(`/playlists/${encodeURIComponent(playlistId)}`),
+        await request(`/playlists/${encodeURIComponent(playlistId)}`, { signal }),
         { includeControlMetadata: true },
       );
     },
 
-    async getPlaylistItems({ playlistId, limit, offset } = {}) {
+    async getPlaylistItems({ playlistId, limit, offset } = {}, { signal } = {}) {
       return normalizePlaylistItemsPage(
         await request(
           `/playlists/${encodeURIComponent(playlistId)}/items${queryString({
             limit,
             offset,
-          })}`,
+          })}`, { signal },
         ),
       );
     },
 
-    async createPlaylist({ name, description } = {}) {
+    async createPlaylist({ name, description } = {}, { signal } = {}) {
       return normalizePlaylist(
         await request("/me/playlists", {
           method: "POST",
+          signal,
           body: {
             name,
             ...(description ? { description } : {}),
@@ -649,38 +802,58 @@ export function createSpotifyWebApiClient({
       );
     },
 
-    async addPlaylistTracks({ playlistId, uris } = {}) {
+    async addPlaylistTracks({ playlistId, uris } = {}, { signal } = {}) {
       const payload = await request(
         `/playlists/${encodeURIComponent(playlistId)}/items`,
-        { method: "POST", body: { uris } },
+        { method: "POST", body: { uris }, signal },
       );
       const snapshotId = safeText(payload?.snapshot_id, 128);
       return snapshotId ? { snapshot_id: snapshotId } : {};
     },
 
-    async replacePlaylistItems({ playlistId, uris } = {}) {
+    async renamePlaylist({ playlistId, name } = {}, { signal } = {}) {
+      await request(`/playlists/${encodeURIComponent(playlistId)}`, {
+        method: "PUT", body: { name }, responseMode: "none", signal,
+      });
+    },
+
+    async removePlaylistItem({ playlistId, uri, snapshotId } = {}, { signal } = {}) {
+      const payload = await request(`/playlists/${encodeURIComponent(playlistId)}/items`, {
+        method: "DELETE", body: { items: [{ uri }], snapshot_id: snapshotId }, signal,
+      });
+      const snapshot = safeText(payload?.snapshot_id, 128);
+      if (!snapshot) fail("spotify_write_receipt_invalid", "Spotify did not return a valid removal receipt. Inspect the playlist before retrying.", { outcomeUnknown: true });
+      return { snapshot_id: snapshot };
+    },
+
+    async replacePlaylistItems({ playlistId, uris } = {}, { signal } = {}) {
       const payload = await request(
         `/playlists/${encodeURIComponent(playlistId)}/items`,
-        { method: "PUT", body: { uris } },
+        { method: "PUT", body: { uris }, signal },
       );
       const snapshotId = safeText(payload?.snapshot_id, 128);
       return snapshotId ? { snapshot_id: snapshotId } : {};
     },
 
-    async checkSavedTracks({ uris } = {}) {
+    async checkSavedTracks({ uris } = {}, { signal } = {}) {
       return normalizeSavedContains(
         await request(
-          `/me/library/contains${queryString({ uris: uris.join(",") })}`,
+          `/me/library/contains${queryString({ uris: uris.join(",") })}`, { signal },
         ),
       );
     },
 
-    async saveTracks({ uris } = {}) {
+    async saveTracks({ uris } = {}, { signal } = {}) {
       await request(`/me/library${queryString({ uris: uris.join(",") })}`, {
         method: "PUT",
         responseMode: "none",
+        signal,
       });
       return null;
+    },
+
+    async removeLibraryItems({ uris } = {}, { signal } = {}) {
+      await request(`/me/library${queryString({ uris: uris.join(",") })}`, { method: "DELETE", responseMode: "none", signal });
     },
 
     async resume(input = {}, { signal } = {}) {
@@ -690,66 +863,67 @@ export function createSpotifyWebApiClient({
       );
     },
 
-    async pause({ deviceId } = {}) {
+    async pause({ deviceId } = {}, { signal } = {}) {
       await request(
         `/me/player/pause${queryString({ device_id: deviceId })}`,
-        { method: "PUT", responseMode: "none" },
+        { method: "PUT", responseMode: "none", signal },
       );
     },
 
-    async next({ deviceId } = {}) {
+    async next({ deviceId } = {}, { signal } = {}) {
       await request(
         `/me/player/next${queryString({ device_id: deviceId })}`,
-        { method: "POST", responseMode: "none" },
+        { method: "POST", responseMode: "none", signal },
       );
     },
 
-    async previous({ deviceId } = {}) {
+    async previous({ deviceId } = {}, { signal } = {}) {
       await request(
         `/me/player/previous${queryString({ device_id: deviceId })}`,
-        { method: "POST", responseMode: "none" },
+        { method: "POST", responseMode: "none", signal },
       );
     },
 
-    async setVolume({ percent, deviceId }) {
+    async setVolume({ percent, deviceId }, { signal } = {}) {
       await request(
         `/me/player/volume${queryString({
           volume_percent: percent,
           device_id: deviceId,
         })}`,
-        { method: "PUT", responseMode: "none" },
+        { method: "PUT", responseMode: "none", signal },
       );
     },
 
-    async seek({ positionMs, deviceId }) {
+    async seek({ positionMs, deviceId }, { signal } = {}) {
       await request(
         `/me/player/seek${queryString({
           position_ms: positionMs,
           device_id: deviceId,
         })}`,
-        { method: "PUT", responseMode: "none" },
+        { method: "PUT", responseMode: "none", signal },
       );
     },
 
-    async setShuffle({ state, deviceId }) {
+    async setShuffle({ state, deviceId }, { signal } = {}) {
       await request(
         `/me/player/shuffle${queryString({ state, device_id: deviceId })}`,
-        { method: "PUT", responseMode: "none" },
+        { method: "PUT", responseMode: "none", signal },
       );
     },
 
-    async setRepeat({ state, deviceId }) {
+    async setRepeat({ state, deviceId }, { signal } = {}) {
       await request(
         `/me/player/repeat${queryString({ state, device_id: deviceId })}`,
-        { method: "PUT", responseMode: "none" },
+        { method: "PUT", responseMode: "none", signal },
       );
     },
 
-    async transfer({ deviceId, play }) {
+    async transfer({ deviceId, play }, { signal } = {}) {
       await request("/me/player", {
         method: "PUT",
         body: { device_ids: [deviceId], play },
         responseMode: "none",
+        signal,
       });
     },
 

@@ -6,6 +6,7 @@ import { createListeningHistoryProfileProjection } from "../profile/spotify-arch
 import {
   assertExternalPlanDiversity,
   exactTitleArtistMatch,
+  listenerAssertionAvoids,
   safeExternalSource,
   safeExternalTrack,
 } from "./apple-projection-domain-services.mjs";
@@ -518,6 +519,14 @@ export class ListeningProfileDomainServices {
     return { candidateSetId, tracks: prepared };
   }
 
+  filterDiscoveryTracks(tracks) {
+    const avoids = this.#store.activeAvoidances?.({ subjectId: this.#subjectId }) ??
+      this.#store.profileSummary({ subjectId: this.#subjectId })?.listener_assertions?.avoids ?? [];
+    return tracks.filter((track) => !listenerAssertionAvoids(
+      { listener_assertions: { avoids } }, "track", track.title, track.artist_credit,
+    ));
+  }
+
   registerExternalCandidateSet({ tracks, source } = {}) {
     if (!Array.isArray(tracks) || tracks.length < 1 || tracks.length > HISTORY_MAX_ITEMS) {
       throw new TypeError("External catalog candidates are invalid");
@@ -536,7 +545,8 @@ export class ListeningProfileDomainServices {
       : [];
     const accepted = [];
     let excludedHistoryMatches = 0;
-    for (const track of prepared) {
+    const allowed = this.filterDiscoveryTracks(prepared);
+    for (const track of allowed) {
       if (listened.some((heard) => exactTitleArtistMatch(track, heard))) {
         excludedHistoryMatches += 1;
         continue;
@@ -560,6 +570,7 @@ export class ListeningProfileDomainServices {
       candidate_set_id: registered,
       candidate_scope: "external_catalog",
       result_count: accepted.length,
+      excluded_avoided_matches: prepared.length - allowed.length,
       excluded_library_matches: excludedHistoryMatches,
       expires_on: "prompt_end",
       source: trustedSource,
@@ -895,6 +906,11 @@ export class ListeningProfileDomainServices {
       selected.length
     ) {
       throw new TypeError("A playlist plan cannot contain duplicate tracks");
+    }
+    const external = selected.map(({ track }) => track)
+      .filter((track) => track.candidate_scope === "external_catalog");
+    if (this.filterDiscoveryTracks(external).length !== external.length) {
+      throw new Error("An external discovery is currently marked Avoid. Choose another track.");
     }
     const tracks = selected.map(({ track, selectionReason }, index) => ({
       position: index + 1,

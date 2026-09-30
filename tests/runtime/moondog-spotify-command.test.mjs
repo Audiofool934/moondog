@@ -574,9 +574,12 @@ test("Spotify status tells playback-only credentials to re-login for connected a
     "user-read-private",
     "playlist-read-private",
     "playlist-modify-private",
+    "playlist-modify-public",
     "user-library-read",
     "user-library-modify",
     "user-read-recently-played",
+    "user-top-read",
+    "user-follow-read",
   ]);
 });
 
@@ -590,16 +593,19 @@ test("Spotify status recognizes complete connected-action authorization scopes",
         "user-modify-playback-state",
         "playlist-read-private",
         "playlist-modify-private",
+    "playlist-modify-public",
         "user-library-read",
         "user-library-modify",
         "user-read-recently-played",
+    "user-top-read",
+    "user-follow-read",
       ].join(" "),
     }),
   );
 
   await runSpotifyCommand({ args: ["status"], ...setup });
 
-  assert.match(setup.stdout.value(), /Permissions for playback and playlists: all set/u);
+  assert.match(setup.stdout.value(), /Permissions for playback, playlists and top artists\/tracks: all set/u);
 });
 
 test("Spotify resolve command reports deterministic catalog matches", async () => {

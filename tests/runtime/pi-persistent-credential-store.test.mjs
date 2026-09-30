@@ -218,10 +218,10 @@ test("credential store recovers a lock owned by a confirmed dead process", async
   });
   assert.equal(deadProcess.status, 0, deadProcess.stderr);
   await writeFile(
-    path.join(lockDirectory, "owner.json"),
+    path.join(lockDirectory, "owner-00000000-0000-0000-0000-000000000001.json"),
     `${JSON.stringify({
       pid: deadProcess.pid,
-      nonce: "dead-process-lock",
+      nonce: "00000000-0000-0000-0000-000000000001",
       createdAt: Date.now(),
     })}\n`,
     { mode: 0o600 },

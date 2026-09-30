@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import {
   createHash,
   randomBytes,
+  randomUUID,
   timingSafeEqual,
 } from "node:crypto";
 import { createServer } from "node:http";
@@ -21,9 +22,12 @@ export const SPOTIFY_DEFAULT_SCOPES = Object.freeze([
   "user-modify-playback-state",
   "playlist-read-private",
   "playlist-modify-private",
+  "playlist-modify-public",
   "user-library-read",
   "user-library-modify",
   "user-read-recently-played",
+  "user-top-read",
+  "user-follow-read",
 ]);
 
 export class SpotifyAuthenticationError extends Error {
@@ -240,7 +244,12 @@ function validateStoredCredential(value) {
     value.refreshExpiresAt <= 0 ||
     value.tokenType !== "Bearer" ||
     typeof value.scope !== "string" ||
-    value.scope.length === 0
+    value.scope.length === 0 ||
+    (value.refreshAttempt !== undefined && (
+      !value.refreshAttempt ||
+      !/^[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/u.test(value.refreshAttempt.id) ||
+      !Number.isSafeInteger(value.refreshAttempt.startedAt) || value.refreshAttempt.startedAt <= 0
+    ))
   ) {
     throw safeError(
       "spotify_credential_invalid",
@@ -643,7 +652,11 @@ export function createSpotifyAuthentication({
   redirectUri = SPOTIFY_DEFAULT_REDIRECT_URI,
   scopes = SPOTIFY_DEFAULT_SCOPES,
   now = Date.now,
+  refreshTimeoutMs = 15_000,
 } = {}) {
+  if (!Number.isSafeInteger(refreshTimeoutMs) || refreshTimeoutMs < 1 || refreshTimeoutMs > 30_000) {
+    throw safeError("spotify_refresh_timeout_invalid", "Spotify refresh timeout must be between 1 and 30000 ms.");
+  }
   assertNonEmptyString(
     clientId,
     "spotify_client_id_invalid",
@@ -664,24 +677,37 @@ export function createSpotifyAuthentication({
   }
   const redirect = normalizeRedirectUri(redirectUri);
   const requestedScopes = normalizeScopes(scopes);
+  let generation = 0;
+  let refreshTask = null;
+  let mutationTail = Promise.resolve();
+  const mutateCredential = (operation) => {
+    const result = mutationTail.then(operation);
+    mutationTail = result.catch(() => {});
+    return result;
+  };
 
   const readCredential = async (options = {}) => {
+    assertNotAborted(options.signal);
     let value;
     try {
       value = await credentialStore.read(options);
     } catch {
+      assertNotAborted(options.signal);
       throw safeError(
         "spotify_credential_store_failed",
         "Spotify credential storage could not be read.",
       );
     }
+    assertNotAborted(options.signal);
     return value === undefined ? undefined : validateStoredCredential(value);
   };
 
   const writeCredential = async (credential, options = {}) => {
+    assertNotAborted(options.signal);
     try {
       await credentialStore.write(structuredClone(credential), options);
     } catch {
+      assertNotAborted(options.signal);
       throw safeError(
         "spotify_credential_store_failed",
         "Spotify credential storage could not be updated.",
@@ -689,9 +715,115 @@ export function createSpotifyAuthentication({
     }
   };
 
+  // The timer bounds lock acquisition and the token exchange. A token service
+  // may ignore abort: race only its response, never the locked transaction.
+  const waitForExchange = (promise, signal) => new Promise((resolve, reject) => {
+    const onAbort = () => reject(signal.reason ?? abortError());
+    signal.addEventListener("abort", onAbort, { once: true });
+    Promise.resolve(promise).then(resolve, reject).finally(() => signal.removeEventListener("abort", onAbort));
+    if (signal.aborted) onAbort();
+  });
+  const credentialMatches = (a, b) => ["type", "accessToken", "refreshToken", "accessExpiresAt", "refreshExpiresAt", "tokenType", "scope"]
+    .every((key) => a?.[key] === b?.[key]);
+
+  const forceRefreshAccessToken = async ({ signal, rejectedAccessToken, proactive = false } = {}) => {
+    assertNotAborted(signal);
+    const credential = await readCredential({ signal });
+    if (!credential) throw safeError("spotify_auth_not_configured", "Spotify is not authenticated.");
+    const usable = (value) => value.accessExpiresAt > now() + ACCESS_TOKEN_REFRESH_WINDOW_MS;
+    if (!credential.refreshAttempt && usable(credential) &&
+        ((rejectedAccessToken && rejectedAccessToken !== credential.accessToken) || proactive)) {
+      return credential.accessToken;
+    }
+    if (typeof credentialStore.modify !== "function") {
+      throw safeError("spotify_refresh_coordination_unavailable", "Spotify refresh requires coordinated credential storage. Run /spotify login with the supported credential store.");
+    }
+    if (refreshTask && (refreshTask.controller.signal.aborted || refreshTask.generation !== generation)) refreshTask = null;
+    if (!refreshTask) {
+      const task = { controller: new AbortController(), waiters: 0, generation, started: false, credential, rejectedAccessToken };
+      const sharedSignal = task.controller.signal;
+      const timer = setTimeout(() => task.controller.abort(safeError(
+        "spotify_refresh_timeout", "Spotify refresh timed out. Run /spotify login if the refresh was interrupted.",
+      )), refreshTimeoutMs);
+      task.promise = mutateCredential(async () => {
+        try {
+          const stored = await credentialStore.modify(async (value, transaction) => {
+            assertNotAborted(sharedSignal);
+            if (!value) throw safeError("spotify_auth_not_configured", "Spotify is not authenticated.");
+            const current = validateStoredCredential(value);
+            // This check precedes *all* token reuse. A durable marker left
+            // after crash/timeout fences every process until explicit login.
+            if (current.refreshAttempt) {
+              throw safeError("spotify_refresh_uncertain", "A previous Spotify refresh was interrupted. Run /spotify login to authorize again; no refresh was retried.");
+            }
+            const mayReuse = rejectedAccessToken
+              ? current.accessToken !== rejectedAccessToken
+              : proactive || !credentialMatches(current, credential);
+            if (usable(current) && mayReuse) return undefined;
+            if (generation !== task.generation) throw safeError("spotify_auth_changed", "Spotify authentication changed during refresh.");
+            if (typeof transaction?.checkpoint !== "function") {
+              throw safeError("spotify_refresh_coordination_unavailable", "Spotify refresh requires durable coordinated credential storage.");
+            }
+            // Persist intent before dispatch. Do not abandon rotation merely
+            // because the last caller stops waiting: drain under the deadline.
+            task.started = true;
+            await transaction.checkpoint({ ...current, refreshAttempt: { id: randomUUID(), startedAt: now() } });
+            assertNotAborted(sharedSignal);
+            const refreshed = await waitForExchange(refreshSpotifyAccessToken({
+              clientId, refreshToken: current.refreshToken,
+              refreshExpiresAt: current.refreshExpiresAt, scopes: current.scope,
+              fetchImpl, signal: sharedSignal, now,
+            }), sharedSignal);
+            assertNotAborted(sharedSignal);
+            if (generation !== task.generation) throw safeError("spotify_auth_changed", "Spotify authentication changed during refresh.");
+            return refreshed;
+          }, { signal: sharedSignal });
+          return validateStoredCredential(stored).accessToken;
+        } catch (error) {
+          if (sharedSignal.aborted) throw sharedSignal.reason ?? abortError();
+          if (error instanceof SpotifyAuthenticationError) throw error;
+          throw safeError("spotify_credential_store_failed", "Spotify credential refresh could not be persisted. Run /spotify login if the refresh was interrupted.");
+        }
+      }).finally(() => { clearTimeout(timer); if (refreshTask === task) refreshTask = null; });
+      refreshTask = task;
+    }
+    const task = refreshTask;
+    task.waiters += 1;
+    return new Promise((resolve, reject) => {
+      let finished = false;
+      const finish = (error, value) => {
+        if (finished) return;
+        finished = true;
+        signal?.removeEventListener("abort", onAbort);
+        task.controller.signal.removeEventListener("abort", onSharedAbort);
+        task.waiters -= 1;
+        if (error) reject(error); else resolve(value);
+      };
+      const onAbort = () => {
+        finish(abortError());
+        if (task.waiters === 0 && !task.started) task.controller.abort(abortError());
+      };
+      const onSharedAbort = () => finish(task.controller.signal.reason ?? abortError());
+      signal?.addEventListener("abort", onAbort, { once: true });
+      task.controller.signal.addEventListener("abort", onSharedAbort, { once: true });
+      task.promise.then((value) => {
+        // A caller may have observed a newer token while this task waited for
+        // the lock. Do not satisfy its rejected-token refresh with that token.
+        if (!finished && value === rejectedAccessToken &&
+            task.credential.accessToken !== rejectedAccessToken && task.rejectedAccessToken !== rejectedAccessToken) {
+          finish(null, forceRefreshAccessToken({ signal, rejectedAccessToken, proactive }));
+        } else finish(null, value);
+      }, (error) => finish(error));
+      if (signal?.aborted) onAbort();
+      if (task.controller.signal.aborted) onSharedAbort();
+    });
+  };
+
   return {
     async login({ signal, onAuthorizationUrl } = {}) {
       assertNotAborted(signal);
+      const loginGeneration = ++generation;
+      refreshTask?.controller.abort();
       if (
         onAuthorizationUrl !== undefined &&
         typeof onAuthorizationUrl !== "function"
@@ -738,7 +870,12 @@ export function createSpotifyAuthentication({
           signal,
           now,
         });
-        await writeCredential(credential, { signal });
+        await mutateCredential(async () => {
+          if (generation !== loginGeneration) {
+            throw safeError("spotify_auth_changed", "Spotify authentication changed during login.");
+          }
+          await writeCredential(credential, { signal });
+        });
         return publicStatus(credential);
       } finally {
         await listener.close();
@@ -759,26 +896,23 @@ export function createSpotifyAuthentication({
           "Spotify is not authenticated.",
         );
       }
-      if (credential.accessExpiresAt > now() + ACCESS_TOKEN_REFRESH_WINDOW_MS) {
+      if (!credential.refreshAttempt && credential.accessExpiresAt > now() + ACCESS_TOKEN_REFRESH_WINDOW_MS) {
         return credential.accessToken;
       }
-      const refreshed = await refreshSpotifyAccessToken({
-        clientId,
-        refreshToken: credential.refreshToken,
-        refreshExpiresAt: credential.refreshExpiresAt,
-        scopes: credential.scope,
-        fetchImpl,
-        signal,
-        now,
-      });
-      await writeCredential(refreshed, { signal });
-      return refreshed.accessToken;
+      return forceRefreshAccessToken({ signal, proactive: true });
+    },
+
+    // A late 401 for an old token reuses the refresh that already replaced it.
+    async refreshAccessToken({ signal, rejectedAccessToken } = {}) {
+      return forceRefreshAccessToken({ signal, rejectedAccessToken });
     },
 
     async logout({ signal } = {}) {
       assertNotAborted(signal);
+      generation += 1;
+      refreshTask?.controller.abort();
       try {
-        await credentialStore.delete({ signal });
+        await mutateCredential(() => credentialStore.delete({ signal }));
       } catch {
         throw safeError(
           "spotify_credential_store_failed",

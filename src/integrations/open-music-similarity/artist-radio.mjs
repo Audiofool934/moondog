@@ -221,7 +221,8 @@ export function createWikidataArtistResolver({
   if (!agent) throw new TypeError("A descriptive Wikidata user agent is required.");
   const cache = new Map();
 
-  async function request(parameters) {
+  async function request(parameters, { signal } = {}) {
+    signal?.throwIfAborted();
     const url = new URL("/w/api.php", wikidataOrigin);
     for (const [key, value] of Object.entries(parameters)) {
       url.searchParams.set(key, String(value));
@@ -232,12 +233,11 @@ export function createWikidataArtistResolver({
           accept: "application/json",
           "user-agent": agent,
         },
-        signal: AbortSignal.timeout(
-          OPEN_MUSIC_SIMILARITY_LIMITS.requestTimeoutMs,
-        ),
+        signal: AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(OPEN_MUSIC_SIMILARITY_LIMITS.requestTimeoutMs)]),
       });
       return await responseJson(response, "Wikidata", "wikidata");
     } catch (error) {
+      signal?.throwIfAborted();
       if (error instanceof OpenMusicSimilarityError) throw error;
       fail(
         "wikidata_request_failed",
@@ -248,7 +248,8 @@ export function createWikidataArtistResolver({
   }
 
   return Object.freeze({
-    async resolveArtist(artistName) {
+    async resolveArtist(artistName, { signal } = {}) {
+      signal?.throwIfAborted();
       const artist = requiredArtistName(artistName);
       const normalized = normalizeForMatch(artist);
       const language = languageForArtist(artist);
@@ -262,7 +263,7 @@ export function createWikidataArtistResolver({
           type: "item",
           limit: OPEN_MUSIC_SIMILARITY_LIMITS.wikidataSearchResultsMax,
           format: "json",
-        });
+        }, { signal });
         const search = Array.isArray(searchPayload?.search)
           ? searchPayload.search
           : [];
@@ -300,7 +301,7 @@ export function createWikidataArtistResolver({
           props: "claims|labels|descriptions",
           languages: language === "en" ? "en" : `${language}|en`,
           format: "json",
-        });
+        }, { signal });
         const entities = isPlainObject(entityPayload?.entities)
           ? entityPayload.entities
           : {};
@@ -449,7 +450,8 @@ export function createListenBrainzArtistRadioClient({
   const cache = new Map();
   let rateLimitedUntil = 0;
 
-  async function request(pathname, parameters) {
+  async function request(pathname, parameters, { signal } = {}) {
+    signal?.throwIfAborted();
     const current = now();
     if (!Number.isFinite(current)) {
       fail(
@@ -476,9 +478,7 @@ export function createListenBrainzArtistRadioClient({
           accept: "application/json",
           "user-agent": agent,
         },
-        signal: AbortSignal.timeout(
-          OPEN_MUSIC_SIMILARITY_LIMITS.requestTimeoutMs,
-        ),
+        signal: AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(OPEN_MUSIC_SIMILARITY_LIMITS.requestTimeoutMs)]),
       });
       const resetIn = headerInteger(response, "x-ratelimit-reset-in");
       const retryAfter = headerInteger(response, "retry-after") ?? resetIn;
@@ -491,6 +491,7 @@ export function createListenBrainzArtistRadioClient({
       }
       return await responseJson(response, "ListenBrainz", "listenbrainz");
     } catch (error) {
+      signal?.throwIfAborted();
       if (error instanceof OpenMusicSimilarityError) {
         if (error.code === "listenbrainz_rate_limited") {
           rateLimitedUntil = Math.max(rateLimitedUntil, current + 1_000);
@@ -513,7 +514,8 @@ export function createListenBrainzArtistRadioClient({
       maxRecordingsPerArtist,
       popBegin,
       popEnd,
-    }) {
+    }, { signal } = {}) {
+      signal?.throwIfAborted();
       const cleanedMbid = safeUuid(artistMbid);
       if (!cleanedMbid) {
         fail(
@@ -538,12 +540,13 @@ export function createListenBrainzArtistRadioClient({
           max_recordings_per_artist: maxRecordingsPerArtist,
           pop_begin: popBegin,
           pop_end: popEnd,
-        });
+        }, { signal });
         return parseRadioPayload(payload);
       });
     },
 
-    async recordingMetadata(recordingMbids) {
+    async recordingMetadata(recordingMbids, { signal } = {}) {
+      signal?.throwIfAborted();
       if (
         !Array.isArray(recordingMbids) ||
         recordingMbids.length < 1 ||
@@ -568,7 +571,7 @@ export function createListenBrainzArtistRadioClient({
         const payload = await request("/1/metadata/recording/", {
           recording_mbids: cleaned.join(","),
           inc: "artist release",
-        });
+        }, { signal });
         return [...parseRecordingMetadata(payload, cleaned).entries()];
       }).then((entries) => new Map(entries));
     },
@@ -664,7 +667,8 @@ export function createOpenMusicSimilarity({
   }
 
   return Object.freeze({
-    async discoverSimilarTracks({ artistName, mode = "medium", limit = 8 } = {}) {
+    async discoverSimilarTracks({ artistName, mode = "medium", limit = 8 } = {}, { signal } = {}) {
+      signal?.throwIfAborted();
       const artist = requiredArtistName(artistName);
       if (!modes.has(mode)) {
         fail(
@@ -686,7 +690,8 @@ export function createOpenMusicSimilarity({
       }
       const range = popularityRanges[mode];
       const source = sourceMetadata(now, mode, range, artist);
-      const identity = await identityResolver.resolveArtist(artist);
+      const identity = await identityResolver.resolveArtist(artist, { signal });
+      signal?.throwIfAborted();
       if (identity.state !== "resolved") {
         return {
           state:
@@ -710,7 +715,8 @@ export function createOpenMusicSimilarity({
         maxRecordingsPerArtist: 5,
         popBegin: range.begin,
         popEnd: range.end,
-      });
+      }, { signal });
+      signal?.throwIfAborted();
       const adjacentGroups = groups.filter(
         (group) => group.artist_mbid !== identity.artist_mbid,
       );
@@ -741,7 +747,9 @@ export function createOpenMusicSimilarity({
         );
         const chunkMetadata = await radioClient.recordingMetadata(
           chunk.map((recording) => recording.recording_mbid),
+          { signal },
         );
+        signal?.throwIfAborted();
         for (const [recordingMbid, details] of chunkMetadata) {
           metadata.set(recordingMbid, details);
         }

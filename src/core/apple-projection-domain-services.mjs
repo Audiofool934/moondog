@@ -970,7 +970,7 @@ function preferenceSignalLabel(observation = {}) {
   return labels.join(", ") || "explicit provider preference signal";
 }
 
-function listenerAssertionAvoids(
+export function listenerAssertionAvoids(
   listening,
   entityType,
   label,
@@ -1726,6 +1726,18 @@ export class AppleProjectionDomainServices {
     };
   }
 
+  filterDiscoveryTracks(tracks) {
+    const store = this.#listeningHistoryStore;
+    const avoids = store?.activeAvoidances?.({ subjectId: this.#subjectId }) ??
+      store?.profileSummary?.({ subjectId: this.#subjectId })?.listener_assertions?.avoids ?? [];
+    const listening = normalizeAppleCorrectionLabels(
+      { listener_assertions: { avoids } }, this.#projection,
+    );
+    return tracks.filter((track) => !listenerAssertionAvoids(
+      listening, "track", track.title, track.artist_credit,
+    ));
+  }
+
   registerExternalCandidateSet({ tracks, source } = {}) {
     if (
       !Array.isArray(tracks) ||
@@ -1747,7 +1759,8 @@ export class AppleProjectionDomainServices {
     }
     const accepted = [];
     let excludedLibraryMatches = 0;
-    for (const track of prepared) {
+    const allowed = this.filterDiscoveryTracks(prepared);
+    for (const track of allowed) {
       const query = Array.from(track.title).slice(0, 256).join("");
       const libraryResults = this.#projection.searchLibrary({
         query,
@@ -1780,6 +1793,7 @@ export class AppleProjectionDomainServices {
         candidate_set_id: null,
         candidate_scope: "external_catalog",
         result_count: 0,
+        excluded_avoided_matches: prepared.length - allowed.length,
         excluded_library_matches: excludedLibraryMatches,
         expires_on: "prompt_end",
         source: trustedSource,
@@ -1797,6 +1811,7 @@ export class AppleProjectionDomainServices {
       candidate_set_id: candidateSetId,
       candidate_scope: "external_catalog",
       result_count: accepted.length,
+      excluded_avoided_matches: prepared.length - allowed.length,
       excluded_library_matches: excludedLibraryMatches,
       expires_on: "prompt_end",
       source: trustedSource,
@@ -2257,6 +2272,11 @@ export class AppleProjectionDomainServices {
         "playlist_track_count_mismatch",
         "The playlist track count does not match the explicit user intent.",
       );
+    }
+    const external = selections.map((selection) => trustedTracks.get(selection.trackRefId))
+      .filter((track) => track.candidate_scope === "external_catalog");
+    if (this.filterDiscoveryTracks(external).length !== external.length) {
+      fail("discovery_track_avoided", "An external discovery is currently marked Avoid. Choose another track.");
     }
     const tracks = selections.map((selection, index) => {
       const track = trustedTracks.get(selection.trackRefId);

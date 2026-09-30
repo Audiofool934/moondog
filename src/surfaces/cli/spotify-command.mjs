@@ -260,7 +260,7 @@ function formatPlain(action, value) {
       `Redirect URI: ${SPOTIFY_DEFAULT_REDIRECT_URI}`,
     ];
     if (value.state === "stored") {
-      const purpose = value.scope_purpose === "recent_listening" ? "reading recent plays" : "playback and playlists";
+      const purpose = value.scope_purpose === "recent_listening" ? "reading recent plays" : "playback, playlists and top artists/tracks";
       lines.push(
         value.scopes_sufficient
           ? `Permissions for ${purpose}: all set`
@@ -478,7 +478,8 @@ function createRuntimeResolver({
       const auth = await this.authentication();
       client = createSpotifyWebApiClient({
         fetchImpl,
-        tokenProvider: () => auth.getAccessToken(),
+        tokenProvider: (options) => auth.getAccessToken(options),
+        refreshAccessToken: (options) => auth.refreshAccessToken(options),
       });
       return client;
     },
