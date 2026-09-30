@@ -1100,6 +1100,14 @@ Playback control requires Spotify Premium and an available Spotify Connect devic
 
 The natural-language agent can resolve trusted tracks returned from the imported library, a prompt-local private-history rediscovery set, a long-gap historical-return set, a Spotify Extended History played-back-to-back set, or a chronological Listening Time Machine, check or save them in the Spotify library, queue or play them, and create a private Spotify playlist from the exact validated playlist plan.
 
+Spotify track search also works without an imported library. Ask for a song, then ask to play, queue, or save a returned result. Search shows at most ten tracks; host-owned references select the exact recordings and expire when that selection is replaced or the conversation is reset. Spotify identifiers stay in the host. Track, artist, album and device labels are untrusted display data, never instructions.
+
+Ask what is playing or what is queued to inspect bounded live metadata. Queue inspection shows up to ten upcoming items and marks truncation; its observed count is not a guaranteed full queue length. A current track or queue selection can be used for an explicit play, queue, or save request.
+
+An explicit request to queue more music like the current playback uses the current artist as a seed for open listening-derived artist similarity, with one to ten requested additions. Automatic outside discovery honors all active track and artist Avoid choices, including choices outside the displayed profile summary; Undo restores eligibility. Similar queueing rechecks Avoid before each addition, skips the current track and observed queued identities, and remembers up to 100 accepted similar additions for fifteen minutes in the current process to cover stale queue snapshots. It cannot guarantee deduplication against entries Spotify did not return. Cancellation stops new requests; known accepted additions and uncertain write outcomes receive distinct receipts, and an uncertain write is not automatically replayed.
+
+Spotify reads have at most three total API attempts shared between rate-limit recovery and one reactive token refresh, with at most ten seconds of cancellable backoff per retry. Writes are replayed only after a definite authentication rejection, never after rate limits or an uncertain transport failure. Concurrent requests coordinate token refresh; cancelling one caller does not cancel other callers, and logout prevents a late refresh from restoring credentials.
+
 When Spotify is the only connected playlist-write provider, a direct request to create, save, or sync a playlist defaults to one private Spotify write in the same turn.
 
 If a turn ends with a validated plan but no write, that provider-neutral plan remains pending in the current process so a follow-up such as `可以`, `就这个`, or `保存它` writes the exact prior order instead of planning again.
@@ -1155,6 +1163,8 @@ Run `/new` to start another conversation while keeping the previous one saved.
 Listening-profile state and durable memories remain available across conversations and model or authentication changes.
 
 Only completed user and assistant exchanges are recorded.
+
+Live Spotify playback, queue and device reads make the active conversation transient. Their replies and follow-up paraphrases remain usable in process but are excluded from generic transcript storage, recall and reflection until `/new` or a conversation reset. This also prevents a staged generic memory claim from retaining live data. Forgetting an existing memory remains available. Search-only conversations can still be recorded because their results are public catalog metadata. Explicit local listening-profile corrections remain separate from generic conversation memory.
 
 Aborted turns, raw tool traces, and prompt-local candidate IDs are not persisted as the conversation transcript.
 
