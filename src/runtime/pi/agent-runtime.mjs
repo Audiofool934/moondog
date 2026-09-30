@@ -2541,6 +2541,7 @@ function projectProfileSummary(value) {
   const optionalIntegerCoverage = [
     ["effective_listening_events", "coverage_listening_events"],
     ["profiled_listening_events", "coverage_profiled_events"],
+    ["aggregate_skip_count", "coverage_skip_count"],
     ["listening_tracks", "coverage_listening_tracks"],
     ["resolved_listening_tracks", "coverage_resolved_tracks"],
     ["spotify_profile_evidence", "coverage_spotify_evidence"],
@@ -2997,6 +2998,67 @@ function projectSpotifyReceipt(value) {
       type: cleanOutputText(value.device.type, 64, "spotify_device_type"),
     };
   }
+  return result;
+}
+
+function projectSpotifyQueueSimilar(value) {
+  if (
+    !isPlainObject(value) ||
+    value.provider !== "spotify" ||
+    value.ok !== true ||
+    value.effect !== "write_external" ||
+    value.action !== "queue.similar" ||
+    typeof value.state !== "string"
+  ) {
+    throw new Error("domain_result_invalid:spotify_queue_similar");
+  }
+  const result = {
+    provider: "spotify",
+    ok: true,
+    effect: "write_external",
+    action: "queue.similar",
+    state: cleanOutputText(value.state, 32, "spotify_queue_similar_state"),
+  };
+  if (value.seed_artist !== undefined) {
+    result.seed_artist = cleanOutputText(
+      value.seed_artist,
+      256,
+      "spotify_queue_similar_seed_artist",
+    );
+  }
+  if (Number.isSafeInteger(value.requested) && value.requested >= 0) {
+    result.requested = value.requested;
+  }
+  if (Number.isSafeInteger(value.queued_count) && value.queued_count >= 0) {
+    result.queued_count = value.queued_count;
+  }
+  if (Number.isSafeInteger(value.failed_count) && value.failed_count >= 0) {
+    result.failed_count = value.failed_count;
+  }
+  if (Array.isArray(value.queued)) {
+    result.queued = [];
+    for (const track of value.queued.slice(0, 10)) {
+      if (!isPlainObject(track)) continue;
+      result.queued.push({
+        title: cleanOutputText(
+          track.title,
+          512,
+          "spotify_queue_similar_track_title",
+        ),
+        artist_credit: cleanOutputText(
+          track.artist_credit,
+          512,
+          "spotify_queue_similar_track_artist",
+        ),
+      });
+    }
+  }
+  const note = optionalOutputText(
+    value.note,
+    512,
+    "spotify_queue_similar_note",
+  );
+  if (note !== undefined) result.note = note;
   return result;
 }
 
@@ -4595,6 +4657,32 @@ function createToolFactories(
       }),
     ],
     [
+      "spotify.queue.similar",
+      (descriptor) => ({
+        name: descriptor.tool_name,
+        label: descriptor.label,
+        description:
+          "Queue more tracks like what's currently playing on Spotify, in one step. The seed is read host-side from live playback, so never ask what is playing. Takes an optional count from 1 to 10 (default 5). Candidates come from open listening-derived artist similarity, skip tracks already in the listening history and the track currently playing, and are queued once each. Call at most once per user request.",
+        parameters: Type.Union([
+          Type.Object({}, { additionalProperties: false }),
+          Type.Object(
+            {
+              count: Type.Integer({ minimum: 1, maximum: 10 }),
+            },
+            { additionalProperties: false },
+          ),
+        ]),
+        executionMode: "sequential",
+        execute: executeDomain(
+          async (_toolCallId, parameters) =>
+            application.spotifyQueueSimilar(
+              parameters.count !== undefined ? { count: parameters.count } : {},
+            ),
+          projectSpotifyQueueSimilar,
+        ),
+      }),
+    ],
+    [
       "spotify.catalog.resolve",
       (descriptor) => ({
         name: descriptor.tool_name,
@@ -5348,6 +5436,7 @@ Spotify control and catalog rules:
 - When the user asks to play on, switch to, or move playback to a device in ordinary words, such as iPhone, computer, or a speaker name, call moondog_spotify_device_transfer once with that short device_name and play set to true. The host matches a live Spotify Connect device. Do not ask the user to paste a device ID, and do not invent one.
 - If the transfer result names the device, confirm that name. If several devices match, or none do, tell the user the visible names from the tool result and ask which one, or ask them to open Spotify on that device. Use moondog_spotify_devices only when they ask what is connected, or when you need those names after a failed match.
 - Execute each requested state-changing action once. Never automatically retry next, previous, queue additions, or device transfers.
+- When the user asks for more tracks like what's playing, to keep the music going, or to queue similar music without naming an artist, call moondog_spotify_queue_similar once with the requested count (default 5, maximum 10). The host seeds it from live Spotify playback without exposing what's playing; report the queued tracks as a listening-derived branch from the returned seed artist. Never invent the seed track.
 - Before queueing, playing, saving, or writing a trusted candidate to Spotify, resolve it with moondog_spotify_resolve_tracks. Resolution is a deterministic host-side match; report match quality honestly and exclude unresolved tracks from Spotify actions.
 - Never invent Spotify URIs, track IDs, playlist IDs, playlist links, snapshot IDs, or device IDs. Pass device_id only when the user pasted that exact ID. Otherwise pass device_name. Use only opaque playlist_ref_id and playlist_item_ref_id values returned in the current prompt, and track_ref_id values from current trusted candidates and resolutions. URIs the user explicitly provided may be used only where a registered tool explicitly accepts them.
 - moondog_spotify_playlist_write and moondog_spotify_library_save are for explicit user requests only. A playlist write must use the exact order from this prompt's validated moondog_playlist_plan, and playlists are always created private.
