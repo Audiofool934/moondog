@@ -286,3 +286,14 @@ test("quick private-playlist edits do not retain tool metadata or inferred taste
   assert.equal(application.currentSessionTurns().length, 0);
   assert.deepEqual(application.memorySummary().memories, []);
 });
+
+
+test("a failed named-device control keeps visible device names out of generic memory", async (context) => {
+  const { application, runtime, faux, client, writes } = await fixture(context);
+  client.getDevices = async () => ({ devices: [{ id: "fictional-device", name: "Transient Device Sentinel", type: "Speaker" }] });
+  faux.setResponses([toolUse("moondog_spotify_player_control", { action: "pause", device_name: "Missing Room" }),
+    fauxAssistantMessage([fauxText("Only Transient Device Sentinel is visible; Missing Room was not paused.")])]);
+  await runtime.prompt("Pause on Missing Room");
+  assert.equal(writes.length, 0); assert.equal(application.currentSessionTurns().length, 0);
+  assert.doesNotMatch(JSON.stringify(application.memoryContext("Sentinel")), /Transient Device Sentinel/u);
+});

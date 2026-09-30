@@ -30,11 +30,15 @@ const providers = [
   ["zai", "glm-4.7", "openai-completions", "https://api.z.ai/api/paas/v4/chat/completions"],
 ];
 const conditionalToolFields = {
-  moondog_spotify_player_control: { required: ["action"], fields: ["action", "device_id", "uri", "context_uri", "position_ms", "track_refs", "pending_plan", "percent", "state"] },
-  moondog_spotify_queue_add: { required: [], fields: ["track_ref_id", "uri", "device_id", "pending_plan"] },
+  moondog_spotify_player_control: { required: ["action"], fields: ["action", "device_id", "device_name", "device_ref_id", "uri", "context_uri", "context_ref_id", "position_ms", "track_refs", "pending_plan", "percent", "state"] },
+  moondog_spotify_queue_add: { required: [], fields: ["item_ref_id", "track_ref_id", "uri", "device_id", "device_name", "device_ref_id", "pending_plan"] },
   moondog_spotify_playlist_read: { required: ["action"], fields: ["action", "limit", "offset", "playlist_ref_id"] },
   moondog_spotify_playlist_write: { required: ["name"], fields: ["name", "description", "track_refs", "pending_plan"] },
-  moondog_spotify_device_transfer: { required: [], fields: ["device_name", "device_id", "play"] },
+  moondog_spotify_device_transfer: { required: [], fields: ["device_name", "device_id", "device_ref_id", "play"] },
+  moondog_spotify_library_save: { required: [], fields: ["track_refs", "item_refs"] },
+  moondog_spotify_playlist_remove: { required: ["action"], fields: ["action", "playlist_ref_id", "item_ref_id"] },
+  moondog_spotify_library_remove: { required: ["action"], fields: ["action", "playlist_ref_id", "item_ref_id"] },
+  moondog_spotify_search: { required: ["query"], fields: ["query", "type", "limit", "offset"] },
   moondog_spotify_devices: { required: [], fields: [] },
 };
 const schemaProviders = [

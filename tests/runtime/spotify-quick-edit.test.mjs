@@ -209,3 +209,10 @@ test("ordinary exact single-track removal is authorized without quotes", async (
   await f.application.spotifyQuickEditPlaylist({ action: "remove_track", ...refs });
   assert.equal(f.writes.length, 1);
 });
+
+test("multiple unquoted rename delimiters require quoting or preview rather than choosing one parse", async (t) => {
+  const f = fixture(t, { name: "A", items: [] });
+  const refs = await f.prepare("Rename my playlist A to B to C");
+  await assert.rejects(f.application.spotifyQuickEditPlaylist({ action: "rename", playlistRefId: refs.playlistRefId }), { code: "spotify_quick_edit_requires_preview" });
+  assert.equal(f.writes.length, 0);
+});

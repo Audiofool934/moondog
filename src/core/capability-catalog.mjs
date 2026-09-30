@@ -255,7 +255,7 @@ const catalog = [
     version: "1",
     state: "enabled",
     effect: "read_external",
-    description: "Inspect metadata-free Spotify playback state.",
+    description: "Inspect bounded Spotify playback metadata, device capabilities, and state.",
     requires_spotify: true,
     agent_tool: {
       name: "moondog_spotify_player_status",

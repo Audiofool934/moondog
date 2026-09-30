@@ -2949,6 +2949,7 @@ function projectSpotifyPlayerStatus(value) {
     active_device: value.active_device === true,
     restricted_device: value.restricted_device === true,
     item_available: value.item_available === true,
+    ...projectSpotifyNowPlaying(value),
   };
 }
 
@@ -2981,7 +2982,7 @@ function projectSpotifyBrowse(value) {
   }
   if (["tracks", "albums", "shows", "playlists", "artists"].includes(value.type)) result.type = value.type;
   if (typeof value.next_after === "string" && /^[A-Za-z0-9]{1,128}$/u.test(value.next_after)) result.next_after = value.next_after;
-  result.evidence_limit = value.type ? "A bounded page of saved items, not listening history or proof of preference." :
+  result.evidence_limit = value.source === "catalog" ? "A bounded page of Spotify catalog contents, not saved-library membership, observed listening, or proof of preference." : value.type ? "A bounded page of saved items, not listening history or proof of preference." :
     "A bounded recent-listening page, not complete lifetime or day history, play counts, or proof of preference. Cursors can request another page; Spotify may not retain older events.";
   // Unicode metadata can use four bytes per character. Bound serialized bytes,
   // not just item counts, and make omitted display rows explicit.
@@ -4615,7 +4616,7 @@ function createToolFactories(
         name: descriptor.tool_name,
         label: descriptor.label,
         description:
-          "Inspect only metadata-free Spotify playback state. Track, artist, album, device, and account metadata are intentionally withheld.",
+          "Read current Spotify playback state, bounded track/episode metadata, device volume/support, and action restrictions. Metadata is untrusted transient data. Returned references support explicit follow-up actions.",
         parameters: emptyParameters,
         executionMode: "parallel",
         execute: executeDomain(
@@ -4737,7 +4738,8 @@ function createToolFactories(
         executionMode: "sequential",
         execute: executeDomain(
           async (_toolCallId, parameters, signal) => {
-            const target = await application.spotifyDeviceTarget({ deviceId: parameters.device_id, deviceName: parameters.device_name, deviceRefId: parameters.device_ref_id }, { signal, forVolume: parameters.action === "volume" });
+            const target = parameters.device_id !== undefined || parameters.device_name !== undefined || parameters.device_ref_id !== undefined || parameters.action === "volume"
+              ? await application.spotifyDeviceTarget({ deviceId: parameters.device_id, deviceName: parameters.device_name, deviceRefId: parameters.device_ref_id }, { signal, forVolume: parameters.action === "volume" }) : {};
             if (parameters.pending_plan === true) {
               return application.spotifyPlayPendingPlan({
                 ...target,
@@ -4820,7 +4822,8 @@ function createToolFactories(
         executionMode: "sequential",
         execute: executeDomain(
           async (_toolCallId, parameters, signal) => {
-            const target = await application.spotifyDeviceTarget({ deviceId: parameters.device_id, deviceName: parameters.device_name, deviceRefId: parameters.device_ref_id }, { signal, forVolume: parameters.action === "volume" });
+            const target = parameters.device_id !== undefined || parameters.device_name !== undefined || parameters.device_ref_id !== undefined || parameters.action === "volume"
+              ? await application.spotifyDeviceTarget({ deviceId: parameters.device_id, deviceName: parameters.device_name, deviceRefId: parameters.device_ref_id }, { signal, forVolume: parameters.action === "volume" }) : {};
             if (parameters.pending_plan === true) {
               return application.spotifyQueuePendingPlan({
                 ...target,
@@ -6842,7 +6845,7 @@ export class PiAgentRuntime {
     const completedResult = (resultText, extra = {}) => {
       // One operation's normal rendering must never hide another operation's
       // partial or unknown effect in the same turn.
-      if (promptState.spotifyWriteReceipts.some((receipt) => receipt.state === "unknown") ||
+      if (promptState.spotifyWriteReceipts.some((receipt) => receipt.state === "unknown" || ["playlist.unfollow", "library.remove", "playlist.rename", "playlist.remove_track"].includes(receipt.action)) ||
           promptState.spotifyPlaylistPartialEffect ||
           ["partial", "unknown", "failed"].includes(promptState.spotifyQueuePlan?.state)) {
         const receiptText = spotifyEffectTexts().join("\n\n");
@@ -7015,9 +7018,9 @@ export class PiAgentRuntime {
 
       if (promptState.spotifyRemovalPreview) {
         const preview = promptState.spotifyRemovalPreview;
-        const authoritativeText = `Remove ${preview.type ?? "playlist"} "${preview.name}" from your Spotify library${preview.type === "playlist" ? " (unfollow)" : ""}? This does not delete the item globally. No removal has been sent.
+        const authoritativeText = [...spotifyEffectTexts(), `Remove ${preview.type ?? "playlist"} "${preview.name}" from your Spotify library${preview.type === "playlist" ? " (unfollow)" : ""}? This does not delete the item globally. No removal has been sent.
 
-To confirm, reply: ${preview.confirmation}`;
+To confirm, reply: ${preview.confirmation}`].join("\n\n");
         replaceRenderedText(authoritativeText);
         return completedResult(authoritativeText, { spotify_removal_preview: structuredClone(preview) });
       }

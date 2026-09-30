@@ -31,9 +31,9 @@ function explicitQuickPlaylistIntent(text) {
   if (match) return { action: "rename", playlistName: match[1], name: match[2] };
   if (!/[";!?]|\b(?:and|then|also)\b/iu.test(value)) {
     const plainRename = value.match(new RegExp(`^${prefix}rename(?: (?:the|my))? (?:private |Spotify )?playlist (.{1,200}?) to (.{1,100}?)[.]?$`, "iu"));
-    if (plainRename) return { action: "rename", playlistName: plainRename[1].trim(), name: plainRename[2].trim() };
+    if (plainRename && (value.match(/\s+to\s+/giu) ?? []).length === 1) return { action: "rename", playlistName: plainRename[1].trim(), name: plainRename[2].trim() };
     const plainRemove = value.match(new RegExp(`^${prefix}remove (.{1,256}?) from(?: (?:the|my))? (?:private |Spotify )?playlist (.{1,200}?)[.]?$`, "iu"));
-    if (plainRemove) return { action: "remove_track", title: plainRemove[1].trim(), playlistName: plainRemove[2].trim() };
+    if (plainRemove && (value.match(/\s+from\s+/giu) ?? []).length === 1) return { action: "remove_track", title: plainRemove[1].trim(), playlistName: plainRemove[2].trim() };
   }
   match = value.match(new RegExp(`^${prefix}remove "([^"\\n]{1,256})"(?: by "([^"\\n]{1,256})")? from(?: (?:the|my))? (?:private |Spotify )?playlist "([^"\\n]{1,200})"[.!?]?$`, "iu"));
   if (match) return { action: "remove_track", title: match[1], artist: match[2], playlistName: match[3] };
@@ -710,13 +710,12 @@ export class MoondogApplication {
   }
 
   async spotifyPlayerStatus({ signal } = {}) {
-    this.transientSpotifyContext = true;
-    const player = await this.requireSpotifyService().currentPlayer({ signal });
-    signal?.throwIfAborted();
+    const player = await this.spotifyNowPlaying({ signal });
     if (player.state !== "available") {
       return { provider: "spotify", state: "inactive" };
     }
     return {
+      ...player,
       provider: "spotify",
       state: "available",
       is_playing: player.is_playing === true,
@@ -931,6 +930,7 @@ export class MoondogApplication {
       if (!id) throw spotifyResolutionError("spotify_device_reference_expired", "That device selection expired. List devices again.");
     }
     if (id === undefined && deviceName === undefined && !forVolume) return {};
+    this.transientSpotifyContext = true;
     const device = await this.requireSpotifyService().resolveDevice({ deviceId: id, deviceName, forVolume }, { signal });
     signal?.throwIfAborted();
     return { deviceId: device.id };

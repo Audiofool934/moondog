@@ -287,17 +287,20 @@ function normalizeTrackSearchItem(raw) {
   return item;
 }
 
-function normalizeTrackSearch(payload) {
+function normalizeTrackSearch(payload, { limit = SPOTIFY_WEB_API_LIMITS.searchResultsMax } = {}) {
   const rawItems = Array.isArray(payload?.tracks?.items)
     ? payload.tracks.items
     : [];
   const items = rawItems
     .map(normalizeTrackSearchItem)
     .filter(Boolean)
-    .slice(0, SPOTIFY_WEB_API_LIMITS.searchResultsMax);
+    .slice(0, limit);
+  const hasMore = Boolean(payload?.tracks?.next) || Number.isInteger(payload?.tracks?.total) && rawItems.length < payload.tracks.total;
   return {
     provider: "spotify",
     items,
+    has_more: hasMore,
+    next_offset: hasMore && rawItems.length ? Math.min(rawItems.length, limit) : null,
     truncated: rawItems.length > items.length,
   };
 }
@@ -709,8 +712,9 @@ export function createSpotifyWebApiClient({
       const payload = await request(`/me/following${queryString({ type: "artist", limit, after })}`, { signal });
       const result = normalizeLibraryPage(payload?.artists, "artists", { limit, offset: 0 });
       delete result.next_offset;
+      result.has_more = Boolean(payload?.artists?.next);
       const cursor = payload?.artists?.cursors?.after;
-      if (typeof cursor === "string" && /^[A-Za-z0-9]{1,128}$/u.test(cursor)) result.next_after = cursor;
+      if (result.has_more && typeof cursor === "string" && cursor !== after && /^[A-Za-z0-9]{1,128}$/u.test(cursor)) result.next_after = cursor;
       return result;
     },
 
@@ -731,7 +735,7 @@ export function createSpotifyWebApiClient({
       const raw = Array.isArray(payload?.items) ? payload.items : [];
       const items = raw.slice(0, limit).map((item) => normalizeCatalogItem(item, childType)).filter(Boolean);
       const hasMore = Boolean(payload?.next) || Number.isInteger(payload?.total) && offset + raw.length < payload.total;
-      return { provider: "spotify", items, limit, offset, has_more: hasMore,
+      return { provider: "spotify", source: "catalog", items, limit, offset, has_more: hasMore,
         next_offset: hasMore && raw.length ? offset + Math.min(raw.length, limit) : null, truncated: raw.length > items.length };
     },
 
@@ -739,7 +743,7 @@ export function createSpotifyWebApiClient({
       return normalizeTrackSearch(
         await request(
           `/search${queryString({ q: query, type: "track", limit, market })}`, { signal },
-        ),
+        ), { limit },
       );
     },
 

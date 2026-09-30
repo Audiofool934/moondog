@@ -81,3 +81,23 @@ for (const unknown of [false, true]) test(`agent renders truthful preview and ${
   assert.equal(result.status, "aborted"); assert.match(result.text, unknown ? /not confirmed/ : /unfollowed/);
   assert.equal(f.writes.length, 1); assert.equal(f.application.spotifyRemovalStatus().state, "none");
 });
+
+
+test("a removal preview preserves another accepted write receipt in the same turn", async (t) => {
+  const f = fixture(t);
+  f.faux.setResponses([use("moondog_spotify_player_control", { action: "pause" }), use("moondog_spotify_playlist_read", { action: "list" }), (input) => {
+    const value = JSON.parse(input.messages.findLast((m) => m.role === "toolResult").content[0].text);
+    return use("moondog_spotify_playlist_remove", { action: "preview", playlist_ref_id: value.playlists[0].playlist_ref_id });
+  }, fauxAssistantMessage([fauxText("Done.")])]);
+  const result = await f.runtime.prompt('Pause and remove playlist "Night Drive"');
+  assert.match(result.text, /pause request/); assert.match(result.text, /No removal has been sent/);
+  assert.equal(f.writes.length, 1); assert.equal(f.writes[0][1], "/v1/me/player/pause");
+});
+
+test("ordinary completed unfollow cannot claim global playlist deletion", async (t) => {
+  const f = fixture(t); const preview = await f.preview(); f.application.endPrompt();
+  f.faux.setResponses([use("moondog_spotify_playlist_remove", { action: "confirm" }), fauxAssistantMessage([fauxText("Globally deleted Night Drive for everyone.")])]);
+  const result = await f.runtime.prompt(preview.confirmation);
+  assert.match(result.text, /unfollowed/); assert.match(result.text, /not globally deleted/);
+  assert.doesNotMatch(result.text, /Globally deleted Night Drive for everyone/); assert.equal(f.writes.length, 1);
+});

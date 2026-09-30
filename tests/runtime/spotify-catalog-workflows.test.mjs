@@ -48,6 +48,7 @@ test("podcast search → next-turn episodes → queue/save → confirmed unfollo
   }]); await f.runtime.prompt("Find Fictional podcast");
   f.faux.setResponses([use("moondog_spotify_catalog_items", { item_ref_id: showRef, limit: 5 }), (input) => {
     const r = JSON.parse(input.messages.findLast((m) => m.role === "toolResult").content[0].text); episodeRef = r.items[0].item_ref_id;
+    assert.match(r.evidence_limit, /catalog contents/); assert.doesNotMatch(r.evidence_limit, /recent-listening/);
     return use("moondog_spotify_queue_add", { item_ref_id: episodeRef });
   }, use("moondog_spotify_library_save", { item_refs: [showRef] }), fauxAssistantMessage([fauxText("Queued the episode and saved the show.")])]);
   await f.runtime.prompt("Queue the first episode and follow that show");
@@ -82,4 +83,19 @@ test("bounded Spotify metadata remains visible even when its title resembles a p
     assert.equal(JSON.parse(m.content[0].text).items[0].name, ["", "Users", "Fictional", "Album"].join("/"));
     return fauxAssistantMessage([fauxText("Found it.")]);
   }]); await f.runtime.prompt("Search fiction"); assert.equal(f.calls.length, 0);
+});
+
+test("followed-artist cursor pagination stops on the last page even when total exceeds page size", async () => {
+  const client = createSpotifyWebApiClient({ tokenProvider: async () => "fictional", fetchImpl: async () => Response.json({ artists: {
+    total: 40, items: Array.from({ length: 20 }, () => item("artist")), next: null, cursors: { after: "lastartist" },
+  } }) });
+  const page = await createSpotifyService({ client }).libraryBrowse({ type: "artists", after: "previousartist", limit: 20 });
+  assert.equal(page.has_more, false); assert.equal(page.next_after, undefined); assert.equal(page.next_offset, undefined);
+});
+test("first track search exposes paging and respects requested result count", async () => {
+  const client = createSpotifyWebApiClient({ tokenProvider: async () => "fictional", fetchImpl: async () => Response.json({ tracks: {
+    total: 40, items: Array.from({ length: 10 }, () => item("track")), next: "untrusted-url",
+  } }) });
+  const result = await createSpotifyService({ client }).searchTracks({ query: "fiction", limit: 3 });
+  assert.equal(result.items.length, 3); assert.equal(result.has_more, true); assert.equal(result.next_offset, 3); assert.equal(result.truncated, true);
 });

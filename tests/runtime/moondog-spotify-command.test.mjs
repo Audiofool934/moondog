@@ -574,10 +574,12 @@ test("Spotify status tells playback-only credentials to re-login for connected a
     "user-read-private",
     "playlist-read-private",
     "playlist-modify-private",
+    "playlist-modify-public",
     "user-library-read",
     "user-library-modify",
     "user-read-recently-played",
     "user-top-read",
+    "user-follow-read",
   ]);
 });
 
@@ -591,10 +593,12 @@ test("Spotify status recognizes complete connected-action authorization scopes",
         "user-modify-playback-state",
         "playlist-read-private",
         "playlist-modify-private",
+    "playlist-modify-public",
         "user-library-read",
         "user-library-modify",
         "user-read-recently-played",
     "user-top-read",
+    "user-follow-read",
       ].join(" "),
     }),
   );

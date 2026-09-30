@@ -701,7 +701,7 @@ test("Pi adapter executes a trusted read-only diagnostic tool", async () => {
   assert.equal(runtime.publicStatus().external_effects, "disabled");
 });
 
-test("Pi adapter exposes metadata-free Spotify status and one-shot controls when connected", async () => {
+test("Pi adapter exposes bounded useful Spotify status and one-shot controls when connected", async () => {
   const calls = [];
   const application = new MoondogApplication({
     importsRoot: "/private/moondog-synthetic-missing-source",
@@ -723,12 +723,12 @@ test("Pi adapter exposes metadata-free Spotify status and one-shot controls when
             currently_playing_type: "track",
             device: {
               id: "PRIVATE_DEVICE_ID",
-              name: "PRIVATE_DEVICE_NAME",
+              name: "Fictional Listening Room",
               is_active: true,
               is_restricted: false,
             },
             item: {
-              name: "PRIVATE_TRACK_NAME",
+              name: "Fictional Track",
               uri: "spotify:track:PrivateTrack",
             },
           };
@@ -761,6 +761,8 @@ test("Pi adapter exposes metadata-free Spotify status and one-shot controls when
       const serialized = JSON.stringify(player);
       assert.equal(serialized.includes("PRIVATE_"), false);
       assert.equal(player.item_available, true);
+      assert.equal(player.item.name, "Fictional Track");
+      assert.equal(player.device.name, "Fictional Listening Room");
       return fauxAssistantMessage(
         [fauxToolCall("moondog_spotify_player_control", { action: "pause" })],
         { stopReason: "toolUse" },
@@ -857,7 +859,7 @@ test("Pi adapter moves Spotify playback onto a named device without revealing it
         name: "Everett's iPhone",
         type: "Smartphone",
       });
-      return fauxAssistantMessage([fauxText("Playing on your iPhone.")]);
+      return fauxAssistantMessage([fauxText("Transferred to your iPhone.")]);
     },
   ]);
 
@@ -866,7 +868,7 @@ test("Pi adapter moves Spotify playback onto a named device without revealing it
     (tool) => tool.name === "moondog_spotify_device_transfer",
   );
 
-  assert.equal(result.text, "Playing on your iPhone.");
+  assert.equal(result.text, "Transferred to your iPhone.");
   assert.match(transferTool.description, /device_name/);
   assert.doesNotMatch(transferTool.description, /explicitly supplied/);
   assert.match(runtime.agent.state.systemPrompt, /short device_name/);
@@ -874,7 +876,7 @@ test("Pi adapter moves Spotify playback onto a named device without revealing it
   assert.deepEqual(calls, [
     "devices",
     "devices",
-    ["transfer", { deviceId: "SECRET_DEVICE_ID", play: true }],
+    ["transfer", { deviceId: "SECRET_DEVICE_ID", play: false }],
   ]);
 });
 
