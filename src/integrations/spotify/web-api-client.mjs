@@ -542,7 +542,7 @@ export function createSpotifyWebApiClient({
 
   const request = async (
     path,
-    { method = "GET", body, responseMode = "json", signal } = {},
+    { method = "GET", body, responseMode = "json", signal, beforeDispatch } = {},
   ) => {
     const initForToken = (token) => {
       const headers = {
@@ -595,6 +595,9 @@ export function createSpotifyWebApiClient({
         } finally { clearTimeout(timer); }
       };
       let response;
+      // A host authority guard runs after async token/refresh/lock waiting.
+      // Local refusal precedes fetch and must not become an uncertain write.
+      beforeDispatch?.();
       try {
         response = await settle(() => fetchImpl(`${normalizedBaseUrl}${path}`, init));
       } catch (error) {
@@ -811,15 +814,15 @@ export function createSpotifyWebApiClient({
       return snapshotId ? { snapshot_id: snapshotId } : {};
     },
 
-    async renamePlaylist({ playlistId, name } = {}, { signal } = {}) {
+    async renamePlaylist({ playlistId, name } = {}, { signal, beforeDispatch } = {}) {
       await request(`/playlists/${encodeURIComponent(playlistId)}`, {
-        method: "PUT", body: { name }, responseMode: "none", signal,
+        method: "PUT", body: { name }, responseMode: "none", signal, beforeDispatch,
       });
     },
 
-    async removePlaylistItem({ playlistId, uri, snapshotId } = {}, { signal } = {}) {
+    async removePlaylistItem({ playlistId, uri, snapshotId } = {}, { signal, beforeDispatch } = {}) {
       const payload = await request(`/playlists/${encodeURIComponent(playlistId)}/items`, {
-        method: "DELETE", body: { items: [{ uri }], snapshot_id: snapshotId }, signal,
+        method: "DELETE", body: { items: [{ uri }], snapshot_id: snapshotId }, signal, beforeDispatch,
       });
       const snapshot = safeText(payload?.snapshot_id, 128);
       if (!snapshot) fail("spotify_write_receipt_invalid", "Spotify did not return a valid removal receipt. Inspect the playlist before retrying.", { outcomeUnknown: true });

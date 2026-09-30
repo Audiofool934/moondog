@@ -786,7 +786,7 @@ test("Pi adapter exposes bounded useful Spotify status and one-shot controls whe
 
   const result = await runtime.prompt("Pause my Spotify playback.");
 
-  assert.equal(result.text, "Paused Spotify.");
+  assert.equal(result.text, 'Paused Spotify.\n\nSelected for follow-up edits: playlist none; song "Fictional Track".');
   assert.equal(runtime.publicStatus().external_effects, "spotify_control");
   assert.deepEqual(calls, [{}]);
 });

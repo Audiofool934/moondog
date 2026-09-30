@@ -26,6 +26,26 @@ function explicitQuickPlaylistIntent(text) {
   if (typeof text !== "string" || text.length > 1000 || /[\n\r\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069]/u.test(text)) return null;
   const value = text.trim().replace(/[“”「」]/gu, '"');
   const prefix = "(?:(?:please|can you|could you)\\s+)?";
+  const playlistPronoun = "(?:my|this|that|the) (?:private |Spotify )?playlist";
+  const trackPronoun = "(?:this|that|the) (?:song|track)";
+  const plain = !/[";!?]|\b(?:and|then|also)\b/iu.test(value);
+  let contextual = value.match(new RegExp(`^${prefix}rename ${playlistPronoun} to "([^"\\n]{1,100})"[.!?]?$`, "iu")) ??
+    value.match(/^(?:请)?(?:把|将)?(?:这(?:个|张)?|那(?:个|张)?|我的)歌单\s*(?:重命名|改名|更名)为\s*"([^"]{1,100})"[。！]?$/u);
+  if (!contextual && plain && (value.match(/\s+to\s+/giu) ?? []).length === 1) contextual = value.match(new RegExp(`^${prefix}rename ${playlistPronoun} to (.{1,100}?)[.]?$`, "iu"));
+  if (contextual) return { action: "rename", playlistPronoun: true, name: contextual[1].trim() };
+  if (new RegExp(`^${prefix}remove ${trackPronoun} from ${playlistPronoun}[.!?]?$`, "iu").test(value) ||
+      /^(?:请)?从(?:这(?:个|张)?|那(?:个|张)?|我的)歌单中?(?:移除|删除)(?:这|那)首歌[。！]?$/u.test(value)) {
+    return { action: "remove_track", playlistPronoun: true, trackPronoun: true };
+  }
+  contextual = value.match(new RegExp(`^${prefix}remove ${trackPronoun} from(?: (?:the|my))? (?:private |Spotify )?playlist "([^"\\n]{1,200})"[.!?]?$`, "iu"));
+  if (!contextual && plain && (value.match(/\s+from\s+/giu) ?? []).length === 1) contextual = value.match(new RegExp(`^${prefix}remove ${trackPronoun} from(?: (?:the|my))? (?:private |Spotify )?playlist (.{1,200}?)[.]?$`, "iu"));
+  if (contextual) return { action: "remove_track", trackPronoun: true, playlistName: contextual[1].trim() };
+  contextual = value.match(new RegExp(`^${prefix}remove "([^"\\n]{1,256})"(?: by "([^"\\n]{1,256})")? from ${playlistPronoun}[.!?]?$`, "iu"));
+  if (contextual) return { action: "remove_track", playlistPronoun: true, title: contextual[1], artist: contextual[2] };
+  if (plain && (value.match(/\s+from\s+/giu) ?? []).length === 1) {
+    contextual = value.match(new RegExp(`^${prefix}remove (.{1,256}?) from ${playlistPronoun}[.]?$`, "iu"));
+    if (contextual && !/^(?:all|everything|all (?:songs|tracks)|every (?:song|track))$/iu.test(contextual[1].trim())) return { action: "remove_track", playlistPronoun: true, title: contextual[1].trim() };
+  }
   let match = value.match(new RegExp(`^${prefix}rename(?: (?:the|my))? (?:private |Spotify )?playlist "([^"\\n]{1,200})" to "([^"\\n]{1,100})"[.!?]?$`, "iu")) ??
     value.match(/^(?:请)?(?:把|将)?歌单\s*"([^"]{1,200})"\s*(?:重命名|改名|更名)为\s*"([^"]{1,100})"[。！]?$/u);
   if (match) return { action: "rename", playlistName: match[1], name: match[2] };
@@ -141,6 +161,7 @@ export class MoondogApplication {
     musicSimilarity = null,
     artistIdentityResolver = null,
     webResearch = null,
+    now = Date.now,
   } = {}) {
     this.importsRoot = importsRoot;
     this.domainServices = domainServices;
@@ -159,6 +180,10 @@ export class MoondogApplication {
     this.webResearch = webResearch;
     this.spotifyResolutions = new Map();
     this.spotifyReadSelections = new Map();
+    this.spotifyQuickEditContext = { playlist: null, track: null };
+    this.spotifyContextClock = now;
+    this.spotifyContextTurn = 0;
+    this.spotifyContextEpoch = 0;
     this.pendingSpotifyRemoval = null;
     this.spotifyDeviceSelections = new Map();
     this.recentSimilarQueueUris = new Map();
@@ -664,6 +689,8 @@ export class MoondogApplication {
 
   resetSpotifyReadContext() {
     this.spotifyReadSelections.clear();
+    this.spotifyQuickEditContext = { playlist: null, track: null };
+    this.spotifyContextEpoch += 1;
     this.pendingSpotifyRemoval = null;
     this.spotifyDeviceSelections.clear();
     this.recentSimilarQueueUris.clear();
@@ -675,6 +702,112 @@ export class MoondogApplication {
       source,
       items: items.map(({ uri: _uri, ...item }) => structuredClone(item)),
     }));
+  }
+
+  #recentSpotifyContext(entry) {
+    const age = entry ? this.spotifyContextClock() - entry.observedAt : -1;
+    return Boolean(entry && entry.epoch === this.spotifyContextEpoch && age >= 0 && age <= 10 * 60_000 &&
+      this.spotifyContextTurn - entry.turn <= 3);
+  }
+
+  spotifyQuickEditContextStatus() {
+    const transaction = this.pendingPlaylistPromptTransaction;
+    const context = transaction?.quickContextInvalidated || transaction?.quickEditAttempted ? { playlist: null, track: null }
+      : transaction?.quickEditContext ?? this.spotifyQuickEditContext;
+    const playlist = this.#recentSpotifyContext(context.playlist) ? context.playlist : null;
+    const track = this.#recentSpotifyContext(context.track) ? context.track : null;
+    return {
+      playlist: playlist ? { playlist_ref_id: playlist.playlistRefId, name: playlist.name } : null,
+      track: track ? { track_ref_id: track.ref, title: track.title, artists: [...track.artists] } : null,
+      lifetime: "at_most_three_turns_and_ten_minutes; session_or_connection_reset_clears",
+      authority: "only_an_explicit_current_user_request; current_turn_reads_cannot_change_referents",
+    };
+  }
+
+  // Called only after the runtime has successfully projected a read result.
+  // Labels and tool arguments cannot manufacture identities: every reference
+  // must resolve back to the host's actual read/inspection records.
+  observeSpotifyQuickEditRead(capability, value, { failed = false } = {}) {
+    const transaction = this.pendingPlaylistPromptTransaction;
+    if (!transaction) return;
+    const playlistRead = capability === "spotify.playlist.read";
+    const trackRead = ["spotify.player.status", "spotify.player.now_playing", "spotify.queue.status", "spotify.search", "spotify.top", "spotify.library.browse", "spotify.history.recent", "spotify.catalog.items"].includes(capability);
+    if (!playlistRead && !trackRead) return;
+    const observations = transaction.quickContextObservations;
+    const mark = (kind) => {
+      observations[kind] ??= { items: new Map(), failed: false };
+      // A failed/aborted replacement read must not revive an older selection.
+      this.spotifyQuickEditContext[kind] = null;
+      if (failed) observations[kind].failed = true;
+      return observations[kind];
+    };
+    this.transientSpotifyContext = true;
+    const observed = { observedAt: this.spotifyContextClock(), turn: this.spotifyContextTurn, epoch: this.spotifyContextEpoch };
+    const tracks = mark("track");
+    if (playlistRead) {
+      const playlists = mark("playlist");
+      if (failed) return;
+      if (value?.state !== "inspection") {
+        if (!value?.playlists?.length) { playlists.failed = true; tracks.failed = true; }
+        return;
+      }
+      const ref = value.playlist?.playlist_ref_id;
+      const snapshot = this.spotifyPlaylistSnapshots.get(ref);
+      if (!snapshot) { playlists.failed = true; return; }
+      playlists.items.set(snapshot.playlistId, { ...structuredClone(snapshot), playlistRefId: ref, ...observed });
+      if (!snapshot.items.length) tracks.failed = true;
+      for (const item of snapshot.items) tracks.items.set(item.uri, { uri: item.uri, ref: item.playlistItemRefId,
+        title: item.metadata.title, artists: [...item.metadata.artists], ...observed });
+      return;
+    }
+    if (failed) return;
+    const refs = new Set();
+    const visit = (part) => {
+      if (!part || typeof part !== "object") return;
+      if (typeof part.track_ref_id === "string") refs.add(part.track_ref_id);
+      if (typeof part.item_ref_id === "string") refs.add(part.item_ref_id);
+      for (const nested of Object.values(part)) if (typeof nested === "object") visit(nested);
+    };
+    visit(value);
+    let count = 0;
+    for (const item of [...this.spotifyReadSelections.values()].flat()) {
+      if (item.type === "track" && item.uri && refs.has(item.track_ref_id)) {
+        count += 1;
+        if (typeof item.name !== "string" || !item.name.trim()) { tracks.failed = true; continue; }
+        tracks.items.set(item.uri, { uri: item.uri, ref: item.track_ref_id, title: item.name, artists: [...item.artists], ...observed });
+      }
+    }
+    if (count === 0) tracks.failed = true;
+  }
+
+  prepareSpotifyQuickEditContext() {
+    const transaction = this.pendingPlaylistPromptTransaction;
+    if (!transaction) return null;
+    const next = {};
+    const invalidated = transaction.quickContextInvalidated || transaction.quickEditAttempted || transaction.removalAttempted ||
+      transaction.playlistEditAttempted || transaction.playlistWriteAttempted || transaction.playlistEditPreviewAttempted ||
+      transaction.removalPreviewAttempted || transaction.playlistPlanAttempted;
+    for (const kind of ["playlist", "track"]) {
+      const observed = transaction.quickContextObservations[kind];
+      next[kind] = invalidated ? null : observed ?
+        (!observed.failed && observed.items.size === 1 && this.#recentSpotifyContext([...observed.items.values()][0])
+          ? structuredClone([...observed.items.values()][0]) : null) :
+        (this.#recentSpotifyContext(this.spotifyQuickEditContext[kind]) ? structuredClone(this.spotifyQuickEditContext[kind]) : null);
+    }
+    transaction.quickContextForCommit = next;
+    const changed = ["playlist", "track"].some((kind) => Boolean(next[kind]) !== Boolean(transaction.quickEditContext[kind]) ||
+      Boolean(next[kind] && transaction.quickContextObservations[kind]));
+    return { changed, playlist: next.playlist ? { name: next.playlist.name } : null,
+      track: next.track ? { title: next.track.title, artists: [...next.track.artists] } : null };
+  }
+
+  markSpotifyQuickEditContextPresented() {
+    if (this.pendingPlaylistPromptTransaction?.quickContextForCommit) this.pendingPlaylistPromptTransaction.quickContextPresented = true;
+  }
+
+  invalidateSpotifyQuickEditContext() {
+    this.spotifyQuickEditContext = { playlist: null, track: null };
+    if (this.pendingPlaylistPromptTransaction) this.pendingPlaylistPromptTransaction.quickContextInvalidated = true;
   }
 
   #registerSpotifyReadItems(source, values) {
@@ -973,7 +1106,10 @@ export class MoondogApplication {
     }
   }
 
-  requireSpotifyNonRemovalAction() {
+  requireSpotifyNonRemovalAction({ quickEdit = false } = {}) {
+    if (this.pendingPlaylistPromptTransaction?.quickEditIntent && !quickEdit) {
+      throw spotifyResolutionError("spotify_quick_edit_action_conflict", "This request authorizes only its exact quick playlist edit. An earlier preview or another Spotify action needs its own explicit request.");
+    }
     if (this.pendingPlaylistPromptTransaction?.removalConfirmationRequested) {
       throw spotifyResolutionError("spotify_confirmation_flow_conflict", "This confirmation authorizes only the displayed library removal, not another Spotify action.");
     }
@@ -987,8 +1123,8 @@ export class MoondogApplication {
     }
   }
 
-  requireSpotifyWriteScopes(requiredScopes, { removal = false } = {}) {
-    if (!removal) this.requireSpotifyNonRemovalAction();
+  requireSpotifyWriteScopes(requiredScopes, { removal = false, quickEdit = false } = {}) {
+    if (!removal) this.requireSpotifyNonRemovalAction({ quickEdit });
     this.requireSpotifyScopes(requiredScopes, "spotify_write_scopes_missing");
   }
 
@@ -1256,7 +1392,12 @@ export class MoondogApplication {
     };
   }
 
-  async spotifyQuickEditPlaylist({ action, playlistRefId, playlistItemRefId } = {}, { signal } = {}) {
+  spotifyQuickEditRequestStatus() {
+    const transaction = this.pendingPlaylistPromptTransaction;
+    return { requested: Boolean(transaction?.quickEditIntent), attempted: transaction?.quickEditAttempted === true };
+  }
+
+  async spotifyQuickEditPlaylist({ action, playlistRefId, playlistItemRefId, recentContext = false } = {}, { signal } = {}) {
     signal?.throwIfAborted();
     const transaction = this.pendingPlaylistPromptTransaction;
     const intent = transaction?.quickEditIntent;
@@ -1266,31 +1407,51 @@ export class MoondogApplication {
     if (transaction.quickEditAttempted) deny("A quick playlist edit was already attempted in this turn. Inspect its result before another explicit request.");
     if (transaction.playlistEditPreviewAttempted || transaction.playlistPlanAttempted || transaction.playlistWriteAttempted) deny("A preview was already attempted in this turn. Finish that preview flow before another explicit edit request.");
     this.requireSpotifyScopes(["user-read-private", "playlist-read-private"]);
-    this.requireSpotifyWriteScopes(["playlist-modify-private"]);
-    const target = this.requireSpotifyPlaylistTarget(playlistRefId);
-    const snapshot = this.spotifyPlaylistSnapshots.get(playlistRefId);
-    const list = transaction.quickPlaylistList;
-    const namedTargets = new Set([...this.spotifyPlaylistTargets.values()].filter((t) => t.name === intent.playlistName).map((t) => t.playlistId));
-    if (!snapshot || !list?.complete || !list.ids.has(target.playlistId) || list.ambiguousNames.includes(intent.playlistName) ||
-        namedTargets.size !== 1 || target.name !== intent.playlistName || snapshot.name !== intent.playlistName) {
-      deny("The named playlist is not uniquely established by a complete bounded list and fresh inspection. Use the exact preview flow.");
+    this.requireSpotifyWriteScopes(["playlist-modify-private"], { quickEdit: true });
+    const context = transaction.quickEditContext;
+    const requireRecentContext = () => {
+      if (transaction.quickContextInvalidated || (intent.playlistPronoun && !this.#recentSpotifyContext(context.playlist)) ||
+          (intent.trackPronoun && !this.#recentSpotifyContext(context.track))) {
+        deny("The previous displayed selection is missing or stale. Inspect the intended playlist and preview the exact edit.");
+      }
+    };
+    requireRecentContext();
+    let snapshot;
+    if (intent.playlistPronoun) {
+      if (recentContext !== true || playlistRefId !== undefined || playlistItemRefId !== undefined) deny("Use recent_context for the host's previously displayed playlist; do not supply replacement references.");
+      snapshot = context.playlist;
+    } else {
+      if (recentContext !== false) deny("A named playlist requires its current inspected reference.");
+      const target = this.requireSpotifyPlaylistTarget(playlistRefId);
+      snapshot = this.spotifyPlaylistSnapshots.get(playlistRefId);
+      const list = transaction.quickPlaylistList;
+      const namedTargets = new Set([...this.spotifyPlaylistTargets.values()].filter((t) => t.name === intent.playlistName).map((t) => t.playlistId));
+      if (!snapshot || !list?.complete || !list.ids.has(target.playlistId) || list.ambiguousNames.includes(intent.playlistName) ||
+          namedTargets.size !== 1 || target.name !== intent.playlistName || snapshot.name !== intent.playlistName) {
+        deny("The named playlist is not uniquely established by a complete bounded list and fresh inspection. Use the exact preview flow.");
+      }
     }
     let uri;
     if (action === "remove_track") {
-      const selected = snapshot.items.find((i) => i.playlistItemRefId === playlistItemRefId);
-      const matching = snapshot.items.filter((i) => i.metadata.title === intent.title &&
-        (!intent.artist || i.metadata.artists.join(", ") === intent.artist));
-      if (!selected || matching.length !== 1 || matching[0] !== selected || snapshot.items.filter((i) => i.uri === selected.uri).length !== 1) {
+      const matching = snapshot.items.filter((i) => intent.trackPronoun ? i.uri === context.track.uri :
+        i.metadata.title === intent.title && (!intent.artist || i.metadata.artists.join(", ") === intent.artist));
+      const selected = matching[0];
+      if (!selected || matching.length !== 1 || (playlistItemRefId !== undefined && selected.playlistItemRefId !== playlistItemRefId) ||
+          (!intent.playlistPronoun && !intent.trackPronoun && playlistItemRefId === undefined) ||
+          snapshot.items.filter((i) => i.uri === selected.uri).length !== 1) {
         deny("The exact track or occurrence is ambiguous. Preview the complete final order before removing it.");
       }
       uri = selected.uri;
     } else if (playlistItemRefId !== undefined) deny("Rename accepts only a playlist target.");
     transaction.quickEditAttempted = true;
+    // Consume the persisted context now, including on cancellation/unknown
+    // outcomes. Keep the frozen copy only for this dispatch's final age check.
+    this.spotifyQuickEditContext = { playlist: null, track: null };
     this.transientSpotifyContext = true;
     try {
-      const receipt = await this.requireSpotifyService().quickEditPlaylist({ action, playlistId: target.playlistId,
+      const receipt = await this.requireSpotifyService().quickEditPlaylist({ action, playlistId: snapshot.playlistId,
         expectedSnapshotId: snapshot.snapshotId, expectedName: snapshot.name, expectedTrackCount: snapshot.items.length,
-        ...(uri ? { uri } : { name: intent.name }) }, { signal });
+        ...(uri ? { uri } : { name: intent.name }) }, { signal, beforeWrite: requireRecentContext });
       transaction.externalized = true;
       this.pendingSpotifyPlaylistEdit = null;
       this.pendingSpotifyRemoval = null;
@@ -1332,6 +1493,7 @@ export class MoondogApplication {
         throw spotifyResolutionError("spotify_confirmation_flow_conflict", "Finish the current playlist edit flow before previewing library removal.");
       }
       transaction.removalPreviewAttempted = true;
+      this.invalidateSpotifyQuickEditContext();
       if ((playlistRefId === undefined) === (itemRefId === undefined)) throw spotifyResolutionError("spotify_removal_target_required", "Select one inspected playlist reference.");
       if (libraryItem && itemRefId !== undefined) {
         const item = this.requireSpotifyReadItem(itemRefId, ["track", "album", "episode", "show", "playlist"]);
@@ -1366,6 +1528,7 @@ export class MoondogApplication {
     }
     this.requireSpotifyWriteScopes([draft.type === "playlist" ? "playlist-modify-public" : "user-library-modify"], { removal: true });
     transaction.removalAttempted = true;
+    this.invalidateSpotifyQuickEditContext();
     // Consume the confirmation before dispatch; cancellation/uncertainty cannot replay it.
     this.pendingSpotifyRemoval = null;
     this.pendingSpotifyPlaylistEdit = null;
@@ -1396,6 +1559,7 @@ export class MoondogApplication {
       throw spotifyResolutionError("spotify_playlist_edit_already_attempted", "A quick edit was already attempted in this turn. Inspect its receipt before starting another edit request.");
     }
     if (this.pendingPlaylistPromptTransaction) this.pendingPlaylistPromptTransaction.playlistEditPreviewAttempted = true;
+    this.invalidateSpotifyQuickEditContext();
     this.requireSpotifyScopes(["user-read-private", "playlist-read-private"]);
     this.requireSpotifyPlaylistTarget(playlistRefId);
     const snapshot = this.spotifyPlaylistSnapshots.get(playlistRefId);
@@ -1586,6 +1750,7 @@ export class MoondogApplication {
     this.requireSpotifyScopes(["user-read-private", "playlist-read-private"]);
     this.requireSpotifyWriteScopes(["playlist-modify-private"]);
     if (transaction) transaction.playlistEditAttempted = true;
+    this.invalidateSpotifyQuickEditContext();
     try {
       const receipt = await this.requireSpotifyService().replacePlaylistItems({
         playlistId: draft.playlistId,
@@ -1823,6 +1988,7 @@ export class MoondogApplication {
     signal?.throwIfAborted();
     this.requireSpotifyPlaylistCreationFlow();
     if (this.pendingPlaylistPromptTransaction) this.pendingPlaylistPromptTransaction.playlistWriteAttempted = true;
+    this.invalidateSpotifyQuickEditContext();
     try {
       const receipt = await this.requireSpotifyService().createPlaylistWithTracks({
         ...details,
@@ -2119,6 +2285,7 @@ export class MoondogApplication {
       throw spotifyResolutionError("spotify_confirmation_flow_conflict", "Finish the displayed playlist action before building a different playlist plan.");
     }
     if (transaction) transaction.playlistPlanAttempted = true;
+    this.invalidateSpotifyQuickEditContext();
     const plan = await this.requirePlaylistServices().buildPlaylistPlan(input);
     const validatedPlaylistTrackRefs = Array.isArray(plan?.tracks)
       ? plan.tracks.map((track) => track.track_ref_id)
@@ -2166,6 +2333,10 @@ export class MoondogApplication {
 
   commitPendingPlaylistPrompt() {
     const active = this.pendingPlaylistPromptTransaction !== null;
+    const transaction = this.pendingPlaylistPromptTransaction;
+    if (transaction?.quickContextPresented && !transaction.quickContextInvalidated) {
+      this.spotifyQuickEditContext = structuredClone(transaction.quickContextForCommit);
+    }
     if (this.pendingSpotifyPlaylistEdit?.confirmable === false) {
       this.pendingSpotifyPlaylistEdit.confirmable = true;
     }
@@ -2197,6 +2368,7 @@ export class MoondogApplication {
     if (this.pendingPlaylistPromptTransaction) {
       throw new Error("A Moondog prompt state transaction is already active.");
     }
+    this.spotifyContextTurn += 1;
     this.pendingPlaylistPromptTransaction = {
       userText: text,
       removalConfirmationRequested: /^Confirm removal of (?:playlist|track|album|episode|show) .+ from my library[.!。！]?$/u.test(text?.trim() ?? ""),
@@ -2208,6 +2380,8 @@ export class MoondogApplication {
       externalized: false,
       editInvalidated: false,
       quickEditIntent: explicitQuickPlaylistIntent(text),
+      quickEditContext: structuredClone(this.spotifyQuickEditContext),
+      quickContextObservations: {},
     };
     this.resetSpotifyResolutions();
     this.resetSpotifyPlaylistInspection();
@@ -2269,6 +2443,7 @@ export class MoondogApplication {
 
   close() {
     try {
+      this.resetSpotifyReadContext();
       this.memorySession = null;
       this.pendingSpotifyPlaylist = null;
       this.pendingSpotifyPlaylistEdit = null;
