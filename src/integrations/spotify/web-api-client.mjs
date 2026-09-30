@@ -39,13 +39,14 @@ const playbackActions = new Set([
 ]);
 
 export class SpotifyWebApiError extends Error {
-  constructor(code, message, { status = null, retryAfterSeconds = null } = {}) {
+  constructor(code, message, { status = null, retryAfterSeconds = null, outcomeUnknown = false } = {}) {
     super(message);
     this.name = "SpotifyWebApiError";
     this.code = code;
     this.provider = "spotify";
     this.status = status;
     this.retryAfterSeconds = retryAfterSeconds;
+    this.outcomeUnknown = outcomeUnknown;
   }
 }
 
@@ -525,8 +526,18 @@ export function createSpotifyWebApiClient({
     // may only replay a definite 401 rejection, never an uncertain outcome.
     const read = method === "GET";
     const maxAttempts = read ? SPOTIFY_WEB_API_LIMITS.rateLimitMaxAttempts : 2;
+    const accessToken = async (operation) => {
+      try {
+        return normalizedToken(await operation());
+      } catch (error) {
+        // Token lookup occurs before dispatch, or after a definite 401. Its
+        // failure cannot turn the protected write into an unknown effect.
+        if (!read && error && typeof error === "object") error.outcomeUnknown = false;
+        throw error;
+      }
+    };
     signal?.throwIfAborted();
-    let token = normalizedToken(await tokenProvider({ signal }));
+    let token = await accessToken(() => tokenProvider({ signal }));
     let refreshed = false;
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
       signal?.throwIfAborted();
@@ -537,32 +548,52 @@ export function createSpotifyWebApiClient({
       try {
         response = await fetchImpl(`${normalizedBaseUrl}${path}`, init);
       } catch (error) {
-        if (read) signal?.throwIfAborted();
-        if (error?.name === "AbortError") throw error;
-        fail("spotify_network_error", "Spotify could not be reached.");
+        if (read) {
+          signal?.throwIfAborted();
+          if (error?.name === "AbortError") throw error;
+        }
+        // Writes have no transport cancellation signal: a transport AbortError
+        // cannot prove that the dispatched action had no effect.
+        fail("spotify_network_error", "Spotify could not be reached.", { outcomeUnknown: !read });
       }
       if (read) signal?.throwIfAborted();
       if (response.ok && (response.status === 204 || responseMode === "none")) return null;
-      const text = await response.text();
+      let text;
+      try {
+        text = await response.text();
+      } catch (error) {
+        if (read) {
+          signal?.throwIfAborted();
+          if (error?.name === "AbortError") throw error;
+        }
+        fail("spotify_network_error", "Spotify's response could not be read.", {
+          status: response.status,
+          outcomeUnknown: !read && !(response.status >= 400 && response.status < 500),
+        });
+      }
       if (read) signal?.throwIfAborted();
       if (Buffer.byteLength(text, "utf8") > SPOTIFY_WEB_API_LIMITS.responseBytesMax) {
-        fail("spotify_response_too_large", "Spotify returned too much data.", { status: response.status });
+        fail("spotify_response_too_large", "Spotify returned too much data.", {
+          status: response.status,
+          outcomeUnknown: !read && !(response.status >= 400 && response.status < 500),
+        });
       }
       let payload = null;
       if (text) {
         try { payload = JSON.parse(text); } catch {
           // Error responses can be plain text. Their HTTP status still decides
           // whether authentication or a bounded read retry is appropriate.
-          if (response.ok) fail("spotify_response_invalid", "Spotify returned an invalid response.", { status: response.status });
+          if (response.ok) fail("spotify_response_invalid", "Spotify returned an invalid response.", { status: response.status, outcomeUnknown: !read });
         }
       }
       if (response.ok) return payload;
       const retryAfter = retryAfterSeconds(response.headers);
-      const options = { status: response.status, retryAfterSeconds: retryAfter };
+      const options = { status: response.status, retryAfterSeconds: retryAfter,
+        outcomeUnknown: !read && response.status >= 500 };
       if (response.status === 401) {
         if (!refreshed && typeof refreshAccessToken === "function" && attempt < maxAttempts) {
           signal?.throwIfAborted();
-          token = normalizedToken(await refreshAccessToken({ signal, rejectedAccessToken: token }));
+          token = await accessToken(() => refreshAccessToken({ signal, rejectedAccessToken: token }));
           refreshed = true;
           continue;
         }
@@ -651,10 +682,11 @@ export function createSpotifyWebApiClient({
       );
     },
 
-    async createPlaylist({ name, description } = {}) {
+    async createPlaylist({ name, description } = {}, { signal } = {}) {
       return normalizePlaylist(
         await request("/me/playlists", {
           method: "POST",
+          signal,
           body: {
             name,
             ...(description ? { description } : {}),
@@ -664,19 +696,19 @@ export function createSpotifyWebApiClient({
       );
     },
 
-    async addPlaylistTracks({ playlistId, uris } = {}) {
+    async addPlaylistTracks({ playlistId, uris } = {}, { signal } = {}) {
       const payload = await request(
         `/playlists/${encodeURIComponent(playlistId)}/items`,
-        { method: "POST", body: { uris } },
+        { method: "POST", body: { uris }, signal },
       );
       const snapshotId = safeText(payload?.snapshot_id, 128);
       return snapshotId ? { snapshot_id: snapshotId } : {};
     },
 
-    async replacePlaylistItems({ playlistId, uris } = {}) {
+    async replacePlaylistItems({ playlistId, uris } = {}, { signal } = {}) {
       const payload = await request(
         `/playlists/${encodeURIComponent(playlistId)}/items`,
-        { method: "PUT", body: { uris } },
+        { method: "PUT", body: { uris }, signal },
       );
       const snapshotId = safeText(payload?.snapshot_id, 128);
       return snapshotId ? { snapshot_id: snapshotId } : {};
@@ -706,66 +738,67 @@ export function createSpotifyWebApiClient({
       );
     },
 
-    async pause({ deviceId } = {}) {
+    async pause({ deviceId } = {}, { signal } = {}) {
       await request(
         `/me/player/pause${queryString({ device_id: deviceId })}`,
-        { method: "PUT", responseMode: "none" },
+        { method: "PUT", responseMode: "none", signal },
       );
     },
 
-    async next({ deviceId } = {}) {
+    async next({ deviceId } = {}, { signal } = {}) {
       await request(
         `/me/player/next${queryString({ device_id: deviceId })}`,
-        { method: "POST", responseMode: "none" },
+        { method: "POST", responseMode: "none", signal },
       );
     },
 
-    async previous({ deviceId } = {}) {
+    async previous({ deviceId } = {}, { signal } = {}) {
       await request(
         `/me/player/previous${queryString({ device_id: deviceId })}`,
-        { method: "POST", responseMode: "none" },
+        { method: "POST", responseMode: "none", signal },
       );
     },
 
-    async setVolume({ percent, deviceId }) {
+    async setVolume({ percent, deviceId }, { signal } = {}) {
       await request(
         `/me/player/volume${queryString({
           volume_percent: percent,
           device_id: deviceId,
         })}`,
-        { method: "PUT", responseMode: "none" },
+        { method: "PUT", responseMode: "none", signal },
       );
     },
 
-    async seek({ positionMs, deviceId }) {
+    async seek({ positionMs, deviceId }, { signal } = {}) {
       await request(
         `/me/player/seek${queryString({
           position_ms: positionMs,
           device_id: deviceId,
         })}`,
-        { method: "PUT", responseMode: "none" },
+        { method: "PUT", responseMode: "none", signal },
       );
     },
 
-    async setShuffle({ state, deviceId }) {
+    async setShuffle({ state, deviceId }, { signal } = {}) {
       await request(
         `/me/player/shuffle${queryString({ state, device_id: deviceId })}`,
-        { method: "PUT", responseMode: "none" },
+        { method: "PUT", responseMode: "none", signal },
       );
     },
 
-    async setRepeat({ state, deviceId }) {
+    async setRepeat({ state, deviceId }, { signal } = {}) {
       await request(
         `/me/player/repeat${queryString({ state, device_id: deviceId })}`,
-        { method: "PUT", responseMode: "none" },
+        { method: "PUT", responseMode: "none", signal },
       );
     },
 
-    async transfer({ deviceId, play }) {
+    async transfer({ deviceId, play }, { signal } = {}) {
       await request("/me/player", {
         method: "PUT",
         body: { device_ids: [deviceId], play },
         responseMode: "none",
+        signal,
       });
     },
 

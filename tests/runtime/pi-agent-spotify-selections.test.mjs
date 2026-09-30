@@ -124,18 +124,111 @@ test("a selected-track queue cancelled during device lookup never dispatches", a
   assert.equal(writes.length, 0);
 });
 
-test("a live conversation discards staged new memory but still completes an explicit forget", async (context) => {
+test("live conversations preserve explicit quoted preferences without retaining Spotify content", async (context) => {
   const { application, runtime, faux } = await fixture(context);
   const old = application.rememberMemory({ text: "Prefers short answers", kind: "preference", horizon: "persistent" });
-  faux.setResponses([toolUse("moondog_memory_remember", { text: "New staged preference", kind: "preference" }),
+  faux.setResponses([toolUse("moondog_memory_remember", { text: "I prefer concise answers", kind: "preference" }),
     toolUse("moondog_spotify_now_playing"),
     fauxAssistantMessage([fauxText("Transient Song Sentinel is playing.")])]);
   const result = await runtime.prompt("I prefer concise answers. What is playing?");
-  assert.match(result.text, /no new generic memory was saved/u);
-  assert.doesNotMatch(JSON.stringify(application.memoryContext("preference")), /New staged preference|Transient Song/u);
+  assert.doesNotMatch(result.text, /no new generic memory was saved/u);
+  assert.ok(application.memorySummary().memories.some((memory) => memory.text === "I prefer concise answers"));
+  faux.setResponses([toolUse("moondog_memory_remember", { text: "Prefers examples, including Transient Song Sentinel", kind: "preference",
+    source_text: "I prefer\nconcrete examples" }),
+    fauxAssistantMessage([fauxText("I will remember your preference for examples.")])]);
+  await runtime.prompt("I prefer\nconcrete examples. Remember that preference.");
+  assert.ok(application.memorySummary().memories.some((memory) => memory.text === "I prefer concrete examples"));
+  faux.setResponses([toolUse("moondog_memory_remember", { text: "Transient Song Sentinel", kind: "preference",
+    source_text: "I prefer Transient Song Sentinel" }),
+    fauxAssistantMessage([fauxText("That playback information stays transient.")])]);
+  await runtime.prompt("Keep the playback context temporary.");
+  assert.doesNotMatch(JSON.stringify(application.memoryContext("Sentinel")), /Transient Song|Transient Device/u);
   faux.setResponses([toolUse("moondog_memory_forget", { memory_id: old.memory_id }),
     fauxAssistantMessage([fauxText("Forgot the saved preference.")])]);
   await runtime.prompt(`Forget the saved preference ${old.memory_id}`);
-  assert.equal(application.memoryContext("short answers").durable_memories.length, 0);
+  assert.equal(application.memorySummary().memories.some((memory) => memory.memory_id === old.memory_id), false);
   assert.equal(application.currentSessionTurns().length, 0);
+  application.startNewSession(); runtime.restoreSession();
+  assert.ok(application.memorySummary().memories.some((memory) => memory.text === "I prefer concrete examples"));
+  assert.doesNotMatch(JSON.stringify(application.memoryContext("Sentinel")), /Transient Song|Transient Device/u);
+});
+
+for (const action of ["play", "queue", "save"]) {
+  test(`a cancelled selected-track ${action} keeps its accepted receipt`, async (context) => {
+    const { application, client, runtime, faux, writes } = await fixture(context);
+    const selection = await application.spotifySearchTracks({ query: "Midnight Lines" });
+    const ref = selection.items[0].track_ref_id;
+    const method = { play: "resume", queue: "addToQueue", save: "saveTracks" }[action];
+    const write = client[method];
+    client[method] = async (...args) => { await write(...args); runtime.abort(); };
+    const call = action === "play" ? toolUse("moondog_spotify_player_control", { action: "resume", track_refs: [ref] })
+      : action === "queue" ? toolUse("moondog_spotify_queue_add", { track_ref_id: ref })
+      : toolUse("moondog_spotify_library_save", { track_refs: [{ track_ref_id: ref }] });
+    faux.setResponses([call, fauxAssistantMessage([fauxText("Done.")])]);
+    const result = await runtime.prompt(`${action} the first search result`);
+    assert.equal(result.status, "aborted");
+    assert.equal(result.spotify_write_receipts.length, 1);
+    assert.equal(result.spotify_write_receipts[0].state, "accepted");
+    assert.match(result.text, /Spotify accepted/u);
+    assert.equal(writes.length, 1);
+    assert.doesNotMatch(JSON.stringify(result.spotify_write_receipts), /spotify:|fictional1/u);
+    assert.equal(application.currentSessionTurns().length, 0);
+  });
+}
+
+test("unverified claims staged before a live read are discarded, and cancelled preferences do not persist", async (context) => {
+  const { application, client, runtime, faux } = await fixture(context);
+  faux.setResponses([toolUse("moondog_memory_remember", { text: "An invented preference", kind: "preference" }),
+    toolUse("moondog_spotify_now_playing"), fauxAssistantMessage([fauxText("Transient Song Sentinel.")])]);
+  assert.match((await runtime.prompt("What is playing?")).text, /other claims were not saved/u);
+  assert.equal(application.memorySummary().memories.length, 0);
+  const current = client.getCurrentPlayback;
+  client.getCurrentPlayback = async () => { runtime.abort(); return current(); };
+  faux.setResponses([toolUse("moondog_memory_remember", { text: "I prefer brief answers", kind: "preference" }),
+    toolUse("moondog_spotify_now_playing"), fauxAssistantMessage([fauxText("Done.")])]);
+  assert.equal((await runtime.prompt("I prefer brief answers. What is playing?")).status, "aborted");
+  assert.equal(application.memorySummary().memories.length, 0);
+  assert.equal(application.currentSessionTurns().length, 0);
+});
+
+test("cancellation retains an unknown selected-track write outcome without claiming success", async (context) => {
+  const { application, client, runtime, faux } = await fixture(context);
+  const selection = await application.spotifySearchTracks({ query: "Midnight Lines" });
+  let writes = 0;
+  client.addToQueue = async () => {
+    writes++;
+    runtime.abort();
+    throw Object.assign(new Error("Fictional connection dropped after dispatch"), { code: "spotify_network_error", outcomeUnknown: true });
+  };
+  faux.setResponses([toolUse("moondog_spotify_queue_add", { track_ref_id: selection.items[0].track_ref_id }),
+    fauxAssistantMessage([fauxText("Queued it.")])]);
+  const result = await runtime.prompt("Queue the first search result");
+  assert.equal(result.status, "aborted");
+  assert.equal(result.spotify_write_receipts[0].state, "unknown");
+  assert.match(result.text, /was not confirmed/u);
+  assert.doesNotMatch(result.text, /Spotify accepted/u);
+  assert.equal(writes, 1);
+});
+
+test("an accepted queue plan cannot hide an unknown library save in the same completed turn", async (context) => {
+  const { application, client, runtime, faux } = await fixture(context);
+  const selection = await application.spotifySearchTracks({ query: "Midnight Lines" });
+  application.spotifyQueuePendingPlan = async () => ({ provider: "spotify", effect: "write_external", action: "playback.queue.add",
+    state: "accepted", ok: true, queued: [{ title: song.name, artist_credit: song.artists[0] }], unmatched: [], not_added: [] });
+  let saves = 0;
+  client.saveTracks = async () => {
+    saves++;
+    throw Object.assign(new Error("Fictional connection failure after dispatch"), { code: "spotify_network_error", outcomeUnknown: true });
+  };
+  faux.setResponses([toolUse("moondog_spotify_queue_add", { pending_plan: true }),
+    toolUse("moondog_spotify_library_save", { track_refs: [{ track_ref_id: selection.items[0].track_ref_id }] }),
+    fauxAssistantMessage([fauxText("Queued and saved everything.")])]);
+  const result = await runtime.prompt("Queue the plan and save the search result");
+  assert.equal(result.status, "completed");
+  assert.equal(result.spotify_queue_plan.state, "accepted");
+  assert.equal(result.spotify_write_receipts[0].state, "unknown");
+  assert.match(result.text, /Midnight Lines/u);
+  assert.match(result.text, /library save was not confirmed/u);
+  assert.doesNotMatch(result.text, /saved everything/u);
+  assert.equal(saves, 1);
 });

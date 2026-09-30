@@ -2902,7 +2902,7 @@ function safeDomainFailure(error) {
   return new Error(`${code}: ${message}`);
 }
 
-function executeDomain(operation, project, onSuccess) {
+function executeDomain(operation, project, onSuccess, onFailure) {
   return async (...args) => {
     try {
       const result = project(await operation(...args));
@@ -2910,6 +2910,7 @@ function executeDomain(operation, project, onSuccess) {
       onSuccess?.(structuredClone(result), ...args);
       return toolResult;
     } catch (error) {
+      onFailure?.(error, ...args);
       if (error?.message?.startsWith("domain_result_")) throw error;
       throw safeDomainFailure(error);
     }
@@ -4255,8 +4256,14 @@ function createToolFactories(
     onWebResearch,
     onSpotifyQueuePlan,
     onSpotifyPlayback,
+    onSpotifyWriteReceipt,
   } = {},
 ) {
+  const retainUnknownSpotifyWrite = (action) => (error) => {
+    if (error?.outcomeUnknown === true) onSpotifyWriteReceipt?.({
+      provider: "spotify", effect: "write_external", action, state: "unknown", ok: false,
+    });
+  };
   const emptyParameters = Type.Object({}, { additionalProperties: false });
   const filterStrings = Type.Array(
     Type.String({ minLength: 1, maxLength: 256 }),
@@ -4353,10 +4360,11 @@ function createToolFactories(
         name: descriptor.tool_name,
         label: descriptor.label,
         description:
-          "Persist a concise durable memory only when it is grounded in an explicit user statement. Do not store transient requests, assistant guesses, or tool output.",
+          "Persist a concise durable memory only when it is grounded in an explicit user statement. Include source_text as an exact quote from the current user message; the host stores that quote. In a live Spotify conversation, only verified user quotes can persist. Do not store transient requests, assistant guesses, or tool output.",
         parameters: Type.Object(
           {
             text: Type.String({ minLength: 1, maxLength: 2_000 }),
+            source_text: Type.Optional(Type.String({ minLength: 1, maxLength: 2_000 })),
             kind: Type.Union([
               Type.Literal("fact"),
               Type.Literal("preference"),
@@ -4377,6 +4385,7 @@ function createToolFactories(
           async (_toolCallId, parameters) =>
             onMemoryRemember({
               text: parameters.text,
+              source_text: parameters.source_text,
               kind: parameters.kind,
               horizon: parameters.horizon,
               origin: "agent_from_explicit_user_statement",
@@ -4675,7 +4684,8 @@ function createToolFactories(
             return result;
           },
           projectSpotifyReceipt,
-          (_receipt, _toolCallId, parameters) => {
+          (receipt, _toolCallId, parameters) => {
+            onSpotifyWriteReceipt?.(receipt);
             if (parameters.action === "resume" && parameters.track_refs?.length === 1) {
               onSpotifyPlayback?.({
                 trackRefId: parameters.track_refs[0],
@@ -4683,6 +4693,7 @@ function createToolFactories(
               });
             }
           },
+          (error, _toolCallId, parameters) => retainUnknownSpotifyWrite(`playback.${parameters.action}${["volume", "shuffle", "repeat"].includes(parameters.action) ? ".set" : ""}`)(error),
         ),
       }),
     ],
@@ -4756,6 +4767,7 @@ function createToolFactories(
               : projectSpotifyReceipt(value),
           (receipt, _toolCallId, parameters) => {
             if (Array.isArray(receipt.queued)) onSpotifyQueuePlan?.(receipt);
+            else onSpotifyWriteReceipt?.(receipt);
             if (parameters.track_ref_id) {
               onSpotifyPlayback?.({
                 trackRefId: parameters.track_ref_id,
@@ -4763,6 +4775,7 @@ function createToolFactories(
               });
             }
           },
+          retainUnknownSpotifyWrite("playback.queue.add"),
         ),
       }),
     ],
@@ -4881,12 +4894,12 @@ function createToolFactories(
         ),
         executionMode: "sequential",
         execute: executeDomain(
-          async (_toolCallId, parameters) =>
+          async (_toolCallId, parameters, signal) =>
             application.spotifyCheckLibraryTracks({
               trackRefs: parameters.track_refs.map(
                 (track) => track.track_ref_id,
               ),
-            }),
+            }, { signal }),
           projectSpotifyLibraryCheck,
         ),
       }),
@@ -4921,6 +4934,8 @@ function createToolFactories(
               ),
             }, { signal }),
           projectSpotifyReceipt,
+          onSpotifyWriteReceipt,
+          retainUnknownSpotifyWrite("library.save"),
         ),
       }),
     ],
@@ -4952,15 +4967,15 @@ function createToolFactories(
         ]),
         executionMode: "sequential",
         execute: executeDomain(
-          async (_toolCallId, parameters) =>
+          async (_toolCallId, parameters, signal) =>
             parameters.action === "list"
               ? application.spotifyListEditablePlaylists({
                   limit: parameters.limit,
                   offset: parameters.offset,
-                })
+                }, { signal })
               : application.spotifyInspectPlaylist({
                   playlistRefId: parameters.playlist_ref_id,
-                }),
+                }, { signal }),
           projectSpotifyPlaylistRead,
         ),
       }),
@@ -5026,9 +5041,10 @@ function createToolFactories(
         parameters: emptyParameters,
         executionMode: "sequential",
         execute: executeDomain(
-          async () => application.spotifyApplyPendingPlaylistEdit(),
+          async (_toolCallId, _parameters, signal) => application.spotifyApplyPendingPlaylistEdit({ signal }),
           projectSpotifyReceipt,
           onSpotifyPlaylistEditWrite,
+          retainUnknownSpotifyWrite("playlist.edit"),
         ),
       }),
     ],
@@ -5067,7 +5083,7 @@ function createToolFactories(
         ]),
         executionMode: "sequential",
         execute: executeDomain(
-          async (_toolCallId, parameters) => {
+          async (_toolCallId, parameters, signal) => {
             try {
               if (parameters.pending_plan === true) {
                 onPlaylistPlan?.(application.pendingSpotifyPlaylistPlan());
@@ -5076,7 +5092,7 @@ function createToolFactories(
                   ...(parameters.description !== undefined
                     ? { description: parameters.description }
                     : {}),
-                });
+                }, { signal });
               }
               return await application.spotifyCreatePlaylist({
                 name: parameters.name,
@@ -5086,21 +5102,22 @@ function createToolFactories(
                 trackRefs: parameters.track_refs.map(
                   (track) => track.track_ref_id,
                 ),
-              });
+              }, { signal });
             } catch (error) {
-              if (error?.code === "playlist_created_without_tracks") {
+              if (["playlist_created_without_tracks", "playlist_created_tracks_unknown"].includes(error?.code)) {
                 onSpotifyPlaylistPartialEffect?.({
                   provider: "spotify",
                   effect: "write_external",
                   action: "playlist.write",
                   state: "partial",
+                  ...(error.code === "playlist_created_tracks_unknown" ? { outcome_unknown: true } : {}),
                   playlist: {
                     name: cleanOutputText(
                       parameters.name,
                       100,
                       "spotify_playlist_name",
                     ),
-                    track_count: 0,
+                    ...(error.code === "playlist_created_without_tracks" ? { track_count: 0 } : {}),
                     is_public: false,
                   },
                 });
@@ -5110,6 +5127,11 @@ function createToolFactories(
           },
           projectSpotifyReceipt,
           onSpotifyPlaylistWrite,
+          (error) => {
+            if (!["playlist_created_without_tracks", "playlist_created_tracks_unknown"].includes(error?.code)) {
+              retainUnknownSpotifyWrite("playlist.write")(error);
+            }
+          },
         ),
       }),
     ],
@@ -5153,14 +5175,16 @@ function createToolFactories(
         ]),
         executionMode: "sequential",
         execute: executeDomain(
-          async (_toolCallId, parameters) =>
+          async (_toolCallId, parameters, signal) =>
             application.spotifyTransfer({
               ...(parameters.device_id
                 ? { deviceId: parameters.device_id }
                 : { deviceName: parameters.device_name }),
               play: parameters.play ?? true,
-            }),
+            }, { signal }),
           projectSpotifyReceipt,
+          onSpotifyWriteReceipt,
+          retainUnknownSpotifyWrite("playback.transfer"),
         ),
       }),
     ],
@@ -5958,6 +5982,45 @@ function renderSpotifyQueuePlan(receipt, promptText) {
   return lines.join("\n");
 }
 
+function renderSpotifyPartialPlaylist(receipt, promptText) {
+  const chinese = responseLanguage(promptText) === "zh";
+  if (receipt.outcome_unknown) {
+    return chinese
+      ? `Spotify 已创建私有歌单「${receipt.playlist.name}」，但加入曲目的结果尚未确认。请检查歌单后再决定是否重试。`
+      : `Spotify created the private playlist "${receipt.playlist.name}", but adding its tracks was not confirmed. Inspect it before deciding whether to retry.`;
+  }
+  return chinese
+    ? `Spotify 已创建私有歌单「${receipt.playlist.name}」，但未能加入曲目；这个空歌单已经存在，请检查后再决定是否重试。`
+    : `Spotify created the private playlist "${receipt.playlist.name}", but did not add its tracks. The empty playlist now exists; inspect it before deciding whether to retry.`;
+}
+
+function renderSpotifyWriteReceipt(receipt, promptText) {
+  const chinese = responseLanguage(promptText) === "zh";
+  const actions = {
+    "playback.resume": ["播放请求", "playback request"],
+    "playback.pause": ["暂停请求", "pause request"],
+    "playback.next": ["下一首请求", "next-track request"],
+    "playback.previous": ["上一首请求", "previous-track request"],
+    "playback.volume.set": ["音量调整", "volume change"],
+    "playback.seek": ["播放位置调整", "playback position change"],
+    "playback.shuffle.set": ["随机播放设置", "shuffle setting"],
+    "playback.repeat.set": ["循环播放设置", "repeat setting"],
+    "playback.transfer": ["设备切换请求", "device transfer"],
+    "playback.queue.add": ["加入队列请求", "queue addition"],
+    "library.save": ["曲目保存请求", "library save"],
+    "playlist.write": ["歌单创建请求", "playlist creation"],
+    "playlist.edit": ["歌单更改请求", "playlist change"],
+  };
+  const [zh, en] = actions[receipt.action] ?? ["更改请求", "requested change"];
+  if (receipt.state === "unknown") return chinese
+    ? `Spotify 的${zh}结果尚未确认。请先检查，再决定是否重试。`
+    : `Spotify's ${en} was not confirmed. Check its state before deciding whether to retry.`;
+  const count = Number.isInteger(receipt.track_count) ? receipt.track_count : null;
+  return chinese
+    ? `Spotify 已接受${zh}${count === null ? "" : `（${count} 首）`}。`
+    : `Spotify accepted the ${en}${count === null ? "" : ` (${count} tracks)`}.`;
+}
+
 function renderValidatedPlaylistPlan(
   plan,
   promptText,
@@ -6050,11 +6113,7 @@ function renderValidatedPlaylistPlan(
         : `Saved as the private Spotify playlist "${spotifyWrite.playlist.name}" (${spotifyWrite.playlist.track_count} tracks).`,
     );
   } else if (spotifyPartialEffect?.playlist) {
-    lines.push(
-      chinese
-        ? `Spotify 已创建私有歌单「${spotifyPartialEffect.playlist.name}」，但未能加入曲目；这个空歌单已经存在，请检查后再决定是否重试。`
-        : `Spotify created the private playlist "${spotifyPartialEffect.playlist.name}", but did not add its tracks. The empty playlist now exists; inspect it before deciding whether to retry.`,
-    );
+    lines.push(renderSpotifyPartialPlaylist(spotifyPartialEffect, promptText));
   } else if (hasExternalCandidates) {
     lines.push(
       chinese
@@ -6392,16 +6451,23 @@ export class PiAgentRuntime {
             this.activePromptState.spotifyPlayback.push(receipt);
           }
         },
+        onSpotifyWriteReceipt: (receipt) => {
+          this.activePromptState?.spotifyWriteReceipts.push(receipt);
+        },
         onMemoryRemember: (parameters) => {
           if (!this.activePromptState) {
             throw new Error("Memory mutation requires an active prompt");
           }
-          if (this.transientSpotifyContext || application.transientSpotifyContext) {
-            throw new Error("Live Spotify context cannot be saved to generic memory. Start a new session for durable preferences.");
+          const sourceText = (parameters.source_text ?? parameters.text).trim();
+          const quotedByUser = sourceText.length > 0 && this.activePromptState.promptText.includes(sourceText);
+          if ((!quotedByUser && parameters.source_text !== undefined) ||
+              (!quotedByUser && (this.transientSpotifyContext || application.transientSpotifyContext))) {
+            throw new Error("Supply source_text as an exact quote of the current user's durable preference. Spotify results and inferred preferences cannot be saved to generic memory.");
           }
-          const prepared = application.prepareRememberMemory(parameters);
+          const prepared = application.prepareRememberMemory({ ...parameters,
+            text: quotedByUser ? sourceText : parameters.text });
           this.activePromptState.stagedMemoryMutations.push(
-            prepared.mutation,
+            { ...prepared.mutation, sourceUserText: quotedByUser ? sourceText : null },
           );
           return prepared.result;
         },
@@ -6512,6 +6578,7 @@ export class PiAgentRuntime {
       spotifyPlaylistEditWrite: null,
       spotifyQueuePlan: null,
       spotifyPlayback: [],
+      spotifyWriteReceipts: [],
       externalCandidateSetCreated: false,
       externalCandidateSets: [],
       discoveryConnections: new Map(),
@@ -6562,7 +6629,36 @@ export class PiAgentRuntime {
       }
     };
 
+    const spotifyEffectDetails = () => ({
+      ...(promptState.spotifyQueuePlan ? { spotify_queue_plan: structuredClone(promptState.spotifyQueuePlan) } : {}),
+      ...(promptState.spotifyWriteReceipts.length > 0 ? { spotify_write_receipts: structuredClone(promptState.spotifyWriteReceipts) } : {}),
+      ...(promptState.spotifyPlaylistWrite ? { spotify_playlist_write: structuredClone(promptState.spotifyPlaylistWrite) } : {}),
+      ...(promptState.spotifyPlaylistEditWrite ? { spotify_playlist_edit_write: structuredClone(promptState.spotifyPlaylistEditWrite) } : {}),
+      ...(promptState.spotifyPlaylistPartialEffect ? { spotify_playlist_partial_effect: structuredClone(promptState.spotifyPlaylistPartialEffect) } : {}),
+    });
+    const spotifyEffectTexts = () => {
+      const receipts = promptState.spotifyWriteReceipts.map((receipt) => renderSpotifyWriteReceipt(receipt, text));
+      if (promptState.spotifyQueuePlan) receipts.push(renderSpotifyQueuePlan(promptState.spotifyQueuePlan, text));
+      if (promptState.spotifyPlaylistEditWrite) receipts.push(renderSpotifyPlaylistEditReceipt(promptState.spotifyPlaylistEditWrite, text));
+      if (promptState.spotifyPlaylistWrite?.playlist) {
+        const { name, track_count: count } = promptState.spotifyPlaylistWrite.playlist;
+        receipts.push(responseLanguage(text) === "zh"
+          ? `已保存为 Spotify 私有歌单「${name}」（${count} 首）。`
+          : `Saved as the private Spotify playlist "${name}" (${count} tracks).`);
+      }
+      if (promptState.spotifyPlaylistPartialEffect) receipts.push(renderSpotifyPartialPlaylist(promptState.spotifyPlaylistPartialEffect, text));
+      return receipts;
+    };
     const completedResult = (resultText, extra = {}) => {
+      // One operation's normal rendering must never hide another operation's
+      // partial or unknown effect in the same turn.
+      if (promptState.spotifyWriteReceipts.some((receipt) => receipt.state === "unknown") ||
+          promptState.spotifyPlaylistPartialEffect ||
+          ["partial", "unknown", "failed"].includes(promptState.spotifyQueuePlan?.state)) {
+        const receiptText = spotifyEffectTexts().join("\n\n");
+        if (receiptText !== resultText) replaceRenderedText(receiptText);
+        resultText = receiptText;
+      }
       let finalResultText = resultText;
       if (promptState.webSources.length > 0) {
         finalResultText = `${resultText}\n\n${formatWebSources(promptState.webSources)}`;
@@ -6582,9 +6678,9 @@ export class PiAgentRuntime {
               : this.application.recordCompletedTurn?.(text, finalResultText);
           memoryRecorded = committed?.recorded === true;
         } else if (resultText) {
-          this.application.commitTransientPrompt?.(promptState.stagedMemoryMutations);
-          if (promptState.stagedMemoryMutations.some((mutation) => mutation.type === "remember")) {
-            const note = responseLanguage(text) === "zh" ? "\n\n当前 Spotify 对话仅临时保留，未写入通用记忆。" : "\n\nThis live Spotify conversation was kept in process; no new generic memory was saved.";
+          const committed = this.application.commitTransientPrompt?.(promptState.stagedMemoryMutations, text);
+          if (committed?.discarded_memories > 0) {
+            const note = responseLanguage(text) === "zh" ? "\n\n当前 Spotify 对话仅临时保留；仅保留可验证的用户原话，其他记忆未保存。" : "\n\nThis live Spotify conversation stays transient; only verified user quotes were eligible for memory, and other claims were not saved.";
             finalResultText += note;
             if (typeof callbacks.onTextReplace === "function") callbacks.onTextReplace(finalResultText);
             else callbacks.onTextDelta?.(note);
@@ -6615,6 +6711,7 @@ export class PiAgentRuntime {
         status: "completed",
         text: finalResultText,
         ...extra,
+        ...spotifyEffectDetails(),
         ...(promptState.webSources.length ? { web_sources: structuredClone(promptState.webSources) } : {}),
         memory_recorded: memoryRecorded,
         messages_in_process: this.agent.state.messages.length,
@@ -6694,10 +6791,11 @@ export class PiAgentRuntime {
       if (finalStopReason === "aborted" || promptState.abortRequested) {
         discardPromptHistory(this.agent, historyStartIndex);
         historyFinalized = true;
-        const abortedText = promptState.spotifyQueuePlan
-          ? renderSpotifyQueuePlan(promptState.spotifyQueuePlan, text)
+        const receipts = spotifyEffectTexts();
+        const abortedText = receipts.length > 0
+          ? [responseLanguage(text) === "zh" ? "已取消后续操作。" : "Cancelled further work.", ...receipts].join("\n\n")
           : promptState.toolExecutionStarted ? "" : streamedText || finalText;
-        if (promptState.spotifyQueuePlan) {
+        if (receipts.length > 0) {
           replaceRenderedText(abortedText);
         } else if (!textWasRendered && abortedText) {
           callbacks.onTextDelta?.(abortedText);
@@ -6705,9 +6803,7 @@ export class PiAgentRuntime {
         return {
           status: "aborted",
           text: abortedText,
-          ...(promptState.spotifyQueuePlan
-            ? { spotify_queue_plan: structuredClone(promptState.spotifyQueuePlan) }
-            : {}),
+          ...spotifyEffectDetails(),
           messages_in_process: this.agent.state.messages.length,
         };
       }

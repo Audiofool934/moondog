@@ -5,6 +5,8 @@ import {
   SpotifyServiceError,
   createSpotifyService,
 } from "../../src/integrations/spotify/service.mjs";
+import { createSpotifyWebApiClient } from "../../src/integrations/spotify/web-api-client.mjs";
+import { MoondogApplication } from "../../src/core/moondog-application.mjs";
 
 function fakeClient() {
   const calls = [];
@@ -312,7 +314,7 @@ test("Spotify service reports a playlist created without its tracks", async () =
       },
       async addPlaylistTracks() {
         calls.push("add");
-        throw new Error("provider failure");
+        throw Object.assign(new Error("Fictional definite rejection"), { status: 403 });
       },
     },
   });
@@ -329,6 +331,173 @@ test("Spotify service reports a playlist created without its tracks", async () =
     },
   );
   assert.deepEqual(calls, ["create", "add"]);
+});
+
+test("application writes stop before a 401 replay when token refresh is cancelled", async (context) => {
+  const controls = [
+    { action: "resume" }, { action: "pause" }, { action: "next" }, { action: "previous" },
+    { action: "volume", percent: 50 }, { action: "seek", positionMs: 1 },
+    { action: "shuffle", state: true }, { action: "repeat", state: "off" },
+  ];
+  for (const input of [...controls, { action: "transfer" }, { action: "playlist_create" }, { action: "playlist_edit" }]) {
+    await context.test(input.action, async () => {
+      const controller = new AbortController();
+      let writes = 0;
+      const client = createSpotifyWebApiClient({
+        tokenProvider: async () => "fictional-old-token",
+        refreshAccessToken: async ({ signal }) => {
+          assert.equal(signal, controller.signal);
+          controller.abort();
+          return "fictional-new-token";
+        },
+        fetchImpl: async (url, init) => {
+          if (init.method === "GET") {
+            const data = new URL(url).pathname === "/v1/me" ? { id: "fictionalowner" } : {
+              id: "fictionalplaylist", uri: "spotify:playlist:fictionalplaylist", name: "Fictional Playlist", public: false, collaborative: false,
+              owner: { id: "fictionalowner" }, snapshot_id: "fictionalsnapshot", items: { total: 1 },
+            };
+            return new Response(JSON.stringify(data), { status: 200 });
+          }
+          writes++;
+          return writes === 1 ? new Response("expired", { status: 401 }) : new Response(null, { status: 204 });
+        },
+      });
+      const application = new MoondogApplication({ spotifyConnection: {
+        service: createSpotifyService({ client }), ready: () => true, missingScopes: () => [],
+      } });
+      try {
+        application.pendingSpotifyPlaylistEdit = { confirmable: true, playlistId: "fictionalplaylist",
+          expectedSnapshotId: "fictionalsnapshot", uris: ["spotify:track:fictional"] };
+        const operation = input.action === "transfer"
+          ? application.spotifyTransfer({ deviceId: "fictional-device", play: true }, { signal: controller.signal })
+          : input.action === "playlist_create"
+            ? application.writeSpotifyPlaylist({ name: "Fictional Playlist" }, ["spotify:track:fictional"], { signal: controller.signal })
+            : input.action === "playlist_edit"
+              ? application.spotifyApplyPendingPlaylistEdit({ signal: controller.signal })
+              : application.spotifyControl(input, { signal: controller.signal });
+        await assert.rejects(operation, { name: "AbortError" });
+        assert.equal(writes, 1);
+      } finally { application.close(); }
+    });
+  }
+});
+
+test("named transfer cancellation during device lookup starts no write", async () => {
+  const controller = new AbortController();
+  let writes = 0;
+  const service = createSpotifyService({ client: {
+    async getDevices({ signal }) {
+      assert.equal(signal, controller.signal);
+      controller.abort();
+      return { devices: [{ id: "fictionaldevice", name: "Fictional Room", type: "Computer" }] };
+    },
+    async transfer() { writes++; },
+  } });
+  await assert.rejects(service.transfer({ deviceName: "Fictional Room" }, { signal: controller.signal }), { name: "AbortError" });
+  assert.equal(writes, 0);
+});
+
+test("cancellation after playlist creation preserves that partial effect and starts no append", async () => {
+  const controller = new AbortController();
+  let appends = 0;
+  const application = new MoondogApplication({ spotifyConnection: {
+    ready: () => true, service: createSpotifyService({ client: {
+      async createPlaylist(_input, { signal }) {
+        assert.equal(signal, controller.signal);
+        controller.abort();
+        return { id: "fictionalplaylist", name: "Fictional Playlist" };
+      },
+      async addPlaylistTracks() { appends++; },
+    } }),
+  } });
+  try {
+    application.pendingSpotifyPlaylist = { plan: { tracks: [] } };
+    application.beginPrompt();
+    await assert.rejects(application.writeSpotifyPlaylist({ name: "Fictional Playlist" }, ["spotify:track:fictional"], { signal: controller.signal }),
+      { code: "playlist_created_without_tracks", outcomeUnknown: false });
+    assert.equal(appends, 0);
+    assert.equal(application.pendingPlaylistPromptTransaction.externalized, true);
+    application.rollbackPendingPlaylistPrompt();
+    assert.equal(application.pendingSpotifyPlaylist, null);
+  } finally { application.close(); }
+});
+
+test("an ambiguous playlist append is never described as an empty playlist", async () => {
+  let writes = 0;
+  const client = createSpotifyWebApiClient({ tokenProvider: async () => "fictional-token", fetchImpl: async () => {
+    writes++;
+    if (writes === 1) return new Response(JSON.stringify({ id: "fictionalplaylist", uri: "spotify:playlist:fictionalplaylist", name: "Fictional Playlist" }), { status: 201 });
+    throw new DOMException("Fictional response was lost", "AbortError");
+  } });
+  const application = new MoondogApplication({ spotifyConnection: { ready: () => true, service: createSpotifyService({ client }) } });
+  try {
+    application.pendingSpotifyPlaylist = { plan: { tracks: [] } };
+    application.beginPrompt();
+    await assert.rejects(application.writeSpotifyPlaylist({ name: "Fictional Playlist" }, ["spotify:track:fictional"]),
+      { code: "playlist_created_tracks_unknown", outcomeUnknown: true });
+    assert.equal(writes, 2);
+    assert.equal(application.pendingPlaylistPromptTransaction.externalized, true);
+    application.rollbackPendingPlaylistPrompt();
+    assert.equal(application.pendingSpotifyPlaylist, null);
+  } finally { application.close(); }
+});
+
+test("a dispatched queue transport AbortError yields an unknown receipt and stops later writes", async () => {
+  let writes = 0;
+  const client = createSpotifyWebApiClient({ tokenProvider: async () => "fictional-token", fetchImpl: async () => {
+    writes++;
+    throw new DOMException("Fictional queue response was lost", "AbortError");
+  } });
+  const tracks = [1, 2].map((index) => ({ track_ref_id: `fictional-ref-${index}`, title: `Fictional Song ${index}`, artist_credit: "Fictional Artist" }));
+  const application = new MoondogApplication({ spotifyConnection: {
+    ready: () => true, missingScopes: () => [], service: createSpotifyService({ client }),
+    resolver: { async resolve() { return { resolutions: tracks.map((track, index) => ({
+      track_ref_id: track.track_ref_id, status: "resolved", spotify: { uri: `spotify:track:fictional${index}` },
+    })) }; } },
+  } });
+  try {
+    application.pendingSpotifyPlaylist = { plan: { tracks }, trustedTracks: tracks };
+    const receipt = await application.spotifyQueuePendingPlan({ deviceId: "fictionaldevice" });
+    assert.equal(receipt.state, "unknown");
+    assert.equal(receipt.outcome_unknown, true);
+    assert.equal(receipt.queued.length, 0);
+    assert.equal(receipt.not_added.length, 1);
+    assert.equal(writes, 1);
+  } finally { application.close(); }
+});
+
+test("uncertain playlist creation and editing invalidate the retained write instead of restoring it", async (context) => {
+  for (const action of ["create", "edit"]) {
+    await context.test(action, async () => {
+      let writes = 0;
+      const client = createSpotifyWebApiClient({ tokenProvider: async () => "fictional-token", fetchImpl: async (url, init) => {
+        if (init.method === "GET") {
+          const data = new URL(url).pathname === "/v1/me" ? { id: "fictionalowner" } : {
+            id: "fictionalplaylist", uri: "spotify:playlist:fictionalplaylist", name: "Fictional Playlist",
+            public: false, collaborative: false, owner: { id: "fictionalowner" }, snapshot_id: "fictionalsnapshot", items: { total: 1 },
+          };
+          return new Response(JSON.stringify(data), { status: 200 });
+        }
+        writes++;
+        throw new DOMException("Fictional write response was lost", "AbortError");
+      } });
+      const application = new MoondogApplication({ spotifyConnection: {
+        ready: () => true, missingScopes: () => [], service: createSpotifyService({ client }),
+      } });
+      try {
+        application.pendingSpotifyPlaylist = { plan: { tracks: [] } };
+        application.pendingSpotifyPlaylistEdit = { confirmable: true, playlistId: "fictionalplaylist",
+          expectedSnapshotId: "fictionalsnapshot", uris: ["spotify:track:fictional"] };
+        application.beginPrompt();
+        await assert.rejects(action === "create"
+          ? application.writeSpotifyPlaylist({ name: "Fictional Playlist" }, ["spotify:track:fictional"])
+          : application.spotifyApplyPendingPlaylistEdit(), { outcomeUnknown: true });
+        assert.equal(writes, 1);
+        application.rollbackPendingPlaylistPrompt();
+        assert.equal(action === "create" ? application.pendingSpotifyPlaylist : application.pendingSpotifyPlaylistEdit, null);
+      } finally { application.close(); }
+    });
+  }
 });
 
 test("Spotify service lists only owned private non-collaborative editable playlists", async () => {

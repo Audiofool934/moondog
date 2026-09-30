@@ -947,3 +947,53 @@ for (const action of ["addToQueue", "resume"]) {
     assert.equal(requests, 0);
   });
 }
+
+test("every write wrapper cancels token lookup before dispatch", async (context) => {
+  const actions = [
+    ["pause", {}], ["next", {}], ["previous", {}], ["setVolume", { percent: 50 }],
+    ["seek", { positionMs: 1 }], ["setShuffle", { state: true }], ["setRepeat", { state: "off" }],
+    ["transfer", { deviceId: "fictionaldevice", play: true }],
+    ["createPlaylist", { name: "Fictional Playlist" }],
+    ["addPlaylistTracks", { playlistId: "fictionalplaylist", uris: ["spotify:track:fictional"] }],
+    ["replacePlaylistItems", { playlistId: "fictionalplaylist", uris: ["spotify:track:fictional"] }],
+    ["saveTracks", { uris: ["spotify:track:fictional"] }],
+  ];
+  for (const [action, input] of actions) {
+    await context.test(action, async () => {
+      const controller = new AbortController();
+      let calls = 0;
+      const client = createSpotifyWebApiClient({ tokenProvider: async ({ signal }) => {
+        assert.equal(signal, controller.signal);
+        controller.abort();
+        return "fictional-token";
+      }, fetchImpl: async () => { calls++; return noContentResponse(); } });
+      await assert.rejects(client[action](input, { signal: controller.signal }), { name: "AbortError" });
+      assert.equal(calls, 0);
+    });
+  }
+});
+
+test("dispatched write transport and response failures retain unknown-effect provenance without replay", async (context) => {
+  for (const failure of ["transport_abort", "body_abort", "malformed_success", "server_failure"]) {
+    await context.test(failure, async () => {
+      let requests = 0;
+      let refreshes = 0;
+      const client = createSpotifyWebApiClient({ tokenProvider: async () => "fictional-token",
+        refreshAccessToken: async () => { refreshes++; return "fictional-replacement"; },
+        fetchImpl: async () => {
+          requests++;
+          if (failure === "transport_abort") throw new DOMException("Fictional transport abort", "AbortError");
+          if (failure === "body_abort") return { ok: true, status: 201, async text() { throw new DOMException("Fictional body abort", "AbortError"); } };
+          return new Response(failure === "malformed_success" ? "incomplete json" : "unavailable", { status: failure === "malformed_success" ? 201 : 503 });
+        },
+      });
+      await assert.rejects(client.createPlaylist({ name: "Fictional Playlist" }), (error) => {
+        assert.equal(error.outcomeUnknown, true);
+        assert.notEqual(error.name, "AbortError");
+        return true;
+      });
+      assert.equal(requests, 1);
+      assert.equal(refreshes, 0);
+    });
+  }
+});

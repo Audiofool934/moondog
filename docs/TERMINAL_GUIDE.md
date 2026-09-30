@@ -1164,7 +1164,7 @@ Listening-profile state and durable memories remain available across conversatio
 
 Only completed user and assistant exchanges are recorded.
 
-Live Spotify playback, queue and device reads make the active conversation transient. Their replies and follow-up paraphrases remain usable in process but are excluded from generic transcript storage, recall and reflection until `/new` or a conversation reset. This also prevents a staged generic memory claim from retaining live data. Forgetting an existing memory remains available. Search-only conversations can still be recorded because their results are public catalog metadata. Explicit local listening-profile corrections remain separate from generic conversation memory.
+Live Spotify playback, queue and device reads make the active conversation transient. Their replies and follow-up paraphrases remain usable in process but are excluded from generic transcript storage, recall and reflection until `/new` or a conversation reset. Explicit user preferences can still persist: the host verifies an exact quote from the current user message and saves that quote alone, without model paraphrases or Spotify output. Unverified staged claims are discarded. Forgetting an existing memory remains available. Search-only conversations can still be recorded because their results are public catalog metadata. Explicit local listening-profile corrections remain separate from generic conversation memory.
 
 Aborted turns, raw tool traces, and prompt-local candidate IDs are not persisted as the conversation transcript.
 

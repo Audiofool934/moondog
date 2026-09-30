@@ -9,6 +9,7 @@ import {
   listCapabilities,
 } from "./capability-catalog.mjs";
 import { recoverArtistReleasesWithCrossCatalogIdentity } from "../integrations/cross-catalog-artist-identity.mjs";
+import { normalizeMemoryContent } from "../memory/local-memory-store.mjs";
 
 const minimumNodeVersion = [22, 19, 0];
 
@@ -527,7 +528,7 @@ export class MoondogApplication {
   commitCompletedPrompt(user, assistant, memoryMutations = []) {
     // Follow-up replies can paraphrase live results from the process-local
     // conversation. Keep that conversation out of generic durable memory.
-    if (this.transientSpotifyContext) return this.commitTransientPrompt(memoryMutations);
+    if (this.transientSpotifyContext) return this.commitTransientPrompt(memoryMutations, user);
     if (!this.memoryStore) return { recorded: false, memory_results: [] };
     const session = this.ensureMemorySession();
     return this.memoryStore.commitCompletedPrompt(session.session_id, {
@@ -541,12 +542,17 @@ export class MoondogApplication {
     return this.commitCompletedPrompt(user, assistant);
   }
 
-  commitTransientPrompt(memoryMutations = []) {
-    // Forget remains available without recording the live dialogue as a turn
-    // or feeding it to reflection. No new generic memory may derive from it.
-    const results = memoryMutations.filter((mutation) => mutation.type === "forget")
-      .map((mutation) => this.memoryStore?.forget(mutation.memoryId));
-    return { recorded: false, memory_results: results };
+  commitTransientPrompt(memoryMutations = [], user = "") {
+    // Keep explicit user claims and retractions without recording live dialogue
+    // or feeding it to reflection. Store the verified quote, never its model
+    // paraphrase: that could smuggle provider content into an otherwise valid quote.
+    const eligible = memoryMutations.filter((mutation) => mutation.type === "forget" ||
+      (mutation.type === "remember" && typeof mutation.sourceUserText === "string" &&
+        mutation.sourceUserText.length > 0 && user.includes(mutation.sourceUserText) &&
+        normalizeMemoryContent(mutation.sourceUserText) === mutation.content));
+    return { recorded: false,
+      memory_results: this.memoryStore?.commitMemoryMutations(eligible) ?? [],
+      discarded_memories: memoryMutations.length - eligible.length };
   }
 
   #clearConversationState() {
@@ -711,19 +717,19 @@ export class MoondogApplication {
       case "resume":
         return service.resume(parameters, { signal });
       case "pause":
-        return service.pause(parameters);
+        return service.pause(parameters, { signal });
       case "next":
-        return service.next(parameters);
+        return service.next(parameters, { signal });
       case "previous":
-        return service.previous(parameters);
+        return service.previous(parameters, { signal });
       case "volume":
-        return service.setVolume(parameters);
+        return service.setVolume(parameters, { signal });
       case "seek":
-        return service.seek(parameters);
+        return service.seek(parameters, { signal });
       case "shuffle":
-        return service.setShuffle(parameters);
+        return service.setShuffle(parameters, { signal });
       case "repeat":
-        return service.setRepeat(parameters);
+        return service.setRepeat(parameters, { signal });
       default:
         throw new Error("Unsupported Spotify player action.");
     }
@@ -815,9 +821,10 @@ export class MoondogApplication {
     return this.requireSpotifyService().devices({ signal });
   }
 
-  spotifyTransfer(input) {
+  spotifyTransfer(input, { signal } = {}) {
+    signal?.throwIfAborted();
     this.transientSpotifyContext = true;
-    return this.requireSpotifyService().transfer(input);
+    return this.requireSpotifyService().transfer(input, { signal });
   }
 
   requireSpotifyResolver() {
@@ -876,12 +883,14 @@ export class MoondogApplication {
     return target;
   }
 
-  async spotifyListEditablePlaylists({ limit, offset } = {}) {
+  async spotifyListEditablePlaylists({ limit, offset } = {}, { signal } = {}) {
+    signal?.throwIfAborted();
     this.requireSpotifyScopes(["user-read-private", "playlist-read-private"]);
     const result = await this.requireSpotifyService().editablePlaylists({
       ...(limit !== undefined ? { limit } : {}),
       ...(offset !== undefined ? { offset } : {}),
-    });
+    }, { signal });
+    signal?.throwIfAborted();
     const playlists = [];
     for (const playlist of result.playlists ?? []) {
       const playlistRefId = randomUUID();
@@ -906,12 +915,14 @@ export class MoondogApplication {
     };
   }
 
-  async spotifyInspectPlaylist({ playlistRefId } = {}) {
+  async spotifyInspectPlaylist({ playlistRefId } = {}, { signal } = {}) {
+    signal?.throwIfAborted();
     this.requireSpotifyScopes(["user-read-private", "playlist-read-private"]);
     const target = this.requireSpotifyPlaylistTarget(playlistRefId);
     const snapshot = await this.requireSpotifyService().playlistSnapshot({
       playlistId: target.playlistId,
-    });
+    }, { signal });
+    signal?.throwIfAborted();
     if (snapshot.playlist?.playlist_id !== target.playlistId) {
       throw spotifyResolutionError(
         "spotify_playlist_identity_changed",
@@ -1268,7 +1279,8 @@ export class MoondogApplication {
     };
   }
 
-  async spotifyApplyPendingPlaylistEdit() {
+  async spotifyApplyPendingPlaylistEdit({ signal } = {}) {
+    signal?.throwIfAborted();
     const draft = this.pendingSpotifyPlaylistEdit;
     if (!draft) {
       throw spotifyResolutionError(
@@ -1289,13 +1301,17 @@ export class MoondogApplication {
         playlistId: draft.playlistId,
         expectedSnapshotId: draft.expectedSnapshotId,
         uris: draft.uris,
-      });
+      }, { signal });
       if (this.pendingPlaylistPromptTransaction) {
         this.pendingPlaylistPromptTransaction.externalized = true;
       }
       this.pendingSpotifyPlaylistEdit = null;
       return receipt;
     } catch (error) {
+      if (error?.outcomeUnknown === true) {
+        this.pendingSpotifyPlaylistEdit = null;
+        if (this.pendingPlaylistPromptTransaction) this.pendingPlaylistPromptTransaction.externalized = true;
+      }
       if (error?.code === "playlist_snapshot_changed") {
         this.pendingSpotifyPlaylistEdit = null;
         if (this.pendingPlaylistPromptTransaction) {
@@ -1306,7 +1322,8 @@ export class MoondogApplication {
     }
   }
 
-  async spotifyCreatePlaylist({ name, description, trackRefs } = {}) {
+  async spotifyCreatePlaylist({ name, description, trackRefs } = {}, { signal } = {}) {
+    signal?.throwIfAborted();
     if (
       !Array.isArray(trackRefs) ||
       !Array.isArray(this.validatedPlaylistTrackRefs) ||
@@ -1324,7 +1341,7 @@ export class MoondogApplication {
     const details = spotifyPlaylistDetails({ name, description });
     this.requireSpotifyWriteScopes(["playlist-modify-private"]);
     const uris = this.requireSpotifyTrackUris(trackRefs);
-    return this.writeSpotifyPlaylist(details, uris);
+    return this.writeSpotifyPlaylist(details, uris, { signal });
   }
 
   pendingSpotifyPlaylistStatus() {
@@ -1366,7 +1383,8 @@ export class MoondogApplication {
     return structuredClone(this.pendingSpotifyPlaylist.plan);
   }
 
-  async spotifyCreatePendingPlaylist({ name, description } = {}) {
+  async spotifyCreatePendingPlaylist({ name, description } = {}, { signal } = {}) {
+    signal?.throwIfAborted();
     if (!this.pendingSpotifyPlaylist) {
       throw spotifyResolutionError(
         "spotify_pending_playlist_unavailable",
@@ -1379,7 +1397,9 @@ export class MoondogApplication {
     const draft = this.pendingSpotifyPlaylist;
     const result = await this.requireSpotifyResolver().resolve(
       draft.trustedTracks,
+      { signal },
     );
+    signal?.throwIfAborted();
     const resolvedByRef = new Map();
     for (const resolution of result.resolutions ?? []) {
       if (resolution.status === "resolved" && resolution.spotify?.uri) {
@@ -1398,7 +1418,7 @@ export class MoondogApplication {
         "The pending playlist could not be fully resolved on Spotify, so no playlist was created.",
       );
     }
-    return this.writeSpotifyPlaylist(details, uris);
+    return this.writeSpotifyPlaylist(details, uris, { signal });
   }
 
   async spotifyPlayPendingPlan({ deviceId } = {}, { signal } = {}) {
@@ -1488,9 +1508,10 @@ export class MoondogApplication {
         stopped = label(track); stopIndex = index;
         // A received rejection or pre-dispatch cancellation is known; transport
         // failures may have applied the write. Never continue or replay it.
-        const rejected = (Number.isInteger(error?.status) && error.status >= 400 && error.status < 500) ||
-          error?.name === "AbortError" || /^invalid_|^spotify_(?:auth|device|active_device|.*scopes)_/u.test(error?.code ?? "");
-        outcomeUnknown = !rejected;
+        const rejected = error?.outcomeUnknown === false ||
+          (Number.isInteger(error?.status) && error.status >= 400 && error.status < 500) ||
+          (error?.name === "AbortError" && signal?.aborted) || /^invalid_|^spotify_(?:auth|device|active_device|.*scopes)_/u.test(error?.code ?? "");
+        outcomeUnknown = error?.outcomeUnknown === true || !rejected;
         break;
       }
     }
@@ -1504,12 +1525,13 @@ export class MoondogApplication {
       ...(signal?.aborted ? { cancelled: true } : {}) };
   }
 
-  async writeSpotifyPlaylist(details, uris) {
+  async writeSpotifyPlaylist(details, uris, { signal } = {}) {
+    signal?.throwIfAborted();
     try {
       const receipt = await this.requireSpotifyService().createPlaylistWithTracks({
         ...details,
         uris,
-      });
+      }, { signal });
       if (this.pendingPlaylistPromptTransaction) {
         this.pendingPlaylistPromptTransaction.externalized = true;
       }
@@ -1517,7 +1539,7 @@ export class MoondogApplication {
       this.pendingPlaylistRevisionCandidateSet = null;
       return receipt;
     } catch (error) {
-      if (error?.code === "playlist_created_without_tracks") {
+      if (error?.outcomeUnknown === true || ["playlist_created_without_tracks", "playlist_created_tracks_unknown"].includes(error?.code)) {
         if (this.pendingPlaylistPromptTransaction) {
           this.pendingPlaylistPromptTransaction.externalized = true;
         }
@@ -1535,12 +1557,14 @@ export class MoondogApplication {
     return this.requireSpotifyService().saveTracks({ uris }, { signal });
   }
 
-  async spotifyCheckLibraryTracks({ trackRefs } = {}) {
+  async spotifyCheckLibraryTracks({ trackRefs } = {}, { signal } = {}) {
+    signal?.throwIfAborted();
     this.requireSpotifyScopes(["user-library-read"]);
     const uris = this.requireSpotifyTrackUris(trackRefs);
     const result = await this.requireSpotifyService().checkSavedTracks({
       uris,
-    });
+    }, { signal });
+    signal?.throwIfAborted();
     return {
       provider: "spotify",
       checked: result.checked.map((entry, index) => ({

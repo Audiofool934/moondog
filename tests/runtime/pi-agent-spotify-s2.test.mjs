@@ -1320,14 +1320,16 @@ test("agent revises a validated pending plan before exact later approval", async
   assert.equal(application.pendingSpotifyPlaylistStatus().state, "none");
 });
 
-test("agent reports an empty playlist when adding its tracks fails", async () => {
+for (const unknown of [false, true]) for (const cancelled of [false, true]) {
+test(`agent retains a created playlist receipt with ${unknown ? "unknown" : "rejected"} additions and cancellation=${cancelled}`, async () => {
   const { application, service } = spotifyApplication();
   service.createPlaylistWithTracks = async (input) => {
     service.calls.push(["playlist.write", input]);
     const error = new Error(
       "Spotify created the private playlist but did not accept its tracks.",
     );
-    error.code = "playlist_created_without_tracks";
+    error.code = unknown ? "playlist_created_tracks_unknown" : "playlist_created_without_tracks";
+    if (cancelled) runtime.abort();
     throw error;
   };
   const { faux, runtime } = configuredRuntime(application);
@@ -1390,14 +1392,15 @@ test("agent reports an empty playlist when adding its tracks fails", async () =>
     "Save one night track to a Spotify playlist called Partial Night.",
   );
 
-  assert.equal(result.status, "completed");
+  assert.equal(result.status, cancelled ? "aborted" : "completed");
   assert.equal(result.spotify_playlist_partial_effect.state, "partial");
   assert.equal(
     result.spotify_playlist_partial_effect.playlist.track_count,
-    0,
+    unknown ? undefined : 0,
   );
   assert.equal("spotify_playlist_write" in result, false);
-  assert.match(result.text, /empty playlist now exists/u);
+  assert.match(result.text, unknown ? /adding its tracks was not confirmed/u : /empty playlist now exists/u);
+  if (unknown) assert.doesNotMatch(result.text, /empty playlist/u);
   assert.doesNotMatch(result.text, /no external effects/u);
   assert.doesNotMatch(result.text, /nothing changed/u);
   assert.deepEqual(service.calls, [
@@ -1410,6 +1413,7 @@ test("agent reports an empty playlist when adding its tracks fails", async () =>
     ],
   ]);
 });
+}
 
 test("playlist write fails safely without a validated plan", async () => {
   const { application, service } = spotifyApplication();
