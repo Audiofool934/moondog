@@ -288,6 +288,19 @@ const catalog = [
     },
   },
   {
+    id: "spotify.queue.status",
+    version: "1",
+    state: "enabled",
+    effect: "read_external",
+    description:
+      "Inspect the current Spotify playback queue with track metadata.",
+    requires_spotify: true,
+    agent_tool: {
+      name: "moondog_spotify_queue_status",
+      label: "See what's queued on Spotify",
+    },
+  },
+  {
     id: "spotify.device.list",
     version: "1",
     state: "enabled",

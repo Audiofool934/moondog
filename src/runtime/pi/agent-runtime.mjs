@@ -2951,6 +2951,56 @@ function projectSpotifyPlayerStatus(value) {
   };
 }
 
+function projectSpotifyQueueItem(item) {
+  if (!isPlainObject(item)) return null;
+  const projected = {};
+  if (typeof item.type === "string") {
+    projected.type = cleanOutputText(item.type, 16, "spotify_queue_item_type");
+  }
+  if (typeof item.uri === "string") {
+    projected.uri = cleanOutputText(item.uri, 256, "spotify_queue_item_uri");
+  }
+  if (typeof item.name === "string") {
+    projected.name = cleanOutputText(
+      item.name,
+      256,
+      "spotify_queue_item_name",
+    );
+  }
+  if (Array.isArray(item.artists)) {
+    projected.artists = item.artists
+      .slice(0, 6)
+      .map((artist) =>
+        cleanOutputText(artist, 256, "spotify_queue_item_artist"),
+      );
+  }
+  if (typeof item.album === "string") {
+    projected.album = cleanOutputText(
+      item.album,
+      256,
+      "spotify_queue_item_album",
+    );
+  }
+  if (Number.isFinite(item.duration_ms)) {
+    projected.duration_ms = item.duration_ms;
+  }
+  return projected;
+}
+
+function projectSpotifyQueue(value) {
+  if (!isPlainObject(value) || value.provider !== "spotify") {
+    throw new Error("domain_result_invalid:spotify_queue");
+  }
+  const items = Array.isArray(value.queue) ? value.queue : [];
+  return {
+    provider: "spotify",
+    currently_playing: projectSpotifyQueueItem(value.currently_playing),
+    queue: items.slice(0, 10).map(projectSpotifyQueueItem).filter(Boolean),
+    queue_count: items.length,
+    truncated: value.truncated === true,
+  };
+}
+
 function projectSpotifyReceipt(value) {
   if (
     !isPlainObject(value) ||
@@ -4713,6 +4763,21 @@ function createToolFactories(
               });
             }
           },
+        ),
+      }),
+    ],
+    [
+      "spotify.queue.status",
+      (descriptor) => ({
+        name: descriptor.tool_name,
+        label: descriptor.label,
+        description:
+          "See the current Spotify playback queue: what is playing now and what is queued next, with track names and artists.",
+        parameters: emptyParameters,
+        executionMode: "parallel",
+        execute: executeDomain(
+          async () => application.spotifyQueueStatus(),
+          projectSpotifyQueue,
         ),
       }),
     ],
