@@ -770,6 +770,156 @@ test("a ready Spotify connection enables bounded player capabilities", async () 
   ]);
 });
 
+test("Spotify queue similar seeds from live playback and skips the playing track", async () => {
+  const queueCalls = [];
+  const candidateOne = "aaaaaaaa-bbbb-4ccc-8ddd-000000000001";
+  const candidateTwo = "aaaaaaaa-bbbb-4ccc-8ddd-000000000002";
+  const service = {
+    async currentPlayer() {
+      return {
+        state: "available",
+        is_playing: true,
+        item: {
+          type: "track",
+          uri: "spotify:track:playing",
+          artists: ["Seed Artist & Friends"],
+        },
+      };
+    },
+    async addToQueue(input) {
+      queueCalls.push(input);
+      return { ok: true };
+    },
+  };
+  const similarityCalls = [];
+  const musicSimilarity = {
+    async discoverSimilarTracks(input) {
+      similarityCalls.push(input);
+      return {
+        state: "resolved",
+        source: { provider: "listenbrainz" },
+        tracks: [
+          {
+            track_ref_id: candidateOne,
+            title: "Similar One",
+            artist_credit: "Kindred Band",
+            release: "Debut",
+            candidate_scope: "external_catalog",
+            catalog_provider: "listenbrainz",
+            discovery_basis: {
+              kind: "listenbrainz_collaborative_artist_similarity",
+              seed_artist: "Seed Artist",
+              adjacent_artist: "Kindred Band",
+              mode: "medium",
+            },
+          },
+          {
+            track_ref_id: candidateTwo,
+            title: "Similar Two",
+            artist_credit: "Other Band",
+            release: "Second",
+            candidate_scope: "external_catalog",
+            catalog_provider: "listenbrainz",
+            discovery_basis: {
+              kind: "listenbrainz_collaborative_artist_similarity",
+              seed_artist: "Seed Artist",
+              adjacent_artist: "Other Band",
+              mode: "medium",
+            },
+          },
+        ],
+      };
+    },
+  };
+  const resolver = {
+    async resolve(tracks) {
+      return {
+        resolutions: tracks.map((track) => ({
+          track_ref_id: track.track_ref_id,
+          status: "resolved",
+          spotify: {
+            track_id: track.track_ref_id,
+            uri:
+              track.track_ref_id === candidateOne
+                ? "spotify:track:playing"
+                : "spotify:track:queued",
+          },
+        })),
+      };
+    },
+  };
+  const application = new MoondogApplication({
+    domainServices: createSyntheticDomainServices({
+      subjectScope: { subjectId: "trusted-synthetic-subject" },
+    }),
+    musicSimilarity,
+    spotifyConnection: {
+      service,
+      resolver,
+      ready: () => true,
+      missingScopes: () => [],
+    },
+  });
+
+  try {
+    const result = await application.spotifyQueueSimilar({ count: 2 });
+    assert.equal(similarityCalls.length, 1);
+    assert.deepEqual(similarityCalls[0], {
+      artistName: "Seed Artist",
+      mode: "medium",
+      limit: 12,
+    });
+    assert.equal(result.state, "accepted");
+    assert.equal(result.seed_artist, "Seed Artist");
+    assert.equal(result.requested, 2);
+    assert.equal(result.queued_count, 1);
+    assert.deepEqual(result.queued, [
+      { title: "Similar Two", artist_credit: "Other Band" },
+    ]);
+    assert.deepEqual(queueCalls, [{ uri: "spotify:track:queued" }]);
+
+    await assert.rejects(application.spotifyQueueSimilar({ count: 11 }), {
+      code: "invalid_similar_queue_count",
+    });
+    await assert.rejects(application.spotifyQueueSimilar({ count: 0 }), {
+      code: "invalid_similar_queue_count",
+    });
+  } finally {
+    application.close();
+  }
+});
+
+test("Spotify queue similar reports when nothing is playing", async () => {
+  const application = new MoondogApplication({
+    domainServices: createSyntheticDomainServices({
+      subjectScope: { subjectId: "trusted-synthetic-subject" },
+    }),
+    musicSimilarity: {
+      async discoverSimilarTracks() {
+        throw new Error("similarity must not run without playback");
+      },
+    },
+    spotifyConnection: {
+      service: {
+        async currentPlayer() {
+          return { state: "inactive" };
+        },
+      },
+      ready: () => true,
+      missingScopes: () => [],
+    },
+  });
+
+  try {
+    const result = await application.spotifyQueueSimilar();
+    assert.equal(result.state, "no_playback");
+    assert.equal(result.ok, true);
+    assert.equal(result.action, "queue.similar");
+  } finally {
+    application.close();
+  }
+});
+
 test("Spotify catalog resolution asks for a fresh login when search scope is missing", async () => {
   let resolverCalls = 0;
   const application = new MoondogApplication({

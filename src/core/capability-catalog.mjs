@@ -243,19 +243,6 @@ const catalog = [
     },
   },
   {
-    id: "memory.reflect",
-    version: "1",
-    state: "enabled",
-    effect: "write_local",
-    description:
-      "Run the Memory Agent reflection over recent conversation episodes to consolidate durable memories.",
-    requires_memory: true,
-    agent_tool: {
-      name: "moondog_memory_reflect",
-      label: "Reflect on recent conversation",
-    },
-  },
-  {
     id: "spotify.history.import",
     version: "1",
     state: "enabled",
@@ -297,6 +284,20 @@ const catalog = [
     agent_tool: {
       name: "moondog_spotify_queue_add",
       label: "Add to Spotify queue",
+    },
+  },
+  {
+    id: "spotify.queue.similar",
+    version: "1",
+    state: "enabled",
+    effect: "write_external",
+    description:
+      "Queue a bounded set of tracks similar to the currently playing Spotify track. The seed is read host-side from live playback and never exposed to the model.",
+    requires_spotify: true,
+    requires_music_similarity: true,
+    agent_tool: {
+      name: "moondog_spotify_queue_similar",
+      label: "Queue more like this on Spotify",
     },
   },
   {

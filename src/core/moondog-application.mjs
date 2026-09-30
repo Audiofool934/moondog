@@ -9,7 +9,7 @@ import {
   listCapabilities,
 } from "./capability-catalog.mjs";
 import { recoverArtistReleasesWithCrossCatalogIdentity } from "../integrations/cross-catalog-artist-identity.mjs";
-import { runMemoryReflection } from "../memory/reflection-worker.mjs";
+import { primaryArtistName } from "../integrations/spotify/catalog-resolver.mjs";
 
 const minimumNodeVersion = [22, 19, 0];
 
@@ -494,17 +494,6 @@ export class MoondogApplication {
     return this.memoryStore.reflectionStatus();
   }
 
-  async reflectMemory({ limit, dryRun = false, runtimeFactory } = {}) {
-    if (!this.memoryStore) throw new Error("Persistent memory is unavailable");
-    return runMemoryReflection({
-      application: this,
-      trigger: "manual",
-      ...(limit !== undefined ? { limit } : {}),
-      dryRun,
-      ...(runtimeFactory ? { runtimeFactory } : {}),
-    });
-  }
-
   forgetMemory(memoryId) {
     if (!this.memoryStore) throw new Error("Persistent memory is unavailable");
     const session = this.ensureMemorySession();
@@ -687,6 +676,125 @@ export class MoondogApplication {
       });
     }
     return this.requireSpotifyService().addToQueue(input);
+  }
+
+  // One-step "keep this going" queueing: reads the current Spotify playback
+  // host-side, seeds open artist similarity from its primary artist, resolves
+  // a bounded set of different tracks to Spotify, and queues each once. The
+  // model never learns what's playing, so this cannot double as a
+  // playback-metadata read.
+  async spotifyQueueSimilar({ count } = {}) {
+    const requested = count === undefined ? 5 : count;
+    if (!Number.isInteger(requested) || requested < 1 || requested > 10) {
+      throw spotifyResolutionError(
+        "invalid_similar_queue_count",
+        "The similar queue count must be an integer from 1 to 10.",
+      );
+    }
+    const player = await this.requireSpotifyService().currentPlayer();
+    const item = player?.state === "available" ? player.item : null;
+    const playingArtists = Array.isArray(item?.artists) ? item.artists : [];
+    if (!item || item.type !== "track" || playingArtists.length < 1) {
+      return {
+        provider: "spotify",
+        ok: true,
+        effect: "write_external",
+        action: "queue.similar",
+        state: "no_playback",
+        note: "Nothing is playing on Spotify right now.",
+      };
+    }
+    this.requireSpotifyScopes(["user-read-private"]);
+    const { similarity, domainServices } = this.requireMusicSimilarity();
+    const seedArtist = primaryArtistName(playingArtists[0]);
+    const discovered = await similarity.discoverSimilarTracks({
+      artistName: seedArtist,
+      mode: "medium",
+      limit: 12,
+    });
+    if (discovered.state !== "resolved" || discovered.tracks.length === 0) {
+      return {
+        provider: "spotify",
+        ok: true,
+        effect: "write_external",
+        action: "queue.similar",
+        state: "no_candidates",
+        seed_artist: seedArtist,
+        note: "No similar tracks were found for the artist currently playing.",
+      };
+    }
+    const registered = domainServices.registerExternalCandidateSet({
+      tracks: discovered.tracks,
+      source: discovered.source,
+    });
+    if (registered.result_count === 0) {
+      return {
+        provider: "spotify",
+        ok: true,
+        effect: "write_external",
+        action: "queue.similar",
+        state: "no_candidates",
+        seed_artist: seedArtist,
+        note: "The similar tracks were all already in the listening history.",
+      };
+    }
+    const resolver = this.requireSpotifyResolver();
+    const trustedByRef = new Map(
+      domainServices
+        .getTrustedTracks(
+          registered.tracks.map((track) => track.track_ref_id),
+        )
+        .map((track) => [track.track_ref_id, track]),
+    );
+    const resolution = await resolver.resolve([...trustedByRef.values()]);
+    const seenUris = new Set();
+    const playable = [];
+    for (const entry of resolution.resolutions ?? []) {
+      if (playable.length >= requested) break;
+      if (entry?.status !== "resolved" || !entry.spotify?.uri) continue;
+      if (entry.spotify.uri === item.uri || seenUris.has(entry.spotify.uri)) {
+        continue;
+      }
+      seenUris.add(entry.spotify.uri);
+      const trusted = trustedByRef.get(entry.track_ref_id);
+      playable.push({
+        uri: entry.spotify.uri,
+        title: trusted?.title ?? "",
+        artist_credit: trusted?.artist_credit ?? "",
+      });
+    }
+    const queued = [];
+    let failedCount = 0;
+    for (const track of playable) {
+      try {
+        // One write per track, no retry: partial failures are reported, not hidden.
+        await this.requireSpotifyService().addToQueue({ uri: track.uri });
+        queued.push({
+          title: track.title,
+          artist_credit: track.artist_credit,
+        });
+      } catch {
+        failedCount += 1;
+      }
+    }
+    this.recordPromptDiscoverySource(registered.source);
+    return {
+      provider: "spotify",
+      ok: true,
+      effect: "write_external",
+      action: "queue.similar",
+      state: "accepted",
+      seed_artist: seedArtist,
+      requested,
+      queued_count: queued.length,
+      queued,
+      ...(failedCount > 0
+        ? {
+            failed_count: failedCount,
+            note: `${failedCount} similar track${failedCount === 1 ? "" : "s"} could not be added to the queue.`,
+          }
+        : {}),
+    };
   }
 
   spotifyDevices() {
