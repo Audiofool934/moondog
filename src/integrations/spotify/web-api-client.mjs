@@ -660,6 +660,21 @@ export function createSpotifyWebApiClient({
       );
     },
 
+    async getTopItems({ type = "tracks", timeRange = "medium_term", limit = 5 } = {}, { signal } = {}) {
+      if (!["artists", "tracks"].includes(type) || !["short_term", "medium_term", "long_term"].includes(timeRange) ||
+          !Number.isInteger(limit) || limit < 1 || limit > 10) {
+        fail("invalid_top_items", "Spotify top items require a supported type, time range, and limit from 1 to 10.");
+      }
+      const payload = await request(`/me/top/${type}${queryString({ time_range: timeRange, limit, offset: 0 })}`, { signal });
+      const raw = Array.isArray(payload?.items) ? payload.items : [];
+      const items = raw.slice(0, limit).map((item, index) => {
+        const normalized = type === "tracks" ? normalizeTrackSearchItem(item) :
+          (safeText(item?.name) ? { name: safeText(item.name), type: "artist" } : null);
+        return normalized ? { ...normalized, affinity_rank: index + 1 } : null;
+      }).filter(Boolean);
+      return { provider: "spotify", items, truncated: raw.length > items.length || Boolean(payload?.next) || payload?.total > raw.length };
+    },
+
     async getCurrentUserPlaylists({ limit, offset } = {}, { signal } = {}) {
       return normalizePlaylistPage(
         await request(

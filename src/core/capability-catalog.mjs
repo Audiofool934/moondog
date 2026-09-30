@@ -364,6 +364,15 @@ const catalog = [
     },
   },
   {
+    id: "spotify.top",
+    version: "1",
+    state: "enabled",
+    effect: "read_external",
+    description: "Read bounded Spotify top artists or tracks as transient calculated-affinity evidence.",
+    requires_spotify: true,
+    agent_tool: { name: "moondog_spotify_top", label: "Your Spotify top artists and tracks" },
+  },
+  {
     id: "spotify.search",
     version: "1",
     state: "enabled",

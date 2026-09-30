@@ -668,8 +668,8 @@ export class MoondogApplication {
       }
       return result;
     });
-    // Each read replaces its previous selection; at most 32 items across the
-    // three read surfaces remain actionable until this conversation ends.
+    // Each read replaces its previous selection; at most 42 items across the
+    // four read surfaces remain actionable until this conversation ends.
     this.spotifyReadSelections.set(source, items);
     return items.map(({ uri: _uri, ...item }) => structuredClone(item));
   }
@@ -733,6 +733,19 @@ export class MoondogApplication {
       default:
         throw new Error("Unsupported Spotify player action.");
     }
+  }
+
+  async spotifyTopItems(input, { signal } = {}) {
+    signal?.throwIfAborted();
+    this.requireSpotifyScopes(["user-top-read"], "spotify_top_scope_missing");
+    this.transientSpotifyContext = true;
+    const result = await this.requireSpotifyService().topItems(input, { signal });
+    signal?.throwIfAborted();
+    const raw = Array.isArray(result.items) ? result.items.slice(0, 10) : [];
+    const items = result.type === "tracks" ? this.#registerSpotifyReadItems("top_tracks", raw) :
+      raw.map((item) => ({ type: "artist", name: typeof item.name === "string" ? item.name.slice(0, 256) : "" }));
+    return { ...result, items: items.map((item, index) => ({ ...item,
+      affinity_rank: Number.isInteger(raw[index]?.affinity_rank) ? raw[index].affinity_rank : index + 1 })) };
   }
 
   async spotifySearchTracks(input, { signal } = {}) {

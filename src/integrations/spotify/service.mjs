@@ -648,6 +648,23 @@ export function createSpotifyService(options = {}) {
       }, { signal });
     },
 
+    async topItems(value, { signal } = {}) {
+      signal?.throwIfAborted();
+      const input = inputObject(value);
+      const type = input.type ?? "tracks";
+      const timeRange = input.timeRange ?? "medium_term";
+      if (!["artists", "tracks"].includes(type) || !["short_term", "medium_term", "long_term"].includes(timeRange)) {
+        fail("invalid_top_items", "Spotify top items require artists or tracks and short_term, medium_term, or long_term.");
+      }
+      const limit = searchLimit(input.limit);
+      const result = await client.getTopItems({ type, timeRange, limit }, { signal });
+      signal?.throwIfAborted();
+      const items = Array.isArray(result?.items) ? result.items : [];
+      return { provider: "spotify", type, time_range: timeRange,
+        evidence_basis: "spotify_calculated_affinity", items: items.slice(0, limit),
+        truncated: result?.truncated === true || items.length > limit };
+    },
+
     async searchTracks(value, { signal } = {}) {
       const input = inputObject(value);
       return client.searchTracks({

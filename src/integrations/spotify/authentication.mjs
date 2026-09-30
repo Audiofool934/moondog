@@ -25,6 +25,7 @@ export const SPOTIFY_DEFAULT_SCOPES = Object.freeze([
   "user-library-read",
   "user-library-modify",
   "user-read-recently-played",
+  "user-top-read",
 ]);
 
 export class SpotifyAuthenticationError extends Error {

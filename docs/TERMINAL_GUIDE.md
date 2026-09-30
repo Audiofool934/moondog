@@ -1164,7 +1164,7 @@ Listening-profile state and durable memories remain available across conversatio
 
 Only completed user and assistant exchanges are recorded.
 
-Live Spotify playback, queue and device reads make the active conversation transient. Their replies and follow-up paraphrases remain usable in process but are excluded from generic transcript storage, recall and reflection until `/new` or a conversation reset. Explicit user preferences can still persist: the host verifies an exact quote from the current user message and saves that quote alone, without model paraphrases or Spotify output. Unverified staged claims are discarded. Forgetting an existing memory remains available. Search-only conversations can still be recorded because their results are public catalog metadata. Explicit local listening-profile corrections remain separate from generic conversation memory.
+Live Spotify top taste, playback, queue and device reads make the active conversation transient. Their replies and follow-up paraphrases remain usable in process but are excluded from generic transcript storage, recall and reflection until `/new` or a conversation reset. Explicit user preferences can still persist: the host verifies an exact quote from the current user message and saves that quote alone, without model paraphrases or Spotify output. Unverified staged claims are discarded. Forgetting an existing memory remains available. Search-only conversations can still be recorded because their results are public catalog metadata. Explicit local listening-profile corrections remain separate from generic conversation memory.
 
 Aborted turns, raw tool traces, and prompt-local candidate IDs are not persisted as the conversation transcript.
 
@@ -1447,3 +1447,9 @@ After three unique independent newcomer sessions against one protocol, create th
 The public aggregate keeps task rates, time to first success, bounded observation task and category counts, environment counts, and repeated blocked tasks while omitting participant IDs, exact session timestamps, free text, paths, credentials, and music data.
 
 Read the complete setup, collection, privacy, validation, and interpretation contract in [First-run Usability Evaluation](FIRST_RUN_USABILITY.md).
+
+### Spotify top artists and tracks
+
+Ask for your top artists or tracks with `short_term` (about four weeks), `medium_term` (about six months, default), or `long_term` (about one year). Each read returns up to 10 items, default 5. This is Spotify-calculated affinity, not play counts, complete listening history, or an explicit preference. Top tracks have temporary references for later explicit play, queue, or save requests. All metadata stays untrusted and this conversation remains out of generic memory; an explicit quoted user preference can still be saved.
+
+This needs `user-top-read`. Existing credentials are not changed automatically. If Moondog reports the missing scope, run `/spotify login` yourself and approve it in Spotify; other authorized features remain available. The recent-listening-only import connection still requests only its existing scope. No reauthorization is performed by the top-items tool. See [Spotify's top-items API](https://developer.spotify.com/documentation/web-api/reference/get-users-top-artists-and-tracks).
