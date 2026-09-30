@@ -11,6 +11,10 @@ export function createSpotifyCredentialStore({
       return credentialStore.read(providerId, options);
     },
 
+    async modify(operation, options) {
+      return credentialStore.modify(providerId, operation, options);
+    },
+
     async write(credential, options) {
       return credentialStore.modify(
         providerId,

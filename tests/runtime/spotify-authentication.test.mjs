@@ -30,19 +30,22 @@ function successfulResponse(payload) {
 
 function memoryCredentialStore(initial) {
   let credential = initial ? structuredClone(initial) : undefined;
+  let tail = Promise.resolve();
+  const lock = (fn) => { const result = tail.then(fn); tail = result.catch(() => {}); return result; };
   return {
-    async read() {
-      return credential ? structuredClone(credential) : undefined;
+    async read() { return structuredClone(credential); },
+    async write(value) { return lock(() => { credential = structuredClone(value); }); },
+    async delete() { return lock(() => { credential = undefined; }); },
+    async modify(fn, { signal } = {}) {
+      return lock(async () => {
+        signal?.throwIfAborted();
+        const next = await fn(structuredClone(credential), { checkpoint: async (value) => { credential = structuredClone(value); } });
+        signal?.throwIfAborted();
+        if (next !== undefined) credential = structuredClone(next);
+        return structuredClone(credential);
+      });
     },
-    async write(value) {
-      credential = structuredClone(value);
-    },
-    async delete() {
-      credential = undefined;
-    },
-    snapshot() {
-      return credential ? structuredClone(credential) : undefined;
-    },
+    snapshot() { return structuredClone(credential); },
   };
 }
 
@@ -453,30 +456,32 @@ test("concurrent and late rejected tokens share one rotating refresh; one caller
 });
 
 for (const stop of ["cancel", "logout", "replace"]) {
-  test(`${stop} prevents a pending refresh from restoring stale credentials`, async () => {
-    let release;
-    let started;
-    let refreshSignal;
+  test(`${stop} during refresh preserves the final credential transaction order`, async () => {
+    let release, started;
     const ready = new Promise((resolve) => { started = resolve; });
-    const { auth, store } = refreshFixture(async (_url, options) => {
-      refreshSignal = options.signal; started();
-      // An uncooperative transport returning after cancellation must not persist.
+    const { auth, store } = refreshFixture(async () => {
+      started();
       await new Promise((resolve) => { release = resolve; });
-      return successfulResponse({ access_token: "stale-result", expires_in: 3600, token_type: "Bearer" });
+      return successfulResponse({ access_token: "rotated-result", expires_in: 3600, token_type: "Bearer" });
     });
     const controller = new AbortController();
-    const result = assert.rejects(auth.getAccessToken({ signal: controller.signal }),
-      (error) => ["spotify_auth_aborted", "spotify_auth_changed"].includes(error.code));
+    const pending = auth.getAccessToken({ signal: controller.signal });
+    const result = stop === "replace" ? pending : assert.rejects(pending);
     await ready;
+    let mutation;
     if (stop === "cancel") controller.abort();
-    if (stop === "logout") await auth.logout();
-    if (stop === "replace") await store.write({ ...store.snapshot(), accessToken: "replacement", refreshToken: "replacement-refresh" });
+    if (stop === "logout") mutation = auth.logout();
+    if (stop === "replace") {
+      const replacement = { ...store.snapshot(), accessToken: "replacement", refreshToken: "replacement-refresh" };
+      delete replacement.refreshAttempt;
+      mutation = store.write(replacement);
+    }
     release();
     await result;
-    await new Promise((resolve) => setImmediate(resolve));
-    assert.notEqual(store.snapshot()?.accessToken, "stale-result");
+    await mutation;
+    if (stop === "cancel") assert.equal(await auth.getAccessToken(), "rotated-result");
     if (stop === "logout") assert.equal(store.snapshot(), undefined);
-    if (stop !== "replace") assert.equal(refreshSignal.aborted, true);
+    if (stop === "replace") assert.equal(store.snapshot().accessToken, "replacement");
   });
 }
 
