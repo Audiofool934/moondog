@@ -882,7 +882,7 @@ export function createSpotifyService(options = {}) {
       };
     },
 
-    async quickEditPlaylist(value, { signal } = {}) {
+    async quickEditPlaylist(value, { signal, beforeWrite } = {}) {
       signal?.throwIfAborted();
       const input = inputObject(value);
       const playlistId = requiredPlaylistId(input.playlistId);
@@ -898,6 +898,7 @@ export function createSpotifyService(options = {}) {
       if (input.action === "rename") {
         name = cleanPlaylistText(input.name, 100, "invalid_playlist_name", "name");
         if (name !== input.name || name === current.playlist.name) fail("invalid_playlist_name", "The exact new playlist name must be valid and different.");
+        beforeWrite?.();
         signal?.throwIfAborted();
         await client.renamePlaylist({ playlistId, name }, { signal });
       } else {
@@ -905,6 +906,7 @@ export function createSpotifyService(options = {}) {
         if (!trackUriPattern.test(uri) || current.items.filter((item) => item.uri === uri).length !== 1) {
           fail("playlist_removal_ambiguous", "Single-track removal requires exactly one occurrence. Preview the exact final order for duplicates or bulk edits.");
         }
+        beforeWrite?.();
         signal?.throwIfAborted();
         await client.removePlaylistItem({ playlistId, uri, snapshotId: expectedSnapshotId }, { signal });
         count -= 1;
