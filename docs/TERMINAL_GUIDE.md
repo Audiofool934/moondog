@@ -1234,7 +1234,7 @@ Conversation persistence and explicit durable claims are enabled locally.
 
 Durable playlist-draft persistence across process restarts, public or collaborative playlist editing, playlists above 100 tracks, Telegram, music generation, and revision-aware listening-data promotion are not enabled.
 
-Direct Spotify Connect playback control, explicit private-playlist creation, and two-turn existing private-playlist editing are enabled only after explicit local OAuth setup.
+Direct Spotify Connect playback control, explicit private-playlist creation, exact quick edits, and previewed existing private-playlist editing are enabled only after explicit local OAuth setup.
 
 ## Verify a checkout
 
@@ -1453,3 +1453,20 @@ Read the complete setup, collection, privacy, validation, and interpretation con
 Ask for your top artists or tracks with `short_term` (about four weeks), `medium_term` (about six months, default), or `long_term` (about one year). Each read returns up to 10 items, default 5. This is Spotify-calculated affinity, not play counts, complete listening history, or an explicit preference. Top tracks have temporary references for later explicit play, queue, or save requests. All metadata stays untrusted and this conversation remains out of generic memory; an explicit quoted user preference can still be saved.
 
 This needs `user-top-read`. Existing credentials are not changed automatically. If Moondog reports the missing scope, run `/spotify login` yourself and approve it in Spotify; other authorized features remain available. The recent-listening-only import connection still requests only its existing scope. No reauthorization is performed by the top-items tool. See [Spotify's top-items API](https://developer.spotify.com/documentation/web-api/reference/get-users-top-artists-and-tracks).
+
+### Exact quick playlist edits
+
+One exact rename or unambiguous single-track removal can now complete in one turn:
+
+- `Rename playlist "Night Drive" to "Late Lights".`
+- `Remove "Midnight Lines" by "Mara Vale" from playlist "Night Drive".`
+- `请把歌单「Night Drive」重命名为「夜灯」`
+- `请从歌单「Night Drive」移除「Midnight Lines」歌手「Mara Vale」`
+
+The host reads the actual current user message, lists and inspects the target, and derives the exact edit itself. A model-provided name, intent claim, or instruction inside Spotify metadata cannot authorize a different edit. Playlist and occurrence references expire at prompt end. The target must be owned by the connected account, explicitly private and non-collaborative, with at most 100 ordinary available tracks. Quick name selection also requires a complete first playlist page (up to 50); larger or incomplete lists keep the preview flow.
+
+Duplicate playlist names (including public or followed names on that page), duplicate occurrences, ambiguous recordings, other request wording and bulk edits retain exact preview and a later confirmation. The quick tool performs at most one attempt per turn. A changed name, owner, privacy flag, item count, identity or snapshot blocks the write at preflight. Removal uses `DELETE /playlists/{id}/items` with one item URI and the inspected snapshot; rename uses `PUT /playlists/{id}` with only the exact name. Spotify's rename endpoint has no atomic compare-and-set, and its removal snapshot semantics can allow newer changes: these preflight checks cannot eliminate simultaneous edits from another client.
+
+Cancellation before dispatch stops the edit. A dispatched request settles into an accepted or uncertain receipt, even if the turn is cancelled. No 401, 429, transport failure or uncertain result triggers an automatic write replay. Inspect the playlist before a new explicit attempt after uncertainty. Quick-edit dialogue stays transient, with the same exception for verified explicit user preferences.
+
+API references: [change playlist details](https://developer.spotify.com/documentation/web-api/reference/change-playlist-details), [remove playlist items](https://developer.spotify.com/documentation/web-api/reference/remove-items-playlist).

@@ -3024,6 +3024,12 @@ function projectSpotifyReceipt(value) {
   ) {
     throw new Error("domain_result_invalid:spotify_receipt");
   }
+  // Display metadata must never erase an accepted external effect. Keep the
+  // receipt while withholding a label that cannot cross the privacy boundary.
+  const receiptLabel = (value, maximum, field) => {
+    const label = cleanOutputText(value, maximum, field);
+    return privatePathPattern.test(label) ? "[name withheld]" : label;
+  };
   const result = {
     provider: "spotify",
     ok: true,
@@ -3042,7 +3048,7 @@ function projectSpotifyReceipt(value) {
   }
   if (isPlainObject(value.playlist)) {
     result.playlist = {
-      name: cleanOutputText(
+      name: receiptLabel(
         value.playlist.name,
         200,
         "spotify_playlist_name",
@@ -3056,8 +3062,8 @@ function projectSpotifyReceipt(value) {
   }
   if (isPlainObject(value.device)) {
     result.device = {
-      name: cleanOutputText(value.device.name, 128, "spotify_device_name"),
-      type: cleanOutputText(value.device.type, 64, "spotify_device_type"),
+      name: receiptLabel(value.device.name, 128, "spotify_device_name"),
+      type: receiptLabel(value.device.type, 64, "spotify_device_type"),
     };
   }
   return result;
@@ -4275,6 +4281,7 @@ function createToolFactories(
   const retainUnknownSpotifyWrite = (action) => (error) => {
     if (error?.outcomeUnknown === true) onSpotifyWriteReceipt?.({
       provider: "spotify", effect: "write_external", action, state: "unknown", ok: false,
+      ...(typeof error.spotifyQuickTarget === "string" ? { target_name: cleanOutputText(error.spotifyQuickTarget, 200, "spotify_quick_target") } : {}),
     });
   };
   const emptyParameters = Type.Object({}, { additionalProperties: false });
@@ -5010,6 +5017,22 @@ function createToolFactories(
       }),
     ],
     [
+      "spotify.playlist.edit.quick",
+      (descriptor) => ({
+        name: descriptor.tool_name, label: descriptor.label,
+        description: 'Make one exact same-turn playlist edit only when the current user explicitly says Rename playlist "Old" to "New" or Remove "Track" by "Artist" from playlist "Name" (Chinese quoted equivalents supported). List and inspect first. The host derives the new name/intent from the user message, checks unique target names across a complete bounded list, owned/private/non-collaborative state and a fresh snapshot. Use preview for other phrasing, incomplete lists, duplicate names/occurrences or bulk edits. Never retry a write automatically.',
+        parameters: Type.Union([
+          Type.Object({ action: Type.Literal("rename"), playlist_ref_id: Type.String({ minLength: 1, maxLength: 128 }) }, { additionalProperties: false }),
+          Type.Object({ action: Type.Literal("remove_track"), playlist_ref_id: Type.String({ minLength: 1, maxLength: 128 }),
+            playlist_item_ref_id: Type.String({ minLength: 1, maxLength: 128 }) }, { additionalProperties: false }),
+        ]), executionMode: "sequential",
+        execute: executeDomain(async (_id, parameters, signal) => application.spotifyQuickEditPlaylist({
+          action: parameters.action, playlistRefId: parameters.playlist_ref_id, playlistItemRefId: parameters.playlist_item_ref_id,
+        }, { signal }), projectSpotifyReceipt, onSpotifyWriteReceipt,
+        (error, _id, parameters) => retainUnknownSpotifyWrite(parameters.action === "rename" ? "playlist.rename" : "playlist.remove_track")(error)),
+      }),
+    ],
+    [
       "spotify.playlist.edit.preview",
       (descriptor) => ({
         name: descriptor.tool_name,
@@ -5625,7 +5648,7 @@ Spotify control and catalog rules:
 - For a direct playlist-write request, complete library search, validated planning, resolution of every planned track, and moondog_spotify_playlist_write in the same prompt. Do not stop after moondog_playlist_plan or ask for redundant confirmation.
 - When the user approves the pending validated plan from the previous turn with yes, 可以, 就这个, 保存它, or equivalent wording, and they are asking to save it, call moondog_spotify_playlist_write with pending_plan set to true. Do not search, resolve through the model, or build a different plan again.
 - When the user asks to queue the pending plan, including "add to my queue", "queue these", "加入队列", or an approval that names the queue, call moondog_spotify_queue_add once with pending_plan set to true. The host resolves every retained track on Spotify and queues the matches. Do not search, resolve through the model, re-plan, or ask whether they meant a playlist. A playlist save stays a separate explicit create, save, or sync request.
-- Existing-playlist editing uses a stricter two-turn boundary. A request to change an existing playlist authorizes inspection and an exact preview only, never a same-turn write.
+- Existing-playlist bulk or ambiguous editing requires preview and a later confirmation. The sole same-turn exception is one exact explicit quoted rename or unambiguous single-track removal via moondog_spotify_playlist_edit_quick after list and inspection; the host validates the actual user message. Do not use quick edits to bypass a refused or incomplete preview.
 - To edit an existing playlist, call moondog_spotify_playlist_read with list, then inspect the chosen prompt-local playlist reference. Build the complete final order with inspected playlist_item_ref_id values and, for additions, track_ref_id values resolved in the same prompt. Then call moondog_spotify_playlist_edit_preview exactly once.
 - The existing-playlist slice supports only playlists owned by the connected account that are private, non-collaborative, contain at most 100 ordinary Spotify tracks, and contain no local, unavailable, episode, or other unsupported items. Do not attempt to bypass these limits.
 - After a successful existing-playlist preview, explain that Spotify has not changed and stop. Never call moondog_spotify_playlist_edit_apply in the same prompt, even if the original request included words such as apply, save, sync, do it, or now.
@@ -6039,11 +6062,19 @@ function renderSpotifyWriteReceipt(receipt, promptText) {
     "library.save": ["曲目保存请求", "library save"],
     "playlist.write": ["歌单创建请求", "playlist creation"],
     "playlist.edit": ["歌单更改请求", "playlist change"],
+    "playlist.rename": ["歌单重命名", "playlist rename"],
+    "playlist.remove_track": ["歌单曲目移除", "playlist track removal"],
   };
   const [zh, en] = actions[receipt.action] ?? ["更改请求", "requested change"];
   if (receipt.state === "unknown") return chinese
-    ? `Spotify 的${zh}结果尚未确认。请先检查，再决定是否重试。`
-    : `Spotify's ${en} was not confirmed. Check its state before deciding whether to retry.`;
+    ? `Spotify 的${zh}${receipt.target_name ? `（「${receipt.target_name}」）` : ""}结果尚未确认。请先检查，再决定是否重试。`
+    : `Spotify's ${en}${receipt.target_name ? ` for "${receipt.target_name}"` : ""} was not confirmed. Check its state before deciding whether to retry.`;
+  if (receipt.action === "playlist.rename" && receipt.playlist) return chinese
+    ? `Spotify 已接受歌单重命名为「${receipt.playlist.name}」。`
+    : `Spotify accepted the playlist rename to "${receipt.playlist.name}".`;
+  if (receipt.action === "playlist.remove_track" && receipt.playlist) return chinese
+    ? `Spotify 已接受从「${receipt.playlist.name}」移除 1 首曲目。`
+    : `Spotify accepted removal of one track from "${receipt.playlist.name}".`;
   const count = Number.isInteger(receipt.track_count) ? receipt.track_count : null;
   return chinese
     ? `Spotify 已接受${zh}${count === null ? "" : `（${count} 首）`}。`
@@ -6579,7 +6610,7 @@ export class PiAgentRuntime {
             terminate: true,
           };
         }
-        if (["spotify.player.status", "spotify.player.now_playing", "spotify.queue.status", "spotify.device.list", "spotify.device.transfer", "spotify.queue.similar", "spotify.top"].includes(descriptor.capability_id)) {
+        if (["spotify.player.status", "spotify.player.now_playing", "spotify.queue.status", "spotify.device.list", "spotify.device.transfer", "spotify.queue.similar", "spotify.top", "spotify.playlist.edit.quick"].includes(descriptor.capability_id)) {
           this.transientSpotifyContext = true;
         }
         return undefined;
@@ -6748,7 +6779,7 @@ export class PiAgentRuntime {
     };
 
     try {
-      this.application.beginPrompt();
+      this.application.beginPrompt({ text });
       promptScopeStarted = true;
       if (callbacks.profileSeed) this.application.setProfileDiscoverySeed(callbacks.profileSeed);
       unsubscribe = this.agent.subscribe((event) => {

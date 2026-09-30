@@ -593,6 +593,8 @@ test("Spotify service lists only owned private non-collaborative editable playli
         track_count: 0,
       },
     ],
+    name_selection_complete: false,
+    ambiguous_names: [],
     excluded: {
       public: 1,
       not_owned: 1,

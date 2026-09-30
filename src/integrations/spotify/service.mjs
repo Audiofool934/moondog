@@ -191,8 +191,8 @@ function editablePlaylistReason(playlist, ownerId) {
     return "invalid";
   }
   if (playlist.owner_id !== ownerId) return "not_owned";
-  if (playlist.is_public === true) return "public";
-  if (playlist.collaborative === true) return "collaborative";
+  if (playlist.is_public !== false) return "public";
+  if (playlist.collaborative !== false) return "collaborative";
   if (playlist.tracks_total > SPOTIFY_SERVICE_LIMITS.playlistEditTracksMax) {
     return "over_track_limit";
   }
@@ -691,6 +691,10 @@ export function createSpotifyService(options = {}) {
         invalid: 0,
       };
       const playlists = [];
+      const names = new Map();
+      for (const item of page?.items ?? []) {
+        if (typeof item?.name === "string") names.set(item.name, (names.get(item.name) ?? 0) + 1);
+      }
       for (const playlist of Array.isArray(page?.items) ? page.items : []) {
         const reason = editablePlaylistReason(playlist, ownerId);
         if (reason) {
@@ -709,6 +713,8 @@ export function createSpotifyService(options = {}) {
       return {
         provider: "spotify",
         playlists,
+        name_selection_complete: page?.complete_for_name_selection === true,
+        ambiguous_names: [...names].filter(([, count]) => count > 1).map(([name]) => name),
         excluded,
         has_more: hasMore,
         next_offset: hasMore ? pageOffset + pageLimit : null,
@@ -768,6 +774,8 @@ export function createSpotifyService(options = {}) {
       );
       signal?.throwIfAborted();
       if (
+        before.id !== playlistId || after.id !== playlistId ||
+        after.name !== before.name ||
         after.snapshot_id !== before.snapshot_id ||
         after.tracks_total !== before.tracks_total ||
         tracks.length !== before.tracks_total
@@ -787,6 +795,38 @@ export function createSpotifyService(options = {}) {
         },
         items: tracks,
       };
+    },
+
+    async quickEditPlaylist(value, { signal } = {}) {
+      signal?.throwIfAborted();
+      const input = inputObject(value);
+      const playlistId = requiredPlaylistId(input.playlistId);
+      const expectedSnapshotId = requiredSnapshotId(input.expectedSnapshotId);
+      if (!["rename", "remove_track"].includes(input.action)) fail("invalid_playlist_edit", "Unsupported quick playlist edit.");
+      const current = await this.playlistSnapshot({ playlistId }, { signal });
+      if (current.playlist.snapshot_id !== expectedSnapshotId || current.playlist.name !== input.expectedName ||
+          current.items.length !== input.expectedTrackCount) {
+        fail("playlist_snapshot_changed", "The playlist changed after inspection. Inspect it again before editing.");
+      }
+      let name = current.playlist.name;
+      let count = current.items.length;
+      if (input.action === "rename") {
+        name = cleanPlaylistText(input.name, 100, "invalid_playlist_name", "name");
+        if (name !== input.name || name === current.playlist.name) fail("invalid_playlist_name", "The exact new playlist name must be valid and different.");
+        signal?.throwIfAborted();
+        await client.renamePlaylist({ playlistId, name }, { signal });
+      } else {
+        const uri = requiredItemUri(input.uri);
+        if (!trackUriPattern.test(uri) || current.items.filter((item) => item.uri === uri).length !== 1) {
+          fail("playlist_removal_ambiguous", "Single-track removal requires exactly one occurrence. Preview the exact final order for duplicates or bulk edits.");
+        }
+        signal?.throwIfAborted();
+        await client.removePlaylistItem({ playlistId, uri, snapshotId: expectedSnapshotId }, { signal });
+        count -= 1;
+      }
+      return { ...actionReceipt(input.action === "rename" ? "playlist.rename" : "playlist.remove_track"),
+        playlist: { name, track_count: count, is_public: false }, previous_track_count: current.items.length,
+        ...(input.action === "remove_track" ? { track_count: 1 } : {}) };
     },
 
     async replacePlaylistItems(value, { signal } = {}) {

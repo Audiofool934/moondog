@@ -423,6 +423,15 @@ const catalog = [
     },
   },
   {
+    id: "spotify.playlist.edit.quick",
+    version: "1",
+    state: "enabled",
+    effect: "write_external",
+    description: "Apply one exact user-authorized rename or unambiguous single-track removal to an inspected owned private playlist.",
+    requires_spotify: true,
+    agent_tool: { name: "moondog_spotify_playlist_edit_quick", label: "Make an exact playlist edit" },
+  },
+  {
     id: "spotify.playlist.edit.preview",
     version: "1",
     state: "enabled",

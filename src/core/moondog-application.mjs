@@ -19,6 +19,22 @@ function spotifyResolutionError(code, message) {
   return error;
 }
 
+// Only the host's current user message can grant a quick edit. Model tool
+// arguments and Spotify metadata never supply authorization. Keep grammar
+// deliberately exact; other phrasing uses the existing preview path.
+function explicitQuickPlaylistIntent(text) {
+  if (typeof text !== "string" || text.length > 1000 || /[\n\r\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069]/u.test(text)) return null;
+  const value = text.trim().replace(/[“”「」]/gu, '"');
+  const prefix = "(?:(?:please|can you|could you)\\s+)?";
+  let match = value.match(new RegExp(`^${prefix}rename(?: (?:the|my))? (?:private |Spotify )?playlist "([^"\\n]{1,200})" to "([^"\\n]{1,100})"[.!?]?$`, "iu")) ??
+    value.match(/^(?:请)?(?:把|将)?歌单\s*"([^"]{1,200})"\s*(?:重命名|改名|更名)为\s*"([^"]{1,100})"[。！]?$/u);
+  if (match) return { action: "rename", playlistName: match[1], name: match[2] };
+  match = value.match(new RegExp(`^${prefix}remove "([^"\\n]{1,256})"(?: by "([^"\\n]{1,256})")? from(?: (?:the|my))? (?:private |Spotify )?playlist "([^"\\n]{1,200})"[.!?]?$`, "iu"));
+  if (match) return { action: "remove_track", title: match[1], artist: match[2], playlistName: match[3] };
+  match = value.match(/^(?:请)?从歌单\s*"([^"]{1,200})"\s*中?(?:移除|删除)\s*"([^"]{1,256})"(?:\s*(?:歌手|作者)\s*"([^"]{1,256})")?[。！]?$/u);
+  return match ? { action: "remove_track", playlistName: match[1], title: match[2], artist: match[3] } : null;
+}
+
 function spotifyPlaylistDetails({ name, description } = {}) {
   if (
     typeof name !== "string" ||
@@ -904,6 +920,13 @@ export class MoondogApplication {
       ...(offset !== undefined ? { offset } : {}),
     }, { signal });
     signal?.throwIfAborted();
+    if (this.pendingPlaylistPromptTransaction) {
+      this.pendingPlaylistPromptTransaction.quickPlaylistList = {
+        complete: result.name_selection_complete === true && (offset ?? 0) === 0 && result.has_more !== true,
+        ambiguousNames: result.ambiguous_names ?? [],
+        ids: new Set((result.playlists ?? []).map((p) => p.playlist_id)),
+      };
+    }
     const playlists = [];
     for (const playlist of result.playlists ?? []) {
       const playlistRefId = randomUUID();
@@ -984,7 +1007,7 @@ export class MoondogApplication {
       items,
       expires_on: "prompt_end",
       edit_boundary:
-        "Preview only in this prompt. An explicit confirmation in a later prompt is required before Spotify changes.",
+        "Exact explicit rename or unique single-track removal may use quick edit. Other changes require preview and later confirmation.",
     };
   }
 
@@ -1124,7 +1147,61 @@ export class MoondogApplication {
     };
   }
 
+  async spotifyQuickEditPlaylist({ action, playlistRefId, playlistItemRefId } = {}, { signal } = {}) {
+    signal?.throwIfAborted();
+    const transaction = this.pendingPlaylistPromptTransaction;
+    const intent = transaction?.quickEditIntent;
+    const deny = (message) => { throw spotifyResolutionError("spotify_quick_edit_requires_preview", message); };
+    if (!intent || intent.action !== action) deny('Quick edits require an exact current request, such as Rename playlist "Old" to "New" or Remove "Track" by "Artist" from playlist "Name". Otherwise preview first.');
+    if (transaction.quickEditAttempted) deny("A quick playlist edit was already attempted in this turn. Inspect its result before another explicit request.");
+    if (transaction.playlistEditPreviewAttempted) deny("A preview was already attempted in this turn. Finish that preview flow before another explicit edit request.");
+    this.requireSpotifyScopes(["user-read-private", "playlist-read-private"]);
+    this.requireSpotifyWriteScopes(["playlist-modify-private"]);
+    const target = this.requireSpotifyPlaylistTarget(playlistRefId);
+    const snapshot = this.spotifyPlaylistSnapshots.get(playlistRefId);
+    const list = transaction.quickPlaylistList;
+    const namedTargets = new Set([...this.spotifyPlaylistTargets.values()].filter((t) => t.name === intent.playlistName).map((t) => t.playlistId));
+    if (!snapshot || !list?.complete || !list.ids.has(target.playlistId) || list.ambiguousNames.includes(intent.playlistName) ||
+        namedTargets.size !== 1 || target.name !== intent.playlistName || snapshot.name !== intent.playlistName) {
+      deny("The named playlist is not uniquely established by a complete bounded list and fresh inspection. Use the exact preview flow.");
+    }
+    let uri;
+    if (action === "remove_track") {
+      const selected = snapshot.items.find((i) => i.playlistItemRefId === playlistItemRefId);
+      const matching = snapshot.items.filter((i) => i.metadata.title === intent.title &&
+        (!intent.artist || i.metadata.artists.join(", ") === intent.artist));
+      if (!selected || matching.length !== 1 || matching[0] !== selected || snapshot.items.filter((i) => i.uri === selected.uri).length !== 1) {
+        deny("The exact track or occurrence is ambiguous. Preview the complete final order before removing it.");
+      }
+      uri = selected.uri;
+    } else if (playlistItemRefId !== undefined) deny("Rename accepts only a playlist target.");
+    transaction.quickEditAttempted = true;
+    this.transientSpotifyContext = true;
+    try {
+      const receipt = await this.requireSpotifyService().quickEditPlaylist({ action, playlistId: target.playlistId,
+        expectedSnapshotId: snapshot.snapshotId, expectedName: snapshot.name, expectedTrackCount: snapshot.items.length,
+        ...(uri ? { uri } : { name: intent.name }) }, { signal });
+      transaction.externalized = true;
+      this.pendingSpotifyPlaylistEdit = null;
+      this.resetSpotifyPlaylistInspection();
+      return receipt;
+    } catch (error) {
+      if (error?.outcomeUnknown === true) error.spotifyQuickTarget = snapshot.name;
+      if (error?.outcomeUnknown === true || error?.code === "playlist_snapshot_changed") {
+        this.pendingSpotifyPlaylistEdit = null;
+        transaction.editInvalidated = true;
+        if (error?.outcomeUnknown === true) transaction.externalized = true;
+        this.resetSpotifyPlaylistInspection();
+      }
+      throw error;
+    }
+  }
+
   async spotifyPreviewPlaylistEdit({ playlistRefId, intent, items } = {}) {
+    if (this.pendingPlaylistPromptTransaction?.quickEditAttempted) {
+      throw spotifyResolutionError("spotify_playlist_edit_already_attempted", "A quick edit was already attempted in this turn. Inspect its receipt before starting another edit request.");
+    }
+    if (this.pendingPlaylistPromptTransaction) this.pendingPlaylistPromptTransaction.playlistEditPreviewAttempted = true;
     this.requireSpotifyScopes(["user-read-private", "playlist-read-private"]);
     this.requireSpotifyPlaylistTarget(playlistRefId);
     const snapshot = this.spotifyPlaylistSnapshots.get(playlistRefId);
@@ -1904,7 +1981,7 @@ export class MoondogApplication {
     };
   }
 
-  beginPrompt() {
+  beginPrompt({ text } = {}) {
     if (this.pendingPlaylistPromptTransaction) {
       throw new Error("A Moondog prompt state transaction is already active.");
     }
@@ -1915,6 +1992,7 @@ export class MoondogApplication {
       ),
       externalized: false,
       editInvalidated: false,
+      quickEditIntent: explicitQuickPlaylistIntent(text),
     };
     this.resetSpotifyResolutions();
     this.resetSpotifyPlaylistInspection();

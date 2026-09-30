@@ -263,3 +263,26 @@ test("top taste is bounded transient affinity evidence; explicit preferences and
   application.startNewSession(); runtime.restoreSession();
   assert.throws(() => application.requireSpotifyResolution(ref), { code: "spotify_track_not_resolved" });
 });
+
+test("quick private-playlist edits do not retain tool metadata or inferred taste", async (context) => {
+  const { application, runtime, faux, client, writes } = await fixture(context);
+  const playlist = { id: "fictionalplaylist", name: "Private Playlist Sentinel", owner_id: "fictionaluser", is_public: false,
+    collaborative: false, snapshot_id: "snapshot-1", tracks_total: 1 };
+  client.getAccount = async () => ({ account_id: "fictionaluser" });
+  client.getCurrentUserPlaylists = async () => ({ items: [playlist], has_more: false, complete_for_name_selection: true });
+  client.getPlaylist = async () => playlist;
+  client.getPlaylistItems = async () => ({ items: [{ item: song, is_local: false }], offset: 0, total: 1 });
+  client.renamePlaylist = async (input) => { writes.push(["rename", input.name]); };
+  let ref;
+  faux.setResponses([toolUse("moondog_spotify_playlist_read", { action: "list" }), (input) => {
+    ref = results(input, "moondog_spotify_playlist_read").at(-1).playlists[0].playlist_ref_id;
+    return toolUse("moondog_spotify_playlist_read", { action: "inspect", playlist_ref_id: ref });
+  }, () => toolUse("moondog_spotify_playlist_edit_quick", { action: "rename", playlist_ref_id: ref }),
+    toolUse("moondog_memory_remember", { text: "The user loves Private Playlist Sentinel", kind: "preference" }),
+    fauxAssistantMessage([fauxText("Renamed the private playlist.")])]);
+  const value = await runtime.prompt('Rename playlist "Private Playlist Sentinel" to "New Name"');
+  assert.equal(value.spotify_write_receipts[0].action, "playlist.rename");
+  assert.deepEqual(writes, [["rename", "New Name"]]);
+  assert.equal(application.currentSessionTurns().length, 0);
+  assert.deepEqual(application.memorySummary().memories, []);
+});

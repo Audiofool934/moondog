@@ -800,6 +800,7 @@ test("Spotify client reads playlist metadata and items through current item endp
     limit: 20,
     offset: 0,
     has_more: false,
+    complete_for_name_selection: true,
   });
   assert.equal(playlist.snapshot_id, "snapshot-1");
   assert.deepEqual(items.items[0], {

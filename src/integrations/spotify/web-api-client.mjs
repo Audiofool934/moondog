@@ -373,10 +373,10 @@ function normalizePlaylist(payload, { includeControlMetadata = false } = {}) {
     id,
     uri,
     name,
-    is_public: payload.public === true,
+    is_public: typeof payload.public === "boolean" ? payload.public : null,
   };
   if (includeControlMetadata) {
-    playlist.collaborative = payload.collaborative === true;
+    playlist.collaborative = typeof payload.collaborative === "boolean" ? payload.collaborative : null;
     const ownerId = safeText(payload.owner?.id, 128);
     const snapshotId = safeText(payload.snapshot_id, 128);
     if (ownerId) playlist.owner_id = ownerId;
@@ -413,7 +413,9 @@ function normalizePlaylistPage(payload) {
     total,
     limit,
     offset,
-    has_more: offset + rawItems.length < total,
+    has_more: offset + rawItems.length < total || Boolean(payload?.next),
+    complete_for_name_selection: payload?.offset === 0 && safeInteger(payload?.total, 0, 1_000_000) !== undefined &&
+      rawItems.length === items.length && items.length === payload.total && payload?.next === null,
   };
 }
 
@@ -457,7 +459,8 @@ function normalizePlaylistItemsPage(payload) {
     total,
     limit,
     offset,
-    has_more: offset + rawItems.length < total,
+    has_more: offset + rawItems.length < total || Boolean(payload?.next),
+    complete_for_name_selection: offset === 0 && rawItems.length === items.length && items.length === total && !payload?.next,
   };
 }
 
@@ -722,6 +725,21 @@ export function createSpotifyWebApiClient({
       );
       const snapshotId = safeText(payload?.snapshot_id, 128);
       return snapshotId ? { snapshot_id: snapshotId } : {};
+    },
+
+    async renamePlaylist({ playlistId, name } = {}, { signal } = {}) {
+      await request(`/playlists/${encodeURIComponent(playlistId)}`, {
+        method: "PUT", body: { name }, responseMode: "none", signal,
+      });
+    },
+
+    async removePlaylistItem({ playlistId, uri, snapshotId } = {}, { signal } = {}) {
+      const payload = await request(`/playlists/${encodeURIComponent(playlistId)}/items`, {
+        method: "DELETE", body: { items: [{ uri }], snapshot_id: snapshotId }, signal,
+      });
+      const snapshot = safeText(payload?.snapshot_id, 128);
+      if (!snapshot) fail("spotify_write_receipt_invalid", "Spotify did not return a valid removal receipt. Inspect the playlist before retrying.", { outcomeUnknown: true });
+      return { snapshot_id: snapshot };
     },
 
     async replacePlaylistItems({ playlistId, uris } = {}, { signal } = {}) {
