@@ -9,6 +9,7 @@ import {
   listCapabilities,
 } from "./capability-catalog.mjs";
 import { recoverArtistReleasesWithCrossCatalogIdentity } from "../integrations/cross-catalog-artist-identity.mjs";
+import { runMemoryReflection } from "../memory/reflection-worker.mjs";
 
 const minimumNodeVersion = [22, 19, 0];
 
@@ -491,6 +492,17 @@ export class MoondogApplication {
       };
     }
     return this.memoryStore.reflectionStatus();
+  }
+
+  async reflectMemory({ limit, dryRun = false, runtimeFactory } = {}) {
+    if (!this.memoryStore) throw new Error("Persistent memory is unavailable");
+    return runMemoryReflection({
+      application: this,
+      trigger: "manual",
+      ...(limit !== undefined ? { limit } : {}),
+      dryRun,
+      ...(runtimeFactory ? { runtimeFactory } : {}),
+    });
   }
 
   forgetMemory(memoryId) {

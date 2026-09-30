@@ -243,6 +243,19 @@ const catalog = [
     },
   },
   {
+    id: "memory.reflect",
+    version: "1",
+    state: "enabled",
+    effect: "write_local",
+    description:
+      "Run the Memory Agent reflection over recent conversation episodes to consolidate durable memories.",
+    requires_memory: true,
+    agent_tool: {
+      name: "moondog_memory_reflect",
+      label: "Reflect on recent conversation",
+    },
+  },
+  {
     id: "spotify.history.import",
     version: "1",
     state: "enabled",
