@@ -900,7 +900,7 @@ export function createSpotifyService(options = {}) {
         if (name !== input.name || name === current.playlist.name) fail("invalid_playlist_name", "The exact new playlist name must be valid and different.");
         beforeWrite?.();
         signal?.throwIfAborted();
-        await client.renamePlaylist({ playlistId, name }, { signal });
+        await client.renamePlaylist({ playlistId, name }, { signal, beforeDispatch: beforeWrite });
       } else {
         const uri = requiredItemUri(input.uri);
         if (!trackUriPattern.test(uri) || current.items.filter((item) => item.uri === uri).length !== 1) {
@@ -908,7 +908,7 @@ export function createSpotifyService(options = {}) {
         }
         beforeWrite?.();
         signal?.throwIfAborted();
-        await client.removePlaylistItem({ playlistId, uri, snapshotId: expectedSnapshotId }, { signal });
+        await client.removePlaylistItem({ playlistId, uri, snapshotId: expectedSnapshotId }, { signal, beforeDispatch: beforeWrite });
         count -= 1;
       }
       return { ...actionReceipt(input.action === "rename" ? "playlist.rename" : "playlist.remove_track"),

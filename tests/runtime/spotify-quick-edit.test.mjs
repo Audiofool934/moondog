@@ -15,13 +15,13 @@ function fixture(t, options = {}) {
   const requests = [], writes = [];
   const metadata = () => ({ id: state.id, uri: `spotify:playlist:${state.id}`, name: state.name, owner: { id: state.owner },
     public: state.public, collaborative: state.collaborative, snapshot_id: state.snapshot, items: { total: state.items.length } });
-  const client = createSpotifyWebApiClient({ tokenProvider: async () => "fictional-token", refreshAccessToken: async () => "refreshed-token",
+  const client = createSpotifyWebApiClient({ tokenProvider: async () => { state.onToken?.(); return "fictional-token"; }, refreshAccessToken: async () => "refreshed-token",
     fetchImpl: async (url, request) => {
       const pathname = new URL(url).pathname;
       requests.push([request.method, pathname]);
       state.onRequest?.(pathname, request);
       if (request.method !== "GET") {
-        writes.push({ path: pathname, method: request.method, body: JSON.parse(request.body) });
+        writes.push({ path: pathname, method: request.method, body: request.body ? JSON.parse(request.body) : null });
         if (state.writeHook) return state.writeHook(request);
         if (request.method === "PUT") { state.name = JSON.parse(request.body).name; return new Response(null, { status: 200 }); }
         return new Response(JSON.stringify({ snapshot_id: "snapshot-2" }));
@@ -32,7 +32,7 @@ function fixture(t, options = {}) {
         device: { id: "fictionaldevice", name: "Fictional speaker", is_active: true, is_restricted: false },
       }));
       if (pathname === "/v1/me/playlists") {
-        const items = [metadata(), ...state.listExtra];
+        const items = state.emptyList ? [] : [metadata(), ...state.listExtra];
         return new Response(JSON.stringify({ items, total: state.listTotal ?? items.length, offset: 0, limit: 50, next: state.listNext ?? null }));
       }
       if (pathname.endsWith("/items")) return new Response(JSON.stringify({ items: state.items, total: state.items.length, offset: 0, limit: 50 }));
@@ -434,4 +434,87 @@ test("an aborted preview cannot restore contextual write authority", async (t) =
   await f.application.spotifyPreviewPlaylistEdit({ playlistRefId: refs.playlistRefId, intent: "Keep only the second song", items: [{ playlistItemRefId: refs.inspected.items[1].playlist_item_ref_id }] });
   f.application.rollbackPendingPlaylistPrompt(); f.application.endPrompt();
   assert.equal(f.application.spotifyQuickEditContextStatus().playlist, null);
+});
+
+for (const read of ["playlist", "track"]) test(`later empty ${read} read cannot promote an earlier same-turn selection`, async (t) => {
+  const f = fixture(t, { items: [song("first")] }), { faux, runtime, call, inspect } = simulatedRuntime(f);
+  faux.setResponses([...(read === "playlist" ? inspect : [call("moondog_spotify_now_playing", {})]), () => {
+    if (read === "playlist") f.state.emptyList = true;
+    else f.state.noPlayer = true;
+    return call(read === "playlist" ? "moondog_spotify_playlist_read" : "moondog_spotify_now_playing", read === "playlist" ? { action: "list", limit: 50 } : {});
+  }, fauxAssistantMessage([fauxText("Nothing selected.")])]);
+  await runtime.prompt("Inspect again");
+  assert.equal(f.application.spotifyQuickEditContextStatus()[read], null);
+  if (read === "playlist") {
+    f.state.emptyList = false;
+    faux.setResponses([call("moondog_spotify_playlist_edit_quick", { action: "rename", recent_context: true }), fauxAssistantMessage([fauxText("Done.")])]);
+    const result = await runtime.prompt('Rename my playlist to "Late Lights"');
+    assert.equal(result.spotify_quick_edit.state, "not_sent");
+    assert.equal(f.writes.length, 0);
+  }
+});
+
+for (const failure of ["missing_title", "footer_projection"]) test(`optional selection ${failure} cannot discard an accepted playback receipt`, async (t) => {
+  const f = fixture(t), { faux, runtime, call } = simulatedRuntime(f);
+  if (failure === "missing_title") { f.state.playing = song("first"); delete f.state.playing.item.name; }
+  else f.application.prepareSpotifyQuickEditContext = () => { throw new Error("fictional unrenderable label"); };
+  f.state.writeHook = () => new Response(null, { status: 204 });
+  faux.setResponses([call("moondog_spotify_now_playing", {}), call("moondog_spotify_player_control", { action: "pause" }), fauxAssistantMessage([fauxText("Paused Spotify.")])]);
+  const result = await runtime.prompt("Pause Spotify");
+  assert.equal(result.status, "completed");
+  assert.equal(result.spotify_write_receipts[0].state, "accepted");
+  assert.equal(f.application.spotifyQuickEditContextStatus().track, null);
+  assert.equal(f.writes.length, 1);
+});
+
+for (const action of ["rename", "remove_track"]) test(`context expiry during final ${action} token lookup refuses dispatch without an uncertain receipt`, async (t) => {
+  let now = 1000;
+  const f = fixture(t, { now: () => now, items: [song("first")] }); await displayPlaylist(f);
+  now += 599_999;
+  let metadataReads = 0, tokenWait = false;
+  f.state.onRequest = (path) => { if (path === "/v1/playlists/fictionalplaylist" && ++metadataReads === 2) tokenWait = true; };
+  f.state.onToken = () => { if (tokenWait) now += 2; };
+  f.application.beginPrompt({ text: action === "rename" ? 'Rename my playlist to "Late Lights"' : "Remove that song from my playlist" });
+  await assert.rejects(f.application.spotifyQuickEditPlaylist({ action, recentContext: true }), (error) =>
+    error.code === "spotify_quick_edit_requires_preview" && error.outcomeUnknown !== true);
+  assert.equal(f.writes.length, 0);
+});
+
+test("a pronoun rename cannot apply a different previously previewed track edit", async (t) => {
+  const f = fixture(t), { faux, runtime, call, inspect, last } = simulatedRuntime(f);
+  faux.setResponses([...inspect, (c) => {
+    const inspected = last(c, "moondog_spotify_playlist_read");
+    return call("moondog_spotify_playlist_edit_preview", { playlist_ref_id: inspected.playlist.playlist_ref_id,
+      intent: "Keep the second track", items: [{ playlist_item_ref_id: inspected.items[1].playlist_item_ref_id }] });
+  }, fauxAssistantMessage([fauxText("Preview ready.")])]);
+  await runtime.prompt("Preview removing the first track");
+  assert.equal(f.application.pendingSpotifyPlaylistEdit.confirmable, true);
+  faux.setResponses([...inspect, fauxAssistantMessage([fauxText("Inspected.")])]);
+  await runtime.prompt("Inspect Night Drive");
+  faux.setResponses([call("moondog_spotify_playlist_edit_apply", {}), fauxAssistantMessage([fauxText("Applied the old edit.")])]);
+  const result = await runtime.prompt('Rename my playlist to "Late Lights"');
+  assert.equal(f.writes.length, 0);
+  assert.equal(result.spotify_quick_edit.state, "not_sent");
+  assert.doesNotMatch(result.text, /Applied the old edit/u);
+  // A rejected unrelated operation does not block the actual requested rename.
+  faux.setResponses([call("moondog_spotify_playlist_edit_quick", { action: "rename", recent_context: true }), fauxAssistantMessage([fauxText("Done.")])]);
+  const actual = await runtime.prompt('Rename my playlist to "Late Lights"');
+  assert.equal(actual.spotify_write_receipts[0].state, "accepted");
+  assert.equal(f.writes.length, 1);
+  assert.deepEqual(f.writes[0].body, { name: "Late Lights" });
+});
+
+test("exact quick intent cannot authorize other Spotify mutations or retained plan saves", async (t) => {
+  const f = fixture(t); await displayPlaylist(f);
+  f.application.beginPrompt({ text: 'Rename my playlist to "Late Lights"' });
+  for (const operation of [
+    () => f.application.spotifyCreatePlaylist({ name: "Unrequested", trackRefs: [] }),
+    () => f.application.spotifyCreatePendingPlaylist({ name: "Unrequested" }),
+    () => f.application.spotifyControl({ action: "pause" }),
+    () => f.application.spotifyTransfer({ deviceId: "fictionaldevice" }),
+    () => f.application.spotifyPlayPendingPlan(),
+    () => f.application.spotifyQueuePendingPlan(),
+    () => f.application.spotifySaveLibraryTracks({ trackRefs: [] }),
+  ]) await assert.rejects(async () => operation(), { code: "spotify_quick_edit_action_conflict" });
+  assert.equal(f.writes.length, 0);
 });

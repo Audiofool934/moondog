@@ -6897,17 +6897,26 @@ export class PiAgentRuntime {
         if (typeof callbacks.onTextReplace === "function") callbacks.onTextReplace(finalResultText);
         else callbacks.onTextDelta?.(finalResultText.slice(resultText.length));
       }
-      const selection = this.application.prepareSpotifyQuickEditContext?.();
-      if (selection?.changed) {
-        const label = (value) => JSON.stringify(cleanOutputText(value, 256, "spotify_selection_label"));
-        const playlist = selection.playlist ? label(selection.playlist.name) : "none";
-        const track = selection.track ? `${label(selection.track.title)}${selection.track.artists.length ? ` by ${selection.track.artists.map(label).join(", ")}` : ""}` : "none";
-        const note = responseLanguage(text) === "zh"
-          ? `\n\n后续编辑选择：歌单 ${playlist}；歌曲 ${track}。`
-          : `\n\nSelected for follow-up edits: playlist ${playlist}; song ${track}.`;
-        finalResultText += note;
+      let selectionNote = "";
+      try {
+        const selection = this.application.prepareSpotifyQuickEditContext?.();
+        if (selection?.changed) {
+          const label = (value) => JSON.stringify(cleanOutputText(value, 256, "spotify_selection_label"));
+          const playlist = selection.playlist ? label(selection.playlist.name) : "none";
+          const track = selection.track ? `${label(selection.track.title)}${selection.track.artists.length ? ` by ${selection.track.artists.map(label).join(", ")}` : ""}` : "none";
+          selectionNote = responseLanguage(text) === "zh"
+            ? `\n\n后续编辑选择：歌单 ${playlist}；歌曲 ${track}。`
+            : `\n\nSelected for follow-up edits: playlist ${playlist}; song ${track}.`;
+        }
+      } catch {
+        // Optional follow-up context must never hide an accepted/uncertain
+        // action receipt. Unrenderable metadata grants no selection authority.
+        this.application.invalidateSpotifyQuickEditContext?.();
+      }
+      if (selectionNote) {
+        finalResultText += selectionNote;
         if (typeof callbacks.onTextReplace === "function") callbacks.onTextReplace(finalResultText);
-        else callbacks.onTextDelta?.(note);
+        else callbacks.onTextDelta?.(selectionNote);
       }
       let memoryRecorded = false;
       try {
