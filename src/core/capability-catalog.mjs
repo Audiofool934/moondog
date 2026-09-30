@@ -279,7 +279,8 @@ const catalog = [
     version: "1",
     state: "enabled",
     effect: "write_external",
-    description: "Add one explicit Spotify URI to the playback queue.",
+    description:
+      "Add one resolved track, one explicit Spotify URI, or the pending plan to the playback queue.",
     requires_spotify: true,
     agent_tool: {
       name: "moondog_spotify_queue_add",
@@ -318,7 +319,7 @@ const catalog = [
     state: "enabled",
     effect: "read_external",
     description:
-      "Resolve trusted library tracks to deterministic Spotify catalog identities.",
+      "Resolve trusted library, history, and external catalog tracks to Spotify catalog identities by title, artist, and release.",
     requires_spotify: true,
     requires_playlist_services: true,
     agent_tool: {

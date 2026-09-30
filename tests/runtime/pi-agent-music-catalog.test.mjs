@@ -597,13 +597,24 @@ test("Pi agent plans from bounded external catalog candidates without a library 
     ),
     false,
   );
-  assert.match(result.text, /来自曲库外 catalog 候选/u);
-  assert.match(result.text, /ambient piano/u);
-  assert.match(result.text, /Electronic/u);
+  assert.match(result.text, /这 2 首：/u);
+  assert.match(result.text, /Quiet Geometry/u);
+  assert.match(result.text, /Slow Meridian/u);
+  assert.match(
+    result.playlist_plan.tracks.map((track) => track.selection_reason).join("\n"),
+    /ambient piano/u,
+  );
+  assert.match(
+    result.playlist_plan.tracks.map((track) => track.selection_reason).join("\n"),
+    /Electronic/u,
+  );
+  assert.doesNotMatch(result.text, /ambient piano|Electronic|推荐依据|依次试听|公开音乐来源|校验范围|新颖性边界/u);
   assert.doesNotMatch(result.text, /Invented|slow tempo|soft piano|crescendo|brass/u);
   assert.doesNotMatch(JSON.stringify(result.playlist_plan), /Invented|slow tempo|soft piano|crescendo|brass/u);
   assert.match(result.text, /不代表你从未听过/u);
-  assert.match(result.text, /公开音乐来源（与私人听歌证据分开）/u);
+  assert.match(result.text, /Apple Music US/u);
+  assert.match(result.text, /检索于/u);
+  assert.match(result.text, /供试听/u);
   assert.deepEqual(
     result.music_world_citations.map((citation) => citation.url),
     [
@@ -664,9 +675,18 @@ test("Pi agent plans from bounded external catalog candidates without a library 
       "https://music.apple.com/us/album/1700000002",
     ],
   );
-  assert.match(revised.text, /发现来源：Apple Music US storefront/u);
-  assert.match(revised.text, /late night jazz/u);
-  assert.match(revised.text, /After Hours/u);
+  assert.match(revised.text, /Apple Music US/u);
+  assert.match(revised.text, /检索于/u);
+  assert.match(revised.text, /不代表你从未听过/u);
+  assert.doesNotMatch(revised.text, /公开音乐来源|发现来源|推荐依据|依次试听/u);
+  assert.match(
+    revised.playlist_plan.tracks.map((track) => track.selection_reason).join("\n"),
+    /late night jazz/u,
+  );
+  assert.match(
+    revised.playlist_plan.tracks.map((track) => track.selection_reason).join("\n"),
+    /After Hours/u,
+  );
   assert.doesNotMatch(revised.text, /Invented|slow tempo|soft piano|crescendo|brass/u);
   assert.doesNotMatch(revised.text, /without checking the source/u);
   application.close();
@@ -862,7 +882,10 @@ test(`Pi agent branches from a trusted ${seedOrigin} seed through open artist si
   assert.equal(result.playlist_plan.candidate_scope, "external_catalog");
   assert.equal(result.playlist_plan.track_count, 2);
   if (seedOrigin === "profile") {
-    assert.match(result.text, /2-track plan from external catalog candidates/u);
+    assert.match(result.text, /2 songs:/u);
+    assert.match(result.text, /does not mean you have never heard/u);
+    assert.match(result.text, /suggestions for listening/u);
+    assert.doesNotMatch(result.text, /Recommendation basis|Explore in this order|Validation scope|Novelty boundary|Public music sources/u);
     assert.doesNotMatch(result.text, /策展判断|排序逻辑|新颖性边界/u);
   } else {
     assert.match(result.text, /不代表你从未听过/u);

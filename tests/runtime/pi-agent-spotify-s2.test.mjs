@@ -810,6 +810,262 @@ test("agent saves the exact pending plan after a bare next-turn approval", async
   ]);
 });
 
+test("agent queues the pending plan in order without saving a playlist", async () => {
+  const { application, service } = spotifyApplication();
+  const { faux, runtime } = configuredRuntime(application);
+  const queueTool = runtime.agent.state.tools.find(
+    (tool) => tool.name === "moondog_spotify_queue_add",
+  );
+  assert.match(queueTool.description, /pending_plan true/);
+  assert.match(queueTool.description, /external catalog/);
+  assert.match(runtime.agent.state.systemPrompt, /one named song is playback/);
+  assert.match(
+    runtime.agent.state.systemPrompt,
+    /call moondog_spotify_queue_add once with pending_plan set to true/,
+  );
+  faux.setResponses([
+    fauxAssistantMessage(
+      [fauxToolCall("moondog_library_search", { query: "night", limit: 2 })],
+      { stopReason: "toolUse" },
+    ),
+    (context) => {
+      const [search] = toolResults(context, "moondog_library_search");
+      return fauxAssistantMessage(
+        [
+          fauxToolCall("moondog_playlist_plan", {
+            intent: "Two night tracks to queue later.",
+            requested_track_count: 2,
+            candidate_set_ids: [search.candidate_set_id],
+            track_refs: search.tracks.map((track) => ({
+              track_ref_id: track.track_ref_id,
+              selection_reason: "Matches the requested night intent.",
+            })),
+            ordering_notes: "Familiar opener into a smoother exit.",
+          }),
+        ],
+        { stopReason: "toolUse" },
+      );
+    },
+    fauxAssistantMessage([fauxText("Here is the plan.")]),
+  ]);
+
+  const proposed = await runtime.prompt("Recommend two night songs. Do not save them.");
+  assert.equal(proposed.playlist_plan.track_count, 2);
+  assert.deepEqual(service.calls, []);
+
+  faux.setResponses([
+    fauxAssistantMessage(
+      [fauxToolCall("moondog_spotify_queue_add", { pending_plan: true })],
+      { stopReason: "toolUse" },
+    ),
+    fauxAssistantMessage([fauxText("Which one did you mean?")]),
+  ]);
+
+  const queued = await runtime.prompt("ok cool. add to my queue");
+
+  assert.equal(queued.status, "completed");
+  assert.match(queued.text, /Queued 2 on Spotify:/u);
+  assert.match(queued.text, /1\. Midnight Lines - Mara Vale/u);
+  assert.match(queued.text, /2\. Glass Highway - North Window/u);
+  assert.equal(queued.text.includes("Which one did you mean?"), false);
+  assert.equal(JSON.stringify(queued.spotify_queue_plan).includes("spotify:track:"), false);
+  assert.equal(application.pendingSpotifyPlaylistStatus().state, "available");
+  assert.deepEqual(service.calls, [
+    ["queue.add", { uri: "spotify:track:midnight-lines" }],
+    ["queue.add", { uri: "spotify:track:glass-highway" }],
+  ]);
+});
+
+test("a pending-plan queue stops after a later Spotify add fails", async () => {
+  const { application, service } = spotifyApplication();
+  const { faux, runtime } = configuredRuntime(application);
+  let attempts = 0;
+  const original = service.addToQueue.bind(service);
+  service.addToQueue = async (input) => {
+    attempts += 1;
+    if (attempts === 2) {
+      const error = new Error("No active Spotify device is available.");
+      error.code = "spotify_active_device_required";
+      throw error;
+    }
+    return original(input);
+  };
+  faux.setResponses([
+    fauxAssistantMessage(
+      [fauxToolCall("moondog_library_search", { query: "night", limit: 2 })],
+      { stopReason: "toolUse" },
+    ),
+    (context) => {
+      const [search] = toolResults(context, "moondog_library_search");
+      return fauxAssistantMessage(
+        [
+          fauxToolCall("moondog_playlist_plan", {
+            intent: "Two night tracks to queue later.",
+            requested_track_count: 2,
+            candidate_set_ids: [search.candidate_set_id],
+            track_refs: search.tracks.map((track) => ({
+              track_ref_id: track.track_ref_id,
+              selection_reason: "Matches the requested night intent.",
+            })),
+            ordering_notes: "Familiar opener into a smoother exit.",
+          }),
+        ],
+        { stopReason: "toolUse" },
+      );
+    },
+    fauxAssistantMessage([fauxText("Here is the plan.")]),
+  ]);
+  await runtime.prompt("Recommend two night songs. Do not save them.");
+
+  faux.setResponses([
+    fauxAssistantMessage(
+      [fauxToolCall("moondog_spotify_queue_add", { pending_plan: true })],
+      { stopReason: "toolUse" },
+    ),
+    fauxAssistantMessage([fauxText("I queued both.")]),
+  ]);
+
+  const queued = await runtime.prompt("add to my queue");
+
+  assert.match(queued.text, /Queued 1 on Spotify, then stopped at "Glass Highway" - North Window/u);
+  assert.match(queued.text, /1\. Midnight Lines - Mara Vale/u);
+  assert.equal(queued.text.includes("I queued both."), false);
+  assert.equal(JSON.stringify(queued.spotify_queue_plan).includes("spotify:track:"), false);
+  assert.equal(application.pendingSpotifyPlaylistStatus().state, "available");
+  assert.deepEqual(service.calls, [
+    ["queue.add", { uri: "spotify:track:midnight-lines" }],
+  ]);
+});
+
+test("queueing one catalog track does not collapse into an unvalidated plan", async () => {
+  const calls = [];
+  const application = new MoondogApplication({
+    importsRoot: "/private/moondog-synthetic-missing-source",
+    domainServices: createSyntheticDomainServices({
+      subjectScope: { subjectId: "trusted-synthetic-subject" },
+    }),
+    musicCatalog: {
+      async findArtistReleases() {
+        throw new Error("not used");
+      },
+      async searchTracks() {
+        return {
+          state: "resolved",
+          source: {
+            provider: "apple_music",
+            catalog: "itunes_search_api",
+            storefront: "US",
+            retrieved_at: "2026-09-30T00:00:00.000Z",
+            coverage: "Keyword relevance only.",
+          },
+          queries: ["Can You Hear the Music"],
+          result_count: 1,
+          tracks: [
+            {
+              track_ref_id: "50000000-0000-4000-8000-000000000009",
+              title: "Can You Hear the Music",
+              artist_credit: "Mara Vale",
+              release: "Oppenheimer",
+              duration_ms: 240_000,
+              candidate_scope: "external_catalog",
+              catalog_provider: "apple_music",
+              matched_queries: ["Can You Hear the Music"],
+            },
+          ],
+        };
+      },
+    },
+    spotifyConnection: {
+      ready: () => true,
+      publicStatus: () => ({
+        provider: "spotify",
+        state: "ready",
+        external_effects: "spotify_control",
+        scopes: { granted: [], missing: [], sufficient: true },
+      }),
+      missingScopes: () => [],
+      service: {
+        async addToQueue(input) {
+          calls.push(["queue.add", input]);
+          return {
+            provider: "spotify",
+            ok: true,
+            effect: "write_external",
+            action: "playback.queue.add",
+            state: "accepted",
+          };
+        },
+      },
+      resolver: createSpotifyCatalogResolver({
+        client: {
+          async searchTracks() {
+            return {
+              provider: "spotify",
+              items: [
+                {
+                  uri: "spotify:track:can-you-hear",
+                  id: "can-you-hear",
+                  name: "Can You Hear the Music",
+                  artists: ["Mara Vale"],
+                  album: "Oppenheimer",
+                  duration_ms: 240_000,
+                  popularity: 70,
+                },
+              ],
+            };
+          },
+        },
+      }),
+    },
+  });
+  const { faux, runtime } = configuredRuntime(application);
+  faux.setResponses([
+    fauxAssistantMessage(
+      [
+        fauxToolCall("moondog_music_catalog_search", {
+          queries: ["Can You Hear the Music"],
+          limit: 1,
+        }),
+      ],
+      { stopReason: "toolUse" },
+    ),
+    (context) => {
+      const [catalog] = toolResults(context, "moondog_music_catalog_search");
+      return fauxAssistantMessage(
+        [
+          fauxToolCall("moondog_spotify_resolve_tracks", {
+            track_refs: [{ track_ref_id: catalog.tracks[0].track_ref_id }],
+          }),
+        ],
+        { stopReason: "toolUse" },
+      );
+    },
+    (context) => {
+      const [catalog] = toolResults(context, "moondog_music_catalog_search");
+      return fauxAssistantMessage(
+        [
+          fauxToolCall("moondog_spotify_queue_add", {
+            track_ref_id: catalog.tracks[0].track_ref_id,
+          }),
+        ],
+        { stopReason: "toolUse" },
+      );
+    },
+    fauxAssistantMessage([
+      fauxText("Queued Can You Hear the Music - Mara Vale."),
+    ]),
+  ]);
+
+  const result = await runtime.prompt("play Can You Hear the Music for me");
+
+  assert.equal(result.text, "Queued Can You Hear the Music - Mara Vale.");
+  assert.equal("playlist_plan" in result, false);
+  assert.deepEqual(calls, [
+    ["queue.add", { uri: "spotify:track:can-you-hear" }],
+  ]);
+  application.close();
+});
+
 test("agent revises a validated pending plan before exact later approval", async () => {
   const { application, service } = spotifyApplication();
   const { faux, runtime } = configuredRuntime(application);

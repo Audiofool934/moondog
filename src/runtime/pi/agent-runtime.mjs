@@ -3000,6 +3000,72 @@ function projectSpotifyReceipt(value) {
   return result;
 }
 
+function projectQueueTrackList(tracks, field) {
+  if (!Array.isArray(tracks)) {
+    throw new Error(`domain_result_invalid:${field}`);
+  }
+  return tracks.slice(0, 12).map((track) => {
+    if (!isPlainObject(track)) {
+      throw new Error(`domain_result_invalid:${field}`);
+    }
+    return {
+      title: cleanOutputText(track.title, 512, `${field}_title`),
+      artist_credit: cleanOutputText(
+        track.artist_credit,
+        512,
+        `${field}_artist`,
+      ),
+    };
+  });
+}
+
+function projectSpotifyQueuePlan(value) {
+  if (
+    !isPlainObject(value) ||
+    value.provider !== "spotify" ||
+    value.ok !== true ||
+    value.effect !== "write_external" ||
+    value.action !== "playback.queue.add" ||
+    (value.state !== "accepted" && value.state !== "partial")
+  ) {
+    throw new Error("domain_result_invalid:spotify_queue_plan");
+  }
+  const queued = projectQueueTrackList(value.queued, "spotify_queue_track");
+  if (queued.length < 1) {
+    throw new Error("domain_result_invalid:spotify_queue_plan");
+  }
+  const result = {
+    provider: "spotify",
+    ok: true,
+    effect: "write_external",
+    action: "playback.queue.add",
+    state: value.state,
+    queued,
+    unmatched: projectQueueTrackList(
+      value.unmatched,
+      "spotify_queue_unmatched",
+    ),
+    not_added: projectQueueTrackList(
+      value.not_added,
+      "spotify_queue_not_added",
+    ),
+  };
+  if (value.state === "partial") {
+    if (!isPlainObject(value.stopped)) {
+      throw new Error("domain_result_invalid:spotify_queue_plan");
+    }
+    result.stopped = {
+      title: cleanOutputText(value.stopped.title, 512, "spotify_queue_stopped_title"),
+      artist_credit: cleanOutputText(
+        value.stopped.artist_credit,
+        512,
+        "spotify_queue_stopped_artist",
+      ),
+    };
+  }
+  return result;
+}
+
 function projectSpotifyDevices(value) {
   if (
     !isPlainObject(value) ||
@@ -4152,6 +4218,8 @@ function createToolFactories(
     onExternalCandidateSet,
     onMusicCatalogArtistReleases,
     onWebResearch,
+    onSpotifyQueuePlan,
+    onSpotifyPlayback,
   } = {},
 ) {
   const emptyParameters = Type.Object({}, { additionalProperties: false });
@@ -4472,7 +4540,7 @@ function createToolFactories(
                   minItems: 1,
                   maxItems: 12,
                   description:
-                    "Play library tracks resolved in this prompt through moondog_spotify_resolve_tracks, in this order.",
+                    "Play tracks resolved in this prompt through moondog_spotify_resolve_tracks, in this order. They may come from the library, history, or an external catalog candidate.",
                 }),
               ),
             },
@@ -4526,8 +4594,8 @@ function createToolFactories(
         ]),
         executionMode: "sequential",
         execute: executeDomain(
-          async (_toolCallId, parameters) =>
-            application.spotifyControl({
+          async (_toolCallId, parameters) => {
+            const result = await application.spotifyControl({
               action: parameters.action,
               ...(parameters.device_id ? { deviceId: parameters.device_id } : {}),
               ...(parameters.uri ? { uris: [parameters.uri] } : {}),
@@ -4540,7 +4608,17 @@ function createToolFactories(
                 ? { percent: parameters.percent }
                 : {}),
               ...(parameters.state !== undefined ? { state: parameters.state } : {}),
-            }),
+            });
+            if (
+              parameters.action === "resume" &&
+              (parameters.uri ||
+                parameters.context_uri ||
+                parameters.track_refs?.length > 0)
+            ) {
+              onSpotifyPlayback?.();
+            }
+            return result;
+          },
           projectSpotifyReceipt,
         ),
       }),
@@ -4551,7 +4629,7 @@ function createToolFactories(
         name: descriptor.tool_name,
         label: descriptor.label,
         description:
-          "Add one track to the Spotify queue. Provide either a track_ref_id resolved in this prompt through moondog_spotify_resolve_tracks or a user-provided Spotify track or episode URI.",
+          "Add to the Spotify queue. Use track_ref_id for one track resolved in this prompt, uri only when the user pasted a Spotify track or episode URI, or pending_plan true to queue the pending plan in order. pending_plan resolves each retained track on Spotify by title and artist, including external catalog tracks, queues the matches, and reports any track that did not match. When the user asks to queue the plan already shown, call this once with pending_plan true and no track_ref_id or uri.",
         parameters: Type.Union([
           Type.Object(
             {
@@ -4571,11 +4649,27 @@ function createToolFactories(
             },
             { additionalProperties: false },
           ),
+          Type.Object(
+            {
+              pending_plan: Type.Literal(true),
+              device_id: Type.Optional(
+                Type.String({ minLength: 1, maxLength: 256 }),
+              ),
+            },
+            { additionalProperties: false },
+          ),
         ]),
         executionMode: "sequential",
         execute: executeDomain(
-          async (_toolCallId, parameters) =>
-            application.spotifyAddToQueue(
+          async (_toolCallId, parameters) => {
+            if (parameters.pending_plan === true) {
+              return application.spotifyQueuePendingPlan({
+                ...(parameters.device_id
+                  ? { deviceId: parameters.device_id }
+                  : {}),
+              });
+            }
+            return application.spotifyAddToQueue(
               parameters.track_ref_id !== undefined
                 ? {
                     trackRefId: parameters.track_ref_id,
@@ -4589,8 +4683,16 @@ function createToolFactories(
                       ? { deviceId: parameters.device_id }
                       : {}),
                   },
-            ),
-          projectSpotifyReceipt,
+            );
+          },
+          (value) =>
+            Array.isArray(value?.queued)
+              ? projectSpotifyQueuePlan(value)
+              : projectSpotifyReceipt(value),
+          (receipt) => {
+            onSpotifyPlayback?.();
+            if (Array.isArray(receipt.queued)) onSpotifyQueuePlan?.(receipt);
+          },
         ),
       }),
     ],
@@ -4600,7 +4702,7 @@ function createToolFactories(
         name: descriptor.tool_name,
         label: descriptor.label,
         description:
-          "Resolve library tracks from active candidate sets to deterministic Spotify catalog identities. Resolve tracks before queueing, playing, saving, or writing them to Spotify. The result reports match quality without exposing Spotify URIs.",
+          "Resolve trusted tracks from active candidate sets to Spotify catalog identities by title, artist, and release. Library, history, and external catalog tracks all resolve this way. Resolve before queueing, playing, saving, or writing individual tracks. A pending-plan queue resolves inside the queue tool. The result reports match quality without exposing Spotify URIs.",
         parameters: Type.Object(
           {
             track_refs: Type.Array(
@@ -5252,7 +5354,7 @@ function toolForModel(tool) {
 function systemPrompt() {
   return `You are Moondog, a local-first personal AI music curator.
 
-Your current task is to help the user with grounded artist and release questions, curate small ordered playlist plans from trusted private-library, private-history, or external-catalog candidates, and safely create or edit private Spotify playlists while maintaining bounded conversation memory.
+Your current task is to help the user with grounded artist and release questions, play or queue a song they name, curate a small ordered plan when they ask for one or for music like something, and safely create or edit private Spotify playlists while maintaining bounded conversation memory.
 
 Public web research rules:
 - Use moondog_web_search for reviews, music news, interviews and concert information, and moondog_web_read to inspect a supplied public URL or verify a source page.
@@ -5285,7 +5387,8 @@ Grounding and evidence rules:
 - Library results expose metadata and aggregate observation summaries, not audio analysis. Do not invent mood, tempo, instrumentation, or sonic properties.
 - Never invent a track, metadata value, personal reason, or library result.
 - A playlist plan may contain only track refs from active candidate_set_ids returned in this prompt or from the pending plan's revision candidate set in trusted product context, whether their candidate_scope is private_library, private_history, or external_catalog. Use moondog_playlist_plan to validate the final order and reasons.
-- A resolved moondog_music_catalog_search or moondog_music_artist_similarity result is an intermediate candidate set, never a final answer. You must call moondog_playlist_plan before naming or listing any returned external tracks. Do not end the turn directly after either discovery tool.
+- A request to play, queue, or put on one named song is playback. Find it with moondog_library_search. If the library misses, one moondog_music_catalog_search for that title is allowed. Resolve the one matching track and play or queue it. Do not call moondog_music_artist_similarity, and do not build a playlist plan.
+- A resolved moondog_music_catalog_search or moondog_music_artist_similarity result is an intermediate candidate set, never a final answer, except the single named song you are about to play or queue. Otherwise you must call moondog_playlist_plan before naming or listing any returned external tracks. Do not end the turn directly after either discovery tool.
 - Copy the user's explicit track count into requested_track_count when calling moondog_playlist_plan.
 - Refer to songs by title and artist in selection reasons and ordering notes, never by internal track refs or shortened IDs.
 - Use product.playlist_response_language for playlist reasons and ordering notes, keeping titles and artist names in their original language. The host displays external-track reasons from registered discovery evidence; it does not use model descriptions as evidence of tempo, instrumentation, genre, or sound.
@@ -5336,7 +5439,8 @@ Spotify control and catalog rules:
 - A direct request to create, save, or sync a playlist authorizes one private Spotify playlist write. Chinese requests such as 创建歌单, 保存歌单, and 同步歌单 count as direct write requests. Requests to recommend, plan, draft, or list tracks remain plan-only.
 - When Spotify is the only registered playlist-write provider, a direct playlist creation request that omits the platform defaults to Spotify.
 - For a direct playlist-write request, complete library search, validated planning, resolution of every planned track, and moondog_spotify_playlist_write in the same prompt. Do not stop after moondog_playlist_plan or ask for redundant confirmation.
-- When the user approves the pending validated plan from the previous turn with yes, 可以, 就这个, 保存它, or equivalent wording, call moondog_spotify_playlist_write with pending_plan set to true. Do not search, resolve through the model, or build a different plan again.
+- When the user approves the pending validated plan from the previous turn with yes, 可以, 就这个, 保存它, or equivalent wording, and they are asking to save it, call moondog_spotify_playlist_write with pending_plan set to true. Do not search, resolve through the model, or build a different plan again.
+- When the user asks to queue or play the pending plan, including "add to my queue", "queue these", "put them on", "加入队列", or an approval that names the queue, call moondog_spotify_queue_add once with pending_plan set to true. The host resolves every retained track on Spotify and queues the matches. Do not search, resolve through the model, re-plan, or ask whether they meant a playlist. A playlist save stays a separate explicit create, save, or sync request.
 - Existing-playlist editing uses a stricter two-turn boundary. A request to change an existing playlist authorizes inspection and an exact preview only, never a same-turn write.
 - To edit an existing playlist, call moondog_spotify_playlist_read with list, then inspect the chosen prompt-local playlist reference. Build the complete final order with inspected playlist_item_ref_id values and, for additions, track_ref_id values resolved in the same prompt. Then call moondog_spotify_playlist_edit_preview exactly once.
 - The existing-playlist slice supports only playlists owned by the connected account that are private, non-collaborative, contain at most 100 ordinary Spotify tracks, and contain no local, unavailable, episode, or other unsupported items. Do not attempt to bypass these limits.
@@ -5348,14 +5452,14 @@ Spotify control and catalog rules:
 - When the user asks to play on, switch to, or move playback to a device in ordinary words, such as iPhone, computer, or a speaker name, call moondog_spotify_device_transfer once with that short device_name and play set to true. The host matches a live Spotify Connect device. Do not ask the user to paste a device ID, and do not invent one.
 - If the transfer result names the device, confirm that name. If several devices match, or none do, tell the user the visible names from the tool result and ask which one, or ask them to open Spotify on that device. Use moondog_spotify_devices only when they ask what is connected, or when you need those names after a failed match.
 - Execute each requested state-changing action once. Never automatically retry next, previous, queue additions, or device transfers.
-- Before queueing, playing, saving, or writing a trusted candidate to Spotify, resolve it with moondog_spotify_resolve_tracks. Resolution is a deterministic host-side match; report match quality honestly and exclude unresolved tracks from Spotify actions.
+- Before queueing, playing, saving, or writing one trusted candidate to Spotify, resolve it with moondog_spotify_resolve_tracks. Skip that call when moondog_spotify_queue_add uses pending_plan, because the host resolves the plan. Resolution matches title, artist, and release for library, history, and external catalog tracks. Report match quality honestly and leave unmatched tracks off the queue.
 - Never invent Spotify URIs, track IDs, playlist IDs, playlist links, snapshot IDs, or device IDs. Pass device_id only when the user pasted that exact ID. Otherwise pass device_name. Use only opaque playlist_ref_id and playlist_item_ref_id values returned in the current prompt, and track_ref_id values from current trusted candidates and resolutions. URIs the user explicitly provided may be used only where a registered tool explicitly accepts them.
 - moondog_spotify_playlist_write and moondog_spotify_library_save are for explicit user requests only. A playlist write must use the exact order from this prompt's validated moondog_playlist_plan, and playlists are always created private.
 - Spotify provider IDs, URIs, account details, device details, and live playback metadata must not enter profile or generic memory. Sanitized imported listening evidence may contribute only through the bounded Profile pipeline.
 
 Output rules:
 - Return the requested number of tracks when the trusted candidate sets contain enough suitable results.
-- Explain the ordering logic and give a concrete reason for every selected track.
+- For a library or history plan, explain the order and give a concrete reason for every selected track. The host shows an external plan as the songs plus one source line.
 - State uncertainty or ask to broaden the search when results are sparse.
 - Spotify playback controls, library saves, and private playlist writes may be used through the registered tools. Publishing, messaging, deletion, paid generation, and all other external effects remain disabled.
 
@@ -5599,6 +5703,88 @@ function renderPlaylistRationale(text, tracks) {
   );
 }
 
+function externalListeningNote(discoverySources, chinese) {
+  const parts = [];
+  for (const source of discoverySources) {
+    if (!isPlainObject(source)) continue;
+    const retrievedDate = typeof source.retrieved_at === "string"
+      ? source.retrieved_at.slice(0, 10)
+      : "unknown";
+    if (source.provider === "listenbrainz") {
+      const seed = optionalOutputText(
+        source.seed_artist,
+        80,
+        "listening_note_seed",
+      );
+      const neighbor = seed
+        ? chinese
+          ? `ListenBrainz 听友相邻，从 ${seed} 出发`
+          : `ListenBrainz listener-neighbors of ${seed}`
+        : chinese
+          ? "ListenBrainz 听友相邻"
+          : "ListenBrainz listener-neighbors";
+      parts.push(
+        chinese
+          ? `${neighbor}（Wikidata 身份，CC0，检索于 ${retrievedDate}；这不是音频相似）`
+          : `${neighbor} (Wikidata identity, CC0, retrieved ${retrievedDate}; this is not audio similarity)`,
+      );
+    } else if (source.provider === "apple_music") {
+      parts.push(
+        chinese
+          ? `Apple Music US 曲名匹配（检索于 ${retrievedDate}）`
+          : `Apple Music US title matches (retrieved ${retrievedDate})`,
+      );
+    }
+  }
+  const limit = chinese
+    ? "导入曲库里的精确同名同艺人是唯一排除项，所以这不代表你从未听过。这些是供试听的建议。"
+    : "A title-and-artist match in your imported library is the only thing excluded, so this does not mean you have never heard them. These are suggestions for listening.";
+  if (parts.length === 0) return limit;
+  return chinese
+    ? `来源：${parts.join("，以及")}。${limit}`
+    : `From ${parts.join(", and ")}. ${limit}`;
+}
+
+function renderSpotifyQueuePlan(receipt, promptText) {
+  const chinese = responseLanguage(promptText) === "zh";
+  const lines = [];
+  if (receipt.stopped) {
+    lines.push(
+      chinese
+        ? `已把 ${receipt.queued.length} 首加入 Spotify 队列，停在《${receipt.stopped.title}》- ${receipt.stopped.artist_credit}。`
+        : `Queued ${receipt.queued.length} on Spotify, then stopped at "${receipt.stopped.title}" - ${receipt.stopped.artist_credit}.`,
+    );
+  } else if (receipt.unmatched.length === 0) {
+    lines.push(
+      chinese
+        ? `已把这 ${receipt.queued.length} 首加入 Spotify 队列：`
+        : `Queued ${receipt.queued.length} on Spotify:`,
+    );
+  } else {
+    lines.push(
+      chinese
+        ? `已把 ${receipt.queued.length} 首加入 Spotify 队列，另有 ${receipt.unmatched.length} 首对不上：`
+        : `Queued ${receipt.queued.length} of ${receipt.queued.length + receipt.unmatched.length} on Spotify:`,
+    );
+  }
+  receipt.queued.forEach((track, index) => {
+    lines.push(`${index + 1}. ${track.title} - ${track.artist_credit}`);
+  });
+  if (receipt.unmatched.length > 0) {
+    lines.push(chinese ? "Spotify 上对不上：" : "Could not match on Spotify:");
+    for (const track of receipt.unmatched) {
+      lines.push(`- ${track.title} - ${track.artist_credit}`);
+    }
+  }
+  if (receipt.not_added.length > 0) {
+    lines.push(chinese ? "还没加入：" : "Not added:");
+    for (const track of receipt.not_added) {
+      lines.push(`- ${track.title} - ${track.artist_credit}`);
+    }
+  }
+  return lines.join("\n");
+}
+
 function renderValidatedPlaylistPlan(
   plan,
   promptText,
@@ -5637,11 +5823,11 @@ function renderValidatedPlaylistPlan(
       ? `值得再听一次的 ${plan.track_count} 首历史重逢方案：`
       : `${plan.track_count}-track listen-again plan from your private history:`,
     external_catalog: chinese
-      ? `来自曲库外 catalog 候选的 ${plan.track_count} 首方案：`
-      : `${plan.track_count}-track plan from external catalog candidates:`,
+      ? `这 ${plan.track_count} 首：`
+      : `${plan.track_count} songs:`,
     mixed: chinese
-      ? `混合个人曲库、私人历史与外部 catalog 候选的 ${plan.track_count} 首方案：`
-      : `${plan.track_count}-track plan mixing private library, private history, and external catalog candidates:`,
+      ? `这 ${plan.track_count} 首：`
+      : `${plan.track_count} songs:`,
   };
   const lines = [
     timeCapsulePlan
@@ -5664,17 +5850,26 @@ function renderValidatedPlaylistPlan(
         ? `${track.history_context.year} · `
         : "";
     lines.push(
-      `${track.position}. ${yearPrefix}${track.title} - ${track.artist_credit}`,
+      track.candidate_scope === "external_catalog"
+        ? chinese
+          ? `${track.position}. ${yearPrefix}${track.title} - ${track.artist_credit}，选自《${track.release}》`
+          : `${track.position}. ${yearPrefix}${track.title} - ${track.artist_credit}, from "${track.release}"`
+        : `${track.position}. ${yearPrefix}${track.title} - ${track.artist_credit}`,
+    );
+    if (track.candidate_scope === "external_catalog") continue;
+    lines.push(
       chinese
-        ? `   ${track.candidate_scope === "external_catalog" ? "推荐依据" : "策展判断"}：${renderPlaylistRationale(track.selection_reason, plan.tracks)}`
-        : `   ${track.candidate_scope === "external_catalog" ? "Recommendation basis" : "Curatorial rationale"}: ${renderPlaylistRationale(track.selection_reason, plan.tracks)}`,
+        ? `   策展判断：${renderPlaylistRationale(track.selection_reason, plan.tracks)}`
+        : `   Curatorial rationale: ${renderPlaylistRationale(track.selection_reason, plan.tracks)}`,
     );
   }
-  lines.push(
-    hasExternalCandidates ? plan.ordering_rationale : chinese
-      ? `排序逻辑：${renderPlaylistRationale(plan.ordering_rationale, plan.tracks)}`
-      : `Ordering rationale: ${renderPlaylistRationale(plan.ordering_rationale, plan.tracks)}`,
-  );
+  if (!hasExternalCandidates) {
+    lines.push(
+      chinese
+        ? `排序逻辑：${renderPlaylistRationale(plan.ordering_rationale, plan.tracks)}`
+        : `Ordering rationale: ${renderPlaylistRationale(plan.ordering_rationale, plan.tracks)}`,
+    );
+  }
   if (spotifyWrite?.playlist) {
     lines.push(
       chinese
@@ -5687,6 +5882,12 @@ function renderValidatedPlaylistPlan(
         ? `Spotify 已创建私有歌单「${spotifyPartialEffect.playlist.name}」，但未能加入曲目；这个空歌单已经存在，请检查后再决定是否重试。`
         : `Spotify created the private playlist "${spotifyPartialEffect.playlist.name}", but did not add its tracks. The empty playlist now exists; inspect it before deciding whether to retry.`,
     );
+  } else if (hasExternalCandidates) {
+    lines.push(
+      chinese
+        ? "还没有保存，也没有加入队列。"
+        : "Nothing has been saved or queued yet.",
+    );
   } else {
     lines.push(
       chinese
@@ -5695,30 +5896,7 @@ function renderValidatedPlaylistPlan(
     );
   }
   if (hasExternalCandidates) {
-    for (const source of discoverySources) {
-      const retrievedDate = source.retrieved_at?.slice(0, 10) ?? "unknown";
-      if (source.provider === "apple_music") {
-        lines.push(
-          chinese
-            ? `发现来源：Apple Music US storefront 关键词目录（检索于 ${retrievedDate}）；它只证明词法目录匹配，不证明个人适配、未听过状态或全平台可用性。`
-            : `Discovery source: Apple Music US storefront keyword catalog, retrieved ${retrievedDate}. It establishes lexical catalog matches, not personal fit, unheard status, or cross-platform availability.`,
-        );
-      }
-      if (source.provider === "listenbrainz") {
-        const begin = source.popularity_range?.begin ?? "unknown";
-        const end = source.popularity_range?.end ?? "unknown";
-        lines.push(
-          chinese
-            ? `发现来源：ListenBrainz 协同艺人相邻与 Wikidata 身份（检索于 ${retrievedDate}，CC0 inputs，${source.mode} mode，popularity ${begin}-${end}）；这不是音频相似度。`
-            : `Discovery source: ListenBrainz collaborative artist adjacency with Wikidata identity, retrieved ${retrievedDate}, using CC0 inputs, ${source.mode} mode, and popularity ${begin}-${end}. This is not audio similarity.`,
-        );
-      }
-    }
-    lines.push(
-      chinese
-        ? "新颖性边界：外部候选只排除了导入曲库中的精确同名同艺人匹配，不代表你从未听过，也没有核对全部 Spotify 历史。"
-        : "Novelty boundary: external candidates exclude only exact title-and-artist matches in the imported library. This does not mean you have never heard them, and complete Spotify history was not checked.",
-    );
+    lines.push(externalListeningNote(discoverySources, chinese));
   }
   if (backToBackPlan) {
     lines.push(
@@ -5727,15 +5905,13 @@ function renderValidatedPlaylistPlan(
         : "Interpretation boundary: adjacent retained playback events do not prove repeat mode, intentional replay, or liking.",
     );
   }
-  lines.push(
-    hasExternalCandidates
-      ? chinese
-        ? "校验范围：曲目身份、候选集归属、数量和顺序已校验；推荐依据来自检索元数据，选曲和顺序供试听参考。"
-        : "Validation scope: track identity, candidate-set membership, count, and order were checked. Recommendation bases come from retrieved metadata; selection and order are suggestions for listening."
-      : chinese
-      ? "校验范围：本地 planner 校验了曲目身份、候选集归属、数量和输出顺序；策展理由与情境适配度仍是基于现有元数据的模型判断。"
-      : "Validation scope: the local planner validates track identity, candidate-set membership, count, and output order; curatorial reasons and situational fit remain model judgments based on available metadata.",
-  );
+  if (!hasExternalCandidates) {
+    lines.push(
+      chinese
+        ? "校验范围：本地 planner 校验了曲目身份、候选集归属、数量和输出顺序；策展理由与情境适配度仍是基于现有元数据的模型判断。"
+        : "Validation scope: the local planner validates track identity, candidate-set membership, count, and output order; curatorial reasons and situational fit remain model judgments based on available metadata.",
+    );
+  }
   return lines.join("\n");
 }
 
@@ -6026,6 +6202,16 @@ export class PiAgentRuntime {
               );
           }
         },
+        onSpotifyQueuePlan: (receipt) => {
+          if (this.activePromptState) {
+            this.activePromptState.spotifyQueuePlan = receipt;
+          }
+        },
+        onSpotifyPlayback: () => {
+          if (this.activePromptState) {
+            this.activePromptState.spotifyPlayback = true;
+          }
+        },
         onMemoryRemember: (parameters) => {
           if (!this.activePromptState) {
             throw new Error("Memory mutation requires an active prompt");
@@ -6138,6 +6324,8 @@ export class PiAgentRuntime {
       spotifyPlaylistPartialEffect: null,
       spotifyPlaylistEditPreview: null,
       spotifyPlaylistEditWrite: null,
+      spotifyQueuePlan: null,
+      spotifyPlayback: false,
       externalCandidateSetCreated: false,
       discoveryConnections: new Map(),
       discoverySources: [],
@@ -6365,17 +6553,31 @@ export class PiAgentRuntime {
         });
       }
 
-      if (promptState.validatedPlaylistPlan) {
-        const authoritativeText = appendMusicWorldCitations(
-          renderValidatedPlaylistPlan(
-            promptState.validatedPlaylistPlan,
-            text,
-            promptState.spotifyPlaylistWrite,
-            promptState.spotifyPlaylistPartialEffect,
-            promptState.discoverySources,
-          ),
-          promptState.musicWorldCitations,
+      if (promptState.spotifyQueuePlan) {
+        const authoritativeText = renderSpotifyQueuePlan(
+          promptState.spotifyQueuePlan,
           text,
+        );
+        replaceRenderedText(authoritativeText);
+        return completedResult(authoritativeText, {
+          spotify_queue_plan: structuredClone(promptState.spotifyQueuePlan),
+          ...(promptState.validatedPlaylistPlan
+            ? {
+                playlist_plan: structuredClone(
+                  promptState.validatedPlaylistPlan,
+                ),
+              }
+            : {}),
+        });
+      }
+
+      if (promptState.validatedPlaylistPlan) {
+        const authoritativeText = renderValidatedPlaylistPlan(
+          promptState.validatedPlaylistPlan,
+          text,
+          promptState.spotifyPlaylistWrite,
+          promptState.spotifyPlaylistPartialEffect,
+          promptState.discoverySources,
         );
         replaceRenderedText(authoritativeText);
         return completedResult(authoritativeText, {
@@ -6413,7 +6615,8 @@ export class PiAgentRuntime {
 
       if (
         promptState.externalCandidateSetCreated &&
-        !promptState.playlistPlanAttempted
+        !promptState.playlistPlanAttempted &&
+        !promptState.spotifyPlayback
       ) {
         const safeFailureText = renderUnvalidatedPlaylistPlan(text);
         replaceRenderedText(safeFailureText);

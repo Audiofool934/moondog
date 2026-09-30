@@ -1257,6 +1257,72 @@ export class MoondogApplication {
     return this.writeSpotifyPlaylist(details, uris);
   }
 
+  async spotifyQueuePendingPlan({ deviceId } = {}) {
+    if (!this.pendingSpotifyPlaylist?.plan) {
+      throw spotifyResolutionError(
+        "spotify_pending_playlist_unavailable",
+        "There is no pending validated playlist plan to queue. Create a playlist plan first.",
+      );
+    }
+    this.requireSpotifyScopes(["user-read-private"]);
+    const draft = this.pendingSpotifyPlaylist;
+    const result = await this.requireSpotifyResolver().resolve(
+      draft.trustedTracks,
+    );
+    const resolvedByRef = new Map();
+    for (const resolution of result.resolutions ?? []) {
+      if (resolution.status === "resolved" && resolution.spotify?.uri) {
+        resolvedByRef.set(resolution.track_ref_id, resolution.spotify.uri);
+      }
+    }
+    const label = (track) => ({
+      title: track.title,
+      artist_credit: track.artist_credit,
+    });
+    const queued = [];
+    const unmatched = [];
+    let stopped = null;
+    let stopIndex = -1;
+    for (const [index, track] of draft.plan.tracks.entries()) {
+      const uri = resolvedByRef.get(track.track_ref_id);
+      if (typeof uri !== "string") {
+        unmatched.push(label(track));
+        continue;
+      }
+      try {
+        await this.requireSpotifyService().addToQueue({
+          uri,
+          ...(deviceId ? { deviceId } : {}),
+        });
+        queued.push(label(track));
+      } catch (error) {
+        if (queued.length === 0) throw error;
+        stopped = label(track);
+        stopIndex = index;
+        break;
+      }
+    }
+    if (queued.length === 0) {
+      throw spotifyResolutionError(
+        "spotify_pending_queue_unmatched",
+        "None of the pending tracks matched a Spotify track, so nothing was queued.",
+      );
+    }
+    return {
+      provider: "spotify",
+      ok: true,
+      effect: "write_external",
+      action: "playback.queue.add",
+      state: stopped ? "partial" : "accepted",
+      queued,
+      unmatched,
+      not_added: stopIndex >= 0
+        ? draft.plan.tracks.slice(stopIndex + 1).map(label)
+        : [],
+      ...(stopped ? { stopped } : {}),
+    };
+  }
+
   async writeSpotifyPlaylist(details, uris) {
     try {
       const receipt = await this.requireSpotifyService().createPlaylistWithTracks({

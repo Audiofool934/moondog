@@ -31,7 +31,7 @@ const providers = [
 ];
 const conditionalToolFields = {
   moondog_spotify_player_control: { required: ["action"], fields: ["action", "device_id", "uri", "context_uri", "position_ms", "track_refs", "percent", "state"] },
-  moondog_spotify_queue_add: { required: [], fields: ["track_ref_id", "uri", "device_id"] },
+  moondog_spotify_queue_add: { required: [], fields: ["track_ref_id", "uri", "device_id", "pending_plan"] },
   moondog_spotify_playlist_read: { required: ["action"], fields: ["action", "limit", "offset", "playlist_ref_id"] },
   moondog_spotify_playlist_write: { required: ["name"], fields: ["name", "description", "track_refs", "pending_plan"] },
   moondog_spotify_device_transfer: { required: [], fields: ["device_name", "device_id", "play"] },
@@ -383,8 +383,20 @@ test("production Spotify tools retain conditional validation before execution", 
       ],
     },
     moondog_spotify_queue_add: {
-      valid: [{ track_ref_id: "fixture-track" }, { uri: "spotify:track:fixture", device_id: "fixture-device" }],
-      invalid: [{}, { track_ref_id: "fixture-track", uri: "spotify:track:fixture" }, { uri: "" }],
+      valid: [
+        { track_ref_id: "fixture-track" },
+        { uri: "spotify:track:fixture", device_id: "fixture-device" },
+        { pending_plan: true },
+        { pending_plan: true, device_id: "fixture-device" },
+      ],
+      invalid: [
+        {},
+        { track_ref_id: "fixture-track", uri: "spotify:track:fixture" },
+        { uri: "" },
+        { pending_plan: false },
+        { pending_plan: true, track_ref_id: "fixture-track" },
+        { pending_plan: true, uri: "spotify:track:fixture" },
+      ],
     },
     moondog_spotify_playlist_read: {
       valid: [{ action: "list", limit: 10, offset: 0 }, { action: "inspect", playlist_ref_id: "fixture-playlist" }],

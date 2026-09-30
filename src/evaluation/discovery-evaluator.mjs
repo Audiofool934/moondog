@@ -303,7 +303,7 @@ export function evaluateDiscoveryRun(run) {
     ),
     check(
       "validation_scope_rendered",
-      /校验范围|Validation scope/iu.test(outputText),
+      /校验范围|Validation scope|供试听|suggestions for listening/iu.test(outputText),
       "Rendered output must distinguish local validation from model judgment.",
     ),
   ];
