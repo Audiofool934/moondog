@@ -15,6 +15,23 @@ function jsonResponse(value, status = 200, headers = {}) {
   });
 }
 
+test("open similarity cancellation aborts both identity and radio HTTP reads", async () => {
+  for (const kind of ["identity", "radio"]) {
+    const controller = new AbortController();
+    let calls = 0;
+    const fetchImpl = async (_url, { signal }) => {
+      calls++;
+      setImmediate(() => controller.abort());
+      return new Promise((_resolve, reject) => signal.addEventListener("abort", () => reject(signal.reason), { once: true }));
+    };
+    const result = kind === "identity"
+      ? createWikidataArtistResolver({ fetchImpl }).resolveArtist("Fictional Seed", { signal: controller.signal })
+      : createListenBrainzArtistRadioClient({ fetchImpl }).artistRadio({ artistMbid: "11111111-1111-4111-8111-111111111111", mode: "medium" }, { signal: controller.signal });
+    await assert.rejects(result, { name: "AbortError" });
+    assert.equal(calls, 1);
+  }
+});
+
 test("Wikidata resolves one exact artist label to a MusicBrainz identity", async () => {
   const calls = [];
   const fetchImpl = async (input, options) => {

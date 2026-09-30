@@ -301,6 +301,16 @@ const catalog = [
     },
   },
   {
+    id: "spotify.queue.similar",
+    version: "1",
+    state: "enabled",
+    effect: "write_external",
+    description: "Queue a bounded artist-similarity selection from current Spotify playback, with filtering and partial receipts.",
+    requires_spotify: true,
+    requires_music_similarity: true,
+    agent_tool: { name: "moondog_spotify_queue_similar", label: "Queue more like this on Spotify" },
+  },
+  {
     id: "spotify.queue.status",
     version: "1",
     state: "enabled",

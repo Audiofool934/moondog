@@ -3069,49 +3069,34 @@ function projectQueueTrackList(tracks, field) {
 }
 
 function projectSpotifyQueuePlan(value) {
-  if (
-    !isPlainObject(value) ||
-    value.provider !== "spotify" ||
-    value.ok !== true ||
-    value.effect !== "write_external" ||
-    value.action !== "playback.queue.add" ||
-    (value.state !== "accepted" && value.state !== "partial")
-  ) {
+  if (!isPlainObject(value) || value.provider !== "spotify" || value.effect !== "write_external" ||
+      !["playback.queue.add", "queue.similar"].includes(value.action) ||
+      !["accepted", "partial", "unknown", "failed", "no_candidates", "no_playback"].includes(value.state) ||
+      value.ok !== !["unknown", "failed"].includes(value.state)) {
     throw new Error("domain_result_invalid:spotify_queue_plan");
   }
   const queued = projectQueueTrackList(value.queued, "spotify_queue_track");
-  if (queued.length < 1) {
+  if (["accepted", "partial"].includes(value.state) !== (queued.length > 0)) {
     throw new Error("domain_result_invalid:spotify_queue_plan");
   }
-  const result = {
-    provider: "spotify",
-    ok: true,
-    effect: "write_external",
-    action: "playback.queue.add",
-    state: value.state,
-    queued,
-    unmatched: projectQueueTrackList(
-      value.unmatched,
-      "spotify_queue_unmatched",
-    ),
-    not_added: projectQueueTrackList(
-      value.not_added,
-      "spotify_queue_not_added",
-    ),
+  const result = { provider: "spotify", ok: value.ok, effect: "write_external", action: value.action, state: value.state, queued,
+    unmatched: projectQueueTrackList(value.unmatched, "spotify_queue_unmatched"),
+    not_added: projectQueueTrackList(value.not_added, "spotify_queue_not_added"),
     ...(value.cancelled === true ? { cancelled: true } : {}),
+    ...(value.outcome_unknown === true ? { outcome_unknown: true } : {}),
   };
-  if (value.state === "partial") {
-    if (!isPlainObject(value.stopped)) {
-      throw new Error("domain_result_invalid:spotify_queue_plan");
-    }
-    result.stopped = {
-      title: cleanOutputText(value.stopped.title, 512, "spotify_queue_stopped_title"),
-      artist_credit: cleanOutputText(
-        value.stopped.artist_credit,
-        512,
-        "spotify_queue_stopped_artist",
-      ),
-    };
+  if (["partial", "unknown", "failed"].includes(value.state)) {
+    result.stopped = projectQueueTrackList([value.stopped], "spotify_queue_stopped")[0];
+  }
+  for (const field of ["skipped_duplicate_count", "skipped_avoided_count"]) {
+    if (value[field] !== undefined) result[field] = safeNonnegativeInteger(value[field], field);
+  }
+  if (value.action === "queue.similar") {
+    result.requested = safeNonnegativeInteger(value.requested, "spotify_similar_requested");
+    if (result.requested < 1 || result.requested > 10 || queued.length > result.requested) throw new Error("domain_result_invalid:spotify_queue_similar_count");
+    result.queued_count = queued.length;
+    if (typeof value.seed_artist === "string") result.seed_artist = cleanOutputText(value.seed_artist, 256, "spotify_similar_seed");
+    result.queue_observation_truncated = value.queue_observation_truncated === true;
   }
   return result;
 }
@@ -4796,6 +4781,21 @@ function createToolFactories(
       }),
     ],
     [
+      "spotify.queue.similar",
+      (descriptor) => ({
+        name: descriptor.tool_name,
+        label: descriptor.label,
+        description: "Queue more music like the currently playing Spotify artist only when explicitly requested. count is 1–10 (default 5). The host reads playback, finds open listening-derived artist adjacency, filters Avoids and known history, resolves tracks and skips the observed queue and recent accepted additions. This is artist similarity, not audio similarity or proof of personal fit. Call once per request; report partial or unknown outcomes without replaying writes.",
+        parameters: Type.Object({ count: Type.Optional(Type.Integer({ minimum: 1, maximum: 10 })) }, { additionalProperties: false }),
+        executionMode: "sequential",
+        execute: executeDomain(
+          async (_toolCallId, parameters, signal) => application.spotifyQueueSimilar(parameters, { signal }),
+          projectSpotifyQueuePlan,
+          onSpotifyQueuePlan,
+        ),
+      }),
+    ],
+    [
       "spotify.catalog.resolve",
       (descriptor) => ({
         name: descriptor.tool_name,
@@ -5581,6 +5581,7 @@ Spotify control and catalog rules:
 - Call other Spotify write tools only for a direct user request to control playback, save library items, add an explicit URI, or move playback onto a device the user named.
 - When the user asks to play on, switch to, or move playback to a device in ordinary words, such as iPhone, computer, or a speaker name, call moondog_spotify_device_transfer once with that short device_name and play set to true. The host matches a live Spotify Connect device. Do not ask the user to paste a device ID, and do not invent one.
 - If the transfer result names the device, confirm that name. If several devices match, or none do, tell the user the visible names from the tool result and ask which one, or ask them to open Spotify on that device. Use moondog_spotify_devices only when they ask what is connected, or when you need those names after a failed match.
+- For an explicit request to queue music like the current playback, call moondog_spotify_queue_similar once with count (1–10, default 5). Report the host receipt, including unknown or partial effects; never replay an uncertain queue write.
 - Execute each requested state-changing action once. Never automatically retry next, previous, queue additions, or device transfers.
 - When the user asks to play the pending plan now, including "play these", "put them on", or "播放这个方案", call moondog_spotify_player_control with action resume and pending_plan true. This starts the retained tracks in order, including on a paused device. Queue-only requests must not resume or replace current playback. Do not resolve retained references through the model or create a playlist.
 - Before queueing, playing, saving, or writing one trusted candidate to Spotify, resolve it with moondog_spotify_resolve_tracks. Skip that call for host references returned by Spotify search, now-playing or queue reads, which already identify an exact track, and when the queue or player-control tool uses pending_plan, because the host resolves the plan. Resolution matches title, artist, and release for library, history, and external catalog tracks. Report match quality honestly and leave unmatched tracks off the queue.
@@ -5906,7 +5907,10 @@ function renderNamedSongPlayback(promptState, promptText) {
 
 function renderSpotifyQueuePlan(receipt, promptText) {
   const chinese = responseLanguage(promptText) === "zh";
+  if (receipt.state === "no_playback") return chinese ? "Spotify 当前没有可用的歌曲播放信息，未加入任何歌曲。" : "Spotify has no current track to use as a seed; nothing was queued.";
+  if (receipt.state === "no_candidates") return chinese ? "筛选后没有新的可播放候选，未加入任何歌曲。" : "No new playable candidates remained after filtering; nothing was queued.";
   const lines = [];
+  if (receipt.seed_artist) lines.push(chinese ? `基于艺人 ${receipt.seed_artist} 的听众相似性：` : `Listener-derived artist similarity from ${receipt.seed_artist}:`);
   if (receipt.cancelled) {
     lines.push(chinese ? "已取消继续加入队列；已接受的歌曲仍在队列中。" : "Stopped queueing after cancellation; accepted tracks remain in the queue.");
   }
@@ -5929,6 +5933,9 @@ function renderSpotifyQueuePlan(receipt, promptText) {
         : `Queued ${receipt.queued.length} of ${receipt.queued.length + receipt.unmatched.length} on Spotify:`,
     );
   }
+  if (receipt.outcome_unknown) lines.push(chinese
+    ? "Spotify 未确认停止处这首歌是否已加入；请先检查队列，不要自动重试。"
+    : "Spotify did not confirm whether the stopped track was added. Check the queue before trying again; this write was not replayed.");
   receipt.queued.forEach((track, index) => {
     lines.push(`${index + 1}. ${track.title} - ${track.artist_credit}`);
   });
@@ -5938,6 +5945,9 @@ function renderSpotifyQueuePlan(receipt, promptText) {
       lines.push(`- ${track.title} - ${track.artist_credit}`);
     }
   }
+  if (receipt.skipped_duplicate_count) lines.push(chinese ? `跳过 ${receipt.skipped_duplicate_count} 首重复曲目。` : `Skipped ${receipt.skipped_duplicate_count} duplicate tracks.`);
+  if (receipt.skipped_avoided_count) lines.push(chinese ? `跳过 ${receipt.skipped_avoided_count} 首 Avoid 曲目。` : `Skipped ${receipt.skipped_avoided_count} avoided tracks.`);
+  if (receipt.queue_observation_truncated) lines.push(chinese ? "仅检查了 Spotify 返回的有限队列片段，无法保证未显示部分没有重复。" : "Deduplication covers Spotify's bounded queue snapshot; unseen entries may still duplicate a selection.");
   if (receipt.not_added.length > 0) {
     lines.push(chinese ? "还没加入：" : "Not added:");
     for (const track of receipt.not_added) {

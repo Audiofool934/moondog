@@ -136,6 +136,7 @@ export class MoondogApplication {
     this.webResearch = webResearch;
     this.spotifyResolutions = new Map();
     this.spotifyReadSelections = new Map();
+    this.recentSimilarQueueUris = new Map();
     this.transientSpotifyContext = false;
     this.spotifyPlaylistTargets = new Map();
     this.spotifyPlaylistItems = new Map();
@@ -633,6 +634,7 @@ export class MoondogApplication {
 
   resetSpotifyReadContext() {
     this.spotifyReadSelections.clear();
+    this.recentSimilarQueueUris.clear();
     this.transientSpotifyContext = false;
   }
 
@@ -754,6 +756,56 @@ export class MoondogApplication {
       }, { signal });
     }
     return this.requireSpotifyService().addToQueue(input, { signal });
+  }
+
+  async spotifyQueueSimilar({ count = 5 } = {}, { signal } = {}) {
+    signal?.throwIfAborted();
+    if (!Number.isInteger(count) || count < 1 || count > 10) {
+      throw spotifyResolutionError("invalid_similar_queue_count", "The similar queue count must be an integer from 1 to 10.");
+    }
+    if (this.pendingPlaylistPromptTransaction?.similarQueueAttempted) {
+      throw spotifyResolutionError("spotify_similar_queue_already_attempted", "Similar queue was already attempted for this request. Check its receipt before starting another request.");
+    }
+    if (this.pendingPlaylistPromptTransaction) this.pendingPlaylistPromptTransaction.similarQueueAttempted = true;
+    this.transientSpotifyContext = true;
+    const service = this.requireSpotifyService();
+    const player = await service.currentPlayer({ signal });
+    signal?.throwIfAborted();
+    const item = player?.state === "available" ? player.item : null;
+    const seedArtist = item?.type === "track" && Array.isArray(item.artists) ? item.artists[0] : null;
+    const empty = (state) => ({ provider: "spotify", ok: true, effect: "write_external", action: "queue.similar",
+      state, requested: count, queued_count: 0, queued: [], unmatched: [], not_added: [] });
+    if (typeof seedArtist !== "string" || !seedArtist.trim()) return empty("no_playback");
+    this.requireSpotifyScopes(["user-read-private", "user-read-playback-state"]);
+    this.requireSpotifyWriteScopes(["user-modify-playback-state"]);
+    const { similarity, domainServices } = this.requireMusicSimilarity();
+    // Spotify's artists array already separates artists. A band's punctuation
+    // (for example an ampersand) is part of its identity, not another artist.
+    const discovered = await similarity.discoverSimilarTracks({ artistName: seedArtist, mode: "medium", limit: 12 }, { signal });
+    signal?.throwIfAborted();
+    if (discovered.state !== "resolved" || discovered.tracks.length === 0) return empty("no_candidates");
+    const registered = domainServices.registerExternalCandidateSet({ tracks: discovered.tracks, source: discovered.source });
+    if (registered.result_count === 0) return empty("no_candidates");
+    const tracks = domainServices.getTrustedTracks(registered.tracks.map((track) => track.track_ref_id));
+    const resolution = await this.requireSpotifyResolver().resolve(tracks, { signal });
+    signal?.throwIfAborted();
+    // Read immediately before the first write. Failure to inspect the queue
+    // stops the operation instead of silently abandoning deduplication.
+    const observed = await service.queue({ signal });
+    signal?.throwIfAborted();
+    const seenUris = new Set([item.uri, observed.currently_playing?.uri, ...(observed.queue ?? []).map((track) => track.uri)].filter(Boolean));
+    const now = Date.now();
+    for (const [uri, acceptedAt] of this.recentSimilarQueueUris) {
+      if (now - acceptedAt > 15 * 60_000) this.recentSimilarQueueUris.delete(uri);
+      else seenUris.add(uri);
+    }
+    const resolvedByRef = new Map((resolution.resolutions ?? [])
+      .filter((entry) => entry.status === "resolved" && /^spotify:track:[A-Za-z0-9]{1,128}$/u.test(entry.spotify?.uri ?? ""))
+      .map((entry) => [entry.track_ref_id, entry.spotify.uri]));
+    const receipt = await this.#queueSpotifyTracks(tracks, resolvedByRef, { signal, seenUris, limit: count, domainServices });
+    this.recordPromptDiscoverySource(registered.source);
+    return { ...receipt, action: "queue.similar", requested: count, queued_count: receipt.queued.length,
+      seed_artist: seedArtist, queue_observation_truncated: observed.truncated === true };
   }
 
   spotifyDevices({ signal } = {}) {
@@ -1356,7 +1408,7 @@ export class MoondogApplication {
     }
     this.requireSpotifyScopes(["user-read-private"]);
     const draft = this.pendingSpotifyPlaylist;
-    const result = await this.requireSpotifyResolver().resolve(draft.trustedTracks);
+    const result = await this.requireSpotifyResolver().resolve(draft.trustedTracks, { signal });
     signal?.throwIfAborted();
     const resolvedByRef = new Map(
       (result.resolutions ?? [])
@@ -1389,6 +1441,7 @@ export class MoondogApplication {
     const draft = this.pendingSpotifyPlaylist;
     const result = await this.requireSpotifyResolver().resolve(
       draft.trustedTracks,
+      { signal },
     );
     signal?.throwIfAborted();
     const resolvedByRef = new Map();
@@ -1397,59 +1450,55 @@ export class MoondogApplication {
         resolvedByRef.set(resolution.track_ref_id, resolution.spotify.uri);
       }
     }
-    const label = (track) => ({
-      title: track.title,
-      artist_credit: track.artist_credit,
-    });
+    const receipt = await this.#queueSpotifyTracks(draft.plan.tracks, resolvedByRef, { signal, deviceId });
+    if (receipt.state === "no_candidates") {
+      throw spotifyResolutionError("spotify_pending_queue_unmatched", "None of the pending tracks matched a Spotify track, so nothing was queued.");
+    }
+    return receipt;
+  }
+
+  async #queueSpotifyTracks(tracks, resolvedByRef, { signal, deviceId, seenUris = null, limit = tracks.length, domainServices = null } = {}) {
+    const label = (track) => ({ title: track.title, artist_credit: track.artist_credit });
     const queued = [];
     const unmatched = [];
+    let skippedDuplicates = 0;
+    let skippedAvoids = 0;
     let stopped = null;
     let stopIndex = -1;
-    for (const [index, track] of draft.plan.tracks.entries()) {
-      if (signal?.aborted) {
-        stopped = label(track);
-        stopIndex = index;
-        break;
-      }
+    let outcomeUnknown = false;
+    for (const [index, track] of tracks.entries()) {
+      if (queued.length >= limit) break;
+      if (signal?.aborted) { stopped = label(track); stopIndex = index; break; }
+      if (domainServices?.filterDiscoveryTracks?.([track]).length === 0) { skippedAvoids++; continue; }
       const uri = resolvedByRef.get(track.track_ref_id);
-      if (typeof uri !== "string") {
-        unmatched.push(label(track));
-        continue;
-      }
+      if (typeof uri !== "string") { unmatched.push(label(track)); continue; }
+      if (seenUris?.has(uri)) { skippedDuplicates++; continue; }
       try {
-        await this.requireSpotifyService().addToQueue({
-          uri,
-          ...(deviceId ? { deviceId } : {}),
-        }, { signal });
+        await this.requireSpotifyService().addToQueue({ uri, ...(deviceId ? { deviceId } : {}) }, { signal });
         queued.push(label(track));
+        seenUris?.add(uri);
+        if (seenUris) {
+          this.recentSimilarQueueUris.set(uri, Date.now());
+          while (this.recentSimilarQueueUris.size > 100) this.recentSimilarQueueUris.delete(this.recentSimilarQueueUris.keys().next().value);
+        }
       } catch (error) {
-        if (queued.length === 0) throw error;
-        stopped = label(track);
-        stopIndex = index;
+        stopped = label(track); stopIndex = index;
+        // A received rejection or pre-dispatch cancellation is known; transport
+        // failures may have applied the write. Never continue or replay it.
+        const rejected = (Number.isInteger(error?.status) && error.status >= 400 && error.status < 500) ||
+          error?.name === "AbortError" || /^invalid_|^spotify_(?:auth|device|active_device|.*scopes)_/u.test(error?.code ?? "");
+        outcomeUnknown = !rejected;
         break;
       }
     }
-    if (queued.length === 0) {
-      signal?.throwIfAborted();
-      throw spotifyResolutionError(
-        "spotify_pending_queue_unmatched",
-        "None of the pending tracks matched a Spotify track, so nothing was queued.",
-      );
-    }
-    return {
-      provider: "spotify",
-      ok: true,
-      effect: "write_external",
-      action: "playback.queue.add",
-      state: stopped ? "partial" : "accepted",
-      queued,
-      unmatched,
-      not_added: stopIndex >= 0
-        ? draft.plan.tracks.slice(stopIndex + 1).map(label)
-        : [],
-      ...(stopped ? { stopped } : {}),
-      ...(signal?.aborted ? { cancelled: true } : {}),
-    };
+    if (queued.length === 0 && !outcomeUnknown) signal?.throwIfAborted();
+    const state = stopped ? (queued.length ? "partial" : outcomeUnknown ? "unknown" : "failed")
+      : queued.length ? "accepted" : "no_candidates";
+    return { provider: "spotify", ok: !["unknown", "failed"].includes(state), effect: "write_external", action: "playback.queue.add",
+      state, queued, unmatched, not_added: stopIndex >= 0 ? tracks.slice(stopIndex + 1).map(label) : [],
+      skipped_duplicate_count: skippedDuplicates, skipped_avoided_count: skippedAvoids,
+      ...(stopped ? { stopped } : {}), ...(outcomeUnknown ? { outcome_unknown: true } : {}),
+      ...(signal?.aborted ? { cancelled: true } : {}) };
   }
 
   async writeSpotifyPlaylist(details, uris) {
