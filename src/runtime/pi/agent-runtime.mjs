@@ -6901,7 +6901,7 @@ export class PiAgentRuntime {
       if (selection?.changed) {
         const label = (value) => JSON.stringify(cleanOutputText(value, 256, "spotify_selection_label"));
         const playlist = selection.playlist ? label(selection.playlist.name) : "none";
-        const track = selection.track ? `${label(selection.track.title)} by ${selection.track.artists.map(label).join(", ")}` : "none";
+        const track = selection.track ? `${label(selection.track.title)}${selection.track.artists.length ? ` by ${selection.track.artists.map(label).join(", ")}` : ""}` : "none";
         const note = responseLanguage(text) === "zh"
           ? `\n\n后续编辑选择：歌单 ${playlist}；歌曲 ${track}。`
           : `\n\nSelected for follow-up edits: playlist ${playlist}; song ${track}.`;

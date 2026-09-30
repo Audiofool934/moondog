@@ -787,7 +787,7 @@ export class MoondogApplication {
     }
     transaction.quickContextForCommit = next;
     const changed = ["playlist", "track"].some((kind) => Boolean(next[kind]) !== Boolean(transaction.quickEditContext[kind]) ||
-      transaction.quickContextObservations[kind]);
+      Boolean(next[kind] && transaction.quickContextObservations[kind]));
     return { changed, playlist: next.playlist ? { name: next.playlist.name } : null,
       track: next.track ? { title: next.track.title, artists: [...next.track.artists] } : null };
   }
