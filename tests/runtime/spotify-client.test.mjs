@@ -912,7 +912,7 @@ test("cancelling a real rate-limit backoff stops promptly without another reques
   assert.equal(calls, 1);
 });
 
-test("a definite 401 write rejection can refresh once; a dispatched write keeps its receipt", async () => {
+test("a dispatched accepted write keeps its receipt after cancellation", async () => {
   const controller = new AbortController();
   let calls = 0;
   const client = createSpotifyWebApiClient({ tokenProvider: async () => "old-token",
@@ -920,13 +920,49 @@ test("a definite 401 write rejection can refresh once; a dispatched write keeps 
     fetchImpl: async (_url, init) => {
       assert.equal(init.signal, undefined);
       calls++;
-      if (calls === 1) return new Response("expired", { status: 401 });
       controller.abort();
       return noContentResponse();
     },
   });
   await client.addToQueue({ uri: "spotify:track:fictional" }, { signal: controller.signal });
-  assert.equal(calls, 2);
+  assert.equal(calls, 1);
+});
+
+test("every write refreshes a rejected token without automatically replaying the action", async (context) => {
+  const actions = [
+    ["resume", {}], ["pause", {}], ["next", {}], ["previous", {}], ["setVolume", { percent: 50 }],
+    ["seek", { positionMs: 1 }], ["setShuffle", { state: true }], ["setRepeat", { state: "off" }],
+    ["transfer", { deviceId: "fictionaldevice", play: true }], ["addToQueue", { uri: "spotify:track:fictional" }],
+    ["createPlaylist", { name: "Fictional Playlist" }],
+    ["addPlaylistTracks", { playlistId: "fictionalplaylist", uris: ["spotify:track:fictional"] }],
+    ["replacePlaylistItems", { playlistId: "fictionalplaylist", uris: ["spotify:track:fictional"] }],
+    ["saveTracks", { uris: ["spotify:track:fictional"] }],
+  ];
+  for (const [action, input] of actions) await context.test(action, async () => {
+    let requests = 0;
+    let refreshes = 0;
+    const client = createSpotifyWebApiClient({ tokenProvider: async () => "fictional-old",
+      refreshAccessToken: async () => { refreshes++; return "fictional-new"; },
+      fetchImpl: async () => { requests++; return new Response("expired", { status: 401 }); } });
+    await assert.rejects(client[action](input), { code: "spotify_action_not_replayed", outcomeUnknown: false, status: 401 });
+    assert.equal(requests, 1);
+    assert.equal(refreshes, 1);
+  });
+});
+
+test("a later explicit write uses the refreshed credential after an unreplayed rejection", async () => {
+  let token = "fictional-old";
+  const tokens = [];
+  const client = createSpotifyWebApiClient({ tokenProvider: async () => token,
+    refreshAccessToken: async () => { token = "fictional-new"; return token; },
+    fetchImpl: async (_url, init) => {
+      tokens.push(init.headers.authorization);
+      return tokens.length === 1 ? new Response("expired", { status: 401 }) : noContentResponse();
+    } });
+  await assert.rejects(client.next(), { code: "spotify_action_not_replayed" });
+  assert.deepEqual(tokens, ["Bearer fictional-old"]);
+  await client.next();
+  assert.deepEqual(tokens, ["Bearer fictional-old", "Bearer fictional-new"]);
 });
 
 for (const action of ["addToQueue", "resume"]) {

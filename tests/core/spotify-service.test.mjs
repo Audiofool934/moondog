@@ -333,7 +333,7 @@ test("Spotify service reports a playlist created without its tracks", async () =
   assert.deepEqual(calls, ["create", "add"]);
 });
 
-test("application writes stop before a 401 replay when token refresh is cancelled", async (context) => {
+test("application writes stop credential recovery promptly after cancellation of a rejected action", async (context) => {
   const controls = [
     { action: "resume" }, { action: "pause" }, { action: "next" }, { action: "previous" },
     { action: "volume", percent: 50 }, { action: "seek", positionMs: 1 },

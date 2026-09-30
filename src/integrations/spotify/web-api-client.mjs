@@ -522,10 +522,10 @@ export function createSpotifyWebApiClient({
       return init;
     };
 
-    // Authentication and rate-limit retries share one request budget. Writes
-    // may only replay a definite 401 rejection, never an uncertain outcome.
+    // Read recovery shares one request budget. Every write gets one dispatch;
+    // a rejected token may be refreshed for a later explicitly requested action.
     const read = method === "GET";
-    const maxAttempts = read ? SPOTIFY_WEB_API_LIMITS.rateLimitMaxAttempts : 2;
+    const maxAttempts = read ? SPOTIFY_WEB_API_LIMITS.rateLimitMaxAttempts : 1;
     const accessToken = async (operation) => {
       try {
         return normalizedToken(await operation());
@@ -591,10 +591,14 @@ export function createSpotifyWebApiClient({
       const options = { status: response.status, retryAfterSeconds: retryAfter,
         outcomeUnknown: !read && response.status >= 500 };
       if (response.status === 401) {
-        if (!refreshed && typeof refreshAccessToken === "function" && attempt < maxAttempts) {
+        if (!refreshed && typeof refreshAccessToken === "function" && (!read || attempt < maxAttempts)) {
           signal?.throwIfAborted();
           token = await accessToken(() => refreshAccessToken({ signal, rejectedAccessToken: token }));
           refreshed = true;
+          if (!read) {
+            signal?.throwIfAborted();
+            fail("spotify_action_not_replayed", "Spotify rejected this action. Authentication was refreshed, but the action was not replayed. Submit a new request if you still want it.", options);
+          }
           continue;
         }
         fail("spotify_authentication_required", "Spotify authentication must be refreshed.", options);
