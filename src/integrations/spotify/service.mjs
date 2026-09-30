@@ -14,6 +14,9 @@ export const SPOTIFY_SERVICE_LIMITS = Object.freeze({
   recentlyPlayedDefault: 20,
   recentlyPlayedMax: 50,
   deviceNameLengthMax: 128,
+  searchQueryLengthMax: 256,
+  searchResultsDefault: 5,
+  searchResultsMax: 10,
 });
 
 const repeatStates = new Set(["off", "track", "context"]);
@@ -294,6 +297,37 @@ function recentLimit(value) {
     fail(
       "invalid_recent_limit",
       `Spotify recent activity limit must be an integer from 1 to ${SPOTIFY_SERVICE_LIMITS.recentlyPlayedMax}.`,
+    );
+  }
+  return value;
+}
+
+function searchQuery(value) {
+  if (typeof value !== "string" || !value.trim()) {
+    fail("invalid_search_query", "The Spotify search query must not be empty.");
+  }
+  const query = value.trim();
+  if (
+    Array.from(query).length > SPOTIFY_SERVICE_LIMITS.searchQueryLengthMax
+  ) {
+    fail(
+      "invalid_search_query",
+      `The Spotify search query must be at most ${SPOTIFY_SERVICE_LIMITS.searchQueryLengthMax} characters.`,
+    );
+  }
+  return query;
+}
+
+function searchLimit(value) {
+  if (value === undefined) return SPOTIFY_SERVICE_LIMITS.searchResultsDefault;
+  if (
+    !Number.isInteger(value) ||
+    value < 1 ||
+    value > SPOTIFY_SERVICE_LIMITS.searchResultsMax
+  ) {
+    fail(
+      "invalid_search_limit",
+      `Spotify search limit must be an integer from 1 to ${SPOTIFY_SERVICE_LIMITS.searchResultsMax}.`,
     );
   }
   return value;
@@ -608,6 +642,14 @@ export function createSpotifyService(options = {}) {
         limit: recentLimit(input.limit),
         ...(after !== undefined ? { after } : {}),
         ...(before !== undefined ? { before } : {}),
+      });
+    },
+
+    async searchTracks(value) {
+      const input = inputObject(value);
+      return client.searchTracks({
+        query: searchQuery(input.query),
+        limit: searchLimit(input.limit),
       });
     },
 

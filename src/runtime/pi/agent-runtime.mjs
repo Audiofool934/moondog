@@ -2951,6 +2951,54 @@ function projectSpotifyPlayerStatus(value) {
   };
 }
 
+function projectSpotifySearch(value) {
+  if (!isPlainObject(value) || value.provider !== "spotify") {
+    throw new Error("domain_result_invalid:spotify_search");
+  }
+  const items = Array.isArray(value.items) ? value.items : [];
+  return {
+    provider: "spotify",
+    items: items
+      .slice(0, 10)
+      .map((entry) => {
+        if (!isPlainObject(entry)) return null;
+        const item = {};
+        if (typeof entry.name === "string") {
+          item.name = cleanOutputText(entry.name, 256, "spotify_search_name");
+        }
+        if (Array.isArray(entry.artists)) {
+          item.artists = entry.artists
+            .slice(0, 6)
+            .map((artist) =>
+              cleanOutputText(artist, 256, "spotify_search_artist"),
+            );
+        }
+        if (typeof entry.album === "string") {
+          item.album = cleanOutputText(
+            entry.album,
+            256,
+            "spotify_search_album",
+          );
+        }
+        if (typeof entry.uri === "string") {
+          item.uri = cleanOutputText(entry.uri, 256, "spotify_search_uri");
+        }
+        if (Number.isFinite(entry.duration_ms)) {
+          item.duration_ms = entry.duration_ms;
+        }
+        if (typeof entry.explicit === "boolean") {
+          item.explicit = entry.explicit;
+        }
+        if (Number.isFinite(entry.popularity)) {
+          item.popularity = entry.popularity;
+        }
+        return item;
+      })
+      .filter(Boolean),
+    truncated: value.truncated === true,
+  };
+}
+
 function projectSpotifyReceipt(value) {
   if (
     !isPlainObject(value) ||
@@ -4746,6 +4794,35 @@ function createToolFactories(
               ),
             }),
           projectSpotifyResolutions,
+        ),
+      }),
+    ],
+    [
+      "spotify.search",
+      (descriptor) => ({
+        name: descriptor.tool_name,
+        label: descriptor.label,
+        description:
+          "Search the Spotify catalog for tracks by free text. Provide a query such as a song title, artist, or album. Returns up to 10 bounded results with track metadata.",
+        parameters: Type.Object(
+          {
+            query: Type.String({ minLength: 1, maxLength: 256 }),
+            limit: Type.Optional(
+              Type.Integer({ minimum: 1, maximum: 10 }),
+            ),
+          },
+          { additionalProperties: false },
+        ),
+        executionMode: "parallel",
+        execute: executeDomain(
+          async (_toolCallId, parameters) =>
+            application.spotifySearchTracks({
+              query: parameters.query,
+              ...(parameters.limit !== undefined
+                ? { limit: parameters.limit }
+                : {}),
+            }),
+          projectSpotifySearch,
         ),
       }),
     ],

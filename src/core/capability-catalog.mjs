@@ -328,6 +328,19 @@ const catalog = [
     },
   },
   {
+    id: "spotify.search",
+    version: "1",
+    state: "enabled",
+    effect: "read_external",
+    description:
+      "Search the Spotify catalog for tracks by free text, with bounded results.",
+    requires_spotify: true,
+    agent_tool: {
+      name: "moondog_spotify_search",
+      label: "Search Spotify",
+    },
+  },
+  {
     id: "spotify.library.check",
     version: "1",
     state: "enabled",

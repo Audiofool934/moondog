@@ -666,6 +666,10 @@ export class MoondogApplication {
     }
   }
 
+  spotifySearchTracks(input) {
+    return this.requireSpotifyService().searchTracks(input);
+  }
+
   spotifyAddToQueue(input) {
     if (input?.trackRefId !== undefined) {
       const resolution = this.requireSpotifyResolution(input.trackRefId);
