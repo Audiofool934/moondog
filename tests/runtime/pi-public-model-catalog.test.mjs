@@ -133,7 +133,7 @@ test("304 without validated cache cannot create an empty catalog", async t => {
   const { catalog, root } = await fixture(t, { fetchImpl: async () => new Response(null, { status: 304 }) });
   assert.equal((await catalog.refresh({ provider: "deepseek" }))[0].state, "failed");
   assert.ok(catalog.models("deepseek").length >= 3);
-  assert.deepEqual(await readdir(root), []);
+  assert.deepEqual(await readdir(path.join(root, "model-catalog")), []);
 });
 
 test("cancellation rejects promptly, ignores late response and does not publish it", async t => {
@@ -147,7 +147,7 @@ test("cancellation rejects promptly, ignores late response and does not publish 
   release(Response.json(document(metadata())));
   await new Promise(resolve => setImmediate(resolve));
   assert.ok(!catalog.models("deepseek").some(model => model.id === "fictional-current"));
-  assert.deepEqual(await readdir(root), []);
+  assert.deepEqual(await readdir(path.join(root, "model-catalog")), []);
 });
 
 test("refresh cannot replace an unsupported OpenRouter API or accept mismatched model identity", async t => {

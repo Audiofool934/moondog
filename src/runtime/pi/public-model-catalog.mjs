@@ -3,7 +3,7 @@ import { constants } from "node:fs";
 import { lstat, mkdir, open, rename, unlink } from "node:fs/promises";
 import path from "node:path";
 import { createPiModels, listPiModels, listPiProviders } from "./model-catalog.mjs";
-import { resolveMoondogAuthFile } from "./persistent-credential-store.mjs";
+import { acquirePrivateFileLock, resolveMoondogAuthFile } from "./persistent-credential-store.mjs";
 import { supportedPiProviderIds } from "./provider-registry.mjs";
 
 export const PI_CATALOG_VERSION = "0.84.3";
@@ -89,6 +89,19 @@ function projectDocument(document, native) {
   return { models, skipped };
 }
 
+function mergeKnownModels(...collections) {
+  const merged = new Map(collections.flatMap(models => models ?? []).map(model => [model.id, model]));
+  if (merged.size > MAX_MODELS) throw failure("too many retained models.");
+  return [...merged.values()];
+}
+
+function mergeRecords(previous, next) {
+  if (!previous) return next;
+  if (!next) return previous;
+  const [older, newer] = previous.checkedAt > next.checkedAt ? [next, previous] : [previous, next];
+  return { ...newer, models: mergeKnownModels(older.models, newer.models) };
+}
+
 async function abortable(promise, signal) {
   signal.throwIfAborted();
   let onAbort;
@@ -160,20 +173,29 @@ export class PublicPiModelCatalog {
     }));
   }
 
+  async readRecord(id) {
+    try {
+      const value = await readCache(this.file(id));
+      if (!plain(value) || value.version !== 1 || value.piVersion !== PI_CATALOG_VERSION || value.provider !== id ||
+          !Number.isSafeInteger(value.checkedAt) || value.checkedAt < 0 || value.checkedAt > this.now() + 300_000 ||
+          !Array.isArray(value.models) || value.models.length > MAX_MODELS || !Array.isArray(value.currentIds) || value.currentIds.length > MAX_MODELS) return;
+      const projection = projectDocument(Object.fromEntries(value.models.map(model => [model.id, model])), this.baseline.getProvider(id));
+      const ids = new Set(projection.models.map(model => model.id));
+      if (projection.skipped || value.currentIds.some(id => !ids.has(id))) return;
+      return { version: 1, piVersion: PI_CATALOG_VERSION, provider: id, checkedAt: value.checkedAt,
+        models: projection.models, currentIds: value.currentIds,
+        ...(printable(value.etag, 300) ? { etag: value.etag } : {}) };
+    } catch { /* A missing or corrupt metadata cache is optional at startup. */ }
+  }
+
   async restore() {
     try { if (!(await lstat(this.root)).isDirectory()) return; } catch { return; }
     await Promise.all(supportedPiProviderIds.map(async id => {
-      try {
-        const value = await readCache(this.file(id));
-        if (!plain(value) || value.version !== 1 || value.piVersion !== PI_CATALOG_VERSION || value.provider !== id ||
-            !Number.isSafeInteger(value.checkedAt) || value.checkedAt < 0 || value.checkedAt > this.now() + 300_000 ||
-            !Array.isArray(value.models) || !Array.isArray(value.currentIds) || value.currentIds.length > MAX_MODELS) return;
-        const projection = projectDocument(Object.fromEntries(value.models.map(model => [model.id, model])), this.baseline.getProvider(id));
-        const ids = new Set(projection.models.map(model => model.id));
-        if (projection.skipped || value.currentIds.some(id => !ids.has(id))) return;
-        this.records.set(id, { ...value, models: projection.models,
-          etag: printable(value.etag, 300) ? value.etag : undefined });
-      } catch { /* Corrupt or incompatible metadata never prevents offline startup. */ }
+      const latest = await this.readRecord(id);
+      if (latest) {
+        try { this.records.set(id, mergeRecords(this.records.get(id), latest)); }
+        catch { /* Retention limits cannot make an existing snapshot unusable. */ }
+      }
     }));
     this.publish();
   }
@@ -183,13 +205,23 @@ export class PublicPiModelCatalog {
     await this.ready;
     signal?.throwIfAborted();
     if (this.pending.has(id)) return { provider: id, state: "busy" };
-    const old = this.records.get(id);
+    let old = this.records.get(id);
     if (!force && old && this.now() - old.checkedAt < FRESH_MS) return { provider: id, state: "cached", count: old.currentIds.length };
     this.pending.add(id);
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(failure("refresh timed out; keeping the previous catalog.")), this.timeoutMs);
     const combined = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
+    let release;
     try {
+      // Coordinate all instances through a cache-specific lock. Re-read after
+      // acquiring it, so an older process cannot erase another saved model ID.
+      release = await acquirePrivateFileLock(this.file(id), { signal: combined });
+      old = mergeRecords(old, await this.readRecord(id));
+      if (!force && old && this.now() - old.checkedAt < FRESH_MS) {
+        combined.throwIfAborted();
+        this.records.set(id, old); this.publish();
+        return { provider: id, state: "cached", count: old.currentIds.length };
+      }
       // Pi's public metadata protocol. Deliberately independent of model credentials
       // and Models.refresh(), which can perform OAuth refresh before fetching models.
       const response = await abortable(Promise.resolve().then(() => this.fetch(
@@ -202,12 +234,10 @@ export class PublicPiModelCatalog {
         if (!response.ok) throw failure(`public metadata HTTP ${response.status}; keeping the previous catalog.`);
         const projection = projectDocument(await responseDocument(response, combined), this.baseline.getProvider(id));
         skipped = projection.skipped;
-        const merged = new Map((old?.models ?? []).map(model => [model.id, model]));
-        for (const model of projection.models) merged.set(model.id, model);
-        if (merged.size > MAX_MODELS) throw failure("too many retained models.");
+        const models = mergeKnownModels(old?.models, projection.models);
         const etag = response.headers.get("etag");
         next = { version: 1, piVersion: PI_CATALOG_VERSION, provider: id, checkedAt: this.now(),
-          models: [...merged.values()], currentIds: projection.models.map(model => model.id),
+          models, currentIds: projection.models.map(model => model.id),
           ...(printable(etag, 300) ? { etag } : {}) };
       }
       combined.throwIfAborted();
@@ -219,7 +249,10 @@ export class PublicPiModelCatalog {
       if (signal?.aborted) throw signal.reason;
       // Never render remote response bodies, arbitrary exception text or URLs.
       return { provider: id, state: "failed", reason: controller.signal.aborted ? "timeout" : "unavailable_or_incompatible" };
-    } finally { clearTimeout(timeout); this.pending.delete(id); }
+    } finally {
+      clearTimeout(timeout);
+      try { await release?.(); } finally { this.pending.delete(id); }
+    }
   }
 
   async refresh({ provider, ...options } = {}) {
@@ -239,6 +272,14 @@ export class PublicPiModelCatalog {
 const catalogs = new Map();
 export async function getPublicPiModelCatalog(environment = process.env) {
   const key = path.dirname(resolveMoondogAuthFile(environment));
-  if (!catalogs.has(key)) catalogs.set(key, new PublicPiModelCatalog({ environment }));
-  const catalog = catalogs.get(key); await catalog.ready; return catalog;
+  if (!catalogs.has(key)) {
+    const catalog = new PublicPiModelCatalog({ environment });
+    catalogs.set(key, catalog); await catalog.ready; return catalog;
+  }
+  const catalog = catalogs.get(key);
+  await catalog.ready;
+  // Another running app can persist a new selection and its catalog entry.
+  // Reload public cache only; do not fetch or touch the active model object.
+  await catalog.restore();
+  return catalog;
 }

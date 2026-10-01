@@ -931,6 +931,11 @@ export async function runMoondogTui({
       break;
     }
 
+    localCommandController?.signal.throwIfAborted();
+    // Saving settings and replacing a runtime is one existing switch transaction.
+    // Only the preceding catalog check is cancellable; never claim an aborted
+    // switch after its settings write or authentication work has begun.
+    setBusy(true);
     setFooter(`Loading ${providerId}/${modelId}...`);
     const status = await replaceRuntime({ provider: providerId, model: modelId });
     addMoondogMessage(

@@ -2331,3 +2331,26 @@ test("a top-level refresh failure still opens the model picker with usable cache
     assert.deepEqual(selected, { provider: "deepseek", model: "deepseek-v4-flash" });
   } finally { signalTarget.emit("SIGTERM"); await running; }
 });
+
+test("Ctrl+C during the model-switch commit never claims that the switch was cancelled", async () => {
+  const terminal = new FakeTerminal(); const signalTarget = new EventEmitter();
+  let release; const gate = new Promise(resolve => { release = resolve; });
+  let switched = false; let started = false;
+  const running = runMoondogTui({ application: fakeApplication(), runtime: fakeRuntime(), terminal, signalTarget,
+    providers: () => [{ id: "deepseek", name: "DeepSeek", modelCount: 1 }],
+    models: () => [{ id: "deepseek-flash", name: "DeepSeek V4.1 Flash" }],
+    async refreshModels() { return [{ provider: "deepseek", state: "cached" }]; },
+    async rebuildRuntime() { started = true; await gate; switched = true;
+      return { ...fakeRuntime(), publicStatus: () => ({ state: "configured", provider: "deepseek", model: "deepseek-flash" }) };
+    },
+  });
+  try {
+    await waitForStart(terminal);
+    terminal.send("/model deepseek deepseek-flash"); terminal.send("\r");
+    await waitFor(() => started); terminal.send("\x03");
+    await waitFor(() => terminal.output.includes("This can't be stopped halfway."));
+    assert.doesNotMatch(stripVTControlCharacters(terminal.output), /Stopping\.\.\.|Stopped the catalog check|Cancelled\./u);
+    release(); await waitFor(() => terminal.output.includes("Model ready."));
+    assert.equal(switched, true);
+  } finally { release(); signalTarget.emit("SIGTERM"); await running; }
+});
