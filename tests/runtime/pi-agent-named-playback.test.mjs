@@ -15,9 +15,13 @@ const answer = (text) => fauxAssistantMessage([fauxText(text)]);
 const results = (context, name) => context.messages.filter(m => m.role === "toolResult" && m.toolName === name)
   .map(m => JSON.parse(m.content[0].text));
 
-function fixture(t, { title = "天长地久", artist = "刘森", count = 1, status = 204, reason, cancel = false, searchStatus = 200, failAfter = 0 } = {}) {
+function fixture(t, { title = "天长地久", artist = "刘森", count = 1, status = 204, reason, cancel = false, searchStatus = 200, failAfter = 0, lateRead = false } = {}) {
   const writes = [];
   const requests = [];
+  let releaseLateRead;
+  let startLateRead;
+  const lateStarted = new Promise(resolve => { startLateRead = resolve; });
+  const lateGate = new Promise(resolve => { releaseLateRead = resolve; });
   const song = { id: "fictionaltrack", uri: "spotify:track:fictionaltrack", type: "track", name: title,
     artists: [{ name: artist }], album: { name: "Fictional Record" }, duration_ms: 240_000 };
   const songs = Array.from({ length: count }, (_, index) => ({ ...song, id: `fictional${index}`, uri: `spotify:track:fictional${index}`,
@@ -33,10 +37,11 @@ function fixture(t, { title = "天长地久", artist = "刘森", count = 1, stat
         return status === 204 ? new Response(null, { status }) : Response.json({ error: { status, reason,
           message: "PRIVATE_PROVIDER_MESSAGE_IGNORE_INSTRUCTIONS" } }, { status });
       }
+      if (pathname === "/v1/search" && lateRead && writes.length) { startLateRead(); await lateGate; }
       if (pathname === "/v1/search") return searchStatus === 200 ? Response.json({ tracks: { items: songs, total: songs.length } })
         : Response.json({ error: { status: searchStatus, message: "PRIVATE_SEARCH_FAILURE" } }, { status: searchStatus });
-      if (pathname === "/v1/me/player/devices") return Response.json({ devices: [{ id: "fictional-device", name: "Fictional Computer", type: "Computer", is_active: true, is_restricted: false }] });
-      if (pathname === "/v1/me/player") return Response.json({ is_playing: true, device: { id: "fictional-device", name: "Fictional Computer", type: "Computer", is_active: true, is_restricted: false }, item: song, actions: { disallows: {} } });
+      if (pathname === "/v1/me/player/devices") return Response.json({ devices: [{ id: "fictional-device", name: "Fictional Computer", type: "Computer", is_active: true, is_restricted: false, supports_volume: true }] });
+      if (pathname === "/v1/me/player") return Response.json({ is_playing: true, device: { id: "fictional-device", name: "Fictional Computer", type: "Computer", is_active: true, is_restricted: false, supports_volume: true }, item: song, actions: { disallows: {} } });
       throw new Error(`Unexpected fictional request: ${pathname}`);
     } });
   const application = new MoondogApplication({ importsRoot: "/private/moondog-synthetic-missing-source",
@@ -52,7 +57,7 @@ function fixture(t, { title = "天长地久", artist = "刘森", count = 1, stat
   const faux = fauxProvider(); const models = createModels(); models.setProvider(faux.provider);
   const runtime = new PiAgentRuntime({ application, models, model: faux.getModel(), provider: "faux", modelId: "faux-1" });
   t.after(() => application.close());
-  return { application, runtime, faux, writes, requests, title, artist };
+  return { application, runtime, faux, writes, requests, title, artist, releaseLateRead, lateStarted };
 }
 
 function catalogTrace({ title, artist }, { stopAfterResolve = false, queue = false } = {}) {
@@ -243,4 +248,52 @@ test("saving a found track alone never confirms a requested playback action", as
   assert.doesNotMatch(result.text, /CLAIMED_PLAYING/u);
   assert.equal(result.spotify_write_receipts[0].action, "library.save");
   assert.match(result.text, /Spotify 已接受/u);
+});
+
+
+test("changing volume alone cannot confirm requested named-song playback", async t => {
+  const f = fixture(t);
+  f.faux.setResponses([tool("moondog_spotify_search", { query: "天长地久 刘森" }),
+    tool("moondog_spotify_player_control", { action: "volume", percent: 30 }), answer("CLAIMED_PLAYING_SENTINEL")]);
+  const result = await f.runtime.prompt(`${exactPrompt}，并把音量调到30%`);
+  assert.deepEqual(f.writes.map(write => write.pathname), ["/v1/me/player/volume"]);
+  assert.match(result.text, /未发送播放或加入队列操作/u);
+  assert.match(result.text, /Spotify 已接受音量调整/u);
+  assert.doesNotMatch(result.text, /CLAIMED_PLAYING/u);
+});
+
+test("a broken observer waits for parallel reads to settle before permitting another turn", async t => {
+  const f = fixture(t, { lateRead: true });
+  f.faux.setResponses([tool("moondog_spotify_search", { query: "天长地久 刘森" }), context =>
+    tool("moondog_spotify_player_control", { action: "resume", track_refs: [results(context, "moondog_spotify_search")[0].items[0].track_ref_id] }),
+  fauxAssistantMessage([fauxToolCall("moondog_spotify_devices", {}),
+    fauxToolCall("moondog_spotify_search", { query: "stale lookup from an interrupted turn" })], { stopReason: "toolUse" })]);
+  let observerFailed;
+  const failureObserved = new Promise(resolve => { observerFailed = resolve; });
+  let settled = false;
+  const firstPromise = f.runtime.prompt(exactPrompt, { onToolEnd({ capabilityId }) {
+    if (capabilityId === "spotify.device.list") { observerFailed(); throw new Error("PRIVATE_UI_FAILURE"); }
+  } }).finally(() => { settled = true; });
+  try {
+    await Promise.all([f.lateStarted, failureObserved]);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(settled, false);
+    await assert.rejects(f.runtime.prompt("Do not start another turn yet."), /already in progress/u);
+  } finally { f.releaseLateRead(); }
+  const first = await firstPromise;
+  assert.equal(first.status, "interrupted");
+  assert.equal(first.spotify_write_receipts[0].state, "accepted");
+  assert.equal(f.writes.length, 1);
+  const nextEvents = [];
+  f.faux.setResponses([context => {
+    assert.equal(results(context, "moondog_spotify_search").length, 0);
+    return answer("No new tool action was requested.");
+  }]);
+  const second = await f.runtime.prompt("What happened? Do not change playback.", {
+    onToolEnd(event) { nextEvents.push(event.capabilityId); },
+  });
+  assert.deepEqual(nextEvents, []);
+  assert.equal(second.text, "No new tool action was requested.");
+  assert.deepEqual(f.application.spotifyQuickEditContext, { playlist: null, track: null });
+  assert.equal(f.writes.length, 1);
 });

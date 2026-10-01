@@ -6146,7 +6146,7 @@ function renderSpotifyPlaybackFailure(failure, promptText) {
 
 function renderIncompletePlaybackLookup(promptState, promptText) {
   if (!playbackOnlyRequest(promptText) ||
-      promptState.spotifyWriteReceipts.some(receipt => receipt.action.startsWith("playback.")) || promptState.spotifyPlaybackFailures.length ||
+      promptState.spotifyWriteReceipts.some(receipt => ["playback.resume", "playback.queue.add"].includes(receipt.action)) || promptState.spotifyPlaybackFailures.length ||
       promptState.externalCandidateSets.some((set) => !set.playbackLookup)) return null;
   if (promptState.spotifyLookupFailures.length) return promptState.spotifyLookupFailures
     .map(failure => renderSpotifyPlaybackFailure({ ...failure, action: "lookup" }, promptText)).join("\n\n");
@@ -6903,6 +6903,7 @@ export class PiAgentRuntime {
       onModelRetry: callbacks.onModelRetry,
       modelConnectionFailure: null,
       abortRequested: false,
+      presentationFailure: false,
       stagedMemoryMutations: [],
     };
     this.activePromptState = promptState;
@@ -7085,78 +7086,87 @@ export class PiAgentRuntime {
       promptScopeStarted = true;
       if (callbacks.profileSeed) this.application.setProfileDiscoverySeed(callbacks.profileSeed);
       unsubscribe = this.agent.subscribe((event) => {
-        callbacks.onEvent?.(event.type);
+        // Observer exceptions must not reject Pi's parallel tool loop early.
+        // Abort further work, then let every outstanding tool settle before the
+        // prompt transaction and its listener can be replaced by another turn.
+        try {
+          callbacks.onEvent?.(event.type);
 
-        if (
-          event.type === "message_update" &&
-          event.assistantMessageEvent.type === "text_delta"
-        ) {
-          streamedText += event.assistantMessageEvent.delta;
           if (
-            replaceableStreaming &&
-            !promptState.validatedPlaylistPlan &&
-            !promptState.playlistPlanAttempted &&
-            !profileDiscoveryUnavailable() &&
-            !promptState.spotifyPlaylistEditPreview &&
-            !promptState.spotifyPlaylistEditWrite &&
-            !promptState.spotifyPlaybackFailures.length
+            event.type === "message_update" &&
+            event.assistantMessageEvent.type === "text_delta"
           ) {
-            callbacks.onTextDelta?.(event.assistantMessageEvent.delta);
-            textWasRendered = true;
+            streamedText += event.assistantMessageEvent.delta;
+            if (
+              replaceableStreaming &&
+              !promptState.validatedPlaylistPlan &&
+              !promptState.playlistPlanAttempted &&
+              !profileDiscoveryUnavailable() &&
+              !promptState.spotifyPlaylistEditPreview &&
+              !promptState.spotifyPlaylistEditWrite &&
+              !promptState.spotifyPlaybackFailures.length
+            ) {
+              callbacks.onTextDelta?.(event.assistantMessageEvent.delta);
+              textWasRendered = true;
+            }
           }
-        }
 
-        if (event.type === "tool_execution_start") {
-          const descriptor = this.capabilityByToolName.get(event.toolName);
-          promptState.toolExecutionStarted = true;
-          if (streamedText.length > 0) {
-            replaceRenderedText("");
+          if (event.type === "tool_execution_start") {
+            const descriptor = this.capabilityByToolName.get(event.toolName);
+            promptState.toolExecutionStarted = true;
+            if (streamedText.length > 0) {
+              replaceRenderedText("");
+            }
+            if (descriptor?.capability_id === "playlist.plan") {
+              promptState.playlistPlanAttempted = true;
+            }
+            callbacks.onToolStart?.({
+              toolCallId: event.toolCallId,
+              toolName: event.toolName,
+              capabilityId: descriptor?.capability_id ?? "unknown",
+              label: descriptor?.label ?? event.toolName,
+            });
           }
-          if (descriptor?.capability_id === "playlist.plan") {
-            promptState.playlistPlanAttempted = true;
-          }
-          callbacks.onToolStart?.({
-            toolCallId: event.toolCallId,
-            toolName: event.toolName,
-            capabilityId: descriptor?.capability_id ?? "unknown",
-            label: descriptor?.label ?? event.toolName,
-          });
-        }
 
-        if (event.type === "tool_execution_end") {
-          const descriptor = this.capabilityByToolName.get(event.toolName);
-          let projected;
-          try { projected = JSON.parse(event.result?.content?.find((block) => block.type === "text")?.text); } catch { /* Failed/withheld projection cannot establish a selection. */ }
-          if (projected && ["spotify.search", "spotify.catalog.resolve", "library.search", "music.catalog.track_search"].includes(descriptor?.capability_id)) {
-            promptState.playbackLookups.push({ capability: descriptor.capability_id, value: projected });
+          if (event.type === "tool_execution_end") {
+            const descriptor = this.capabilityByToolName.get(event.toolName);
+            let projected;
+            try { projected = JSON.parse(event.result?.content?.find((block) => block.type === "text")?.text); } catch { /* Failed/withheld projection cannot establish a selection. */ }
+            if (projected && ["spotify.search", "spotify.catalog.resolve", "library.search", "music.catalog.track_search"].includes(descriptor?.capability_id)) {
+              promptState.playbackLookups.push({ capability: descriptor.capability_id, value: projected });
+            }
+            this.application.observeSpotifyQuickEditRead?.(descriptor?.capability_id, projected,
+              { failed: event.isError === true || !projected });
+            const connectionFailure = discoveryConnectionFailures.get(descriptor?.capability_id);
+            if (connectionFailure) {
+              promptState.discoveryConnections.set(descriptor.capability_id,
+                event.isError === true && event.result?.content?.some(
+                  (block) => block.type === "text" && connectionFailure.test(block.text),
+                ) === true,
+              );
+            }
+            callbacks.onToolEnd?.({
+              toolCallId: event.toolCallId,
+              toolName: event.toolName,
+              capabilityId: descriptor?.capability_id ?? "unknown",
+              label: descriptor?.label ?? event.toolName,
+              isError: event.isError === true,
+            });
           }
-          this.application.observeSpotifyQuickEditRead?.(descriptor?.capability_id, projected,
-            { failed: event.isError === true || !projected });
-          const connectionFailure = discoveryConnectionFailures.get(descriptor?.capability_id);
-          if (connectionFailure) {
-            promptState.discoveryConnections.set(descriptor.capability_id,
-              event.isError === true && event.result?.content?.some(
-                (block) => block.type === "text" && connectionFailure.test(block.text),
-              ) === true,
-            );
-          }
-          callbacks.onToolEnd?.({
-            toolCallId: event.toolCallId,
-            toolName: event.toolName,
-            capabilityId: descriptor?.capability_id ?? "unknown",
-            label: descriptor?.label ?? event.toolName,
-            isError: event.isError === true,
-          });
-        }
 
-        if (event.type === "message_end" && event.message.role === "assistant") {
-          const messageText = extractAssistantText(event.message);
-          if (messageText.length > 0) finalText = messageText;
-          finalStopReason = event.message.stopReason;
+          if (event.type === "message_end" && event.message.role === "assistant") {
+            const messageText = extractAssistantText(event.message);
+            if (messageText.length > 0) finalText = messageText;
+            finalStopReason = event.message.stopReason;
+          }
+        } catch {
+          promptState.presentationFailure = true;
+          this.agent.abort();
         }
       });
 
       await this.agent.prompt(text);
+      if (promptState.presentationFailure) throw new Error("Moondog response presentation was interrupted.");
 
       if (finalStopReason === "aborted" || promptState.abortRequested) {
         discardPromptHistory(this.agent, historyStartIndex);
