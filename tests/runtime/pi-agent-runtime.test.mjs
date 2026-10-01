@@ -871,7 +871,8 @@ test("Pi adapter moves Spotify playback onto a named device without revealing it
   assert.equal(result.text, "Transferred to your iPhone.");
   assert.match(transferTool.description, /device_name/);
   assert.doesNotMatch(transferTool.description, /explicitly supplied/);
-  assert.match(runtime.agent.state.systemPrompt, /short device_name/);
+  assert.match(runtime.agent.state.systemPrompt, /device_name stated by the listener/);
+  assert.match(runtime.agent.state.systemPrompt, /Resume owns device preparation/);
   assert.doesNotMatch(runtime.agent.state.systemPrompt, /explicit device ID/);
   assert.deepEqual(calls, [
     "devices",

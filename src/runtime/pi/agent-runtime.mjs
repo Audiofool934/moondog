@@ -2912,6 +2912,9 @@ function spotifyFailureDetails(error) {
     reason: spotifyErrorReason(error?.reason),
     outcome_unknown: error?.outcomeUnknown === true || error?.message?.startsWith("domain_result_") === true,
     ...(error?.actionNotDispatched === true && error?.outcomeUnknown !== true ? { not_sent: true } : {}),
+    ...(error?.playbackNotDispatched === true ? { playback_not_sent: true } : {}),
+    ...(error?.playbackRecoveryAttempted === true ? { recovery_attempted: true, recovery_rejection: { status: 404, reason: "NO_ACTIVE_DEVICE" } } : {}),
+    ...(error?.playbackPreparationStopped === true ? { preparation_stopped: true } : {}),
   };
 }
 
@@ -2951,7 +2954,7 @@ function projectSpotifyPlayerStatus(value) {
   return {
     provider: "spotify",
     state: "available",
-    is_playing: value.is_playing === true,
+    is_playing: typeof value.is_playing === "boolean" ? value.is_playing : null,
     shuffle_state: value.shuffle_state === true,
     repeat_state: repeatState,
     currently_playing_type: cleanOutputText(
@@ -3062,7 +3065,7 @@ function projectSpotifyNowPlaying(value) {
   if (!isPlainObject(value) || value.provider !== "spotify") throw new Error("domain_result_invalid:spotify_playback");
   if (value.state === "inactive") return { provider: "spotify", state: "inactive" };
   if (value.state !== "available") throw new Error("domain_result_invalid:spotify_playback_state");
-  const result = { provider: "spotify", state: "available", is_playing: value.is_playing === true };
+  const result = { provider: "spotify", state: "available", is_playing: typeof value.is_playing === "boolean" ? value.is_playing : null };
   if (typeof value.shuffle_state === "boolean") result.shuffle_state = value.shuffle_state;
   if (["off", "track", "context"].includes(value.repeat_state)) result.repeat_state = value.repeat_state;
   result.disallowed_actions = safeStringArray(value.disallowed_actions, 12, 64, "spotify_disallowed_action");
@@ -3117,6 +3120,14 @@ function projectSpotifyReceipt(value) {
     state: "accepted",
   };
   if (value.targets) result.targets = projectPlaybackTargets(value.targets);
+  if (value.recovered_no_active_device === true) {
+    result.recovered_no_active_device = true;
+    result.recovery_rejection = { status: 404, reason: "NO_ACTIVE_DEVICE" };
+  }
+  if (Array.isArray(value.preparation_effects)) result.preparation_effects = value.preparation_effects.slice(0, 1).map(effect => {
+    if (effect.action !== "playback.transfer") throw new Error("domain_result_invalid:playback_preparation");
+    return projectSpotifyReceipt({ ...effect, preparation_effects: undefined });
+  });
   if (Number.isSafeInteger(value.track_count) && value.track_count >= 0) {
     result.track_count = value.track_count;
   }
@@ -3233,8 +3244,8 @@ function projectSpotifyDevices(value) {
           64,
           "spotify_device_type",
         ),
-        is_active: device.is_active === true,
-        is_restricted: device.is_restricted === true,
+        is_active: typeof device.is_active === "boolean" ? device.is_active : null,
+        is_restricted: typeof device.is_restricted === "boolean" ? device.is_restricted : null,
         ...(typeof device.device_ref_id === "string" ? { device_ref_id: cleanOutputText(device.device_ref_id, 128, "spotify_device_ref") } : {}),
         ...(typeof device.supports_volume === "boolean" ? { supports_volume: device.supports_volume } : {}),
         ...(Number.isInteger(device.volume_percent) && device.volume_percent >= 0 && device.volume_percent <= 100 ? { volume_percent: device.volume_percent } : {}),
@@ -4384,7 +4395,9 @@ function createToolFactories(
     });
   };
   const retainPlaybackFailure = (action) => (error) => {
-    if (error?.name === "AbortError" && error?.outcomeUnknown !== true) return;
+    for (const receipt of error?.playbackPreparation ?? []) onSpotifyWriteReceipt?.(projectSpotifyReceipt(receipt));
+    if (error?.name === "AbortError" && error?.outcomeUnknown !== true && !error?.playbackPreparation?.length) return;
+    if (["playback.transfer", "playback.resume"].includes(error?.playbackAction)) action = error.playbackAction;
     const details = spotifyFailureDetails(error);
     retainUnknownSpotifyWrite(action)({ ...error, outcomeUnknown: details.outcome_unknown });
     onSpotifyPlaybackFailure?.({ action, ...details,
@@ -4726,7 +4739,7 @@ function createToolFactories(
         name: descriptor.tool_name,
         label: descriptor.label,
         description:
-          "Perform exactly one Spotify playback action directly requested by the user. Never retry next, previous, or another write automatically. volume requires percent; seek requires position_ms; shuffle requires a boolean state; repeat requires state off, track, or context. For a returned track or episode, use action resume with item_ref_id (preferred) or track_refs for tracks. Copy the opaque reference exactly; do not turn it into a Spotify URI. uri/context_uri are only for a user-supplied Spotify URI or URL. Only resume accepts these sources, with optional position_ms. For a bare displayed number or explicit retry, use resume without a source to use spotify_playback_context’s frozen target. For delegated alternate-version requests, resume without a source chooses a different verified version, or supply a verified different version. A locally rejected not_sent input may be corrected; an actual rejected/uncertain Spotify write must not be replayed. A fresh explicit user instruction starts a new action, even after an earlier local rejection. To play the exact pending plan now, use action resume with pending_plan true and no other source; the host resolves the retained plan and starts it in order. pause, next, and previous accept only action and an optional device_id. Target any action with device_name or a listed device_ref_id (including duplicate-name devices); device_id is reserved for user-provided IDs. Choose only one selector. Album/artist/playlist item_ref_id values can be played with context_ref_id.",
+          "Perform exactly one Spotify playback action directly requested by the user. Never retry next, previous, or another write automatically. volume requires percent; seek requires position_ms; shuffle requires a boolean state; repeat requires state off, track, or context. For a returned track or episode, use action resume with item_ref_id (preferred) or track_refs for tracks. Copy the opaque reference exactly; do not turn it into a Spotify URI. uri/context_uri are only for a user-supplied Spotify URI or URL. Only resume accepts these sources, with optional position_ms. For a bare displayed number or explicit retry, use resume without a source to use spotify_playback_context’s frozen target. For delegated alternate-version requests, resume without a source chooses a different verified version, or supply a verified different version. The host prepares a single exact device and may recover once from a definite NO_ACTIVE_DEVICE rejection; it never retries an uncertain write. Do not implement your own warm-up, transfer, or retry after this tool returns. A locally rejected not_sent argument may be corrected, but preparation_stopped means wait for a new listener request. A fresh explicit user instruction starts a new action, even after an earlier local rejection. To play the exact pending plan now, use action resume with pending_plan true and no other source; the host resolves the retained plan and starts it in order. pause, next, and previous accept only action and an optional device_id. Target any action with device_name or a listed device_ref_id (including duplicate-name devices); device_id is reserved for user-provided IDs. Choose only one selector. Album/artist/playlist item_ref_id values can be played with context_ref_id.",
         parameters: Type.Union([
           Type.Object(
             {
@@ -4846,7 +4859,9 @@ function createToolFactories(
           },
           projectSpotifyReceipt,
           (receipt, _toolCallId, parameters) => {
-            onSpotifyWriteReceipt?.(receipt);
+            for (const preparation of receipt.preparation_effects ?? []) onSpotifyWriteReceipt?.(preparation);
+            const { preparation_effects: _preparation, ...playback } = receipt;
+            onSpotifyWriteReceipt?.(playback);
             if (parameters.action === "resume" && parameters.track_refs?.length === 1) {
               onSpotifyPlayback?.({
                 trackRefId: parameters.track_refs[0],
@@ -5812,7 +5827,7 @@ Grounding and evidence rules:
 - Never fabricate verified catalog identities, library membership, personal evidence or tool results. Music knowledge may suggest unverified song, artist, genre or version hypotheses. Verify identities before actions; distinguish curatorial judgment from catalog facts and from measured audio properties.
 - A playlist plan may contain only track refs from active candidate_set_ids returned in this prompt or from the pending plan's revision candidate set in trusted product context, whether their candidate_scope is private_library, private_history, or external_catalog. Use moondog_playlist_plan to validate the final order and reasons.
 - A request to play, queue, or put on one named song is playback, in any language or quote style (for example 播放一首艺人的“歌曲” or Play “Title” by Artist). Use moondog_spotify_search with the title and artist first, then pass the matching item_ref_id to moondog_spotify_player_control (action resume, item_ref_id) or track_refs: [track_ref_id]; moondog_spotify_queue_add takes item_ref_id or track_ref_id. These Spotify references need no resolution step. Verify both title and artist when supplied; ask for a choice when versions or artists remain ambiguous, and report no match if none fits. A request to play any one song by a named artist also uses Spotify search and one matching track. Do not create a playlist plan or call artist similarity for these requests. Use imported-library search only when the user asks for their library; use external catalog and Spotify resolution only as a fallback when needed.
-- A Spotify playback error is an action failure, never a playlist-plan validation failure. Report the tool's HTTP status and reason when present. An unspecified rejection does not establish device inactivity, account tier, or missing permission. Read current player/device state to diagnose when useful; do not guess, transfer playback, change devices, log in, or replay a dispatched rejected/uncertain write automatically. A not_sent failure is a pre-dispatch rejection with no external write: correct its arguments using the retained host references. A fresh explicit user instruction is a new action; an earlier local rejection does not require extra confirmation.
+- A Spotify playback error is an action failure, never a playlist-plan validation failure. Report the tool's HTTP status and reason when present. An unspecified rejection does not establish device inactivity, account tier, or missing permission. The resume tool reads fresh device/player state, freezes the selected device, and owns its bounded readiness recovery. It can transfer once while playback is confirmed paused and replay the identical play once only after a definite 404 NO_ACTIVE_DEVICE rejection. Never reproduce that recovery with model tool calls. Read current player/device state to diagnose when useful; do not guess, transfer playback, change devices, log in, or replay a dispatched rejected/uncertain write automatically. A not_sent failure is a pre-dispatch rejection with no external write: correct its arguments using the retained host references. A fresh explicit user instruction is a new action; an earlier local rejection does not require extra confirmation.
 - For playlist plans, validate external candidate sets with moondog_playlist_plan. For play or queue requests, verify external candidate titles/artists on Spotify and act on its host references directly. No playlist-plan gate applies to an explicit queue request.
 - Copy the user's explicit track count into requested_track_count when calling moondog_playlist_plan.
 - Refer to songs by title and artist in selection reasons and ordering notes, never by internal track refs or shortened IDs.
@@ -5876,7 +5891,7 @@ Spotify control and catalog rules:
 - If the user asks to revise a pending existing-playlist preview, inspect the live playlist again and produce a new preview. Never infer or mutate the host-retained draft from prose alone.
 - Existing-playlist edits are full exact replacements guarded by a snapshot preflight. If Spotify reports that the playlist changed, do not retry. Tell the user to inspect and preview the latest version again.
 - Call other Spotify write tools only for a direct user request to control playback, save library items, add an explicit URI, or move playback onto a device the user named.
-- When the user asks to play on, switch to, or move playback to a device in ordinary words, such as iPhone, computer, or a speaker name, call moondog_spotify_device_transfer with that short device_name, or a returned device_ref_id. Set play true only when the user asks to start or continue playing; omit it for a pure transfer to preserve playback state. The host matches a live Spotify Connect device. Do not ask the user to paste a device ID, and do not invent one.
+- For a requested song on a named device, call moondog_spotify_player_control with resume, the exact song reference, and the device_name stated by the listener. Do not call standalone transfer first: it may play the old song. Resume owns device preparation. A returned device_ref_id still needs the listener’s device intent; metadata and model arguments never authorize a switch. Only a separate explicit request to switch or move playback uses moondog_spotify_device_transfer. Set play true only when the user asks to continue the existing playback; omit it for a pure transfer to preserve state. Do not ask the user to paste a device ID or invent a device preference.
 - If the transfer result names the device, confirm that name. If several devices match, or none do, tell the user the visible names from the tool result and ask which one, or ask them to open Spotify on that device. Use moondog_spotify_devices only when they ask what is connected, or when you need those names after a failed match.
 - A style/count/queue request (for example “great，再来十二首国风DJ，queue”) already authorizes queueing up to that count. Use moondog_spotify_discover for 1–3 varied queries at a time, informed by music knowledge or web research, then moondog_spotify_queue_batch with verified references in preferred order. Up to six queries retain a shared pool; a twelve-song request supports twelve accepted additions. No playlist plan, playlist creation or redundant confirmation is needed. If a discovery source is empty, refine Spotify queries while budget remains. Report actual accepted/requested counts and shortfalls.
 - moondog_spotify_queue_similar is only a narrow shortcut for explicitly requested current-artist similarity (1–12). It is not a style/genre search. If it returns no candidates without writes, fall back to the general Spotify discovery path.
@@ -6189,6 +6204,19 @@ function playbackOnlyRequest(text) {
 
 function renderSpotifyPlaybackFailure(failure, promptText) {
   const chinese = responseLanguage(promptText) === "zh";
+  const readiness = {
+    spotify_device_not_found: ["Spotify 没有列出目标设备。请在该设备上打开 Spotify，再请求播放；没有改用其他设备。", "Spotify cannot see the target device. Open Spotify on it, then request playback again; no other device was substituted."],
+    spotify_device_ambiguous: ["有多个可能的 Spotify 设备，请指定要使用的设备名称。", "Several Spotify devices may be available. Specify the intended device name."],
+    spotify_device_restricted: ["目标设备未确认允许 Spotify Web API 控制，请选择其他可用设备。", "The target device does not confirm Spotify Web API control. Choose another available device."],
+    spotify_device_changed: ["另一个 Spotify 设备已变为活跃状态。请明确选择设备，没有自动转移播放。", "Another Spotify device became active. Select the intended device explicitly; playback was not moved automatically."],
+    spotify_device_state_unconfirmed: ["Spotify 的设备与播放状态不完整或不一致。请检查 Spotify 中的当前设备后再试。", "Spotify device/playback state is incomplete or inconsistent. Check the current device in Spotify before trying again."],
+    spotify_device_not_ready: ["目标设备尚未就绪，已停止有限等待。请在该设备上打开 Spotify，再请求播放同一首歌。", "The target device did not become ready within the bounded wait. Open Spotify on it, then request the same song again."],
+    spotify_playback_restricted: ["Spotify 当前不允许恢复播放，请检查目标设备。", "Spotify currently disallows resuming playback. Check the target device."],
+  }[failure.code];
+  if (readiness) return `${readiness[chinese ? 0 : 1]} (${failure.code})${failure.not_sent || failure.playback_not_sent ? chinese ? " 尚未发送歌曲播放请求。" : " The song play request was not sent." : ""}`;
+  if (failure.preparation_stopped && failure.not_sent) return chinese
+    ? `播放前的设备检查未完成（${[failure.code, failure.status ? `HTTP ${failure.status}` : "", failure.reason].filter(Boolean).join("; ")}），没有发送歌曲播放请求。请检查 Spotify 设备状态后再试。`
+    : `Playback device checks did not complete (${[failure.code, failure.status ? `HTTP ${failure.status}` : "", failure.reason].filter(Boolean).join("; ")}); no song play request was sent. Check Spotify device state before trying again.`;
   if (failure.not_sent) return chinese
     ? `一次工具参数在本地被拒绝（${failure.code}），该次尝试没有向 Spotify 发送播放请求。请使用保留的歌曲引用修正参数，或重新搜索；后续明确的播放请求可以直接继续。`
     : `This tool input was rejected locally (${failure.code}); no playback request was sent to Spotify. Correct it with a retained item reference or search again. A fresh explicit playback request can proceed.`;
@@ -6206,8 +6234,8 @@ function renderSpotifyPlaybackFailure(failure, promptText) {
     ? `${outcome}（${evidence}）。${reason}未发送播放或加入队列操作。`
     : `${outcome} (${evidence}). ${reason} No play or queue action was sent.`;
   return chinese
-    ? `${targets ? `目标：${targets}。\n` : ""}${outcome}（${evidence}）。${reason}未自动重试；可以读取播放状态和设备列表继续诊断。`
-    : `${targets ? `Target: ${targets}.\n` : ""}${outcome} (${evidence}). ${reason} The action was not retried. Read playback state and available devices to diagnose further.`;
+    ? `${targets ? `目标：${targets}。\n` : ""}${outcome}（${evidence}）。${reason}${failure.playback_not_sent ? "歌曲播放请求尚未发送。" : ""}${failure.recovery_attempted ? "已结束一次有限的设备恢复流程，不再重试。" : "未自动重试。"}可以读取播放状态和设备列表继续诊断。`
+    : `${targets ? `Target: ${targets}.\n` : ""}${outcome} (${evidence}). ${reason}${failure.playback_not_sent ? " The song play request was not sent." : ""} ${failure.recovery_attempted ? "One bounded device recovery ended; no further retry was made." : "The action was not retried."} Read playback state and available devices to diagnose further.`;
 }
 
 function renderIncompletePlaybackLookup(promptState, promptText, application) {
@@ -6960,7 +6988,7 @@ export class PiAgentRuntime {
         if (listeningContext?.queue_request?.requested > 1 && descriptor.capability_id === "spotify.queue.add" && !toolCall.arguments?.pending_plan) {
           return { block: true, reason: "Use moondog_spotify_queue_batch for this multi-song queue request so Avoid, deduplication, count and partial receipts are preserved." };
         }
-        const playbackStopped = state && (state.spotifyPlaybackFailures.some(failure => !failure.not_sent) ||
+        const playbackStopped = state && (state.spotifyPlaybackFailures.some(failure => !failure.not_sent || failure.preparation_stopped) ||
           ["partial", "unknown", "failed"].includes(state.spotifyQueuePlan?.state) ||
           state.spotifyWriteReceipts.some(receipt => receipt.state === "unknown"));
         if (playbackStopped &&
@@ -7296,7 +7324,7 @@ export class PiAgentRuntime {
           !(this.application.spotifyPlaybackContextStatus?.().queue_request?.requested > 12) &&
           this.capabilityByToolName.has("moondog_spotify_discover") &&
           !promptState.abortRequested && finalStopReason !== "aborted" && !this.agent.state.errorMessage &&
-          !promptState.presentationFailure && !promptState.spotifyWriteReceipts.length && !promptState.spotifyPlaybackFailures.some(failure => !failure.not_sent) &&
+          !promptState.presentationFailure && !promptState.spotifyWriteReceipts.length && !promptState.spotifyPlaybackFailures.some(failure => !failure.not_sent || failure.preparation_stopped) &&
           (!promptState.spotifyQueuePlan || ["no_candidates", "no_playback"].includes(promptState.spotifyQueuePlan.state)) &&
           !promptState.playbackLookups.some(lookup => lookup.capability === "spotify.discovery.search" && (lookup.value.queries_remaining === 0 || lookup.value.state === "unavailable"))) {
         this.agent.followUp({ role: "user", timestamp: Date.now(), content: [{ type: "text", text: "[Host workflow continuation, not a new listener request] The current listener already requested a Spotify queue. No queue write has succeeded or has an uncertain outcome. Complete that same request: use musical knowledge or available web research for hypotheses, verify candidates through moondog_spotify_discover, then call moondog_spotify_queue_batch. Do not ask for playlist confirmation or create a playlist. Refine empty searches within the remaining six-query budget. If no verified candidates or a real blocker remains, state that limitation without claiming a write." }] });

@@ -25,6 +25,7 @@ async function fixture(t, { persistent = true, spotify = false, delayedWrite = f
     if (init.method !== 'GET') { writes.push(endpoint); writeStarted.resolve(); if (delayedWrite) await writeGate.promise; return new Response(null, { status: 204 }); }
     if (endpoint === '/v1/search') return Response.json({ tracks: { items: [{ id: 'fictionalone', type: 'track', uri: 'spotify:track:fictionalone', name: 'Fictional Stars', artists: [{ name: 'Mara Vale' }], album: { name: 'Fictional Record' } }] } });
     if (endpoint === '/v1/me/player') return Response.json({ is_playing: true, item: { type: 'track', uri: 'spotify:track:fictionalone', name: 'Fictional Stars', artists: [{ name: 'Mara Vale' }] } });
+    if (endpoint === '/v1/me/player/devices') return Response.json({ devices: [{ id: 'fictional-device', name: 'Fictional device', is_active: true, is_restricted: false }] });
     throw new Error('Unexpected fixture endpoint');
   } });
   const faux = fauxProvider(); const models = createModels(); models.setProvider(faux.provider);

@@ -109,7 +109,7 @@ for (const [status, reason, cancel] of [[404, "NO_ACTIVE_DEVICE", false], [403, 
     const f = fixture(t, { status, reason, cancel });
     f.faux.setResponses(catalogTrace(f));
     const result = await f.runtime.prompt(exactPrompt);
-    assert.equal(f.writes.length, 1);
+    assert.equal(f.writes.length, status === 404 && reason === "NO_ACTIVE_DEVICE" && !cancel ? 2 : 1);
     assert.equal(result.status, cancel ? "aborted" : "completed");
     assert.match(result.text, new RegExp(`HTTP ${status}`, "u"));
     assert.doesNotMatch(JSON.stringify(result), /PRIVATE_|FICTIONAL_TOKEN|UNSUPPORTED|playlist plan/u);

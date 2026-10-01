@@ -29,6 +29,7 @@ function fixture(t, { status = 204, cancelOnWrite = false } = {}) {
       }
       if (parsed.pathname === "/v1/search") return Response.json({ tracks: { items: parsed.searchParams.get("q").includes("刘森") ? [songs[0]] : songs.slice(1) } });
       if (parsed.pathname === "/v1/me/player/devices") return Response.json({ devices: [{ id: "fictionalDevice", name: "Fictional speaker", type: "Speaker", is_active: true, is_restricted: false, supports_volume: true }] });
+      if (parsed.pathname === "/v1/me/player") return Response.json({ is_playing: false });
       throw new Error(`Unexpected fixture request: ${parsed.pathname}`);
     } });
   const application = new MoondogApplication({ importsRoot: "/private/moondog-synthetic-missing-source",

@@ -60,6 +60,13 @@ test("restricted, unsupported volume, conflicting selectors and cancellation do 
   await assert.rejects(f.application.spotifyDeviceTarget({ deviceId: "two" }, { signal: AbortSignal.abort() }));
   assert.equal(f.writes.length, 0);
 });
+test("a duplicate-name device ordinal authorizes only its retained identity", async t => {
+  const f = fixture(t);
+  const listed = await f.application.spotifyDevices();
+  f.faux.setResponses([use("moondog_spotify_device_transfer", { device_ref_id: listed.devices[0].device_ref_id }), fauxAssistantMessage([fauxText("Done.")])]);
+  await f.runtime.prompt("Switch to the second Kitchen");
+  assert.equal(f.writes.length, 0);
+});
 for (const status of [null, 200, 403, 503]) test(`write settlement deadline is bounded and never replays; stalled status ${status}`, async () => {
   let calls = 0; let late;
   const client = createSpotifyWebApiClient({ tokenProvider: async () => "fictional", writeTimeoutMs: 20, fetchImpl: async (_url, init) => {

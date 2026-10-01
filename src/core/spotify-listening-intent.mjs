@@ -46,3 +46,43 @@ export function trackVersionFamily(name) {
     .split(/[([（【]|\s[-—–]\s|\b(?:dj|remix|mix|version)\b/iu)[0]
     .replace(/[^\p{L}\p{N}]+/gu, "");
 }
+
+export function playbackDeviceExplicitlyRequested(text, { deviceId, deviceName, deviceRefId, ordinal } = {}) {
+  if (typeof text !== "string") return false;
+  // IDs are allowed only when the listener actually supplied the token. A name
+  // must occur as a device target, not inside a song/artist such as Mac DeMarco.
+  const negated = name => {
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+    return new RegExp(`(?:\\b(?:not|never|don't|do not|without|avoid)\\b|不要|别|不用|不能|禁止)[^,，。;；!?！？]{0,100}${escaped}`, "iu").test(text.normalize("NFKC").replace(/[‘’]/gu, "'"));
+  };
+  if (deviceId !== undefined || deviceRefId !== undefined) return !negated(deviceId ?? deviceRefId) && text.split(/\s+/u).some(token => token === (deviceId ?? deviceRefId));
+  if (typeof deviceName !== "string" || !deviceName.trim()) return false;
+  const value = text.normalize("NFKC").toLocaleLowerCase("en-US").trim();
+  const query = deviceName.normalize("NFKC").toLocaleLowerCase("en-US").trim();
+  const aliases = [["computer", "desktop", "laptop", "电脑", "计算机"], ["phone", "smartphone", "手机"], ["speaker", "音箱", "音响"]];
+  const ordinalWords = ["first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth", "tenth"];
+  const chinese = Object.keys(digits).find(key => digits[key] === ordinal && key !== "两") ?? String(ordinal);
+  const names = ordinal === undefined ? aliases.find(group => group.includes(query)) ?? [query] :
+    [`${ordinal}${ordinal === 1 ? "st" : ordinal === 2 ? "nd" : ordinal === 3 ? "rd" : "th"} ${query}`,
+      ...(ordinalWords[ordinal - 1] ? [`${ordinalWords[ordinal - 1]} ${query}`] : []),
+      ...[String(ordinal), chinese].flatMap(value => [`第${value}台${query}`, `第${value}个${query}`, `第${value}台 ${query}`, `第${value}个 ${query}`])];
+  if (names.some(negated)) return false;
+  return names.some(name => {
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+    return value === name || new RegExp(`(?:\\b(?:on|onto|to|using|use|via|through|set)\\s+(?:(?:my|the|this)\\s+)?["“']?|(?:在|用|使用|切到|切换到|转到|通过)(?:我的|这台|这个)?\\s*)${escaped}(?:\\b|[上里播放，。]|$)`, "iu").test(value) ||
+      new RegExp(`${escaped}\\s*(?:上|里)(?:播放|听|放|继续|恢复)`, "iu").test(value);
+  });
+}
+
+export function playbackDeviceConstraints(text = "") {
+  const value = text.normalize("NFKC").replace(/[‘’]/gu, "'");
+  const noTransfer = /(?:\b(?:not|never|don't|do not|stop|avoid|without)\b[^,，。;；!?！？]{0,60}\b(?:switch|transfer|move)|(?:不要|别|不用|停止|禁止|不能)[^,，。;；!?！？]{0,30}(?:切换|切到|换到|转移|转到))/iu.test(value);
+  const excludedNames = [];
+  for (const match of value.matchAll(/(?:\b(?:not|never|don't|do not)\s+(?:(?:play|switch|transfer|move)\s+)?(?:on|to|using)\s+(?:(?:my|the)\s+)?)([^,.;!?\n]{1,128})/giu)) excludedNames.push(match[1].trim());
+  for (const match of value.matchAll(/(?:不要|别|禁止)(?:在|用|使用|切换到|切到|转到)\s*([^，。；！？\n]{1,128}?)(?:上播放|上听|播放|上|听|$)/gu)) excludedNames.push(match[1].trim());
+  return { allowTransfer: !noTransfer, excludedDeviceNames: excludedNames };
+}
+
+export function standaloneDeviceTransferRequested(text) {
+  return typeof text === "string" && /\b(?:switch|transfer|move)\b|切换|切到|换到|转移|转到/iu.test(text) && playbackDeviceConstraints(text).allowTransfer;
+}

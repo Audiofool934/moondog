@@ -1,4 +1,5 @@
 import { createSpotifyWebApiClient } from "./web-api-client.mjs";
+import { setTimeout as delay } from "node:timers/promises";
 
 export const SPOTIFY_SERVICE_LIMITS = Object.freeze({
   deviceIdLengthMax: 256,
@@ -17,6 +18,9 @@ export const SPOTIFY_SERVICE_LIMITS = Object.freeze({
   searchQueryLengthMax: 256,
   searchResultsDefault: 5,
   searchResultsMax: 10,
+  playbackReadinessSnapshotsMax: 4,
+  playbackReadinessTimeoutMs: 5_000,
+  playbackReadinessPollMs: 250,
 });
 
 const repeatStates = new Set(["off", "track", "context"]);
@@ -388,6 +392,11 @@ const DEVICE_TYPE_ALIASES = new Map([
   ["computer", "computer"],
   ["desktop", "computer"],
   ["laptop", "computer"],
+  ["电脑", "computer"],
+  ["计算机", "computer"],
+  ["手机", "smartphone"],
+  ["音箱", "speaker"],
+  ["音响", "speaker"],
   ["speaker", "speaker"],
   ["tv", "tv"],
   ["television", "tv"],
@@ -612,6 +621,128 @@ export function createSpotifyService(options = {}) {
   const client = options.client ?? createSpotifyWebApiClient(options);
   if (!client || typeof client !== "object") {
     throw new TypeError("A Spotify Web API client is required.");
+  }
+  const readinessTimeout = options.playbackReadinessTimeoutMs ?? SPOTIFY_SERVICE_LIMITS.playbackReadinessTimeoutMs;
+  if (!Number.isInteger(readinessTimeout) || readinessTimeout < 1 || readinessTimeout > 5_000) throw new TypeError("Invalid Spotify playback preparation timeout.");
+  const readinessSleep = options.playbackReadinessSleep ?? ((ms, { signal }) => delay(ms, undefined, { signal }));
+
+  async function preparedResume(input, { signal, preferredDeviceId, allowDeviceSwitch = input.deviceId !== undefined, allowTransfer = true, excludedDeviceNames = [], onDeviceSelected } = {}) {
+    const effects = [];
+    const deadline = Date.now() + readinessTimeout;
+    let snapshots = 0, playAttempts = 0, writeStarted = false, phase = "read";
+    let recovered = false, selected;
+    const stop = (code, message) => failBeforeDispatch(code, message);
+    // Reads and delays are bounded even if an injected transport ignores abort.
+    // Dispatched writes retain the client's separate settlement deadline.
+    const boundedRead = async operation => {
+      signal?.throwIfAborted();
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) stop("spotify_device_not_ready", "Spotify device readiness timed out. Open Spotify on the selected device, then request playback again.");
+      const controller = new AbortController();
+      const combined = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
+      let timer, abort;
+      try {
+        return await Promise.race([Promise.resolve().then(() => operation(combined)), new Promise((_, reject) => {
+          abort = () => reject(combined.reason);
+          combined.addEventListener("abort", abort, { once: true });
+          timer = setTimeout(() => controller.abort(new SpotifyServiceError("spotify_device_not_ready", "Spotify device readiness timed out. Open Spotify on the selected device, then request playback again.")), remaining);
+        })]);
+      } finally { clearTimeout(timer); combined.removeEventListener("abort", abort); }
+    };
+    const snapshot = async (wait = false) => {
+      phase = "read";
+      if (snapshots >= SPOTIFY_SERVICE_LIMITS.playbackReadinessSnapshotsMax) stop("spotify_device_not_ready", "Spotify has not made the selected device ready. Open Spotify on it, then request playback again.");
+      if (wait) await boundedRead(readSignal => readinessSleep(SPOTIFY_SERVICE_LIMITS.playbackReadinessPollMs, { signal: readSignal }));
+      snapshots++;
+      const [listing, player] = await boundedRead(readSignal => Promise.all([
+        client.getDevices({ signal: readSignal }), client.getCurrentPlayback({ signal: readSignal }),
+      ]));
+      signal?.throwIfAborted();
+      if (!Array.isArray(listing?.devices) || !["available", "inactive"].includes(player?.state)) stop("spotify_device_state_unconfirmed", "Spotify did not return a usable device and playback state. Check Spotify before requesting playback again.");
+      const devices = listedDevices(listing);
+      if (new Set(devices.map(device => device.id)).size !== devices.length) stop("spotify_device_state_unconfirmed", "Spotify returned conflicting device entries. Check Spotify's device selector before trying again.");
+      const active = new Set(devices.filter(device => device.is_active === true).map(device => device.id));
+      if (player.device?.is_active === true) active.add(player.device.id);
+      if (active.size > 1) stop("spotify_device_state_unconfirmed", "Spotify device and playback snapshots disagree. Check the active device before trying again.");
+      return { devices, player, active: [...active][0], truncated: listing.truncated === true };
+    };
+    const find = (state, id) => {
+      const device = state.devices.find(entry => entry.id === id);
+      if (!device) stop("spotify_device_not_found", "The selected Spotify device is not visible. Open Spotify on that device and request playback again; no other device was substituted.");
+      if (device.is_restricted !== false) stop("spotify_device_restricted", "The selected device does not confirm Web API control. Choose another available Spotify device.");
+      if (excludedDeviceNames.some(name => {
+        const query = deviceQuery(name), tokens = meaningfulTokens(query.normalized);
+        return nameMatchScore(device, query.normalized, tokens) > 0 || sharedTypeAlias(tokens) === device.type?.toLocaleLowerCase("en-US");
+      })) stop("spotify_device_selection_not_authorized", "The listener excluded the selected device. Specify another available Spotify device before playing.");
+      return device;
+    };
+    const check = state => {
+      selected = find(state, selected.id);
+      if (state.player.device?.id === selected.id && state.player.device.is_restricted === true) stop("spotify_device_restricted", "Spotify playback state restricts control of this device. Choose another available device.");
+      if (state.active && state.active !== selected.id && !allowDeviceSwitch) stop("spotify_device_changed", "Another Spotify device became active. Choose the intended device explicitly; playback was not moved automatically.");
+      if (state.player.disallowed_actions?.includes("resuming")) stop("spotify_playback_restricted", "Spotify currently disallows resuming playback. Check the selected device in Spotify.");
+    };
+    const prepare = async (state, afterRejection = false) => {
+      check(state);
+      if (selected.is_active === true && state.active === selected.id) return state;
+      // play:false preserves the previous state. It is safe preparation only
+      // with affirmative evidence of paused playback, never from a 204/unknown
+      // response or a currently playing session (which could play the old song).
+      const paused = state.player.state === "available" && state.player.is_playing === false;
+      if (!allowTransfer || !paused || state.truncated || state.player.disallowed_actions?.includes("transferring_playback")) {
+        if (afterRejection) stop("spotify_device_not_ready", "Spotify rejected playback because the selected device is not ready. Open Spotify on that device, then request the same song again.");
+        return state; // One exact-target play can work without a separate transfer.
+      }
+      if (!effects.length) {
+        signal?.throwIfAborted(); phase = "transfer";
+        await client.transfer({ deviceId: selected.id, play: false }, { signal, beforeDispatch: () => { signal?.throwIfAborted(); writeStarted = true; } });
+        writeStarted = true;
+        effects.push({ ...actionReceipt("playback.transfer"), device: { name: selected.name, type: selected.type ?? "unknown" } });
+      }
+      while (true) {
+        state = await snapshot(true); check(state);
+        if (selected.is_active === true && state.active === selected.id) return state;
+      }
+    };
+    try {
+      let state = await snapshot();
+      const id = input.deviceId ?? state.active ?? preferredDeviceId;
+      if (id) selected = find(state, id);
+      else {
+        if (state.truncated || state.devices.length !== 1) stop(state.devices.length ? "spotify_device_ambiguous" : "spotify_device_not_found",
+          state.devices.length ? "Several Spotify devices may be available. Choose the intended device by name before playing." : "No Spotify Connect device is visible. Open Spotify on the intended device and request playback again.");
+        selected = find(state, state.devices[0].id);
+      }
+      onDeviceSelected?.(selected.id);
+      input = { ...input, deviceId: selected.id }; // Frozen before any write.
+      state = await prepare(state);
+      for (;;) {
+        signal?.throwIfAborted(); phase = "resume";
+        try { await client.resume(input, { signal, beforeDispatch: () => { signal?.throwIfAborted(); writeStarted = true; playAttempts++; } }); break; }
+        catch (error) {
+          // A definite NO_ACTIVE_DEVICE rejection is the sole recoverable
+          // play response. No queue/skip/transfer or uncertain write is replayed.
+          if (playAttempts !== 1 || error?.status !== 404 || error.reason !== "NO_ACTIVE_DEVICE" || error.outcomeUnknown !== false || signal?.aborted) throw error;
+          recovered = true;
+          state = await snapshot(true);
+          await prepare(state, true);
+        }
+      }
+      return { ...actionReceipt("playback.resume"), device: { name: selected.name, type: selected.type ?? "unknown" },
+        ...(effects.length ? { preparation_effects: effects } : {}), ...(recovered ? { recovered_no_active_device: true } : {}) };
+    } catch (error) {
+      // Retain accepted preparation even if a later read, cancellation, or play
+      // fails. A preparation failure must not claim that the song was dispatched.
+      error.playbackPreparation = effects;
+      error.playbackAction = phase === "transfer" ? "playback.transfer" : "playback.resume";
+      error.playbackNotDispatched = playAttempts === 0;
+      error.playbackPreparationStopped = true;
+      error.playbackRecoveryAttempted = recovered;
+      if (phase === "read") error.outcomeUnknown = false;
+      if (!writeStarted) error.actionNotDispatched = true;
+      else delete error.actionNotDispatched;
+      throw error;
+    }
   }
 
   return Object.freeze({
@@ -954,7 +1085,7 @@ export function createSpotifyService(options = {}) {
       };
     },
 
-    async resume(value, { signal } = {}) {
+    async resume(value, { signal, ...preparation } = {}) {
       signal?.throwIfAborted();
       const input = inputObject(value);
       const contextUri = optionalContextUri(input.contextUri);
@@ -971,15 +1102,14 @@ export function createSpotifyService(options = {}) {
       if (offsetPosition !== undefined && offsetUri !== undefined) {
         fail("conflicting_offset", "Choose one Spotify playback offset.");
       }
-      await client.resume({
+      return preparedResume({
         deviceId: optionalDeviceId(input.deviceId),
         contextUri,
         uris,
         offsetPosition,
         offsetUri,
         positionMs: optionalPosition(input.positionMs, "invalid_position"),
-      }, { signal });
-      return actionReceipt("playback.resume");
+      }, { signal, ...preparation });
     },
 
     async pause(value, { signal } = {}) {
@@ -1055,7 +1185,7 @@ export function createSpotifyService(options = {}) {
       return actionReceipt("playback.repeat.set");
     },
 
-    async transfer(value, { signal } = {}) {
+    async transfer(value, { signal, onDeviceSelected } = {}) {
       signal?.throwIfAborted();
       const input = inputObject(value);
       if (input.play !== undefined && typeof input.play !== "boolean") {
@@ -1072,6 +1202,7 @@ export function createSpotifyService(options = {}) {
       }
       const play = input.play ?? false;
       if (deviceId) {
+        onDeviceSelected?.(deviceId);
         await client.transfer({ deviceId, play }, { signal });
         return actionReceipt("playback.transfer");
       }
@@ -1079,6 +1210,7 @@ export function createSpotifyService(options = {}) {
         fail("invalid_device_id", "A Spotify device identifier is required.");
       }
       const device = await resolveNamedDevice(client, input.deviceName, { signal });
+      onDeviceSelected?.(device.id);
       signal?.throwIfAborted();
       await client.transfer({ deviceId: device.id, play }, { signal });
       return {
