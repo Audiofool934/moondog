@@ -173,3 +173,126 @@ for (const action of ["play", "transfer"]) test(`uncertain ${action} is never de
   assert.equal(result.spotify_playback_failures[0].preparation_read_failed, undefined);
   assert.doesNotMatch(result.text, /prevented reading Spotify|Nothing happened/iu);
 });
+
+for (const failure of ["missing", "empty", "ambiguous", "network", "cancel"]) test(`failed device change → retry keeps the recording and never returns to Mac: ${failure}`, async t => {
+  const alternate = { ...song, id: "denverOther", uri: "spotify:track:denverOther", name: "Take Me Home, Country Roads" };
+  const f = fixture(t, { devices: [device(), pc], playback: playing, searchItems: [song, alternate] });
+  await show(f);
+  await f.prompt("1.", [resume({}), say()]);
+  assert.deepEqual(f.state.writes, [{ route: "/v1/me/player/play", device: "mac", body: { uris: [song.uri] } }]);
+  if (failure === "missing") f.state.devices = [device()];
+  if (failure === "empty") f.state.devices = [];
+  if (failure === "ambiguous") f.state.devices.push({ ...pc, id: "otherPc" });
+  f.state.onRead = route => {
+    if (route !== "/v1/me/player/devices") return;
+    if (failure === "network") throw new Error("Fictional device lookup outage");
+    if (failure === "cancel") f.runtime.abort();
+  };
+  const rejected = await f.prompt("play it on PC", [resume({ device_name: "PC" }), say()]);
+  assert.equal(f.state.writes.length, 1);
+  if (failure === "cancel") assert.equal(rejected.status, "aborted");
+  else {
+    const error = rejected.spotify_playback_failures[0];
+    assert.equal(error.code, { missing: "spotify_device_no_match", empty: "spotify_device_not_found", ambiguous: "spotify_device_ambiguous", network: "spotify_network_error" }[failure]);
+    assert.equal(error.playback_not_sent, true);
+    assert.equal(error.outcome_unknown, false);
+  }
+  if (failure === "network") assert.match(rejected.text, /network error.*song play request was not sent/isu);
+  if (["missing", "empty", "ambiguous"].includes(failure)) {
+    const stillUnavailable = await f.prompt("retry", [resume({}), say()]);
+    assert.equal(f.state.writes.length, 1);
+    assert.equal(stillUnavailable.spotify_playback_failures[0].playback_not_sent, true);
+  }
+  f.state.onRead = null;
+  f.state.devices = [device(), pc];
+  f.state.searchItems.reverse();
+  const result = await f.prompt("retry", [tool("moondog_spotify_search", { query: "Country Road" }), resume({}), say()]);
+  assert.equal(result.spotify_write_receipts.at(-1).state, "accepted");
+  assert.deepEqual(f.state.writes.slice(1), [{ route: "/v1/me/player/play", device: "pc", body: { uris: [song.uri] } }]);
+});
+
+test("cancellation before a device selector is captured cannot revive the old target", async t => {
+  const f = fixture(t, { devices: [device(), pc], playback: playing });
+  await show(f);
+  await f.prompt("1", [resume({}), say()]);
+  const cancelled = await f.prompt("play it on PC", [() => { f.runtime.abort(); return say(); }]);
+  assert.equal(cancelled.status, "aborted");
+  const retry = await f.prompt("retry", [resume({}), say()]);
+  assert.equal(retry.spotify_playback_failures[0].code, "spotify_device_selection_required");
+  assert.equal(f.state.writes.length, 1);
+  await f.prompt("play it on PC", [resume({ device_name: "PC" }), say()]);
+  assert.deepEqual(f.state.writes.slice(1), [{ route: "/v1/me/player/play", device: "pc", body: { uris: [song.uri] } }]);
+});
+
+test("retry cannot replace the pending device, song or position with model arguments", async t => {
+  const f = fixture(t, { devices: [device(), pc], playback: playing });
+  await f.prompt(`Play ${song.uri}`, [resume({ uri: song.uri, position_ms: 123 }), say()]);
+  f.state.onRead = () => { throw new Error("Fictional device lookup outage"); };
+  await f.prompt("play it on PC", [resume({ device_name: "PC" }), say()]);
+  f.state.onRead = null;
+  const result = await f.prompt("retry", [resume({ device_name: "Fictional Mac" }), resume({ position_ms: 456 }),
+    resume({ uri: "spotify:track:other" }), resume({}), say()]);
+  assert.equal(result.spotify_write_receipts.at(-1).state, "accepted");
+  assert.deepEqual(f.state.writes.slice(1), [{ route: "/v1/me/player/play", device: "pc", body: { uris: [song.uri], position_ms: 123 } }]);
+});
+
+test("a device lookup interrupted after resolving its ID cannot substitute a namesake on retry", async t => {
+  const f = fixture(t, { devices: [device(), pc], playback: playing });
+  await show(f);
+  await f.prompt("1", [resume({}), say()]);
+  // A local source mismatch stops before resume registers an attempt, after the
+  // device lookup has already established the exact intended PC identity.
+  await f.prompt("play it on PC", [resume({ device_name: "PC", position_ms: 99 }), say()]);
+  assert.equal(f.state.writes.length, 1);
+  f.state.devices = [device(), { ...pc, id: "replacementPc" }];
+  const result = await f.prompt("retry", [resume({}), say()]);
+  assert.equal(result.spotify_playback_failures[0].code, "spotify_device_not_found");
+  assert.equal(f.state.writes.length, 1);
+});
+
+for (const phase of ["retarget", "retry"]) test(`connection reset during ${phase} device lookup cannot restore the invalidated attempt`, async t => {
+  const f = fixture(t, { devices: [device(), pc], playback: playing });
+  await show(f);
+  await f.prompt("1", [resume({}), say()]);
+  if (phase === "retry") {
+    f.state.onRead = () => { throw new Error("Fictional first lookup outage"); };
+    await f.prompt("play it on PC", [resume({ device_name: "PC" }), say()]);
+  }
+  f.state.onRead = route => { if (route === "/v1/me/player/devices") f.app.setSpotifyConnection(f.app.spotifyConnection); };
+  const result = await f.prompt(phase === "retarget" ? "play it on PC" : "retry",
+    [resume(phase === "retarget" ? { device_name: "PC" } : {}), say()]);
+  assert.equal(result.spotify_playback_failures[0].code, "spotify_selection_context_unavailable");
+  assert.equal(f.state.writes.length, 1);
+  assert.equal(f.app.spotifyPlaybackAttempt, null);
+});
+
+for (const boundary of ["readiness", "token", "after-transfer", "after-play"]) test(`device change context reset at ${boundary} stops new writes and preserves dispatched effects`, async t => {
+  const f = fixture(t, { devices: [device(), pc], playback: playing });
+  await show(f);
+  await f.prompt("1", [resume({}), say()]);
+  let reads = 0;
+  if (boundary === "readiness") f.state.onRead = route => { if (route.endsWith("/devices") && ++reads === 2) f.app.setSpotifyConnection(f.app.spotifyConnection); };
+  if (boundary === "token") {
+    f.state.tokenCalls = 0;
+    f.state.onToken = call => { if (call === 4) f.app.setSpotifyConnection(f.app.spotifyConnection); };
+  }
+  if (boundary === "after-transfer") f.state.playback = { ...playing, is_playing: false };
+  f.state.onWrite = write => {
+    if (boundary === "after-transfer" && write.route === "/v1/me/player" ||
+        boundary === "after-play" && write.route === "/v1/me/player/play") f.app.setSpotifyConnection(f.app.spotifyConnection);
+  };
+  const result = await f.prompt("play it on PC", [resume({ device_name: "PC" }), say()]);
+  assert.equal(f.app.spotifyPlaybackAttempt, null);
+  assert.equal(f.app.spotifyPreferredPlaybackDevice, null);
+  if (["readiness", "token"].includes(boundary)) {
+    assert.equal(f.state.writes.length, 1);
+    assert.equal(result.spotify_playback_failures[0].playback_not_sent, true);
+  } else {
+    assert.equal(f.state.writes.length, 2);
+    const action = boundary === "after-transfer" ? "playback.transfer" : "playback.resume";
+    assert.ok(result.spotify_write_receipts.some(receipt => receipt.action === action && receipt.state === "accepted"));
+    assert.equal(f.state.writes[1].route, boundary === "after-transfer" ? "/v1/me/player" : "/v1/me/player/play");
+    if (boundary === "after-transfer") assert.equal(result.spotify_playback_failures[0].playback_not_sent, true);
+    else assert.deepEqual(f.state.writes[1], { route: "/v1/me/player/play", device: "pc", body: { uris: [song.uri] } });
+  }
+});

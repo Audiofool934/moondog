@@ -637,7 +637,7 @@ export function createSpotifyService(options = {}) {
   if (!Number.isInteger(readinessTimeout) || readinessTimeout < 1 || readinessTimeout > 5_000) throw new TypeError("Invalid Spotify playback preparation timeout.");
   const readinessSleep = options.playbackReadinessSleep ?? ((ms, { signal }) => delay(ms, undefined, { signal }));
 
-  async function preparedResume(input, { signal, preferredDeviceId, allowDeviceSwitch = input.deviceId !== undefined, allowTransfer = true, excludedDeviceNames = [], onDeviceSelected } = {}) {
+  async function preparedResume(input, { signal, preferredDeviceId, allowDeviceSwitch = input.deviceId !== undefined, allowTransfer = true, excludedDeviceNames = [], onDeviceSelected, beforeDispatch } = {}) {
     const effects = [];
     const deadline = Date.now() + readinessTimeout;
     let snapshots = 0, readRecoveries = 0, playAttempts = 0, writeStarted = false, phase = "read";
@@ -718,7 +718,7 @@ export function createSpotifyService(options = {}) {
       }
       if (!effects.length) {
         signal?.throwIfAborted(); phase = "transfer";
-        await client.transfer({ deviceId: selected.id, play: false }, { signal, beforeDispatch: () => { signal?.throwIfAborted(); writeStarted = true; } });
+        await client.transfer({ deviceId: selected.id, play: false }, { signal, beforeDispatch: () => { signal?.throwIfAborted(); beforeDispatch?.(); writeStarted = true; } });
         writeStarted = true;
         effects.push({ ...actionReceipt("playback.transfer"), device: { name: selected.name, type: selected.type ?? "unknown" } });
       }
@@ -741,7 +741,7 @@ export function createSpotifyService(options = {}) {
       state = await prepare(state);
       for (;;) {
         signal?.throwIfAborted(); phase = "resume";
-        try { await client.resume(input, { signal, beforeDispatch: () => { signal?.throwIfAborted(); writeStarted = true; playAttempts++; } }); break; }
+        try { await client.resume(input, { signal, beforeDispatch: () => { signal?.throwIfAborted(); beforeDispatch?.(); writeStarted = true; playAttempts++; } }); break; }
         catch (error) {
           // A definite NO_ACTIVE_DEVICE rejection is the sole recoverable
           // play response. No queue/skip/transfer or uncertain write is replayed.
