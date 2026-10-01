@@ -280,7 +280,7 @@ function normalizeQueue(payload) {
 }
 
 function normalizeTrackSearchItem(raw) {
-  if (!isPlainObject(raw)) return null;
+  if (!isPlainObject(raw) || raw.is_local === true || raw.is_playable === false) return null;
   const uri = safeText(raw.uri);
   const id = safeText(raw.id, 128);
   const name = safeText(raw.name);

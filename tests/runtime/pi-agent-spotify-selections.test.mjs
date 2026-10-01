@@ -56,7 +56,11 @@ test("Spotify-only search references support next-turn play, queue and save with
     fauxAssistantMessage([fauxText("Played, queued and saved the first result.")])]);
   assert.equal((await runtime.prompt("Play, queue and save the first result")).status, "completed");
   assert.deepEqual(writes, [["play", [song.uri]], ["queue", [song.uri]], ["save", [song.uri]]]);
-  await application.spotifySearchTracks({ query: "another result" });
+  const replacement = await application.spotifySearchTracks({ query: "another result" });
+  // A newly read ordering cannot retarget the host-displayed choice. Only a
+  // successfully displayed replacement (or reset/expiry) replaces that map.
+  assert.equal(application.requireSpotifyResolution(firstRef).uri, song.uri);
+  application.presentSpotifyChoices(replacement.items.map(item => item.item_ref_id));
   assert.throws(() => application.spotifyAddToQueue({ trackRefId: firstRef }), { code: "spotify_track_not_resolved" });
   assert.throws(() => application.spotifyControl({ action: "resume", trackRefs: ["forged-reference"] }), { code: "spotify_track_not_resolved" });
   assert.equal(writes.length, 3);

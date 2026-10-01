@@ -527,7 +527,11 @@ export class ListeningProfileDomainServices {
     ));
   }
 
-  registerExternalCandidateSet({ tracks, source } = {}) {
+  isKnownDiscoveryTrack(track) {
+    return (this.#store.listenedTracks?.({ subjectId: this.#subjectId }) ?? []).some(heard => exactTitleArtistMatch(track, heard));
+  }
+
+  registerExternalCandidateSet({ tracks, source, excludeKnown = true } = {}) {
     if (!Array.isArray(tracks) || tracks.length < 1 || tracks.length > HISTORY_MAX_ITEMS) {
       throw new TypeError("External catalog candidates are invalid");
     }
@@ -539,7 +543,7 @@ export class ListeningProfileDomainServices {
     if (new Set(prepared.map((track) => track.track_ref_id)).size !== prepared.length) {
       throw new TypeError("External catalog candidates are duplicated");
     }
-    // Outside suggestions should be new to the listener, so drop anything already played.
+    // Familiarity is useful evidence, not an automatic discovery exclusion.
     const listened = typeof this.#store.listenedTracks === "function"
       ? this.#store.listenedTracks({ subjectId: this.#subjectId })
       : [];
@@ -547,7 +551,8 @@ export class ListeningProfileDomainServices {
     let excludedHistoryMatches = 0;
     const allowed = this.filterDiscoveryTracks(prepared);
     for (const track of allowed) {
-      if (listened.some((heard) => exactTitleArtistMatch(track, heard))) {
+      const heard = listened.some((heard) => exactTitleArtistMatch(track, heard));
+      if (excludeKnown && heard) {
         excludedHistoryMatches += 1;
         continue;
       }
@@ -555,7 +560,7 @@ export class ListeningProfileDomainServices {
         ...track,
         knownness: {
           imported_library: "not_imported",
-          listening_history: "not_found_by_exact_title_artist",
+          listening_history: heard ? "found_by_exact_title_artist" : "not_found_by_exact_title_artist",
         },
       });
     }
