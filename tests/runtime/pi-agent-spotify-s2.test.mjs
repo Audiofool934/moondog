@@ -1932,6 +1932,10 @@ for (const scenario of ["named_resume", "extra_candidate", "raw_uri", "other_tra
       assert.match(result.text, /Can You Hear the Music/u);
       assert.doesNotMatch(result.text, /could not validate|Unrelated Discovery/u);
       assert.match(result.text, scenario === "chinese_play" ? /已加入队列/u : /Queued/u);
+    } else if (scenario === "invalid_receipt") {
+      assert.match(result.text, /outcome is uncertain/u);
+      assert.equal(result.spotify_write_receipts[0].state, "unknown");
+      assert.doesNotMatch(result.text, /playlist plan/u);
     } else {
       assert.match(result.text, /could not validate this playlist plan/u);
     }

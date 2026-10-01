@@ -1682,6 +1682,9 @@ export async function runMoondogTui({
           response.setText(streamedText);
         }
         setFooter("Cancelled.");
+      } else if (result.status === "interrupted") {
+        response.setText(sanitizeTerminalText(result.text));
+        setFooter("Response interrupted. Spotify results are shown.", warning);
       } else {
         setFooter("Up recalls this conversation.", success);
       }

@@ -2,6 +2,7 @@ import { Agent } from "@earendil-works/pi-agent-core";
 import { Type } from "@earendil-works/pi-ai";
 
 import { projectWebResearchResult } from "../../integrations/web/codex-web.mjs";
+import { spotifyErrorReason } from "../../integrations/spotify/web-api-client.mjs";
 import { formatWebSources } from "../../surfaces/cli/web-command.mjs";
 import {
   createModelConnectionError,
@@ -2899,7 +2900,18 @@ function safeDomainFailure(error) {
   if (privatePathPattern.test(message)) {
     message = "The trusted Moondog domain service failed without exposing private details.";
   }
-  return new Error(`${code}: ${message}`);
+  const details = spotifyFailureDetails(error);
+  const evidence = [details.status ? `HTTP ${details.status}` : "", details.reason].filter(Boolean);
+  return new Error(`${code}: ${message}${evidence.length ? ` (${evidence.join("; ")})` : ""}`);
+}
+
+function spotifyFailureDetails(error) {
+  return {
+    code: typeof error?.code === "string" && /^[a-z][a-z0-9_]{1,63}$/u.test(error.code) ? error.code : "spotify_result_unconfirmed",
+    status: Number.isInteger(error?.status) && error.status >= 400 && error.status <= 599 ? error.status : null,
+    reason: spotifyErrorReason(error?.reason),
+    outcome_unknown: error?.outcomeUnknown === true || error?.message?.startsWith("domain_result_") === true,
+  };
 }
 
 function executeDomain(operation, project, onSuccess, onFailure) {
@@ -4318,6 +4330,8 @@ function createToolFactories(
     onWebResearch,
     onSpotifyQueuePlan,
     onSpotifyPlayback,
+    onSpotifyPlaybackFailure,
+    onSpotifyLookupFailure,
     onSpotifyWriteReceipt,
   } = {},
 ) {
@@ -4326,6 +4340,12 @@ function createToolFactories(
       provider: "spotify", effect: "write_external", action, state: "unknown", ok: false,
       ...(typeof error.spotifyQuickTarget === "string" ? { target_name: cleanOutputText(error.spotifyQuickTarget, 200, "spotify_quick_target") } : {}),
     });
+  };
+  const retainPlaybackFailure = (action) => (error) => {
+    if (error?.name === "AbortError" && error?.outcomeUnknown !== true) return;
+    const details = spotifyFailureDetails(error);
+    retainUnknownSpotifyWrite(action)({ ...error, outcomeUnknown: details.outcome_unknown });
+    onSpotifyPlaybackFailure?.({ action, ...details });
   };
   const emptyParameters = Type.Object({}, { additionalProperties: false });
   const filterStrings = Type.Array(
@@ -4774,7 +4794,7 @@ function createToolFactories(
               });
             }
           },
-          (error, _toolCallId, parameters) => retainUnknownSpotifyWrite(`playback.${parameters.action}${["volume", "shuffle", "repeat"].includes(parameters.action) ? ".set" : ""}`)(error),
+          (error, _toolCallId, parameters) => retainPlaybackFailure(`playback.${parameters.action}${["volume", "shuffle", "repeat"].includes(parameters.action) ? ".set" : ""}`)(error),
         ),
       }),
     ],
@@ -4859,7 +4879,7 @@ function createToolFactories(
               });
             }
           },
-          retainUnknownSpotifyWrite("playback.queue.add"),
+          retainPlaybackFailure("playback.queue.add"),
         ),
       }),
     ],
@@ -4923,6 +4943,8 @@ function createToolFactories(
               ),
             }, { signal }),
           projectSpotifyResolutions,
+          undefined,
+          (error) => onSpotifyLookupFailure?.(spotifyFailureDetails(error)),
         ),
       }),
     ],
@@ -4996,6 +5018,8 @@ function createToolFactories(
                 : {}),
             }, { signal }),
           projectSpotifySearch,
+          undefined,
+          (error) => onSpotifyLookupFailure?.(spotifyFailureDetails(error)),
         ),
       }),
     ],
@@ -5371,7 +5395,7 @@ function createToolFactories(
             }, { signal }),
           projectSpotifyReceipt,
           onSpotifyWriteReceipt,
-          retainUnknownSpotifyWrite("playback.transfer"),
+          retainPlaybackFailure("playback.transfer"),
         ),
       }),
     ],
@@ -5727,7 +5751,8 @@ Grounding and evidence rules:
 - Library results expose metadata and aggregate observation summaries, not audio analysis. Do not invent mood, tempo, instrumentation, or sonic properties.
 - Never invent a track, metadata value, personal reason, or library result.
 - A playlist plan may contain only track refs from active candidate_set_ids returned in this prompt or from the pending plan's revision candidate set in trusted product context, whether their candidate_scope is private_library, private_history, or external_catalog. Use moondog_playlist_plan to validate the final order and reasons.
-- A request to play, queue, or put on one named song is playback. Find it with moondog_library_search. If the library misses, one moondog_music_catalog_search for that title is allowed. Resolve the one matching track and play or queue it. Do not call moondog_music_artist_similarity, and do not build a playlist plan.
+- A request to play, queue, or put on one named song is playback, in any language or quote style (for example 播放一首艺人的“歌曲” or Play “Title” by Artist). Use moondog_spotify_search with the title and artist first, then pass the matching track_ref_id directly to moondog_spotify_player_control (action resume) or moondog_spotify_queue_add. These Spotify references need no resolution step. Verify both title and artist when supplied; ask for a choice when versions or artists remain ambiguous, and report no match if none fits. A request to play any one song by a named artist also uses Spotify search and one matching track. Do not create a playlist plan or call artist similarity for these requests. Use imported-library search only when the user asks for their library; use external catalog and Spotify resolution only as a fallback when needed.
+- A Spotify playback error is an action failure, never a playlist-plan validation failure. Report the tool's HTTP status and reason when present. An unspecified rejection does not establish device inactivity, account tier, or missing permission. Read current player/device state to diagnose when useful; do not guess, transfer playback, change devices, log in, or retry a failed/uncertain write automatically.
 - A resolved moondog_music_catalog_search or moondog_music_artist_similarity result is an intermediate candidate set, never a final answer, except the single named song you are about to play or queue. Otherwise you must call moondog_playlist_plan before naming or listing any returned external tracks. Do not end the turn directly after either discovery tool.
 - Copy the user's explicit track count into requested_track_count when calling moondog_playlist_plan.
 - Refer to songs by title and artist in selection reasons and ordering notes, never by internal track refs or shortened IDs.
@@ -6089,13 +6114,69 @@ function externalListeningNote(discoverySources, chinese) {
     : `From ${parts.join(", and ")}. ${limit}`;
 }
 
+function playbackOnlyRequest(text) {
+  // Presentation routing only. This never grants authority or chooses a track.
+  // Ignore words inside quoted titles when looking for a mixed discovery task.
+  const request = text.normalize("NFKC").trim();
+  const outsideTitles = request.replace(/"[^"]*"|'[^']*'|“[^”]*”|‘[^’]*’|「[^」]*」|『[^』]*』|《[^》]*》/gu, " song ");
+  if (/\b(?:recommend\w*|suggest\w*|similar|playlist\w*|discover\w*)\b|推荐|相似|类似|歌单|再找|发现/iu.test(outsideTitles)) return false;
+  return /^(?:(?:please|can you|could you|would you)\s+)*(?:play|queue|put on)\b\s*\S/iu.test(request) ||
+    /^(?:请|帮我|给我|麻烦|随便)*(?:播放|放一首|放一下|放首)\s*\S/u.test(request) ||
+    /^(?:请|帮我|给我)*(?:把|将).+加入队列/u.test(request);
+}
+
+function renderSpotifyPlaybackFailure(failure, promptText) {
+  const chinese = responseLanguage(promptText) === "zh";
+  const evidence = [failure.code, failure.status ? `HTTP ${failure.status}` : "", failure.reason].filter(Boolean).join("; ");
+  const outcome = failure.action === "lookup"
+    ? chinese ? "Spotify 查询未完成" : "The Spotify lookup did not complete"
+    : failure.outcome_unknown
+    ? chinese ? "Spotify 操作结果尚不确定" : "The Spotify action outcome is uncertain"
+    : chinese ? "Spotify 播放操作未获确认" : "The Spotify playback action was not confirmed";
+  const reason = failure.reason
+    ? chinese ? `Spotify 返回的原因：${failure.reason}。` : `Spotify reported: ${failure.reason}.`
+    : chinese ? "具体原因未获证实。" : "The specific cause is unconfirmed.";
+  if (failure.action === "lookup") return chinese
+    ? `${outcome}（${evidence}）。${reason}未发送播放或加入队列操作。`
+    : `${outcome} (${evidence}). ${reason} No play or queue action was sent.`;
+  return chinese
+    ? `${outcome}（${evidence}）。${reason}未自动重试；可以读取播放状态和设备列表继续诊断。`
+    : `${outcome} (${evidence}). ${reason} The action was not retried. Read playback state and available devices to diagnose further.`;
+}
+
+function renderIncompletePlaybackLookup(promptState, promptText) {
+  if (!playbackOnlyRequest(promptText) ||
+      promptState.spotifyWriteReceipts.some(receipt => ["playback.resume", "playback.queue.add"].includes(receipt.action)) || promptState.spotifyPlaybackFailures.length ||
+      promptState.externalCandidateSets.some((set) => !set.playbackLookup)) return null;
+  if (promptState.spotifyLookupFailures.length) return promptState.spotifyLookupFailures
+    .map(failure => renderSpotifyPlaybackFailure({ ...failure, action: "lookup" }, promptText)).join("\n\n");
+  if (!promptState.playbackLookups.length) return null;
+  const chinese = responseLanguage(promptText) === "zh";
+  const last = promptState.playbackLookups.at(-1);
+  if (last.capability === "spotify.catalog.resolve" && last.value.resolved_count === 0) {
+    return chinese ? "没有在 Spotify 找到可确认的匹配歌曲，未发送播放或加入队列操作。可以补充专辑或版本信息再搜索。"
+      : "No verified Spotify match was found. No play or queue action was sent. Add an album or version to refine the search.";
+  }
+  const tracks = last.value.items ?? last.value.tracks ?? [];
+  if (last.capability !== "spotify.catalog.resolve" && tracks.length === 0) {
+    return chinese ? "这次搜索没有找到匹配歌曲，未发送播放或加入队列操作。可以调整歌曲名或艺人名再搜索。"
+      : "This search returned no matching songs. No play or queue action was sent. Refine the title or artist to search again.";
+  }
+  const choices = last.capability === "spotify.search" ? tracks.slice(0, 5).map((track, index) =>
+    `${index + 1}. ${track.name ?? track.title} - ${(track.artists ?? [track.artist_credit]).filter(Boolean).join(", ")}${track.album ? ` (${track.album})` : ""}`) : [];
+  return [chinese ? "搜索已完成，但未发送播放或加入队列操作。" : "The lookup completed, but no play or queue action was sent.",
+    ...choices,
+    tracks.length > 1 ? chinese ? "请选择要播放的匹配项或补充版本信息。" : "Choose a matching result or specify the version." : "",
+  ].filter(Boolean).join("\n");
+}
+
 function renderNamedSongPlayback(promptState, promptText) {
   // Exempt only the named track actually played from one catalog lookup. Render
   // its receipt ourselves; no other search results or model-authored list escape
   // validation, even when the lookup returned several possible recordings.
   const [playback] = promptState.spotifyPlayback;
   const sets = promptState.externalCandidateSets;
-  if (promptState.spotifyPlayback.length !== 1 || sets.length !== 1 ||
+  if (!playbackOnlyRequest(promptText) || promptState.spotifyPlayback.length !== 1 || sets.length !== 1 ||
       !sets[0].playbackLookup) return null;
   const track = sets[0].tracks.find((candidate) => candidate.track_ref_id === playback.trackRefId);
   if (!track) return null;
@@ -6105,7 +6186,10 @@ function renderNamedSongPlayback(promptState, promptText) {
   const title = normalize(track.title);
   const playbackRequested = /\b(?:play|queue|put on)\b/u.test(prompt) ||
     /播放|放一首|放一下|加入队列/u.test(promptText);
-  if (!title || !prompt.includes(title) || !playbackRequested) return null;
+  const artist = normalize(track.artist_credit);
+  const anySongByArtist = artist && prompt.includes(artist) &&
+    (/随便|任意|任何|一首.*(?:的音乐|的歌|歌曲)/u.test(promptText) || /\b(?:any|a|one)\s+(?:one\s+)?(?:song|track)\b/iu.test(promptText));
+  if (!title || (!prompt.includes(title) && !anySongByArtist) || !playbackRequested) return null;
   const chinese = responseLanguage(promptText) === "zh";
   if (playback.action === "playback.queue.add") {
     return chinese
@@ -6664,6 +6748,12 @@ export class PiAgentRuntime {
             this.activePromptState.spotifyPlayback.push(receipt);
           }
         },
+        onSpotifyPlaybackFailure: (failure) => {
+          this.activePromptState?.spotifyPlaybackFailures.push(failure);
+        },
+        onSpotifyLookupFailure: (failure) => {
+          this.activePromptState?.spotifyLookupFailures.push(failure);
+        },
         onSpotifyWriteReceipt: (receipt) => {
           this.activePromptState?.spotifyWriteReceipts.push(receipt);
         },
@@ -6763,6 +6853,14 @@ export class PiAgentRuntime {
             terminate: true,
           };
         }
+        const state = this.activePromptState;
+        const playbackStopped = state && (state.spotifyPlaybackFailures.length ||
+          ["partial", "unknown", "failed"].includes(state.spotifyQueuePlan?.state) ||
+          state.spotifyWriteReceipts.some(receipt => receipt.state === "unknown"));
+        if (playbackStopped &&
+            ["spotify.player.control", "spotify.queue.add", "spotify.device.transfer", "spotify.queue.similar"].includes(descriptor.capability_id)) {
+          return { block: true, reason: "A Spotify playback action already failed in this turn. Read-only diagnosis is allowed; another playback write requires a new user request." };
+        }
         if (["spotify.player.status", "spotify.player.now_playing", "spotify.queue.status", "spotify.device.list", "spotify.device.transfer", "spotify.queue.similar", "spotify.top", "spotify.playlist.edit.quick"].includes(descriptor.capability_id)) {
           this.transientSpotifyContext = true;
         }
@@ -6791,6 +6889,9 @@ export class PiAgentRuntime {
       spotifyPlaylistEditWrite: null,
       spotifyQueuePlan: null,
       spotifyPlayback: [],
+      spotifyPlaybackFailures: [],
+      spotifyLookupFailures: [],
+      playbackLookups: [],
       spotifyWriteReceipts: [],
       externalCandidateSetCreated: false,
       externalCandidateSets: [],
@@ -6802,6 +6903,7 @@ export class PiAgentRuntime {
       onModelRetry: callbacks.onModelRetry,
       modelConnectionFailure: null,
       abortRequested: false,
+      presentationFailure: false,
       stagedMemoryMutations: [],
     };
     this.activePromptState = promptState;
@@ -6824,6 +6926,9 @@ export class PiAgentRuntime {
       new Set([
         "playlist.plan",
         "music.catalog.artist_releases",
+        "spotify.player.control",
+        "spotify.queue.add",
+        "spotify.device.transfer",
       ]).has(descriptor.capability_id),
     );
     const replaceableStreaming =
@@ -6843,6 +6948,8 @@ export class PiAgentRuntime {
     };
 
     const spotifyEffectDetails = () => ({
+      ...(promptState.spotifyPlaybackFailures.length ? { spotify_playback_failures: structuredClone(promptState.spotifyPlaybackFailures) } : {}),
+      ...(promptState.spotifyLookupFailures.length ? { spotify_lookup_failures: structuredClone(promptState.spotifyLookupFailures) } : {}),
       ...(promptState.spotifyQueuePlan ? { spotify_queue_plan: structuredClone(promptState.spotifyQueuePlan) } : {}),
       ...(promptState.spotifyWriteReceipts.length > 0 ? { spotify_write_receipts: structuredClone(promptState.spotifyWriteReceipts) } : {}),
       ...(promptState.spotifyPlaylistWrite ? { spotify_playlist_write: structuredClone(promptState.spotifyPlaylistWrite) } : {}),
@@ -6860,6 +6967,7 @@ export class PiAgentRuntime {
           : `Saved as the private Spotify playlist "${name}" (${count} tracks).`);
       }
       if (promptState.spotifyPlaylistPartialEffect) receipts.push(renderSpotifyPartialPlaylist(promptState.spotifyPlaylistPartialEffect, text));
+      receipts.push(...promptState.spotifyPlaybackFailures.map((failure) => renderSpotifyPlaybackFailure(failure, text)));
       return receipts;
     };
     const completedResult = (resultText, extra = {}) => {
@@ -6885,6 +6993,7 @@ export class PiAgentRuntime {
       // One operation's normal rendering must never hide another operation's
       // partial or unknown effect in the same turn.
       if (promptState.spotifyWriteReceipts.some((receipt) => receipt.state === "unknown" || ["playlist.unfollow", "library.remove", "playlist.rename", "playlist.remove_track"].includes(receipt.action)) ||
+          promptState.spotifyPlaybackFailures.length > 0 ||
           promptState.spotifyPlaylistPartialEffect ||
           ["partial", "unknown", "failed"].includes(promptState.spotifyQueuePlan?.state)) {
         const receiptText = spotifyEffectTexts().join("\n\n");
@@ -6977,74 +7086,87 @@ export class PiAgentRuntime {
       promptScopeStarted = true;
       if (callbacks.profileSeed) this.application.setProfileDiscoverySeed(callbacks.profileSeed);
       unsubscribe = this.agent.subscribe((event) => {
-        callbacks.onEvent?.(event.type);
+        // Observer exceptions must not reject Pi's parallel tool loop early.
+        // Abort further work, then let every outstanding tool settle before the
+        // prompt transaction and its listener can be replaced by another turn.
+        try {
+          callbacks.onEvent?.(event.type);
 
-        if (
-          event.type === "message_update" &&
-          event.assistantMessageEvent.type === "text_delta"
-        ) {
-          streamedText += event.assistantMessageEvent.delta;
           if (
-            replaceableStreaming &&
-            !promptState.validatedPlaylistPlan &&
-            !promptState.playlistPlanAttempted &&
-            !profileDiscoveryUnavailable() &&
-            !promptState.spotifyPlaylistEditPreview &&
-            !promptState.spotifyPlaylistEditWrite
+            event.type === "message_update" &&
+            event.assistantMessageEvent.type === "text_delta"
           ) {
-            callbacks.onTextDelta?.(event.assistantMessageEvent.delta);
-            textWasRendered = true;
+            streamedText += event.assistantMessageEvent.delta;
+            if (
+              replaceableStreaming &&
+              !promptState.validatedPlaylistPlan &&
+              !promptState.playlistPlanAttempted &&
+              !profileDiscoveryUnavailable() &&
+              !promptState.spotifyPlaylistEditPreview &&
+              !promptState.spotifyPlaylistEditWrite &&
+              !promptState.spotifyPlaybackFailures.length
+            ) {
+              callbacks.onTextDelta?.(event.assistantMessageEvent.delta);
+              textWasRendered = true;
+            }
           }
-        }
 
-        if (event.type === "tool_execution_start") {
-          const descriptor = this.capabilityByToolName.get(event.toolName);
-          promptState.toolExecutionStarted = true;
-          if (streamedText.length > 0) {
-            replaceRenderedText("");
+          if (event.type === "tool_execution_start") {
+            const descriptor = this.capabilityByToolName.get(event.toolName);
+            promptState.toolExecutionStarted = true;
+            if (streamedText.length > 0) {
+              replaceRenderedText("");
+            }
+            if (descriptor?.capability_id === "playlist.plan") {
+              promptState.playlistPlanAttempted = true;
+            }
+            callbacks.onToolStart?.({
+              toolCallId: event.toolCallId,
+              toolName: event.toolName,
+              capabilityId: descriptor?.capability_id ?? "unknown",
+              label: descriptor?.label ?? event.toolName,
+            });
           }
-          if (descriptor?.capability_id === "playlist.plan") {
-            promptState.playlistPlanAttempted = true;
-          }
-          callbacks.onToolStart?.({
-            toolCallId: event.toolCallId,
-            toolName: event.toolName,
-            capabilityId: descriptor?.capability_id ?? "unknown",
-            label: descriptor?.label ?? event.toolName,
-          });
-        }
 
-        if (event.type === "tool_execution_end") {
-          const descriptor = this.capabilityByToolName.get(event.toolName);
-          let projected;
-          try { projected = JSON.parse(event.result?.content?.find((block) => block.type === "text")?.text); } catch { /* Failed/withheld projection cannot establish a selection. */ }
-          this.application.observeSpotifyQuickEditRead?.(descriptor?.capability_id, projected,
-            { failed: event.isError === true || !projected });
-          const connectionFailure = discoveryConnectionFailures.get(descriptor?.capability_id);
-          if (connectionFailure) {
-            promptState.discoveryConnections.set(descriptor.capability_id,
-              event.isError === true && event.result?.content?.some(
-                (block) => block.type === "text" && connectionFailure.test(block.text),
-              ) === true,
-            );
+          if (event.type === "tool_execution_end") {
+            const descriptor = this.capabilityByToolName.get(event.toolName);
+            let projected;
+            try { projected = JSON.parse(event.result?.content?.find((block) => block.type === "text")?.text); } catch { /* Failed/withheld projection cannot establish a selection. */ }
+            if (projected && ["spotify.search", "spotify.catalog.resolve", "library.search", "music.catalog.track_search"].includes(descriptor?.capability_id)) {
+              promptState.playbackLookups.push({ capability: descriptor.capability_id, value: projected });
+            }
+            this.application.observeSpotifyQuickEditRead?.(descriptor?.capability_id, projected,
+              { failed: event.isError === true || !projected });
+            const connectionFailure = discoveryConnectionFailures.get(descriptor?.capability_id);
+            if (connectionFailure) {
+              promptState.discoveryConnections.set(descriptor.capability_id,
+                event.isError === true && event.result?.content?.some(
+                  (block) => block.type === "text" && connectionFailure.test(block.text),
+                ) === true,
+              );
+            }
+            callbacks.onToolEnd?.({
+              toolCallId: event.toolCallId,
+              toolName: event.toolName,
+              capabilityId: descriptor?.capability_id ?? "unknown",
+              label: descriptor?.label ?? event.toolName,
+              isError: event.isError === true,
+            });
           }
-          callbacks.onToolEnd?.({
-            toolCallId: event.toolCallId,
-            toolName: event.toolName,
-            capabilityId: descriptor?.capability_id ?? "unknown",
-            label: descriptor?.label ?? event.toolName,
-            isError: event.isError === true,
-          });
-        }
 
-        if (event.type === "message_end" && event.message.role === "assistant") {
-          const messageText = extractAssistantText(event.message);
-          if (messageText.length > 0) finalText = messageText;
-          finalStopReason = event.message.stopReason;
+          if (event.type === "message_end" && event.message.role === "assistant") {
+            const messageText = extractAssistantText(event.message);
+            if (messageText.length > 0) finalText = messageText;
+            finalStopReason = event.message.stopReason;
+          }
+        } catch {
+          promptState.presentationFailure = true;
+          this.agent.abort();
         }
       });
 
       await this.agent.prompt(text);
+      if (promptState.presentationFailure) throw new Error("Moondog response presentation was interrupted.");
 
       if (finalStopReason === "aborted" || promptState.abortRequested) {
         discardPromptHistory(this.agent, historyStartIndex);
@@ -7079,6 +7201,12 @@ export class PiAgentRuntime {
           });
         }
         throw new Error(providerMessage);
+      }
+
+      if (promptState.spotifyPlaybackFailures.length) {
+        const failureText = spotifyEffectTexts().join("\n\n");
+        replaceRenderedText(failureText);
+        return completedResult(failureText);
       }
 
       if (promptState.spotifyRemovalPreview) {
@@ -7134,6 +7262,13 @@ To confirm, reply: ${preview.confirmation}`].join("\n\n");
         });
       }
 
+      const incompletePlayback = renderIncompletePlaybackLookup(promptState, text);
+      if (incompletePlayback) {
+        const outcomeText = [incompletePlayback, ...spotifyEffectTexts()].join("\n\n");
+        replaceRenderedText(outcomeText);
+        return completedResult(outcomeText);
+      }
+
       if (promptState.validatedPlaylistPlan) {
         const authoritativeText = renderValidatedPlaylistPlan(
           promptState.validatedPlaylistPlan,
@@ -7185,13 +7320,13 @@ To confirm, reply: ${preview.confirmation}`].join("\n\n");
           replaceRenderedText(playbackText);
           return completedResult(playbackText);
         }
-        const safeFailureText = renderUnvalidatedPlaylistPlan(text);
+        const safeFailureText = [renderUnvalidatedPlaylistPlan(text), ...spotifyEffectTexts()].join("\n\n");
         replaceRenderedText(safeFailureText);
         return completedResult(safeFailureText);
       }
 
       if (promptState.playlistPlanAttempted) {
-        const safeFailureText = renderUnvalidatedPlaylistPlan(text);
+        const safeFailureText = [renderUnvalidatedPlaylistPlan(text), ...spotifyEffectTexts()].join("\n\n");
         replaceRenderedText(safeFailureText);
         return completedResult(safeFailureText);
       }
@@ -7224,6 +7359,22 @@ To confirm, reply: ${preview.confirmation}`].join("\n\n");
       }
 
       return completedResult(finalText || streamedText);
+    } catch (error) {
+      // A later model/renderer failure cannot undo an external action or erase
+      // its receipt. Keep only host evidence; discard model claims and staged
+      // memory/plans. The caller can still display the returned receipt if its
+      // streaming callback itself was the source of the exception.
+      const receipts = spotifyEffectTexts();
+      if (!receipts.length) throw error;
+      const interruptedText = [responseLanguage(text) === "zh"
+        ? "回复中断；已确认的 Spotify 操作结果如下。未重新执行任何操作。"
+        : "The response was interrupted. The recorded Spotify outcomes are below; no action was replayed.", ...receipts].join("\n\n");
+      compactCompletedPromptHistory(this.agent, historyStartIndex, interruptedText);
+      historyFinalized = true;
+      this.application.invalidateSpotifyQuickEditContext?.();
+      try { replaceRenderedText(interruptedText); } catch { /* Return the receipt even if rendering is unavailable. */ }
+      return { status: "interrupted", text: interruptedText, ...spotifyEffectDetails(),
+        memory_recorded: false, messages_in_process: this.agent.state.messages.length };
     } finally {
       unsubscribe();
       try {
