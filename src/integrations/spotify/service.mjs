@@ -48,6 +48,12 @@ function failBeforeDispatch(code, message) {
   fail(code, message, { actionNotDispatched: true });
 }
 
+function failDeviceSelection(code, message, devices) {
+  const error = new SpotifyServiceError(code, message, { actionNotDispatched: true });
+  error.availableDevices = devices.slice(0, 20).map(({ name, type, is_active, is_restricted }) => ({ name, type, is_active, is_restricted }));
+  throw error;
+}
+
 function isPlainObject(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const prototype = Object.getPrototypeOf(value);
@@ -470,7 +476,10 @@ function nameMatchScore(device, queryNormalized, tokens) {
         tokenIsSpecific(token) &&
         nameTokens.some((nameToken) => tokenMatches(nameToken, token)),
     );
-  return matched ? 2 : 0;
+  if (matched) return 2;
+  // Windows is a common listener label for a device Spotify names "PC".
+  // This is a name alias only, never an inference that every Computer is Windows.
+  return tokens.includes("windows") && tokens.every(token => ["windows", "pc"].includes(token)) && nameTokens.includes("pc") ? 1 : 0;
 }
 
 function sharedTypeAlias(tokens) {
@@ -537,13 +546,14 @@ function requireTransferDevice(chosen, display) {
       ),
     );
   }
-  failBeforeDispatch(
+  failDeviceSelection(
     "spotify_device_ambiguous",
     fitDeviceMessage(
       `Several Spotify devices match "${display}": `,
       chosen,
       ". Say which one.",
     ),
+    chosen,
   );
 }
 
@@ -577,13 +587,14 @@ async function resolveNamedDevice(client, deviceName, { signal } = {}) {
         (device) => (device.type ?? "").toLocaleLowerCase("en-US") === type,
       );
   if (chosen.length === 0) {
-    failBeforeDispatch(
-      "spotify_device_not_found",
+    failDeviceSelection(
+      "spotify_device_no_match",
       fitDeviceMessage(
         `No Spotify device matches "${clipText(query.display, 40)}". Visible now: `,
         devices,
         ".",
       ),
+      devices,
     );
   }
   const display = clipText(query.display, 40);
@@ -629,7 +640,7 @@ export function createSpotifyService(options = {}) {
   async function preparedResume(input, { signal, preferredDeviceId, allowDeviceSwitch = input.deviceId !== undefined, allowTransfer = true, excludedDeviceNames = [], onDeviceSelected } = {}) {
     const effects = [];
     const deadline = Date.now() + readinessTimeout;
-    let snapshots = 0, playAttempts = 0, writeStarted = false, phase = "read";
+    let snapshots = 0, readRecoveries = 0, playAttempts = 0, writeStarted = false, phase = "read";
     let recovered = false, selected;
     const stop = (code, message) => failBeforeDispatch(code, message);
     // Reads and delays are bounded even if an injected transport ignores abort.
@@ -647,16 +658,24 @@ export function createSpotifyService(options = {}) {
           combined.addEventListener("abort", abort, { once: true });
           timer = setTimeout(() => controller.abort(new SpotifyServiceError("spotify_device_not_ready", "Spotify device readiness timed out. Open Spotify on the selected device, then request playback again.")), remaining);
         })]);
-      } finally { clearTimeout(timer); combined.removeEventListener("abort", abort); }
+      } finally { clearTimeout(timer); combined.removeEventListener("abort", abort); controller.abort(); }
     };
     const snapshot = async (wait = false) => {
       phase = "read";
       if (snapshots >= SPOTIFY_SERVICE_LIMITS.playbackReadinessSnapshotsMax) stop("spotify_device_not_ready", "Spotify has not made the selected device ready. Open Spotify on it, then request playback again.");
       if (wait) await boundedRead(readSignal => readinessSleep(SPOTIFY_SERVICE_LIMITS.playbackReadinessPollMs, { signal: readSignal }));
       snapshots++;
-      const [listing, player] = await boundedRead(readSignal => Promise.all([
-        client.getDevices({ signal: readSignal }), client.getCurrentPlayback({ signal: readSignal }),
-      ]));
+      let listing, player;
+      try {
+        [listing, player] = await boundedRead(readSignal => Promise.all([
+          client.getDevices({ signal: readSignal }), client.getCurrentPlayback({ signal: readSignal }),
+        ]));
+      } catch (error) {
+        // A transient read failure is safe to recover. Keep the same snapshot
+        // count and deadline; this never grants another playback/transfer write.
+        if (error?.code === "spotify_network_error" && readRecoveries++ === 0 && !signal?.aborted) return snapshot(true);
+        throw error;
+      }
       signal?.throwIfAborted();
       if (!Array.isArray(listing?.devices) || !["available", "inactive"].includes(player?.state)) stop("spotify_device_state_unconfirmed", "Spotify did not return a usable device and playback state. Check Spotify before requesting playback again.");
       const devices = listedDevices(listing);
@@ -680,7 +699,11 @@ export function createSpotifyService(options = {}) {
       selected = find(state, selected.id);
       if (state.player.device?.id === selected.id && state.player.device.is_restricted === true) stop("spotify_device_restricted", "Spotify playback state restricts control of this device. Choose another available device.");
       if (state.active && state.active !== selected.id && !allowDeviceSwitch) stop("spotify_device_changed", "Another Spotify device became active. Choose the intended device explicitly; playback was not moved automatically.");
-      if (state.player.disallowed_actions?.includes("resuming")) stop("spotify_playback_restricted", "Spotify currently disallows resuming playback. Check the selected device in Spotify.");
+      // These flags describe controls for the current playback context. Starting
+      // a requested URI/context is not resuming the old item, and another device
+      // must not inherit the old device's contextual resume restriction.
+      if (!input.uris && !input.contextUri && state.player.device?.id === selected.id &&
+          state.player.is_playing !== true && state.player.disallowed_actions?.includes("resuming")) stop("spotify_playback_restricted", "Spotify currently disallows resuming this playback context. Choose a song to start or check the selected device.");
     };
     const prepare = async (state, afterRejection = false) => {
       check(state);
@@ -737,6 +760,7 @@ export function createSpotifyService(options = {}) {
       error.playbackAction = phase === "transfer" ? "playback.transfer" : "playback.resume";
       error.playbackNotDispatched = playAttempts === 0;
       error.playbackPreparationStopped = true;
+      error.playbackReadFailure = phase === "read";
       error.playbackRecoveryAttempted = recovered;
       if (phase === "read") error.outcomeUnknown = false;
       if (!writeStarted) error.actionNotDispatched = true;

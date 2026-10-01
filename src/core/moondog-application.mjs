@@ -860,7 +860,7 @@ export class MoondogApplication {
       return { intent, target: item && ["track", "episode", "album", "artist", "playlist"].includes(item.type) ? { parameters: ["track", "episode"].includes(item.type) ? { uris: [item.uri] } : { contextUri: item.uri }, items: [structuredClone(item)] } : null };
     }
     const queue = this.#recentSpotifyContext(this.spotifyQueueRequest) ? this.spotifyQueueRequest : null;
-    if (intent?.kind === "retry") return { intent, target: previous && !(queue?.attempted && queue.turn >= previous.turn) ? structuredClone(previous) : null };
+    if (["retry", "retarget"].includes(intent?.kind)) return { intent, target: previous && !(queue?.attempted && queue.turn >= previous.turn) ? structuredClone(previous) : null };
     if (intent?.kind === "alternative") return { intent, target: previous?.items.length === 1 ? structuredClone(previous) : null };
     return { intent: null, target: null };
   }
@@ -1046,14 +1046,16 @@ export class MoondogApplication {
     const transaction = this.pendingPlaylistPromptTransaction;
     if (transaction?.lastAcceptedPlaybackSelection) throw spotifyResolutionError("spotify_playback_already_accepted", "Playback already succeeded in this turn. Report its receipt without sending a second resume; additional songs belong in the queue.");
     const followup = transaction?.playbackIntent;
-    if (transaction && !followup && parameters.deviceId !== undefined &&
+    if (transaction && (!followup || followup.kind === "retarget") && parameters.deviceId !== undefined &&
         !transaction.explicitPlaybackDevices?.has(parameters.deviceId) &&
         !playbackDeviceExplicitlyRequested(transaction.userText, { deviceId: parameters.deviceId })) throw spotifyResolutionError("spotify_device_selection_not_authorized", "The listener did not choose that device. Resume without a device selector to let the host preserve the active device or resolve an unambiguous target; do not invent a device preference.");
     const required = transaction?.requiredPlayback;
     if (followup) {
       if (transaction.lastAcceptedPlaybackSelection) throw spotifyResolutionError("spotify_playback_already_accepted", "The selected playback already succeeded in this turn. Report its receipt without another write.");
       if (!required) throw spotifyResolutionError("spotify_selection_context_unavailable", "The displayed choice or previous playback target is missing or stale. Search and present the intended versions again; do not guess a number or retry target.");
+      if (followup.kind === "retarget" && parameters.deviceId === undefined) throw spotifyResolutionError("spotify_device_selection_required", "Keep the retained song and resolve the device requested by the listener. Do not resume the old device or the device's previous song.");
       for (const field of ["deviceId", "positionMs"]) {
+        if (field === "deviceId" && followup.kind === "retarget") continue;
         if (parameters[field] !== undefined && parameters[field] !== required.parameters[field]) throw spotifyResolutionError("spotify_selected_target_mismatch", "This follow-up preserves the selected target and device intent. Do not add or change playback parameters.");
       }
       if (followup.kind === "alternative") {
@@ -1087,7 +1089,7 @@ export class MoondogApplication {
     }
     if (attempt) this.spotifyPlaybackAttempt = attempt;
     const targets = items.map(item => ({ title: item.name ?? "Spotify item", artist_credit: item.artists.join(", ") }));
-    const explicitDevice = parameters.deviceId !== undefined && !followup;
+    const explicitDevice = parameters.deviceId !== undefined && (!followup || followup.kind === "retarget");
     const deviceConstraints = playbackDeviceConstraints(transaction?.userText);
     return this.requireSpotifyService().resume(parameters, { signal,
       ...deviceConstraints,
@@ -1435,6 +1437,12 @@ export class MoondogApplication {
     signal?.throwIfAborted();
     const transaction = this.pendingPlaylistPromptTransaction;
     let explicitlySelected = transaction && playbackDeviceExplicitlyRequested(transaction.userText, input);
+    if (transaction && !explicitlySelected && playbackDeviceExplicitlyRequested(transaction.userText, { deviceName: "Windows" })) {
+      // Match the actual listener label again, so a model-picked PC ref cannot
+      // override a more specific visible Windows-named device.
+      const named = await this.requireSpotifyService().resolveDevice({ deviceName: "Windows" }, { signal });
+      explicitlySelected = named.id === device.id;
+    }
     if (transaction && !explicitlySelected && deviceRefId !== undefined) {
       // An ordinal qualifies a name against the retained listing, never the
       // newly fetched device order or the model's chosen reference alone.

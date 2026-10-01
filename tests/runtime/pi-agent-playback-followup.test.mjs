@@ -208,7 +208,7 @@ test("changing settings cannot turn a second model call into another accepted pl
 
 test("a locally rejected device selector can be corrected before the first playback write", async t => {
   const f = fixture(t); const [item] = await f.search();
-  const result = await f.prompt("Play that on Fictional speaker", [tool({ item_ref_id: item.item_ref_id, device_name: "Unknown device" }),
+  const result = await f.prompt(`Play "${item.name}" on Fictional speaker`, [tool({ item_ref_id: item.item_ref_id, device_name: "Unknown device" }),
     tool({ item_ref_id: item.item_ref_id, device_name: "Fictional speaker" }), answer()]);
   assert.equal(f.writes.length, 1);
   assert.equal(result.spotify_playback_failures[0].not_sent, true);

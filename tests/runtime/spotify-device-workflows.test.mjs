@@ -26,7 +26,7 @@ function fixture(t) {
 }
 test("device names never substitute another brand or a suffix; generic type remains useful", async (t) => {
   const f = fixture(t);
-  await assert.rejects(f.service.transfer({ deviceName: "iPhone" }), { code: "spotify_device_not_found" });
+  await assert.rejects(f.service.transfer({ deviceName: "iPhone" }), { code: "spotify_device_no_match" });
   await f.service.transfer({ deviceName: "phone" });
   assert.deepEqual(f.writes, [["transfer", { deviceId: "three", play: false }]]);
   await assert.rejects(f.service.transfer({ deviceName: "Kitchen" }), { code: "spotify_device_ambiguous" });
