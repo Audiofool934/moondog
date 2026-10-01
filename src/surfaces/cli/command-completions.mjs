@@ -71,6 +71,12 @@ export function withCommandCompletions(commands, {
 } = {}) {
   const firstArgument = (items) => (previous) => previous.length === 0 ? items : [];
   const specifications = {
+    update: {
+      argumentHint: "[--check] [--channel latest|beta]",
+      choices: previous => previous.at(-1) === "--channel"
+        ? choices([["latest", "Stable releases"], ["beta", "Preview releases"]])
+        : choices([["--check", "Check without installing"], ["--channel", "Choose the release channel"]]).filter(item => !previous.includes(item.value)),
+    },
     theme: { argumentHint: "[paper|charcoal|terminal|auto]", choices: firstArgument(themeChoices) },
     art: { argumentHint: "[braille|ascii|off|auto]", choices: firstArgument(artChoices) },
     motion: { argumentHint: "[on|off]", choices: firstArgument(motionChoices) },

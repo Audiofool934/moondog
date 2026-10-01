@@ -106,7 +106,7 @@ test("fresh cache skips network; stale refresh and 304 reuse the last valid body
 for (const kind of ["failed-request", "invalid-json", "oversized-header", "oversized-body", "http-500", "all-incompatible", "slow-headers", "slow-body"]) {
   test(`${kind} refresh retains fallback and the last valid cache`, async t => {
     let fail = false;
-    const { catalog, root } = await fixture(t, { timeoutMs: 40, fetchImpl: async () => {
+    const { catalog, root } = await fixture(t, { fetchImpl: async () => {
       if (!fail) return Response.json(document(metadata()));
       if (kind === "failed-request") throw new Error("PRIVATE_URL_OR_SECRET");
       if (kind === "invalid-json") return new Response("invalid");
@@ -118,6 +118,9 @@ for (const kind of ["failed-request", "invalid-json", "oversized-header", "overs
       return new Response(new ReadableStream({ start(controller) { controller.enqueue(new TextEncoder().encode("{")); } }));
     } });
     assert.equal((await catalog.refresh({ provider: "deepseek" }))[0].state, "updated");
+    // Apply the short fault deadline after seeding a valid cache; parallel CI
+    // can take more than 40 ms to perform that successful filesystem write.
+    catalog.timeoutMs = 40;
     const cacheFile = path.join(root, "model-catalog", "deepseek.json");
     const before = await readFile(cacheFile, "utf8"); fail = true;
     const result = await catalog.refresh({ provider: "deepseek", force: true });

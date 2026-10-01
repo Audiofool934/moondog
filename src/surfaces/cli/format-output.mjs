@@ -674,6 +674,8 @@ export function helpText() {
 
 From your shell:
 
+- \`moondog --version\` - show the installed version
+- \`moondog update [--check] [--channel latest|beta]\` - check for or install a published release
 - \`moondog web status|search|read [arguments] [--json]\` - look things up on public music sites through the Codex CLI
 - \`moondog studio\` - open the browser Studio for dropping in a Spotify ZIP
 - \`moondog studio --demo\` - try the Studio with made-up history; your own data is never read
@@ -715,6 +717,7 @@ From your shell:
 
 Inside the listening room:
 
+- \`/update [--check] [--channel latest|beta]\` - check for updates, or save and close this session to install one
 - \`/status\` or \`/sources\` - see where things stand
 - \`/profile\` or \`/taste\` - your profile, and why each song or artist is there
 - \`/taste report\` - the whole report on one page
