@@ -173,6 +173,8 @@ export class MoondogApplication {
     this.memoryStore = memoryStore;
     this.memoryRouteKey = memoryRouteKey;
     this.memorySession = null;
+    this.localConversations = new Map();
+    this.conversationEntry = null;
     this.spotifyConnection = spotifyConnection;
     this.musicCatalog = musicCatalog;
     this.musicSimilarity = musicSimilarity;
@@ -575,16 +577,20 @@ export class MoondogApplication {
   }
 
   commitCompletedPrompt(user, assistant, memoryMutations = []) {
-    // Follow-up replies can paraphrase live results from the process-local
-    // conversation. Keep that conversation out of generic durable memory.
-    if (this.transientSpotifyContext) return this.commitTransientPrompt(memoryMutations, user);
-    if (!this.memoryStore) return { recorded: false, memory_results: [] };
-    const session = this.ensureMemorySession();
-    return this.memoryStore.commitCompletedPrompt(session.session_id, {
-      user,
-      assistant,
-      memoryMutations,
-    });
+    const standalone = !this.conversationEntry;
+    if (standalone) this.beginConversationEntry(user);
+    let status = 'failed';
+    try {
+      // Live Spotify dialogue is saved only in the conversation journal, never
+      // in generic memory, automatic recall or reflection.
+      const result = this.transientSpotifyContext ? this.commitTransientPrompt(memoryMutations, user)
+        : this.memoryStore ? this.memoryStore.commitCompletedPrompt(this.ensureMemorySession().session_id,
+          { user, assistant, memoryMutations }) : { recorded: false, memory_results: [] };
+      status = 'completed';
+      return result;
+    } finally {
+      if (standalone) this.finishConversationEntry({ status, text: status === 'completed' ? assistant : '' });
+    }
   }
 
   recordCompletedTurn(user, assistant) {
@@ -617,15 +623,19 @@ export class MoondogApplication {
   }
 
   startNewSession(reason = "new_session") {
+    if (this.conversationEntry) throw new Error("Wait for the current turn to finish before starting a conversation");
     this.memorySession = this.memoryStore
       ? this.memoryStore.rotateSession(this.memoryRouteKey, reason)
-      : null;
+      : this.#newLocalConversation();
     this.#clearConversationState();
     return structuredClone(this.memorySession);
   }
 
   listSavedSessions({ limit = 200 } = {}) {
-    if (!this.memoryStore) return [];
+    if (!this.memoryStore) return [...this.localConversations.values()].filter(row => row.entries.length || row.pending.draft)
+      .reverse().slice(0, limit).map(row => ({ session_id: row.session_id, started_at: row.started_at,
+        updated_at: row.entries.at(-1)?.created_at ?? row.started_at, turn_count: row.entries.length * 2,
+        title: row.entries[0]?.user_text ?? row.pending.draft, ...(row.parent_session_id ? { parent_session_id: row.parent_session_id } : {}) }));
     return this.memoryStore.listSessions({
       routeKey: this.memoryRouteKey,
       limit,
@@ -633,16 +643,19 @@ export class MoondogApplication {
   }
 
   resumeSession(sessionId) {
-    if (!this.memoryStore) throw new Error("Persistent memory is unavailable");
-    this.memorySession = this.memoryStore.resumeSession(sessionId, {
-      routeKey: this.memoryRouteKey,
-    });
+    if (this.conversationEntry) throw new Error("Wait for the current conversation turn to finish");
+    if (this.memoryStore) this.memorySession = this.memoryStore.resumeSession(sessionId, { routeKey: this.memoryRouteKey });
+    else {
+      const row = this.localConversations.get(sessionId);
+      if (!row) throw new Error("Saved conversation not found");
+      this.memorySession = { session_id: row.session_id, started_at: row.started_at, route_key: this.memoryRouteKey };
+    }
     this.#clearConversationState();
     return structuredClone(this.memorySession);
   }
 
   ensureMemorySession() {
-    if (!this.memoryStore) return null;
+    if (!this.memoryStore) return this.memorySession ??= this.#newLocalConversation();
     this.memorySession ??= this.memoryStore.resumeOrStartSession(
       this.memoryRouteKey,
     );
@@ -653,6 +666,80 @@ export class MoondogApplication {
     if (!this.memoryStore) return [];
     const session = this.ensureMemorySession();
     return this.memoryStore.readSessionTurns(session.session_id, { limit });
+  }
+
+  #newLocalConversation() {
+    const session = { session_id: randomUUID(), started_at: new Date().toISOString(), route_key: this.memoryRouteKey };
+    this.localConversations.set(session.session_id, { ...session, entries: [], pending: { draft: '', queued: [] } });
+    return session;
+  }
+
+  beginConversationEntry(text) {
+    if (this.conversationEntry) throw new Error("A conversation turn is already active");
+    if (typeof text !== 'string' || !text.trim() || text.length > 8_000) throw new TypeError("Conversation input is invalid");
+    const sessionId = this.ensureMemorySession().session_id;
+    const entryId = this.memoryStore ? this.memoryStore.beginConversationEntry(sessionId, text) : randomUUID();
+    if (!this.memoryStore) {
+      const row = this.localConversations.get(sessionId);
+      row.entries.push({ entry_id: entryId, user_text: text, assistant_text: '', outcome: 'running', transient: false, created_at: new Date().toISOString() });
+      row.pending.draft = '';
+    }
+    this.conversationEntry = { sessionId, entryId };
+    return entryId;
+  }
+
+  finishConversationEntry(outcome) {
+    const active = this.conversationEntry;
+    if (!active) return;
+    try {
+      const result = { ...outcome, transient: this.transientSpotifyContext || outcome.transient === true };
+      if (this.memoryStore) this.memoryStore.finishConversationEntry(active.sessionId, active.entryId, result);
+      else Object.assign(this.localConversations.get(active.sessionId).entries.find(row => row.entry_id === active.entryId),
+        { assistant_text: result.text ?? '', outcome: result.status ?? 'failed', transient: result.transient });
+    } finally { this.conversationEntry = null; }
+  }
+
+  conversationEntries({ limit = 200 } = {}) {
+    const sessionId = this.ensureMemorySession().session_id;
+    return this.memoryStore ? this.memoryStore.readConversationEntries(sessionId, { limit })
+      : structuredClone(this.localConversations.get(sessionId).entries.slice(-Math.min(500, limit)));
+  }
+
+  currentConversationTurns({ limit = 40 } = {}) {
+    return this.conversationEntries({ limit: Math.ceil(limit / 2) }).flatMap(entry => [
+      { role: 'user', text: entry.user_text, created_at: entry.created_at, transient: entry.transient },
+      { role: 'assistant', text: entry.assistant_text || (entry.outcome === 'completed' ? ''
+        : 'This turn did not finish. External actions may have occurred; inspect their state before repeating them.'),
+      created_at: entry.created_at, transient: entry.transient },
+    ]).filter(turn => turn.text).slice(-limit);
+  }
+
+  conversationPending(pending) {
+    const sessionId = this.ensureMemorySession().session_id;
+    if (this.memoryStore) return this.memoryStore.conversationPending(sessionId, pending);
+    const row = this.localConversations.get(sessionId);
+    if (pending) row.pending = structuredClone(pending);
+    return structuredClone(row.pending);
+  }
+
+  rewindConversation(entryId) {
+    if (this.conversationEntry || this.pendingPlaylistPromptTransaction) throw new Error("Wait for the current turn to finish before rewinding");
+    const sessionId = this.ensureMemorySession().session_id;
+    let next;
+    if (this.memoryStore) next = this.memoryStore.forkConversation(sessionId, entryId, { routeKey: this.memoryRouteKey });
+    else {
+      const original = this.localConversations.get(sessionId);
+      const index = original.entries.findIndex(entry => entry.entry_id === entryId);
+      if (index < 0) throw new Error("The selected turn is no longer available");
+      next = { ...this.#newLocalConversation(), parent_session_id: sessionId, draft: original.entries[index].user_text };
+      const branch = this.localConversations.get(next.session_id);
+      branch.parent_session_id = sessionId;
+      branch.entries = structuredClone(original.entries.slice(0, index)).map(entry => ({ ...entry, entry_id: randomUUID() }));
+      branch.pending.draft = next.draft;
+    }
+    this.memorySession = next;
+    this.#clearConversationState();
+    return structuredClone(next);
   }
 
   setSpotifyConnection(connection) {

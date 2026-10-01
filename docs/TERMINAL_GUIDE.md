@@ -1162,13 +1162,15 @@ Restoring a conversation loads its recent transcript and model context together.
 Run `/new` to start another conversation while keeping the previous one saved.
 Listening-profile state and durable memories remain available across conversations and model or authentication changes.
 
-Only completed user and assistant exchanges are recorded.
+Use `/rewind` (or Alt+R) to choose one of the latest 200 submitted messages, or `/rewind latest` for the last message. Moondog saves a new branch before that message and puts the original text in the editor. Edit it, then press Enter. The original conversation remains in `/resume`; repeated rewinds create separate branches. Each branch restores up to 40 recent user/assistant messages as model context.
 
-Live Spotify top taste, playback, queue and device reads make the active conversation transient. Their replies and follow-up paraphrases remain usable in process but are excluded from generic transcript storage, recall and reflection until `/new` or a conversation reset. Explicit user preferences can still persist: the host verifies an exact quote from the current user message and saves that quote alone, without model paraphrases or Spotify output. Unverified staged claims are discarded. Forgetting an existing memory remains available. Search-only conversations can still be recorded because their results are public catalog metadata. Explicit local listening-profile corrections remain separate from generic conversation memory.
+Rewind waits for active work to stop. If a provider ignores cancellation for more than five seconds, no branch change is made; try again once the turn finishes. Queued messages and an unsent draft stay with the original conversation. When resumed, queued drafts are paused: press Up with an empty editor to retrieve one, then explicitly send it. Old tool calls, selections, playlist previews and confirmation authority are cleared. No Spotify action is undone or replayed, and explicit preferences/profile corrections remain in place.
 
-Aborted turns, raw tool traces, and prompt-local candidate IDs are not persisted as the conversation transcript.
+A separate conversation journal records submitted input, rendered replies and completion/cancellation/interruption outcomes, including Spotify action receipts. It persists in the same private SQLite store, and works in process when persistent storage is unavailable. Drafts and branch relationships survive restart. A turn interrupted by process failure is shown as unfinished with a warning that external actions may have occurred. Raw tool traces, credentials and reusable action plans are not journaled. An already-rendered song title or receipt remains historical untrusted context; current state and references must be read again after restoring a conversation.
 
-Each completed exchange also becomes a typed short-term dialogue episode.
+Live Spotify reads and follow-up paraphrases are excluded from generic transcript storage, automatic recall and reflection. They can be shown again only through the explicitly selected conversation history. Explicit user preferences still persist after the host verifies an exact quote; model paraphrases and unverified staged claims are discarded. Forgetting a memory remains available. Public search-only conversation can still contribute generic dialogue episodes. Rewound branches exclude their original/sibling conversation's episodes and generic transcript from automatic history recall, while explicit durable preferences remain available.
+
+Completed non-transient exchanges also become typed short-term dialogue episodes. Cancelled or interrupted turns remain only in conversation history and do not commit staged memory mutations.
 
 `/memory` shows recent episodes, dialogue context, and active durable claims.
 

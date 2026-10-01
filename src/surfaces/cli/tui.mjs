@@ -106,6 +106,7 @@ const slashCommands = [
   { name: "remember", description: "Ask Moondog to remember something" },
   { name: "forget", description: "Forget one memory by ID" },
   { name: "resume", description: "Pick up a saved conversation" },
+  { name: "rewind", description: "Edit an earlier message on a new branch · Alt+R" },
   { name: "new", description: "Start fresh; this conversation stays saved" },
   { name: "help", description: "Commands and shortcuts" },
   { name: "quit", description: "Leave Moondog" },
@@ -238,6 +239,9 @@ export async function runMoondogTui({
   let homeFocused = false;
   let homeSelected = 0;
   let busy = false;
+  let activeSubmission = null;
+  let rewindPending = false;
+  let queuePaused = false;
   const messageQueue = [];
   const queuedLineCount = () => messageQueue.length === 0
     ? 0
@@ -270,7 +274,7 @@ export async function runMoondogTui({
     if (id) recallBySession.set(id, editor.recallEntries());
   };
   const recallFromTurns = () => {
-    const turns = application.currentSessionTurns?.({ limit: 100 }) ?? [];
+    const turns = application.currentConversationTurns?.({ limit: 100 }) ?? application.currentSessionTurns?.({ limit: 100 }) ?? [];
     const history = [];
     for (let index = turns.length - 1; index >= 0 && history.length < 100; index -= 1) {
       const turn = turns[index];
@@ -472,7 +476,8 @@ export async function runMoondogTui({
           ? "↑ ↓ choose · enter open · esc type"
           : homeVisible && !editor.getText()
             ? width >= 60 ? "tab explore · ctrl+p commands       enter send · shift+enter newline" : "tab explore · ctrl+p commands"
-            : width >= 72 ? "enter send · shift+enter newline" : "enter send";
+            : queuePaused && messageQueue.length ? "queued drafts paused · up edits the last"
+            : width >= 72 ? "enter send · shift+enter newline · alt+r rewind" : "enter send · /rewind";
         lines.push(paintBrandLine(` ${theme.faint(keys)}`, width, theme));
       }
       return lines;
@@ -558,6 +563,7 @@ export async function runMoondogTui({
 
   const cleanup = () => {
     if (cleanedUp) return;
+    try { application.conversationPending?.({ draft: editor.getText(), queued: [...messageQueue] }); } catch { /* Terminal cleanup must still run when storage is unavailable. */ }
     cleanedUp = true;
     clearInterval(indicator);
     indicator = null;
@@ -1273,6 +1279,53 @@ export async function runMoondogTui({
     setFooter(`Spotify ${action}: done.`, success);
   };
 
+  const savePendingConversation = () => application.conversationPending?.({ draft: editor.getText(), queued: [...messageQueue] });
+  const restorePendingConversation = () => {
+    const pending = application.conversationPending?.();
+    if (!pending) return;
+    editor.setText(pending.draft);
+    messageQueue.splice(0, messageQueue.length, ...pending.queued);
+    queuePaused = pending.queued.length > 0;
+    releaseQueue = false;
+  };
+  const rewindConversation = async (args) => {
+    if (args.length > 1) throw new Error("Use /rewind or /rewind latest.");
+    if (typeof application.conversationEntries !== 'function' || typeof application.rewindConversation !== 'function') {
+      throw new Error("Conversation rewind isn't available in this runtime.");
+    }
+    const entries = application.conversationEntries({ limit: 200 });
+    if (!entries.length) { setFooter("No earlier messages yet."); return; }
+    let selected = args[0] === 'latest' ? { value: entries.at(-1).entry_id } : args[0] ? { value: args[0] } : null;
+    if (!selected) selected = await choose(entries.map((entry, index) => ({
+      value: entry.entry_id,
+      label: `${index + 1}. ${sanitizeTerminalText(entry.user_text).replace(/\s+/gu, ' ').trim()}`,
+      description: `${entry.outcome} · ${entry.created_at.slice(0, 16).replace('T', ' ')}`,
+    })).reverse(), entries.at(-1).entry_id, "Rewind to a message · original stays saved");
+    if (cleanedUp) return;
+    if (!selected) { setFooter("Rewind cancelled. Queued drafts stay paused."); return; }
+    storeRecall();
+    savePendingConversation();
+    const branch = typeof activeRuntime.rewindTo === 'function'
+      ? await activeRuntime.rewindTo(selected.value)
+      : application.rewindConversation(selected.value);
+    if (typeof activeRuntime.rewindTo !== 'function') activeRuntime.restoreSession?.();
+    profileDiscoveryDraft = null;
+    conversationTitle = '';
+    transcript.clear();
+    homeVisible = false;
+    homeFocused = false;
+    editor.focused = true;
+    for (const turn of application.currentConversationTurns({ limit: 40 })) {
+      if (turn.role === 'user') addUserMessage(sanitizeTerminalText(turn.text));
+      else addMoondogMessage(turn.text);
+    }
+    installRecall(branch.session_id, recallFromTurns());
+    restorePendingConversation();
+    addMoondogMessage("Branched before this message. Edit it below, then send. The original is in /resume. Spotify actions and saved preferences have not been undone; inspect the original receipts before repeating an action.");
+    setFooter("Earlier message restored · edit before sending · /resume keeps both branches", success);
+    tui.requestRender(true);
+  };
+
   const resumeConversation = async (args) => {
     if (args.length > 1) throw new Error("Use /resume, or /resume <conversation-id>.");
     if (typeof application.listSavedSessions !== "function" ||
@@ -1308,6 +1361,7 @@ export async function runMoondogTui({
       return;
     }
     storeRecall();
+    savePendingConversation();
     conversationTitle = "";
     application.resumeSession(selected.value);
     if (!recallBySession.has(selected.value)) {
@@ -1315,7 +1369,9 @@ export async function runMoondogTui({
     }
     editor.replaceRecall(recallBySession.get(selected.value));
     activeRuntime.restoreSession();
-    const turns = application.currentSessionTurns({ limit: 40 });
+    const turns = application.currentConversationTurns?.({ limit: 40 }) ?? application.currentSessionTurns({ limit: 40 });
+    restorePendingConversation();
+    profileDiscoveryDraft = null;
     transcript.clear();
     homeVisible = turns.length === 0;
     homeFocused = false;
@@ -1358,6 +1414,10 @@ export async function runMoondogTui({
         addMoondogMessage(formatLocalResult("taste", await application.runLocalCommand("taste", runtimeStatus)));
         setFooter("Full report above. /taste opens the profile.");
       } else await openProfile();
+      return;
+    }
+    if (command === "rewind") {
+      await rewindConversation(args);
       return;
     }
     if (command === "resume") {
@@ -1506,7 +1566,11 @@ export async function runMoondogTui({
     if (command === "new") {
       if (args.length) throw new Error("/new doesn't take anything after it.");
       storeRecall();
+      savePendingConversation();
       application.startNewSession?.("user_new");
+      editor.setText('');
+      messageQueue.splice(0);
+      queuePaused = false;
       installRecall(sessionId(), []);
       activeRuntime.reset();
       profileDiscoveryDraft = null;
@@ -1575,7 +1639,7 @@ export async function runMoondogTui({
         return;
       }
       try {
-        if (!["home", "theme", "art", "motion", "model", "resume", "new", "taste", "profile", "import"].includes(command)) enterConversation();
+        if (!["home", "theme", "art", "motion", "model", "resume", "rewind", "new", "taste", "profile", "import"].includes(command)) enterConversation();
         if (command !== "auth") editor.addToHistory(value);
         localCommandController = ["web", "lyrics"].includes(command) ? new AbortController() : null;
         const controller = localCommandController;
@@ -1713,7 +1777,28 @@ export async function runMoondogTui({
   };
   editor.onSubmit = async (rawValue) => {
     const pending = sanitizeTerminalText(rawValue).trim();
-    if (busy) {
+    if (/^\/rewind(?:\s|$)/u.test(pending)) {
+      if (rewindPending) return;
+      rewindPending = true;
+      releaseQueue = false;
+      queuePaused = messageQueue.length > 0;
+      let timer;
+      try {
+        if (busy) {
+          if (!activeSubmission || !cancelWork) throw new Error("Wait for this local operation to finish before rewinding.");
+          cancellationRequested = true;
+          cancelWork();
+          setFooter("Stopping the current turn before rewind...");
+          await Promise.race([activeSubmission, new Promise((_, reject) => {
+            timer = setTimeout(() => reject(new Error("The current turn is still stopping; no rewind was made. Try again after it finishes.")), 5_000);
+          })]);
+        }
+        if (!cleanedUp) await submitListeningTurn(rawValue);
+      } catch (error) { setFooter(sanitizeTerminalText(error.message), warning); }
+      finally { clearTimeout(timer); rewindPending = false; }
+      return;
+    }
+    if (busy || rewindPending) {
       if (pending === "/quit" || pending === "/exit") {
         shutdown();
         return;
@@ -1725,10 +1810,12 @@ export async function runMoondogTui({
       if (!cleanedUp) tui.requestRender();
       return;
     }
-    releaseQueue = true;
-    try {
-      await submitListeningTurn(rawValue);
-    } finally {
+    releaseQueue = !queuePaused;
+    const submission = submitListeningTurn(rawValue);
+    activeSubmission = submission;
+    try { await submission; }
+    finally {
+      if (activeSubmission === submission) activeSubmission = null;
       if (!busy && !cleanedUp && releaseQueue) settleQueue();
     }
   };
@@ -1751,6 +1838,10 @@ export async function runMoondogTui({
       if (busy) return { consume: true };
       if (matchesKey(data, "ctrl+c")) { closeProfile(); return { consume: true }; }
       return undefined;
+    }
+    if (matchesKey(data, "alt+r")) {
+      void editor.onSubmit('/rewind');
+      return { consume: true };
     }
     if (!busy && homeVisible && !editor.getText()) {
       if (matchesKey(data, "tab") || matchesKey(data, "shift+tab")) {
@@ -1784,7 +1875,7 @@ export async function runMoondogTui({
         }
       }
     }
-    if (busy && !editor.isShowingAutocomplete() && matchesKey(data, "up") && !editor.getText() && messageQueue.length) {
+    if ((busy || queuePaused) && !editor.isShowingAutocomplete() && matchesKey(data, "up") && !editor.getText() && messageQueue.length) {
       editor.setText(messageQueue.pop());
       tui.requestRender();
       return { consume: true };

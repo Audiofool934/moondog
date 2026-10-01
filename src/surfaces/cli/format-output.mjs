@@ -738,6 +738,8 @@ Inside the listening room:
 - \`/reload\` - reload model settings and sign-ins
 - \`/remember [kind] <text>\` - ask me to remember something
 - \`/forget <memory-id>\` - forget something
+- \`/rewind\` or Alt+R - edit an earlier message on a new branch; the original stays saved
+- \`/rewind latest\` - edit the most recent message
 - \`/resume\` - pick up a saved conversation
 - \`/resume <session-id>\` - go straight to one
 - \`/new\` - start fresh; the last one stays saved
