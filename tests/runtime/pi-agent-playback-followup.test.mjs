@@ -28,6 +28,7 @@ function fixture(t, { status = 204, cancelOnWrite = false } = {}) {
         return status === 204 ? new Response(null, { status }) : Response.json({ error: { status, message: "PRIVATE_ERROR" } }, { status });
       }
       if (parsed.pathname === "/v1/search") return Response.json({ tracks: { items: parsed.searchParams.get("q").includes("刘森") ? [songs[0]] : songs.slice(1) } });
+      if (parsed.pathname === "/v1/me/player/devices") return Response.json({ devices: [{ id: "fictionalDevice", name: "Fictional speaker", type: "Speaker", is_active: true, is_restricted: false, supports_volume: true }] });
       throw new Error(`Unexpected fixture request: ${parsed.pathname}`);
     } });
   const application = new MoondogApplication({ importsRoot: "/private/moondog-synthetic-missing-source",
@@ -86,7 +87,7 @@ test("a local invalid URI permits a corrected call in the same turn and never cl
   assert.equal(result.spotify_playback_failures[0].not_sent, true);
   assert.equal(result.spotify_playback_failures[0].outcome_unknown, false);
   assert.equal(result.spotify_write_receipts[0].state, "accepted");
-  assert.doesNotMatch(result.text, /未获确认|不确定|本地被拒绝/u);
+  assert.doesNotMatch(result.text, /未获确认|不确定/u);
 });
 
 test("misplaced exact references resolve, and a second model call cannot replay that accepted selection", async t => {
@@ -175,4 +176,40 @@ test("a later local rejection cannot hide behind an earlier accepted playback re
   assert.equal(f.writes.length, 1);
   assert.match(result.text, /Spotify 已接受/u);
   assert.match(result.text, /本地被拒绝/u);
+});
+
+for (const pasted of ["spotify:track:fictionalUser_other", "https://open.spotify.com/track/fictionalUser-other"]) {
+  test(`a malformed pasted target never authorizes its valid prefix: ${pasted}`, async t => {
+    const f = fixture(t);
+    const result = await f.prompt(`播放 ${pasted}`, [tool({ uri: "spotify:track:fictionalUser" }), answer()]);
+    assert.equal(f.writes.length, 0);
+    assert.equal(result.spotify_playback_failures[0].code, "spotify_playback_source_untrusted");
+  });
+}
+
+test("success for a different selection cannot erase an earlier locally rejected attempt", async t => {
+  const f = fixture(t); const [first, second] = await f.search();
+  const result = await f.prompt("播放第一个版本，再播放第二个版本", [tool({ uri: `spotify:track:${first.item_ref_id}` }),
+    tool({ item_ref_id: second.item_ref_id }), answer("两个版本都播放了。")]);
+  assert.equal(f.writes.length, 1);
+  assert.match(result.text, /本地被拒绝/u);
+  assert.match(result.text, /Spotify 已接受/u);
+  assert.doesNotMatch(result.text, /两个版本都播放了/u);
+});
+
+test("changing settings cannot turn a second model call into another accepted playback write", async t => {
+  const f = fixture(t); const [item] = await f.search();
+  const result = await f.prompt("播放第一首并开启随机播放", [tool({ item_ref_id: item.item_ref_id }),
+    tool({ action: "shuffle", state: true }), tool({ item_ref_id: item.item_ref_id }), answer()]);
+  assert.equal(f.writes.filter(write => write.path === "/v1/me/player/play").length, 1);
+  assert.equal(result.spotify_write_receipts.length, 2);
+});
+
+test("a locally rejected device selector can be corrected before the first playback write", async t => {
+  const f = fixture(t); const [item] = await f.search();
+  const result = await f.prompt("Play that on Fictional speaker", [tool({ item_ref_id: item.item_ref_id, device_name: "Unknown device" }),
+    tool({ item_ref_id: item.item_ref_id, device_name: "Fictional speaker" }), answer()]);
+  assert.equal(f.writes.length, 1);
+  assert.equal(result.spotify_playback_failures[0].not_sent, true);
+  assert.equal(result.spotify_write_receipts[0].state, "accepted");
 });

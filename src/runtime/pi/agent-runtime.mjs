@@ -5754,8 +5754,8 @@ Grounding and evidence rules:
 - Library results expose metadata and aggregate observation summaries, not audio analysis. Do not invent mood, tempo, instrumentation, or sonic properties.
 - Never invent a track, metadata value, personal reason, or library result.
 - A playlist plan may contain only track refs from active candidate_set_ids returned in this prompt or from the pending plan's revision candidate set in trusted product context, whether their candidate_scope is private_library, private_history, or external_catalog. Use moondog_playlist_plan to validate the final order and reasons.
-- A request to play, queue, or put on one named song is playback, in any language or quote style (for example 播放一首艺人的“歌曲” or Play “Title” by Artist). Use moondog_spotify_search with the title and artist first, then pass the matching track_ref_id directly to moondog_spotify_player_control (action resume) or moondog_spotify_queue_add. These Spotify references need no resolution step. Verify both title and artist when supplied; ask for a choice when versions or artists remain ambiguous, and report no match if none fits. A request to play any one song by a named artist also uses Spotify search and one matching track. Do not create a playlist plan or call artist similarity for these requests. Use imported-library search only when the user asks for their library; use external catalog and Spotify resolution only as a fallback when needed.
-- A Spotify playback error is an action failure, never a playlist-plan validation failure. Report the tool's HTTP status and reason when present. An unspecified rejection does not establish device inactivity, account tier, or missing permission. Read current player/device state to diagnose when useful; do not guess, transfer playback, change devices, log in, or retry a failed/uncertain write automatically.
+- A request to play, queue, or put on one named song is playback, in any language or quote style (for example 播放一首艺人的“歌曲” or Play “Title” by Artist). Use moondog_spotify_search with the title and artist first, then pass the matching item_ref_id to moondog_spotify_player_control (action resume, item_ref_id) or track_refs: [track_ref_id]; moondog_spotify_queue_add takes item_ref_id or track_ref_id. These Spotify references need no resolution step. Verify both title and artist when supplied; ask for a choice when versions or artists remain ambiguous, and report no match if none fits. A request to play any one song by a named artist also uses Spotify search and one matching track. Do not create a playlist plan or call artist similarity for these requests. Use imported-library search only when the user asks for their library; use external catalog and Spotify resolution only as a fallback when needed.
+- A Spotify playback error is an action failure, never a playlist-plan validation failure. Report the tool's HTTP status and reason when present. An unspecified rejection does not establish device inactivity, account tier, or missing permission. Read current player/device state to diagnose when useful; do not guess, transfer playback, change devices, log in, or replay a dispatched rejected/uncertain write automatically. A not_sent failure is a pre-dispatch rejection with no external write: correct its arguments using the retained host references. A fresh explicit user instruction is a new action; an earlier local rejection does not require extra confirmation.
 - A resolved moondog_music_catalog_search or moondog_music_artist_similarity result is an intermediate candidate set, never a final answer, except the single named song you are about to play or queue. Otherwise you must call moondog_playlist_plan before naming or listing any returned external tracks. Do not end the turn directly after either discovery tool.
 - Copy the user's explicit track count into requested_track_count when calling moondog_playlist_plan.
 - Refer to songs by title and artist in selection reasons and ordering notes, never by internal track refs or shortened IDs.
@@ -6131,7 +6131,7 @@ function playbackOnlyRequest(text) {
 function renderSpotifyPlaybackFailure(failure, promptText) {
   const chinese = responseLanguage(promptText) === "zh";
   if (failure.not_sent) return chinese
-    ? `这次工具参数在本地被拒绝（${failure.code}），没有向 Spotify 发送播放请求。请使用保留的歌曲引用修正参数，或重新搜索；后续明确的播放请求可以直接继续。`
+    ? `一次工具参数在本地被拒绝（${failure.code}），该次尝试没有向 Spotify 发送播放请求。请使用保留的歌曲引用修正参数，或重新搜索；后续明确的播放请求可以直接继续。`
     : `This tool input was rejected locally (${failure.code}); no playback request was sent to Spotify. Correct it with a retained item reference or search again. A fresh explicit playback request can proceed.`;
   const evidence = [failure.code, failure.status ? `HTTP ${failure.status}` : "", failure.reason].filter(Boolean).join("; ");
   const outcome = failure.action === "lookup"
@@ -6763,13 +6763,7 @@ export class PiAgentRuntime {
           this.activePromptState?.spotifyLookupFailures.push(failure);
         },
         onSpotifyWriteReceipt: (receipt) => {
-          const state = this.activePromptState;
-          if (state && receipt.state === "accepted") {
-            for (const failure of state.spotifyPlaybackFailures) {
-              if (failure.not_sent && failure.action === receipt.action) state.resolvedPlaybackFailures.add(failure);
-            }
-          }
-          state?.spotifyWriteReceipts.push(receipt);
+          this.activePromptState?.spotifyWriteReceipts.push(receipt);
         },
         onMemoryRemember: (parameters) => {
           if (!this.activePromptState) {
@@ -6906,7 +6900,6 @@ export class PiAgentRuntime {
       spotifyQueuePlan: null,
       spotifyPlayback: [],
       spotifyPlaybackFailures: [],
-      resolvedPlaybackFailures: new Set(),
       spotifyLookupFailures: [],
       playbackLookups: [],
       spotifyWriteReceipts: [],
@@ -6975,7 +6968,7 @@ export class PiAgentRuntime {
       ...(promptState.spotifyPlaylistPartialEffect ? { spotify_playlist_partial_effect: structuredClone(promptState.spotifyPlaylistPartialEffect) } : {}),
     });
     const unresolvedPlaybackFailures = () => promptState.spotifyPlaybackFailures.filter(failure =>
-      !promptState.resolvedPlaybackFailures.has(failure) && failure.code !== "spotify_playback_already_accepted");
+      failure.code !== "spotify_playback_already_accepted");
     const spotifyEffectTexts = () => {
       const receipts = promptState.spotifyWriteReceipts.map((receipt) => renderSpotifyWriteReceipt(receipt, text));
       if (promptState.spotifyQueuePlan) receipts.push(renderSpotifyQueuePlan(promptState.spotifyQueuePlan, text));

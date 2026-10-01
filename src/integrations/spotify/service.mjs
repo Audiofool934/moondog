@@ -25,19 +25,23 @@ const trackUriPattern = /^spotify:track:[A-Za-z0-9]{1,128}$/u;
 const contextUriPattern = /^spotify:(?:album|artist|playlist):[A-Za-z0-9]{1,128}$/u;
 
 export class SpotifyServiceError extends Error {
-  constructor(code, message, { outcomeUnknown = false } = {}) {
+  constructor(code, message, { outcomeUnknown = false, actionNotDispatched = false } = {}) {
     super(message);
     this.name = "SpotifyServiceError";
     this.code = code;
     this.provider = "spotify";
     this.outcomeUnknown = outcomeUnknown;
     // These errors are raised by local argument validators before client dispatch.
-    if (!outcomeUnknown && /^(?:invalid_|conflicting_)/u.test(code)) this.actionNotDispatched = true;
+    if (!outcomeUnknown && (actionNotDispatched || /^(?:invalid_|conflicting_)/u.test(code))) this.actionNotDispatched = true;
   }
 }
 
 function fail(code, message, options) {
   throw new SpotifyServiceError(code, message, options);
+}
+
+function failBeforeDispatch(code, message) {
+  fail(code, message, { actionNotDispatched: true });
 }
 
 function isPlainObject(value) {
@@ -507,7 +511,7 @@ function listedDevices(result) {
 
 function requireTransferDevice(chosen, display) {
   if (chosen.length === 1 && chosen[0].is_restricted === true) {
-    fail(
+    failBeforeDispatch(
       "spotify_device_restricted",
       `Spotify does not allow Web API control on ${clipText(chosen[0].name, 80)}. Pick another device.`,
     );
@@ -515,7 +519,7 @@ function requireTransferDevice(chosen, display) {
   const controllable = chosen.filter((device) => device.is_restricted !== true);
   if (controllable.length === 1 && chosen.length === 1) return controllable[0];
   if (controllable.length === 0) {
-    fail(
+    failBeforeDispatch(
       "spotify_device_restricted",
       fitDeviceMessage(
         "Spotify will not take playback on the matching devices: ",
@@ -524,7 +528,7 @@ function requireTransferDevice(chosen, display) {
       ),
     );
   }
-  fail(
+  failBeforeDispatch(
     "spotify_device_ambiguous",
     fitDeviceMessage(
       `Several Spotify devices match "${display}": `,
@@ -539,7 +543,7 @@ async function resolveNamedDevice(client, deviceName, { signal } = {}) {
   const devices = listedDevices(await client.getDevices({ signal }));
   signal?.throwIfAborted();
   if (devices.length === 0) {
-    fail(
+    failBeforeDispatch(
       "spotify_device_not_found",
       "No Spotify devices are visible. Open Spotify on that device and try again.",
     );
@@ -564,7 +568,7 @@ async function resolveNamedDevice(client, deviceName, { signal } = {}) {
         (device) => (device.type ?? "").toLocaleLowerCase("en-US") === type,
       );
   if (chosen.length === 0) {
-    fail(
+    failBeforeDispatch(
       "spotify_device_not_found",
       fitDeviceMessage(
         `No Spotify device matches "${clipText(query.display, 40)}". Visible now: `,
@@ -593,12 +597,12 @@ async function queueDeviceId(client, requestedDeviceId, { signal } = {}) {
   if (active) return active.id;
   if (controllable.length === 1) return controllable[0].id;
   if (devices.length > 0 && controllable.length === 0) {
-    fail(
+    failBeforeDispatch(
       "spotify_device_restricted",
       "Spotify's available devices do not accept Web API controls. Open Spotify on another device and try again.",
     );
   }
-  fail(
+  failBeforeDispatch(
     "spotify_active_device_required",
     "No active Spotify device is available. Open Spotify on one device and start playback, then try again.",
   );
@@ -634,10 +638,10 @@ export function createSpotifyService(options = {}) {
         const devices = listedDevices(await client.getDevices({ signal }));
         signal?.throwIfAborted();
         const matching = devices.filter((item) => id ? item.id === id : item.is_active === true);
-        if (matching.length === 0) fail("spotify_device_not_found", "That Spotify device is no longer available. List devices again or open Spotify on it.");
+        if (matching.length === 0) failBeforeDispatch("spotify_device_not_found", "That Spotify device is no longer available. List devices again or open Spotify on it.");
         device = requireTransferDevice(matching, "selected device");
       }
-      if (input.forVolume && device.supports_volume === false) fail("spotify_volume_unsupported", "Spotify cannot change this device's volume through the Web API. Use its hardware or Spotify app volume control.");
+      if (input.forVolume && device.supports_volume === false) failBeforeDispatch("spotify_volume_unsupported", "Spotify cannot change this device's volume through the Web API. Use its hardware or Spotify app volume control.");
       return device;
     },
 

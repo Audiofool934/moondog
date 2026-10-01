@@ -1963,3 +1963,15 @@ test("pending-plan resume schema rejects mixed sources and non-playback actions"
   ]) assert.equal(validate(parameters), false, JSON.stringify(parameters));
   application.close();
 });
+
+test("repeated model calls for one pending-plan playback do not replay the accepted write", async t => {
+  const { application, service } = spotifyApplication(); t.after(() => application.close());
+  const { faux, runtime } = configuredRuntime(application);
+  await proposeTwoTrackPlan(faux, runtime);
+  const play = () => fauxAssistantMessage([fauxToolCall("moondog_spotify_player_control", { action: "resume", pending_plan: true })], { stopReason: "toolUse" });
+  faux.setResponses([play(), play(), fauxAssistantMessage([fauxText("Started the plan.")])]);
+  const result = await runtime.prompt("Play the pending plan now");
+  assert.equal(service.calls.filter(([action]) => action === "resume").length, 1);
+  assert.equal(result.spotify_write_receipts[0].state, "accepted");
+  assert.equal(result.spotify_playback_failures[0].code, "spotify_playback_already_accepted");
+});
