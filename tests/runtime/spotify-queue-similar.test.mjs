@@ -58,7 +58,7 @@ test("similar queue excludes current, observed and recently accepted identities 
   assert.equal(first.queue_observation_truncated, true);
   assert.equal((await application.spotifyQueueSimilar({ count: 3 })).state, "no_candidates");
   assert.equal(calls.filter((value) => value === "write").length, 1);
-  await assert.rejects(application.spotifyQueueSimilar({ count: 11 }), { code: "invalid_similar_queue_count" });
+  await assert.rejects(application.spotifyQueueSimilar({ count: 13 }), { code: "invalid_similar_queue_count" });
 });
 
 test("similar queue applies Avoid before selection and rechecks corrections before writing; Undo restores eligibility", async (context) => {

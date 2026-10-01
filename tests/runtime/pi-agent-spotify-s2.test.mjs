@@ -1924,9 +1924,11 @@ for (const scenario of ["named_resume", "extra_candidate", "raw_uri", "other_tra
       : scenario === "chinese_play" ? "放一首 Can You Hear the Music"
       : "Play Can You Hear the Music and tell me what you found";
     const result = await runtime.prompt(prompt);
-    assert.equal(calls.length, 1);
+    assert.equal(calls.length, scenario === "raw_uri" ? 0 : 1);
     assert.doesNotMatch(result.text, /Ungrounded recommendation sentinel/u);
-    if (scenario === "named_resume") {
+    if (scenario === "raw_uri") {
+      assert.match(result.text, /spotify_playback_source_untrusted/u);
+    } else if (scenario === "named_resume") {
       assert.equal(result.text, "Started playback of Can You Hear the Music - Mara Vale on Spotify.");
     } else if (["extra_candidate", "put_on", "chinese_play"].includes(scenario)) {
       assert.match(result.text, /Can You Hear the Music/u);

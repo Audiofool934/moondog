@@ -1,5 +1,15 @@
 const catalog = [
   {
+    id: "spotify.discovery.search", version: "1", state: "enabled", effect: "read_external", requires_spotify: true,
+    description: "Verify open-world music hypotheses with bounded Spotify queries, retaining a shared candidate pool.",
+    agent_tool: { name: "moondog_spotify_discover", label: "Discover verified Spotify tracks" },
+  },
+  {
+    id: "spotify.queue.batch", version: "1", state: "enabled", effect: "write_external", requires_spotify: true,
+    description: "Queue up to twelve verified tracks for an explicit listener request with Avoid, deduplication and partial receipts.",
+    agent_tool: { name: "moondog_spotify_queue_batch", label: "Queue the verified selection" },
+  },
+  {
     id: "web.search", version: "1", state: "enabled", effect: "read_external",
     description: "Search public music reviews, news, interviews and event information through the local Codex CLI.",
     requires_web_research: true,

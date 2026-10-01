@@ -130,7 +130,8 @@ The [model setup guide](docs/TERMINAL_GUIDE.md#enable-agent-conversation) lists 
 
 While an answer is on the way, each step appears in the conversation as it starts.
 The steps stay above the reply, with a count of what finished, what failed, and what was not confirmed.
-Every song the agent picks has to come from a real list it looked up.
+The agent can use musical knowledge and web research to find candidates, then verify the recordings on Spotify before playing or queueing them.
+For example, “再来十二首国风DJ，queue” asks it to add up to twelve verified songs directly; your history guides the choice without limiting it to your library.
 What it reads about the wider music world stays separate from what it knows about you.
 
 | Optional connection | What it adds |

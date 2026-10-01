@@ -145,7 +145,7 @@ for (const count of [0, 2]) {
     assert.equal(f.writes.length, 0);
     assert.match(result.text, /未发送播放或加入队列操作/u);
     assert.doesNotMatch(result.text, /playlist plan|Playing now|UNTRUSTED/u);
-    if (count > 1) assert.match(result.text, /请选择/u);
+    if (count > 1) assert.match(result.text, /回复编号选择/u);
   });
 }
 

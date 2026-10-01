@@ -252,7 +252,7 @@ function safeTrackResult(track) {
       result.discovery_basis = structuredClone(track.discoveryBasis);
     }
     result.knownness = {
-      imported_library: "not_found_by_exact_title_artist",
+      imported_library: track.knownLibraryMatch ? "found_by_exact_title_artist" : "not_found_by_exact_title_artist",
       listening_history: "not_checked",
     };
     if (track.primaryGenre) result.primary_genre = track.primaryGenre;
@@ -1064,7 +1064,7 @@ export class SyntheticDomainServices {
     };
   }
 
-  registerExternalCandidateSet({ tracks, source } = {}) {
+  registerExternalCandidateSet({ tracks, source, excludeKnown = true } = {}) {
     const provider =
       isPlainObject(source) && externalCatalogProviders.has(source.provider)
         ? source.provider
@@ -1101,10 +1101,11 @@ export class SyntheticDomainServices {
           normalizeSearchText(track.artistCredit) ===
             normalizeSearchText(internal.artistCredit),
       );
-      if (libraryMatch) {
+      if (excludeKnown && libraryMatch) {
         excludedLibraryMatches += 1;
         continue;
       }
+      internal.knownLibraryMatch = libraryMatch;
       if (this.#tracksById.has(internal.trackRefId)) {
         fail("external_candidate_invalid", "External catalog candidates are duplicated.");
       }

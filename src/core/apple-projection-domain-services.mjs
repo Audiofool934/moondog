@@ -1738,7 +1738,11 @@ export class AppleProjectionDomainServices {
     ));
   }
 
-  registerExternalCandidateSet({ tracks, source } = {}) {
+  isKnownDiscoveryTrack(track) {
+    return (this.#listeningHistoryStore?.listenedTracks?.({ subjectId: this.#subjectId }) ?? []).some(heard => exactTitleArtistMatch(track, heard));
+  }
+
+  registerExternalCandidateSet({ tracks, source, excludeKnown = true } = {}) {
     if (
       !Array.isArray(tracks) ||
       tracks.length < 1 ||
@@ -1776,14 +1780,14 @@ export class AppleProjectionDomainServices {
       const libraryMatch = libraryResults.tracks
         .map(safeTrack)
         .some((candidate) => exactTitleArtistMatch(track, candidate));
-      if (libraryMatch) {
+      if (excludeKnown && libraryMatch) {
         excludedLibraryMatches += 1;
         continue;
       }
       accepted.push({
         ...track,
         knownness: {
-          imported_library: "not_found_by_exact_title_artist",
+          imported_library: libraryMatch ? "found_by_exact_title_artist" : "not_found_by_exact_title_artist",
           listening_history: "not_checked",
         },
       });

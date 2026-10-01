@@ -630,7 +630,7 @@ test("Spotify client returns bounded normalized catalog search results", async (
     duration_ms: 200_000,
     popularity: 50,
     explicit: false,
-    is_local: true,
+    is_local: false,
     external_urls: { spotify: "PRIVATE_TRACK_URL_SENTINEL" },
   }));
   items[0] = { uri: "spotify:track:no-name", id: "x" };

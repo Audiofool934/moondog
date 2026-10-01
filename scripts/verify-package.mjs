@@ -27,7 +27,7 @@ const maximumPackedBytes = 2_500_000;
 // The reviewed baseline packs 109 entries / 3,999,318 bytes. Allow measured
 // integration growth while retaining the independent path/content privacy gates.
 const maximumUnpackedBytes = 4_250_000;
-const maximumEntries = 110;
+const maximumEntries = 111;
 const packageOnlyPrivateSentinelPattern = new RegExp(
   ["PRIVATE", "(?:IP|PLATFORM)", "SENTINEL"].join("_"),
   "u",
@@ -52,6 +52,7 @@ const requiredPackagePaths = new Set([
   "src/core/lyric-library.mjs",
   "src/core/lyric-profile.mjs",
   "src/core/lyric-service.mjs",
+  "src/core/spotify-listening-intent.mjs",
   "src/integrations/listenbrainz/history-file.mjs",
   "src/integrations/public-playlists.mjs",
   "src/integrations/youtube-music/takeout.mjs",
