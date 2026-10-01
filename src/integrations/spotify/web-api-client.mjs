@@ -180,9 +180,9 @@ function normalizeDevice(raw) {
     id,
     name,
     type: type ?? "unknown",
-    is_active: raw.is_active === true,
+    is_active: typeof raw.is_active === "boolean" ? raw.is_active : null,
     is_private_session: raw.is_private_session === true,
-    is_restricted: raw.is_restricted === true,
+    is_restricted: typeof raw.is_restricted === "boolean" ? raw.is_restricted : null,
     supports_volume: raw.supports_volume === true,
   };
   const volume = safeInteger(raw.volume_percent, 0, 100);
@@ -225,7 +225,7 @@ function normalizePlayback(payload) {
   const result = {
     provider: "spotify",
     state: "available",
-    is_playing: payload.is_playing === true,
+    is_playing: typeof payload.is_playing === "boolean" ? payload.is_playing : null,
     shuffle_state: payload.shuffle_state === true,
     repeat_state: ["off", "track", "context"].includes(payload.repeat_state)
       ? payload.repeat_state
@@ -873,10 +873,10 @@ export function createSpotifyWebApiClient({
       await request(`/me/library${queryString({ uris: uris.join(",") })}`, { method: "DELETE", responseMode: "none", signal });
     },
 
-    async resume(input = {}, { signal } = {}) {
+    async resume(input = {}, { signal, beforeDispatch } = {}) {
       await request(
         `/me/player/play${queryString({ device_id: input.deviceId })}`,
-        { method: "PUT", body: playbackBody(input), responseMode: "none", signal },
+        { method: "PUT", body: playbackBody(input), responseMode: "none", signal, beforeDispatch },
       );
     },
 
@@ -935,12 +935,13 @@ export function createSpotifyWebApiClient({
       );
     },
 
-    async transfer({ deviceId, play }, { signal } = {}) {
+    async transfer({ deviceId, play }, { signal, beforeDispatch } = {}) {
       await request("/me/player", {
         method: "PUT",
         body: { device_ids: [deviceId], play },
         responseMode: "none",
         signal,
+        beforeDispatch,
       });
     },
 

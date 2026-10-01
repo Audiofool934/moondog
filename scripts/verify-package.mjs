@@ -24,9 +24,9 @@ const repositoryRoot = path.resolve(
   "..",
 );
 const maximumPackedBytes = 2_500_000;
-// The reviewed baseline packs 109 entries / 3,999,318 bytes. Allow measured
-// integration growth while retaining the independent path/content privacy gates.
-const maximumUnpackedBytes = 4_250_000;
+// Playback preparation brings the reviewed package to 111 entries / about
+// 4.26 MB unpacked. Keep modest headroom and the path/content privacy gates.
+const maximumUnpackedBytes = 4_300_000;
 const maximumEntries = 111;
 const packageOnlyPrivateSentinelPattern = new RegExp(
   ["PRIVATE", "(?:IP|PLATFORM)", "SENTINEL"].join("_"),

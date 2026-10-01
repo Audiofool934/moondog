@@ -15,7 +15,8 @@ function fixture(t) {
     if (u.pathname === "/v1/search") { const type = u.searchParams.get("type"); return Response.json({ [`${type}s`]: { items: [item(type)], total: 2, next: "untrusted-next-url" } }); }
     if (u.pathname.endsWith("/episodes")) return Response.json({ items: [item("episode")], total: 2, next: "untrusted-next-url" });
     if (u.pathname.startsWith("/v1/albums/")) return Response.json({ items: [item("track")], total: 1 });
-    if (u.pathname === "/v1/me/player/devices") return Response.json({ devices: [{ id: "fictionaldevice", name: "Room", type: "Speaker", is_active: true }] });
+    if (u.pathname === "/v1/me/player/devices") return Response.json({ devices: [{ id: "fictionaldevice", name: "Room", type: "Speaker", is_active: true, is_restricted: false }] });
+    if (u.pathname === "/v1/me/player") return Response.json({ is_playing: false });
     if (u.pathname === "/v1/me/following") return Response.json({ artists: { items: [item("artist")], next: "untrusted-next-url", cursors: { after: "nextartist" } } });
     if (u.pathname === "/v1/me/playlists") return Response.json({ items: [item("playlist")], total: 1 });
     throw new Error(`Unexpected fictional endpoint: ${u.pathname}`);

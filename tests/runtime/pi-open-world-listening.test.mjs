@@ -69,15 +69,15 @@ test("Chinese displayed 3 → 404 → retry preserves exact version despite new 
   const f = fixture(t); const choices = await f.showVersions();
   f.state.failAt = 1; f.state.status = 404;
   const rejected = await f.prompt("3", [resume({ item_ref_id: choices[0].item_ref_id }), resume({}), say("没有任何操作")]);
-  assert.equal(f.writes.length, 1); assert.deepEqual(f.writes[0].body, { uris: [versions[2].uri] });
+  assert.equal(f.writes.length, 2); assert.deepEqual(f.writes[0], f.writes[1]); assert.deepEqual(f.writes[0].body, { uris: [versions[2].uri] });
   assert.match(rejected.text, /HTTP 404.*NO_ACTIVE_DEVICE/u); assert.match(rejected.text, /DJ铁柱/u);
   assert.doesNotMatch(rejected.text, /没有任何操作|保证.*未播放/u);
   f.state.failAt = Infinity; f.state.versions = [versions[2], versions[1], versions[0]];
   const retried = await f.prompt("retry", [call("moondog_spotify_search", { query: "精卫" }), resume({}), say("已播放罐头鱼")]);
-  assert.deepEqual(f.writes[1].body, { uris: [versions[2].uri] });
+  assert.deepEqual(f.writes[2].body, { uris: [versions[2].uri] });
   assert.match(retried.text, /DJ铁柱/u); assert.doesNotMatch(retried.text, /已播放罐头鱼/u);
   const alternate = await f.prompt("换一个，这版本不好听", [resume({ item_ref_id: choices[2].item_ref_id }), resume({}), say("又播放铁柱")]);
-  assert.equal(f.writes.length, 3); assert.notEqual(f.writes[2].body.uris[0], versions[2].uri);
+  assert.equal(f.writes.length, 4); assert.notEqual(f.writes[3].body.uris[0], versions[2].uri);
   assert.doesNotMatch(alternate.text, /又播放铁柱/u);
 });
 
@@ -175,19 +175,19 @@ test("whole conversation preserves numbered versions, queue counts, clarificatio
   await f.prompt("retry", [resume({}), say()]);
   await f.prompt("换一个版本不好听", [resume({}), resume({ item_ref_id: choices[1].item_ref_id }), say()]);
   await f.prompt("第一个", [resume({}), say()]);
-  assert.deepEqual(f.writes.map(write => write.body?.uris?.[0]), [versions[2].uri, versions[2].uri, versions[0].uri, versions[0].uri]);
+  assert.deepEqual(f.writes.map(write => write.body?.uris?.[0]), [versions[2].uri, versions[2].uri, versions[2].uri, versions[0].uri, versions[0].uri]);
   const result = await f.prompt("great，再来十二首国风DJ，queue", queueResponses());
   assert.equal(result.spotify_queue_plan.queued_count, 12);
   const queueEntry = f.application.conversationEntries().at(-1);
   const clarification = await f.prompt("我要的是queue，不是歌单", [resume({}), ...queueResponses()]);
-  assert.equal(f.writes.length, 16);
+  assert.equal(f.writes.length, 17);
   assert.match(clarification.text, /上次队列操作.*\n.*12/su);
   const retried = await f.prompt("retry", [resume({}), say("已重播精卫")]);
-  assert.equal(f.writes.length, 16); assert.doesNotMatch(retried.text, /已重播精卫/u);
+  assert.equal(f.writes.length, 17); assert.doesNotMatch(retried.text, /已重播精卫/u);
   await f.runtime.rewindTo(queueEntry.entry_id);
   assert.equal(f.application.spotifyPlaybackContextStatus().displayed_choices.length, 0);
   await f.prompt("retry", [resume({ item_ref_id: choices[0].item_ref_id }), say()]);
-  assert.equal(f.writes.length, 16);
+  assert.equal(f.writes.length, 17);
   const fresh = await f.prompt("great，再来十二首国风DJ，queue", queueResponses());
   assert.equal(fresh.spotify_queue_plan.queued_count, 8); // accepted external writes survive rewind, though the mocked queue is stale.
   assert.equal(fresh.spotify_queue_plan.skipped_duplicate_count, 12);
@@ -206,9 +206,9 @@ test("a frozen retry rejects a new position or device before replaying the exact
   f.state.failAt = 1; f.state.status = 404;
   await f.prompt("3", [resume({}), say()]);
   f.state.failAt = Infinity;
-  await f.prompt("retry", [resume({ pending_plan: true }), resume({ position_ms: 8000 }), resume({ device_name: "Fictional speaker" }), resume({}), say()]);
-  assert.equal(f.writes.length, 2);
-  assert.deepEqual(f.writes[1], f.writes[0]);
+  await f.prompt("retry", [resume({ pending_plan: true }), resume({ position_ms: 8000 }), resume({ device_name: "Unavailable phone" }), resume({}), say()]);
+  assert.equal(f.writes.length, 3);
+  assert.deepEqual(f.writes[2], f.writes[0]);
 });
 
 for (const error of ["projection_not_built", "projection_subject_unavailable"]) test(`fresh users without an Apple import can queue (${error})`, async t => {

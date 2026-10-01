@@ -23,7 +23,7 @@ async function fixture(context) {
     async getCurrentPlayback() { return { provider: "spotify", state: "available", is_playing: true,
       item: { ...song, name: "Transient Song Sentinel" }, device: { id: "private-device-id", name: "Transient Device Sentinel", type: "Computer" } }; },
     async getQueue() { return { provider: "spotify", currently_playing: song, queue: [song] }; },
-    async getDevices() { return { devices: [{ id: "fictional-device", name: "Fictional Room", is_active: true }] }; },
+    async getDevices() { return { devices: [{ id: "fictional-device", name: "Fictional Room", is_active: true, is_restricted: false }] }; },
     async resume(input) { writes.push(["play", input.uris]); },
     async addToQueue(input) { writes.push(["queue", [input.uri]]); },
     async saveTracks(input) { writes.push(["save", input.uris]); },

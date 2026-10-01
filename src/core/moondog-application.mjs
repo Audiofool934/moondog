@@ -10,7 +10,7 @@ import {
 } from "./capability-catalog.mjs";
 import { recoverArtistReleasesWithCrossCatalogIdentity } from "../integrations/cross-catalog-artist-identity.mjs";
 import { normalizeMemoryContent } from "../memory/local-memory-store.mjs";
-import { playbackFollowupIntent, queueListeningIntent, trackVersionFamily } from "./spotify-listening-intent.mjs";
+import { playbackFollowupIntent, queueListeningIntent, trackVersionFamily, playbackDeviceExplicitlyRequested, playbackDeviceConstraints, standaloneDeviceTransferRequested } from "./spotify-listening-intent.mjs";
 
 const minimumNodeVersion = [22, 19, 0];
 
@@ -193,6 +193,7 @@ export class MoondogApplication {
     this.spotifyReadSelections = new Map();
     this.spotifyDisplayedChoices = null;
     this.spotifyPlaybackAttempt = null;
+    this.spotifyPreferredPlaybackDevice = null;
     this.spotifyQueueRequest = null;
     this.spotifyQuickEditContext = { playlist: null, track: null };
     this.spotifyContextClock = now;
@@ -790,6 +791,7 @@ export class MoondogApplication {
     this.spotifyReadSelections.clear();
     this.spotifyDisplayedChoices = null;
     this.spotifyPlaybackAttempt = null;
+    this.spotifyPreferredPlaybackDevice = null;
     this.spotifyQueueRequest = null;
     this.spotifyQuickEditContext = { playlist: null, track: null };
     this.spotifyContextEpoch += 1;
@@ -1010,7 +1012,7 @@ export class MoondogApplication {
       ...player,
       provider: "spotify",
       state: "available",
-      is_playing: player.is_playing === true,
+      is_playing: typeof player.is_playing === "boolean" ? player.is_playing : null,
       shuffle_state: player.shuffle_state === true,
       repeat_state: player.repeat_state,
       currently_playing_type: player.currently_playing_type,
@@ -1042,7 +1044,11 @@ export class MoondogApplication {
 
   #resumeSpotifySelection(parameters, { signal } = {}) {
     const transaction = this.pendingPlaylistPromptTransaction;
+    if (transaction?.lastAcceptedPlaybackSelection) throw spotifyResolutionError("spotify_playback_already_accepted", "Playback already succeeded in this turn. Report its receipt without sending a second resume; additional songs belong in the queue.");
     const followup = transaction?.playbackIntent;
+    if (transaction && !followup && parameters.deviceId !== undefined &&
+        !transaction.explicitPlaybackDevices?.has(parameters.deviceId) &&
+        !playbackDeviceExplicitlyRequested(transaction.userText, { deviceId: parameters.deviceId })) throw spotifyResolutionError("spotify_device_selection_not_authorized", "The listener did not choose that device. Resume without a device selector to let the host preserve the active device or resolve an unambiguous target; do not invent a device preference.");
     const required = transaction?.requiredPlayback;
     if (followup) {
       if (transaction.lastAcceptedPlaybackSelection) throw spotifyResolutionError("spotify_playback_already_accepted", "The selected playback already succeeded in this turn. Report its receipt without another write.");
@@ -1067,8 +1073,9 @@ export class MoondogApplication {
         if (followup.kind === "retry") parameters = { ...required.parameters, ...parameters };
       }
     }
-    const key = parameters.uris || parameters.contextUri ? JSON.stringify([parameters.uris ?? null, parameters.contextUri ?? null,
-      parameters.deviceId ?? null, parameters.positionMs ?? null]) : null;
+    const selectionKey = deviceId => parameters.uris || parameters.contextUri ? JSON.stringify([parameters.uris ?? null, parameters.contextUri ?? null,
+      deviceId ?? null, parameters.positionMs ?? null]) : null;
+    let key = selectionKey(parameters.deviceId);
     if (key && transaction?.lastAcceptedPlaybackSelection === key) throw spotifyResolutionError("spotify_playback_already_accepted", "This exact playback selection already succeeded in this turn. Do not send it again.");
     const items = (parameters.uris ?? (parameters.contextUri ? [parameters.contextUri] : [])).map(uri => this.spotifyHostReadItems().find(item => item.uri === uri)).filter(Boolean).map(item => structuredClone(item));
     const attempt = parameters.uris || parameters.contextUri ? { parameters: structuredClone(parameters), items,
@@ -1080,9 +1087,21 @@ export class MoondogApplication {
     }
     if (attempt) this.spotifyPlaybackAttempt = attempt;
     const targets = items.map(item => ({ title: item.name ?? "Spotify item", artist_credit: item.artists.join(", ") }));
-    return this.requireSpotifyService().resume(parameters, { signal }).then(receipt => {
+    const explicitDevice = parameters.deviceId !== undefined && !followup;
+    const deviceConstraints = playbackDeviceConstraints(transaction?.userText);
+    return this.requireSpotifyService().resume(parameters, { signal,
+      ...deviceConstraints,
+      preferredDeviceId: this.spotifyPreferredPlaybackDevice,
+      allowDeviceSwitch: explicitDevice && deviceConstraints.allowTransfer,
+      onDeviceSelected: deviceId => {
+        key = selectionKey(deviceId);
+        if (key && transaction?.lastAcceptedPlaybackSelection === key) throw spotifyResolutionError("spotify_playback_already_accepted", "This exact song and device already succeeded in this turn. Report its receipt without another playback write.");
+        if (attempt) attempt.parameters.deviceId = deviceId;
+      },
+    }).then(receipt => {
       if (key && transaction && receipt.state === "accepted") transaction.lastAcceptedPlaybackSelection = key;
       if (attempt) attempt.outcome = receipt.state;
+      if (explicitDevice && receipt.state === "accepted") this.spotifyPreferredPlaybackDevice = parameters.deviceId;
       return { ...receipt, ...(targets.length ? { targets } : {}) };
     }, error => {
       if (attempt) attempt.outcome = error.actionNotDispatched ? "not_sent" : error.outcomeUnknown ? "unknown" : "not_confirmed";
@@ -1414,19 +1433,52 @@ export class MoondogApplication {
     this.transientSpotifyContext = true;
     const device = await this.requireSpotifyService().resolveDevice({ deviceId: id, deviceName, forVolume }, { signal });
     signal?.throwIfAborted();
+    const transaction = this.pendingPlaylistPromptTransaction;
+    let explicitlySelected = transaction && playbackDeviceExplicitlyRequested(transaction.userText, input);
+    if (transaction && !explicitlySelected && deviceRefId !== undefined) {
+      // An ordinal qualifies a name against the retained listing, never the
+      // newly fetched device order or the model's chosen reference alone.
+      const named = [...this.spotifyDeviceSelections.values()].filter(entry => entry.name === device.name);
+      const ordinal = named.findIndex(entry => entry.id === device.id) + 1;
+      explicitlySelected = ordinal > 0 && playbackDeviceExplicitlyRequested(transaction.userText, { deviceName: device.name, ordinal });
+    }
+    if (transaction && !explicitlySelected && deviceRefId !== undefined &&
+        playbackDeviceExplicitlyRequested(transaction.userText, { deviceName: device.name })) {
+      // A reference carries identity, not permission. Resolve the listener's
+      // named target uniquely; duplicate display names must still ask a choice.
+      const named = await this.requireSpotifyService().resolveDevice({ deviceName: device.name }, { signal });
+      explicitlySelected = named.id === device.id;
+    }
+    if (explicitlySelected) {
+      transaction.explicitPlaybackDevices ??= new Map();
+      transaction.explicitPlaybackDevices.set(device.id, { name: device.name, type: device.type || "unknown" });
+    }
     return { deviceId: device.id };
   }
 
   async spotifyTransfer(input, { signal } = {}) {
     signal?.throwIfAborted();
     this.requireSpotifyNonRemovalAction();
+    const text = this.pendingPlaylistPromptTransaction?.userText;
+    let targetDisplay;
+    if (text !== undefined) {
+      if (!standaloneDeviceTransferRequested(text)) throw spotifyResolutionError("spotify_transfer_requires_device_request", "For a song requested on a device, use resume with that device name. A standalone transfer requires an affirmative request to switch or move playback; do not warm up the previous song.");
+      const target = await this.spotifyDeviceTarget(input, { signal });
+      if (!target.deviceId || !this.pendingPlaylistPromptTransaction.explicitPlaybackDevices?.has(target.deviceId)) throw spotifyResolutionError("spotify_device_selection_not_authorized", "The listener did not choose this transfer target. Ask which device to use rather than inventing a device preference.");
+      targetDisplay = this.pendingPlaylistPromptTransaction.explicitPlaybackDevices.get(target.deviceId);
+      input = { ...target, play: input.play };
+    }
     this.spotifyPlaybackAttempt = null;
     this.transientSpotifyContext = true;
+    let selectedDevice;
+    const options = { signal, onDeviceSelected: id => { selectedDevice = id; } };
+    let receipt;
     if (input.deviceRefId !== undefined) {
       const device = await this.spotifyDeviceTarget(input, { signal });
-      return this.requireSpotifyService().transfer({ ...device, play: input.play }, { signal });
-    }
-    return this.requireSpotifyService().transfer(input, { signal });
+      receipt = await this.requireSpotifyService().transfer({ ...device, play: input.play }, options);
+    } else receipt = await this.requireSpotifyService().transfer(input, options);
+    if (selectedDevice && receipt.state === "accepted") this.spotifyPreferredPlaybackDevice = selectedDevice;
+    return targetDisplay ? { ...receipt, device: targetDisplay } : receipt;
   }
 
   requireSpotifyResolver() {

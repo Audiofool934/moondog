@@ -94,6 +94,7 @@ test("Spotify service returns metadata-free receipts for every write action", as
   const fixture = fakeClient();
   const service = createSpotifyService({ client: fixture.client });
   const deviceId = "PRIVATE_DEVICE_SENTINEL";
+  fixture.client.getDevices = async () => ({ devices: [{ id: deviceId, name: "Fictional device", type: "Computer", is_active: true, is_restricted: false }] });
   const uri = "spotify:track:PrivateTrack123";
   const receipts = [
     await service.resume({ deviceId, uris: [uri], positionMs: 1_000 }),
@@ -352,6 +353,8 @@ test("application writes stop credential recovery promptly after cancellation of
         },
         fetchImpl: async (url, init) => {
           if (init.method === "GET") {
+            if (new URL(url).pathname === "/v1/me/player/devices") return Response.json({ devices: [{ id: "fictional-device", name: "Fictional device", is_active: true, is_restricted: false }] });
+            if (new URL(url).pathname === "/v1/me/player") return Response.json({ is_playing: false });
             const data = new URL(url).pathname === "/v1/me" ? { id: "fictionalowner" } : {
               id: "fictionalplaylist", uri: "spotify:playlist:fictionalplaylist", name: "Fictional Playlist", public: false, collaborative: false,
               owner: { id: "fictionalowner" }, snapshot_id: "fictionalsnapshot", items: { total: 1 },
