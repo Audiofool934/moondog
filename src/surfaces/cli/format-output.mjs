@@ -727,6 +727,7 @@ Inside the listening room:
 - \`/doctor\` - check your setup
 - \`/model\` - pick the model I talk through
 - \`/model <provider> <model>\` - switch straight to a model
+- \`/model refresh [provider]\` - update public model choices; keep the selected model
 - \`/auth [provider]\` - sign in to a model provider
 - \`/web status|search|read\` - look things up on public music sites
 - \`/import [path]\` - bring in your history, library, or a playlist

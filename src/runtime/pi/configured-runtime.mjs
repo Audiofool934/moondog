@@ -1,6 +1,6 @@
 import { PiAgentRuntime } from "./agent-runtime.mjs";
 import { createPiAuthContext } from "./authentication.mjs";
-import { createPiModels } from "./model-catalog.mjs";
+import { getPublicPiModelCatalog } from "./public-model-catalog.mjs";
 import { createPersistentCredentialStore } from "./persistent-credential-store.mjs";
 import { readPiRuntimeSelection } from "./runtime-settings.mjs";
 
@@ -40,7 +40,7 @@ export async function createConfiguredRuntime(
   environment = process.env,
   {
     credentials,
-    modelsFactory = createPiModels,
+    modelsFactory,
     runtimeFactory = (configuration) => new PiAgentRuntime(configuration),
     selection,
     settingsReader = readPiRuntimeSelection,
@@ -70,7 +70,8 @@ export async function createConfiguredRuntime(
 
   const credentialStore =
     credentials ?? createPersistentCredentialStore(environment);
-  const models = modelsFactory({
+  const catalog = modelsFactory ? null : await getPublicPiModelCatalog(environment);
+  const models = (modelsFactory ?? (options => catalog.createModels(options)))({
     credentials: credentialStore,
     authContext: createPiAuthContext(environment),
   });

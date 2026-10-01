@@ -88,14 +88,17 @@ export function withCommandCompletions(commands, {
         .map((provider) => ({ value: provider.id, label: provider.id, description: provider.name })) : [],
     },
     model: {
-      argumentHint: "[provider] [model]",
+      argumentHint: "[provider] [model] | refresh [provider]",
       choices: (previous) => {
         if (previous.length > 1) return [];
         const available = providers().filter((provider) => provider.modelCount > 0);
         if (previous.length === 0) {
-          return available.map((provider) => ({ value: provider.id, label: provider.id, description: provider.name }));
+          return [{ value: "refresh", label: "refresh", description: "Refresh public model metadata; keep selection" },
+            ...available.map((provider) => ({ value: provider.id, label: provider.id, description: provider.name }))];
         }
         const providerId = previous[0].toLowerCase();
+        if (providerId === "refresh") return available.filter(provider => authProviderIds.includes(provider.id))
+          .map(provider => ({ value: provider.id, label: provider.id, description: provider.name }));
         if (!available.some((provider) => provider.id === providerId)) return [];
         return models(providerId).map((model) => ({ value: model.id, label: model.id, description: model.name }));
       },

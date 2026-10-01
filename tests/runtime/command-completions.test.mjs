@@ -102,7 +102,7 @@ test("Pi applies enum and model completions to exactly the intended command argu
 
 test("provider suggestions follow model availability and authentication support without probing unknown providers", async () => {
   const { suggestions, modelLookups } = fixture();
-  assert.deepEqual((await suggestions("/model ")).items.map((item) => item.value), ["openai-codex", "xai"]);
+  assert.deepEqual((await suggestions("/model ")).items.map((item) => item.value), ["refresh", "openai-codex", "xai"]);
   assert.deepEqual((await suggestions("/auth ")).items.map((item) => item.value), ["openai-codex", "empty"]);
   assert.equal(await suggestions("/model unknown g"), null);
   assert.equal(await suggestions("/model empty g"), null);
@@ -184,4 +184,11 @@ test("differently cased arguments can still be completed to the spelling accepte
   editor.handleInput("\r");
   assert.equal(editor.getText(), "/theme paper");
   assert.equal(submissions, 0);
+});
+
+test("catalog refresh completion suggests supported providers without reading model or credential data", async () => {
+  const { suggestions, modelLookups } = fixture();
+  assert.deepEqual((await suggestions("/model ref")).items.map(item => item.value), ["refresh"]);
+  assert.deepEqual((await suggestions("/model refresh ")).items.map(item => item.value), ["refresh openai-codex"]);
+  assert.deepEqual(modelLookups, []);
 });
