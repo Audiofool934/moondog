@@ -6216,6 +6216,7 @@ function renderSpotifyPlaybackFailure(failure, promptText) {
     ? `读取 Spotify 设备或播放状态时发生网络错误，设备准备已停止。${failure.playback_not_sent ? "歌曲播放请求尚未发送。" : ""}请检查与 Spotify 的连接后重试。 (${failure.code})`
     : `A network error prevented reading Spotify device/playback state; preparation stopped.${failure.playback_not_sent ? " The song play request was not sent." : ""} Check the connection to Spotify and retry. (${failure.code})`;
   const readiness = {
+    spotify_device_selection_required: ["所选歌曲仍保留，但目标设备尚未确定。请明确指定设备名称，不会改用之前的设备。", "The selected song is retained, but the target device is not established. Name the intended device; the previous device will not be substituted."],
     spotify_device_not_found: ["Spotify 没有列出目标设备。请在该设备上打开 Spotify，再请求播放；没有改用其他设备。", "Spotify cannot see the target device. Open Spotify on it, then request playback again; no other device was substituted."],
     spotify_device_ambiguous: ["有多个可能的 Spotify 设备，请指定要使用的设备名称。", "Several Spotify devices may be available. Specify the intended device name."],
     spotify_device_restricted: ["目标设备未确认允许 Spotify Web API 控制，请选择其他可用设备。", "The target device does not confirm Spotify Web API control. Choose another available device."],
