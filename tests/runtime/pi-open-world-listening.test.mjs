@@ -287,3 +287,12 @@ for (const request of ["The queue has 12 songs already.", "Please don’t queue 
   const result = await f.prompt(request, [say("Acknowledged.")]);
   assert.equal(result.text, "Acknowledged."); assert.equal(f.writes.length, 0); assert.equal(f.reads.length, 0);
 });
+
+test("a different visible numbered menu invalidates old song ordinals", async t => {
+  const f = fixture(t); const choices = await f.showVersions();
+  await f.prompt("Explain my device options", [say("1. Open Spotify on a phone\n2. Open Spotify on a computer")]);
+  const result = await f.prompt("1", [resume({ item_ref_id: choices[0].item_ref_id }), resume({}), say("Playing the old song")]);
+  assert.equal(f.writes.length, 0);
+  assert.doesNotMatch(result.text, /Playing the old song/u);
+  assert.equal(f.application.spotifyPlaybackContextStatus().displayed_choices.length, 0);
+});

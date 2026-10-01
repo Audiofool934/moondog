@@ -7187,6 +7187,7 @@ export class PiAgentRuntime {
       );
       this.application.markSpotifyQuickEditContextPresented?.();
       if (promptState.displayedChoiceRefs) this.application.presentSpotifyChoices?.(promptState.displayedChoiceRefs);
+      else if (/(?:^|\n)\s*\d+[.)、]\s*/u.test(finalResultText)) this.application.presentSpotifyChoices?.([]);
       historyFinalized = true;
       promptCompleted = true;
       conversationOutcome = { status: 'completed', text: finalResultText };
