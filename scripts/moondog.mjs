@@ -2,6 +2,8 @@
 
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { createApplicationUpdater } from "../src/core/application-update.mjs";
+import { runUpdateCommand } from "../src/surfaces/cli/update-command.mjs";
 
 import { MoondogApplication } from "../src/core/moondog-application.mjs";
 import { openLocalMemoryStore } from "../src/memory/local-memory-store.mjs";
@@ -425,12 +427,36 @@ async function emitTasteprintArtifact(
 }
 
 async function main() {
+  const updater = createApplicationUpdater();
+  const argv = process.argv.slice(2);
+  if (argv.length === 1 && ["--version", "-v"].includes(argv[0])) {
+    process.stdout.write(`${await updater.version()}\n`);
+    return;
+  }
+  const installUpdate = async (args) => {
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    process.once("SIGINT", abort);
+    process.once("SIGTERM", abort);
+    try {
+      const result = await runUpdateCommand({ args, updater, signal: controller.signal,
+        onProgress: text => process.stdout.write(`${sanitizeTerminalText(text)}\n`) });
+      process.stdout.write(`${sanitizeTerminalText(result.text)}\n`);
+      if (result.result?.state === "unavailable") process.exitCode = 1;
+    } finally {
+      process.removeListener("SIGINT", abort);
+      process.removeListener("SIGTERM", abort);
+    }
+  };
+  if (argv[0] === "update") { await installUpdate(argv.slice(1)); return; }
   const options = parseArguments(process.argv.slice(2));
 
   if (options.command === "help" || options.command === "--help" || options.command === "-h") {
     process.stdout.write(`${helpText()}\n`);
     return;
   }
+
+  await updater.assertNotUpdating();
 
   if (options.command === "web") {
     if (options.dryRun || options.offline || options.html || options.card || options.save || options.from || options.output) {
@@ -787,6 +813,7 @@ async function main() {
   });
 
   let lyrics = null;
+  let exitRequest;
   try {
     const runtime = await createConfiguredRuntime(application);
     const runtimeStatus = runtime.publicStatus();
@@ -867,10 +894,12 @@ async function main() {
       );
     }
     lyrics = await createLyricService().catch(() => null);
-    await runMoondogTui({
+    exitRequest = await runMoondogTui({
       application,
       runtime,
       lyrics,
+      checkUpdates: options => updater.startupCheck(options),
+      runUpdate: (args, options) => runUpdateCommand({ args, updater, deferInstall: true, ...options }),
       prepareImport: prepareTuiHistoryImport,
       prepareRecentImport: async () => prepareTuiHistoryImport(undefined, {
         recentPage: await runSpotifySurface({
@@ -943,6 +972,10 @@ async function main() {
   } finally {
     lyrics?.close();
     application.close();
+  }
+  if (exitRequest?.update) {
+    closeSpotifyResolutionCache();
+    await installUpdate(["--channel", exitRequest.update.channel]);
   }
 }
 

@@ -2,6 +2,8 @@
 
 Updated 2026-09-10.
 
+Update delivery, 2026-10-01: the source candidate `0.2.0-beta.1` adds an explicit updater, nonblocking startup checks, stable/beta channels, checksum-bound npm package staging and source-tag verification. The tagged release workflow runs clean-source verification before OIDC publication. See [updates and maintainer setup](UPDATES.md). The previously published npm version remains 0.1.0 until a maintainer publishes a new release; this source change does not establish npm trusted-publisher configuration or successful publication.
+
 The canonical repository is [Audiofool934/moondog](https://github.com/Audiofool934/moondog).
 The current distribution is a source checkout with Node.js 22.19.0 or newer and locked npm dependencies.
 The active product is the Pi-based TUI, with local listening-history import, interactive profile evidence and correction, fresh conversations, and explicit `/resume`.

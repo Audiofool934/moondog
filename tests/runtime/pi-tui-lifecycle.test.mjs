@@ -2354,3 +2354,56 @@ test("Ctrl+C during the model-switch commit never claims that the switch was can
     assert.equal(switched, true);
   } finally { release(); signalTarget.emit("SIGTERM"); await running; }
 });
+
+test("update check remains in the room and a late startup notice cannot replace a typed draft", async () => {
+  const terminal = new FakeTerminal(), signalTarget = new EventEmitter();
+  let notify; const check = new Promise(resolve => { notify = resolve; });
+  const running = runMoondogTui({ application: fakeApplication(), runtime: fakeRuntime(), terminal, signalTarget,
+    providers: () => [], models: () => [], checkUpdates: () => check,
+    runUpdate: async args => { assert.deepEqual(args, ["--check"]); return { text: "Fixture release is current." }; },
+  });
+  try {
+    await waitForStart(terminal); terminal.send("my unfinished listening request");
+    notify({ state: "available", latest: "0.2.0" });
+    await waitFor(() => terminal.output.includes("my unfinished listening request"));
+    assert.equal(terminal.stopCount, 0);
+    terminal.send("\x15"); terminal.send("/update --check"); terminal.send("\r");
+    await waitFor(() => terminal.output.includes("Fixture release is current."));
+    assert.equal(terminal.stopCount, 0);
+  } finally { signalTarget.emit("SIGTERM"); await running; }
+});
+
+test("queued update waits for current listening work, saves later drafts and restores terminal before returning", async () => {
+  const terminal = new FakeTerminal(), signalTarget = new EventEmitter();
+  let started = false, release, updateCalls = 0, pending;
+  const gate = new Promise(resolve => { release = resolve; });
+  const runtime = { ...fakeRuntime(), publicStatus: () => ({ state: "configured", provider: "fixture", model: "fixture" }),
+    async prompt() { started = true; await gate; return { status: "completed", text: "Listening work completed." }; } };
+  const running = runMoondogTui({ application: { ...fakeApplication(), conversationPending: value => { pending = value; } }, runtime, terminal, signalTarget,
+    providers: () => [], models: () => [],
+    runUpdate: async () => { updateCalls++; assert.ok(started); return { text: "Closing before install.", update: { channel: "beta" } }; },
+  });
+  try {
+    await waitForStart(terminal); terminal.send("play a song"); terminal.send("\r"); await waitFor(() => started);
+    terminal.send("/update --channel beta"); terminal.send("\r");
+    terminal.send("another request to keep"); terminal.send("\r");
+    assert.equal(updateCalls, 0); release();
+    assert.deepEqual(await running, { update: { channel: "beta" } });
+    assert.equal(updateCalls, 1); assert.equal(terminal.stopCount, 1);
+    assert.deepEqual(pending.queued, ["another request to keep"]);
+    assert.equal(signalTarget.listenerCount("SIGTERM"), 0);
+  } finally { release(); signalTarget.emit("SIGTERM"); await running; }
+});
+
+test("cancelling an update check does not exit the room or dispatch installation", async () => {
+  const terminal = new FakeTerminal(), signalTarget = new EventEmitter(); let started = false;
+  const running = runMoondogTui({ application: fakeApplication(), runtime: fakeRuntime(), terminal, signalTarget,
+    providers: () => [], models: () => [],
+    runUpdate: async (_, { signal }) => { started = true; await new Promise((_, reject) => signal.addEventListener("abort", () => reject(signal.reason), { once: true })); },
+  });
+  try {
+    await waitForStart(terminal); terminal.send("/update"); terminal.send("\r"); await waitFor(() => started);
+    terminal.send("\x03"); await waitFor(() => terminal.output.includes("Stopped the update check."));
+    assert.equal(terminal.stopCount, 0);
+  } finally { signalTarget.emit("SIGTERM"); await running; }
+});

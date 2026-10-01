@@ -572,6 +572,7 @@ While an answer is coming, each step shows in the conversation, and the footer n
 - \`/new\` - start fresh; this conversation stays saved
 - \`/status\`, \`/sources\`, \`/tools\`, \`/doctor\` - see what's connected and working
 - \`/reload\` - reload model settings and sign-ins
+- \`/update [--check] [--channel latest|beta]\` - check for a release, or close this room and install it
 - \`/help all\` - every command, including the ones for the shell
 - \`/quit\` - leave
 

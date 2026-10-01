@@ -1,0 +1,75 @@
+name: Publish release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: npm-release
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify release on Node ${{ matrix.node }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22.19.0, 24.x]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm install --global npm@11.16.0
+      - name: Verify release identity and main ancestry
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          node scripts/release-version.mjs "$RELEASE_TAG"
+          git merge-base --is-ancestor HEAD origin/main
+      - run: npm run verify:clean-source
+
+  publish:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: npm
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+      - run: npm install --global npm@11.16.0
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Select release channel
+        id: release
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: node scripts/release-version.mjs "$RELEASE_TAG"
+      - name: Publish through npm trusted publishing
+        env:
+          RELEASE_CHANNEL: ${{ steps.release.outputs.channel }}
+        run: npm publish --provenance --access public --tag "$RELEASE_CHANNEL"
+      - name: Create release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_CHANNEL: ${{ steps.release.outputs.channel }}
+        run: |
+          if [ "$RELEASE_CHANNEL" = beta ]; then
+            gh release create "$RELEASE_TAG" --verify-tag --generate-notes --prerelease
+          else
+            gh release create "$RELEASE_TAG" --verify-tag --generate-notes --latest
+          fi

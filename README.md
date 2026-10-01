@@ -4,7 +4,7 @@
 
 <h1 align="center">Moondog</h1>
 
-<p align="center">Version 0.1.0</p>
+<p align="center">Source candidate 0.2.0-beta.1</p>
 
 <p align="center"><strong>A listening room that shows its work.</strong></p>
 
@@ -35,6 +35,8 @@ npm start
 
 [@audiofool/moondog](https://www.npmjs.com/package/@audiofool/moondog) 0.1.0 is the published package.
 To see the agent work through fictional data, with no sign-in at all, run `npm run demo` from the checkout.
+
+The source version supports `moondog update` and `/update`, with stable (`latest`) and preview (`beta`) channels. Startup checks show a quiet notification; installation happens only when you request it. See [updating and release channels](docs/UPDATES.md), including the one-time upgrade needed for the older npm 0.1.0 package.
 
 ## The sleeve
 
@@ -178,7 +180,7 @@ Your profile, and anything Moondog remembers, carry over.
 - [Runtime architecture](docs/ADR_0001_AGENT_RUNTIME_AND_CLI.md) and [data contracts](contracts/README.md): how the pieces fit together.
 - [Contribution guide](CONTRIBUTING.md) and [release readiness](docs/PUBLIC_RELEASE_READINESS.md): local setup, checks, and how private data is kept out.
 
-Moondog is at 0.1.0, and the work happens in the TUI.
+The source candidate is 0.2.0-beta.1, and the work happens in the TUI.
 GUI and Studio development is paused.
 The earlier [browser prototypes](docs/TERMINAL_GUIDE.md#archived-gui-prototypes-paused) remain for reference.
 There is no open-source license yet.

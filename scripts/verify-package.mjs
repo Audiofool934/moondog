@@ -24,10 +24,9 @@ const repositoryRoot = path.resolve(
   "..",
 );
 const maximumPackedBytes = 2_500_000;
-// Playback preparation brings the reviewed package to 111 entries / about
-// 4.26 MB unpacked. Keep modest headroom and the path/content privacy gates.
-const maximumUnpackedBytes = 4_300_000;
-const maximumEntries = 111;
+// The updater adds two runtime modules; retain bounded package headroom.
+const maximumUnpackedBytes = 4_350_000;
+const maximumEntries = 113;
 const packageOnlyPrivateSentinelPattern = new RegExp(
   ["PRIVATE", "(?:IP|PLATFORM)", "SENTINEL"].join("_"),
   "u",
@@ -53,6 +52,8 @@ const requiredPackagePaths = new Set([
   "src/core/lyric-profile.mjs",
   "src/core/lyric-service.mjs",
   "src/core/spotify-listening-intent.mjs",
+  "src/core/application-update.mjs",
+  "src/surfaces/cli/update-command.mjs",
   "src/integrations/listenbrainz/history-file.mjs",
   "src/integrations/public-playlists.mjs",
   "src/integrations/youtube-music/takeout.mjs",

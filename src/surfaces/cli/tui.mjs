@@ -85,6 +85,7 @@ class ListeningRoom extends TuiAltScreen {
 }
 
 const slashCommands = [
+  { name: "update", description: "Check for or install a Moondog release" },
   { name: "home", description: "Back to the record sleeve" },
   { name: "lyrics", description: "Your lyric library, or sync more songs" },
   { name: "import", description: "Bring in your listening history or library" },
@@ -183,6 +184,8 @@ export async function runMoondogTui({
   runProfile,
   runProfileAction,
   runWeb,
+  checkUpdates,
+  runUpdate,
   lyrics,
   prepareImport,
   prepareRecentImport,
@@ -268,6 +271,9 @@ export async function runMoondogTui({
   let motionEnabled = environment.MOONDOG_MOTION !== "off";
   let phase = 0;
   let footerText = "Ready.";
+  let updateNotice = "";
+  let exitRequest;
+  const updateCheckController = new AbortController();
   let footerColor = dim;
   let localCommandController = null;
   let startAttempted = false;
@@ -463,6 +469,7 @@ export async function runMoondogTui({
       if (terminal.rows < 20 && !busy && !profileView && !importView && editor.isShowingAutocomplete()) {
         statusText = "↑↓ choose · Tab/Enter complete";
       }
+      if (updateNotice && homeVisible && ["Ready.", "New conversation · /resume history"].includes(footerText) && !editor.getText() && !busy && !profileView && !importView && !tui.hasOverlay() && !editor.isShowingAutocomplete()) statusText = updateNotice;
       const lines = [paintBrandLine(` ${markerInk(marker)} ${footerColor(statusText)}`, width, theme)];
       if (terminal.rows >= 20) {
         const keys = importView
@@ -580,6 +587,7 @@ export async function runMoondogTui({
     localCommandController?.abort();
     importAuthController?.abort();
     lyricController?.abort();
+    updateCheckController.abort();
     preparedImport?.close?.();
     preparedImport = null;
     removeLifecycleListeners();
@@ -1428,6 +1436,17 @@ export async function runMoondogTui({
   };
 
   const runLocalCommand = async (command, args = []) => {
+    if (command === "update") {
+      if (!runUpdate) throw new Error("Use moondog update from your shell for this installation.");
+      const result = await runUpdate(args, { signal: localCommandController?.signal });
+      if (cleanedUp) return;
+      localCommandController?.signal.throwIfAborted();
+      updateNotice = "";
+      addMoondogMessage(result.text);
+      if (result.update) { exitRequest = { update: result.update }; shutdown(); }
+      else setFooter("Update check finished.");
+      return;
+    }
     if (command === "lyrics") {
       if (args.length > 1 || (args[0] && args[0] !== "sync")) throw new Error("Use /lyrics, or /lyrics sync.");
       if (!lyrics) throw new Error("The lyric library isn't available when Moondog is started this way.");
@@ -1679,7 +1698,7 @@ export async function runMoondogTui({
       try {
         if (!["home", "theme", "art", "motion", "model", "resume", "rewind", "new", "taste", "profile", "import"].includes(command)) enterConversation();
         if (command !== "auth") editor.addToHistory(value);
-        localCommandController = ["web", "lyrics", "model"].includes(command) ? new AbortController() : null;
+        localCommandController = ["web", "lyrics", "model", "update"].includes(command) ? new AbortController() : null;
         const controller = localCommandController;
         setBusy(true, controller ? () => controller.abort() : null);
         setFooter(`/${command}...`);
@@ -1693,7 +1712,7 @@ export async function runMoondogTui({
         if (cleanedUp) return;
         enterConversation();
         const cancelled = localCommandController?.signal.aborted;
-        addMoondogMessage(cancelled ? command === "web" ? "Stopped the lookup." : command === "model" ? "Stopped the catalog check. Model unchanged." : "Stopped the lyric sync." : `That didn't work: ${error.message}`);
+        addMoondogMessage(cancelled ? command === "web" ? "Stopped the lookup." : command === "model" ? "Stopped the catalog check. Model unchanged." : command === "update" ? "Stopped the update check. No update installed." : "Stopped the lyric sync." : `That didn't work: ${error.message}`);
         setFooter(cancelled ? "Cancelled." : `/${command} didn't work.`, cancelled ? dim : failure);
       } finally {
         localCommandController = null;
@@ -1944,10 +1963,16 @@ export async function runMoondogTui({
   try {
     startAttempted = true;
     tui.start();
+    if (checkUpdates) void Promise.resolve().then(() => checkUpdates({ signal: updateCheckController.signal })).then(result => {
+      if (cleanedUp || result?.state !== "available") return;
+      updateNotice = `Moondog ${result.latest} available · /update`;
+      tui.requestRender();
+    }).catch(() => {});
     void updateHomeLyrics();
     await stoppedPromise;
   } finally {
     cleanup();
     await lyricTask;
   }
+  return exitRequest;
 }
