@@ -3,7 +3,7 @@ import { chmod, mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 
-export const MOONDOG_MEMORY_SCHEMA_VERSION = 2;
+export const MOONDOG_MEMORY_SCHEMA_VERSION = 3;
 export function resolveMoondogMemoryPath(environment = process.env) {
   const configuredState = environment.MOONDOG_STATE_HOME?.trim();
   if (configuredState) {
@@ -91,6 +91,29 @@ const schema = `
 
   CREATE INDEX IF NOT EXISTS turns_session_position
     ON turns(session_id, position);
+
+  -- Display/model conversation history is separate from memory and reflection.
+  -- It contains no raw tool calls or reusable action authority.
+  CREATE TABLE IF NOT EXISTS conversation_entries (
+    entry_id TEXT PRIMARY KEY NOT NULL,
+    session_id TEXT NOT NULL REFERENCES sessions(session_id),
+    position INTEGER NOT NULL,
+    user_text TEXT NOT NULL,
+    assistant_text TEXT NOT NULL DEFAULT '',
+    outcome TEXT NOT NULL CHECK (outcome IN ('running', 'completed', 'aborted', 'interrupted', 'failed')),
+    transient INTEGER NOT NULL DEFAULT 0 CHECK (transient IN (0, 1)),
+    created_at TEXT NOT NULL,
+    UNIQUE (session_id, position)
+  ) STRICT;
+
+  CREATE TABLE IF NOT EXISTS conversation_branches (
+    session_id TEXT PRIMARY KEY NOT NULL REFERENCES sessions(session_id),
+    root_session_id TEXT NOT NULL REFERENCES sessions(session_id),
+    parent_session_id TEXT REFERENCES sessions(session_id),
+    source_entry_id TEXT,
+    draft TEXT NOT NULL DEFAULT '',
+    queued_json TEXT NOT NULL DEFAULT '[]'
+  ) STRICT;
 
   CREATE TABLE IF NOT EXISTS memory_claims (
     memory_id TEXT PRIMARY KEY NOT NULL,
@@ -825,35 +848,28 @@ export class LocalMemoryStore {
     const bounded = Number.isFinite(requestedLimit)
       ? Math.max(1, Math.min(Math.trunc(requestedLimit), 200))
       : 200;
-    return this.#database
-      .prepare(`
-        SELECT
-          s.session_id,
-          s.started_at,
-          MAX(t.created_at) AS updated_at,
-          COUNT(t.turn_id) AS turn_count,
-          COALESCE((
-            SELECT first_turn.content
-            FROM turns first_turn
-            WHERE first_turn.session_id = s.session_id AND first_turn.role = 'user'
-            ORDER BY first_turn.position ASC
-            LIMIT 1
-          ), '') AS title
-        FROM sessions s
-        JOIN turns t ON t.session_id = s.session_id
-        WHERE s.route_key = ?
-        GROUP BY s.session_id
-        ORDER BY updated_at DESC, s.started_at DESC, s.rowid DESC
-        LIMIT ?
-      `)
-      .all(route, bounded)
-      .map((session) => ({
-        session_id: session.session_id,
-        started_at: session.started_at,
-        updated_at: session.updated_at,
-        turn_count: session.turn_count,
-        title: session.title,
-      }));
+    return this.#database.prepare(`
+      SELECT s.session_id, s.started_at,
+        MAX(s.started_at, COALESCE((SELECT MAX(created_at) FROM conversation_entries WHERE session_id = s.session_id),
+          (SELECT MAX(created_at) FROM turns WHERE session_id = s.session_id), s.started_at)) AS updated_at,
+        CASE WHEN EXISTS (SELECT 1 FROM conversation_entries WHERE session_id = s.session_id)
+          THEN (SELECT SUM(1 + (assistant_text != '')) FROM conversation_entries WHERE session_id = s.session_id)
+          ELSE (SELECT COUNT(*) FROM turns WHERE session_id = s.session_id) END AS turn_count,
+        COALESCE((SELECT user_text FROM conversation_entries WHERE session_id = s.session_id ORDER BY position LIMIT 1),
+          (SELECT content FROM turns WHERE session_id = s.session_id AND role = 'user' ORDER BY position LIMIT 1),
+          b.draft, '') AS title,
+        b.parent_session_id,
+        COALESCE(NULLIF(b.draft, ''), (SELECT user_text FROM conversation_entries WHERE session_id = s.session_id ORDER BY position DESC LIMIT 1), '') AS last_message
+      FROM sessions s LEFT JOIN conversation_branches b ON b.session_id = s.session_id
+      WHERE s.route_key = ? AND (
+        EXISTS (SELECT 1 FROM conversation_entries WHERE session_id = s.session_id) OR
+        EXISTS (SELECT 1 FROM turns WHERE session_id = s.session_id) OR b.draft != '')
+      ORDER BY updated_at DESC, s.started_at DESC, s.rowid DESC LIMIT ?
+    `).all(route, bounded).map(row => ({
+      session_id: row.session_id, started_at: row.started_at, updated_at: row.updated_at,
+      turn_count: row.turn_count, title: row.title,
+      ...(row.parent_session_id ? { parent_session_id: row.parent_session_id, last_message: row.last_message } : {}),
+    }));
   }
 
   resumeSession(sessionId, { routeKey = "local:main" } = {}) {
@@ -1070,6 +1086,103 @@ export class LocalMemoryStore {
         text: turn.content,
         created_at: turn.created_at,
       }));
+  }
+
+  #ensureConversation(sessionId) {
+    const exists = this.#database.prepare("SELECT 1 FROM conversation_branches WHERE session_id = ?").get(sessionId);
+    if (exists) return;
+    this.#database.prepare(`INSERT INTO conversation_branches(session_id, root_session_id) VALUES (?, ?)`).run(sessionId, sessionId);
+    // Import only an old session's rendered text, never tool messages or plans.
+    const legacy = this.#database.prepare("SELECT * FROM turns WHERE session_id = ? ORDER BY position").all(sessionId);
+    const insert = this.#database.prepare(`INSERT INTO conversation_entries
+      (entry_id, session_id, position, user_text, assistant_text, outcome, transient, created_at)
+      VALUES (?, ?, ?, ?, ?, 'completed', 0, ?)`);
+    for (let index = 0, position = 1; index < legacy.length; index += 1) {
+      const user = legacy[index];
+      if (user.role !== 'user') continue;
+      const assistant = legacy[index + 1]?.role === 'assistant' ? legacy[++index].content : '';
+      insert.run(user.turn_id, sessionId, position++, user.content, assistant, user.created_at);
+    }
+  }
+
+  beginConversationEntry(sessionId, user) {
+    this.#assertOpen();
+    if (typeof user !== 'string' || !user.trim() || user.length > 8_000) throw new TypeError("Conversation input is invalid");
+    const text = user;
+    this.#database.exec("BEGIN IMMEDIATE");
+    try {
+      this.#ensureConversation(sessionId);
+      const position = this.#database.prepare("SELECT COALESCE(MAX(position), 0) + 1 AS n FROM conversation_entries WHERE session_id = ?").get(sessionId).n;
+      const entryId = randomUUID();
+      this.#database.prepare(`INSERT INTO conversation_entries(entry_id, session_id, position, user_text, outcome, created_at)
+        VALUES (?, ?, ?, ?, 'running', ?)`).run(entryId, sessionId, position, text, isoTimestamp(this.#clock));
+      this.#database.prepare("UPDATE conversation_branches SET draft = '' WHERE session_id = ?").run(sessionId);
+      this.#database.exec("COMMIT");
+      return entryId;
+    } catch (error) { this.#database.exec("ROLLBACK"); throw error; }
+  }
+
+  finishConversationEntry(sessionId, entryId, { text = '', status = 'failed', transient = false } = {}) {
+    this.#assertOpen();
+    if (!['completed', 'aborted', 'interrupted', 'failed'].includes(status) || typeof text !== 'string' || text.length > 40_000) {
+      throw new TypeError("Conversation outcome is invalid");
+    }
+    const changed = this.#database.prepare(`UPDATE conversation_entries SET assistant_text = ?, outcome = ?, transient = ?
+      WHERE session_id = ? AND entry_id = ? AND outcome = 'running'`).run(text, status, transient ? 1 : 0, sessionId, entryId);
+    if (changed.changes !== 1) throw new Error("Conversation turn is no longer active");
+  }
+
+  readConversationEntries(sessionId, { limit = 200 } = {}) {
+    this.#assertOpen();
+    this.#database.exec("BEGIN IMMEDIATE");
+    try { this.#ensureConversation(sessionId); this.#database.exec("COMMIT"); }
+    catch (error) { this.#database.exec("ROLLBACK"); throw error; }
+    const bounded = Math.max(1, Math.min(Math.trunc(Number(limit)) || 200, 500));
+    return this.#database.prepare(`SELECT entry_id, user_text, assistant_text, outcome, transient, created_at
+      FROM conversation_entries WHERE session_id = ? ORDER BY position DESC LIMIT ?`).all(sessionId, bounded).reverse()
+      .map(row => ({ ...row, transient: row.transient === 1 }));
+  }
+
+  conversationPending(sessionId, pending) {
+    this.#assertOpen();
+    if (pending !== undefined && (typeof pending?.draft !== 'string' || pending.draft.length > 8_000 ||
+        !Array.isArray(pending.queued) || pending.queued.length > 30 ||
+        pending.queued.some(text => typeof text !== 'string' || text.length > 8_000))) throw new TypeError("Conversation draft is invalid");
+    this.#database.exec("BEGIN IMMEDIATE");
+    try {
+      this.#ensureConversation(sessionId);
+      if (pending !== undefined) this.#database.prepare("UPDATE conversation_branches SET draft = ?, queued_json = ? WHERE session_id = ?")
+        .run(pending.draft, JSON.stringify(pending.queued), sessionId);
+      const row = this.#database.prepare("SELECT draft, queued_json FROM conversation_branches WHERE session_id = ?").get(sessionId);
+      this.#database.exec("COMMIT");
+      return { draft: row.draft, queued: JSON.parse(row.queued_json) };
+    } catch (error) { this.#database.exec("ROLLBACK"); throw error; }
+  }
+
+  forkConversation(sessionId, entryId, { routeKey = 'local:main' } = {}) {
+    this.#assertOpen();
+    const route = cleanText(routeKey, 128, "Session route");
+    this.#database.exec("BEGIN IMMEDIATE");
+    try {
+      const original = this.#database.prepare("SELECT * FROM sessions WHERE session_id = ? AND route_key = ? AND status = 'active'").get(sessionId, route);
+      if (!original) throw new Error("The selected conversation is no longer active");
+      this.#ensureConversation(sessionId);
+      const selected = this.#database.prepare("SELECT * FROM conversation_entries WHERE session_id = ? AND entry_id = ?").get(sessionId, entryId);
+      if (!selected) throw new Error("The selected turn is no longer available");
+      const root = this.#database.prepare("SELECT root_session_id FROM conversation_branches WHERE session_id = ?").get(sessionId).root_session_id;
+      const createdAt = isoTimestamp(this.#clock);
+      const nextId = randomUUID();
+      this.#database.prepare("UPDATE sessions SET status = 'closed', ended_at = ?, close_reason = 'rewind' WHERE session_id = ?").run(createdAt, sessionId);
+      this.#database.prepare("INSERT INTO sessions(session_id, route_key, started_at, status) VALUES (?, ?, ?, 'active')").run(nextId, route, createdAt);
+      this.#database.prepare(`INSERT INTO conversation_branches(session_id, root_session_id, parent_session_id, source_entry_id, draft)
+        VALUES (?, ?, ?, ?, ?)`).run(nextId, root, sessionId, entryId, selected.user_text);
+      const prefix = this.#database.prepare("SELECT * FROM conversation_entries WHERE session_id = ? AND position < ? ORDER BY position").all(sessionId, selected.position);
+      const insert = this.#database.prepare(`INSERT INTO conversation_entries
+        (entry_id, session_id, position, user_text, assistant_text, outcome, transient, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
+      for (const row of prefix) insert.run(randomUUID(), nextId, row.position, row.user_text, row.assistant_text, row.outcome, row.transient, row.created_at);
+      this.#database.exec("COMMIT");
+      return { session_id: nextId, route_key: route, started_at: createdAt, parent_session_id: sessionId, draft: selected.user_text };
+    } catch (error) { this.#database.exec("ROLLBACK"); throw error; }
   }
 
   prepareRemember({
@@ -1557,6 +1670,7 @@ export class LocalMemoryStore {
   recentEpisodes({
     query,
     excludeSessionId,
+    includeCurrentSession = false,
     limit = 12,
     now = this.#clock(),
   } = {}) {
@@ -1569,11 +1683,12 @@ export class LocalMemoryStore {
         FROM episodes
         WHERE status = 'active'
           AND (expires_at IS NULL OR expires_at > ?)
-          AND (session_id IS NULL OR session_id != COALESCE(?, ''))
+          AND (session_id IS NULL OR (session_id = ? AND ? = 1) OR COALESCE((SELECT root_session_id FROM conversation_branches b WHERE b.session_id = episodes.session_id), session_id)
+            != COALESCE((SELECT root_session_id FROM conversation_branches WHERE session_id = ?), ?, ''))
         ORDER BY occurred_at DESC, episode_id ASC
         LIMIT 256
       `)
-      .all(nowTimestamp, excludeSessionId ?? null);
+      .all(nowTimestamp, excludeSessionId ?? null, includeCurrentSession ? 1 : 0, excludeSessionId ?? null, excludeSessionId ?? null);
     const terms = queryTerms(query);
     return rows
       .map((row) => ({
@@ -1604,12 +1719,13 @@ export class LocalMemoryStore {
       .prepare(`
         SELECT s.session_id, s.started_at, s.ended_at
         FROM sessions s
-        WHERE s.session_id != COALESCE(?, '')
+        WHERE COALESCE((SELECT root_session_id FROM conversation_branches b WHERE b.session_id = s.session_id), s.session_id)
+          != COALESCE((SELECT root_session_id FROM conversation_branches WHERE session_id = ?), ?, '')
           AND EXISTS (SELECT 1 FROM turns t WHERE t.session_id = s.session_id)
         ORDER BY COALESCE(s.ended_at, s.started_at) DESC
         LIMIT ?
       `)
-      .all(excludeSessionId ?? null, boundedSessions);
+      .all(excludeSessionId ?? null, excludeSessionId ?? null, boundedSessions);
     const readTurns = this.#database.prepare(`
       SELECT role, content, created_at
       FROM turns
@@ -1709,7 +1825,7 @@ export async function openLocalMemoryStore({
     database.exec("PRAGMA trusted_schema = OFF");
     const currentVersion = database.prepare("PRAGMA user_version").get()
       .user_version;
-    if (![0, 1, MOONDOG_MEMORY_SCHEMA_VERSION].includes(currentVersion)) {
+    if (![0, 1, 2, MOONDOG_MEMORY_SCHEMA_VERSION].includes(currentVersion)) {
       throw new Error("Memory database schema is incompatible");
     }
     database.exec(schema);

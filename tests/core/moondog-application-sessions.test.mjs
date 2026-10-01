@@ -121,10 +121,16 @@ test("application session controls remain useful without persistent memory", () 
   const application = new MoondogApplication();
   try {
     assert.deepEqual(application.listSavedSessions(), []);
-    assert.throws(() => application.resumeSession("unknown-session"), /Persistent memory is unavailable/);
+    assert.throws(() => application.resumeSession("unknown-session"), /Saved conversation not found/);
     seedPendingState(application);
-    assert.equal(application.startNewSession(), null);
+    const first = application.startNewSession();
+    assert.ok(first.session_id);
     assertPendingStateCleared(application);
+    application.recordCompletedTurn("A process-local request", "A process-local answer");
+    application.startNewSession();
+    application.resumeSession(first.session_id);
+    assert.deepEqual(application.currentConversationTurns().map(turn => turn.text), ["A process-local request", "A process-local answer"]);
+    assert.deepEqual(application.currentSessionTurns(), []);
   } finally {
     application.close();
   }

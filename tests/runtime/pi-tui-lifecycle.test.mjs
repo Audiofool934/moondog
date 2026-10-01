@@ -2134,3 +2134,124 @@ test("home artwork and lyrics animate, pause during interaction, and stop with m
   await expectStill("after exit");
   assert.equal(terminal.stopCount, 1);
 });
+
+test('Alt+R branches before a selected message, preserves the unsent draft, and sends only after editing', async context => {
+  const f = await createSavedConversationFixture(context);
+  await f.launch();
+  await f.submit('First rewind request', 'Fixture response: First rewind request');
+  await f.submit('Second rewind request', 'Fixture response: Second rewind request');
+  const originalId = f.application.ensureMemorySession().session_id;
+  f.terminal.send('Unsent original draft');
+  f.terminal.send('\x1br');
+  await f.outputIncludes('Rewind to a message');
+  f.terminal.output = '';
+  f.terminal.send('\r');
+  await f.outputIncludes('Earlier message restored');
+  const branchId = f.application.ensureMemorySession().session_id;
+  assert.notEqual(branchId, originalId);
+  assert.equal(f.application.conversationPending().draft, 'Second rewind request');
+  assert.equal(f.application.conversationEntries().length, 1);
+  assert.equal(f.runtime.prompts.length, 2);
+  assert.match(stripVTControlCharacters(f.terminal.output), /Spotify actions and saved preferences/u);
+  f.terminal.send('\x15');
+  await f.submit('Edited second request', 'Fixture response: Edited second request');
+  assert.equal(f.runtime.prompts.at(-1).text, 'Edited second request');
+  await f.submit(`/resume ${originalId}`, 'Back in:');
+  assert.equal(f.application.conversationEntries().length, 2);
+  assert.equal(f.application.conversationPending().draft, 'Unsent original draft');
+  assert.match(stripVTControlCharacters(f.terminal.output), /Unsent original draft/u);
+  assert.equal(f.runtime.prompts.length, 3);
+});
+
+test('rewind picker cancellation preserves a multiline draft and never calls the model', async context => {
+  const f = await createSavedConversationFixture(context);
+  await f.launch();
+  await f.submit('Completed before cancellation', 'Fixture response: Completed before cancellation');
+  const originalId = f.application.ensureMemorySession().session_id;
+  const draft = 'Unsent first line\nUnsent second line';
+  f.terminal.send(`\x1b[200~${draft}\x1b[201~`);
+  f.terminal.send('\x1br');
+  await f.outputIncludes('Rewind to a message');
+  f.terminal.output = '';
+  f.terminal.send('\x1b');
+  await f.outputIncludes('Rewind cancelled');
+  assert.equal(f.application.ensureMemorySession().session_id, originalId);
+  assert.equal(f.runtime.prompts.length, 1);
+  f.terminal.send('\r');
+  await waitFor(() => f.runtime.prompts.length === 2);
+  assert.equal(f.runtime.prompts[1].text, draft);
+});
+
+test('/rewind latest restores an editable first message across narrow and wide resizes', async context => {
+  const f = await createSavedConversationFixture(context);
+  await f.launch();
+  await f.submit('First message to edit', 'Fixture response: First message to edit');
+  await f.submit('/rewind latest', 'Earlier message restored');
+  assert.deepEqual(f.application.conversationEntries(), []);
+  assert.equal(f.application.conversationPending().draft, 'First message to edit');
+  for (const [columns, rows] of [[42, 26], [120, 38]]) {
+    f.terminal.columns = columns; f.terminal.rows = rows; f.terminal.onResize();
+    await new Promise(resolve => setTimeout(resolve, 20));
+    assert.match(stripVTControlCharacters(f.terminal.output), /First message to edit/u);
+  }
+  assert.equal(f.runtime.prompts.length, 1);
+});
+
+test('rewinding an active turn waits for cancellation and saves queued drafts with the original without replay', async context => {
+  const f = await createSavedConversationFixture(context);
+  await f.launch();
+  const ordinaryPrompt = f.runtime.prompt.bind(f.runtime);
+  const stopped = Promise.withResolvers();
+  f.runtime.abort = () => { f.runtime.abortCount += 1; stopped.resolve(); };
+  f.runtime.prompt = async (text, callbacks) => {
+    if (text !== 'Slow fictional request') return ordinaryPrompt(text, callbacks);
+    f.application.beginConversationEntry(text);
+    await stopped.promise;
+    f.application.finishConversationEntry({ status: 'aborted', text: 'Cancelled fictional work.' });
+    return { status: 'aborted', text: 'Cancelled fictional work.' };
+  };
+  f.terminal.send('Slow fictional request'); f.terminal.send('\r');
+  await waitFor(() => Boolean(f.application.conversationEntry));
+  const originalId = f.application.ensureMemorySession().session_id;
+  f.terminal.send('Queued fictional request'); f.terminal.send('\r');
+  f.terminal.send('/rewind'); f.terminal.send('\r');
+  await f.outputIncludes('Rewind to a message');
+  f.terminal.output = ''; f.terminal.send('\r');
+  await f.outputIncludes('Earlier message restored');
+  assert.equal(f.runtime.abortCount, 1);
+  assert.equal(f.runtime.prompts.length, 0);
+  assert.deepEqual(f.application.conversationPending().queued, []);
+  f.terminal.send('\x15');
+  await f.submit(`/resume ${originalId}`, 'Back in:');
+  assert.deepEqual(f.application.conversationPending().queued, ['Queued fictional request']);
+  assert.equal(f.runtime.prompts.length, 0);
+  f.terminal.send('\x1b[A');
+  f.terminal.send('\r');
+  await waitFor(() => f.runtime.prompts.length === 1);
+  assert.equal(f.runtime.prompts[0].text, 'Queued fictional request');
+});
+
+test('a draft queued during rewind cancellation stays paused even if the picker is dismissed', async context => {
+  const f = await createSavedConversationFixture(context);
+  await f.launch();
+  const ordinaryPrompt = f.runtime.prompt.bind(f.runtime);
+  const stopped = Promise.withResolvers();
+  f.runtime.abort = () => { setTimeout(() => stopped.resolve(), 30); };
+  f.runtime.prompt = async (text, callbacks) => {
+    if (text !== 'Slow cancellation fixture') return ordinaryPrompt(text, callbacks);
+    f.application.beginConversationEntry(text);
+    await stopped.promise;
+    f.application.finishConversationEntry({ status: 'aborted', text: 'Cancelled.' });
+    return { status: 'aborted', text: 'Cancelled.' };
+  };
+  f.terminal.send('Slow cancellation fixture'); f.terminal.send('\r');
+  await waitFor(() => Boolean(f.application.conversationEntry));
+  f.terminal.send('/rewind'); f.terminal.send('\r');
+  f.terminal.send('Late queued draft'); f.terminal.send('\r');
+  await f.outputIncludes('Rewind to a message');
+  f.terminal.send('\x1b');
+  await f.outputIncludes('Rewind cancelled');
+  await f.submit('A new explicit request', 'Fixture response: A new explicit request');
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.deepEqual(f.runtime.prompts.map(prompt => prompt.text), ['A new explicit request']);
+});

@@ -4,6 +4,17 @@ import { createSpotifyCredentialStore } from "../../../src/integrations/spotify/
 import { createSpotifyAuthentication } from "../../../src/integrations/spotify/authentication.mjs";
 const [authFile, mode = "refresh"] = process.argv.slice(2);
 const persistent = new PersistentCredentialStore({ authFile });
+let storageFailure;
+for (const method of ["read", "modify"]) {
+  const original = persistent[method].bind(persistent);
+  persistent[method] = async (...args) => {
+    try { return await original(...args); }
+    catch (error) {
+      storageFailure = { method, code: error.code, causeCode: error.cause?.code };
+      throw error;
+    }
+  };
+}
 const credentialStore = createSpotifyCredentialStore({ credentialStore: persistent });
 const controller = new AbortController();
 let release;
@@ -32,5 +43,5 @@ try {
     const token = await auth.refreshAccessToken({ rejectedAccessToken: "old-access", signal: controller.signal });
     process.send({ event: "token", token });
   }
-} catch (error) { process.send({ event: "error", code: error.code }); }
+} catch (error) { process.send({ event: "error", code: error.code, storageFailure }); }
 process.disconnect();
