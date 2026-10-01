@@ -991,7 +991,7 @@ test("Spotify transfer names the visible devices when nothing matches", async ()
   await assert.rejects(
     service.transfer({ deviceName: "kitchen" }),
     (error) => {
-      assert.equal(error.code, "spotify_device_not_found");
+      assert.equal(error.code, "spotify_device_no_match");
       assert.equal(
         error.message,
         'No Spotify device matches "kitchen". Visible now: Everett\'s iPhone (Smartphone, active); Studio Mac (Computer).',
