@@ -127,7 +127,7 @@ Its active logical session resumes across process restarts and model or authenti
 
 The canonical stored transcript contains only completed user and assistant exchanges.
 
-Aborted turns, raw tool traces, and prompt-local candidate IDs do not become stored dialogue history.
+Aborted turns do not become generic dialogue episodes. The conversation-rewind journal separately retains submitted text, rendered outcomes and receipts, including cancelled/interrupted turns, for explicit history restoration. Raw tool traces and reusable action authority are not restored; a branch invalidates candidate IDs and pending plans.
 
 Each completed exchange also creates a typed short-term dialogue episode.
 

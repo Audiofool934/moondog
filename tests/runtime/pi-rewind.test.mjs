@@ -66,6 +66,8 @@ for (const persistent of [true, false]) {
     const secondBranch = await f.runtime.rewindTo(f.application.conversationEntries()[1].entry_id);
     assert.equal(secondBranch.draft, 'Replacement request');
     assert.equal(f.application.listSavedSessions().length, 3);
+    assert.equal(f.application.listSavedSessions()[0].session_id, secondBranch.session_id);
+    assert.equal(f.application.listSavedSessions()[0].last_message, 'Replacement request');
     f.application.resumeSession(originalId); f.runtime.restoreSession();
     assert.equal(f.application.conversationEntries().length, 3);
     assert.match(JSON.stringify(f.runtime.agent.state.messages), /DISCARDED_ANSWER_SENTINEL/u);
@@ -203,4 +205,23 @@ test('rewind of a running turn waits for settlement, retains its receipt in the 
   assert.equal(f.writes.length, 1);
   assert.match(f.store.readConversationEntries(originalId)[0].assistant_text, /Spotify/u);
   assert.equal(f.application.conversationEntries().length, 0);
+});
+
+test('explicit memory recall excludes discarded futures while retaining current branch episodes and preferences', async t => {
+  const f = await fixture(t);
+  await f.say('Prefix request', 'Prefix answer');
+  await f.say('FUTURE_ONLY_SENTINEL', 'FUTURE_REPLY_SENTINEL');
+  f.application.rememberMemory({ text: 'I prefer brief replies', kind: 'preference' });
+  await f.runtime.rewindTo(f.application.conversationEntries()[1].entry_id);
+  await f.say('CURRENT_BRANCH_SENTINEL', 'Current answer');
+  const summary = f.application.memorySummary();
+  assert.doesNotMatch(JSON.stringify(summary), /FUTURE_ONLY_SENTINEL|FUTURE_REPLY_SENTINEL/u);
+  assert.match(JSON.stringify(summary.recent_episodes), /CURRENT_BRANCH_SENTINEL/u);
+  assert.match(JSON.stringify(summary.memories), /I prefer brief replies/u);
+  f.faux.setResponses([tool('moondog_memory_recall', { query: 'FUTURE_ONLY_SENTINEL' }), context => {
+    const recalled = context.messages.findLast(message => message.role === 'toolResult');
+    assert.doesNotMatch(JSON.stringify(recalled), /FUTURE_ONLY_SENTINEL|FUTURE_REPLY_SENTINEL/u);
+    return answer('Continue only from the branch.');
+  }]);
+  await f.runtime.prompt('Continue the earlier discussion');
 });

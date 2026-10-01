@@ -2230,3 +2230,28 @@ test('rewinding an active turn waits for cancellation and saves queued drafts wi
   await waitFor(() => f.runtime.prompts.length === 1);
   assert.equal(f.runtime.prompts[0].text, 'Queued fictional request');
 });
+
+test('a draft queued during rewind cancellation stays paused even if the picker is dismissed', async context => {
+  const f = await createSavedConversationFixture(context);
+  await f.launch();
+  const ordinaryPrompt = f.runtime.prompt.bind(f.runtime);
+  const stopped = Promise.withResolvers();
+  f.runtime.abort = () => { setTimeout(() => stopped.resolve(), 30); };
+  f.runtime.prompt = async (text, callbacks) => {
+    if (text !== 'Slow cancellation fixture') return ordinaryPrompt(text, callbacks);
+    f.application.beginConversationEntry(text);
+    await stopped.promise;
+    f.application.finishConversationEntry({ status: 'aborted', text: 'Cancelled.' });
+    return { status: 'aborted', text: 'Cancelled.' };
+  };
+  f.terminal.send('Slow cancellation fixture'); f.terminal.send('\r');
+  await waitFor(() => Boolean(f.application.conversationEntry));
+  f.terminal.send('/rewind'); f.terminal.send('\r');
+  f.terminal.send('Late queued draft'); f.terminal.send('\r');
+  await f.outputIncludes('Rewind to a message');
+  f.terminal.send('\x1b');
+  await f.outputIncludes('Rewind cancelled');
+  await f.submit('A new explicit request', 'Fixture response: A new explicit request');
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.deepEqual(f.runtime.prompts.map(prompt => prompt.text), ['A new explicit request']);
+});

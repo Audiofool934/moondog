@@ -1346,8 +1346,8 @@ export async function runMoondogTui({
       });
       const items = sessions.map((session) => ({
         value: session.session_id,
-        label: sanitizeTerminalText(session.title).replace(/\s+/gu, " ").trim() || "Untitled",
-        description: `${formatTime.format(new Date(session.updated_at))} · ${session.turn_count} ${session.turn_count === 1 ? "message" : "messages"}${session.session_id === currentId ? " · open now" : ""}`,
+        label: `${session.parent_session_id ? 'Branch · ' : ''}${sanitizeTerminalText(session.title).replace(/\s+/gu, " ").trim() || "Untitled"}`,
+        description: `${formatTime.format(new Date(session.updated_at))} · ${session.turn_count} ${session.turn_count === 1 ? "message" : "messages"}${session.session_id === currentId ? " · open now" : ""}${session.parent_session_id && session.last_message ? ` · ${sanitizeTerminalText(session.last_message).replace(/\s+/gu, ' ').slice(0, 100)}` : ''}`,
       }));
       selected = await choose(items, currentId, "Pick up where you left off");
       if (cleanedUp) return;
@@ -1806,6 +1806,7 @@ export async function runMoondogTui({
       if (pending) {
         if (messageQueue.length >= 30) editor.setText(pending);
         else messageQueue.push(pending);
+        if (rewindPending) queuePaused = true;
       }
       if (!cleanedUp) tui.requestRender();
       return;

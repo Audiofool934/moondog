@@ -850,15 +850,16 @@ export class LocalMemoryStore {
       : 200;
     return this.#database.prepare(`
       SELECT s.session_id, s.started_at,
-        COALESCE((SELECT MAX(created_at) FROM conversation_entries WHERE session_id = s.session_id),
-          (SELECT MAX(created_at) FROM turns WHERE session_id = s.session_id), s.started_at) AS updated_at,
+        MAX(s.started_at, COALESCE((SELECT MAX(created_at) FROM conversation_entries WHERE session_id = s.session_id),
+          (SELECT MAX(created_at) FROM turns WHERE session_id = s.session_id), s.started_at)) AS updated_at,
         CASE WHEN EXISTS (SELECT 1 FROM conversation_entries WHERE session_id = s.session_id)
           THEN (SELECT SUM(1 + (assistant_text != '')) FROM conversation_entries WHERE session_id = s.session_id)
           ELSE (SELECT COUNT(*) FROM turns WHERE session_id = s.session_id) END AS turn_count,
         COALESCE((SELECT user_text FROM conversation_entries WHERE session_id = s.session_id ORDER BY position LIMIT 1),
           (SELECT content FROM turns WHERE session_id = s.session_id AND role = 'user' ORDER BY position LIMIT 1),
           b.draft, '') AS title,
-        b.parent_session_id
+        b.parent_session_id,
+        COALESCE(NULLIF(b.draft, ''), (SELECT user_text FROM conversation_entries WHERE session_id = s.session_id ORDER BY position DESC LIMIT 1), '') AS last_message
       FROM sessions s LEFT JOIN conversation_branches b ON b.session_id = s.session_id
       WHERE s.route_key = ? AND (
         EXISTS (SELECT 1 FROM conversation_entries WHERE session_id = s.session_id) OR
@@ -867,7 +868,7 @@ export class LocalMemoryStore {
     `).all(route, bounded).map(row => ({
       session_id: row.session_id, started_at: row.started_at, updated_at: row.updated_at,
       turn_count: row.turn_count, title: row.title,
-      ...(row.parent_session_id ? { parent_session_id: row.parent_session_id } : {}),
+      ...(row.parent_session_id ? { parent_session_id: row.parent_session_id, last_message: row.last_message } : {}),
     }));
   }
 
@@ -1669,6 +1670,7 @@ export class LocalMemoryStore {
   recentEpisodes({
     query,
     excludeSessionId,
+    includeCurrentSession = false,
     limit = 12,
     now = this.#clock(),
   } = {}) {
@@ -1681,12 +1683,12 @@ export class LocalMemoryStore {
         FROM episodes
         WHERE status = 'active'
           AND (expires_at IS NULL OR expires_at > ?)
-          AND (session_id IS NULL OR COALESCE((SELECT root_session_id FROM conversation_branches b WHERE b.session_id = episodes.session_id), session_id)
+          AND (session_id IS NULL OR (session_id = ? AND ? = 1) OR COALESCE((SELECT root_session_id FROM conversation_branches b WHERE b.session_id = episodes.session_id), session_id)
             != COALESCE((SELECT root_session_id FROM conversation_branches WHERE session_id = ?), ?, ''))
         ORDER BY occurred_at DESC, episode_id ASC
         LIMIT 256
       `)
-      .all(nowTimestamp, excludeSessionId ?? null, excludeSessionId ?? null);
+      .all(nowTimestamp, excludeSessionId ?? null, includeCurrentSession ? 1 : 0, excludeSessionId ?? null, excludeSessionId ?? null);
     const terms = queryTerms(query);
     return rows
       .map((row) => ({

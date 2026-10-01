@@ -473,8 +473,7 @@ export class MoondogApplication {
       ...status,
       memories: this.memoryStore.listMemories({ query, limit }),
       recent_episodes: this.memoryStore.recentEpisodes({
-        query,
-        limit,
+        query, limit, excludeSessionId: session.session_id, includeCurrentSession: true,
       }),
       recent_sessions: this.memoryStore.recentSessions({
         excludeSessionId: session.session_id,
@@ -635,7 +634,7 @@ export class MoondogApplication {
     if (!this.memoryStore) return [...this.localConversations.values()].filter(row => row.entries.length || row.pending.draft)
       .reverse().slice(0, limit).map(row => ({ session_id: row.session_id, started_at: row.started_at,
         updated_at: row.entries.at(-1)?.created_at ?? row.started_at, turn_count: row.entries.length * 2,
-        title: row.entries[0]?.user_text ?? row.pending.draft, ...(row.parent_session_id ? { parent_session_id: row.parent_session_id } : {}) }));
+        title: row.entries[0]?.user_text ?? row.pending.draft, ...(row.parent_session_id ? { parent_session_id: row.parent_session_id, last_message: row.pending.draft || row.entries.at(-1)?.user_text || '' } : {}) }));
     return this.memoryStore.listSessions({
       routeKey: this.memoryRouteKey,
       limit,
