@@ -38,13 +38,27 @@ const playbackActions = new Set([
   "transferring_playback",
 ]);
 
+// Provider error bodies are untrusted and can contain identifiers or credentials.
+// Keep only known machine reasons; never return an arbitrary response message.
+const publicErrorReasons = new Set([
+  "NO_ACTIVE_DEVICE", "PREMIUM_REQUIRED", "RESTRICTION_VIOLATED",
+  "DEVICE_NOT_CONTROLLABLE", "REMOTE_CONTROL_DISALLOW", "CONTEXT_DISALLOW",
+  "NOT_ALLOWED", "TRACK_NOT_PLAYABLE", "CONTENT_UNAVAILABLE", "NON_PLAYABLE",
+  "QUOTA_EXCEEDED", "UNKNOWN", "NO_SPECIFIC_REASON",
+]);
+
+export function spotifyErrorReason(value) {
+  return publicErrorReasons.has(value) ? value : null;
+}
+
 export class SpotifyWebApiError extends Error {
-  constructor(code, message, { status = null, retryAfterSeconds = null, outcomeUnknown = false } = {}) {
+  constructor(code, message, { status = null, reason = null, retryAfterSeconds = null, outcomeUnknown = false } = {}) {
     super(message);
     this.name = "SpotifyWebApiError";
     this.code = code;
     this.provider = "spotify";
     this.status = status;
+    this.reason = spotifyErrorReason(reason);
     this.retryAfterSeconds = retryAfterSeconds;
     this.outcomeUnknown = outcomeUnknown;
   }
@@ -641,7 +655,7 @@ export function createSpotifyWebApiClient({
       }
       if (response.ok) return payload;
       const retryAfter = retryAfterSeconds(response.headers);
-      const options = { status: response.status, retryAfterSeconds: retryAfter,
+      const options = { status: response.status, reason: quotaReason(payload), retryAfterSeconds: retryAfter,
         outcomeUnknown: !read && response.status >= 500 };
       if (response.status === 401) {
         if (!refreshed && typeof refreshAccessToken === "function" && (!read || attempt < maxAttempts)) {
