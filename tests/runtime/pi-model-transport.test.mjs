@@ -280,14 +280,20 @@ test("a model HTTP retry after Spotify next keeps its receipt and executes the a
   assert.equal(toolEnds[0].isError, false);
 });
 
-test("exhaustion after Spotify next reports executed tools without repeating the action", async () => {
+test("exhaustion after Spotify next returns its accepted receipt without repeating the action", async () => {
   const fixture = runtimeFixture(({ count }) => {
     if (count === 1) return spotifyNextResponse();
     throw networkFailure();
   }, { spotify: true });
-  await assert.rejects(fixture.runtime.prompt("Skip one track."), (error) =>
-    assertSafeConnectionError(error, { toolsExecuted: true }),
-  );
+  const result = await fixture.runtime.prompt("Skip one track.");
+  assert.equal(result.status, "interrupted");
+  assert.deepEqual(result.spotify_write_receipts, [{
+    provider: "spotify", ok: true, effect: "write_external",
+    action: "playback.next", state: "accepted",
+  }]);
+  assert.match(result.text, /Spotify accepted the next-track request/u);
+  assert.doesNotMatch(JSON.stringify(result), /PRIVATE_|Bearer|SENTINEL/u);
+  assert.equal(result.memory_recorded, false);
   assert.equal(fixture.requests.length, 4);
   assert.deepEqual(fixture.writes, [{ action: "next" }]);
 });
