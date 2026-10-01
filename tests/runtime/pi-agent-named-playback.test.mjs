@@ -181,3 +181,66 @@ test("a later playback failure retains an earlier accepted receipt and blocks fu
   assert.match(result.text, /HTTP 400/u);
   assert.doesNotMatch(result.text, /UNSUPPORTED/u);
 });
+
+for (const [prompt, title, artist] of [
+  ["随便播放一首刘森的音乐", "天长地久", "刘森"],
+  ["播放刘森的『发现』", "发现", "刘森"],
+  ["Play 'Discover Me' by Mara Vale", "Discover Me", "Mara Vale"],
+]) {
+  test(`catalog fallback preserves successful direct playback: ${prompt}`, async t => {
+    const f = fixture(t, { title, artist });
+    f.faux.setResponses(catalogTrace(f));
+    const result = await f.runtime.prompt(prompt);
+    assert.equal(f.writes.length, 1);
+    assert.doesNotMatch(result.text, /playlist plan|UNSUPPORTED/u);
+    assert.match(result.text, new RegExp(title, "u"));
+  });
+}
+
+for (const status of [204, 400, 503]) {
+  test(`a model failure after HTTP ${status} preserves Spotify outcomes without replay`, async t => {
+    const f = fixture(t, { status });
+    f.faux.setResponses([...catalogTrace(f).slice(0, -1), fauxAssistantMessage([], { stopReason: "error", errorMessage: "PRIVATE_MODEL_FAILURE" })]);
+    const result = await f.runtime.prompt(exactPrompt);
+    assert.equal(result.status, "interrupted");
+    assert.equal(f.writes.length, 1);
+    if (status === 204) assert.equal(result.spotify_write_receipts[0].state, "accepted");
+    else assert.equal(result.spotify_playback_failures[0].status, status);
+    if (status === 503) assert.equal(result.spotify_write_receipts[0].state, "unknown");
+    assert.doesNotMatch(result.text, /PRIVATE_|UNSUPPORTED|playlist plan/u);
+    assert.equal(result.memory_recorded, false);
+    f.faux.setResponses([context => {
+      assert.ok(context.messages.some(message => message.role === "assistant" && message.content.some(block => block.text === result.text)));
+      return answer("The recorded outcome is still available.");
+    }]);
+    assert.equal((await f.runtime.prompt("What happened? Do not change playback.")).status, "completed");
+    assert.equal(f.writes.length, 1);
+  });
+}
+
+test("UI callback errors cannot erase accepted Spotify effects", async t => {
+  const f = fixture(t);
+  f.faux.setResponses(catalogTrace(f));
+  const result = await f.runtime.prompt(exactPrompt, {
+    onToolEnd({ capabilityId }) { if (capabilityId === "spotify.player.control") throw new Error("PRIVATE_UI_FAILURE"); },
+    onTextReplace() { throw new Error("PRIVATE_RENDER_FAILURE"); },
+  });
+  assert.equal(f.writes.length, 1);
+  assert.equal(result.status, "interrupted");
+  assert.equal(result.spotify_write_receipts[0].state, "accepted");
+  assert.doesNotMatch(result.text, /PRIVATE_/u);
+});
+
+test("saving a found track alone never confirms a requested playback action", async t => {
+  const f = fixture(t);
+  f.faux.setResponses([tool("moondog_spotify_search", { query: "天长地久 刘森" }), context =>
+    tool("moondog_spotify_library_save", { track_refs: [{ track_ref_id: results(context, "moondog_spotify_search")[0].items[0].track_ref_id }] }),
+  answer("CLAIMED_PLAYING_SENTINEL")]);
+  const result = await f.runtime.prompt(`${exactPrompt}，并保存到我的曲库`);
+  assert.equal(f.writes.length, 1);
+  assert.equal(f.writes[0].pathname, "/v1/me/library");
+  assert.match(result.text, /未发送播放/u);
+  assert.doesNotMatch(result.text, /CLAIMED_PLAYING/u);
+  assert.equal(result.spotify_write_receipts[0].action, "library.save");
+  assert.match(result.text, /Spotify 已接受/u);
+});

@@ -6118,7 +6118,7 @@ function playbackOnlyRequest(text) {
   // Presentation routing only. This never grants authority or chooses a track.
   // Ignore words inside quoted titles when looking for a mixed discovery task.
   const request = text.normalize("NFKC").trim();
-  const outsideTitles = request.replace(/["“「《][^"”」》]*["”」》]/gu, " song ");
+  const outsideTitles = request.replace(/"[^"]*"|'[^']*'|“[^”]*”|‘[^’]*’|「[^」]*」|『[^』]*』|《[^》]*》/gu, " song ");
   if (/\b(?:recommend\w*|suggest\w*|similar|playlist\w*|discover\w*)\b|推荐|相似|类似|歌单|再找|发现/iu.test(outsideTitles)) return false;
   return /^(?:(?:please|can you|could you|would you)\s+)*(?:play|queue|put on)\b\s*\S/iu.test(request) ||
     /^(?:请|帮我|给我|麻烦|随便)*(?:播放|放一首|放一下|放首)\s*\S/u.test(request) ||
@@ -6146,7 +6146,7 @@ function renderSpotifyPlaybackFailure(failure, promptText) {
 
 function renderIncompletePlaybackLookup(promptState, promptText) {
   if (!playbackOnlyRequest(promptText) ||
-      promptState.spotifyWriteReceipts.length || promptState.spotifyPlaybackFailures.length ||
+      promptState.spotifyWriteReceipts.some(receipt => receipt.action.startsWith("playback.")) || promptState.spotifyPlaybackFailures.length ||
       promptState.externalCandidateSets.some((set) => !set.playbackLookup)) return null;
   if (promptState.spotifyLookupFailures.length) return promptState.spotifyLookupFailures
     .map(failure => renderSpotifyPlaybackFailure({ ...failure, action: "lookup" }, promptText)).join("\n\n");
@@ -6186,7 +6186,10 @@ function renderNamedSongPlayback(promptState, promptText) {
   const title = normalize(track.title);
   const playbackRequested = /\b(?:play|queue|put on)\b/u.test(prompt) ||
     /播放|放一首|放一下|加入队列/u.test(promptText);
-  if (!title || !prompt.includes(title) || !playbackRequested) return null;
+  const artist = normalize(track.artist_credit);
+  const anySongByArtist = artist && prompt.includes(artist) &&
+    (/随便|任意|任何|一首.*(?:的音乐|的歌|歌曲)/u.test(promptText) || /\b(?:any|a|one)\s+(?:one\s+)?(?:song|track)\b/iu.test(promptText));
+  if (!title || (!prompt.includes(title) && !anySongByArtist) || !playbackRequested) return null;
   const chinese = responseLanguage(promptText) === "zh";
   if (playback.action === "playback.queue.add") {
     return chinese
@@ -6850,8 +6853,12 @@ export class PiAgentRuntime {
             terminate: true,
           };
         }
-        if (this.activePromptState?.spotifyPlaybackFailures.length &&
-            ["spotify.player.control", "spotify.queue.add", "spotify.device.transfer"].includes(descriptor.capability_id)) {
+        const state = this.activePromptState;
+        const playbackStopped = state && (state.spotifyPlaybackFailures.length ||
+          ["partial", "unknown", "failed"].includes(state.spotifyQueuePlan?.state) ||
+          state.spotifyWriteReceipts.some(receipt => receipt.state === "unknown"));
+        if (playbackStopped &&
+            ["spotify.player.control", "spotify.queue.add", "spotify.device.transfer", "spotify.queue.similar"].includes(descriptor.capability_id)) {
           return { block: true, reason: "A Spotify playback action already failed in this turn. Read-only diagnosis is allowed; another playback write requires a new user request." };
         }
         if (["spotify.player.status", "spotify.player.now_playing", "spotify.queue.status", "spotify.device.list", "spotify.device.transfer", "spotify.queue.similar", "spotify.top", "spotify.playlist.edit.quick"].includes(descriptor.capability_id)) {
@@ -7247,8 +7254,9 @@ To confirm, reply: ${preview.confirmation}`].join("\n\n");
 
       const incompletePlayback = renderIncompletePlaybackLookup(promptState, text);
       if (incompletePlayback) {
-        replaceRenderedText(incompletePlayback);
-        return completedResult(incompletePlayback);
+        const outcomeText = [incompletePlayback, ...spotifyEffectTexts()].join("\n\n");
+        replaceRenderedText(outcomeText);
+        return completedResult(outcomeText);
       }
 
       if (promptState.validatedPlaylistPlan) {
@@ -7341,6 +7349,22 @@ To confirm, reply: ${preview.confirmation}`].join("\n\n");
       }
 
       return completedResult(finalText || streamedText);
+    } catch (error) {
+      // A later model/renderer failure cannot undo an external action or erase
+      // its receipt. Keep only host evidence; discard model claims and staged
+      // memory/plans. The caller can still display the returned receipt if its
+      // streaming callback itself was the source of the exception.
+      const receipts = spotifyEffectTexts();
+      if (!receipts.length) throw error;
+      const interruptedText = [responseLanguage(text) === "zh"
+        ? "回复中断；已确认的 Spotify 操作结果如下。未重新执行任何操作。"
+        : "The response was interrupted. The recorded Spotify outcomes are below; no action was replayed.", ...receipts].join("\n\n");
+      compactCompletedPromptHistory(this.agent, historyStartIndex, interruptedText);
+      historyFinalized = true;
+      this.application.invalidateSpotifyQuickEditContext?.();
+      try { replaceRenderedText(interruptedText); } catch { /* Return the receipt even if rendering is unavailable. */ }
+      return { status: "interrupted", text: interruptedText, ...spotifyEffectDetails(),
+        memory_recorded: false, messages_in_process: this.agent.state.messages.length };
     } finally {
       unsubscribe();
       try {

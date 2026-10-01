@@ -139,3 +139,30 @@ test("no playback is an explicit no-op and queue inspection failure starts no wr
   await assert.rejects(application.spotifyQueueSimilar(), /Fictional queue unavailable/u);
   assert.equal(calls.includes("write"), false);
 });
+
+for (const first of ["control", "similar_unknown", "similar_partial"]) {
+  test(`a stopped ${first} action fences all subsequent playback tools in the turn`, async context => {
+    let writes = 0;
+    const { application, service, calls } = await fixture(context, stage => {
+      if (first !== "control" && stage === "write" && writes++ === (first === "similar_partial" ? 1 : 0)) {
+        throw Object.assign(new Error("Fictional uncertain result"), { code: "spotify_network_error", outcomeUnknown: true });
+      }
+    });
+    service.resume = async () => {
+      calls.push("resume");
+      if (first === "control") throw Object.assign(new Error("Fictional rejection"), { code: "spotify_api_error", status: 400 });
+      return { provider: "spotify", ok: true, effect: "write_external", action: "playback.resume", state: "accepted" };
+    };
+    const faux = fauxProvider(); const models = createModels(); models.setProvider(faux.provider);
+    const runtime = new PiAgentRuntime({ application, models, model: faux.getModel(), provider: "faux", modelId: "faux-1" });
+    const control = fauxToolCall("moondog_spotify_player_control", { action: "resume" });
+    const similar = fauxToolCall("moondog_spotify_queue_similar", { count: 3 });
+    // Both tools in one batch also obey the sequential failure fence.
+    faux.setResponses([fauxAssistantMessage(first === "control" ? [control, similar] : [similar, control], { stopReason: "toolUse" }),
+      fauxAssistantMessage([fauxText("UNVERIFIED_SUCCESS")])]);
+    const result = await runtime.prompt("Resume playback and queue similar music.");
+    assert.equal(calls.filter(call => call === "resume").length, first === "control" ? 1 : 0);
+    assert.equal(calls.filter(call => call === "write").length, first === "control" ? 0 : first === "similar_partial" ? 2 : 1);
+    assert.doesNotMatch(result.text, /UNVERIFIED_SUCCESS/u);
+  });
+}
