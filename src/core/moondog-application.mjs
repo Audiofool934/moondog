@@ -13,9 +13,17 @@ import { normalizeMemoryContent } from "../memory/local-memory-store.mjs";
 
 const minimumNodeVersion = [22, 19, 0];
 
+function spotifyPlaybackTarget(value, types) {
+  if (typeof value !== "string") return null;
+  const match = /^spotify:(track|episode|album|artist|playlist):([A-Za-z0-9]{1,128})$/u.exec(value) ??
+    /^https:\/\/open\.spotify\.com\/(?:intl-[A-Za-z-]+\/)?(track|episode|album|artist|playlist)\/([A-Za-z0-9]{1,128})(?:\?[^\s#]*)?$/u.exec(value);
+  return match && types.includes(match[1]) ? `spotify:${match[1]}:${match[2]}` : null;
+}
+
 function spotifyResolutionError(code, message) {
   const error = new Error(message);
   error.code = code;
+  error.actionNotDispatched = true;
   return error;
 }
 
@@ -947,44 +955,74 @@ export class MoondogApplication {
     };
   }
 
+  resolveSpotifyPlaybackUri(value, types) {
+    // A model may put an opaque host reference in the legacy URI field. Resolve
+    // only an exact retained reference; never manufacture a URI from its text.
+    const reference = this.spotifyResolutions.get(value) ?? [...this.spotifyReadSelections.values()].flat()
+      .find(item => item.item_ref_id === value && types.includes(item.type));
+    if (reference?.uri && types.some(type => reference.uri.startsWith(`spotify:${type}:`))) return reference.uri;
+    value = spotifyPlaybackTarget(value, types);
+    if (!value) {
+      throw spotifyResolutionError("invalid_spotify_uri", "Use item_ref_id or track_refs from a current Spotify result; an opaque reference is not a Spotify URI.");
+    }
+    const transaction = this.pendingPlaylistPromptTransaction;
+    const known = [...this.spotifyResolutions.values(), ...[...this.spotifyReadSelections.values()].flat()].some(item => item.uri === value);
+    // Parse the entire pasted token. A malformed suffix must never authorize a
+    // different, shortened provider ID chosen by the model.
+    const userTargets = transaction?.userText?.match(/(?:spotify:|https:\/\/open\.spotify\.com\/)[^\s<>"'“”‘’《》]+/gu) ?? [];
+    const supplied = userTargets.some(target => spotifyPlaybackTarget(target.replace(/[),.;!?，。！？、；]+$/u, ""), types) === value);
+    if (transaction && !known && !supplied) throw spotifyResolutionError("spotify_playback_source_untrusted", "Use a retained host reference or a Spotify URI/URL supplied by the current user. Do not invent provider identifiers.");
+    return value;
+  }
+
+  #resumeSpotifySelection(parameters, { signal } = {}) {
+    const transaction = this.pendingPlaylistPromptTransaction;
+    const key = parameters.uris || parameters.contextUri ? JSON.stringify([parameters.uris ?? null, parameters.contextUri ?? null,
+      parameters.deviceId ?? null, parameters.positionMs ?? null]) : null;
+    if (key && transaction?.lastAcceptedPlaybackSelection === key) throw spotifyResolutionError("spotify_playback_already_accepted", "This exact playback selection already succeeded in this turn. Do not send it again.");
+    return this.requireSpotifyService().resume(parameters, { signal }).then(receipt => {
+      if (key && transaction && receipt.state === "accepted") transaction.lastAcceptedPlaybackSelection = key;
+      return receipt;
+    });
+  }
+
   spotifyControl({ action, ...parameters }, { signal } = {}) {
     signal?.throwIfAborted();
     this.requireSpotifyNonRemovalAction();
     const service = this.requireSpotifyService();
-    if (parameters.contextRefId !== undefined) {
-      if (action !== "resume" || parameters.contextUri !== undefined || parameters.trackRefs !== undefined || parameters.uris !== undefined) {
-        throw spotifyResolutionError("spotify_playback_source_conflict", "Choose one playback source.");
-      }
+    const sources = ["itemRefId", "contextRefId", "contextUri", "trackRefs", "uris"].filter(key => parameters[key] !== undefined);
+    if (sources.length > 1 || (sources.length && action !== "resume")) throw spotifyResolutionError("spotify_playback_source_conflict", "Choose one playback source for resume.");
+    if (parameters.itemRefId !== undefined) {
+      const { itemRefId, ...rest } = parameters;
+      parameters = { ...rest, uris: [this.requireSpotifyReadItem(itemRefId, ["track", "episode"]).uri] };
+    } else if (parameters.contextRefId !== undefined) {
       const { contextRefId, ...rest } = parameters;
       parameters = { ...rest, contextUri: this.requireSpotifyReadItem(contextRefId, ["album", "artist", "playlist"]).uri };
-    }
-    if (action === "resume" && Array.isArray(parameters.trackRefs)) {
-      const { trackRefs, ...playbackParameters } = parameters;
-      const uris = this.requireSpotifyTrackUris(trackRefs);
-      return service.resume({
-        ...playbackParameters,
-        uris,
-      }, { signal });
+    } else if (parameters.trackRefs !== undefined) {
+      const { trackRefs, ...rest } = parameters;
+      parameters = { ...rest, uris: this.requireSpotifyTrackUris(trackRefs) };
+    } else if (parameters.uris !== undefined) {
+      if (!Array.isArray(parameters.uris) || parameters.uris.length < 1 || parameters.uris.length > 12) throw spotifyResolutionError("invalid_spotify_uris", "Choose from 1 to 12 Spotify playback items.");
+      parameters = { ...parameters, uris: parameters.uris.map(value => this.resolveSpotifyPlaybackUri(value, ["track", "episode"])) };
+    } else if (parameters.contextUri !== undefined) {
+      parameters = { ...parameters, contextUri: this.resolveSpotifyPlaybackUri(parameters.contextUri, ["album", "artist", "playlist"]) };
     }
     switch (action) {
-      case "resume":
-        return service.resume(parameters, { signal });
+      case "resume": return this.#resumeSpotifySelection(parameters, { signal });
       case "pause":
-        return service.pause(parameters, { signal });
       case "next":
-        return service.next(parameters, { signal });
       case "previous":
-        return service.previous(parameters, { signal });
-      case "volume":
-        return service.setVolume(parameters, { signal });
-      case "seek":
-        return service.seek(parameters, { signal });
-      case "shuffle":
-        return service.setShuffle(parameters, { signal });
-      case "repeat":
-        return service.setRepeat(parameters, { signal });
-      default:
-        throw new Error("Unsupported Spotify player action.");
+      case "seek": {
+        const transaction = this.pendingPlaylistPromptTransaction;
+        return service[action](parameters, { signal }).then(receipt => {
+          if (transaction) transaction.lastAcceptedPlaybackSelection = null;
+          return receipt;
+        });
+      }
+      case "volume": return service.setVolume(parameters, { signal });
+      case "shuffle": return service.setShuffle(parameters, { signal });
+      case "repeat": return service.setRepeat(parameters, { signal });
+      default: throw spotifyResolutionError("invalid_spotify_action", "Unsupported Spotify player action.");
     }
   }
 
@@ -1989,7 +2027,7 @@ export class MoondogApplication {
         "The pending plan could not be fully resolved on Spotify, so playback was not changed.",
       );
     }
-    const receipt = await this.requireSpotifyService().resume({
+    const receipt = await this.#resumeSpotifySelection({
       uris,
       ...(deviceId ? { deviceId } : {}),
     }, { signal });

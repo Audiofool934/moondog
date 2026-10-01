@@ -16,6 +16,7 @@ import {
   listPiModels,
   listPiProviders,
 } from "../../runtime/pi/model-catalog.mjs";
+import { getPublicPiModelCatalog } from "../../runtime/pi/public-model-catalog.mjs";
 import { supportedAuthProviderIds } from "../../runtime/pi/authentication.mjs";
 import {
   formatLocalResult,
@@ -189,8 +190,15 @@ export async function runMoondogTui({
   openImportHelp,
   providers = listPiProviders,
   models = listPiModels,
+  refreshModels,
   environment = process.env,
 }) {
+  if (providers === listPiProviders && models === listPiModels) {
+    const catalog = await getPublicPiModelCatalog(environment);
+    providers = () => catalog.providers();
+    models = id => catalog.models(id);
+    refreshModels ??= options => catalog.refresh(options);
+  }
   let activeRuntime = runtime;
   application.startNewSession?.("tui_start");
   activeRuntime.reset();
@@ -831,9 +839,26 @@ export async function runMoondogTui({
     return nextStatus;
   };
 
+  const refreshCatalog = async (options) => {
+    try { return await refreshModels(options); }
+    catch (error) {
+      if (options.signal?.aborted) throw options.signal.reason;
+      return [{ provider: options.provider ?? "catalog", state: "failed" }];
+    }
+  };
+
   const selectModel = async (args) => {
-    if (args.length > 2) {
-      throw new Error("Usage: /model [provider] [model].");
+    if (args.length > 2) throw new Error("Usage: /model [provider] [model], or /model refresh [provider].");
+    const describeRefresh = results => results.map(result => `${result.provider}: ${result.state}${result.count !== undefined ? ` (${result.count} current models)` : ""}${result.skipped ? `; ${result.skipped} incompatible entries skipped` : ""}${result.state === "failed" ? "; previous catalog retained" : ""}`).join("\n");
+    if (args[0]?.toLowerCase() === "refresh") {
+      if (!refreshModels) throw new Error("Catalog refresh is unavailable in this launch mode.");
+      setFooter("Refreshing public model metadata... Ctrl+C cancels.");
+      const results = await refreshCatalog({ provider: args[1]?.toLowerCase(), force: true, signal: localCommandController?.signal });
+      if (cleanedUp) return;
+      enterConversation();
+      addMoondogMessage(`Model choices refreshed from Pi’s public catalog (pi.dev).\n\n${describeRefresh(results)}\n\nYour selected model and conversation are unchanged.`);
+      setFooter("Catalog checked. /model opens the updated choices.");
+      return;
     }
 
     const availableProviders = providers()
@@ -871,6 +896,14 @@ export async function runMoondogTui({
         }
         providerId = selectedProvider.value;
       }
+      let catalogNote = "";
+      if (refreshModels) {
+        setFooter("Checking public model catalog... Ctrl+C cancels.");
+        const results = await refreshCatalog({ provider: providerId, signal: localCommandController?.signal });
+        if (cleanedUp) return;
+        if (results.some(result => result.state === "failed")) catalogNote = " (cached/bundled fallback)";
+        setFooter(results.some(result => result.state === "failed") ? "Catalog unavailable; showing retained choices. /model refresh retries." : "Choose a model. Esc goes back.");
+      }
       const availableModels = models(providerId);
       if (modelId) {
         if (!availableModels.some((model) => model.id === modelId)) {
@@ -880,10 +913,10 @@ export async function runMoondogTui({
         const selectedModel = await choose(
           availableModels.map((model) => ({
             value: model.id, label: model.id,
-            description: `${model.name}${model.reasoning ? " - reasoning" : ""}`,
+            description: `${model.name}${model.reasoning ? " - reasoning" : ""}${model.catalogNote ? ` - ${model.catalogNote}` : ""}`,
           })),
           runtimeStatus.provider === providerId ? runtimeStatus.model : undefined,
-          `Choose a model for ${providerId}`,
+          `Choose a model for ${providerId}${catalogNote}`,
         );
         if (!selectedModel) {
           if (!args[0] && availableModels.length && !cleanedUp) {
@@ -898,6 +931,11 @@ export async function runMoondogTui({
       break;
     }
 
+    localCommandController?.signal.throwIfAborted();
+    // Saving settings and replacing a runtime is one existing switch transaction.
+    // Only the preceding catalog check is cancellable; never claim an aborted
+    // switch after its settings write or authentication work has begun.
+    setBusy(true);
     setFooter(`Loading ${providerId}/${modelId}...`);
     const status = await replaceRuntime({ provider: providerId, model: modelId });
     addMoondogMessage(
@@ -1641,7 +1679,7 @@ export async function runMoondogTui({
       try {
         if (!["home", "theme", "art", "motion", "model", "resume", "rewind", "new", "taste", "profile", "import"].includes(command)) enterConversation();
         if (command !== "auth") editor.addToHistory(value);
-        localCommandController = ["web", "lyrics"].includes(command) ? new AbortController() : null;
+        localCommandController = ["web", "lyrics", "model"].includes(command) ? new AbortController() : null;
         const controller = localCommandController;
         setBusy(true, controller ? () => controller.abort() : null);
         setFooter(`/${command}...`);
@@ -1655,7 +1693,7 @@ export async function runMoondogTui({
         if (cleanedUp) return;
         enterConversation();
         const cancelled = localCommandController?.signal.aborted;
-        addMoondogMessage(cancelled ? command === "web" ? "Stopped the lookup." : "Stopped the lyric sync." : `That didn't work: ${error.message}`);
+        addMoondogMessage(cancelled ? command === "web" ? "Stopped the lookup." : command === "model" ? "Stopped the catalog check. Model unchanged." : "Stopped the lyric sync." : `That didn't work: ${error.message}`);
         setFooter(cancelled ? "Cancelled." : `/${command} didn't work.`, cancelled ? dim : failure);
       } finally {
         localCommandController = null;

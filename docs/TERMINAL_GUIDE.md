@@ -640,8 +640,15 @@ A model without credentials stays offline and shows the matching authentication 
 | Gemini | `google` | `GEMINI_API_KEY` |
 | OpenRouter | `openrouter` | `OPENROUTER_API_KEY` |
 
-The model picker reads Pi's bundled model catalog, so available model IDs follow the pinned Pi dependency.
-Models still depend on provider availability and your account's access.
+The model picker starts with Pi's bundled catalog and a validated local cache. Opening a supported provider checks Pi's public catalog when the cache is more than four hours old. This updates compatible model choices without upgrading Pi or changing your selected model. A failed check keeps the last usable cache and bundled choices.
+
+Use `/model refresh` to refresh all ten sign-in-supported providers, or `/model refresh deepseek` for one. Ctrl+C cancels the check. Refresh sends only the provider ID, Pi compatibility version and optional public catalog ETag to `pi.dev`; it sends no credentials, prompts or custom provider configuration and makes no model or OAuth request. It does not restart the current conversation. Other bundled Pi providers retain their installed catalogs.
+
+Moondog accepts only metadata compatible with the installed provider's transport, keeps its API endpoint and preserves previously known model IDs. Incompatible entries are skipped; retained IDs absent from the current catalog are marked in the picker. The public cache lives in `model-catalog/` beside Moondog's settings, separate from credentials. Existing custom runtime factories remain authoritative; Moondog does not import another application's `models.json`.
+
+As of October 1, 2026, DeepSeek's [official model table](https://api-docs.deepseek.com/quick_start/pricing/) identifies `deepseek-flash` as **DeepSeek V4.1 Flash** and `deepseek-v4-pro` as the distinct **V4 Pro (0813)**. The legacy IDs `deepseek-v4-flash` and `deepseek-v4-flash-vision-exp` still route to V4.1 Flash at DeepSeek. They remain selectable and are labeled as aliases. A saved alias stays unchanged. To deliberately select the canonical Flash ID, run `/model deepseek deepseek-flash`. Catalog costs are estimates; provider pricing and account access govern actual requests.
+
+Models still depend on provider availability and your account's access. Catalog refresh does not verify entitlement or make a paid test request.
 Moondog's `zai` provider uses the [standard Z.AI API endpoint](https://docs.z.ai/guides/develop/http/introduction), `https://api.z.ai/api/paas/v4`, for music conversation.
 This differs from Pi's coding-plan default; use a standard API account and key for this entry.
 Other Pi providers remain in the model picker and use their native environment-based authentication where available.

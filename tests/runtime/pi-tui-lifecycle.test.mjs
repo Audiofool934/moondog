@@ -2255,3 +2255,102 @@ test('a draft queued during rewind cancellation stays paused even if the picker 
   await new Promise(resolve => setTimeout(resolve, 20));
   assert.deepEqual(f.runtime.prompts.map(prompt => prompt.text), ['A new explicit request']);
 });
+
+for (const mode of ["updated", "failed", "throws"]) {
+  test(`catalog refresh ${mode} preserves the selected model and conversation`, async () => {
+    const terminal = new FakeTerminal(); const signalTarget = new EventEmitter();
+    let rebuilds = 0; let resetCount = 0; const requests = [];
+    const runtime = { ...fakeRuntime(), reset() { resetCount++; }, publicStatus() {
+      return { state: "configured", provider: "deepseek", model: "deepseek-v4-flash" };
+    } };
+    const running = runMoondogTui({ application: fakeApplication(), runtime, terminal, signalTarget,
+      providers: () => [{ id: "deepseek", name: "DeepSeek", modelCount: 2 }],
+      models: () => [{ id: "deepseek-flash", name: "DeepSeek V4.1 Flash" }, { id: "deepseek-v4-flash", name: "DeepSeek V4.1 Flash (legacy alias)" }],
+      rebuildRuntime() { rebuilds++; return runtime; },
+      async refreshModels(options) {
+        requests.push(options);
+        if (mode === "throws") throw new Error("PRIVATE_REFRESH_DIAGNOSTIC");
+        return [{ provider: "deepseek", state: mode, count: 2 }];
+      },
+    });
+    try {
+      await waitForStart(terminal);
+      terminal.send("/model refresh deepseek"); terminal.send("\r");
+      await waitFor(() => terminal.output.includes("Catalog checked."));
+      assert.equal(rebuilds, 0); assert.equal(resetCount, 1);
+      assert.equal(requests[0].provider, "deepseek"); assert.equal(requests[0].force, true);
+      const output = stripVTControlCharacters(terminal.output);
+      assert.match(output, /Your selected model and conversation are unchanged/u);
+      assert.match(output, /deepseek-v4-flash/u);
+      assert.doesNotMatch(output, /PRIVATE_REFRESH_DIAGNOSTIC/u);
+      if (mode !== "updated") assert.match(output, /previous catalog retained/u);
+    } finally { signalTarget.emit("SIGTERM"); await running; }
+  });
+}
+
+test("catalog refresh cancellation leaves the current runtime usable", async () => {
+  const terminal = new FakeTerminal(); const signalTarget = new EventEmitter(); const prompts = [];
+  let requestedSignal; let rebuilds = 0;
+  const running = runMoondogTui({ application: fakeApplication(), runtime: configuredFakeRuntime(prompts), terminal, signalTarget,
+    providers: () => [{ id: "deepseek", name: "DeepSeek", modelCount: 1 }],
+    models: () => [{ id: "deepseek-flash", name: "DeepSeek V4.1 Flash" }],
+    rebuildRuntime() { rebuilds++; },
+    refreshModels({ signal }) { requestedSignal = signal; return new Promise((_, reject) => signal.addEventListener("abort", () => reject(signal.reason), { once: true })); },
+  });
+  try {
+    await waitForStart(terminal);
+    terminal.send("/model refresh deepseek"); terminal.send("\r");
+    await waitFor(() => requestedSignal); terminal.send("\x03");
+    await waitFor(() => terminal.output.includes("Stopped the catalog check."));
+    assert.equal(requestedSignal.aborted, true); assert.equal(rebuilds, 0);
+    terminal.send("Keep the current model"); terminal.send("\r");
+    await waitFor(() => prompts.length === 1);
+    assert.equal(prompts[0], "Keep the current model");
+  } finally { signalTarget.emit("SIGTERM"); await running; }
+});
+
+test("a top-level refresh failure still opens the model picker with usable cached choices", async () => {
+  const terminal = new FakeTerminal(); const signalTarget = new EventEmitter(); let selected;
+  const runtime = { ...fakeRuntime(), publicStatus: () => ({ state: "configured", provider: "deepseek", model: "deepseek-v4-flash" }) };
+  const running = runMoondogTui({ application: fakeApplication(), runtime, terminal, signalTarget,
+    providers: () => [{ id: "deepseek", name: "DeepSeek", modelCount: 2 }],
+    models: () => [{ id: "deepseek-flash", name: "DeepSeek V4.1 Flash" }, { id: "deepseek-v4-flash", name: "DeepSeek V4.1 Flash (legacy alias)" }],
+    async refreshModels() { throw new Error("PRIVATE_FAILURE"); },
+    async rebuildRuntime(value) { selected = value; return runtime; },
+  });
+  try {
+    await waitForStart(terminal);
+    terminal.send("/model deepseek"); terminal.send("\r");
+    await waitFor(() => terminal.output.includes("cached/bundled fallback"));
+    assert.equal(selected, undefined);
+    const output = stripVTControlCharacters(terminal.output);
+    assert.match(output, /DeepSeek V4.1 Flash/u); assert.doesNotMatch(output, /PRIVATE_FAILURE/u);
+    // Enter keeps the highlighted saved legacy ID; refreshing never switches it.
+    terminal.send("\r");
+    await waitFor(() => selected !== undefined);
+    assert.deepEqual(selected, { provider: "deepseek", model: "deepseek-v4-flash" });
+  } finally { signalTarget.emit("SIGTERM"); await running; }
+});
+
+test("Ctrl+C during the model-switch commit never claims that the switch was cancelled", async () => {
+  const terminal = new FakeTerminal(); const signalTarget = new EventEmitter();
+  let release; const gate = new Promise(resolve => { release = resolve; });
+  let switched = false; let started = false;
+  const running = runMoondogTui({ application: fakeApplication(), runtime: fakeRuntime(), terminal, signalTarget,
+    providers: () => [{ id: "deepseek", name: "DeepSeek", modelCount: 1 }],
+    models: () => [{ id: "deepseek-flash", name: "DeepSeek V4.1 Flash" }],
+    async refreshModels() { return [{ provider: "deepseek", state: "cached" }]; },
+    async rebuildRuntime() { started = true; await gate; switched = true;
+      return { ...fakeRuntime(), publicStatus: () => ({ state: "configured", provider: "deepseek", model: "deepseek-flash" }) };
+    },
+  });
+  try {
+    await waitForStart(terminal);
+    terminal.send("/model deepseek deepseek-flash"); terminal.send("\r");
+    await waitFor(() => started); terminal.send("\x03");
+    await waitFor(() => terminal.output.includes("This can't be stopped halfway."));
+    assert.doesNotMatch(stripVTControlCharacters(terminal.output), /Stopping\.\.\.|Stopped the catalog check|Cancelled\./u);
+    release(); await waitFor(() => terminal.output.includes("Model ready."));
+    assert.equal(switched, true);
+  } finally { release(); signalTarget.emit("SIGTERM"); await running; }
+});

@@ -695,3 +695,9 @@ export function createPersistentCredentialStore(environment = process.env) {
     authFile: resolveMoondogAuthFile(environment),
   });
 }
+
+// Reuse the owner-checked, cancellable filesystem lock for other private files.
+// This acquires only <file>.lock; it never reads or writes credential documents.
+export function acquirePrivateFileLock(file, options = {}) {
+  return new PersistentCredentialStore({ authFile: file }).acquireLock(options);
+}
