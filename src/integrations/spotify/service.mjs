@@ -31,6 +31,8 @@ export class SpotifyServiceError extends Error {
     this.code = code;
     this.provider = "spotify";
     this.outcomeUnknown = outcomeUnknown;
+    // These errors are raised by local argument validators before client dispatch.
+    if (!outcomeUnknown && /^(?:invalid_|conflicting_)/u.test(code)) this.actionNotDispatched = true;
   }
 }
 
