@@ -7331,9 +7331,11 @@ export class PiAgentRuntime {
       // One bounded continuation keeps an explicit queue request from stopping
       // at a plan/empty adjacency result or a redundant confirmation. It cannot
       // grant new authority, retry a write, or outlive cancellation.
+      const requestedQueueCount = this.application.spotifyPlaybackContextStatus?.().queue_request?.requested;
+      const queueCountValid = requestedQueueCount == null || (Number.isInteger(requestedQueueCount) && requestedQueueCount >= 1 && requestedQueueCount <= 12);
       if (this.application.spotifyPlaybackContextStatus?.().queue_request &&
           !this.application.spotifyPlaybackContextStatus?.().queue_request?.clarification_only &&
-          !(this.application.spotifyPlaybackContextStatus?.().queue_request?.requested > 12) &&
+          queueCountValid &&
           this.capabilityByToolName.has("moondog_spotify_discover") &&
           !promptState.abortRequested && finalStopReason !== "aborted" && !this.agent.state.errorMessage &&
           !promptState.presentationFailure && !promptState.spotifyWriteReceipts.length && !promptState.spotifyPlaybackFailures.some(failure => !failure.not_sent || failure.preparation_stopped) &&
@@ -7453,7 +7455,9 @@ To confirm, reply: ${preview.confirmation}`].join("\n\n");
       }
 
       if (this.application.spotifyPlaybackContextStatus?.().queue_request && !promptState.spotifyQueuePlan && !promptState.spotifyWriteReceipts.length) {
-        const queueText = responseLanguage(text) === "zh"
+        const queueText = !queueCountValid ? (responseLanguage(text) === "zh"
+          ? "没有向 Spotify 加入歌曲；请明确一个 1 到 12 首之间的整数数量。"
+          : "No songs were queued on Spotify. Specify one exact whole-number count from 1 to 12 songs.") : responseLanguage(text) === "zh"
           ? "这次还没有向 Spotify 加入歌曲；明确的 queue 请求已足够授权，不需要另建歌单或再次确认。当前没有完成可验证的队列操作。"
           : "No songs were queued on Spotify. Your explicit queue request already authorizes the action; no playlist or additional confirmation is required. A verified queue operation was not completed.";
         replaceRenderedText(queueText);

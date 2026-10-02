@@ -1573,6 +1573,10 @@ export class MoondogApplication {
   }
 
   requireSpotifyNonRemovalAction({ quickEdit = false } = {}) {
+    const requested = this.pendingPlaylistPromptTransaction?.queueIntent?.requested;
+    if (requested != null && (!Number.isInteger(requested) || requested < 1 || requested > 12)) {
+      throw spotifyResolutionError("spotify_queue_count_limit", "Specify one exact queue count from 1 to 12 songs. No write was sent.");
+    }
     if (this.pendingPlaylistPromptTransaction?.queueBatchAttempted) throw spotifyResolutionError("spotify_queue_batch_already_attempted", "The requested queue batch was already attempted. Keep its receipt; do not replay or add another action.");
     if (this.pendingPlaylistPromptTransaction?.quickEditIntent && !quickEdit) {
       throw spotifyResolutionError("spotify_quick_edit_action_conflict", "This request authorizes only its exact quick playlist edit. An earlier preview or another Spotify action needs its own explicit request.");
