@@ -282,10 +282,47 @@ test("long multilingual metadata cannot erase accepted batch counts at the tool 
 });
 
 
-for (const request of ["The queue has 12 songs already.", "Please don’t queue 12 songs."]) test(`non-actions do not authorize discovery continuation: ${request}`, async t => {
+for (const request of ["The queue has 12 songs already.", "Queue has 12 songs already.", "The queue is not a playlist and has 12 songs.", "Please don’t queue 12 songs.", "Don't add two songs to my queue."]) test(`non-actions do not authorize discovery continuation: ${request}`, async t => {
   const f = fixture(t);
   const result = await f.prompt(request, [say("Acknowledged.")]);
   assert.equal(result.text, "Acknowledged."); assert.equal(f.writes.length, 0); assert.equal(f.reads.length, 0);
+});
+
+for (const [request, count] of [["queue two songs", 2], ["add 12 songs to my queue", 12], ["帮我找两首国风DJ加入队列", 2], ["Queue has 12 songs already; add two more songs to my queue.", 2]]) test(`surplus verified candidates respect the listener's count: ${request}`, async t => {
+  const f = fixture(t);
+  const result = await f.prompt(request, [say("Confirm a playlist first?"), ...queueResponses()]);
+  assert.equal(f.writes.length, count); assert.equal(result.spotify_queue_plan.requested, count);
+  assert.equal(result.spotify_queue_plan.queued_count, count);
+  assert.ok(f.writes.every(write => write.path === "/v1/me/player/queue"));
+  assert.doesNotMatch(result.text, /Confirm a playlist/u);
+});
+
+for (const request of ["queue zero songs", "queue thirteen songs", "queue two and a half songs", "queue twelve songs, actually only two"]) test(`invalid quantities block single-add, batch and similarity writes: ${request}`, async t => {
+  const f = fixture(t);
+  f.application.beginPrompt({ text: request });
+  const found = await f.application.spotifyDiscover({ queries: ["first", "second"] });
+  await assert.rejects(async () => f.application.spotifyAddToQueue({ itemRefId: found.items[0].item_ref_id }), { code: "spotify_queue_count_limit" });
+  await assert.rejects(f.application.spotifyQueueBatch({ itemRefs: found.items.map(item => item.item_ref_id) }), { code: "spotify_queue_count_limit" });
+  await assert.rejects(f.application.spotifyQueueSimilar({ count: 2 }), { code: "spotify_queue_count_limit" });
+  assert.equal(f.writes.length, 0);
+  f.application.endPrompt();
+  const result = await f.prompt(request, [say("Should I make a playlist?")]);
+  assert.match(result.text, /Specify one exact whole-number count from 1 to 12/u);
+  assert.equal(f.writes.length, 0);
+});
+
+test("word-count correction completes an unattempted request, then confirmation and retry cannot replay it", async t => {
+  const f = fixture(t);
+  await f.prompt("queue two songs", [call("moondog_spotify_discover", { queries: ["offline"] }), say("Search unavailable.")]);
+  assert.equal(f.writes.length, 0);
+  const queued = await f.prompt("I meant queue, not a playlist", queueResponses());
+  assert.equal(queued.spotify_queue_plan.queued_count, 2);
+  const clarified = await f.prompt("I meant queue, not a playlist", queueResponses());
+  assert.match(clarified.text, /2/u); assert.equal(f.writes.length, 2);
+  for (const request of ["yes", "1", "retry"]) {
+    await f.prompt(request, queueResponses());
+    assert.equal(f.writes.length, 2, request);
+  }
 });
 
 test("a different visible numbered menu invalidates old song ordinals", async t => {
