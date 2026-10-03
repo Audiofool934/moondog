@@ -580,7 +580,10 @@ function preserveExtendedHistoryMatches(bundle, retainedMatch) {
 
   // Account Data cannot distinguish equal-duration plays of the same title and
   // artist within one minute. Added video plays can reorder those ordinals.
-  // Keep established pairs and assign only the still-unmatched equivalent plays.
+  // A narrower export may omit an established counterpart's ordinal entirely.
+  // Keep those pairs too; only new plays use this archive's remaining candidates.
+  // The store's conflict checks still reject a new play claiming an absent play's
+  // retained counterpart, so an incomplete export cannot invent another match.
   const events = new Map(bundle.listeningEvents.map((event) => [event.listening_event_id, event]));
   const tracks = new Map(bundle.trackRefs.map((track) => [track.track_ref_id, track]));
   const groups = new Map();
@@ -602,7 +605,7 @@ function preserveExtendedHistoryMatches(bundle, retainedMatch) {
     for (const candidate of group) {
       const previous = retained.get(candidate.supersedingEventId);
       if (!previous) continue;
-      if (!available.delete(previous)) throw new Error("Listening history reconciliation conflict");
+      available.delete(previous);
       matches.set(candidate.supersedingEventId, previous);
     }
     const remaining = available.values();

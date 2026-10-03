@@ -272,3 +272,129 @@ for (const standardTiming of ["before", "after"]) {
     assert.equal(store.activeAvoidances({ subjectId })[0].correction_id, correction.correction_id);
   });
 }
+
+function overlappingHistoryFixtures() {
+  const capturedAt = "2026-09-01T00:00:00.000Z";
+  const record = (ts) => musicRecord({
+    ts, ms_played: 5_000, master_metadata_track_name: "Synthetic Song",
+    master_metadata_album_artist_name: "Example Artist", master_metadata_album_album_name: "Example Album",
+  });
+  const audio = record("2026-08-29T04:00:42Z");
+  const video = record("2026-08-29T04:00:12Z");
+  const newPlay = record("2026-08-29T04:00:02Z");
+  const extended = (records, digest, memberNames = ["Streaming_History_Audio_2026.json"]) =>
+    projectSpotifyExtendedStreamingHistory({
+      subjectId, capturedAt, records, archiveSha256: digest.repeat(64), archiveSizeBytes: 4096, memberNames,
+    });
+  const standard = (count, digest) => projectSpotifyAccountDataHistory({
+    subjectId, capturedAt, archiveSha256: digest.repeat(64), archiveSizeBytes: 1024,
+    memberNames: ["StreamingHistory_music_0.json"],
+    records: Array.from({ length: count }, () => ({
+      endTime: "2026-08-29 04:00", artistName: "Example Artist", trackName: "Synthetic Song", msPlayed: 5_000,
+    })),
+  });
+  const original = extended([audio], "a");
+  const full = extended([audio, video], "a", [
+    "Streaming_History_Audio_2026.json", "Streaming_History_Video_2026.json",
+  ]);
+  return { audio, video, newPlay, capturedAt, extended, standard, original, full };
+}
+
+for (const route of ["audio then video expansion", "audio and video together"]) {
+  for (const standardTiming of ["before", "after"]) {
+    test(`narrower Extended History preserves ${route} matches with Account Data ${standardTiming}`, async (context) => {
+      const root = await mkdtemp(path.join(tmpdir(), "moondog-history-subset-"));
+      context.after(() => rm(root, { recursive: true, force: true }));
+      const databasePath = path.join(root, "history.sqlite");
+      let store = await openListeningHistoryStore({ databasePath });
+      context.after(() => store.close());
+      const { audio, video, capturedAt, extended, standard, original, full } = overlappingHistoryFixtures();
+      const accountData = standard(2, "f");
+      if (standardTiming === "before") store.ingestImport(accountData);
+      if (route === "audio then video expansion") store.ingestImport(original);
+      store.ingestImport(full);
+      const subset = extended([route === "audio then video expansion" ? video : audio], "b");
+      const correction = store.recordListenerCorrection({
+        subjectId, entityType: "track", label: "Synthetic Song", artistCredit: "Example Artist",
+        stance: "avoid", occurredAt: capturedAt,
+      });
+      const savedEvents = store.recentEvents({ subjectId });
+      store.close();
+      store = await openListeningHistoryStore({ databasePath });
+
+      const imported = store.ingestImport(subset);
+      assert.equal(imported.inserted_events, 0);
+      assert.equal(imported.duplicate_events, 1);
+      assert.equal(imported.effective_event_delta, 0);
+      assert.deepEqual(store.recentEvents({ subjectId }), savedEvents);
+      assert.equal(store.ingestImport(subset).effective_event_delta, 0);
+      if (standardTiming === "after") store.ingestImport(accountData);
+      const matchedEvents = store.recentEvents({ subjectId });
+      assert.deepEqual(new Set(matchedEvents.map(event => event.supersedes_listening_event_id)),
+        new Set(accountData.listening_events.map(event => event.listening_event_id)));
+      const first = route === "audio then video expansion" ? original : full;
+      const firstCandidate = first.reconciliation_candidates[0];
+      assert.equal(matchedEvents.find(event => event.listening_event_id === firstCandidate.superseding_event_id)
+        .supersedes_listening_event_id, firstCandidate.superseded_event_id);
+
+      store.close();
+      store = await openListeningHistoryStore({ databasePath });
+      for (const bundle of [subset, full, accountData]) {
+        assert.equal(store.ingestImport(bundle).effective_event_delta, 0);
+      }
+      assert.deepEqual(store.recentEvents({ subjectId }), matchedEvents);
+      assert.equal(store.status().effective_listening_events, 2);
+      assert.equal(store.status().superseded_listening_events, 2);
+      assert.equal(store.activeAvoidances({ subjectId })[0].correction_id, correction.correction_id);
+    });
+  }
+}
+
+test("a new same-minute play cannot steal a retained match from an absent play", async (context) => {
+  const root = await mkdtemp(path.join(tmpdir(), "moondog-history-new-overlap-"));
+  context.after(() => rm(root, { recursive: true, force: true }));
+  const databasePath = path.join(root, "history.sqlite");
+  let store = await openListeningHistoryStore({ databasePath });
+  context.after(() => store.close());
+  const { audio, video, newPlay, capturedAt, extended, standard, full } = overlappingHistoryFixtures();
+  store.ingestImport(standard(2, "f"));
+  store.ingestImport(full);
+  const correction = store.recordListenerCorrection({
+    subjectId, entityType: "track", label: "Synthetic Song", artistCredit: "Example Artist",
+    stance: "avoid", occurredAt: capturedAt,
+  });
+  const savedEvents = store.recentEvents({ subjectId });
+  const savedStatus = store.status();
+  const savedSources = store.profileCatalog({ subjectId }).sources;
+  for (const records of [[newPlay], [newPlay, video]]) {
+    assert.throws(() => store.ingestImport(extended(records, "b")), /Listening history reconciliation conflict/u);
+    assert.deepEqual(store.recentEvents({ subjectId }), savedEvents);
+    assert.deepEqual(store.status(), savedStatus);
+    assert.deepEqual(store.profileCatalog({ subjectId }).sources, savedSources);
+  }
+  store.close();
+  store = await openListeningHistoryStore({ databasePath });
+  assert.deepEqual(store.recentEvents({ subjectId }), savedEvents);
+
+  // A complete larger export supplies a third equivalent counterpart. The new
+  // play can use it without changing either of the already-established pairs.
+  const larger = extended([newPlay, video, audio], "c");
+  const imported = store.ingestImport(larger);
+  assert.equal(imported.inserted_events, 1);
+  assert.equal(imported.effective_event_delta, 1);
+  assert.deepEqual(store.recentEvents({ subjectId }).filter(event =>
+    savedEvents.some(saved => saved.listening_event_id === event.listening_event_id)), savedEvents);
+  const accountData = standard(3, "d");
+  assert.equal(store.ingestImport(accountData).effective_event_delta, 0);
+  const matchedEvents = store.recentEvents({ subjectId });
+  assert.deepEqual(new Set(matchedEvents.map(event => event.supersedes_listening_event_id)),
+    new Set(accountData.listening_events.map(event => event.listening_event_id)));
+  store.close();
+  store = await openListeningHistoryStore({ databasePath });
+  assert.equal(store.ingestImport(larger).effective_event_delta, 0);
+  assert.equal(store.ingestImport(accountData).effective_event_delta, 0);
+  assert.deepEqual(store.recentEvents({ subjectId }), matchedEvents);
+  assert.equal(store.status().effective_listening_events, 3);
+  assert.equal(store.status().superseded_listening_events, 3);
+  assert.equal(store.activeAvoidances({ subjectId })[0].correction_id, correction.correction_id);
+});
