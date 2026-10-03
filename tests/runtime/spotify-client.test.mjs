@@ -487,6 +487,138 @@ test("Spotify client does not wait out an unbounded Retry-After", async () => {
   assert.equal(sleeps.length, 0);
 });
 
+test("Spotify client re-arms the rate limiter for later requests after a 429", async () => {
+  const sleeps = [];
+  const responses = [
+    jsonResponse({ error: { status: 429 } }, 429, { "retry-after": "3600" }),
+    jsonResponse({ id: "account-1" }),
+  ];
+  const client = createSpotifyWebApiClient({
+    tokenProvider: async () => "token",
+    fetchImpl: async () => responses.shift(),
+    sleepImpl: async (milliseconds) => {
+      sleeps.push(milliseconds);
+    },
+  });
+
+  // The first request fails fast on the unbounded Retry-After, but the
+  // re-armed cooldown (bounded at 10s) still paces the next request.
+  let error;
+  try {
+    await client.getAccount();
+  } catch (caught) {
+    error = caught;
+  }
+  assert.ok(error instanceof SpotifyWebApiError);
+  assert.equal(error.code, "spotify_rate_limited");
+
+  const account = await client.getAccount();
+  assert.equal(account.account_id, "account-1");
+  assert.equal(sleeps.length, 1);
+  assert.ok(
+    sleeps[0] > 9_000 && sleeps[0] <= 10_000,
+    `re-armed wait was ${sleeps[0]}ms`,
+  );
+});
+
+test("Spotify client re-arms the rate limiter after a 429 on a write", async () => {
+  const sleeps = [];
+  const responses = [
+    jsonResponse({ error: { status: 429 } }, 429, { "retry-after": "3" }),
+    jsonResponse({ id: "account-1" }),
+  ];
+  const client = createSpotifyWebApiClient({
+    tokenProvider: async () => "token",
+    fetchImpl: async () => responses.shift(),
+    sleepImpl: async (milliseconds) => {
+      sleeps.push(milliseconds);
+    },
+  });
+
+  let error;
+  try {
+    await client.pause({ deviceId: "device" });
+  } catch (caught) {
+    error = caught;
+  }
+  assert.ok(error instanceof SpotifyWebApiError);
+  assert.equal(error.code, "spotify_rate_limited");
+
+  const account = await client.getAccount();
+  assert.equal(account.account_id, "account-1");
+  assert.equal(sleeps.length, 1);
+  assert.ok(sleeps[0] > 2_000 && sleeps[0] <= 3_000, `re-armed wait was ${sleeps[0]}ms`);
+});
+
+test("Spotify client fails loudly when playlist items advertise a total but return none", async () => {
+  const client = createSpotifyWebApiClient({
+    tokenProvider: async () => "token",
+    fetchImpl: async () =>
+      jsonResponse({ items: [], total: 12, limit: 50, offset: 0, next: null }),
+  });
+
+  let error;
+  try {
+    await client.getPlaylistItems({ playlistId: "playlist-1", limit: 50, offset: 0 });
+  } catch (caught) {
+    error = caught;
+  }
+
+  assert.ok(error instanceof SpotifyWebApiError);
+  assert.equal(error.code, "spotify_playlist_items_mismatch");
+  assert.match(error.message, /12/);
+});
+
+test("Spotify client still reads a genuinely empty playlist", async () => {
+  const client = createSpotifyWebApiClient({
+    tokenProvider: async () => "token",
+    fetchImpl: async () =>
+      jsonResponse({ items: [], total: 0, limit: 50, offset: 0, next: null }),
+  });
+
+  const page = await client.getPlaylistItems({ playlistId: "playlist-1", limit: 50, offset: 0 });
+
+  assert.deepEqual(page.items, []);
+  assert.equal(page.total, 0);
+  assert.equal(page.has_more, false);
+});
+
+test("Spotify client reports silent 403 refusals as retired endpoints", async (t) => {
+  for (const fixture of [
+    {
+      name: "empty error body",
+      response: jsonResponse({}, 403),
+      code: "spotify_endpoint_retired",
+    },
+    {
+      name: "plain text body",
+      response: new Response("Forbidden", { status: 403 }),
+      code: "spotify_endpoint_retired",
+    },
+    {
+      name: "explained refusal",
+      response: jsonResponse({ error: { message: "Restricted content" } }, 403),
+      code: "spotify_action_forbidden",
+    },
+  ]) {
+    await t.test(fixture.name, async () => {
+      const client = createSpotifyWebApiClient({
+        tokenProvider: async () => "token",
+        fetchImpl: async () => fixture.response,
+      });
+      let error;
+      try {
+        await client.getAccount();
+      } catch (caught) {
+        error = caught;
+      }
+      assert.ok(error instanceof SpotifyWebApiError);
+      assert.equal(error.code, fixture.code);
+      assert.equal(error.status, 403);
+    });
+  }
+});
+
 test("Spotify client never retries exhausted development quota, even on GETs", async () => {
   let callCount = 0;
   const client = createSpotifyWebApiClient({
