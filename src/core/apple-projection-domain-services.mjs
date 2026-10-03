@@ -1915,7 +1915,11 @@ export class AppleProjectionDomainServices {
 
   #appleProfileCatalog(knownAvoids) {
     if (typeof this.#projection.getProfileCatalog !== "function") return null;
-    const avoids = knownAvoids ?? this.#listeningHistoryStore?.activeAvoidances?.({ subjectId: this.#subjectId }) ?? [];
+    const { listener_assertions: { avoids } } = normalizeAppleCorrectionLabels({
+      listener_assertions: {
+        avoids: knownAvoids ?? this.#listeningHistoryStore?.activeAvoidances?.({ subjectId: this.#subjectId }) ?? [],
+      },
+    }, this.#projection);
     return this.#projection.getProfileCatalog({ excludePreference: (track) =>
       listenerAssertionAvoids({ listener_assertions: { avoids } }, "track", track.label, track.artist_credit) });
   }

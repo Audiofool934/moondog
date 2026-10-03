@@ -33,7 +33,10 @@ export function exploreProfileCatalog({ listening, apple, input }) {
   const catalog = { ...listening?.sections, ...apple?.sections };
   const all = catalog[section] ?? [];
   const needle = normalize(query);
-  let matches = all.filter((row) => !needle || [row.name, row.label, row.artist_credit, row.release, row.genre, row.year, row.evidence_kind]
+  let matches = all.filter((row) => !needle || [
+    row.name, row.label, row.artist_credit, row.release, row.genre, row.year, row.evidence_kind,
+    row.source_label, row.period, row.text, row.playlist_name, ...(row.playlist_names ?? []),
+  ]
     .some((text) => normalize(text).includes(needle)));
   if (sort !== "ranked") {
     matches = matches.map((row, index) => ({ row, index })).sort((left, right) => {
@@ -43,7 +46,12 @@ export function exploreProfileCatalog({ listening, apple, input }) {
       return order || left.index - right.index;
     }).map(({ row }) => row);
   }
-  const items = matches.slice(offset, offset + limit);
+  const items = matches.slice(offset, offset + limit).map((row) => {
+    if (!needle || !row.playlist_names) return row;
+    // Search every membership, and keep matching names in the bounded display.
+    return { ...row, playlist_names: [...row.playlist_names].sort((left, right) =>
+      Number(normalize(right).includes(needle)) - Number(normalize(left).includes(needle))) };
+  });
   return structuredClone({
     schema_version: "profile-exploration/1",
     analysis_scope: "all_retained_supported_data",

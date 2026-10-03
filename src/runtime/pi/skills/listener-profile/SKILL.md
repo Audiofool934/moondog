@@ -13,7 +13,7 @@ For a personalized recommendation or generation brief, use the summary for orien
 For a full profile build, use the overview's nonempty sections to cover history, chronology, saved music and playlists, Apple library facets, provider interpretations, and direct listener choices.
 Describe an unavailable source or an unexamined family as a gap.
 All aggregation precedes pagination.
-Use `query` to investigate names across the entire selected section and `offset` with `next_offset` to reach later pages.
+Use `query` to investigate names, playlist context, and provider descriptions across the selected section, and `offset` with `next_offset` to reach later pages.
 Do not read every row into the conversation just to claim completeness; use whole-corpus totals and investigate relevant slices.
 Distinguish records included in aggregation from examples actually inspected by the model.
 Search matches and a ranked first page do not establish exhaustive review.

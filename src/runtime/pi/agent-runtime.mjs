@@ -2554,12 +2554,13 @@ function projectProfileExploration(value) {
     items: (value.items ?? []).slice(0, 20).map((row) => ({
       ...pick(row, ["name", "label", "artist_credit", "release", "genre", "evidence_id", "track_ref_id", "entity_type",
         "stance", "asserted_at", "first_played_at", "last_played_at", "source_label", "identity_status",
-        "evidence_kind", "period", "text", "playlist_name", "unit", "observed_at"], [
+        "evidence_kind", "period", "text", "playlist_name", "unit", "observed_at", "last_added_at"], [
         "play_count", "engaged_play_count", "explicit_skips", "listening_minutes", "distinct_tracks", "year", "event_count",
         "first_observed_tracks", "playlist_count", "library_tracks", "preferred_tracks", "tracks_with_play_count",
         "preference_strength", "loved", "favorited", "rating_value", "rating_computed", "rank",
         "playlist_position", "value", "stream_count", "played_seconds",
       ]),
+      ...(row.playlist_names ? { playlist_names: safeStringArray(row.playlist_names, 3, 256, "exploration_playlist_names") } : {}),
       ...(row.top_artist ? { top_artist: pick(row.top_artist, ["name"], ["play_count", "listening_minutes"]) } : {}),
     })),
     limitations: safeStringArray(value.limitations, 6, 512, "exploration_limitations"),

@@ -1484,7 +1484,7 @@ function evidenceGroups(records, eventAnalysis, explanations) {
       artist_credit: group.entity.artist_credit,
       ...(group.entity.release ? { release: group.entity.release } : {}),
       playlist_count: group.playlists.size,
-      playlist_names: [...group.playlists].sort(lexicalCompare).slice(0, 3),
+      playlist_names: [...group.playlists].sort(lexicalCompare),
       last_added_at: group.lastAddedAt,
       evidence_id: group.evidenceId,
     }));
@@ -2432,7 +2432,9 @@ export function projectListeningProfile({
       },
       curated_preferences: {
         saved_tracks: slice(evidence.savedTracks, maxItems),
-        playlist_anchors: slice(evidence.playlistAnchors, maxItems),
+        playlist_anchors: slice(evidence.playlistAnchors, maxItems).map((item) => ({
+          ...item, playlist_names: item.playlist_names.slice(0, 3),
+        })),
         followed_artists: slice(evidence.followedArtists, maxItems),
         saved_albums: slice(evidence.savedAlbums, maxItems),
         avoids: slice(combinedAvoids(direct.avoids, evidence.avoids), maxItems),

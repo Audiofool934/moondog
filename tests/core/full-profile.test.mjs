@@ -12,6 +12,8 @@ import { createAppleProjectionDomainServices } from "../../src/core/apple-projec
 import { createListeningProfileDomainServices } from "../../src/core/listening-profile-domain-services.mjs";
 import { openEphemeralListeningHistoryStore } from "../../src/profile/listening-history-store.mjs";
 import { projectSpotifyExtendedStreamingHistory } from "../../src/integrations/spotify/extended-streaming-history.mjs";
+import { projectSpotifyAccountDataHistory } from "../../src/integrations/spotify/account-data-history.mjs";
+import { mergeSpotifyAccountProfile, projectSpotifyAccountDataProfile } from "../../src/integrations/spotify/account-data-profile.mjs";
 import { normalizeAppleMusicLibrary, parseAppleMusicLibraryBuffer, writeAppleMusicImportBatch,
   rebuildAppleMusicSqliteProjection, openAppleMusicSqliteProjection } from "../../src/importers/apple-music-library/index.mjs";
 
@@ -60,6 +62,33 @@ test("Apple artist and genre facets use preferences beyond the first fifty track
   const avoided = await services.exploreProfile({ section: "apple_artists", query: "Broad preference" });
   assert.equal(avoided.items[0].library_tracks, 80);
   assert.equal(avoided.items[0].preferred_tracks, 0);
+});
+
+test("Apple exploration honors and retracts legacy track Avoids beyond the first page", async (t) => {
+  const store = await openEphemeralListeningHistoryStore();
+  t.after(() => store.close());
+  const services = await appleServices(t, store);
+  const correction = store.recordListenerCorrection({
+    subjectId, entityType: "track", label: "Fixture song 100 - Broad preference",
+    artistCredit: "Broad preference", stance: "avoid", occurredAt: "2026-09-01T00:00:00Z",
+  });
+  for (let index = 0; index < 60; index++) {
+    store.recordListenerCorrection({ subjectId, entityType: "artist", label: `Other artist ${index}`,
+      stance: "avoid", occurredAt: "2026-09-02T00:00:00Z" });
+  }
+
+  const track = await services.exploreProfile({ section: "apple_tracks", query: "Fixture song 100" });
+  assert.equal(track.items[0].preference_strength, 0);
+  assert.equal(track.items[0].loved, 1, "the source preference remains inspectable");
+  const profile = await services.getProfileSummary({ maxItems: 1 });
+  assert.equal(profile.artist_facets[0].preferred_tracks, 79);
+  assert.equal(profile.genre_facets[0].preferred_tracks, 78);
+  const explanation = await services.explainProfileEvidence({ evidenceId: profile.artist_facets[0].evidence_id });
+  assert.match(explanation.basis_summary, /79 tracks with positive provider preferences among 80 library tracks/u);
+
+  store.retractListenerCorrection({ subjectId, correctionId: correction.correction_id });
+  assert.equal((await services.getProfileSummary({ maxItems: 1 })).artist_facets[0].preferred_tracks, 80);
+  assert.ok((await services.exploreProfile({ section: "apple_tracks", query: "Fixture song 100" })).items[0].preference_strength > 0);
 });
 
 test("full profile exploration reaches every retained history track beyond summary limits", async (t) => {
@@ -136,4 +165,57 @@ test("Pi agent can inspect complete library coverage, a tail result, and its agg
   ]);
   const result = await runtime.prompt("Build my music profile from all my data.");
   assert.equal(result.text, "The full library supports the broader preference.");
+});
+
+test("Pi exploration searches playlist context and provider descriptions beyond the first page", async (t) => {
+  const store = await openEphemeralListeningHistoryStore();
+  t.after(() => store.close());
+  const shared = { subjectId, capturedAt: "2026-09-01T00:00:00.000Z", archiveSha256: "b".repeat(64), archiveSizeBytes: 4096 };
+  const history = projectSpotifyAccountDataHistory({ ...shared, records: [], memberNames: ["StreamingHistory_music_0.json"] });
+  const evidence = projectSpotifyAccountDataProfile({ ...shared, documents: {
+    "Playlist1.json": { playlists: Array.from({ length: 25 }, (_, index) => Array.from({ length: 4 }, (_, collection) => ({
+      name: index === 24 && collection === 3 ? "Night drive" : `Fixture collection ${index}-${collection}`,
+      lastModifiedDate: "2026-08-29",
+      items: [{ addedDate: "2026-08-20", track: {
+        trackName: `Fixture song ${String(index).padStart(2, "0")}`, artistName: "Fixture artist",
+        albumName: "Fixture album", trackUri: `spotify:track:${String(index).padStart(22, "0")}`,
+      } }],
+    }))).flat() },
+    "TasteProfile.json": { tasteProfile: { artistUris: [], musicalIdentity: "The provider describes an interest in string quartets." } },
+  } });
+  store.ingestImport(mergeSpotifyAccountProfile(history, evidence));
+  const services = createListeningProfileDomainServices({ listeningHistoryStore: store, subjectId });
+  assert.equal((await services.getProfileSummary({ maxItems: 1 })).curated_preferences.playlist_anchors[0].playlist_names.length, 3);
+  const application = new MoondogApplication({ domainServices: services, importsRoot: "/private/fixture-no-imports" });
+  t.after(() => application.close());
+  const faux = fauxProvider();
+  const models = createModels();
+  models.setProvider(faux.provider);
+  const runtime = new PiAgentRuntime({ application, models, model: faux.getModel(), provider: "faux", modelId: "faux-1" });
+  faux.setResponses([
+    fauxAssistantMessage([
+      fauxToolCall("moondog_profile_explore", { section: "playlist_tracks", query: "NIGHT drive" }),
+      fauxToolCall("moondog_profile_explore", { section: "provider_evidence", query: "Night drive" }),
+      fauxToolCall("moondog_profile_explore", { section: "provider_evidence", query: "quartets" }),
+    ], { stopReason: "toolUse" }),
+    (context) => {
+      const [playlist, membership, interpretation] = context.messages
+        .filter(message => message.role === "toolResult" && message.toolName === "moondog_profile_explore")
+        .map(message => JSON.parse(message.content[0].text));
+      assert.equal(playlist.total, 25);
+      assert.equal(playlist.matched, 1);
+      assert.equal(playlist.items[0].label, "Fixture song 24");
+      assert.ok(playlist.items[0].playlist_names.includes("Night drive"));
+      assert.equal(playlist.items[0].playlist_names.length, 3);
+      assert.equal(playlist.items[0].playlist_count, 4);
+      assert.equal(playlist.items[0].last_added_at, "2026-08-20T00:00:00.000Z");
+      assert.equal(membership.items[0].playlist_name, "Night drive");
+      assert.equal(interpretation.items[0].evidence_kind, "provider_interpretation");
+      assert.match(interpretation.items[0].text, /string quartets/u);
+      assert.doesNotMatch(JSON.stringify([playlist, membership, interpretation]), /spotify:track:|subject_id|playlist_ref_id/u);
+      return fauxAssistantMessage([fauxText("Found the curation context and the separate provider interpretation.")]);
+    },
+  ]);
+  const result = await runtime.prompt("Investigate my Night drive playlist and the provider's quartet description.");
+  assert.match(result.text, /curation context/u);
 });

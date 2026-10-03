@@ -186,6 +186,7 @@ Exploration separates retained Spotify events, export overlap removal, private-s
 Extended Spotify imports include music records in both `Streaming_History_Audio` and `Streaming_History_Video` members; non-music rows remain excluded.
 Re-import the original ZIP to add video-member music omitted by an older importer; existing events and corrections are preserved and repeated imports remain idempotent.
 The overview lists each available section and its complete item count; `query`, `offset`, and `next_offset` reach beyond the compact profile examples.
+Search also matches playlist names and provider descriptions; playlist results retain their names and latest observed addition date as curation context.
 An analysis describes the imported evidence and does not claim complete lifetime coverage beyond the supplied exports or convert inferred taste into an explicit preference.
 A correction records only the explicit stance you chose and preserves the original listening history.
 Keeping an artist out still applies when you like one of their tracks; undo the artist choice separately to change that.

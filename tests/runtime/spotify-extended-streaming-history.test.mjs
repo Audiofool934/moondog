@@ -13,6 +13,7 @@ import {
   projectSpotifyExtendedStreamingHistory,
 } from "../../src/integrations/spotify/extended-streaming-history.mjs";
 import { readSpotifyHistoryArchive } from "../../src/integrations/spotify/history-archive.mjs";
+import { openListeningHistoryStore } from "../../src/profile/listening-history-store.mjs";
 import {
   contractSchemaIds,
   createContractValidator,
@@ -211,3 +212,63 @@ test("history archive router reads music in audio and video members and can exte
   assert.equal(store.profileSummary({ subjectId }).coverage.effective_listening_events, 2);
   assert.equal(store.profileCatalog({ subjectId }).sources[0].input_records, 2);
 });
+
+for (const standardTiming of ["before", "after"]) {
+  test(`video expansion preserves colliding audio matches with Account Data imported ${standardTiming}`, async (context) => {
+    const root = await mkdtemp(path.join(tmpdir(), "moondog-video-expansion-"));
+    context.after(() => rm(root, { recursive: true, force: true }));
+    const dataRoot = path.join(root, "Spotify Extended Streaming History");
+    const archivePath = path.join(root, "history.zip");
+    const audio = musicRecord({ ts: "2026-08-29T04:00:42Z", ms_played: 5_000 });
+    const video = musicRecord({ ts: "2026-08-29T04:00:12Z", ms_played: 5_000 });
+    await mkdir(dataRoot);
+    await writeFile(path.join(dataRoot, "Streaming_History_Audio_2026.json"), JSON.stringify([audio]));
+    await writeFile(path.join(dataRoot, "Streaming_History_Video_2026.json"), JSON.stringify([video]));
+    await execFileAsync("/usr/bin/zip", ["-q", "-r", archivePath, "Spotify Extended Streaming History"], { cwd: root });
+    const full = await readSpotifyHistoryArchive({ archivePath, subjectId, capturedAt });
+    const original = projectSpotifyExtendedStreamingHistory({
+      subjectId, capturedAt, records: [audio], archiveSha256: full.import_batch.archive_sha256,
+      archiveSizeBytes: full.import_batch.archive_size_bytes, memberNames: ["Streaming_History_Audio_2026.json"],
+    });
+    const standard = projectSpotifyAccountDataHistory({
+      subjectId, capturedAt, archiveSha256: "f".repeat(64), archiveSizeBytes: 1024,
+      memberNames: ["StreamingHistory_music_0.json"],
+      records: Array.from({ length: 2 }, () => ({
+        endTime: "2026-08-29 04:00", artistName: "Pink Floyd", trackName: "Echoes", msPlayed: 5_000,
+      })),
+    });
+    const databasePath = path.join(root, "history.sqlite");
+    let store = await openListeningHistoryStore({ databasePath });
+    context.after(() => store.close());
+    if (standardTiming === "before") store.ingestImport(standard);
+    store.ingestImport(original);
+    const audioId = original.listening_events[0].listening_event_id;
+    const savedAudio = store.recentEvents({ subjectId }).find(event => event.listening_event_id === audioId);
+    const correction = store.recordListenerCorrection({ subjectId, entityType: "track", label: "Echoes",
+      artistCredit: "Pink Floyd", stance: "avoid", occurredAt: capturedAt });
+    store.close();
+    store = await openListeningHistoryStore({ databasePath });
+
+    const upgraded = store.ingestImport(full);
+    assert.equal(upgraded.inserted_events, 1);
+    assert.equal(upgraded.effective_event_delta, standardTiming === "before" ? 0 : 1);
+    assert.deepEqual(store.recentEvents({ subjectId }).find(event => event.listening_event_id === audioId), savedAudio);
+    if (standardTiming === "after") store.ingestImport(standard);
+    store.close();
+    store = await openListeningHistoryStore({ databasePath });
+    assert.equal(store.ingestImport(full).effective_event_delta, 0);
+    assert.equal(store.ingestImport(standard).effective_event_delta, 0);
+    const overlappingExport = projectSpotifyExtendedStreamingHistory({
+      subjectId, capturedAt, records: [audio, video], archiveSha256: "d".repeat(64),
+      archiveSizeBytes: 2048, memberNames: full.import_batch.member_names,
+    });
+    assert.equal(store.ingestImport(overlappingExport).effective_event_delta, 0);
+    assert.equal(store.status().effective_listening_events, 2);
+    assert.equal(store.status().superseded_listening_events, 2);
+    const events = store.recentEvents({ subjectId });
+    assert.equal(events.find(event => event.listening_event_id === audioId).supersedes_listening_event_id,
+      original.reconciliation_candidates[0].superseded_event_id);
+    assert.equal(store.profileCatalog({ subjectId }).sources.find(source => source.format === full.import_batch.source_format).input_records, 4);
+    assert.equal(store.activeAvoidances({ subjectId })[0].correction_id, correction.correction_id);
+  });
+}

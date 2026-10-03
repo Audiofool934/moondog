@@ -569,6 +569,56 @@ function insertBundleRecords(bundle, statements) {
   return { insertedTracks, insertedEvents };
 }
 
+function preserveExtendedHistoryMatches(bundle, retainedMatch) {
+  const candidates = bundle.reconciliationCandidates;
+  if (bundle.importBatch.sourceFormat !== "spotify_extended_streaming_history_music_v1") return candidates;
+  const retained = new Map(candidates.map((candidate) => [
+    candidate.supersedingEventId, retainedMatch(candidate.supersedingEventId),
+  ]));
+  if (!candidates.some((candidate) => retained.get(candidate.supersedingEventId) &&
+    retained.get(candidate.supersedingEventId) !== candidate.supersededEventId)) return candidates;
+
+  // Account Data cannot distinguish equal-duration plays of the same title and
+  // artist within one minute. Added video plays can reorder those ordinals.
+  // Keep established pairs and assign only the still-unmatched equivalent plays.
+  const events = new Map(bundle.listeningEvents.map((event) => [event.listening_event_id, event]));
+  const tracks = new Map(bundle.trackRefs.map((track) => [track.track_ref_id, track]));
+  const groups = new Map();
+  for (const candidate of candidates) {
+    const event = events.get(candidate.supersedingEventId);
+    const track = tracks.get(event.track_ref_id);
+    const key = JSON.stringify([
+      event.occurred_at.slice(0, 16), event.played_ms,
+      track.title.normalize("NFKC").toLowerCase(),
+      track.artist_credits[0].name.normalize("NFKC").toLowerCase(),
+    ]);
+    const group = groups.get(key) ?? [];
+    group.push(candidate);
+    groups.set(key, group);
+  }
+  const matches = new Map();
+  for (const group of groups.values()) {
+    const available = new Set(group.map((candidate) => candidate.supersededEventId));
+    for (const candidate of group) {
+      const previous = retained.get(candidate.supersedingEventId);
+      if (!previous) continue;
+      if (!available.delete(previous)) throw new Error("Listening history reconciliation conflict");
+      matches.set(candidate.supersedingEventId, previous);
+    }
+    const remaining = available.values();
+    for (const candidate of group) {
+      if (matches.has(candidate.supersedingEventId)) continue;
+      const selected = available.has(candidate.supersededEventId)
+        ? candidate.supersededEventId : remaining.next().value;
+      matches.set(candidate.supersedingEventId, selected);
+      available.delete(selected);
+    }
+  }
+  return candidates.map((candidate) => ({
+    ...candidate, supersededEventId: matches.get(candidate.supersedingEventId),
+  }));
+}
+
 export class ListeningHistoryStore {
   #database;
   #closed = false;
@@ -1198,7 +1248,10 @@ export class ListeningHistoryStore {
               insertedEvents, batch.inputRecords, insertedEvents, insertedTracks, batch.importBatchId);
         }
       }
-      for (const candidate of bundle.reconciliationCandidates) {
+      const reconciliationCandidates = preserveExtendedHistoryMatches(bundle, (eventId) =>
+        selectCandidateBySuperseding.get(eventId)?.superseded_event_id ??
+        selectBySuperseding.get(eventId)?.superseded_event_id);
+      for (const candidate of reconciliationCandidates) {
         const existingBySuperseded = selectCandidateBySuperseded.get(
           candidate.supersededEventId,
         )?.superseding_event_id;
