@@ -118,3 +118,15 @@ test("dedicated Pi Memory Agent rejects oversized input before a provider call",
   );
   assert.equal(faux.state.callCount, 0);
 });
+
+test("dedicated Pi Memory Agent stops after an invalid tool submission without another model request", async () => {
+  const { faux, runtime } = fixture();
+  faux.setResponses([
+    fauxAssistantMessage([
+      fauxToolCall("moondog_submit_memory_reflection", { proposals: "invalid" }),
+    ], { stopReason: "toolUse" }),
+  ]);
+
+  await assert.rejects(runtime.reflect({ episodes: [episode()] }), /did not submit/iu);
+  assert.equal(faux.state.callCount, 1);
+});

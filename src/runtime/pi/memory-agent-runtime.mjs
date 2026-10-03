@@ -233,7 +233,7 @@ export class MemoryAgentRuntime {
     return {
       state: "configured",
       adapter: "pi_memory_agent",
-      pi_version: "0.84.3",
+      pi_version: "1.0.1",
       worker_version: MEMORY_AGENT_WORKER_VERSION,
       provider: this.provider,
       model: this.modelId,
@@ -294,7 +294,7 @@ export class MemoryAgentRuntime {
           toolChoice: toolChoiceForApi(model.api),
         }),
       toolExecution: "sequential",
-      shouldStopAfterTurn: () => true,
+      finishTurn: () => ({ action: "end" }),
     });
     this.activeAgent = agent;
     try {

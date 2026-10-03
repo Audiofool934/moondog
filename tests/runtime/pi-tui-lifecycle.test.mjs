@@ -952,7 +952,7 @@ for (const [label, receipt, expected] of [
     fixture.terminal.send("\x1b");
     await fixture.outputIncludes("Your history is in");
     const transcript = stripVTControlCharacters(fixture.terminal.output);
-    assert.ok(transcript.replace(/\s+/gu, " ").includes(expected), transcript);
+    assert.ok(transcript.replace(/[│┃]/gu, "").replace(/\s+/gu, " ").includes(expected), transcript);
     if (receipt.superseded_events) {
       assert.doesNotMatch(transcript, /\d+ new plays|Already up to date/u);
       assert.match(transcript, /overlapping records?/u);
