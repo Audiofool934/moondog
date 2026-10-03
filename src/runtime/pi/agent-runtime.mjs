@@ -1,5 +1,7 @@
 import { Agent } from "@earendil-works/pi-agent-core";
 import { Type } from "@earendil-works/pi-ai";
+import { readFileSync } from "node:fs";
+import { PROFILE_SECTIONS } from "../../profile/profile-exploration.mjs";
 
 import { projectWebResearchResult } from "../../integrations/web/codex-web.mjs";
 import { spotifyErrorReason } from "../../integrations/spotify/web-api-client.mjs";
@@ -12,6 +14,8 @@ import {
 
 const maximumToolResultBytes = 32 * 1024;
 const maximumNestedProfileItems = 6;
+const listenerProfileSkill = readFileSync(new URL("./skills/listener-profile/SKILL.md", import.meta.url), "utf8")
+  .replace(/^---[\s\S]*?---\s*/u, "");
 const discoveryConnectionFailures = new Map([
   ["music.discovery.artist_similarity", /^(?:wikidata|listenbrainz)_request_failed:/u],
   ["music.catalog.track_search", /^apple_music_catalog_request_failed:/u],
@@ -2514,6 +2518,54 @@ function projectProviderSignals(value) {
   };
 }
 
+function projectProfileExploration(value) {
+  if (!isPlainObject(value) || !PROFILE_SECTIONS.includes(value.section)) throw new Error("domain_result_invalid:profile_exploration");
+  const pick = (row, textFields, numberFields) => {
+    if (!isPlainObject(row)) throw new Error("domain_result_invalid:profile_exploration_row");
+    const result = {};
+    for (const key of textFields) if (row[key] !== undefined && row[key] !== null && row[key] !== "") {
+      result[key] = cleanOutputText(row[key], 512, `profile_exploration_${key}`);
+    }
+    for (const key of numberFields) if (row[key] !== undefined && row[key] !== null) {
+      result[key] = safeNonnegativeNumber(row[key], `profile_exploration_${key}`);
+    }
+    return result;
+  };
+  return {
+    schema_version: "profile-exploration/1",
+    analysis_scope: "all_retained_supported_data",
+    section: value.section,
+    coverage: pick(value.coverage ?? {}, ["earliest_played_at", "latest_played_at", "apple_snapshot_at"], [
+      "effective_listening_events", "profiled_listening_events", "events_with_played_duration", "distinct_tracks",
+      "resolved_tracks", "cross_format_track_links", "cross_format_ambiguous_tracks", "listening_hours",
+      "stored_listening_events", "superseded_listening_events", "profile_evidence_records", "collection_tracks",
+      "saved_tracks", "saved_albums", "followed_artists", "playlist_memberships", "active_listener_assertions",
+      "apple_library_tracks", "apple_preferred_tracks", "apple_tracks_with_play_count", "apple_aggregate_plays",
+    ]),
+    sources: (value.sources ?? []).slice(0, 20).map((source) => pick(source, ["format", "scope", "earliest", "latest"], ["input_records"])),
+    context: pick(value.context ?? {}, ["reference_date"], ["recent_window_days", "incognito_events_excluded", "release_minimum_distinct_tracks"]),
+    section_note: cleanOutputText(value.section_note, 512, "exploration_section_note"),
+    sections: (value.sections ?? []).filter((section) => PROFILE_SECTIONS.includes(section.name)).slice(0, PROFILE_SECTIONS.length)
+      .map((section) => ({ name: section.name, total: safeNonnegativeInteger(section.total, "section_total") })),
+    total: safeNonnegativeInteger(value.total, "exploration_total"),
+    matched: safeNonnegativeInteger(value.matched, "exploration_matched"),
+    offset: safeNonnegativeInteger(value.offset, "exploration_offset"),
+    next_offset: value.next_offset === null ? null : safeNonnegativeInteger(value.next_offset, "exploration_next"),
+    items: (value.items ?? []).slice(0, 20).map((row) => ({
+      ...pick(row, ["name", "label", "artist_credit", "release", "genre", "evidence_id", "track_ref_id", "entity_type",
+        "stance", "asserted_at", "first_played_at", "last_played_at", "source_label", "identity_status",
+        "evidence_kind", "period", "text", "playlist_name", "unit", "observed_at"], [
+        "play_count", "engaged_play_count", "explicit_skips", "listening_minutes", "distinct_tracks", "year", "event_count",
+        "first_observed_tracks", "playlist_count", "library_tracks", "preferred_tracks", "tracks_with_play_count",
+        "preference_strength", "loved", "favorited", "rating_value", "rating_computed", "rank",
+        "playlist_position", "value", "stream_count", "played_seconds",
+      ]),
+      ...(row.top_artist ? { top_artist: pick(row.top_artist, ["name"], ["play_count", "listening_minutes"]) } : {}),
+    })),
+    limitations: safeStringArray(value.limitations, 6, 512, "exploration_limitations"),
+  };
+}
+
 function projectProfileSummary(value) {
   if (!isPlainObject(value)) throw new Error("domain_result_invalid:profile");
   const projectItems = (items, kind) =>
@@ -2569,6 +2621,7 @@ function projectProfileSummary(value) {
     projectedCoverage.listening_hours = listeningHours;
   }
   const result = {
+    selection_note: "Compact examples only. Use moondog_profile_explore for complete coverage, full-library facets, search, and pages beyond these examples.",
     profile_version: cleanOutputText(
       value.profile_version,
       128,
@@ -5573,6 +5626,23 @@ function createToolFactories(
       }),
     ],
     [
+      "profile.explore",
+      (descriptor) => ({
+        name: descriptor.tool_name,
+        label: descriptor.label,
+        description: "Build a profile from all retained supported music data. Start with overview for coverage and section totals, then search or paginate full evidence sections. Limits apply only to returned pages. History is attention; Apple aggregate counts remain separate from timed plays.",
+        parameters: Type.Object({
+          section: Type.Optional(Type.Union(PROFILE_SECTIONS.map((name) => Type.Literal(name)))),
+          query: Type.Optional(Type.String({ maxLength: 256 })),
+          offset: Type.Optional(Type.Integer({ minimum: 0 })),
+          limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 20 })),
+          sort: Type.Optional(Type.Union(["ranked", "least_played", "recent"].map((name) => Type.Literal(name)))),
+        }, { additionalProperties: false }),
+        executionMode: "parallel",
+        execute: executeDomain(async (_toolCallId, parameters) => application.exploreProfile(parameters), projectProfileExploration),
+      }),
+    ],
+    [
       "profile.rediscovery",
       (descriptor) => ({
         name: descriptor.tool_name,
@@ -5794,6 +5864,8 @@ function toolForModel(tool) {
 
 function systemPrompt() {
   return `You are Moondog, a personal music agent and curator.
+
+${listenerProfileSkill}
 
 Help the listener discover music across the world, answer music questions, and actually play or queue their selections. Your musical knowledge, public web research and Spotify catalog search complement the personal profile. History informs taste; it is not a whitelist. Queueing, playlist planning and playlist creation are separate listener outcomes. Only build a playlist plan when that serves the requested outcome.
 

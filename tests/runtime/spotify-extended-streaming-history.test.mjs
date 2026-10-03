@@ -158,7 +158,7 @@ test("Extended History rejects invalid track identities and behavior fields", ()
   );
 });
 
-test("history archive router reads Extended audio and ignores video", async (context) => {
+test("history archive router reads music in audio and video members and can extend an older import", async (context) => {
   const root = await mkdtemp(path.join(tmpdir(), "moondog-spotify-extended-"));
   context.after(() => rm(root, { recursive: true, force: true }));
   const dataRoot = path.join(root, "Spotify Extended Streaming History");
@@ -170,7 +170,10 @@ test("history archive router reads Extended audio and ignores video", async (con
   );
   await writeFile(
     path.join(dataRoot, "Streaming_History_Video_2026.json"),
-    JSON.stringify([{ ts: "2026-08-29T04:00:42Z", episode_name: "Video" }]),
+    JSON.stringify([
+      { ts: "2026-08-29T04:00:42Z", spotify_track_uri: null, episode_name: "Private video podcast" },
+      musicRecord({ ts: "2026-08-29T04:04:00Z", ms_played: 60_000 }),
+    ]),
   );
   await execFileAsync(
     "/usr/bin/zip",
@@ -185,10 +188,26 @@ test("history archive router reads Extended audio and ignores video", async (con
   });
 
   assert.equal(bundle.source_key, SPOTIFY_EXTENDED_HISTORY_SOURCE);
-  assert.equal(bundle.listening_events.length, 1);
+  assert.equal(bundle.listening_events.length, 2);
   assert.deepEqual(bundle.import_batch.member_names, [
     "Streaming_History_Audio_2026.json",
+    "Streaming_History_Video_2026.json",
   ]);
-  assert.equal(JSON.stringify(bundle).includes("Video"), false);
+  assert.equal(JSON.stringify(bundle).includes("Private video podcast"), false);
   assert.equal(JSON.stringify(bundle).includes(archivePath), false);
+
+  const { openEphemeralListeningHistoryStore } = await import("../../src/profile/listening-history-store.mjs");
+  const store = await openEphemeralListeningHistoryStore();
+  context.after(() => store.close());
+  const previous = projectSpotifyExtendedStreamingHistory({
+    subjectId, capturedAt, records: [musicRecord()],
+    archiveSha256: bundle.import_batch.archive_sha256,
+    archiveSizeBytes: bundle.import_batch.archive_size_bytes,
+    memberNames: ["Streaming_History_Audio_2026.json"],
+  });
+  store.ingestImport(previous);
+  assert.equal(store.ingestImport(bundle).inserted_events, 1);
+  assert.equal(store.ingestImport(bundle).inserted_events, 0);
+  assert.equal(store.profileSummary({ subjectId }).coverage.effective_listening_events, 2);
+  assert.equal(store.profileCatalog({ subjectId }).sources[0].input_records, 2);
 });

@@ -31,8 +31,8 @@ export const SPOTIFY_EXTENDED_HISTORY_LIMITS = Object.freeze({
 });
 
 const execFileAsync = promisify(execFile);
-const audioMemberPattern =
-  /^Spotify Extended Streaming History\/Streaming_History_Audio_([0-9]{4})(?:_([0-9]+))?\.json$/u;
+const historyMemberPattern =
+  /^Spotify Extended Streaming History\/Streaming_History_(?:Audio|Video)_([0-9]{4})(?:_([0-9]+))?\.json$/u;
 const trackUriPattern = /^spotify:track:([A-Za-z0-9]{22})$/u;
 const sha256Pattern = /^[a-f0-9]{64}$/u;
 const unsafeTextPattern =
@@ -222,7 +222,7 @@ function normalizedMemberNames(memberNames) {
   const normalized = memberNames.map((value) => {
     if (
       typeof value !== "string" ||
-      !/^Streaming_History_Audio_[0-9]{4}(?:_[0-9]+)?\.json$/u.test(value)
+      !/^Streaming_History_(?:Audio|Video)_[0-9]{4}(?:_[0-9]+)?\.json$/u.test(value)
     ) {
       fail("Spotify Extended History member names are invalid.");
     }
@@ -418,12 +418,12 @@ async function unzip(args, maximumBytes) {
   }
 }
 
-function selectedAudioMembers(listing) {
+function selectedHistoryMembers(listing) {
   const selected = listing
     .split(/\r?\n/u)
     .filter(Boolean)
     .map((name) => {
-      const match = audioMemberPattern.exec(name);
+      const match = historyMemberPattern.exec(name);
       return match
         ? {
             name,
@@ -439,13 +439,13 @@ function selectedAudioMembers(listing) {
         : left.year - right.year,
     );
   if (selected.length < 1) {
-    fail("The ZIP does not contain Spotify Extended History audio files.");
+    fail("The ZIP does not contain Spotify Extended History audio/video files.");
   }
   if (selected.length > SPOTIFY_EXTENDED_HISTORY_LIMITS.maximumHistoryMembers) {
-    fail("The ZIP contains too many Spotify Extended History audio files.");
+    fail("The ZIP contains too many Spotify Extended History audio/video files.");
   }
   if (new Set(selected.map(({ name }) => name)).size !== selected.length) {
-    fail("The ZIP contains duplicate Spotify Extended History audio files.");
+    fail("The ZIP contains duplicate Spotify Extended History audio/video files.");
   }
   return selected;
 }
@@ -481,7 +481,7 @@ export async function readSpotifyExtendedStreamingHistoryArchive({
   }
 
   const listing = await unzip(["-Z1", resolvedPath], 1024 * 1024);
-  const members = selectedAudioMembers(listing);
+  const members = selectedHistoryMembers(listing);
   const records = [];
   let totalJsonBytes = 0;
   for (const member of members) {
@@ -500,12 +500,12 @@ export async function readSpotifyExtendedStreamingHistoryArchive({
       parsed = JSON.parse(jsonText.replace(/^\uFEFF/u, ""));
     } catch {
       fail(
-        `Spotify Extended History audio file for ${member.year} is invalid JSON.`,
+        `Spotify Extended History audio/video file for ${member.year} is invalid JSON.`,
       );
     }
     if (!Array.isArray(parsed)) {
       fail(
-        `Spotify Extended History audio file for ${member.year} is not an array.`,
+        `Spotify Extended History audio/video file for ${member.year} is not an array.`,
       );
     }
     records.push(...parsed);

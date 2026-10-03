@@ -179,6 +179,14 @@ Escape returns to the previous screen with your conversation draft preserved.
 Ctrl+R refreshes local evidence, Page Up and Page Down scroll the selected detail, and Ctrl+O opens the full report.
 `/taste report` shows the full report: your years one song at a time (*Time*), songs gone quiet (*Wish You Were Here*), songs that came back (*Coming Back to Life*), songs played again right away (*Echoes*), and what the data can't see (*The dark side of the moon*).
 The interactive list is a bounded selection of profile evidence, not a search of every historical play.
+For a deeper analysis, ask Moondog: "Build my listener profile from all my imported data, including less-played music."
+The built-in listener-profile workflow starts with full source coverage and uses `moondog_profile_explore` to investigate complete evidence sections through search and pagination.
+Whole-library Apple artist and genre aggregates include every imported track before selecting the displayed facets.
+Exploration separates retained Spotify events, export overlap removal, private-session exclusions, saved and playlist evidence, direct choices, and Apple library snapshot counts.
+Extended Spotify imports include music records in both `Streaming_History_Audio` and `Streaming_History_Video` members; non-music rows remain excluded.
+Re-import the original ZIP to add video-member music omitted by an older importer; existing events and corrections are preserved and repeated imports remain idempotent.
+The overview lists each available section and its complete item count; `query`, `offset`, and `next_offset` reach beyond the compact profile examples.
+An analysis describes the imported evidence and does not claim complete lifetime coverage beyond the supplied exports or convert inferred taste into an explicit preference.
 A correction records only the explicit stance you chose and preserves the original listening history.
 Keeping an artist out still applies when you like one of their tracks; undo the artist choice separately to change that.
 The explicit `/profile correct` and `/profile retract` commands also return to the refreshed profile.

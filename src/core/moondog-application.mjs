@@ -234,6 +234,11 @@ export class MoondogApplication {
     );
   }
 
+  profileExplorationReady() {
+    return this.profileServicesReady() && typeof this.domainServices.exploreProfile === "function" &&
+      this.domainServices.profileExplorationReady?.() === true;
+  }
+
   playlistServicesReady() {
     return (
       this.domainServices !== null &&
@@ -2559,6 +2564,7 @@ export class MoondogApplication {
       registry_version:
         "a3-s3-open-similarity+a4-s4+rediscovery+historical-returns+time-capsule+back-to-back/1",
       capabilities: listCapabilities({
+        profileExplorationReady: this.profileExplorationReady(),
         domainServicesReady: this.domainServicesReady(),
         profileServicesReady: this.profileServicesReady(),
         playlistServicesReady: this.playlistServicesReady(),
@@ -2578,6 +2584,7 @@ export class MoondogApplication {
 
   agentCapabilityDescriptors() {
     return listAgentCapabilityDescriptors({
+      profileExplorationReady: this.profileExplorationReady(),
       domainServicesReady: this.domainServicesReady(),
       profileServicesReady: this.profileServicesReady(),
       playlistServicesReady: this.playlistServicesReady(),
@@ -2728,6 +2735,11 @@ export class MoondogApplication {
 
   async getProfileSummary(input) {
     return this.requireProfileServices().getProfileSummary(input);
+  }
+
+  async exploreProfile(input) {
+    if (!this.profileExplorationReady()) throw new Error("Full profile exploration is unavailable");
+    return this.requireProfileServices().exploreProfile(input);
   }
 
   // Host-only personalization; lyric text is not injected into model context.

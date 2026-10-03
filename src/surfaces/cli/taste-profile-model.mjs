@@ -280,7 +280,9 @@ export function buildTasteProfileModel(profile = {}) {
     if (!target) continue;
     const existing = subjects.get(subjectKey(target));
     if (item.evidence_id && existing?.evidence.some((evidence) => evidence.id === item.evidence_id)) continue;
-    add(item, "artist", "Through a track", "Shows up through one of their tracks.");
+    add(item, "artist", "Library evidence", Number.isSafeInteger(item.library_tracks)
+      ? `Across your Apple library: ${plural(item.library_tracks, "track")} · ${count(item.preferred_tracks)} with positive preferences.`
+      : "Shows up through one of their tracks.");
   }
 
   for (const subject of subjects.values()) {

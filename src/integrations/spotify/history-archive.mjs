@@ -45,7 +45,7 @@ export async function readSpotifyHistoryArchive(options = {}) {
   const hasExtendedHistory = listing
     .split(/\r?\n/u)
     .some((name) =>
-      /^Spotify Extended Streaming History\/Streaming_History_Audio_[0-9]{4}(?:_[0-9]+)?\.json$/u.test(
+      /^Spotify Extended Streaming History\/Streaming_History_(?:Audio|Video)_[0-9]{4}(?:_[0-9]+)?\.json$/u.test(
         name,
       ),
     );
