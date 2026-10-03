@@ -122,6 +122,12 @@ function hasInsufficientClientScope(payload) {
   );
 }
 
+function refusalMessage(payload) {
+  if (!isPlainObject(payload)) return undefined;
+  const error = isPlainObject(payload.error) ? payload.error : null;
+  return safeText(error?.message ?? payload.message, 128);
+}
+
 function normalizeArtistNames(rawArtists) {
   if (!Array.isArray(rawArtists)) return [];
   const result = [];
@@ -471,19 +477,28 @@ function normalizePlaylistItem(raw) {
 
 function normalizePlaylistItemsPage(payload) {
   const rawItems = Array.isArray(payload?.items) ? payload.items : [];
+  const offset =
+    safeInteger(payload?.offset, 0, 1_000_000) ?? 0;
   const items = rawItems
     .slice(0, SPOTIFY_WEB_API_LIMITS.playlistItemsPageMax)
     .map(normalizePlaylistItem);
   const total =
     safeInteger(payload?.total, 0, 1_000_000) ?? items.length;
+  if (offset === 0 && total > 0 && rawItems.length === 0) {
+    // The items migration's silent failure mode: a retired playlist-items
+    // path answers 200 with an empty list. Never present that as an empty
+    // playlist — fail so the caller inspects instead of acting on a lie.
+    fail(
+      "spotify_playlist_items_mismatch",
+      `Spotify reported ${total} playlist items but returned none. The playlist may use a retired response shape, or its items are unavailable. Inspect it in the Spotify app before retrying.`,
+    );
+  }
   const limit =
     safeInteger(
       payload?.limit,
       1,
       SPOTIFY_WEB_API_LIMITS.playlistItemsPageMax,
     ) ?? Math.max(1, items.length);
-  const offset =
-    safeInteger(payload?.offset, 0, 1_000_000) ?? 0;
   return {
     provider: "spotify",
     items,
@@ -540,6 +555,25 @@ export function createSpotifyWebApiClient({
   const normalizedBaseUrl = String(baseUrl).replace(/\/+$/u, "");
   if (!Number.isInteger(writeTimeoutMs) || writeTimeoutMs < 1 || writeTimeoutMs > 60_000) throw new TypeError("Invalid Spotify write settlement timeout.");
 
+  // A 429 re-arms the limiter for the whole client: the server's cooldown
+  // paces later requests too, not just the retried one.
+  let rateLimitResumeAtMs = 0;
+
+  const rearmRateLimit = (waitMs) => {
+    const bounded = Math.min(
+      Math.max(0, waitMs),
+      SPOTIFY_WEB_API_LIMITS.rateLimitMaxWaitMs,
+    );
+    const resumeAt = Date.now() + bounded;
+    if (resumeAt > rateLimitResumeAtMs) rateLimitResumeAtMs = resumeAt;
+  };
+
+  const honorRateLimitCooldown = async ({ signal } = {}) => {
+    signal?.throwIfAborted();
+    const remainingMs = rateLimitResumeAtMs - Date.now();
+    if (remainingMs > 0) await sleepImpl(remainingMs, { signal });
+  };
+
   const request = async (
     path,
     { method = "GET", body, responseMode = "json", signal, beforeDispatch } = {},
@@ -574,6 +608,9 @@ export function createSpotifyWebApiClient({
     signal?.throwIfAborted();
     let token = await accessToken(() => tokenProvider({ signal }));
     let refreshed = false;
+    // A 429 re-arms the limiter for later requests: honor the shared
+    // cooldown before the first dispatch. Retries pace themselves.
+    await honorRateLimitCooldown({ signal });
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
       signal?.throwIfAborted();
       const init = initForToken(token);
@@ -661,6 +698,7 @@ export function createSpotifyWebApiClient({
           fail("spotify_quota_exceeded", "Spotify development quota is exhausted.", options);
         }
         const waitMs = retryAfter === null ? SPOTIFY_WEB_API_LIMITS.rateLimitDefaultWaitMs : retryAfter * 1_000;
+        rearmRateLimit(waitMs);
         if (read && attempt < maxAttempts && waitMs <= SPOTIFY_WEB_API_LIMITS.rateLimitMaxWaitMs) {
           signal?.throwIfAborted();
           const jittered = Math.min(SPOTIFY_WEB_API_LIMITS.rateLimitMaxWaitMs,
@@ -673,6 +711,12 @@ export function createSpotifyWebApiClient({
       if (response.status === 403) {
         if (hasInsufficientClientScope(payload)) {
           fail("spotify_scope_insufficient", "Spotify authorization is missing a required scope. Run moondog spotify login again.", options);
+        }
+        if (refusalMessage(payload) === undefined) {
+          // The items migration's signature: retired or app-restricted
+          // endpoints answer 403 with no helpful body. Report that
+          // distinctly instead of a generic forbidden action.
+          fail("spotify_endpoint_retired", "Spotify refused this request without detail. The endpoint or content may have been retired or restricted for this app after Spotify's items migration.", options);
         }
         fail("spotify_action_forbidden", "Spotify did not allow this action.", options);
       }

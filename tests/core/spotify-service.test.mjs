@@ -760,6 +760,42 @@ test("Spotify service rejects an inconsistent playlist read and never writes", a
   assert.equal(writes, 0);
 });
 
+test("Spotify service surfaces a playlist items mismatch instead of a concurrent change", async () => {
+  let writes = 0;
+  const service = createSpotifyService({
+    client: {
+      async getAccount() {
+        return { provider: "spotify", account_id: "user-1" };
+      },
+      async getPlaylist() {
+        return {
+          id: "playlist-1",
+          name: "Night Drive",
+          is_public: false,
+          collaborative: false,
+          owner_id: "user-1",
+          snapshot_id: "snapshot-1",
+          tracks_total: 2,
+        };
+      },
+      async getPlaylistItems() {
+        const error = new Error("Spotify reported 2 playlist items but returned none.");
+        error.code = "spotify_playlist_items_mismatch";
+        throw error;
+      },
+      async replacePlaylistItems() {
+        writes += 1;
+      },
+    },
+  });
+
+  await assert.rejects(
+    service.playlistSnapshot({ playlistId: "playlist-1" }),
+    { code: "spotify_playlist_items_mismatch" },
+  );
+  assert.equal(writes, 0);
+});
+
 test("Spotify service replaces exact items only when the expected snapshot is current", async () => {
   const calls = [];
   let snapshotId = "snapshot-1";
