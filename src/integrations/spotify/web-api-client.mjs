@@ -582,12 +582,6 @@ export function createSpotifyWebApiClient({
     if (resumeAt > rateLimitResumeAtMs) rateLimitResumeAtMs = resumeAt;
   };
 
-  const honorRateLimitCooldown = async ({ signal } = {}) => {
-    signal?.throwIfAborted();
-    const remainingMs = rateLimitResumeAtMs - Date.now();
-    if (remainingMs > 0) await sleepImpl(remainingMs, { signal });
-  };
-
   const request = async (
     path,
     { method = "GET", body, responseMode = "json", signal, beforeDispatch } = {},
@@ -622,11 +616,16 @@ export function createSpotifyWebApiClient({
     signal?.throwIfAborted();
     let token = await accessToken(() => tokenProvider({ signal }));
     let refreshed = false;
-    // A 429 re-arms the limiter for later requests: honor the shared
-    // cooldown before the first dispatch. Retries pace themselves.
-    await honorRateLimitCooldown({ signal });
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-      signal?.throwIfAborted();
+      // Recheck before every dispatch, including after refresh or retry backoff.
+      // Another in-flight 429 can extend the deadline while this request sleeps.
+      // Backoff already elapsed; wait only for any remaining shared cooldown.
+      while (true) {
+        signal?.throwIfAborted();
+        const remainingMs = rateLimitResumeAtMs - Date.now();
+        if (remainingMs <= 0) break;
+        await sleepImpl(remainingMs, { signal });
+      }
       const init = initForToken(token);
       // Let a dispatched write settle so cancellation cannot hide its receipt.
       if (read && signal) init.signal = signal;

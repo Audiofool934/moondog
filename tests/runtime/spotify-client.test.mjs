@@ -17,6 +17,11 @@ function noContentResponse() {
   return new Response(null, { status: 204 });
 }
 
+function mockClock(t, now = 100_000) {
+  t.mock.method(Date, "now", () => now);
+  return { advance(milliseconds) { now += milliseconds; } };
+}
+
 test("Spotify playback errors retain HTTP evidence and allowlisted reasons without raw provider text", async () => {
   for (const [status, reason] of [[404, "NO_ACTIVE_DEVICE"], [403, "PREMIUM_REQUIRED"], [403, "RESTRICTION_VIOLATED"],
     [400, "PRIVATE_REASON_SENTINEL"], [503, undefined]]) {
@@ -375,7 +380,8 @@ test("Spotify client distinguishes rate limits from exhausted quota and never re
   }
 });
 
-test("Spotify client retries idempotent GETs on 429 and honors Retry-After", async () => {
+test("Spotify client retries idempotent GETs on 429 and honors Retry-After", async (t) => {
+  const clock = mockClock(t);
   const sleeps = [];
   const requests = [];
   const responses = [
@@ -390,6 +396,7 @@ test("Spotify client retries idempotent GETs on 429 and honors Retry-After", asy
     },
     sleepImpl: async (milliseconds) => {
       sleeps.push(milliseconds);
+      clock.advance(milliseconds);
     },
   });
 
@@ -405,7 +412,8 @@ test("Spotify client retries idempotent GETs on 429 and honors Retry-After", asy
   );
 });
 
-test("Spotify client uses a bounded default wait when Retry-After is absent", async () => {
+test("Spotify client uses a bounded default wait when Retry-After is absent", async (t) => {
+  const clock = mockClock(t);
   const sleeps = [];
   const responses = [
     jsonResponse({ error: { status: 429 } }, 429),
@@ -416,6 +424,7 @@ test("Spotify client uses a bounded default wait when Retry-After is absent", as
     fetchImpl: async () => responses.shift(),
     sleepImpl: async (milliseconds) => {
       sleeps.push(milliseconds);
+      clock.advance(milliseconds);
     },
   });
 
@@ -428,7 +437,8 @@ test("Spotify client uses a bounded default wait when Retry-After is absent", as
   );
 });
 
-test("Spotify client gives up after the 429 retry budget on idempotent GETs", async () => {
+test("Spotify client gives up after the 429 retry budget on idempotent GETs", async (t) => {
+  const clock = mockClock(t);
   const sleeps = [];
   let callCount = 0;
   const client = createSpotifyWebApiClient({
@@ -441,6 +451,7 @@ test("Spotify client gives up after the 429 retry budget on idempotent GETs", as
     },
     sleepImpl: async (milliseconds) => {
       sleeps.push(milliseconds);
+      clock.advance(milliseconds);
     },
   });
 
@@ -487,7 +498,8 @@ test("Spotify client does not wait out an unbounded Retry-After", async () => {
   assert.equal(sleeps.length, 0);
 });
 
-test("Spotify client re-arms the rate limiter for later requests after a 429", async () => {
+test("Spotify client re-arms the rate limiter for later requests after a 429", async (t) => {
+  const clock = mockClock(t);
   const sleeps = [];
   const responses = [
     jsonResponse({ error: { status: 429 } }, 429, { "retry-after": "3600" }),
@@ -498,6 +510,7 @@ test("Spotify client re-arms the rate limiter for later requests after a 429", a
     fetchImpl: async () => responses.shift(),
     sleepImpl: async (milliseconds) => {
       sleeps.push(milliseconds);
+      clock.advance(milliseconds);
     },
   });
 
@@ -521,7 +534,8 @@ test("Spotify client re-arms the rate limiter for later requests after a 429", a
   );
 });
 
-test("Spotify client re-arms the rate limiter after a 429 on a write", async () => {
+test("Spotify client re-arms the rate limiter after a 429 on a write", async (t) => {
+  const clock = mockClock(t);
   const sleeps = [];
   const responses = [
     jsonResponse({ error: { status: 429 } }, 429, { "retry-after": "3" }),
@@ -532,6 +546,7 @@ test("Spotify client re-arms the rate limiter after a 429 on a write", async () 
     fetchImpl: async () => responses.shift(),
     sleepImpl: async (milliseconds) => {
       sleeps.push(milliseconds);
+      clock.advance(milliseconds);
     },
   });
 
@@ -548,6 +563,184 @@ test("Spotify client re-arms the rate limiter after a 429 on a write", async () 
   assert.equal(account.account_id, "account-1");
   assert.equal(sleeps.length, 1);
   assert.ok(sleeps[0] > 2_000 && sleeps[0] <= 3_000, `re-armed wait was ${sleeps[0]}ms`);
+});
+
+test("Spotify shared cooldown rechecks an extension before the first dispatch", async (t) => {
+  const clock = mockClock(t);
+  const writeStarted = Promise.withResolvers();
+  const writeResponse = Promise.withResolvers();
+  const sleepStarted = Promise.withResolvers();
+  const sleepFinished = Promise.withResolvers();
+  const requests = [];
+  const sleeps = [];
+  const client = createSpotifyWebApiClient({
+    tokenProvider: async () => "token",
+    fetchImpl: async (url, init) => {
+      const device = new URL(url).searchParams.get("device_id");
+      requests.push({ device, method: init.method, at: Date.now() });
+      if (device === "inflight") {
+        writeStarted.resolve();
+        return writeResponse.promise;
+      }
+      if (device === "seed") return jsonResponse({}, 429, { "retry-after": "1" });
+      return jsonResponse({ id: "account-1" });
+    },
+    sleepImpl: async (milliseconds) => {
+      sleeps.push(milliseconds);
+      if (sleeps.length === 1) {
+        sleepStarted.resolve();
+        await sleepFinished.promise;
+      } else clock.advance(milliseconds);
+    },
+  });
+  const writeRejected = assert.rejects(client.pause({ deviceId: "inflight" }), { code: "spotify_rate_limited" });
+  await writeStarted.promise;
+  await assert.rejects(client.pause({ deviceId: "seed" }), { code: "spotify_rate_limited" });
+  const account = client.getAccount();
+  await sleepStarted.promise;
+  clock.advance(500);
+  writeResponse.resolve(jsonResponse({}, 429, { "retry-after": "3" }));
+  await writeRejected;
+  clock.advance(500);
+  sleepFinished.resolve();
+  assert.equal((await account).account_id, "account-1");
+
+  assert.deepEqual(requests, [
+    { device: "inflight", method: "PUT", at: 100_000 },
+    { device: "seed", method: "PUT", at: 100_000 },
+    { device: null, method: "GET", at: 103_500 },
+  ]);
+  assert.deepEqual(sleeps, [1_000, 2_500]);
+});
+
+test("Spotify shared cooldown paces a 401 retry after another request arms it during refresh", async (t) => {
+  const clock = mockClock(t);
+  const refreshStarted = Promise.withResolvers();
+  const refreshFinished = Promise.withResolvers();
+  const requests = [];
+  const sleeps = [];
+  let accountAttempts = 0;
+  let refreshes = 0;
+  const client = createSpotifyWebApiClient({
+    tokenProvider: async () => "old-token",
+    refreshAccessToken: async () => {
+      refreshes += 1;
+      refreshStarted.resolve();
+      return refreshFinished.promise;
+    },
+    fetchImpl: async (url, init) => {
+      const path = new URL(url).pathname;
+      requests.push({ path, token: init.headers.authorization, at: Date.now() });
+      if (path === "/v1/me") {
+        return ++accountAttempts === 1 ? jsonResponse({}, 401) : jsonResponse({ id: "account-1" });
+      }
+      return jsonResponse({}, 429, { "retry-after": "3600" });
+    },
+    sleepImpl: async (milliseconds) => {
+      sleeps.push(milliseconds);
+      clock.advance(milliseconds);
+    },
+  });
+  const account = client.getAccount();
+  await refreshStarted.promise;
+  await assert.rejects(client.getDevices(), { code: "spotify_rate_limited" });
+  refreshFinished.resolve("fresh-token");
+  assert.equal((await account).account_id, "account-1");
+
+  assert.deepEqual(requests, [
+    { path: "/v1/me", token: "Bearer old-token", at: 100_000 },
+    { path: "/v1/me/player/devices", token: "Bearer old-token", at: 100_000 },
+    { path: "/v1/me", token: "Bearer fresh-token", at: 110_000 },
+  ]);
+  assert.deepEqual(sleeps, [10_000]);
+  assert.equal(refreshes, 1);
+});
+
+test("Spotify shared cooldown rechecks after 429 backoff without duplicating the wait or replaying writes", async (t) => {
+  const clock = mockClock(t);
+  t.mock.method(Math, "random", () => 0.5);
+  const writeStarted = Promise.withResolvers();
+  const writeResponse = Promise.withResolvers();
+  const sleepStarted = Promise.withResolvers();
+  const sleepFinished = Promise.withResolvers();
+  const requests = [];
+  const sleeps = [];
+  let accountAttempts = 0;
+  const client = createSpotifyWebApiClient({
+    tokenProvider: async () => "token",
+    fetchImpl: async (_url, init) => {
+      requests.push({ method: init.method, at: Date.now() });
+      if (init.method === "PUT") {
+        writeStarted.resolve();
+        return writeResponse.promise;
+      }
+      return ++accountAttempts === 1
+        ? jsonResponse({}, 429, { "retry-after": "1" })
+        : jsonResponse({ id: "account-1" });
+    },
+    sleepImpl: async (milliseconds) => {
+      sleeps.push(milliseconds);
+      if (sleeps.length === 1) {
+        sleepStarted.resolve();
+        await sleepFinished.promise;
+      } else clock.advance(milliseconds);
+    },
+  });
+  const writeRejected = assert.rejects(client.pause(), { code: "spotify_rate_limited" });
+  await writeStarted.promise;
+  const account = client.getAccount();
+  await sleepStarted.promise;
+  clock.advance(500);
+  writeResponse.resolve(jsonResponse({}, 429, { "retry-after": "3" }));
+  await writeRejected;
+  clock.advance(625);
+  sleepFinished.resolve();
+  assert.equal((await account).account_id, "account-1");
+
+  assert.deepEqual(requests, [
+    { method: "PUT", at: 100_000 },
+    { method: "GET", at: 100_000 },
+    { method: "GET", at: 103_500 },
+  ]);
+  assert.deepEqual(sleeps, [1_125, 2_375]);
+});
+
+test("Spotify shared cooldown cancellation prevents read and write dispatch", async (t) => {
+  for (const action of ["read", "write"]) await t.test(action, async (context) => {
+    mockClock(context);
+    const controller = new AbortController();
+    const sleepStarted = Promise.withResolvers();
+    let calls = 0;
+    let guardCalls = 0;
+    const client = createSpotifyWebApiClient({
+      tokenProvider: async () => "token",
+      fetchImpl: async () => {
+        calls += 1;
+        return jsonResponse({}, 429, { "retry-after": "2" });
+      },
+      sleepImpl: async (milliseconds, { signal }) => {
+        assert.equal(milliseconds, 2_000);
+        assert.equal(signal, controller.signal);
+        signal.throwIfAborted();
+        const aborted = new Promise((resolve, reject) => {
+          signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+        });
+        sleepStarted.resolve();
+        return aborted;
+      },
+    });
+    await assert.rejects(client.pause(), { code: "spotify_rate_limited" });
+    const pending = action === "read"
+      ? client.getAccount({ signal: controller.signal })
+      : client.resume({}, { signal: controller.signal, beforeDispatch: () => { guardCalls += 1; } });
+    const rejected = assert.rejects(pending, { name: "AbortError" });
+    await sleepStarted.promise;
+    controller.abort();
+    await rejected;
+    assert.equal(Date.now(), 100_000);
+    assert.equal(calls, 1);
+    assert.equal(guardCalls, 0);
+  });
 });
 
 test("Spotify client fails loudly when playlist items advertise a total but return none", async () => {
@@ -1033,7 +1226,8 @@ test("Spotify client checks and saves library tracks", async () => {
   assert.equal(requests[1].init.method, "PUT");
 });
 
-test("rate limits and authentication share three total GET attempts, including non-JSON errors", async () => {
+test("rate limits and authentication share three total GET attempts, including non-JSON errors", async (t) => {
+  const clock = mockClock(t);
   const responses = [new Response("busy", { status: 429, headers: { "retry-after": "0" } }),
     new Response("expired", { status: 401 }), new Response("busy again", { status: 429 })];
   let calls = 0;
@@ -1042,7 +1236,7 @@ test("rate limits and authentication share three total GET attempts, including n
     refreshAccessToken: async ({ rejectedAccessToken }) => {
       assert.equal(rejectedAccessToken, "old-token"); refreshes++; return "new-token";
     },
-    fetchImpl: async () => { calls++; return responses.shift(); }, sleepImpl: async () => {} });
+    fetchImpl: async () => { calls++; return responses.shift(); }, sleepImpl: async (milliseconds) => { clock.advance(milliseconds); } });
   await assert.rejects(client.getQueue(), { code: "spotify_rate_limited" });
   assert.equal(calls, 3);
   assert.equal(refreshes, 1);
