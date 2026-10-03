@@ -93,6 +93,9 @@ The current priority is to complete and validate the personal listening loop in 
 
 ### Recommendation quality
 
+- [ ] Build a persistent listener-profile revision from complete imported evidence, using deterministic digests, model-led investigation, and traceable claims.
+  Completion requires a long-tail interest to survive synthesis, explicit corrections to affect the next revision, and a fresh TUI session to recover the result and its evidence.
+  The [Hermes and OpenClaw comparison](LISTENER_PROFILE_HARNESS_RESEARCH.md) defines the proposed slice and distinguishes it from the existing full-corpus exploration tools.
 - [ ] Complete a bounded provider-blind human review set for relevance, serendipity, canonical-recording quality, and explanation usefulness.
   Completion requires validator-compatible ratings and aggregate-only results that do not expose raw listening profiles.
 - [ ] Publish the evaluation method and representative aggregate findings.
