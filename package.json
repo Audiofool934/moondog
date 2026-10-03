@@ -80,9 +80,9 @@
     "test": "node --test tests/contracts/*.test.mjs tests/core/*.test.mjs tests/importers/*.test.mjs tests/runtime/*.test.mjs"
   },
   "dependencies": {
-    "@earendil-works/pi-agent-core": "0.84.3",
-    "@earendil-works/pi-ai": "0.84.3",
-    "@earendil-works/pi-tui": "0.84.3",
+    "@earendil-works/pi-agent-core": "1.0.1",
+    "@earendil-works/pi-ai": "1.0.1",
+    "@earendil-works/pi-tui": "1.0.1",
     "ajv": "8.20.0",
     "ajv-formats": "3.0.1",
     "plist": "5.0.0"

@@ -57,7 +57,7 @@ for (const persistent of [true, false]) {
     const branch = await f.runtime.rewindTo(entries[1].entry_id);
     assert.equal(branch.draft, edited);
     assert.equal(branch.parent_session_id, originalId);
-    assert.deepEqual(f.runtime.agent.state.messages.map(messageText), ['First fictional request', 'First reply']);
+    assert.deepEqual(f.runtime.agent.state.messages.filter(message => message.role !== "system").map(messageText), ['First fictional request', 'First reply']);
     assert.equal(f.application.conversationPending().draft, edited);
     f.faux.setResponses([context => {
       assert.doesNotMatch(JSON.stringify(context), /DISCARDED_FUTURE|DISCARDED_ANSWER|Second reply/u);
@@ -87,7 +87,7 @@ test('rewind drafts, original history and explicit preferences survive restart w
   await f.reopen();
   assert.equal(f.application.ensureMemorySession().session_id, branch.session_id);
   assert.deepEqual(f.application.conversationPending(), { draft: 'Before branch', queued: [] });
-  assert.deepEqual(f.runtime.agent.state.messages, []);
+  assert.deepEqual(f.runtime.agent.state.messages.filter(message => message.role !== "system"), []);
   const context = f.application.memoryContext();
   assert.doesNotMatch(JSON.stringify(context.recent_episodes), /Discard this future/u);
   assert.doesNotMatch(JSON.stringify(context.recent_sessions), /Future response/u);
@@ -127,7 +127,7 @@ test('live Spotify conversation and receipts resume only as history, with no gen
   assert.equal(f.application.ensureMemorySession().session_id, branch.session_id);
   assert.equal(f.runtime.transientSpotifyContext, true);
   assert.match(JSON.stringify(f.runtime.agent.state.messages), /Spotify accepted/u);
-  assert.ok(f.runtime.agent.state.messages.every(message => ['user', 'assistant'].includes(message.role)));
+  assert.ok(f.runtime.agent.state.messages.filter(message => message.role !== "system").every(message => ['user', 'assistant'].includes(message.role)));
   f.faux.setResponses([tool('moondog_spotify_player_control', { action: 'resume', track_refs: [trackRef] }), answer('No fresh selection.')]);
   await f.runtime.prompt('Play the old selection again');
   assert.equal(f.writes.length, 1);
@@ -156,7 +156,7 @@ test('rewind waits for an active write and times out without changing branches o
   assert.match(f.application.conversationEntries()[0].assistant_text, /Spotify/u);
   const branch = await f.runtime.rewindTo(entry.entry_id);
   assert.equal(branch.draft, 'Skip one track');
-  assert.equal(f.runtime.agent.state.messages.length, 0);
+  assert.equal(f.runtime.agent.state.messages.filter(message => message.role !== "system").length, 0);
   assert.equal(f.writes.length, 1);
 });
 
@@ -172,7 +172,7 @@ test('rewind rejects stale/cross-session entry identifiers and never restores Pi
   f.runtime.agent.followUp({ role: 'user', content: 'STALE_FOLLOWUP', timestamp: 0 });
   await f.runtime.rewindTo(f.application.conversationEntries()[0].entry_id);
   assert.equal(f.runtime.agent.hasQueuedMessages(), false);
-  assert.deepEqual(f.runtime.agent.state.messages, []);
+  assert.deepEqual(f.runtime.agent.state.messages.filter(message => message.role !== "system"), []);
 });
 
 test('legacy generic transcripts can be rewound without rewriting their stored history', async t => {

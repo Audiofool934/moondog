@@ -14,7 +14,7 @@ export class OfflineAgentRuntime {
     return {
       state: "offline",
       adapter: "pi_agent_core",
-      pi_version: "0.84.3",
+      pi_version: "1.0.1",
       reason: this.reason,
       ...this.selection,
       session_persistence: "none",

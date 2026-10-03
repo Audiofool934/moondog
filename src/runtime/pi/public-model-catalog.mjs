@@ -6,7 +6,7 @@ import { createPiModels, listPiModels, listPiProviders } from "./model-catalog.m
 import { acquirePrivateFileLock, resolveMoondogAuthFile } from "./persistent-credential-store.mjs";
 import { supportedPiProviderIds } from "./provider-registry.mjs";
 
-export const PI_CATALOG_VERSION = "0.84.3";
+export const PI_CATALOG_VERSION = "1.0.1";
 const MAX_BYTES = 2 * 1024 * 1024;
 const MAX_MODELS = 2000;
 const FRESH_MS = 4 * 60 * 60 * 1000;

@@ -32,7 +32,7 @@ Moondog will use three released Pi packages behind Moondog-owned adapters:
 - `@earendil-works/pi-ai` for LLM provider and model adaptation.
 - `@earendil-works/pi-tui` for the terminal interface.
 
-All three packages are pinned exactly to `0.84.3`.
+All three packages are pinned exactly to `1.0.1`.
 
 Moondog follows a Pi-first baseline rule.
 
@@ -46,7 +46,8 @@ Moondog will not depend on `@earendil-works/pi-coding-agent`.
 
 Moondog will not fork Pi.
 
-Moondog will not use the current experimental `AgentHarness` as its runtime because its public operation surface is still an explicit scaffold that throws `HarnessNotImplemented` for unfinished paths.
+Moondog uses Pi's classic `Agent` loop and owns its session persistence.
+Pi 1.0 removed the experimental `AgentHarness` from `pi-agent-core`; the upgrade does not introduce `pi-durable` or change Moondog's session storage.
 
 OpenClaw may return later as an optional Telegram, Gateway, delivery, and scheduler adapter.
 
@@ -291,15 +292,21 @@ External effects remain disabled until policy evaluation, confirmation, budget r
 
 ## Dependency Policy
 
-Pi is a fast-moving `0.x` project.
+Moondog tracks released Pi versions through its adapters.
 
 The three Pi packages must upgrade together and remain exact versions in the lockfile.
 
 Every upgrade requires the Pi adapter compatibility tests and a real terminal smoke test.
 
-The repository now requires Node `>=22.19.0`, matching Pi `0.84.3`.
+The repository requires Node `>=22.19.0`, matching Pi `1.0.1`.
 
-The audited local runtime used Node `24.18.0`.
+The Pi `1.0.1` upgrade was checked locally with Node `24.19.0`.
+
+Pi now stores system instructions and tool declarations in transcript system messages.
+Moondog adapts `toolsAdded` for provider schemas while retaining the original action schemas for execution, and preserves the leading system message when restoring or rewinding a conversation.
+The memory agent uses `finishTurn` to keep reflection bounded to one model request.
+The model catalog uses Pi's canonical DeepSeek Flash metadata while preserving Moondog's legacy Flash aliases and saved selections.
+Catalog caches carry the new Pi version so incompatible older metadata is ignored.
 
 Pi is MIT licensed and is consumed as a dependency.
 
@@ -309,7 +316,10 @@ No Pi or OpenClaw source code was copied into this slice.
 
 - [OpenAI Codex authentication](https://learn.chatgpt.com/docs/auth)
 
-Pi was audited at commit [`dcd461925db2edf69a43c8135db1180d418afd54`](https://github.com/earendil-works/pi/commit/dcd461925db2edf69a43c8135db1180d418afd54), with published release [`v0.84.3`](https://github.com/earendil-works/pi/releases/tag/v0.84.3).
+The current adapter migration targets [`v1.0.1`](https://github.com/earendil-works/pi/tree/v1.0.1).
+Its compatibility changes are documented in the [Agent changelog](https://github.com/earendil-works/pi/blob/v1.0.1/packages/agent/CHANGELOG.md), [AI changelog](https://github.com/earendil-works/pi/blob/v1.0.1/packages/ai/CHANGELOG.md), and [TUI changelog](https://github.com/earendil-works/pi/blob/v1.0.1/packages/tui/CHANGELOG.md).
+
+The original Pi audit used commit [`dcd461925db2edf69a43c8135db1180d418afd54`](https://github.com/earendil-works/pi/commit/dcd461925db2edf69a43c8135db1180d418afd54), with published release [`v0.84.3`](https://github.com/earendil-works/pi/releases/tag/v0.84.3).
 
 - [Pi Agent quick start](https://github.com/earendil-works/pi/blob/dcd461925db2edf69a43c8135db1180d418afd54/packages/agent/README.md#quick-start)
 - [Pi Agent tool and hook types](https://github.com/earendil-works/pi/blob/dcd461925db2edf69a43c8135db1180d418afd54/packages/agent/src/types.ts)
