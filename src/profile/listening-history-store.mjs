@@ -569,6 +569,56 @@ function insertBundleRecords(bundle, statements) {
   return { insertedTracks, insertedEvents };
 }
 
+function preserveExtendedHistoryMatches(bundle, retainedMatch) {
+  const candidates = bundle.reconciliationCandidates;
+  if (bundle.importBatch.sourceFormat !== "spotify_extended_streaming_history_music_v1") return candidates;
+  const retained = new Map(candidates.map((candidate) => [
+    candidate.supersedingEventId, retainedMatch(candidate.supersedingEventId),
+  ]));
+  if (!candidates.some((candidate) => retained.get(candidate.supersedingEventId) &&
+    retained.get(candidate.supersedingEventId) !== candidate.supersededEventId)) return candidates;
+
+  // Account Data cannot distinguish equal-duration plays of the same title and
+  // artist within one minute. Added video plays can reorder those ordinals.
+  // Keep established pairs and assign only the still-unmatched equivalent plays.
+  const events = new Map(bundle.listeningEvents.map((event) => [event.listening_event_id, event]));
+  const tracks = new Map(bundle.trackRefs.map((track) => [track.track_ref_id, track]));
+  const groups = new Map();
+  for (const candidate of candidates) {
+    const event = events.get(candidate.supersedingEventId);
+    const track = tracks.get(event.track_ref_id);
+    const key = JSON.stringify([
+      event.occurred_at.slice(0, 16), event.played_ms,
+      track.title.normalize("NFKC").toLowerCase(),
+      track.artist_credits[0].name.normalize("NFKC").toLowerCase(),
+    ]);
+    const group = groups.get(key) ?? [];
+    group.push(candidate);
+    groups.set(key, group);
+  }
+  const matches = new Map();
+  for (const group of groups.values()) {
+    const available = new Set(group.map((candidate) => candidate.supersededEventId));
+    for (const candidate of group) {
+      const previous = retained.get(candidate.supersedingEventId);
+      if (!previous) continue;
+      if (!available.delete(previous)) throw new Error("Listening history reconciliation conflict");
+      matches.set(candidate.supersedingEventId, previous);
+    }
+    const remaining = available.values();
+    for (const candidate of group) {
+      if (matches.has(candidate.supersedingEventId)) continue;
+      const selected = available.has(candidate.supersededEventId)
+        ? candidate.supersededEventId : remaining.next().value;
+      matches.set(candidate.supersedingEventId, selected);
+      available.delete(selected);
+    }
+  }
+  return candidates.map((candidate) => ({
+    ...candidate, supersededEventId: matches.get(candidate.supersedingEventId),
+  }));
+}
+
 export class ListeningHistoryStore {
   #database;
   #closed = false;
@@ -1055,7 +1105,7 @@ export class ListeningHistoryStore {
     const bundle = normalizedImportBundle(value);
     const batch = bundle.importBatch;
     const existingBatch = this.#database.prepare(
-      `SELECT import_batch_id FROM import_batches
+      `SELECT * FROM import_batches
       WHERE import_batch_id = ?`,
     );
     const insertBatch = this.#database.prepare(
@@ -1146,7 +1196,8 @@ export class ListeningHistoryStore {
     let profileAlreadyImported = bundle.profileImport === undefined;
     try {
       this.localSubjectId({ preferredSubjectId: batch.subjectId });
-      alreadyImported = Boolean(existingBatch.get(batch.importBatchId));
+      const previousBatch = existingBatch.get(batch.importBatchId);
+      alreadyImported = Boolean(previousBatch);
       if (!alreadyImported) {
         ({ insertedTracks, insertedEvents } = insertBundleRecords(
           bundle,
@@ -1169,8 +1220,38 @@ export class ListeningHistoryStore {
           batch.inputRecords - insertedEvents,
           insertedTracks,
         );
+      } else {
+        // Earlier readers skipped video members, even when they contained music.
+        // Extend that same archive's receipt without replacing its existing rows.
+        const previousMembers = JSON.parse(previousBatch.member_names_json);
+        const addedMembers = batch.memberNames.filter((name) => !previousMembers.includes(name));
+        const expandsExtendedArchive = batch.sourceFormat === "spotify_extended_streaming_history_music_v1" &&
+          previousBatch.subject_id === batch.subjectId && previousBatch.source_key === bundle.sourceKey &&
+          previousBatch.source_format === batch.sourceFormat && previousBatch.data_scope === batch.dataScope &&
+          previousBatch.archive_sha256 === batch.archiveSha256 && previousBatch.archive_size_bytes === batch.archiveSizeBytes &&
+          previousMembers.every((name) => batch.memberNames.includes(name)) && addedMembers.length > 0 &&
+          addedMembers.every((name) => /^Streaming_History_Video_\d{4}(?:_\d+)?\.json$/u.test(name));
+        if (expandsExtendedArchive) {
+          const incomingIds = new Set(bundle.listeningEvents.map((event) => event.listening_event_id));
+          const previousEvents = this.#database.prepare(`SELECT listening_event_id FROM listening_events
+            WHERE subject_id = ? AND json_extract(record_json, '$.provenance.import_batch_id') = ?`)
+            .all(batch.subjectId, batch.importBatchId);
+          if (batch.inputRecords < previousBatch.input_records || previousEvents.some((event) => !incomingIds.has(event.listening_event_id))) {
+            throw new Error("Extended archive expansion must preserve every previously imported event");
+          }
+          ({ insertedTracks, insertedEvents } = insertBundleRecords(bundle, statements));
+          this.#database.prepare(`UPDATE import_batches SET member_names_json = ?, input_records = ?,
+            earliest_occurred_at = ?, latest_occurred_at = ?,
+            inserted_events = inserted_events + ?, duplicate_events = ? - inserted_events - ?,
+            inserted_track_refs = inserted_track_refs + ? WHERE import_batch_id = ?`)
+            .run(JSON.stringify(batch.memberNames), batch.inputRecords, batch.earliestOccurredAt, batch.latestOccurredAt,
+              insertedEvents, batch.inputRecords, insertedEvents, insertedTracks, batch.importBatchId);
+        }
       }
-      for (const candidate of bundle.reconciliationCandidates) {
+      const reconciliationCandidates = preserveExtendedHistoryMatches(bundle, (eventId) =>
+        selectCandidateBySuperseding.get(eventId)?.superseded_event_id ??
+        selectBySuperseding.get(eventId)?.superseded_event_id);
+      for (const candidate of reconciliationCandidates) {
         const existingBySuperseded = selectCandidateBySuperseded.get(
           candidate.supersededEventId,
         )?.superseding_event_id;
@@ -1333,7 +1414,7 @@ export class ListeningHistoryStore {
           }
         : {}),
       profile_effects:
-        insertedEvents - supersededEvents !== 0 || insertedProfileEvidence > 0
+        insertedEvents > 0 || supersededEvents > 0 || insertedProfileEvidence > 0
           ? "updated"
           : "unchanged",
     };
@@ -1556,6 +1637,31 @@ export class ListeningHistoryStore {
     return structuredClone(
       this.#profileProjection({ subjectId, maxItems }).summary,
     );
+  }
+
+  profileCatalog({ subjectId } = {}) {
+    const projected = this.#profileProjection({ subjectId, maxItems: 1 });
+    const normalizedSubjectId = subjectId.toLowerCase();
+    const imports = this.#database.prepare(`SELECT source_format AS format, data_scope AS scope,
+      SUM(input_records) AS input_records, MIN(earliest_occurred_at) AS earliest,
+      MAX(latest_occurred_at) AS latest
+      FROM import_batches WHERE subject_id = ? GROUP BY source_format, data_scope ORDER BY source_format`)
+      .all(normalizedSubjectId);
+    const stored = this.#database.prepare("SELECT COUNT(*) AS count FROM listening_events WHERE subject_id = ?")
+      .get(normalizedSubjectId).count;
+    return structuredClone({
+      coverage: { ...projected.summary.coverage,
+        stored_listening_events: stored,
+        superseded_listening_events: stored - projected.summary.coverage.effective_listening_events },
+      sources: imports,
+      context: {
+        reference_date: projected.summary.listening_behavior.context.reference_date,
+        recent_window_days: projected.summary.listening_behavior.context.recent_window_days,
+        incognito_events_excluded: projected.summary.listening_behavior.context.incognito_events_excluded,
+        release_minimum_distinct_tracks: projected.summary.listening_behavior.context.release_minimum_distinct_tracks,
+      },
+      sections: projected.catalog,
+    });
   }
 
   rediscoveryCandidates({ subjectId, limit = 6 } = {}) {

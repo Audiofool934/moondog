@@ -1484,7 +1484,7 @@ function evidenceGroups(records, eventAnalysis, explanations) {
       artist_credit: group.entity.artist_credit,
       ...(group.entity.release ? { release: group.entity.release } : {}),
       playlist_count: group.playlists.size,
-      playlist_names: [...group.playlists].sort(lexicalCompare).slice(0, 3),
+      playlist_names: [...group.playlists].sort(lexicalCompare),
       last_added_at: group.lastAddedAt,
       evidence_id: group.evidenceId,
     }));
@@ -2432,7 +2432,9 @@ export function projectListeningProfile({
       },
       curated_preferences: {
         saved_tracks: slice(evidence.savedTracks, maxItems),
-        playlist_anchors: slice(evidence.playlistAnchors, maxItems),
+        playlist_anchors: slice(evidence.playlistAnchors, maxItems).map((item) => ({
+          ...item, playlist_names: item.playlist_names.slice(0, 3),
+        })),
         followed_artists: slice(evidence.followedArtists, maxItems),
         saved_albums: slice(evidence.savedAlbums, maxItems),
         avoids: slice(combinedAvoids(direct.avoids, evidence.avoids), maxItems),
@@ -2514,6 +2516,33 @@ export function projectListeningProfile({
       ],
     },
     explanations,
+    // Host-only complete evidence catalogs. Bound pages after selecting a section.
+    catalog: {
+      history_artists: events.lifetime.rankedArtists,
+      history_tracks: events.lifetime.rankedTracks,
+      recent_artists: events.recent.rankedArtists,
+      recent_tracks: events.recent.rankedTracks,
+      history_years: events.historyArc,
+      history_releases: releases,
+      saved_tracks: evidence.savedTracks,
+      playlist_tracks: evidence.playlistAnchors,
+      saved_albums: evidence.savedAlbums,
+      followed_artists: evidence.followedArtists,
+      provider_genres: evidence.genres,
+      listener_preferences: direct.preferences,
+      listener_avoids: combinedAvoids(direct.avoids, evidence.avoids),
+      provider_evidence: deduplicatedEvidence.map((record) => ({
+        evidence_id: record.profile_evidence_id,
+        evidence_kind: record.evidence_kind,
+        entity_type: record.entity.entity_type,
+        label: record.entity.label ?? "Unresolved provider label",
+        ...(record.entity.artist_credit ? { artist_credit: record.entity.artist_credit } : {}),
+        source_label: musicProviderLabel(record.provenance.source_system),
+        observed_at: record.observed_at,
+        ...Object.fromEntries(["rank", "period", "text", "playlist_name", "playlist_position", "value", "unit", "stream_count", "played_seconds"]
+          .filter((key) => record.attributes[key] !== undefined).map((key) => [key, record.attributes[key]])),
+      })),
+    },
     // Host-only consumers need every exclusion, not the bounded display sample.
     lyricExclusions: combinedAvoids(direct.avoids, evidence.avoids),
   };
