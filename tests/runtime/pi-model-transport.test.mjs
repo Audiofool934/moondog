@@ -119,7 +119,7 @@ function profileSession() {
   const state = { reads: 0, reviews: 0, submissions: 0, retries: [] };
   const entry = { reference_id: "ev_fixture", section: "history_tracks", data: { label: "Synthetic track" } };
   return {
-    state, manifest: { digest_partitions: 1 },
+    state, phase: "review", manifest: { digest_partitions: 1 },
     progress: () => ({ reviewed_partitions: state.reviews, total_partitions: 1 }),
     findings: () => ({ total: state.reviews, items: [], next_offset: null }),
     read(id) {
@@ -147,7 +147,8 @@ function profileCheckpointResponse(count) {
     }],
   });
   return profileToolResponse("moondog_submit_listener_profile", {
-    summary: "A synthetic saved profile.", highlight_claim_ids: ["claim_fixture"],
+    summary: "A synthetic saved profile.", insights: [{ kind: "observation", statement: "A retained synthetic track.",
+      scope: "Synthetic fixture", uncertainty: "Presence is not liking.", supporting_refs: ["ev_fixture"], contradicting_refs: [] }],
   });
 }
 
@@ -157,6 +158,8 @@ test("profile worker retries a rejected DeepSeek request without replaying saved
     if (count === 3 || count === 4) throw networkFailure();
     return profileCheckpointResponse(count);
   }, { profile: true });
+  await fixture.runtime.investigate(session);
+  session.phase = "synthesis";
   await fixture.runtime.investigate(session);
   assert.equal(fixture.requests.length, 5);
   assert.deepEqual(fixture.requests[2], fixture.requests[3]);
@@ -173,6 +176,8 @@ test("profile worker reports safe provider errors after bounded retries or termi
     if (count < 3) return profileCheckpointResponse(count);
     throw networkFailure("UND_ERR_CONNECT_TIMEOUT");
   }, { profile: true });
+  await fixture.runtime.investigate(session);
+  session.phase = "synthesis";
   await assert.rejects(fixture.runtime.investigate(session), error => {
     assertSafeConnectionError(error, { code: "UND_ERR_CONNECT_TIMEOUT" });
     assert.match(error.message, /Saved progress: 1\/1 evidence pages/u);
@@ -213,6 +218,8 @@ test("profile worker cancellation during connection backoff preserves the checkp
     started.resolve();
     return delay(milliseconds, undefined, { signal });
   } });
+  await fixture.runtime.investigate(session);
+  session.phase = "synthesis";
   const completion = fixture.runtime.investigate(session);
   await started.promise;
   fixture.runtime.abort();

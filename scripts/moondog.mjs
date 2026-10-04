@@ -831,6 +831,7 @@ async function main() {
           signal: controller.signal, onProgress: options.json ? undefined : progress =>
             process.stderr.write(progress.model_retry
               ? `Retrying model ${progress.model_retry.attempt}/${progress.model_retry.maxRetries}; ${progress.reviewed_partitions}/${progress.total_partitions} profile pages saved\n`
+              : progress.phase === "synthesis" ? `Synthesizing profile; ${progress.reviewed_partitions}/${progress.total_partitions} evidence pages saved\n`
               : `Profile: ${progress.reviewed_partitions}/${progress.total_partitions} evidence pages reviewed\n`) });
       } finally { process.removeListener("SIGINT", abort); }
       return;

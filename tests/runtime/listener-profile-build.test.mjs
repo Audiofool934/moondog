@@ -74,15 +74,15 @@ function submit(session) {
     claims.push(...page.items);
     offset = page.next_offset;
   } while (offset !== null);
-  const selected = [...claims.filter(claim => claim.kind === "listener_assertion"),
-    ...claims.filter(claim => claim.statement.includes("Quiet interest")), ...claims].slice(0, 12);
+  const selected = [...claims.filter(claim => claim.statement.includes("Quiet interest")), ...claims]
+    .filter(claim => claim.kind !== "listener_assertion").slice(0, 12);
   session.submit({ summary: "There is broad dominant attention and a smaller retained interest; explicit choices take precedence.",
-    highlight_claim_ids: [...new Set(selected.map(claim => claim.claim_id))] });
+    insights: [...new Map(selected.map(claim => [claim.claim_id, claim])).values()] });
 }
 
 function scriptedRuntime(investigate = async session => {
   while (session.progress().pending.length) for (const item of session.progress().pending) reviewPage(session, item.partition_id);
-  submit(session);
+  if (session.phase === "synthesis") submit(session);
 }) {
   return async () => ({ publicStatus: () => modelStatus, investigate, abort() {} });
 }
@@ -111,7 +111,7 @@ test("saved profile includes the tail, survives restart, reuses identical import
   const next = await state.application.buildListenerProfile({ runtimeFactory });
   assert.equal(next.revision.sequence, 2);
   assert.equal(next.revision.parent_revision_id, built.revision.revision_id);
-  assert.ok(next.revision.highlights.some(claim => claim.kind === "listener_assertion" && claim.stance === "avoid" && /Smaller artist/u.test(claim.statement)));
+  assert.ok(next.revision.listener_assertions.some(claim => claim.kind === "listener_assertion" && claim.stance === "avoid" && /Smaller artist/u.test(claim.statement)));
   assert.equal((await state.application.getListenerProfile({ revisionId: built.revision.revision_id })).state, "stale");
 
   let output = "";
@@ -141,7 +141,7 @@ test("interrupted builds checkpoint pages, resume after restart, and keep the pr
   const final = await state.application.buildListenerProfile({ runtimeFactory: scriptedRuntime(async session => {
     resumed = session.progress();
     while (session.progress().pending.length) for (const part of session.progress().pending) reviewPage(session, part.partition_id);
-    submit(session);
+    if (session.phase === "synthesis") submit(session);
   }) });
   assert.ok(resumed.reused_partitions > 0);
   assert.equal(final.revision.sequence, 2);
@@ -241,8 +241,10 @@ test("invalid references and changes during synthesis cannot publish a profile",
   }) }), /evidence reference/u);
   await assert.rejects(state.application.buildListenerProfile({ force: true, runtimeFactory: scriptedRuntime(async session => {
     while (session.progress().pending.length) for (const part of session.progress().pending) reviewPage(session, part.partition_id);
-    submit(session);
-    state.store.recordListenerCorrection({ subjectId, entityType: "artist", label: "Dominant artist", stance: "avoid" });
+    if (session.phase === "synthesis") {
+      submit(session);
+      state.store.recordListenerCorrection({ subjectId, entityType: "artist", label: "Dominant artist", stance: "avoid" });
+    }
   }) }), /changed during the build/u);
   assert.equal((await state.application.getListenerProfile()).revision_id, first.revision.revision_id);
 });
@@ -268,12 +270,17 @@ test("one build command continues across Pi session limits until every page is s
   responses.push(context => {
     const content = context.messages.find(message => message.role === "user").content;
     const initial = JSON.parse(typeof content === "string" ? content : content.map(item => item.text ?? "").join(""));
-    claims.push(...initial.saved_findings.items);
+    assert.equal(initial.phase, "synthesis");
+    assert.equal(initial.saved_findings, undefined);
+    claims.push(...initial.global_overview.flatMap(section => section.items.map(finding)));
     for (const result of context.messages.filter(message => message.role === "toolResult" && message.toolName === "moondog_record_profile_findings")) {
       claims.push(...JSON.parse(result.content[0].text).saved_claims);
     }
     return fauxAssistantMessage([fauxToolCall("moondog_submit_listener_profile", { summary: "The retained history records attention, without proving liking.",
-      highlight_claim_ids: [...new Set(claims.map(claim => claim.claim_id))].slice(0, 6) })], { stopReason: "toolUse" });
+      insights: claims.slice(0, 6).map(claim => ({
+        kind: claim.kind, statement: claim.statement, scope: claim.scope, uncertainty: claim.uncertainty,
+        supporting_refs: claim.supporting_refs, contradicting_refs: claim.contradicting_refs,
+      })) })], { stopReason: "toolUse" });
   });
   faux.setResponses(responses);
   let output = "";
@@ -343,7 +350,7 @@ test("a fresh Pi listening session receives the saved reading, evidence tools an
   const fresh = new PiAgentRuntime({ application: state.application, models, model: faux.getModel(), provider: "faux", modelId: "faux-1" });
   faux.setResponses([context => {
     const prompt = JSON.stringify(context.messages);
-    assert.match(prompt, /New source evidence or listener choices/u);
+    assert.match(prompt, /Source evidence, listener choices or analysis changed/u);
     assert.doesNotMatch(prompt, /smaller retained interest/u);
     return fauxAssistantMessage([fauxText("The saved reading needs an update.")]);
   }]);

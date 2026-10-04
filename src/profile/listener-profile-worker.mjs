@@ -1,5 +1,5 @@
 import {
-  compileListenerProfile, modelEvidence, validateProfileReview,
+  compileListenerProfile, listenerProfileOverview, LISTENER_PROFILE_SYNTHESIS_VERSION, modelEvidence, validateProfileReview,
 } from "./listener-profile-build.mjs";
 import { createConfiguredProfileBuildRuntime } from "../runtime/pi/profile-build-runtime.mjs";
 
@@ -11,7 +11,7 @@ export async function runListenerProfileBuild({
   const { input, store } = application.getProfileBuildContext();
   if (!input.partitions.length) return { state: "no_evidence", reviewed_partitions: 0, total_partitions: 0 };
   const previous = store.current();
-  if (!force && previous?.input_digest === input.input_digest) {
+  if (!force && previous?.input_digest === input.input_digest && previous.synthesis_version === LISTENER_PROFILE_SYNTHESIS_VERSION) {
     return { state: "unchanged", revision: await application.getListenerProfile(),
       reviewed_partitions: input.partitions.length, total_partitions: input.partitions.length };
   }
@@ -25,13 +25,23 @@ export async function runListenerProfileBuild({
   const inspectedFindings = new Set();
   let submission = null;
   const progress = () => ({
+    phase: Object.keys(reviews).length === input.partitions.length ? "synthesis" : "review",
     reviewed_partitions: Object.keys(reviews).length, total_partitions: input.partitions.length,
     reused_partitions: build.reused_partitions,
     pending: input.partitions.filter(part => !reviews[part.partition_id]).slice(0, 12)
       .map(({ partition_id, section, offset, total, items }) => ({ partition_id, section, offset, total, rows: items.length })),
   });
-  const findings = (offset) => {
-    const all = Object.values(reviews).flatMap(review => review.claims);
+  const partitionSections = new Map(input.partitions.map(part => [part.partition_id, part.section]));
+  const overview = listenerProfileOverview(input);
+  const findings = (offset, { section, query } = {}) => {
+    if (section !== undefined && !input.manifest.sections.some(item => item.section === section)) throw new TypeError("Unknown findings section");
+    if (query !== undefined && (typeof query !== "string" || query.length > 200)) throw new TypeError("Invalid findings query");
+    const needle = query?.normalize("NFKC").toLocaleLowerCase();
+    const all = Object.values(reviews).filter(review => !section || partitionSections.get(review.partition_id) === section)
+      .flatMap(review => review.claims.map(claim => ({ ...claim, section: partitionSections.get(review.partition_id) })))
+      .filter(claim => !needle || JSON.stringify([claim.statement, claim.scope, claim.uncertainty,
+        ...claim.supporting_refs.map(ref => modelEvidence(input.evidence.get(ref)).data)])
+        .normalize("NFKC").toLocaleLowerCase().includes(needle));
     // A fresh model session picks up the unread findings instead of starting
     // synthesis from the first twelve again. Explicit offsets can revisit them.
     offset ??= Math.max(0, all.findIndex(claim => !inspectedFindings.has(claim.claim_id)));
@@ -53,14 +63,15 @@ export async function runListenerProfileBuild({
     signal?.throwIfAborted();
     onProgress(progress());
     const session = {
-      manifest: input.manifest, progress, findings,
+      phase: "review", manifest: input.manifest, overview, progress, findings,
       modelRetry: retry => { if (!signal?.aborted) onProgress({ ...progress(), model_retry: retry }); },
       read: (partitionId) => {
         signal?.throwIfAborted();
         const partition = input.partitions.find(part => part.partition_id === partitionId);
         if (!partition) throw new TypeError("Unknown profile digest partition");
         seen.add(partitionId);
-        return { ...partition, items: partition.items.map(item => modelEvidence(item)) };
+        return { ...partition, semantics: input.manifest.sections.find(item => item.section === partition.section),
+          items: partition.items.map(item => modelEvidence(item)) };
       },
       evidence: async (referenceId, offset = 0) => {
         signal?.throwIfAborted();
@@ -71,13 +82,14 @@ export async function runListenerProfileBuild({
         if (entry.data.evidence_id) {
           try {
             const detail = await application.explainProfileEvidence({ evidenceId: entry.data.evidence_id });
-            result.explanation = { basis: detail.basis_summary, limitation: detail.interpretation_limit };
+            result.explanation = { basis: detail.basis_summary, limitation: detail.interpretation_limit ?? detail.limitation };
           } catch { /* The frozen digest remains the source for aggregate-only rows. */ }
         }
         return result;
       },
       review: (partitionId, value) => {
         signal?.throwIfAborted();
+        if (session.phase !== "review") throw new Error("Page findings are fixed during final synthesis");
         if (!seen.has(partitionId)) throw new Error("Read a digest before reviewing it");
         if (reviews[partitionId]) throw new Error("This partition already has saved findings");
         const review = validateProfileReview(input, partitionId, value);
@@ -89,12 +101,14 @@ export async function runListenerProfileBuild({
       },
       submit: (value) => {
         signal?.throwIfAborted();
+        if (session.phase !== "synthesis") throw new Error("Finish page review before the separate synthesis session");
         if (submission) throw new Error("Submit the listener profile only once");
         submission = compileListenerProfile(input, reviews, value);
       },
     };
     while (!submission) {
       signal?.throwIfAborted();
+      session.phase = Object.keys(reviews).length === input.partitions.length ? "synthesis" : "review";
       const reviewedBefore = Object.keys(reviews).length;
       const inspectedBefore = inspectedFindings.size;
       await runtime.investigate(session);

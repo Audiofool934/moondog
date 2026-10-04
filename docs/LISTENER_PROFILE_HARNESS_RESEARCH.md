@@ -196,13 +196,17 @@ Current deterministic tool tests establish access and arithmetic, not that final
 The TUI now supports `/profile build`, `/profile saved`, and `/profile explain <number>`; the Pi agent exposes matching build and saved-evidence tools.
 The builder uses complete local analysis catalogs, stable input fingerprints, typed findings, and immutable SQLite revisions with frozen cited evidence.
 A dedicated Pi worker reads bounded digest pages and checkpoints its findings before the current revision is replaced.
+A separate synthesis session receives measured cross-source anchors and section ordering semantics, then searches saved findings and writes global insights with raw evidence references.
+Compatible pages from an earlier completed build remain reusable when only the synthesis changes.
 Changed evidence invalidates the saved reading, identical imports reuse it, and interrupted builds can continue after restarting.
 The compact current reading is available to a fresh listening conversation; stale inferred text is withheld from that context.
 Current direct choices remain separate from historical observations.
 
 The synthetic acceptance path covers a supported interest beyond the first hundred tracks, Apple library curation, correction-driven revision, saved evidence recovery, invalid reference rejection, cancellation, and source changes during a build.
 A faux provider exercises the real Pi agent and tools; it does not evaluate the quality of a live model's taste inference.
-The listener review of a real model-produced reading remains a separate quality gate.
+The first real listener review exposed a gap between factual page observations and a useful final profile: collection-heavy selection, incidental song lists, and unsupported interpretations of catalog order.
+The synthesis changes address those mechanisms, while their effect on a new live model-produced reading remains a separate listener evaluation step.
+Private profiles and individual feedback remain local; shared tests use fictional evidence.
 See the [terminal guide](TERMINAL_GUIDE.md#saved-listener-profiles) and [builder tests](../tests/runtime/listener-profile-build.test.mjs).
 
 ## Research scope and source versions

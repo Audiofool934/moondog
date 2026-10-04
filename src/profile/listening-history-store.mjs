@@ -49,6 +49,8 @@ const schema = `
 
   CREATE INDEX IF NOT EXISTS listening_events_subject_time
     ON listening_events(subject_id, occurred_at DESC);
+  CREATE INDEX IF NOT EXISTS listening_events_subject_track
+    ON listening_events(subject_id, track_ref_id, track_ref_revision);
 
   CREATE TABLE IF NOT EXISTS source_cursors (
     source_key TEXT PRIMARY KEY NOT NULL,

@@ -1563,6 +1563,7 @@ export async function runMoondogTui({
         signal: localCommandController?.signal,
         onProgress: progress => setFooter(progress.model_retry
           ? `Retrying model ${progress.model_retry.attempt}/${progress.model_retry.maxRetries}. ${progress.reviewed_partitions}/${progress.total_partitions} pages saved. Ctrl+C cancels.`
+          : progress.phase === "synthesis" ? `Synthesizing your listening profile. ${progress.reviewed_partitions}/${progress.total_partitions} pages saved. Ctrl+C saves progress.`
           : `Reading your music: ${progress.reviewed_partitions}/${progress.total_partitions} evidence pages. Ctrl+C saves progress.`),
       }));
       void updateHomeLyrics();

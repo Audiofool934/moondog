@@ -514,8 +514,8 @@ test("TUI builds a saved reading, exposes its evidence, and cancels with a recov
         }
         return;
       }
-      const ids = session.findings().items.map(item => item.claim_id);
-      session.submit({ summary: "A saved reading of fictional listening.", highlight_claim_ids: ids.slice(0, 6) });
+      const insights = session.findings().items.slice(0, 6);
+      session.submit({ summary: "A saved reading of fictional listening.", insights });
     },
   }) });
   await fixture.launch();

@@ -1548,15 +1548,21 @@ This sends bounded music evidence digests to that configured model; it does not 
 /profile explain 1
 ```
 
-The builder reviews full-corpus digest pages, saves intermediate findings, and commits a version only after all pages are reviewed and evidence references are valid.
+The builder reviews full-corpus digest pages and saves intermediate findings.
+After every page is reviewed, a fresh model session receives a cross-source overview of lifetime and recent listening leaders, yearly coverage, library curation, and explicit choices.
+It can search earlier page findings by source or text and inspect their raw references before writing the final summary and evidence-linked insights.
+Page order is not addition chronology, missing library play counts are unknown, and presence in a collection does not establish familiarity or liking.
+The host validates references and commits a new version while keeping the previous reading and all page findings.
 A finding distinguishes a measured observation, a hypothesis with uncertainty, or an explicit listener choice.
-`/profile saved` shows twelve findings at a time; follow its next-page command to read more.
+`/profile saved` shows the final insights and the listener's explicit choices, using their original finding numbers.
+Use `/profile saved 0` to browse all saved findings, twelve at a time, and follow its next-page command to read more.
 `/profile explain <number>` opens the frozen supporting and conflicting evidence for that finding.
 The normal listening agent receives the compact current reading in a fresh conversation and can retrieve further saved evidence.
 
-A new import or correction marks the saved reading as needing an update.
+A new import, correction, or synthesis version can mark the saved reading as needing an update.
 Run `/profile build` again to update it; an identical input reuses the current reading without calling a model.
 Unchanged digest findings can be reused when the input changes.
+The separate synthesis stage can reuse pages from an older completed build with the same model and compatible evidence, without reviewing them again.
 Use `/profile build --force` to start a fresh interpretation with the current model.
 
 Ctrl+C stops the build and keeps saved progress and the previous version.

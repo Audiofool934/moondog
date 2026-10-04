@@ -233,7 +233,7 @@ test("saved Apple profile retains a curated tail interest and normalizes legacy 
     publicStatus: () => ({ state: "configured", provider: "faux", model: "faux-1", worker_version: "1" }),
     abort() {},
     async investigate(session) {
-      const highlights = [];
+      const insights = [];
       for (;;) {
         const pending = session.progress().pending;
         if (!pending.length) break;
@@ -246,15 +246,16 @@ test("saved Apple profile retains a curated tail interest and normalizes legacy 
             uncertainty: "Imported library choices are provider evidence, not a new assertion to Moondog.",
             supporting_refs: [entry.reference_id], contradicting_refs: [],
           }] : [] });
-          highlights.push(...saved.saved_claims.map(claim => claim.claim_id));
+          insights.push(...saved.saved_claims);
         }
       }
       for (let offset = 0; offset !== null;) {
         const page = session.findings(offset);
-        highlights.push(...page.items.filter(claim => claim.kind === "listener_assertion").map(claim => claim.claim_id));
+        insights.push(...page.items.filter(claim => claim.kind !== "listener_assertion"));
         offset = page.next_offset;
       }
-      session.submit({ summary: "A smaller curated interest is preserved alongside dominant preferences.", highlight_claim_ids: [...new Set(highlights)] });
+      if (session.phase === "synthesis") session.submit({ summary: "A smaller curated interest is preserved alongside dominant preferences.",
+        insights: [...new Map(insights.map(claim => [claim.claim_id, claim])).values()] });
     },
   });
   const built = await application.buildListenerProfile({ runtimeFactory });
@@ -268,5 +269,5 @@ test("saved Apple profile retains a curated tail interest and normalizes legacy 
   const updated = await application.buildListenerProfile({ runtimeFactory });
   assert.equal(updated.revision.sequence, 2);
   assert.ok(updated.revision.highlights.some(item => item.statement === "Quiet curator has an imported Apple preference strength of 0."));
-  assert.ok(updated.revision.highlights.some(item => item.kind === "listener_assertion" && item.statement === "Fixture song 60 by Quiet curator: keep out of suggestions."));
+  assert.ok(updated.revision.listener_assertions.some(item => item.kind === "listener_assertion" && item.statement === "Fixture song 60 by Quiet curator: keep out of suggestions."));
 });

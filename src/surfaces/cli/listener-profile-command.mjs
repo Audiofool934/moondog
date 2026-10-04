@@ -2,20 +2,24 @@ import { sanitizeTerminalText } from "./format-output.mjs";
 
 export const savedProfileActions = new Set(["build", "saved", "explain"]);
 
-function formatSaved(value, prefix) {
+function formatSaved(value, prefix, allFindings = false) {
   if (value.state === "missing") return `No saved reading yet. Use ${prefix} build with a connected model.`;
   const lines = [
     `# Your saved listening profile · v${value.sequence}`,
-    value.state === "stale" ? `Your music or choices changed. Use ${prefix} build to update this reading.`
+    value.state === "stale" ? `Evidence, choices or analysis changed. Use ${prefix} build to update this reading.`
       : `Built ${value.built_at.slice(0, 10)} · ${value.coverage.reviewed_partitions}/${value.coverage.digest_partitions} evidence pages reviewed`,
     "", value.summary, "",
   ];
-  for (const [index, claim] of value.claims.entries()) {
-    lines.push(`${value.offset + index + 1}. [${claim.kind.replaceAll("_", " ")}] ${claim.statement}`,
+  const displayed = allFindings ? value.claims : [...new Map([
+    ...(value.listener_assertions ?? []), ...(value.highlights ?? []),
+  ].map(claim => [claim.claim_id, claim])).values()];
+  for (const [index, claim] of displayed.entries()) {
+    lines.push(`${claim.finding_number ?? value.offset + index + 1}. [${claim.kind.replaceAll("_", " ")}] ${claim.statement}`,
       `   ${claim.scope} · ${claim.uncertainty}`);
   }
   lines.push("", `Use ${prefix} explain <number> for a finding's evidence.`);
-  if (value.next_offset !== null) lines.push(`More findings: ${prefix} saved ${value.next_offset}`);
+  if (!allFindings && value.total_claims > 0) lines.push(`All ${value.total_claims} findings: ${prefix} saved 0`);
+  else if (value.next_offset !== null) lines.push(`More findings: ${prefix} saved ${value.next_offset}`);
   return lines.join("\n");
 }
 
@@ -46,7 +50,7 @@ export async function runListenerProfileCommand({
       throw new Error(`Usage: ${commandPrefix} saved [offset].`);
     }
     result = await application.getListenerProfile({ offset: Number(values[0] ?? 0) });
-    rendered = formatSaved(result, commandPrefix);
+    rendered = formatSaved(result, commandPrefix, values.length > 0);
   } else if (action === "explain") {
     if (values.length !== 1 || !/^[1-9]\d*$/u.test(values[0]) || !Number.isSafeInteger(Number(values[0]))) {
       throw new Error(`Usage: ${commandPrefix} explain <finding-number>.`);
