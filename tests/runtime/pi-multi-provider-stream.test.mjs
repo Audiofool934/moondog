@@ -19,11 +19,11 @@ const serializedArguments = JSON.stringify(toolArguments);
 const toolOutput = JSON.stringify({ title: "Bird's Lament", artist: "Moondog" });
 const finalText = "Try Bird's Lament by Moondog.";
 const providers = [
-  ["anthropic", "claude-haiku-4-5", "anthropic-messages", "https://api.anthropic.com/v1/messages"],
+  ["anthropic", "claude-haiku-4-5", "anthropic-messages", "https://api.anthropic.com/v1/messages?beta=true"],
   ["deepseek", "deepseek-v4-flash", "openai-completions", "https://api.deepseek.com/chat/completions"],
   ["google", "gemini-3.5-flash-lite", "google-generative-ai", "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:streamGenerateContent?alt=sse"],
-  ["moonshotai", "kimi-k2.5", "openai-completions", "https://api.moonshot.ai/v1/chat/completions"],
-  ["moonshotai-cn", "kimi-k2.5", "openai-completions", "https://api.moonshot.cn/v1/chat/completions"],
+  ["moonshotai", "kimi-k2.6", "openai-completions", "https://api.moonshot.ai/v1/chat/completions"],
+  ["moonshotai-cn", "kimi-k2.6", "openai-completions", "https://api.moonshot.cn/v1/chat/completions"],
   ["openai", "gpt-5.4-mini", "openai-responses", "https://api.openai.com/v1/responses"],
   ["openrouter", "openai/gpt-5.4-mini", "openai-completions", "https://openrouter.ai/api/v1/chat/completions"],
   ["xai", "grok-4.6", "openai-responses", "https://api.x.ai/v1/responses"],

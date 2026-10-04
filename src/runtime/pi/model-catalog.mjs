@@ -28,19 +28,13 @@ export function zaiApiProvider() {
   });
 }
 
-// Official DeepSeek metadata checked 2026-10-01. Keep canonical Flash available
-// offline; legacy IDs remain valid aliases and saved selections are never rewritten.
-// https://api-docs.deepseek.com/quick_start/pricing/
+// Pi supplies canonical Flash metadata. Keep legacy IDs as aliases so saved
+// Moondog selections continue to resolve without rewriting the listener's settings.
 function currentDeepSeekModels(nativeModels) {
-  const oldFlash = nativeModels.find(model => model.id === "deepseek-v4-flash");
-  const flash = { ...oldFlash, id: "deepseek-flash", name: "DeepSeek V4.1 Flash",
-    input: ["text", "image"], contextWindow: 1_000_000, maxTokens: 384_000,
-    cost: { input: 0.30, output: 1.20, cacheRead: 0.006, cacheWrite: 0 },
-    thinkingLevelMap: { minimal: null, low: "low", medium: null, high: "high", max: "max" },
-    compat: { ...oldFlash.compat, supportsStrictMode: true } };
-  return [flash, ...nativeModels.filter(model => model.id !== oldFlash.id).map(model =>
+  const flash = nativeModels.find(model => model.id === "deepseek-flash");
+  return [...nativeModels.map(model =>
     model.id === "deepseek-v4-pro" ? { ...model, name: "DeepSeek V4 Pro (0813)" } : model),
-    ...[oldFlash.id, "deepseek-v4-flash-vision-exp"].map(id => ({ ...flash, id, name: `${flash.name} (legacy alias)` }))];
+    ...["deepseek-v4-flash", "deepseek-v4-flash-vision-exp"].map(id => ({ ...flash, id, name: `${flash.name} (legacy alias)` }))];
 }
 
 export function createPiModels({ catalogModels, ...options } = {}) {

@@ -6806,7 +6806,7 @@ export class PiAgentRuntime {
     this.runtimeStatus = {
       state: "configured",
       adapter: "pi_agent_core",
-      pi_version: "0.84.3",
+      pi_version: "1.0.1",
       provider,
       model: modelId,
       session_persistence: persistentMemoryReady
@@ -7005,7 +7005,10 @@ export class PiAgentRuntime {
           selectedModel.api === "google-vertex";
         return models.streamSimple(selectedModel, {
           ...context,
-          tools: context.tools?.map(toolForModel),
+          messages: context.messages.map((message) =>
+            message.role === "system" && message.toolsAdded
+              ? { ...message, toolsAdded: message.toolsAdded.map(toolForModel) }
+              : message),
         }, {
           ...options,
           // Retry this HTTP request only; never restart the agent's tool loop.
@@ -7026,16 +7029,16 @@ export class PiAgentRuntime {
         const query = this.activePromptState?.promptText ?? extractMessageText(
           messages.findLast((message) => message.role === "user"),
         );
-        return [
-          contextMessage(
-            await trustedContextSnapshot(
-              application,
-              this.runtimeStatus,
-              query,
-            ),
-          ),
-          ...messages,
-        ];
+        const trustedContext = contextMessage(await trustedContextSnapshot(
+          application,
+          this.runtimeStatus,
+          query,
+        ));
+        // Pi keeps the system prompt and tool declarations in the transcript.
+        // Keep that leading message ahead of Moondog's per-request context.
+        return messages[0]?.role === "system"
+          ? [messages[0], trustedContext, ...messages.slice(1)]
+          : [trustedContext, ...messages];
       },
       beforeToolCall: async ({ toolCall }) => {
         const descriptor = this.capabilityByToolName.get(toolCall.name);
@@ -7716,7 +7719,7 @@ To confirm, reply: ${preview.confirmation}`].join("\n\n");
       },
     );
     this.reset();
-    this.agent.state.messages = messages;
+    this.agent.state.messages = [...this.agent.state.messages, ...messages];
     this.transientSpotifyContext = turns.some(turn => turn.transient === true);
     this.application.transientSpotifyContext ||= this.transientSpotifyContext;
   }

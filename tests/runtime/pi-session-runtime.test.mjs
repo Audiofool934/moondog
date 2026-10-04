@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { createModels, fauxAssistantMessage, fauxProvider } from "@earendil-works/pi-ai";
 
+import { listAgentCapabilityDescriptors } from "../../src/core/capability-catalog.mjs";
 import { PiAgentRuntime } from "../../src/runtime/pi/agent-runtime.mjs";
 import { createConfiguredRuntime, OfflineAgentRuntime } from "../../src/runtime/pi/configured-runtime.mjs";
 
@@ -24,7 +25,9 @@ function fixture() {
       state.reads.push({ session: state.selected, limit });
       return structuredClone(sessions[state.selected].slice(-limit));
     },
-    agentCapabilityDescriptors: () => [],
+    agentCapabilityDescriptors: () => listAgentCapabilityDescriptors().filter(
+      descriptor => descriptor.capability_id === "source.apple_music.status",
+    ),
     sourceStatus: async () => ({ state: "missing", latest: null }),
     profileStatus: async () => ({ state: "not_materialized" }),
     memoryStatus: () => ({ state: "ready", long_term_memory: "explicit_only" }),
@@ -52,13 +55,17 @@ function fixture() {
 
 test("restoring session B replaces session A and clears queued Pi messages before the next prompt", async () => {
   const { application, state, sessions, faux, runtime } = fixture();
+  const systemMessage = structuredClone(runtime.agent.state.messages[0]);
+  assert.equal(systemMessage.role, "system");
+  assert.ok(systemMessage.toolsAdded.length > 0);
   faux.setResponses([
     (context) => {
       assert.match(JSON.stringify(context.messages), /SESSION_A_ANSWER/u);
       return fauxAssistantMessage("SESSION_A_NEW_ANSWER");
     },
     (context) => {
-      const messages = context.messages.map(messageText);
+      assert.deepEqual(context.messages[0], systemMessage, "resume must retain the leading instructions and tools");
+      const messages = context.messages.filter(message => message.role !== "system").map(messageText);
       assert.deepEqual(messages.slice(1), ["SESSION_B_REQUEST", "SESSION_B_ANSWER", "Continue B."]);
       assert.doesNotMatch(JSON.stringify(context), /SESSION_A_|STALE_STEER|STALE_FOLLOWUP/u);
       assert.deepEqual(state.promptState, {});
@@ -74,13 +81,14 @@ test("restoring session B replaces session A and clears queued Pi messages befor
   state.selected = "B";
   runtime.restoreSession();
 
+  assert.deepEqual(runtime.agent.state.messages[0], systemMessage);
   assert.deepEqual(state.reads.at(-1), { session: "B", limit: 40 });
   assert.equal(state.resets, 1);
   assert.equal(runtime.agent.hasQueuedMessages(), false);
   assert.equal(runtime.activePromptState, null);
   assert.equal(runtime.promptInFlight, false);
-  assert.deepEqual(runtime.agent.state.messages.map(messageText), ["SESSION_B_REQUEST", "SESSION_B_ANSWER"]);
-  const assistant = runtime.agent.state.messages[1];
+  assert.deepEqual(runtime.agent.state.messages.filter(message => message.role !== "system").map(messageText), ["SESSION_B_REQUEST", "SESSION_B_ANSWER"]);
+  const assistant = runtime.agent.state.messages.filter(message => message.role !== "system")[1];
   assert.equal(assistant.api, runtime.model.api);
   assert.equal(assistant.provider, "faux");
   assert.equal(assistant.model, "faux-1");
@@ -140,15 +148,15 @@ test("model reload hydrates the selected session using the new model metadata", 
   // Match the TUI replacement order: construct the next runtime, then reset the previous one.
   runtime.reset();
   assert.equal(state.selected, "B");
-  assert.deepEqual(runtime.agent.state.messages, []);
-  assert.deepEqual(reloaded.agent.state.messages.map(messageText), ["SESSION_B_REQUEST", "SESSION_B_ANSWER"]);
-  assert.equal(reloaded.agent.state.messages[1].model, "faux-2");
-  assert.equal(reloaded.agent.state.messages[1].provider, "faux");
-  assert.equal(reloaded.agent.state.messages[1].api, faux.getModel("faux-2").api);
+  assert.deepEqual(runtime.agent.state.messages.filter(message => message.role !== "system"), []);
+  assert.deepEqual(reloaded.agent.state.messages.filter(message => message.role !== "system").map(messageText), ["SESSION_B_REQUEST", "SESSION_B_ANSWER"]);
+  assert.equal(reloaded.agent.state.messages.filter(message => message.role !== "system")[1].model, "faux-2");
+  assert.equal(reloaded.agent.state.messages.filter(message => message.role !== "system")[1].provider, "faux");
+  assert.equal(reloaded.agent.state.messages.filter(message => message.role !== "system")[1].api, faux.getModel("faux-2").api);
   faux.setResponses([
     (context, _options, _state, model) => {
       assert.equal(model.id, "faux-2");
-      assert.deepEqual(context.messages.slice(1).map(messageText), ["SESSION_B_REQUEST", "SESSION_B_ANSWER", "Use the selected session."]);
+      assert.deepEqual(context.messages.filter(message => message.role !== "system").slice(1).map(messageText), ["SESSION_B_REQUEST", "SESSION_B_ANSWER", "Use the selected session."]);
       assert.doesNotMatch(JSON.stringify(context), /SESSION_A_/u);
       return fauxAssistantMessage("Session B, new model.");
     },
@@ -158,13 +166,16 @@ test("model reload hydrates the selected session using the new model metadata", 
 
 test("reset keeps a fresh context empty and offline restore remains a no-op", async () => {
   const { runtime, faux } = fixture();
+  const systemMessage = structuredClone(runtime.agent.state.messages[0]);
   runtime.agent.followUp(queuedMessage("STALE_FOLLOWUP"));
   runtime.reset();
-  assert.deepEqual(runtime.agent.state.messages, []);
+  assert.deepEqual(runtime.agent.state.messages, [systemMessage]);
+  assert.deepEqual(runtime.agent.state.messages.filter(message => message.role !== "system"), []);
   assert.equal(runtime.agent.hasQueuedMessages(), false);
   faux.setResponses([
     (context) => {
-      assert.deepEqual(context.messages.slice(1).map(messageText), ["Fresh session request."]);
+      assert.deepEqual(context.messages[0], systemMessage, "new sessions must keep Moondog's instructions and tools");
+      assert.deepEqual(context.messages.filter(message => message.role !== "system").slice(1).map(messageText), ["Fresh session request."]);
       assert.doesNotMatch(JSON.stringify(context), /SESSION_A_|SESSION_B_|STALE_FOLLOWUP/u);
       return fauxAssistantMessage("Fresh session reply.");
     },
