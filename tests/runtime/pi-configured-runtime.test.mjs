@@ -102,7 +102,7 @@ test("openai-codex runtime uses the persisted Moondog OAuth credential", async (
   assert.deepEqual(runtime.publicStatus(), {
     state: "configured",
     adapter: "pi_agent_core",
-    pi_version: "0.84.3",
+    pi_version: "1.0.1",
     provider,
     model,
     session_persistence: "process_local_only",

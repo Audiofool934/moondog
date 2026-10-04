@@ -57,7 +57,7 @@ for (const provider of supportedPiProviderIds) {
     assert.equal(requests.length, 1);
     assert.equal(requests[0].url, `https://pi.dev/api/models/providers/${provider}?pi-version=${PI_CATALOG_VERSION}`);
     assert.equal(requests[0].headers.Accept, "application/json");
-    assert.match(requests[0].headers["User-Agent"], /^pi\/0\.84\.3 /u);
+    assert.match(requests[0].headers["User-Agent"], /^pi\/1\.0\.1 /u);
     assert.equal(requests[0].credentials, "omit");
     assert.equal(requests[0].redirect, "error");
     assert.equal(requests[0].body, undefined);
@@ -155,7 +155,7 @@ test("cancellation rejects promptly, ignores late response and does not publish 
 
 test("refresh cannot replace an unsupported OpenRouter API or accept mismatched model identity", async t => {
   const existing = baseline.getModels("openrouter")[0];
-  const unsupported = { ...existing, api: "anthropic-messages" };
+  const unsupported = { ...existing, api: "unsupported-api" };
   const good = metadata("openrouter");
   const { catalog } = await fixture(t, { fetchImpl: async () => Response.json({
     ...document(unsupported, good, metadata("openrouter", "wrong-provider", { provider: "deepseek" })),
@@ -164,7 +164,7 @@ test("refresh cannot replace an unsupported OpenRouter API or accept mismatched 
   const [result] = await catalog.refresh({ provider: "openrouter" });
   assert.equal(result.state, "updated"); assert.equal(result.skipped, 3);
   assert.deepEqual(catalog.createModels().getModel("openrouter", existing.id), existing);
-  assert.equal(catalog.createModels().getModel("openrouter", good.id).api, "openai-completions");
+  assert.equal(catalog.createModels().getModel("openrouter", good.id).api, good.api);
 });
 
 test("saved aliases and omitted remote-only IDs survive refresh without settings or active-model mutation", async t => {

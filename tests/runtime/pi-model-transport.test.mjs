@@ -134,7 +134,7 @@ test("Pi retries a rejected model HTTP request twice and streams the recovered a
   assert.deepEqual(fixture.requests[2], fixture.requests[0]);
   assert.deepEqual(fixture.waits, [250, 500]);
   assert.deepEqual(retryEvents, [{ attempt: 1, maxRetries: 2 }, { attempt: 2, maxRetries: 2 }]);
-  assert.equal(fixture.runtime.agent.state.messages.length, 2);
+  assert.equal(fixture.runtime.agent.state.messages.filter(message => message.role !== "system").length, 2);
 });
 
 test("Codex SSE retries its compressed HTTP body without changing production transport selection", async () => {
@@ -214,7 +214,7 @@ test("Pi exposes a safe final connection error after exhaustion and accepts anot
     return true;
   });
   assert.equal(fixture.requests.length, 3);
-  assert.deepEqual(fixture.runtime.agent.state.messages, []);
+  assert.deepEqual(fixture.runtime.agent.state.messages.filter(message => message.role !== "system"), []);
   recovered = true;
   assert.equal((await fixture.runtime.prompt("Second synthetic prompt.")).status, "completed");
   assert.equal(fixture.requests.length, 4);
@@ -238,7 +238,7 @@ test("aborting model backoff cancels the turn without another fetch", async () =
   assert.equal(result.status, "aborted");
   assert.equal(fixture.requests.length, 1);
   assert.deepEqual(retries, [{ attempt: 1, maxRetries: 2 }]);
-  assert.deepEqual(fixture.runtime.agent.state.messages, []);
+  assert.deepEqual(fixture.runtime.agent.state.messages.filter(message => message.role !== "system"), []);
 });
 
 test("Pi does not retry HTTP authentication, permission, or quota responses", async () => {
@@ -318,7 +318,7 @@ test("a failure after the model response starts never replays its body or partia
   assert.equal(fixture.requests.length, 1);
   assert.deepEqual(deltas, ["Partial synthetic answer."]);
   assert.deepEqual(fixture.waits, []);
-  assert.deepEqual(fixture.runtime.agent.state.messages, []);
+  assert.deepEqual(fixture.runtime.agent.state.messages.filter(message => message.role !== "system"), []);
 });
 
 test("model fetch declines retries for caller-owned Request bodies and streaming bodies", async () => {

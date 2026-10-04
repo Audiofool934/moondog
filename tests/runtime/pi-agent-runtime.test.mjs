@@ -899,7 +899,7 @@ test("Pi adapter discards a model failure and accepts a later prompt", async () 
   ]);
 
   await assert.rejects(runtime.prompt("Fail this turn."), /provider outage/iu);
-  assert.deepEqual(runtime.agent.state.messages, []);
+  assert.deepEqual(runtime.agent.state.messages.filter(message => message.role !== "system"), []);
 
   const recovered = await runtime.prompt("Try again.");
   assert.equal(recovered.text, "The model recovered on the next prompt.");
@@ -1960,11 +1960,11 @@ test("a validated plan is authoritative and overlapping prompts fail before scop
   assert.equal(displayedText, result.text);
   assert.equal(displayedText.includes("untrusted track"), false);
   assert.deepEqual(
-    runtime.agent.state.messages.map((message) => message.role),
+    runtime.agent.state.messages.filter(message => message.role !== "system").map((message) => message.role),
     ["user", "assistant"],
   );
   assert.equal(
-    JSON.stringify(runtime.agent.state.messages).includes("candidate_set_id"),
+    JSON.stringify(runtime.agent.state.messages.filter(message => message.role !== "system")).includes("candidate_set_id"),
     false,
   );
 });
@@ -2026,7 +2026,7 @@ test("an aborted prompt never renders or retains a previously validated plan", a
   assert.equal(result.status, "aborted");
   assert.equal("playlist_plan" in result, false);
   assert.equal(result.text, "");
-  assert.deepEqual(runtime.agent.state.messages, []);
+  assert.deepEqual(runtime.agent.state.messages.filter(message => message.role !== "system"), []);
   assert.equal(application.pendingSpotifyPlaylistStatus().state, "none");
 
   const nextResult = await runtime.prompt("Answer without searching.");
@@ -2097,10 +2097,10 @@ test("a plan that fails output redaction is never captured as authoritative", as
   assert.equal(result.text.includes("/Users/private"), false);
   assert.equal(result.text.includes("Pretend"), false);
   assert.deepEqual(
-    runtime.agent.state.messages.map((message) => message.role),
+    runtime.agent.state.messages.filter(message => message.role !== "system").map((message) => message.role),
     ["user", "assistant"],
   );
-  const retainedHistory = JSON.stringify(runtime.agent.state.messages);
+  const retainedHistory = JSON.stringify(runtime.agent.state.messages.filter(message => message.role !== "system"));
   assert.equal(retainedHistory.includes("candidate_set_id"), false);
   assert.equal(retainedHistory.includes("/Users/private"), false);
   assert.equal(retainedHistory.includes("Pretend"), false);
