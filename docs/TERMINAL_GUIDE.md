@@ -1560,7 +1560,9 @@ Unchanged digest findings can be reused when the input changes.
 Use `/profile build --force` to start a fresh interpretation with the current model.
 
 Ctrl+C stops the build and keeps saved progress and the previous version.
-A build that reaches its turn limit also saves progress; run `/profile build` again to continue.
+One `/profile build` continues automatically through all evidence pages and synthesis, using fresh model sessions as needed.
+Reaching a session's turn limit does not stop the build or require another command.
+If you cancel, a model request fails, or the model stops making progress, run `/profile build` again to resume saved findings.
 If evidence changes during synthesis, the new version is rejected and the previous version stays available.
 Saved profiles and evidence snapshots live in the private listening database and are included in `data export --scope listening` or `--scope profile`.
 Resetting the corresponding scope archives that database, including its saved readings.

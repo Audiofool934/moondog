@@ -21,8 +21,8 @@ export async function runListenerProfileBuild({
   const model = { provider: status.provider, model: status.model, worker_version: status.worker_version };
   const build = store.begin(input, model, { force });
   const reviews = build.reviews;
-  const initialReviewed = Object.keys(reviews).length;
   const seen = new Set(Object.keys(reviews));
+  const inspectedFindings = new Set();
   let submission = null;
   const progress = () => ({
     reviewed_partitions: Object.keys(reviews).length, total_partitions: input.partitions.length,
@@ -30,18 +30,29 @@ export async function runListenerProfileBuild({
     pending: input.partitions.filter(part => !reviews[part.partition_id]).slice(0, 12)
       .map(({ partition_id, section, offset, total, items }) => ({ partition_id, section, offset, total, rows: items.length })),
   });
-  const findings = (offset = 0) => {
-    if (!Number.isSafeInteger(offset) || offset < 0) throw new TypeError("Invalid findings offset");
+  const findings = (offset) => {
     const all = Object.values(reviews).flatMap(review => review.claims);
-    return { total: all.length, items: all.slice(offset, offset + 12),
+    // A fresh model session picks up the unread findings instead of starting
+    // synthesis from the first twelve again. Explicit offsets can revisit them.
+    offset ??= Math.max(0, all.findIndex(claim => !inspectedFindings.has(claim.claim_id)));
+    if (!Number.isSafeInteger(offset) || offset < 0) throw new TypeError("Invalid findings offset");
+    const items = all.slice(offset, offset + 12);
+    for (const claim of items) inspectedFindings.add(claim.claim_id);
+    return { total: all.length, offset, items,
       next_offset: offset + 12 < all.length ? offset + 12 : null };
+  };
+  const assertCurrentInput = () => {
+    signal?.throwIfAborted();
+    if (application.getProfileBuildContext().input.input_digest !== input.input_digest) {
+      throw new Error("Your music or choices changed during the build. Use /profile build to read the updated evidence.");
+    }
   };
   const abort = () => runtime.abort?.();
   signal?.addEventListener("abort", abort, { once: true });
   try {
     signal?.throwIfAborted();
     onProgress(progress());
-    await runtime.investigate({
+    const session = {
       manifest: input.manifest, progress, findings,
       read: (partitionId) => {
         signal?.throwIfAborted();
@@ -80,21 +91,22 @@ export async function runListenerProfileBuild({
         if (submission) throw new Error("Submit the listener profile only once");
         submission = compileListenerProfile(input, reviews, value);
       },
-    });
-    signal?.throwIfAborted();
-    if (!submission) {
-      store.interrupt(build);
-      if (Object.keys(reviews).length === initialReviewed && initialReviewed === 0) {
-        throw new Error("The model did not save any profile findings. Try /profile build again.");
-      }
-      return { state: "partial", ...progress() };
-    }
-    store.complete(build, submission, () => {
+    };
+    while (!submission) {
       signal?.throwIfAborted();
-      if (application.getProfileBuildContext().input.input_digest !== input.input_digest) {
-        throw new Error("Your music or choices changed during the build. Use /profile build to read the updated evidence.");
+      const reviewedBefore = Object.keys(reviews).length;
+      const inspectedBefore = inspectedFindings.size;
+      await runtime.investigate(session);
+      signal?.throwIfAborted();
+      if (submission) break;
+      if (Object.keys(reviews).length === reviewedBefore && inspectedFindings.size === inspectedBefore) {
+        throw new Error("The profile model stopped making progress. Saved findings and your previous reading are safe. Use /profile build to retry.");
       }
-    });
+      // The turn limit bounds one model context, not the listener's build.
+      // Saved reviews remain authoritative when the next fresh session starts.
+      assertCurrentInput();
+    }
+    store.complete(build, submission, assertCurrentInput);
     return { state: "ready", revision: await application.getListenerProfile(), ...progress() };
   } catch (error) {
     store.interrupt(build);

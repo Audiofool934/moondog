@@ -7,6 +7,7 @@ import { createModels, fauxProvider, fauxAssistantMessage, fauxText, fauxToolCal
 import { MoondogApplication } from "../../src/core/moondog-application.mjs";
 import { createListeningProfileDomainServices } from "../../src/core/listening-profile-domain-services.mjs";
 import { openListeningHistoryStore } from "../../src/profile/listening-history-store.mjs";
+import { createListenerProfileInput, validateProfileReview } from "../../src/profile/listener-profile-build.mjs";
 import { projectSpotifyExtendedStreamingHistory } from "../../src/integrations/spotify/extended-streaming-history.mjs";
 import { ProfileBuildRuntime } from "../../src/runtime/pi/profile-build-runtime.mjs";
 import { PiAgentRuntime } from "../../src/runtime/pi/agent-runtime.mjs";
@@ -127,10 +128,12 @@ test("interrupted builds checkpoint pages, resume after restart, and keep the pr
   const first = await state.application.buildListenerProfile({ runtimeFactory: scriptedRuntime() });
   state.store.recordListenerCorrection({ subjectId, entityType: "artist", label: "Dominant artist", stance: "like" });
   const controller = new AbortController();
+  let sessions = 0;
   await assert.rejects(state.application.buildListenerProfile({ signal: controller.signal, runtimeFactory: scriptedRuntime(async session => {
     reviewPage(session, session.progress().pending[0].partition_id);
-    controller.abort();
+    if (++sessions === 2) controller.abort();
   }) }), { name: "AbortError" });
+  assert.equal(sessions, 2);
   assert.equal((await state.application.getListenerProfile()).revision_id, first.revision.revision_id);
   await state.application.close();
   await state.open();
@@ -142,6 +145,89 @@ test("interrupted builds checkpoint pages, resume after restart, and keep the pr
   }) });
   assert.ok(resumed.reused_partitions > 0);
   assert.equal(final.revision.sequence, 2);
+});
+
+test("one command resumes 77 of 666 saved pages and continues through review and synthesis sessions", async t => {
+  const state = await fixture(t, bundle(2));
+  const input = createListenerProfileInput({ subjectId, evidenceRevision: "synthetic-large-profile",
+    listening: { sections: { history_tracks: Array.from({ length: 666 * 24 }, (_, index) => ({
+      label: `Synthetic track ${index}`, play_count: 1,
+    })) } } });
+  assert.equal(input.partitions.length, 666);
+  const store = state.store.listenerProfileStorage({ subjectId });
+  const { provider, model, worker_version } = modelStatus;
+  const interrupted = store.begin(input, { provider, model, worker_version });
+  for (const part of input.partitions.slice(0, 77)) {
+    store.checkpoint(interrupted, validateProfileReview(input, part.partition_id, {
+      note: "Previously reviewed before the command stopped.", claims: [finding(part.items[0])],
+    }));
+  }
+  store.interrupt(interrupted);
+  await state.application.close();
+  await state.open();
+  t.mock.method(state.application, "getProfileBuildContext", () => ({
+    input, store: state.store.listenerProfileStorage({ subjectId }),
+  }));
+  let reviewSessions = 0;
+  let synthesisSessions = 0;
+  const newPages = new Set();
+  const progress = [];
+  const offsets = [];
+  const result = await state.application.buildListenerProfile({
+    onProgress: value => progress.push(value.reviewed_partitions),
+    runtimeFactory: scriptedRuntime(async session => {
+      assert.ok(reviewSessions + synthesisSessions < 90, "continuation must make finite progress");
+      if (session.progress().pending.length) {
+        reviewSessions++;
+        for (let count = 0; count < 20; count++) {
+          const part = session.progress().pending[0];
+          if (!part) break;
+          assert.ok(!newPages.has(part.partition_id));
+          newPages.add(part.partition_id);
+          reviewPage(session, part.partition_id);
+        }
+        return;
+      }
+      synthesisSessions++;
+      const page = session.findings();
+      offsets.push(page.offset);
+      if (page.next_offset === null) submit(session);
+    }),
+  });
+  assert.equal(result.state, "ready");
+  assert.equal(result.reused_partitions, 77);
+  assert.equal(result.reviewed_partitions, 666);
+  assert.equal(newPages.size, 666 - 77);
+  assert.equal(reviewSessions, 30);
+  assert.equal(synthesisSessions, Math.ceil(666 / 12));
+  assert.deepEqual(offsets, Array.from({ length: synthesisSessions }, (_, index) => index * 12));
+  assert.deepEqual(progress, Array.from({ length: 666 - 77 + 1 }, (_, index) => index + 77));
+  assert.equal(result.revision.coverage.reviewed_partitions, 666);
+});
+
+test("a stalled continuation or changed input stops safely without discarding the previous reading", async t => {
+  const state = await fixture(t, bundle(3));
+  const first = await state.application.buildListenerProfile({ runtimeFactory: scriptedRuntime() });
+  state.store.recordListenerCorrection({ subjectId, entityType: "artist", label: "Dominant artist", stance: "like" });
+  let sessions = 0;
+  await assert.rejects(state.application.buildListenerProfile({ force: true, runtimeFactory: scriptedRuntime(async session => {
+    if (++sessions === 1) reviewPage(session, session.progress().pending[0].partition_id);
+  }) }), /stopped making progress/u);
+  assert.equal(sessions, 2);
+  sessions = 0;
+  await assert.rejects(state.application.buildListenerProfile({ runtimeFactory: scriptedRuntime(async session => {
+    assert.ok(session.progress().reused_partitions > 0, "the interrupted build's findings are reused");
+    sessions++;
+  }) }), /stopped making progress/u);
+  assert.equal(sessions, 1);
+  sessions = 0;
+  await assert.rejects(state.application.buildListenerProfile({ force: true, runtimeFactory: scriptedRuntime(async session => {
+    sessions++;
+    reviewPage(session, session.progress().pending[0].partition_id);
+    state.store.recordListenerCorrection({ subjectId, entityType: "artist", label: "Dominant artist", stance: "avoid" });
+  }) }), /changed during the build/u);
+  assert.equal(sessions, 1);
+  assert.equal((await state.application.getListenerProfile()).revision_id, first.revision.revision_id);
 });
 
 test("invalid references and changes during synthesis cannot publish a profile", async t => {
@@ -161,12 +247,12 @@ test("invalid references and changes during synthesis cannot publish a profile",
   assert.equal((await state.application.getListenerProfile()).revision_id, first.revision.revision_id);
 });
 
-test("actual Pi worker reads, checkpoints and submits through model tools", async t => {
+test("one build command continues across Pi session limits until every page is saved", async t => {
   const state = await fixture(t, bundle(2));
   const faux = fauxProvider();
   const models = createModels();
   models.setProvider(faux.provider);
-  const runtime = new ProfileBuildRuntime({ models, model: faux.getModel(), provider: "faux", modelId: "faux-1" });
+  const runtime = new ProfileBuildRuntime({ models, model: faux.getModel(), provider: "faux", modelId: "faux-1", maxTurns: 4 });
   const partitions = state.application.getProfileBuildContext().input.partitions;
   const responses = [];
   const claims = [];
@@ -180,16 +266,27 @@ test("actual Pi worker reads, checkpoints and submits through model tools", asyn
     });
   }
   responses.push(context => {
+    const content = context.messages.find(message => message.role === "user").content;
+    const initial = JSON.parse(typeof content === "string" ? content : content.map(item => item.text ?? "").join(""));
+    claims.push(...initial.saved_findings.items);
     for (const result of context.messages.filter(message => message.role === "toolResult" && message.toolName === "moondog_record_profile_findings")) {
       claims.push(...JSON.parse(result.content[0].text).saved_claims);
     }
     return fauxAssistantMessage([fauxToolCall("moondog_submit_listener_profile", { summary: "The retained history records attention, without proving liking.",
-      highlight_claim_ids: claims.slice(0, 6).map(claim => claim.claim_id) })], { stopReason: "toolUse" });
+      highlight_claim_ids: [...new Set(claims.map(claim => claim.claim_id))].slice(0, 6) })], { stopReason: "toolUse" });
   });
   faux.setResponses(responses);
-  const result = await state.application.buildListenerProfile({ runtimeFactory: async () => runtime });
+  let output = "";
+  const progress = [];
+  const result = await runListenerProfileCommand({ application: state.application, args: ["build"],
+    runtimeFactory: async () => runtime, onProgress: value => progress.push(value.reviewed_partitions),
+    output: { write: text => { output += text; } } });
   assert.equal(result.state, "ready");
+  assert.ok(partitions.length * 2 > runtime.maxTurns);
   assert.equal(result.revision.coverage.reviewed_partitions, partitions.length);
+  assert.deepEqual(progress, Array.from({ length: partitions.length + 1 }, (_, index) => index));
+  assert.match(output, /Saved your new listening profile/u);
+  assert.doesNotMatch(output, /Use .* build to continue/u);
   assert.equal(runtime.activeAgent, null);
 });
 

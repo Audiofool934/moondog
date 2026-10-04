@@ -489,31 +489,41 @@ test("a completed history import opens the cumulative native profile and preserv
 test("TUI builds a saved reading, exposes its evidence, and cancels with a recoverable checkpoint", async t => {
   let cancel = false;
   let release;
+  let sessions = 0;
   const fixture = await createTasteFixture(t, { profileRuntimeFactory: async () => ({
     publicStatus: () => ({ state: "configured", provider: "faux", model: "faux-1", worker_version: "1" }),
     abort() { release?.(); },
     async investigate(session) {
-      const ids = [];
-      for (;;) {
-        const pending = session.progress().pending;
-        if (!pending.length) break;
-        for (const part of pending) {
+      sessions++;
+      if (sessions === 2) await new Promise(resolve => { release = resolve; });
+      const pending = session.progress().pending;
+      if (pending.length) {
+        for (const part of pending.slice(0, 2)) {
           const page = session.read(part.partition_id);
           const entry = page.items[0];
-          const saved = session.review(part.partition_id, { note: "Reviewed this page.", claims: [{
+          session.review(part.partition_id, { note: "Reviewed this page.", claims: [{
             kind: "observation", statement: "Retained listening provides evidence of attention.",
             scope: page.section, uncertainty: "It does not establish liking.",
             supporting_refs: [entry.reference_id], contradicting_refs: [],
           }] });
-          ids.push(...saved.saved_claims.map(item => item.claim_id));
           if (cancel) { await new Promise(resolve => { release = resolve; }); return; }
         }
+        return;
       }
+      const ids = session.findings().items.map(item => item.claim_id);
       session.submit({ summary: "A saved reading of fictional listening.", highlight_claim_ids: ids.slice(0, 6) });
     },
   }) });
   await fixture.launch();
-  await fixture.submit("/profile build", "Saved your new listening profile.");
+  fixture.terminal.send("/profile build");
+  fixture.terminal.send("\r");
+  await waitFor(() => sessions === 2, "automatic continuation", fixture.terminal);
+  await fixture.waitBody("Reading your music: 2/");
+  assert.doesNotMatch(fixture.terminal.body, /Done\.|Saved your new listening profile/u);
+  release();
+  await fixture.waitOutput("Saved your new listening profile.");
+  assert.ok(sessions > 1);
+  assert.doesNotMatch(fixture.terminal.text, /Use \/profile build to continue/u);
   await fixture.submit("/profile saved", "A saved reading of fictional listening.");
   await fixture.submit("/profile explain 1", "Supporting evidence:");
   cancel = true;

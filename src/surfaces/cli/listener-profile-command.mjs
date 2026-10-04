@@ -40,7 +40,6 @@ export async function runListenerProfileCommand({
     }
     result = await application.buildListenerProfile({ force: values[0] === "--force", signal, onProgress, runtimeFactory });
     rendered = result.state === "no_evidence" ? "Import your music first with /import."
-      : result.state === "partial" ? `Saved progress: ${result.reviewed_partitions}/${result.total_partitions} evidence pages reviewed. Use ${commandPrefix} build to continue. Your previous reading stays available.`
       : `${result.state === "unchanged" ? "Your saved reading already matches the current evidence." : "Saved your new listening profile."}\n\n${formatSaved(result.revision, commandPrefix)}`;
   } else if (action === "saved") {
     if (values.length > 1 || (values.length === 1 && !/^\d+$/u.test(values[0]))) {

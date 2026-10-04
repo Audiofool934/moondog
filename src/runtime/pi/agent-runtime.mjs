@@ -5648,7 +5648,7 @@ function createToolFactories(
       "profile.build",
       descriptor => ({
         name: descriptor.tool_name, label: descriptor.label,
-        description: "When the listener asks to build or update their saved profile, investigate all local digest pages with their configured model. Saves progress on interruption; repeat to resume. Do not run automatically for ordinary recommendations.",
+        description: "When the listener asks to build or update their saved profile, investigate all local digest pages with their configured model. Continues automatically until complete; saves progress if cancelled or interrupted. Repeat only to resume an interrupted build. Do not run automatically for ordinary recommendations.",
         parameters: Type.Object({ force: Type.Optional(Type.Boolean()) }, { additionalProperties: false }),
         executionMode: "sequential",
         execute: executeDomain(async (_id, args, signal) => application.buildListenerProfile({ force: args.force, signal }),
