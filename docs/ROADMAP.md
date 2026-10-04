@@ -93,9 +93,12 @@ The current priority is to complete and validate the personal listening loop in 
 
 ### Recommendation quality
 
-- [ ] Build a persistent listener-profile revision from complete imported evidence, using deterministic digests, model-led investigation, and traceable claims.
-  Completion requires a long-tail interest to survive synthesis, explicit corrections to affect the next revision, and a fresh TUI session to recover the result and its evidence.
-  The [Hermes and OpenClaw comparison](LISTENER_PROFILE_HARNESS_RESEARCH.md) defines the proposed slice and distinguishes it from the existing full-corpus exploration tools.
+- [x] Build a persistent listener-profile revision from complete imported evidence, using deterministic digests, model-led investigation, and traceable claims.
+  `/profile build` saves typed findings and frozen cited evidence, resumes interrupted work, and reuses an unchanged input.
+  `/profile saved` and `/profile explain <number>` recover the result in a fresh TUI session; new imports or corrections mark the old reading for an update.
+  Synthetic tests cover an interest beyond the first hundred tracks, Apple curation, correction-driven revision, and failed-build retention; a real pseudo-terminal journey verifies saved reading, evidence, restart, and offline fallback.
+  This proves the persistent loop with a faux model, while the quality of a live model's taste interpretation remains a listener evaluation task.
+  The [Hermes and OpenClaw comparison](LISTENER_PROFILE_HARNESS_RESEARCH.md) records the design and implementation boundary.
 - [ ] Complete a bounded provider-blind human review set for relevance, serendipity, canonical-recording quality, and explanation usefulness.
   Completion requires validator-compatible ratings and aggregate-only results that do not expose raw listening profiles.
 - [ ] Publish the evaluation method and representative aggregate findings.

@@ -19,12 +19,13 @@ import { normalizeAppleMusicLibrary, parseAppleMusicLibraryBuffer, writeAppleMus
 
 const subjectId = "11111111-1111-4111-8111-111111111111";
 
-async function appleServices(t, listeningHistoryStore = null) {
+async function appleServices(t, listeningHistoryStore = null, { tailInterest = false } = {}) {
   const parsed = parseAppleMusicLibraryBuffer(await readFile(new URL("../fixtures/apple-music-library/minimal.xml", import.meta.url)));
   parsed.root.Tracks = Object.fromEntries(Array.from({ length: 140 }, (_, index) => [String(index + 1), {
     "Track ID": index + 1, "Persistent ID": (index + 1).toString(16).padStart(16, "0"),
     Name: `Fixture song ${index}`, Artist: index < 60 ? "Small selection" : "Broad preference",
     Album: "Fixture album", Genre: index === 139 ? "" : index < 60 ? "Small genre" : "Broad genre",
+    ...(tailInterest && index === 60 ? { Artist: "Quiet curator", Genre: "Chamber music" } : {}),
     Loved: true, "Play Count": index + 1,
     ...(index < 60 ? { Favorited: true } : {}),
   }]));
@@ -218,4 +219,54 @@ test("Pi exploration searches playlist context and provider descriptions beyond 
   ]);
   const result = await runtime.prompt("Investigate my Night drive playlist and the provider's quartet description.");
   assert.match(result.text, /curation context/u);
+});
+
+test("saved Apple profile retains a curated tail interest and normalizes legacy corrections in its next version", async t => {
+  const store = await openEphemeralListeningHistoryStore();
+  const services = await appleServices(t, store, { tailInterest: true });
+  const application = new MoondogApplication({ domainServices: services, importsRoot: "/private/fixture-no-imports" });
+  t.after(() => application.close());
+  const firstInput = application.getProfileBuildContext().input;
+  const tail = firstInput.partitions.find(part => part.section === "apple_tracks" && part.items.some(item => item.data.label === "Fixture song 60"));
+  assert.ok(tail.offset >= 100);
+  const runtimeFactory = async () => ({
+    publicStatus: () => ({ state: "configured", provider: "faux", model: "faux-1", worker_version: "1" }),
+    abort() {},
+    async investigate(session) {
+      const highlights = [];
+      for (;;) {
+        const pending = session.progress().pending;
+        if (!pending.length) break;
+        for (const part of pending) {
+          const page = session.read(part.partition_id);
+          const entry = page.items.find(item => item.data.label === "Fixture song 60");
+          const saved = session.review(part.partition_id, { note: "Examined the full page.", claims: entry ? [{
+            kind: "observation", statement: `Quiet curator has an imported Apple preference strength of ${entry.data.preference_strength}.`,
+            scope: "Apple library snapshot, separate from dated listening history.",
+            uncertainty: "Imported library choices are provider evidence, not a new assertion to Moondog.",
+            supporting_refs: [entry.reference_id], contradicting_refs: [],
+          }] : [] });
+          highlights.push(...saved.saved_claims.map(claim => claim.claim_id));
+        }
+      }
+      for (let offset = 0; offset !== null;) {
+        const page = session.findings(offset);
+        highlights.push(...page.items.filter(claim => claim.kind === "listener_assertion").map(claim => claim.claim_id));
+        offset = page.next_offset;
+      }
+      session.submit({ summary: "A smaller curated interest is preserved alongside dominant preferences.", highlight_claim_ids: [...new Set(highlights)] });
+    },
+  });
+  const built = await application.buildListenerProfile({ runtimeFactory });
+  assert.equal(built.revision.coverage.coverage.apple_library_tracks, 140);
+  const claim = built.revision.highlights.find(item => item.statement.startsWith("Quiet curator"));
+  const explanation = await application.getListenerProfile({ claimId: claim.claim_id });
+  assert.ok(explanation.supporting_evidence[0].data.preference_strength > 0);
+  store.recordListenerCorrection({ subjectId, entityType: "track", label: "Fixture song 60 - Quiet curator",
+    artistCredit: "Quiet curator", stance: "avoid", occurredAt: "2026-09-01T00:00:00Z" });
+  assert.equal((await application.getListenerProfile()).state, "stale");
+  const updated = await application.buildListenerProfile({ runtimeFactory });
+  assert.equal(updated.revision.sequence, 2);
+  assert.ok(updated.revision.highlights.some(item => item.statement === "Quiet curator has an imported Apple preference strength of 0."));
+  assert.ok(updated.revision.highlights.some(item => item.kind === "listener_assertion" && item.statement === "Fixture song 60 by Quiet curator: keep out of suggestions."));
 });

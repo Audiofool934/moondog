@@ -98,6 +98,11 @@ Importing the same file twice changes nothing, and your original files are never
 Apple's privacy download, and full QQ or NetEase listening history, are not supported yet.
 The [terminal guide](docs/TERMINAL_GUIDE.md#import-and-inspect-listening-history) has every format.
 
+With a connected model, `/profile build` saves a versioned reading of the complete supported evidence.
+Use `/profile saved` to read it and `/profile explain 1` to trace a finding to its evidence, including after restarting.
+New imports or corrections mark it for an update; interrupted builds keep progress and the previous reading.
+The builder sends bounded music digests to your configured model when you request it.
+
 ## Your profile
 
 The profile says what you played, and what that cannot prove.

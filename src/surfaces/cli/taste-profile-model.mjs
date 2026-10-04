@@ -129,6 +129,11 @@ function overview(profile) {
   if (captured) lines.push(`Library as of ${captured}`);
   const active = count(coverage.active_listener_assertions);
   if (coverage.active_listener_assertions > 0) lines.push(`${plural(coverage.active_listener_assertions, "choice")} you've made`);
+  if (profile?.listener_model) {
+    const saved = profile.listener_model;
+    lines.splice(1, 0, saved.state === "missing" ? "Build a saved reading: /profile build"
+      : `Saved reading v${saved.sequence}${saved.state === "stale" ? " needs update: /profile build" : ": /profile saved"}`);
+  }
   return lines;
 }
 

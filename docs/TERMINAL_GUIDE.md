@@ -1534,3 +1534,38 @@ Spotify's current `DELETE /me/library` reference lists `playlist-modify-public` 
 Library browsing also lists playlists and followed artists. Artist pagination uses the returned `next_after` cursor rather than an offset and requires `user-follow-read`. Typed `item_refs` let the library-save tool save tracks, albums, episodes, shows or playlists. The library-remove tool previews one item and requires the exact later-turn confirmation phrase before unsaving it. Playlist removal retains the owned/private/non-collaborative checks. Catalog metadata is bounded untrusted data: it may be shown and used as selection evidence, but it cannot authorize an action or provide instructions. Names resembling paths are still names in these typed Spotify projections; credentials and raw provider payloads remain outside the tool result.
 
 Exact ordinary commands such as “Rename my playlist Night Drive to Late Lights” and “Remove Midnight Lines from my playlist Night Drive” can use the same guarded quick-edit path as quoted names. Ambiguous names, duplicate tracks, and bulk edits still use an inspectable preview.
+
+
+## Saved listener profiles
+
+`/taste` still opens immediately after an import and works without a model.
+For a durable model reading of the complete supported evidence, connect a model with `/model` and run `/profile build`.
+This sends bounded music evidence digests to that configured model; it does not upload the original archive or enable playback or account tools.
+
+```text
+/profile build
+/profile saved
+/profile explain 1
+```
+
+The builder reviews full-corpus digest pages, saves intermediate findings, and commits a version only after all pages are reviewed and evidence references are valid.
+A finding distinguishes a measured observation, a hypothesis with uncertainty, or an explicit listener choice.
+`/profile saved` shows twelve findings at a time; follow its next-page command to read more.
+`/profile explain <number>` opens the frozen supporting and conflicting evidence for that finding.
+The normal listening agent receives the compact current reading in a fresh conversation and can retrieve further saved evidence.
+
+A new import or correction marks the saved reading as needing an update.
+Run `/profile build` again to update it; an identical input reuses the current reading without calling a model.
+Unchanged digest findings can be reused when the input changes.
+Use `/profile build --force` to start a fresh interpretation with the current model.
+
+Ctrl+C stops the build and keeps saved progress and the previous version.
+A build that reaches its turn limit also saves progress; run `/profile build` again to continue.
+If evidence changes during synthesis, the new version is rejected and the previous version stays available.
+Saved profiles and evidence snapshots live in the private listening database and are included in `data export --scope listening` or `--scope profile`.
+Resetting the corresponding scope archives that database, including its saved readings.
+An Apple-only reset removes the Apple projection; combined readings remain in the listening scope as historical snapshots until that scope is reset too.
+
+The same commands work outside the TUI as `moondog profile build`, `moondog profile saved`, and `moondog profile explain 1`, with optional `--json` output.
+Synthetic tests verify the build, correction, interruption, and recovery behavior.
+They do not establish the taste quality of a particular model; recognizable interests and useful recommendations still need listener evaluation.

@@ -13,6 +13,7 @@ import { fictionalSpotifyHistoryEntries } from "../../src/demo/fictional-spotify
 import { projectSpotifyExtendedStreamingHistory } from "../../src/integrations/spotify/extended-streaming-history.mjs";
 import { openListeningHistoryStore } from "../../src/profile/listening-history-store.mjs";
 import { runProfileCommand } from "../../src/surfaces/cli/profile-command.mjs";
+import { runListenerProfileCommand, savedProfileActions } from "../../src/surfaces/cli/listener-profile-command.mjs";
 import { runMoondogTui } from "../../src/surfaces/cli/tui.mjs";
 
 class FakeTerminal {
@@ -59,7 +60,7 @@ async function waitFor(condition, description, terminal) {
   assert.fail(`Timed out waiting for ${description}.\n${terminal?.text.slice(-2_000) ?? ""}`);
 }
 
-async function createTasteFixture(context, { imported = true, configured = false, discoveryReady = false } = {}) {
+async function createTasteFixture(context, { imported = true, configured = false, discoveryReady = false, profileRuntimeFactory } = {}) {
   const root = await mkdtemp(path.join(tmpdir(), "moondog-tui-taste-loop-"));
   const environment = {
     MOONDOG_STATE_HOME: path.join(root, "state"),
@@ -154,9 +155,11 @@ async function createTasteFixture(context, { imported = true, configured = false
           store.ingestImport(projectedImport);
           return "Spotify history import completed.";
         },
-        async runProfile(args) {
+        async runProfile(args, controls) {
           let output = "";
-          await runProfileCommand({
+          const command = savedProfileActions.has(args[0]) ? runListenerProfileCommand : runProfileCommand;
+          await command({
+            application, ...controls, runtimeFactory: profileRuntimeFactory,
             args, environment, commandPrefix: "/profile",
             output: { write(value) { output += value; } },
           });
@@ -480,4 +483,46 @@ test("a completed history import opens the cumulative native profile and preserv
   assert.equal(repeatedImport.coverage.effective_listening_events, firstImport.coverage.effective_listening_events);
   assert.equal(fixture.spotifyActions.length, 2);
   assert.deepEqual(fixture.prompts, []);
+});
+
+
+test("TUI builds a saved reading, exposes its evidence, and cancels with a recoverable checkpoint", async t => {
+  let cancel = false;
+  let release;
+  const fixture = await createTasteFixture(t, { profileRuntimeFactory: async () => ({
+    publicStatus: () => ({ state: "configured", provider: "faux", model: "faux-1", worker_version: "1" }),
+    abort() { release?.(); },
+    async investigate(session) {
+      const ids = [];
+      for (;;) {
+        const pending = session.progress().pending;
+        if (!pending.length) break;
+        for (const part of pending) {
+          const page = session.read(part.partition_id);
+          const entry = page.items[0];
+          const saved = session.review(part.partition_id, { note: "Reviewed this page.", claims: [{
+            kind: "observation", statement: "Retained listening provides evidence of attention.",
+            scope: page.section, uncertainty: "It does not establish liking.",
+            supporting_refs: [entry.reference_id], contradicting_refs: [],
+          }] });
+          ids.push(...saved.saved_claims.map(item => item.claim_id));
+          if (cancel) { await new Promise(resolve => { release = resolve; }); return; }
+        }
+      }
+      session.submit({ summary: "A saved reading of fictional listening.", highlight_claim_ids: ids.slice(0, 6) });
+    },
+  }) });
+  await fixture.launch();
+  await fixture.submit("/profile build", "Saved your new listening profile.");
+  await fixture.submit("/profile saved", "A saved reading of fictional listening.");
+  await fixture.submit("/profile explain 1", "Supporting evidence:");
+  cancel = true;
+  fixture.terminal.output = "";
+  fixture.terminal.send("/profile build --force");
+  fixture.terminal.send("\r");
+  await fixture.waitOutput("Ctrl+C saves progress.");
+  fixture.terminal.send("\x03");
+  await fixture.waitOutput("Stopped the profile build.");
+  assert.equal((await fixture.application.getListenerProfile()).sequence, 1);
+  await fixture.submit("/profile saved", "A saved reading of fictional listening.");
 });

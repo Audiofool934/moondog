@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { compactListenerProfile, readListenerProfile } from "../profile/listener-profile-build.mjs";
 
 import {
   readAppleMusicSourceStatus,
@@ -237,6 +238,25 @@ export class MoondogApplication {
   profileExplorationReady() {
     return this.profileServicesReady() && typeof this.domainServices.exploreProfile === "function" &&
       this.domainServices.profileExplorationReady?.() === true;
+  }
+
+  profileBuildReady() {
+    return this.profileExplorationReady() && this.domainServices.profileBuildReady?.() === true;
+  }
+
+  getProfileBuildContext() {
+    if (!this.profileBuildReady()) throw new Error("Saved profile building is unavailable without imported evidence");
+    return this.domainServices.getProfileBuildContext();
+  }
+
+  async getListenerProfile(input) {
+    if (!this.profileBuildReady()) return { state: "missing", total_claims: 0, claims: [], next_offset: null };
+    return readListenerProfile(this.getProfileBuildContext(), input);
+  }
+
+  async buildListenerProfile(options = {}) {
+    const { runListenerProfileBuild } = await import("../profile/listener-profile-worker.mjs");
+    return runListenerProfileBuild({ ...options, application: this });
   }
 
   playlistServicesReady() {
@@ -2565,6 +2585,7 @@ export class MoondogApplication {
         "a3-s3-open-similarity+a4-s4+rediscovery+historical-returns+time-capsule+back-to-back/1",
       capabilities: listCapabilities({
         profileExplorationReady: this.profileExplorationReady(),
+        profileBuildReady: this.profileBuildReady(),
         domainServicesReady: this.domainServicesReady(),
         profileServicesReady: this.profileServicesReady(),
         playlistServicesReady: this.playlistServicesReady(),
@@ -2585,6 +2606,7 @@ export class MoondogApplication {
   agentCapabilityDescriptors() {
     return listAgentCapabilityDescriptors({
       profileExplorationReady: this.profileExplorationReady(),
+      profileBuildReady: this.profileBuildReady(),
       domainServicesReady: this.domainServicesReady(),
       profileServicesReady: this.profileServicesReady(),
       playlistServicesReady: this.playlistServicesReady(),
@@ -2734,7 +2756,10 @@ export class MoondogApplication {
   }
 
   async getProfileSummary(input) {
-    return this.requireProfileServices().getProfileSummary(input);
+    const profile = await this.requireProfileServices().getProfileSummary(input);
+    return this.profileBuildReady()
+      ? { ...profile, listener_model: compactListenerProfile(await this.getListenerProfile()) }
+      : profile;
   }
 
   async exploreProfile(input) {

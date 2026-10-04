@@ -11,6 +11,10 @@ export function profileCorrectionHelpText(commandPrefix = "moondog profile") {
 
 Commands:
 
+- \`${commandPrefix} build [--force]\` - build or resume a saved reading with your connected model
+- \`${commandPrefix} saved [offset]\` - read saved findings, including after a restart
+- \`${commandPrefix} explain <number>\` - inspect a saved finding's evidence
+
 - \`${commandPrefix} corrections [--all] [--json]\` - everything you've told me; add --all to include earlier choices
 - \`${commandPrefix} correct --artist <name> (--like|--avoid) [--note <text>] [--json]\` - like an artist, or keep them out
 - \`${commandPrefix} correct --track <title> --by <artist> (--like|--avoid) [--note <text>] [--json]\` - like a track, or keep it out

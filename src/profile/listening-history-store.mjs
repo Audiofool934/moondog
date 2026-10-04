@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { chmod, mkdir } from "node:fs/promises";
 import path from "node:path";
 
@@ -9,8 +9,9 @@ import {
   createListenerCorrectionRetraction,
 } from "./listener-corrections.mjs";
 import { projectListeningProfile } from "./listening-profile-projection.mjs";
+import { ListenerProfileStore, listenerProfileSchema } from "./listener-profile-store.mjs";
 
-export const LISTENING_HISTORY_SCHEMA_VERSION = 6;
+export const LISTENING_HISTORY_SCHEMA_VERSION = 7;
 
 export function resolveListeningHistoryPath(environment = process.env) {
   return path.join(resolveMoondogStateDirectory(environment), "listening-history.sqlite");
@@ -158,6 +159,8 @@ const schema = `
   CREATE UNIQUE INDEX IF NOT EXISTS taste_events_one_retraction
     ON taste_events(retracts_taste_event_id)
     WHERE retracts_taste_event_id IS NOT NULL;
+
+  ${listenerProfileSchema}
 `;
 
 function listenerCorrectionError(code, message) {
@@ -1665,6 +1668,37 @@ export class ListeningHistoryStore {
       },
       sections: projected.catalog,
     });
+  }
+
+  listenerProfileStorage({ subjectId } = {}) {
+    if (this.#closed) throw new Error("Listening history store is closed");
+    if (!isUuid(subjectId)) throw new TypeError("A valid profile subject is required");
+    return new ListenerProfileStore(this.#database, subjectId.toLowerCase());
+  }
+
+  profileEvidenceRevision({ subjectId } = {}) {
+    if (this.#closed) throw new Error("Listening history store is closed");
+    if (!isUuid(subjectId)) throw new TypeError("A valid profile subject is required");
+    const digest = createHash("sha256");
+    // Build artifacts never feed back into source evidence. Hash locally; raw
+    // events, source identifiers and private import metadata do not go to Pi.
+    const queries = [
+      "SELECT record_json FROM listening_events WHERE subject_id = ? ORDER BY listening_event_id",
+      "SELECT record_json FROM spotify_profile_evidence WHERE subject_id = ? ORDER BY profile_evidence_id",
+      "SELECT record_json FROM taste_events WHERE subject_id = ? ORDER BY taste_event_id",
+      "SELECT * FROM import_batches WHERE subject_id = ? ORDER BY import_batch_id",
+      "SELECT * FROM profile_import_batches WHERE subject_id = ? ORDER BY profile_import_id",
+      `SELECT t.record_json FROM track_refs t WHERE EXISTS (SELECT 1 FROM listening_events e
+        WHERE e.subject_id = ? AND e.track_ref_id = t.track_ref_id AND e.track_ref_revision = t.revision)
+        ORDER BY t.track_ref_id, t.revision`,
+    ];
+    for (const query of queries) {
+      digest.update(query).update("\0");
+      for (const row of this.#database.prepare(query).iterate(subjectId.toLowerCase())) {
+        digest.update(JSON.stringify(row)).update("\0");
+      }
+    }
+    return digest.digest("hex");
   }
 
   rediscoveryCandidates({ subjectId, limit = 6 } = {}) {

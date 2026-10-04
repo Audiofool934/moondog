@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { exploreProfileCatalog, profileExplorationInput } from "../profile/profile-exploration.mjs";
+import { createListenerProfileInput } from "../profile/listener-profile-build.mjs";
 import { lyricSeedsFromProfile } from "./lyric-profile.mjs";
 import { collectionCoverage } from "../profile/music-providers.mjs";
 import { lstat } from "node:fs/promises";
@@ -1935,6 +1936,29 @@ export class AppleProjectionDomainServices {
       listening,
       apple: this.#appleProfileCatalog(listening?.sections.listener_avoids), input,
     });
+  }
+
+  profileBuildReady() {
+    return typeof this.#listeningHistoryStore?.listenerProfileStorage === "function" &&
+      typeof this.#projection.logicalDigest === "function";
+  }
+
+  getProfileBuildContext() {
+    const listening = this.#listeningHistoryStore.profileCatalog({ subjectId: this.#subjectId });
+    const normalized = normalizeAppleCorrectionLabels({ listener_assertions: {
+      preferences: listening.sections.listener_preferences, avoids: listening.sections.listener_avoids,
+    } }, this.#projection).listener_assertions;
+    listening.sections.listener_preferences = normalized.preferences;
+    listening.sections.listener_avoids = normalized.avoids;
+    return {
+      store: this.#listeningHistoryStore.listenerProfileStorage({ subjectId: this.#subjectId }),
+      input: createListenerProfileInput({
+        subjectId: this.#subjectId,
+        evidenceRevision: [this.#projection.logicalDigest(),
+          this.#listeningHistoryStore.profileEvidenceRevision({ subjectId: this.#subjectId })],
+        listening, apple: this.#appleProfileCatalog(listening.sections.listener_avoids),
+      }),
+    };
   }
 
   async getProfileSummary(argumentsValue) {

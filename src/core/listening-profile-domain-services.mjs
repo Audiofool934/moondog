@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { exploreProfileCatalog, profileExplorationInput } from "../profile/profile-exploration.mjs";
+import { createListenerProfileInput } from "../profile/listener-profile-build.mjs";
 import { lyricSeedsFromProfile } from "./lyric-profile.mjs";
 
 import { isUuid } from "./uuid-v5.mjs";
@@ -608,6 +609,21 @@ export class ListeningProfileDomainServices {
   async exploreProfile(argumentsValue) {
     const input = profileExplorationInput(argumentsValue);
     return exploreProfileCatalog({ listening: this.#store.profileCatalog({ subjectId: this.#subjectId }), input });
+  }
+
+  profileBuildReady() {
+    return typeof this.#store.listenerProfileStorage === "function";
+  }
+
+  getProfileBuildContext() {
+    return {
+      store: this.#store.listenerProfileStorage({ subjectId: this.#subjectId }),
+      input: createListenerProfileInput({
+        subjectId: this.#subjectId,
+        evidenceRevision: this.#store.profileEvidenceRevision({ subjectId: this.#subjectId }),
+        listening: this.#store.profileCatalog({ subjectId: this.#subjectId }),
+      }),
+    };
   }
 
   async getRediscoveryCandidates(argumentsValue) {

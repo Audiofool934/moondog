@@ -77,7 +77,7 @@ Sources: [OpenClaw compaction](https://docs.openclaw.ai/concepts/compaction) and
 Repeatedly summarizing whichever tracks happened to appear in chat cannot demonstrate coverage of a music archive.
 The profile must be recoverable from stored evidence and its build artifact after the conversation is compacted or closed.
 
-## Current Moondog position
+## Moondog position at the research snapshot
 
 The code was inspected at `715aa9c` on the full-listener-profile branch.
 The following distinction remains important after the accompanying skill refinement.
@@ -102,7 +102,8 @@ Generic conversation memory must not become a second canonical music profile.
 ## Proposed profile-building workflow
 
 This workflow is a Moondog design proposal derived from the comparison, not a claim that either upstream project implements music profiling this way.
-The persistent builder described below is not implemented by this research change.
+The research change did not implement the builder.
+The later implementation described below now provides the first persistent slice.
 
 ```mermaid
 flowchart TD
@@ -189,6 +190,20 @@ The first proof should exercise four observable outcomes with synthetic data:
 
 Then evaluate one real model-produced profile with the listener for recognizable interests, missing facets, misleading certainty, and usefulness for a concrete recommendation.
 Current deterministic tool tests establish access and arithmetic, not that final quality outcome.
+
+## Implemented first slice
+
+The TUI now supports `/profile build`, `/profile saved`, and `/profile explain <number>`; the Pi agent exposes matching build and saved-evidence tools.
+The builder uses complete local analysis catalogs, stable input fingerprints, typed findings, and immutable SQLite revisions with frozen cited evidence.
+A dedicated Pi worker reads bounded digest pages and checkpoints its findings before the current revision is replaced.
+Changed evidence invalidates the saved reading, identical imports reuse it, and interrupted builds can continue after restarting.
+The compact current reading is available to a fresh listening conversation; stale inferred text is withheld from that context.
+Current direct choices remain separate from historical observations.
+
+The synthetic acceptance path covers a supported interest beyond the first hundred tracks, Apple library curation, correction-driven revision, saved evidence recovery, invalid reference rejection, cancellation, and source changes during a build.
+A faux provider exercises the real Pi agent and tools; it does not evaluate the quality of a live model's taste inference.
+The listener review of a real model-produced reading remains a separate quality gate.
+See the [terminal guide](TERMINAL_GUIDE.md#saved-listener-profiles) and [builder tests](../tests/runtime/listener-profile-build.test.mjs).
 
 ## Research scope and source versions
 
