@@ -16,6 +16,7 @@ import {
   sha256Hex,
 } from "../../../scripts/contract-semantics.mjs";
 import { resolveMoondogStateDirectory } from "../../core/state-directory.mjs";
+import { uuidV5 } from "../../core/uuid-v5.mjs";
 import { AppleMusicImportError } from "./parse-plist.mjs";
 import { listAppleMusicImportBatches } from "./read-batch.mjs";
 import { promoteAppleMusicImportBatches } from "./projection-records.mjs";
@@ -1185,6 +1186,56 @@ class AppleMusicSqliteProjection {
         "Loved, Favorited, and ratings are current provider snapshot states without action timestamps.",
         "Name-only artist and provider genre labels are not resolved entities.",
       ],
+    };
+  }
+
+  getProfileCatalog({ excludePreference = () => false } = {}) {
+    this.#assertOpen();
+    // Aggregate preference evidence per track before joining, so a loved and
+    // rated track contributes once to each facet's track count.
+    const tracks = this.#database.prepare(`SELECT s.track_ref_id, s.title AS label,
+      s.artist_credit, s.release_title AS release, s.genre_label AS genre,
+      s.play_count, s.loved, s.favorited, s.rating_value, s.rating_computed,
+      COALESCE(p.strength, 0) AS preference_strength, p.evidence_id
+      FROM library_search s LEFT JOIN (
+        SELECT subject_id, track_ref_id, MAX(strength) AS strength, MIN(evidence_id) AS evidence_id
+        FROM profile_evidence WHERE claim_dimension = 'taste.track_preference' AND direction = 'supports'
+        GROUP BY subject_id, track_ref_id
+      ) p ON p.subject_id = s.subject_id AND p.track_ref_id = s.track_ref_id
+      WHERE s.subject_id = ? ORDER BY preference_strength DESC, s.play_count DESC, s.track_ref_id`)
+      .all(this.#subjectId).map((row) => ({
+        ...Object.fromEntries(Object.entries(row).filter(([, value]) => value !== null)),
+        preference_strength: excludePreference(row) ? 0 : row.preference_strength,
+      })).sort((a, b) => b.preference_strength - a.preference_strength ||
+        (b.play_count ?? -1) - (a.play_count ?? -1) || a.track_ref_id.localeCompare(b.track_ref_id));
+    const facets = (field) => {
+      const grouped = new Map();
+      for (const track of tracks) {
+        if (!track[field]?.trim()) continue;
+        const key = normalizedText(track[field]);
+        const item = grouped.get(key) ?? {
+          name: track[field], library_tracks: 0, preferred_tracks: 0, play_count: 0,
+          tracks_with_play_count: 0, preference_strength: 0,
+          evidence_id: uuidV5(`${this.#subjectId}\0apple-${field}\0${key}`, "5d9a8b8d-c66c-547f-98c2-c8a0559f56be"),
+        };
+        item.library_tracks++;
+        if (track.preference_strength > 0) item.preferred_tracks++;
+        item.preference_strength += track.preference_strength;
+        if (track.play_count !== undefined) { item.play_count += track.play_count; item.tracks_with_play_count++; }
+        grouped.set(key, item);
+      }
+      return [...grouped.values()].sort((a, b) => b.preference_strength - a.preference_strength ||
+        b.library_tracks - a.library_tracks || a.name.localeCompare(b.name));
+    };
+    return {
+      coverage: {
+        apple_library_tracks: tracks.length,
+        apple_preferred_tracks: tracks.filter((track) => track.preference_strength > 0).length,
+        apple_tracks_with_play_count: tracks.filter((track) => track.play_count !== undefined).length,
+        apple_aggregate_plays: tracks.reduce((sum, track) => sum + (track.play_count ?? 0), 0),
+        apple_snapshot_at: readMeta(this.#database, "projection.source_timestamp"),
+      },
+      sections: { apple_tracks: tracks, apple_artists: facets("artist_credit"), apple_genres: facets("genre") },
     };
   }
 

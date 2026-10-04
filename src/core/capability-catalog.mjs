@@ -101,6 +101,12 @@ const catalog = [
     },
   },
   {
+    id: "profile.explore", version: "1", state: "enabled", effect: "read_local",
+    description: "Analyze all retained profile evidence with coverage, full-library facets, search, and pagination.",
+    requires_profile_exploration: true,
+    agent_tool: { name: "moondog_profile_explore", label: "Explore your complete music profile" },
+  },
+  {
     id: "profile.rediscovery",
     version: "1",
     state: "enabled",
@@ -537,7 +543,11 @@ function withRuntimeAvailability(
   musicDiscoveryReady,
   musicSimilarityReady,
   webResearchReady,
+  profileExplorationReady,
 ) {
+  if (capability.requires_profile_exploration && !profileExplorationReady) {
+    return { ...capability, state: "blocked", blocked_by: "profile_exploration_not_ready" };
+  }
   if (capability.requires_web_research && !webResearchReady) {
     return { ...capability, state: "blocked", blocked_by: "codex_web_not_ready" };
   }
@@ -645,6 +655,7 @@ export function listCapabilities({
   musicDiscoveryReady = false,
   musicSimilarityReady = false,
   webResearchReady = false,
+  profileExplorationReady = false,
 } = {}) {
   return structuredClone(
     catalog.map((capability) =>
@@ -663,6 +674,7 @@ export function listCapabilities({
         musicDiscoveryReady,
         musicSimilarityReady,
         webResearchReady,
+        profileExplorationReady,
       ),
     ),
   );

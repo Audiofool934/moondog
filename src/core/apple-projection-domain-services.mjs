@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { exploreProfileCatalog, profileExplorationInput } from "../profile/profile-exploration.mjs";
 import { lyricSeedsFromProfile } from "./lyric-profile.mjs";
 import { collectionCoverage } from "../profile/music-providers.mjs";
 import { lstat } from "node:fs/promises";
@@ -1912,6 +1913,30 @@ export class AppleProjectionDomainServices {
     };
   }
 
+  #appleProfileCatalog(knownAvoids) {
+    if (typeof this.#projection.getProfileCatalog !== "function") return null;
+    const { listener_assertions: { avoids } } = normalizeAppleCorrectionLabels({
+      listener_assertions: {
+        avoids: knownAvoids ?? this.#listeningHistoryStore?.activeAvoidances?.({ subjectId: this.#subjectId }) ?? [],
+      },
+    }, this.#projection);
+    return this.#projection.getProfileCatalog({ excludePreference: (track) =>
+      listenerAssertionAvoids({ listener_assertions: { avoids } }, "track", track.label, track.artist_credit) });
+  }
+
+  profileExplorationReady() {
+    return typeof this.#projection.getProfileCatalog === "function";
+  }
+
+  async exploreProfile(argumentsValue) {
+    const input = profileExplorationInput(argumentsValue);
+    const listening = this.#listeningHistoryStore?.profileCatalog({ subjectId: this.#subjectId });
+    return exploreProfileCatalog({
+      listening,
+      apple: this.#appleProfileCatalog(listening?.sections.listener_avoids), input,
+    });
+  }
+
   async getProfileSummary(argumentsValue) {
     const input = modelArguments(argumentsValue, new Set(["maxItems"]));
     const bounded = boundedLimit(
@@ -2009,13 +2034,16 @@ export class AppleProjectionDomainServices {
         play_count: item.play_count,
         evidence_id: item.evidence_id,
       })) ?? [];
-    const appleArtistFacets = facetItems(
+    const appleCatalog = this.#appleProfileCatalog();
+    const appleArtistFacets = (appleCatalog
+      ? appleCatalog.sections.apple_artists.filter((item) => item.preferred_tracks > 0)
+      : facetItems(
       preferenceItems,
       (item) => item.artist_credit,
       bounded,
-    ).filter(
+    )).filter(
       (item) => !listenerAssertionAvoids(listening, "artist", item.name),
-    );
+    ).slice(0, bounded);
     const spotifyArtistFacets = [
       ...(listening?.curated_preferences.followed_artists ?? []),
       ...(listening?.listening_behavior.enduring_artists ?? []),
@@ -2028,7 +2056,9 @@ export class AppleProjectionDomainServices {
         name: item.name,
         evidence_id: item.evidence_id,
       }));
-    const appleGenreFacets = facetItems(
+    const appleGenreFacets = appleCatalog
+      ? appleCatalog.sections.apple_genres.filter((item) => item.preferred_tracks > 0).slice(0, bounded)
+      : facetItems(
       preferenceItems,
       (item) => item.labels?.provider_genre,
       bounded,
@@ -2128,6 +2158,17 @@ export class AppleProjectionDomainServices {
     if (!isUuid(cleanedId)) {
       fail("invalid_evidence_id", "Profile evidence ID is invalid.");
     }
+    const catalog = this.#appleProfileCatalog();
+    const facet = [...(catalog?.sections.apple_artists ?? []), ...(catalog?.sections.apple_genres ?? [])]
+      .find((item) => item.evidence_id === cleanedId);
+    if (facet) return {
+      evidence_id: facet.evidence_id,
+      claim: { dimension: "taste.library_facet", value: facet.name, direction: "supports" },
+      basis_summary: `${facet.preferred_tracks} tracks with positive provider preferences among ${facet.library_tracks} library tracks, after active Avoids. ${facet.play_count} aggregate plays across ${facet.tracks_with_play_count} tracks with known counts.`,
+      derivation: { kind: "rule", name: "whole-apple-library-facet", version: "1" },
+      confidence: 0.9,
+      interpretation_limit: "A full-library metadata aggregation. Play counts show familiarity; provider preferences are snapshot states, and genre names do not describe measured audio.",
+    };
     const raw = this.#projection.explainProfileEvidence({
       evidenceId: cleanedId,
     });
