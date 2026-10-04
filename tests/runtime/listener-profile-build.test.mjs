@@ -290,6 +290,31 @@ test("one build command continues across Pi session limits until every page is s
   assert.equal(runtime.activeAgent, null);
 });
 
+test("profile failures keep the provider diagnosis and report the recoverable checkpoint", async t => {
+  const state = await fixture(t, bundle(2));
+  const faux = fauxProvider();
+  const models = createModels();
+  models.setProvider(faux.provider);
+  const runtime = new ProfileBuildRuntime({ models, model: faux.getModel(), provider: "faux", modelId: "faux-1" });
+  const partitions = state.application.getProfileBuildContext().input.partitions;
+  const first = partitions[0];
+  faux.setResponses([
+    fauxAssistantMessage([fauxToolCall("moondog_read_profile_digest", { partition_id: first.partition_id })], { stopReason: "toolUse" }),
+    fauxAssistantMessage([fauxToolCall("moondog_record_profile_findings", { partition_id: first.partition_id,
+      note: "Saved before a provider outage.", claims: [finding(first.items[0])] })], { stopReason: "toolUse" }),
+    fauxAssistantMessage([], { stopReason: "error", errorMessage: "503 Service unavailable" }),
+  ]);
+  await assert.rejects(state.application.buildListenerProfile({ runtimeFactory: async () => runtime }), error => {
+    assert.match(error.message, /503 Service unavailable/u);
+    assert.match(error.message, new RegExp(`Saved progress: 1/${partitions.length} evidence pages`));
+    return true;
+  });
+  assert.equal(runtime.activeAgent, null);
+  const resumed = await state.application.buildListenerProfile({ runtimeFactory: scriptedRuntime() });
+  assert.equal(resumed.reused_partitions, 1);
+  assert.equal(resumed.state, "ready");
+});
+
 test("a fresh Pi listening session receives the saved reading, evidence tools and updated constraints", async t => {
   const state = await fixture(t, bundle(3));
   await state.application.buildListenerProfile({ runtimeFactory: scriptedRuntime() });

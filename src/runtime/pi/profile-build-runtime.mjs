@@ -1,6 +1,7 @@
 import { Agent } from "@earendil-works/pi-agent-core";
 import { Type } from "@earendil-works/pi-ai";
 import { createConfiguredRuntime } from "./configured-runtime.mjs";
+import { createModelConnectionError, createModelFetch, isModelConnectionFailure, safeProviderErrorMessage } from "./model-transport.mjs";
 
 export const PROFILE_BUILD_WORKER_VERSION = "profile-investigation/1";
 const reference = Type.String({ minLength: 1, maxLength: 80 });
@@ -23,8 +24,9 @@ function tool(name, description, parameters, action) {
 }
 
 export class ProfileBuildRuntime {
-  constructor({ models, model, provider, modelId, agentFactory = options => new Agent(options), maxTurns = 32 }) {
-    Object.assign(this, { models, model, provider, modelId, agentFactory, maxTurns });
+  constructor({ models, model, provider, modelId, agentFactory = options => new Agent(options), maxTurns = 32,
+    modelFetch, modelRetryDelay }) {
+    Object.assign(this, { models, model, provider, modelId, agentFactory, maxTurns, modelFetch, modelRetryDelay });
     this.activeAgent = null;
   }
 
@@ -37,6 +39,8 @@ export class ProfileBuildRuntime {
     if (this.activeAgent) throw new Error("A profile investigation is already running");
     let submitted = false;
     let turns = 0;
+    let connectionFailure = null;
+    let retrying = false;
     const tools = [
       tool("moondog_read_profile_digest", "Read one complete local analysis page. Follow continuations for longer fields.",
         Type.Object({ partition_id: reference }, { additionalProperties: false }),
@@ -80,7 +84,21 @@ export class ProfileBuildRuntime {
           "Use only these tools. No web, playback, messaging, account access or general memory is available. Do not answer with an unsaved prose profile.",
         ].join("\n"),
       },
-      streamFn: (model, context, options) => this.models.streamSimple(model, context, { ...options, maxRetries: 0 }),
+      streamFn: (model, context, options) => this.models.streamSimple(model, context, {
+        ...options,
+        maxRetries: 0,
+        // Reuse the normal conversation transport's bounded HTTP retries.
+        // Replaying the agent loop could repeat checkpoint tools.
+        fetch: ["google-generative-ai", "google-vertex"].includes(model.api) ? undefined : createModelFetch({
+          provider: this.provider, fetchImpl: this.modelFetch ?? options?.fetch, wait: this.modelRetryDelay,
+          onRetry: retry => { retrying = true; session.modelRetry?.(retry); },
+          onFailure: error => { connectionFailure = error; },
+        }),
+        onResponse: (response, selectedModel) => {
+          if (retrying) { retrying = false; session.modelRetry?.(null); }
+          return options?.onResponse?.(response, selectedModel);
+        },
+      }),
       toolExecution: "sequential",
       finishTurn: () => {
         turns++;
@@ -92,7 +110,15 @@ export class ProfileBuildRuntime {
     try {
       await agent.prompt(JSON.stringify({ manifest: session.manifest, progress: session.progress(),
         saved_findings: session.findings(), instruction: "Continue the saved work and submit only when all pages are reviewed." }));
-      if (agent.state?.errorMessage) throw new Error("The profile model request failed. Saved progress is available for another build.");
+      if (agent.state?.errorMessage && agent.state.messages?.at(-1)?.stopReason !== "aborted") {
+        const message = safeProviderErrorMessage(agent.state.errorMessage, this.provider);
+        const error = connectionFailure || isModelConnectionFailure(message)
+          ? createModelConnectionError({ provider: this.provider, cause: connectionFailure ?? new Error(message) })
+          : Object.assign(new Error(message), { code: "profile_model_request_failed" });
+        const progress = session.progress();
+        error.message += `\n\nSaved progress: ${progress.reviewed_partitions}/${progress.total_partitions} evidence pages. Use /profile build to continue. Your previous reading is kept.`;
+        throw error;
+      }
     } finally { this.activeAgent = null; }
   }
 

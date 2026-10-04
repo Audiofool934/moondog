@@ -54,6 +54,7 @@ export async function runListenerProfileBuild({
     onProgress(progress());
     const session = {
       manifest: input.manifest, progress, findings,
+      modelRetry: retry => { if (!signal?.aborted) onProgress({ ...progress(), model_retry: retry }); },
       read: (partitionId) => {
         signal?.throwIfAborted();
         const partition = input.partitions.find(part => part.partition_id === partitionId);

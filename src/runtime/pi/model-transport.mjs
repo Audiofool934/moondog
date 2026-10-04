@@ -19,6 +19,16 @@ const publicCodes = new Set([...retryableCodes, ...certificateCodes]);
 const publicCodePattern = new RegExp(`\\b(${[...publicCodes].join("|")})\\b`, "u");
 const connectionMessagePattern = /^(?:fetch failed|failed to fetch|network (?:error|request failed)|connection error)\.?$|\b(?:socket hang up|other side closed|connection (?:reset|refused|lost)|getaddrinfo (?:ENOTFOUND|EAI_AGAIN)|(?:connect|connection|response headers|request) timed? out|websocket (?:closed|error))\b|^terminated$/iu;
 const credentialMessagePattern = /(?:access|refresh|id)[_ -]?token|api[_ -]?key|authentication|unauthorized|forbidden|quota|billing/iu;
+const credentialBearingErrorPattern = /(?:access|refresh|id)[_ -]?token|api[_ -]?key|authorization\s*[:=]\s*bearer|oauth\s+(?:auth|refresh|token)|credential\s+store/iu;
+
+export function safeProviderErrorMessage(value, provider) {
+  const message = typeof value === "string" && value.trim()
+    ? value.trim() : "The model provider request failed.";
+  if (credentialBearingErrorPattern.test(message)) {
+    return `${provider === "openai-codex" ? "OpenAI Codex" : provider} authentication failed. Run moondog auth login ${provider} and try again.`;
+  }
+  return message;
+}
 
 function errorChain(value) {
   const pending = [value];

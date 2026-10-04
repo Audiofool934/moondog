@@ -495,7 +495,11 @@ test("TUI builds a saved reading, exposes its evidence, and cancels with a recov
     abort() { release?.(); },
     async investigate(session) {
       sessions++;
-      if (sessions === 2) await new Promise(resolve => { release = resolve; });
+      if (sessions === 2) {
+        session.modelRetry({ attempt: 1, maxRetries: 2 });
+        await new Promise(resolve => { release = resolve; });
+        session.modelRetry(null);
+      }
       const pending = session.progress().pending;
       if (pending.length) {
         for (const part of pending.slice(0, 2)) {
@@ -518,7 +522,8 @@ test("TUI builds a saved reading, exposes its evidence, and cancels with a recov
   fixture.terminal.send("/profile build");
   fixture.terminal.send("\r");
   await waitFor(() => sessions === 2, "automatic continuation", fixture.terminal);
-  await fixture.waitBody("Reading your music: 2/");
+  await fixture.waitBody("Retrying model 1/2.");
+  assert.match(fixture.terminal.body, /2\/\d+ pages saved/u);
   assert.doesNotMatch(fixture.terminal.body, /Done\.|Saved your new listening profile/u);
   release();
   await fixture.waitOutput("Saved your new listening profile.");

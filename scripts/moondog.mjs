@@ -829,7 +829,9 @@ async function main() {
       try {
         await runListenerProfileCommand({ application, args: options.rest, json: options.json,
           signal: controller.signal, onProgress: options.json ? undefined : progress =>
-            process.stderr.write(`Profile: ${progress.reviewed_partitions}/${progress.total_partitions} evidence pages reviewed\n`) });
+            process.stderr.write(progress.model_retry
+              ? `Retrying model ${progress.model_retry.attempt}/${progress.model_retry.maxRetries}; ${progress.reviewed_partitions}/${progress.total_partitions} profile pages saved\n`
+              : `Profile: ${progress.reviewed_partitions}/${progress.total_partitions} evidence pages reviewed\n`) });
       } finally { process.removeListener("SIGINT", abort); }
       return;
     }

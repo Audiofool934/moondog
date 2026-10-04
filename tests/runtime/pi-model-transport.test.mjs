@@ -5,6 +5,7 @@ import { zstdDecompressSync } from "node:zlib";
 
 import { listAgentCapabilityDescriptors } from "../../src/core/capability-catalog.mjs";
 import { PiAgentRuntime } from "../../src/runtime/pi/agent-runtime.mjs";
+import { ProfileBuildRuntime } from "../../src/runtime/pi/profile-build-runtime.mjs";
 import { createPiModels } from "../../src/runtime/pi/model-catalog.mjs";
 import { createModelFetch } from "../../src/runtime/pi/model-transport.mjs";
 
@@ -77,7 +78,7 @@ function applicationFixture({ spotify = false } = {}) {
   };
 }
 
-function runtimeFixture(fetch, { spotify = false, wait } = {}) {
+function runtimeFixture(fetch, { spotify = false, wait, profile = false } = {}) {
   const models = createPiModels({
     credentials: { read: async () => ({ type: "api_key", key: fixtureKey }) },
     authContext: { env: async () => undefined, fileExists: async () => false },
@@ -85,7 +86,8 @@ function runtimeFixture(fetch, { spotify = false, wait } = {}) {
   const application = applicationFixture({ spotify });
   const requests = [];
   const waits = [];
-  const runtime = new PiAgentRuntime({
+  const Runtime = profile ? ProfileBuildRuntime : PiAgentRuntime;
+  const runtime = new Runtime({
     application, models, provider, modelId,
     model: models.getModel(provider, modelId),
     modelFetch: async (input, init) => {
@@ -104,6 +106,121 @@ function runtimeFixture(fetch, { spotify = false, wait } = {}) {
   });
   return { runtime, requests, waits, writes: application.writes };
 }
+
+function profileToolResponse(name, args) {
+  return new Response([
+    completionChunk({ tool_calls: [{ index: 0, id: `call_${name}`, type: "function",
+      function: { name, arguments: JSON.stringify(args) } }] }),
+    completionChunk({}, "tool_calls"),
+  ].map(eventText).join(""), { headers: { "content-type": "text/event-stream" } });
+}
+
+function profileSession() {
+  const state = { reads: 0, reviews: 0, submissions: 0, retries: [] };
+  const entry = { reference_id: "ev_fixture", section: "history_tracks", data: { label: "Synthetic track" } };
+  return {
+    state, manifest: { digest_partitions: 1 },
+    progress: () => ({ reviewed_partitions: state.reviews, total_partitions: 1 }),
+    findings: () => ({ total: state.reviews, items: [], next_offset: null }),
+    read(id) {
+      assert.equal(id, "part_fixture");
+      state.reads++;
+      return { partition_id: id, items: [entry] };
+    },
+    review(id) {
+      assert.equal(id, "part_fixture");
+      assert.equal(state.reads, 1);
+      assert.equal(state.reviews++, 0, "the checkpoint must not be repeated");
+      return { saved_claims: [{ claim_id: "claim_fixture" }] };
+    },
+    submit() { assert.equal(state.reviews, 1); state.submissions++; },
+    modelRetry(value) { state.retries.push(value); },
+  };
+}
+
+function profileCheckpointResponse(count) {
+  if (count === 1) return profileToolResponse("moondog_read_profile_digest", { partition_id: "part_fixture" });
+  if (count === 2) return profileToolResponse("moondog_record_profile_findings", {
+    partition_id: "part_fixture", note: "Retained synthetic evidence.", claims: [{
+      kind: "observation", statement: "The synthetic track is present.", scope: "Synthetic fixture",
+      uncertainty: "Presence is not liking.", supporting_refs: ["ev_fixture"], contradicting_refs: [],
+    }],
+  });
+  return profileToolResponse("moondog_submit_listener_profile", {
+    summary: "A synthetic saved profile.", highlight_claim_ids: ["claim_fixture"],
+  });
+}
+
+test("profile worker retries a rejected DeepSeek request without replaying saved tools", async () => {
+  const session = profileSession();
+  const fixture = runtimeFixture(({ count }) => {
+    if (count === 3 || count === 4) throw networkFailure();
+    return profileCheckpointResponse(count);
+  }, { profile: true });
+  await fixture.runtime.investigate(session);
+  assert.equal(fixture.requests.length, 5);
+  assert.deepEqual(fixture.requests[2], fixture.requests[3]);
+  assert.deepEqual(fixture.requests[3], fixture.requests[4]);
+  assert.deepEqual(fixture.waits, [250, 500]);
+  assert.deepEqual(session.state, { reads: 1, reviews: 1, submissions: 1,
+    retries: [{ attempt: 1, maxRetries: 2 }, { attempt: 2, maxRetries: 2 }, null] });
+  assert.equal(fixture.runtime.activeAgent, null);
+});
+
+test("profile worker reports safe provider errors after bounded retries or terminal HTTP responses", async () => {
+  const session = profileSession();
+  const fixture = runtimeFixture(({ count }) => {
+    if (count < 3) return profileCheckpointResponse(count);
+    throw networkFailure("UND_ERR_CONNECT_TIMEOUT");
+  }, { profile: true });
+  await assert.rejects(fixture.runtime.investigate(session), error => {
+    assertSafeConnectionError(error, { code: "UND_ERR_CONNECT_TIMEOUT" });
+    assert.match(error.message, /Saved progress: 1\/1 evidence pages/u);
+    return true;
+  });
+  assert.equal(fixture.requests.length, 5);
+  assert.equal(session.state.reviews, 1);
+  assert.equal(session.state.submissions, 0);
+  assert.equal(fixture.runtime.activeAgent, null);
+
+  for (const [status, message, expected] of [
+    [401, "Incorrect API key provided: PRIVATE_KEY_SENTINEL", /auth login deepseek/u],
+    [429, "insufficient_quota", /429.*insufficient_quota/u],
+    [503, "Service unavailable", /503.*Service unavailable/u],
+  ]) {
+    const terminal = runtimeFixture(() => new Response(JSON.stringify({ error: { message } }), {
+      status, headers: { "content-type": "application/json" },
+    }), { profile: true });
+    await assert.rejects(terminal.runtime.investigate(profileSession()), error => {
+      assert.match(error.message, expected);
+      assert.match(error.message, /Saved progress: 0\/1 evidence pages/u);
+      assert.doesNotMatch(error.message, /PRIVATE_KEY_SENTINEL/u);
+      return true;
+    });
+    assert.equal(terminal.requests.length, 1);
+    assert.deepEqual(terminal.waits, []);
+    assert.equal(terminal.runtime.activeAgent, null);
+  }
+});
+
+test("profile worker cancellation during connection backoff preserves the checkpoint without another request", async () => {
+  const started = Promise.withResolvers();
+  const session = profileSession();
+  const fixture = runtimeFixture(({ count }) => {
+    if (count < 3) return profileCheckpointResponse(count);
+    throw networkFailure();
+  }, { profile: true, wait: (milliseconds, signal) => {
+    started.resolve();
+    return delay(milliseconds, undefined, { signal });
+  } });
+  const completion = fixture.runtime.investigate(session);
+  await started.promise;
+  fixture.runtime.abort();
+  await completion;
+  assert.equal(fixture.requests.length, 3);
+  assert.deepEqual(session.state, { reads: 1, reviews: 1, submissions: 0, retries: [{ attempt: 1, maxRetries: 2 }] });
+  assert.equal(fixture.runtime.activeAgent, null);
+});
 
 function assertSafeConnectionError(error, { toolsExecuted = false, code = "ECONNRESET" } = {}) {
   assert.equal(error.code, "model_connection_failed");

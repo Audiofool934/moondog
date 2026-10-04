@@ -11,6 +11,7 @@ import {
   createModelConnectionError,
   createModelFetch,
   isModelConnectionFailure,
+  safeProviderErrorMessage,
 } from "./model-transport.mjs";
 
 const maximumToolResultBytes = 32 * 1024;
@@ -21,7 +22,6 @@ const discoveryConnectionFailures = new Map([
   ["music.discovery.artist_similarity", /^(?:wikidata|listenbrainz)_request_failed:/u],
   ["music.catalog.track_search", /^apple_music_catalog_request_failed:/u],
 ]);
-const credentialBearingErrorPattern = /(?:access|refresh|id)[_ -]?token|api[_ -]?key|authorization\s*[:=]\s*bearer|oauth\s+(?:auth|refresh|token)|credential\s+store/iu;
 const safeCapabilityEffects = new Set([
   "read_local",
   "read_runtime",
@@ -48,17 +48,6 @@ const forbiddenResultKeys = new Set([
 const privatePathPattern = /(?:file:\/\/|\/Users\/|\/private\/|[A-Za-z]:\\Users\\)/u;
 const musicBrainzArtistIdPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
-
-function safeProviderErrorMessage(value, provider) {
-  const message =
-    typeof value === "string" && value.trim()
-      ? value.trim()
-      : "The model provider request failed.";
-  if (credentialBearingErrorPattern.test(message)) {
-    return `${provider === "openai-codex" ? "OpenAI Codex" : provider} authentication failed. Run moondog auth login ${provider} and try again.`;
-  }
-  return message;
-}
 
 function normalizeKey(value) {
   return value.toLowerCase().replaceAll(/[^a-z0-9]/gu, "");

@@ -1563,6 +1563,10 @@ Ctrl+C stops the build and keeps saved progress and the previous version.
 One `/profile build` continues automatically through all evidence pages and synthesis, using fresh model sessions as needed.
 Reaching a session's turn limit does not stop the build or require another command.
 If you cancel, a model request fails, or the model stops making progress, run `/profile build` again to resume saved findings.
+For DeepSeek, transient connection failures before a response starts receive up to two short retries of the same model request, with progress shown in the terminal.
+Saved finding tools are not replayed by these retries.
+Authentication, quota, HTTP errors, and broken response streams stop with a diagnostic and the saved page count.
+Credential-bearing authentication details are redacted.
 If evidence changes during synthesis, the new version is rejected and the previous version stays available.
 Saved profiles and evidence snapshots live in the private listening database and are included in `data export --scope listening` or `--scope profile`.
 Resetting the corresponding scope archives that database, including its saved readings.
