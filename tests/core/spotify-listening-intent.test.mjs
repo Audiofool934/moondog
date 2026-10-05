@@ -66,3 +66,31 @@ test("only an explicit queue correction inherits host-retained count and attempt
   }
   assert.equal(queueListeningIntent("queue two songs, don't play anything yet").queue_only, true);
 });
+
+test("a playback queue request survives count and version refinements before any write", () => {
+  const initial = queueListeningIntent("给我编辑一个播放队列，插入到现在的后面吧");
+  assert.ok(initial);
+  assert.equal(initial.requested, null);
+  assert.equal(initial.queue_only, true);
+  const counted = queueListeningIntent("我还是要老歌气质吧，但是我很喜欢清亮的女声。队列数量先来十首试试？", initial);
+  assert.equal(counted?.requested, 10);
+  assert.equal(counted?.queue_only, true);
+  for (const text of ["掺翻唱", "原唱", "Mix in some covers", "Original versions, please"]) {
+    const refined = queueListeningIntent(text, counted);
+    assert.equal(refined?.requested, 10, text);
+    assert.equal(refined?.queue_only, true, text);
+    assert.equal(queueListeningIntent(text), null, text);
+    assert.equal(queueListeningIntent(text, { ...counted, attempted: true }), null, text);
+  }
+});
+
+test("pending queue refinements preserve exclusions and never turn questions or cancellation into writes", () => {
+  const previous = { requested: 4, request: "queue four unheard tracks", queue_only: true, excludeKnown: true };
+  assert.equal(queueListeningIntent("Ten songs please", previous)?.requested, 10);
+  assert.equal(queueListeningIntent("先来两首试试", previous)?.requested, 2);
+  assert.equal(queueListeningIntent("掺翻唱", previous)?.excludeKnown, true);
+  for (const text of ["啥意思？", "什么是翻唱？", "不要翻唱", "取消队列", "别加了", "What are cover versions?", "Don't queue any covers", "Tell me about ten songs", "队列里已经有十首歌", "队列没有十首歌", "Ten songs are already in my queue"]) {
+    assert.equal(queueListeningIntent(text, previous), null, text);
+  }
+  assert.equal(queueListeningIntent("Ten songs, actually two", previous)?.requested, 0);
+});

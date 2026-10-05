@@ -71,24 +71,51 @@ function queueCommand(clause, hasQueue) {
   return null;
 }
 
+export function queueCancellationRequested(text) {
+  if (typeof text !== "string") return false;
+  const value = text.normalize("NFKC").replace(/[‘’]/gu, "'").trim();
+  return /^(?:cancel|stop|算了|取消|不用了|别加了|不要加了)[.!。！]?$/iu.test(value) ||
+    /\b(?:don't|do not|never|stop|cancel|not to)\b[^,，。;；!?！？]*\bqueue\b|(?:不要|别|取消|停止)[^，。!?！？]{0,40}(?:queue|队列)/iu.test(value);
+}
+
+function queueRefinement(value, previous) {
+  if (!previous || previous.attempted || value.length > 500) return null;
+  // A count or musical version choice completes a recent, unfinished listener
+  // request. It never creates authority without that original queue request.
+  const clauses = value.split(/[,，。;；!?！？\n]|\.(?:\s|$)/u).map(clause => clause.trim()).filter(Boolean);
+  const countStart = new RegExp(`^(?:${englishCountPattern}|[+-]?(?:\\d+(?:\\.\\d+)?|\\.\\d+))\\s+(?:more\\s+)?(?:songs?|tracks?)\\b`, "iu");
+  const counts = clauses.filter(clause =>
+    /^(?:(?:队列(?:数量|首数)?|数量|首数)\s*(?:先来|就要|来|要|改成|改为)?|先来|来|就要|改成|改为)\s*(?:[零〇一二两三四五六七八九十百千万亿]+|[+-]?\d+(?:\.\d+)?)\s*首/u.test(clause) ||
+    (countStart.test(clause) && !/\b(?:are|is|were|was|already|have|has|had)\b/iu.test(clause)))
+    .map(queueCount).filter(count => count !== null);
+  const choice = value.replace(/[,，.!。！?？]/gu, " ").trim();
+  const versionChoice = /^(?:(?:掺|混|加|选|用|要|就|还是|只要|一点|一些|纯)\s*)*(?:翻唱|原唱|现场|录音室|女声|男声|纯音乐|老歌)(?:版本|版|气质)?(?:\s*(?:和|加|也|都|一点|一些|吧|的|翻唱|原唱|现场|录音室|女声|男声|纯音乐|老歌))*$/u.test(choice) ||
+    /^(?:(?:mix in|include|add|choose|use|only|just|some|a few)\s+)*(?:covers?|originals?|original versions?|live versions?|studio versions?|instrumentals?|female vocals?|male vocals?)(?:\s+please)?$/iu.test(choice);
+  if (!counts.length && !versionChoice) return null;
+  const ambiguous = counts.length > 1 || /[,，;；]\s*(?:actually|instead|make that|only|改成|改为|其实)/iu.test(value);
+  return { requested: ambiguous ? 0 : counts[0] ?? previous.requested,
+    request: previous.request, refinement: value, queue_only: previous.queue_only !== false,
+    excludeKnown: previous.excludeKnown === true };
+}
+
 export function queueListeningIntent(text, previous = null) {
   if (typeof text !== "string" || text.length > 2000) return null;
   const value = text.normalize("NFKC").replace(/[‘’]/gu, "'").trim().replace(/\b\d{1,3}(?:,\d{3})+(?:\.\d+)?\b/gu, count => count.replaceAll(",", ""));
-  const hasQueue = /\bqueue\b|(?:加入|加到|放到|排进|到|进)(?:我的)?队列/iu.test(value);
-  if (!hasQueue ||
-      /\b(?:don't|do not|never|stop|cancel|not to)\b[^,，。;；!?！？]*(?:\bqueue\b)|(?:不要|别|取消|停止)[^，。!?！？]{0,40}(?:queue|队列)/iu.test(value) ||
+  const hasQueue = /\bqueue\b|播放队列|(?:加入|加到|放到|排进|到|进)(?:我的)?队列/iu.test(value);
+  if (queueCancellationRequested(value) ||
       /\b(?:explain|describe|what(?:'s| is)|why|how|whether|tell me about|can i|should i|do i|does|show|inspect|list|read|check)\b.*\bqueue\b|^(?:为什么|怎么|如何|查看|看看|显示|读取|队列里|请问|(?:帮我|给我)(?:看看|解释|说明|介绍)|(?:请|可以|能否)?(?:解释|说明|介绍))/iu.test(value)) return null;
+  if (!hasQueue) return queueRefinement(value, previous);
   // A correction can reuse only the host's recent request, including its receipt.
   const correction = /^(?:i meant (?:the )?queue(?:\s*[,，]?\s*not (?:a )?playlist)?|queue\s*[,，]\s*not (?:a )?playlist|(?:我)?要的是\s*queue\s*[,，]?\s*不是歌单)[.!。！]?$/iu.test(value);
   if (correction && !previous) return null;
   const clauses = value.split(/[,，。;；!?！？]|\.(?:\s|$)/u);
   const commands = correction ? [] : clauses.map(clause => queueCommand(clause, hasQueue)).filter(command => command !== null);
-  if (!correction && commands.length === 0) return null;
+  if (!correction && commands.length === 0) return queueRefinement(value, previous);
   const counts = commands.map(queueCount);
   // Multiple commands or a revised quantity need an exact request before writing.
   const ambiguous = commands.length > 1 || (counts[0] === null && clauses.some(clause => queueCommand(clause, hasQueue) === null && queueCount(clause) !== null)) || /\d,\d/u.test(value) || /[,，;；]\s*(?:actually|instead|make that|only|改成|改为|其实)/iu.test(value);
   const requested = correction ? previous.requested : ambiguous ? 0 : counts[0];
-  const affirmative = value.replace(/(?:don't|don’t|do not|never)\s+[^,，.;；]+|(?:不要|别)[^，。;；]+/giu, "");
+  const affirmative = value.replace(/(?:don't|don’t|do not|never)\s+[^,，.;；]+|(?:不要|别)[^，。;；]+/giu, "").replaceAll("播放队列", "队列");
   return { requested,
     request: correction ? previous.request : value,
     queue_only: correction || !/\b(?:play|resume|pause|skip|next|previous|seek|volume|shuffle|repeat|transfer|save|create|follow|unfollow)\b|播放|暂停|下一首|上一首|音量|切换设备|保存|创建|关注/iu.test(affirmative),
