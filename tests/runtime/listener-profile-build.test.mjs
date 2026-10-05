@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { access, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import { createModels, fauxProvider, fauxAssistantMessage, fauxText, fauxToolCall } from "@earendil-works/pi-ai";
 import { MoondogApplication } from "../../src/core/moondog-application.mjs";
 import { createListeningProfileDomainServices } from "../../src/core/listening-profile-domain-services.mjs";
@@ -32,8 +35,8 @@ function bundle(count = 141, digest = "a") {
 
 async function fixture(t, initial = bundle()) {
   const root = await mkdtemp(path.join(tmpdir(), "moondog-profile-build-"));
-  const options = { databasePath: path.join(root, "history.sqlite"), boundaryRoot: root };
-  const state = {};
+  const options = { databasePath: path.join(root, "listening-history.sqlite"), boundaryRoot: root };
+  const state = { root };
   state.open = async () => {
     state.store = await openListeningHistoryStore(options);
     state.application = new MoondogApplication({
@@ -358,6 +361,8 @@ test("a fresh Pi listening session receives the saved reading, evidence tools an
   await state.application.buildListenerProfile({ runtimeFactory: scriptedRuntime() });
   await state.application.close();
   await state.open();
+  const catalog = t.mock.method(state.store, "profileCatalog");
+  const digest = t.mock.method(state.store, "profileEvidenceRevision");
   const faux = fauxProvider();
   const models = createModels();
   models.setProvider(faux.provider);
@@ -377,6 +382,8 @@ test("a fresh Pi listening session receives the saved reading, evidence tools an
     return fauxAssistantMessage([fauxText("Recovered the saved reading and its evidence.")]);
   }]);
   assert.match((await runtime.prompt("Use my saved profile to explain a recommendation.")).text, /Recovered/u);
+  assert.equal(catalog.mock.callCount(), 1, "model turns and evidence reads reuse the unchanged input");
+  assert.equal(digest.mock.callCount(), 1);
   state.store.recordListenerCorrection({ subjectId, entityType: "artist", label: "Dominant artist", stance: "avoid" });
   const fresh = new PiAgentRuntime({ application: state.application, models, model: faux.getModel(), provider: "faux", modelId: "faux-1" });
   faux.setResponses([context => {
@@ -386,4 +393,91 @@ test("a fresh Pi listening session receives the saved reading, evidence tools an
     return fauxAssistantMessage([fauxText("The saved reading needs an update.")]);
   }]);
   await fresh.prompt("What fits my current taste?");
+  assert.equal(catalog.mock.callCount(), 2, "a local correction invalidates the saved input");
+  assert.equal(digest.mock.callCount(), 2);
+});
+
+test("ordinary Pi turns skip build analysis when no saved reading exists", async t => {
+  const state = await fixture(t, bundle(3));
+  const catalog = t.mock.method(state.store, "profileCatalog");
+  const digest = t.mock.method(state.store, "profileEvidenceRevision");
+  const faux = fauxProvider();
+  const models = createModels();
+  models.setProvider(faux.provider);
+  const runtime = new PiAgentRuntime({ application: state.application, models, model: faux.getModel(), provider: "faux", modelId: "faux-1" });
+  faux.setResponses([
+    fauxAssistantMessage([fauxToolCall("moondog_profile_saved", {})], { stopReason: "toolUse" }),
+    context => {
+      const result = context.messages.find(message => message.role === "toolResult" && message.toolName === "moondog_profile_saved");
+      assert.equal(JSON.parse(result.content[0].text).state, "missing");
+      return fauxAssistantMessage([fauxText("No saved reading yet.")]);
+    },
+    fauxAssistantMessage([fauxText("Ready to listen.")]),
+  ]);
+  await runtime.prompt("Do I have a saved listening profile?");
+  await runtime.prompt("Let's listen.");
+  assert.equal(catalog.mock.callCount(), 0);
+  assert.equal(digest.mock.callCount(), 0);
+});
+
+test("saved input detects other connections and new imports without rescanning unchanged evidence", async t => {
+  const state = await fixture(t, bundle(3));
+  await state.application.buildListenerProfile({ runtimeFactory: scriptedRuntime() });
+  await state.application.close();
+  await state.open();
+  const other = await openListeningHistoryStore({ databasePath: path.join(state.root, "listening-history.sqlite") });
+  try {
+    const catalog = t.mock.method(state.store, "profileCatalog");
+    const digest = t.mock.method(state.store, "profileEvidenceRevision");
+    assert.equal((await state.application.getListenerProfile()).state, "current");
+    assert.equal((await state.application.getListenerProfile()).state, "current");
+    assert.equal(catalog.mock.callCount(), 1);
+    assert.equal(digest.mock.callCount(), 1);
+
+    other.recordListenerCorrection({ subjectId, entityType: "artist", label: "Dominant artist", stance: "avoid" });
+    assert.equal((await state.application.getListenerProfile()).state, "stale");
+    assert.equal((await state.application.getListenerProfile()).state, "stale");
+    assert.equal(catalog.mock.callCount(), 2);
+    assert.equal(digest.mock.callCount(), 2);
+    assert.ok(state.application.getProfileBuildContext().input.partitions.some(part => part.section === "listener_avoids"));
+
+    state.store.ingestImport(bundle(4, "b"));
+    assert.equal((await state.application.getListenerProfile()).state, "stale");
+    assert.equal(state.application.getProfileBuildContext().input.manifest.coverage.effective_listening_events, 4);
+    assert.equal(catalog.mock.callCount(), 3);
+    assert.equal(digest.mock.callCount(), 3);
+  } finally { other.close(); }
+});
+
+test("saved profile CLI reads and unchanged builds bypass unrelated startup services", async t => {
+  const state = await fixture(t, bundle(3));
+  state.store.localSubjectId({ preferredSubjectId: subjectId, create: true });
+  const built = await state.application.buildListenerProfile({ runtimeFactory: scriptedRuntime() });
+  await state.application.close();
+  const marker = path.join(state.root, "codex-probed");
+  const codex = path.join(state.root, "codex");
+  await writeFile(codex, '#!/bin/sh\n: > "$MOONDOG_PROBE_MARKER"\nexit 1\n', { mode: 0o700 });
+  for (const file of ["memory.sqlite", "settings.json", "spotify.json", "auth.json"]) {
+    await writeFile(path.join(state.root, file), "invalid unrelated service state");
+  }
+  const environment = {
+    ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("MOONDOG_"))),
+    MOONDOG_STATE_HOME: state.root, MOONDOG_CONFIG_HOME: state.root,
+    MOONDOG_CODEX_BIN: codex, MOONDOG_PROBE_MARKER: marker, MOONDOG_UPDATE_CHECK: "off",
+  };
+  const run = args => promisify(execFile)(process.execPath,
+    ["--disable-warning=ExperimentalWarning", fileURLToPath(new URL("../../scripts/moondog.mjs", import.meta.url)), "profile", ...args, "--json"],
+    { env: environment, timeout: 15_000, maxBuffer: 2 * 1024 * 1024 });
+  const saved = JSON.parse((await run(["saved"])).stdout);
+  assert.equal(saved.revision_id, built.revision.revision_id);
+  assert.equal(saved.state, "current");
+  const explained = JSON.parse((await run(["explain", "1"])).stdout);
+  assert.equal(explained.claim.claim_id, saved.claims[0].claim_id);
+  assert.ok(explained.supporting_evidence.length);
+  assert.equal(JSON.parse((await run(["build"])).stdout).state, "unchanged");
+  await assert.rejects(run(["build", "--force"]), error => {
+    assert.match(error.stderr, /runtime settings are not valid JSON/u);
+    return true;
+  });
+  await assert.rejects(access(marker), { code: "ENOENT" });
 });

@@ -1678,6 +1678,14 @@ export class ListeningHistoryStore {
     return new ListenerProfileStore(this.#database, subjectId.toLowerCase());
   }
 
+  profileDataVersion() {
+    if (this.#closed) throw new Error("Listening history store is closed");
+    // data_version observes other connections; total_changes observes our own.
+    // This is a connection-local cache key, never a persisted evidence digest.
+    return `${this.#database.prepare("PRAGMA data_version").get().data_version}:${
+      this.#database.prepare("SELECT total_changes() AS changes").get().changes}`;
+  }
+
   profileEvidenceRevision({ subjectId } = {}) {
     if (this.#closed) throw new Error("Listening history store is closed");
     if (!isUuid(subjectId)) throw new TypeError("A valid profile subject is required");

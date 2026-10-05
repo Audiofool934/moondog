@@ -266,11 +266,18 @@ test("saved Apple profile retains a curated tail interest and normalizes legacy 
   const built = await application.buildListenerProfile({ runtimeFactory });
   assert.equal(built.revision.coverage.coverage.apple_library_tracks, 140);
   const claim = built.revision.highlights.find(item => item.statement.startsWith("Quiet curator"));
+  const catalog = t.mock.method(store, "profileCatalog");
+  const digest = t.mock.method(store, "profileEvidenceRevision");
   const explanation = await application.getListenerProfile({ claimId: claim.claim_id });
   assert.ok(explanation.supporting_evidence[0].data.preference_strength > 0);
+  assert.equal((await application.getListenerProfile()).state, "current");
+  assert.equal(catalog.mock.callCount(), 0, "Apple reads reuse the input cached by the completed build");
+  assert.equal(digest.mock.callCount(), 0);
   store.recordListenerCorrection({ subjectId, entityType: "track", label: "Fixture song 60 - Quiet curator",
     artistCredit: "Quiet curator", stance: "avoid", occurredAt: "2026-09-01T00:00:00Z" });
   assert.equal((await application.getListenerProfile()).state, "stale");
+  assert.equal(catalog.mock.callCount(), 1);
+  assert.equal(digest.mock.callCount(), 1);
   const updated = await application.buildListenerProfile({ runtimeFactory });
   assert.equal(updated.revision.sequence, 2);
   assert.ok(updated.revision.highlights.some(item => item.statement === "Quiet curator has an imported Apple preference strength of 0."));

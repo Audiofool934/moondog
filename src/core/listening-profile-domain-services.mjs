@@ -412,6 +412,7 @@ export class ListeningProfileDomainServices {
   #store;
   #subjectId;
   #candidateSets = new Map();
+  #profileBuildInput;
 
   constructor({ listeningHistoryStore, subjectId } = {}) {
     if (
@@ -615,15 +616,20 @@ export class ListeningProfileDomainServices {
     return typeof this.#store.listenerProfileStorage === "function";
   }
 
+  getListenerProfileStore() {
+    return this.#store.listenerProfileStorage({ subjectId: this.#subjectId });
+  }
+
   getProfileBuildContext() {
-    return {
-      store: this.#store.listenerProfileStorage({ subjectId: this.#subjectId }),
-      input: createListenerProfileInput({
+    const version = this.#store.profileDataVersion();
+    if (this.#profileBuildInput?.version !== version) {
+      this.#profileBuildInput = { version, input: createListenerProfileInput({
         subjectId: this.#subjectId,
         evidenceRevision: this.#store.profileEvidenceRevision({ subjectId: this.#subjectId }),
         listening: this.#store.profileCatalog({ subjectId: this.#subjectId }),
-      }),
-    };
+      }) };
+    }
+    return { store: this.getListenerProfileStore(), input: this.#profileBuildInput.input };
   }
 
   async getRediscoveryCandidates(argumentsValue) {
