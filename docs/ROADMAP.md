@@ -95,10 +95,12 @@ The current priority is to complete and validate the personal listening loop in 
 
 - [ ] Make the first requested profile build useful and reliable without a listener-led correction cycle.
   This is the highest-priority profile outcome as of 2026-10-05.
+  Success means a plausible, multidimensional and internally coherent understanding that supports listening and discovery, with reasonable tolerance for inference error and local factual imperfections.
   One build may include bounded internal verification and repair, but the listener must not repeatedly inspect, correct, and rerun it to obtain a sound first result.
   Completion requires fresh-build evidence against the [first-build acceptance target](LISTENER_PROFILE_HARNESS_RESEARCH.md#first-build-quality-target-2026-10-05), with later listener feedback withheld from the builder's initial input.
-  Preserve supported musical detail while verifying factual claims, citation meaning, metric and source scope, counterexamples, and the distinction between current attention and enduring taste.
+  Preserve supported musical detail and distinguish current attention from enduring taste; prioritize errors that materially distort that understanding over exhaustive factual or citation perfection.
   Candidate verification and bounded automatic repair now run before saving, with resumable draft and check checkpoints; the first-build quality target still needs live evaluation across varied inputs.
+  The next iteration should simplify the existing claim-by-claim gate toward a bounded whole-profile coherence check, without accumulating listener-specific rules or review machinery to eliminate every error.
   A dedicated user-facing profile inspection workflow remains an undecided later feature, not a dependency of this outcome.
 - [x] Build a persistent listener-profile revision from complete imported evidence, using deterministic digests, model-led investigation, and traceable claims.
   `/profile build` saves typed findings and frozen cited evidence, resumes interrupted work, and reuses an unchanged input.

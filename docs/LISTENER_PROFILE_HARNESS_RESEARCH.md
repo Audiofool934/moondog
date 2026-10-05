@@ -216,20 +216,28 @@ See the [terminal guide](TERMINAL_GUIDE.md#saved-listener-profiles) and [builder
 ## First-build quality target (2026-10-05)
 
 The next priority is a useful and reliable profile from the listener's initial import and one requested build.
+The quality target is a plausible, multidimensional and internally coherent working understanding that the model can use for listening and discovery.
+Reasonable inference error and local factual imperfections are acceptable; neither exhaustive correctness nor exact agreement with a listener's self-description defines success.
+Long-term interests, recent attention, collection evidence and uncertainty should coexist in a coherent reading, with room for supported interpretation.
 Repeated owner review is a development and evaluation method, not the intended newcomer experience.
 A dedicated user-facing inspection workflow remains an undecided later feature.
 Existing evidence and correction commands remain available, but expanding that workflow must not substitute for improving the builder.
 
 One build can perform several internal passes without requiring another user request.
-The target path is source-coverage analysis, grounded investigation, global synthesis, claim verification, and bounded automatic repair before saving the result.
+Keep the target path simple: understand source coverage, investigate the evidence, synthesize the profile, then make a bounded whole-profile coherence check and revise material problems when needed.
+Prioritize contradictions, invented direct preferences and unsupported narratives that substantially change the musical understanding.
+An isolated minor defect should not require a larger review pipeline or prevent an otherwise useful reading from being delivered.
 Progress, cancellation, resumable checkpoints, and preservation of the previous revision still apply.
-Network interruption and unavailable evidence must be reported honestly; they do not justify publishing an unverified interpretation as a successful reading.
+Report network interruption and unavailable evidence honestly, and distinguish these operational failures from ordinary uncertainty in a model's interpretation.
 
 Compilation checks types, coverage of digest pages, and the existence of evidence references.
 The implemented verification stage adds a separate model judgment about entailment, contradiction, factual and source scope, and useful coverage.
 The host requires a complete report bound to the exact candidate, including every cited reference for each highlighted claim, and withholds the new revision when any check requests repair.
 The model can search the complete frozen evidence catalog to investigate claims omitted or misstated in earlier page findings.
 This establishes a bounded verification and repair mechanism; agreement between model stages is not proof that the final interpretation is correct.
+The current claim-by-claim gate is an implementation snapshot and is stricter than this quality target.
+The next iteration should simplify it toward a small whole-profile check of plausibility, meaningful breadth and consistency, preserving the existing recovery and evidence facilities.
+Add specialized checks only for observed failures with a material effect on that understanding; do not grow listener-specific rules or repeated review machinery to chase perfect agreement.
 The first-build quality target is not yet a verified capability.
 
 ### Acceptance cases
@@ -241,7 +249,7 @@ The first-build quality target is not yet a verified capability.
 | A meaningful smaller interest with evidence across history or curation | Preserve it in the reading without equating play duration with the listener's subjective importance. |
 | Repeated tracks, skips, or high completion | Describe supported behavior without inventing dislike, driving, mood, intention, or a preference ranking from those measures. |
 | A library snapshot with partial or missing counts | Keep curation separate from dated plays and do not treat unknown counts as zero lifetime listening or unfamiliarity. |
-| A rank, total, comparison, category, or counterexample | Verify the exact metric, denominator, source scope, classification basis, and relationship to the cited proposition. |
+| A rank, total, comparison, category, or counterexample central to the interpretation | Check that its metric, source scope and evidence support the musical judgment, with effort proportionate to the consequence of being wrong. |
 | A fact unavailable in the permitted input | Leave it unknown or qualify the conclusion; do not guess the private fact that a later listener review reveals. |
 
 ### Evaluation boundary
@@ -253,7 +261,9 @@ When evaluating personalization from supplied feedback, label that as a separate
 
 Use a small set of fictional or authorized private profiles that varies source coverage, temporal patterns, and musical interests rather than tuning only to one listener's names or answers.
 Keep private examples and raw feedback outside public fixtures and reports.
-Assess useful supported coverage, factual and citation correctness, unjustified interpretations, and whether the result requires listener repair before it can support discovery.
+Assess whether the model's reasoning is plausible from the available evidence and whether the whole reading preserves meaningful interests without material internal contradictions.
+Distinguish defects that change the dominant musical understanding from minor factual, citation or phrasing imperfections.
+Use a small set of concrete examples to guide development rather than expanding a benchmark or rule set around every listener disagreement.
 Passing by deleting all substantive insights or substituting generic uncertainty language is not acceptable.
 Record internal repair attempts, model calls, elapsed time, and available usage data so quality improvements remain proportionate and observable.
 Repeat fresh runs when needed to distinguish stable behavior from a lucky sample; faux-model tests alone cannot establish this outcome.
