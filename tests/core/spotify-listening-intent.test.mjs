@@ -88,7 +88,9 @@ test("pending queue refinements preserve exclusions and never turn questions or 
   const previous = { requested: 4, request: "queue four unheard tracks", queue_only: true, excludeKnown: true };
   assert.equal(queueListeningIntent("Ten songs please", previous)?.requested, 10);
   assert.equal(queueListeningIntent("先来两首试试", previous)?.requested, 2);
+  for (const text of ["十首", "10首", "十首就好"]) assert.equal(queueListeningIntent(text, previous)?.requested, 10);
   assert.equal(queueListeningIntent("掺翻唱", previous)?.excludeKnown, true);
+  assert.equal(queueListeningIntent("掺翻唱", { ...previous, queue_only: false })?.queue_only, true);
   for (const text of ["啥意思？", "什么是翻唱？", "不要翻唱", "取消队列", "别加了", "What are cover versions?", "Don't queue any covers", "Tell me about ten songs", "队列里已经有十首歌", "队列没有十首歌", "Ten songs are already in my queue"]) {
     assert.equal(queueListeningIntent(text, previous), null, text);
   }

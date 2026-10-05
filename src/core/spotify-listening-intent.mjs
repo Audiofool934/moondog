@@ -85,7 +85,7 @@ function queueRefinement(value, previous) {
   const clauses = value.split(/[,，。;；!?！？\n]|\.(?:\s|$)/u).map(clause => clause.trim()).filter(Boolean);
   const countStart = new RegExp(`^(?:${englishCountPattern}|[+-]?(?:\\d+(?:\\.\\d+)?|\\.\\d+))\\s+(?:more\\s+)?(?:songs?|tracks?)\\b`, "iu");
   const counts = clauses.filter(clause =>
-    /^(?:(?:队列(?:数量|首数)?|数量|首数)\s*(?:先来|就要|来|要|改成|改为)?|先来|来|就要|改成|改为)\s*(?:[零〇一二两三四五六七八九十百千万亿]+|[+-]?\d+(?:\.\d+)?)\s*首/u.test(clause) ||
+    /^(?:(?:队列(?:数量|首数)?|数量|首数)\s*(?:先来|就要|来|要|改成|改为)?|先来|来|就要|改成|改为)?\s*(?:[零〇一二两三四五六七八九十百千万亿]+|[+-]?\d+(?:\.\d+)?)\s*首/u.test(clause) ||
     (countStart.test(clause) && !/\b(?:are|is|were|was|already|have|has|had)\b/iu.test(clause)))
     .map(queueCount).filter(count => count !== null);
   const choice = value.replace(/[,，.!。！?？]/gu, " ").trim();
@@ -94,7 +94,7 @@ function queueRefinement(value, previous) {
   if (!counts.length && !versionChoice) return null;
   const ambiguous = counts.length > 1 || /[,，;；]\s*(?:actually|instead|make that|only|改成|改为|其实)/iu.test(value);
   return { requested: ambiguous ? 0 : counts[0] ?? previous.requested,
-    request: previous.request, refinement: value, queue_only: previous.queue_only !== false,
+    request: previous.request, refinement: value, queue_only: true,
     excludeKnown: previous.excludeKnown === true };
 }
 
