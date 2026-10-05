@@ -145,6 +145,7 @@ export class ProfileBuildRuntime {
             "Check every factual clause in the summary and every highlighted statement, including their scope and uncertainty. Citation existence is not support: match numbers, rankings, identities, classifications and time/source comparisons to the actual data.",
             "Judge the candidate's exact wording. Do not silently paraphrase a false clause into a true one and then mark it supported. For grouped artists, check each member's stated language or genre; for rankings, read the section's metric; for provider totals, separate each source's coverage.",
             "The summary may use supported insights, manifest coverage and explicit choices; it must not introduce unchecked facts. An uncertainty sentence does not excuse a false statement or an overly certain observation.",
+            "Read scope across the whole paragraph and its supplied scope/uncertainty fields. A summary introduced as imported local evidence does not need that qualifier repeated after every number. Do not request a date or limit already stated, or treat a complete section as a sample when its total equals the supplied rows. Return revise for a concrete factual, citation, interpretation or material-coverage defect, not for redundant qualifiers or a preferred phrasing.",
             "For each claim, inspect every supplied support and counter reference and include all of them in evidence_refs. Inspect continuations or search the raw catalog when needed, especially for only, never, all or changing-interest claims. Page findings are provisional and cannot prove a claim on their own.",
             "A wrong supporting citation or compatible reference labeled as a counterexample requires revise, even if the underlying musical fact is true. This is a correctness problem. Evidence you find elsewhere does not fix the candidate's references until a repaired draft cites it. Include the bad references in your check so the writer can fix their roles.",
             "Return supported only when the scope and evidence justify the whole target. Return revise with a specific factual problem and a feasible correction or narrower claim. Do not request unavailable private facts or cosmetic rewrites.",
@@ -185,7 +186,7 @@ export class ProfileBuildRuntime {
     try {
       await agent.prompt(JSON.stringify({ phase: session.phase, manifest: session.manifest, progress: session.progress(),
         ...(review ? { saved_findings: session.findings() }
-          : !verification || batch.targets.includes("coverage") ? { global_overview: session.overview } : {}),
+          : !verification || batch.targets.some(target => ["summary", "coverage"].includes(target)) ? { global_overview: session.overview } : {}),
         ...(verification ? { candidate: batch.candidate, verification_targets: batch.targets } : {}),
         ...(repair ? { candidate: session.candidate } : {}),
         ...(repair ? { verification: session.verification } : {}),
