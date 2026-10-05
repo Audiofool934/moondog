@@ -501,6 +501,15 @@ test("TUI builds a saved reading, exposes its evidence, and cancels with a recov
         session.modelRetry(null);
       }
       const pending = session.progress().pending;
+      if (session.phase === "verification") {
+        session.verify({ candidate_id: session.candidate.candidate_id,
+          checks: ["summary", "coverage", ...session.candidate.insights.map(claim => claim.claim_id)].map(target => {
+            const claim = session.candidate.insights.find(item => item.claim_id === target);
+            return { target, status: "supported", reason: "The fictional reading matches its scoped evidence.",
+              evidence_refs: claim ? [...claim.supporting_refs, ...claim.contradicting_refs] : [] };
+          }) });
+        return;
+      }
       if (pending.length) {
         for (const part of pending.slice(0, 2)) {
           const page = session.read(part.partition_id);

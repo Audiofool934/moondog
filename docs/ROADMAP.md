@@ -98,6 +98,7 @@ The current priority is to complete and validate the personal listening loop in 
   One build may include bounded internal verification and repair, but the listener must not repeatedly inspect, correct, and rerun it to obtain a sound first result.
   Completion requires fresh-build evidence against the [first-build acceptance target](LISTENER_PROFILE_HARNESS_RESEARCH.md#first-build-quality-target-2026-10-05), with later listener feedback withheld from the builder's initial input.
   Preserve supported musical detail while verifying factual claims, citation meaning, metric and source scope, counterexamples, and the distinction between current attention and enduring taste.
+  Candidate verification and bounded automatic repair now run before saving, with resumable draft and check checkpoints; the first-build quality target still needs live evaluation across varied inputs.
   A dedicated user-facing profile inspection workflow remains an undecided later feature, not a dependency of this outcome.
 - [x] Build a persistent listener-profile revision from complete imported evidence, using deterministic digests, model-led investigation, and traceable claims.
   `/profile build` saves typed findings and frozen cited evidence, resumes interrupted work, and reuses an unchanged input.

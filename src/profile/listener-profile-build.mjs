@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 
 export const LISTENER_PROFILE_ANALYSIS_VERSION = "listener-profile/1";
-export const LISTENER_PROFILE_SYNTHESIS_VERSION = "listener-synthesis/2";
+export const LISTENER_PROFILE_SYNTHESIS_VERSION = "listener-synthesis/3";
 export const PROFILE_DIGEST_ROWS = 24;
 
 function sectionSemantics(section) {
@@ -14,6 +14,7 @@ function sectionSemantics(section) {
       limitations: "Attention in the imported history is not a direct statement of liking. Recent and lifetime views overlap; do not add their totals." };
   }
   if (section === "history_years") return { ...common,
+    ordering: "top_artist is selected by measured listening duration, not play count. Row position is not a preference ranking.",
     limitations: "Years have unequal coverage. Sparse or missing imported records do not establish a gap in the listener's actual listening." };
   if (section === "saved_tracks") return {
     ordering: "Measured listening duration descending, then playlist membership count descending, then title.",
@@ -86,7 +87,7 @@ export function createListenerProfileInput({ subjectId, evidenceRevision, listen
   return { subjectId, input_digest, manifest, partitions, evidence };
 }
 
-export function modelEvidence(entry, offset = 0) {
+export function modelEvidence(entry, offset = 0, limit = 12) {
   // Only music observations cross the model boundary. Local identities and
   // provider handles remain in the private frozen evidence snapshot.
   const fields = new Set([
@@ -104,8 +105,8 @@ export function modelEvidence(entry, offset = 0) {
   const continuations = {};
   for (const [key, value] of Object.entries(data)) {
     if (Array.isArray(value)) {
-      data[key] = value.slice(offset, offset + 12);
-      if (value.length > offset + 12) continuations[key] = { total: value.length, next_offset: offset + 12 };
+      data[key] = value.slice(offset, offset + limit);
+      if (value.length > offset + limit) continuations[key] = { total: value.length, next_offset: offset + limit };
     }
   }
   return { ...entry, data, ...(Object.keys(continuations).length ? { continuations } : {}) };
@@ -130,14 +131,17 @@ function validateClaim(input, raw, own) {
   if (!["observation", "hypothesis"].includes(raw?.kind)) {
     throw new TypeError("Only the listener can establish a direct preference");
   }
-  const references = (values, minimum) => {
-    if (!Array.isArray(values) || values.length < minimum || values.length > 8 || new Set(values).size !== values.length ||
-        values.some(id => !input.evidence.has(id))) throw new TypeError("Listener profile evidence reference is invalid");
+  const references = (values, minimum, role) => {
+    if (!Array.isArray(values) || values.length < minimum || values.length > 8 || new Set(values).size !== values.length) {
+      throw new TypeError(`Listener profile evidence reference is invalid: ${role} needs ${minimum} to 8 unique references`);
+    }
+    const unknown = values.filter(id => !input.evidence.has(id));
+    if (unknown.length) throw new TypeError(`Listener profile evidence reference is invalid: ${role} contains unknown IDs ${JSON.stringify(unknown)}. Copy exact IDs from the raw evidence tools.`);
     return [...values];
   };
-  const supporting_refs = references(raw.supporting_refs, 1);
+  const supporting_refs = references(raw.supporting_refs, 1, "supporting_refs");
   if (own && !supporting_refs.some(id => own.has(id))) throw new TypeError("A finding must cite its reviewed partition");
-  const contradicting_refs = references(raw.contradicting_refs ?? [], 0);
+  const contradicting_refs = references(raw.contradicting_refs ?? [], 0, "contradicting_refs");
   if (contradicting_refs.some(id => supporting_refs.includes(id))) throw new TypeError("Supporting and conflicting evidence must differ");
   const claim = {
     kind: raw.kind, statement: text(raw.statement, 700, "statement"),
@@ -209,11 +213,13 @@ export function readListenerProfile({ input, store }, { offset = 0, limit = 12, 
   const revision = revisionId ? store.revision(revisionId) : current;
   if (revisionId && !revision) throw new Error("That saved profile version is unavailable");
   if (!revision) return { state: "missing", total_claims: 0, claims: [], next_offset: null };
-  const state = revision.input_digest === input.input_digest && revision.synthesis_version === LISTENER_PROFILE_SYNTHESIS_VERSION ? "current" : "stale";
+  const state = revision.input_digest === input.input_digest && revision.synthesis_version === LISTENER_PROFILE_SYNTHESIS_VERSION &&
+    revision.verification?.state === "passed" ? "current" : "stale";
   const result = {
     state, revision_id: revision.revision_id, sequence: revision.sequence,
     parent_revision_id: revision.parent_revision_id, built_at: revision.built_at, model: revision.model,
     synthesis_version: revision.synthesis_version,
+    verification: revision.verification,
     summary: revision.summary, coverage: revision.coverage,
     total_claims: revision.claims.length,
     claims: revision.claims.slice(offset, offset + limit), offset,

@@ -1550,9 +1550,15 @@ This sends bounded music evidence digests to that configured model; it does not 
 
 The builder reviews full-corpus digest pages and saves intermediate findings.
 After every page is reviewed, a fresh model session receives a cross-source overview of lifetime and recent listening leaders, yearly coverage, library curation, and explicit choices.
-It can search earlier page findings by source or text and inspect their raw references before writing the final summary and evidence-linked insights.
+It can search earlier page findings and the full raw evidence catalog by source or text before writing a candidate summary and evidence-linked insights.
 Page order is not addition chronology, missing library play counts are unknown, and presence in a collection does not establish familiarity or liking.
-The host validates references and commits a new version while keeping the previous reading and all page findings.
+Fresh model sessions check up to three highlighted insights at a time against raw evidence, including all supporting and conflicting references.
+The summary and useful coverage receive a separate final check; earlier model page findings are unavailable to the verifier.
+It checks metric and source scope, citation meaning, counterexamples, and unsupported interpretations of recent attention, subjective importance, or listening context.
+Failed checks trigger up to two automatic revisions within the same build, each followed by another check.
+Repairs patch failed claims; unchanged claims retain their checks, while the summary and coverage are checked again.
+Only a candidate that passes all checks becomes the current reading; the previous version and all page findings remain available.
+These are model judgments, not a guarantee that every interpretation is correct, and earlier page findings remain provisional.
 A finding distinguishes a measured observation, a hypothesis with uncertainty, or an explicit listener choice.
 `/profile saved` shows the final insights and the listener's explicit choices, using their original finding numbers.
 Use `/profile saved 0` to browse all saved findings, twelve at a time, and follow its next-page command to read more.
@@ -1566,14 +1572,17 @@ The separate synthesis stage can reuse pages from an older completed build with 
 Use `/profile build --force` to start a fresh interpretation with the current model.
 
 Ctrl+C stops the build and keeps saved progress and the previous version.
-One `/profile build` continues automatically through all evidence pages and synthesis, using fresh model sessions as needed.
+One `/profile build` continues automatically through all evidence pages, synthesis, verification, and any needed repairs, using fresh model sessions as needed.
 Reaching a session's turn limit does not stop the build or require another command.
-If you cancel, a model request fails, or the model stops making progress, run `/profile build` again to resume saved findings.
+The terminal shows whether it is reading, synthesizing, checking, or correcting the profile.
+The checking and repair stages share a limit of eighteen model sessions per invocation, including up to five checking batches per draft.
+If you cancel, a model request fails, the model stops making progress, or automatic checking reaches its limit, the previous profile stays available and the unfinished build is retained.
+Run `/profile build` again to resume the saved pages, candidate, and unfinished checking batches rather than starting over.
 For DeepSeek, transient connection failures before a response starts receive up to two short retries of the same model request, with progress shown in the terminal.
 Saved finding tools are not replayed by these retries.
 Authentication, quota, HTTP errors, and broken response streams stop with a diagnostic and the saved page count.
 Credential-bearing authentication details are redacted.
-If evidence changes during synthesis, the new version is rejected and the previous version stays available.
+If evidence changes during synthesis or checking, the new version is rejected and the previous version stays available.
 Saved profiles and evidence snapshots live in the private listening database and are included in `data export --scope listening` or `--scope profile`.
 Resetting the corresponding scope archives that database, including its saved readings.
 An Apple-only reset removes the Apple projection; combined readings remain in the listening scope as historical snapshots until that scope is reset too.

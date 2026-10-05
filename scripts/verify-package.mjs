@@ -24,9 +24,9 @@ const repositoryRoot = path.resolve(
   "..",
 );
 const maximumPackedBytes = 2_500_000;
-// The persistent profile builder adds five runtime modules (about 35 KB).
-const maximumUnpackedBytes = 4_400_000;
-const maximumEntries = 120;
+// Profile verification adds one module plus resumable checking and repair logic.
+const maximumUnpackedBytes = 4_425_000;
+const maximumEntries = 121;
 const packageOnlyPrivateSentinelPattern = new RegExp(
   ["PRIVATE", "(?:IP|PLATFORM)", "SENTINEL"].join("_"),
   "u",
@@ -63,6 +63,7 @@ const requiredPackagePaths = new Set([
   "src/profile/listener-profile-build.mjs",
   "src/profile/listener-profile-store.mjs",
   "src/profile/listener-profile-worker.mjs",
+  "src/profile/listener-profile-verification.mjs",
   "src/runtime/pi/profile-build-runtime.mjs",
   "src/surfaces/cli/listener-profile-command.mjs",
   "src/runtime/pi/skills/listener-profile/SKILL.md",

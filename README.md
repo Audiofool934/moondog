@@ -99,6 +99,7 @@ Apple's privacy download, and full QQ or NetEase listening history, are not supp
 The [terminal guide](docs/TERMINAL_GUIDE.md#import-and-inspect-listening-history) has every format.
 
 With a connected model, `/profile build` saves a versioned reading of the complete supported evidence.
+It checks the candidate against its evidence and can repair unsupported conclusions before saving, within the same build.
 Use `/profile saved` to read it and `/profile explain 1` to trace a finding to its evidence, including after restarting.
 New imports or corrections mark it for an update; interrupted builds keep progress and the previous reading.
 The builder sends bounded music digests to your configured model when you request it.

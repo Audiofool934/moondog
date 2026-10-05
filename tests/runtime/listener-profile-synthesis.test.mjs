@@ -107,6 +107,14 @@ test("a completed legacy reading reuses its pages for a fresh cross-source synth
     publicStatus: () => ({ state: "configured", ...model }), abort() {},
     async investigate(session) {
       sessions++;
+      if (session.phase === "verification") {
+        session.verify({ candidate_id: session.candidate.candidate_id, checks: [
+          ...["summary", "coverage"].map(target => ({ target, status: "supported", reason: "Scoped fictional overview.", evidence_refs: [] })),
+          ...session.candidate.insights.map(claim => ({ target: claim.claim_id, status: "supported", reason: "Both windows support this comparison.",
+            evidence_refs: [...claim.supporting_refs, ...claim.contradicting_refs] })),
+        ] });
+        return;
+      }
       assert.equal(session.phase, "synthesis");
       assert.equal(session.progress().pending.length, 0);
       const lifetime = session.overview.find(section => section.section === "history_artists").items[0];
@@ -123,7 +131,7 @@ test("a completed legacy reading reuses its pages for a fresh cross-source synth
           supporting_refs: [lifetime.reference_id, recent.reference_id], contradicting_refs: [] }] });
     },
   }) });
-  assert.equal(sessions, 1);
+  assert.equal(sessions, 2);
   assert.equal(result.reused_partitions, input.partitions.length - 1);
   assert.equal(result.revision.sequence, 2);
   assert.equal(result.revision.parent_revision_id, v1.revision_id);

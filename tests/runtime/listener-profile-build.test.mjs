@@ -80,9 +80,19 @@ function submit(session) {
     insights: [...new Map(selected.map(claim => [claim.claim_id, claim])).values()] });
 }
 
+function approve(session) {
+  session.verify({ candidate_id: session.candidate.candidate_id, checks: [
+    ...["summary", "coverage"].map(target => ({ target, status: "supported", reason: "Supported fictional overview.", evidence_refs: [] })),
+    ...session.candidate.insights.map(claim => ({ target: claim.claim_id, status: "supported",
+      reason: "The fictional observation matches its evidence.",
+      evidence_refs: [...claim.supporting_refs, ...claim.contradicting_refs] })),
+  ] });
+}
+
 function scriptedRuntime(investigate = async session => {
   while (session.progress().pending.length) for (const item of session.progress().pending) reviewPage(session, item.partition_id);
   if (session.phase === "synthesis") submit(session);
+  else if (session.phase === "verification") approve(session);
 }) {
   return async () => ({ publicStatus: () => modelStatus, investigate, abort() {} });
 }
@@ -142,6 +152,7 @@ test("interrupted builds checkpoint pages, resume after restart, and keep the pr
     resumed = session.progress();
     while (session.progress().pending.length) for (const part of session.progress().pending) reviewPage(session, part.partition_id);
     if (session.phase === "synthesis") submit(session);
+    else if (session.phase === "verification") approve(session);
   }) });
   assert.ok(resumed.reused_partitions > 0);
   assert.equal(final.revision.sequence, 2);
@@ -176,6 +187,7 @@ test("one command resumes 77 of 666 saved pages and continues through review and
   const result = await state.application.buildListenerProfile({
     onProgress: value => progress.push(value.reviewed_partitions),
     runtimeFactory: scriptedRuntime(async session => {
+      if (session.phase === "verification") { approve(session); return; }
       assert.ok(reviewSessions + synthesisSessions < 90, "continuation must make finite progress");
       if (session.progress().pending.length) {
         reviewSessions++;
@@ -201,7 +213,7 @@ test("one command resumes 77 of 666 saved pages and continues through review and
   assert.equal(reviewSessions, 30);
   assert.equal(synthesisSessions, Math.ceil(666 / 12));
   assert.deepEqual(offsets, Array.from({ length: synthesisSessions }, (_, index) => index * 12));
-  assert.deepEqual(progress, Array.from({ length: 666 - 77 + 1 }, (_, index) => index + 77));
+  assert.deepEqual([...new Set(progress)], Array.from({ length: 666 - 77 + 1 }, (_, index) => index + 77));
   assert.equal(result.revision.coverage.reviewed_partitions, 666);
 });
 
@@ -238,7 +250,7 @@ test("invalid references and changes during synthesis cannot publish a profile",
     const claim = finding(part.items[0]);
     claim.supporting_refs = ["invented"];
     session.review(part.partition_id, { note: "Bad reference", claims: [claim] });
-  }) }), /evidence reference/u);
+  }) }), /evidence reference.*invented/u);
   await assert.rejects(state.application.buildListenerProfile({ force: true, runtimeFactory: scriptedRuntime(async session => {
     while (session.progress().pending.length) for (const part of session.progress().pending) reviewPage(session, part.partition_id);
     if (session.phase === "synthesis") {
@@ -282,6 +294,25 @@ test("one build command continues across Pi session limits until every page is s
         supporting_refs: claim.supporting_refs, contradicting_refs: claim.contradicting_refs,
       })) })], { stopReason: "toolUse" });
   });
+  const verifyBatch = context => {
+    const content = context.messages.find(message => message.role === "user").content;
+    const initial = JSON.parse(typeof content === "string" ? content : content.map(item => item.text ?? "").join(""));
+    assert.equal(initial.phase, "verification");
+    assert.ok(initial.candidate.cited_evidence.length > 0);
+    const leading = JSON.stringify(context.messages[0]);
+    assert.match(leading, /moondog_record_profile_verification/u);
+    assert.doesNotMatch(leading, /moondog_record_profile_findings|moondog_submit_listener_profile|moondog_read_profile_findings|moondog_read_profile_digest/u);
+    if (!initial.verification_targets.includes("coverage")) {
+      assert.ok(initial.candidate.insights.length <= 3);
+      assert.equal(initial.candidate.summary, undefined);
+      assert.equal(initial.global_overview, undefined);
+    }
+    let report;
+    approve({ candidate: initial.candidate, verify: value => { report = value; } });
+    report.checks = report.checks.filter(check => initial.verification_targets.includes(check.target));
+    return fauxAssistantMessage([fauxToolCall("moondog_record_profile_verification", report)], { stopReason: "toolUse" });
+  };
+  responses.push(verifyBatch, verifyBatch, verifyBatch);
   faux.setResponses(responses);
   let output = "";
   const progress = [];
@@ -291,7 +322,7 @@ test("one build command continues across Pi session limits until every page is s
   assert.equal(result.state, "ready");
   assert.ok(partitions.length * 2 > runtime.maxTurns);
   assert.equal(result.revision.coverage.reviewed_partitions, partitions.length);
-  assert.deepEqual(progress, Array.from({ length: partitions.length + 1 }, (_, index) => index));
+  assert.deepEqual([...new Set(progress)], Array.from({ length: partitions.length + 1 }, (_, index) => index));
   assert.match(output, /Saved your new listening profile/u);
   assert.doesNotMatch(output, /Use .* build to continue/u);
   assert.equal(runtime.activeAgent, null);

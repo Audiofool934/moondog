@@ -196,7 +196,11 @@ Current deterministic tool tests establish access and arithmetic, not that final
 The TUI now supports `/profile build`, `/profile saved`, and `/profile explain <number>`; the Pi agent exposes matching build and saved-evidence tools.
 The builder uses complete local analysis catalogs, stable input fingerprints, typed findings, and immutable SQLite revisions with frozen cited evidence.
 A dedicated Pi worker reads bounded digest pages and checkpoints its findings before the current revision is replaced.
-A separate synthesis session receives measured cross-source anchors and section ordering semantics, then searches saved findings and writes global insights with raw evidence references.
+A separate synthesis session receives measured cross-source anchors and section ordering semantics, then searches saved findings and writes candidate global insights with raw evidence references.
+Fresh verification sessions check up to three highlighted insights at a time using only frozen raw evidence, then check the complete summary and useful coverage.
+Failed checks trigger up to two automatic repairs per invocation, with a new verification after each repair and an overall limit of eighteen verification or repair sessions.
+Drafts and verification reports are resumable checkpoints; a failed or interrupted check does not replace the previous revision.
+Repairs target failed claim IDs and preserve other claims; identical claims retain their raw-evidence checks within the frozen input, while summary and coverage are always checked again.
 Compatible pages from an earlier completed build remain reusable when only the synthesis changes.
 Changed evidence invalidates the saved reading, identical imports reuse it, and interrupted builds can continue after restarting.
 The compact current reading is available to a fresh listening conversation; stale inferred text is withheld from that context.
@@ -221,9 +225,11 @@ The target path is source-coverage analysis, grounded investigation, global synt
 Progress, cancellation, resumable checkpoints, and preservation of the previous revision still apply.
 Network interruption and unavailable evidence must be reported honestly; they do not justify publishing an unverified interpretation as a successful reading.
 
-Current compilation checks types, coverage of digest pages, and the existence of evidence references.
-It does not establish that a reference entails a statement or logically contradicts it.
-The next bounded implementation slice should verify the final summary and highlighted claims against raw evidence, repair unsupported claims automatically, and retain a useful scoped result when a stronger conclusion cannot be established.
+Compilation checks types, coverage of digest pages, and the existence of evidence references.
+The implemented verification stage adds a separate model judgment about entailment, contradiction, factual and source scope, and useful coverage.
+The host requires a complete report bound to the exact candidate, including every cited reference for each highlighted claim, and withholds the new revision when any check requests repair.
+The model can search the complete frozen evidence catalog to investigate claims omitted or misstated in earlier page findings.
+This establishes a bounded verification and repair mechanism; agreement between model stages is not proof that the final interpretation is correct.
 The first-build quality target is not yet a verified capability.
 
 ### Acceptance cases

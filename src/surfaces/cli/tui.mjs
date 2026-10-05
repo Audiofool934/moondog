@@ -1563,6 +1563,9 @@ export async function runMoondogTui({
         signal: localCommandController?.signal,
         onProgress: progress => setFooter(progress.model_retry
           ? `Retrying model ${progress.model_retry.attempt}/${progress.model_retry.maxRetries}. ${progress.reviewed_partitions}/${progress.total_partitions} pages saved. Ctrl+C cancels.`
+          : progress.phase === "verification" ? `Checking your profile: ${progress.checked_targets}/${progress.total_check_targets} conclusions. Ctrl+C saves progress.`
+          : progress.phase === "repair" ? "Correcting unsupported profile conclusions before saving. Ctrl+C saves progress."
+          : progress.phase === "complete" ? "Saving your checked listening profile."
           : progress.phase === "synthesis" ? `Synthesizing your listening profile. ${progress.reviewed_partitions}/${progress.total_partitions} pages saved. Ctrl+C saves progress.`
           : `Reading your music: ${progress.reviewed_partitions}/${progress.total_partitions} evidence pages. Ctrl+C saves progress.`),
       }));

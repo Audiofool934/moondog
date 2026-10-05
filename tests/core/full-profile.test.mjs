@@ -256,6 +256,11 @@ test("saved Apple profile retains a curated tail interest and normalizes legacy 
       }
       if (session.phase === "synthesis") session.submit({ summary: "A smaller curated interest is preserved alongside dominant preferences.",
         insights: [...new Map(insights.map(claim => [claim.claim_id, claim])).values()] });
+      else if (session.phase === "verification") session.verify({ candidate_id: session.candidate.candidate_id, checks: [
+        ...["summary", "coverage"].map(target => ({ target, status: "supported", reason: "Scoped fictional curation evidence.", evidence_refs: [] })),
+        ...session.candidate.insights.map(claim => ({ target: claim.claim_id, status: "supported",
+          reason: "The snapshot contains this preference strength.", evidence_refs: [...claim.supporting_refs, ...claim.contradicting_refs] })),
+      ] });
     },
   });
   const built = await application.buildListenerProfile({ runtimeFactory });

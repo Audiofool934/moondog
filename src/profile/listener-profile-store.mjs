@@ -109,6 +109,19 @@ export class ListenerProfileStore {
     } catch (error) { this.database.exec("ROLLBACK"); throw error; }
   }
 
+  checkpointFinalization(build, finalization) {
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      this.#assertLease(build);
+      const row = this.database.prepare("SELECT record_json FROM listener_profile_builds WHERE build_id = ?")
+        .get(build.build_id);
+      const record = { ...JSON.parse(row.record_json), finalization };
+      this.database.prepare("UPDATE listener_profile_builds SET record_json = ? WHERE build_id = ?")
+        .run(JSON.stringify(record), build.build_id);
+      this.database.exec("COMMIT");
+    } catch (error) { this.database.exec("ROLLBACK"); throw error; }
+  }
+
   interrupt(build) {
     this.database.prepare(`UPDATE listener_profile_builds SET state = 'interrupted'
       WHERE subject_id = ? AND build_id = ? AND lease_token = ? AND state = 'building'`)
