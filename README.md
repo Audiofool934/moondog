@@ -106,8 +106,7 @@ The builder sends bounded music digests to your configured model when you reques
 ## Your profile
 
 The profile says what you played, and what that cannot prove.
-Playing a song a lot shows how well you know it.
-It does not prove you love it.
+Playing a song a lot does not, on its own, establish how much it matters to you.
 
 <p align="center">
   <img src="assets/demo/moondog-tui-profile.png" width="1000" alt="The listening profile for the fictional track Midnight Lines by Mara Vale, with the plays on one side and the limit of that evidence on the other">

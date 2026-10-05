@@ -209,6 +209,49 @@ The synthesis changes address those mechanisms, while their effect on a new live
 Private profiles and individual feedback remain local; shared tests use fictional evidence.
 See the [terminal guide](TERMINAL_GUIDE.md#saved-listener-profiles) and [builder tests](../tests/runtime/listener-profile-build.test.mjs).
 
+## First-build quality target (2026-10-05)
+
+The next priority is a useful and reliable profile from the listener's initial import and one requested build.
+Repeated owner review is a development and evaluation method, not the intended newcomer experience.
+A dedicated user-facing inspection workflow remains an undecided later feature.
+Existing evidence and correction commands remain available, but expanding that workflow must not substitute for improving the builder.
+
+One build can perform several internal passes without requiring another user request.
+The target path is source-coverage analysis, grounded investigation, global synthesis, claim verification, and bounded automatic repair before saving the result.
+Progress, cancellation, resumable checkpoints, and preservation of the previous revision still apply.
+Network interruption and unavailable evidence must be reported honestly; they do not justify publishing an unverified interpretation as a successful reading.
+
+Current compilation checks types, coverage of digest pages, and the existence of evidence references.
+It does not establish that a reference entails a statement or logically contradicts it.
+The next bounded implementation slice should verify the final summary and highlighted claims against raw evidence, repair unsupported claims automatically, and retain a useful scoped result when a stronger conclusion cannot be established.
+The first-build quality target is not yet a verified capability.
+
+### Acceptance cases
+
+| Input condition | Required first-build behavior |
+| --- | --- |
+| Unequal platform coverage or missing periods | State the observed source and time scope without turning missing records into an absence of listening or inventing platform-switch dates. |
+| A recent concentration alongside persistent historical interests | Describe recent attention separately, without asserting that it replaces enduring taste. |
+| A meaningful smaller interest with evidence across history or curation | Preserve it in the reading without equating play duration with the listener's subjective importance. |
+| Repeated tracks, skips, or high completion | Describe supported behavior without inventing dislike, driving, mood, intention, or a preference ranking from those measures. |
+| A library snapshot with partial or missing counts | Keep curation separate from dated plays and do not treat unknown counts as zero lifetime listening or unfamiliarity. |
+| A rank, total, comparison, category, or counterexample | Verify the exact metric, denominator, source scope, classification basis, and relationship to the cited proposition. |
+| A fact unavailable in the permitted input | Leave it unknown or qualify the conclusion; do not guess the private fact that a later listener review reveals. |
+
+### Evaluation boundary
+
+Freeze the imported input, model configuration, builder version, and first output before reading later listener feedback as evaluation evidence.
+Do not seed a first-build evaluation with that later feedback or hand-edited conclusions.
+Distinguish errors the available evidence should have prevented from private facts that the builder could not have recovered.
+When evaluating personalization from supplied feedback, label that as a separate scenario.
+
+Use a small set of fictional or authorized private profiles that varies source coverage, temporal patterns, and musical interests rather than tuning only to one listener's names or answers.
+Keep private examples and raw feedback outside public fixtures and reports.
+Assess useful supported coverage, factual and citation correctness, unjustified interpretations, and whether the result requires listener repair before it can support discovery.
+Passing by deleting all substantive insights or substituting generic uncertainty language is not acceptable.
+Record internal repair attempts, model calls, elapsed time, and available usage data so quality improvements remain proportionate and observable.
+Repeat fresh runs when needed to distinguish stable behavior from a lucky sample; faux-model tests alone cannot establish this outcome.
+
 ## Research scope and source versions
 
 Official documentation was read for the specific mechanisms cited above.

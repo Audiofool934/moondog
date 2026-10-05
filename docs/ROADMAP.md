@@ -93,11 +93,17 @@ The current priority is to complete and validate the personal listening loop in 
 
 ### Recommendation quality
 
+- [ ] Make the first requested profile build useful and reliable without a listener-led correction cycle.
+  This is the highest-priority profile outcome as of 2026-10-05.
+  One build may include bounded internal verification and repair, but the listener must not repeatedly inspect, correct, and rerun it to obtain a sound first result.
+  Completion requires fresh-build evidence against the [first-build acceptance target](LISTENER_PROFILE_HARNESS_RESEARCH.md#first-build-quality-target-2026-10-05), with later listener feedback withheld from the builder's initial input.
+  Preserve supported musical detail while verifying factual claims, citation meaning, metric and source scope, counterexamples, and the distinction between current attention and enduring taste.
+  A dedicated user-facing profile inspection workflow remains an undecided later feature, not a dependency of this outcome.
 - [x] Build a persistent listener-profile revision from complete imported evidence, using deterministic digests, model-led investigation, and traceable claims.
   `/profile build` saves typed findings and frozen cited evidence, resumes interrupted work, and reuses an unchanged input.
   `/profile saved` and `/profile explain <number>` recover the result in a fresh TUI session; new imports or corrections mark the old reading for an update.
   Synthetic tests cover an interest beyond the first hundred tracks, Apple curation, correction-driven revision, and failed-build retention; a real pseudo-terminal journey verifies saved reading, evidence, restart, and offline fallback.
-  This proves the persistent loop with a faux model, while the quality of a live model's taste interpretation remains a listener evaluation task.
+  This proves the persistent loop with a faux model; development-time evaluation of live model output must establish first-build interpretation quality separately.
   The [Hermes and OpenClaw comparison](LISTENER_PROFILE_HARNESS_RESEARCH.md) records the design and implementation boundary.
 - [ ] Complete a bounded provider-blind human review set for relevance, serendipity, canonical-recording quality, and explanation usefulness.
   Completion requires validator-compatible ratings and aggregate-only results that do not expose raw listening profiles.

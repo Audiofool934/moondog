@@ -71,6 +71,17 @@ Ground conversations in reliable knowledge about artists, works, recordings, gen
 
 Turn authorized listening history and explicit feedback into a profile that is temporal, interpretable, revisable, and supported by evidence.
 
+The first-build quality target, set on 2026-10-05, is a useful and reliable reading from the initial import and one requested profile build.
+The listener should not need a sequence of manual reviews and rebuilds to correct basic errors before Moondog becomes useful.
+The build may perform multiple internal analysis, verification, and repair stages within one user-initiated operation.
+Development-time listener review should improve the general builder and provide evaluation evidence, rather than become a required onboarding step.
+
+The target is the quality of a carefully reviewed profile wherever the permitted input supports that quality.
+Incomplete platform history and unreported personal circumstances must produce appropriately scoped conclusions, not invented facts.
+Preserve useful, supported musical detail while separating persistent observed interests, recent attention, explicit preferences, subjective importance, and listening context.
+Neither a recent listening peak nor a play-duration ranking establishes a change in enduring taste.
+See the [first-build acceptance target](LISTENER_PROFILE_HARNESS_RESEARCH.md#first-build-quality-target-2026-10-05) for the evaluation boundary.
+
 ### Recommendation and Curation
 
 Use both world knowledge and personal context to generate recommendations, explain tradeoffs, and collaborate on playlists.
@@ -122,6 +133,8 @@ Moondog should not claim to understand a listener more deeply than its data supp
 ### User Control
 
 Users should be able to inspect, correct, reset, export, and revoke personal profile data.
+These controls do not make profile inspection or correction a mandatory onboarding step.
+A dedicated profile inspection experience remains a possible later product decision; first-build quality takes priority over expanding it.
 
 ### Local-First Privacy
 
