@@ -794,6 +794,30 @@ async function main() {
     return;
   }
 
+  if (options.command === "profile" && savedProfileActions.has(options.rest[0])) {
+    if (options.dryRun || options.offline || options.html || options.card || options.save || options.output || options.from) {
+      throw new Error("Usage: moondog profile <build|saved|explain> [--json].");
+    }
+    const application = new MoondogApplication(await loadDomainServices());
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    process.once("SIGINT", abort);
+    try {
+      // Saved reads only need the profile domain. The builder connects its own
+      // model when new analysis is actually required.
+      await runListenerProfileCommand({ application, args: options.rest, json: options.json,
+        signal: controller.signal, onProgress: options.json ? undefined : progress =>
+          process.stderr.write(progress.model_retry
+            ? `Retrying model ${progress.model_retry.attempt}/${progress.model_retry.maxRetries}; ${progress.reviewed_partitions}/${progress.total_partitions} profile pages saved\n`
+            : progress.phase === "synthesis" ? `Synthesizing profile; ${progress.reviewed_partitions}/${progress.total_partitions} evidence pages saved\n`
+            : `Profile: ${progress.reviewed_partitions}/${progress.total_partitions} evidence pages reviewed\n`) });
+    } finally {
+      process.removeListener("SIGINT", abort);
+      application.close();
+    }
+    return;
+  }
+
   const domainState = await loadDomainServices();
   const memoryStore = await openLocalMemoryStore();
   const spotifyConnection = await loadSpotifyConnection();
@@ -818,24 +842,6 @@ async function main() {
   try {
     const runtime = await createConfiguredRuntime(application);
     const runtimeStatus = runtime.publicStatus();
-
-    if (options.command === "profile" && savedProfileActions.has(options.rest[0])) {
-      if (options.dryRun || options.offline || options.html || options.card || options.save || options.output || options.from) {
-        throw new Error("Usage: moondog profile <build|saved|explain> [--json].");
-      }
-      const controller = new AbortController();
-      const abort = () => controller.abort();
-      process.once("SIGINT", abort);
-      try {
-        await runListenerProfileCommand({ application, args: options.rest, json: options.json,
-          signal: controller.signal, onProgress: options.json ? undefined : progress =>
-            process.stderr.write(progress.model_retry
-              ? `Retrying model ${progress.model_retry.attempt}/${progress.model_retry.maxRetries}; ${progress.reviewed_partitions}/${progress.total_partitions} profile pages saved\n`
-              : progress.phase === "synthesis" ? `Synthesizing profile; ${progress.reviewed_partitions}/${progress.total_partitions} evidence pages saved\n`
-              : `Profile: ${progress.reviewed_partitions}/${progress.total_partitions} evidence pages reviewed\n`) });
-      } finally { process.removeListener("SIGINT", abort); }
-      return;
-    }
 
     if (localCommands.has(options.command)) {
       if (options.command === "taste" && (options.html || options.card)) {

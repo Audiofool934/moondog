@@ -205,7 +205,7 @@ export function compileListenerProfile(input, reviews, submission) {
   };
 }
 
-export function readListenerProfile({ input, store }, { offset = 0, limit = 12, claimId, revisionId } = {}) {
+export function readListenerProfile({ input, getInput, store }, { offset = 0, limit = 12, claimId, revisionId } = {}) {
   if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isInteger(limit) || limit < 1 || limit > 20) {
     throw new TypeError("Saved profile page is invalid");
   }
@@ -213,6 +213,9 @@ export function readListenerProfile({ input, store }, { offset = 0, limit = 12, 
   const revision = revisionId ? store.revision(revisionId) : current;
   if (revisionId && !revision) throw new Error("That saved profile version is unavailable");
   if (!revision) return { state: "missing", total_claims: 0, claims: [], next_offset: null };
+  // Most new listeners have no saved reading. Do not scan their source archive
+  // merely to tell an ordinary conversation that the reading is missing.
+  input ??= getInput();
   const state = revision.input_digest === input.input_digest && revision.synthesis_version === LISTENER_PROFILE_SYNTHESIS_VERSION &&
     revision.verification?.state === "passed" ? "current" : "stale";
   const result = {

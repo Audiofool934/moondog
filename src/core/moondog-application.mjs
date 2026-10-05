@@ -251,7 +251,10 @@ export class MoondogApplication {
 
   async getListenerProfile(input) {
     if (!this.profileBuildReady()) return { state: "missing", total_claims: 0, claims: [], next_offset: null };
-    return readListenerProfile(this.getProfileBuildContext(), input);
+    return readListenerProfile({
+      store: this.domainServices.getListenerProfileStore(),
+      getInput: () => this.getProfileBuildContext().input,
+    }, input);
   }
 
   async buildListenerProfile(options = {}) {
