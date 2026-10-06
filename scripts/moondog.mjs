@@ -805,12 +805,18 @@ async function main() {
     try {
       // Saved reads only need the profile domain. The builder connects its own
       // model when new analysis is actually required.
+      const stages = { synthesis: "Writing your profile", check: "Checking the draft",
+        revision: "Revising after the check", complete: "Saving your profile" };
+      let stage;
       await runListenerProfileCommand({ application, args: options.rest, json: options.json,
-        signal: controller.signal, onProgress: options.json ? undefined : progress =>
-          process.stderr.write(progress.model_retry
-            ? `Retrying model ${progress.model_retry.attempt}/${progress.model_retry.maxRetries}; ${progress.reviewed_partitions}/${progress.total_partitions} profile pages saved\n`
-            : progress.phase === "synthesis" ? `Synthesizing profile; ${progress.reviewed_partitions}/${progress.total_partitions} evidence pages saved\n`
-            : `Profile: ${progress.reviewed_partitions}/${progress.total_partitions} evidence pages reviewed\n`) });
+        signal: controller.signal, onProgress: options.json ? undefined : progress => {
+          if (progress.model_retry) {
+            process.stderr.write(`Retrying the model, ${progress.model_retry.attempt} of ${progress.model_retry.maxRetries}\n`);
+          } else if (progress.phase !== stage) {
+            stage = progress.phase;
+            process.stderr.write(`${stages[stage] ?? "Building your profile"}\n`);
+          }
+        } });
     } finally {
       process.removeListener("SIGINT", abort);
       application.close();

@@ -1,6 +1,7 @@
 import { modelEvidence, profileDigest } from "./listener-profile-build.mjs";
 
-export const LISTENER_PROFILE_VERIFICATION_VERSION = "listener-verification/1";
+export const LISTENER_PROFILE_CHECK_VERSION = "listener-check/1";
+const MAX_CHECK_ISSUES = 6;
 
 export function listenerProfileCandidate(input, profile) {
   const byId = new Map(profile.claims.map(claim => [claim.claim_id, claim]));
@@ -14,55 +15,41 @@ export function listenerProfileCandidate(input, profile) {
   };
 }
 
-export function listenerProfileVerificationBatch(candidate, verification) {
-  const checked = new Set(verification?.checks.map(check => check.target));
-  const pending = candidate.insights.filter(claim => !checked.has(claim.claim_id));
-  if (!pending.length) return { targets: ["summary", "coverage"].filter(target => !checked.has(target)), candidate };
-  const insights = pending.slice(0, 3);
-  const refs = new Set(insights.flatMap(claim => [...claim.supporting_refs, ...claim.contradicting_refs]));
-  return { targets: insights.map(claim => claim.claim_id), candidate: {
-    candidate_id: candidate.candidate_id, insights,
-    cited_evidence: candidate.cited_evidence.filter(entry => refs.has(entry.reference_id)),
-  } };
+function checkText(value, field) {
+  if (typeof value !== "string" || !value.trim() || Array.from(value).length > 500 ||
+      /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f‪-‮⁦-⁩]/u.test(value)) {
+    throw new TypeError(`Each check issue needs a ${field} of at most 500 characters`);
+  }
+  return value.trim();
 }
 
-export function validateListenerProfileVerification(input, candidate, value, { allowPartial = false } = {}) {
+/**
+ * One judgment of the whole candidate. Only material problems are issues;
+ * citation completeness and phrasing are deliberately out of scope.
+ */
+export function validateListenerProfileCheck(candidate, value) {
   if (value?.candidate_id !== candidate.candidate_id) {
-    throw new TypeError("Verification must identify the current profile candidate");
+    throw new TypeError("The check must identify the current profile candidate");
   }
-  const targets = new Map([["summary", null], ["coverage", null],
-    ...candidate.insights.map(claim => [claim.claim_id, claim])]);
-  if (!Array.isArray(value.checks) || !value.checks.length || value.checks.length > targets.size ||
-      (!allowPartial && value.checks.length !== targets.size) ||
-      new Set(value.checks.map(check => check?.target)).size !== value.checks.length ||
-      value.checks.some(check => !targets.has(check?.target))) {
-    throw new TypeError("Verification must check the summary, coverage and every highlighted claim exactly once");
+  if (!["pass", "revise"].includes(value.verdict)) throw new TypeError("The check verdict must be pass or revise");
+  const issues = value.issues ?? [];
+  if (!Array.isArray(issues) || issues.length > MAX_CHECK_ISSUES) {
+    throw new TypeError(`The check can list at most ${MAX_CHECK_ISSUES} material issues`);
   }
-  const referenceErrors = [];
-  const checks = value.checks.map(check => {
-    if (!["supported", "revise"].includes(check.status) || typeof check.reason !== "string" ||
-        !check.reason.trim() || Array.from(check.reason).length > 700 ||
-        /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f\u202a-\u202e\u2066-\u2069]/u.test(check.reason)) {
-      throw new TypeError(`Verification target ${check.target} needs a valid decision and a reason of at most 700 characters`);
-    }
-    const refs = check.evidence_refs;
-    const claim = targets.get(check.target);
-    if (!Array.isArray(refs) || refs.length > 16 || new Set(refs).size !== refs.length) {
-      throw new TypeError(`Verification target ${check.target} needs at most 16 unique evidence references`);
-    }
-    const unknown = refs.filter(ref => !input.evidence.has(ref));
-    const missing = claim ? [...claim.supporting_refs, ...claim.contradicting_refs].filter(ref => !refs.includes(ref)) : [];
-    if (unknown.length || missing.length) referenceErrors.push({ target: check.target, unknown_refs: unknown, missing_cited_refs: missing });
-    return { target: check.target, status: check.status, reason: check.reason.trim(), evidence_refs: [...refs] };
-  });
-  if (referenceErrors.length) {
-    throw new TypeError(`Verification must examine every cited reference, including incorrect support and counterexamples. Correct these check rows: ${JSON.stringify(referenceErrors)}`);
-  }
+  if (value.verdict === "revise" && !issues.length) throw new TypeError("A revise verdict needs at least one material issue");
+  if (value.verdict === "pass" && issues.length) throw new TypeError("A pass verdict lists no issues; return revise for a material problem");
+  const targets = new Set(["summary", ...candidate.insights.map(claim => claim.claim_id)]);
   return {
-    version: LISTENER_PROFILE_VERIFICATION_VERSION,
+    version: LISTENER_PROFILE_CHECK_VERSION,
     candidate_id: candidate.candidate_id,
-    state: checks.length < targets.size ? "checking" : checks.every(check => check.status === "supported") ? "passed" : "needs_repair",
-    checked_at: new Date().toISOString(), checks,
+    verdict: value.verdict,
+    issues: issues.map(issue => {
+      if (!targets.has(issue?.target)) {
+        throw new TypeError(`Check issue target ${JSON.stringify(issue?.target)} must be "summary" or a claim_id of this candidate`);
+      }
+      return { target: issue.target, problem: checkText(issue.problem, "problem"), correction: checkText(issue.correction, "correction") };
+    }),
+    checked_at: new Date().toISOString(),
   };
 }
 

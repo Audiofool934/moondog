@@ -1539,8 +1539,8 @@ Exact ordinary commands such as “Rename my playlist Night Drive to Late Lights
 ## Saved listener profiles
 
 `/taste` still opens immediately after an import and works without a model.
-For a durable model reading of the complete supported evidence, connect a model with `/model` and run `/profile build`.
-This sends bounded music evidence digests to that configured model; it does not upload the original archive or enable playback or account tools.
+For a durable model reading of everything you imported, connect a model with `/model` and run `/profile build`.
+This sends a compact summary of your music evidence to that configured model; it does not upload the original archive or enable playback or account tools.
 
 ```text
 /profile build
@@ -1548,41 +1548,39 @@ This sends bounded music evidence digests to that configured model; it does not 
 /profile explain 1
 ```
 
-The builder reviews full-corpus digest pages and saves intermediate findings.
-After every page is reviewed, a fresh model session receives a cross-source overview of lifetime and recent listening leaders, yearly coverage, library curation, and explicit choices.
-It can search earlier page findings and the full raw evidence catalog by source or text before writing a candidate summary and evidence-linked insights.
-Page order is not addition chronology, missing library play counts are unknown, and presence in a collection does not establish familiarity or liking.
-Fresh model sessions check up to three highlighted insights at a time against raw evidence, including all supporting and conflicting references.
-The summary and useful coverage receive a separate final check; earlier model page findings are unavailable to the verifier.
-It checks metric and source scope, citation meaning, counterexamples, and unsupported interpretations of recent attention, subjective importance, or listening context.
-Failed checks trigger up to two automatic revisions within the same build, each followed by another check.
-Repairs patch failed claims; unchanged claims retain their checks, while the summary and coverage are checked again.
-Only a candidate that passes all checks becomes the current reading; the previous version and all page findings remain available.
-These are model judgments, not a guarantee that every interpretation is correct, and earlier page findings remain provisional.
-A finding distinguishes a measured observation, a hypothesis with uncertainty, or an explicit listener choice.
-`/profile saved` shows the final insights and the listener's explicit choices, using their original finding numbers.
-Use `/profile saved 0` to browse all saved findings, twelve at a time, and follow its next-page command to read more.
+Moondog first computes a dossier locally from every supported record.
+It lists the leading artists, tracks and albums across your history, recent movement against lifetime rank, yearly coverage, your curation and library, distinctive provider signals, and every explicit choice, each row with a reference.
+One model session writes the reading from that dossier and can search the complete evidence catalog for anything it leaves out.
+The reading names the musical threads in your listening, such as scenes, lineages and eras.
+It keeps enduring listening, recent attention, curation and explicit choices apart.
+Interpretations are marked as interpretations, and each finding cites a few rows of evidence.
+
+A second, fresh session checks the whole draft.
+It looks only for material problems: contradictions, wrong headline facts, invented preferences or personal context, recent attention presented as a change of enduring taste, or a major thread left out.
+Citation completeness and phrasing are not grounds for a revision.
+When the check finds a problem, the build revises the draft once and checks it again, then saves it.
+A concern that the final check still raises is saved with the reading and shown under it, rather than blocking the profile.
+These are model judgments, not a guarantee that every interpretation is correct.
+
+A finding is a measured observation, an interpretation, or one of your own choices.
+`/profile saved` shows the summary, the findings and your explicit choices; `/profile saved 0` lists every saved finding.
 `/profile explain <number>` opens the frozen supporting and conflicting evidence for that finding.
 The normal listening agent receives the compact current reading in a fresh conversation and can retrieve further saved evidence.
 
 A new import, correction, or synthesis version can mark the saved reading as needing an update.
 Run `/profile build` again to update it; an identical input reuses the current reading without calling a model.
-Unchanged digest findings can be reused when the input changes.
-The separate synthesis stage can reuse pages from an older completed build with the same model and compatible evidence, without reviewing them again.
 Use `/profile build --force` to start a fresh interpretation with the current model.
 
-Ctrl+C stops the build and keeps saved progress and the previous version.
-One `/profile build` continues automatically through all evidence pages, synthesis, verification, and any needed repairs, using fresh model sessions as needed.
-Reaching a session's turn limit does not stop the build or require another command.
-The terminal shows whether it is reading, synthesizing, checking, or correcting the profile.
-The checking and repair stages share a limit of eighteen model sessions per invocation, including up to five checking batches per draft.
-If you cancel, a model request fails, the model stops making progress, or automatic checking reaches its limit, the previous profile stays available and the unfinished build is retained.
-Run `/profile build` again to resume the saved pages, candidate, and unfinished checking batches rather than starting over.
+Ctrl+C stops the build and keeps the saved draft and the previous version.
+The terminal shows whether the build is writing, checking or revising the profile.
+One `/profile build` continues across model sessions as needed, up to eight per build.
+If you cancel, a model request fails, or the model stops making progress, the previous profile stays available and the unfinished build keeps its draft.
+Run `/profile build` again to continue from that draft rather than starting over.
 For DeepSeek, transient connection failures before a response starts receive up to two short retries of the same model request, with progress shown in the terminal.
-Saved finding tools are not replayed by these retries.
-Authentication, quota, HTTP errors, and broken response streams stop with a diagnostic and the saved page count.
+Saved draft and check tools are not replayed by these retries.
+Authentication, quota, HTTP errors, and broken response streams stop with a diagnostic.
 Credential-bearing authentication details are redacted.
-If evidence changes during synthesis or checking, the new version is rejected and the previous version stays available.
+If evidence changes during the build, the new version is rejected and the previous version stays available.
 Saved profiles and evidence snapshots live in the private listening database and are included in `data export --scope listening` or `--scope profile`.
 Resetting the corresponding scope archives that database, including its saved readings.
 An Apple-only reset removes the Apple projection; combined readings remain in the listening scope as historical snapshots until that scope is reset too.

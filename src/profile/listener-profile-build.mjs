@@ -1,13 +1,20 @@
 import { createHash } from "node:crypto";
 
-export const LISTENER_PROFILE_ANALYSIS_VERSION = "listener-profile/1";
-export const LISTENER_PROFILE_SYNTHESIS_VERSION = "listener-synthesis/3";
-export const PROFILE_DIGEST_ROWS = 24;
+export const LISTENER_PROFILE_ANALYSIS_VERSION = "listener-profile/2";
+export const LISTENER_PROFILE_SYNTHESIS_VERSION = "listener-synthesis/4";
+// A saved reading is current only after its whole-profile check has run.
+export const CHECKED_PROFILE_STATES = new Set(["passed", "revised", "flagged"]);
+
+const LISTENER_SECTIONS = new Set(["listener_preferences", "listener_avoids"]);
+// Curation already appears in its own sections; these provider rows only repeat it.
+const DUPLICATED_PROVIDER_KINDS = new Set([
+  "playlist_track_added", "library_track_saved", "library_album_saved", "library_artist_followed",
+]);
 
 function sectionSemantics(section) {
   const common = {
     ordering: "Catalog order, not chronology or preference strength unless explicitly stated.",
-    limitations: "Page position and repeated rows are not independent evidence of importance. Use the row's dated fields for time claims.",
+    limitations: "Row position and repeated rows are not independent evidence of importance. Use the row's dated fields for time claims.",
   };
   if (["history_artists", "history_tracks", "recent_artists", "recent_tracks"].includes(section)) {
     return { ordering: "Ranked by measured listening duration, descending.",
@@ -43,7 +50,7 @@ export function profileDigest(value) {
 
 function text(value, maximum, field) {
   if (typeof value !== "string" || !value.trim() || Array.from(value).length > maximum ||
-      /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f\u202a-\u202e\u2066-\u2069]/u.test(value)) {
+      /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f‪-‮⁦-⁩]/u.test(value)) {
     throw new TypeError(`Listener profile ${field} is invalid`);
   }
   return value.trim();
@@ -52,22 +59,11 @@ function text(value, maximum, field) {
 export function createListenerProfileInput({ subjectId, evidenceRevision, listening, apple }) {
   const sections = { ...listening?.sections, ...apple?.sections };
   const context = listening?.context ?? {};
-  const constraints = profileDigest([sections.listener_preferences ?? [], sections.listener_avoids ?? []]);
-  const partitions = [];
   const evidence = new Map();
   for (const [section, rows] of Object.entries(sections).sort(([a], [b]) => a.localeCompare(b))) {
-    const entries = rows.map(row => {
+    for (const row of rows) {
       const reference_id = `ev_${profileDigest([section, row]).slice(0, 32)}`;
-      const entry = { reference_id, section, data: structuredClone(row) };
-      evidence.set(reference_id, entry);
-      return entry;
-    });
-    for (let offset = 0; offset < entries.length; offset += PROFILE_DIGEST_ROWS) {
-      const items = entries.slice(offset, offset + PROFILE_DIGEST_ROWS);
-      // A changed direct choice invalidates interpretations even where historical
-      // counts stay the same. Identical partitions on the same context can resume.
-      const partition_id = `part_${profileDigest([LISTENER_PROFILE_ANALYSIS_VERSION, section, items, context, constraints]).slice(0, 32)}`;
-      partitions.push({ partition_id, section, offset, total: entries.length, items });
+      evidence.set(reference_id, { reference_id, section, data: structuredClone(row) });
     }
   }
   const manifest = {
@@ -75,16 +71,16 @@ export function createListenerProfileInput({ subjectId, evidenceRevision, listen
     coverage: { ...listening?.coverage, ...apple?.coverage },
     sources: listening?.sources ?? [], context,
     sections: Object.entries(sections).map(([section, rows]) => ({ section, rows: rows.length, ...sectionSemantics(section) })),
-    digest_partitions: partitions.length,
-    digest_rows: [...evidence.values()].length,
+    evidence_rows: evidence.size,
     limitations: [
-      "All supported records contribute to local analysis before digest pages are selected. Digest rows are aggregates or observations, not a count of distinct plays.",
+      "Every supported record contributes to local analysis before the dossier selects rows. Rows are aggregates or observations, not a count of distinct plays.",
       "History measures attention. Apple snapshot counts are separate from dated plays; private-session plays and superseded overlaps do not become behavioral evidence.",
-      "Reviewed partitions record what was examined during investigation, not proof that every interpretation is correct. Provider labels are not listener assertions or measured audio features.",
+      "Provider labels are not listener assertions or measured audio features.",
     ],
   };
-  const input_digest = profileDigest({ subjectId, evidenceRevision, manifest, partitions });
-  return { subjectId, input_digest, manifest, partitions, evidence };
+  // Rows are content-addressed, so the ordered references cover every evidence value.
+  const input_digest = profileDigest({ subjectId, evidenceRevision, manifest, evidence: [...evidence.keys()] });
+  return { subjectId, input_digest, manifest, evidence };
 }
 
 export function modelEvidence(entry, offset = 0, limit = 12) {
@@ -112,22 +108,69 @@ export function modelEvidence(entry, offset = 0, limit = 12) {
   return { ...entry, data, ...(Object.keys(continuations).length ? { continuations } : {}) };
 }
 
-export function listenerProfileOverview(input) {
-  // A fresh synthesis always sees the same cross-source anchors, independent
-  // of which collection happened to finish the preceding review session.
-  const limits = { history_artists: 12, recent_artists: 12, history_years: 64,
-    saved_tracks: 4, playlist_tracks: 4, saved_albums: 6, followed_artists: 6,
-    apple_artists: 6, apple_genres: 6, provider_genres: 6,
-    listener_preferences: 24, listener_avoids: 24 };
-  return Object.entries(limits).flatMap(([section, limit]) => {
-    const rows = [...input.evidence.values()].filter(entry => entry.section === section);
-    return rows.length ? [{ section, total: rows.length, ...sectionSemantics(section),
-      items: rows.slice(0, limit).map(entry => modelEvidence(entry)),
-      remaining_rows: Math.max(0, rows.length - limit) }] : [];
-  });
+const artistKey = value => typeof value === "string" ? value.normalize("NFKC").trim().toLocaleLowerCase() : null;
+
+/**
+ * A compact, deterministic view of the complete evidence for one synthesis
+ * session. Every row keeps its reference so the model can cite it; the full
+ * catalog stays searchable for anything the dossier leaves out.
+ */
+export function listenerProfileDossier(input) {
+  const rows = section => [...input.evidence.values()].filter(entry => entry.section === section);
+  const row = entry => ({ ref: entry.reference_id, ...modelEvidence(entry, 0, 6).data });
+  const take = (section, limit) => rows(section).slice(0, limit).map(row);
+  const lifetime = rows("history_artists");
+  const lifetimeRank = new Map(lifetime.map((entry, index) => [artistKey(entry.data.name), index + 1]));
+  const listened = new Set(lifetime.slice(0, 80).map(entry => artistKey(entry.data.name)));
+  const curated = new Map();
+  const curate = (name, entry, signal) => {
+    const key = artistKey(name);
+    if (!key || listened.has(key)) return;
+    const item = curated.get(key) ?? { artist: name, signals: [], refs: [] };
+    if (item.refs.length < 4) item.refs.push(entry.reference_id);
+    item.signals.push(signal);
+    curated.set(key, item);
+  };
+  for (const entry of rows("followed_artists")) curate(entry.data.name, entry, "followed");
+  for (const entry of rows("saved_albums")) curate(entry.data.artist_credit, entry, `saved album ${entry.data.label}`);
+  for (const entry of rows("apple_artists")) {
+    if ((entry.data.preferred_tracks ?? 0) >= 2 || (entry.data.library_tracks ?? 0) >= 20) {
+      curate(entry.data.name, entry, `Apple library: ${entry.data.library_tracks} tracks, ${entry.data.preferred_tracks ?? 0} preferred`);
+    }
+  }
+  for (const entry of rows("playlist_tracks").slice(0, 300)) curate(entry.data.artist_credit, entry, `playlist track ${entry.data.label}`);
+  const provider = rows("provider_evidence").filter(entry => !DUPLICATED_PROVIDER_KINDS.has(entry.data.evidence_kind));
+  const sections = Object.fromEntries(input.manifest.sections.map(({ section, rows: total, ordering, limitations }) =>
+    [section, { total, ordering, limitations }]));
+  return {
+    coverage: input.manifest.coverage, sources: input.manifest.sources, context: input.manifest.context,
+    sections,
+    lifetime_artists: lifetime.slice(0, 40).map(row),
+    next_lifetime_artists: lifetime.slice(40, 80).map(entry => ({ ref: entry.reference_id, name: entry.data.name,
+      listening_minutes: entry.data.listening_minutes, play_count: entry.data.play_count, distinct_tracks: entry.data.distinct_tracks })),
+    recent_artists: rows("recent_artists").slice(0, 25).map(entry => ({ ...row(entry),
+      lifetime_rank: lifetimeRank.get(artistKey(entry.data.name)) ?? null })),
+    years: take("history_years", 64),
+    lifetime_tracks: take("history_tracks", 25),
+    recent_tracks: take("recent_tracks", 15),
+    releases_in_depth: take("history_releases", 15),
+    curated_beyond_listening: [...curated.values()].sort((a, b) => b.signals.length - a.signals.length).slice(0, 20)
+      .map(item => ({ ...item, signals: item.signals.slice(0, 4) })),
+    saved_albums: take("saved_albums", 20),
+    saved_tracks: take("saved_tracks", 15),
+    playlist_tracks: take("playlist_tracks", 15),
+    followed_artists: rows("followed_artists").map(entry => ({ ref: entry.reference_id, name: entry.data.name,
+      listening_minutes: entry.data.listening_minutes ?? null })),
+    apple_artists: take("apple_artists", 20),
+    apple_genres: take("apple_genres", 20),
+    apple_tracks: take("apple_tracks", 15),
+    provider_genres: take("provider_genres", 15),
+    provider_signals: provider.slice(0, 50).map(row),
+    explicit_choices: [...rows("listener_preferences"), ...rows("listener_avoids")].slice(0, 100).map(row),
+  };
 }
 
-function validateClaim(input, raw, own) {
+function validateClaim(input, raw) {
   if (!["observation", "hypothesis"].includes(raw?.kind)) {
     throw new TypeError("Only the listener can establish a direct preference");
   }
@@ -136,11 +179,10 @@ function validateClaim(input, raw, own) {
       throw new TypeError(`Listener profile evidence reference is invalid: ${role} needs ${minimum} to 8 unique references`);
     }
     const unknown = values.filter(id => !input.evidence.has(id));
-    if (unknown.length) throw new TypeError(`Listener profile evidence reference is invalid: ${role} contains unknown IDs ${JSON.stringify(unknown)}. Copy exact IDs from the raw evidence tools.`);
+    if (unknown.length) throw new TypeError(`Listener profile evidence reference is invalid: ${role} contains unknown IDs ${JSON.stringify(unknown)}. Copy exact refs from the dossier or the evidence tools.`);
     return [...values];
   };
   const supporting_refs = references(raw.supporting_refs, 1, "supporting_refs");
-  if (own && !supporting_refs.some(id => own.has(id))) throw new TypeError("A finding must cite its reviewed partition");
   const contradicting_refs = references(raw.contradicting_refs ?? [], 0, "contradicting_refs");
   if (contradicting_refs.some(id => supporting_refs.includes(id))) throw new TypeError("Supporting and conflicting evidence must differ");
   const claim = {
@@ -151,55 +193,37 @@ function validateClaim(input, raw, own) {
   return { claim_id: `claim_${profileDigest(claim).slice(0, 32)}`, ...claim };
 }
 
-export function validateProfileReview(input, partitionId, value) {
-  const partition = input.partitions.find(part => part.partition_id === partitionId);
-  if (!partition || !value || !Array.isArray(value.claims) || value.claims.length > 6) {
-    throw new TypeError("Listener profile partition review is invalid");
-  }
-  const own = new Set(partition.items.map(item => item.reference_id));
-  const claims = value.claims.map(raw => validateClaim(input, raw, own));
-  return { partition_id: partitionId, note: text(value.note, 700, "review note"), claims };
+/** Direct choices come from the listener's own records, never from the model. */
+export function listenerAssertionClaims(input) {
+  return [...input.evidence.values()].filter(entry => LISTENER_SECTIONS.has(entry.section)).map(({ reference_id, section, data }) => {
+    const stance = section === "listener_avoids" ? "avoid" : "like";
+    const direct = Boolean(data.correction_id);
+    const claim = {
+      kind: direct ? "listener_assertion" : "observation",
+      statement: `${data.label ?? data.name}${data.artist_credit ? ` by ${data.artist_credit}` : ""}: ${stance === "avoid" ? "keep out of suggestions" : "explicit positive choice"}.`,
+      scope: data.entity_type ?? "listener choice",
+      uncertainty: direct ? "An explicit listener choice; it does not rewrite past listening."
+        : "An exclusion or choice in imported source data; it is not a new statement by the listener.",
+      stance, supporting_refs: [reference_id], contradicting_refs: [],
+    };
+    return { claim_id: `claim_${profileDigest(claim).slice(0, 32)}`, ...claim };
+  });
 }
 
-export function directAssertionReview(partition) {
-  if (!["listener_preferences", "listener_avoids"].includes(partition.section)) return null;
-  const stance = partition.section === "listener_avoids" ? "avoid" : "like";
-  return {
-    partition_id: partition.partition_id,
-    note: "Direct choices and source exclusions are retained separately from inferred taste.",
-    claims: partition.items.map(({ reference_id, data }) => {
-      const direct = Boolean(data.correction_id);
-      const claim = {
-        kind: direct ? "listener_assertion" : "observation",
-        statement: `${data.label ?? data.name}${data.artist_credit ? ` by ${data.artist_credit}` : ""}: ${stance === "avoid" ? "keep out of suggestions" : "explicit positive choice"}.`,
-        scope: data.entity_type ?? "listener choice",
-        uncertainty: direct ? "An explicit listener choice; it does not rewrite past listening."
-          : "An exclusion or choice in imported source data; it is not a new statement by the listener.",
-        stance, supporting_refs: [reference_id], contradicting_refs: [],
-      };
-      return { claim_id: `claim_${profileDigest(claim).slice(0, 32)}`, ...claim };
-    }),
-  };
-}
-
-export function compileListenerProfile(input, reviews, submission) {
-  if (input.partitions.some(part => !reviews[part.partition_id])) {
-    throw new Error("Review every digest partition before saving the profile");
-  }
-  const notes = Object.values(reviews).flatMap(review => review.claims);
-  if (!Array.isArray(submission?.insights) || submission.insights.length > 12 ||
-      (notes.some(claim => claim.kind !== "listener_assertion") && !submission.insights.length)) {
-    throw new TypeError("Listener profile synthesis needs up to twelve evidence-linked insights");
+export function compileListenerProfile(input, submission) {
+  const needsInsights = [...input.evidence.values()].some(entry => !LISTENER_SECTIONS.has(entry.section));
+  if (!Array.isArray(submission?.insights) || submission.insights.length > 12 || (needsInsights && !submission.insights.length)) {
+    throw new TypeError("Listener profile synthesis needs one to twelve evidence-linked insights");
   }
   const insights = submission.insights.map(raw => validateClaim(input, raw));
-  const claims = [...new Map([...notes, ...insights].map(claim => [claim.claim_id, claim])).values()];
+  const claims = [...new Map([...insights, ...listenerAssertionClaims(input)].map(claim => [claim.claim_id, claim])).values()];
   const referenced = new Set(claims.flatMap(claim => [...claim.supporting_refs, ...claim.contradicting_refs]));
   return {
     analysis_version: LISTENER_PROFILE_ANALYSIS_VERSION,
     synthesis_version: LISTENER_PROFILE_SYNTHESIS_VERSION,
     input_digest: input.input_digest,
     summary: text(submission.summary, 1_600, "summary"),
-    coverage: { ...input.manifest, reviewed_partitions: input.partitions.length },
+    coverage: input.manifest,
     claims, highlight_claim_ids: [...new Set(insights.map(claim => claim.claim_id))],
     evidence: Object.fromEntries([...referenced].map(id => [id, input.evidence.get(id)])),
   };
@@ -217,7 +241,7 @@ export function readListenerProfile({ input, getInput, store }, { offset = 0, li
   // merely to tell an ordinary conversation that the reading is missing.
   input ??= getInput();
   const state = revision.input_digest === input.input_digest && revision.synthesis_version === LISTENER_PROFILE_SYNTHESIS_VERSION &&
-    revision.verification?.state === "passed" ? "current" : "stale";
+    CHECKED_PROFILE_STATES.has(revision.verification?.state) ? "current" : "stale";
   const result = {
     state, revision_id: revision.revision_id, sequence: revision.sequence,
     parent_revision_id: revision.parent_revision_id, built_at: revision.built_at, model: revision.model,
@@ -246,14 +270,19 @@ export function readListenerProfile({ input, getInput, store }, { offset = 0, li
 
 export function compactListenerProfile(value) {
   if (!value || value.state === "missing") return { state: "missing" };
+  const coverage = value.coverage?.coverage ?? {};
+  const flagged = value.verification?.state === "flagged"
+    ? value.verification.checks.at(-1).issues.slice(0, 3).map(issue => issue.problem) : [];
   return {
     state: value.state, revision_id: value.revision_id, sequence: value.sequence, built_at: value.built_at,
     ...(value.state === "current" ? {
       summary: value.summary,
       claims: value.highlights,
       listener_assertions: value.listener_assertions,
-      coverage: { digest_partitions: value.coverage.digest_partitions,
-        reviewed_partitions: value.coverage.reviewed_partitions },
+      coverage: { listening_events: coverage.effective_listening_events ?? null,
+        first_played_at: coverage.earliest_played_at ?? null, last_played_at: coverage.latest_played_at ?? null,
+        library_tracks: coverage.apple_library_tracks ?? null },
+      ...(flagged.length ? { unresolved_check_notes: flagged } : {}),
     } : { message: "Source evidence, listener choices or analysis changed. Update the reading before using the previous interpretation as current taste." }),
   };
 }
