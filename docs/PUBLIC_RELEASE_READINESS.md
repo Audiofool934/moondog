@@ -17,7 +17,7 @@ The original working files and private history remain local.
 The release-tree verifier checks the exported allowlist and content markers; this is a bounded publication check, not a security audit.
 Run `npm run verify:release-tree` to inspect that boundary directly.
 
-The source is public, but no project license has been selected and no open-source license is granted yet.
+The source is open under the [Apache License 2.0](../LICENSE), selected by the owner on 2026-10-06.
 `@audiofool/moondog` is the public npm package name. Version 0.1.0 is the first registry release.
 Maintainer and contribution information is linked from [CONTRIBUTING.md](../CONTRIBUTING.md).
 

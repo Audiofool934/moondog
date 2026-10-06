@@ -78,7 +78,7 @@ for (const expected of [
   "## Now: prove the personal loop",
   "## Next: deepen discovery and collaboration",
   "## Later: creative agent tools",
-  "## Owner gates before a licensed release",
+  "## Owner gates",
   "## Turning roadmap items into issues",
 ]) {
   assert(roadmap.includes(expected), `the public roadmap is missing ${expected}`);
@@ -119,6 +119,13 @@ for (const relativePath of [
 assert(
   /fictional/iu.test(readme) && tuiMedia.every((relativePath) => readme.includes(relativePath)),
   "README does not show both terminal views with an explicit fictional-data caption",
+);
+const license = await read("LICENSE");
+assert(
+  readme.includes("## License") && readme.includes("[Apache License 2.0](LICENSE)") &&
+    license.includes("Apache License") && license.includes("Version 2.0, January 2004") &&
+    license.includes("TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION"),
+  "README and LICENSE do not grant the Apache License 2.0",
 );
 for (const command of [
   "/import", "/taste", "/auth", "/model", "/new", "/resume",
@@ -603,10 +610,8 @@ assert(
   "release status does not link the canonical repository and distinguish local verification from hosted CI",
 );
 assert(
-  /license/iu.test(releaseReadiness) &&
-    /(?:not (?:yet )?(?:selected|chosen)|unselected|no (?:project |open-source )?license)/iu.test(releaseReadiness) &&
-    /private/iu.test(releaseReadiness) && /npm/iu.test(releaseReadiness),
-  "release status does not preserve the unselected-license and private npm-package boundary",
+  releaseReadiness.includes("[Apache License 2.0](../LICENSE)") && /npm/iu.test(releaseReadiness),
+  "release status does not state the project license and npm package status",
 );
 assert(
   releaseReadiness.includes("verification/linux-node-22.19.0.json") &&
@@ -796,7 +801,7 @@ assert(
 
 const contributing = await read("CONTRIBUTING.md");
 for (const expected of [
-  "## Pre-release governance boundary",
+  "## License and contributions",
   "## Start with the listener outcome",
   "## Protect private listener data",
   "## Verify the change",
@@ -813,9 +818,8 @@ for (const expected of [
   assert(contributing.includes(expected), `CONTRIBUTING.md is missing ${expected}`);
 }
 assert(
-  contributing.includes("does not yet have a selected public license") &&
-    contributing.includes("does not grant redistribution rights"),
-  "CONTRIBUTING.md obscures the pre-release license boundary",
+  contributing.includes("[Apache License 2.0](LICENSE)") && contributing.includes("section 5 of the license"),
+  "CONTRIBUTING.md does not state the project license and contribution terms",
 );
 assert(
   contributing.includes("Spotify Account Data or Extended Streaming History exports") &&

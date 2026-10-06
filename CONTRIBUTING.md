@@ -5,14 +5,12 @@ Moondog welcomes changes that make the personal music loop more useful, understa
 The project favors complete listener outcomes over isolated feature volume.
 A strong contribution identifies the user path, preserves evidence boundaries, and includes the smallest proof that the outcome works.
 
-## Pre-release governance boundary
+## License and contributions
 
-Moondog does not yet have a selected public license.
-The canonical repository is [Audiofool934/moondog](https://github.com/Audiofool934/moondog).
-Until a license is published, this checkout is available for local evaluation and project development but does not grant redistribution rights.
-External contribution acceptance begins only after the maintainers publish the license and canonical contribution route.
-
-This boundary is an owner decision and must not be inferred from the source tree.
+Moondog is open source under the [Apache License 2.0](LICENSE).
+The canonical repository is [Audiofool934/moondog](https://github.com/Audiofool934/moondog), and contributions arrive there as pull requests.
+Unless you state otherwise, a contribution you submit is licensed under the Apache License 2.0, as section 5 of the license describes.
+There is no separate contributor agreement.
 
 ## Start with the listener outcome
 

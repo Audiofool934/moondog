@@ -3,6 +3,7 @@
   "version": "0.2.0-beta.1",
   "type": "module",
   "description": "Local-first personal AI music agent.",
+  "license": "Apache-2.0",
   "keywords": [
     "ai-agent",
     "listenbrainz",
