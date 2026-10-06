@@ -188,4 +188,8 @@ Your profile, and anything Moondog remembers, carry over.
 The source candidate is 0.2.0-beta.1, and the work happens in the TUI.
 GUI and Studio development is paused.
 The earlier [browser prototypes](docs/TERMINAL_GUIDE.md#archived-gui-prototypes-paused) remain for reference.
-There is no open-source license yet.
+
+## License
+
+Moondog is open source under the [Apache License 2.0](LICENSE).
+Copyright 2026 Audiofool.

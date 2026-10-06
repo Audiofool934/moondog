@@ -24,14 +24,15 @@ const repositoryRoot = path.resolve(
   "..",
 );
 const maximumPackedBytes = 2_500_000;
-// Profile verification adds one module plus resumable checking and repair logic.
-const maximumUnpackedBytes = 4_425_000;
-const maximumEntries = 121;
+// The Apache-2.0 LICENSE file adds one entry and about 11 KB.
+const maximumUnpackedBytes = 4_437_000;
+const maximumEntries = 122;
 const packageOnlyPrivateSentinelPattern = new RegExp(
   ["PRIVATE", "(?:IP|PLATFORM)", "SENTINEL"].join("_"),
   "u",
 );
 const requiredPackagePaths = new Set([
+  "LICENSE",
   "README.md",
   "assets/brand/moondog-lunar-record/moondog-logo-1x1.png",
   "contracts/v1/definitions.schema.json",

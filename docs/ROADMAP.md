@@ -156,14 +156,16 @@ The current priority is to complete and validate the personal listening loop in 
 - [ ] Carry listener intent and selected references into creative work without uploading raw history by default.
 - [ ] Evaluate creative usefulness with saved artifacts and human review rather than provider claims alone.
 
-## Owner gates before a licensed release
+## Owner gates
 
-- [ ] Confirm ownership and publication rights for source code, contracts, inherited DJ Claw material, and visual assets.
-- [ ] Select the project license.
+- [x] Confirm ownership and publication rights for source code, contracts, inherited DJ Claw material, and visual assets.
+  The owner confirmed sole ownership on 2026-10-06.
+- [x] Select the project license: the [Apache License 2.0](../LICENSE), selected on 2026-10-06.
 - [x] Use [Audiofool934/moondog](https://github.com/Audiofool934/moondog) as the canonical source repository.
-- [x] Distribute the first public snapshot as a source checkout; npm publication remains disabled.
+- [x] Distribute the first public snapshot as a source checkout.
 - [x] Use the Moondog name and current lunar-record visual package for the public source page.
-- [ ] Publish maintainer and private disclosure routes for a licensed release.
+- [ ] Configure npm trusted publishing so that tagged releases publish from GitHub Actions.
+- [ ] Publish maintainer and private disclosure routes.
 
 These decisions are intentionally not inferred from code or local repository state.
 
