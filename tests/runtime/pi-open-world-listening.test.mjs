@@ -333,3 +333,66 @@ test("a different visible numbered menu invalidates old song ordinals", async t 
   assert.doesNotMatch(result.text, /Playing the old song/u);
   assert.equal(f.application.spotifyPlaybackContextStatus().displayed_choices.length, 0);
 });
+
+test("Chinese queue request, count refinement and cover choice complete the same ten-song batch", async t => {
+  const f = fixture(t);
+  const unavailable = () => [call("moondog_spotify_discover", { queries: ["offline"] }), say("暂时未找到歌曲。")];
+  await f.prompt("给我编辑一个播放队列，插入到现在的后面吧", unavailable());
+  await f.prompt("我还是要老歌气质吧，但是我很喜欢清亮的女声。队列数量先来十首试试？", unavailable());
+  const explanation = await f.prompt("啥意思？", [say("查询暂时不可用，十首的请求还在。")]);
+  assert.equal(explanation.text, "查询暂时不可用，十首的请求还在。");
+  const result = await f.prompt("掺翻唱", [resume({}), ...queueResponses()]);
+  assert.equal(result.spotify_queue_plan?.requested, 10);
+  assert.equal(result.spotify_queue_plan?.queued_count, 10);
+  assert.equal(f.writes.length, 10);
+  assert.ok(f.writes.every(write => write.path === "/v1/me/player/queue"));
+  assert.deepEqual(f.writes.map(write => write.uri), catalogue.slice(0, 10).map(item => item.uri));
+  assert.doesNotMatch(result.text, /spotify_queue_request_required|参数|回复编号/u);
+  await f.prompt("掺翻唱", queueResponses());
+  assert.equal(f.writes.length, 10, "a later style choice cannot replay an accepted batch");
+});
+
+for (const request of ["现在想探索 similar 的歌，这种经典流行女声的感觉。", "最近发现 Fictional Song 特别好听"]) test(`music conversation keeps the curated answer instead of a search menu: ${request}`, async t => {
+  const f = fixture(t);
+  await f.showVersions();
+  const answer = "可以从 Fictional 国风 DJ 0 开始，接着听 Fictional 国风 DJ 10。";
+  const result = await f.prompt(request, [
+    call("moondog_spotify_discover", { queries: ["first"] }),
+    call("moondog_spotify_search", { query: "second" }), say(answer),
+  ]);
+  assert.equal(result.text, answer);
+  assert.equal(f.writes.length, 0);
+  assert.equal(f.application.spotifyPlaybackContextStatus().displayed_choices.length, 0);
+});
+
+for (const invalidation of ["cancel", "reset", "expired"]) test(`a ${invalidation} queue request cannot be revived by a version choice`, async t => {
+  const f = fixture(t);
+  await f.prompt("queue ten tracks", [call("moondog_spotify_discover", { queries: ["offline"] }), say("Search unavailable.")]);
+  if (invalidation === "cancel") await f.prompt("别加了", [say("已取消。")]);
+  if (invalidation === "reset") f.runtime.reset();
+  if (invalidation === "expired") f.application.spotifyContextClock = () => Date.now() + 11 * 60_000;
+  await f.prompt("掺翻唱", queueResponses());
+  assert.equal(f.writes.length, 0);
+});
+
+test("a successful single-song queue request cannot become another batch through a version choice", async t => {
+  const f = fixture(t);
+  await f.prompt("queue one song", [call("moondog_spotify_discover", { queries: ["first"] }), context =>
+    call("moondog_spotify_queue_add", { item_ref_id: latest(context, "moondog_spotify_discover").items[0].item_ref_id }), say()]);
+  assert.equal(f.writes.length, 1);
+  await f.prompt("掺翻唱", queueResponses());
+  assert.equal(f.writes.length, 1);
+});
+
+test("cancelling a partially sent queue cannot revive an older playback target on retry", async t => {
+  const f = fixture(t);
+  await f.showVersions();
+  await f.prompt("1", [resume({}), say()]);
+  f.state.onWrite = () => f.runtime.abort();
+  const cancelled = await f.prompt("queue ten tracks", queueResponses());
+  assert.equal(cancelled.status, "aborted");
+  assert.equal(f.writes.length, 2);
+  f.state.onWrite = null;
+  await f.prompt("retry", [resume({}), say()]);
+  assert.equal(f.writes.length, 2);
+});

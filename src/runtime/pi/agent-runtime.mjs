@@ -5989,6 +5989,7 @@ Spotify control and catalog rules:
 - “Play it on” a device preserves the exact previously selected recording while explicitly changing its device. Use resume with the listener’s device_name and no new source. A Windows query can match a Spotify device named PC; it must never become an arbitrary Computer. When the name does not match, show the actual visible Spotify names and retain the song for the listener’s corrected device request. Current-context resuming UI flags do not prohibit starting a selected new song.
 - If the transfer result names the device, confirm that name. If several devices match, or none do, tell the user the visible names from the tool result and ask which one, or ask them to open Spotify on that device. Use moondog_spotify_devices only when they ask what is connected, or when you need those names after a failed match.
 - A style/count/queue request (for example “great，再来十二首国风DJ，queue”) already authorizes queueing up to that count. Use moondog_spotify_discover for 1–3 varied queries at a time, informed by music knowledge or web research, then moondog_spotify_queue_batch with verified references in preferred order. Up to six queries retain a shared pool; a twelve-song request supports twelve accepted additions. No playlist plan, playlist creation or redundant confirmation is needed. If a discovery source is empty, refine Spotify queries while budget remains. Report actual accepted/requested counts and shortfalls.
+- A recent unfinished queue request stays active when the listener supplies its count or chooses recording versions. Read spotify_playback_context.queue_request for the retained request and count. Carry forward the stated musical direction; choose a coherent mix when the listener delegates curation. A local tool-input failure is yours to repair, not a reason to ask the listener to repeat their taste or authorization. Do not replay a batch with accepted or uncertain writes.
 - moondog_spotify_queue_similar is only a narrow shortcut for explicitly requested current-artist similarity (1–12). It is not a style/genre search. If it returns no candidates without writes, fall back to the general Spotify discovery path.
 - spotify_playback_context binds the host-displayed list order and exact previous target. For a bare number or explicit retry, call moondog_spotify_player_control with action resume and no new source; the host uses the frozen exact version. New reads cannot redefine that target. A missing/stale context requires a fresh displayed choice, never a guessed ordinal. For “换一个，这版本不好听”, resume without a source chooses a different verified version in the retained context, or search the selected title for alternatives. Do not ask which version when the listener delegated the choice and suitable alternatives exist. These requests never grant unrelated next/queue/playlist writes.
 - Execute each requested state-changing action once. Never automatically retry next, previous, queue additions, or device transfers.
@@ -6323,6 +6324,9 @@ function renderSpotifyPlaybackFailure(failure, promptText) {
   if (failure.preparation_stopped && failure.not_sent) return chinese
     ? `播放前的设备检查未完成（${[failure.code, failure.status ? `HTTP ${failure.status}` : "", failure.reason].filter(Boolean).join("; ")}），没有发送歌曲播放请求。请检查 Spotify 设备状态后再试。`
     : `Playback device checks did not complete (${[failure.code, failure.status ? `HTTP ${failure.status}` : "", failure.reason].filter(Boolean).join("; ")}); no song play request was sent. Check Spotify device state before trying again.`;
+  if (failure.code === "spotify_queue_request_required") return chinese
+    ? "这次没有加入歌曲：我没能把这条回复关联到入队请求。需要明确要加入播放队列，才能继续。"
+    : "No songs were queued: I could not connect this reply to a queue request. An explicit request to add music to the playback queue is needed to continue.";
   if (failure.not_sent) return chinese
     ? `一次工具参数在本地被拒绝（${failure.code}），该次尝试没有向 Spotify 发送播放请求。请使用保留的歌曲引用修正参数，或重新搜索；后续明确的播放请求可以直接继续。`
     : `This tool input was rejected locally (${failure.code}); no playback request was sent to Spotify. Correct it with a retained item reference or search again. A fresh explicit playback request can proceed.`;
@@ -6347,6 +6351,13 @@ function renderSpotifyPlaybackFailure(failure, promptText) {
 function renderIncompletePlaybackLookup(promptState, promptText, application) {
   if (promptState.spotifyWriteReceipts.some(receipt => ["playback.resume", "playback.queue.add"].includes(receipt.action)) || promptState.spotifyPlaybackFailures.length) return null;
   const spotifyLookup = promptState.playbackLookups.findLast(lookup => ["spotify.search", "spotify.discovery.search"].includes(lookup.capability));
+  const playbackContext = application.spotifyPlaybackContextStatus?.();
+  // Catalog verification also supports music conversation and recommendations.
+  // Only a playback/selection request needs the host's numbered version menu.
+  if (spotifyLookup) promptState.displayedChoiceRefs = [];
+  if (!playbackContext?.requested_followup && !playbackContext?.queue_request &&
+      /\b(?:recommend\w*|suggest\w*|similar|discover\w*|explor\w*)\b|推荐|相似|类似|探索|最近发现|好听|喜欢/iu.test(promptText) &&
+      !/\b(?:play|queue|put on)\b|播放|加入队列/iu.test(promptText)) return null;
   if (!spotifyLookup && (!playbackOnlyRequest(promptText) || promptState.externalCandidateSets.some(set => !set.playbackLookup))) return null;
   if (promptState.spotifyLookupFailures.length) return promptState.spotifyLookupFailures
     .map(failure => renderSpotifyPlaybackFailure({ ...failure, action: "lookup" }, promptText)).join("\n\n");
@@ -7446,6 +7457,7 @@ export class PiAgentRuntime {
       if (promptState.presentationFailure) throw new Error("Moondog response presentation was interrupted.");
 
       if (finalStopReason === "aborted" || promptState.abortRequested) {
+        this.application.cancelSpotifyQueueRequest?.();
         discardPromptHistory(this.agent, historyStartIndex);
         historyFinalized = true;
         const receipts = spotifyEffectTexts();
