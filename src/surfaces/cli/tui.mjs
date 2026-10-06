@@ -1559,7 +1559,16 @@ export async function runMoondogTui({
       if (typeof runProfile !== "function") {
         throw new Error("Changing your profile isn't available when Moondog is started this way.");
       }
-      addMoondogMessage(await runProfile(args));
+      addMoondogMessage(await runProfile(args, {
+        signal: localCommandController?.signal,
+        onProgress: progress => setFooter(progress.model_retry
+          ? `Retrying model ${progress.model_retry.attempt}/${progress.model_retry.maxRetries}. ${progress.reviewed_partitions}/${progress.total_partitions} pages saved. Ctrl+C cancels.`
+          : progress.phase === "verification" ? `Checking your profile: ${progress.checked_targets}/${progress.total_check_targets} conclusions. Ctrl+C saves progress.`
+          : progress.phase === "repair" ? "Correcting unsupported profile conclusions before saving. Ctrl+C saves progress."
+          : progress.phase === "complete" ? "Saving your checked listening profile."
+          : progress.phase === "synthesis" ? `Synthesizing your listening profile. ${progress.reviewed_partitions}/${progress.total_partitions} pages saved. Ctrl+C saves progress.`
+          : `Reading your music: ${progress.reviewed_partitions}/${progress.total_partitions} evidence pages. Ctrl+C saves progress.`),
+      }));
       void updateHomeLyrics();
       if (["correct", "retract"].includes(args[0])) {
         try {
@@ -1698,7 +1707,7 @@ export async function runMoondogTui({
       try {
         if (!["home", "theme", "art", "motion", "model", "resume", "rewind", "new", "taste", "profile", "import"].includes(command)) enterConversation();
         if (command !== "auth") editor.addToHistory(value);
-        localCommandController = ["web", "lyrics", "model", "update"].includes(command) ? new AbortController() : null;
+        localCommandController = ["web", "lyrics", "model", "update", "profile"].includes(command) ? new AbortController() : null;
         const controller = localCommandController;
         setBusy(true, controller ? () => controller.abort() : null);
         setFooter(`/${command}...`);
@@ -1712,7 +1721,7 @@ export async function runMoondogTui({
         if (cleanedUp) return;
         enterConversation();
         const cancelled = localCommandController?.signal.aborted;
-        addMoondogMessage(cancelled ? command === "web" ? "Stopped the lookup." : command === "model" ? "Stopped the catalog check. Model unchanged." : command === "update" ? "Stopped the update check. No update installed." : "Stopped the lyric sync." : `That didn't work: ${error.message}`);
+        addMoondogMessage(cancelled ? command === "web" ? "Stopped the lookup." : command === "model" ? "Stopped the catalog check. Model unchanged." : command === "update" ? "Stopped the update check. No update installed." : command === "profile" ? "Stopped the profile build. Saved progress and your previous reading are kept. Use /profile build to continue." : "Stopped the lyric sync." : `That didn't work: ${error.message}`);
         setFooter(cancelled ? "Cancelled." : `/${command} didn't work.`, cancelled ? dim : failure);
       } finally {
         localCommandController = null;

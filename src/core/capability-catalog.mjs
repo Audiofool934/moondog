@@ -101,6 +101,18 @@ const catalog = [
     },
   },
   {
+    id: "profile.saved", version: "1", state: "enabled", effect: "read_local",
+    description: "Read a durable listener-profile revision and trace a finding to its frozen evidence.",
+    requires_profile_build: true,
+    agent_tool: { name: "moondog_profile_saved", label: "Read your saved listening profile" },
+  },
+  {
+    id: "profile.build", version: "1", state: "enabled", effect: "write_local",
+    description: "Build or resume a grounded local listener-profile revision with the configured model.",
+    requires_profile_build: true,
+    agent_tool: { name: "moondog_profile_build", label: "Build your saved listening profile" },
+  },
+  {
     id: "profile.explore", version: "1", state: "enabled", effect: "read_local",
     description: "Analyze all retained profile evidence with coverage, full-library facets, search, and pagination.",
     requires_profile_exploration: true,
@@ -544,7 +556,11 @@ function withRuntimeAvailability(
   musicSimilarityReady,
   webResearchReady,
   profileExplorationReady,
+  profileBuildReady,
 ) {
+  if (capability.requires_profile_build && !profileBuildReady) {
+    return { ...capability, state: "blocked", blocked_by: "profile_build_not_ready" };
+  }
   if (capability.requires_profile_exploration && !profileExplorationReady) {
     return { ...capability, state: "blocked", blocked_by: "profile_exploration_not_ready" };
   }
@@ -656,6 +672,7 @@ export function listCapabilities({
   musicSimilarityReady = false,
   webResearchReady = false,
   profileExplorationReady = false,
+  profileBuildReady = false,
 } = {}) {
   return structuredClone(
     catalog.map((capability) =>
@@ -675,6 +692,7 @@ export function listCapabilities({
         musicSimilarityReady,
         webResearchReady,
         profileExplorationReady,
+        profileBuildReady,
       ),
     ),
   );

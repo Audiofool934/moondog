@@ -98,11 +98,16 @@ Importing the same file twice changes nothing, and your original files are never
 Apple's privacy download, and full QQ or NetEase listening history, are not supported yet.
 The [terminal guide](docs/TERMINAL_GUIDE.md#import-and-inspect-listening-history) has every format.
 
+With a connected model, `/profile build` saves a versioned reading of the complete supported evidence.
+It checks the candidate against its evidence and can repair unsupported conclusions before saving, within the same build.
+Use `/profile saved` to read it and `/profile explain 1` to trace a finding to its evidence, including after restarting.
+New imports or corrections mark it for an update; interrupted builds keep progress and the previous reading.
+The builder sends bounded music digests to your configured model when you request it.
+
 ## Your profile
 
 The profile says what you played, and what that cannot prove.
-Playing a song a lot shows how well you know it.
-It does not prove you love it.
+Playing a song a lot does not, on its own, establish how much it matters to you.
 
 <p align="center">
   <img src="assets/demo/moondog-tui-profile.png" width="1000" alt="The listening profile for the fictional track Midnight Lines by Mara Vale, with the plays on one side and the limit of that evidence on the other">

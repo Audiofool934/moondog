@@ -237,7 +237,7 @@ export class TasteProfileView {
     const lines = [ends(heading, theme.muted(count), inner)];
     if (height >= 10) {
       const summaries = Array.isArray(this.model.summaryLines) ? this.model.summaryLines : [];
-      const maxSummary = height >= 22 ? 2 : 1;
+      const maxSummary = height >= 22 ? 3 : 1;
       lines.push(...summaries.slice(0, maxSummary).map((line) => theme.muted(inline(line))));
     }
     if (height >= 5) lines.push(inner >= 76

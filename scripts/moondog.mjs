@@ -28,6 +28,7 @@ import { runDataCommand } from "../src/surfaces/cli/data-command.mjs";
 import { migrateLegacyAppleMusicData } from "../src/core/apple-data-migration.mjs";
 import { runCatalogCommand } from "../src/surfaces/cli/catalog-command.mjs";
 import { runProfileCommand } from "../src/surfaces/cli/profile-command.mjs";
+import { runListenerProfileCommand, savedProfileActions } from "../src/surfaces/cli/listener-profile-command.mjs";
 import { createCodexWebResearch } from "../src/integrations/web/codex-web.mjs";
 import { runWebCommand } from "../src/surfaces/cli/web-command.mjs";
 import { openSpotifyConnection } from "../src/integrations/spotify/connection.mjs";
@@ -590,7 +591,7 @@ async function main() {
     return;
   }
 
-  if (options.command === "profile" && options.rest.length > 0) {
+  if (options.command === "profile" && options.rest.length > 0 && !savedProfileActions.has(options.rest[0])) {
     if (
       options.dryRun ||
       options.offline ||
@@ -793,6 +794,30 @@ async function main() {
     return;
   }
 
+  if (options.command === "profile" && savedProfileActions.has(options.rest[0])) {
+    if (options.dryRun || options.offline || options.html || options.card || options.save || options.output || options.from) {
+      throw new Error("Usage: moondog profile <build|saved|explain> [--json].");
+    }
+    const application = new MoondogApplication(await loadDomainServices());
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    process.once("SIGINT", abort);
+    try {
+      // Saved reads only need the profile domain. The builder connects its own
+      // model when new analysis is actually required.
+      await runListenerProfileCommand({ application, args: options.rest, json: options.json,
+        signal: controller.signal, onProgress: options.json ? undefined : progress =>
+          process.stderr.write(progress.model_retry
+            ? `Retrying model ${progress.model_retry.attempt}/${progress.model_retry.maxRetries}; ${progress.reviewed_partitions}/${progress.total_partitions} profile pages saved\n`
+            : progress.phase === "synthesis" ? `Synthesizing profile; ${progress.reviewed_partitions}/${progress.total_partitions} evidence pages saved\n`
+            : `Profile: ${progress.reviewed_partitions}/${progress.total_partitions} evidence pages reviewed\n`) });
+    } finally {
+      process.removeListener("SIGINT", abort);
+      application.close();
+    }
+    return;
+  }
+
   const domainState = await loadDomainServices();
   const memoryStore = await openLocalMemoryStore();
   const spotifyConnection = await loadSpotifyConnection();
@@ -930,12 +955,14 @@ async function main() {
         resolvePreferredSubjectId: optionalAppleMusicSubjectId,
         output: { write() {} },
       }),
-      runProfile: async (args) => {
+      runProfile: async (args, controls = {}) => {
         const values = [...args];
         const json = values.at(-1) === "--json";
         if (json) values.pop();
         let output = "";
-        await runProfileCommand({
+        const command = savedProfileActions.has(values[0]) ? runListenerProfileCommand : runProfileCommand;
+        await command({
+          application, ...controls,
           args: values,
           json,
           commandPrefix: "/profile",

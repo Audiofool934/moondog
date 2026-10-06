@@ -24,9 +24,9 @@ const repositoryRoot = path.resolve(
   "..",
 );
 const maximumPackedBytes = 2_500_000;
-// The updater adds two runtime modules; retain bounded package headroom.
-const maximumUnpackedBytes = 4_350_000;
-const maximumEntries = 115;
+// Profile verification adds one module plus resumable checking and repair logic.
+const maximumUnpackedBytes = 4_425_000;
+const maximumEntries = 121;
 const packageOnlyPrivateSentinelPattern = new RegExp(
   ["PRIVATE", "(?:IP|PLATFORM)", "SENTINEL"].join("_"),
   "u",
@@ -60,6 +60,12 @@ const requiredPackagePaths = new Set([
   "src/profile/music-import-bundle.mjs",
   "src/profile/music-providers.mjs",
   "src/profile/profile-exploration.mjs",
+  "src/profile/listener-profile-build.mjs",
+  "src/profile/listener-profile-store.mjs",
+  "src/profile/listener-profile-worker.mjs",
+  "src/profile/listener-profile-verification.mjs",
+  "src/runtime/pi/profile-build-runtime.mjs",
+  "src/surfaces/cli/listener-profile-command.mjs",
   "src/runtime/pi/skills/listener-profile/SKILL.md",
   "src/profile/listener-corrections.mjs",
   "src/profile/local-music-data.mjs",

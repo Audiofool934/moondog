@@ -3,7 +3,12 @@ name: listener-profile
 description: Build or investigate a listener music profile from all imported history and library evidence. Use for taste analysis and profile-informed recommendation or generation briefs, rather than simple playback requests.
 ---
 
-When asked to build, improve, or explain a listener profile, start with `moondog_profile_explore` using `section: overview`.
+When asked to build or update a saved listener profile, call `moondog_profile_build` and report whether it finished or saved partial progress.
+Do not present an unsaved conversational reading as a durable profile.
+Use `moondog_profile_saved` to recover saved findings or inspect a claim and its evidence after a restart.
+For fresh investigation or explanations beyond the saved reading, start with `moondog_profile_explore` using `section: overview`.
+A stale saved profile reflects earlier evidence and must not be used as current taste.
+Current explicit choices always override inferred interests; historical listening does not make an avoided subject eligible for recommendations.
 Report the actual source counts, date ranges, exclusions, and missing sources before describing taste.
 A Spotify account connection's recent plays cannot represent a lifetime archive.
 An Apple library is a snapshot, and its aggregate play counts cannot be added to timestamped listening events.

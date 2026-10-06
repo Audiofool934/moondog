@@ -77,7 +77,7 @@ Sources: [OpenClaw compaction](https://docs.openclaw.ai/concepts/compaction) and
 Repeatedly summarizing whichever tracks happened to appear in chat cannot demonstrate coverage of a music archive.
 The profile must be recoverable from stored evidence and its build artifact after the conversation is compacted or closed.
 
-## Current Moondog position
+## Moondog position at the research snapshot
 
 The code was inspected at `715aa9c` on the full-listener-profile branch.
 The following distinction remains important after the accompanying skill refinement.
@@ -102,7 +102,8 @@ Generic conversation memory must not become a second canonical music profile.
 ## Proposed profile-building workflow
 
 This workflow is a Moondog design proposal derived from the comparison, not a claim that either upstream project implements music profiling this way.
-The persistent builder described below is not implemented by this research change.
+The research change did not implement the builder.
+The later implementation described below now provides the first persistent slice.
 
 ```mermaid
 flowchart TD
@@ -189,6 +190,83 @@ The first proof should exercise four observable outcomes with synthetic data:
 
 Then evaluate one real model-produced profile with the listener for recognizable interests, missing facets, misleading certainty, and usefulness for a concrete recommendation.
 Current deterministic tool tests establish access and arithmetic, not that final quality outcome.
+
+## Implemented first slice
+
+The TUI now supports `/profile build`, `/profile saved`, and `/profile explain <number>`; the Pi agent exposes matching build and saved-evidence tools.
+The builder uses complete local analysis catalogs, stable input fingerprints, typed findings, and immutable SQLite revisions with frozen cited evidence.
+A dedicated Pi worker reads bounded digest pages and checkpoints its findings before the current revision is replaced.
+A separate synthesis session receives measured cross-source anchors and section ordering semantics, then searches saved findings and writes candidate global insights with raw evidence references.
+Fresh verification sessions check up to three highlighted insights at a time using only frozen raw evidence, then check the complete summary and useful coverage.
+Failed checks trigger up to two automatic repairs per invocation, with a new verification after each repair and an overall limit of eighteen verification or repair sessions.
+Drafts and verification reports are resumable checkpoints; a failed or interrupted check does not replace the previous revision.
+Repairs target failed claim IDs and preserve other claims; identical claims retain their raw-evidence checks within the frozen input, while summary and coverage are always checked again.
+Compatible pages from an earlier completed build remain reusable when only the synthesis changes.
+Changed evidence invalidates the saved reading, identical imports reuse it, and interrupted builds can continue after restarting.
+The compact current reading is available to a fresh listening conversation; stale inferred text is withheld from that context.
+Current direct choices remain separate from historical observations.
+
+The synthetic acceptance path covers a supported interest beyond the first hundred tracks, Apple library curation, correction-driven revision, saved evidence recovery, invalid reference rejection, cancellation, and source changes during a build.
+A faux provider exercises the real Pi agent and tools; it does not evaluate the quality of a live model's taste inference.
+The first real listener review exposed a gap between factual page observations and a useful final profile: collection-heavy selection, incidental song lists, and unsupported interpretations of catalog order.
+The synthesis changes address those mechanisms, while their effect on a new live model-produced reading remains a separate listener evaluation step.
+Private profiles and individual feedback remain local; shared tests use fictional evidence.
+See the [terminal guide](TERMINAL_GUIDE.md#saved-listener-profiles) and [builder tests](../tests/runtime/listener-profile-build.test.mjs).
+
+## First-build quality target (2026-10-05)
+
+The next priority is a useful and reliable profile from the listener's initial import and one requested build.
+The quality target is a plausible, multidimensional and internally coherent working understanding that the model can use for listening and discovery.
+Reasonable inference error and local factual imperfections are acceptable; neither exhaustive correctness nor exact agreement with a listener's self-description defines success.
+Long-term interests, recent attention, collection evidence and uncertainty should coexist in a coherent reading, with room for supported interpretation.
+Repeated owner review is a development and evaluation method, not the intended newcomer experience.
+A dedicated user-facing inspection workflow remains an undecided later feature.
+Existing evidence and correction commands remain available, but expanding that workflow must not substitute for improving the builder.
+
+One build can perform several internal passes without requiring another user request.
+Keep the target path simple: understand source coverage, investigate the evidence, synthesize the profile, then make a bounded whole-profile coherence check and revise material problems when needed.
+Prioritize contradictions, invented direct preferences and unsupported narratives that substantially change the musical understanding.
+An isolated minor defect should not require a larger review pipeline or prevent an otherwise useful reading from being delivered.
+Progress, cancellation, resumable checkpoints, and preservation of the previous revision still apply.
+Report network interruption and unavailable evidence honestly, and distinguish these operational failures from ordinary uncertainty in a model's interpretation.
+
+Compilation checks types, coverage of digest pages, and the existence of evidence references.
+The implemented verification stage adds a separate model judgment about entailment, contradiction, factual and source scope, and useful coverage.
+The host requires a complete report bound to the exact candidate, including every cited reference for each highlighted claim, and withholds the new revision when any check requests repair.
+The model can search the complete frozen evidence catalog to investigate claims omitted or misstated in earlier page findings.
+This establishes a bounded verification and repair mechanism; agreement between model stages is not proof that the final interpretation is correct.
+The current claim-by-claim gate is an implementation snapshot and is stricter than this quality target.
+The next iteration should simplify it toward a small whole-profile check of plausibility, meaningful breadth and consistency, preserving the existing recovery and evidence facilities.
+Add specialized checks only for observed failures with a material effect on that understanding; do not grow listener-specific rules or repeated review machinery to chase perfect agreement.
+The first-build quality target is not yet a verified capability.
+
+### Acceptance cases
+
+| Input condition | Required first-build behavior |
+| --- | --- |
+| Unequal platform coverage or missing periods | State the observed source and time scope without turning missing records into an absence of listening or inventing platform-switch dates. |
+| A recent concentration alongside persistent historical interests | Describe recent attention separately, without asserting that it replaces enduring taste. |
+| A meaningful smaller interest with evidence across history or curation | Preserve it in the reading without equating play duration with the listener's subjective importance. |
+| Repeated tracks, skips, or high completion | Describe supported behavior without inventing dislike, driving, mood, intention, or a preference ranking from those measures. |
+| A library snapshot with partial or missing counts | Keep curation separate from dated plays and do not treat unknown counts as zero lifetime listening or unfamiliarity. |
+| A rank, total, comparison, category, or counterexample central to the interpretation | Check that its metric, source scope and evidence support the musical judgment, with effort proportionate to the consequence of being wrong. |
+| A fact unavailable in the permitted input | Leave it unknown or qualify the conclusion; do not guess the private fact that a later listener review reveals. |
+
+### Evaluation boundary
+
+Freeze the imported input, model configuration, builder version, and first output before reading later listener feedback as evaluation evidence.
+Do not seed a first-build evaluation with that later feedback or hand-edited conclusions.
+Distinguish errors the available evidence should have prevented from private facts that the builder could not have recovered.
+When evaluating personalization from supplied feedback, label that as a separate scenario.
+
+Use a small set of fictional or authorized private profiles that varies source coverage, temporal patterns, and musical interests rather than tuning only to one listener's names or answers.
+Keep private examples and raw feedback outside public fixtures and reports.
+Assess whether the model's reasoning is plausible from the available evidence and whether the whole reading preserves meaningful interests without material internal contradictions.
+Distinguish defects that change the dominant musical understanding from minor factual, citation or phrasing imperfections.
+Use a small set of concrete examples to guide development rather than expanding a benchmark or rule set around every listener disagreement.
+Passing by deleting all substantive insights or substituting generic uncertainty language is not acceptable.
+Record internal repair attempts, model calls, elapsed time, and available usage data so quality improvements remain proportionate and observable.
+Repeat fresh runs when needed to distinguish stable behavior from a lucky sample; faux-model tests alone cannot establish this outcome.
 
 ## Research scope and source versions
 

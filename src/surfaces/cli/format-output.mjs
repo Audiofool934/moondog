@@ -703,6 +703,9 @@ From your shell:
 - \`moondog data inspect --scope <listening|apple|profile>\` - see what's stored, and get the code needed to reset it
 - \`moondog data export --scope <listening|apple|profile> --output <directory>\` - export a copy, leaving the original alone
 - \`moondog data reset --scope <listening|apple|profile> --confirm <token>\` - set stored data aside (it is archived, not deleted)
+- \`moondog profile build [--force]\` - build or resume a saved profile with your connected model
+- \`moondog profile saved [offset]\` - read your saved profile
+- \`moondog profile explain <number>\` - trace a saved finding to its evidence
 - \`moondog profile corrections [--all]\` - everything you've told me, including earlier choices
 - \`moondog profile correct --artist <name> (--like|--avoid)\` - like an artist, or keep them out
 - \`moondog profile correct --track <title> --by <artist> (--like|--avoid)\` - like a track, or keep it out
@@ -721,6 +724,9 @@ Inside the listening room:
 - \`/status\` or \`/sources\` - see where things stand
 - \`/profile\` or \`/taste\` - your profile, and why each song or artist is there
 - \`/taste report\` - the whole report on one page
+- \`/profile build [--force]\` - build or resume a saved reading; Ctrl+C keeps progress
+- \`/profile saved [offset]\` - read your saved profile
+- \`/profile explain <number>\` - inspect a saved finding's evidence
 - \`/profile corrections [--all]\` - everything you've told me
 - \`/profile correct --track "<title>" --by "<artist>" (--like|--avoid)\` - like a track, or keep it out
 - \`/profile correct --artist "<name>" (--like|--avoid)\` - like an artist, or keep them out
