@@ -227,40 +227,26 @@ test("saved Apple profile retains a curated tail interest and normalizes legacy 
   const application = new MoondogApplication({ domainServices: services, importsRoot: "/private/fixture-no-imports" });
   t.after(() => application.close());
   const firstInput = application.getProfileBuildContext().input;
-  const tail = firstInput.partitions.find(part => part.section === "apple_tracks" && part.items.some(item => item.data.label === "Fixture song 60"));
-  assert.ok(tail.offset >= 100);
+  const appleTracks = [...firstInput.evidence.values()].filter(entry => entry.section === "apple_tracks");
+  assert.ok(appleTracks.findIndex(entry => entry.data.label === "Fixture song 60") >= 100);
   const runtimeFactory = async () => ({
     publicStatus: () => ({ state: "configured", provider: "faux", model: "faux-1", worker_version: "1" }),
     abort() {},
     async investigate(session) {
-      const insights = [];
-      for (;;) {
-        const pending = session.progress().pending;
-        if (!pending.length) break;
-        for (const part of pending) {
-          const page = session.read(part.partition_id);
-          const entry = page.items.find(item => item.data.label === "Fixture song 60");
-          const saved = session.review(part.partition_id, { note: "Examined the full page.", claims: entry ? [{
-            kind: "observation", statement: `Quiet curator has an imported Apple preference strength of ${entry.data.preference_strength}.`,
-            scope: "Apple library snapshot, separate from dated listening history.",
-            uncertainty: "Imported library choices are provider evidence, not a new assertion to Moondog.",
-            supporting_refs: [entry.reference_id], contradicting_refs: [],
-          }] : [] });
-          insights.push(...saved.saved_claims);
-        }
+      if (session.phase === "check") {
+        session.record({ candidate_id: session.candidate.candidate_id, verdict: "pass", issues: [] });
+        return;
       }
-      for (let offset = 0; offset !== null;) {
-        const page = session.findings(offset);
-        insights.push(...page.items.filter(claim => claim.kind !== "listener_assertion"));
-        offset = page.next_offset;
-      }
-      if (session.phase === "synthesis") session.submit({ summary: "A smaller curated interest is preserved alongside dominant preferences.",
-        insights: [...new Map(insights.map(claim => [claim.claim_id, claim])).values()] });
-      else if (session.phase === "verification") session.verify({ candidate_id: session.candidate.candidate_id, checks: [
-        ...["summary", "coverage"].map(target => ({ target, status: "supported", reason: "Scoped fictional curation evidence.", evidence_refs: [] })),
-        ...session.candidate.insights.map(claim => ({ target: claim.claim_id, status: "supported",
-          reason: "The snapshot contains this preference strength.", evidence_refs: [...claim.supporting_refs, ...claim.contradicting_refs] })),
-      ] });
+      // The tail row is beyond the dossier's library rows; the writer reaches it through
+      // catalog search. Only a later explicit choice lists it directly.
+      assert.ok(!JSON.stringify({ ...session.dossier, explicit_choices: [] }).includes("Fixture song 60"));
+      const entry = session.search({ section: "apple_tracks", query: "Fixture song 60" }).items[0];
+      session.submit({ summary: "A smaller curated interest is preserved alongside dominant preferences.", insights: [{
+        kind: "observation", statement: `Quiet curator has an imported Apple preference strength of ${entry.data.preference_strength}.`,
+        scope: "Apple library snapshot, separate from dated listening history.",
+        uncertainty: "Imported library choices are provider evidence, not a new assertion to Moondog.",
+        supporting_refs: [entry.reference_id], contradicting_refs: [],
+      }] });
     },
   });
   const built = await application.buildListenerProfile({ runtimeFactory });

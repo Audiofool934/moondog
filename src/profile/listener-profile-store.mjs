@@ -1,6 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { directAssertionReview, profileDigest } from "./listener-profile-build.mjs";
+import { profileDigest } from "./listener-profile-build.mjs";
 
+// listener_profile_partitions holds page findings from builds before
+// listener-synthesis/4. New builds no longer write it; it stays so existing
+// databases open unchanged.
 export const listenerProfileSchema = `
   CREATE TABLE IF NOT EXISTS listener_profile_builds (
     build_id TEXT PRIMARY KEY NOT NULL, subject_id TEXT NOT NULL,
@@ -41,23 +44,21 @@ export class ListenerProfileStore {
     return row ? JSON.parse(row.record_json) : null;
   }
 
-  reviews(buildId) {
-    return Object.fromEntries(this.database.prepare(`SELECT partition_id, review_json
-      FROM listener_profile_partitions WHERE build_id = ?`).all(buildId)
-      .map(row => [row.partition_id, JSON.parse(row.review_json)]));
-  }
-
+  /** Resume an unfinished build for the same input and model, or start a new one. */
   begin(input, model, { force = false } = {}) {
     const modelKey = profileDigest(model);
     this.database.exec("BEGIN IMMEDIATE");
     try {
+      const parent = this.current()?.revision_id ?? null;
       const existing = force ? null : this.database.prepare(`SELECT record_json FROM listener_profile_builds
         WHERE subject_id = ? AND input_digest = ? AND model_key = ? AND state <> 'complete'
         ORDER BY rowid DESC LIMIT 1`).get(this.subjectId, input.input_digest, modelKey);
-      const build = existing ? JSON.parse(existing.record_json) : {
+      const saved = existing ? JSON.parse(existing.record_json) : null;
+      // A checkpoint written against an older current reading cannot replace the newer one.
+      const resumable = saved?.parent_revision_id === parent ? saved : null;
+      const build = resumable ?? {
         build_id: randomUUID(), input_digest: input.input_digest, model,
-        parent_revision_id: this.current()?.revision_id ?? null,
-        started_at: new Date().toISOString(), manifest: input.manifest,
+        parent_revision_id: parent, started_at: new Date().toISOString(),
       };
       build.lease_token = randomUUID();
       this.database.prepare(`INSERT INTO listener_profile_builds
@@ -65,24 +66,8 @@ export class ListenerProfileStore {
         VALUES (?, ?, ?, ?, ?, 'building', ?) ON CONFLICT(build_id) DO UPDATE
         SET lease_token = excluded.lease_token, state = 'building', record_json = excluded.record_json`)
         .run(build.build_id, this.subjectId, input.input_digest, modelKey, build.lease_token, JSON.stringify(build));
-      let reused = 0;
-      const present = this.reviews(build.build_id);
-      for (const partition of input.partitions) {
-        if (present[partition.partition_id]) { reused++; continue; }
-        const direct = directAssertionReview(partition);
-        const cached = direct || force ? null : this.database.prepare(`SELECT p.review_json FROM listener_profile_partitions p
-          JOIN listener_profile_builds b ON b.build_id = p.build_id
-          WHERE b.subject_id = ? AND b.model_key = ? AND p.partition_id = ? ORDER BY b.rowid DESC LIMIT 1`)
-          .get(this.subjectId, modelKey, partition.partition_id);
-        const review = direct ?? (cached ? JSON.parse(cached.review_json) : null);
-        if (review && review.claims.every(claim => [...claim.supporting_refs, ...claim.contradicting_refs]
-          .every(ref => input.evidence.has(ref)))) {
-          this.#writeReview(build.build_id, partition.partition_id, review);
-          if (!direct) reused++;
-        }
-      }
       this.database.exec("COMMIT");
-      return { ...build, reused_partitions: reused, reviews: this.reviews(build.build_id) };
+      return { ...build, resumed: Boolean(resumable) };
     } catch (error) { this.database.exec("ROLLBACK"); throw error; }
   }
 
@@ -92,21 +77,6 @@ export class ListenerProfileStore {
     if (row?.lease_token !== build.lease_token || row.state !== "building") {
       throw new Error("Another profile build has taken over; continue from its saved progress");
     }
-  }
-
-  #writeReview(buildId, partitionId, review) {
-    this.database.prepare(`INSERT INTO listener_profile_partitions (build_id, partition_id, review_json)
-      VALUES (?, ?, ?) ON CONFLICT(build_id, partition_id) DO UPDATE SET review_json = excluded.review_json`)
-      .run(buildId, partitionId, JSON.stringify(review));
-  }
-
-  checkpoint(build, review) {
-    this.database.exec("BEGIN IMMEDIATE");
-    try {
-      this.#assertLease(build);
-      this.#writeReview(build.build_id, review.partition_id, review);
-      this.database.exec("COMMIT");
-    } catch (error) { this.database.exec("ROLLBACK"); throw error; }
   }
 
   checkpointFinalization(build, finalization) {

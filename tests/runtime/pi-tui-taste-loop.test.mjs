@@ -500,43 +500,28 @@ test("TUI builds a saved reading, exposes its evidence, and cancels with a recov
         await new Promise(resolve => { release = resolve; });
         session.modelRetry(null);
       }
-      const pending = session.progress().pending;
-      if (session.phase === "verification") {
-        session.verify({ candidate_id: session.candidate.candidate_id,
-          checks: ["summary", "coverage", ...session.candidate.insights.map(claim => claim.claim_id)].map(target => {
-            const claim = session.candidate.insights.find(item => item.claim_id === target);
-            return { target, status: "supported", reason: "The fictional reading matches its scoped evidence.",
-              evidence_refs: claim ? [...claim.supporting_refs, ...claim.contradicting_refs] : [] };
-          }) });
+      if (session.phase === "check") {
+        session.record({ candidate_id: session.candidate.candidate_id, verdict: "pass", issues: [] });
         return;
       }
-      if (pending.length) {
-        for (const part of pending.slice(0, 2)) {
-          const page = session.read(part.partition_id);
-          const entry = page.items[0];
-          session.review(part.partition_id, { note: "Reviewed this page.", claims: [{
-            kind: "observation", statement: "Retained listening provides evidence of attention.",
-            scope: page.section, uncertainty: "It does not establish liking.",
-            supporting_refs: [entry.reference_id], contradicting_refs: [],
-          }] });
-          if (cancel) { await new Promise(resolve => { release = resolve; }); return; }
-        }
-        return;
-      }
-      const insights = session.findings().items.slice(0, 6);
-      session.submit({ summary: "A saved reading of fictional listening.", insights });
+      if (cancel) { await new Promise(resolve => { release = resolve; }); return; }
+      const entry = session.search({}).items[0];
+      session.submit({ summary: "A saved reading of fictional listening.", insights: [{
+        kind: "observation", statement: "Retained listening provides evidence of attention.",
+        scope: entry.section, uncertainty: "It does not establish liking.",
+        supporting_refs: [entry.reference_id], contradicting_refs: [],
+      }] });
     },
   }) });
   await fixture.launch();
   fixture.terminal.send("/profile build");
   fixture.terminal.send("\r");
-  await waitFor(() => sessions === 2, "automatic continuation", fixture.terminal);
-  await fixture.waitBody("Retrying model 1/2.");
-  assert.match(fixture.terminal.body, /2\/\d+ pages saved/u);
+  await waitFor(() => sessions === 2, "automatic continuation into the check", fixture.terminal);
+  await fixture.waitBody("Retrying the model, 1 of 2.");
   assert.doesNotMatch(fixture.terminal.body, /Done\.|Saved your new listening profile/u);
   release();
   await fixture.waitOutput("Saved your new listening profile.");
-  assert.ok(sessions > 1);
+  assert.equal(sessions, 2);
   assert.doesNotMatch(fixture.terminal.text, /Use \/profile build to continue/u);
   await fixture.submit("/profile saved", "A saved reading of fictional listening.");
   await fixture.submit("/profile explain 1", "Supporting evidence:");
@@ -544,7 +529,7 @@ test("TUI builds a saved reading, exposes its evidence, and cancels with a recov
   fixture.terminal.output = "";
   fixture.terminal.send("/profile build --force");
   fixture.terminal.send("\r");
-  await fixture.waitOutput("Ctrl+C saves progress.");
+  await fixture.waitOutput("Reading your music and writing your profile. Ctrl+C cancels.");
   fixture.terminal.send("\x03");
   await fixture.waitOutput("Stopped the profile build.");
   assert.equal((await fixture.application.getListenerProfile()).sequence, 1);

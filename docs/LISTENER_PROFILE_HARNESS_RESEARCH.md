@@ -191,25 +191,40 @@ The first proof should exercise four observable outcomes with synthetic data:
 Then evaluate one real model-produced profile with the listener for recognizable interests, missing facets, misleading certainty, and usefulness for a concrete recommendation.
 Current deterministic tool tests establish access and arithmetic, not that final quality outcome.
 
-## Implemented first slice
+## Implemented builder
 
-The TUI now supports `/profile build`, `/profile saved`, and `/profile explain <number>`; the Pi agent exposes matching build and saved-evidence tools.
-The builder uses complete local analysis catalogs, stable input fingerprints, typed findings, and immutable SQLite revisions with frozen cited evidence.
-A dedicated Pi worker reads bounded digest pages and checkpoints its findings before the current revision is replaced.
-A separate synthesis session receives measured cross-source anchors and section ordering semantics, then searches saved findings and writes candidate global insights with raw evidence references.
-Fresh verification sessions check up to three highlighted insights at a time using only frozen raw evidence, then check the complete summary and useful coverage.
-Failed checks trigger up to two automatic repairs per invocation, with a new verification after each repair and an overall limit of eighteen verification or repair sessions.
-Drafts and verification reports are resumable checkpoints; a failed or interrupted check does not replace the previous revision.
-Repairs target failed claim IDs and preserve other claims; identical claims retain their raw-evidence checks within the frozen input, while summary and coverage are always checked again.
-Compatible pages from an earlier completed build remain reusable when only the synthesis changes.
-Changed evidence invalidates the saved reading, identical imports reuse it, and interrupted builds can continue after restarting.
-The compact current reading is available to a fresh listening conversation; stale inferred text is withheld from that context.
-Current direct choices remain separate from historical observations.
+### First slice (2026-10-04)
 
-The synthetic acceptance path covers a supported interest beyond the first hundred tracks, Apple library curation, correction-driven revision, saved evidence recovery, invalid reference rejection, cancellation, and source changes during a build.
-A faux provider exercises the real Pi agent and tools; it does not evaluate the quality of a live model's taste inference.
-The first real listener review exposed a gap between factual page observations and a useful final profile: collection-heavy selection, incidental song lists, and unsupported interpretations of catalog order.
-The synthesis changes address those mechanisms, while their effect on a new live model-produced reading remains a separate listener evaluation step.
+The TUI gained `/profile build`, `/profile saved`, and `/profile explain <number>`, and the Pi agent gained matching build and saved-evidence tools.
+That builder paged the complete evidence into 24-row digests and had a model review every page before a separate synthesis session.
+Fresh sessions then verified up to three highlighted claims at a time, with up to two automatic repairs.
+Stable input fingerprints, typed findings, resumable checkpoints and immutable SQLite revisions with frozen cited evidence came from this slice and remain in use.
+
+The first real build was slow, and the gate rarely passed.
+On one large private archive of about 16,000 evidence rows, page review produced 666 pages of findings and took about four hours.
+In private evaluations on 2026-10-04 and 2026-10-05, no build on that archive passed the claim-by-claim gate.
+About half of the rejected checks concerned missing or misassigned citations rather than wrong musical conclusions, and the verifier made its own errors.
+The first listener review also found collection-heavy selection, incidental song lists, and unsupported readings of catalog order.
+
+### Profile engine v2 (2026-10-06)
+
+A controlled comparison on that frozen archive showed that page review did not change the quality of the final reading.
+Synthesis with the 666 cached pages and synthesis without them produced readings of similar quality, each surfacing different secondary interests, in under two minutes.
+A stronger model produced a noticeably tighter reading from the same evidence with far fewer tool calls.
+None of these readings described the music as music, because the prompt rules discouraged genre, scene and lineage interpretation.
+
+The current builder therefore has four steps:
+
+1. Code computes a compact dossier from every supported record: leading artists, tracks and releases, recent movement against lifetime rank, yearly coverage, curation beyond listening, the library, distinctive provider signals, and every explicit choice, each row with a reference.
+2. One model session writes the reading from the dossier and can search the complete evidence catalog. It uses musical knowledge to name scenes, lineages and eras, marks interpretations as hypotheses, and keeps enduring listening, recent attention, curation and explicit choices apart.
+3. A fresh session judges the whole draft once and flags only material problems: contradictions, wrong headline facts, invented preferences or personal context, recent attention presented as a change of enduring taste, or a major omitted thread.
+4. A flagged draft is revised once and checked again, then saved. Any concern the final check still raises is saved with the reading and shown with it.
+
+On the same archive, full v2 builds took under three minutes with both a fast and a stronger model.
+The fast model's check found three real factual errors, which the single revision fixed before saving.
+Both readings named the main scenes and lineages, kept smaller and curated interests, and separated recent attention from enduring taste.
+Each insight carried a few anchor references rather than exhaustive citations.
+This is a small private sample of one listener, not proof of stable quality across listeners.
 Private profiles and individual feedback remain local; shared tests use fictional evidence.
 See the [terminal guide](TERMINAL_GUIDE.md#saved-listener-profiles) and [builder tests](../tests/runtime/listener-profile-build.test.mjs).
 
@@ -230,15 +245,11 @@ An isolated minor defect should not require a larger review pipeline or prevent 
 Progress, cancellation, resumable checkpoints, and preservation of the previous revision still apply.
 Report network interruption and unavailable evidence honestly, and distinguish these operational failures from ordinary uncertainty in a model's interpretation.
 
-Compilation checks types, coverage of digest pages, and the existence of evidence references.
-The implemented verification stage adds a separate model judgment about entailment, contradiction, factual and source scope, and useful coverage.
-The host requires a complete report bound to the exact candidate, including every cited reference for each highlighted claim, and withholds the new revision when any check requests repair.
-The model can search the complete frozen evidence catalog to investigate claims omitted or misstated in earlier page findings.
-This establishes a bounded verification and repair mechanism; agreement between model stages is not proof that the final interpretation is correct.
-The current claim-by-claim gate is an implementation snapshot and is stricter than this quality target.
-The next iteration should simplify it toward a small whole-profile check of plausibility, meaningful breadth and consistency, preserving the existing recovery and evidence facilities.
+Compilation checks finding types and the existence of every evidence reference, and only the listener's own records can become explicit choices.
+Profile engine v2 implements the whole-profile check described above, bound to the exact candidate, with one revision.
+Agreement between model stages is not proof that the final interpretation is correct.
 Add specialized checks only for observed failures with a material effect on that understanding; do not grow listener-specific rules or repeated review machinery to chase perfect agreement.
-The first-build quality target is not yet a verified capability.
+The first-build quality target has early evidence on one private archive and still needs fresh builds across varied inputs.
 
 ### Acceptance cases
 

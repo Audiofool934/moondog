@@ -116,40 +116,41 @@ function profileToolResponse(name, args) {
 }
 
 function profileSession() {
-  const state = { reads: 0, reviews: 0, submissions: 0, retries: [] };
+  const state = { searches: 0, submissions: 0, checks: 0, retries: [] };
   const entry = { reference_id: "ev_fixture", section: "history_tracks", data: { label: "Synthetic track" } };
-  return {
-    state, phase: "review", manifest: { digest_partitions: 1 },
-    progress: () => ({ reviewed_partitions: state.reviews, total_partitions: 1 }),
-    findings: () => ({ total: state.reviews, items: [], next_offset: null }),
-    read(id) {
-      assert.equal(id, "part_fixture");
-      state.reads++;
-      return { partition_id: id, items: [entry] };
+  const session = {
+    state, phase: "synthesis", dossier: { lifetime_tracks: [{ ref: "ev_fixture", label: "Synthetic track" }] },
+    candidate: null, check: null,
+    progress: () => ({ phase: session.phase }),
+    search(args) {
+      assert.equal(args.query, "Synthetic");
+      state.searches++;
+      return { total: 1, offset: 0, items: [entry], next_offset: null };
     },
-    review(id) {
-      assert.equal(id, "part_fixture");
-      assert.equal(state.reads, 1);
-      assert.equal(state.reviews++, 0, "the checkpoint must not be repeated");
-      return { saved_claims: [{ claim_id: "claim_fixture" }] };
+    evidence: () => entry,
+    submit() {
+      assert.equal(state.searches, 1);
+      assert.equal(state.submissions++, 0, "the checkpoint must not be repeated");
+      session.candidate = { candidate_id: "candidate_fixture", summary: "A synthetic saved profile.", insights: [], cited_evidence: [] };
+      return { state: "draft_saved", next: "check" };
     },
-    submit() { assert.equal(state.reviews, 1); state.submissions++; },
+    record(value) {
+      assert.equal(value.candidate_id, "candidate_fixture");
+      state.checks++;
+      return { verdict: value.verdict, issues: 0 };
+    },
     modelRetry(value) { state.retries.push(value); },
   };
+  return session;
 }
 
 function profileCheckpointResponse(count) {
-  if (count === 1) return profileToolResponse("moondog_read_profile_digest", { partition_id: "part_fixture" });
-  if (count === 2) return profileToolResponse("moondog_record_profile_findings", {
-    partition_id: "part_fixture", note: "Retained synthetic evidence.", claims: [{
-      kind: "observation", statement: "The synthetic track is present.", scope: "Synthetic fixture",
-      uncertainty: "Presence is not liking.", supporting_refs: ["ev_fixture"], contradicting_refs: [],
-    }],
-  });
-  return profileToolResponse("moondog_submit_listener_profile", {
+  if (count === 1) return profileToolResponse("moondog_search_profile_evidence", { query: "Synthetic" });
+  if (count === 2) return profileToolResponse("moondog_submit_listener_profile", {
     summary: "A synthetic saved profile.", insights: [{ kind: "observation", statement: "A retained synthetic track.",
       scope: "Synthetic fixture", uncertainty: "Presence is not liking.", supporting_refs: ["ev_fixture"], contradicting_refs: [] }],
   });
+  return profileToolResponse("moondog_record_profile_check", { candidate_id: "candidate_fixture", verdict: "pass", issues: [] });
 }
 
 test("profile worker retries a rejected DeepSeek request without replaying saved tools", async () => {
@@ -159,13 +160,13 @@ test("profile worker retries a rejected DeepSeek request without replaying saved
     return profileCheckpointResponse(count);
   }, { profile: true });
   await fixture.runtime.investigate(session);
-  session.phase = "synthesis";
+  session.phase = "check";
   await fixture.runtime.investigate(session);
   assert.equal(fixture.requests.length, 5);
   assert.deepEqual(fixture.requests[2], fixture.requests[3]);
   assert.deepEqual(fixture.requests[3], fixture.requests[4]);
   assert.deepEqual(fixture.waits, [250, 500]);
-  assert.deepEqual(session.state, { reads: 1, reviews: 1, submissions: 1,
+  assert.deepEqual(session.state, { searches: 1, submissions: 1, checks: 1,
     retries: [{ attempt: 1, maxRetries: 2 }, { attempt: 2, maxRetries: 2 }, null] });
   assert.equal(fixture.runtime.activeAgent, null);
 });
@@ -177,15 +178,15 @@ test("profile worker reports safe provider errors after bounded retries or termi
     throw networkFailure("UND_ERR_CONNECT_TIMEOUT");
   }, { profile: true });
   await fixture.runtime.investigate(session);
-  session.phase = "synthesis";
+  session.phase = "check";
   await assert.rejects(fixture.runtime.investigate(session), error => {
     assertSafeConnectionError(error, { code: "UND_ERR_CONNECT_TIMEOUT" });
-    assert.match(error.message, /Saved progress: 1\/1 evidence pages/u);
+    assert.match(error.message, /saved draft are kept/u);
     return true;
   });
   assert.equal(fixture.requests.length, 5);
-  assert.equal(session.state.reviews, 1);
-  assert.equal(session.state.submissions, 0);
+  assert.equal(session.state.submissions, 1);
+  assert.equal(session.state.checks, 0);
   assert.equal(fixture.runtime.activeAgent, null);
 
   for (const [status, message, expected] of [
@@ -198,7 +199,7 @@ test("profile worker reports safe provider errors after bounded retries or termi
     }), { profile: true });
     await assert.rejects(terminal.runtime.investigate(profileSession()), error => {
       assert.match(error.message, expected);
-      assert.match(error.message, /Saved progress: 0\/1 evidence pages/u);
+      assert.match(error.message, /saved draft are kept/u);
       assert.doesNotMatch(error.message, /PRIVATE_KEY_SENTINEL/u);
       return true;
     });
@@ -219,13 +220,13 @@ test("profile worker cancellation during connection backoff preserves the checkp
     return delay(milliseconds, undefined, { signal });
   } });
   await fixture.runtime.investigate(session);
-  session.phase = "synthesis";
+  session.phase = "check";
   const completion = fixture.runtime.investigate(session);
   await started.promise;
   fixture.runtime.abort();
   await completion;
   assert.equal(fixture.requests.length, 3);
-  assert.deepEqual(session.state, { reads: 1, reviews: 1, submissions: 0, retries: [{ attempt: 1, maxRetries: 2 }] });
+  assert.deepEqual(session.state, { searches: 1, submissions: 1, checks: 0, retries: [{ attempt: 1, maxRetries: 2 }] });
   assert.equal(fixture.runtime.activeAgent, null);
 });
 
