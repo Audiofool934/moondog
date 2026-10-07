@@ -2034,14 +2034,51 @@ test("/language switches and saves the reply language without a model call", asy
   terminal.output = "";
   terminal.send("/language español");
   terminal.send("\r");
-  await waitFor(() => stripVTControlCharacters(terminal.output).includes("Español: replies use it"));
+  await waitFor(() => stripVTControlCharacters(terminal.output).includes("Español: las respuestas lo usan"));
   assert.equal(application.locale, "es");
   assert.deepEqual(saved, ["es"]);
   terminal.output = "";
   terminal.send("/language klingon");
   terminal.send("\r");
-  await waitFor(() => stripVTControlCharacters(terminal.output).includes("Use /language"));
+  await waitFor(() => stripVTControlCharacters(terminal.output).includes("Usa /language"));
   assert.equal(application.locale, "es");
+});
+
+test("the listening room switches its own screen text with /language, including wide Chinese text", async (context) => {
+  const terminal = new FakeTerminal();
+  const signalTarget = new EventEmitter();
+  let frame;
+  const doRender = TuiAltScreen.prototype.doRender;
+  context.mock.method(TuiAltScreen.prototype, "doRender", function () {
+    doRender.call(this);
+    frame = this.captureRenderState();
+  });
+  const application = { ...fakeApplication(), locale: "en" };
+  const running = runMoondogTui({
+    application, runtime: fakeRuntime(), terminal, signalTarget, saveLanguage: async () => {},
+    environment: { TERM: "xterm-256color", MOONDOG_ART: "text", MOONDOG_MOTION: "off" },
+  });
+  context.after(async () => { signalTarget.emit("SIGTERM"); await running; });
+  await waitForStart(terminal);
+  const screen = () => frame?.previousLines.map(stripVTControlCharacters).join("\n") ?? "";
+  const show = async (input, expected) => {
+    terminal.send(input);
+    terminal.send("\r");
+    await waitFor(() => screen().includes(expected)).catch(error => { console.log(`SCREEN for ${input}:\n${screen()}`); throw error; });
+  };
+  await show("/language es", "las respuestas lo usan");
+  await show("/home", "Perfil de escucha");
+  assert.match(screen(), /tu sala de escucha/u);
+  await show("/import", "Trae tu música");
+  assert.match(screen(), /Otras fuentes/u);
+  terminal.send("\x1b");
+  await show("/language zh", "回复都会使用它");
+  await show("/import", "带上你的音乐");
+  terminal.send("\x1b");
+  await show("/home", "聆听资料");
+  // Every painted row still fits the terminal, even with double-width characters.
+  assert.ok(frame.previousLines.every(line => visibleWidth(line) <= terminal.columns), screen());
+  assert.equal(application.locale, "zh");
 });
 
 test("Tab focuses home actions and Down then Enter opens the import guide without a model call", async (context) => {

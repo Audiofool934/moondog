@@ -135,9 +135,11 @@ export async function readYouTubeMusicTakeout({ filePath, subjectId, capturedAt 
     rows.push(...parsed.rows); skipped += parsed.skipped;
     if (rows.length > maximumRecords) throw new Error("Import up to 100,000 music records at a time. Import the extracted files separately.");
   }
-  return prepareMusicBundle({ provider: "youtube_music", subjectId, capturedAt, rows,
+  const prepared = prepareMusicBundle({ provider: "youtube_music", subjectId, capturedAt, rows,
     digest: musicHash(bytes), size: bytes.length, members: sources.map((source) => source.name), skipped,
     fileName: path.basename(filePath),
     scopeNote: "Your library songs and YouTube Music plays, read in English or Chinese. Regular YouTube videos are left out. Google doesn't say how long you listened, and history you deleted or paused can't come back.",
   });
+  prepared.preview.source = "youtube-music";
+  return prepared;
 }

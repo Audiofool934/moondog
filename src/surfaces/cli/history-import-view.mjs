@@ -12,6 +12,7 @@ import {
 import { sanitizeTerminalText } from "./format-output.mjs";
 import { IMPORT_GUIDE_URLS } from "./import-guides.mjs";
 import { SPOTIFY_LIBRARY_SCOPES } from "../../integrations/spotify/library-snapshot.mjs";
+import { screenTranslator } from "../../i18n/index.mjs";
 
 function clean(value) {
   return sanitizeTerminalText(stripVTControlCharacters(String(value ?? "")))
@@ -37,10 +38,6 @@ function safeEditorLine(value) {
     .join("")).join(CURSOR_MARKER);
 }
 
-function count(value) {
-  return Number.isFinite(value) && value >= 0 ? value.toLocaleString("en-US") : "Unknown";
-}
-
 function day(value) {
   if (value === undefined || value === null || value === "") return null;
   const date = new Date(value);
@@ -49,8 +46,9 @@ function day(value) {
 
 /** Acquisition guidance and file review; all effects belong to the host. */
 export class HistoryImportView {
-  constructor({ tui, getTheme, getRows, profileReady = false, onAction }) {
+  constructor({ tui, getTheme, getRows, profileReady = false, onAction, getText = () => screenTranslator("en") }) {
     this.getTheme = getTheme;
+    this.getText = getText;
     this.getRows = getRows;
     this.profileReady = profileReady;
     this.onAction = onAction;
@@ -132,110 +130,144 @@ export class HistoryImportView {
 
   emit(type, detail = {}) { this.onAction?.({ type, ...detail }); }
 
+  // A preview's source decides its label and note; brand names stay as they are.
+  previewSource(preview) {
+    const tr = this.getText();
+    switch (preview.source) {
+      case "spotify-quick-library": return [tr("Your Spotify library and recent plays"),
+        tr("Your library shows what you keep and what Spotify ranks highest for you. Recent plays are your latest 50. A history ZIP can add years of listening later.")];
+      case "spotify-quick-recent": return [tr("Spotify recent listening"),
+        tr("Your latest plays, up to 50. Spotify doesn't say how long you listened here. A history ZIP can add the older ones later.")];
+      case "apple-library": return [tr("Apple Music library"),
+        tr("Your library with loves, ratings, play counts and when you last played each song. It doesn't list every play.")];
+      case "listenbrainz": return [tr("ListenBrainz history"),
+        tr("Your saved listens. Some don't say how long you listened, so they count as plays without minutes.")];
+      case "spotify-extended": return [tr("Spotify Extended Streaming History"),
+        tr("Every play in this file, with how long you listened and how each song started and ended.")];
+      case "spotify-account": return [tr("Spotify Account Data"),
+        tr("Your plays from the past year, plus your library and playlists. For older plays and listening time, use Extended streaming history.")];
+      case "youtube-music": return [clean(preview.sourceLabel),
+        tr("Your library songs and YouTube Music plays, read in English or Chinese. Regular YouTube videos are left out. Google doesn't say how long you listened, and history you deleted or paused can't come back.")];
+      case "public-playlist": return [clean(preview.sourceLabel), Number.isFinite(preview.totalTracks)
+        ? tr("{read} of {total} songs could be read; the service hides some. Only this playlist is added. It shows what you keep, not what you played, and it may not be one you made.", { read: tr.number(preview.availableTracks), total: tr.number(preview.totalTracks) })
+        : tr("{read} songs could be read; the service hides some. Only this playlist is added. It shows what you keep, not what you played, and it may not be one you made.", { read: tr.number(preview.availableTracks) })];
+      default: return [clean(preview.sourceLabel), clean(preview.scopeNote)];
+    }
+  }
+
   spotifyQuickPreview(preview) {
+    const tr = this.getText();
     const library = preview.library;
-    const plural = (value, one, many) => `${count(value)} ${value === 1 ? one : many}`;
     const first = day(preview.earliestListeningAt);
     const last = day(preview.latestListeningAt);
+    const [label, note] = this.previewSource(preview);
     return {
-      title: "Review your Spotify",
-      notice: "Nothing is added until you import it.",
+      title: tr("Review your Spotify"),
+      notice: tr("Nothing is added until you import it."),
       paragraphs: [
-        clean(preview.sourceLabel),
+        label,
         ...(library ? [
-          `${plural(library.savedTracks, "saved song", "saved songs")} · ${plural(library.savedAlbums, "saved album", "saved albums")} · ${plural(library.followedArtists, "followed artist", "followed artists")}`,
-          `${plural(library.playlistTracks, "song", "songs")} across ${plural(library.playlists, "playlist you made", "playlists you made")}`,
-          `${plural(library.topArtists, "top artist", "top artists")} and ${plural(library.topTracks, "top track", "top tracks")} from Spotify`,
-          ...(library.truncated?.length ? ["A very large library: Moondog read up to its limit and stopped there."] : []),
-          ...(library.skippedPlaylists ? [`${plural(library.skippedPlaylists, "playlist", "playlists")} couldn't be read and will be left out.`] : []),
-        ] : preview.libraryUnavailable ? ["Your library isn't included: Reconnect Spotify to allow it."] : []),
+          [tr.n(library.savedTracks, "{count} saved song", "{count} saved songs"), tr.n(library.savedAlbums, "{count} saved album", "{count} saved albums"),
+            tr.n(library.followedArtists, "{count} followed artist", "{count} followed artists")].join(" · "),
+          tr("{songs} across {playlists}", { songs: tr.n(library.playlistTracks, "{count} song", "{count} songs"),
+            playlists: tr.n(library.playlists, "{count} playlist you made", "{count} playlists you made") }),
+          tr("{artists} and {tracks} from Spotify", { artists: tr.n(library.topArtists, "{count} top artist", "{count} top artists"),
+            tracks: tr.n(library.topTracks, "{count} top track", "{count} top tracks") }),
+          ...(library.truncated?.length ? [tr("A very large library: Moondog read up to its limit and stopped there.")] : []),
+          ...(library.skippedPlaylists ? [tr.n(library.skippedPlaylists, "{count} playlist couldn't be read and will be left out.", "{count} playlists couldn't be read and will be left out.")] : []),
+        ] : preview.libraryUnavailable ? [tr("Your library isn't included: Reconnect Spotify to allow it.")] : []),
         preview.listeningEvents
-          ? `${plural(preview.listeningEvents, "recent play", "recent plays")}${first && last ? `, ${first} to ${last}` : ""}`
-          : "No recent plays from Spotify right now.",
-        clean(preview.scopeNote),
+          ? first && last
+            ? tr("{plays}, {first} to {last}", { plays: tr.n(preview.listeningEvents, "{count} recent play", "{count} recent plays"), first, last })
+            : tr.n(preview.listeningEvents, "{count} recent play", "{count} recent plays")
+          : tr("No recent plays from Spotify right now."),
+        note,
       ].filter(Boolean),
-      actions: [{ type: "commit", label: "Add to my profile" }, { type: "recent", label: "Read Spotify again" }, { type: "back", label: "Back" }],
+      actions: [{ type: "commit", label: tr("Add to my profile") }, { type: "recent", label: tr("Read Spotify again") }, { type: "back", label: tr("Back") }],
     };
   }
 
   pageContent() {
-    const profile = this.profileReady ? [{ type: "profile", label: "View my profile" }] : [];
-    const file = { type: "file", label: "Choose a file" };
-    const back = { type: "back", label: "Back" };
+    const tr = this.getText();
+    const profile = this.profileReady ? [{ type: "profile", label: tr("View my profile") }] : [];
+    const file = { type: "file", label: tr("Choose a file") };
+    const back = { type: "back", label: tr("Back") };
+    const website = url => tr("Website: {url}", { url });
     switch (this.state.page) {
       case "youtube_music": return {
-        title: "Import from YouTube Music",
-        paragraphs: ["Start with the songs in your library, then add what you've played from Google Takeout.", "Already have an export? Bring it in now. A new export takes a while to arrive, but there's nothing to set up."],
-        actions: [{ type: "youtubeQuick", label: "Start with my music library" }, { type: "youtubeHistory", label: "Add past listening history" }, back],
+        title: tr("Import from YouTube Music"),
+        paragraphs: [tr("Start with the songs in your library, then add what you've played from Google Takeout."),
+          tr("Already have an export? Bring it in now. A new export takes a while to arrive, but there's nothing to set up.")],
+        actions: [{ type: "youtubeQuick", label: tr("Start with my music library") }, { type: "youtubeHistory", label: tr("Add past listening history") }, back],
       };
       case "youtubeQuick":
       case "youtubeHistory": return {
-        title: this.state.page === "youtubeQuick" ? "YouTube Music: saved library" : "YouTube Music: past listening",
+        title: this.state.page === "youtubeQuick" ? tr("YouTube Music: saved library") : tr("YouTube Music: past listening"),
         paragraphs: [
-          `Website: ${IMPORT_GUIDE_URLS.youtube}`,
-          "1. In Google Takeout, deselect all products, then select YouTube and YouTube Music.",
-          "2. Under included data, select music library songs and history. In format options, set history to JSON (not HTML).",
-          "3. Create a one-time ZIP export with a download link. Google emails you when it is ready; save it in Downloads.",
-          "4. Return here and choose the ZIP, or an extracted music-library-songs.csv or watch-history.json.",
-          "Library songs show what you keep. Only YouTube Music plays count as plays; regular YouTube videos are left out. Google doesn't say how long you listened.",
-          "Regular YouTube playlist CSVs and uploaded audio don't work yet. If the ZIP is over 256 MB, unzip it and bring in the music files one at a time.",
+          website(IMPORT_GUIDE_URLS.youtube),
+          tr("1. In Google Takeout, deselect all products, then select YouTube and YouTube Music."),
+          tr("2. Under included data, select music library songs and history. In format options, set history to JSON (not HTML)."),
+          tr("3. Create a one-time ZIP export with a download link. Google emails you when it is ready; save it in Downloads."),
+          tr("4. Return here and choose the ZIP, or an extracted music-library-songs.csv or watch-history.json."),
+          tr("Library songs show what you keep. Only YouTube Music plays count as plays; regular YouTube videos are left out. Google doesn't say how long you listened."),
+          tr("Regular YouTube playlist CSVs and uploaded audio don't work yet. If the ZIP is over 256 MB, unzip it and bring in the music files one at a time."),
         ],
-        actions: [{ type: "file", label: "Choose my Takeout file" }, { type: "openYouTube", label: "Open Google Takeout" }, back],
+        actions: [{ type: "file", label: tr("Choose my Takeout file") }, { type: "openYouTube", label: tr("Open Google Takeout") }, back],
       };
       case "qq_music":
       case "netease": {
         const qq = this.state.page === "qq_music";
         return {
-          title: `Import from ${qq ? "QQ Music / QQ 音乐" : "NetEase / 网易云音乐"}`,
+          title: tr("Import from {service}", { service: qq ? "QQ Music / QQ 音乐" : "NetEase / 网易云音乐" }),
           paragraphs: [
-            "Quick start: open a playlist that sounds like you, choose Share > Copy link, and paste it below.",
-            "Moondog reads the public song list without signing in. You'll see the playlist and its songs before anything is added.",
-            "Private playlists can't be read, and some songs may be unavailable; the preview shows how many made it. A playlist shows what you keep, not what you played, and not necessarily one you made.",
-            "Past listening: there's no reliable way to export your full history from this service yet, so playlists are the way in for now.",
+            tr("Quick start: open a playlist that sounds like you, choose Share > Copy link, and paste it below."),
+            tr("Moondog reads the public song list without signing in. You'll see the playlist and its songs before anything is added."),
+            tr("Private playlists can't be read, and some songs may be unavailable; the preview shows how many made it. A playlist shows what you keep, not what you played, and not necessarily one you made."),
+            tr("Past listening: there's no reliable way to export your full history from this service yet, so playlists are the way in for now."),
           ],
-          actions: [{ type: "file", label: "Paste a playlist share link" }, { type: qq ? "openQQ" : "openNetEase", label: "Open my music service" }, back],
+          actions: [{ type: "file", label: tr("Paste a playlist share link") }, { type: qq ? "openQQ" : "openNetEase", label: tr("Open my music service") }, back],
         };
       }
       case "spotify": return {
-        title: "Import from Spotify",
+        title: tr("Import from Spotify"),
         paragraphs: [
-          "Quick start: connect Spotify and bring in your library, your top artists, and what you've played lately.",
-          "Past history: bring in the history ZIP Spotify sends you, going back years.",
-          "Either way, it all ends up in the same profile.",
+          tr("Quick start: connect Spotify and bring in your library, your top artists, and what you've played lately."),
+          tr("Past history: bring in the history ZIP Spotify sends you, going back years."),
+          tr("Either way, it all ends up in the same profile."),
         ],
-        actions: [{ type: "quick", label: "Quick start" }, { type: "spotifyHistory", label: "Add past listening history" }, back],
+        actions: [{ type: "quick", label: tr("Quick start") }, { type: "spotifyHistory", label: tr("Add past listening history") }, back],
       };
       case "apple": return {
-        title: "Import from Apple Music",
+        title: tr("Import from Apple Music"),
         paragraphs: [
-          "Quick start: export your library from Music on Mac and bring in the XML file.",
-          "Past history: Apple can send you your data, but Moondog can't read that archive yet.",
+          tr("Quick start: export your library from Music on Mac and bring in the XML file."),
+          tr("Past history: Apple can send you your data, but Moondog can't read that archive yet."),
         ],
-        actions: [{ type: "appleQuick", label: "Quick start with library XML" }, { type: "appleHistory", label: "Past listening history guide" }, back],
+        actions: [{ type: "appleQuick", label: tr("Quick start with library XML") }, { type: "appleHistory", label: tr("Past listening history guide") }, back],
       };
       case "appleQuick": return {
-        title: "Quick start with Apple Music",
+        title: tr("Quick start with Apple Music"),
         paragraphs: [
-          "1. In Music on Mac, choose File > Library > Export Library.",
-          "2. Save Library.xml somewhere easy to find, such as Downloads.",
-          "3. Choose the XML below. Preview it before adding it to your profile.",
-          "Moondog reads the file on this machine, including your loves, ratings and play counts. Nothing to sign in to.",
-          "A library shows what you keep and how often, but not when you played each song. Apple's privacy download is a different format.",
+          tr("1. In Music on Mac, choose File > Library > Export Library."),
+          tr("2. Save Library.xml somewhere easy to find, such as Downloads."),
+          tr("3. Choose the XML below. Preview it before adding it to your profile."),
+          tr("Moondog reads the file on this machine, including your loves, ratings and play counts. Nothing to sign in to."),
+          tr("A library shows what you keep and how often, but not when you played each song. Apple's privacy download is a different format."),
         ],
-        actions: [{ type: "file", label: "Choose my Library.xml" }, { type: "openAppleHelp", label: "Open Apple XML export guide" }, back],
+        actions: [{ type: "file", label: tr("Choose my Library.xml") }, { type: "openAppleHelp", label: tr("Open Apple XML export guide") }, back],
       };
       case "appleHistory": return {
-        title: "Apple Music: past listening history",
+        title: tr("Apple Music: past listening history"),
         paragraphs: [
-          `Website: ${IMPORT_GUIDE_URLS.applePrivacy}`,
-          "1. Sign in to Apple's Data & Privacy website and choose Request a copy of your data.",
-          "2. Select Apple Media Services information, which includes Apple Music activity, then complete the request.",
-          "3. Apple notifies you when it is ready. Return to Data & Privacy to download the prepared files within 14 days.",
-          "4. Save the download on your computer. Your browser usually uses Downloads, or asks you to choose a folder.",
-          "What's included depends on your account and region. Opening the link doesn't request or import anything by itself.",
-          "Moondog can't read Apple's privacy download yet. Keep it safe, and start with Library.xml for now.",
+          website(IMPORT_GUIDE_URLS.applePrivacy),
+          tr("1. Sign in to Apple's Data & Privacy website and choose Request a copy of your data."),
+          tr("2. Select Apple Media Services information, which includes Apple Music activity, then complete the request."),
+          tr("3. Apple notifies you when it is ready. Return to Data & Privacy to download the prepared files within 14 days."),
+          tr("4. Save the download on your computer. Your browser usually uses Downloads, or asks you to choose a folder."),
+          tr("What's included depends on your account and region. Opening the link doesn't request or import anything by itself."),
+          tr("Moondog can't read Apple's privacy download yet. Keep it safe, and start with Library.xml for now."),
         ],
-        actions: [{ type: "openApplePrivacy", label: "Open privacy.apple.com" }, { type: "appleQuick", label: "Start with library XML" }, back],
+        actions: [{ type: "openApplePrivacy", label: tr("Open privacy.apple.com") }, { type: "appleQuick", label: tr("Start with library XML") }, back],
       };
       case "quick": {
         const status = this.state.spotify ?? {};
@@ -244,81 +276,81 @@ export class HistoryImportView {
         const ready = recentOnly && SPOTIFY_LIBRARY_SCOPES.every((scope) => granted.includes(scope));
         const configured = status.client_id_configured;
         return {
-          title: "Quick start with Spotify",
+          title: tr("Quick start with Spotify"),
           paragraphs: [
-            "Start your profile from your Spotify library: saved songs and albums, the artists you follow, your own playlists, and the artists and tracks Spotify ranks highest for you. Your latest 50 plays come along too.",
-            "You'll see it all before anything is saved. No model or download needed.",
-            "Years of listening can come later with a history ZIP.",
-            ready ? "Spotify is connected. Go ahead when you're ready."
-              : recentOnly ? "Your Spotify sign-in only covers recent plays. Reconnect once so Moondog can read your library too."
-              : configured ? "Connect Spotify so Moondog can read your library and recent plays."
-                : "Connecting Spotify takes a one-time setup on this computer. Or start with a downloaded ZIP instead.",
+            tr("Start your profile from your Spotify library: saved songs and albums, the artists you follow, your own playlists, and the artists and tracks Spotify ranks highest for you. Your latest 50 plays come along too."),
+            tr("You'll see it all before anything is saved. No model or download needed."),
+            tr("Years of listening can come later with a history ZIP."),
+            ready ? tr("Spotify is connected. Go ahead when you're ready.")
+              : recentOnly ? tr("Your Spotify sign-in only covers recent plays. Reconnect once so Moondog can read your library too.")
+              : configured ? tr("Connect Spotify so Moondog can read your library and recent plays.")
+                : tr("Connecting Spotify takes a one-time setup on this computer. Or start with a downloaded ZIP instead."),
           ],
           actions: [
-            ready ? { type: "recent", label: "Preview my Spotify" }
-              : recentOnly ? { type: "connectSpotify", label: "Reconnect Spotify" }
-              : { type: configured ? "connectSpotify" : "setup", label: configured ? "Connect Spotify" : "Set up Spotify connection" },
-            ...(ready ? [{ type: "connectSpotify", label: "Reconnect Spotify" }] : recentOnly ? [{ type: "recent", label: "Just my recent plays" }] : []),
-            { type: "spotifyHistory", label: "Add past listening history" }, back,
+            ready ? { type: "recent", label: tr("Preview my Spotify") }
+              : recentOnly ? { type: "connectSpotify", label: tr("Reconnect Spotify") }
+              : configured ? { type: "connectSpotify", label: tr("Connect Spotify") } : { type: "setup", label: tr("Set up Spotify connection") },
+            ...(ready ? [{ type: "connectSpotify", label: tr("Reconnect Spotify") }] : recentOnly ? [{ type: "recent", label: tr("Just my recent plays") }] : []),
+            { type: "spotifyHistory", label: tr("Add past listening history") }, back,
           ],
         };
       }
       case "setup": return {
-        title: "Set up Spotify connection",
+        title: tr("Set up Spotify connection"),
         paragraphs: [
-          "For now, Moondog connects through a Spotify app you create yourself. It takes a few minutes.",
-          "In the Spotify Dashboard, create an app with Web API turned on.",
-          "Add redirect URI: http://127.0.0.1:43821/callback",
-          "Copy the Client ID from the app's settings. You don't need the client secret.",
-          "The app owner needs Premium, and up to 5 people can use it. If you're not the owner, get added under User Management.",
+          tr("For now, Moondog connects through a Spotify app you create yourself. It takes a few minutes."),
+          tr("In the Spotify Dashboard, create an app with Web API turned on."),
+          tr("Add redirect URI: {uri}", { uri: "http://127.0.0.1:43821/callback" }),
+          tr("Copy the Client ID from the app's settings. You don't need the client secret."),
+          tr("The app owner needs Premium, and up to 5 people can use it. If you're not the owner, get added under User Management."),
         ],
         actions: [
-          { type: "openSpotifySetup", label: "Open Spotify Dashboard" },
-          { type: "client", label: "Enter my Client ID" },
-          { type: "spotifyHistory", label: "Use a history ZIP instead" }, back,
+          { type: "openSpotifySetup", label: tr("Open Spotify Dashboard") },
+          { type: "client", label: tr("Enter my Client ID") },
+          { type: "spotifyHistory", label: tr("Use a history ZIP instead") }, back,
         ],
       };
       case "empty": return {
-        title: "Silence from Spotify",
+        title: tr("Silence from Spotify"),
         paragraphs: [
-          "Spotify didn't return any recent plays, so nothing was imported.",
-          "Play something in Spotify and try again, or bring a history ZIP.",
-          "This only covers the last few plays. Your full history is still there.",
+          tr("Spotify didn't return any recent plays, so nothing was imported."),
+          tr("Play something in Spotify and try again, or bring a history ZIP."),
+          tr("This only covers the last few plays. Your full history is still there."),
         ],
-        actions: [{ type: "recent", label: "Try recent listening again" }, { type: "spotifyHistory", label: "Add past listening history" }, back],
+        actions: [{ type: "recent", label: tr("Try recent listening again") }, { type: "spotifyHistory", label: tr("Add past listening history") }, back],
       };
       case "spotifyHistory": return {
-        title: "Spotify: past listening history",
+        title: tr("Spotify: past listening history"),
         paragraphs: [
-          "Already have your Spotify ZIP? Choose it below. No need to unzip it.",
-          `Website: ${IMPORT_GUIDE_URLS.spotify}`,
-          "1. Sign in, find Download your data, and select Extended streaming history. It goes back the furthest.",
-          "2. Confirm the request. Spotify emails you when it's ready, which can take up to 30 days.",
-          "3. Download the ZIP. It usually lands in your Downloads folder.",
-          "4. Come back to /import > Spotify > Add past listening history and choose that ZIP.",
-          "The quicker Account data download works too. It covers the past year plus your library. Neither needs a Spotify app or sign-in.",
-          "Opening the website doesn't request or import anything by itself.",
+          tr("Already have your Spotify ZIP? Choose it below. No need to unzip it."),
+          website(IMPORT_GUIDE_URLS.spotify),
+          tr("1. Sign in, find Download your data, and select Extended streaming history. It goes back the furthest."),
+          tr("2. Confirm the request. Spotify emails you when it's ready, which can take up to 30 days."),
+          tr("3. Download the ZIP. It usually lands in your Downloads folder."),
+          tr("4. Come back to /import > Spotify > Add past listening history and choose that ZIP."),
+          tr("The quicker Account data download works too. It covers the past year plus your library. Neither needs a Spotify app or sign-in."),
+          tr("Opening the website doesn't request or import anything by itself."),
         ],
         actions: [
-          { type: "file", label: "Choose my Spotify ZIP" },
-          { type: "openSpotify", label: "Open Spotify data export website" },
-          { type: "waiting", label: "I'm waiting for my download" }, back,
+          { type: "file", label: tr("Choose my Spotify ZIP") },
+          { type: "openSpotify", label: tr("Open Spotify data export website") },
+          { type: "waiting", label: tr("I'm waiting for my download") }, back,
         ],
       };
       case "waiting": return {
-        title: "Wish you were here",
+        title: tr("Wish you were here"),
         paragraphs: [
-          "When Spotify's email arrives, save the ZIP, usually in Downloads.",
-          "Then come back to /import > Spotify > Add past listening history and choose it.",
-          this.profileReady ? "Your profile is still here to explore in the meantime." : "You can still talk music while you wait.",
-          "Connecting Spotify now brings in your latest plays, not your full history.",
+          tr("When Spotify's email arrives, save the ZIP, usually in Downloads."),
+          tr("Then come back to /import > Spotify > Add past listening history and choose it."),
+          this.profileReady ? tr("Your profile is still here to explore in the meantime.") : tr("You can still talk music while you wait."),
+          tr("Connecting Spotify now brings in your latest plays, not your full history."),
         ],
-        actions: [{ type: "quick", label: "Quick start while I wait" }, file, ...profile, back],
+        actions: [{ type: "quick", label: tr("Quick start while I wait") }, file, ...profile, back],
       };
       case "other": return {
-        title: "Other listening sources",
+        title: tr("Other listening sources"),
         paragraphs: [
-          "ListenBrainz: choose a listens JSON file saved from ListenBrainz, either a GET export or a single/import payload.",
+          tr("ListenBrainz: choose a listens JSON file saved from ListenBrainz, either a GET export or a single/import payload."),
         ],
         actions: [file, back],
       };
@@ -330,37 +362,41 @@ export class HistoryImportView {
         const collection = preview.kind === "collection";
         const first = day(preview.earliestListeningAt);
         const last = day(preview.latestListeningAt);
+        const [label, note] = this.previewSource(preview);
+        const known = value => Number.isFinite(value) && value >= 0;
         return {
-          title: library ? "Review your Apple Music library" : recent ? "Review recent listening" : "Review this import",
-          notice: "Nothing is added until you import it.",
+          title: library ? tr("Review your Apple Music library") : recent ? tr("Review recent listening") : tr("Review this import"),
+          notice: tr("Nothing is added until you import it."),
           paragraphs: [
-            clean(preview.sourceLabel) || "Your history",
+            label || tr("Your history"),
             clean(preview.fileName),
-            library || collection ? `${count(preview.tracks)} ${preview.tracks === 1 ? "song" : "songs"}` : `${count(preview.listeningEvents)} ${preview.listeningEvents === 1 ? "play" : "plays"} · ${count(preview.tracks)} ${preview.tracks === 1 ? "track" : "tracks"}`,
-            library || collection ? `As of ${day(preview.capturedAt) ?? "an unknown date"}` : first && last ? `${first} to ${last}` : "No dates in this file.",
-            library || collection ? "This shows what you keep, so no plays will be added." : recent
-              ? "Spotify doesn't say how long you listened to recent plays."
+            library || collection
+              ? known(preview.tracks) ? tr.n(preview.tracks, "{count} song", "{count} songs") : tr("Unknown number of songs")
+              : `${known(preview.listeningEvents) ? tr.n(preview.listeningEvents, "{count} play", "{count} plays") : tr("Unknown number of plays")} · ${known(preview.tracks) ? tr.n(preview.tracks, "{count} track", "{count} tracks") : tr("Unknown number of tracks")}`,
+            library || collection ? tr("As of {date}", { date: day(preview.capturedAt) ?? tr("an unknown date") }) : first && last ? tr("{first} to {last}", { first, last }) : tr("No dates in this file."),
+            library || collection ? tr("This shows what you keep, so no plays will be added.") : recent
+              ? tr("Spotify doesn't say how long you listened to recent plays.")
               : preview.eventsWithPlayedMs === preview.listeningEvents
-                ? "Listening time is known for every play."
-                : `Listening time is known for ${count(preview.eventsWithPlayedMs)} of ${count(preview.listeningEvents)} plays.`,
-            ...(preview.profileEvidence > 0 ? [`Also ${count(preview.profileEvidence)} saved songs, follows, or playlist entries`] : []),
-            ...(preview.skippedRecords > 0 ? [`Left out ${count(preview.skippedRecords)} podcasts, videos, or incomplete entries`] : []),
-            clean(preview.scopeNote),
+                ? tr("Listening time is known for every play.")
+                : tr("Listening time is known for {known} of {total} plays.", { known: tr.number(preview.eventsWithPlayedMs), total: tr.number(preview.listeningEvents) }),
+            ...(preview.profileEvidence > 0 ? [tr.n(preview.profileEvidence, "Also {count} saved song, follow, or playlist entry", "Also {count} saved songs, follows, or playlist entries")] : []),
+            ...(preview.skippedRecords > 0 ? [tr.n(preview.skippedRecords, "Left out {count} podcast, video, or incomplete entry", "Left out {count} podcasts, videos, or incomplete entries")] : []),
+            note,
             ...(preview.sampleTracks ?? []).map((track) => `  ${clean(track)}`),
           ].filter(Boolean),
           actions: [
-            { type: "commit", label: "Add to my profile" },
-            recent ? { type: "recent", label: "Refresh recent listening" } : { type: "file", label: "Choose a different file" }, back,
+            { type: "commit", label: tr("Add to my profile") },
+            recent ? { type: "recent", label: tr("Refresh recent listening") } : { type: "file", label: tr("Choose a different file") }, back,
           ],
         };
       }
       default: return {
-        title: "Bring your music",
+        title: tr("Bring your music"),
         paragraphs: [
-          "Pick your music service. Start with what you've played lately, or go all the way back.",
-          this.profileReady ? "Anything you bring in joins your profile. Your choices stay as they are." : "You'll see what's inside before anything is added. It all stays on this machine.",
+          tr("Pick your music service. Start with what you've played lately, or go all the way back."),
+          this.profileReady ? tr("Anything you bring in joins your profile. Your choices stay as they are.") : tr("You'll see what's inside before anything is added. It all stays on this machine."),
         ],
-        actions: [{ type: "spotify", label: "Spotify" }, { type: "apple", label: "Apple Music" }, { type: "youtube_music", label: "YouTube Music" }, { type: "qq_music", label: "QQ Music / QQ 音乐" }, { type: "netease", label: "NetEase / 网易云音乐" }, { type: "other", label: "Other sources" }, ...profile],
+        actions: [{ type: "spotify", label: "Spotify" }, { type: "apple", label: "Apple Music" }, { type: "youtube_music", label: "YouTube Music" }, { type: "qq_music", label: "QQ Music / QQ 音乐" }, { type: "netease", label: "NetEase / 网易云音乐" }, { type: "other", label: tr("Other sources") }, ...profile],
       };
     }
   }
@@ -409,12 +445,15 @@ export class HistoryImportView {
     const input = client ? this.clientEditor : this.editor;
     const error = clean(this.state.error?.message ?? this.state.error);
     const errorLines = error ? wrapTextWithAnsi(error, width).slice(0, Math.min(3, Math.max(1, height - 6))).map(theme.error) : [];
+    const tr = this.getText();
+    const fileKind = { apple: tr("Apple Music library XML"), spotify: tr("Original Spotify history ZIP"),
+      youtube_music: tr("Takeout ZIP, music library CSV or watch-history JSON"), other: "ListenBrainz JSON" }[this.state.provider] ?? tr("Music export file or public playlist link");
     const header = client
-      ? [theme.bold("Enter your Spotify Client ID"), theme.muted("From your app settings. No client secret."), theme.text("Client ID")]
-      : playlist ? [theme.bold("Paste your playlist share link"), theme.muted(this.state.provider === "qq_music" ? "QQ Music public playlist" : "NetEase Cloud Music public playlist"), theme.text("Link (or the copied share text)")]
-      : [theme.bold("Choose your music file"), theme.muted(this.state.provider === "apple" ? "Apple Music library XML" : this.state.provider === "spotify" ? "Original Spotify history ZIP" : this.state.provider === "youtube_music" ? "Takeout ZIP, music library CSV or watch-history JSON" : this.state.provider === "other" ? "ListenBrainz JSON" : "Music export file or public playlist link"), theme.text("File path")];
-    const hint = client ? theme.muted("Enter save · Esc back") : playlist ? theme.muted("Paste link · Enter preview · Esc back") : theme.muted(width >= 64 ? "Paste or drag one path · Tab completes · Enter inspect · Esc back"
-      : width >= 38 ? "Paste/drag · Tab path · ↵ inspect · Esc" : "Tab path · ↵ inspect · Esc");
+      ? [theme.bold(tr("Enter your Spotify Client ID")), theme.muted(tr("From your app settings. No client secret.")), theme.text("Client ID")]
+      : playlist ? [theme.bold(tr("Paste your playlist share link")), theme.muted(this.state.provider === "qq_music" ? tr("QQ Music public playlist") : tr("NetEase Cloud Music public playlist")), theme.text(tr("Link (or the copied share text)"))]
+      : [theme.bold(tr("Choose your music file")), theme.muted(fileKind), theme.text(tr("File path"))];
+    const hint = client ? theme.muted(tr("Enter save · Esc back")) : playlist ? theme.muted(tr("Paste link · Enter preview · Esc back")) : theme.muted(width >= 64 ? tr("Paste or drag one path · Tab completes · Enter inspect · Esc back")
+      : width >= 38 ? tr("Paste/drag · Tab path · ↵ inspect · Esc") : tr("Tab path · ↵ inspect · Esc"));
     const budget = Math.max(1, height - header.length - errorLines.length - 1);
     input.setAutocompleteMaxVisible(Math.max(1, Math.min(4, budget - 8)));
     let editor = input.render(width);
@@ -439,13 +478,14 @@ export class HistoryImportView {
     const inset = columns >= 8 ? 1 : 0;
     const inner = Math.max(1, columns - inset * 2);
     const theme = this.getTheme();
+    const tr = this.getText();
     let lines;
     if (["file", "client"].includes(this.state.page)) {
       lines = this.renderFile(inner, height, theme);
     } else if (this.state.page === "working") {
-      const message = clean(this.state.message) || "Working on it…";
-      lines = [theme.bold("Your listening history"), "", ...wrapTextWithAnsi(message, inner).map(theme.text)];
-      if (height >= 5) lines.push("", theme.muted("One moment."));
+      const message = clean(this.state.message) || tr("Working on it…");
+      lines = [theme.bold(tr("Your listening history")), "", ...wrapTextWithAnsi(message, inner).map(theme.text)];
+      if (height >= 5) lines.push("", theme.muted(tr("One moment.")));
     } else {
       const page = this.pageContent();
       const spacious = height >= 17;
@@ -468,8 +508,8 @@ export class HistoryImportView {
         return selected ? theme.selected(text) : theme.text(text);
       });
       const hint = this.contentMaxOffset > 0
-        ? inner >= 36 ? "↑↓ ↵ choose · PgUp/Dn read · Esc back" : "↑↓ ↵ · PgUp/Dn read · Esc"
-        : inner >= 34 ? "↑↓ choose · Enter select · Esc back" : "↑↓ choose · ↵ select · Esc";
+        ? inner >= 36 ? tr("↑↓ ↵ choose · PgUp/Dn read · Esc back") : tr("↑↓ ↵ · PgUp/Dn read · Esc")
+        : inner >= 34 ? tr("↑↓ choose · Enter select · Esc back") : tr("↑↓ choose · ↵ select · Esc");
       lines = [...header, ...paragraphs.slice(this.contentOffset, this.contentOffset + capacity),
         ...(spacious ? [""] : []), ...actions, theme.faint(hint)];
     }

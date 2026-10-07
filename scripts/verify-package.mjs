@@ -26,9 +26,10 @@ const repositoryRoot = path.resolve(
 const maximumPackedBytes = 2_500_000;
 // The Apache-2.0 LICENSE file adds one entry and about 11 KB; the Spotify
 // library import adds one more entry and about 20 KB; the language module
-// adds five entries and about 35 KB, mostly message catalogs.
-const maximumUnpackedBytes = 4_500_000;
-const maximumEntries = 128;
+// adds five entries and about 35 KB, mostly message catalogs. Screen text
+// catalogs add about 100 KB and one entry per language.
+const maximumUnpackedBytes = 4_750_000;
+const maximumEntries = 130;
 const packageOnlyPrivateSentinelPattern = new RegExp(
   ["PRIVATE", "(?:IP|PLATFORM)", "SENTINEL"].join("_"),
   "u",

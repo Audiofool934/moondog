@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { LOCALES, messageCatalogKeys, messageLocale, normalizeLocale, systemLocale, translator } from "../../src/i18n/index.mjs";
+import { LOCALES, liveScreenTranslator, messageCatalogKeys, messageLocale, normalizeLocale, screenCatalog, systemLocale, translator } from "../../src/i18n/index.mjs";
 import { readLanguagePreference, resolveListenerLocale, writeLanguagePreference } from "../../src/i18n/preferences.mjs";
 import en from "../../src/i18n/messages/en.mjs";
 import es from "../../src/i18n/messages/es.mjs";
@@ -67,4 +67,38 @@ test("the saved language survives restarts, and MOONDOG_LANGUAGE still wins", as
   assert.equal(await resolveListenerLocale(environment), "es");
   assert.equal(await resolveListenerLocale({ ...environment, MOONDOG_LANGUAGE: "zh" }), "zh");
   await assert.rejects(writeLanguagePreference("klingon", environment), /Unsupported language/u);
+});
+
+test("every screen sentence is translated in every language, with the same placeholders", async () => {
+  const { screenSentences } = await import("../../scripts/i18n-strings.mjs");
+  const { sentences, problems } = await screenSentences();
+  assert.deepEqual(problems, []);
+  assert.ok(sentences.size > 800);
+  const placeholders = text => [...text.matchAll(/\{(\w+)\}/gu)].map(match => match[1]).sort();
+  for (const locale of Object.keys(LOCALES).filter(code => code !== "en")) {
+    const catalog = screenCatalog(locale);
+    for (const [english, { plural }] of sentences) {
+      const entry = catalog[english];
+      assert.ok(entry !== undefined, `${locale} is missing: ${english.slice(0, 80)}`);
+      const forms = typeof entry === "string" ? [entry] : [entry.other];
+      if (typeof entry !== "string") assert.ok(plural && typeof entry.one === "string", `${locale} plural shape: ${english.slice(0, 60)}`);
+      for (const form of forms) assert.deepEqual(placeholders(form), placeholders(english), `${locale} placeholders: ${english.slice(0, 60)}`);
+    }
+    // A sentence the source no longer uses is dead weight that hides drift.
+    for (const english of Object.keys(catalog)) assert.ok(sentences.has(english), `${locale} has an unused sentence: ${english.slice(0, 80)}`);
+  }
+});
+
+test("screen text follows the live language and pluralizes per language", () => {
+  let locale = "en";
+  const tr = liveScreenTranslator(() => locale);
+  assert.equal(tr("Bring your music"), "Bring your music");
+  assert.equal(tr.n(1, "{count} song", "{count} songs"), "1 song");
+  locale = "es";
+  assert.equal(tr("Bring your music"), "Trae tu música");
+  assert.equal(tr.n(1, "{count} song", "{count} songs"), "1 canción");
+  assert.equal(tr.n(1200, "{count} song", "{count} songs"), "1200 canciones");
+  locale = "zh";
+  assert.equal(tr.n(3, "{count} song", "{count} songs"), "3 首歌");
+  assert.equal(tr("A sentence nobody translated"), "A sentence nobody translated");
 });

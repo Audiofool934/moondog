@@ -9,12 +9,13 @@ import {
 } from "@earendil-works/pi-tui";
 
 import { sanitizeTerminalText } from "./format-output.mjs";
+import { N_, screenTranslator } from "../../i18n/index.mjs";
 
 const categories = [
-  { id: "all", label: "All" },
-  { id: "track", label: "Tracks" },
-  { id: "artist", label: "Artists" },
-  { id: "choices", label: "Your choices" },
+  { id: "all", label: N_("All") },
+  { id: "track", label: N_("Tracks") },
+  { id: "artist", label: N_("Artists") },
+  { id: "choices", label: N_("Your choices") },
 ];
 
 function clean(value) {
@@ -41,14 +42,15 @@ function ends(left, right, width) {
   return head + " ".repeat(width - visibleWidth(head) - tailWidth) + right;
 }
 
-function stanceLabel(subject) {
-  return subject?.stance === "like" ? "You like this" : subject?.stance === "avoid" ? "You asked me to keep this out" : "";
+function stanceLabel(subject, tr) {
+  return subject?.stance === "like" ? tr("You like this") : subject?.stance === "avoid" ? tr("You asked me to keep this out") : "";
 }
 
 /** A terminal-native, searchable profile with a live reading beside its subjects. */
 export class TasteProfileView {
-  constructor({ model, getTheme, getRows }) {
+  constructor({ model, getTheme, getRows, getText = () => screenTranslator("en") }) {
     this.getTheme = getTheme;
+    this.getText = getText;
     this.getRows = getRows;
     this.input = new Input();
     this.category = "all";
@@ -76,7 +78,7 @@ export class TasteProfileView {
     const subjects = Array.isArray(this.model.subjects) ? this.model.subjects : [];
     this.entries = subjects.filter((subject) => subject && typeof subject === "object").map((subject) => ({
       subject,
-      search: [subject.label, subject.subtitle, subject.kind, stanceLabel(subject), ...(subject.detailLines ?? [])]
+      search: [subject.label, subject.subtitle, subject.kind, stanceLabel(subject, this.getText()), ...(subject.detailLines ?? [])]
         .map(inline).join(" ").toLowerCase(),
     }));
     this.filterSubjects();
@@ -150,12 +152,13 @@ export class TasteProfileView {
   }
 
   renderCategories(width, theme) {
+    const tr = this.getText();
     if (width < 34) {
-      const label = categories.find((category) => category.id === this.category)?.label ?? "All";
-      return theme.bold(`‹ ${label} ›`) + (width >= 24 ? theme.faint("  tab change") : "");
+      const label = tr.marked(categories.find((category) => category.id === this.category)?.label ?? "All");
+      return theme.bold(`‹ ${label} ›`) + (width >= 24 ? theme.faint(`  ${tr("tab change")}`) : "");
     }
     return categories.map(({ id, label }) => {
-      const text = width < 38 && id === "choices" ? "Choices" : label;
+      const text = width < 38 && id === "choices" ? tr("Choices") : tr.marked(label);
       return id === this.category ? theme.underline(theme.selected(text)) : theme.muted(text);
     }).join(width >= 34 ? "  " : " ");
   }
@@ -167,14 +170,15 @@ export class TasteProfileView {
     const selectedIndex = this.filtered.findIndex((subject) => subject.key === this.selectedKey);
     const start = Math.max(0, Math.min(selectedIndex - Math.floor(capacity / 2), this.filtered.length - capacity));
     const lines = [];
+    const tr = this.getText();
     for (const subject of this.filtered.slice(start, start + capacity)) {
       const selected = subject.key === this.selectedKey;
       const marker = selected ? "◉ " : "  ";
-      const label = inline(subject.label) || (subject.kind === "artist" ? "Artist" : "Track");
+      const label = inline(subject.label) || (subject.kind === "artist" ? tr("Artist") : tr("Track"));
       const stance = subject.stance === "like" ? "+" : subject.stance === "avoid" ? "−" : "";
       const main = ends(marker + label, stance, width);
       lines.push(selected ? theme.selected(main) : theme.text(main));
-      if (!compact && lines.length < height) lines.push(theme.muted(`  ${inline(subject.subtitle) || (subject.kind === "artist" ? "Artist" : "Track")}`));
+      if (!compact && lines.length < height) lines.push(theme.muted(`  ${inline(subject.subtitle) || (subject.kind === "artist" ? tr("Artist") : tr("Track"))}`));
     }
     return Array.from({ length: height }, (_, index) => lines[index] ?? "");
   }
@@ -183,16 +187,17 @@ export class TasteProfileView {
     if (height <= 0) return [];
     const subject = this.getSelectedItem();
     if (!subject) return Array(height).fill("");
-    const heading = theme.bold(inline(subject.label) || "Selected");
+    const tr = this.getText();
+    const heading = theme.bold(inline(subject.label) || tr("Selected"));
     const subtitle = inline(subject.subtitle);
-    const stance = stanceLabel(subject);
+    const stance = stanceLabel(subject, tr);
     const prefix = [heading];
     if (subtitle && height >= 4) prefix.push(theme.muted(subtitle));
     if (stance && height >= 6) prefix.push(theme.accent(stance));
     if (height >= 8) prefix.push("");
     const sourceLines = Array.isArray(subject.detailLines) && subject.detailLines.length
       ? subject.detailLines
-      : ["Nothing more to show for this one yet."];
+      : [tr("Nothing more to show for this one yet.")];
     const detail = sourceLines.flatMap((line) => wrapTextWithAnsi(clean(line), Math.max(1, width)));
     const available = Math.max(0, height - prefix.length);
     const scrolls = detail.length > available;
@@ -204,7 +209,7 @@ export class TasteProfileView {
     const lines = [...prefix, ...visible];
     if (scrolls && available >= 2) {
       const range = `${this.detailOffset + 1}–${Math.min(detail.length, this.detailOffset + contentHeight)}/${detail.length}`;
-      lines.push(theme.faint(ends("PgUp/PgDn to scroll", range, width)));
+      lines.push(theme.faint(ends(tr("PgUp/PgDn to scroll"), range, width)));
     }
     return Array.from({ length: height }, (_, index) => lines[index] ?? "");
   }
@@ -213,11 +218,12 @@ export class TasteProfileView {
     this.detailOffset = 0;
     this.detailMaxOffset = 0;
     const filtered = this.entries.length > 0;
+    const tr = this.getText();
     const lines = filtered
-      ? ["Nothing matches that.", "", "Try fewer words, or press Tab for another list."]
+      ? [tr("Nothing matches that."), "", tr("Try fewer words, or press Tab for another list.")]
       : (Array.isArray(this.model.emptyLines) && this.model.emptyLines.length
         ? this.model.emptyLines
-        : ["Nothing to look at yet.", "", "Import your history or library and it will show up here."]);
+        : [tr("Nothing to look at yet."), "", tr("Import your history or library and it will show up here.")]);
     const wrapped = lines.flatMap((line) => wrapTextWithAnsi(clean(line), width));
     return Array.from({ length: height }, (_, index) => index === 0
       ? theme.bold(wrapped[index] ?? "") : theme.muted(wrapped[index] ?? ""));
@@ -233,7 +239,8 @@ export class TasteProfileView {
     const inner = Math.max(1, columns - inset * 2);
     const position = this.filtered.findIndex((subject) => subject.key === this.selectedKey) + 1;
     const count = `${Math.max(0, position)}/${this.filtered.length}`;
-    const heading = theme.bold(inner >= 24 + count.length ? "Your listening profile" : "Your profile");
+    const tr = this.getText();
+    const heading = theme.bold(inner >= 24 + count.length ? tr("Your listening profile") : tr("Your profile"));
     const lines = [ends(heading, theme.muted(count), inner)];
     if (height >= 10) {
       const summaries = Array.isArray(this.model.summaryLines) ? this.model.summaryLines : [];
@@ -241,10 +248,10 @@ export class TasteProfileView {
       lines.push(...summaries.slice(0, maxSummary).map((line) => theme.muted(inline(line))));
     }
     if (height >= 5) lines.push(inner >= 76
-      ? ends(this.renderCategories(inner, theme), theme.faint("Ctrl+R refresh · Ctrl+O report"), inner)
+      ? ends(this.renderCategories(inner, theme), theme.faint(tr("Ctrl+R refresh · Ctrl+O report")), inner)
       : this.renderCategories(inner, theme));
     if (height >= 2) {
-      const searchLabel = inner >= 26 ? theme.faint("Search ") : "";
+      const searchLabel = inner >= 26 ? theme.faint(`${tr("Search")} `) : "";
       lines.push(searchLabel + this.input.render(Math.max(1, inner - visibleWidth(searchLabel)))[0]);
     }
     if (height >= 7) lines.push(theme.faint("─".repeat(inner)));

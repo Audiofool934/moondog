@@ -1,55 +1,59 @@
+import { N_, screenTranslator } from "../../i18n/index.mjs";
+
+// Descriptions are marked English and translated when shown, so /language applies at once.
+let translate = screenTranslator("en");
 function choices(entries) {
-  return entries.map(([value, description]) => ({ value, label: value, description }));
+  return entries.map(([value, description]) => ({ value, label: value, get description() { return translate.marked(description); } }));
 }
 
 const themeChoices = choices([
-  ["paper", "Black ink on white paper"],
-  ["charcoal", "Moonlight on a black sky"],
-  ["terminal", "Keep your terminal's colors"],
-  ["auto", "Follow MOONDOG_THEME, or guess from your terminal"],
+  ["paper", N_("Black ink on white paper")],
+  ["charcoal", N_("Moonlight on a black sky")],
+  ["terminal", N_("Keep your terminal's colors")],
+  ["auto", N_("Follow MOONDOG_THEME, or guess from your terminal")],
 ]);
 const artChoices = choices([
-  ["braille", "Character artwork with fine detail"],
-  ["ascii", "Simple terminal characters"],
-  ["off", "A quiet opening, no artwork"],
-  ["auto", "Choose artwork for this terminal"],
+  ["braille", N_("Character artwork with fine detail")],
+  ["ascii", N_("Simple terminal characters")],
+  ["off", N_("A quiet opening, no artwork")],
+  ["auto", N_("Choose artwork for this terminal")],
 ]);
-const motionChoices = choices([["on", "Animate the character artwork"], ["off", "Keep the artwork still"]]);
+const motionChoices = choices([["on", N_("Animate the character artwork")], ["off", N_("Keep the artwork still")]]);
 const webChoices = choices([
-  ["search", "Search public music sites"],
-  ["read", "Read a public page"],
-  ["status", "Check whether web lookups work"],
-  ["help", "Web lookup commands"],
+  ["search", N_("Search public music sites")],
+  ["read", N_("Read a public page")],
+  ["status", N_("Check whether web lookups work")],
+  ["help", N_("Web lookup commands")],
 ]);
 const spotifyChoices = choices([
-  ["status", "Check your Spotify connection"],
-  ["now", "What's playing now"],
-  ["devices", "Your Spotify devices"],
-  ["queue", "What's queued up"],
-  ["recent", "What you played lately"],
-  ["account", "Which account is connected"],
-  ["play", "Resume playback or play a Spotify URI"],
-  ["pause", "Pause playback"],
-  ["next", "Play the next track"],
-  ["previous", "Play the previous track"],
-  ["volume", "Set volume from 0 to 100"],
-  ["seek", "Seek to a position in milliseconds"],
-  ["shuffle", "Set shuffle on or off"],
-  ["repeat", "Repeat off, one track, or the context"],
-  ["transfer", "Move playback to another device"],
-  ["queue-add", "Add a track or episode URI to the queue"],
-  ["resolve", "Find a track by title and artist"],
-  ["sync-recent", "Add your latest plays to your profile"],
-  ["sync-library", "Add your Spotify library and top artists to your profile"],
-  ["import-history", "Add a Spotify history ZIP to your profile"],
-  ["configure", "Save your Spotify app's Client ID"],
-  ["login", "Connect your Spotify account"],
-  ["logout", "Disconnect your Spotify account"],
-  ["help", "Spotify commands"],
+  ["status", N_("Check your Spotify connection")],
+  ["now", N_("What's playing now")],
+  ["devices", N_("Your Spotify devices")],
+  ["queue", N_("What's queued up")],
+  ["recent", N_("What you played lately")],
+  ["account", N_("Which account is connected")],
+  ["play", N_("Resume playback or play a Spotify URI")],
+  ["pause", N_("Pause playback")],
+  ["next", N_("Play the next track")],
+  ["previous", N_("Play the previous track")],
+  ["volume", N_("Set volume from 0 to 100")],
+  ["seek", N_("Seek to a position in milliseconds")],
+  ["shuffle", N_("Set shuffle on or off")],
+  ["repeat", N_("Repeat off, one track, or the context")],
+  ["transfer", N_("Move playback to another device")],
+  ["queue-add", N_("Add a track or episode URI to the queue")],
+  ["resolve", N_("Find a track by title and artist")],
+  ["sync-recent", N_("Add your latest plays to your profile")],
+  ["sync-library", N_("Add your Spotify library and top artists to your profile")],
+  ["import-history", N_("Add a Spotify history ZIP to your profile")],
+  ["configure", N_("Save your Spotify app's Client ID")],
+  ["login", N_("Connect your Spotify account")],
+  ["logout", N_("Disconnect your Spotify account")],
+  ["help", N_("Spotify commands")],
 ]);
 const spotifyArguments = new Map([
-  ["shuffle", choices([["on", "Enable shuffle"], ["off", "Disable shuffle"]])],
-  ["repeat", choices([["off", "Disable repeat"], ["track", "Repeat this track"], ["context", "Repeat the album or playlist"]])],
+  ["shuffle", choices([["on", N_("Enable shuffle")], ["off", N_("Disable shuffle")]])],
+  ["repeat", choices([["off", N_("Disable repeat")], ["track", N_("Repeat this track")], ["context", N_("Repeat the album or playlist")]])],
 ]);
 
 function completeArgument(prefix, getChoices) {
@@ -69,19 +73,21 @@ export function withCommandCompletions(commands, {
   providers = () => [],
   models = () => [],
   authProviderIds = [],
+  tr,
 } = {}) {
+  if (tr) translate = tr;
   const firstArgument = (items) => (previous) => previous.length === 0 ? items : [];
   const specifications = {
     update: {
       argumentHint: "[--check] [--channel latest|beta]",
       choices: previous => previous.at(-1) === "--channel"
-        ? choices([["latest", "Stable releases"], ["beta", "Preview releases"]])
-        : choices([["--check", "Check without installing"], ["--channel", "Choose the release channel"]]).filter(item => !previous.includes(item.value)),
+        ? choices([["latest", N_("Stable releases")], ["beta", N_("Preview releases")]])
+        : choices([["--check", N_("Check without installing")], ["--channel", N_("Choose the release channel")]]).filter(item => !previous.includes(item.value)),
     },
     theme: { argumentHint: "[paper|charcoal|terminal|auto]", choices: firstArgument(themeChoices) },
     art: { argumentHint: "[braille|ascii|off|auto]", choices: firstArgument(artChoices) },
     motion: { argumentHint: "[on|off]", choices: firstArgument(motionChoices) },
-    lyrics: { argumentHint: "[sync]", choices: firstArgument(choices([["sync", "Check profile songs for lyrics"]])) },
+    lyrics: { argumentHint: "[sync]", choices: firstArgument(choices([["sync", N_("Check profile songs for lyrics")]])) },
     web: { argumentHint: "search <query> | read <url> | status", choices: firstArgument(webChoices) },
     spotify: {
       argumentHint: "<command> [arguments]",
@@ -100,7 +106,7 @@ export function withCommandCompletions(commands, {
         if (previous.length > 1) return [];
         const available = providers().filter((provider) => provider.modelCount > 0);
         if (previous.length === 0) {
-          return [{ value: "refresh", label: "refresh", description: "Refresh public model metadata; keep selection" },
+          return [{ value: "refresh", label: "refresh", description: translate("Refresh public model metadata; keep selection") },
             ...available.map((provider) => ({ value: provider.id, label: provider.id, description: provider.name }))];
         }
         const providerId = previous[0].toLowerCase();

@@ -2,7 +2,12 @@ import { CURSOR_MARKER, Editor, Text, getCellDimensions, truncateToWidth, visibl
 import { stripVTControlCharacters } from "node:util";
 import { sanitizeTerminalText } from "./format-output.mjs";
 import { LOGO_MOTION_FRAMES, renderLunarRecordLayers, renderMoondogWordmark } from "./terminal-art.mjs";
+import { N_, screenTranslator } from "../../i18n/index.mjs";
 export { ListeningMenu } from "./listening-menu.mjs";
+
+// The TUI sets its live translator once; components read it while rendering.
+let tr = screenTranslator("en");
+export function setBrandText(translator) { tr = translator; }
 
 export function paintBrandLine(line, width, theme) {
   const clipped = truncateToWidth(line, Math.max(1, width), "");
@@ -69,17 +74,17 @@ export class ListeningHeader {
     const placeRoom = width - (1 + visibleWidth("MOONDOG") + visibleWidth(lead));
     const suffix = placeName && placeRoom >= 12
       ? theme.muted(lead + truncateToWidth(placeName, placeRoom, "…"))
-      : !placeName && width >= 46 ? theme.muted(`${lead}your listening room`) : "";
+      : !placeName && width >= 46 ? theme.muted(`${lead}${tr("your listening room")}`) : "";
     const title = theme.bold("MOONDOG") + suffix;
     const profileLabel = profileReady
-      ? compact ? "profile ready" : "local profile"
-      : compact ? "no history" : "bring your history";
-    const modelLabel = modelReady ? modelName || (compact ? "model ready" : "conversation ready") : "model offline";
+      ? compact ? tr("profile ready") : tr("local profile")
+      : compact ? tr("no history") : tr("bring your history");
+    const modelLabel = modelReady ? modelName || (compact ? tr("model ready") : tr("conversation ready")) : tr("model offline");
     const identity = modelReady && providerName ? `${providerName} / ${modelLabel}` : modelLabel;
     const available = Math.max(1, width - 1);
     // Keep the active model readable before spending space on optional status.
     const candidates = [
-      [profileLabel, identity, ...(spotifyReady && !compact ? ["Spotify connected"] : [])],
+      [profileLabel, identity, ...(spotifyReady && !compact ? [tr("Spotify connected")] : [])],
       [profileLabel, identity],
       [profileLabel, modelLabel],
       [identity],
@@ -108,7 +113,7 @@ export class AgentWork {
   }
   invalidate() {}
   note(key, label, state) {
-    const text = sanitizeTerminalText(label).replace(/\s+/gu, " ").trim() || "Music tool";
+    const text = sanitizeTerminalText(label).replace(/\s+/gu, " ").trim() || tr("Music tool");
     const existing = this.calls.find((call) => call.key === key);
     if (existing) {
       existing.label = text;
@@ -131,9 +136,9 @@ export class AgentWork {
     const done = count("completed");
     const failed = count("failed");
     const open = count("running");
-    if (done) parts.push(`${done} done`);
-    if (failed) parts.push(`${failed} didn't work`);
-    if (open) parts.push(`${open} not confirmed`);
+    if (done) parts.push(tr("{count} done", { count: done }));
+    if (failed) parts.push(tr("{count} didn't work", { count: failed }));
+    if (open) parts.push(tr("{count} not confirmed", { count: open }));
     return [parts.join(", "), this.elapsed].filter(Boolean).join(" · ");
   }
   render(width) {
@@ -144,7 +149,7 @@ export class AgentWork {
     const liveMarks = ["·", "•", "·", "∙"];
     const shown = this.calls.slice(-8);
     const earlier = this.calls.length - shown.length;
-    const lines = earlier ? line(`· ${earlier} earlier`, theme.faint) : [];
+    const lines = earlier ? line(`· ${tr("{count} earlier", { count: earlier })}`, theme.faint) : [];
     lines.push(...shown.flatMap((call) => {
       const settledOpen = this.settled && call.state === "running";
       const mark = call.state === "failed" ? "×"
@@ -213,13 +218,13 @@ export class ListeningEditor extends Editor {
     const lines = super.render(width).map((line) => this.focused ? line : line.replace(/\x1b\[7m([\s\S]*?)\x1b\[0m/g, "$1"));
     const { busy, homeVisible, homeFocused } = this.getState();
     if (!/[↑↓]/u.test(lines[0])) {
-      const label = busy ? " NEXT " : homeFocused ? " TAB TO TYPE " : " YOU ";
+      const label = ` ${busy ? tr("NEXT") : homeFocused ? tr("TAB TO TYPE") : tr("YOU")} `;
       lines[0] = width >= label.length + 4
         ? theme.faint("─ ") + theme.muted(label) + theme.faint("─".repeat(width - label.length - 2))
         : theme.faint("─".repeat(width));
     }
     if (!busy && !this.getText() && lines.length === 3 && width >= 28) {
-      const hint = homeFocused ? "Esc returns to your next thought." : homeVisible ? "What have you been listening to?" : "A song, a playlist, or what to play next.";
+      const hint = homeFocused ? tr("Esc returns to your next thought.") : homeVisible ? tr("What have you been listening to?") : tr("A song, a playlist, or what to play next.");
       const text = truncateToWidth(hint, width - 2, "");
       lines[1] = " " + (this.focused ? CURSOR_MARKER + theme.inverse(text[0]) : theme.faint(text[0])) + theme.faint(text.slice(1));
     }
@@ -229,12 +234,19 @@ export class ListeningEditor extends Editor {
   }
 }
 
-export const homeActions = [
-  { command: "taste", label: "Listening profile", short: "Profile", description: "See what your listening reveals. Tell me what I missed." },
-  { command: "import", label: "Import your music", short: "Import music", description: "Bring songs, playlists or listening history." },
-  { command: "theme", label: "Appearance", short: "Appearance", description: "Paper, charcoal, or your terminal colors." },
-  { command: "help", label: "Help & commands", short: "Help", description: "Commands, connections and keyboard shortcuts." },
+// Text is marked English and translated as the sleeve renders, so /language applies at once.
+const homeActionText = [
+  { command: "taste", label: N_("Listening profile"), short: N_("Profile"), description: N_("See what your listening reveals. Tell me what I missed.") },
+  { command: "import", label: N_("Import your music"), short: N_("Import music"), description: N_("Bring songs, playlists or listening history.") },
+  { command: "theme", label: N_("Appearance"), short: N_("Appearance"), description: N_("Paper, charcoal, or your terminal colors.") },
+  { command: "help", label: N_("Help & commands"), short: N_("Help"), description: N_("Commands, connections and keyboard shortcuts.") },
 ];
+export const homeActions = homeActionText.map(({ command, label, short, description }) => ({
+  command,
+  get label() { return tr.marked(label); },
+  get short() { return tr.marked(short); },
+  get description() { return tr.marked(description); },
+}));
 
 // Rows of air between a stacked record and the title beneath it.
 const STACK_GAP = 2;
@@ -348,7 +360,7 @@ export class RecordSleeve {
     };
     if (rows < 7 || width < 34 || this.artMode === "off") {
       const compact = withNote([hang(theme.bold("MOONDOG  ◎")),
-        ...(rows >= 9 && width >= 30 ? [hang(theme.muted("Your personal music agent.")), ""] : []),
+        ...(rows >= 9 && width >= 30 ? [hang(theme.muted(tr("Your personal music agent."))), ""] : []),
         ...tracklist(theme, { focused, selected, columns: width }),
       ], Math.max(1, width - 2), rows);
       const top = Math.max(0, Math.floor((rows - compact.length) / 2));
@@ -360,7 +372,7 @@ export class RecordSleeve {
       ? renderMoondogWordmark().map(theme.text) : [theme.bold(roomy ? "M O O N D O G" : "MOONDOG")];
     const copyBlock = (columns, budget, roomy, note = true, reserve = roomy) => (note ? withNote : (lines) => lines)([
       ...title(columns, budget, roomy).map(hang),
-      ...(budget >= 12 ? [...wrapDescription("Your personal music agent.", columns).map((line) => hang(theme.muted(line))), ""] : [""]),
+      ...(budget >= 12 ? [...wrapDescription(tr("Your personal music agent."), columns).map((line) => hang(theme.muted(line))), ""] : [""]),
       ...tracklist(theme, { focused, selected, columns: columns + 2 }),
       ...(reserve ? ["", ...actionNote(focused ? homeActions[selected].description : "", columns).map((line) => hang(theme.muted(line)))] : []),
     ], columns, budget);
@@ -524,64 +536,10 @@ function hang(line) {
 }
 
 function wrapDescription(text, width) {
-  const lines = [];
-  let line = "";
-  for (const word of text.split(" ")) {
-    if (line && visibleWidth(`${line} ${word}`) > width) { lines.push(line); line = ""; }
-    line += (line ? " " : "") + word;
-  }
-  if (line) lines.push(line);
-  return lines;
+  // Pi wraps by word and breaks text without spaces, such as Chinese or Japanese.
+  return wrapTextWithAnsi(text, Math.max(1, width)).map((line) => line.trimEnd());
 }
 
 export function listeningHelp() {
-  return `# Your listening room
-
-## 01 / Listen and discover
-
-Just type to talk about music, ask for a playlist, or go exploring.
-To talk, Moondog needs a model: \`/auth\` signs you in, then \`/model\` picks one.
-While an answer is coming, each step shows in the conversation, and the footer names the one in progress.
-
-- \`/taste\` - your profile: open any song or artist to see why it's there
-- \`/taste report\` - the whole picture on one page
-- \`/import\` - bring in your history, your library, or a playlist
-- \`/lyrics\` - the lyrics on the sleeve; \`/lyrics sync\` finds more
-- \`/spotify\` - play, queue, and make playlists in Spotify
-- Ask to move playback onto your iPhone, computer, or another Spotify device by name
-- \`/web search <query>\` or \`/web read <url>\` - look things up on public music sites
-
-## 02 / Make it yours
-
-- \`/profile\` - the same profile as \`/taste\`
-- \`/profile corrections\` - everything you've told me
-- \`/profile retract <id>\` - undo one of those
-- \`/profile help\` - the full set of profile commands
-- \`/remember <text>\`, \`/memory\`, \`/forget <id>\` - what I remember between conversations
-
-## 03 / Around the room
-
-- \`/home\` - back to the record sleeve; the conversation stays
-- \`/theme paper|charcoal|terminal|auto\` - change the look
-- \`/art braille|ascii|off\` - change the artwork
-- \`/motion on|off\` - turn the animation on or off
-- \`/commands\` or Ctrl+P - search every command; your message stays put
-- Page Up and Page Down scroll the conversation. The header and your draft stay put
-- Up and Down in the draft recall what you typed in this conversation
-- \`/resume\` - pick up a saved conversation (type to filter, Enter opens)
-- \`/new\` - start fresh; this conversation stays saved
-- \`/status\`, \`/sources\`, \`/tools\`, \`/doctor\` - see what's connected and working
-- \`/reload\` - reload model settings and sign-ins
-- \`/update [--check] [--channel latest|beta]\` - check for a release, or close this room and install it
-- \`/help all\` - every command, including the ones for the shell
-- \`/quit\` - leave
-
-Tab moves to the menu on the home screen. Esc goes back to typing.
-Enter sends, and Shift+Enter starts a new line.
-Tab or Enter accepts a suggestion.
-Ctrl+C stops a model or web request, or leaves when nothing is running.
-In the profile, type to filter, Tab switches lists, and Enter shows what you can do.
-Ctrl+R refreshes it and Ctrl+O opens the full report.
-Your profile works without a model.
-Put quotes around paths, titles, and names that have spaces.`;
+  return tr("# Your listening room\n\n## 01 / Listen and discover\n\nJust type to talk about music, ask for a playlist, or go exploring.\nTo talk, Moondog needs a model: `/auth` signs you in, then `/model` picks one.\nWhile an answer is coming, each step shows in the conversation, and the footer names the one in progress.\n\n- `/taste` - your profile: open any song or artist to see why it's there\n- `/taste report` - the whole picture on one page\n- `/import` - bring in your history, your library, or a playlist\n- `/lyrics` - the lyrics on the sleeve; `/lyrics sync` finds more\n- `/spotify` - play, queue, and make playlists in Spotify\n- Ask to move playback onto your iPhone, computer, or another Spotify device by name\n- `/web search <query>` or `/web read <url>` - look things up on public music sites\n\n## 02 / Make it yours\n\n- `/profile` - the same profile as `/taste`\n- `/profile corrections` - everything you've told me\n- `/profile retract <id>` - undo one of those\n- `/profile help` - the full set of profile commands\n- `/remember <text>`, `/memory`, `/forget <id>` - what I remember between conversations\n\n## 03 / Around the room\n\n- `/home` - back to the record sleeve; the conversation stays\n- `/theme paper|charcoal|terminal|auto` - change the look\n- `/art braille|ascii|off` - change the artwork\n- `/motion on|off` - turn the animation on or off\n- `/commands` or Ctrl+P - search every command; your message stays put\n- Page Up and Page Down scroll the conversation. The header and your draft stay put\n- Up and Down in the draft recall what you typed in this conversation\n- `/resume` - pick up a saved conversation (type to filter, Enter opens)\n- `/new` - start fresh; this conversation stays saved\n- `/status`, `/sources`, `/tools`, `/doctor` - see what's connected and working\n- `/reload` - reload model settings and sign-ins\n- `/update [--check] [--channel latest|beta]` - check for a release, or close this room and install it\n- `/help all` - every command, including the ones for the shell\n- `/language` - choose the language Moondog uses\n- `/quit` - leave\n\nTab moves to the menu on the home screen. Esc goes back to typing.\nEnter sends, and Shift+Enter starts a new line.\nTab or Enter accepts a suggestion.\nCtrl+C stops a model or web request, or leaves when nothing is running.\nIn the profile, type to filter, Tab switches lists, and Enter shows what you can do.\nCtrl+R refreshes it and Ctrl+O opens the full report.\nYour profile works without a model.\nPut quotes around paths, titles, and names that have spaces.");
 }

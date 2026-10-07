@@ -1,3 +1,4 @@
+import { screenTranslator } from "../../i18n/index.mjs";
 import { access } from "node:fs/promises";
 
 import {
@@ -111,14 +112,14 @@ function writeLine(output, value = "") {
   output.write(`${sanitizeTerminalText(value)}\n`);
 }
 
-function formatCorrections(value) {
+function formatCorrections(value, tr) {
   const lines = [
-    "# What you've told me",
+    `# ${tr("What you've told me")}`,
     "",
-    `${value.active} ${value.active === 1 ? "choice" : "choices"} in effect.`,
+    tr.n(value.active, "{count} choice in effect.", "{count} choices in effect."),
   ];
   if (value.corrections.length === 0) {
-    lines.push("", "Nothing yet. Open a song or artist in /taste to like it or keep it out.");
+    lines.push("", tr("Nothing yet. Open a song or artist in /taste to like it or keep it out."));
     return lines.join("\n");
   }
   lines.push("");
@@ -126,8 +127,11 @@ function formatCorrections(value) {
     const target = item.artist_credit
       ? `${item.label} - ${item.artist_credit}`
       : item.label;
+    const choice = item.entity_type === "track"
+      ? item.stance === "avoid" ? tr("Keep out track") : tr("Like track")
+      : item.stance === "avoid" ? tr("Keep out artist") : tr("Like artist");
     lines.push(
-      `- ${item.stance === "avoid" ? "Keep out" : "Like"} ${item.entity_type}: ${target}${item.state === "active" ? "" : ` (${item.state})`}`,
+      `- ${choice}: ${target}${item.state === "active" ? "" : ` (${item.state})`}`,
       `  ${String(item.occurred_at).slice(0, 10)} · \`${item.correction_id}\``,
     );
     if (item.note) lines.push(`  "${item.note}"`);
@@ -135,22 +139,22 @@ function formatCorrections(value) {
   return lines.join("\n");
 }
 
-function formatCorrection(value, commandPrefix) {
+function formatCorrection(value, commandPrefix, tr) {
   const target = value.artist_credit
     ? `${value.label} - ${value.artist_credit}`
     : value.label;
   return [
-    value.stance === "avoid" ? `Noted. I'll keep ${target} out.` : `Noted. You like ${target}.`,
-    ...(value.superseded_correction_id ? ["This replaces what you told me before about it."] : []),
-    "Your profile is updated. Your listening history stays as it was.",
-    `To undo it: ${commandPrefix} retract ${value.correction_id}`,
+    value.stance === "avoid" ? tr("Noted. I'll keep {name} out.", { name: target }) : tr("Noted. You like {name}.", { name: target }),
+    ...(value.superseded_correction_id ? [tr("This replaces what you told me before about it.")] : []),
+    tr("Your profile is updated. Your listening history stays as it was."),
+    tr("To undo it: {command}", { command: `${commandPrefix} retract ${value.correction_id}` }),
   ].join("\n");
 }
 
-function formatRetraction(value) {
+function formatRetraction(value, tr) {
   return [
-    `Undone. I'll read ${value.label} from your listening again.`,
-    "Your profile is updated. Your listening history stays as it was.",
+    tr("Undone. I'll read {name} from your listening again.", { name: value.label }),
+    tr("Your profile is updated. Your listening history stays as it was."),
   ].join("\n");
 }
 
@@ -173,6 +177,7 @@ export async function runProfileCommand({
   openStore = openListeningHistoryStore,
   now = () => new Date(),
   commandPrefix = "moondog profile",
+  tr = screenTranslator("en"),
 } = {}) {
   const options = parseProfileArguments(args ?? []);
   if (!options.action || options.action === "help") {
@@ -197,11 +202,11 @@ export async function runProfileCommand({
       corrections: [],
       writes: "none",
     };
-    writeLine(output, json ? JSON.stringify(empty, null, 2) : formatCorrections(empty));
+    writeLine(output, json ? JSON.stringify(empty, null, 2) : formatCorrections(empty, tr));
     return empty;
   }
   if (options.action === "retract" && !databasePresent) {
-    throw new Error("There's nothing to undo yet.");
+    throw new Error(tr("There's nothing to undo yet."));
   }
   if (
     options.action === "correct" &&
@@ -210,7 +215,7 @@ export async function runProfileCommand({
     preferredSubjectId = await resolvePreferredSubjectId();
     if (!preferredSubjectId) {
       throw new Error(
-        "There's no profile to change yet. Bring in your music with /import first.",
+        tr("There's no profile to change yet. Bring in your music with /import first."),
       );
     }
   }
@@ -228,7 +233,7 @@ export async function runProfileCommand({
       };
       writeLine(
         output,
-        json ? JSON.stringify(empty, null, 2) : formatCorrections(empty),
+        json ? JSON.stringify(empty, null, 2) : formatCorrections(empty, tr),
       );
       return empty;
     }
@@ -240,7 +245,7 @@ export async function runProfileCommand({
     }
     if (!subjectId) {
       throw new Error(
-        "There's no profile to change yet. Bring in your music with /import first.",
+        tr("There's no profile to change yet. Bring in your music with /import first."),
       );
     }
     let value;
@@ -282,10 +287,10 @@ export async function runProfileCommand({
       json
         ? JSON.stringify(value, null, 2)
         : options.action === "corrections"
-          ? formatCorrections(value)
+          ? formatCorrections(value, tr)
           : options.action === "correct"
-            ? formatCorrection(value, commandPrefix)
-            : formatRetraction(value),
+            ? formatCorrection(value, commandPrefix, tr)
+            : formatRetraction(value, tr),
     );
     return value;
   } finally {

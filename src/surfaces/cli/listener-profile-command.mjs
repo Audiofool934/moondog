@@ -1,26 +1,29 @@
 import { sanitizeTerminalText } from "./format-output.mjs";
+import { N_, screenTranslator } from "../../i18n/index.mjs";
 
 export const savedProfileActions = new Set(["build", "saved", "explain"]);
 
-const kindLabels = { observation: "measured", hypothesis: "interpretation", listener_assertion: "your choice" };
+const kindLabels = { observation: N_("measured"), hypothesis: N_("interpretation"), listener_assertion: N_("your choice") };
 
-function builtLine(value) {
+function builtLine(value, tr) {
   const coverage = value.coverage?.coverage ?? {};
-  const plays = Number.isInteger(coverage.effective_listening_events)
-    ? ` from ${coverage.effective_listening_events.toLocaleString("en-US")} plays` : "";
-  const span = coverage.earliest_played_at && coverage.latest_played_at
-    ? `, ${coverage.earliest_played_at.slice(0, 10)} to ${coverage.latest_played_at.slice(0, 10)}` : "";
   const concerns = value.verification?.state === "flagged" ? value.verification.checks.at(-1).issues.length : 0;
-  const check = value.verification?.state === "revised" ? "checked and revised once"
-    : concerns ? `checked; ${concerns === 1 ? "one concern remains" : `${concerns} concerns remain`}` : "checked";
-  return `Built ${value.built_at.slice(0, 10)}${plays}${span} · ${check}`;
+  const check = value.verification?.state === "revised" ? tr("checked and revised once")
+    : concerns ? tr.n(concerns, "checked; one concern remains", "checked; {count} concerns remain") : tr("checked");
+  const built = [
+    tr("Built {date}", { date: value.built_at.slice(0, 10) }),
+    ...(Number.isInteger(coverage.effective_listening_events) ? [tr.n(coverage.effective_listening_events, "from {count} play", "from {count} plays")] : []),
+  ].join(" ");
+  const span = coverage.earliest_played_at && coverage.latest_played_at
+    ? `, ${tr("{first} to {last}", { first: coverage.earliest_played_at.slice(0, 10), last: coverage.latest_played_at.slice(0, 10) })}` : "";
+  return `${built}${span} · ${check}`;
 }
 
-function formatSaved(value, prefix, allFindings = false) {
-  if (value.state === "missing") return `No saved reading yet. Use ${prefix} build with a connected model.`;
+function formatSaved(value, prefix, allFindings = false, tr) {
+  if (value.state === "missing") return tr("No saved reading yet. Use {prefix} build with a connected model.", { prefix });
   const lines = [
-    `# Your saved listening profile · v${value.sequence}`,
-    value.state === "stale" ? `Evidence, choices or analysis changed. Use ${prefix} build to update this reading.` : builtLine(value),
+    `# ${tr("Your saved listening profile · v{version}", { version: value.sequence })}`,
+    value.state === "stale" ? tr("Evidence, choices or analysis changed. Use {prefix} build to update this reading.", { prefix }) : builtLine(value, tr),
     "", value.summary, "",
   ];
   // The TUI renders this text as Markdown, which renumbers an ordered list from its
@@ -30,14 +33,14 @@ function formatSaved(value, prefix, allFindings = false) {
   ].map(claim => [claim.claim_id, claim])).values()].sort((a, b) => a.finding_number - b.finding_number);
   for (const [index, claim] of displayed.entries()) {
     lines.push(`${claim.finding_number ?? value.offset + index + 1}. ${claim.statement}`,
-      `   ${kindLabels[claim.kind] ?? claim.kind.replaceAll("_", " ")} · ${claim.scope} · ${claim.uncertainty}`);
+      `   ${kindLabels[claim.kind] ? tr.marked(kindLabels[claim.kind]) : claim.kind.replaceAll("_", " ")} · ${claim.scope} · ${claim.uncertainty}`);
   }
   if (value.state === "current" && value.verification?.state === "flagged") {
-    lines.push("", "The final check still flagged:", ...value.verification.checks.at(-1).issues.map(issue => `- ${issue.problem}`));
+    lines.push("", tr("The final check still flagged:"), ...value.verification.checks.at(-1).issues.map(issue => `- ${issue.problem}`));
   }
-  lines.push("", `Use ${prefix} explain <number> for a finding's evidence.`);
-  if (!allFindings && value.total_claims > displayed.length) lines.push(`All ${value.total_claims} findings: ${prefix} saved 0`);
-  else if (allFindings && value.next_offset !== null) lines.push(`More findings: ${prefix} saved ${value.next_offset}`);
+  lines.push("", tr("Use {prefix} explain <number> for a finding's evidence.", { prefix }));
+  if (!allFindings && value.total_claims > displayed.length) lines.push(tr("All {count} findings: {prefix} saved 0", { count: value.total_claims, prefix }));
+  else if (allFindings && value.next_offset !== null) lines.push(tr("More findings: {prefix} saved {offset}", { prefix, offset: value.next_offset }));
   return lines.join("\n");
 }
 
@@ -51,36 +54,37 @@ function formatEvidence(entry) {
 
 export async function runListenerProfileCommand({
   application, args, json = false, output = process.stdout, commandPrefix = "moondog profile",
-  signal, onProgress, runtimeFactory,
+  signal, onProgress, runtimeFactory, tr = screenTranslator("en"),
 } = {}) {
   const [action, ...values] = args ?? [];
   let result;
   let rendered;
   if (action === "build") {
     if (values.length > 1 || (values.length === 1 && values[0] !== "--force")) {
-      throw new Error(`Usage: ${commandPrefix} build [--force].`);
+      throw new Error(tr("Usage: {prefix} build [--force].", { prefix: commandPrefix }));
     }
     result = await application.buildListenerProfile({ force: values[0] === "--force", signal, onProgress, runtimeFactory });
-    rendered = result.state === "no_evidence" ? "Import your music first with /import."
-      : `${result.state === "unchanged" ? "Your saved reading already matches the current evidence." : "Saved your new listening profile."}\n\n${formatSaved(result.revision, commandPrefix)}`;
+    rendered = result.state === "no_evidence" ? tr("Import your music first with /import.")
+      : `${result.state === "unchanged" ? tr("Your saved reading already matches the current evidence.") : tr("Saved your new listening profile.")}\n\n${formatSaved(result.revision, commandPrefix, false, tr)}`;
   } else if (action === "saved") {
     if (values.length > 1 || (values.length === 1 && !/^\d+$/u.test(values[0]))) {
-      throw new Error(`Usage: ${commandPrefix} saved [offset].`);
+      throw new Error(tr("Usage: {prefix} saved [offset].", { prefix: commandPrefix }));
     }
     result = await application.getListenerProfile({ offset: Number(values[0] ?? 0) });
-    rendered = formatSaved(result, commandPrefix, values.length > 0);
+    rendered = formatSaved(result, commandPrefix, values.length > 0, tr);
   } else if (action === "explain") {
     if (values.length !== 1 || !/^[1-9]\d*$/u.test(values[0]) || !Number.isSafeInteger(Number(values[0]))) {
-      throw new Error(`Usage: ${commandPrefix} explain <finding-number>.`);
+      throw new Error(tr("Usage: {prefix} explain <finding-number>.", { prefix: commandPrefix }));
     }
     const page = await application.getListenerProfile({ offset: Number(values[0]) - 1, limit: 1 });
-    if (!page.claims.length) throw new Error("That finding is not in your saved profile. Open /profile saved first.");
+    if (!page.claims.length) throw new Error(tr("That finding is not in your saved profile. Open /profile saved first."));
     result = await application.getListenerProfile({ claimId: page.claims[0].claim_id, revisionId: page.revision_id });
     rendered = [
-      `# Finding ${values[0]} · profile v${result.sequence}${result.state === "stale" ? " · needs update" : ""}`,
-      result.claim.statement, "", `Scope: ${result.claim.scope}`, `Uncertainty: ${result.claim.uncertainty}`,
-      "", "Supporting evidence:", ...result.supporting_evidence.map(formatEvidence),
-      ...(result.contradicting_evidence.length ? ["", "Conflicting evidence:", ...result.contradicting_evidence.map(formatEvidence)] : []),
+      `# ${result.state === "stale" ? tr("Finding {number} · profile v{version} · needs update", { number: values[0], version: result.sequence })
+        : tr("Finding {number} · profile v{version}", { number: values[0], version: result.sequence })}`,
+      result.claim.statement, "", tr("Scope: {scope}", { scope: result.claim.scope }), tr("Uncertainty: {uncertainty}", { uncertainty: result.claim.uncertainty }),
+      "", tr("Supporting evidence:"), ...result.supporting_evidence.map(formatEvidence),
+      ...(result.contradicting_evidence.length ? ["", tr("Conflicting evidence:"), ...result.contradicting_evidence.map(formatEvidence)] : []),
     ].join("\n");
   } else throw new Error("Unknown saved profile command");
   output.write(`${sanitizeTerminalText(json ? JSON.stringify(result, null, 2) : rendered)}\n`);

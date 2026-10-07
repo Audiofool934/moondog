@@ -1,6 +1,8 @@
 import en from "./messages/en.mjs";
 import es from "./messages/es.mjs";
 import zh from "./messages/zh.mjs";
+import esScreen from "./screen/es.mjs";
+import zhScreen from "./screen/zh.mjs";
 
 // English is the source language; every other catalog falls back to it.
 export const DEFAULT_LOCALE = "en";
@@ -10,6 +12,8 @@ export const LOCALES = Object.freeze({
   zh: Object.freeze({ name: "Simplified Chinese", nativeName: "简体中文" }),
 });
 const CATALOGS = { en, es, zh };
+// Screen text is keyed by its English sentence, gettext style; English needs no file.
+const SCREEN = { en: {}, es: esScreen, zh: zhScreen };
 
 /** "es_ES.UTF-8", "es-MX" and "ES" all mean Spanish; anything unsupported is null. */
 export function normalizeLocale(value) {
@@ -99,4 +103,57 @@ export function translator(locale) {
 
 export function messageCatalogKeys(locale) {
   return Object.keys(CATALOGS[locale] ?? {});
+}
+
+const fill = (text, params) => text.replace(/\{(\w+)\}/gu, (match, name) => params[name] ?? match);
+
+/**
+ * Screen text for one locale. Call tr("English sentence", { name }) with
+ * {name} placeholders, and tr.n(count, "{count} song", "{count} songs") for
+ * plurals. Keep the English as plain string literals: a test extracts them
+ * to check that every catalog translates every sentence.
+ */
+const screenTranslators = new Map();
+
+export function screenTranslator(locale) {
+  const code = normalizeLocale(locale) ?? DEFAULT_LOCALE;
+  if (!screenTranslators.has(code)) screenTranslators.set(code, createScreenTranslator(code));
+  return screenTranslators.get(code);
+}
+
+function createScreenTranslator(code) {
+  const catalog = SCREEN[code];
+  const numbers = new Intl.NumberFormat(code === "zh" ? "zh-CN" : code);
+  const plurals = new Intl.PluralRules(code === "zh" ? "zh-CN" : code);
+  const tr = (english, params = {}) => fill(typeof catalog[english] === "string" ? catalog[english] : english, params);
+  tr.n = (count, one, other, params = {}) => {
+    const values = { ...params, count: Number.isFinite(count) ? numbers.format(count) : count };
+    const entry = catalog[other];
+    if (typeof entry === "string") return fill(entry, values);
+    if (entry && typeof entry === "object") return fill(entry[plurals.select(count)] ?? entry.other, values);
+    return fill(count === 1 ? one : other, values);
+  };
+  tr.number = value => Number.isFinite(value) ? numbers.format(value) : value;
+  // For a sentence marked with N_() where it was defined, such as a command list.
+  tr.marked = (english, params = {}) => tr(english, params);
+  tr.locale = code;
+  return tr;
+}
+
+/** Marks an English sentence for extraction where no translator exists yet. */
+export const N_ = text => text;
+
+/** A translator that follows a changing locale, such as the /language choice. */
+export function liveScreenTranslator(getLocale) {
+  const current = () => screenTranslator(getLocale());
+  const tr = (english, params) => current()(english, params);
+  tr.n = (...args) => current().n(...args);
+  tr.number = value => current().number(value);
+  tr.marked = (english, params) => current().marked(english, params);
+  Object.defineProperty(tr, "locale", { get: () => current().locale });
+  return tr;
+}
+
+export function screenCatalog(locale) {
+  return SCREEN[locale] ?? {};
 }
