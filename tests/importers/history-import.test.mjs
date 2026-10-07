@@ -8,7 +8,7 @@ import { promisify } from "node:util";
 import test from "node:test";
 
 import { createFictionalSpotifyHistoryArchive } from "../../src/demo/fictional-spotify-history.mjs";
-import { prepareHistoryImport, prepareSpotifyRecentImport } from "../../src/profile/history-import.mjs";
+import { prepareHistoryImport, prepareSpotifyQuickImport } from "../../src/profile/history-import.mjs";
 import { openListeningHistoryStore } from "../../src/profile/listening-history-store.mjs";
 import { persistAppleLibraryImport, refreshAppleLibraryImport } from "../../src/profile/apple-library-import.mjs";
 import { openAppleProjectionDomainServices } from "../../src/core/apple-projection-domain-services.mjs";
@@ -72,7 +72,7 @@ test("recent listening preview keeps unknown durations and repeated saves add no
   const store = await openListeningHistoryStore({ environment: { MOONDOG_STATE_HOME: root } });
   t.after(() => store.close());
   store.localSubjectId({ preferredSubjectId: subjectId, create: true });
-  const prepared = prepareSpotifyRecentImport({ subjectId, capturedAt, page: {
+  const prepared = prepareSpotifyQuickImport({ subjectId, capturedAt, page: {
     provider: "spotify", items: [{ played_at: "2026-09-01T10:00:00.000Z", track: {
       id: "synthetic-track", name: "Synthetic song", artists: ["Synthetic artist"], album: "Synthetic album", duration_ms: 240000,
     } }],

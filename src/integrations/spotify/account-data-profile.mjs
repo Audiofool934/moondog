@@ -91,6 +91,11 @@ function hashParts(...parts) {
   return hash.digest("hex");
 }
 
+/** One key per logical item, so an export and a live library read describe the same save. */
+export function spotifyProfileEvidenceKey(subjectId, kind, logicalKey) {
+  return hashParts("spotify-account-profile-evidence-key-v1", subjectId, kind, logicalKey);
+}
+
 function normalizedText(value) {
   return value.normalize("NFKC").toLocaleLowerCase("und");
 }
@@ -108,6 +113,14 @@ function optionalUri(value) {
   if (typeof value !== "string") return null;
   const match = spotifyUriPattern.exec(value.trim());
   return match ? { type: match[1], id: match[2] } : null;
+}
+
+export function spotifyEntityRefId(type, externalId) {
+  return entityRefId(type, externalId);
+}
+
+export function spotifyResolvedTrackRef(value) {
+  return resolvedTrackRef(value);
 }
 
 function entityRefId(type, externalId) {
@@ -184,12 +197,7 @@ function profileBuilder({ subjectId, archiveSha256, capturedAt, profileImportId 
     sourceMember,
     attributes = {},
   }) {
-    const evidenceKey = hashParts(
-      "spotify-account-profile-evidence-key-v1",
-      subjectId,
-      kind,
-      logicalKey,
-    );
+    const evidenceKey = spotifyProfileEvidenceKey(subjectId, kind, logicalKey);
     records.push({
       schema_version: 1,
       profile_evidence_id: uuidV5(

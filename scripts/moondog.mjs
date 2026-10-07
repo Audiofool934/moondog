@@ -41,7 +41,7 @@ import {
 import { runSpotifyCommand } from "../src/surfaces/cli/spotify-command.mjs";
 import { runListenBrainzCommand } from "../src/surfaces/cli/listenbrainz-command.mjs";
 import { openListeningHistoryStore } from "../src/profile/listening-history-store.mjs";
-import { prepareHistoryImport, prepareSpotifyRecentImport } from "../src/profile/history-import.mjs";
+import { commitSpotifyQuickImport, prepareHistoryImport, prepareSpotifyQuickImport } from "../src/profile/history-import.mjs";
 import { persistAppleLibraryImport, refreshAppleLibraryImport } from "../src/profile/apple-library-import.mjs";
 import { IMPORT_GUIDE_URLS } from "../src/surfaces/cli/import-guides.mjs";
 import { runMoondogTui } from "../src/surfaces/cli/tui.mjs";
@@ -253,7 +253,7 @@ async function loadSpotifyConnection() {
 }
 
 async function spotifyRecentSyncContext(args) {
-  if (!new Set(["sync-recent", "import-history"]).has(args[0])) return {};
+  if (!new Set(["sync-recent", "sync-library", "import-history"]).has(args[0])) return {};
   const recentActivityStore = await openListeningHistoryStore();
   try {
     const appleSubjectId = await optionalAppleMusicSubjectId();
@@ -303,7 +303,7 @@ async function runListenBrainzSurface(options) {
   }
 }
 
-async function prepareTuiHistoryImport(filePath, { recentPage, provider } = {}) {
+async function prepareTuiHistoryImport(filePath, { recentPage, librarySnapshot, libraryUnavailable, provider } = {}) {
   const historyStore = await openListeningHistoryStore();
   try {
     const appleSubjectId = await optionalAppleMusicSubjectId();
@@ -311,7 +311,7 @@ async function prepareTuiHistoryImport(filePath, { recentPage, provider } = {}) 
       ...(appleSubjectId ? { preferredSubjectId: appleSubjectId } : {}),
       create: true,
     });
-    const prepared = recentPage ? prepareSpotifyRecentImport({ page: recentPage, subjectId }) : await prepareHistoryImport({
+    const prepared = recentPage ? prepareSpotifyQuickImport({ page: recentPage, librarySnapshot, libraryUnavailable, subjectId }) : await prepareHistoryImport({
       filePath, subjectId, provider, capturedAt: new Date().toISOString(),
     });
     let closed = false;
@@ -323,8 +323,8 @@ async function prepareTuiHistoryImport(filePath, { recentPage, provider } = {}) 
         if (closed || committed) throw new Error("That preview is gone. Open it again before importing.");
         const options = { args: ["import-history", filePath], stdout: { write() {} }, subjectId };
         // Commit the exact inspected bundle, even if the source file later changes.
-        const receipt = prepared.provider === "spotify-recent"
-          ? historyStore.ingest(prepared.bundle)
+        const receipt = prepared.provider === "spotify-quick"
+          ? commitSpotifyQuickImport(historyStore, prepared)
           : prepared.provider === "apple-music-library"
           ? await persistAppleLibraryImport(prepared.bundle)
           : prepared.provider === "spotify"
@@ -932,11 +932,19 @@ async function main() {
       checkUpdates: options => updater.startupCheck(options),
       runUpdate: (args, options) => runUpdateCommand({ args, updater, deferInstall: true, ...options }),
       prepareImport: prepareTuiHistoryImport,
-      prepareRecentImport: async () => prepareTuiHistoryImport(undefined, {
-        recentPage: await runSpotifySurface({
-          args: ["recent", "--limit", "50"], stdout: { write() {} },
-        }),
-      }),
+      prepareRecentImport: async ({ onProgress } = {}) => {
+        const recentPage = await runSpotifySurface({ args: ["recent", "--limit", "50"], stdout: { write() {} } });
+        let librarySnapshot = null;
+        let libraryUnavailable = null;
+        try {
+          librarySnapshot = await runSpotifySurface({ args: ["library"], stdout: { write() {} }, onProgress });
+        } catch (error) {
+          // An older recent-plays-only sign-in can still import recent plays.
+          if (error?.code !== "spotify_scope_insufficient") throw error;
+          libraryUnavailable = "missing_permission";
+        }
+        return prepareTuiHistoryImport(undefined, { recentPage, librarySnapshot, libraryUnavailable });
+      },
       openImportHelp,
       refreshImportedData: async (receipt) => {
         if (receipt?.provider === "apple-music-library") await refreshAppleLibraryImport();

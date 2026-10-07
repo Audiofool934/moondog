@@ -21,6 +21,10 @@ function input() {
       provider_evidence: [
         { evidence_kind: "library_track_saved", label: "Duplicate of a saved track" },
         { evidence_kind: "wrapped_artist_ranked", label: "Artist 1", rank: 1, period: "2025" },
+        { evidence_kind: "top_artist_ranked", label: "Newcomer", rank: 1, period: "the last four weeks" },
+        { evidence_kind: "top_artist_ranked", label: "Artist 1", rank: 2, period: "the last four weeks" },
+        { evidence_kind: "top_artist_ranked", label: "Artist 1", rank: 1, period: "about the last year" },
+        { evidence_kind: "top_track_ranked", label: "Fictional Hit", artist_credit: "Newcomer", rank: 3, period: "the last six months" },
       ],
       listener_preferences: [{ label: "Artist 2", entity_type: "artist", stance: "like", correction_id: "private-choice" }],
     },
@@ -39,6 +43,11 @@ test("the dossier shows leaders, recent movement, curated interests beyond liste
   assert.equal(dossier.curated_beyond_listening[0].artist, "Shelf Composer");
   assert.deepEqual(dossier.curated_beyond_listening[0].signals, ["followed", "saved album Night Scores"]);
   assert.deepEqual(dossier.provider_signals.map(row => row.evidence_kind), ["wrapped_artist_ranked"]);
+  // One row per name, with each period's rank, so recent and enduring standing stay comparable.
+  assert.deepEqual(dossier.spotify_top.artists.map(({ label, ranks }) => [label, ranks]),
+    [["Artist 1", { "the last four weeks": 2, "about the last year": 1 }], ["Newcomer", { "the last four weeks": 1 }]]);
+  assert.deepEqual(dossier.spotify_top.tracks.map(({ label, artist_credit }) => [label, artist_credit]), [["Fictional Hit", "Newcomer"]]);
+  assert.ok(value.evidence.has(dossier.spotify_top.artists[0].ref));
   assert.equal(dossier.explicit_choices[0].label, "Artist 2");
   assert.match(dossier.sections.history_artists.ordering, /duration/u);
   assert.doesNotMatch(JSON.stringify(dossier), /private-|track_ref_id|evidence_id|correction_id/u);

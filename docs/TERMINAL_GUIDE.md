@@ -275,7 +275,7 @@ Other existing sources remain available under **Other sources**.
 
 | Service | Start with | Past listening |
 | --- | --- | --- |
-| Spotify | Connect for up to 50 recent plays, with current developer-app setup requirements | Account Data or Extended Streaming History ZIP |
+| Spotify | Connect for your library, top artists and tracks, and up to 50 recent plays, with current developer-app setup requirements | Account Data or Extended Streaming History ZIP |
 | Apple Music | Export Library.xml from Music on Mac | Privacy-request guide only; archive parsing is not available |
 | YouTube Music | Takeout music-library-songs.csv or a ZIP containing it | Takeout watch-history.json or a ZIP containing it |
 | QQ Music | Paste a public playlist share link | Account history import is not available |
@@ -304,8 +304,10 @@ Importing a selected playlist does not imply you created it, liked every song or
 Collections and history keep their platform labels in the same cumulative profile, and repeating an identical import adds no duplicate evidence.
 These imports add observations; they do not synchronize later playlist removals or replace existing preferences.
 
-**Quick start** connects Spotify and previews up to 50 recent plays before you choose **Import into my profile**.
-It requests only permission to read recent listening, and does not control playback or change your Spotify library.
+**Quick start** connects Spotify and previews your library and up to 50 recent plays before you choose **Add to my profile**.
+The library covers saved songs and albums, followed artists, playlists you made, and Spotify's top artists and tracks for three periods.
+Importing reads only; it does not control playback or change your Spotify library.
+The sign-in is Moondog's standard one, so the same connection also lets the listening room play and queue music.
 Recent listening has playback timestamps but no actual played duration, and cannot reconstruct the full history.
 This release needs a configured Spotify developer app; the guide provides setup instructions and a Client ID input if needed.
 New development apps require Premium for the app owner and support at most five allowlisted users, as described in [Spotify's quota rules](https://developer.spotify.com/documentation/web-api/concepts/quota-modes).
@@ -1027,6 +1029,17 @@ Later runs send the stored millisecond `after` cursor and insert only newly obse
 The sync converts Spotify payloads into provider-neutral `TrackRef v1` and `ListeningEvent v1` records before persistence.
 
 Repeated events are deduplicated by a stable event fingerprint.
+
+Read your Spotify library into the same store with:
+
+```bash
+moondog spotify sync-library
+```
+
+It saves your saved songs and albums, followed artists, your own playlists, and Spotify's top artists and tracks for the last four weeks, six months and about a year.
+`moondog spotify library` shows the same read without saving it.
+Reads are bounded (for example 10,000 saved songs and 20,000 playlist entries), and the summary says when a very large library reached a limit.
+An unchanged library adds nothing; a changed one becomes the current snapshot.
 
 Import the music portion of either a standard Spotify Account Data ZIP or an Extended Streaming History ZIP directly with:
 

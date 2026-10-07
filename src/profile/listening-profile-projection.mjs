@@ -1320,8 +1320,13 @@ function backToBackTracks(
 }
 
 function deduplicateProfileEvidence(records) {
+  // A live library read is a complete snapshot: the newest one replaces older
+  // reads, so an unsaved song or unfollowed artist drops out after a re-sync.
+  const latestLibraryRead = records.reduce((latest, record) => record.provenance?.source_system === "spotify_web_api" &&
+    (record.provenance.captured_at ?? "") > latest ? record.provenance.captured_at : latest, "");
   const selected = new Map();
   for (const record of records) {
+    if (record.provenance?.source_system === "spotify_web_api" && record.provenance.captured_at !== latestLibraryRead) continue;
     const current = selected.get(record.evidence_key);
     const capturedAt = record.provenance?.captured_at ?? "";
     const currentCapturedAt = current?.provenance?.captured_at ?? "";
@@ -1357,14 +1362,17 @@ function persistedExplanation(record) {
     taste_artist_ranked: `Spotify's exported Taste Profile ranked this artist reference at position ${attributes.rank}.`,
     provider_interpretation: `Spotify supplied this provider-generated ${label.replaceAll("_", " ")} narrative in ${source}.`,
     sound_capsule_artist_ranked: `Spotify Sound Capsule ranked this artist at position ${attributes.rank} for ${attributes.period}.`,
+    top_artist_ranked: `Spotify ranked this artist at position ${attributes.rank} of your top artists for ${attributes.period}, as of ${record.provenance.captured_at}.`,
+    top_track_ranked: `Spotify ranked this track at position ${attributes.rank} of your top tracks for ${attributes.period}, as of ${record.provenance.captured_at}.`,
     sound_capsule_track_ranked: `Spotify Sound Capsule ranked this track label at position ${attributes.rank} for ${attributes.period}.`,
     sound_capsule_highlight: `Spotify Sound Capsule emitted a ${attributes.highlight_type} highlight dated ${record.observed_at}.`,
     wrapped_metric: `Spotify Wrapped reported ${attributes.value} ${attributes.unit} for ${label} in ${attributes.period}.`,
     sound_capsule_period_metric: `Spotify Sound Capsule reported ${attributes.stream_count} streams and ${attributes.played_seconds} played seconds for ${attributes.period}.`,
   };
   const limitationByClass = {
-    explicit:
-      "This is an explicit current provider state, but the export does not include the original action timestamp.",
+    explicit: record.provenance?.source_system === "spotify_web_api"
+      ? "This is your saved state in Spotify when Moondog read it; it shows what you keep, not how often you play it."
+      : "This is an explicit current provider state, but the export does not include the original action timestamp.",
     curated:
       "Playlist inclusion is a curatorial signal, not proof of a permanent preference or the reason for inclusion.",
     behavioral:
@@ -1388,6 +1396,8 @@ function persistedExplanation(record) {
     provider_interpretation: "provider.interpretation",
     sound_capsule_artist_ranked: "provider.artist_rank",
     sound_capsule_track_ranked: "provider.track_rank",
+    top_artist_ranked: "provider.artist_rank",
+    top_track_ranked: "provider.track_rank",
     sound_capsule_highlight: "provider.highlight",
     wrapped_metric: "provider.metric",
     sound_capsule_period_metric: "provider.metric",
@@ -1562,10 +1572,12 @@ function evidenceGroups(records, eventAnalysis, explanations) {
     "wrapped_artist_ranked",
     "taste_artist_ranked",
     "sound_capsule_artist_ranked",
+    "top_artist_ranked",
   ]);
   const providerTrackKinds = new Set([
     "wrapped_track_ranked",
     "sound_capsule_track_ranked",
+    "top_track_ranked",
   ]);
   function providerRanked(kinds, outputType) {
     const groups = new Map();

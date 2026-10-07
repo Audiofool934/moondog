@@ -1157,6 +1157,7 @@ test("Spotify client reads playlist metadata and items through current item endp
       album: "Night Transit",
       duration_ms: 278_000,
     },
+    added_at: "2026-09-03T00:00:00.000Z",
   });
   assert.equal(items.items[1].is_local, true);
   assert.equal(items.total, 2);

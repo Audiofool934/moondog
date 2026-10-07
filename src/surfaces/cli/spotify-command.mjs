@@ -16,9 +16,10 @@ import {
   projectSpotifyRecentActivity,
 } from "../../integrations/spotify/recent-activity.mjs";
 import { readSpotifyHistoryArchive } from "../../integrations/spotify/history-archive.mjs";
+import { projectSpotifyLibrarySnapshot } from "../../integrations/spotify/library-snapshot.mjs";
 import { sanitizeTerminalText } from "./format-output.mjs";
 
-const readCommands = new Set(["account", "now", "devices", "queue", "recent"]);
+const readCommands = new Set(["account", "now", "devices", "queue", "recent", "library"]);
 const writeCommands = new Set([
   "play",
   "pause",
@@ -50,6 +51,8 @@ Commands:
 - \`moondog spotify account|now|devices|queue [--json]\`
 - \`moondog spotify recent [--limit <1-50>] [--after <ms>|--before <ms>] [--json]\`
 - \`moondog spotify sync-recent [--limit <1-50>] [--json]\`
+- \`moondog spotify library [--json]\`
+- \`moondog spotify sync-library [--json]\`
 - \`moondog spotify import-history <spotify-history.zip> [--json]\`
 - \`moondog spotify play [spotify-uri] [--json]\`
 - \`moondog spotify pause|next|previous [--json]\`
@@ -351,6 +354,26 @@ function formatPlain(action, value) {
       `- ${value.inserted_track_refs ?? 0} songs new to your profile`,
     ].join("\n");
   }
+  if (action === "library") {
+    return [
+      "# Your Spotify library",
+      `- ${value.saved_tracks?.length ?? 0} saved songs, ${value.saved_albums?.length ?? 0} saved albums`,
+      `- ${value.followed_artists?.length ?? 0} followed artists`,
+      `- ${value.playlists?.length ?? 0} of your own playlists`,
+      `- Top artists and tracks for the last four weeks, six months and year`,
+    ].join("\n");
+  }
+  if (action === "sync-library") {
+    if (value.already_imported) return "Your Spotify library hasn't changed since the last sync.";
+    return [
+      "# Your Spotify library is in",
+      `- ${value.preview.savedTracks} saved songs, ${value.preview.savedAlbums} saved albums, ${value.preview.followedArtists} followed artists`,
+      `- ${value.preview.playlistTracks} songs across ${value.preview.playlists} of your own playlists`,
+      `- ${value.preview.topArtists} top artists and ${value.preview.topTracks} top tracks from Spotify`,
+      ...(value.preview.truncated.length ? [`- Very large library: stopped reading ${value.preview.truncated.join(", ").replaceAll("_", " ")} at Moondog's limit`] : []),
+      ...(value.preview.skippedPlaylists ? [`- ${value.preview.skippedPlaylists} playlists couldn't be read and were skipped`] : []),
+    ].join("\n");
+  }
   if (action === "import-history") {
     const extended =
       value.data_scope === "lifetime_extended_streaming_history";
@@ -508,11 +531,12 @@ function createRuntimeResolver({
   };
 }
 
-async function runReadCommand(action, service, input) {
+async function runReadCommand(action, service, input, { signal, onProgress } = {}) {
   if (action === "account") return service.account();
   if (action === "now") return service.currentPlayer();
   if (action === "devices") return service.devices();
   if (action === "recent") return service.recentActivity(input);
+  if (action === "library") return service.librarySnapshot({ signal, onProgress });
   return service.queue();
 }
 
@@ -602,6 +626,7 @@ export async function runSpotifyCommand({
   spotify,
   signalTarget = process,
   signal,
+  onProgress,
 } = {}) {
   const options = parseArguments(args, json);
   const action = options.action;
@@ -618,6 +643,7 @@ export async function runSpotifyCommand({
     "logout",
     "resolve",
     "sync-recent",
+    "sync-library",
     "import-history",
     ...readCommands,
     ...writeCommands,
@@ -794,7 +820,7 @@ export async function runSpotifyCommand({
         : (exactArguments(action, options.rest, 0), undefined);
     const service = await runtime.service();
     const result = await externalCall(
-      () => runReadCommand(action, service, input),
+      () => runReadCommand(action, service, input, { signal, onProgress }),
       `Spotify ${action} could not be read.`,
     );
     emit(stdout, action, result, options.json);
@@ -836,6 +862,25 @@ export async function runSpotifyCommand({
         ),
       "Spotify recent activity could not be stored.",
     );
+    emit(stdout, action, result, options.json);
+    return result;
+  }
+
+  if (action === "sync-library") {
+    exactArguments(action, options.rest, 0);
+    if (!recentActivityStore || typeof recentActivityStore.ingestImport !== "function") {
+      throw commandError("Spotify library storage is unavailable.");
+    }
+    if (typeof subjectId !== "string" || !subjectId.trim()) {
+      throw commandError("A trusted local music subject is required for a library sync.");
+    }
+    const service = await runtime.service();
+    const snapshot = await externalCall(() => service.librarySnapshot({ signal, onProgress }), "Your Spotify library could not be read.");
+    const currentTime = now();
+    if (!Number.isFinite(currentTime)) throw commandError("Spotify library capture time is unavailable.");
+    const projected = projectSpotifyLibrarySnapshot({ subjectId, snapshot, capturedAt: new Date(currentTime).toISOString() });
+    const receipt = await externalCall(() => recentActivityStore.ingestImport(projected.bundle), "Your Spotify library could not be stored.");
+    const result = { ...receipt, preview: projected.preview };
     emit(stdout, action, result, options.json);
     return result;
   }

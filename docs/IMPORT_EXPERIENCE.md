@@ -73,10 +73,14 @@ Each service page describes the data it can actually supply and the available ne
 The home action and command palette open that same guide.
 An unfinished conversation draft remains available after leaving the guide.
 
-Spotify quick start reads up to 50 recent plays and previews the retained dates and track count before saving.
+Spotify quick start reads the listener's library and up to 50 recent plays, and previews both before saving.
+The library covers saved songs and albums, followed artists, the listener's own playlists, and Spotify's top artists and tracks for the last four weeks, six months and about a year.
+Followed playlists made by someone else are left out, and a playlist that cannot be read is skipped and counted rather than failing the import.
 It needs a Spotify connection, but no model or downloaded history archive.
-The connection step requests only `user-read-recently-played`; playback and playlist permissions remain part of the separate full Spotify login.
-This source does not include actual played duration, and it does not reconstruct older listening.
+The connection step uses Moondog's standard Spotify sign-in, so one consent covers both import and listening control and a later connect never narrows it.
+An older sign-in that only allowed recent plays can still import them; the guide offers a reconnect to add the library.
+Each library read is a complete snapshot: the newest one replaces older reads in the profile, so unsaved songs and unfollowed artists drop out after a re-sync.
+Neither part includes actual played duration, and recent plays do not reconstruct older listening.
 Empty results, expired authorization, app access denial, and quota failures keep the archive path available.
 Repeated recent imports use the existing event fingerprints and do not duplicate the same recent observations.
 

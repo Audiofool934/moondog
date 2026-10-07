@@ -7,6 +7,7 @@ export const CHECKED_PROFILE_STATES = new Set(["passed", "revised", "flagged"]);
 
 const LISTENER_SECTIONS = new Set(["listener_preferences", "listener_avoids"]);
 // Curation already appears in its own sections; these provider rows only repeat it.
+const SPOTIFY_TOP_KINDS = new Set(["top_artist_ranked", "top_track_ranked"]);
 const DUPLICATED_PROVIDER_KINDS = new Set([
   "playlist_track_added", "library_track_saved", "library_album_saved", "library_artist_followed",
 ]);
@@ -139,7 +140,21 @@ export function listenerProfileDossier(input) {
     }
   }
   for (const entry of rows("playlist_tracks").slice(0, 300)) curate(entry.data.artist_credit, entry, `playlist track ${entry.data.label}`);
-  const provider = rows("provider_evidence").filter(entry => !DUPLICATED_PROVIDER_KINDS.has(entry.data.evidence_kind));
+  const provider = rows("provider_evidence").filter(entry => !DUPLICATED_PROVIDER_KINDS.has(entry.data.evidence_kind) && !SPOTIFY_TOP_KINDS.has(entry.data.evidence_kind));
+  // Spotify ranks the same names across three periods; one row per name keeps them comparable.
+  const spotifyTop = (kind, limit) => {
+    const grouped = new Map();
+    for (const entry of rows("provider_evidence").filter(entry => entry.data.evidence_kind === kind)) {
+      const key = artistKey(`${entry.data.label}\0${entry.data.artist_credit ?? ""}`);
+      const item = grouped.get(key) ?? { ref: entry.reference_id, label: entry.data.label,
+        ...(entry.data.artist_credit ? { artist_credit: entry.data.artist_credit } : {}), ranks: {}, best: Infinity };
+      item.ranks[entry.data.period] = entry.data.rank;
+      if (entry.data.rank < item.best) Object.assign(item, { best: entry.data.rank, ref: entry.reference_id });
+      grouped.set(key, item);
+    }
+    return [...grouped.values()].sort((a, b) => a.best - b.best || Object.keys(b.ranks).length - Object.keys(a.ranks).length)
+      .slice(0, limit).map(({ best: _best, ...item }) => item);
+  };
   const sections = Object.fromEntries(input.manifest.sections.map(({ section, rows: total, ordering, limitations }) =>
     [section, { total, ordering, limitations }]));
   return {
@@ -165,6 +180,11 @@ export function listenerProfileDossier(input) {
     apple_genres: take("apple_genres", 20),
     apple_tracks: take("apple_tracks", 15),
     provider_genres: take("provider_genres", 15),
+    spotify_top: {
+      note: "Spotify's own affinity ranks (1 is highest) for the last four weeks, six months and about a year, read from the live account. Short-term ranks reflect recent attention; ranks held across all periods suggest something more enduring. Not play counts.",
+      artists: spotifyTop("top_artist_ranked", 40),
+      tracks: spotifyTop("top_track_ranked", 25),
+    },
     provider_signals: provider.slice(0, 50).map(row),
     explicit_choices: [...rows("listener_preferences"), ...rows("listener_avoids")].slice(0, 100).map(row),
   };

@@ -40,6 +40,7 @@ const spotifyChoices = choices([
   ["queue-add", "Add a track or episode URI to the queue"],
   ["resolve", "Find a track by title and artist"],
   ["sync-recent", "Add your latest plays to your profile"],
+  ["sync-library", "Add your Spotify library and top artists to your profile"],
   ["import-history", "Add a Spotify history ZIP to your profile"],
   ["configure", "Save your Spotify app's Client ID"],
   ["login", "Connect your Spotify account"],
