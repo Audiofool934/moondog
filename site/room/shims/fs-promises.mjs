@@ -1,0 +1,11 @@
+import { unavailable } from "./unavailable.mjs";
+export const access = unavailable("fs.access");
+export const lstat = unavailable("fs.lstat");
+export const mkdir = unavailable("fs.mkdir");
+export const open = unavailable("fs.open");
+export const readdir = unavailable("fs.readdir");
+export const readFile = unavailable("fs.readFile");
+export const rename = unavailable("fs.rename");
+export const rmdir = unavailable("fs.rmdir");
+export const unlink = unavailable("fs.unlink");
+export default { access, lstat, mkdir, open, readdir, readFile, rename, rmdir, unlink };

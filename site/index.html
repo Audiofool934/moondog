@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <meta name="referrer" content="no-referrer">
+  <meta name="color-scheme" content="light dark">
+  <meta name="description" content="Moondog is a listening room in your terminal. It reads the history your music services already keep, and turns it into a profile you can open, question, and correct.">
+  <title>Moondog</title>
+  <link rel="icon" href="static/favicon-64.png" type="image/png">
+  <link rel="stylesheet" href="page.css">
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="page.js"></script>
+</head>
+<body>
+  <header class="masthead">
+    <a class="brand" href="#top" aria-label="Moondog, back to the top">
+      <img src="static/favicon-64.png" width="32" height="32" alt="">
+      <span>Moondog</span>
+    </a>
+    <nav aria-label="Page">
+      <a class="nav-room" href="#room">Try the room</a>
+      <a href="#install">Install</a>
+      <a href="https://github.com/Audiofool934/moondog">GitHub</a>
+    </nav>
+  </header>
+
+  <main id="top">
+    <section class="intro" aria-labelledby="intro-title">
+      <h1 id="intro-title">A listening room that shows its work.</h1>
+      <div class="intro-text">
+        <p>Moondog is a listening room in your terminal. It reads the history your music services already keep, and turns it into a profile you can open, question, and correct.</p>
+        <p class="actions">
+          <a class="button" href="#install">Install Moondog</a>
+          <a href="https://github.com/Audiofool934/moondog">Read the source</a>
+        </p>
+      </div>
+    </section>
+
+    <section class="room" id="room" aria-label="Try the listening room">
+      <div class="room-frame" data-room data-state="loading">
+        <div class="room-screen" data-room-screen role="application" aria-label="Moondog listening room. Click to type."></div>
+      </div>
+      <div class="room-keys" aria-label="Keys for touch screens">
+        <button type="button" data-command="/taste">/taste</button>
+        <button type="button" data-command="/help">/help</button>
+        <button type="button" data-key="tab">Tab</button>
+        <button type="button" data-key="up" aria-label="Up">↑</button>
+        <button type="button" data-key="down" aria-label="Down">↓</button>
+        <button type="button" data-key="enter">Enter</button>
+        <button type="button" data-key="esc">Esc</button>
+      </div>
+      <p class="room-note">This is the real room, running in your browser with a fictional listener. <span class="for-mouse">Click inside and type <code>/taste</code>, or press Tab to look around.</span><span class="for-touch">Tap <code>/taste</code> above to open the profile, or tap the room to type.</span> Nothing you type leaves this page.</p>
+    </section>
+
+    <section class="tracks" aria-label="What Moondog does">
+      <article class="track">
+        <header>
+          <h2>Bring your history</h2>
+          <code>/import</code>
+        </header>
+        <div class="track-body">
+          <p>Pick a service, and Moondog shows you what's inside before anything is saved. Your original files are never touched, and importing the same file twice changes nothing.</p>
+          <dl class="sources">
+            <dt>Spotify</dt>
+            <dd>Recent plays after you connect, or your whole history from the ZIP Spotify emails you.</dd>
+            <dt>Apple Music</dt>
+            <dd>The Library.xml you export from Music on a Mac.</dd>
+            <dt>YouTube Music</dt>
+            <dd>A Google Takeout export.</dd>
+            <dt>QQ Music and NetEase</dt>
+            <dd>Any public playlist, from its share link.</dd>
+            <dt>ListenBrainz</dt>
+            <dd>A saved listens file.</dd>
+          </dl>
+        </div>
+      </article>
+
+      <article class="track">
+        <header>
+          <h2>Your profile</h2>
+          <code>/taste</code>
+        </header>
+        <div class="track-body">
+          <p>The profile says what you played, and what that can't prove. Playing a song a lot doesn't show, on its own, how much it matters to you.</p>
+          <p>Open any song or artist to see why it's there: what you played, what that can't tell Moondog, and what you told it. Choose <em>I like this</em> or <em>Keep it out</em>, and the profile updates. Your listening history stays as it was.</p>
+          <p>With a model connected, <code>/profile build</code> writes a reading of everything you imported, usually in a few minutes. A second pass checks the draft for contradictions and invented claims before it's saved.</p>
+        </div>
+      </article>
+
+      <article class="track">
+        <header>
+          <h2>An agent, when you want one</h2>
+          <code>/model</code>
+        </header>
+        <div class="track-body">
+          <p>The profile works without a model, an API key, or a music-service login. When you want company, sign in with <code>/auth</code> and pick a model: GLM, Kimi, DeepSeek, Grok, GPT, Claude, Gemini, or OpenRouter.</p>
+          <p>The agent talks music with you, finds songs you haven't heard, and checks each recording on Spotify before it plays or queues it. Each step shows in the conversation as it happens.</p>
+          <figure class="request">
+            <blockquote lang="zh"><code>再来十二首国风DJ，queue</code></blockquote>
+            <figcaption>Twelve more guofeng DJ tracks, straight into the queue. Moondog speaks English, Spanish, Portuguese, Japanese, and Chinese.</figcaption>
+          </figure>
+        </div>
+      </article>
+
+      <article class="track">
+        <header>
+          <h2>The dark side of the moon</h2>
+          <code>moondog data inspect</code>
+        </header>
+        <div class="track-body">
+          <p>Moondog names what play counts can never tell it about you. It is just as plain about where your data goes.</p>
+          <ul class="ledger">
+            <li>Your history, your profile, and your conversations stay on your machine.</li>
+            <li>When you build a profile, Moondog sends a compact summary of your music evidence to the model you picked. When you chat, your messages go to that model too.</li>
+            <li>For the lyric on the sleeve, Moondog asks LRCLIB for the words to a song you played. It doesn't send your profile, your history, or the conversation.</li>
+            <li>Spotify sees only what you connect. Moondog makes playlists only when you ask, and never posts, deletes, or spends money.</li>
+          </ul>
+        </div>
+      </article>
+    </section>
+
+    <section class="install" id="install" aria-labelledby="install-title">
+      <h2 id="install-title">Install</h2>
+      <p>You need Node.js 22.19.0 or newer, on macOS or Linux.</p>
+      <div class="commands">
+        <pre id="install-commands"><code>git clone https://github.com/Audiofool934/moondog.git
+cd moondog
+npm ci
+npm start</code></pre>
+        <button type="button" class="copy" data-copy="install-commands">Copy</button>
+      </div>
+      <p>To watch the agent work through fictional data without signing in to anything, run <code>npm run demo</code> in the same folder.</p>
+      <p>The npm package, <code>@audiofool/moondog</code>, is still at an older 0.1.0. The next release brings it up to date. The <a href="https://github.com/Audiofool934/moondog/blob/main/docs/TERMINAL_GUIDE.md">terminal guide</a> covers every import format and model setting.</p>
+    </section>
+  </main>
+
+  <footer class="liner">
+    <img src="static/moondog-logo-144.png" width="72" height="72" alt="The Moondog logo: a dog in headphones inside a moon that is also a record">
+    <div>
+      <p>Moondog is open source under the Apache 2.0 license, and built on <a href="https://github.com/earendil-works/pi">Pi</a>. Lyrics on the sleeve come from <a href="https://lrclib.net/">LRCLIB</a>. Everyone in the room above is made up.</p>
+      <p class="liner-links">
+        <a href="https://github.com/Audiofool934/moondog">Source</a>
+        <a href="https://github.com/Audiofool934/moondog/blob/main/CONTRIBUTING.md">Contributing</a>
+        <a href="https://github.com/Audiofool934/moondog/issues">Report a problem</a>
+      </p>
+    </div>
+  </footer>
+</body>
+</html>

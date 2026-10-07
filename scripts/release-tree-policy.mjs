@@ -78,6 +78,7 @@ const allowedPathPrefixes = [
   "contracts/",
   "docs/",
   "scripts/",
+  "site/",
   "src/",
   "tests/",
 ];
@@ -108,9 +109,11 @@ const forbiddenBasenames = new Set([
   "secrets.json",
 ]);
 
-export const maximumReleaseEntries = 350;
+// Raised when the project page (site/) arrived: main was at 346 entries and 14.9 MiB.
+// The ceilings still catch bulk accidents such as a data dump or a build folder.
+export const maximumReleaseEntries = 450;
 export const maximumReleaseFileBytes = 5 * 1024 * 1024;
-export const maximumReleaseTreeBytes = 15 * 1024 * 1024;
+export const maximumReleaseTreeBytes = 20 * 1024 * 1024;
 
 export const requiredReleasePaths = new Set([
   ".github/PULL_REQUEST_TEMPLATE.md",
