@@ -1,8 +1,12 @@
 // The project page: the live room, on-screen keys for touch screens, and copy buttons.
 import { openRoom } from "./room/room.mjs";
 
+// The build sets MOONDOG_AGENT_URL when the public agent is running.
+const agentUrl = MOONDOG_AGENT_URL;
+for (const note of document.querySelectorAll("[data-agent]")) note.hidden = (note.dataset.agent === "online") !== Boolean(agentUrl);
+
 const frame = document.querySelector("[data-room]");
-const room = openRoom(frame.querySelector("[data-room-screen]"));
+const room = openRoom(frame.querySelector("[data-room-screen]"), { agentUrl });
 // The spectrum fades once the room has drawn its first frame.
 requestAnimationFrame(() => { frame.dataset.state = "ready"; });
 

@@ -1,40 +1,25 @@
 // Builds the fictional listening data that the browser room reads.
-// The real CLI imports the fictional Spotify history into a throwaway state folder,
-// then the real application answers the questions the room asks, saved as JSON.
-import { execFile } from "node:child_process";
+// The real application answers the questions the room asks, saved as JSON.
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
+import { prepareFictionalHistory } from "./fictional-history.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const output = path.join(root, "site", "generated", "snapshot.json");
 const work = await mkdtemp(path.join(tmpdir(), "moondog-web-room-"));
 
 try {
-  const environment = {
-    MOONDOG_STATE_HOME: path.join(work, "state"),
-    MOONDOG_CONFIG_HOME: path.join(work, "config"),
-    MOONDOG_APPLE_IMPORTS_ROOT: path.join(work, "apple", "imports"),
-    MOONDOG_APPLE_PROJECTION_PATH: path.join(work, "apple", "projection.sqlite"),
-    MOONDOG_LYRICS: "off",
-  };
+  const { environment, databasePath } = await prepareFictionalHistory(work);
   // Set before the stores load, so nothing can touch the real state.
   Object.assign(process.env, environment);
-  const cli = (...args) => promisify(execFile)(process.execPath, [
-    "--disable-warning=ExperimentalWarning", path.join(root, "scripts", "moondog.mjs"), ...args,
-  ], { env: { ...process.env, ...environment } });
-
-  const archive = path.join(work, "fictional-spotify-history.zip");
-  await cli("demo-history", "--output", archive);
-  await cli("spotify", "import-history", archive);
 
   const { openListeningHistoryStore } = await import("../../src/profile/listening-history-store.mjs");
   const { createListeningProfileDomainServices } = await import("../../src/core/listening-profile-domain-services.mjs");
   const { MoondogApplication } = await import("../../src/core/moondog-application.mjs");
 
-  const listeningHistoryStore = await openListeningHistoryStore();
+  const listeningHistoryStore = await openListeningHistoryStore({ databasePath, environment });
   const subjectId = listeningHistoryStore.localSubjectId();
   const application = new MoondogApplication({
     domainServices: createListeningProfileDomainServices({ listeningHistoryStore, subjectId }),

@@ -5,6 +5,7 @@ import "@xterm/xterm/css/xterm.css";
 import { runMoondogTui } from "../../src/surfaces/cli/tui.mjs";
 import snapshot from "../generated/snapshot.json";
 import { BrowserApplication, PreviewRuntime, needsApp } from "./browser-application.mjs";
+import { RemoteRuntime } from "./remote-runtime.mjs";
 import { XtermTerminal } from "./xterm-terminal.mjs";
 
 // The room's own paper and charcoal colors, from src/surfaces/cli/brand-theme.mjs.
@@ -13,7 +14,8 @@ const PALETTES = {
   charcoal: { background: "#0c0c0c", foreground: "#e4e4e4", cursor: "#e4e4e4", cursorAccent: "#0c0c0c", selectionBackground: "#e4e4e433" },
 };
 
-export function openRoom(container) {
+// With an agent URL, messages go to Moondog's public agent; without one, the room has no model.
+export function openRoom(container, { agentUrl = "" } = {}) {
   const dark = matchMedia("(prefers-color-scheme: dark)").matches;
   const xterm = new Terminal({
     fontFamily: '"SF Mono", Menlo, "DejaVu Sans Mono", "Cascadia Mono", Consolas, monospace',
@@ -47,7 +49,7 @@ export function openRoom(container) {
 
   const run = () => runMoondogTui({
     application: new BrowserApplication(snapshot),
-    runtime: new PreviewRuntime(),
+    runtime: agentUrl ? new RemoteRuntime(agentUrl) : new PreviewRuntime(),
     terminal: new XtermTerminal(xterm),
     signalTarget: signals,
     environment,
