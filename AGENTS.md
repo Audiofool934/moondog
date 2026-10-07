@@ -5,6 +5,8 @@
 - Build and evaluate the personal listening loop in the Pi-based TUI.
 - GUI and Studio development is paused until the project owner explicitly reopens that scope.
 - Keep existing browser prototypes as reference; do not make them the default entrypoint or expand them as part of general project advancement.
+- The project page in `site/` is in scope.
+  It runs the real TUI in the browser on fictional data; keep that room code shared with the terminal app rather than forking its behavior for the page.
 - Reuse the shared profile, correction, import, and agent services when adding terminal interactions.
 - Present the listening-profile result immediately after a successful TUI import, in the same terminal session; do not require a browser or a separate command to see it.
 

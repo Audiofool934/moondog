@@ -1,41 +1,39 @@
-# Web Room Spike
+# Moondog Project Page
 
-This spike runs the real Moondog listening room in a browser page.
-It uses fictional listening data and connects to no model or music service.
-It is an experiment, not a product surface.
+This folder builds Moondog's project page.
+Its hero is the real listening room, running in the browser with a fictional listener.
+The page makes no network requests, and its content security policy enforces that.
 
 ## Run it
 
-It needs Node 22.19 or newer.
+It needs Node.js 22.19 or newer.
 Run `npm ci` at the repository root first.
 
 ```bash
-cd web-room
-npm install
-npm run snapshot
-npm run build -- --serve --dev
+cd site
+npm ci
+npm run dev
 ```
 
 Then open <http://localhost:8737>.
+`npm run build` makes a fresh fictional snapshot and writes the page to `dist/`.
 
-## How it works
+## How the room runs in a browser
 
 - `src/surfaces/cli/tui.mjs` runs unchanged.
-  Its `terminal` parameter gets `src/xterm-terminal.mjs`, which implements pi-tui's `Terminal` interface on top of xterm.js.
-- `snapshot.mjs` imports the fictional Spotify history into a throwaway state folder with the real CLI.
-  It then saves what the room reads (the profile summary, the evidence, and the local command results) to `generated/snapshot.json`.
-- `src/browser-application.mjs` answers the room from that snapshot.
-  Anything else says it needs the installed app.
+  `room/xterm-terminal.mjs` gives it pi-tui's `Terminal` interface on top of xterm.js.
+- `room/snapshot.mjs` imports the fictional Spotify history into a throwaway state folder with the real CLI.
+  It saves what the room reads (the profile summary, the evidence, and the local command results) to `generated/snapshot.json`.
+- `room/browser-application.mjs` answers the room from that snapshot.
+  Anything that needs files, a model, or a music service says it needs the installed app.
 - `build.mjs` bundles with esbuild.
-  It swaps Node built-ins and the model and sign-in modules for the small stand-ins in `shims/`.
+  It swaps Node built-ins and the model and sign-in modules for the stand-ins in `room/shims/`, and makes pi-tui's Node-only timer calls optional.
 
-## Findings
+## Publishing
 
-- The home sleeve, motion, tracklist, `/taste`, filtering, evidence, `/import`'s service list, `/help`, the no-model reply, paper and charcoal (from the system setting), and the narrow stacked layout all work in the browser.
-- No room code changed.
-  The browser needed 11 small shim files, and the only real fix was a `Buffer` stand-in for pi-tui's input buffer.
-- `main.js` is 1.4 MB, or 359 KB gzipped.
-  Translations are 470 KB and could load on demand; xterm.js is 336 KB; the snapshot is 233 KB.
+`.github/workflows/pages.yml` builds the page on pull requests and publishes `dist/` to GitHub Pages from `main`.
+
+## Known gaps
+
 - Like, Avoid, and Undo are not wired yet, because they write to the listening store.
-- At phone width the lyric line loses its opening quote mark.
-  Check whether the terminal app does the same.
+- Typing a message shows the no-model reply, and `/model` explains that a model needs the installed app.

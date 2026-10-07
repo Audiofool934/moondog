@@ -1,6 +1,6 @@
 // Answers the room's questions from the fictional snapshot.
 // Everything else says plainly that it needs the installed app.
-const needsApp = (what) => new Error(`${what} needs the installed app. This page is a preview with fictional data.`);
+export const needsApp = (what) => new Error(`${what} needs the installed app. The Install section below the room shows how.`);
 
 export class BrowserApplication {
   constructor(snapshot) {

@@ -4,7 +4,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import { runMoondogTui } from "../../src/surfaces/cli/tui.mjs";
 import snapshot from "../generated/snapshot.json";
-import { BrowserApplication, PreviewRuntime } from "./browser-application.mjs";
+import { BrowserApplication, PreviewRuntime, needsApp } from "./browser-application.mjs";
 import { XtermTerminal } from "./xterm-terminal.mjs";
 
 // The room's own paper and charcoal colors, from src/surfaces/cli/brand-theme.mjs.
@@ -12,7 +12,6 @@ const PALETTES = {
   paper: { background: "#f4f4f4", foreground: "#141414", cursor: "#141414", cursorAccent: "#f4f4f4", selectionBackground: "#14141433" },
   charcoal: { background: "#0c0c0c", foreground: "#e4e4e4", cursor: "#e4e4e4", cursorAccent: "#0c0c0c", selectionBackground: "#e4e4e433" },
 };
-const needsApp = "needs the installed app. Install Moondog to bring your own history.";
 
 export function openRoom(container) {
   const dark = matchMedia("(prefers-color-scheme: dark)").matches;
@@ -56,8 +55,8 @@ export function openRoom(container) {
     providers: () => snapshot.providers,
     models: (id) => snapshot.models[id] ?? [],
     refreshModels: async () => [],
-    rebuildRuntime: async () => { throw new Error(`Connecting a model ${needsApp}`); },
-    prepareImport: async () => { throw new Error(`Reading your files ${needsApp}`); },
+    rebuildRuntime: async () => { throw needsApp("Connecting a model"); },
+    prepareImport: async () => { throw needsApp("Reading your files"); },
     openImportHelp: async (url) => { window.open(url, "_blank", "noopener"); },
   });
 
