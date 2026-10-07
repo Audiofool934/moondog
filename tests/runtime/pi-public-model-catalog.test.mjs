@@ -256,3 +256,11 @@ test("public latest aliases are supported, while invalid cost metadata cannot re
   assert.ok(catalog.createModels().getModel("openrouter", alias.id));
   assert.deepEqual(catalog.createModels().getModel("openrouter", prior.id), prior);
 });
+
+test("a deadline that passes before the request starts reports a failed refresh instead of an unhandled rejection", async t => {
+  // A slow cache lock can outlast the deadline; the already-started request must still be observed.
+  const { catalog } = await fixture(t, { timeoutMs: 0, fetchImpl: async () => { throw new Error("PRIVATE_URL_OR_SECRET"); } });
+  const result = await catalog.refresh({ provider: "deepseek", force: true });
+  assert.equal(result[0].state, "failed");
+  await new Promise(resolve => setImmediate(resolve));
+});

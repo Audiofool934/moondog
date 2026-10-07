@@ -103,6 +103,9 @@ function mergeRecords(previous, next) {
 }
 
 async function abortable(promise, signal) {
+  // The caller already started the work. Observe it even when the deadline
+  // passed first, so its later failure cannot become an unhandled rejection.
+  promise.catch(() => {});
   signal.throwIfAborted();
   let onAbort;
   const aborted = new Promise((_, reject) => { onAbort = () => reject(signal.reason); signal.addEventListener("abort", onAbort, { once: true }); });
