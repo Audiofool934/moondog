@@ -3,7 +3,9 @@ import {
   CombinedAutocompleteProvider,
   CURSOR_MARKER,
   Editor,
+  getCapabilities,
   getKeybindings,
+  hyperlink,
   truncateToWidth,
   visibleWidth,
   wrapTextWithAnsi,
@@ -121,6 +123,8 @@ export class HistoryImportView {
       this.pasteActive = false;
       this.pasteTail = "";
       this.editor.setText(this.getPath());
+      // A pasted Client ID must replace the old one, not join it. A failed save keeps the text to fix.
+      if (next.page === "client" && this.state.page !== "working") this.clientEditor.setText("");
     }
     this.state = next;
     if (typeof state?.profileReady === "boolean") this.profileReady = state.profileReady;
@@ -291,6 +295,8 @@ export class HistoryImportView {
               : recentOnly ? { type: "connectSpotify", label: tr("Reconnect Spotify") }
               : configured ? { type: "connectSpotify", label: tr("Connect Spotify") } : { type: "setup", label: tr("Set up Spotify connection") },
             ...(ready ? [{ type: "connectSpotify", label: tr("Reconnect Spotify") }] : recentOnly ? [{ type: "recent", label: tr("Just my recent plays") }] : []),
+            // A mistyped Client ID only shows up at sign-in, so keep a way to replace it.
+            ...(configured && !ready && !recentOnly ? [{ type: "client", label: tr("Change Client ID") }] : []),
             { type: "spotifyHistory", label: tr("Add past listening history") }, back,
           ],
         };
@@ -299,9 +305,9 @@ export class HistoryImportView {
         title: tr("Set up Spotify connection"),
         paragraphs: [
           tr("For now, Moondog connects through a Spotify app you create yourself. It takes a few minutes."),
-          tr("In the Spotify Dashboard, create an app with Web API turned on."),
-          tr("Add redirect URI: {uri}", { uri: "http://127.0.0.1:43821/callback" }),
-          tr("Copy the Client ID from the app's settings. You don't need the client secret."),
+          `1. ${tr("In the Spotify Dashboard, create an app with Web API turned on.")}`,
+          `2. ${tr("Add redirect URI: {uri}", { uri: "http://127.0.0.1:43821/callback" })}`,
+          `3. ${tr("Copy the Client ID from the app's settings. You don't need the client secret.")}`,
           tr("The app owner needs Premium, and up to 5 people can use it. If you're not the owner, get added under User Management."),
         ],
         actions: [
@@ -486,6 +492,21 @@ export class HistoryImportView {
       const message = clean(this.state.message) || tr("Working on it…");
       lines = [theme.bold(tr("Your listening history")), "", ...wrapTextWithAnsi(message, inner).map(theme.text)];
       if (height >= 5) lines.push("", theme.muted(tr("One moment.")));
+    } else if (this.state.page === "signin") {
+      // Spotify reports a wrong Client ID or redirect URI only in the browser, so say what to look for here.
+      const url = clean(this.state.url);
+      // A link split across rows cannot be copied whole, so prefer one clickable label.
+      const link = url && getCapabilities().hyperlinks ? hyperlink(tr("Open the Spotify sign-in page"), url) : url;
+      const paragraphs = [
+        tr("Your browser opened Spotify. Sign in, then choose Agree."),
+        tr("If Spotify shows INVALID_CLIENT or \"Invalid redirect URI\", your Spotify app doesn't match yet. Cancel, check the redirect URI, then choose Change Client ID."),
+        tr("Add redirect URI: {uri}", { uri: "http://127.0.0.1:43821/callback" }),
+        ...(link ? [tr("Browser didn't open? Use this link:"), link] : []),
+      ];
+      lines = [theme.bold(tr("Sign in to Spotify")), "",
+        ...paragraphs.flatMap((text, index) => [...(index ? [""] : []), ...wrapTextWithAnsi(text, inner).map(text === link ? theme.text : theme.muted)]),
+        "", theme.faint(tr("Esc cancels"))];
+      if (lines.length > height) lines = [...lines.slice(0, height - 1), lines.at(-1)];
     } else {
       const page = this.pageContent();
       const spacious = height >= 17;

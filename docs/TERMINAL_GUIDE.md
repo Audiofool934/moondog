@@ -329,6 +329,8 @@ Importing reads only; it does not control playback or change your Spotify librar
 The sign-in is Moondog's standard one, so the same connection also lets the listening room play and queue music.
 Recent listening has playback timestamps but no actual played duration, and cannot reconstruct the full history.
 This release needs a configured Spotify developer app; the guide provides setup instructions and a Client ID input if needed.
+Sign-in stays in the listening room and shows what to check if Spotify reports `INVALID_CLIENT` or an invalid redirect URI; **Esc** cancels and **Change Client ID** replaces a mistyped ID.
+Right after sign-in, Moondog reads your Spotify account once, so a missing User Management entry or an owner without Premium shows up before any import.
 New development apps require Premium for the app owner and support at most five allowlisted users, as described in [Spotify's quota rules](https://developer.spotify.com/documentation/web-api/concepts/quota-modes).
 File import remains available without Spotify authorization or developer-app setup.
 

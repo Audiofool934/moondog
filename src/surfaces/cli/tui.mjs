@@ -1149,26 +1149,45 @@ export async function runMoondogTui({
     const view = importView;
     const configuring = clientId !== undefined;
     setBusy(true);
-    setImportPage("working", { message: configuring ? tr("Saving your Spotify app...") : tr("Finish signing in to Spotify in your browser. Ctrl+C cancels.") });
-    importAuthController = new AbortController();
-    if (!configuring) tui.stop({ preserveScreen: true });
+    const controller = new AbortController();
+    importAuthController = controller;
+    setImportPage(configuring ? "working" : "signin", configuring ? { message: tr("Saving your Spotify app...") } : {});
+    if (!configuring) setFooter(tr("Waiting for you to sign in to Spotify."));
+    // Sign-in prints its authorization link; show it on the sign-in page instead of the raw terminal.
+    const signinOutput = {
+      write(value) {
+        const url = String(value).match(/https:\/\/accounts\.spotify\.com\/\S+/u)?.[0];
+        if (url && !cleanedUp && importView === view && importPage === "signin") setImportPage("signin", { url });
+      },
+    };
     try {
       if (typeof runSpotify !== "function") throw new Error(tr("Spotify isn't available when Moondog is started this way."));
       // One sign-in covers import and listening control, so a later connect never narrows it.
-      await runSpotify(configuring ? ["configure", clientId] : ["login"], { signal: importAuthController.signal });
+      await runSpotify(configuring ? ["configure", clientId] : ["login"], { signal: controller.signal, stderr: signinOutput });
       if (cleanedUp || importView !== view) return;
       if (typeof rebuildRuntime === "function") await replaceRuntime();
       if (cleanedUp || importView !== view) return;
+      if (!configuring) {
+        // A development-mode app refuses accounts missing from User Management, and every account
+        // when its owner lacks Premium. Find out now, not halfway through an import.
+        setImportPage("working", { message: tr("Checking your Spotify account...") });
+        await runSpotify(["account"], { signal: controller.signal });
+        if (cleanedUp || importView !== view) return;
+      }
       setImportPage("quick", { message: configuring ? tr("App saved. Now connect Spotify.") : tr("Spotify is connected. Next, preview what Moondog will bring in.") });
-      setFooter(tr("Connected. Nothing imported yet."), success);
+      setFooter(configuring ? tr("App saved. Nothing imported yet.") : tr("Connected. Nothing imported yet."), success);
     } catch (error) {
       if (!cleanedUp && importView === view) {
-        setImportPage(configuring ? "client" : "quick", { error: sanitizeTerminalText(error.message) });
+        const message = controller.signal.aborted
+          ? tr("Sign-in cancelled. If Spotify showed an error, check the redirect URI in your Spotify app, or choose Change Client ID.")
+          : error?.code === "spotify_action_forbidden"
+            ? tr("Spotify said no. Make sure this account is listed under User Management in your Spotify app, and that the app owner has Premium. A history ZIP works either way.")
+            : sanitizeTerminalText(error.message);
+        setImportPage(configuring ? "client" : "quick", { error: message });
         setFooter(tr("Nothing imported. Try again, or use a history ZIP."), warning);
       }
     } finally {
       importAuthController = null;
-      if (!configuring && !cleanedUp) { tui.start(); tui.requestRender(true); }
       setBusy(false);
       if (!cleanedUp && importView === view) tui.setFocus(view);
     }
@@ -1946,7 +1965,10 @@ export async function runMoondogTui({
   tui.addInputListener((data) => {
     if (tui.hasOverlay()) return undefined;
     if (importView) {
-      if (busy) return { consume: true };
+      if (busy) {
+        if (importPage === "signin" && (matchesKey(data, "escape") || matchesKey(data, "ctrl+c"))) importAuthController?.abort();
+        return { consume: true };
+      }
       if (matchesKey(data, "ctrl+c")) {
         closeImport();
         return { consume: true };
