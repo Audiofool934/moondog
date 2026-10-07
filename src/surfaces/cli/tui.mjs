@@ -1,4 +1,4 @@
-import { LOCALES, normalizeLocale } from "../../i18n/index.mjs";
+import { LOCALES, N_, liveScreenTranslator, normalizeLocale } from "../../i18n/index.mjs";
 import {
   CombinedAutocompleteProvider,
   Container,
@@ -43,6 +43,7 @@ import {
   homeActions,
   listeningHelp,
   paintBrandLine,
+  setBrandText,
 } from "./brand-components.mjs";
 
 const LAYOUT_NODE = Symbol.for("@earendil-works/pi-tui/layout-node");
@@ -86,34 +87,34 @@ class ListeningRoom extends TuiAltScreen {
 }
 
 const slashCommands = [
-  { name: "update", description: "Check for or install a Moondog release" },
-  { name: "home", description: "Back to the record sleeve" },
-  { name: "lyrics", description: "Your lyric library, or sync more songs" },
-  { name: "import", description: "Bring in your listening history or library" },
-  { name: "theme", description: "Paper, charcoal, or your terminal colors" },
-  { name: "language", description: "The language Moondog replies in" },
-  { name: "art", description: "Braille, ASCII, or a quiet opening" },
-  { name: "motion", description: "Turn the animation on or off" },
-  { name: "commands", description: "Search every command" },
-  { name: "status", description: "See what's connected and ready" },
-  { name: "sources", description: "See where your music data comes from" },
-  { name: "profile", description: "Review, change, or undo your choices" },
-  { name: "taste", description: "Your listening profile and the evidence behind it" },
-  { name: "memory", description: "See what Moondog remembers" },
-  { name: "tools", description: "See which music tools are available" },
-  { name: "doctor", description: "Check your setup" },
-  { name: "model", description: "Choose the model Moondog talks through" },
-  { name: "auth", description: "Sign in to a model provider" },
-  { name: "web", description: "Look things up on public music sites" },
-  { name: "spotify", description: "Connect and control Spotify" },
-  { name: "reload", description: "Reload model settings and sign-ins" },
-  { name: "remember", description: "Ask Moondog to remember something" },
-  { name: "forget", description: "Forget one memory by ID" },
-  { name: "resume", description: "Pick up a saved conversation" },
-  { name: "rewind", description: "Edit an earlier message on a new branch · Alt+R" },
-  { name: "new", description: "Start fresh; this conversation stays saved" },
-  { name: "help", description: "Commands and shortcuts" },
-  { name: "quit", description: "Leave Moondog" },
+  { name: "update", description: N_("Check for or install a Moondog release") },
+  { name: "home", description: N_("Back to the record sleeve") },
+  { name: "lyrics", description: N_("Your lyric library, or sync more songs") },
+  { name: "import", description: N_("Bring in your listening history or library") },
+  { name: "theme", description: N_("Paper, charcoal, or your terminal colors") },
+  { name: "language", description: N_("The language Moondog replies in") },
+  { name: "art", description: N_("Braille, ASCII, or a quiet opening") },
+  { name: "motion", description: N_("Turn the animation on or off") },
+  { name: "commands", description: N_("Search every command") },
+  { name: "status", description: N_("See what's connected and ready") },
+  { name: "sources", description: N_("See where your music data comes from") },
+  { name: "profile", description: N_("Review, change, or undo your choices") },
+  { name: "taste", description: N_("Your listening profile and the evidence behind it") },
+  { name: "memory", description: N_("See what Moondog remembers") },
+  { name: "tools", description: N_("See which music tools are available") },
+  { name: "doctor", description: N_("Check your setup") },
+  { name: "model", description: N_("Choose the model Moondog talks through") },
+  { name: "auth", description: N_("Sign in to a model provider") },
+  { name: "web", description: N_("Look things up on public music sites") },
+  { name: "spotify", description: N_("Connect and control Spotify") },
+  { name: "reload", description: N_("Reload model settings and sign-ins") },
+  { name: "remember", description: N_("Ask Moondog to remember something") },
+  { name: "forget", description: N_("Forget one memory by ID") },
+  { name: "resume", description: N_("Pick up a saved conversation") },
+  { name: "rewind", description: N_("Edit an earlier message on a new branch · Alt+R") },
+  { name: "new", description: N_("Start fresh; this conversation stays saved") },
+  { name: "help", description: N_("Commands and shortcuts") },
+  { name: "quit", description: N_("Leave Moondog") },
 ];
 
 // Parse command arguments as text only. Never evaluate shell substitutions.
@@ -154,18 +155,14 @@ export function parseTuiArguments(text) {
   return values;
 }
 
-function offlineReply(runtimeStatus) {
+function offlineReply(runtimeStatus, tr) {
   const provider = runtimeStatus.provider ?? "openai-codex";
   const [why, next] = runtimeStatus.reason === "provider_authentication_required"
-    ? [`you're not signed in to ${provider}`, `Sign in with \`/auth ${provider}\`.`]
+    ? [tr("you're not signed in to {provider}", { provider }), tr("Sign in with `/auth {provider}`.", { provider })]
     : runtimeStatus.reason === "model_not_configured" || !runtimeStatus.reason
-      ? ["no model is connected", "Type `/model` to pick one."]
-      : [`I can't reach the model (\`${runtimeStatus.reason}\`)`, "Type `/model` to pick another, or `/reload` to try again."];
-  return `Obscured by clouds. I can't talk yet because ${why}.
-
-${next}
-
-Your profile doesn't need a model. \`/taste\`, \`/import\`, and \`/help\` all work right now.`;
+      ? [tr("no model is connected"), tr("Type `/model` to pick one.")]
+      : [tr("I can't reach the model (`{reason}`)", { reason: runtimeStatus.reason }), tr("Type `/model` to pick another, or `/reload` to try again.")];
+  return tr("Obscured by clouds. I can't talk yet because {why}.\n\n{next}\n\nYour profile doesn't need a model. `/taste`, `/import`, and `/help` all work right now.", { why, next });
 }
 
 function elapsedTime(startedAt) {
@@ -205,6 +202,10 @@ export async function runMoondogTui({
     models = id => catalog.models(id);
     refreshModels ??= options => catalog.refresh(options);
   }
+  // Screen text follows the listener's language and switches with /language.
+  const tr = liveScreenTranslator(() => application.locale);
+  setBrandText(tr);
+  const localizedCommands = slashCommands.map(({ name, description }) => ({ name, get description() { return tr.marked(description); } }));
   let activeRuntime = runtime;
   application.startNewSession?.("tui_start");
   activeRuntime.reset();
@@ -273,7 +274,7 @@ export async function runMoondogTui({
   let lyricError = null;
   let motionEnabled = environment.MOONDOG_MOTION !== "off";
   let phase = 0;
-  let footerText = "Ready.";
+  let footerText = tr("Ready.");
   let updateNotice = "";
   let exitRequest;
   const updateCheckController = new AbortController();
@@ -416,7 +417,7 @@ export async function runMoondogTui({
         const hidden = Math.max(0, messageQueue.length - 4);
         const shown = messageQueue.slice(-4);
         const firstNumber = messageQueue.length - shown.length + 1;
-        if (hidden) lines.push(paintBrandLine(theme.faint(`  ${hidden} more queued`), width, theme));
+        if (hidden) lines.push(paintBrandLine(theme.faint(`  ${tr.n(hidden, "{count} more queued", "{count} more queued")}`), width, theme));
         shown.forEach((text, index) => {
           const number = String(firstNumber + index);
           const prefix = `  ${number}  `;
@@ -447,63 +448,64 @@ export async function runMoondogTui({
       const marker = theme.plain ? "." : "◎";
       const markerInk = spinning ? theme.prism[phase % theme.prism.length] : theme.faint;
       const compactHint = terminal.rows < 20 && homeVisible && !busy && !profileView && !importView;
-      let statusText = compactHint && homeFocused ? "↑ ↓ choose · enter open · esc type"
-        : compactHint && editor.getText() ? "enter send · ctrl+p commands"
-        : compactHint && footerText === "Ready." ? "tab explore · type to talk" : footerText;
+      let statusText = compactHint && homeFocused ? tr("↑ ↓ choose · enter open · esc type")
+        : compactHint && editor.getText() ? tr("enter send · ctrl+p commands")
+        : compactHint && footerText === tr("Ready.") ? tr("tab explore · type to talk") : footerText;
       if (importView && width < 64) {
-        if (busy) statusText = footerText.startsWith("Reading the file") ? "Reading; nothing added yet."
-          : footerText.startsWith("History saved") ? "Saved; refreshing profile..." : "Saving history locally...";
-        else if (importView.state.error) statusText = "See the message above.";
-        else if (footerText.startsWith("Guide opened")) statusText = "Guide opened in browser.";
-        else statusText = importPage === "preview" ? "Ready; nothing added."
-          : importPage === "file" ? "Choose one history file." : "Choose a step; Esc goes back.";
+        if (busy) statusText = footerText === tr("Reading the file. Nothing is added until you say so.") ? tr("Reading; nothing added yet.")
+          : footerText === tr("History saved. Updating your profile...") ? tr("Saved; refreshing profile...") : tr("Saving history locally...");
+        else if (importView.state.error) statusText = tr("See the message above.");
+        else if (footerText === tr("Opened in your browser. Moondog will be here when you're back.")) statusText = tr("Guide opened in browser.");
+        else statusText = importPage === "preview" ? tr("Ready; nothing added.")
+          : importPage === "file" ? tr("Choose one history file.") : tr("Choose a step; Esc goes back.");
       }
       if (profileView && !importView && width < 60) {
-        statusText = footerText.replace(/\. Profile refreshed\.$/u, "");
-        if (tui.hasOverlay()) statusText = "Enter chooses · Esc back";
-        else if (footerText.startsWith("Pick a song or artist.")) statusText = "Enter actions · Tab views · Esc back";
-        else if (footerText.startsWith("Here's the evidence.")) statusText = "Evidence · PgUp/PgDn scroll · Enter";
-        else if (footerText.startsWith("Imported.")) statusText = "Imported · Enter to review";
+        statusText = footerText;
+        if (tui.hasOverlay()) statusText = tr("Enter chooses · Esc back");
+        else if (footerText === tr("Pick a song or artist. Enter shows why it's here.")) statusText = tr("Enter actions · Tab views · Esc back");
+        else if (footerText === tr("Here's the evidence. PgUp/PgDn to scroll, Enter for actions.")) statusText = tr("Evidence · PgUp/PgDn scroll · Enter");
+        else if (footerText === tr("Imported. Here's your profile with everything so far.")) statusText = tr("Imported · Enter to review");
       }
       if (busy && !profileView && !importView && width >= 20) {
         const elapsed = ` · ${elapsedTime(workStartedAt)}`;
         statusText = truncateToWidth(statusText, width - 3 - visibleWidth(elapsed)) + elapsed;
       }
       if (terminal.rows < 20 && !busy && !profileView && !importView && editor.isShowingAutocomplete()) {
-        statusText = "↑↓ choose · Tab/Enter complete";
+        statusText = tr("↑↓ choose · Tab/Enter complete");
       }
-      if (updateNotice && homeVisible && ["Ready.", "New conversation · /resume history"].includes(footerText) && !editor.getText() && !busy && !profileView && !importView && !tui.hasOverlay() && !editor.isShowingAutocomplete()) statusText = updateNotice;
+      if (updateNotice && homeVisible && [tr("Ready."), tr("New conversation · /resume history")].includes(footerText) && !editor.getText() && !busy && !profileView && !importView && !tui.hasOverlay() && !editor.isShowingAutocomplete()) statusText = updateNotice;
       const lines = [paintBrandLine(` ${markerInk(marker)} ${footerColor(statusText)}`, width, theme)];
       if (terminal.rows >= 20) {
         const keys = importView
-          ? width < 64 ? busy ? "One moment..." : importPage === "file"
-            ? "Tab path · ↵ inspect · Esc back" : "↑↓ ↵ · PgUp/Dn read · Esc back"
-          : busy ? "One moment..." : importPage === "file"
-            ? "paste a path · tab completes · enter inspects · esc back"
-            : "↑↓ choose · enter select · PgUp/PgDn read · esc back"
+          ? width < 64 ? busy ? tr("One moment...") : importPage === "file"
+            ? tr("Tab path · ↵ inspect · Esc back") : tr("↑↓ ↵ · PgUp/Dn read · Esc back")
+          : busy ? tr("One moment...") : importPage === "file"
+            ? tr("paste a path · tab completes · enter inspects · esc back")
+            : tr("↑↓ choose · enter select · PgUp/PgDn read · esc back")
           : profileView
-          ? busy ? "One moment..."
-            : width >= 76 ? "type filter · ↑↓ select · enter actions · tab views · esc back" : "↑↓ select · enter actions · tab views · esc back"
+          ? busy ? tr("One moment...")
+            : width >= 76 ? tr("type filter · ↑↓ select · enter actions · tab views · esc back") : tr("↑↓ select · enter actions · tab views · esc back")
           : busy ? cancellationRequested
-            ? messageQueue.length ? "stopping · the queue waits" : "stopping"
+            ? messageQueue.length ? tr("stopping · the queue waits") : tr("stopping")
             : messageQueue.length
-              ? `${messageQueue.length === 1 ? "1 queued" : `${messageQueue.length} queued`} · up edits the last${cancelWork ? " · ctrl+c cancel" : " · waiting for command"}`
-              : cancelWork ? "enter queues the next one · ctrl+c cancel"
-                : "enter queues the next one · waiting for command"
-          : editor.isShowingAutocomplete() ? "↑↓ choose · tab/enter complete · esc dismiss" : homeFocused
-          ? "↑ ↓ choose · enter open · esc type"
+              ? cancelWork ? tr.n(messageQueue.length, "{count} queued · up edits the last · ctrl+c cancel", "{count} queued · up edits the last · ctrl+c cancel")
+                : tr.n(messageQueue.length, "{count} queued · up edits the last · waiting for command", "{count} queued · up edits the last · waiting for command")
+              : cancelWork ? tr("enter queues the next one · ctrl+c cancel")
+                : tr("enter queues the next one · waiting for command")
+          : editor.isShowingAutocomplete() ? tr("↑↓ choose · tab/enter complete · esc dismiss") : homeFocused
+          ? tr("↑ ↓ choose · enter open · esc type")
           : homeVisible && !editor.getText()
-            ? width >= 60 ? "tab explore · ctrl+p commands       enter send · shift+enter newline" : "tab explore · ctrl+p commands"
-            : queuePaused && messageQueue.length ? "queued drafts paused · up edits the last"
-            : width >= 72 ? "enter send · shift+enter newline · alt+r rewind" : "enter send · /rewind";
+            ? width >= 60 ? tr("tab explore · ctrl+p commands       enter send · shift+enter newline") : tr("tab explore · ctrl+p commands")
+            : queuePaused && messageQueue.length ? tr("queued drafts paused · up edits the last")
+            : width >= 72 ? tr("enter send · shift+enter newline · alt+r rewind") : tr("enter send · /rewind");
         lines.push(paintBrandLine(` ${theme.faint(keys)}`, width, theme));
       }
       return lines;
     },
   }, { shrink: 0 });
   editor.setAutocompleteProvider(
-    new CombinedAutocompleteProvider(withCommandCompletions(slashCommands, {
-      providers, models, authProviderIds: supportedAuthProviderIds,
+    new CombinedAutocompleteProvider(withCommandCompletions(localizedCommands, {
+      providers, models, authProviderIds: supportedAuthProviderIds, tr,
     }), process.cwd(), null),
   );
   tui.setFocus(editor);
@@ -545,7 +547,7 @@ export async function runMoondogTui({
   const addUserMessage = (text) => {
     const title = text.replace(/\s+/gu, " ").trim();
     if (!conversationTitle && title) conversationTitle = Array.from(title).slice(0, 160).join("");
-    addLabel("You");
+    addLabel(tr("You"));
     transcript.addChild(new Text(text, 1, 1));
   };
   // A finished local message is read from the top. Several messages added before
@@ -649,7 +651,7 @@ export async function runMoondogTui({
 
   const choose = async (items, currentValue, title) => {
     if (items.length === 0) return undefined;
-    const menu = new ListeningMenu({ items, currentValue, title, getTheme, getRows: () => terminal.rows });
+    const menu = new ListeningMenu({ items, currentValue, title, getTheme, getText: () => tr, getRows: () => terminal.rows });
     return await new Promise((resolve) => {
       let overlay;
       const finish = (value) => {
@@ -677,7 +679,7 @@ export async function runMoondogTui({
     homeVisible = profileReturnHome;
     homeFocused = false;
     tui.setFocus(editor);
-    setFooter("Profile closed · /taste opens it again.");
+    setFooter(tr("Profile closed · /taste opens it again."));
     tui.requestRender(true);
   };
 
@@ -685,7 +687,7 @@ export async function runMoondogTui({
     const snapshot = await application.getProfileSummary({ maxItems: 10 });
     if (cleanedUp || !profileView) return;
     profileSnapshot = snapshot;
-    profileView.setModel(buildTasteProfileModel(snapshot));
+    profileView.setModel(buildTasteProfileModel(snapshot, tr));
     profileNeedsRefresh = false;
     void updateHomeLyrics();
     renderHeader();
@@ -697,7 +699,7 @@ export async function runMoondogTui({
     try {
       await action();
     } catch (error) {
-      if (!cleanedUp) setFooter(`That didn't work: ${error.message}`, failure);
+      if (!cleanedUp) setFooter(tr("That didn't work: {error}", { error: error.message }), failure);
     } finally {
       setBusy(false);
       if (!cleanedUp && profileView && !tui.hasOverlay()) tui.setFocus(profileView);
@@ -707,67 +709,67 @@ export async function runMoondogTui({
   const inspectProfileSubject = async (subject) => {
     if (profileNeedsRefresh) {
       await refreshProfile();
-      setFooter("Profile updated. Pick a song or artist.", success);
+      setFooter(tr("Profile updated. Pick a song or artist."), success);
       return;
     }
     const evidenceItems = subject.evidence?.length ? subject.evidence
-      : subject.evidenceId ? [{ id: subject.evidenceId, source: "From your profile" }] : [];
+      : subject.evidenceId ? [{ id: subject.evidenceId, source: tr("From your profile") }] : [];
     const selected = await choose([
       ...(subject.target?.entityType === "track" && application.musicSimilarityReady?.() ? [{
-        value: "discover", label: "Find more like this", description: "Start a request from this track that you can edit",
+        value: "discover", label: tr("Find more like this"), description: tr("Start a request from this track that you can edit"),
       }] : []),
-      ...(evidenceItems.length ? [{ value: "evidence", label: "Why it's here", description: "Where this comes from and what it can't tell me" }] : []),
+      ...(evidenceItems.length ? [{ value: "evidence", label: tr("Why it's here"), description: tr("Where this comes from and what it can't tell me") }] : []),
       ...(typeof runProfileAction === "function" ? [
-        { value: "like", label: "I like this", description: "Tell Moondog you like this " + subject.kind },
-        { value: "avoid", label: "Keep it out", description: "Leave this " + subject.kind + " out of suggestions" },
-        ...(subject.correctionId ? [{ value: "retract", label: "Undo my choice", description: "Go back to what your listening says" }] : []),
+        { value: "like", label: tr("I like this"), description: subject.kind === "track" ? tr("Tell Moondog you like this track") : tr("Tell Moondog you like this artist") },
+        { value: "avoid", label: tr("Keep it out"), description: subject.kind === "track" ? tr("Leave this track out of suggestions") : tr("Leave this artist out of suggestions") },
+        ...(subject.correctionId ? [{ value: "retract", label: tr("Undo my choice"), description: tr("Go back to what your listening says") }] : []),
       ] : []),
-      { value: "back", label: "Back", description: "Keep looking around" },
+      { value: "back", label: tr("Back"), description: tr("Keep looking around") },
     ], undefined, subject.label);
     if (!selected || selected.value === "back" || cleanedUp || !profileView) return;
     if (selected.value === "discover") {
       const draft = editor.getText();
       if (draft.trimStart().startsWith("/")) {
-        setFooter("You have a command half-typed. Finish or clear it first.", warning);
+        setFooter(tr("You have a command half-typed. Finish or clear it first."), warning);
         return;
       }
       const target = subject.target;
       const context = `Track: ${JSON.stringify(sanitizeTerminalText(target.label))}\nArtist: ${JSON.stringify(sanitizeTerminalText(target.artistCredit))}`;
       const text = profileDiscoveryDraft && draft.includes(profileDiscoveryDraft.context)
         ? draft.replace(profileDiscoveryDraft.context, () => context)
-        : `${draft || "Find me 3 songs to go to from here, and tell me why each one."}\n\n${context}`;
+        : `${draft || tr("Find me 3 songs to go to from here, and tell me why each one.")}\n\n${context}`;
       profileDiscoveryDraft = { context, target: { ...target } };
       editor.setText(text);
       profileReturnHome = false;
       closeProfile();
       enterConversation();
       setFooter(runtimeStatus.state === "configured"
-        ? "Request ready · edit it, then press Enter."
-        : "Request ready · /model connects a model first.", runtimeStatus.state === "configured" ? success : warning);
+        ? tr("Request ready · edit it, then press Enter.")
+        : tr("Request ready · /model connects a model first."), runtimeStatus.state === "configured" ? success : warning);
       return;
     }
     if (selected.value === "evidence") {
       let evidence = evidenceItems[0];
       if (evidenceItems.length > 1) {
         const choice = await choose(evidenceItems.map((item) => ({
-          value: item.id, label: item.source, description: "From your profile",
-        })), undefined, "Which evidence?");
+          value: item.id, label: item.source, description: tr("From your profile"),
+        })), undefined, tr("Which evidence?"));
         if (!choice || cleanedUp) return;
         evidence = evidenceItems.find((item) => item.id === choice.value);
       }
       const explanation = await application.explainProfileEvidence({ evidenceId: evidence.id });
       if (cleanedUp || !profileView) return;
       const detailLines = [
-        "Why it's here", evidence.source, "",
+        tr("Why it's here"), evidence.source, "",
         explanation.basis_summary,
-        "", "What it can't tell me", explanation.interpretation_limit,
-        ...(Number.isFinite(explanation.confidence) ? ["", `How sure: ${Math.round(explanation.confidence * 100)}%`] : []),
+        "", tr("What it can't tell me"), explanation.interpretation_limit,
+        ...(Number.isFinite(explanation.confidence) ? ["", tr("How sure: {percent}%", { percent: Math.round(explanation.confidence * 100) })] : []),
         "", ...subject.detailLines,
       ].filter((line) => typeof line === "string").map(sanitizeTerminalText);
-      const model = buildTasteProfileModel(profileSnapshot);
+      const model = buildTasteProfileModel(profileSnapshot, tr);
       model.subjects = model.subjects.map((item) => item.key === subject.key ? { ...item, detailLines } : item);
       profileView.setModel(model);
-      setFooter("Here's the evidence. PgUp/PgDn to scroll, Enter for actions.");
+      setFooter(tr("Here's the evidence. PgUp/PgDn to scroll, Enter for actions."));
       return;
     }
     const target = subject.target;
@@ -775,35 +777,35 @@ export async function runMoondogTui({
       : ["correct", ...(target.entityType === "track"
         ? ["--track", target.label, "--by", target.artistCredit]
         : ["--artist", target.label]), `--${selected.value}`];
-    setFooter("Saving your choice...");
+    setFooter(tr("Saving your choice..."));
     await runProfileAction(args);
     if (cleanedUp || !profileView) return;
-    const receipt = selected.value === "retract" ? `Undone: ${subject.label}`
-      : `${selected.value === "like" ? "Liked" : "Kept out"}: ${subject.label}`;
-    const named = `${subject.label}${subject.kind === "track" ? ` by ${target.artistCredit}` : ""}`;
+    const receipt = selected.value === "retract" ? tr("Undone: {name}", { name: subject.label })
+      : selected.value === "like" ? tr("Liked: {name}", { name: subject.label }) : tr("Kept out: {name}", { name: subject.label });
+    const named = subject.kind === "track" ? tr("{title} by {artist}", { title: subject.label, artist: target.artistCredit }) : subject.label;
     addMoondogMessage(selected.value === "retract"
-      ? `Done. I'll read ${named} from your listening again, without your earlier choice.`
+      ? tr("Done. I'll read {name} from your listening again, without your earlier choice.", { name: named })
       : selected.value === "like"
-        ? `Noted. You like ${named}.\n\nYour listening history stays as it was.`
-        : `Noted. I'll leave ${named} out of suggestions.\n\nYour listening history stays as it was.`);
+        ? tr("Noted. You like {name}.\n\nYour listening history stays as it was.", { name: named })
+        : tr("Noted. I'll leave {name} out of suggestions.\n\nYour listening history stays as it was.", { name: named }));
     profileReturnHome = false;
     profileNeedsRefresh = true;
     try {
       await refreshProfile();
-      setFooter(`${receipt}.`, success);
+      setFooter(tr("{receipt}.", { receipt }), success);
     } catch (error) {
-      setFooter(`${receipt}. The profile didn't refresh; Ctrl+R tries again.`, warning);
+      setFooter(tr("{receipt}. The profile didn't refresh; Ctrl+R tries again.", { receipt }), warning);
     }
   };
 
   const openProfile = async ({ imported = false } = {}) => {
     if (application.profileServicesReady?.() === false) {
-      addMoondogMessage("## Is there anybody out there?\n\nNot yet. Your profile starts with your listening history.\n\nType `/import`, pick your music service, and bring in your history, your library, or a public playlist. Then come back here to see what it says about you, and tell me what I got wrong.\n\nEverything stays on this machine. You don't need a model or a Spotify sign-in.");
-      setFooter("No profile yet. /import brings in your history.");
+      addMoondogMessage(tr("## Is there anybody out there?\n\nNot yet. Your profile starts with your listening history.\n\nType `/import`, pick your music service, and bring in your history, your library, or a public playlist. Then come back here to see what it says about you, and tell me what I got wrong.\n\nEverything stays on this machine. You don't need a model or a Spotify sign-in."));
+      setFooter(tr("No profile yet. /import brings in your history."));
       return;
     }
     if (typeof application.getProfileSummary !== "function") {
-      addMoondogMessage(formatLocalResult("taste", await application.runLocalCommand("taste", runtimeStatus)));
+      addMoondogMessage(formatLocalResult("taste", await application.runLocalCommand("taste", runtimeStatus), tr));
       return;
     }
     const snapshot = await application.getProfileSummary({ maxItems: 10 });
@@ -812,30 +814,30 @@ export async function runMoondogTui({
     profileNeedsRefresh = false;
     profileReturnHome = homeVisible;
     profileView = new TasteProfileView({
-      model: buildTasteProfileModel(snapshot), getTheme,
+      model: buildTasteProfileModel(snapshot, tr), getTheme, getText: () => tr,
       getRows: () => Math.max(1, terminal.rows - 2 - (terminal.rows >= 20 ? 2 : 1)),
     });
     profileView.onSelect = (subject) => { void profileTask(() => inspectProfileSubject(subject)); };
     profileView.onClose = closeProfile;
     profileView.onRefresh = () => { void profileTask(async () => {
       await refreshProfile();
-      setFooter("Profile updated.", success);
+      setFooter(tr("Profile updated."), success);
     }); };
     profileView.onReport = () => {
       const snapshot = profileSnapshot;
       closeProfile();
-      addMoondogMessage(formatLocalResult("taste", snapshot));
-      setFooter("Full report above. /taste opens the profile again.");
+      addMoondogMessage(formatLocalResult("taste", snapshot, tr));
+      setFooter(tr("Full report above. /taste opens the profile again."));
     };
     homeFocused = false;
     tui.setFocus(profileView);
-    setFooter(imported ? "Imported. Here's your profile with everything so far." : "Pick a song or artist. Enter shows why it's here.", success);
+    setFooter(imported ? tr("Imported. Here's your profile with everything so far.") : tr("Pick a song or artist. Enter shows why it's here."), success);
     tui.requestRender(true);
   };
 
   const replaceRuntime = async (selection) => {
     if (typeof rebuildRuntime !== "function") {
-      throw new Error("Runtime rebuilding is unavailable in this launch mode.");
+      throw new Error(tr("Runtime rebuilding is unavailable in this launch mode."));
     }
     const nextRuntime = await rebuildRuntime(selection);
     const nextStatus = nextRuntime.publicStatus();
@@ -859,16 +861,19 @@ export async function runMoondogTui({
   };
 
   const selectModel = async (args) => {
-    if (args.length > 2) throw new Error("Usage: /model [provider] [model], or /model refresh [provider].");
-    const describeRefresh = results => results.map(result => `${result.provider}: ${result.state}${result.count !== undefined ? ` (${result.count} current models)` : ""}${result.skipped ? `; ${result.skipped} incompatible entries skipped` : ""}${result.state === "failed" ? "; previous catalog retained" : ""}`).join("\n");
+    if (args.length > 2) throw new Error(tr("Usage: /model [provider] [model], or /model refresh [provider]."));
+    const describeRefresh = results => results.map(result => [`${result.provider}: ${result.state}`,
+      result.count !== undefined ? ` (${tr.n(result.count, "{count} current model", "{count} current models")})` : "",
+      result.skipped ? `; ${tr.n(result.skipped, "{count} incompatible entry skipped", "{count} incompatible entries skipped")}` : "",
+      result.state === "failed" ? `; ${tr("previous catalog retained")}` : ""].join("")).join("\n");
     if (args[0]?.toLowerCase() === "refresh") {
-      if (!refreshModels) throw new Error("Catalog refresh is unavailable in this launch mode.");
-      setFooter("Refreshing public model metadata... Ctrl+C cancels.");
+      if (!refreshModels) throw new Error(tr("Catalog refresh is unavailable in this launch mode."));
+      setFooter(tr("Refreshing public model metadata... Ctrl+C cancels."));
       const results = await refreshCatalog({ provider: args[1]?.toLowerCase(), force: true, signal: localCommandController?.signal });
       if (cleanedUp) return;
       enterConversation();
-      addMoondogMessage(`Model choices refreshed from Pi’s public catalog (pi.dev).\n\n${describeRefresh(results)}\n\nYour selected model and conversation are unchanged.`);
-      setFooter("Catalog checked. /model opens the updated choices.");
+      addMoondogMessage(tr("Model choices refreshed from Pi’s public catalog (pi.dev).\n\n{results}\n\nYour selected model and conversation are unchanged.", { results: describeRefresh(results) }));
+      setFooter(tr("Catalog checked. /model opens the updated choices."));
       return;
     }
 
@@ -890,51 +895,51 @@ export async function runMoondogTui({
     while (true) {
       if (providerId) {
         if (!availableProviders.some((provider) => provider.id === providerId)) {
-          throw new Error(`Unknown Pi provider: ${providerId}`);
+          throw new Error(tr("Unknown Pi provider: {provider}", { provider: providerId }));
         }
       } else {
         const selectedProvider = await choose(
           availableProviders.map((provider) => ({
             value: provider.id, label: provider.id,
-            description: `${provider.name} - ${provider.modelCount} models`,
+            description: `${provider.name} - ${tr.n(provider.modelCount, "{count} model", "{count} models")}`,
           })),
           runtimeStatus.provider,
-          "Choose a model provider",
+          tr("Choose a model provider"),
         );
         if (!selectedProvider) {
-          setFooter("Model unchanged.");
+          setFooter(tr("Model unchanged."));
           return;
         }
         providerId = selectedProvider.value;
       }
       let catalogNote = "";
       if (refreshModels) {
-        setFooter("Checking public model catalog... Ctrl+C cancels.");
+        setFooter(tr("Checking public model catalog... Ctrl+C cancels."));
         const results = await refreshCatalog({ provider: providerId, signal: localCommandController?.signal });
         if (cleanedUp) return;
-        if (results.some(result => result.state === "failed")) catalogNote = " (cached/bundled fallback)";
-        setFooter(results.some(result => result.state === "failed") ? "Catalog unavailable; showing retained choices. /model refresh retries." : "Choose a model. Esc goes back.");
+        if (results.some(result => result.state === "failed")) catalogNote = tr(" (cached/bundled fallback)");
+        setFooter(results.some(result => result.state === "failed") ? tr("Catalog unavailable; showing retained choices. /model refresh retries.") : tr("Choose a model. Esc goes back."));
       }
       const availableModels = models(providerId);
       if (modelId) {
         if (!availableModels.some((model) => model.id === modelId)) {
-          throw new Error(`Unknown ${providerId} model: ${modelId}`);
+          throw new Error(tr("Unknown {provider} model: {model}", { provider: providerId, model: modelId }));
         }
       } else {
         const selectedModel = await choose(
           availableModels.map((model) => ({
             value: model.id, label: model.id,
-            description: `${model.name}${model.reasoning ? " - reasoning" : ""}${model.catalogNote ? ` - ${model.catalogNote}` : ""}`,
+            description: `${model.name}${model.reasoning ? tr(" - reasoning") : ""}${model.catalogNote ? ` - ${model.catalogNote}` : ""}`,
           })),
           runtimeStatus.provider === providerId ? runtimeStatus.model : undefined,
-          `Choose a model for ${providerId}${catalogNote}`,
+          tr("Choose a model for {provider}{note}", { provider: providerId, note: catalogNote }),
         );
         if (!selectedModel) {
           if (!args[0] && availableModels.length && !cleanedUp) {
             providerId = undefined;
             continue;
           }
-          setFooter("Model unchanged.");
+          setFooter(tr("Model unchanged."));
           return;
         }
         modelId = selectedModel.value;
@@ -947,27 +952,27 @@ export async function runMoondogTui({
     // Only the preceding catalog check is cancellable; never claim an aborted
     // switch after its settings write or authentication work has begun.
     setBusy(true);
-    setFooter(`Loading ${providerId}/${modelId}...`);
+    setFooter(tr("Loading {model}...", { model: `${providerId}/${modelId}` }));
     const status = await replaceRuntime({ provider: providerId, model: modelId });
     addMoondogMessage(
       status.state === "configured"
-        ? `Now talking through \`${providerId}/${modelId}\`. This conversation and what I remember carry over.`
+        ? tr("Now talking through `{model}`. This conversation and what I remember carry over.", { model: `${providerId}/${modelId}` })
         : status.reason === "provider_authentication_required"
-          ? `Saved \`${providerId}/${modelId}\`, but you're not signed in yet. Run \`/auth ${providerId}\` to connect it.`
-          : `Saved \`${providerId}/${modelId}\`, but I can't reach it yet (\`${status.reason}\`).`,
+          ? tr("Saved `{model}`, but you're not signed in yet. Run `/auth {provider}` to connect it.", { model: `${providerId}/${modelId}`, provider: providerId })
+          : tr("Saved `{model}`, but I can't reach it yet (`{reason}`).", { model: `${providerId}/${modelId}`, reason: status.reason }),
     );
     setFooter(
-      status.state === "configured" ? "Model ready." : "Model saved, not connected yet.",
+      status.state === "configured" ? tr("Model ready.") : tr("Model saved, not connected yet."),
       status.state === "configured" ? success : warning,
     );
   };
 
   const authenticate = async (args) => {
     if (args.length > 1) {
-      throw new Error("Use /auth or /auth <provider>. Type API keys only into the hidden prompt that follows.");
+      throw new Error(tr("Use /auth or /auth <provider>. Type API keys only into the hidden prompt that follows."));
     }
     if (typeof runAuth !== "function") {
-      throw new Error("Sign-in isn't available when Moondog is started this way.");
+      throw new Error(tr("Sign-in isn't available when Moondog is started this way."));
     }
 
     const availableProviders = providers().filter((provider) =>
@@ -975,24 +980,24 @@ export async function runMoondogTui({
     );
     let providerId = args[0]?.toLowerCase() ?? runtimeStatus.provider;
     if (!providerId || !supportedAuthProviderIds.includes(providerId)) {
-      if (args[0]) throw new Error("I can't sign in to that provider. Type /auth to see the ones I can.");
+      if (args[0]) throw new Error(tr("I can't sign in to that provider. Type /auth to see the ones I can."));
       const selectedProvider = await choose(
         availableProviders.map((provider) => ({
           value: provider.id,
           label: provider.name,
-          description: `${provider.id} - ${provider.id === "openai-codex" ? "ChatGPT sign-in" : "API key"}`,
+          description: `${provider.id} - ${provider.id === "openai-codex" ? tr("ChatGPT sign-in") : tr("API key")}`,
         })),
         runtimeStatus.provider ?? "openai-codex",
-        "Sign in to a model provider",
+        tr("Sign in to a model provider"),
       );
       if (!selectedProvider) {
-        setFooter("Sign-in cancelled.");
+        setFooter(tr("Sign-in cancelled."));
         return;
       }
       providerId = selectedProvider.value;
     }
 
-    setFooter(`Opening ${providerId} sign-in...`);
+    setFooter(tr("Opening {provider} sign-in...", { provider: providerId }));
     tui.stop({ preserveScreen: true });
     try {
       await runAuth(providerId);
@@ -1012,13 +1017,13 @@ export async function runMoondogTui({
       const status = await replaceRuntime(currentSelection);
       addMoondogMessage(
         status.state === "configured"
-          ? `Signed in. Talking through \`${status.provider}/${status.model}\`.`
-          : `Signed in. Run \`/model ${providerId}\` to pick a model.`,
+          ? tr("Signed in. Talking through `{model}`.", { model: `${status.provider}/${status.model}` })
+          : tr("Signed in. Run `/model {provider}` to pick a model.", { provider: providerId }),
       );
     } else {
-      addMoondogMessage("Signed in. Restart Moondog to use it.");
+      addMoondogMessage(tr("Signed in. Restart Moondog to use it."));
     }
-    setFooter("Signed in.", success);
+    setFooter(tr("Signed in."), success);
   };
 
   const showImportedListeningProfile = async () => {
@@ -1026,17 +1031,17 @@ export async function runMoondogTui({
     try {
       const profile = await application.runLocalCommand("taste", runtimeStatus);
       addMoondogMessage([
-        "Here's everything I can read so far, including anything you imported before.",
-        formatLocalResult("taste", profile),
-        "Type `/taste` to open any song or artist and see why it's here. `/taste report` brings this report back.",
+        tr("Here's everything I can read so far, including anything you imported before."),
+        formatLocalResult("taste", profile, tr),
+        tr("Type `/taste` to open any song or artist and see why it's here. `/taste report` brings this report back."),
       ].join("\n\n"));
       if (typeof application.getProfileSummary === "function") await openProfile({ imported: true });
-      else setFooter("Imported. /taste opens your profile.", success);
+      else setFooter(tr("Imported. /taste opens your profile."), success);
     } catch (error) {
       addMoondogMessage(
-        `Your history was imported, but I couldn't show the profile: ${error.message}\n\nNothing was lost. Type \`/taste\` to try again.`,
+        tr("Your history was imported, but I couldn't show the profile: {error}\n\nNothing was lost. Type `/taste` to try again.", { error: error.message }),
       );
-      setFooter("Imported. The profile didn't open; try /taste.", warning);
+      setFooter(tr("Imported. The profile didn't open; try /taste."), warning);
     }
   };
 
@@ -1057,7 +1062,7 @@ export async function runMoondogTui({
     if (restore) homeVisible = importReturnHome;
     homeFocused = false;
     tui.setFocus(profileView ?? editor);
-    setFooter("Import closed. Nothing changed.");
+    setFooter(tr("Import closed. Nothing changed."));
     tui.requestRender(true);
   };
 
@@ -1067,10 +1072,10 @@ export async function runMoondogTui({
     const view = importView;
     view.setPath(filePath);
     setBusy(true);
-    setImportPage("working", { message: "Reading your file..." });
-    setFooter("Reading the file. Nothing is added until you say so.");
+    setImportPage("working", { message: tr("Reading your file...") });
+    setFooter(tr("Reading the file. Nothing is added until you say so."));
     try {
-      if (typeof prepareImport !== "function") throw new Error("Reading files isn't available when Moondog is started this way.");
+      if (typeof prepareImport !== "function") throw new Error(tr("Reading files isn't available when Moondog is started this way."));
       const prepared = await prepareImport(filePath, { provider: importProvider });
       if (cleanedUp || importView !== view) { prepared.close?.(); return; }
       if (!importProvider) {
@@ -1079,11 +1084,11 @@ export async function runMoondogTui({
       }
       preparedImport = prepared;
       setImportPage("preview", { preview: prepared.preview });
-      setFooter("Here's what's inside. Nothing is added until you import it.", success);
+      setFooter(tr("Here's what's inside. Nothing is added until you import it."), success);
     } catch (error) {
       if (!cleanedUp && importView === view) {
         setImportPage("file", { error: sanitizeTerminalText(error.message) });
-        setFooter("Nothing imported. Your path is still there to fix.", warning);
+        setFooter(tr("Nothing imported. Your path is still there to fix."), warning);
       }
     } finally {
       setBusy(false);
@@ -1096,37 +1101,44 @@ export async function runMoondogTui({
     importOrigin = "quick";
     const view = importView;
     setBusy(true);
-    setImportPage("working", { message: "Asking Spotify for your library and recent listening..." });
-    setFooter("Reading from Spotify. Nothing is added until you say so.");
-    const stages = { saved_tracks: "saved songs", saved_albums: "saved albums", followed_artists: "followed artists", playlists: "playlists", playlist_items: "playlist songs", top_items: "top artists and tracks" };
+    setImportPage("working", { message: tr("Asking Spotify for your library and recent listening...") });
+    setFooter(tr("Reading from Spotify. Nothing is added until you say so."));
+    const stages = {
+      saved_tracks: count => tr("Reading your Spotify library: {count} saved songs...", { count }),
+      saved_albums: count => tr("Reading your Spotify library: {count} saved albums...", { count }),
+      followed_artists: count => tr("Reading your Spotify library: {count} followed artists...", { count }),
+      playlists: count => tr("Reading your Spotify library: {count} playlists...", { count }),
+      playlist_items: count => tr("Reading your Spotify library: {count} playlist songs...", { count }),
+      top_items: count => tr("Reading your Spotify library: {count} top artists and tracks...", { count }),
+    };
     const onProgress = ({ stage, count }) => {
       if (cleanedUp || importView !== view || !stages[stage]) return;
-      setImportPage("working", { message: `Reading your Spotify library: ${count} ${stages[stage]}...` });
+      setImportPage("working", { message: stages[stage](tr.number(count)) });
     };
     try {
-      if (typeof prepareRecentImport !== "function") throw new Error("Recent listening isn't available when Moondog is started this way. A history ZIP still works.");
+      if (typeof prepareRecentImport !== "function") throw new Error(tr("Recent listening isn't available when Moondog is started this way. A history ZIP still works."));
       const prepared = await prepareRecentImport({ onProgress });
       if (cleanedUp || importView !== view) { prepared.close?.(); return; }
       if (!prepared.preview.listeningEvents && !prepared.preview.library?.profileEvidence) {
         prepared.close?.();
         setImportPage("empty");
-        setFooter("Nothing to import yet. Try again later, or bring a ZIP.");
+        setFooter(tr("Nothing to import yet. Try again later, or bring a ZIP."));
       } else {
         preparedImport = prepared;
         setImportPage("preview", { preview: prepared.preview });
-        setFooter("Here's what Spotify has. Nothing is added until you import it.", success);
+        setFooter(tr("Here's what Spotify has. Nothing is added until you import it."), success);
       }
     } catch (error) {
       if (cleanedUp || importView !== view) return;
       const messages = {
-        spotify_action_forbidden: "Spotify said no. Make sure this account is listed under User Management in your Spotify app, and that the app owner has Premium. A history ZIP works either way.",
-        spotify_scope_insufficient: "Spotify needs one more permission. Choose Reconnect Spotify.",
-        spotify_authentication_required: "Your Spotify sign-in has expired. Choose Reconnect Spotify.",
-        spotify_quota_exceeded: "Your Spotify app has used up its quota for now. A downloaded history ZIP still works.",
-        spotify_rate_limited: "Spotify wants us to slow down. Wait a minute and try again, or use a history ZIP.",
+        spotify_action_forbidden: tr("Spotify said no. Make sure this account is listed under User Management in your Spotify app, and that the app owner has Premium. A history ZIP works either way."),
+        spotify_scope_insufficient: tr("Spotify needs one more permission. Choose Reconnect Spotify."),
+        spotify_authentication_required: tr("Your Spotify sign-in has expired. Choose Reconnect Spotify."),
+        spotify_quota_exceeded: tr("Your Spotify app has used up its quota for now. A downloaded history ZIP still works."),
+        spotify_rate_limited: tr("Spotify wants us to slow down. Wait a minute and try again, or use a history ZIP."),
       };
       setImportPage("quick", { error: messages[error.code] ?? sanitizeTerminalText(error.message) });
-      setFooter("Nothing imported. Your profile is unchanged.");
+      setFooter(tr("Nothing imported. Your profile is unchanged."));
     } finally {
       setBusy(false);
       if (!cleanedUp && importView === view) tui.setFocus(view);
@@ -1137,22 +1149,22 @@ export async function runMoondogTui({
     const view = importView;
     const configuring = clientId !== undefined;
     setBusy(true);
-    setImportPage("working", { message: configuring ? "Saving your Spotify app..." : "Finish signing in to Spotify in your browser. Ctrl+C cancels." });
+    setImportPage("working", { message: configuring ? tr("Saving your Spotify app...") : tr("Finish signing in to Spotify in your browser. Ctrl+C cancels.") });
     importAuthController = new AbortController();
     if (!configuring) tui.stop({ preserveScreen: true });
     try {
-      if (typeof runSpotify !== "function") throw new Error("Spotify isn't available when Moondog is started this way.");
+      if (typeof runSpotify !== "function") throw new Error(tr("Spotify isn't available when Moondog is started this way."));
       // One sign-in covers import and listening control, so a later connect never narrows it.
       await runSpotify(configuring ? ["configure", clientId] : ["login"], { signal: importAuthController.signal });
       if (cleanedUp || importView !== view) return;
       if (typeof rebuildRuntime === "function") await replaceRuntime();
       if (cleanedUp || importView !== view) return;
-      setImportPage("quick", { message: configuring ? "App saved. Now connect Spotify." : "Spotify is connected. Next, preview what Moondog will bring in." });
-      setFooter("Connected. Nothing imported yet.", success);
+      setImportPage("quick", { message: configuring ? tr("App saved. Now connect Spotify.") : tr("Spotify is connected. Next, preview what Moondog will bring in.") });
+      setFooter(tr("Connected. Nothing imported yet."), success);
     } catch (error) {
       if (!cleanedUp && importView === view) {
         setImportPage(configuring ? "client" : "quick", { error: sanitizeTerminalText(error.message) });
-        setFooter("Nothing imported. Try again, or use a history ZIP.", warning);
+        setFooter(tr("Nothing imported. Try again, or use a history ZIP."), warning);
       }
     } finally {
       importAuthController = null;
@@ -1169,8 +1181,8 @@ export async function runMoondogTui({
     const view = importView;
     let saved = false;
     setBusy(true);
-    setImportPage("working", { message: "Adding it to your profile..." });
-    setFooter("Saving your history on this machine...");
+    setImportPage("working", { message: tr("Adding it to your profile...") });
+    setFooter(tr("Saving your history on this machine..."));
     try {
       const receipt = await pending.commit();
       saved = true;
@@ -1180,31 +1192,36 @@ export async function runMoondogTui({
       const insertedEvents = receipt.inserted_events ?? 0;
       const supersededEvents = receipt.superseded_events ?? 0;
       const playDelta = receipt.effective_event_delta ?? insertedEvents - supersededEvents;
-      const playCountChange = playDelta === 0 ? "The profile's play count is unchanged."
-        : playDelta > 0 ? `The profile has ${playDelta} more ${playDelta === 1 ? "play" : "plays"}.`
-        : `The profile has ${-playDelta} fewer ${playDelta === -1 ? "play" : "plays"} after reconciling overlaps.`;
+      const playCountChange = playDelta === 0 ? tr("The profile's play count is unchanged.")
+        : playDelta > 0 ? tr.n(playDelta, "The profile has {count} more play.", "The profile has {count} more plays.")
+        : tr.n(-playDelta, "The profile has {count} fewer play after reconciling overlaps.", "The profile has {count} fewer plays after reconciling overlaps.");
+      const evidence = receipt.inserted_profile_evidence ? preview.library
+        ? tr.n(receipt.inserted_profile_evidence, "{count} saved song, album, follow, playlist entry, or Spotify top pick.", "{count} saved songs, albums, follows, playlist entries, and Spotify top picks.")
+        : tr.n(receipt.inserted_profile_evidence, "{count} saved song, follow, or playlist entry.", "{count} saved songs, follows, or playlist entries.") : null;
       const counts = preview.kind === "library"
-        ? receipt.already_imported ? "You've imported this library before, so nothing changed."
-          : `Saved ${receipt.library_tracks ?? preview.tracks} songs from your library. A library shows what you keep, not when you played it, so no plays were added.`
+        ? receipt.already_imported ? tr("You've imported this library before, so nothing changed.")
+          : tr.n(receipt.library_tracks ?? preview.tracks, "Saved {count} song from your library. A library shows what you keep, not when you played it, so no plays were added.", "Saved {count} songs from your library. A library shows what you keep, not when you played it, so no plays were added.")
         : insertedEvents === 0 && !receipt.inserted_profile_evidence && !supersededEvents
-        ? "Already up to date. There was nothing new in this one."
+        ? tr("Already up to date. There was nothing new in this one.")
         : [
-          ...(insertedEvents || supersededEvents || !receipt.inserted_profile_evidence ? [supersededEvents
-            ? `Saved ${insertedEvents} new listening ${insertedEvents === 1 ? "record" : "records"}. ${playCountChange}`
-            : `${insertedEvents} new ${insertedEvents === 1 ? "play" : "plays"}${receipt.duplicate_events ? `, ${receipt.duplicate_events} I already had` : ""}.`] : []),
-          ...(receipt.inserted_profile_evidence ? [`${insertedEvents || supersededEvents ? "Also " : ""}${receipt.inserted_profile_evidence} ${preview.library ? "saved songs, albums, follows, playlist entries, and Spotify top picks" : "saved songs, follows, or playlist entries"}.`] : []),
+          ...(insertedEvents || supersededEvents || !evidence ? [supersededEvents
+            ? `${tr.n(insertedEvents, "Saved {count} new listening record.", "Saved {count} new listening records.")} ${playCountChange}`
+            : receipt.duplicate_events
+              ? tr("{plays}, {duplicates} I already had.", { plays: tr.n(insertedEvents, "{count} new play", "{count} new plays"), duplicates: tr.number(receipt.duplicate_events) })
+              : tr.n(insertedEvents, "{count} new play.", "{count} new plays.")] : []),
+          ...(evidence ? [insertedEvents || supersededEvents ? tr("Also {items}", { items: evidence }) : evidence] : []),
         ].join(" ");
       // Keep the durable result visible even if refreshing the runtime later fails.
       addMoondogMessage([
-        preview.kind === "library" ? "## Your Apple Music library is in" : preview.kind === "collection" ? "## Your collection is in"
-          : preview.library ? "## Your Spotify is in" : "## Your history is in",
-        [preview.sourceLabel, preview.fileName].filter(Boolean).join(" · "),
+        preview.kind === "library" ? tr("## Your Apple Music library is in") : preview.kind === "collection" ? tr("## Your collection is in")
+          : preview.library ? tr("## Your Spotify is in") : tr("## Your history is in"),
+        [view?.previewSource(preview)[0] ?? preview.sourceLabel, preview.fileName].filter(Boolean).join(" · "),
         counts,
-        ...(supersededEvents ? [`Reconciled ${supersededEvents} overlapping ${supersededEvents === 1 ? "record" : "records"}, keeping the more detailed listening evidence.`] : []),
-        "Everything from before is still here, including your choices. `/import` adds another source any time.",
+        ...(supersededEvents ? [tr.n(supersededEvents, "Reconciled {count} overlapping record, keeping the more detailed listening evidence.", "Reconciled {count} overlapping records, keeping the more detailed listening evidence.")] : []),
+        tr("Everything from before is still here, including your choices. `/import` adds another source any time."),
       ].join("\n\n"));
-      setImportPage("working", { message: "Saved. Reading it..." });
-      setFooter("History saved. Updating your profile...");
+      setImportPage("working", { message: tr("Saved. Reading it...") });
+      setFooter(tr("History saved. Updating your profile..."));
       await refreshImportedData?.(importNeedsRefresh);
       if (cleanedUp) return;
       if (typeof rebuildRuntime === "function") await replaceRuntime();
@@ -1220,11 +1237,11 @@ export async function runMoondogTui({
         homeVisible = false;
         profileView = null;
         tui.setFocus(editor);
-        addMoondogMessage(`Your history is saved, but I couldn't update the profile: ${sanitizeTerminalText(error.message)}\n\nNothing was lost. Try \`/reload\`, then \`/taste\`.`);
-        setFooter("History saved. The profile needs another try.", warning);
+        addMoondogMessage(tr("Your history is saved, but I couldn't update the profile: {error}\n\nNothing was lost. Try `/reload`, then `/taste`.", { error: sanitizeTerminalText(error.message) }));
+        setFooter(tr("History saved. The profile needs another try."), warning);
       } else {
         setImportPage("preview", { preview, error: sanitizeTerminalText(error.message) });
-        setFooter("Not saved. See the message above.", warning);
+        setFooter(tr("Not saved. See the message above."), warning);
       }
     } finally {
       setBusy(false);
@@ -1251,11 +1268,11 @@ export async function runMoondogTui({
       const destination = { openSpotify: "spotify", openSpotifySetup: "spotifySetup", openAppleHelp: "apple", openApplePrivacy: "applePrivacy", openYouTube: "youtube", openQQ: "qq", openNetEase: "netease" }[type];
       const url = IMPORT_GUIDE_URLS[destination];
       try {
-        if (typeof openImportHelp !== "function") throw new Error("Can't open a browser from here.");
+        if (typeof openImportHelp !== "function") throw new Error(tr("Can't open a browser from here."));
         await openImportHelp(destination);
-        setFooter("Opened in your browser. Moondog will be here when you're back.");
+        setFooter(tr("Opened in your browser. Moondog will be here when you're back."));
       } catch {
-        setImportPage(importPage, { error: `I couldn't open your browser. Here's the link: ${url}` });
+        setImportPage(importPage, { error: tr("I couldn't open your browser. Here's the link: {url}", { url }) });
       }
       return;
     }
@@ -1272,8 +1289,8 @@ export async function runMoondogTui({
       setImportPage(type);
     }
     setFooter(importPage === "file"
-      ? "Paste or drag in a file. Tab completes the path, Enter reads it."
-      : "Pick a step.");
+      ? tr("Paste or drag in a file. Tab completes the path, Enter reads it.")
+      : tr("Pick a step."));
     tui.setFocus(importView);
   };
 
@@ -1284,25 +1301,25 @@ export async function runMoondogTui({
       importReturnHome = homeVisible;
       homeFocused = false;
       importView = new HistoryImportView({
-        tui, getTheme,
+        tui, getTheme, getText: () => tr,
         getRows: () => Math.max(1, terminal.rows - 2 - (terminal.rows >= 20 ? 2 : 1)),
         profileReady: application.profileServicesReady?.() ?? false,
         onAction: (action) => {
           void handleImportAction(action).catch((error) => {
-            if (!cleanedUp) setFooter(`That didn't work: ${error.message}`, failure);
+            if (!cleanedUp) setFooter(tr("That didn't work: {error}", { error: error.message }), failure);
           });
         },
       });
     }
     setImportPage("start");
     tui.setFocus(importView);
-    setFooter("Welcome to the machine. Pick your music service.");
+    setFooter(tr("Welcome to the machine. Pick your music service."));
     if (filePath) await inspectImport(filePath);
   };
 
   const runSpotifyCommand = async (args) => {
     if (typeof runSpotify !== "function") {
-      throw new Error("Spotify isn't available when Moondog is started this way.");
+      throw new Error(tr("Spotify isn't available when Moondog is started this way."));
     }
     const action = args[0]?.toLowerCase() ?? "help";
     const leavesTui = action === "login";
@@ -1327,7 +1344,7 @@ export async function runMoondogTui({
     } else {
       renderHeader();
     }
-    addMoondogMessage(markdown || "Done.");
+    addMoondogMessage(markdown || tr("Done."));
     if (["import-history", "sync-library"].includes(action)) {
       await showImportedListeningProfile();
       return;
@@ -1345,20 +1362,20 @@ export async function runMoondogTui({
     releaseQueue = false;
   };
   const rewindConversation = async (args) => {
-    if (args.length > 1) throw new Error("Use /rewind or /rewind latest.");
+    if (args.length > 1) throw new Error(tr("Use /rewind or /rewind latest."));
     if (typeof application.conversationEntries !== 'function' || typeof application.rewindConversation !== 'function') {
-      throw new Error("Conversation rewind isn't available in this runtime.");
+      throw new Error(tr("Conversation rewind isn't available in this runtime."));
     }
     const entries = application.conversationEntries({ limit: 200 });
-    if (!entries.length) { setFooter("No earlier messages yet."); return; }
+    if (!entries.length) { setFooter(tr("No earlier messages yet.")); return; }
     let selected = args[0] === 'latest' ? { value: entries.at(-1).entry_id } : args[0] ? { value: args[0] } : null;
     if (!selected) selected = await choose(entries.map((entry, index) => ({
       value: entry.entry_id,
       label: `${index + 1}. ${sanitizeTerminalText(entry.user_text).replace(/\s+/gu, ' ').trim()}`,
       description: `${entry.outcome} · ${entry.created_at.slice(0, 16).replace('T', ' ')}`,
-    })).reverse(), entries.at(-1).entry_id, "Rewind to a message · original stays saved");
+    })).reverse(), entries.at(-1).entry_id, tr("Rewind to a message · original stays saved"));
     if (cleanedUp) return;
-    if (!selected) { setFooter("Rewind cancelled. Queued drafts stay paused."); return; }
+    if (!selected) { setFooter(tr("Rewind cancelled. Queued drafts stay paused.")); return; }
     storeRecall();
     savePendingConversation();
     const branch = typeof activeRuntime.rewindTo === 'function'
@@ -1377,24 +1394,24 @@ export async function runMoondogTui({
     }
     installRecall(branch.session_id, recallFromTurns());
     restorePendingConversation();
-    addMoondogMessage("Branched before this message. Edit it below, then send. The original is in /resume. Spotify actions and saved preferences have not been undone; inspect the original receipts before repeating an action.");
-    setFooter("Earlier message restored · edit before sending · /resume keeps both branches", success);
+    addMoondogMessage(tr("Branched before this message. Edit it below, then send. The original is in /resume. Spotify actions and saved preferences have not been undone; inspect the original receipts before repeating an action."));
+    setFooter(tr("Earlier message restored · edit before sending · /resume keeps both branches"), success);
     tui.requestRender(true);
   };
 
   const resumeConversation = async (args) => {
-    if (args.length > 1) throw new Error("Use /resume, or /resume <conversation-id>.");
+    if (args.length > 1) throw new Error(tr("Use /resume, or /resume <conversation-id>."));
     if (typeof application.listSavedSessions !== "function" ||
         typeof application.resumeSession !== "function" ||
         typeof activeRuntime.restoreSession !== "function") {
-      throw new Error("Saved conversations aren't available when Moondog is started this way.");
+      throw new Error(tr("Saved conversations aren't available when Moondog is started this way."));
     }
     const currentId = application.ensureMemorySession?.()?.session_id;
     let selected = args[0] ? { value: args[0] } : undefined;
     if (!selected) {
       const sessions = application.listSavedSessions({ limit: 200 });
       if (!sessions.length) {
-        setFooter("No saved conversations yet.");
+        setFooter(tr("No saved conversations yet."));
         return;
       }
       const formatTime = new Intl.DateTimeFormat(undefined, {
@@ -1403,17 +1420,19 @@ export async function runMoondogTui({
       const items = sessions.map((session) => ({
         value: session.session_id,
         label: `${session.parent_session_id ? 'Branch · ' : ''}${sanitizeTerminalText(session.title).replace(/\s+/gu, " ").trim() || "Untitled"}`,
-        description: `${formatTime.format(new Date(session.updated_at))} · ${session.turn_count} ${session.turn_count === 1 ? "message" : "messages"}${session.session_id === currentId ? " · open now" : ""}${session.parent_session_id && session.last_message ? ` · ${sanitizeTerminalText(session.last_message).replace(/\s+/gu, ' ').slice(0, 100)}` : ''}`,
+        description: [formatTime.format(new Date(session.updated_at)), tr.n(session.turn_count, "{count} message", "{count} messages"),
+          ...(session.session_id === currentId ? [tr("open now")] : []),
+          ...(session.parent_session_id && session.last_message ? [sanitizeTerminalText(session.last_message).replace(/\s+/gu, ' ').slice(0, 100)] : [])].join(" · "),
       }));
-      selected = await choose(items, currentId, "Pick up where you left off");
+      selected = await choose(items, currentId, tr("Pick up where you left off"));
       if (cleanedUp) return;
       if (!selected) {
-        setFooter("Staying here.");
+        setFooter(tr("Staying here."));
         return;
       }
     }
     if (selected.value === currentId) {
-      setFooter("You're already in that one.");
+      setFooter(tr("You're already in that one."));
       return;
     }
     storeRecall();
@@ -1438,48 +1457,49 @@ export async function runMoondogTui({
     }
     const savedTitle = selected.label ? undefined
       : application.listSavedSessions({ limit: 200 }).find((session) => session.session_id === selected.value)?.title;
-    const title = selected.label ?? savedTitle ?? turns.find((turn) => turn.role === "user")?.text ?? "Saved conversation";
+    const title = selected.label ?? savedTitle ?? turns.find((turn) => turn.role === "user")?.text ?? tr("Saved conversation");
     const resumed = String(title).replace(/\s+/gu, " ").trim();
-    if (resumed && resumed !== "Saved conversation") conversationTitle = Array.from(resumed).slice(0, 160).join("");
-    setFooter(`Back in: ${resumed || "Saved conversation"}`, success);
+    if (resumed && resumed !== tr("Saved conversation")) conversationTitle = Array.from(resumed).slice(0, 160).join("");
+    setFooter(tr("Back in: {title}", { title: resumed || tr("Saved conversation") }), success);
     tui.requestRender(true);
   };
 
   const runLocalCommand = async (command, args = []) => {
     if (command === "update") {
-      if (!runUpdate) throw new Error("Use moondog update from your shell for this installation.");
+      if (!runUpdate) throw new Error(tr("Use moondog update from your shell for this installation."));
       const result = await runUpdate(args, { signal: localCommandController?.signal });
       if (cleanedUp) return;
       localCommandController?.signal.throwIfAborted();
       updateNotice = "";
       addMoondogMessage(result.text);
       if (result.update) { exitRequest = { update: result.update }; shutdown(); }
-      else setFooter("Update check finished.");
+      else setFooter(tr("Update check finished."));
       return;
     }
     if (command === "lyrics") {
-      if (args.length > 1 || (args[0] && args[0] !== "sync")) throw new Error("Use /lyrics, or /lyrics sync.");
-      if (!lyrics) throw new Error("The lyric library isn't available when Moondog is started this way.");
+      if (args.length > 1 || (args[0] && args[0] !== "sync")) throw new Error(tr("Use /lyrics, or /lyrics sync."));
+      if (!lyrics) throw new Error(tr("The lyric library isn't available when Moondog is started this way."));
       if (args[0] === "sync") await updateHomeLyrics({ signal: localCommandController?.signal });
       if (cleanedUp) return;
       const status = lyrics.status();
       addMoondogMessage([
-        "## Your lyric library", "",
-        `${status.ready} ${status.ready === 1 ? "song" : "songs"} with lyrics · ${status.instrumental} ${status.instrumental === 1 ? "instrumental" : "instrumentals"} · ${status.entries} looked up`,
-        `Stored at ${status.path}`,
+        tr("## Your lyric library"), "",
+        [tr.n(status.ready, "{count} song with lyrics", "{count} songs with lyrics"), tr.n(status.instrumental, "{count} instrumental", "{count} instrumentals"),
+          tr("{count} looked up", { count: tr.number(status.entries) })].join(" · "),
+        tr("Stored at {path}", { path: status.path }),
         `Syncing: ${status.refresh.state}`,
-        ...(lyricError ? [`Last problem: ${lyricError}`] : []),
-        ...(homeLyric ? ["", `On the sleeve now: ${homeLyric.title} · ${homeLyric.artist}`, `Lyrics from ${homeLyric.sourceUrl}`] : []),
-        "", "`/lyrics sync` looks up more songs from your profile. `/home` takes you back to the sleeve.",
+        ...(lyricError ? [tr("Last problem: {error}", { error: lyricError })] : []),
+        ...(homeLyric ? ["", tr("On the sleeve now: {title} · {artist}", { title: homeLyric.title, artist: homeLyric.artist }), tr("Lyrics from {url}", { url: homeLyric.sourceUrl })] : []),
+        "", tr("`/lyrics sync` looks up more songs from your profile. `/home` takes you back to the sleeve."),
       ].join("\n"));
-      setFooter("Lyric library · /home to go back.");
+      setFooter(tr("Lyric library · /home to go back."));
       return;
     }
     if (command === "taste" || (command === "profile" && !args.length)) {
-      if (args.length > 1 || (args[0] && args[0] !== "report")) throw new Error("Use /taste, or /taste report.");
+      if (args.length > 1 || (args[0] && args[0] !== "report")) throw new Error(tr("Use /taste, or /taste report."));
       if (args[0] === "report") {
-        addMoondogMessage(formatLocalResult("taste", await application.runLocalCommand("taste", runtimeStatus)));
-        setFooter("Full report above. /taste opens the profile.");
+        addMoondogMessage(formatLocalResult("taste", await application.runLocalCommand("taste", runtimeStatus), tr));
+        setFooter(tr("Full report above. /taste opens the profile."));
       } else await openProfile();
       return;
     }
@@ -1492,39 +1512,39 @@ export async function runMoondogTui({
       return;
     }
     if (command === "web") {
-      if (typeof runWeb !== "function") throw new Error("Web lookups aren't available when Moondog is started this way.");
-      setFooter("Looking it up with Codex... Ctrl+C cancels.");
+      if (typeof runWeb !== "function") throw new Error(tr("Web lookups aren't available when Moondog is started this way."));
+      setFooter(tr("Looking it up with Codex... Ctrl+C cancels."));
       addMoondogMessage(await runWeb(args, { signal: localCommandController.signal }));
-      setFooter("Done.", success);
+      setFooter(tr("Done."), success);
       return;
     }
     if (command === "home") {
-      if (args.length) throw new Error("/home doesn't take anything after it.");
+      if (args.length) throw new Error(tr("/home doesn't take anything after it."));
       homeVisible = true;
       homeFocused = false;
       sleeve.invalidate();
-      setFooter("Say anything, or press Tab to look around.");
+      setFooter(tr("Say anything, or press Tab to look around."));
       return;
     }
     if (command === "theme") {
       if (args.length > 1 || (args[0] && !["auto", "paper", "charcoal", "terminal"].includes(args[0]))) {
-        throw new Error("Use /theme, or /theme paper, charcoal, terminal, or auto.");
+        throw new Error(tr("Use /theme, or /theme paper, charcoal, terminal, or auto."));
       }
       let mode = args[0];
       if (!mode) {
         const selected = await choose([
-          { value: "paper", label: "Paper", description: "Black ink on white paper" },
-          { value: "charcoal", label: "Charcoal", description: "Moonlight on a black sky" },
-          { value: "terminal", label: "Terminal", description: "Keep your terminal's colors" },
-          { value: "auto", label: "Auto", description: "Follow MOONDOG_THEME, or guess from your terminal" },
-        ], theme.mode, "Pick a look");
+          { value: "paper", label: "Paper", description: tr("Black ink on white paper") },
+          { value: "charcoal", label: "Charcoal", description: tr("Moonlight on a black sky") },
+          { value: "terminal", label: "Terminal", description: tr("Keep your terminal's colors") },
+          { value: "auto", label: "Auto", description: tr("Follow MOONDOG_THEME, or guess from your terminal") },
+        ], theme.mode, tr("Pick a look"));
         mode = selected?.value;
       }
-      if (!mode) { setFooter("Theme unchanged."); return; }
+      if (!mode) { setFooter(tr("Theme unchanged.")); return; }
       theme = createMoondogTheme({ mode, environment });
       transcript.invalidate();
       sleeve.invalidate();
-      setFooter(`${theme.mode === "paper" ? "Paper" : theme.mode === "charcoal" ? "Charcoal" : "Terminal"} theme, for this session.`);
+      setFooter(theme.mode === "paper" ? tr("Paper theme, for this session.") : theme.mode === "charcoal" ? tr("Charcoal theme, for this session.") : tr("Terminal theme, for this session."));
       tui.requestRender(true);
       return;
     }
@@ -1532,34 +1552,39 @@ export async function runMoondogTui({
       const wanted = args.join(" ").trim().toLocaleLowerCase();
       const match = Object.entries(LOCALES).find(([code, value]) =>
         [code, value.name.toLocaleLowerCase(), value.nativeName.toLocaleLowerCase()].includes(wanted));
-      if (wanted && !match) throw new Error(`Use /language, or /language ${Object.keys(LOCALES).join(", ")}.`);
+      if (wanted && !match) throw new Error(tr("Use /language, or /language {codes}.", { codes: Object.keys(LOCALES).join(", ") }));
       let locale = match?.[0];
       if (!locale) {
         const selected = await choose(Object.entries(LOCALES).map(([code, value]) => ({
           value: code, label: value.nativeName, description: value.name,
-        })), application.locale, "Reply language");
+        })), application.locale, tr("Reply language"));
         locale = selected?.value;
       }
-      if (!locale) { setFooter("Language unchanged."); return; }
+      if (!locale) { setFooter(tr("Language unchanged.")); return; }
       application.locale = locale;
       await saveLanguage?.(locale);
       const pinned = normalizeLocale(environment.MOONDOG_LANGUAGE);
-      setFooter(`${LOCALES[locale].nativeName}: replies use it unless you write in another language.${pinned && pinned !== locale ? " MOONDOG_LANGUAGE still sets the next start." : ""}`, success);
+      transcript.invalidate();
+      sleeve.invalidate();
+      renderHeader();
+      setFooter(pinned && pinned !== locale
+        ? tr("{language}: replies use it unless you write in another language. MOONDOG_LANGUAGE still sets the next start.", { language: LOCALES[locale].nativeName })
+        : tr("{language}: replies use it unless you write in another language.", { language: LOCALES[locale].nativeName }), success);
       return;
     }
     if (command === "art") {
       if (args.length > 1 || (args[0] && !["auto", "braille", "ascii", "off", "text"].includes(args[0]))) {
-        throw new Error("Use /art, or /art braille, ascii, off, or auto.");
+        throw new Error(tr("Use /art, or /art braille, ascii, off, or auto."));
       }
       sleeve.setArtMode(args[0] ?? (sleeve.artMode === "ascii" ? "braille" : "ascii"));
       homeVisible = true;
-      setFooter(sleeve.artMode === "off" ? "A quiet opening, no artwork." : `${sleeve.artMode === "ascii" || sleeve.artMode === "text" ? "ASCII" : "Braille"} artwork.`);
+      setFooter(sleeve.artMode === "off" ? tr("A quiet opening, no artwork.") : sleeve.artMode === "ascii" || sleeve.artMode === "text" ? tr("ASCII artwork.") : tr("Braille artwork."));
       return;
     }
     if (command === "motion") {
-      if (args.length > 1 || (args[0] && !["on", "off"].includes(args[0]))) throw new Error("Use /motion, or /motion on or off.");
+      if (args.length > 1 || (args[0] && !["on", "off"].includes(args[0]))) throw new Error(tr("Use /motion, or /motion on or off."));
       motionEnabled = args[0] ? args[0] === "on" : !motionEnabled;
-      setFooter(motionEnabled ? "Animation on." : "Animation off.");
+      setFooter(motionEnabled ? tr("Animation on.") : tr("Animation off."));
       return;
     }
     if (command === "import") {
@@ -1567,9 +1592,9 @@ export async function runMoondogTui({
       return;
     }
     if (command === "help") {
-      if (args.length > 1 || (args[0] && args[0] !== "all")) throw new Error("Use /help, or /help all.");
-      addMoondogMessage(args[0] === "all" ? helpText() : listeningHelp());
-      setFooter("Type / to browse every command.");
+      if (args.length > 1 || (args[0] && args[0] !== "all")) throw new Error(tr("Use /help, or /help all."));
+      addMoondogMessage(args[0] === "all" ? helpText(tr) : listeningHelp());
+      setFooter(tr("Type / to browse every command."));
       return;
     }
     if (command === "model") {
@@ -1586,28 +1611,29 @@ export async function runMoondogTui({
     }
     if (command === "profile" && args.length > 0) {
       if (typeof runProfile !== "function") {
-        throw new Error("Changing your profile isn't available when Moondog is started this way.");
+        throw new Error(tr("Changing your profile isn't available when Moondog is started this way."));
       }
       addMoondogMessage(await runProfile(args, {
         signal: localCommandController?.signal,
+        tr,
         onProgress: progress => setFooter(progress.model_retry
-          ? `Retrying the model, ${progress.model_retry.attempt} of ${progress.model_retry.maxRetries}. Ctrl+C cancels and keeps the saved draft.`
-          : progress.phase === "check" ? "Checking the draft for contradictions. Ctrl+C keeps the draft."
-          : progress.phase === "revision" ? "Fixing what the check found. Ctrl+C keeps the draft."
-          : progress.phase === "complete" ? "Saving your listening profile."
-          : "Reading your music and writing your profile. Ctrl+C cancels."),
+          ? tr("Retrying the model, {attempt} of {max}. Ctrl+C cancels and keeps the saved draft.", { attempt: progress.model_retry.attempt, max: progress.model_retry.maxRetries })
+          : progress.phase === "check" ? tr("Checking the draft for contradictions. Ctrl+C keeps the draft.")
+          : progress.phase === "revision" ? tr("Fixing what the check found. Ctrl+C keeps the draft.")
+          : progress.phase === "complete" ? tr("Saving your listening profile.")
+          : tr("Reading your music and writing your profile. Ctrl+C cancels.")),
       }));
       void updateHomeLyrics();
       if (["correct", "retract"].includes(args[0])) {
         try {
           await openProfile();
         } catch (error) {
-          addMoondogMessage(`Your choice is saved, but I couldn't update the profile: ${error.message}\n\nType \`/taste\` to try again.`);
-          setFooter("Choice saved. The profile needs another try.", warning);
+          addMoondogMessage(tr("Your choice is saved, but I couldn't update the profile: {error}\n\nType `/taste` to try again.", { error: error.message }));
+          setFooter(tr("Choice saved. The profile needs another try."), warning);
           return;
         }
       }
-      setFooter("Done.", success);
+      setFooter(tr("Done."), success);
       return;
     }
     if (command === "reload") {
@@ -1616,10 +1642,10 @@ export async function runMoondogTui({
       importNeedsRefresh = false;
       addMoondogMessage(
         status.state === "configured"
-          ? `Reloaded \`${status.provider}/${status.model}\`. This conversation and what I remember carry over.`
-          : `Reloaded, but no model is connected (\`${status.reason}\`). Your profile still works.`,
+          ? tr("Reloaded `{model}`. This conversation and what I remember carry over.", { model: `${status.provider}/${status.model}` })
+          : tr("Reloaded, but no model is connected (`{reason}`). Your profile still works.", { reason: status.reason }),
       );
-      setFooter("Reloaded.", status.state === "configured" ? success : warning);
+      setFooter(tr("Reloaded."), status.state === "configured" ? success : warning);
       return;
     }
     if (command === "remember") {
@@ -1636,29 +1662,31 @@ export async function runMoondogTui({
         .trim();
       if (!text) {
         throw new Error(
-          "Tell me what to remember, like /remember preference no live albums.",
+          tr("Tell me what to remember, like /remember preference no live albums."),
         );
       }
       const memory = application.rememberMemory({ text, kind });
       addMoondogMessage(
-        `${memory.created ? "I'll remember that" : "I already knew that"}: ${memory.text}\n\nTo forget it later: \`/forget ${memory.memory_id}\``,
+        memory.created
+          ? tr("I'll remember that: {text}\n\nTo forget it later: `/forget {id}`", { text: memory.text, id: memory.memory_id })
+          : tr("I already knew that: {text}\n\nTo forget it later: `/forget {id}`", { text: memory.text, id: memory.memory_id }),
       );
-      setFooter("Remembered.", success);
+      setFooter(tr("Remembered."), success);
       return;
     }
     if (command === "forget") {
-      if (args.length !== 1) throw new Error("Tell me which memory, like /forget <memory-id>.");
+      if (args.length !== 1) throw new Error(tr("Tell me which memory, like /forget <memory-id>."));
       const result = application.forgetMemory(args[0]);
       addMoondogMessage(
         result.forgotten
-          ? `Forgotten: \`${result.memory_id}\`.`
-          : `I don't have a memory called \`${result.memory_id}\`.`,
+          ? tr("Forgotten: `{id}`.", { id: result.memory_id })
+          : tr("I don't have a memory called `{id}`.", { id: result.memory_id }),
       );
-      setFooter(result.forgotten ? "Forgotten." : "No such memory.", warning);
+      setFooter(result.forgotten ? tr("Forgotten.") : tr("No such memory."), warning);
       return;
     }
     if (command === "new") {
-      if (args.length) throw new Error("/new doesn't take anything after it.");
+      if (args.length) throw new Error(tr("/new doesn't take anything after it."));
       storeRecall();
       savePendingConversation();
       application.startNewSession?.("user_new");
@@ -1673,28 +1701,28 @@ export async function runMoondogTui({
       homeVisible = true;
       homeFocused = false;
       sleeve.invalidate();
-      setFooter("A fresh start. /resume brings back the last one.", success);
+      setFooter(tr("A fresh start. /resume brings back the last one."), success);
       return;
     }
     const result = await application.runLocalCommand(command, runtimeStatus);
-    addMoondogMessage(formatLocalResult(command, result));
-    setFooter("Ready.");
+    addMoondogMessage(formatLocalResult(command, result, tr));
+    setFooter(tr("Ready."));
   };
 
   const openCommandPalette = async () => {
-    const selected = await choose(slashCommands.map(({ name, description }) => ({
+    const selected = await choose(localizedCommands.map(({ name, description }) => ({
       value: name, label: `/${name}`, description,
-    })), undefined, "Commands");
+    })), undefined, tr("Commands"));
     if (!selected || cleanedUp) return;
     if (profileView) closeProfile();
     homeFocused = false;
     editor.focused = true;
     if (["web", "remember", "forget", "spotify", "art", "motion"].includes(selected.value)) {
       if (editor.getText()) {
-        setFooter(`Your message is still here. Send or clear it, then use /${selected.value}.`);
+        setFooter(tr("Your message is still here. Send or clear it, then use /{command}.", { command: selected.value }));
       } else {
         editor.setText(`/${selected.value} `);
-        setFooter("Finish the command, then press Enter.");
+        setFooter(tr("Finish the command, then press Enter."));
       }
       return;
     }
@@ -1724,11 +1752,11 @@ export async function runMoondogTui({
       }
       if (!slashCommands.some((entry) => entry.name === command)) {
         enterConversation();
-        addMoondogMessage(`I don't know \`/${command}\`. Type \`/help\` to see what I do know.`);
+        addMoondogMessage(tr("I don't know `/{command}`. Type `/help` to see what I do know.", { command }));
         return;
       }
       if (command === "commands") {
-        if (args.length) { addMoondogMessage("`/commands` doesn't take anything after it."); return; }
+        if (args.length) { addMoondogMessage(tr("`/commands` doesn't take anything after it.")); return; }
         await openCommandPalette();
         return;
       }
@@ -1749,8 +1777,8 @@ export async function runMoondogTui({
         if (cleanedUp) return;
         enterConversation();
         const cancelled = localCommandController?.signal.aborted;
-        addMoondogMessage(cancelled ? command === "web" ? "Stopped the lookup." : command === "model" ? "Stopped the catalog check. Model unchanged." : command === "update" ? "Stopped the update check. No update installed." : command === "profile" ? "Stopped the profile build. Saved progress and your previous reading are kept. Use /profile build to continue." : "Stopped the lyric sync." : `That didn't work: ${error.message}`);
-        setFooter(cancelled ? "Cancelled." : `/${command} didn't work.`, cancelled ? dim : failure);
+        addMoondogMessage(cancelled ? command === "web" ? tr("Stopped the lookup.") : command === "model" ? tr("Stopped the catalog check. Model unchanged.") : command === "update" ? tr("Stopped the update check. No update installed.") : command === "profile" ? tr("Stopped the profile build. Saved progress and your previous reading are kept. Use /profile build to continue.") : tr("Stopped the lyric sync.") : tr("That didn't work: {error}", { error: error.message }));
+        setFooter(cancelled ? tr("Cancelled.") : tr("/{command} didn't work.", { command }), cancelled ? dim : failure);
       } finally {
         localCommandController = null;
         setBusy(false);
@@ -1764,7 +1792,7 @@ export async function runMoondogTui({
     if (profileSeed && runtimeStatus.state !== "configured") {
       releaseQueue = false;
       editor.setText(rawValue);
-      setFooter("Your request is still here · /model connects a model first.", warning);
+      setFooter(tr("Your request is still here · /model connects a model first."), warning);
       return;
     }
     // Retain the binding for history recall, only while its exact metadata is visible.
@@ -1773,12 +1801,12 @@ export async function runMoondogTui({
     addUserMessage(value);
     enterConversation();
     if (runtimeStatus.state !== "configured") {
-      addMoondogMessage(offlineReply(runtimeStatus));
+      addMoondogMessage(offlineReply(runtimeStatus, tr));
       return;
     }
 
     setBusy(true, () => activeRuntime.abort());
-    setFooter("Thinking...");
+    setFooter(tr("Thinking..."));
     transcriptScroll.scrollToEnd();
     addLabel("Moondog");
     const work = new AgentWork(getTheme, () => phase);
@@ -1790,8 +1818,8 @@ export async function runMoondogTui({
     let legacyToolId = 0;
     const updateTool = (tool, state) => {
       if (cleanedUp) return;
-      const label = sanitizeTerminalText(typeof tool === "string" ? tool : tool?.label ?? "Music tool")
-        .replace(/\s+/gu, " ").trim() || "Music tool";
+      const label = sanitizeTerminalText(tr.marked(typeof tool === "string" ? tool : tool?.label ?? "Music tool"))
+        .replace(/\s+/gu, " ").trim() || tr("Music tool");
       // Runtime events carry call IDs; retain support for older label-only callbacks.
       const key = tool?.toolCallId ?? (state !== "running"
         ? [...toolCalls].find(([, call]) => call.state === "running" && call.label === label)?.[0]
@@ -1804,9 +1832,9 @@ export async function runMoondogTui({
       }
       const pending = [...toolCalls.values()].filter((call) => call.state === "running");
       if (pending.length) {
-        setFooter(pending.length > 1 ? `${pending.length} running · ${pending[0].label}` : `${pending[0].label}...`);
+        setFooter(pending.length > 1 ? tr("{count} running · {label}", { count: pending.length, label: pending[0].label }) : `${pending[0].label}...`);
       } else {
-        setFooter(state === "failed" ? `${label} didn't work · carrying on...` : "Thinking...", state === "failed" ? warning : dim);
+        setFooter(state === "failed" ? tr("{label} didn't work · carrying on...", { label }) : tr("Thinking..."), state === "failed" ? warning : dim);
       }
     };
 
@@ -1828,7 +1856,7 @@ export async function runMoondogTui({
           tui.requestRender();
         },
         onModelRetry: ({ attempt, maxRetries }) => {
-          if (!cancellationRequested) setFooter(`Can't reach the model. Trying again (${attempt}/${maxRetries})...`, warning);
+          if (!cancellationRequested) setFooter(tr("Can't reach the model. Trying again ({attempt}/{max})...", { attempt, max: maxRetries }), warning);
         },
         onToolStart: (tool) => updateTool(tool, "running"),
         onToolEnd: (tool) => updateTool(tool, tool?.isError ? "failed" : "completed"),
@@ -1839,30 +1867,30 @@ export async function runMoondogTui({
           streamedText = sanitizeTerminalText(result.text);
           response.setText(streamedText);
         }
-        setFooter("Cancelled.");
+        setFooter(tr("Cancelled."));
       } else if (result.status === "interrupted") {
         response.setText(sanitizeTerminalText(result.text));
-        setFooter("Response interrupted. Spotify results are shown.", warning);
+        setFooter(tr("Response interrupted. Spotify results are shown."), warning);
       } else {
-        setFooter("Up recalls this conversation.", success);
+        setFooter(tr("Up recalls this conversation."), success);
       }
     } catch (error) {
       if (cleanedUp) return;
       const connectionFailed = error.code === "model_connection_failed";
       const errorText = connectionFailed
         ? `${sanitizeTerminalText(error.message)}\n\n${error.toolsExecuted
-          ? "Something already ran before the connection dropped. Check what happened before you ask again."
-          : "Press ↑ to bring your message back, then Enter to try again."}`
-        : `Something went wrong: ${sanitizeTerminalText(error.message)}`;
+          ? tr("Something already ran before the connection dropped. Check what happened before you ask again.")
+          : tr("Press ↑ to bring your message back, then Enter to try again.")}`
+        : tr("Something went wrong: {error}", { error: sanitizeTerminalText(error.message) });
       const appendedError = connectionFailed ? errorText : `_${errorText}_`;
       response.setText(
         streamedText.length > 0 ? `${streamedText}\n\n${appendedError}` : errorText,
       );
       setFooter(connectionFailed
         ? error.toolsExecuted
-          ? "Lost the model. Check what ran before retrying."
-          : "Lost the model. ↑ brings your message back."
-        : "The model couldn't answer.", failure);
+          ? tr("Lost the model. Check what ran before retrying.")
+          : tr("Lost the model. ↑ brings your message back.")
+        : tr("The model couldn't answer."), failure);
     } finally {
       if (!cleanedUp && work.calls.length) work.settle(elapsedTime(workStartedAt));
       setBusy(false);
@@ -1879,12 +1907,12 @@ export async function runMoondogTui({
       let timer;
       try {
         if (busy) {
-          if (!activeSubmission || !cancelWork) throw new Error("Wait for this local operation to finish before rewinding.");
+          if (!activeSubmission || !cancelWork) throw new Error(tr("Wait for this local operation to finish before rewinding."));
           cancellationRequested = true;
           cancelWork();
-          setFooter("Stopping the current turn before rewind...");
+          setFooter(tr("Stopping the current turn before rewind..."));
           await Promise.race([activeSubmission, new Promise((_, reject) => {
-            timer = setTimeout(() => reject(new Error("The current turn is still stopping; no rewind was made. Try again after it finishes.")), 5_000);
+            timer = setTimeout(() => reject(new Error(tr("The current turn is still stopping; no rewind was made. Try again after it finishes."))), 5_000);
           })]);
         }
         if (!cleanedUp) await submitListeningTurn(rawValue);
@@ -1980,11 +2008,11 @@ export async function runMoondogTui({
       if (cancelWork) {
         if (!cancellationRequested) {
           cancellationRequested = true;
-          setFooter("Stopping...");
+          setFooter(tr("Stopping..."));
           cancelWork();
         }
       } else {
-        setFooter("This can't be stopped halfway. Almost there...");
+        setFooter(tr("This can't be stopped halfway. Almost there..."));
       }
     } else {
       shutdown();
@@ -1992,17 +2020,17 @@ export async function runMoondogTui({
     return { consume: true };
   });
 
-  setFooter("New conversation · /resume history");
+  setFooter(tr("New conversation · /resume history"));
   void sourceStatusTask.then((error) => {
-    if (cleanedUp || !error || footerText !== "New conversation · /resume history") return;
-    setFooter(`Couldn't read the music library: ${sanitizeTerminalText(error.message)}`, warning);
+    if (cleanedUp || !error || footerText !== tr("New conversation · /resume history")) return;
+    setFooter(tr("Couldn't read the music library: {error}", { error: sanitizeTerminalText(error.message) }), warning);
   });
   try {
     startAttempted = true;
     tui.start();
     if (checkUpdates) void Promise.resolve().then(() => checkUpdates({ signal: updateCheckController.signal })).then(result => {
       if (cleanedUp || result?.state !== "available") return;
-      updateNotice = `Moondog ${result.latest} available · /update`;
+      updateNotice = tr("Moondog {version} available · /update", { version: result.latest });
       tui.requestRender();
     }).catch(() => {});
     void updateHomeLyrics();

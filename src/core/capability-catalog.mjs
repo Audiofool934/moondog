@@ -1,25 +1,28 @@
+import { N_ } from "../i18n/index.mjs";
+
+// Tool labels are marked English; screens translate them when shown.
 const catalog = [
   {
     id: "spotify.discovery.search", version: "1", state: "enabled", effect: "read_external", requires_spotify: true,
     description: "Verify open-world music hypotheses with bounded Spotify queries, retaining a shared candidate pool.",
-    agent_tool: { name: "moondog_spotify_discover", label: "Discover verified Spotify tracks" },
+    agent_tool: { name: "moondog_spotify_discover", label: N_("Discover verified Spotify tracks") },
   },
   {
     id: "spotify.queue.batch", version: "1", state: "enabled", effect: "write_external", requires_spotify: true,
     description: "Queue up to twelve verified tracks for an explicit listener request with Avoid, deduplication and partial receipts.",
-    agent_tool: { name: "moondog_spotify_queue_batch", label: "Queue the verified selection" },
+    agent_tool: { name: "moondog_spotify_queue_batch", label: N_("Queue the verified selection") },
   },
   {
     id: "web.search", version: "1", state: "enabled", effect: "read_external",
     description: "Search public music reviews, news, interviews and event information through the local Codex CLI.",
     requires_web_research: true,
-    agent_tool: { name: "moondog_web_search", label: "Search the public web" },
+    agent_tool: { name: "moondog_web_search", label: N_("Search the public web") },
   },
   {
     id: "web.read", version: "1", state: "enabled", effect: "read_external",
     description: "Read and summarize a public web page with dated source attribution through the local Codex CLI.",
     requires_web_research: true,
-    agent_tool: { name: "moondog_web_read", label: "Read a public web page" },
+    agent_tool: { name: "moondog_web_read", label: N_("Read a public web page") },
   },
   {
     id: "source.apple_music.status",
@@ -29,7 +32,7 @@ const catalog = [
     description: "Inspect aggregate Apple Music import readiness.",
     agent_tool: {
       name: "moondog_source_status",
-      label: "Check your music sources",
+      label: N_("Check your music sources"),
     },
   },
   {
@@ -40,7 +43,7 @@ const catalog = [
     description: "Inspect evidence-backed profile readiness.",
     agent_tool: {
       name: "moondog_profile_status",
-      label: "Check your profile",
+      label: N_("Check your profile"),
     },
   },
   {
@@ -51,7 +54,7 @@ const catalog = [
     description: "Inspect conversation and long-term memory readiness.",
     agent_tool: {
       name: "moondog_memory_status",
-      label: "Check what I remember",
+      label: N_("Check what I remember"),
     },
   },
   {
@@ -62,7 +65,7 @@ const catalog = [
     description: "Inspect the Moondog capability registry.",
     agent_tool: {
       name: "moondog_capability_status",
-      label: "Check what I can do",
+      label: N_("Check what I can do"),
     },
   },
   {
@@ -73,7 +76,7 @@ const catalog = [
     description: "Inspect the configured model runtime.",
     agent_tool: {
       name: "moondog_runtime_status",
-      label: "Check the model connection",
+      label: N_("Check the model connection"),
     },
   },
   {
@@ -85,7 +88,7 @@ const catalog = [
     requires_domain_services: true,
     agent_tool: {
       name: "moondog_library_search",
-      label: "Search your music library",
+      label: N_("Search your music library"),
     },
   },
   {
@@ -97,26 +100,26 @@ const catalog = [
     requires_profile_services: true,
     agent_tool: {
       name: "moondog_profile_summary",
-      label: "Read your music profile",
+      label: N_("Read your music profile"),
     },
   },
   {
     id: "profile.saved", version: "1", state: "enabled", effect: "read_local",
     description: "Read a durable listener-profile revision and trace a finding to its frozen evidence.",
     requires_profile_build: true,
-    agent_tool: { name: "moondog_profile_saved", label: "Read your saved listening profile" },
+    agent_tool: { name: "moondog_profile_saved", label: N_("Read your saved listening profile") },
   },
   {
     id: "profile.build", version: "1", state: "enabled", effect: "write_local",
     description: "Build or resume a grounded local listener-profile revision with the configured model.",
     requires_profile_build: true,
-    agent_tool: { name: "moondog_profile_build", label: "Build your saved listening profile" },
+    agent_tool: { name: "moondog_profile_build", label: N_("Build your saved listening profile") },
   },
   {
     id: "profile.explore", version: "1", state: "enabled", effect: "read_local",
     description: "Analyze all retained profile evidence with coverage, full-library facets, search, and pagination.",
     requires_profile_exploration: true,
-    agent_tool: { name: "moondog_profile_explore", label: "Explore your complete music profile" },
+    agent_tool: { name: "moondog_profile_explore", label: N_("Explore your complete music profile") },
   },
   {
     id: "profile.rediscovery",
@@ -128,7 +131,7 @@ const catalog = [
     requires_rediscovery_services: true,
     agent_tool: {
       name: "moondog_rediscovery_candidates",
-      label: "Find music worth another listen",
+      label: N_("Find music worth another listen"),
     },
   },
   {
@@ -141,7 +144,7 @@ const catalog = [
     requires_historical_return_services: true,
     agent_tool: {
       name: "moondog_historical_return_candidates",
-      label: "Find music that came back",
+      label: N_("Find music that came back"),
     },
   },
   {
@@ -154,7 +157,7 @@ const catalog = [
     requires_time_capsule_services: true,
     agent_tool: {
       name: "moondog_time_capsule_candidates",
-      label: "Travel through your years",
+      label: N_("Travel through your years"),
     },
   },
   {
@@ -167,7 +170,7 @@ const catalog = [
     requires_back_to_back_services: true,
     agent_tool: {
       name: "moondog_back_to_back_candidates",
-      label: "Find music played back to back",
+      label: N_("Find music played back to back"),
     },
   },
   {
@@ -179,7 +182,7 @@ const catalog = [
     requires_profile_services: true,
     agent_tool: {
       name: "moondog_profile_explain",
-      label: "Look at why it's in your profile",
+      label: N_("Look at why it's in your profile"),
     },
   },
   {
@@ -191,7 +194,7 @@ const catalog = [
     requires_playlist_services: true,
     agent_tool: {
       name: "moondog_playlist_plan",
-      label: "Build a playlist plan",
+      label: N_("Build a playlist plan"),
     },
   },
   {
@@ -204,7 +207,7 @@ const catalog = [
     requires_music_catalog: true,
     agent_tool: {
       name: "moondog_music_artist_releases",
-      label: "Find current artist releases",
+      label: N_("Find current artist releases"),
     },
   },
   {
@@ -217,7 +220,7 @@ const catalog = [
     requires_music_discovery: true,
     agent_tool: {
       name: "moondog_music_catalog_search",
-      label: "Search outside your library",
+      label: N_("Search outside your library"),
     },
   },
   {
@@ -230,7 +233,7 @@ const catalog = [
     requires_music_similarity: true,
     agent_tool: {
       name: "moondog_music_artist_similarity",
-      label: "Find music nearby",
+      label: N_("Find music nearby"),
     },
   },
   {
@@ -242,7 +245,7 @@ const catalog = [
     requires_memory: true,
     agent_tool: {
       name: "moondog_memory_recall",
-      label: "Remember what you've told me",
+      label: N_("Remember what you've told me"),
     },
   },
   {
@@ -255,7 +258,7 @@ const catalog = [
     requires_memory: true,
     agent_tool: {
       name: "moondog_memory_remember",
-      label: "Remember something you said",
+      label: N_("Remember something you said"),
     },
   },
   {
@@ -267,7 +270,7 @@ const catalog = [
     requires_memory: true,
     agent_tool: {
       name: "moondog_memory_forget",
-      label: "Forget something",
+      label: N_("Forget something"),
     },
   },
   {
@@ -287,7 +290,7 @@ const catalog = [
     requires_spotify: true,
     agent_tool: {
       name: "moondog_spotify_player_status",
-      label: "Check what Spotify is playing",
+      label: N_("Check what Spotify is playing"),
     },
   },
   {
@@ -300,7 +303,7 @@ const catalog = [
     requires_spotify: true,
     agent_tool: {
       name: "moondog_spotify_now_playing",
-      label: "See what's playing in detail",
+      label: N_("See what's playing in detail"),
     },
   },
   {
@@ -312,7 +315,7 @@ const catalog = [
     requires_spotify: true,
     agent_tool: {
       name: "moondog_spotify_player_control",
-      label: "Control Spotify playback",
+      label: N_("Control Spotify playback"),
     },
   },
   {
@@ -325,7 +328,7 @@ const catalog = [
     requires_spotify: true,
     agent_tool: {
       name: "moondog_spotify_queue_add",
-      label: "Add to Spotify queue",
+      label: N_("Add to Spotify queue"),
     },
   },
   {
@@ -336,7 +339,7 @@ const catalog = [
     description: "Queue a bounded artist-similarity selection from current Spotify playback, with filtering and partial receipts.",
     requires_spotify: true,
     requires_music_similarity: true,
-    agent_tool: { name: "moondog_spotify_queue_similar", label: "Queue more like this on Spotify" },
+    agent_tool: { name: "moondog_spotify_queue_similar", label: N_("Queue more like this on Spotify") },
   },
   {
     id: "spotify.queue.status",
@@ -348,7 +351,7 @@ const catalog = [
     requires_spotify: true,
     agent_tool: {
       name: "moondog_spotify_queue_status",
-      label: "See what's queued on Spotify",
+      label: N_("See what's queued on Spotify"),
     },
   },
   {
@@ -361,7 +364,7 @@ const catalog = [
     requires_spotify: true,
     agent_tool: {
       name: "moondog_spotify_devices",
-      label: "See your Spotify devices",
+      label: N_("See your Spotify devices"),
     },
   },
   {
@@ -374,7 +377,7 @@ const catalog = [
     requires_spotify: true,
     agent_tool: {
       name: "moondog_spotify_device_transfer",
-      label: "Move Spotify playback",
+      label: N_("Move Spotify playback"),
     },
   },
   {
@@ -388,7 +391,7 @@ const catalog = [
     requires_playlist_services: true,
     agent_tool: {
       name: "moondog_spotify_resolve_tracks",
-      label: "Find your songs on Spotify",
+      label: N_("Find your songs on Spotify"),
     },
   },
   {
@@ -398,27 +401,27 @@ const catalog = [
     effect: "read_external",
     description: "Read bounded Spotify top artists or tracks as transient calculated-affinity evidence.",
     requires_spotify: true,
-    agent_tool: { name: "moondog_spotify_top", label: "Your Spotify top artists and tracks" },
+    agent_tool: { name: "moondog_spotify_top", label: N_("Your Spotify top artists and tracks") },
   },
   {
     id: "spotify.library.browse", version: "1", state: "enabled", effect: "read_external", requires_spotify: true,
     description: "Browse bounded pages of saved Spotify tracks, albums, and shows.",
-    agent_tool: { name: "moondog_spotify_library_browse", label: "Browse your Spotify library" },
+    agent_tool: { name: "moondog_spotify_library_browse", label: N_("Browse your Spotify library") },
   },
   {
     id: "spotify.history.recent", version: "1", state: "enabled", effect: "read_external", requires_spotify: true,
     description: "Read a bounded page of recent Spotify listening with timestamps and cursors.",
-    agent_tool: { name: "moondog_spotify_history_recent", label: "Read recent Spotify listening" },
+    agent_tool: { name: "moondog_spotify_history_recent", label: N_("Read recent Spotify listening") },
   },
   {
     id: "spotify.catalog.items", version: "1", state: "enabled", effect: "read_external", requires_spotify: true,
     description: "Read bounded album tracks or podcast episodes from a selected host reference.",
-    agent_tool: { name: "moondog_spotify_catalog_items", label: "Browse album tracks or podcast episodes" },
+    agent_tool: { name: "moondog_spotify_catalog_items", label: N_("Browse album tracks or podcast episodes") },
   },
   {
     id: "spotify.library.remove", version: "1", state: "enabled", effect: "write_external", requires_spotify: true,
     description: "Confirm removal of one selected saved track, album, episode, show, or owned private playlist.",
-    agent_tool: { name: "moondog_spotify_library_remove", label: "Remove a saved Spotify item" },
+    agent_tool: { name: "moondog_spotify_library_remove", label: N_("Remove a saved Spotify item") },
   },
   {
     id: "spotify.search",
@@ -430,7 +433,7 @@ const catalog = [
     requires_spotify: true,
     agent_tool: {
       name: "moondog_spotify_search",
-      label: "Search Spotify",
+      label: N_("Search Spotify"),
     },
   },
   {
@@ -442,7 +445,7 @@ const catalog = [
     requires_spotify: true,
     agent_tool: {
       name: "moondog_spotify_library_check",
-      label: "Check Spotify saved tracks",
+      label: N_("Check Spotify saved tracks"),
     },
   },
   {
@@ -454,7 +457,7 @@ const catalog = [
     requires_spotify: true,
     agent_tool: {
       name: "moondog_spotify_library_save",
-      label: "Save tracks to Spotify library",
+      label: N_("Save tracks to Spotify library"),
     },
   },
   {
@@ -467,7 +470,7 @@ const catalog = [
     requires_spotify: true,
     agent_tool: {
       name: "moondog_spotify_playlist_read",
-      label: "Look at your Spotify playlists",
+      label: N_("Look at your Spotify playlists"),
     },
   },
   {
@@ -477,12 +480,12 @@ const catalog = [
     effect: "write_external",
     description: "Apply one exact user-authorized rename or unambiguous single-track removal to an inspected owned private playlist.",
     requires_spotify: true,
-    agent_tool: { name: "moondog_spotify_playlist_edit_quick", label: "Make an exact playlist edit" },
+    agent_tool: { name: "moondog_spotify_playlist_edit_quick", label: N_("Make an exact playlist edit") },
   },
   {
     id: "spotify.playlist.remove", version: "1", state: "enabled", effect: "write_external", requires_spotify: true,
     description: "Confirm and remove an owned private playlist from the current user's library without claiming global deletion.",
-    agent_tool: { name: "moondog_spotify_playlist_remove", label: "Remove a playlist from your library" },
+    agent_tool: { name: "moondog_spotify_playlist_remove", label: N_("Remove a playlist from your library") },
   },
   {
     id: "spotify.playlist.edit.preview",
@@ -494,7 +497,7 @@ const catalog = [
     requires_spotify: true,
     agent_tool: {
       name: "moondog_spotify_playlist_edit_preview",
-      label: "Preview a playlist change",
+      label: N_("Preview a playlist change"),
     },
   },
   {
@@ -507,7 +510,7 @@ const catalog = [
     requires_spotify: true,
     agent_tool: {
       name: "moondog_spotify_playlist_edit_apply",
-      label: "Change a Spotify playlist",
+      label: N_("Change a Spotify playlist"),
     },
   },
   {
@@ -521,7 +524,7 @@ const catalog = [
     requires_playlist_services: true,
     agent_tool: {
       name: "moondog_spotify_playlist_write",
-      label: "Save the playlist to Spotify",
+      label: N_("Save the playlist to Spotify"),
     },
   },
   {

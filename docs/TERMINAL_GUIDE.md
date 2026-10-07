@@ -142,8 +142,9 @@ On a fresh install it follows your system language (`LANG`), and the `MOONDOG_LA
 The chosen language also sets the language of your saved listening profile the next time you build it with `/profile build`.
 Names of artists, albums, songs, and playlists stay exactly as they are.
 
-Moondog's own confirmations, Spotify receipts, and errors are translated.
-Menus, the import guide, and other screen text are still English for now.
+Moondog's own confirmations, Spotify receipts, and errors are translated, and so are the menus, the import guide, help, the profile view, and the footers.
+Screen text follows your chosen language and switches as soon as you use `/language`.
+Output from shell commands such as `moondog spotify ...` stays English.
 To add a language, see [Translating Moondog](TRANSLATING.md).
 
 ## Personal lyric library

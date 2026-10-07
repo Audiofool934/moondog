@@ -5,6 +5,7 @@ import {
   truncateToWidth,
   visibleWidth,
 } from "@earendil-works/pi-tui";
+import { screenTranslator } from "../../i18n/index.mjs";
 
 function paintLine(value, width, theme) {
   const clipped = truncateToWidth(value, width, "");
@@ -16,7 +17,8 @@ function paintLine(value, width, theme) {
 
 /** A searchable Pi menu that keeps its own contents inside the viewport. */
 export class ListeningMenu {
-  constructor({ items, title, getTheme, getRows, currentValue }) {
+  constructor({ items, title, getTheme, getRows, currentValue, getText = () => screenTranslator("en") }) {
+    this.getText = getText;
     this.items = items;
     this.title = title;
     this.getTheme = getTheme;
@@ -125,9 +127,10 @@ export class ListeningMenu {
     const title = theme.bold(truncateToWidth(this.title, titleWidth, ""));
     const heading = title + " ".repeat(Math.max(1, inner - visibleWidth(title) - count.length)) + theme.muted(count);
     const search = this.input.render(inner)[0];
+    const tr = this.getText();
     const hint = theme.muted(inner >= 55
-      ? "type to filter  ↑↓ choose  enter select  esc back"
-      : inner >= 29 ? "↑↓ choose  enter ↵  esc back" : "↑↓  ↵  esc");
+      ? tr("type to filter  ↑↓ choose  enter select  esc back")
+      : inner >= 29 ? tr("↑↓ choose  enter ↵  esc back") : "↑↓  ↵  esc");
     let lines;
     if (budget < 4) {
       // An exceptionally short terminal has no room for separate chrome rows.
@@ -144,7 +147,7 @@ export class ListeningMenu {
       // The title owns the item count; omit SelectList's additional scroll-info row.
       const candidates = this.filteredItems.length
         ? this.select.render(inner).slice(0, this.capacity)
-        : [theme.muted("Nothing matches. Backspace to widen the search.")];
+        : [theme.muted(tr("Nothing matches. Backspace to widen the search."))];
       let labels = [heading, search];
       if (compactBox) {
         const labelWidth = Math.max(1, Math.floor(inner / 2));

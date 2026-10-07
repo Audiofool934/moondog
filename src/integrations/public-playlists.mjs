@@ -98,6 +98,7 @@ export async function readPublicPlaylist({ input, subjectId, capturedAt, provide
     digest: musicHash(bytes), size: bytes.length, members: ["public-playlist.json"], fileName: name, skipped: songs.length - rows.length,
     scopeNote: `${rows.length} of ${total ?? "an unknown number of"} songs could be read; the service hides some. Only this playlist is added. It shows what you keep, not what you played, and it may not be one you made.`,
   });
+  prepared.preview.source = "public-playlist";
   prepared.preview.availableTracks = rows.length;
   prepared.preview.totalTracks = total;
   return prepared;

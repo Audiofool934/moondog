@@ -26,6 +26,7 @@ export function prepareSpotifyQuickImport({ page, librarySnapshot = null, librar
     libraryBundle: library?.bundle ?? null,
     preview: {
       kind: "spotify-quick",
+      source: library ? "spotify-quick-library" : "spotify-quick-recent",
       sourceLabel: library ? "Your Spotify library and recent plays" : "Spotify recent listening",
       capturedAt,
       listeningEvents: bundle.listening_events.length,
@@ -143,6 +144,7 @@ export async function prepareHistoryImport({ filePath, subjectId, provider: sele
       bundle,
       preview: {
         kind: "library",
+        source: "apple-library",
         sourceLabel: "Apple Music library",
         fileName: path.basename(resolvedPath),
         tracks: bundle.trackRefs.length,
@@ -171,6 +173,7 @@ export async function prepareHistoryImport({ filePath, subjectId, provider: sele
     provider,
     bundle,
     preview: {
+      source: provider === "listenbrainz" ? "listenbrainz" : extended ? "spotify-extended" : "spotify-account",
       sourceLabel: provider === "listenbrainz" ? "ListenBrainz history" : extended ? "Spotify Extended Streaming History" : "Spotify Account Data",
       fileName: path.basename(resolvedPath),
       sourceFormat: bundle.import_batch.source_format,
