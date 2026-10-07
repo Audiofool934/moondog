@@ -640,7 +640,7 @@ test("Pi agent plans from bounded external catalog candidates without a library 
       assert.equal(revision.candidate_scope, "external_catalog");
       assert.equal(revision.discovery_sources.length, 1);
       assert.equal(revision.discovery_sources[0].provider, "apple_music");
-      assert.equal(product.playlist_response_language, "zh");
+      assert.equal(product.reply_language, "zh");
       assert.doesNotMatch(JSON.stringify(revision), /Invented|slow tempo|soft piano|crescendo|brass/u);
       return fauxAssistantMessage(
         [
@@ -776,7 +776,7 @@ test(`Pi agent branches from a trusted ${seedOrigin} seed through open artist si
   const seedResponses = seedOrigin === "profile" ? [
     (context) => {
       const seed = trustedProductContext(context).selected_profile_track;
-      assert.equal(trustedProductContext(context).playlist_response_language, "en");
+      assert.equal(trustedProductContext(context).reply_language, "en");
       assert.equal(seed.title, profileSeed.label);
       assert.equal(seed.artist_credit, profileSeed.artistCredit);
       assert.equal(seed.source, "user_selected_profile_track");

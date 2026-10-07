@@ -1,3 +1,4 @@
+import { LOCALES } from "../../i18n/index.mjs";
 import { Agent } from "@earendil-works/pi-agent-core";
 import { Type } from "@earendil-works/pi-ai";
 import { createConfiguredRuntime } from "./configured-runtime.mjs";
@@ -101,6 +102,7 @@ export class ProfileBuildRuntime {
         model: this.model, tools, messages: [],
         systemPrompt: [...COMMON, ...(check ? CHECKER : WRITER),
           ...(revision ? ["Revise the candidate: fix every listed issue, keep everything that is sound, and submit the complete revised profile."] : []),
+          ...(!check && session.language && session.language !== "en" ? [`Write the summary and insights in ${LOCALES[session.language]?.name ?? "English"}. Keep artist, album, song and playlist names exactly as they are.`] : []),
         ].join("\n"),
       },
       streamFn: (model, context, options) => this.models.streamSimple(model, context, {

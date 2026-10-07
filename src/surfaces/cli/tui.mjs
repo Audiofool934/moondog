@@ -1,3 +1,4 @@
+import { LOCALES, normalizeLocale } from "../../i18n/index.mjs";
 import {
   CombinedAutocompleteProvider,
   Container,
@@ -90,6 +91,7 @@ const slashCommands = [
   { name: "lyrics", description: "Your lyric library, or sync more songs" },
   { name: "import", description: "Bring in your listening history or library" },
   { name: "theme", description: "Paper, charcoal, or your terminal colors" },
+  { name: "language", description: "The language Moondog replies in" },
   { name: "art", description: "Braille, ASCII, or a quiet opening" },
   { name: "motion", description: "Turn the animation on or off" },
   { name: "commands", description: "Search every command" },
@@ -194,6 +196,7 @@ export async function runMoondogTui({
   providers = listPiProviders,
   models = listPiModels,
   refreshModels,
+  saveLanguage,
   environment = process.env,
 }) {
   if (providers === listPiProviders && models === listPiModels) {
@@ -1523,6 +1526,25 @@ export async function runMoondogTui({
       sleeve.invalidate();
       setFooter(`${theme.mode === "paper" ? "Paper" : theme.mode === "charcoal" ? "Charcoal" : "Terminal"} theme, for this session.`);
       tui.requestRender(true);
+      return;
+    }
+    if (command === "language") {
+      const wanted = args.join(" ").trim().toLocaleLowerCase();
+      const match = Object.entries(LOCALES).find(([code, value]) =>
+        [code, value.name.toLocaleLowerCase(), value.nativeName.toLocaleLowerCase()].includes(wanted));
+      if (wanted && !match) throw new Error(`Use /language, or /language ${Object.keys(LOCALES).join(", ")}.`);
+      let locale = match?.[0];
+      if (!locale) {
+        const selected = await choose(Object.entries(LOCALES).map(([code, value]) => ({
+          value: code, label: value.nativeName, description: value.name,
+        })), application.locale, "Reply language");
+        locale = selected?.value;
+      }
+      if (!locale) { setFooter("Language unchanged."); return; }
+      application.locale = locale;
+      await saveLanguage?.(locale);
+      const pinned = normalizeLocale(environment.MOONDOG_LANGUAGE);
+      setFooter(`${LOCALES[locale].nativeName}: replies use it unless you write in another language.${pinned && pinned !== locale ? " MOONDOG_LANGUAGE still sets the next start." : ""}`, success);
       return;
     }
     if (command === "art") {

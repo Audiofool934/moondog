@@ -58,6 +58,7 @@ export async function runListenerProfileBuild({
   };
   const session = {
     phase: phase(), manifest: input.manifest, dossier: listenerProfileDossier(input), progress,
+    language: application.locale ?? "en",
     get candidate() { return candidate; },
     get check() { return latestCheck(); },
     search: args => {

@@ -12,7 +12,8 @@ import {
 } from "./capability-catalog.mjs";
 import { recoverArtistReleasesWithCrossCatalogIdentity } from "../integrations/cross-catalog-artist-identity.mjs";
 import { normalizeMemoryContent } from "../memory/local-memory-store.mjs";
-import { playbackFollowupIntent, queueListeningIntent, queueCancellationRequested, trackVersionFamily, playbackDeviceExplicitlyRequested, playbackDeviceConstraints, standaloneDeviceTransferRequested } from "./spotify-listening-intent.mjs";
+import { playbackFollowupIntent, queueListeningIntent, queueCancellationRequested, trackVersionFamily, playbackDeviceExplicitlyRequested, playbackDeviceConstraints, standaloneDeviceTransferRequested, unheardRequested } from "./spotify-listening-intent.mjs";
+import { DEFAULT_LOCALE, normalizeLocale } from "../i18n/index.mjs";
 
 const minimumNodeVersion = [22, 19, 0];
 
@@ -172,9 +173,12 @@ export class MoondogApplication {
     musicSimilarity = null,
     artistIdentityResolver = null,
     webResearch = null,
+    locale = DEFAULT_LOCALE,
     now = Date.now,
   } = {}) {
     this.importsRoot = importsRoot;
+    // The listener's language: replies follow each message, and fall back to this.
+    this.locale = normalizeLocale(locale) ?? DEFAULT_LOCALE;
     this.domainServices = domainServices;
     this.domainServicesError =
       typeof domainServicesError === "string" &&
@@ -1313,7 +1317,7 @@ export class MoondogApplication {
       evidence_limit: "Spotify catalog matches, not audio analysis, guaranteed playback availability or proof of preference. Retained listening is not an exclusion unless explicitly requested. Candidate queries may originate in model knowledge or public web research." };
   }
 
-  async spotifyQueueBatch({ itemRefs, deviceId } = {}, { signal } = {}) {
+  async spotifyQueueBatch({ itemRefs, count, deviceId } = {}, { signal } = {}) {
     signal?.throwIfAborted();
     this.requireSpotifyNonRemovalAction();
     const transaction = this.pendingPlaylistPromptTransaction;
@@ -1325,7 +1329,9 @@ export class MoondogApplication {
     if (intent?.clarification_only) throw spotifyResolutionError("spotify_queue_already_handled", "The previous queue operation already has a receipt. This clarification does not replay accepted, failed or uncertain writes; inspect that receipt before making a new request.");
     if (transaction.queueBatchAttempted || transaction.queueWriteCount > 0) throw spotifyResolutionError("spotify_queue_batch_already_attempted", "A queue write was already attempted for this request. Report its receipt without replaying it.");
     if (!Array.isArray(itemRefs) || itemRefs.length < 1 || itemRefs.length > 36 || new Set(itemRefs).size !== itemRefs.length) throw spotifyResolutionError("invalid_queue_batch", "Choose up to 36 distinct host-issued Spotify track references in preference order; at most 12 will be queued.");
-    const requested = intent?.requested ?? Math.min(itemRefs.length, 12);
+    // The host's own parse wins; otherwise the model reports the number the listener
+    // named in their language; otherwise a sensible batch from the candidates.
+    const requested = intent?.requested ?? count ?? Math.min(itemRefs.length, 12);
     if (!Number.isInteger(requested) || requested < 1 || requested > 12) throw spotifyResolutionError("spotify_queue_count_limit", "A queue request supports 1 to 12 songs. No write was sent.");
     const items = itemRefs.map(ref => this.requireSpotifyReadItem(ref, ["track"]));
     this.requireSpotifyWriteScopes(["user-modify-playback-state"]);
@@ -1443,7 +1449,7 @@ export class MoondogApplication {
     if (!Number.isInteger(count) || count < 1 || count > 12) {
       throw spotifyResolutionError("invalid_similar_queue_count", "The similar queue count must be an integer from 1 to 12.");
     }
-    if (queueIntent && !/\bsimilar\b|\blike\b|类似|相似|像|这种|这样/iu.test(this.pendingPlaylistPromptTransaction.userText)) throw spotifyResolutionError("spotify_style_discovery_required", "This listener requested a style-based queue, not current-artist adjacency. Use Spotify discovery queries, optionally informed by music knowledge or web research, then queue the verified batch.");
+    if (queueIntent && !/\bsimilar\b|\blike\b|类似|相似|像|这种|这样|parecid|similares?\b|como (?:esta|esto|la que suena)/iu.test(this.pendingPlaylistPromptTransaction.userText)) throw spotifyResolutionError("spotify_style_discovery_required", "This listener requested a style-based queue, not current-artist adjacency. Use Spotify discovery queries, optionally informed by music knowledge or web research, then queue the verified batch.");
     if (this.pendingPlaylistPromptTransaction?.similarQueueAttempted) {
       throw spotifyResolutionError("spotify_similar_queue_already_attempted", "Similar queue was already attempted for this request. Check its receipt before starting another request.");
     }
@@ -1654,7 +1660,7 @@ export class MoondogApplication {
   requireSpotifyPlaylistCreationFlow() {
     this.requireSpotifyNonRemovalAction();
     const transaction = this.pendingPlaylistPromptTransaction;
-    if (transaction?.queueIntent && !/(?:create|save|sync)\b[^.!?]{0,40}\bplaylist|创建歌单|保存歌单|同步歌单/iu.test(transaction.userText)) throw spotifyResolutionError("spotify_queue_not_playlist", "This listener requested a playback queue, not playlist creation. Queue verified Spotify references directly; no playlist confirmation is needed.");
+    if (transaction?.queueIntent && !/(?:create|save|sync)\b[^.!?]{0,40}\bplaylist|创建歌单|保存歌单|同步歌单|\b(?:crea|crear|guarda|guardar|sincroniza)\b[^.!?]{0,40}\b(?:playlist|lista)/iu.test(transaction.userText)) throw spotifyResolutionError("spotify_queue_not_playlist", "This listener requested a playback queue, not playlist creation. Queue verified Spotify references directly; no playlist confirmation is needed.");
     if (this.pendingSpotifyRemoval || transaction?.removalPreviewAttempted || transaction?.removalAttempted || transaction?.playlistEditPreviewAttempted || transaction?.playlistEditAttempted || transaction?.quickEditAttempted) {
       throw spotifyResolutionError("spotify_confirmation_flow_conflict", "Finish the displayed playlist action before creating a different playlist.");
     }
@@ -2761,7 +2767,7 @@ export class MoondogApplication {
     const registered = domainServices.registerExternalCandidateSet({
       tracks: result.tracks,
       source: result.source,
-      excludeKnown: /没听过|从未听|不要听过|\bunheard\b|\bnever heard\b|outside.*library|曲库之外/iu.test(this.pendingPlaylistPromptTransaction?.userText ?? ""),
+      excludeKnown: unheardRequested(this.pendingPlaylistPromptTransaction?.userText),
     });
     if (registered.result_count > 0) {
       this.recordPromptDiscoverySource(registered.source);
@@ -2806,7 +2812,7 @@ export class MoondogApplication {
     const registered = domainServices.registerExternalCandidateSet({
       tracks: result.tracks,
       source: result.source,
-      excludeKnown: /没听过|从未听|不要听过|\bunheard\b|\bnever heard\b|outside.*library|曲库之外/iu.test(this.pendingPlaylistPromptTransaction?.userText ?? ""),
+      excludeKnown: unheardRequested(this.pendingPlaylistPromptTransaction?.userText),
     });
     if (registered.result_count > 0) {
       this.recordPromptDiscoverySource(registered.source);

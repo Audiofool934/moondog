@@ -2020,6 +2020,30 @@ test("home, appearance controls, and the import guide never call a model or disc
   assert.equal(modelCalls, 0);
 });
 
+test("/language switches and saves the reply language without a model call", async (context) => {
+  const terminal = new FakeTerminal();
+  const signalTarget = new EventEmitter();
+  const saved = [];
+  const application = { ...fakeApplication(), locale: "en" };
+  const running = runMoondogTui({
+    application, runtime: fakeRuntime(), terminal, signalTarget, saveLanguage: async locale => { saved.push(locale); },
+    environment: { TERM: "xterm-256color", MOONDOG_ART: "text", MOONDOG_MOTION: "off" },
+  });
+  context.after(async () => { signalTarget.emit("SIGTERM"); await running; });
+  await waitForStart(terminal);
+  terminal.output = "";
+  terminal.send("/language español");
+  terminal.send("\r");
+  await waitFor(() => stripVTControlCharacters(terminal.output).includes("Español: replies use it"));
+  assert.equal(application.locale, "es");
+  assert.deepEqual(saved, ["es"]);
+  terminal.output = "";
+  terminal.send("/language klingon");
+  terminal.send("\r");
+  await waitFor(() => stripVTControlCharacters(terminal.output).includes("Use /language"));
+  assert.equal(application.locale, "es");
+});
+
 test("Tab focuses home actions and Down then Enter opens the import guide without a model call", async (context) => {
   const terminal = new FakeTerminal();
   const signalTarget = new EventEmitter();

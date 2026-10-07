@@ -62,6 +62,7 @@ import {
 } from "../src/profile/spotify-archive-taste.mjs";
 import { deriveArtistReleaseHintsFromSpotifyArchive } from "../src/profile/spotify-archive-catalog-hints.mjs";
 import { runMoondogStudio } from "../src/surfaces/web/studio.mjs";
+import { resolveListenerLocale, writeLanguagePreference } from "../src/i18n/preferences.mjs";
 
 const localCommands = new Set([
   "status",
@@ -835,6 +836,7 @@ async function main() {
   const webResearch = await createCodexWebResearch();
   const application = new MoondogApplication({
     ...domainState,
+    locale: await resolveListenerLocale(),
     webResearch,
     memoryStore,
     spotifyConnection,
@@ -946,6 +948,7 @@ async function main() {
         return prepareTuiHistoryImport(undefined, { recentPage, librarySnapshot, libraryUnavailable });
       },
       openImportHelp,
+      saveLanguage: locale => writeLanguagePreference(locale),
       refreshImportedData: async (receipt) => {
         if (receipt?.provider === "apple-music-library") await refreshAppleLibraryImport();
         const next = await loadDomainServices();
