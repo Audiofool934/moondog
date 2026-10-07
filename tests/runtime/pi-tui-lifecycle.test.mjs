@@ -10,6 +10,7 @@ import path from "node:path";
 import test from "node:test";
 
 import { parseTuiArguments, runMoondogTui } from "../../src/surfaces/cli/tui.mjs";
+import { SPOTIFY_DEFAULT_SCOPES } from "../../src/integrations/spotify/authentication.mjs";
 import { runProfileCommand } from "../../src/surfaces/cli/profile-command.mjs";
 import { openListeningHistoryStore } from "../../src/profile/listening-history-store.mjs";
 import { openLocalMemoryStore } from "../../src/memory/local-memory-store.mjs";
@@ -581,7 +582,7 @@ async function createGuidedImportFixture(context, options = {}) {
   const running = runMoondogTui({
     application: {
       ...fakeApplication(),
-      spotifyStatus: () => options.spotifyStatus?.() ?? { state: "ready", client_id_configured: true, scopes: { granted: ["user-read-recently-played"] } },
+      spotifyStatus: () => options.spotifyStatus?.() ?? { state: "ready", client_id_configured: true, scopes: { granted: [...SPOTIFY_DEFAULT_SCOPES] } },
       profileServicesReady: () => calls.commits > 0,
       async runLocalCommand(command) { assert.equal(command, "taste"); return profile; },
       async getProfileSummary() { calls.profiles += 1; return profile; },
@@ -625,7 +626,7 @@ test("Spotify quick start previews without saving, returns to quick start on can
   fixture.terminal.send("\r");
   await fixture.outputIncludes("Import from Spotify");
   terminal.send("\r");
-  await fixture.outputIncludes("Preview recent listening");
+  await fixture.outputIncludes("Preview my Spotify");
   terminal.send("\r");
   await fixture.outputIncludes("Review recent listening");
   assert.equal(calls.commits, 0);
@@ -656,7 +657,7 @@ for (const condition of ["empty", "forbidden"]) {
   fixture.terminal.send("\r");
   await fixture.outputIncludes("Import from Spotify");
     terminal.send("\r");
-    await fixture.outputIncludes("Preview recent listening");
+    await fixture.outputIncludes("Preview my Spotify");
     terminal.send("\r");
     await fixture.outputIncludes(condition === "empty" ? "Silence from Spotify" : "Spotify said no");
     assert.equal(calls.commits, 0);
@@ -666,11 +667,47 @@ for (const condition of ["empty", "forbidden"]) {
   });
 }
 
-test("Spotify quick start authorizes for history only and resumes the guide without importing", async (context) => {
+test("Spotify quick start previews the library with recent plays and saves both in one step", async (context) => {
+  const fixture = await createGuidedImportFixture(context, {
+    preview: { kind: "spotify-quick", sourceLabel: "Your Spotify library and recent plays", listeningEvents: 0,
+      library: { savedTracks: 3, savedAlbums: 1, followedArtists: 2, playlists: 1, playlistTracks: 4, topArtists: 5, topTracks: 6, profileEvidence: 22, truncated: [], skippedPlaylists: 0 } },
+    commit: async () => ({ inserted_events: 0, duplicate_events: 0, inserted_profile_evidence: 22 }),
+  });
+  await fixture.submit("/import", "Bring your music");
+  fixture.terminal.send("\r");
+  await fixture.outputIncludes("Import from Spotify");
+  fixture.terminal.send("\r");
+  await fixture.outputIncludes("Preview my Spotify");
+  fixture.terminal.send("\r");
+  await fixture.outputIncludes("Review your Spotify");
+  assert.match(fixture.screen(), /3 saved songs · 1 saved album · 2 followed artists/u);
+  assert.match(fixture.screen(), /4 songs across 1 playlist you made/u);
+  assert.match(fixture.screen(), /No recent plays from Spotify right now/u);
+  fixture.terminal.send("\r");
+  await fixture.outputIncludes("Your listening profile");
+  assert.equal(fixture.calls.commits, 1);
+  fixture.terminal.send("\x1b");
+  await fixture.outputIncludes("Your Spotify is in");
+  assert.match(fixture.screen(), /^ 22 saved songs, albums, follows, playlist entries, and\s+Spotify top picks/mu);
+});
+
+test("an older recent-plays-only sign-in is asked to reconnect for the library but can still import recent plays", async (context) => {
+  const fixture = await createGuidedImportFixture(context, {
+    spotifyStatus: () => ({ state: "ready", client_id_configured: true, scopes: { granted: ["user-read-recently-played"] } }),
+  });
+  await fixture.submit("/import", "Bring your music");
+  fixture.terminal.send("\r");
+  await fixture.outputIncludes("Import from Spotify");
+  fixture.terminal.send("\r");
+  await fixture.outputIncludes("Your Spotify sign-in only covers recent plays.");
+  assert.match(fixture.screen(), /Just my recent plays/u);
+});
+
+test("Spotify quick start signs in once for import and control and resumes the guide without importing", async (context) => {
   let connected = false;
   const commands = [];
   const fixture = await createGuidedImportFixture(context, {
-    spotifyStatus: () => ({ client_id_configured: true, state: connected ? "ready" : "not_authenticated", scopes: { granted: connected ? ["user-read-recently-played"] : [] } }),
+    spotifyStatus: () => ({ client_id_configured: true, state: connected ? "ready" : "not_authenticated", scopes: { granted: connected ? [...SPOTIFY_DEFAULT_SCOPES] : [] } }),
     async runSpotify(args) { commands.push(args); connected = true; },
   });
   await fixture.submit("/import", "Bring your music");
@@ -680,9 +717,9 @@ test("Spotify quick start authorizes for history only and resumes the guide with
   await fixture.outputIncludes("Connect Spotify");
   fixture.terminal.send("\r");
   await fixture.outputIncludes("Spotify is connected.");
-  assert.deepEqual(commands, [["login", "--history-only"]]);
+  assert.deepEqual(commands, [["login"]]);
   assert.equal(fixture.calls.commits, 0);
-  assert.match(fixture.screen(), /Preview recent listening/u);
+  assert.match(fixture.screen(), /Preview my Spotify/u);
   assert.equal(fixture.terminal.stopCount, 1);
   assert.equal(fixture.terminal.startCount, 2);
 });
@@ -940,7 +977,7 @@ for (const [label, receipt, expected] of [
   ["richer replacements", { inserted_events: 2, superseded_events: 2, effective_event_delta: 0 }, "The profile's play count is unchanged."],
   ["new records alongside replacements", { inserted_events: 3, superseded_events: 2, effective_event_delta: 1 }, "The profile has 1 more play."],
   ["deferred overlap reconciliation", { inserted_events: 0, superseded_events: 1, effective_event_delta: -1, already_imported: true }, "The profile has 1 fewer play after reconciling overlaps."],
-  ["new collection evidence from a known history archive", { inserted_events: 0, inserted_profile_evidence: 3, already_imported: true }, "Also 3 saved songs, follows, or playlist entries."],
+  ["new collection evidence from a known history archive", { inserted_events: 0, inserted_profile_evidence: 3, already_imported: true }, "3 saved songs, follows, or playlist entries."],
   ["an unchanged repeat", { inserted_events: 0, duplicate_events: 2, already_imported: true }, "Already up to date. There was nothing new in this one."],
 ]) {
   test(`guided import receipt explains ${label}`, async (context) => {

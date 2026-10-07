@@ -1093,26 +1093,31 @@ export async function runMoondogTui({
     importOrigin = "quick";
     const view = importView;
     setBusy(true);
-    setImportPage("working", { message: "Asking Spotify for your recent listening..." });
+    setImportPage("working", { message: "Asking Spotify for your library and recent listening..." });
     setFooter("Reading from Spotify. Nothing is added until you say so.");
+    const stages = { saved_tracks: "saved songs", saved_albums: "saved albums", followed_artists: "followed artists", playlists: "playlists", playlist_items: "playlist songs", top_items: "top artists and tracks" };
+    const onProgress = ({ stage, count }) => {
+      if (cleanedUp || importView !== view || !stages[stage]) return;
+      setImportPage("working", { message: `Reading your Spotify library: ${count} ${stages[stage]}...` });
+    };
     try {
       if (typeof prepareRecentImport !== "function") throw new Error("Recent listening isn't available when Moondog is started this way. A history ZIP still works.");
-      const prepared = await prepareRecentImport();
+      const prepared = await prepareRecentImport({ onProgress });
       if (cleanedUp || importView !== view) { prepared.close?.(); return; }
-      if (!prepared.preview.listeningEvents) {
+      if (!prepared.preview.listeningEvents && !prepared.preview.library?.profileEvidence) {
         prepared.close?.();
         setImportPage("empty");
         setFooter("Nothing to import yet. Try again later, or bring a ZIP.");
       } else {
         preparedImport = prepared;
         setImportPage("preview", { preview: prepared.preview });
-        setFooter("Here's your recent listening. Nothing is added until you import it.", success);
+        setFooter("Here's what Spotify has. Nothing is added until you import it.", success);
       }
     } catch (error) {
       if (cleanedUp || importView !== view) return;
       const messages = {
         spotify_action_forbidden: "Spotify said no. Make sure this account is listed under User Management in your Spotify app, and that the app owner has Premium. A history ZIP works either way.",
-        spotify_scope_insufficient: "Spotify needs one more permission. Reconnect Spotify to allow recent listening.",
+        spotify_scope_insufficient: "Spotify needs one more permission. Choose Reconnect Spotify.",
         spotify_authentication_required: "Your Spotify sign-in has expired. Choose Reconnect Spotify.",
         spotify_quota_exceeded: "Your Spotify app has used up its quota for now. A downloaded history ZIP still works.",
         spotify_rate_limited: "Spotify wants us to slow down. Wait a minute and try again, or use a history ZIP.",
@@ -1134,11 +1139,12 @@ export async function runMoondogTui({
     if (!configuring) tui.stop({ preserveScreen: true });
     try {
       if (typeof runSpotify !== "function") throw new Error("Spotify isn't available when Moondog is started this way.");
-      await runSpotify(configuring ? ["configure", clientId] : ["login", "--history-only"], { signal: importAuthController.signal });
+      // One sign-in covers import and listening control, so a later connect never narrows it.
+      await runSpotify(configuring ? ["configure", clientId] : ["login"], { signal: importAuthController.signal });
       if (cleanedUp || importView !== view) return;
       if (typeof rebuildRuntime === "function") await replaceRuntime();
       if (cleanedUp || importView !== view) return;
-      setImportPage("quick", { message: configuring ? "App saved. Now connect Spotify." : "Spotify is connected. Next, preview your recent listening." });
+      setImportPage("quick", { message: configuring ? "App saved. Now connect Spotify." : "Spotify is connected. Next, preview what Moondog will bring in." });
       setFooter("Connected. Nothing imported yet.", success);
     } catch (error) {
       if (!cleanedUp && importView === view) {
@@ -1180,14 +1186,15 @@ export async function runMoondogTui({
         : insertedEvents === 0 && !receipt.inserted_profile_evidence && !supersededEvents
         ? "Already up to date. There was nothing new in this one."
         : [
-          supersededEvents
+          ...(insertedEvents || supersededEvents || !receipt.inserted_profile_evidence ? [supersededEvents
             ? `Saved ${insertedEvents} new listening ${insertedEvents === 1 ? "record" : "records"}. ${playCountChange}`
-            : `${insertedEvents} new ${insertedEvents === 1 ? "play" : "plays"}${receipt.duplicate_events ? `, ${receipt.duplicate_events} I already had` : ""}.`,
-          ...(receipt.inserted_profile_evidence ? [`Also ${receipt.inserted_profile_evidence} saved songs, follows, or playlist entries.`] : []),
+            : `${insertedEvents} new ${insertedEvents === 1 ? "play" : "plays"}${receipt.duplicate_events ? `, ${receipt.duplicate_events} I already had` : ""}.`] : []),
+          ...(receipt.inserted_profile_evidence ? [`${insertedEvents || supersededEvents ? "Also " : ""}${receipt.inserted_profile_evidence} ${preview.library ? "saved songs, albums, follows, playlist entries, and Spotify top picks" : "saved songs, follows, or playlist entries"}.`] : []),
         ].join(" ");
       // Keep the durable result visible even if refreshing the runtime later fails.
       addMoondogMessage([
-        preview.kind === "library" ? "## Your Apple Music library is in" : preview.kind === "collection" ? "## Your collection is in" : "## Your history is in",
+        preview.kind === "library" ? "## Your Apple Music library is in" : preview.kind === "collection" ? "## Your collection is in"
+          : preview.library ? "## Your Spotify is in" : "## Your history is in",
         [preview.sourceLabel, preview.fileName].filter(Boolean).join(" · "),
         counts,
         ...(supersededEvents ? [`Reconciled ${supersededEvents} overlapping ${supersededEvents === 1 ? "record" : "records"}, keeping the more detailed listening evidence.`] : []),
@@ -1310,7 +1317,7 @@ export async function runMoondogTui({
     if (cleanedUp) return;
 
     if (
-      ["configure", "login", "logout", "import-history", "sync-recent"].includes(action) &&
+      ["configure", "login", "logout", "import-history", "sync-recent", "sync-library"].includes(action) &&
       typeof rebuildRuntime === "function"
     ) {
       await replaceRuntime();
@@ -1318,7 +1325,7 @@ export async function runMoondogTui({
       renderHeader();
     }
     addMoondogMessage(markdown || "Done.");
-    if (action === "import-history") {
+    if (["import-history", "sync-library"].includes(action)) {
       await showImportedListeningProfile();
       return;
     }

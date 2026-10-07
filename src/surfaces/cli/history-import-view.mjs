@@ -11,6 +11,7 @@ import {
 
 import { sanitizeTerminalText } from "./format-output.mjs";
 import { IMPORT_GUIDE_URLS } from "./import-guides.mjs";
+import { SPOTIFY_LIBRARY_SCOPES } from "../../integrations/spotify/library-snapshot.mjs";
 
 function clean(value) {
   return sanitizeTerminalText(stripVTControlCharacters(String(value ?? "")))
@@ -131,6 +132,32 @@ export class HistoryImportView {
 
   emit(type, detail = {}) { this.onAction?.({ type, ...detail }); }
 
+  spotifyQuickPreview(preview) {
+    const library = preview.library;
+    const plural = (value, one, many) => `${count(value)} ${value === 1 ? one : many}`;
+    const first = day(preview.earliestListeningAt);
+    const last = day(preview.latestListeningAt);
+    return {
+      title: "Review your Spotify",
+      notice: "Nothing is added until you import it.",
+      paragraphs: [
+        clean(preview.sourceLabel),
+        ...(library ? [
+          `${plural(library.savedTracks, "saved song", "saved songs")} · ${plural(library.savedAlbums, "saved album", "saved albums")} · ${plural(library.followedArtists, "followed artist", "followed artists")}`,
+          `${plural(library.playlistTracks, "song", "songs")} across ${plural(library.playlists, "playlist you made", "playlists you made")}`,
+          `${plural(library.topArtists, "top artist", "top artists")} and ${plural(library.topTracks, "top track", "top tracks")} from Spotify`,
+          ...(library.truncated?.length ? ["A very large library: Moondog read up to its limit and stopped there."] : []),
+          ...(library.skippedPlaylists ? [`${plural(library.skippedPlaylists, "playlist", "playlists")} couldn't be read and will be left out.`] : []),
+        ] : preview.libraryUnavailable ? ["Your library isn't included: Reconnect Spotify to allow it."] : []),
+        preview.listeningEvents
+          ? `${plural(preview.listeningEvents, "recent play", "recent plays")}${first && last ? `, ${first} to ${last}` : ""}`
+          : "No recent plays from Spotify right now.",
+        clean(preview.scopeNote),
+      ].filter(Boolean),
+      actions: [{ type: "commit", label: "Add to my profile" }, { type: "recent", label: "Read Spotify again" }, { type: "back", label: "Back" }],
+    };
+  }
+
   pageContent() {
     const profile = this.profileReady ? [{ type: "profile", label: "View my profile" }] : [];
     const file = { type: "file", label: "Choose a file" };
@@ -172,7 +199,7 @@ export class HistoryImportView {
       case "spotify": return {
         title: "Import from Spotify",
         paragraphs: [
-          "Quick start: connect Spotify and bring in what you've played lately.",
+          "Quick start: connect Spotify and bring in your library, your top artists, and what you've played lately.",
           "Past history: bring in the history ZIP Spotify sends you, going back years.",
           "Either way, it all ends up in the same profile.",
         ],
@@ -212,21 +239,26 @@ export class HistoryImportView {
       };
       case "quick": {
         const status = this.state.spotify ?? {};
-        const ready = status.state === "ready" && status.scopes?.granted?.includes("user-read-recently-played");
+        const granted = status.state === "ready" ? status.scopes?.granted ?? [] : [];
+        const recentOnly = granted.includes("user-read-recently-played");
+        const ready = recentOnly && SPOTIFY_LIBRARY_SCOPES.every((scope) => granted.includes(scope));
         const configured = status.client_id_configured;
         return {
           title: "Quick start with Spotify",
           paragraphs: [
-            "Start your profile from up to 50 of your latest plays.",
-            "You'll see them before anything is saved. No model or download needed.",
-            "Older listening can come later with a history ZIP.",
+            "Start your profile from your Spotify library: saved songs and albums, the artists you follow, your own playlists, and the artists and tracks Spotify ranks highest for you. Your latest 50 plays come along too.",
+            "You'll see it all before anything is saved. No model or download needed.",
+            "Years of listening can come later with a history ZIP.",
             ready ? "Spotify is connected. Go ahead when you're ready."
-              : configured ? "Connect Spotify so Moondog can read your recent plays."
+              : recentOnly ? "Your Spotify sign-in only covers recent plays. Reconnect once so Moondog can read your library too."
+              : configured ? "Connect Spotify so Moondog can read your library and recent plays."
                 : "Connecting Spotify takes a one-time setup on this computer. Or start with a downloaded ZIP instead.",
           ],
           actions: [
-            { type: ready ? "recent" : configured ? "connectSpotify" : "setup", label: ready ? "Preview recent listening" : configured ? "Connect Spotify" : "Set up Spotify connection" },
-            ...(ready ? [{ type: "connectSpotify", label: "Reconnect Spotify" }] : []),
+            ready ? { type: "recent", label: "Preview my Spotify" }
+              : recentOnly ? { type: "connectSpotify", label: "Reconnect Spotify" }
+              : { type: configured ? "connectSpotify" : "setup", label: configured ? "Connect Spotify" : "Set up Spotify connection" },
+            ...(ready ? [{ type: "connectSpotify", label: "Reconnect Spotify" }] : recentOnly ? [{ type: "recent", label: "Just my recent plays" }] : []),
             { type: "spotifyHistory", label: "Add past listening history" }, back,
           ],
         };
@@ -293,6 +325,7 @@ export class HistoryImportView {
       case "preview": {
         const preview = this.state.preview ?? {};
         const recent = this.state.origin === "quick";
+        if (preview.kind === "spotify-quick") return this.spotifyQuickPreview(preview);
         const library = preview.kind === "library";
         const collection = preview.kind === "collection";
         const first = day(preview.earliestListeningAt);

@@ -326,6 +326,7 @@ function normalizedProfileInput(value, batch) {
       !isPlainObject(record.provenance) ||
       record.provenance.source_kind !== "import" ||
       !(record.provenance.source_system === "spotify_account_data" ||
+        (record.provenance.source_system === "spotify_web_api" && profileImport.source_key === "spotify.web_api_library") ||
         (["youtube_music", "qq_music", "netease"].includes(record.provenance.source_system) &&
           profileImport.source_key === `${record.provenance.source_system}.music_import`)) ||
       !profileImport.member_names.includes(record.provenance.source_member) ||

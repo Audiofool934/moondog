@@ -1,4 +1,5 @@
 import { createSpotifyWebApiClient } from "./web-api-client.mjs";
+import { readSpotifyLibrarySnapshot } from "./library-snapshot.mjs";
 import { setTimeout as delay } from "node:timers/promises";
 
 export const SPOTIFY_SERVICE_LIMITS = Object.freeze({
@@ -851,6 +852,12 @@ export function createSpotifyService(options = {}) {
         ...(after !== undefined ? { after } : {}),
         ...(before !== undefined ? { before } : {}),
       }, { signal });
+    },
+
+    // A bounded read of the whole library for a profile import, never an action.
+    async librarySnapshot({ signal, onProgress } = {}) {
+      signal?.throwIfAborted();
+      return readSpotifyLibrarySnapshot(client, { signal, onProgress });
     },
 
     async topItems(value, { signal } = {}) {

@@ -6,25 +6,53 @@ import { fileURLToPath } from "node:url";
 import { readSpotifyHistoryArchive } from "../integrations/spotify/history-archive.mjs";
 import { readListenBrainzHistoryFile } from "../integrations/listenbrainz/history-file.mjs";
 import { projectSpotifyRecentActivity } from "../integrations/spotify/recent-activity.mjs";
+import { projectSpotifyLibrarySnapshot } from "../integrations/spotify/library-snapshot.mjs";
 import { buildAppleMusicLibraryImport } from "../importers/apple-music-library/index.mjs";
 import { readYouTubeMusicTakeout } from "../integrations/youtube-music/takeout.mjs";
 import { readPublicPlaylist } from "../integrations/public-playlists.mjs";
 
-export function prepareSpotifyRecentImport({ page, subjectId, capturedAt = new Date().toISOString() }) {
+/**
+ * Spotify quick start: the latest plays plus the listener's library (saves,
+ * follows, own playlists and Spotify's top artists and tracks) in one preview.
+ * The library is optional so an older recent-plays-only sign-in still works.
+ */
+export function prepareSpotifyQuickImport({ page, librarySnapshot = null, libraryUnavailable = null, subjectId, capturedAt = new Date().toISOString() }) {
   const bundle = projectSpotifyRecentActivity({ page, subjectId, capturedAt });
+  const library = librarySnapshot ? projectSpotifyLibrarySnapshot({ subjectId, snapshot: librarySnapshot, capturedAt }) : null;
   const dates = bundle.listening_events.map((event) => event.occurred_at).sort();
   return {
-    provider: "spotify-recent",
+    provider: "spotify-quick",
     bundle,
+    libraryBundle: library?.bundle ?? null,
     preview: {
-      sourceLabel: "Spotify recent listening",
+      kind: "spotify-quick",
+      sourceLabel: library ? "Your Spotify library and recent plays" : "Spotify recent listening",
+      capturedAt,
       listeningEvents: bundle.listening_events.length,
-      tracks: bundle.track_refs.length,
+      tracks: new Set([...bundle.track_refs, ...(library?.bundle.track_refs ?? [])].map((ref) => ref.track_ref_id)).size,
       earliestListeningAt: dates[0],
       latestListeningAt: dates.at(-1),
       eventsWithPlayedMs: 0,
-      scopeNote: "Your latest plays, up to 50. Spotify doesn't say how long you listened here. A history ZIP can add the older ones later.",
+      ...(library ? { library: library.preview } : {}),
+      ...(libraryUnavailable ? { libraryUnavailable } : {}),
+      scopeNote: library
+        ? "Your library shows what you keep and what Spotify ranks highest for you. Recent plays are your latest 50. A history ZIP can add years of listening later."
+        : "Your latest plays, up to 50. Spotify doesn't say how long you listened here. A history ZIP can add the older ones later.",
     },
+  };
+}
+
+/** Save both parts of an inspected quick import; returns one combined receipt. */
+// Both writes are idempotent, so retrying after a partial failure is safe.
+export function commitSpotifyQuickImport(store, prepared) {
+  const library = prepared.libraryBundle ? store.ingestImport(prepared.libraryBundle) : null;
+  const recent = store.ingest(prepared.bundle);
+  if (!library) return { ...recent, provider: "spotify-quick" };
+  return {
+    ...recent, provider: "spotify-quick",
+    inserted_track_refs: (recent.inserted_track_refs ?? 0) + (library.inserted_track_refs ?? 0),
+    inserted_profile_evidence: library.inserted_profile_evidence ?? 0,
+    library_already_imported: library.already_imported === true,
   };
 }
 

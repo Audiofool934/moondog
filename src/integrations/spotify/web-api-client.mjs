@@ -483,9 +483,11 @@ function normalizePlaylistItem(raw) {
   if (item && typeof source?.is_playable === "boolean") {
     item.is_playable = source.is_playable;
   }
+  const addedAt = normalizedUtcTimestamp(raw.added_at);
   return {
     is_local: raw.is_local === true || source?.is_local === true,
     item,
+    ...(addedAt ? { added_at: addedAt } : {}),
   };
 }
 
@@ -762,8 +764,9 @@ export function createSpotifyWebApiClient({
       );
     },
 
+    // Agent browsing is capped by the service; a library import reads Spotify's full page of 50.
     async getSavedItems({ type = "tracks", limit = 20, offset = 0 } = {}, { signal } = {}) {
-      if (!["tracks", "albums", "shows", "playlists"].includes(type) || !Number.isInteger(limit) || limit < 1 || limit > 20 ||
+      if (!["tracks", "albums", "shows", "playlists"].includes(type) || !Number.isInteger(limit) || limit < 1 || limit > 50 ||
           !Number.isInteger(offset) || offset < 0 || offset > 1_000_000) fail("invalid_library_page", "Choose a supported library type and bounded page.");
       return normalizeLibraryPage(await request(`/me/${type}${queryString({ limit, offset })}`, { signal }), type, { limit, offset });
     },
@@ -809,14 +812,15 @@ export function createSpotifyWebApiClient({
 
     async getTopItems({ type = "tracks", timeRange = "medium_term", limit = 5 } = {}, { signal } = {}) {
       if (!["artists", "tracks"].includes(type) || !["short_term", "medium_term", "long_term"].includes(timeRange) ||
-          !Number.isInteger(limit) || limit < 1 || limit > 10) {
-        fail("invalid_top_items", "Spotify top items require a supported type, time range, and limit from 1 to 10.");
+          !Number.isInteger(limit) || limit < 1 || limit > 50) {
+        fail("invalid_top_items", "Spotify top items require a supported type, time range, and limit from 1 to 50.");
       }
       const payload = await request(`/me/top/${type}${queryString({ time_range: timeRange, limit, offset: 0 })}`, { signal });
       const raw = Array.isArray(payload?.items) ? payload.items : [];
       const items = raw.slice(0, limit).map((item, index) => {
+        const artistUri = typeof item?.uri === "string" && /^spotify:artist:[A-Za-z0-9]{22}$/u.test(item.uri) ? item.uri : null;
         const normalized = type === "tracks" ? normalizeTrackSearchItem(item) :
-          (safeText(item?.name) ? { name: safeText(item.name), type: "artist" } : null);
+          (safeText(item?.name) ? { name: safeText(item.name), type: "artist", ...(artistUri ? { uri: artistUri } : {}) } : null);
         return normalized ? { ...normalized, affinity_rank: index + 1 } : null;
       }).filter(Boolean);
       return { provider: "spotify", items, truncated: raw.length > items.length || Boolean(payload?.next) || payload?.total > raw.length };
