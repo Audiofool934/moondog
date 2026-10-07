@@ -2,6 +2,9 @@
 #   docker build -f site/server/Dockerfile -t moondog-agent .
 FROM node:24-slim
 
+# Moondog lists and reads Spotify ZIPs with the system unzip.
+RUN apt-get update && apt-get install -y --no-install-recommends unzip && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
