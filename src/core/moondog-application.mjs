@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { setTimeout as delay } from "node:timers/promises";
 import { compactListenerProfile, readListenerProfile } from "../profile/listener-profile-build.mjs";
 
 import {
@@ -203,6 +204,7 @@ export class MoondogApplication {
     this.pendingSpotifyRemoval = null;
     this.spotifyDeviceSelections = new Map();
     this.recentSimilarQueueUris = new Map();
+    this.queueVerificationDelayMs = 700;
     this.recentUncertainQueueUris = new Map();
     this.transientSpotifyContext = false;
     this.spotifyPlaylistTargets = new Map();
@@ -1315,11 +1317,15 @@ export class MoondogApplication {
     signal?.throwIfAborted();
     this.requireSpotifyNonRemovalAction();
     const transaction = this.pendingPlaylistPromptTransaction;
-    if (!transaction?.queueIntent) throw spotifyResolutionError("spotify_queue_request_required", "A direct listener request to queue music is required. Discovery alone does not authorize a write.");
-    if (transaction.queueIntent.clarification_only) throw spotifyResolutionError("spotify_queue_already_handled", "The previous queue operation already has a receipt. This clarification does not replay accepted, failed or uncertain writes; inspect that receipt before making a new request.");
+    if (!transaction) throw spotifyResolutionError("spotify_queue_request_required", "Queueing runs inside a listener request.");
+    // The model acts on the listener's words, as for a single queue entry. A parsed
+    // count only sizes the batch; failing to parse a phrasing never blocks it.
+    const intent = transaction.queueIntent ?? null;
+    if (queueCancellationRequested(transaction.userText)) throw spotifyResolutionError("spotify_queue_cancelled", "The listener asked to stop queueing. No write was sent.");
+    if (intent?.clarification_only) throw spotifyResolutionError("spotify_queue_already_handled", "The previous queue operation already has a receipt. This clarification does not replay accepted, failed or uncertain writes; inspect that receipt before making a new request.");
     if (transaction.queueBatchAttempted || transaction.queueWriteCount > 0) throw spotifyResolutionError("spotify_queue_batch_already_attempted", "A queue write was already attempted for this request. Report its receipt without replaying it.");
     if (!Array.isArray(itemRefs) || itemRefs.length < 1 || itemRefs.length > 36 || new Set(itemRefs).size !== itemRefs.length) throw spotifyResolutionError("invalid_queue_batch", "Choose up to 36 distinct host-issued Spotify track references in preference order; at most 12 will be queued.");
-    const requested = transaction.queueIntent.requested ?? Math.min(itemRefs.length, 12);
+    const requested = intent?.requested ?? Math.min(itemRefs.length, 12);
     if (!Number.isInteger(requested) || requested < 1 || requested > 12) throw spotifyResolutionError("spotify_queue_count_limit", "A queue request supports 1 to 12 songs. No write was sent.");
     const items = itemRefs.map(ref => this.requireSpotifyReadItem(ref, ["track"]));
     this.requireSpotifyWriteScopes(["user-modify-playback-state"]);
@@ -1341,7 +1347,7 @@ export class MoondogApplication {
     this.transientSpotifyContext = true;
     const filters = { filterDiscoveryTracks: tracks => tracks.filter(track => this.spotifyDiscoveryAllowed({ name: track.title, artists: track.artists })) };
     const receipt = await this.#queueSpotifyTracks(tracks, resolved, { signal, deviceId, seenUris, limit: requested, domainServices: filters,
-      knownTrack: transaction.queueIntent.excludeKnown ? track => this.domainServices?.isKnownDiscoveryTrack?.(track) === true : null });
+      knownTrack: intent?.excludeKnown ? track => this.domainServices?.isKnownDiscoveryTrack?.(track) === true : null });
     if (!receipt.queued.length && !receipt.stopped) transaction.queueBatchAttempted = false;
     const result = { ...receipt, action: "queue.batch", requested, queued_count: receipt.queued.length,
       shortfall: requested - receipt.queued.length, queue_observation_truncated: observed.truncated === true };
@@ -1357,6 +1363,25 @@ export class MoondogApplication {
       else seen.add(uri);
     }
     return seen;
+  }
+
+  // Spotify's own queue is the truth. An accepted write can take a moment to
+  // appear, so look twice before calling an entry unconfirmed.
+  async #verifyQueued(uris, { signal } = {}) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        if (attempt) await delay(this.queueVerificationDelayMs, undefined, { signal });
+        const observed = await this.requireSpotifyService().queue({ signal });
+        const visible = new Set([observed.currently_playing?.uri, ...(observed.queue ?? []).map(item => item.uri)].filter(Boolean));
+        const confirmed = uris.filter(uri => visible.has(uri)).length;
+        if (confirmed === uris.length || attempt === 1) {
+          return { checked: true, accepted_count: uris.length, confirmed_count: confirmed,
+            ...(observed.truncated === true ? { queue_view_truncated: true } : {}) };
+        }
+      } catch {
+        return { checked: false, accepted_count: uris.length };
+      }
+    }
   }
 
   async spotifyCatalogChildren({ itemRefId, limit, offset } = {}, { signal } = {}) {
@@ -1385,7 +1410,7 @@ export class MoondogApplication {
       queue_count: Math.min(50, raw.length), truncated: result.truncated === true || raw.length > 10 };
   }
 
-  spotifyAddToQueue(input, { signal } = {}) {
+  async spotifyAddToQueue(input, { signal } = {}) {
     signal?.throwIfAborted();
     this.requireSpotifyNonRemovalAction();
     let uri;
@@ -1394,16 +1419,20 @@ export class MoondogApplication {
       uri = this.requireSpotifyReadItem(input.itemRefId, ["track", "episode"]).uri;
     } else if (input?.trackRefId !== undefined) uri = this.requireSpotifyResolution(input.trackRefId).uri;
     else uri = this.resolveSpotifyPlaybackUri(input?.uri, ["track", "episode"]);
-    const service = this.requireSpotifyService();
+    this.requireSpotifyService();
+    if (queueCancellationRequested(this.pendingPlaylistPromptTransaction?.userText)) throw spotifyResolutionError("spotify_queue_cancelled", "The listener asked to stop queueing. No write was sent.");
     if (this.pendingPlaylistPromptTransaction?.queueIntent && this.spotifyQueueRequest) this.spotifyQueueRequest.attempted = true;
-    return service.addToQueue({ uri, ...(input.deviceId ? { deviceId: input.deviceId } : {}) }, { signal }).then(receipt => {
-      this.recentSimilarQueueUris.set(uri, Date.now());
-      while (this.recentSimilarQueueUris.size > 100) this.recentSimilarQueueUris.delete(this.recentSimilarQueueUris.keys().next().value);
-      const transaction = this.pendingPlaylistPromptTransaction;
-      if (transaction) transaction.queueWriteCount = (transaction.queueWriteCount ?? 0) + 1;
-      const item = this.spotifyHostReadItems().find(item => item.uri === uri);
-      return item?.name ? { ...receipt, targets: [{ title: item.name, artist_credit: item.artists.join(", ") }] } : receipt;
-    });
+    const item = this.spotifyHostReadItems().find(item => item.uri === uri);
+    const track = { track_ref_id: "single", title: item?.name ?? "the selected track", artist_credit: item?.artists?.join(", ") ?? "" };
+    // One entry takes the same path as a batch: one device decision, start
+    // playback when nothing is playing, and a check of Spotify's real queue.
+    const receipt = await this.#queueSpotifyTracks([track], new Map([["single", uri]]), { signal, deviceId: input.deviceId, rethrow: true });
+    this.recentSimilarQueueUris.set(uri, Date.now());
+    while (this.recentSimilarQueueUris.size > 100) this.recentSimilarQueueUris.delete(this.recentSimilarQueueUris.keys().next().value);
+    return { provider: "spotify", ok: true, effect: "write_external", action: "playback.queue.add", state: "accepted",
+      ...(item?.name ? { targets: [{ title: item.name, artist_credit: item.artists.join(", ") }] } : {}),
+      ...(receipt.device ? { device: receipt.device } : {}), ...(receipt.started_playback ? { started_playback: true } : {}),
+      ...(receipt.verification ? { verification: receipt.verification } : {}) };
   }
 
   async spotifyQueueSimilar({ count = 5 } = {}, { signal } = {}) {
@@ -2448,7 +2477,7 @@ export class MoondogApplication {
     return receipt;
   }
 
-  async #queueSpotifyTracks(tracks, resolvedByRef, { signal, deviceId, seenUris = null, limit = tracks.length, domainServices = null, knownTrack = null } = {}) {
+  async #queueSpotifyTracks(tracks, resolvedByRef, { signal, deviceId, seenUris = null, limit = tracks.length, domainServices = null, knownTrack = null, rethrow = false } = {}) {
     const label = (track) => ({ title: track.title, artist_credit: track.artist_credit });
     const queued = [];
     const unmatched = [];
@@ -2463,6 +2492,9 @@ export class MoondogApplication {
     let failure = null;
     let stopIndex = -1;
     let outcomeUnknown = false;
+    let target = null;
+    let started = null;
+    const acceptedUris = [];
     for (const [index, track] of tracks.entries()) {
       if (queued.length >= limit) break;
       if (signal?.aborted) { stopped = label(track); stopIndex = index; break; }
@@ -2474,8 +2506,32 @@ export class MoondogApplication {
       try {
         if (domainServices?.filterDiscoveryTracks?.([track]).length === 0) { skippedAvoids++; continue; }
         if (knownTrack?.(track)) { skippedKnown++; continue; }
-        dispatching = true;
-        await this.requireSpotifyService().addToQueue({ uri, ...(deviceId ? { deviceId } : {}) }, { signal });
+        const service = this.requireSpotifyService();
+        target ??= await service.queueTarget({ ...(deviceId ? { deviceId } : {}) }, { signal });
+        const device = target.deviceId ? { deviceId: target.deviceId } : {};
+        // Nothing is playing, so a queue entry has nowhere to go: start this song instead.
+        const start = async () => {
+          dispatching = true;
+          const receipt = await service.resume({ uris: [uri], ...device }, { signal });
+          started = label(track);
+          target = { ...target, active: true, ...(receipt?.device ? { device: receipt.device } : {}) };
+        };
+        if (target.active === false) await start();
+        else {
+          dispatching = true;
+          try {
+            const receipt = await service.addToQueue({ uri, ...device }, { signal });
+            // A response that does not confirm acceptance is not a success.
+            if (receipt?.ok === false) throw Object.assign(new Error("Spotify did not confirm the queue addition."), { code: "spotify_result_unconfirmed", outcomeUnknown: true });
+          }
+          catch (error) {
+            const idle = error?.status === 404 && error.reason === "NO_ACTIVE_DEVICE" && error.outcomeUnknown === false;
+            if (!idle || queued.length || started || signal?.aborted) throw error;
+            await start();
+          }
+          target = { ...target, active: true };
+        }
+        acceptedUris.push(uri);
         queued.push(label(track));
         if (this.pendingPlaylistPromptTransaction) this.pendingPlaylistPromptTransaction.queueWriteCount = (this.pendingPlaylistPromptTransaction.queueWriteCount ?? 0) + 1;
         seenUris?.add(uri);
@@ -2498,14 +2554,18 @@ export class MoondogApplication {
           this.recentUncertainQueueUris.set(uri, Date.now());
           while (this.recentUncertainQueueUris.size > 100) this.recentUncertainQueueUris.delete(this.recentUncertainQueueUris.keys().next().value);
         }
+        if (rethrow) throw error;
         break;
       }
     }
     if (queued.length === 0 && !outcomeUnknown) signal?.throwIfAborted();
     const state = stopped ? (queued.length ? "partial" : outcomeUnknown ? "unknown" : "failed")
       : queued.length ? "accepted" : "no_candidates";
+    const verification = acceptedUris.length && !signal?.aborted ? await this.#verifyQueued(acceptedUris, { signal }) : null;
     return { provider: "spotify", ok: !["unknown", "failed"].includes(state), effect: "write_external", action: "playback.queue.add",
       state, queued, unmatched, not_added: stopIndex >= 0 ? tracks.slice(stopIndex + 1, stopIndex + Math.max(1, limit - queued.length)).map(label) : [],
+      ...(target?.device ? { device: target.device } : {}), ...(started ? { started_playback: started } : {}),
+      ...(verification ? { verification } : {}),
       ...(stopIndex >= 0 ? { not_added_count: Math.min(tracks.length - stopIndex - 1, Math.max(0, limit - queued.length - 1)) } : {}),
       skipped_duplicate_count: skippedDuplicates, skipped_avoided_count: skippedAvoids,
       skipped_known_count: skippedKnown,

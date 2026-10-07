@@ -29,6 +29,7 @@ async function fixture(context, hook = () => {}) {
     async currentPlayer(options) { await step("playback", options); return { state: "available",
       item: { type: "track", uri: "spotify:track:seed", artists: ["Seed Band & Friends", "Second Artist"] } }; },
     async queue(options) { await step("queue_read", options); return { queue: [], truncated: false }; },
+    async queueTarget() { return { active: true }; },
     async addToQueue(input, options) { await step("write", options); return { ok: true }; },
   };
   const resolver = { async resolve(selected, options) {

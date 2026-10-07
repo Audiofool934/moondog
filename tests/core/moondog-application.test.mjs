@@ -710,6 +710,9 @@ test("a ready Spotify connection enables bounded player capabilities", async () 
         state: "accepted",
       };
     },
+    async queueTarget() {
+      return { active: true };
+    },
     async addToQueue(input) {
       calls.push(["queue", input]);
       return { ok: true };

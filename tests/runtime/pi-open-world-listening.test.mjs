@@ -26,6 +26,10 @@ function fixture(t, { web = false, similarity = false } = {}) {
       writes.push({ path: parsed.pathname, body: JSON.parse(init.body ?? "null"), uri: parsed.searchParams.get("uri") });
       state.onWrite?.();
       const status = writes.length >= state.failAt ? state.status : 204;
+      // Like Spotify, accepted writes change what the queue and player report.
+      const known = uri => [...state.catalogue, ...versions].find(item => item.uri === uri);
+      if (status === 204 && parsed.pathname === "/v1/me/player/queue" && known(parsed.searchParams.get("uri"))) state.queue.push(known(parsed.searchParams.get("uri")));
+      if (status === 204 && parsed.pathname === "/v1/me/player/play" && known(JSON.parse(init.body ?? "null")?.uris?.[0])) state.current = known(JSON.parse(init.body).uris[0]);
       return status === 204 ? new Response(null, { status }) : Response.json({ error: { status, reason: status === 404 ? "NO_ACTIVE_DEVICE" : "UNKNOWN", message: "Fictional failure" } }, { status });
     }
     reads.push(parsed.pathname);
@@ -36,8 +40,10 @@ function fixture(t, { web = false, similarity = false } = {}) {
       return Response.json({ tracks: { items } });
     }
     if (parsed.pathname === "/v1/me/player/queue") return Response.json({ currently_playing: state.current, queue: state.queue });
-    if (parsed.pathname === "/v1/me/player") return Response.json({ item: state.current ?? versions[2], is_playing: true });
-    if (parsed.pathname === "/v1/me/player/devices") return Response.json({ devices: [{ id: "fictionalSpeaker", name: "Fictional speaker", type: "Speaker", is_active: true, is_restricted: false }] });
+    if (parsed.pathname === "/v1/me/player") return state.idle && !state.current ? new Response(null, { status: 204 }) : Response.json({ item: state.current ?? versions[2], is_playing: true });
+    if (parsed.pathname === "/v1/me/player/devices") return Response.json({ devices: [state.idle && !state.current
+      ? { id: "fictionalLaptop", name: "Fictional laptop", type: "Computer", is_active: false, is_restricted: false }
+      : { id: "fictionalSpeaker", name: "Fictional speaker", type: "Speaker", is_active: true, is_restricted: false }] });
     throw new Error(`Unexpected fictional route ${parsed.pathname}`);
   } });
   // No imported library is necessary. These two bounded preference lookups stand
@@ -154,14 +160,49 @@ test("batch cancellation preserves accepted receipts, and concurrent callers can
   assert.equal(f.writes.length, 1); assert.ok(receipt.cancelled); assert.ok(receipt.queued.length === 1 || receipt.outcome_unknown);
 });
 
-test("query limits, read failures and mere discussion never authorize a batch", async t => {
-  const f = fixture(t); f.application.beginPrompt({ text: "Explain why queue needs confirmation" });
+test("query limits and read failures stay bounded; an explicit stop never queues", async t => {
+  const f = fixture(t); f.application.beginPrompt({ text: "Stop, don't queue anything" });
   const found = await f.application.spotifyDiscover({ queries: ["first", "offline", "empty"] });
   assert.equal(found.failures.length, 1); assert.equal(found.items.length, 10);
-  await assert.rejects(f.application.spotifyQueueBatch({ itemRefs: found.items.map(item => item.item_ref_id) }), { code: "spotify_queue_request_required" });
+  await assert.rejects(f.application.spotifyQueueBatch({ itemRefs: found.items.map(item => item.item_ref_id) }), { code: "spotify_queue_cancelled" });
   await f.application.spotifyDiscover({ queries: ["first", "second", "third"] });
   await assert.rejects(f.application.spotifyDiscover({ queries: ["fourth"] }), { code: "spotify_discovery_query_limit" });
   assert.equal(f.writes.length, 0);
+});
+
+// The reported failure: the phrasing was not recognized, the batch was refused,
+// single adds then worked, and the reply still said nothing was queued.
+for (const request of ["I want a Ludwig x Hans Zimmer queue rn", "make me a queue of film scores", "来点汉斯季默加到队列", "line up some jazz next"]) test(`any phrasing the model acts on queues and reports one verified receipt: ${request}`, async t => {
+  const f = fixture(t);
+  const result = await f.prompt(request, [call("moondog_spotify_discover", { queries: ["first"] }), context =>
+    call("moondog_spotify_queue_batch", { item_refs: latest(context, "moondog_spotify_discover").items.slice(0, 6).map(item => item.item_ref_id) }), say()]);
+  assert.equal(result.spotify_queue_plan.queued_count, 6);
+  assert.equal(f.writes.length, 6);
+  assert.deepEqual(f.state.queue.map(item => item.uri), catalogue.slice(0, 6).map(item => item.uri));
+  assert.match(result.text, /Confirmed in your Spotify queue: all 6|已在 Spotify 队列里确认这 6 首/u);
+  assert.doesNotMatch(result.text, /No songs were queued|could not connect|没有加入/u);
+});
+
+test("repeated single adds in one turn render one verified receipt, never a contradictory refusal", async t => {
+  const f = fixture(t);
+  const add = index => context => call("moondog_spotify_queue_add", { item_ref_id: latest(context, "moondog_spotify_discover").items[index].item_ref_id });
+  const result = await f.prompt("I want a Ludwig x Hans Zimmer queue rn", [call("moondog_spotify_discover", { queries: ["first"] }),
+    call("moondog_spotify_queue_batch", { item_refs: ["forged-reference"] }), ...[0, 1, 2, 3, 4, 5].map(add), say("No songs were queued.")]);
+  assert.deepEqual(f.state.queue.map(item => item.uri), catalogue.slice(0, 6).map(item => item.uri));
+  assert.match(result.text, /Queued 6 on Spotify/u);
+  assert.match(result.text, /Confirmed in your Spotify queue: all 6/u);
+  assert.doesNotMatch(result.text, /No songs were queued|could not connect/u);
+});
+
+test("a queue request with nothing playing starts the first song and queues the rest", async t => {
+  const f = fixture(t); f.state.idle = true;
+  const result = await f.prompt("line up some jazz", [call("moondog_spotify_discover", { queries: ["first"] }), context =>
+    call("moondog_spotify_queue_batch", { item_refs: latest(context, "moondog_spotify_discover").items.slice(0, 4).map(item => item.item_ref_id) }), say()]);
+  assert.deepEqual(f.writes.map(write => write.path), ["/v1/me/player/play", "/v1/me/player/queue", "/v1/me/player/queue", "/v1/me/player/queue"]);
+  assert.deepEqual(f.writes[0].body.uris, [catalogue[0].uri]);
+  assert.equal(f.state.current.uri, catalogue[0].uri);
+  assert.match(result.text, /Nothing was playing, so I started "Fictional 国风 DJ 0" on Fictional laptop and lined up the rest/u);
+  assert.match(result.text, /Confirmed on Spotify: the first is playing and the rest are in your queue/u);
 });
 
 const queueResponses = () => [call("moondog_spotify_discover", { queries: ["first", "second"] }),
@@ -319,10 +360,9 @@ test("word-count correction completes an unattempted request, then confirmation 
   assert.equal(queued.spotify_queue_plan.queued_count, 2);
   const clarified = await f.prompt("I meant queue, not a playlist", queueResponses());
   assert.match(clarified.text, /2/u); assert.equal(f.writes.length, 2);
-  for (const request of ["yes", "1", "retry"]) {
-    await f.prompt(request, queueResponses());
-    assert.equal(f.writes.length, 2, request);
-  }
+  for (const request of ["yes", "1", "retry"]) await f.prompt(request, queueResponses());
+  // Whatever a later turn adds, a song Spotify already accepted is never sent again.
+  assert.equal(new Set(f.writes.map(write => write.uri)).size, f.writes.length);
 });
 
 test("a different visible numbered menu invalidates old song ordinals", async t => {
@@ -349,7 +389,7 @@ test("Chinese queue request, count refinement and cover choice complete the same
   assert.deepEqual(f.writes.map(write => write.uri), catalogue.slice(0, 10).map(item => item.uri));
   assert.doesNotMatch(result.text, /spotify_queue_request_required|参数|回复编号/u);
   await f.prompt("掺翻唱", queueResponses());
-  assert.equal(f.writes.length, 10, "a later style choice cannot replay an accepted batch");
+  assert.equal(new Set(f.writes.map(write => write.uri)).size, f.writes.length, "a later style choice never resends an accepted song");
 });
 
 for (const request of ["现在想探索 similar 的歌，这种经典流行女声的感觉。", "最近发现 Fictional Song 特别好听"]) test(`music conversation keeps the curated answer instead of a search menu: ${request}`, async t => {
@@ -365,13 +405,10 @@ for (const request of ["现在想探索 similar 的歌，这种经典流行女�
   assert.equal(f.application.spotifyPlaybackContextStatus().displayed_choices.length, 0);
 });
 
-for (const invalidation of ["cancel", "reset", "expired"]) test(`a ${invalidation} queue request cannot be revived by a version choice`, async t => {
+for (const stop of ["别加了", "cancel", "don't queue anything"]) test(`an explicit stop cannot queue: ${stop}`, async t => {
   const f = fixture(t);
   await f.prompt("queue ten tracks", [call("moondog_spotify_discover", { queries: ["offline"] }), say("Search unavailable.")]);
-  if (invalidation === "cancel") await f.prompt("别加了", [say("已取消。")]);
-  if (invalidation === "reset") f.runtime.reset();
-  if (invalidation === "expired") f.application.spotifyContextClock = () => Date.now() + 11 * 60_000;
-  await f.prompt("掺翻唱", queueResponses());
+  await f.prompt(stop, queueResponses());
   assert.equal(f.writes.length, 0);
 });
 
@@ -381,7 +418,7 @@ test("a successful single-song queue request cannot become another batch through
     call("moondog_spotify_queue_add", { item_ref_id: latest(context, "moondog_spotify_discover").items[0].item_ref_id }), say()]);
   assert.equal(f.writes.length, 1);
   await f.prompt("掺翻唱", queueResponses());
-  assert.equal(f.writes.length, 1);
+  assert.equal(f.writes.filter(write => write.uri === f.writes[0].uri).length, 1, "the accepted song is never queued twice");
 });
 
 test("cancelling a partially sent queue cannot revive an older playback target on retry", async t => {

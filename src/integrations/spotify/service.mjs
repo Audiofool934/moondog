@@ -517,6 +517,15 @@ function fitDeviceMessage(lead, devices, tail) {
     : message;
 }
 
+// With nothing active, the obvious device is the only one, or the only computer:
+// the machine running Moondog. Anything else stays an explicit choice.
+export function preferredIdleDevice(devices) {
+  const usable = devices.filter(device => device.is_restricted !== true);
+  if (usable.length === 1) return usable[0];
+  const computers = usable.filter(device => device.type?.toLocaleLowerCase("en-US") === "computer");
+  return computers.length === 1 ? computers[0] : null;
+}
+
 function listedDevices(result) {
   return (Array.isArray(result?.devices) ? result.devices : []).filter(
     (device) =>
@@ -729,7 +738,7 @@ export function createSpotifyService(options = {}) {
     };
     try {
       let state = await snapshot();
-      const id = input.deviceId ?? state.active ?? preferredDeviceId;
+      const id = input.deviceId ?? state.active ?? preferredDeviceId ?? (state.truncated ? null : preferredIdleDevice(state.devices)?.id);
       if (id) selected = find(state, id);
       else {
         if (state.truncated || state.devices.length !== 1) stop(state.devices.length ? "spotify_device_ambiguous" : "spotify_device_not_found",
@@ -802,6 +811,28 @@ export function createSpotifyService(options = {}) {
 
     queue(options) {
       return client.getQueue(options);
+    },
+
+    // One device decision for a whole queue request. An idle device cannot take a
+    // queue entry, so the caller starts the first song there and queues the rest.
+    async queueTarget(value, { signal } = {}) {
+      signal?.throwIfAborted();
+      const input = inputObject(value ?? {});
+      // A named device needs no lookup: an idle one answers NO_ACTIVE_DEVICE and the caller starts playback there.
+      const explicit = optionalDeviceId(input.deviceId);
+      if (explicit) return { deviceId: explicit, active: null };
+      const [listing, player] = await Promise.all([client.getDevices({ signal }), client.getCurrentPlayback({ signal })]);
+      signal?.throwIfAborted();
+      const devices = listedDevices(listing);
+      const describe = device => ({ deviceId: device.id, device: { name: device.name, type: device.type ?? "unknown" } });
+      const active = devices.find(device => device.is_active === true && device.is_restricted !== true) ??
+        (player?.device?.is_active === true ? devices.find(device => device.id === player.device.id && device.is_restricted !== true) : undefined);
+      if (active) return { ...describe(active), active: true };
+      const idle = preferredIdleDevice(devices);
+      if (idle) return { ...describe(idle), active: false };
+      failBeforeDispatch(devices.length ? "spotify_device_ambiguous" : "spotify_device_not_found", devices.length
+        ? `Nothing is playing, and several Spotify devices are available (${devices.map(device => device.name).slice(0, 5).join(", ")}). Say which one to use.`
+        : "No Spotify device is open. Open Spotify on this computer or your phone, then ask again.");
     },
 
     async recentActivity(value, { signal } = {}) {
