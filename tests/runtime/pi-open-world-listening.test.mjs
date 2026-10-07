@@ -215,6 +215,21 @@ test("a Spanish queue request uses the count the model reports and answers in Sp
   assert.match(result.text, /Confirmadas en tu cola de Spotify: las 4\./u);
 });
 
+for (const [request, queued, confirmed, stop] of [
+  ["coloca 3 músicas de jazz na fila", /Adicionei 3 à fila do Spotify:/u, /Confirmadas na sua fila do Spotify: todas as 3\./u, "não adiciona nada na fila"],
+  ["ジャズを3曲キューに入れて", /Spotify のキューに 3 曲追加しました:/u, /Spotify のキューに 3 曲すべて入っていることを確認しました。/u, "キューに入れないで"],
+]) test(`a queue request answers in its own language and its stop never queues: ${request}`, async t => {
+  const f = fixture(t);
+  const respond = () => [call("moondog_spotify_discover", { queries: ["first"] }), context =>
+    call("moondog_spotify_queue_batch", { item_refs: latest(context, "moondog_spotify_discover").items.slice(0, 5).map(item => item.item_ref_id), count: 3 }), say()];
+  const result = await f.prompt(request, respond());
+  assert.equal(f.writes.length, 3);
+  assert.match(result.text, queued);
+  assert.match(result.text, confirmed);
+  await f.prompt(stop, respond());
+  assert.equal(f.writes.length, 3);
+});
+
 test("a message without a clear language follows the listener's setting, and a Spanish stop never queues", async t => {
   const f = fixture(t, { locale: "es" });
   const respond = () => [call("moondog_spotify_discover", { queries: ["first"] }), context =>

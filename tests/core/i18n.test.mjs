@@ -8,6 +8,8 @@ import { LOCALES, liveScreenTranslator, messageCatalogKeys, messageLocale, norma
 import { readLanguagePreference, resolveListenerLocale, writeLanguagePreference } from "../../src/i18n/preferences.mjs";
 import en from "../../src/i18n/messages/en.mjs";
 import es from "../../src/i18n/messages/es.mjs";
+import ja from "../../src/i18n/messages/ja.mjs";
+import pt from "../../src/i18n/messages/pt.mjs";
 import zh from "../../src/i18n/messages/zh.mjs";
 
 test("every catalog has exactly the English keys with matching shapes", () => {
@@ -18,7 +20,7 @@ test("every catalog has exactly the English keys with matching shapes", () => {
     for (const key of english) {
       // Rendering with empty parameters must not throw; strings stay strings.
       assert.equal(typeof t(key, { parts: [], names: "", count: 2 }), "string", `${locale} ${key}`);
-      assert.equal(typeof { en, es, zh }[locale][key], typeof en[key], `${locale} ${key} shape`);
+      assert.equal(typeof { en, es, ja, pt, zh }[locale][key], typeof en[key], `${locale} ${key} shape`);
     }
   }
 });
@@ -53,6 +55,17 @@ test("a reply follows the message's language, then the listener's setting", () =
     ["pon algo y responde en inglés", "es", "en"],
     ["用西班牙语回答：推荐几首歌", "en", "es"],
     ["Track: \"Canción de la noche\"\nWhat do you think?", "en", "en"],
+    ["coloca umas músicas de jazz na fila", "en", "pt"],
+    ["você pode tocar algo?", "es", "pt"],
+    ["quero ouvir algo novo", "en", "pt"],
+    ["quiero escuchar algo nuevo", "pt", "es"],
+    ["responda em inglês, por favor", "pt", "en"],
+    ["ジャズをキューに入れて", "en", "ja"],
+    ["日本語で答えて", "en", "ja"],
+    ["用日语回答", "en", "ja"],
+    ["米津玄師", "en", "zh"],
+    ["Ludwig x Hans Zimmer", "pt", "pt"],
+    ["Ludwig x Hans Zimmer", "ja", "ja"],
   ];
   for (const [text, setting, expected] of cases) assert.equal(messageLocale(text, setting), expected, text);
 });
@@ -101,4 +114,32 @@ test("screen text follows the live language and pluralizes per language", () => 
   locale = "zh";
   assert.equal(tr.n(3, "{count} song", "{count} songs"), "3 首歌");
   assert.equal(tr("A sentence nobody translated"), "A sentence nobody translated");
+});
+
+test("the words Moondog reads itself work in every supported language", async () => {
+  const { playbackFollowupIntent, queueCancellationRequested, unheardRequested, playbackDeviceExplicitlyRequested } =
+    await import("../../src/core/spotify-listening-intent.mjs");
+  const followups = [
+    ["3", "ordinal:3"], ["第三个", "ordinal:3"], ["retry", "retry"],
+    ["la tercera", "ordinal:3"], ["pon la 2", "ordinal:2"], ["otra vez", "retry"], ["otra versión", "alternative"], ["ponla en el altavoz", "retarget"],
+    ["a terceira", "ordinal:3"], ["coloca a 2", "ordinal:2"], ["de novo", "retry"], ["outra versão", "alternative"], ["toca na caixa de som", "retarget"],
+    ["3番", "ordinal:3"], ["三つ目", "ordinal:3"], ["もう一度", "retry"], ["別のバージョンにして", "alternative"], ["スピーカーで再生して", "retarget"],
+    ["ジャズをSpotifyで再生して", null],
+  ];
+  for (const [text, expected] of followups) {
+    const intent = playbackFollowupIntent(text);
+    assert.equal(intent ? `${intent.kind}${intent.ordinal ? `:${intent.ordinal}` : ""}` : null, expected, text);
+  }
+  for (const text of ["cancel", "别加了", "cancela", "no añadas nada a la cola", "não adiciona nada na fila", "キャンセル", "キューに入れないで"]) {
+    assert.equal(queueCancellationRequested(text), true, text);
+  }
+  for (const text of ["queue some jazz", "pon jazz en la cola", "coloca jazz na fila", "ジャズをキューに入れて"]) {
+    assert.equal(queueCancellationRequested(text), false, text);
+  }
+  for (const text of ["songs I've never heard", "canciones que no haya escuchado", "músicas que eu ainda não ouvi", "聴いたことのない曲"]) {
+    assert.equal(unheardRequested(text), true, text);
+  }
+  for (const text of ["ponla en mi altavoz", "toca no meu celular", "スマホで再生して"]) {
+    assert.equal(playbackDeviceExplicitlyRequested(text, { deviceName: text.includes("altavoz") ? "speaker" : "phone" }), true, text);
+  }
 });

@@ -1449,7 +1449,7 @@ export class MoondogApplication {
     if (!Number.isInteger(count) || count < 1 || count > 12) {
       throw spotifyResolutionError("invalid_similar_queue_count", "The similar queue count must be an integer from 1 to 12.");
     }
-    if (queueIntent && !/\bsimilar\b|\blike\b|类似|相似|像|这种|这样|parecid|similares?\b|como (?:esta|esto|la que suena)/iu.test(this.pendingPlaylistPromptTransaction.userText)) throw spotifyResolutionError("spotify_style_discovery_required", "This listener requested a style-based queue, not current-artist adjacency. Use Spotify discovery queries, optionally informed by music knowledge or web research, then queue the verified batch.");
+    if (queueIntent && !/\bsimilar\b|\blike\b|类似|相似|像|这种|这样|parecid|similares?\b|como (?:esta|esto|la que suena)|semelhante|tipo (?:essa|esta)|como (?:essa|a que t[aá] tocando)|似た|みたいな|っぽい/iu.test(this.pendingPlaylistPromptTransaction.userText)) throw spotifyResolutionError("spotify_style_discovery_required", "This listener requested a style-based queue, not current-artist adjacency. Use Spotify discovery queries, optionally informed by music knowledge or web research, then queue the verified batch.");
     if (this.pendingPlaylistPromptTransaction?.similarQueueAttempted) {
       throw spotifyResolutionError("spotify_similar_queue_already_attempted", "Similar queue was already attempted for this request. Check its receipt before starting another request.");
     }
@@ -1660,7 +1660,7 @@ export class MoondogApplication {
   requireSpotifyPlaylistCreationFlow() {
     this.requireSpotifyNonRemovalAction();
     const transaction = this.pendingPlaylistPromptTransaction;
-    if (transaction?.queueIntent && !/(?:create|save|sync)\b[^.!?]{0,40}\bplaylist|创建歌单|保存歌单|同步歌单|\b(?:crea|crear|guarda|guardar|sincroniza)\b[^.!?]{0,40}\b(?:playlist|lista)/iu.test(transaction.userText)) throw spotifyResolutionError("spotify_queue_not_playlist", "This listener requested a playback queue, not playlist creation. Queue verified Spotify references directly; no playlist confirmation is needed.");
+    if (transaction?.queueIntent && !/(?:create|save|sync)\b[^.!?]{0,40}\bplaylist|创建歌单|保存歌单|同步歌单|\b(?:crea|crear|guarda|guardar|sincroniza|cria|criar|salva|salvar)\b[^.!?]{0,40}\b(?:playlist|lista)|プレイリスト(?:を)?(?:作|保存|同期)/iu.test(transaction.userText)) throw spotifyResolutionError("spotify_queue_not_playlist", "This listener requested a playback queue, not playlist creation. Queue verified Spotify references directly; no playlist confirmation is needed.");
     if (this.pendingSpotifyRemoval || transaction?.removalPreviewAttempted || transaction?.removalAttempted || transaction?.playlistEditPreviewAttempted || transaction?.playlistEditAttempted || transaction?.quickEditAttempted) {
       throw spotifyResolutionError("spotify_confirmation_flow_conflict", "Finish the displayed playlist action before creating a different playlist.");
     }

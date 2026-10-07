@@ -1,6 +1,6 @@
 # Translating Moondog
 
-Moondog replies in English, Spanish, and Simplified Chinese.
+Moondog speaks English, Spanish, Brazilian Portuguese, Japanese, and Simplified Chinese.
 This page explains how a reply picks its language, and how to add another one.
 
 ## How a reply picks its language
@@ -14,7 +14,8 @@ Moondog itself writes two kinds of text, and both come from catalogs, one file p
 For each message, Moondog decides the reply language in this order:
 
 1. An explicit request, such as "reply in Spanish", "responde en inglés", or "用中文回答".
-2. The message's script: Han characters mean Chinese.
+2. The message's script: kana means Japanese, and Han characters without kana mean Chinese.
+   Japanese written only in kanji therefore reads as Chinese, and the explicit request or your setting decides.
 3. Common words and commands, such as "pon", "quiero", "the", or "play", scored per language.
 4. Your chosen language, from `/language`, then `MOONDOG_LANGUAGE`, then your system's `LANG`.
 
@@ -43,7 +44,8 @@ Quoted titles and track metadata are removed before any of this, because song na
    Keep every `{placeholder}`.
    A sentence written with `tr.n()` is a plural: give `{ one, other }` (or another plural category your language uses), or a single string if your language does not inflect.
 4. Register the language in `LOCALES`, `CATALOGS` and `SCREEN` in `src/i18n/index.mjs`.
-5. Add its name to `LANGUAGE_NAMES`, and, for a Latin-script language, its common words and commands to `WORDS` and `COMMANDS`.
+5. Add its name to `LANGUAGE_NAMES`, and, for a Latin-script language, its common words and commands to `WORDS` and `COMMANDS`, plus any letters only it uses to `MARKS`.
+   Leave out words it shares with a close language, such as "de" or "que" in Spanish and Portuguese; they decide nothing.
    A language with its own script only needs a script check in `messageLocale`.
 6. Add the words Moondog must understand on its own: cancelling a queue, retrying, choosing a numbered result, asking for another version, and device names.
    These are safety rails, so a stop phrase in your language must never be missed.
