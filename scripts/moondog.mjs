@@ -988,7 +988,7 @@ async function main() {
         });
         return json ? `\`\`\`json\n${output.trim()}\n\`\`\`` : output.trim();
       },
-      runSpotify: async (args, { signal } = {}) => {
+      runSpotify: async (args, { signal, stderr } = {}) => {
         let output = "";
         const capture = {
           write(value) {
@@ -999,7 +999,7 @@ async function main() {
           args,
           signal,
           stdout: capture,
-          stderr: args[0] === "login" ? process.stderr : capture,
+          stderr: stderr ?? (args[0] === "login" ? process.stderr : capture),
           resolutionCache: await spotifyResolutionCacheIfConfigured(),
         });
         if (["import-history", "sync-recent"].includes(args[0])) {

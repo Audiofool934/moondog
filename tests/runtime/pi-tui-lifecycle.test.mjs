@@ -717,11 +717,74 @@ test("Spotify quick start signs in once for import and control and resumes the g
   await fixture.outputIncludes("Connect Spotify");
   fixture.terminal.send("\r");
   await fixture.outputIncludes("Spotify is connected.");
-  assert.deepEqual(commands, [["login"]]);
+  // Sign-in stays inside the room, and one account read checks access right away.
+  assert.deepEqual(commands, [["login"], ["account"]]);
   assert.equal(fixture.calls.commits, 0);
   assert.match(fixture.screen(), /Preview my Spotify/u);
-  assert.equal(fixture.terminal.stopCount, 1);
-  assert.equal(fixture.terminal.startCount, 2);
+  assert.equal(fixture.terminal.stopCount, 0);
+  assert.equal(fixture.terminal.startCount, 1);
+});
+
+test("Spotify sign-in explains a mismatched app, cancels with Esc, and replaces the Client ID", async (context) => {
+  const previousCapabilities = getCapabilities();
+  context.after(() => setCapabilities(previousCapabilities));
+  setCapabilities({ ...previousCapabilities, hyperlinks: true });
+  const commands = [];
+  let saved = "a".repeat(32);
+  const url = "https://accounts.spotify.com/authorize?client_id=fixture";
+  const fixture = await createGuidedImportFixture(context, {
+    spotifyStatus: () => ({ client_id_configured: true, state: "not_authenticated" }),
+    async runSpotify(args, { signal, stderr } = {}) {
+      commands.push(args);
+      if (args[0] === "configure") { saved = args[1]; return; }
+      // Spotify shows INVALID_CLIENT in the browser and never calls back, so sign-in waits.
+      stderr?.write(`Open this URL to authorize Spotify:\n${url}\n`);
+      await new Promise((resolve, reject) => signal.addEventListener("abort", () => reject(new Error("Spotify authentication was cancelled.")), { once: true }));
+    },
+  });
+  await fixture.submit("/import", "Bring your music");
+  fixture.terminal.send("\r");
+  await fixture.outputIncludes("Import from Spotify");
+  fixture.terminal.send("\r");
+  await fixture.outputIncludes("Change Client ID");
+  fixture.terminal.send("\r");
+  await fixture.outputIncludes("Open the Spotify sign-in page");
+  assert.match(fixture.screen(), /INVALID_CLIENT/u);
+  assert.ok(fixture.terminal.output.includes(`\x1b]8;;${url}\x1b\\`), "The sign-in link should be one clickable label.");
+  assert.equal(fixture.terminal.stopCount, 0);
+
+  fixture.terminal.send("\x1b");
+  await fixture.outputIncludes("Sign-in cancelled.");
+  fixture.terminal.send("\x1b[B");
+  fixture.terminal.send("\r");
+  await fixture.outputIncludes("Enter your Spotify Client ID");
+  const replacement = "b".repeat(32);
+  fixture.terminal.send(`\x1b[200~${replacement}\x1b[201~`);
+  fixture.terminal.send("\r");
+  await fixture.outputIncludes("App saved. Now connect Spotify.");
+  assert.equal(saved, replacement);
+  assert.deepEqual(commands, [["login"], ["configure", replacement]]);
+  assert.equal(fixture.calls.commits, 0);
+});
+
+test("Spotify sign-in reports a refused account right away instead of during import", async (context) => {
+  const commands = [];
+  const fixture = await createGuidedImportFixture(context, {
+    spotifyStatus: () => ({ client_id_configured: true, state: "not_authenticated" }),
+    async runSpotify(args) {
+      commands.push(args);
+      if (args[0] === "account") throw Object.assign(new Error("Spotify did not allow this action."), { code: "spotify_action_forbidden" });
+    },
+  });
+  await fixture.submit("/import", "Bring your music");
+  fixture.terminal.send("\r");
+  await fixture.outputIncludes("Import from Spotify");
+  fixture.terminal.send("\r");
+  await fixture.outputIncludes("Connect Spotify");
+  fixture.terminal.send("\r");
+  await fixture.outputIncludes("User Management");
+  assert.deepEqual(commands, [["login"], ["account"]]);
+  assert.equal(fixture.calls.commits, 0);
 });
 
 test("Spotify setup keeps the client ID after failure and returns to connection before any import", async (context) => {
