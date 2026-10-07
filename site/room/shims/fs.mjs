@@ -1,0 +1,10 @@
+import { unavailable } from "./unavailable.mjs";
+export const constants = { F_OK: 0, R_OK: 4, W_OK: 2, X_OK: 1, O_RDONLY: 0, O_NOFOLLOW: 0 };
+export const statSync = unavailable("fs.statSync");
+export const readdirSync = () => [];
+export const existsSync = () => false;
+export const mkdirSync = () => {};
+export const appendFileSync = () => {};
+export const writeFileSync = () => {};
+export const readFileSync = unavailable("fs.readFileSync");
+export default { constants, statSync, readdirSync, existsSync, mkdirSync, appendFileSync, writeFileSync, readFileSync };

@@ -1,0 +1,265 @@
+/* Moondog project page. Black and white like the moon; the room's own paper and charcoal.
+   Prism colors keep the room's meanings: green confirms, the spectrum means work in progress. */
+:root {
+  --paper: #f4f4f4;
+  --ink: #141414;
+  --muted: #585858;
+  --faint: #8a8a8a;
+  --rule: #d4d4d4;
+  --raised: #ebebeb;
+  --green: #3c7c3d;
+  --spectrum: linear-gradient(90deg, #d33028 0 16.6%, #b25119 0 33.3%, #787102 0 50%, #3c7c3d 0 66.6%, #33768d 0 83.3%, #6e5c8c 0);
+  --serif: Charter, "Bitstream Charter", "Iowan Old Style", "Sitka Text", Cambria, Georgia, serif;
+  --mono: ui-monospace, "SF Mono", Menlo, "DejaVu Sans Mono", "Cascadia Mono", Consolas, monospace;
+  --gutter: clamp(16px, 4vw, 40px);
+  --measure: 62ch;
+  --page: min(1100px, calc(100% - 2 * var(--gutter)));
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #0c0c0c;
+    --ink: #e4e4e4;
+    --muted: #9e9e9e;
+    --faint: #666666;
+    --rule: #2a2a2a;
+    --raised: #1a1a1a;
+    --green: #52a953;
+    --spectrum: linear-gradient(90deg, #d93e37 0 16.6%, #e27231 0 33.3%, #fcf040 0 50%, #52a953 0 66.6%, #4ea2bf 0 83.3%, #6e5c8c 0);
+    color-scheme: dark;
+  }
+}
+
+* { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; scroll-padding-top: 24px; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font: 18px/1.6 var(--serif);
+  font-kerning: normal;
+  -webkit-text-size-adjust: 100%;
+}
+
+a { color: inherit; text-decoration-thickness: 1px; text-underline-offset: 0.2em; }
+a:hover { text-decoration-thickness: 2px; }
+:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+
+code, pre { font-family: var(--mono); font-size: 0.82em; }
+
+/* Masthead */
+.masthead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: var(--page);
+  margin: 0 auto;
+  padding: 20px 0;
+}
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 20px;
+  text-decoration: none;
+}
+.brand img { border-radius: 50%; }
+.masthead nav { display: flex; gap: clamp(14px, 3vw, 28px); font-size: 16px; white-space: nowrap; }
+@media (max-width: 520px) { .masthead .nav-room { display: none; } }
+.masthead nav a { text-decoration: none; color: var(--muted); }
+.masthead nav a:hover { color: var(--ink); text-decoration: underline; }
+
+main, .liner { width: var(--page); margin-inline: auto; }
+
+/* Intro: the headline and what Moondog is, side by side on wide screens */
+.intro {
+  display: grid;
+  gap: 12px 48px;
+  padding: clamp(24px, 6vw, 72px) 0 clamp(20px, 3vw, 32px);
+}
+.intro h1 {
+  margin: 0;
+  max-width: 15ch;
+  font-size: clamp(36px, 6.2vw, 64px);
+  font-weight: 400;
+  line-height: 1.05;
+  letter-spacing: -0.015em;
+}
+.intro-text p { margin: 0 0 16px; max-width: 46ch; color: var(--muted); }
+.intro-text .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px; margin: 0; color: var(--ink); }
+@media (min-width: 900px) {
+  .intro { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); align-items: end; }
+}
+
+.button {
+  display: inline-block;
+  padding: 10px 18px;
+  border-radius: 4px;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 16px;
+  text-decoration: none;
+}
+.button:hover { text-decoration: underline; }
+
+/* The room: the real TUI in a sleeve */
+.room-frame {
+  position: relative;
+  height: clamp(480px, 72vh, 760px);
+  padding: 14px 16px 10px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--paper);
+  overflow: hidden;
+}
+.room-frame:focus-within { border-color: var(--ink); }
+/* The spectrum shows only while the room is starting, as it does in the terminal while Moondog works. */
+.room-frame::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 2px;
+  background: var(--spectrum);
+  opacity: 0;
+  transition: opacity 600ms ease;
+}
+.room-frame[data-state="loading"]::before { opacity: 1; }
+.room-screen { height: 100%; }
+.room-screen .xterm-viewport { scrollbar-width: none; }
+.room-screen .xterm-viewport::-webkit-scrollbar { display: none; }
+
+.room-note {
+  max-width: var(--measure);
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.room-keys { display: none; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.for-touch { display: none; }
+@media (pointer: coarse) {
+  .room-keys { display: flex; }
+  .for-mouse { display: none; }
+  .for-touch { display: inline; }
+}
+.room-keys button {
+  min-width: 44px;
+  min-height: 40px;
+  padding: 6px 12px;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: var(--raised);
+  color: var(--ink);
+  font: 14px var(--mono);
+}
+
+/* What Moondog does: one row per part of the room, with the command that opens it */
+.tracks { margin-top: clamp(48px, 8vw, 96px); }
+.track {
+  display: grid;
+  gap: 8px 48px;
+  padding: 28px 0 32px;
+  border-top: 1px solid var(--rule);
+}
+.track header h2 {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 400;
+  line-height: 1.2;
+}
+.track header code { display: block; margin-top: 6px; color: var(--muted); }
+.track-body { max-width: var(--measure); }
+.track-body p { margin: 0 0 14px; }
+.track-body > :last-child { margin-bottom: 0; }
+@media (min-width: 900px) {
+  .track { grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr); }
+  .track header { position: sticky; top: 24px; align-self: start; }
+}
+
+.sources {
+  display: grid;
+  grid-template-columns: minmax(9em, max-content) 1fr;
+  gap: 8px 20px;
+  margin: 20px 0 0;
+  font-size: 16px;
+  line-height: 1.5;
+}
+.sources dt { font-weight: 700; }
+.sources dd { margin: 0; color: var(--muted); }
+@media (max-width: 520px) {
+  .sources { grid-template-columns: 1fr; gap: 2px; }
+  .sources dd { margin-bottom: 10px; }
+}
+
+.request { margin: 20px 0 0; padding-left: 18px; border-left: 2px solid var(--ink); }
+.request blockquote { margin: 0; font-size: 20px; }
+.request code { font-size: 1em; }
+.request figcaption { margin-top: 4px; color: var(--muted); font-size: 16px; line-height: 1.5; }
+
+.ledger { margin: 18px 0 0; padding: 0; list-style: none; }
+.ledger li { position: relative; margin: 0 0 12px; padding-left: 22px; }
+.ledger li::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 0.62em;
+  width: 9px;
+  height: 9px;
+  border: 1px solid var(--ink);
+  border-radius: 50%;
+}
+
+/* Install */
+.install {
+  margin-top: clamp(48px, 8vw, 96px);
+  padding-top: 28px;
+  border-top: 1px solid var(--rule);
+}
+.install h2 { margin: 0 0 10px; font-size: 26px; font-weight: 400; }
+.install p { margin: 0 0 14px; max-width: var(--measure); }
+.commands { position: relative; max-width: 760px; margin: 18px 0 20px; }
+.commands pre {
+  margin: 0;
+  padding: 18px 20px;
+  border-radius: 6px;
+  background: var(--raised);
+  font-size: 15px;
+  line-height: 1.6;
+  overflow-x: auto;
+}
+.copy {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  padding: 4px 10px;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: var(--paper);
+  color: var(--ink);
+  font: 14px var(--serif);
+  cursor: pointer;
+}
+.copy:hover { border-color: var(--ink); }
+.copy[data-state="done"] { border-color: var(--green); color: var(--green); }
+
+/* Liner notes */
+.liner {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+  margin-top: clamp(56px, 9vw, 112px);
+  padding: 28px 0 48px;
+  border-top: 1px solid var(--rule);
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.55;
+}
+.liner img { flex: none; border-radius: 50%; }
+.liner p { margin: 0 0 10px; max-width: var(--measure); }
+.liner-links { display: flex; flex-wrap: wrap; gap: 6px 20px; }

@@ -1,0 +1,72 @@
+name: Project page
+
+on:
+  pull_request:
+    paths:
+      - "site/**"
+      - "src/**"
+      - "package-lock.json"
+      - ".github/workflows/pages.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "site/**"
+      - "src/**"
+      - "package-lock.json"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build the page and the room
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            site/package-lock.json
+      - name: Install declared npm version
+        run: npm install --global npm@11.16.0
+      - name: Install Moondog and the page tools
+        run: |
+          npm ci
+          npm ci --prefix site
+      - name: Build from fresh fictional data
+        run: node site/build.mjs --snapshot
+      - name: Upload the page
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: site/dist
+
+  deploy:
+    name: Publish to GitHub Pages
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v5
