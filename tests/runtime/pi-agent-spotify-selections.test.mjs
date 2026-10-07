@@ -25,6 +25,7 @@ async function fixture(context) {
     async getQueue() { return { provider: "spotify", currently_playing: song, queue: [song] }; },
     async getDevices() { return { devices: [{ id: "fictional-device", name: "Fictional Room", is_active: true, is_restricted: false }] }; },
     async resume(input) { writes.push(["play", input.uris]); },
+    async queueTarget() { return { active: true }; },
     async addToQueue(input) { writes.push(["queue", [input.uri]]); },
     async saveTracks(input) { writes.push(["save", input.uris]); },
   };
@@ -61,7 +62,7 @@ test("Spotify-only search references support next-turn play, queue and save with
   // successfully displayed replacement (or reset/expiry) replaces that map.
   assert.equal(application.requireSpotifyResolution(firstRef).uri, song.uri);
   application.presentSpotifyChoices(replacement.items.map(item => item.item_ref_id));
-  assert.throws(() => application.spotifyAddToQueue({ trackRefId: firstRef }), { code: "spotify_track_not_resolved" });
+  await assert.rejects(application.spotifyAddToQueue({ trackRefId: firstRef }), { code: "spotify_track_not_resolved" });
   assert.throws(() => application.spotifyControl({ action: "resume", trackRefs: ["forged-reference"] }), { code: "spotify_track_not_resolved" });
   assert.equal(writes.length, 3);
 });
@@ -173,7 +174,7 @@ for (const action of ["play", "queue", "save"]) {
     assert.equal(result.status, "aborted");
     assert.equal(result.spotify_write_receipts.length, 1);
     assert.equal(result.spotify_write_receipts[0].state, "accepted");
-    assert.match(result.text, /Spotify accepted/u);
+    assert.match(result.text, action === "queue" ? /Queued 1 on Spotify/u : /Spotify accepted/u);
     assert.equal(writes.length, 1);
     assert.doesNotMatch(JSON.stringify(result.spotify_write_receipts), /spotify:|fictional1/u);
     assert.equal(application.currentSessionTurns().length, 0);

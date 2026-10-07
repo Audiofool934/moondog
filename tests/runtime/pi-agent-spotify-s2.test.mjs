@@ -217,6 +217,9 @@ function fakeSpotifyService() {
         checked: input.uris.map((uri, index) => ({ uri, saved: index === 0 })),
       };
     },
+    async queueTarget() {
+      return { active: true };
+    },
     async addToQueue(input) {
       calls.push(["queue.add", input]);
       return {
@@ -867,8 +870,8 @@ test("agent queues the pending plan in order without saving a playlist", async (
 
   assert.equal(queued.status, "completed");
   assert.match(queued.text, /Queued 2 on Spotify:/u);
-  assert.match(queued.text, /1\. Midnight Lines - Mara Vale/u);
-  assert.match(queued.text, /2\. Glass Highway - North Window/u);
+  assert.match(queued.text, /- Midnight Lines - Mara Vale/u);
+  assert.match(queued.text, /- Glass Highway - North Window/u);
   assert.equal(queued.text.includes("Which one did you mean?"), false);
   assert.equal(JSON.stringify(queued.spotify_queue_plan).includes("spotify:track:"), false);
   assert.equal(application.pendingSpotifyPlaylistStatus().state, "available");
@@ -930,7 +933,7 @@ test("a pending-plan queue stops after a later Spotify add fails", async () => {
   const queued = await runtime.prompt("add to my queue");
 
   assert.match(queued.text, /Queued 1 on Spotify, then stopped at "Glass Highway" - North Window/u);
-  assert.match(queued.text, /1\. Midnight Lines - Mara Vale/u);
+  assert.match(queued.text, /- Midnight Lines - Mara Vale/u);
   assert.equal(queued.text.includes("I queued both."), false);
   assert.equal(JSON.stringify(queued.spotify_queue_plan).includes("spotify:track:"), false);
   assert.equal(application.pendingSpotifyPlaylistStatus().state, "available");
@@ -1001,6 +1004,9 @@ function catalogPlaybackApplication({ extraCandidate = false } = {}) {
         async resume(input) {
           calls.push(["resume", input]);
           return { provider: "spotify", ok: true, effect: "write_external", action: "playback.resume", state: "accepted" };
+        },
+        async queueTarget() {
+          return { active: true };
         },
         async addToQueue(input) {
           calls.push(["queue.add", input]);
@@ -1665,6 +1671,8 @@ test("agent queues and plays resolved tracks by track reference", async () => {
         effect: "write_external",
         action: "playback.queue.add",
         state: "accepted",
+        // This fake has no queue read, so the host says it could not double-check.
+        verification: { checked: false, accepted_count: 1 },
       });
       const [search] = toolResults(context, "moondog_library_search");
       return fauxAssistantMessage(
@@ -1812,6 +1820,7 @@ for (const timing of ["before_resolution", "during_resolution", "after_first_add
           runtime.abort();
           return { devices: [{ id: "synthetic-device", is_active: true }] };
         },
+        async queueTarget() { return { active: true }; },
         async addToQueue(input) { service.calls.push(["unexpected.add", input]); },
       } });
     }

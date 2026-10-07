@@ -3166,6 +3166,7 @@ function projectSpotifyReceipt(value) {
     state: "accepted",
   };
   if (value.targets) result.targets = projectPlaybackTargets(value.targets);
+  if (value.action === "playback.queue.add") Object.assign(result, projectQueueOutcome(value));
   if (value.recovered_no_active_device === true) {
     result.recovered_no_active_device = true;
     result.recovery_rejection = { status: 404, reason: "NO_ACTIVE_DEVICE" };
@@ -3225,6 +3226,27 @@ function projectQueueTrackList(tracks, field) {
   });
 }
 
+// What actually happened on Spotify: the device used, whether playback had to
+// start, and how many accepted entries Spotify's own queue shows afterwards.
+function projectQueueOutcome(value) {
+  const result = {};
+  if (isPlainObject(value.device) && typeof value.device.name === "string") {
+    result.device = { name: cleanOutputText(value.device.name, 256, "spotify_queue_device"),
+      type: cleanOutputText(typeof value.device.type === "string" ? value.device.type : "unknown", 64, "spotify_queue_device_type") };
+  }
+  if (value.started_playback) result.started_playback = isPlainObject(value.started_playback)
+    ? projectQueueTrackList([value.started_playback], "spotify_queue_started")[0] : true;
+  if (isPlainObject(value.verification)) {
+    const verification = value.verification;
+    result.verification = verification.checked === true
+      ? { checked: true, accepted_count: safeNonnegativeInteger(verification.accepted_count, "spotify_queue_accepted"),
+        confirmed_count: safeNonnegativeInteger(verification.confirmed_count, "spotify_queue_confirmed"),
+        ...(verification.queue_view_truncated === true ? { queue_view_truncated: true } : {}) }
+      : { checked: false, accepted_count: safeNonnegativeInteger(verification.accepted_count, "spotify_queue_accepted") };
+  }
+  return result;
+}
+
 function projectSpotifyQueuePlan(value) {
   if (!isPlainObject(value) || value.provider !== "spotify" || value.effect !== "write_external" ||
       !["playback.queue.add", "queue.similar", "queue.batch"].includes(value.action) ||
@@ -3241,6 +3263,7 @@ function projectSpotifyQueuePlan(value) {
     not_added: projectQueueTrackList(value.not_added, "spotify_queue_not_added"),
     ...(value.cancelled === true ? { cancelled: true } : {}),
     ...(value.outcome_unknown === true ? { outcome_unknown: true } : {}),
+    ...projectQueueOutcome(value),
   };
   if (["partial", "unknown", "failed"].includes(value.state)) {
     result.stopped = projectQueueTrackList([value.stopped], "spotify_queue_stopped")[0];
@@ -4461,7 +4484,7 @@ function createToolFactories(
       executionMode: "sequential", execute: executeDomain(async (_id, parameters, signal) => application.spotifyDiscover(parameters, { signal }), projectSpotifyDiscovery),
     })],
     ["spotify.queue.batch", descriptor => ({ name: descriptor.tool_name, label: descriptor.label,
-      description: "Complete an explicit queue request using Spotify-verified item_ref_id values, never invented IDs or model-only candidates. Supply up to 36 distinct track references in preferred order; the host queues up to the listener's requested count (maximum12), skipping active Avoid, current/observed/recent queue duplicates. More candidates than requested allow deduplication to fill the batch. No playlist plan, playlist creation or separate confirmation is required for an explicit queue request. Report requested versus accepted count and any shortfall/cancellation/unknown effect. Never repeat a batch after any write.",
+      description: "Queue several songs when the listener asks for a queue in any phrasing (for example \"I want a Ludwig x Hans Zimmer queue\", \"line up some jazz\"), using Spotify-verified item_ref_id values, never invented IDs or model-only candidates. Supply up to 36 distinct track references in preferred order; the host queues up to the listener's requested count (maximum12), skipping active Avoid, current/observed/recent queue duplicates. More candidates than requested allow deduplication to fill the batch. No playlist plan, playlist creation or separate confirmation is required for an explicit queue request. Report requested versus accepted count and any shortfall/cancellation/unknown effect. Never repeat a batch after any write.",
       parameters: Type.Object({ item_refs: Type.Array(Type.String({ minLength: 1, maxLength: 128 }), { minItems: 1, maxItems: 36, uniqueItems: true }),
         device_name: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })), device_ref_id: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })), device_id: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })) }, { additionalProperties: false }),
       executionMode: "sequential", execute: executeDomain(async (_id, parameters, signal) => {
@@ -5987,6 +6010,7 @@ Spotify control and catalog rules:
 - For a requested song on a named device, call moondog_spotify_player_control with resume, the exact song reference, and the device_name stated by the listener. Do not call standalone transfer first: it may play the old song. Resume owns device preparation. A returned device_ref_id still needs the listener’s device intent; metadata and model arguments never authorize a switch. Only a separate explicit request to switch or move playback uses moondog_spotify_device_transfer. Set play true only when the user asks to continue the existing playback; omit it for a pure transfer to preserve state. Do not ask the user to paste a device ID or invent a device preference.
 - “Play it on” a device preserves the exact previously selected recording while explicitly changing its device. Use resume with the listener’s device_name and no new source. A Windows query can match a Spotify device named PC; it must never become an arbitrary Computer. When the name does not match, show the actual visible Spotify names and retain the song for the listener’s corrected device request. Current-context resuming UI flags do not prohibit starting a selected new song.
 - If the transfer result names the device, confirm that name. If several devices match, or none do, tell the user the visible names from the tool result and ask which one, or ask them to open Spotify on that device. Use moondog_spotify_devices only when they ask what is connected, or when you need those names after a failed match.
+- Any wording that asks for songs in the queue (for example "I want a Ludwig x Hans Zimmer queue rn", "line up some jazz", “再来十二首国风DJ，queue”) authorizes queueing; without a count, choose a sensible batch of up to 12. For more than one song call moondog_spotify_queue_batch once instead of repeated single adds. The host picks the device, starts the first song when nothing is playing, and checks Spotify's real queue afterwards; do not ask about devices, permissions or confirmation first, and report the host's receipt rather than your own count.
 - A style/count/queue request (for example “great，再来十二首国风DJ，queue”) already authorizes queueing up to that count. Use moondog_spotify_discover for 1–3 varied queries at a time, informed by music knowledge or web research, then moondog_spotify_queue_batch with verified references in preferred order. Up to six queries retain a shared pool; a twelve-song request supports twelve accepted additions. No playlist plan, playlist creation or redundant confirmation is needed. If a discovery source is empty, refine Spotify queries while budget remains. Report actual accepted/requested counts and shortfalls.
 - A recent unfinished queue request stays active when the listener supplies its count or chooses recording versions. Read spotify_playback_context.queue_request for the retained request and count. Carry forward the stated musical direction; choose a coherent mix when the listener delegates curation. A local tool-input failure is yours to repair, not a reason to ask the listener to repeat their taste or authorization. Do not replay a batch with accepted or uncertain writes.
 - moondog_spotify_queue_similar is only a narrow shortcut for explicitly requested current-artist similarity (1–12). It is not a style/genre search. If it returns no candidates without writes, fall back to the general Spotify discovery path.
@@ -6416,6 +6440,43 @@ function renderNamedSongPlayback(promptState, promptText) {
     : `Started playback of ${track.title} - ${track.artist_credit} on Spotify.`;
 }
 
+// Every queue write in a turn is one outcome for the listener: a batch and any
+// single additions are reported together, once.
+function mergedQueueReceipt(plan, singles) {
+  if (!singles.length) return plan ?? null;
+  const targets = singles.flatMap(receipt => receipt.targets?.length ? receipt.targets : [{ title: "a selected track", artist_credit: "" }]);
+  const base = plan ?? { provider: "spotify", action: "playback.queue.add", state: "accepted", queued: [], unmatched: [], not_added: [] };
+  const checks = [base.verification, ...singles.map(receipt => receipt.verification)].filter(Boolean);
+  return { ...base, state: ["no_candidates", "no_playback"].includes(base.state) ? "accepted" : base.state,
+    queued: [...base.queued, ...targets],
+    ...(base.device ?? singles.find(receipt => receipt.device)?.device ? { device: base.device ?? singles.find(receipt => receipt.device).device } : {}),
+    ...(base.started_playback ? {} : singles[0]?.started_playback ? { started_playback: targets[0] } : {}),
+    ...(checks.length ? { verification: { checked: checks.every(check => check.checked),
+      accepted_count: checks.reduce((sum, check) => sum + check.accepted_count, 0),
+      confirmed_count: checks.reduce((sum, check) => sum + (check.confirmed_count ?? 0), 0),
+      ...(checks.some(check => check.queue_view_truncated) ? { queue_view_truncated: true } : {}) } } : {}) };
+}
+
+function renderQueueVerification(receipt, chinese) {
+  const verification = receipt.verification;
+  if (!verification || !receipt.queued.length) return null;
+  const one = verification.accepted_count === 1;
+  if (!verification.checked) return chinese
+    ? "Spotify 已接受，但我没能读取你的队列来再次确认。"
+    : `Spotify accepted ${one ? "it" : "them"}, but I couldn't read your queue to double-check.`;
+  if (verification.confirmed_count >= verification.accepted_count) {
+    if (receipt.started_playback) return chinese
+      ? (one ? "已在 Spotify 上确认正在播放。" : "已在 Spotify 上确认：第一首正在播放，其余都在队列里。")
+      : (one ? "Confirmed playing on Spotify." : "Confirmed on Spotify: the first is playing and the rest are in your queue.");
+    return chinese
+      ? (one ? "已在 Spotify 队列里确认。" : `已在 Spotify 队列里确认这 ${verification.accepted_count} 首。`)
+      : (one ? "Confirmed in your Spotify queue." : `Confirmed in your Spotify queue: all ${verification.accepted_count}.`);
+  }
+  return chinese
+    ? `Spotify 接受了 ${verification.accepted_count} 首，目前队列里能看到 ${verification.confirmed_count} 首${verification.queue_view_truncated ? "（Spotify 只显示长队列的一部分）" : ""}。`
+    : `Spotify accepted ${verification.accepted_count}; ${verification.confirmed_count} show in your queue right now${verification.queue_view_truncated ? " (Spotify only shows part of a long queue)" : ""}.`;
+}
+
 function renderSpotifyQueuePlan(receipt, promptText) {
   const chinese = responseLanguage(promptText) === "zh";
   if (receipt.state === "no_playback") return chinese ? "Spotify 当前没有可用的歌曲播放信息，未加入任何歌曲。" : "Spotify has no current track to use as a seed; nothing was queued.";
@@ -6449,9 +6510,20 @@ function renderSpotifyQueuePlan(receipt, promptText) {
     ? "Spotify 未确认停止处这首歌是否已加入；请先检查队列，不要自动重试。"
     : "Spotify did not confirm whether the stopped track was added. Check the queue before trying again; this write was not replayed.");
   if (receipt.failure) lines.push(renderSpotifyPlaybackFailure(receipt.failure, promptText));
-  receipt.queued.forEach((track, index) => {
-    lines.push(`${index + 1}. ${track.title} - ${track.artist_credit}`);
-  });
+  if (receipt.started_playback && receipt.queued.length) {
+    const first = receipt.queued[0];
+    const more = receipt.queued.length > 1;
+    lines.push(chinese
+      ? `刚才没有在播放，所以我先在${receipt.device?.name ? `「${receipt.device.name}」` : " Spotify "}上播放《${first.title}》${more ? "，其余排在后面" : ""}。`
+      : `Nothing was playing, so I started "${first.title}"${receipt.device?.name ? ` on ${receipt.device.name}` : ""}${more ? " and lined up the rest" : ""}.`);
+  }
+  // Bullets, not numbers: a receipt is not a choice list and must not replace
+  // the listener's displayed numbered choices.
+  for (const track of receipt.queued) {
+    lines.push(`- ${track.title}${track.artist_credit ? ` - ${track.artist_credit}` : ""}`);
+  }
+  const verified = renderQueueVerification(receipt, chinese);
+  if (verified) lines.push(verified);
   if (receipt.unmatched.length > 0) {
     lines.push(chinese ? "Spotify 上对不上：" : "Could not match on Spotify:");
     for (const track of receipt.unmatched) {
@@ -7214,11 +7286,20 @@ export class PiAgentRuntime {
       ...(promptState.spotifyPlaylistEditWrite ? { spotify_playlist_edit_write: structuredClone(promptState.spotifyPlaylistEditWrite) } : {}),
       ...(promptState.spotifyPlaylistPartialEffect ? { spotify_playlist_partial_effect: structuredClone(promptState.spotifyPlaylistPartialEffect) } : {}),
     });
+    const singleQueueAdds = () => promptState.spotifyWriteReceipts.filter(receipt =>
+      receipt.action === "playback.queue.add" && receipt.state === "accepted");
+    // A refused queue attempt that sent nothing is superseded once queue entries
+    // were accepted; printing both would contradict what Spotify received.
+    const acceptedQueueWrite = () => singleQueueAdds().length > 0 || (promptState.spotifyQueuePlan?.queued?.length ?? 0) > 0;
     const unresolvedPlaybackFailures = () => promptState.spotifyPlaybackFailures.filter(failure =>
-      failure.code !== "spotify_playback_already_accepted");
+      failure.code !== "spotify_playback_already_accepted" &&
+      !(failure.not_sent && failure.action === "playback.queue.add" && acceptedQueueWrite()));
     const spotifyEffectTexts = () => {
-      const receipts = promptState.spotifyWriteReceipts.map((receipt) => renderSpotifyWriteReceipt(receipt, text));
-      if (promptState.spotifyQueuePlan) receipts.push(renderSpotifyQueuePlan(promptState.spotifyQueuePlan, text));
+      const singles = singleQueueAdds();
+      const receipts = promptState.spotifyWriteReceipts.filter(receipt => !singles.includes(receipt))
+        .map((receipt) => renderSpotifyWriteReceipt(receipt, text));
+      const queue = mergedQueueReceipt(promptState.spotifyQueuePlan, singles);
+      if (queue) receipts.push(renderSpotifyQueuePlan(queue, text));
       if (promptState.spotifyPlaylistEditWrite) receipts.push(renderSpotifyPlaylistEditReceipt(promptState.spotifyPlaylistEditWrite, text));
       if (promptState.spotifyPlaylistWrite?.playlist) {
         const { name, track_count: count } = promptState.spotifyPlaylistWrite.playlist;
