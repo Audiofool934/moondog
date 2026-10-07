@@ -390,6 +390,8 @@ const DEVICE_QUERY_FILLER = new Set([
   "now",
   "there",
   "here",
+  // Spanish filler around a device name.
+  "en", "el", "la", "mi", "al", "pon", "ponla", "ponlo", "reproduce", "dispositivo", "ahora", "aquí", "allí",
 ]);
 
 const DEVICE_TYPE_ALIASES = new Map([
@@ -404,6 +406,19 @@ const DEVICE_TYPE_ALIASES = new Map([
   ["手机", "smartphone"],
   ["音箱", "speaker"],
   ["音响", "speaker"],
+  ["ordenador", "computer"],
+  ["computadora", "computer"],
+  ["portátil", "computer"],
+  ["móvil", "smartphone"],
+  ["celular", "smartphone"],
+  ["teléfono", "smartphone"],
+  ["altavoz", "speaker"],
+  ["bocina", "speaker"],
+  ["parlante", "speaker"],
+  ["tele", "tv"],
+  ["televisión", "tv"],
+  ["coche", "automobile"],
+  ["carro", "automobile"],
   ["speaker", "speaker"],
   ["tv", "tv"],
   ["television", "tv"],

@@ -17,7 +17,7 @@ const track = (id, name, artist = `Fictional Artist ${id}`) => ({ id, uri: `spot
 const versions = [track("mix1", "精卫（关中王）DJ版", "DJ罐头鱼"), track("mix2", "精卫", "30年前50年后"), track("mix3", "精卫（万物终归向海）DJ铁柱版", "DJ铁柱、银翼杀手")];
 const catalogue = Array.from({ length: 24 }, (_, index) => track(`song${index}`, `Fictional 国风 DJ ${index}`));
 
-function fixture(t, { web = false, similarity = false } = {}) {
+function fixture(t, { web = false, similarity = false, locale } = {}) {
   const writes = [], reads = [], webCalls = [], avoids = new Set(), known = new Set();
   const state = { status: 204, failAt: Infinity, versions: [...versions, versions[0]], catalogue, queue: [], current: null, onWrite: null, similarityCalls: 0 };
   const client = createSpotifyWebApiClient({ tokenProvider: async () => "FICTIONAL_TOKEN", fetchImpl: async (url, init) => {
@@ -50,7 +50,7 @@ function fixture(t, { web = false, similarity = false } = {}) {
   // in for the independently tested persistent profile projection.
   const domainServices = { filterDiscoveryTracks: tracks => tracks.filter(track => !avoids.has(track.artist_credit)),
     isKnownDiscoveryTrack: track => known.has(track.title) };
-  const application = new MoondogApplication({ importsRoot: "/tmp/moondog-fictional-open-world", domainServices: similarity ? createSyntheticDomainServices({ subjectScope: { subjectId: "fictional-discovery" } }) : domainServices,
+  const application = new MoondogApplication({ importsRoot: "/tmp/moondog-fictional-open-world", locale, domainServices: similarity ? createSyntheticDomainServices({ subjectScope: { subjectId: "fictional-discovery" } }) : domainServices,
     ...(similarity ? { musicSimilarity: { discoverSimilarTracks: async () => { state.similarityCalls++; return { state: "not_found", tracks: [] }; } } } : {}),
     spotifyConnection: { ready: () => true, missingScopes: () => [], publicStatus: () => ({ provider: "spotify", state: "ready" }), service: createSpotifyService({ client }) },
     ...(web ? { webResearch: { publicStatus: () => ({ state: "configured" }), search: async input => {
@@ -203,6 +203,30 @@ test("a queue request with nothing playing starts the first song and queues the 
   assert.equal(f.state.current.uri, catalogue[0].uri);
   assert.match(result.text, /Nothing was playing, so I started "Fictional 国风 DJ 0" on Fictional laptop and lined up the rest/u);
   assert.match(result.text, /Confirmed on Spotify: the first is playing and the rest are in your queue/u);
+});
+
+test("a Spanish queue request uses the count the model reports and answers in Spanish", async t => {
+  const f = fixture(t);
+  const result = await f.prompt("pon 4 canciones de jazz en la cola", [call("moondog_spotify_discover", { queries: ["first"] }), context =>
+    call("moondog_spotify_queue_batch", { item_refs: latest(context, "moondog_spotify_discover").items.slice(0, 6).map(item => item.item_ref_id), count: 4 }), say()]);
+  assert.equal(f.writes.length, 4);
+  assert.equal(result.spotify_queue_plan.requested, 4);
+  assert.match(result.text, /Añadí 4 a la cola de Spotify:/u);
+  assert.match(result.text, /Confirmadas en tu cola de Spotify: las 4\./u);
+});
+
+test("a message without a clear language follows the listener's setting, and a Spanish stop never queues", async t => {
+  const f = fixture(t, { locale: "es" });
+  const respond = () => [call("moondog_spotify_discover", { queries: ["first"] }), context =>
+    call("moondog_spotify_queue_batch", { item_refs: latest(context, "moondog_spotify_discover").items.slice(0, 2).map(item => item.item_ref_id) }), say()];
+  const ambiguous = await f.prompt("Ludwig x Hans Zimmer", respond());
+  assert.match(ambiguous.text, /Añadí 2 a la cola de Spotify:/u);
+  const english = await f.prompt("queue some jazz", [call("moondog_spotify_discover", { queries: ["second"] }), context =>
+    call("moondog_spotify_queue_batch", { item_refs: latest(context, "moondog_spotify_discover").items.slice(0, 2).map(item => item.item_ref_id) }), say()]);
+  assert.match(english.text, /Queued 2 on Spotify:/u);
+  const writes = f.writes.length;
+  await f.prompt("no añadas nada a la cola", respond());
+  assert.equal(f.writes.length, writes);
 });
 
 const queueResponses = () => [call("moondog_spotify_discover", { queries: ["first", "second"] }),

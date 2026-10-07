@@ -173,6 +173,7 @@ Read the [connection and data details](docs/TERMINAL_GUIDE.md) before you connec
 | `/theme paper` | Black ink on white. |
 | `/theme charcoal` | Moonlight on a black sky. |
 | `/theme terminal` | Your terminal's own colors. |
+| `/language` | Choose the language Moondog replies in: English, Español, or 简体中文. |
 
 Each launch starts a new conversation.
 Your profile, and anything Moondog remembers, carry over.
@@ -185,6 +186,7 @@ Your profile, and anything Moondog remembers, carry over.
 - [Voice](docs/VOICE.md): how Moondog talks, and where Pink Floyd shows up.
 - [Runtime architecture](docs/ADR_0001_AGENT_RUNTIME_AND_CLI.md) and [data contracts](contracts/README.md): how the pieces fit together.
 - [Contribution guide](CONTRIBUTING.md) and [release readiness](docs/PUBLIC_RELEASE_READINESS.md): local setup, checks, and how private data is kept out.
+- [Translating Moondog](docs/TRANSLATING.md): how replies choose a language, and how to add one.
 
 The source candidate is 0.2.0-beta.1, and the work happens in the TUI.
 GUI and Studio development is paused.

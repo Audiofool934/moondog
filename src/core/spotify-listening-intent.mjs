@@ -10,16 +10,28 @@ function number(value) {
   return digits[value] ?? null;
 }
 
+// Spanish ordinals and small numbers for "la tercera", "pon la 2", "número dos".
+const spanishOrdinals = { primer: 1, primero: 1, primera: 1, segundo: 2, segunda: 2, tercer: 3, tercero: 3, tercera: 3,
+  cuarto: 4, cuarta: 4, quinto: 5, quinta: 5, sexto: 6, sexta: 6, séptimo: 7, séptima: 7, septimo: 7, septima: 7,
+  octavo: 8, octava: 8, noveno: 9, novena: 9, décimo: 10, décima: 10, decimo: 10, decima: 10,
+  dos: 2, tres: 3, cuatro: 4, cinco: 5, seis: 6, siete: 7, ocho: 8, nueve: 9, diez: 10 };
+const spanishOrdinal = new RegExp(`^(?:(?:pon|ponme|reproduce|toca|elige|escoge|quiero)\\s+)?(?:(?:la|el)\\s+)?(?:n[uú]mero\\s+)?(\\d{1,2}|${Object.keys(spanishOrdinals).join("|")})(?:\\s+(?:versi[oó]n|opci[oó]n|canci[oó]n))?$`, "iu");
+
 export function playbackFollowupIntent(text) {
   if (typeof text !== "string" || text.length > 500) return null;
-  const value = text.normalize("NFKC").trim().replace(/[.!。！]+$/u, "");
+  const value = text.normalize("NFKC").trim().replace(/[.!。！]+$/u, "").replace(/^[¡¿]+|[?]+$/gu, "");
   const ordinal = value.match(/^(?:(?:play|choose|number)\s*|(?:播放|选|来|第)\s*)?(\d{1,2}|[一二三四五六七八九十])(?:\s*(?:个|首|号|那个|这个|版本))?$/iu);
   if (ordinal) return { kind: "ordinal", ordinal: number(ordinal[1]) };
-  if (/^(?:please\s+)?(?:retry|try (?:it )?again|play (?:it )?again|重试|再试(?:一次|一下)?|再来一次)$/iu.test(value)) return { kind: "retry" };
+  const spanish = value.match(spanishOrdinal);
+  if (spanish) return { kind: "ordinal", ordinal: /^\d/u.test(spanish[1]) ? Number(spanish[1]) : spanishOrdinals[spanish[1].toLocaleLowerCase("es")] };
+  if (/^(?:please\s+)?(?:retry|try (?:it )?again|play (?:it )?again|重试|再试(?:一次|一下)?|再来一次)$/iu.test(value) ||
+      /^(?:por favor\s+)?(?:otra vez|de nuevo|reint[eé]ntalo|reintenta(?:r)?|int[eé]ntalo (?:otra vez|de nuevo)|vuelve a intentarlo|pon(?:la|lo) (?:otra vez|de nuevo))(?:\s+por favor)?$/iu.test(value)) return { kind: "retry" };
   if (/^(?:(?:please|can you|could you|would you)\s+)?(?:play|put)\s+(?:it|that|this|the (?:same |selected )?(?:song|track|version))\s+(?:on|through|using)\s+\S/iu.test(value) ||
-      /^(?:请|可以|能不能|能否)?(?:在|用).{1,128}(?:播放|放)(?:它|这首|那首|同一首|刚才那首)|^(?:请)?(?:把|将)(?:它|这首|那首|同一首|刚才那首).{0,12}(?:放到|换到|转到|在).{1,128}(?:播放|上放|上播)/u.test(value)) return { kind: "retarget" };
+      /^(?:请|可以|能不能|能否)?(?:在|用).{1,128}(?:播放|放)(?:它|这首|那首|同一首|刚才那首)|^(?:请)?(?:把|将)(?:它|这首|那首|同一首|刚才那首).{0,12}(?:放到|换到|转到|在).{1,128}(?:播放|上放|上播)/u.test(value) ||
+      /^(?:(?:por favor|puedes)\s+)?(?:pon|reproduce|toca)(?:la|lo)\s+en\s+\S/iu.test(value)) return { kind: "retarget" };
   if (/^(?:换(?:一|另一个|个)|换一个(?:版本)?|另一个版本|换个版本|再换一版)(?:[，,。\s].*|不好听|这(?:个)?版本不好听)?$/u.test(value) ||
-      /^(?:try|play|choose|pick|put on) (?:a |an )?(?:different|another) (?:one|version|mix)(?:[,.!\s].*)?$/iu.test(value)) return { kind: "alternative" };
+      /^(?:try|play|choose|pick|put on) (?:a |an )?(?:different|another) (?:one|version|mix)(?:[,.!\s].*)?$/iu.test(value) ||
+      /^(?:(?:pon|prueba|elige|busca|quiero)\s+)?otra versi[oó]n(?:[,.!\s].*)?$|^c[aá]mbia(?:la|lo)? (?:de|por otra) versi[oó]n/iu.test(value)) return { kind: "alternative" };
   return null;
 }
 
@@ -74,8 +86,15 @@ function queueCommand(clause, hasQueue) {
 export function queueCancellationRequested(text) {
   if (typeof text !== "string") return false;
   const value = text.normalize("NFKC").replace(/[‘’]/gu, "'").trim();
-  return /^(?:cancel|stop|算了|取消|不用了|别加了|不要加了)[.!。！]?$/iu.test(value) ||
-    /\b(?:don't|do not|never|stop|cancel|not to)\b[^,，。;；!?！？]*\bqueue\b|(?:不要|别|取消|停止)[^，。!?！？]{0,40}(?:queue|队列)/iu.test(value);
+  return /^[¡]?(?:cancel|stop|算了|取消|不用了|别加了|不要加了|cancela|cancelar|para|detente|d[eé]jalo|olv[ií]dalo|ya no)[.!。！]?$/iu.test(value) ||
+    /\b(?:don't|do not|never|stop|cancel|not to)\b[^,，。;；!?！？]*\bqueue\b|(?:不要|别|取消|停止)[^，。!?！？]{0,40}(?:queue|队列)/iu.test(value) ||
+    /(?:^|[\s¡¿,])(?:no|nunca|deja de|para de|cancela)\s[^,.;!?¡¿]{0,40}\bcola\b/iu.test(value);
+}
+
+/** The listener asked for music they have not heard, in any supported language. */
+export function unheardRequested(text) {
+  return typeof text === "string" &&
+    /没听过|从未听|不要听过|\bunheard\b|\bnever heard\b|outside.*library|曲库之外|nunca he (?:escuchado|o[ií]do)|que no (?:he|haya) (?:escuchado|o[ií]do)|sin escuchar|nuevas para m[ií]/iu.test(text);
 }
 
 function queueRefinement(value, previous) {
@@ -120,7 +139,7 @@ export function queueListeningIntent(text, previous = null) {
     request: correction ? previous.request : value,
     queue_only: correction || !/\b(?:play|resume|pause|skip|next|previous|seek|volume|shuffle|repeat|transfer|save|create|follow|unfollow)\b|播放|暂停|下一首|上一首|音量|切换设备|保存|创建|关注/iu.test(affirmative),
     ...(correction && previous.attempted ? { clarification_only: true } : {}),
-    excludeKnown: /没听过|从未听|不要听过|\bunheard\b|\bnever heard\b/iu.test(value) || (correction && previous.excludeKnown === true) };
+    excludeKnown: unheardRequested(value) || (correction && previous.excludeKnown === true) };
 }
 
 export function trackVersionFamily(name) {
@@ -141,7 +160,8 @@ export function playbackDeviceExplicitlyRequested(text, { deviceId, deviceName, 
   if (typeof deviceName !== "string" || !deviceName.trim()) return false;
   const value = text.normalize("NFKC").toLocaleLowerCase("en-US").trim();
   const query = deviceName.normalize("NFKC").toLocaleLowerCase("en-US").trim();
-  const aliases = [["computer", "desktop", "laptop", "电脑", "计算机"], ["phone", "smartphone", "手机"], ["speaker", "音箱", "音响"]];
+  const aliases = [["computer", "desktop", "laptop", "电脑", "计算机", "ordenador", "computadora", "portátil"],
+    ["phone", "smartphone", "手机", "móvil", "celular", "teléfono"], ["speaker", "音箱", "音响", "altavoz", "bocina", "parlante"]];
   const ordinalWords = ["first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth", "tenth"];
   const chinese = Object.keys(digits).find(key => digits[key] === ordinal && key !== "两") ?? String(ordinal);
   const names = ordinal === undefined ? aliases.find(group => group.includes(query)) ?? [query] :
@@ -151,7 +171,7 @@ export function playbackDeviceExplicitlyRequested(text, { deviceId, deviceName, 
   if (names.some(negated)) return false;
   return names.some(name => {
     const escaped = name.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
-    return value === name || new RegExp(`(?:\\b(?:on|onto|to|using|use|via|through|set)\\s+(?:(?:my|the|this)\\s+)?["“']?|(?:在|用|使用|切到|切换到|转到|通过)(?:我的|这台|这个)?\\s*)${escaped}(?:\\b|[上里播放，。]|$)`, "iu").test(value) ||
+    return value === name || new RegExp(`(?:\\b(?:on|onto|to|using|use|via|through|set|en|al|desde)\\s+(?:(?:my|the|this|mi|el|la|este|esta)\\s+)?["“']?|(?:在|用|使用|切到|切换到|转到|通过)(?:我的|这台|这个)?\\s*)${escaped}(?:\\b|[上里播放，。]|$)`, "iu").test(value) ||
       new RegExp(`${escaped}\\s*(?:上|里)(?:播放|听|放|继续|恢复)`, "iu").test(value);
   });
 }

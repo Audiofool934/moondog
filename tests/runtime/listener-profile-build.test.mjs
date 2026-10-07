@@ -233,6 +233,37 @@ test("the Pi runtime writes with the dossier and checks in a fresh session throu
   assert.equal(runtime.activeAgent, null);
 });
 
+test("the reading is written in the listener's language, and checking stays language-neutral", async t => {
+  const userInput = context => {
+    const content = context.messages.find(message => message.role === "user").content;
+    return JSON.parse(typeof content === "string" ? content : content.map(item => item.text ?? "").join(""));
+  };
+  const state = await fixture(t, bundle(2));
+  state.application.locale = "es";
+  const faux = fauxProvider();
+  const models = createModels();
+  models.setProvider(faux.provider);
+  const runtime = new ProfileBuildRuntime({ models, model: faux.getModel(), provider: "faux", modelId: "faux-1" });
+  const prompts = [];
+  faux.setResponses([context => {
+    prompts.push(JSON.stringify(context.messages[0]));
+    const value = userInput(context);
+    const leader = value.dossier.lifetime_artists[0];
+    return fauxAssistantMessage([fauxToolCall("moondog_submit_listener_profile", { summary: "Tu escucha gira en torno a un artista.",
+      insights: [insight(leader.ref, `${leader.name} encabeza tu escucha.`)] })], { stopReason: "toolUse" });
+  }, context => {
+    prompts.push(JSON.stringify(context.messages[0]));
+    const value = userInput(context);
+    return fauxAssistantMessage([fauxToolCall("moondog_record_profile_check", {
+      candidate_id: value.candidate.candidate_id, verdict: "pass", issues: [] })], { stopReason: "toolUse" });
+  }]);
+  const result = await runListenerProfileCommand({ application: state.application, args: ["build"],
+    runtimeFactory: async () => runtime, output: { write() {} } });
+  assert.equal(result.state, "ready");
+  assert.match(prompts[0], /Write the summary and insights in Spanish\./u);
+  assert.doesNotMatch(prompts[1], /in Spanish/u);
+});
+
 test("profile failures keep the provider diagnosis and the saved draft", async t => {
   const state = await fixture(t, bundle(2));
   const faux = fauxProvider();

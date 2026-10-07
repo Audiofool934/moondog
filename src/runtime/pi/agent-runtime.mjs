@@ -1,6 +1,7 @@
 import { Agent } from "@earendil-works/pi-agent-core";
 import { Type } from "@earendil-works/pi-ai";
 import { readFileSync } from "node:fs";
+import { messageLocale, translator } from "../../i18n/index.mjs";
 import { PROFILE_SECTIONS } from "../../profile/profile-exploration.mjs";
 import { compactListenerProfile } from "../../profile/listener-profile-build.mjs";
 
@@ -4484,13 +4485,14 @@ function createToolFactories(
       executionMode: "sequential", execute: executeDomain(async (_id, parameters, signal) => application.spotifyDiscover(parameters, { signal }), projectSpotifyDiscovery),
     })],
     ["spotify.queue.batch", descriptor => ({ name: descriptor.tool_name, label: descriptor.label,
-      description: "Queue several songs when the listener asks for a queue in any phrasing (for example \"I want a Ludwig x Hans Zimmer queue\", \"line up some jazz\"), using Spotify-verified item_ref_id values, never invented IDs or model-only candidates. Supply up to 36 distinct track references in preferred order; the host queues up to the listener's requested count (maximum12), skipping active Avoid, current/observed/recent queue duplicates. More candidates than requested allow deduplication to fill the batch. No playlist plan, playlist creation or separate confirmation is required for an explicit queue request. Report requested versus accepted count and any shortfall/cancellation/unknown effect. Never repeat a batch after any write.",
+      description: "Queue several songs when the listener asks for a queue in any phrasing (for example \"I want a Ludwig x Hans Zimmer queue\", \"line up some jazz\"), using Spotify-verified item_ref_id values, never invented IDs or model-only candidates. Supply up to 36 distinct track references in preferred order; the host queues up to the listener's requested count (maximum 12). Pass count when the listener named a number of songs, in any language; omit it otherwise. The host skips active Avoid and current, observed or recent queue duplicates. More candidates than requested allow deduplication to fill the batch. No playlist plan, playlist creation or separate confirmation is required for an explicit queue request. Report requested versus accepted count and any shortfall/cancellation/unknown effect. Never repeat a batch after any write.",
       parameters: Type.Object({ item_refs: Type.Array(Type.String({ minLength: 1, maxLength: 128 }), { minItems: 1, maxItems: 36, uniqueItems: true }),
+        count: Type.Optional(Type.Integer({ minimum: 1, maximum: 12 })),
         device_name: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })), device_ref_id: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })), device_id: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })) }, { additionalProperties: false }),
       executionMode: "sequential", execute: executeDomain(async (_id, parameters, signal) => {
         const target = parameters.device_id !== undefined || parameters.device_name !== undefined || parameters.device_ref_id !== undefined
           ? await application.spotifyDeviceTarget({ deviceId: parameters.device_id, deviceName: parameters.device_name, deviceRefId: parameters.device_ref_id }, { signal }) : {};
-        return application.spotifyQueueBatch({ itemRefs: parameters.item_refs, ...target }, { signal });
+        return application.spotifyQueueBatch({ itemRefs: parameters.item_refs, count: parameters.count, ...target }, { signal });
       }, projectSpotifyQueuePlan, onSpotifyQueuePlan, retainPlaybackFailure("playback.queue.add")),
     })],
     ...["search", "read"].map((kind) => [
@@ -5947,7 +5949,7 @@ Grounding and evidence rules:
 - For playlist plans, validate external candidate sets with moondog_playlist_plan. For play or queue requests, verify external candidate titles/artists on Spotify and act on its host references directly. No playlist-plan gate applies to an explicit queue request.
 - Copy the user's explicit track count into requested_track_count when calling moondog_playlist_plan.
 - Refer to songs by title and artist in selection reasons and ordering notes, never by internal track refs or shortened IDs.
-- Use product.playlist_response_language for playlist reasons and ordering notes, keeping titles and artist names in their original language. The host displays external-track reasons from registered discovery evidence; it does not use model descriptions as evidence of tempo, instrumentation, genre, or sound.
+- Use product.reply_language for playlist reasons and ordering notes, keeping titles and artist names in their original language. The host displays external-track reasons from registered discovery evidence; it does not use model descriptions as evidence of tempo, instrumentation, genre, or sound.
 - Treat source coverage and limitations as part of the answer. The Apple Music library remains the trusted source for library membership, while the effective Spotify event set supplies bounded listening behavior.
 
 Playlist revision rules:
@@ -6036,7 +6038,7 @@ Voice:
 - Moondog lives on a lunar record and grew up on Pink Floyd. An occasional light nod to their songs or ideas is welcome when it truly fits the moment, at most once in a conversation, and never at the expense of a clear answer. Never quote more than a short line of any lyric.
 - No hype, no exclamation marks, no filler openings or closing offers. Use plain hyphens, never em dashes.
 
-Respond in the language used by the user unless asked otherwise.`;
+Respond in the language used by the user unless asked otherwise; product.reply_language is that language, or the listener's chosen language when a message does not show one.`;
 }
 
 function contextMessage(snapshot) {
@@ -6173,44 +6175,35 @@ function escapeMarkdownLinkLabel(value) {
     .replace(/([\\[\]`*_<>])/gu, "\\$1");
 }
 
-function responseLanguage(promptText) {
-  // The profile action appends quoted metadata; its script does not set the reply language.
-  const prose = promptText
-    .replace(/^(?:Track|Artist): "(?:[^"\\\n]|\\.)*"[ \t]*$/gmu, "")
-    .replace(/"(?:[^"\\]|\\.)*"|“[^”]*”|「[^」]*」|《[^》]*》/gu, "");
-  const explicit = [...prose.matchAll(
-    /\b(?:reply|respond|answer|write|explain)(?:\s+(?:to me|this|it))?\s+in\s+(English|Chinese|Mandarin)\b|(?:用|使用|以)\s*(英文|英语|中文|汉语|普通话)\s*(?:回答|回复|解释|说明|输出)/giu,
-  )].at(-1);
-  if (explicit) return /^(?:English|英文|英语)$/iu.test(explicit[1] ?? explicit[2]) ? "en" : "zh";
-  return /\p{Script=Han}/u.test(prose) ? "zh" : "en";
+// Device readiness failures have their own catalog entries.
+const READINESS_FAILURES = new Set(["spotify_device_selection_required", "spotify_device_not_found",
+  "spotify_device_ambiguous", "spotify_device_restricted", "spotify_device_changed", "spotify_device_state_unconfirmed",
+  "spotify_device_not_ready", "spotify_playback_restricted"]);
+
+// The reply language for one listener message: what they wrote in, else their setting.
+function replyTranslator(text, application) {
+  return translator(messageLocale(text, application?.locale));
 }
 
-function groundedPlaylistPresentation(plan, promptText) {
+function groundedPlaylistPresentation(plan, t) {
   if (!plan.tracks?.some((track) => track.candidate_scope === "external_catalog")) return plan;
   const result = structuredClone(plan);
-  const chinese = responseLanguage(promptText) === "zh";
   for (const track of result.tracks) {
     if (track.candidate_scope !== "external_catalog") continue;
     const evidence = track.discovery_evidence;
     if (evidence?.provider === "listenbrainz") {
-      track.selection_reason = chinese
-        ? `ListenBrainz 收听数据将 ${evidence.adjacent_artist} 与 ${evidence.seed_artist} 关联；选自《${track.release}》。`
-        : `ListenBrainz listening data connects ${evidence.adjacent_artist} with ${evidence.seed_artist}; from "${track.release}".`;
+      track.selection_reason = t("discovery.reason.listenbrainz", { adjacent: evidence.adjacent_artist, seed: evidence.seed_artist, release: track.release });
     } else if (evidence?.provider === "apple_music") {
       const queries = evidence.matched_queries.map((query) => JSON.stringify(query)).join(", ");
-      track.selection_reason = chinese
-        ? `Apple Music 目录${queries ? `匹配检索词 ${queries}` : "候选"}；选自《${track.release}》${evidence.primary_genre ? `，目录流派为 ${evidence.primary_genre}` : ""}。`
-        : `Apple Music catalog ${queries ? `match for ${queries}` : "candidate"}; from "${track.release}"${evidence.primary_genre ? `, catalog genre: ${evidence.primary_genre}` : ""}.`;
+      track.selection_reason = t("discovery.reason.appleMusic", { queries, release: track.release, genre: evidence.primary_genre });
     } else {
-      track.selection_reason = chinese
-        ? `来自已检索的外部目录，选自《${track.release}》。`
-        : `From the retrieved external catalog, on "${track.release}".`;
+      track.selection_reason = t("discovery.reason.external", { release: track.release });
     }
     track.selection_reason = cleanOutputText(track.selection_reason, 256, "selection_reason");
   }
   const path = result.tracks.map((track) => track.artist_credit).join(" → ");
   result.ordering_rationale = cleanOutputText(
-    chinese ? `依次试听：${path}。` : `Explore in this order: ${path}.`,
+    t("discovery.order", { path }),
     500,
     "ordering_rationale",
   );
@@ -6219,37 +6212,24 @@ function groundedPlaylistPresentation(plan, promptText) {
 
 function pendingPlaylistPresentation(application, promptText) {
   const status = application.pendingSpotifyPlaylistStatus?.() ?? { state: "none" };
-  if (status.revision?.tracks) status.revision = groundedPlaylistPresentation(status.revision, promptText);
+  if (status.revision?.tracks) status.revision = groundedPlaylistPresentation(status.revision, replyTranslator(promptText, application));
   return status;
 }
 
-function renderMusicWorldCitations(citations, promptText) {
+function renderMusicWorldCitations(citations, t) {
   if (citations.length === 0) return "";
-  const chinese = responseLanguage(promptText) === "zh";
-  const lines = [
-    chinese
-      ? "公开音乐来源（与私人听歌证据分开）："
-      : "Public music sources (separate from personal listening evidence):",
-  ];
+  const lines = [t("citations.heading")];
   for (const citation of citations) {
     const retrievedDate = citation.retrieved_at.slice(0, 10);
     const label = escapeMarkdownLinkLabel(citation.label);
-    lines.push(
-      chinese
-        ? `- [${label}](<${citation.url}>) - ${citation.storefront} storefront，检索于 ${retrievedDate}。`
-        : `- [${label}](<${citation.url}>) - ${citation.storefront} storefront, retrieved ${retrievedDate}.`,
-    );
+    lines.push(t("citations.item", { label, url: citation.url, storefront: citation.storefront, date: retrievedDate }));
   }
-  lines.push(
-    chinese
-      ? "范围：这些公开 catalog 页面不证明个人偏好、完整听歌历史或全平台可用性。"
-      : "Scope: these public catalog pages do not establish personal preference, complete listening history, or cross-platform availability.",
-  );
+  lines.push(t("citations.scope"));
   return lines.join("\n");
 }
 
-function appendMusicWorldCitations(answer, citations, promptText) {
-  const rendered = renderMusicWorldCitations(citations, promptText);
+function appendMusicWorldCitations(answer, citations, t) {
+  const rendered = renderMusicWorldCitations(citations, t);
   if (!rendered) return answer;
   return answer ? `${answer.trimEnd()}\n\n${rendered}` : rendered;
 }
@@ -6270,7 +6250,7 @@ function renderPlaylistRationale(text, tracks) {
   );
 }
 
-function externalListeningNote(discoverySources, chinese) {
+function externalListeningNote(discoverySources, t) {
   const parts = [];
   for (const source of discoverySources) {
     if (!isPlainObject(source)) continue;
@@ -6283,33 +6263,14 @@ function externalListeningNote(discoverySources, chinese) {
         80,
         "listening_note_seed",
       );
-      const neighbor = seed
-        ? chinese
-          ? `ListenBrainz 听友相邻，从 ${seed} 出发`
-          : `ListenBrainz listener-neighbors of ${seed}`
-        : chinese
-          ? "ListenBrainz 听友相邻"
-          : "ListenBrainz listener-neighbors";
-      parts.push(
-        chinese
-          ? `${neighbor}（Wikidata 身份，CC0，检索于 ${retrievedDate}；这不是音频相似）`
-          : `${neighbor} (Wikidata identity, CC0, retrieved ${retrievedDate}; this is not audio similarity)`,
-      );
+      parts.push(t("external.listenbrainz", { neighbor: t("external.neighbors", { seed }), date: retrievedDate }));
     } else if (source.provider === "apple_music") {
-      parts.push(
-        chinese
-          ? `Apple Music US 曲名匹配（检索于 ${retrievedDate}）`
-          : `Apple Music US title matches (retrieved ${retrievedDate})`,
-      );
+      parts.push(t("external.appleMusic", { date: retrievedDate }));
     }
   }
-  const limit = chinese
-    ? "导入曲库里的精确同名同艺人是唯一排除项，所以这不代表你从未听过。这些是供试听的建议。"
-    : "A title-and-artist match in your imported library is the only thing excluded, so this does not mean you have never heard them. These are suggestions for listening.";
+  const limit = t("external.limit");
   if (parts.length === 0) return limit;
-  return chinese
-    ? `来源：${parts.join("，以及")}。${limit}`
-    : `From ${parts.join(", and ")}. ${limit}`;
+  return t("external.from", { parts, limit });
 }
 
 function playbackOnlyRequest(text) {
@@ -6317,61 +6278,35 @@ function playbackOnlyRequest(text) {
   // Ignore words inside quoted titles when looking for a mixed discovery task.
   const request = text.normalize("NFKC").trim();
   const outsideTitles = request.replace(/"[^"]*"|'[^']*'|“[^”]*”|‘[^’]*’|「[^」]*」|『[^』]*』|《[^》]*》/gu, " song ");
-  if (/\b(?:recommend\w*|suggest\w*|similar|playlist\w*|discover\w*)\b|推荐|相似|类似|歌单|再找|发现/iu.test(outsideTitles)) return false;
+  if (/\b(?:recommend\w*|suggest\w*|similar|playlist\w*|discover\w*|recomi[eé]nd\w*|sugi[eé]r\w*|parecid\w*|descubr\w*|lista)\b|推荐|相似|类似|歌单|再找|发现/iu.test(outsideTitles)) return false;
   return /^(?:(?:please|can you|could you|would you)\s+)*(?:play|queue|put on)\b\s*\S/iu.test(request) ||
+    /^(?:(?:por favor|puedes)\s+)*(?:pon|ponme|reproduce|toca|a[nñ]ade|agrega)\b\s*\S/iu.test(request) ||
     /^(?:请|帮我|给我|麻烦|随便)*(?:播放|放一首|放一下|放首)\s*\S/u.test(request) ||
     /^(?:请|帮我|给我)*(?:把|将).+加入队列/u.test(request);
 }
 
-function renderSpotifyPlaybackFailure(failure, promptText) {
-  const chinese = responseLanguage(promptText) === "zh";
+function renderSpotifyPlaybackFailure(failure, t) {
   if (["spotify_device_no_match", "spotify_device_ambiguous"].includes(failure.code) && failure.available_devices?.length) {
     const names = failure.available_devices.map(device => `${device.name} (${device.type})`).join("; ");
-    return chinese ? `设备名称${failure.code === "spotify_device_no_match" ? "没有匹配成功" : "匹配到多个设备"}。Spotify 当前可见：${names}。请用显示的名称说“在该设备上播放它”，所选歌曲会保留。尚未发送歌曲播放请求。 (${failure.code})`
-      : `The device name ${failure.code === "spotify_device_no_match" ? "did not match" : "matched several devices"}. Spotify currently lists: ${names}. Say “play it on” followed by the displayed device name; the selected song is retained. No song play request was sent. (${failure.code})`;
+    return t("failure.deviceList", { noMatch: failure.code === "spotify_device_no_match", names, code: failure.code });
   }
-  if (failure.code === "spotify_network_error" && failure.preparation_read_failed) return chinese
-    ? `读取 Spotify 设备或播放状态时发生网络错误，设备准备已停止。${failure.playback_not_sent ? "歌曲播放请求尚未发送。" : ""}请检查与 Spotify 的连接后重试。 (${failure.code})`
-    : `A network error prevented reading Spotify device/playback state; preparation stopped.${failure.playback_not_sent ? " The song play request was not sent." : ""} Check the connection to Spotify and retry. (${failure.code})`;
-  const readiness = {
-    spotify_device_selection_required: ["所选歌曲仍保留，但目标设备尚未确定。请明确指定设备名称，不会改用之前的设备。", "The selected song is retained, but the target device is not established. Name the intended device; the previous device will not be substituted."],
-    spotify_device_not_found: ["Spotify 没有列出目标设备。请在该设备上打开 Spotify，再请求播放；没有改用其他设备。", "Spotify cannot see the target device. Open Spotify on it, then request playback again; no other device was substituted."],
-    spotify_device_ambiguous: ["有多个可能的 Spotify 设备，请指定要使用的设备名称。", "Several Spotify devices may be available. Specify the intended device name."],
-    spotify_device_restricted: ["目标设备未确认允许 Spotify Web API 控制，请选择其他可用设备。", "The target device does not confirm Spotify Web API control. Choose another available device."],
-    spotify_device_changed: ["另一个 Spotify 设备已变为活跃状态。请明确选择设备，没有自动转移播放。", "Another Spotify device became active. Select the intended device explicitly; playback was not moved automatically."],
-    spotify_device_state_unconfirmed: ["Spotify 的设备与播放状态不完整或不一致。请检查 Spotify 中的当前设备后再试。", "Spotify device/playback state is incomplete or inconsistent. Check the current device in Spotify before trying again."],
-    spotify_device_not_ready: ["目标设备尚未就绪，已停止有限等待。请在该设备上打开 Spotify，再请求播放同一首歌。", "The target device did not become ready within the bounded wait. Open Spotify on it, then request the same song again."],
-    spotify_playback_restricted: ["Spotify 当前不允许恢复播放，请检查目标设备。", "Spotify currently disallows resuming playback. Check the target device."],
-  }[failure.code];
-  if (readiness) return `${readiness[chinese ? 0 : 1]} (${failure.code})${failure.not_sent || failure.playback_not_sent ? chinese ? " 尚未发送歌曲播放请求。" : " The song play request was not sent." : ""}`;
-  if (failure.preparation_stopped && failure.not_sent) return chinese
-    ? `播放前的设备检查未完成（${[failure.code, failure.status ? `HTTP ${failure.status}` : "", failure.reason].filter(Boolean).join("; ")}），没有发送歌曲播放请求。请检查 Spotify 设备状态后再试。`
-    : `Playback device checks did not complete (${[failure.code, failure.status ? `HTTP ${failure.status}` : "", failure.reason].filter(Boolean).join("; ")}); no song play request was sent. Check Spotify device state before trying again.`;
-  if (failure.code === "spotify_queue_request_required") return chinese
-    ? "这次没有加入歌曲：我没能把这条回复关联到入队请求。需要明确要加入播放队列，才能继续。"
-    : "No songs were queued: I could not connect this reply to a queue request. An explicit request to add music to the playback queue is needed to continue.";
-  if (failure.not_sent) return chinese
-    ? `一次工具参数在本地被拒绝（${failure.code}），该次尝试没有向 Spotify 发送播放请求。请使用保留的歌曲引用修正参数，或重新搜索；后续明确的播放请求可以直接继续。`
-    : `This tool input was rejected locally (${failure.code}); no playback request was sent to Spotify. Correct it with a retained item reference or search again. A fresh explicit playback request can proceed.`;
+  if (failure.code === "spotify_network_error" && failure.preparation_read_failed) return t("failure.networkRead", { notSent: failure.playback_not_sent, code: failure.code });
+  if (READINESS_FAILURES.has(failure.code)) {
+    return `${t(`failure.readiness.${failure.code}`)} (${failure.code})${failure.not_sent || failure.playback_not_sent ? t("failure.songNotSent") : ""}`;
+  }
+  if (failure.preparation_stopped && failure.not_sent) return t("failure.preparationStopped", {
+    evidence: [failure.code, failure.status ? `HTTP ${failure.status}` : "", failure.reason].filter(Boolean).join("; ") });
+  if (failure.code === "spotify_queue_request_required") return t("failure.queueRequestRequired");
+  if (failure.not_sent) return t("failure.notSent", { code: failure.code });
   const evidence = [failure.code, failure.status ? `HTTP ${failure.status}` : "", failure.reason].filter(Boolean).join("; ");
-  const outcome = failure.action === "lookup"
-    ? chinese ? "Spotify 查询未完成" : "The Spotify lookup did not complete"
-    : failure.outcome_unknown
-    ? chinese ? "Spotify 操作结果尚不确定" : "The Spotify action outcome is uncertain"
-    : chinese ? "Spotify 播放操作未获确认" : "The Spotify playback action was not confirmed";
-  const reason = failure.reason
-    ? chinese ? `Spotify 返回的原因：${failure.reason}。` : `Spotify reported: ${failure.reason}.`
-    : chinese ? "具体原因未获证实。" : "The specific cause is unconfirmed.";
+  const outcome = t(failure.action === "lookup" ? "failure.outcome.lookup" : failure.outcome_unknown ? "failure.outcome.unknown" : "failure.outcome.unconfirmed");
+  const reason = failure.reason ? t("failure.reason", { reason: failure.reason }) : t("failure.reasonUnknown");
   const targets = (failure.targets ?? []).map(item => `${JSON.stringify(item.title)} - ${item.artist_credit}`).join("; ");
-  if (failure.action === "lookup") return chinese
-    ? `${outcome}（${evidence}）。${reason}未发送播放或加入队列操作。`
-    : `${outcome} (${evidence}). ${reason} No play or queue action was sent.`;
-  return chinese
-    ? `${targets ? `目标：${targets}。\n` : ""}${outcome}（${evidence}）。${reason}${failure.playback_not_sent ? "歌曲播放请求尚未发送。" : ""}${failure.recovery_attempted ? "已结束一次有限的设备恢复流程，不再重试。" : "未自动重试。"}可以读取播放状态和设备列表继续诊断。`
-    : `${targets ? `Target: ${targets}.\n` : ""}${outcome} (${evidence}). ${reason}${failure.playback_not_sent ? " The song play request was not sent." : ""} ${failure.recovery_attempted ? "One bounded device recovery ended; no further retry was made." : "The action was not retried."} Read playback state and available devices to diagnose further.`;
+  if (failure.action === "lookup") return t("failure.lookup", { outcome, evidence, reason });
+  return t("failure.general", { targets, outcome, evidence, reason, playbackNotSent: failure.playback_not_sent, recovered: failure.recovery_attempted });
 }
 
-function renderIncompletePlaybackLookup(promptState, promptText, application) {
+function renderIncompletePlaybackLookup(promptState, promptText, application, t) {
   if (promptState.spotifyWriteReceipts.some(receipt => ["playback.resume", "playback.queue.add"].includes(receipt.action)) || promptState.spotifyPlaybackFailures.length) return null;
   const spotifyLookup = promptState.playbackLookups.findLast(lookup => ["spotify.search", "spotify.discovery.search"].includes(lookup.capability));
   const playbackContext = application.spotifyPlaybackContextStatus?.();
@@ -6379,23 +6314,20 @@ function renderIncompletePlaybackLookup(promptState, promptText, application) {
   // Only a playback/selection request needs the host's numbered version menu.
   if (spotifyLookup) promptState.displayedChoiceRefs = [];
   if (!playbackContext?.requested_followup && !playbackContext?.queue_request &&
-      /\b(?:recommend\w*|suggest\w*|similar|discover\w*|explor\w*)\b|推荐|相似|类似|探索|最近发现|好听|喜欢/iu.test(promptText) &&
-      !/\b(?:play|queue|put on)\b|播放|加入队列/iu.test(promptText)) return null;
+      /\b(?:recommend\w*|suggest\w*|similar|discover\w*|explor\w*|recomi[eé]nd\w*|sugi[eé]r\w*|parecid\w*|descubr\w*)\b|推荐|相似|类似|探索|最近发现|好听|喜欢/iu.test(promptText) &&
+      !/\b(?:play|queue|put on|pon|ponme|reproduce|toca)\b|播放|加入队列|a la cola/iu.test(promptText)) return null;
   if (!spotifyLookup && (!playbackOnlyRequest(promptText) || promptState.externalCandidateSets.some(set => !set.playbackLookup))) return null;
   if (promptState.spotifyLookupFailures.length) return promptState.spotifyLookupFailures
-    .map(failure => renderSpotifyPlaybackFailure({ ...failure, action: "lookup" }, promptText)).join("\n\n");
+    .map(failure => renderSpotifyPlaybackFailure({ ...failure, action: "lookup" }, t)).join("\n\n");
   if (!promptState.playbackLookups.length) return null;
-  const chinese = responseLanguage(promptText) === "zh";
   const last = spotifyLookup ?? promptState.playbackLookups.at(-1);
   if (last.capability === "spotify.catalog.resolve" && last.value.resolved_count === 0) {
-    return chinese ? "没有在 Spotify 找到可确认的匹配歌曲，未发送播放或加入队列操作。可以补充专辑或版本信息再搜索。"
-      : "No verified Spotify match was found. No play or queue action was sent. Add an album or version to refine the search.";
+    return t("lookup.noVerifiedMatch");
   }
   if (spotifyLookup) promptState.displayedChoiceRefs = [];
   const tracks = last.value.items ?? last.value.tracks ?? [];
   if (last.capability !== "spotify.catalog.resolve" && tracks.length === 0) {
-    return chinese ? "这次搜索没有找到匹配歌曲，未发送播放或加入队列操作。可以调整歌曲名或艺人名再搜索。"
-      : "This search returned no matching songs. No play or queue action was sent. Refine the title or artist to search again.";
+    return t("lookup.noResults");
   }
   const selected = spotifyLookup ? application.spotifyChoiceItems(tracks.map(item => item.item_ref_id).filter(Boolean)) : [];
   promptState.displayedChoiceRefs = selected.map(item => item.item_ref_id);
@@ -6403,13 +6335,13 @@ function renderIncompletePlaybackLookup(promptState, promptText, application) {
     const duration = Number.isInteger(track.duration_ms) ? ` · ${Math.floor(track.duration_ms / 60000)}:${String(Math.floor(track.duration_ms / 1000) % 60).padStart(2, "0")}` : "";
     return `${index + 1}. ${track.name} - ${track.artists.join(", ")}${track.album ? ` (${track.album})` : ""}${duration}`;
   });
-  return [chinese ? "搜索已完成，但未发送播放或加入队列操作。" : "The lookup completed, but no play or queue action was sent.",
+  return [t("lookup.choices"),
     ...choices,
-    selected.length > 1 ? chinese ? "回复编号选择该版本，也可以让我挑一个。" : "Reply with a number for that exact version, or ask me to choose." : "",
+    selected.length > 1 ? t("lookup.chooseNumber") : "",
   ].filter(Boolean).join("\n");
 }
 
-function renderNamedSongPlayback(promptState, promptText) {
+function renderNamedSongPlayback(promptState, promptText, t) {
   // Exempt only the named track actually played from one catalog lookup. Render
   // its receipt ourselves; no other search results or model-authored list escape
   // validation, even when the lookup returned several possible recordings.
@@ -6423,21 +6355,13 @@ function renderNamedSongPlayback(promptState, promptText) {
     .toLocaleLowerCase("en-US").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
   const prompt = normalize(promptText);
   const title = normalize(track.title);
-  const playbackRequested = /\b(?:play|queue|put on)\b/u.test(prompt) ||
+  const playbackRequested = /\b(?:play|queue|put on|pon|ponme|reproduce|toca|cola)\b/u.test(prompt) ||
     /播放|放一首|放一下|加入队列/u.test(promptText);
   const artist = normalize(track.artist_credit);
   const anySongByArtist = artist && prompt.includes(artist) &&
-    (/随便|任意|任何|一首.*(?:的音乐|的歌|歌曲)/u.test(promptText) || /\b(?:any|a|one)\s+(?:one\s+)?(?:song|track)\b/iu.test(promptText));
+    (/随便|任意|任何|一首.*(?:的音乐|的歌|歌曲)/u.test(promptText) || /\b(?:any|a|one)\s+(?:one\s+)?(?:song|track)\b|\b(?:una|alguna|cualquier)\s+canci[oó]n/iu.test(promptText));
   if (!title || (!prompt.includes(title) && !anySongByArtist) || !playbackRequested) return null;
-  const chinese = responseLanguage(promptText) === "zh";
-  if (playback.action === "playback.queue.add") {
-    return chinese
-      ? `已加入队列：《${track.title}》- ${track.artist_credit}。`
-      : `Queued ${track.title} - ${track.artist_credit}.`;
-  }
-  return chinese
-    ? `已在 Spotify 开始播放《${track.title}》- ${track.artist_credit}。`
-    : `Started playback of ${track.title} - ${track.artist_credit} on Spotify.`;
+  return t(playback.action === "playback.queue.add" ? "named.queued" : "named.playing", { title: track.title, artist: track.artist_credit });
 }
 
 // Every queue write in a turn is one outcome for the listener: a batch and any
@@ -6457,154 +6381,81 @@ function mergedQueueReceipt(plan, singles) {
       ...(checks.some(check => check.queue_view_truncated) ? { queue_view_truncated: true } : {}) } } : {}) };
 }
 
-function renderQueueVerification(receipt, chinese) {
+function renderQueueVerification(receipt, t) {
   const verification = receipt.verification;
   if (!verification || !receipt.queued.length) return null;
   const one = verification.accepted_count === 1;
-  if (!verification.checked) return chinese
-    ? "Spotify 已接受，但我没能读取你的队列来再次确认。"
-    : `Spotify accepted ${one ? "it" : "them"}, but I couldn't read your queue to double-check.`;
+  if (!verification.checked) return t("queue.unverified", { one });
   if (verification.confirmed_count >= verification.accepted_count) {
-    if (receipt.started_playback) return chinese
-      ? (one ? "已在 Spotify 上确认正在播放。" : "已在 Spotify 上确认：第一首正在播放，其余都在队列里。")
-      : (one ? "Confirmed playing on Spotify." : "Confirmed on Spotify: the first is playing and the rest are in your queue.");
-    return chinese
-      ? (one ? "已在 Spotify 队列里确认。" : `已在 Spotify 队列里确认这 ${verification.accepted_count} 首。`)
-      : (one ? "Confirmed in your Spotify queue." : `Confirmed in your Spotify queue: all ${verification.accepted_count}.`);
+    return receipt.started_playback ? t("queue.confirmedPlaying", { one }) : t("queue.confirmed", { count: verification.accepted_count });
   }
-  return chinese
-    ? `Spotify 接受了 ${verification.accepted_count} 首，目前队列里能看到 ${verification.confirmed_count} 首${verification.queue_view_truncated ? "（Spotify 只显示长队列的一部分）" : ""}。`
-    : `Spotify accepted ${verification.accepted_count}; ${verification.confirmed_count} show in your queue right now${verification.queue_view_truncated ? " (Spotify only shows part of a long queue)" : ""}.`;
+  return t("queue.partlyVisible", { accepted: verification.accepted_count, confirmed: verification.confirmed_count, truncated: verification.queue_view_truncated });
 }
 
-function renderSpotifyQueuePlan(receipt, promptText) {
-  const chinese = responseLanguage(promptText) === "zh";
-  if (receipt.state === "no_playback") return chinese ? "Spotify 当前没有可用的歌曲播放信息，未加入任何歌曲。" : "Spotify has no current track to use as a seed; nothing was queued.";
-  if (receipt.state === "no_candidates") return chinese ? "筛选后没有可加入的候选，未加入任何歌曲。" : "No eligible candidates remained after filtering; nothing was queued.";
+function renderSpotifyQueuePlan(receipt, t) {
+  if (receipt.state === "no_playback") return t("queue.noPlayback");
+  if (receipt.state === "no_candidates") return t("queue.noCandidates");
   const lines = [];
-  if (receipt.requested) lines.push(chinese ? `请求 ${receipt.requested} 首；Spotify 已接受 ${receipt.queued.length} 首${receipt.shortfall ? `，还差 ${receipt.shortfall} 首` : ""}。` : `Requested ${receipt.requested}; Spotify accepted ${receipt.queued.length}${receipt.shortfall ? `, ${receipt.shortfall} short` : ""}.`);
-  if (receipt.seed_artist) lines.push(chinese ? `基于艺人 ${receipt.seed_artist} 的听众相似性：` : `Listener-derived artist similarity from ${receipt.seed_artist}:`);
-  if (receipt.cancelled) {
-    lines.push(chinese ? "已取消继续加入队列；已接受的歌曲仍在队列中。" : "Stopped queueing after cancellation; accepted tracks remain in the queue.");
-  }
-  if (receipt.stopped) {
-    lines.push(
-      chinese
-        ? `已把 ${receipt.queued.length} 首加入 Spotify 队列，停在《${receipt.stopped.title}》- ${receipt.stopped.artist_credit}。`
-        : `Queued ${receipt.queued.length} on Spotify, then stopped at "${receipt.stopped.title}" - ${receipt.stopped.artist_credit}.`,
-    );
-  } else if (receipt.unmatched.length === 0) {
-    lines.push(
-      chinese
-        ? `已把这 ${receipt.queued.length} 首加入 Spotify 队列：`
-        : `Queued ${receipt.queued.length} on Spotify:`,
-    );
-  } else {
-    lines.push(
-      chinese
-        ? `已把 ${receipt.queued.length} 首加入 Spotify 队列，另有 ${receipt.unmatched.length} 首对不上：`
-        : `Queued ${receipt.queued.length} of ${receipt.queued.length + receipt.unmatched.length} on Spotify:`,
-    );
-  }
-  if (receipt.outcome_unknown) lines.push(chinese
-    ? "Spotify 未确认停止处这首歌是否已加入；请先检查队列，不要自动重试。"
-    : "Spotify did not confirm whether the stopped track was added. Check the queue before trying again; this write was not replayed.");
-  if (receipt.failure) lines.push(renderSpotifyPlaybackFailure(receipt.failure, promptText));
+  if (receipt.requested) lines.push(t("queue.requested", { requested: receipt.requested, accepted: receipt.queued.length, shortfall: receipt.shortfall }));
+  if (receipt.seed_artist) lines.push(t("queue.similarSeed", { artist: receipt.seed_artist }));
+  if (receipt.cancelled) lines.push(t("queue.cancelled"));
+  if (receipt.stopped) lines.push(t("queue.stopped", { count: receipt.queued.length, title: receipt.stopped.title, artist: receipt.stopped.artist_credit }));
+  else if (receipt.unmatched.length === 0) lines.push(t("queue.queued", { count: receipt.queued.length }));
+  else lines.push(t("queue.queuedSome", { count: receipt.queued.length, unmatched: receipt.unmatched.length }));
+  if (receipt.outcome_unknown) lines.push(t("queue.outcomeUnknown"));
+  if (receipt.failure) lines.push(renderSpotifyPlaybackFailure(receipt.failure, t));
   if (receipt.started_playback && receipt.queued.length) {
-    const first = receipt.queued[0];
-    const more = receipt.queued.length > 1;
-    lines.push(chinese
-      ? `刚才没有在播放，所以我先在${receipt.device?.name ? `「${receipt.device.name}」` : " Spotify "}上播放《${first.title}》${more ? "，其余排在后面" : ""}。`
-      : `Nothing was playing, so I started "${first.title}"${receipt.device?.name ? ` on ${receipt.device.name}` : ""}${more ? " and lined up the rest" : ""}.`);
+    lines.push(t("queue.started", { title: receipt.queued[0].title, device: receipt.device?.name, more: receipt.queued.length > 1 }));
   }
   // Bullets, not numbers: a receipt is not a choice list and must not replace
   // the listener's displayed numbered choices.
   for (const track of receipt.queued) {
     lines.push(`- ${track.title}${track.artist_credit ? ` - ${track.artist_credit}` : ""}`);
   }
-  const verified = renderQueueVerification(receipt, chinese);
+  const verified = renderQueueVerification(receipt, t);
   if (verified) lines.push(verified);
   if (receipt.unmatched.length > 0) {
-    lines.push(chinese ? "Spotify 上对不上：" : "Could not match on Spotify:");
-    for (const track of receipt.unmatched) {
-      lines.push(`- ${track.title} - ${track.artist_credit}`);
-    }
+    lines.push(t("queue.unmatchedHeading"));
+    for (const track of receipt.unmatched) lines.push(`- ${track.title} - ${track.artist_credit}`);
   }
-  if (receipt.skipped_duplicate_count) lines.push(chinese ? `跳过 ${receipt.skipped_duplicate_count} 首重复曲目。` : `Skipped ${receipt.skipped_duplicate_count} duplicate tracks.`);
-  if (receipt.skipped_uncertain_count) lines.push(chinese ? `跳过 ${receipt.skipped_uncertain_count} 首此前入队结果不明的曲目，避免重复；请先检查 Spotify 队列。` : `Skipped ${receipt.skipped_uncertain_count} tracks with earlier uncertain queue outcomes to avoid replay; check the Spotify queue.`);
-  if (receipt.skipped_avoided_count) lines.push(chinese ? `跳过 ${receipt.skipped_avoided_count} 首 Avoid 曲目。` : `Skipped ${receipt.skipped_avoided_count} avoided tracks.`);
-  if (receipt.skipped_known_count) lines.push(chinese ? `按你的要求跳过 ${receipt.skipped_known_count} 首有保留听歌记录的曲目。` : `Skipped ${receipt.skipped_known_count} tracks matched in retained history, as requested.`);
-  if (receipt.queue_observation_truncated) lines.push(chinese ? "仅检查了 Spotify 返回的有限队列片段，无法保证未显示部分没有重复。" : "Deduplication covers Spotify's bounded queue snapshot; unseen entries may still duplicate a selection.");
+  if (receipt.skipped_duplicate_count) lines.push(t("queue.skippedDuplicates", { count: receipt.skipped_duplicate_count }));
+  if (receipt.skipped_uncertain_count) lines.push(t("queue.skippedUncertain", { count: receipt.skipped_uncertain_count }));
+  if (receipt.skipped_avoided_count) lines.push(t("queue.skippedAvoided", { count: receipt.skipped_avoided_count }));
+  if (receipt.skipped_known_count) lines.push(t("queue.skippedKnown", { count: receipt.skipped_known_count }));
+  if (receipt.queue_observation_truncated) lines.push(t("queue.observationTruncated"));
   if (receipt.not_added.length > 0) {
-    lines.push(chinese ? "还没加入：" : "Not added:");
-    for (const track of receipt.not_added) {
-      lines.push(`- ${track.title} - ${track.artist_credit}`);
-    }
+    lines.push(t("queue.notAddedHeading"));
+    for (const track of receipt.not_added) lines.push(`- ${track.title} - ${track.artist_credit}`);
   }
   return lines.join("\n");
 }
 
-function renderSpotifyPartialPlaylist(receipt, promptText) {
-  const chinese = responseLanguage(promptText) === "zh";
-  if (receipt.outcome_unknown) {
-    return chinese
-      ? `Spotify 已创建私有歌单「${receipt.playlist.name}」，但加入曲目的结果尚未确认。请检查歌单后再决定是否重试。`
-      : `Spotify created the private playlist "${receipt.playlist.name}", but adding its tracks was not confirmed. Inspect it before deciding whether to retry.`;
-  }
-  return chinese
-    ? `Spotify 已创建私有歌单「${receipt.playlist.name}」，但未能加入曲目；这个空歌单已经存在，请检查后再决定是否重试。`
-    : `Spotify created the private playlist "${receipt.playlist.name}", but did not add its tracks. The empty playlist now exists; inspect it before deciding whether to retry.`;
+function renderSpotifyPartialPlaylist(receipt, t) {
+  return t(receipt.outcome_unknown ? "playlist.partialUnknown" : "playlist.partialEmpty", { name: receipt.playlist.name });
 }
 
-function renderSpotifyWriteReceipt(receipt, promptText) {
-  const chinese = responseLanguage(promptText) === "zh";
-  const actions = {
-    "playback.resume": ["播放请求", "playback request"],
-    "playback.pause": ["暂停请求", "pause request"],
-    "playback.next": ["下一首请求", "next-track request"],
-    "playback.previous": ["上一首请求", "previous-track request"],
-    "playback.volume.set": ["音量调整", "volume change"],
-    "playback.seek": ["播放位置调整", "playback position change"],
-    "playback.shuffle.set": ["随机播放设置", "shuffle setting"],
-    "playback.repeat.set": ["循环播放设置", "repeat setting"],
-    "playback.transfer": ["设备切换请求", "device transfer"],
-    "playback.queue.add": ["加入队列请求", "queue addition"],
-    "library.remove": ["取消收藏请求", "library removal"],
-    "library.save": ["曲目保存请求", "library save"],
-    "playlist.write": ["歌单创建请求", "playlist creation"],
-    "playlist.edit": ["歌单更改请求", "playlist change"],
-    "playlist.rename": ["歌单重命名", "playlist rename"],
-    "playlist.unfollow": ["歌单取消收藏", "playlist removal from library"],
-    "playlist.remove_track": ["歌单曲目移除", "playlist track removal"],
-  };
-  const [zh, en] = actions[receipt.action] ?? ["更改请求", "requested change"];
-  if (receipt.state === "unknown") return chinese
-    ? `Spotify 的${zh}${receipt.target_name ? `（「${receipt.target_name}」）` : ""}结果尚未确认。请先检查，再决定是否重试。`
-    : `Spotify's ${en}${receipt.target_name ? ` for "${receipt.target_name}"` : ""} was not confirmed. Check its state before deciding whether to retry.`;
-  if (receipt.action === "playlist.unfollow" && receipt.playlist) return chinese
-    ? `已从你的 Spotify 音乐库移除歌单「${receipt.playlist.name}」（取消收藏）。歌单可能仍对其他听众存在；这不是全局删除。`
-    : `Removed "${receipt.playlist.name}" from your Spotify library (unfollowed). The playlist may still exist for other listeners; it was not globally deleted.`;
-  if (receipt.action === "playlist.rename" && receipt.playlist) return chinese
-    ? `Spotify 已接受歌单重命名为「${receipt.playlist.name}」。`
-    : `Spotify accepted the playlist rename to "${receipt.playlist.name}".`;
-  if (receipt.action === "playlist.remove_track" && receipt.playlist) return chinese
-    ? `Spotify 已接受从「${receipt.playlist.name}」移除 1 首曲目。`
-    : `Spotify accepted removal of one track from "${receipt.playlist.name}".`;
+const WRITE_ACTIONS = new Set(["playback.resume", "playback.pause", "playback.next", "playback.previous", "playback.volume.set",
+  "playback.seek", "playback.shuffle.set", "playback.repeat.set", "playback.transfer", "playback.queue.add", "library.remove",
+  "library.save", "playlist.write", "playlist.edit", "playlist.rename", "playlist.unfollow", "playlist.remove_track"]);
+
+function renderSpotifyWriteReceipt(receipt, t) {
+  const action = t(WRITE_ACTIONS.has(receipt.action) ? `action.${receipt.action}` : "action.other");
+  if (receipt.state === "unknown") return t("write.unknown", { action, target: receipt.target_name });
+  if (receipt.action === "playlist.unfollow" && receipt.playlist) return t("write.unfollowed", { name: receipt.playlist.name });
+  if (receipt.action === "playlist.rename" && receipt.playlist) return t("write.renamed", { name: receipt.playlist.name });
+  if (receipt.action === "playlist.remove_track" && receipt.playlist) return t("write.trackRemoved", { name: receipt.playlist.name });
   const count = Number.isInteger(receipt.track_count) ? receipt.track_count : null;
   const targets = (receipt.targets ?? []).map(item => `${JSON.stringify(item.title)} - ${item.artist_credit}`).join("; ");
-  return chinese
-    ? `Spotify 已接受${zh}${count === null ? "" : `（${count} 首）`}${targets ? `：${targets}` : ""}。`
-    : `Spotify accepted the ${en}${count === null ? "" : ` (${count} tracks)`}${targets ? `: ${targets}` : ""}.`;
+  return t("write.accepted", { action, count, targets });
 }
 
 function renderValidatedPlaylistPlan(
   plan,
-  promptText,
+  t,
   spotifyWrite = null,
   spotifyPartialEffect = null,
   discoverySources = [],
 ) {
-  const chinese = responseLanguage(promptText) === "zh";
   const candidateScope = plan.candidate_scope ?? "private_library";
   const timeCapsulePlan =
     candidateScope === "private_history" &&
@@ -6627,152 +6478,54 @@ function renderValidatedPlaylistPlan(
   const hasExternalCandidates = plan.tracks.some(
     (track) => track.candidate_scope === "external_catalog",
   );
-  const headings = {
-    private_library: chinese
-      ? `来自个人曲库的 ${plan.track_count} 首方案：`
-      : `${plan.track_count}-track plan from your library:`,
-    private_history: chinese
-      ? `值得再听一次的 ${plan.track_count} 首历史重逢方案：`
-      : `${plan.track_count}-track listen-again plan from your private history:`,
-    external_catalog: chinese
-      ? `这 ${plan.track_count} 首：`
-      : `${plan.track_count} songs:`,
-    mixed: chinese
-      ? `这 ${plan.track_count} 首：`
-      : `${plan.track_count} songs:`,
-  };
-  const lines = [
-    timeCapsulePlan
-      ? chinese
-        ? `穿过 ${plan.track_count} 个听歌年份的时间机器方案：`
-        : `${plan.track_count}-stop Listening Time Machine across your years:`
-      : historicalReturnPlan
-        ? chinese
-          ? `${plan.track_count} 首曾在长久空档后重新出现的回归方案：`
-          : `${plan.track_count}-track return path from your private history:`
-        : backToBackPlan
-          ? chinese
-            ? `${plan.track_count} 首曾被连续播放的历史片段方案：`
-            : `${plan.track_count}-track played-back-to-back path from your private history:`
-          : headings[candidateScope] ?? headings.private_library,
-  ];
+  const heading = timeCapsulePlan ? "timeCapsule" : historicalReturnPlan ? "historicalReturn" : backToBackPlan ? "backToBack"
+    : ["private_library", "private_history", "external_catalog", "mixed"].includes(candidateScope) ? candidateScope : "private_library";
+  const lines = [t(`plan.heading.${heading}`, { count: plan.track_count })];
   for (const track of plan.tracks) {
     const yearPrefix =
       timeCapsulePlan && Number.isInteger(track.history_context?.year)
         ? `${track.history_context.year} · `
         : "";
-    lines.push(
-      track.candidate_scope === "external_catalog"
-        ? chinese
-          ? `${track.position}. ${yearPrefix}${track.title} - ${track.artist_credit}，选自《${track.release}》`
-          : `${track.position}. ${yearPrefix}${track.title} - ${track.artist_credit}, from "${track.release}"`
-        : `${track.position}. ${yearPrefix}${track.title} - ${track.artist_credit}`,
-    );
-    if (track.candidate_scope === "external_catalog") continue;
-    lines.push(
-      chinese
-        ? `   策展判断：${renderPlaylistRationale(track.selection_reason, plan.tracks)}`
-        : `   Curatorial rationale: ${renderPlaylistRationale(track.selection_reason, plan.tracks)}`,
-    );
+    const line = `${track.position}. ${yearPrefix}${track.title} - ${track.artist_credit}`;
+    if (track.candidate_scope === "external_catalog") {
+      lines.push(t("plan.externalTrack", { line, release: track.release }));
+      continue;
+    }
+    lines.push(line, t("plan.rationale", { text: renderPlaylistRationale(track.selection_reason, plan.tracks) }));
   }
-  if (!hasExternalCandidates) {
-    lines.push(
-      chinese
-        ? `排序逻辑：${renderPlaylistRationale(plan.ordering_rationale, plan.tracks)}`
-        : `Ordering rationale: ${renderPlaylistRationale(plan.ordering_rationale, plan.tracks)}`,
-    );
-  }
-  if (spotifyWrite?.playlist) {
-    lines.push(
-      chinese
-        ? `已保存为 Spotify 私有歌单「${spotifyWrite.playlist.name}」（${spotifyWrite.playlist.track_count} 首）。`
-        : `Saved as the private Spotify playlist "${spotifyWrite.playlist.name}" (${spotifyWrite.playlist.track_count} tracks).`,
-    );
-  } else if (spotifyPartialEffect?.playlist) {
-    lines.push(renderSpotifyPartialPlaylist(spotifyPartialEffect, promptText));
-  } else if (hasExternalCandidates) {
-    lines.push(
-      chinese
-        ? "还没有保存，也没有加入队列。"
-        : "Nothing has been saved or queued yet.",
-    );
-  } else {
-    lines.push(
-      chinese
-        ? "边界：此方案仅在当前进程内待确认，尚未写入 Spotify，也没有外部副作用。"
-        : "Boundary: this plan is pending only in the current process, has not been written to Spotify, and has no external effects.",
-    );
-  }
-  if (hasExternalCandidates) {
-    lines.push(externalListeningNote(discoverySources, chinese));
-  }
-  if (backToBackPlan) {
-    lines.push(
-      chinese
-        ? "解释边界：相邻的保留播放事件不证明当时开启了循环、重播是有意的，或你喜欢这首歌。"
-        : "Interpretation boundary: adjacent retained playback events do not prove repeat mode, intentional replay, or liking.",
-    );
-  }
-  if (!hasExternalCandidates) {
-    lines.push(
-      chinese
-        ? "校验范围：本地 planner 校验了曲目身份、候选集归属、数量和输出顺序；策展理由与情境适配度仍是基于现有元数据的模型判断。"
-        : "Validation scope: the local planner validates track identity, candidate-set membership, count, and output order; curatorial reasons and situational fit remain model judgments based on available metadata.",
-    );
-  }
+  if (!hasExternalCandidates) lines.push(t("plan.ordering", { text: renderPlaylistRationale(plan.ordering_rationale, plan.tracks) }));
+  if (spotifyWrite?.playlist) lines.push(t("playlist.saved", { name: spotifyWrite.playlist.name, count: spotifyWrite.playlist.track_count }));
+  else if (spotifyPartialEffect?.playlist) lines.push(renderSpotifyPartialPlaylist(spotifyPartialEffect, t));
+  else lines.push(t(hasExternalCandidates ? "plan.notSaved" : "plan.pending"));
+  if (hasExternalCandidates) lines.push(externalListeningNote(discoverySources, t));
+  if (backToBackPlan) lines.push(t("plan.backToBackBoundary"));
+  if (!hasExternalCandidates) lines.push(t("plan.validationScope"));
   return lines.join("\n");
 }
 
-function renderSpotifyPlaylistEditPreview(preview, promptText) {
-  const chinese = responseLanguage(promptText) === "zh";
+function renderSpotifyPlaylistEditPreview(preview, t) {
   const playlist = preview.playlist;
-  const lines = [
-    chinese
-      ? `Spotify 私有歌单「${playlist.name}」编辑预览（${playlist.before_track_count} -> ${playlist.after_track_count} 首）：`
-      : `Spotify private playlist "${playlist.name}" edit preview (${playlist.before_track_count} -> ${playlist.after_track_count} tracks):`,
-  ];
-  const statusLabels = chinese
-    ? { added: "新增", moved: "移动", retained: "保留" }
-    : { added: "add", moved: "move", retained: "keep" };
+  const lines = [t("edit.previewHeading", { name: playlist.name, before: playlist.before_track_count, after: playlist.after_track_count })];
   for (const track of preview.items) {
-    lines.push(
-      `${track.position}. [${statusLabels[track.status]}] ${track.title} - ${track.artists.join(", ")}`,
-    );
+    lines.push(`${track.position}. [${t(`edit.status.${track.status}`)}] ${track.title} - ${track.artists.join(", ")}`);
   }
   if (preview.removed_items.length > 0) {
-    lines.push(chinese ? "将移除：" : "Remove:");
+    lines.push(t("edit.removeHeading"));
     for (const track of preview.removed_items) {
-      lines.push(
-        `- ${track.previous_position}. ${track.title} - ${track.artists.join(", ")}`,
-      );
+      lines.push(`- ${track.previous_position}. ${track.title} - ${track.artists.join(", ")}`);
     }
   }
-  lines.push(
-    chinese
-      ? `变更摘要：新增 ${preview.changes.added}，移除 ${preview.changes.removed}，移动 ${preview.changes.moved}，原位保留 ${preview.changes.retained}。`
-      : `Change summary: ${preview.changes.added} added, ${preview.changes.removed} removed, ${preview.changes.moved} moved, ${preview.changes.retained} retained in place.`,
-    chinese
-      ? "边界：Spotify 尚未发生变化。请在下一条消息中明确确认，Moondog 才会写入这份宿主层保留的精确版本。"
-      : "Boundary: Spotify has not changed. Explicitly confirm in your next message before Moondog writes this exact host-retained version.",
-  );
+  lines.push(t("edit.summary", preview.changes), t("edit.boundary"));
   return lines.join("\n");
 }
 
-function renderSpotifyPlaylistEditReceipt(receipt, promptText) {
-  const chinese = responseLanguage(promptText) === "zh";
-  const before = Number.isSafeInteger(receipt.previous_track_count)
-    ? receipt.previous_track_count
-    : null;
-  const after = receipt.playlist.track_count;
-  return chinese
-    ? `已按确认过的精确预览更新 Spotify 私有歌单「${receipt.playlist.name}」${before === null ? `（现为 ${after} 首）` : `（${before} -> ${after} 首）`}。`
-    : `Updated the private Spotify playlist "${receipt.playlist.name}" from the exact confirmed preview${before === null ? ` (${after} tracks now)` : ` (${before} -> ${after} tracks)`}.`;
+function renderSpotifyPlaylistEditReceipt(receipt, t) {
+  const before = Number.isSafeInteger(receipt.previous_track_count) ? receipt.previous_track_count : null;
+  return t("edit.updated", { name: receipt.playlist.name, before, after: receipt.playlist.track_count });
 }
 
-function renderUnvalidatedPlaylistPlan(promptText) {
-  return responseLanguage(promptText) === "zh"
-    ? "我无法验证这次 playlist plan，因此不会返回未经可信候选集校验的曲目列表。请缩小或扩大搜索范围后重试。"
-    : "I could not validate this playlist plan, so I will not return a track list that was not checked against trusted candidates. Please refine or broaden the search and try again.";
+function renderUnvalidatedPlaylistPlan(t) {
+  return t("plan.unvalidated");
 }
 
 async function trustedContextSnapshot(application, runtimeStatus, query) {
@@ -6837,7 +6590,7 @@ async function trustedContextSnapshot(application, runtimeStatus, query) {
         spotify_read_selections: application.spotifyReadContext?.() ?? [],
         spotify_quick_edit_context: application.spotifyQuickEditContextStatus?.() ?? null,
         spotify_playback_context: application.spotifyPlaybackContextStatus?.() ?? null,
-        playlist_response_language: responseLanguage(query),
+        reply_language: replyTranslator(query, application).locale,
       },
       profile: { state: profile.state },
       listener_model: compactListenerProfile(listenerModel),
@@ -6887,7 +6640,7 @@ async function trustedContextSnapshot(application, runtimeStatus, query) {
         spotify_read_selections: application.spotifyReadContext?.() ?? [],
         spotify_quick_edit_context: application.spotifyQuickEditContextStatus?.() ?? null,
         spotify_playback_context: application.spotifyPlaybackContextStatus?.() ?? null,
-        playlist_response_language: responseLanguage(query),
+        reply_language: replyTranslator(query, application).locale,
       },
       profile: { state: "unavailable" },
       memory: { state: "unavailable" },
@@ -6969,7 +6722,7 @@ export class PiAgentRuntime {
                   this.activePromptState.discoverySources,
                 ),
               );
-            const publicPlan = groundedPlaylistPresentation(structuredClone(plan), this.activePromptState.promptText);
+            const publicPlan = groundedPlaylistPresentation(structuredClone(plan), this.activePromptState.t);
             for (const track of publicPlan.tracks) {
               delete track.public_catalog_reference;
             }
@@ -7208,8 +6961,11 @@ export class PiAgentRuntime {
     const settlement = Promise.withResolvers();
     this.promptSettlement = settlement.promise;
     const historyStartIndex = this.agent.state.messages.length;
+    // One reply language per turn, from the message itself or the listener's setting.
+    const t = replyTranslator(text, this.application);
     const promptState = {
       promptText: text,
+      t,
       validatedPlaylistPlan: null,
       playlistPlanAttempted: false,
       spotifyPlaylistWrite: null,
@@ -7297,26 +7053,23 @@ export class PiAgentRuntime {
     const spotifyEffectTexts = () => {
       const singles = singleQueueAdds();
       const receipts = promptState.spotifyWriteReceipts.filter(receipt => !singles.includes(receipt))
-        .map((receipt) => renderSpotifyWriteReceipt(receipt, text));
+        .map((receipt) => renderSpotifyWriteReceipt(receipt, t));
       const queue = mergedQueueReceipt(promptState.spotifyQueuePlan, singles);
-      if (queue) receipts.push(renderSpotifyQueuePlan(queue, text));
-      if (promptState.spotifyPlaylistEditWrite) receipts.push(renderSpotifyPlaylistEditReceipt(promptState.spotifyPlaylistEditWrite, text));
+      if (queue) receipts.push(renderSpotifyQueuePlan(queue, t));
+      if (promptState.spotifyPlaylistEditWrite) receipts.push(renderSpotifyPlaylistEditReceipt(promptState.spotifyPlaylistEditWrite, t));
       if (promptState.spotifyPlaylistWrite?.playlist) {
         const { name, track_count: count } = promptState.spotifyPlaylistWrite.playlist;
-        receipts.push(responseLanguage(text) === "zh"
-          ? `已保存为 Spotify 私有歌单「${name}」（${count} 首）。`
-          : `Saved as the private Spotify playlist "${name}" (${count} tracks).`);
+        receipts.push(t("playlist.saved", { name, count }));
       }
-      if (promptState.spotifyPlaylistPartialEffect) receipts.push(renderSpotifyPartialPlaylist(promptState.spotifyPlaylistPartialEffect, text));
-      receipts.push(...unresolvedPlaybackFailures().map((failure) => renderSpotifyPlaybackFailure(failure, text)));
+      if (promptState.spotifyPlaylistPartialEffect) receipts.push(renderSpotifyPartialPlaylist(promptState.spotifyPlaylistPartialEffect, t));
+      receipts.push(...unresolvedPlaybackFailures().map((failure) => renderSpotifyPlaybackFailure(failure, t)));
       return receipts;
     };
     const completedResult = (resultText, extra = {}) => {
       const priorReceipt = this.application.spotifyQueueClarificationReceipt?.();
       const priorQueue = priorReceipt ? projectSpotifyQueuePlan(priorReceipt) : null;
       if (priorQueue) {
-        resultText = [(responseLanguage(text) === "zh" ? "这是上次队列操作的结果；这次澄清没有再次添加歌曲。" : "This is the earlier queue receipt; this clarification did not add the songs again."),
-          renderSpotifyQueuePlan(priorQueue, text)].join("\n\n");
+        resultText = [t("queue.earlierReceipt"), renderSpotifyQueuePlan(priorQueue, t)].join("\n\n");
         replaceRenderedText(resultText);
       }
       const quickEdit = this.application.spotifyQuickEditRequestStatus?.();
@@ -7361,9 +7114,7 @@ export class PiAgentRuntime {
           const label = (value) => JSON.stringify(cleanOutputText(value, 256, "spotify_selection_label"));
           const playlist = selection.playlist ? label(selection.playlist.name) : "none";
           const track = selection.track ? `${label(selection.track.title)}${selection.track.artists.length ? ` by ${selection.track.artists.map(label).join(", ")}` : ""}` : "none";
-          selectionNote = responseLanguage(text) === "zh"
-            ? `\n\n后续编辑选择：歌单 ${playlist}；歌曲 ${track}。`
-            : `\n\nSelected for follow-up edits: playlist ${playlist}; song ${track}.`;
+          selectionNote = t("selection.note", { playlist, track });
         }
       } catch {
         // Optional follow-up context must never hide an accepted/uncertain
@@ -7390,7 +7141,7 @@ export class PiAgentRuntime {
         } else if (resultText) {
           const committed = this.application.commitTransientPrompt?.(promptState.stagedMemoryMutations, text);
           if (committed?.discarded_memories > 0) {
-            const note = responseLanguage(text) === "zh" ? "\n\nSpotify 查询结果不进入通用记忆；仅保存可验证的用户原话，其他记忆未保存。" : "\n\nSpotify results are excluded from generic memory; only verified user quotes were eligible, and other claims were not saved.";
+            const note = t("memory.spotifyExcluded");
             finalResultText += note;
             if (typeof callbacks.onTextReplace === "function") callbacks.onTextReplace(finalResultText);
             else callbacks.onTextDelta?.(note);
@@ -7399,9 +7150,7 @@ export class PiAgentRuntime {
       } catch {
         this.runtimeStatus.memory_state = "degraded";
         if (promptState.stagedMemoryMutations.length > 0) {
-          const note = responseLanguage(text) === "zh"
-            ? "\n\n这条回复已经完成，但记忆没有成功保存。"
-            : "\n\nThe response completed, but the memory was not saved.";
+          const note = t("memory.notSaved");
           finalResultText = `${finalResultText}${note}`;
           if (typeof callbacks.onTextReplace === "function") {
             callbacks.onTextReplace(finalResultText);
@@ -7542,7 +7291,7 @@ export class PiAgentRuntime {
         historyFinalized = true;
         const receipts = spotifyEffectTexts();
         const abortedText = receipts.length > 0
-          ? [responseLanguage(text) === "zh" ? "已取消后续操作。" : "Cancelled further work.", ...receipts].join("\n\n")
+          ? [t("turn.cancelled"), ...receipts].join("\n\n")
           : promptState.toolExecutionStarted ? "" : streamedText || finalText;
         if (receipts.length > 0) {
           replaceRenderedText(abortedText);
@@ -7591,7 +7340,7 @@ To confirm, reply: ${preview.confirmation}`].join("\n\n");
       if (promptState.spotifyPlaylistEditPreview) {
         const authoritativeText = renderSpotifyPlaylistEditPreview(
           promptState.spotifyPlaylistEditPreview,
-          text,
+          t,
         );
         replaceRenderedText(authoritativeText);
         return completedResult(authoritativeText, {
@@ -7604,7 +7353,7 @@ To confirm, reply: ${preview.confirmation}`].join("\n\n");
       if (promptState.spotifyPlaylistEditWrite) {
         const authoritativeText = renderSpotifyPlaylistEditReceipt(
           promptState.spotifyPlaylistEditWrite,
-          text,
+          t,
         );
         replaceRenderedText(authoritativeText);
         return completedResult(authoritativeText, {
@@ -7617,7 +7366,7 @@ To confirm, reply: ${preview.confirmation}`].join("\n\n");
       if (promptState.spotifyQueuePlan) {
         const authoritativeText = renderSpotifyQueuePlan(
           promptState.spotifyQueuePlan,
-          text,
+          t,
         );
         replaceRenderedText(authoritativeText);
         return completedResult(authoritativeText, {
@@ -7632,7 +7381,7 @@ To confirm, reply: ${preview.confirmation}`].join("\n\n");
         });
       }
 
-      const incompletePlayback = renderIncompletePlaybackLookup(promptState, text, this.application);
+      const incompletePlayback = renderIncompletePlaybackLookup(promptState, text, this.application, t);
       if (incompletePlayback) {
         const outcomeText = [incompletePlayback, ...spotifyEffectTexts()].join("\n\n");
         replaceRenderedText(outcomeText);
@@ -7646,11 +7395,7 @@ To confirm, reply: ${preview.confirmation}`].join("\n\n");
       }
 
       if (this.application.spotifyPlaybackContextStatus?.().queue_request && !promptState.spotifyQueuePlan && !promptState.spotifyWriteReceipts.length) {
-        const queueText = !queueCountValid ? (responseLanguage(text) === "zh"
-          ? "没有向 Spotify 加入歌曲；请明确一个 1 到 12 首之间的整数数量。"
-          : "No songs were queued on Spotify. Specify one exact whole-number count from 1 to 12 songs.") : responseLanguage(text) === "zh"
-          ? "这次还没有向 Spotify 加入歌曲；明确的 queue 请求已足够授权，不需要另建歌单或再次确认。当前没有完成可验证的队列操作。"
-          : "No songs were queued on Spotify. Your explicit queue request already authorizes the action; no playlist or additional confirmation is required. A verified queue operation was not completed.";
+        const queueText = t(queueCountValid ? "queue.notCompleted" : "queue.invalidCount");
         replaceRenderedText(queueText);
         return completedResult(queueText);
       }
@@ -7658,7 +7403,7 @@ To confirm, reply: ${preview.confirmation}`].join("\n\n");
       if (promptState.validatedPlaylistPlan) {
         const authoritativeText = renderValidatedPlaylistPlan(
           promptState.validatedPlaylistPlan,
-          text,
+          t,
           promptState.spotifyPlaylistWrite,
           promptState.spotifyPlaylistPartialEffect,
           promptState.discoverySources,
@@ -7701,18 +7446,18 @@ To confirm, reply: ${preview.confirmation}`].join("\n\n");
         promptState.externalCandidateSetCreated &&
         !promptState.playlistPlanAttempted
       ) {
-        const playbackText = renderNamedSongPlayback(promptState, text);
+        const playbackText = renderNamedSongPlayback(promptState, text, t);
         if (playbackText) {
           replaceRenderedText(playbackText);
           return completedResult(playbackText);
         }
-        const safeFailureText = [renderUnvalidatedPlaylistPlan(text), ...spotifyEffectTexts()].join("\n\n");
+        const safeFailureText = [renderUnvalidatedPlaylistPlan(t), ...spotifyEffectTexts()].join("\n\n");
         replaceRenderedText(safeFailureText);
         return completedResult(safeFailureText);
       }
 
       if (promptState.playlistPlanAttempted) {
-        const safeFailureText = [renderUnvalidatedPlaylistPlan(text), ...spotifyEffectTexts()].join("\n\n");
+        const safeFailureText = [renderUnvalidatedPlaylistPlan(t), ...spotifyEffectTexts()].join("\n\n");
         replaceRenderedText(safeFailureText);
         return completedResult(safeFailureText);
       }
@@ -7721,7 +7466,7 @@ To confirm, reply: ${preview.confirmation}`].join("\n\n");
         const authoritativeText = appendMusicWorldCitations(
           finalText || streamedText,
           promptState.musicWorldCitations,
-          text,
+          t,
         );
         replaceRenderedText(authoritativeText);
         return completedResult(authoritativeText, {
@@ -7732,9 +7477,7 @@ To confirm, reply: ${preview.confirmation}`].join("\n\n");
       }
 
       if (profileDiscoveryUnavailable()) {
-        const failureText = responseLanguage(text) === "zh"
-          ? "音乐发现服务暂时无法连接，这次没有生成推荐。请重新提交这条请求再试。"
-          : "I couldn't reach the music discovery services, so this request produced no recommendations. Please resend this request to try again.";
+        const failureText = t("discovery.unavailable");
         replaceRenderedText(failureText);
         return completedResult(failureText);
       }
@@ -7752,9 +7495,7 @@ To confirm, reply: ${preview.confirmation}`].join("\n\n");
       // streaming callback itself was the source of the exception.
       const receipts = spotifyEffectTexts();
       if (!receipts.length) throw error;
-      const interruptedText = [responseLanguage(text) === "zh"
-        ? "回复中断；已确认的 Spotify 操作结果如下。未重新执行任何操作。"
-        : "The response was interrupted. The recorded Spotify outcomes are below; no action was replayed.", ...receipts].join("\n\n");
+      const interruptedText = [t("turn.interrupted"), ...receipts].join("\n\n");
       compactCompletedPromptHistory(this.agent, historyStartIndex, interruptedText);
       historyFinalized = true;
       this.application.invalidateSpotifyQuickEditContext?.();

@@ -128,6 +128,24 @@ The TUI reads the configured local profile and never loads fictional listening h
 Profile viewing and correction work without a model or music-service connection.
 Use `/auth` and `/model` only when you want agent conversation.
 
+## Language
+
+Moondog replies in English, Spanish, or Simplified Chinese.
+Each reply follows the language of your message: its script, its common words, or an explicit request such as "reply in Spanish" or "responde en inglés".
+Song, album, and artist names never decide it, so "Play La Bamba" stays English.
+When a message gives no clear sign, such as a bare artist name, Moondog uses your chosen language.
+
+Choose it with `/language`, or `/language es`, `/language zh`, or `/language en`.
+The choice is saved in `language.json` next to Moondog's other settings.
+On a fresh install it follows your system language (`LANG`), and the `MOONDOG_LANGUAGE` environment variable overrides both.
+
+The chosen language also sets the language of your saved listening profile the next time you build it with `/profile build`.
+Names of artists, albums, songs, and playlists stay exactly as they are.
+
+Moondog's own confirmations, Spotify receipts, and errors are translated.
+Menus, the import guide, and other screen text are still English for now.
+To add a language, see [Translating Moondog](TRANSLATING.md).
+
 ## Personal lyric library
 
 The home opening can come from music in your listening profile.

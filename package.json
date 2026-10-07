@@ -27,6 +27,7 @@
     "scripts/moondog.mjs",
     "scripts/demo-studio.mjs",
     "src/core",
+    "src/i18n",
     "src/demo/moondog-interactive-tasteprint-demo.mjs",
     "src/demo/moondog-demo.mjs",
     "src/demo/fictional-spotify-history.mjs",
