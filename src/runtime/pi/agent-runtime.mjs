@@ -6278,9 +6278,11 @@ function playbackOnlyRequest(text) {
   // Ignore words inside quoted titles when looking for a mixed discovery task.
   const request = text.normalize("NFKC").trim();
   const outsideTitles = request.replace(/"[^"]*"|'[^']*'|“[^”]*”|‘[^’]*’|「[^」]*」|『[^』]*』|《[^》]*》/gu, " song ");
-  if (/\b(?:recommend\w*|suggest\w*|similar|playlist\w*|discover\w*|recomi[eé]nd\w*|sugi[eé]r\w*|parecid\w*|descubr\w*|lista)\b|推荐|相似|类似|歌单|再找|发现/iu.test(outsideTitles)) return false;
+  if (/\b(?:recommend\w*|suggest\w*|similar|playlist\w*|discover\w*|recomi[eé]nd\w*|sugi[eé]r\w*|parecid\w*|descubr\w*|lista|recomend\w*|sugest\w*|semelhante\w*|descobr\w*)\b|推荐|相似|类似|歌单|再找|发现|おすすめ|似た|プレイリスト/iu.test(outsideTitles)) return false;
   return /^(?:(?:please|can you|could you|would you)\s+)*(?:play|queue|put on)\b\s*\S/iu.test(request) ||
     /^(?:(?:por favor|puedes)\s+)*(?:pon|ponme|reproduce|toca|a[nñ]ade|agrega)\b\s*\S/iu.test(request) ||
+    /^(?:(?:por favor|pode)\s+)*(?:toque|coloca|coloque|põe|bota|adiciona|adicione)\b\s*\S/iu.test(request) ||
+    /\S.*(?:を)?(?:再生して|かけて|流して|キューに(?:入れて|追加して))/u.test(request) ||
     /^(?:请|帮我|给我|麻烦|随便)*(?:播放|放一首|放一下|放首)\s*\S/u.test(request) ||
     /^(?:请|帮我|给我)*(?:把|将).+加入队列/u.test(request);
 }
@@ -6314,8 +6316,8 @@ function renderIncompletePlaybackLookup(promptState, promptText, application, t)
   // Only a playback/selection request needs the host's numbered version menu.
   if (spotifyLookup) promptState.displayedChoiceRefs = [];
   if (!playbackContext?.requested_followup && !playbackContext?.queue_request &&
-      /\b(?:recommend\w*|suggest\w*|similar|discover\w*|explor\w*|recomi[eé]nd\w*|sugi[eé]r\w*|parecid\w*|descubr\w*)\b|推荐|相似|类似|探索|最近发现|好听|喜欢/iu.test(promptText) &&
-      !/\b(?:play|queue|put on|pon|ponme|reproduce|toca)\b|播放|加入队列|a la cola/iu.test(promptText)) return null;
+      /\b(?:recommend\w*|suggest\w*|similar|discover\w*|explor\w*|recomi[eé]nd\w*|sugi[eé]r\w*|parecid\w*|descubr\w*|recomend\w*|sugest\w*|semelhante\w*|descobr\w*)\b|推荐|相似|类似|探索|最近发现|好听|喜欢|おすすめ|似た/iu.test(promptText) &&
+      !/\b(?:play|queue|put on|pon|ponme|reproduce|toca|toque|coloca|coloque)\b|播放|加入队列|a la cola|na fila|再生|かけて|キュー/iu.test(promptText)) return null;
   if (!spotifyLookup && (!playbackOnlyRequest(promptText) || promptState.externalCandidateSets.some(set => !set.playbackLookup))) return null;
   if (promptState.spotifyLookupFailures.length) return promptState.spotifyLookupFailures
     .map(failure => renderSpotifyPlaybackFailure({ ...failure, action: "lookup" }, t)).join("\n\n");
@@ -6355,7 +6357,7 @@ function renderNamedSongPlayback(promptState, promptText, t) {
     .toLocaleLowerCase("en-US").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
   const prompt = normalize(promptText);
   const title = normalize(track.title);
-  const playbackRequested = /\b(?:play|queue|put on|pon|ponme|reproduce|toca|cola)\b/u.test(prompt) ||
+  const playbackRequested = /\b(?:play|queue|put on|pon|ponme|reproduce|toca|cola|toque|coloca|coloque|fila)\b|再生|かけて|流して|キュー/u.test(prompt) ||
     /播放|放一首|放一下|加入队列/u.test(promptText);
   const artist = normalize(track.artist_credit);
   const anySongByArtist = artist && prompt.includes(artist) &&

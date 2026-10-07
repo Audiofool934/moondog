@@ -2076,9 +2076,14 @@ test("the listening room switches its own screen text with /language, including 
   await show("/import", "带上你的音乐");
   terminal.send("\x1b");
   await show("/home", "聆听资料");
+  await show("/language ja", "返事はこの言語になります");
+  await show("/home", "リスニングプロフィール");
+  assert.ok(frame.previousLines.every(line => visibleWidth(line) <= terminal.columns), screen());
+  await show("/language pt", "as respostas usam este idioma");
+  await show("/import", "Traga sua música");
   // Every painted row still fits the terminal, even with double-width characters.
   assert.ok(frame.previousLines.every(line => visibleWidth(line) <= terminal.columns), screen());
-  assert.equal(application.locale, "zh");
+  assert.equal(application.locale, "pt");
 });
 
 test("Tab focuses home actions and Down then Enter opens the import guide without a model call", async (context) => {

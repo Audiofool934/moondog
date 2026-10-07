@@ -1,5 +1,5 @@
 import { sanitizeTerminalText } from "./format-output.mjs";
-import { screenTranslator } from "../../i18n/index.mjs";
+import { intlLocale, screenTranslator } from "../../i18n/index.mjs";
 
 const MAX_ITEMS_PER_SOURCE = 10;
 
@@ -30,7 +30,7 @@ function count(value) {
 
 function amount(value, locale = "en") {
   return Number.isFinite(value) && value >= 0
-    ? value.toLocaleString(locale === "zh" ? "zh-CN" : locale, { maximumFractionDigits: 1 })
+    ? value.toLocaleString(intlLocale(locale), { maximumFractionDigits: 1 })
     : undefined;
 }
 

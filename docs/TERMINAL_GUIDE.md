@@ -130,12 +130,12 @@ Use `/auth` and `/model` only when you want agent conversation.
 
 ## Language
 
-Moondog replies in English, Spanish, or Simplified Chinese.
+Moondog speaks English, Spanish, Brazilian Portuguese, Japanese, and Simplified Chinese.
 Each reply follows the language of your message: its script, its common words, or an explicit request such as "reply in Spanish" or "responde en inglés".
 Song, album, and artist names never decide it, so "Play La Bamba" stays English.
 When a message gives no clear sign, such as a bare artist name, Moondog uses your chosen language.
 
-Choose it with `/language`, or `/language es`, `/language zh`, or `/language en`.
+Choose it with `/language`, or name one directly: `/language en`, `es`, `pt`, `ja`, or `zh`.
 The choice is saved in `language.json` next to Moondog's other settings.
 On a fresh install it follows your system language (`LANG`), and the `MOONDOG_LANGUAGE` environment variable overrides both.
 

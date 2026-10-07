@@ -23,13 +23,15 @@ const repositoryRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "..",
 );
-const maximumPackedBytes = 2_500_000;
+// Each language adds about 30 KB packed (conversation and screen catalogs).
+const maximumPackedBytes = 2_600_000;
 // The Apache-2.0 LICENSE file adds one entry and about 11 KB; the Spotify
 // library import adds one more entry and about 20 KB; the language module
 // adds five entries and about 35 KB, mostly message catalogs. Screen text
-// catalogs add about 100 KB and one entry per language.
-const maximumUnpackedBytes = 4_750_000;
-const maximumEntries = 130;
+// catalogs add about 100 KB and one entry per language; Japanese and
+// Portuguese add four entries and about 250 KB.
+const maximumUnpackedBytes = 5_000_000;
+const maximumEntries = 134;
 const packageOnlyPrivateSentinelPattern = new RegExp(
   ["PRIVATE", "(?:IP|PLATFORM)", "SENTINEL"].join("_"),
   "u",
