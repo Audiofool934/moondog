@@ -2510,3 +2510,15 @@ test("cancelling an update check does not exit the room or dispatch installation
     assert.equal(terminal.stopCount, 0);
   } finally { signalTarget.emit("SIGTERM"); await running; }
 });
+
+test("a late terminal cell-size reply redraws the room instead of crashing", async (context) => {
+  const fixture = await createSavedConversationFixture(context);
+  const { terminal } = fixture;
+  const previousCells = getCellDimensions();
+  context.after(() => setCellDimensions(previousCells));
+  await fixture.launch();
+  // Some terminals answer the cell-size query only after the first frame.
+  terminal.output = "";
+  terminal.send("\x1b[6;20;10t");
+  await fixture.submit("After the cell-size reply", "Fixture response: After the cell-size reply");
+});

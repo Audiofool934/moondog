@@ -30,7 +30,7 @@ export class BrandSurface {
   }
   handleInput(data) { this.component.handleInput?.(data); }
   invalidate() {
-    this.paintCache = undefined;
+    this.paintCache?.clear();
     this.component.invalidate?.();
   }
   render(width) {
