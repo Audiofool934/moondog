@@ -25,6 +25,9 @@ const replaced = new Set(["model-catalog.mjs", "public-model-catalog.mjs", "auth
 const staticFiles = ["index.html", "style.css", "static"];
 // The public agent's address. Without it, the room runs with no model and the page makes no requests.
 const agentUrl = process.env.MOONDOG_AGENT_URL?.trim().replace(/\/+$/u, "") ?? "";
+// Cloudflare Turnstile's public site key, when the agent checks visitors first.
+const turnstileSiteKey = process.env.MOONDOG_TURNSTILE_SITE_KEY?.trim() ?? "";
+if (turnstileSiteKey && !/^[0-9A-Za-z_-]{10,64}$/u.test(turnstileSiteKey)) throw new Error("MOONDOG_TURNSTILE_SITE_KEY does not look like a Turnstile site key.");
 if (agentUrl && !/^https:\/\/[a-z0-9.-]+(:\d+)?$|^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/u.test(agentUrl)) {
   throw new Error(`MOONDOG_AGENT_URL must be an https origin (or http on localhost): ${agentUrl}`);
 }
@@ -58,7 +61,13 @@ const copyStatic = async () => {
   await Promise.all(staticFiles.map((name) => cp(path.join(here, name), path.join(outdir, name), { recursive: true })));
   // The page may talk to the agent's origin and nowhere else.
   const page = path.join(outdir, "index.html");
-  await writeFile(page, (await readFile(page, "utf8")).replace("connect-src 'none'", `connect-src ${agentUrl || "'none'"}`));
+  let html = (await readFile(page, "utf8")).replace("connect-src 'none'", `connect-src ${agentUrl || "'none'"}`);
+  // Turnstile runs Cloudflare's script, which shows its check in a frame.
+  if (agentUrl && turnstileSiteKey) {
+    html = html.replace("script-src 'self'", "script-src 'self' https://challenges.cloudflare.com")
+      .replace("default-src 'self';", "default-src 'self'; frame-src https://challenges.cloudflare.com;");
+  }
+  await writeFile(page, html);
 };
 await rm(outdir, { recursive: true, force: true });
 await mkdir(outdir, { recursive: true });
@@ -72,7 +81,7 @@ const options = {
   target: "es2022",
   outdir,
   inject: [shim("process.mjs")],
-  define: { MOONDOG_AGENT_URL: JSON.stringify(agentUrl) },
+  define: { MOONDOG_AGENT_URL: JSON.stringify(agentUrl), MOONDOG_TURNSTILE_SITE_KEY: JSON.stringify(turnstileSiteKey) },
   plugins: [browserPlugin],
   loader: { ".json": "json" },
   minify: !flags.has("--dev"),

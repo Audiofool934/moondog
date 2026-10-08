@@ -35,7 +35,24 @@ export function configFromEnvironment(environment = process.env) {
     maxSessions: numberFrom(environment.MOONDOG_AGENT_MAX_SESSIONS, 300),
     sessionIdleMs: numberFrom(environment.MOONDOG_AGENT_SESSION_IDLE_MINUTES, 30) * 60_000,
     turnTimeoutMs: numberFrom(environment.MOONDOG_AGENT_TURN_TIMEOUT_SECONDS, 150) * 1000,
+    // With a Turnstile secret, each new conversation needs a token from Cloudflare's check on the page.
+    turnstileSecret: environment.TURNSTILE_SECRET_KEY?.trim() || null,
   };
+}
+
+// Asks Cloudflare whether a Turnstile token is genuine and unused.
+export async function verifyTurnstile({ secret, token, address }) {
+  try {
+    const response = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ secret, response: token, ...(address && address !== "unknown" ? { remoteip: address } : {}) }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    return (await response.json()).success === true;
+  } catch {
+    return false;
+  }
 }
 
 // What the visitor reads when a limit stops a turn. These arrive as Moondog's reply.
@@ -47,12 +64,13 @@ const notices = {
   failed: "I couldn't finish that reply. Try again in a moment.",
   model_unavailable: "The demo can't reach its model right now. `/taste` still works here.",
   too_long: "Keep messages here under {max} characters, please.",
+  check_failed: "I couldn't confirm you're a person. Reload the page and try again.",
 };
 
 // The demo agent reads and plans; it never writes, builds, or acts on a service.
 const allowedEffects = new Set(["read_local", "read_runtime", "read_external", "derive_local"]);
 
-export async function startAgentServer(config = configFromEnvironment(), { credentials, modelsFactory, log = console.log } = {}) {
+export async function startAgentServer(config = configFromEnvironment(), { credentials, modelsFactory, verifyHuman = verifyTurnstile, log = console.log } = {}) {
   const work = await mkdtemp(path.join(tmpdir(), "moondog-agent-"));
   const { environment, databasePath: template } = await prepareFictionalHistory(path.join(work, "listener"));
   // Moondog modules read their folders from the environment; keep them inside this server's work folder.
@@ -245,7 +263,7 @@ export async function startAgentServer(config = configFromEnvironment(), { crede
       if (request.method === "OPTIONS") { response.writeHead(originAllowed ? 204 : 403); return response.end(); }
       if (request.method === "GET" && url.pathname === "/healthz") return send(response, 200, { ok: true });
       if (request.method === "GET" && url.pathname === "/v1/status") {
-        return send(response, 200, { ...availability(), provider: config.provider, model: config.model, turnsPerSession: config.turnsPerSession });
+        return send(response, 200, { ...availability(), provider: config.provider, model: config.model, turnsPerSession: config.turnsPerSession, humanCheck: Boolean(config.turnstileSecret) });
       }
       // Only the website may open conversations from a browser.
       if (!originAllowed) return send(response, 403, { error: { code: "origin" } });
@@ -256,6 +274,12 @@ export async function startAgentServer(config = configFromEnvironment(), { crede
         const refuse = (status, code) => send(response, status, { error: { code, text: notices[code] } });
         if (!state.available) return refuse(503, state.reason);
         if (sessions.size >= config.maxSessions) return refuse(503, "busy");
+        if (config.turnstileSecret) {
+          const token = (await readBody(request)).turnstileToken;
+          const human = typeof token === "string" && token.length > 0 && token.length <= 2048 &&
+            await verifyHuman({ secret: config.turnstileSecret, token, address });
+          if (!human) return refuse(403, "check_failed");
+        }
         if (!limits.claimSession(address)) return refuse(429, "daily_limit");
         const session = await openSession(address);
         return send(response, 201, { session: session.id, turnsPerSession: config.turnsPerSession });

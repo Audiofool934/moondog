@@ -141,6 +141,8 @@ main, .liner { width: var(--page); margin-inline: auto; }
   line-height: 1.5;
 }
 
+.room-check { margin-top: 10px; }
+.room-check[hidden] { display: none; }
 .room-keys { display: none; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .for-touch { display: none; }
 @media (pointer: coarse) {

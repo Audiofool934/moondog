@@ -7,12 +7,13 @@ import { configFromEnvironment, startAgentServer } from "./agent-server.mjs";
 
 const origin = "http://localhost:8737";
 
-async function start(t, overrides = {}) {
+async function start(t, overrides = {}, { verifyHuman } = {}) {
   const faux = fauxProvider();
   const config = { ...configFromEnvironment({}), port: 0, host: "127.0.0.1", origins: [origin], provider: "faux", model: "faux-1", ...overrides };
   const agent = await startAgentServer(config, {
     modelsFactory: () => { const models = createModels(); models.setProvider(faux.provider); return models; },
     log: () => {},
+    ...(verifyHuman ? { verifyHuman } : {}),
   });
   t.after(() => agent.close());
   const call = (path, init = {}) => fetch(`http://127.0.0.1:${agent.port}${path}`, {
@@ -69,4 +70,18 @@ test("each visitor gets a separate copy of the fictional history", async (t) => 
   const [first, second] = [await open(), await open()];
   const paths = [first, second].map((id) => agent.sessions.get(id).folder);
   assert.notEqual(paths[0], paths[1]);
+});
+
+test("with a Turnstile secret, a conversation starts only after Cloudflare confirms the token", async (t) => {
+  const checked = [];
+  const { call } = await start(t, { turnstileSecret: "secret" }, {
+    verifyHuman: async ({ token }) => { checked.push(token); return token === "good"; },
+  });
+  const open = (body) => call("/v1/sessions", { method: "POST", body: JSON.stringify(body) });
+  const refused = await open({});
+  assert.equal(refused.status, 403);
+  assert.match((await refused.json()).error.text, /confirm you're a person/u);
+  assert.equal((await open({ turnstileToken: "bad" })).status, 403);
+  assert.equal((await open({ turnstileToken: "good" })).status, 201);
+  assert.deepEqual(checked, ["bad", "good"]);
 });

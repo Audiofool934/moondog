@@ -3,10 +3,13 @@
 import { needsApp } from "./browser-application.mjs";
 
 const unreachable = "I can't reach Moondog's demo server right now. `/taste` still works here.";
+const unchecked = "I couldn't confirm you're a person. Reload the page and try again.";
 
 export class RemoteRuntime {
-  constructor(url) {
+  // humanCheck, when given, returns a Turnstile token for each new conversation.
+  constructor(url, { humanCheck } = {}) {
     this.url = url.replace(/\/+$/u, "");
+    this.humanCheck = humanCheck;
     this.session = null;
     this.controller = null;
   }
@@ -22,7 +25,17 @@ export class RemoteRuntime {
       // A conversation the server let go of (idle, restarted) starts over once.
       for (let attempt = 0; attempt < 2; attempt += 1) {
         if (!this.session) {
-          const opened = await fetch(`${this.url}/v1/sessions`, { method: "POST", signal: controller.signal });
+          let turnstileToken;
+          if (this.humanCheck) {
+            try { turnstileToken = await this.humanCheck({ signal: controller.signal }); }
+            catch { if (controller.signal.aborted) throw controller.signal.reason; return notice(unchecked, callbacks); }
+          }
+          const opened = await fetch(`${this.url}/v1/sessions`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(turnstileToken ? { turnstileToken } : {}),
+            signal: controller.signal,
+          });
           const body = await opened.json().catch(() => ({}));
           if (!opened.ok) return notice(body.error?.text ?? unreachable, callbacks);
           this.session = body.session;

@@ -47,6 +47,10 @@ To run it, build `server/Dockerfile` from the repository root, or use `server/co
 It needs `DEEPSEEK_API_KEY` and, behind a proxy, `MOONDOG_AGENT_ADDRESS_HEADER` (for example `cf-connecting-ip`), so the limits count real visitors.
 The page talks to the agent only when the build has `MOONDOG_AGENT_URL`; the Pages workflow reads it from the repository variable of the same name.
 
+Cloudflare Turnstile can check visitors before each conversation.
+Set `TURNSTILE_SECRET_KEY` on the server and the `MOONDOG_TURNSTILE_SITE_KEY` repository variable for the page, both from the same Turnstile widget.
+The page loads Cloudflare's script only when a conversation starts, and `/v1/status` shows `"humanCheck":true` when the server requires it.
+
 ## Publishing
 
 `.github/workflows/pages.yml` builds the page on pull requests and publishes `dist/` to GitHub Pages from `main`.
