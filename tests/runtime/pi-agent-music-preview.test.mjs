@@ -119,6 +119,25 @@ test("without Spotify, a request to play a song becomes a preview in the listene
   assert.deepEqual(played.map(({ tracks }) => tracks.map((track) => track.preview_url)), [["https://audio-ssl.itunes.apple.com/itunes-assets/original.m4a"]]);
 });
 
+test("songs by artists the listener named are left out of the queue", async () => {
+  const played = [];
+  const { faux, runtime } = runtimeFor(application({ played }));
+  faux.setResponses([
+    fauxAssistantMessage([fauxToolCall("moondog_music_preview", {
+      tracks: [{ title: "Wind of Change", artist: "Scorpions" }, { title: "Glory Box", artist: "Portishead" }],
+      exclude_artists: ["Portishead"],
+    })], { stopReason: "toolUse" }),
+    (context) => {
+      const value = JSON.parse(context.messages.find((message) => message.role === "toolResult").content[0].text);
+      assert.deepEqual(value.playing_in_order.map((song) => song.title), ["Wind of Change"]);
+      assert.equal(value.left_out_by_excluded_artist, 1);
+      return fauxAssistantMessage([fauxText("Wind of Change is playing.")]);
+    },
+  ]);
+  await runtime.prompt("I love Portishead");
+  assert.deepEqual(played[0].tracks.map((track) => track.title), ["Wind of Change"]);
+});
+
 test("an album request queues the album's previews in order", async () => {
   const played = [];
   const { faux, runtime } = runtimeFor(application({ played }));
@@ -147,4 +166,19 @@ test("with Spotify connected, the prompt keeps its Spotify playback rules", asyn
     return fauxAssistantMessage([fauxText("Ready.")]);
   }]);
   await runtime.prompt("Hi");
+});
+
+test("host notes reach the agent's instructions, and the terminal passes none", async () => {
+  const withNotes = runtimeFor(new MoondogApplication({ agentHostNotes: ["This is Moondog's public demo on its website."] }));
+  withNotes.faux.setResponses([(context) => {
+    assert.match(systemText(context), /About this session:(?:\n|\\n)- This is Moondog.s public demo on its website\./u);
+    return fauxAssistantMessage([fauxText("Hi.")]);
+  }]);
+  await withNotes.runtime.prompt("Hi");
+  const plain = runtimeFor(new MoondogApplication({}));
+  plain.faux.setResponses([(context) => {
+    assert.doesNotMatch(systemText(context), /About this session:/u);
+    return fauxAssistantMessage([fauxText("Hi.")]);
+  }]);
+  await plain.runtime.prompt("Hi");
 });

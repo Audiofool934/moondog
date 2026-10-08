@@ -24,6 +24,8 @@ export function configFromEnvironment(environment = process.env) {
     addressHeader: environment.MOONDOG_AGENT_ADDRESS_HEADER?.toLowerCase() || null,
     provider: environment.MOONDOG_AGENT_PROVIDER ?? "deepseek",
     model: environment.MOONDOG_AGENT_MODEL ?? "deepseek-flash",
+    // How hard the model thinks (see /effort). Low gave more accurate picks than off, for about $0.0001 more a turn.
+    effort: environment.MOONDOG_AGENT_EFFORT?.trim().toLowerCase() || "low",
     dailyBudgetUsd: numberFrom(environment.MOONDOG_AGENT_DAILY_BUDGET_USD, 3),
     sessionsPerAddress: numberFrom(environment.MOONDOG_AGENT_SESSIONS_PER_ADDRESS, 6),
     turnsPerAddress: numberFrom(environment.MOONDOG_AGENT_TURNS_PER_ADDRESS, 30),
@@ -69,6 +71,13 @@ const notices = {
   check_failed: "I couldn't confirm you're a person. Reload the page and try again.",
 };
 
+// What the agent should know about the website demo.
+const demoNotes = [
+  "This is Moondog's public demo on its website. The visitor is trying Moondog in a browser and has not imported anything.",
+  "The listening history and profile here belong to a fictional demo listener whose artists and songs are made up. When the visitor asks about \"my listening\", read that profile and say it is the demo listener's.",
+  "When the visitor names artists, songs, or albums they love, treat those as their own taste for this conversation, and keep using them. In two or three sentences, say what connects them (sound, era, scene, mood), then pick six songs that fit and pass all six to moondog_music_preview in one call so the visitor hears them; talk only about the songs it reports as playing. Pass the artists they named as exclude_artists, so every song is by someone new to the conversation. Say once, briefly, that the full app builds a profile from their real history.",
+];
+
 // The demo agent reads, plans, and plays previews on the page; it never writes, builds, or acts on a service.
 const allowedEffects = new Set(["read_local", "read_runtime", "read_external", "derive_local", "play_preview"]);
 
@@ -97,7 +106,7 @@ export async function startAgentServer(config = configFromEnvironment(), { crede
   const musicCatalog = catalogOverride ?? createAppleMusicCatalog();
   const artistIdentityResolver = createWikidataArtistResolver();
   const musicSimilarity = createOpenMusicSimilarity({ identityResolver: artistIdentityResolver });
-  const modelEnvironment = { ...process.env, MOONDOG_PROVIDER: config.provider, MOONDOG_MODEL: config.model };
+  const modelEnvironment = { ...process.env, MOONDOG_PROVIDER: config.provider, MOONDOG_MODEL: config.model, ...(config.effort ? { MOONDOG_EFFORT: config.effort } : {}) };
 
   // Caps every model call's output, and keeps track of the calls in the current turn.
   const guardModels = (models, session) => new Proxy(models, {
@@ -124,6 +133,7 @@ export async function startAgentServer(config = configFromEnvironment(), { crede
       musicCatalog,
       musicSimilarity,
       artistIdentityResolver,
+      agentHostNotes: demoNotes,
       // Previews play in the visitor's page, sent as a stream event of the current turn.
       musicPreviewPlayer: {
         play: async (tracks, { album } = {}) => session.emit?.({
