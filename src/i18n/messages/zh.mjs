@@ -111,6 +111,7 @@ export default {
   "plan.rationale": ({ text }) => `   策展判断：${text}`,
   "plan.ordering": ({ text }) => `排序逻辑：${text}`,
   "plan.notSaved": "还没有保存，也没有加入队列。",
+  "plan.previewing": "30 秒试听正在播放器里播放，完整歌曲在 Apple Music 上。",
   "plan.pending": "边界：此方案仅在当前进程内待确认，尚未写入 Spotify，也没有外部副作用。",
   "plan.backToBackBoundary": "解释边界：相邻的保留播放事件不证明当时开启了循环、重播是有意的，或你喜欢这首歌。",
   "plan.validationScope": "校验范围：本地 planner 校验了曲目身份、候选集归属、数量和输出顺序；策展理由与情境适配度仍是基于现有元数据的模型判断。",

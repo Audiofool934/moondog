@@ -112,6 +112,7 @@ export default {
   "plan.rationale": ({ text }) => `   Curatorial rationale: ${text}`,
   "plan.ordering": ({ text }) => `Ordering rationale: ${text}`,
   "plan.notSaved": "Nothing has been saved or queued yet.",
+  "plan.previewing": "The 30-second previews are playing in your player; the full songs are on Apple Music.",
   "plan.pending": "Boundary: this plan is pending only in the current process, has not been written to Spotify, and has no external effects.",
   "plan.backToBackBoundary": "Interpretation boundary: adjacent retained playback events do not prove repeat mode, intentional replay, or liking.",
   "plan.validationScope": "Validation scope: the local planner validates track identity, candidate-set membership, count, and output order; curatorial reasons and situational fit remain model judgments based on available metadata.",

@@ -111,6 +111,7 @@ export default {
   "plan.rationale": ({ text }) => `   選んだ理由: ${text}`,
   "plan.ordering": ({ text }) => `曲順の理由: ${text}`,
   "plan.notSaved": "まだ保存もキューへの追加もしていません。",
+  "plan.previewing": "30秒のプレビューをプレーヤーで再生中です。フル尺の曲は Apple Music で聴けます。",
   "plan.pending": "範囲: このプランは今のセッション内で保留中です。Spotify には書き込んでおらず、外部への影響はありません。",
   "plan.backToBackBoundary": "読み方の注意: 保存された再生が続いていても、リピート再生だった、意図して聴き直した、気に入っている、とは限りません。",
   "plan.validationScope": "確認した範囲: ローカルのプランナーが曲の同一性、候補への所属、曲数、順番を確認しています。選んだ理由や場面への合い方は、手元のメタデータにもとづくモデルの判断です。",

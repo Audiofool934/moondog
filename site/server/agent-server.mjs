@@ -124,11 +124,15 @@ export async function startAgentServer(config = configFromEnvironment(), { crede
       musicCatalog,
       musicSimilarity,
       artistIdentityResolver,
-      // A preview plays in the visitor's page, as a stream event of the current turn.
+      // Previews play in the visitor's page, sent as a stream event of the current turn.
       musicPreviewPlayer: {
-        play: async (track) => session.emit?.({
+        play: async (tracks, { album } = {}) => session.emit?.({
           type: "preview",
-          track: { title: track.title, artist_credit: track.artist_credit, preview_url: track.preview_url, catalog_url: track.catalog_url },
+          tracks: tracks.map((track) => ({
+            title: track.title, artist_credit: track.artist_credit,
+            preview_url: track.preview_url, catalog_url: track.catalog_url, artwork_url: track.artwork_url,
+          })),
+          ...(album ? { album: { title: album.title, artist_credit: album.artist_credit, catalog_url: album.catalog_url, artwork_url: album.artwork_url } } : {}),
         }),
       },
     });
