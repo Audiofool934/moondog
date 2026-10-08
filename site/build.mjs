@@ -6,7 +6,7 @@
 //   node build.mjs --snapshot   remake the snapshot first
 //   node build.mjs --serve      rebuild on change and serve at http://localhost:8737
 import { execFile } from "node:child_process";
-import { access, cp, mkdir, readFile, rm, watch } from "node:fs/promises";
+import { access, cp, mkdir, readFile, rm, watch, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -23,6 +23,11 @@ const builtins = {
 };
 const replaced = new Set(["model-catalog.mjs", "public-model-catalog.mjs", "authentication.mjs"]);
 const staticFiles = ["index.html", "style.css", "static"];
+// The public agent's address. Without it, the room runs with no model and the page makes no requests.
+const agentUrl = process.env.MOONDOG_AGENT_URL?.trim().replace(/\/+$/u, "") ?? "";
+if (agentUrl && !/^https:\/\/[a-z0-9.-]+(:\d+)?$|^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/u.test(agentUrl)) {
+  throw new Error(`MOONDOG_AGENT_URL must be an https origin (or http on localhost): ${agentUrl}`);
+}
 
 const browserPlugin = {
   name: "moondog-browser",
@@ -49,8 +54,12 @@ if (flags.has("--snapshot") || !(await access(snapshotPath).then(() => true, () 
   process.stdout.write(stdout);
 }
 
-const copyStatic = () => Promise.all(staticFiles.map((name) =>
-  cp(path.join(here, name), path.join(outdir, name), { recursive: true })));
+const copyStatic = async () => {
+  await Promise.all(staticFiles.map((name) => cp(path.join(here, name), path.join(outdir, name), { recursive: true })));
+  // The page may talk to the agent's origin and nowhere else.
+  const page = path.join(outdir, "index.html");
+  await writeFile(page, (await readFile(page, "utf8")).replace("connect-src 'none'", `connect-src ${agentUrl || "'none'"}`));
+};
 await rm(outdir, { recursive: true, force: true });
 await mkdir(outdir, { recursive: true });
 await copyStatic();
@@ -63,6 +72,7 @@ const options = {
   target: "es2022",
   outdir,
   inject: [shim("process.mjs")],
+  define: { MOONDOG_AGENT_URL: JSON.stringify(agentUrl) },
   plugins: [browserPlugin],
   loader: { ".json": "json" },
   minify: !flags.has("--dev"),

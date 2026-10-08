@@ -46,7 +46,12 @@ jobs:
         run: |
           npm ci
           npm ci --prefix site
+      - name: Test the public agent with a fake model
+        run: node --disable-warning=ExperimentalWarning --test site/server/agent-server.test.mjs
       - name: Build from fresh fictional data
+        # Empty until the public agent runs; then the room sends messages there.
+        env:
+          MOONDOG_AGENT_URL: ${{ vars.MOONDOG_AGENT_URL }}
         run: node site/build.mjs --snapshot
       - name: Upload the page
         if: github.event_name != 'pull_request'

@@ -1,0 +1,23 @@
+# Runs the public agent next to an existing reverse proxy.
+# Put DEEPSEEK_API_KEY and the settings below in site/server/.env (never commit it).
+services:
+  moondog-agent:
+    build:
+      context: ../..
+      dockerfile: site/server/Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      MOONDOG_AGENT_ORIGINS: https://moondog.audiofool.ai
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m
+    mem_limit: 768m
+    # Join the proxy's network so it can reach moondog-agent:8787; publish no ports.
+    networks:
+      - proxy
+
+networks:
+  proxy:
+    external: true
+    name: ${PROXY_NETWORK:?set PROXY_NETWORK to the reverse proxy's Docker network}
