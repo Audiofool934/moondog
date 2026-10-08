@@ -6,6 +6,7 @@ export function createHumanCheck(siteKey, container) {
   let loading = null;
   let widget;
   let pending = null;
+  let interactive = null;
   const settle = (outcome, value) => {
     const current = pending;
     pending = null;
@@ -20,7 +21,9 @@ export function createHumanCheck(siteKey, container) {
   });
 
   // Each conversation gets a fresh token; Cloudflare accepts a token once.
-  return async function token({ signal } = {}) {
+  // onInteractive runs when Cloudflare needs the visitor to tick its box.
+  return async function token({ signal, onInteractive } = {}) {
+    interactive = onInteractive ?? null;
     await load();
     const { turnstile } = window;
     const result = new Promise((resolve, reject) => { pending = { resolve, reject }; });
@@ -34,6 +37,7 @@ export function createHumanCheck(siteKey, container) {
         callback: (value) => settle("resolve", value),
         "error-callback": () => settle("reject", new Error("Turnstile failed")),
         "expired-callback": () => settle("reject", new Error("Turnstile expired")),
+        "before-interactive-callback": () => interactive?.(),
       });
     } else {
       turnstile.reset(widget);
