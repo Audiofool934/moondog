@@ -118,12 +118,12 @@ test("a preview the agent plays reaches the page as a stream event", async (t) =
   };
   const { faux, turn, open } = await start(t, {}, { musicCatalog });
   faux.setResponses([
-    fauxAssistantMessage([fauxToolCall("moondog_music_preview", { title: "Wind of Change", artist: "Scorpions" })], { stopReason: "toolUse" }),
+    fauxAssistantMessage([fauxToolCall("moondog_music_preview", { tracks: [{ title: "Wind of Change", artist: "Scorpions" }] })], { stopReason: "toolUse" }),
     fauxAssistantMessage([fauxText("Here's a 30-second preview.")]),
   ]);
   const events = await turn(await open(), "Play Wind of Change by Scorpions");
   const preview = events.find((event) => event.type === "preview");
-  assert.equal(preview.track.preview_url, track.preview_url);
-  assert.equal(preview.track.catalog_url, track.catalog_url);
+  assert.equal(preview.tracks[0].preview_url, track.preview_url);
+  assert.equal(preview.tracks[0].catalog_url, track.catalog_url);
   assert.equal(events.at(-1).result.text, "Here's a 30-second preview.");
 });

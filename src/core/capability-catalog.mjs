@@ -229,11 +229,11 @@ const catalog = [
     state: "enabled",
     effect: "play_preview",
     description:
-      "Play a 30-second Apple Music preview of one named recording in the host's player.",
+      "Play 30-second Apple Music previews of named songs or one album, as a queue in the host's player.",
     requires_music_preview: true,
     agent_tool: {
       name: "moondog_music_preview",
-      label: N_("Play a preview"),
+      label: N_("Play previews"),
     },
   },
   {

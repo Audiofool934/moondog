@@ -7,7 +7,7 @@ const unchecked = "I couldn't confirm you're a person. Reload the page and try a
 
 export class RemoteRuntime {
   // humanCheck, when given, returns a Turnstile token for each new conversation.
-  // onPreview receives each Apple Music preview the agent plays.
+  // onPreview receives each set of Apple Music previews the agent plays, as (tracks, album).
   constructor(url, { humanCheck, onPreview } = {}) {
     this.url = url.replace(/\/+$/u, "");
     this.humanCheck = humanCheck;
@@ -96,7 +96,7 @@ async function replay(body, callbacks) {
       else if (event.type === "tool_start") callbacks.onToolStart?.(event.tool);
       else if (event.type === "tool_end") callbacks.onToolEnd?.(event.tool);
       else if (event.type === "model_retry") callbacks.onModelRetry?.(event);
-      else if (event.type === "preview") callbacks.onPreview?.(event.track);
+      else if (event.type === "preview") callbacks.onPreview?.(event.tracks ?? [], event.album ?? null);
       else if (event.type === "notice") return notice(event.text, callbacks);
       else if (event.type === "result") return event.result;
     }

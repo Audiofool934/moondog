@@ -4291,23 +4291,31 @@ function projectOpenMusicSimilarity(value) {
   };
 }
 
-// The model learns what played and where the full song is; the audio address stays with the host.
+// The model learns what is playing and where the full songs are; audio and artwork addresses stay with the host.
 function projectMusicPreview(value) {
   if (!isPlainObject(value)) throw new Error("domain_result_invalid:music_preview");
   const state = cleanOutputText(value.state, 64, "music_preview_state");
-  if (state === "not_found") return { state, played: false };
-  if (state !== "resolved" || !isPlainObject(value.track)) throw new Error("domain_result_invalid:music_preview_state");
-  return {
+  if (!["resolved", "not_found"].includes(state)) throw new Error("domain_result_invalid:music_preview_state");
+  const song = (track) => ({
+    title: cleanOutputText(track?.title, 256, "music_preview_title"),
+    artist_credit: cleanOutputText(track?.artist_credit, 256, "music_preview_artist"),
+  });
+  const result = {
     state,
-    played: value.played === true,
     preview_seconds: 30,
-    track: {
-      title: cleanOutputText(value.track.title, 256, "music_preview_title"),
-      artist_credit: cleanOutputText(value.track.artist_credit, 256, "music_preview_artist"),
-      release: optionalOutputText(value.track.release, 256, "music_preview_release"),
-      apple_music_url: optionalOutputText(value.track.catalog_url, 2_048, "music_preview_url"),
-    },
+    playing_in_order: (Array.isArray(value.played) ? value.played : []).slice(0, 30).map(song),
+    not_found: (Array.isArray(value.not_found) ? value.not_found : []).slice(0, 6).map((wanted) => ({
+      title: cleanOutputText(wanted?.title, 256, "music_preview_missing_title"),
+      artist: cleanOutputText(wanted?.artist, 256, "music_preview_missing_artist"),
+    })),
   };
+  if (isPlainObject(value.album)) {
+    result.album = {
+      ...song(value.album),
+      apple_music_url: optionalOutputText(value.album.catalog_url, 2_048, "music_preview_album_url"),
+    };
+  }
+  return result;
 }
 
 function projectAppleMusicTrackSearch(value) {
@@ -4466,6 +4474,7 @@ function createToolFactories(
     onSpotifyQuickEditFailure,
     onSpotifyPlaylistEditWrite,
     onExternalCandidateSet,
+    onMusicPreview,
     onMusicCatalogArtistReleases,
     onWebResearch,
     onSpotifyQueuePlan,
@@ -4756,25 +4765,35 @@ function createToolFactories(
     ],
     [
       "music.preview.play",
-      (descriptor) => ({
-        name: descriptor.tool_name,
-        label: descriptor.label,
-        description:
-          "Play a 30-second Apple Music preview of one named recording in the listener's player. Give the exact title and the artist. The listener hears it right away. One recording per call; for several songs, preview the one they asked about or the best first pick and name the rest.",
-        parameters: Type.Object(
+      (descriptor) => {
+        const song = Type.Object(
           {
             title: Type.String({ minLength: 1, maxLength: 256 }),
             artist: Type.String({ minLength: 1, maxLength: 256 }),
           },
           { additionalProperties: false },
-        ),
-        executionMode: "sequential",
-        execute: executeDomain(
-          async (_toolCallId, parameters) =>
-            application.playMusicPreview({ title: parameters.title, artist: parameters.artist }),
-          projectMusicPreview,
-        ),
-      }),
+        );
+        return {
+          name: descriptor.tool_name,
+          label: descriptor.label,
+          description:
+            "Play 30-second Apple Music previews in the listener's player, one after another. Give either tracks (up to six named recordings, in the order to play) or album (its title and artist) to play that album's songs in order. The listener hears the first one right away and can skip through the rest.",
+          parameters: Type.Object(
+            {
+              tracks: Type.Optional(Type.Array(song, { minItems: 1, maxItems: 6 })),
+              album: Type.Optional(song),
+            },
+            { additionalProperties: false },
+          ),
+          executionMode: "sequential",
+          execute: executeDomain(
+            async (_toolCallId, parameters) =>
+              application.playMusicPreview({ tracks: parameters.tracks, album: parameters.album }),
+            projectMusicPreview,
+            (value) => { if (value.playing_in_order.length) onMusicPreview?.(); },
+          ),
+        };
+      },
     ],
     [
       "music.discovery.artist_similarity",
@@ -5955,8 +5974,9 @@ function sessionAvailability({ spotifyReady, previewReady }) {
   ];
   if (previewReady) {
     lines.push(
-      "- To let the listener hear a song, including any request to play or queue one, find the recording from your knowledge (or moondog_music_catalog_search when unsure) and call moondog_music_preview with its title and artist. It plays a 30-second Apple Music preview in their player.",
-      "- After a preview plays, say in one short line that it is a 30-second preview and that the full song is on Apple Music. Queueing and full playback are not available here; for several songs, preview one and name the others.",
+      "- To let the listener hear music, including any request to play or queue it, call moondog_music_preview: tracks for named songs (up to six, in the order to play) or album for a whole album. It finds each recording in the Apple Music catalog itself and reports any it cannot find, so pass songs straight to it. The previews play one after another in their player.",
+      "- When you recommend songs here, pass them to moondog_music_preview so the listener can hear them, and pick songs not already played in this conversation. Build a playlist plan only when they ask for a playlist; this overrides the plan step in other tool instructions.",
+      "- After previews start, say in one short line that they are 30-second previews and that the full songs are on Apple Music. Full playback is not available here.",
       "- Do not suggest linking Spotify or another account to play music here.",
     );
   } else {
@@ -6516,6 +6536,7 @@ function renderValidatedPlaylistPlan(
   spotifyWrite = null,
   spotifyPartialEffect = null,
   discoverySources = [],
+  previewsPlaying = false,
 ) {
   const candidateScope = plan.candidate_scope ?? "private_library";
   const timeCapsulePlan =
@@ -6557,6 +6578,7 @@ function renderValidatedPlaylistPlan(
   if (!hasExternalCandidates) lines.push(t("plan.ordering", { text: renderPlaylistRationale(plan.ordering_rationale, plan.tracks) }));
   if (spotifyWrite?.playlist) lines.push(t("playlist.saved", { name: spotifyWrite.playlist.name, count: spotifyWrite.playlist.track_count }));
   else if (spotifyPartialEffect?.playlist) lines.push(renderSpotifyPartialPlaylist(spotifyPartialEffect, t));
+  else if (previewsPlaying) lines.push(t("plan.previewing"));
   else lines.push(t(hasExternalCandidates ? "plan.notSaved" : "plan.pending"));
   if (hasExternalCandidates) lines.push(externalListeningNote(discoverySources, t));
   if (backToBackPlan) lines.push(t("plan.backToBackBoundary"));
@@ -6818,6 +6840,9 @@ export class PiAgentRuntime {
           if (this.activePromptState) {
             this.activePromptState.spotifyPlaylistEditWrite = receipt;
           }
+        },
+        onMusicPreview: () => {
+          if (this.activePromptState) this.activePromptState.previewsPlaying = true;
         },
         onExternalCandidateSet: (value, { playbackLookup = false } = {}) => {
           if (this.activePromptState) {
@@ -7471,6 +7496,7 @@ To confirm, reply: ${preview.confirmation}`].join("\n\n");
           promptState.spotifyPlaylistWrite,
           promptState.spotifyPlaylistPartialEffect,
           promptState.discoverySources,
+          promptState.previewsPlaying === true,
         );
         replaceRenderedText(authoritativeText);
         return completedResult(authoritativeText, {

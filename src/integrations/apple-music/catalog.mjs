@@ -127,6 +127,33 @@ function safePreviewUrl(value) {
   }
 }
 
+// Cover art comes only from Apple's image hosts, at the size a small player needs.
+function safeArtworkUrl(value) {
+  const cleaned = safeText(value, 2_048);
+  if (!cleaned) return null;
+  try {
+    const url = new URL(cleaned);
+    if (url.protocol !== "https:" || !url.hostname.endsWith(".mzstatic.com")) return null;
+    return url.toString().replace(/\/100x100bb\./u, "/300x300bb.");
+  } catch {
+    return null;
+  }
+}
+
+function normalizeAlbum(raw) {
+  if (!isPlainObject(raw) || raw.wrapperType !== "collection") return null;
+  const catalogId = safeCatalogId(raw.collectionId);
+  const title = safeText(raw.collectionName, 512);
+  const artistCredit = safeText(raw.artistName, 256);
+  if (!catalogId || !title || !artistCredit) return null;
+  const album = { catalog_id: catalogId, title, artist_credit: artistCredit };
+  const catalogUrl = safeAppleMusicUrl(raw.collectionViewUrl);
+  const artworkUrl = safeArtworkUrl(raw.artworkUrl100);
+  if (catalogUrl) album.catalog_url = catalogUrl;
+  if (artworkUrl) album.artwork_url = artworkUrl;
+  return album;
+}
+
 function releaseDate(value) {
   if (typeof value !== "string") return null;
   const matched = /^(\d{4}-\d{2}-\d{2})T/u.exec(value);
@@ -227,7 +254,9 @@ function normalizeTrack(raw) {
   if (catalogUrl) track.catalog_url = catalogUrl;
   if (date) track.release_date = date;
   const previewUrl = safePreviewUrl(raw.previewUrl);
+  const artworkUrl = safeArtworkUrl(raw.artworkUrl100);
   if (previewUrl) track.preview_url = previewUrl;
+  if (artworkUrl) track.artwork_url = artworkUrl;
   return track;
 }
 
@@ -443,6 +472,31 @@ export function createAppleMusicCatalogClient({
       });
     },
 
+    async searchAlbums(query) {
+      const cleaned = cleanInputText(query, APPLE_MUSIC_CATALOG_LIMITS.discoveryQueryLengthMax, "apple_music_catalog_query_invalid", "album query");
+      const key = `albums|US|${normalizeForMatch(cleaned)}`;
+      return cachedRequest(cache, key, cacheTtlMs, now, async () => {
+        const results = await request("/search", { term: cleaned, country: "us", media: "music", entity: "album", limit: 10 });
+        return results.map(normalizeAlbum).filter(Boolean);
+      });
+    },
+
+    // Every song on one album, in disc and track order.
+    async albumTracks(albumId) {
+      const catalogId = typeof albumId === "string" && /^\d{1,20}$/u.test(albumId) ? albumId : null;
+      if (!catalogId) fail("apple_music_catalog_query_invalid", "The album identity is invalid.");
+      const key = `album-tracks|US|${catalogId}`;
+      return cachedRequest(cache, key, cacheTtlMs, now, async () => {
+        const results = await request("/lookup", { id: catalogId, country: "us", entity: "song", limit: 200 });
+        const order = (raw) => (Number.isSafeInteger(raw?.discNumber) ? raw.discNumber : 1) * 1000 + (Number.isSafeInteger(raw?.trackNumber) ? raw.trackNumber : 999);
+        return results
+          .filter((raw) => isPlainObject(raw) && raw.kind === "song")
+          .sort((left, right) => order(left) - order(right))
+          .map(normalizeTrack)
+          .filter(Boolean);
+      });
+    },
+
     async searchArtists(artistName) {
       const cleaned = cleanInputText(
         artistName,
@@ -572,6 +626,27 @@ export function createAppleMusicCatalog({
         state: track ? "resolved" : "not_found",
         source: sourceMetadata(now),
         ...(track ? { track } : {}),
+      };
+    },
+
+    // One named album's previews, in order: the exact title first, then an edition of it.
+    async findAlbumPreviews({ title, artist } = {}) {
+      if (typeof client.searchAlbums !== "function" || typeof client.albumTracks !== "function") {
+        fail("apple_music_catalog_unavailable", "Album previews are unavailable.");
+      }
+      const cleanedTitle = cleanInputText(title, APPLE_MUSIC_CATALOG_LIMITS.discoveryQueryLengthMax, "apple_music_catalog_query_invalid", "album title");
+      const cleanedArtist = cleanInputText(artist, APPLE_MUSIC_CATALOG_LIMITS.discoveryQueryLengthMax, "apple_music_catalog_query_invalid", "artist");
+      const wantedTitle = normalizeForMatch(cleanedTitle);
+      const wantedArtist = normalizeForMatch(cleanedArtist);
+      const albums = (await client.searchAlbums(`${cleanedArtist} ${cleanedTitle}`))
+        .filter((candidate) => normalizeForMatch(candidate.artist_credit).includes(wantedArtist));
+      const album = albums.find((candidate) => normalizeForMatch(candidate.title) === wantedTitle) ??
+        albums.find((candidate) => normalizeForMatch(candidate.title).startsWith(wantedTitle));
+      const tracks = album ? (await client.albumTracks(album.catalog_id)).filter((track) => track.preview_url).slice(0, 30) : [];
+      return {
+        state: tracks.length ? "resolved" : "not_found",
+        source: sourceMetadata(now),
+        ...(tracks.length ? { album, tracks } : {}),
       };
     },
 

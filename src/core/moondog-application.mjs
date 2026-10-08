@@ -402,11 +402,29 @@ export class MoondogApplication {
       typeof this.musicPreviewPlayer?.play === "function";
   }
 
-  async playMusicPreview({ title, artist } = {}) {
+  // Plays up to six named songs, or one album, as a queue in the host's player.
+  async playMusicPreview({ tracks, album } = {}) {
     if (!this.musicPreviewReady()) throw new Error("Music previews are unavailable");
-    const found = await this.musicCatalog.findPreview({ title, artist });
-    if (found.state === "resolved") await this.musicPreviewPlayer.play(structuredClone(found.track));
-    return { ...found, played: found.state === "resolved" };
+    if (Boolean(album) === (Array.isArray(tracks) && tracks.length > 0)) {
+      throw new Error("Give either up to six songs or one album.");
+    }
+    let found;
+    if (album) {
+      const result = await this.musicCatalog.findAlbumPreviews({ title: album.title, artist: album.artist });
+      found = { kind: "album", album: result.album, played: result.tracks ?? [], not_found: result.state === "resolved" ? [] : [album] };
+    } else {
+      const played = [];
+      const notFound = [];
+      for (const wanted of tracks.slice(0, 6)) {
+        const result = await this.musicCatalog.findPreview({ title: wanted.title, artist: wanted.artist });
+        if (result.state === "resolved") played.push(result.track); else notFound.push(wanted);
+      }
+      found = { kind: "tracks", played, not_found: notFound };
+    }
+    if (found.played.length) {
+      await this.musicPreviewPlayer.play(structuredClone(found.played), found.album ? { album: structuredClone(found.album) } : {});
+    }
+    return { state: found.played.length ? "resolved" : "not_found", ...found };
   }
 
   musicDiscoveryReady() {

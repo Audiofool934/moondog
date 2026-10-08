@@ -111,6 +111,7 @@ export default {
   "plan.rationale": ({ text }) => `   Por que está aqui: ${text}`,
   "plan.ordering": ({ text }) => `Por que esta ordem: ${text}`,
   "plan.notSaved": "Nada foi salvo nem adicionado à fila ainda.",
+  "plan.previewing": "As prévias de 30 segundos estão tocando no seu player; as músicas completas estão no Apple Music.",
   "plan.pending": "Limite: este plano só está pendente nesta sessão, não foi gravado no Spotify e não tem efeitos externos.",
   "plan.backToBackBoundary": "Como ler: duas reproduções guardadas em sequência não provam que você usou a repetição, que tocou de novo de propósito nem que gosta da música.",
   "plan.validationScope": "O que foi conferido: o planejador local verifica a identidade de cada música, se ela está entre as candidatas, a quantidade e a ordem; os motivos e o encaixe com o momento continuam sendo julgamentos do modelo a partir dos metadados disponíveis.",
