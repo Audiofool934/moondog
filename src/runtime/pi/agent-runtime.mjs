@@ -6739,7 +6739,7 @@ async function trustedContextSnapshot(application, runtimeStatus, query) {
 }
 
 export class PiAgentRuntime {
-  constructor({ application, models, model, provider, modelId, modelFetch, modelRetryDelay }) {
+  constructor({ application, models, model, provider, modelId, effort, effortLevels, thinkingLevel, modelFetch, modelRetryDelay }) {
     this.application = application;
     this.models = models;
     this.model = model;
@@ -6750,6 +6750,8 @@ export class PiAgentRuntime {
       pi_version: "1.0.1",
       provider,
       model: modelId,
+      ...(effort ? { effort, thinking_level: thinkingLevel } : {}),
+      ...(effortLevels ? { effort_levels: effortLevels } : {}),
       session_persistence: persistentMemoryReady
         ? "local_sqlite"
         : "process_local_only",
@@ -6942,6 +6944,7 @@ export class PiAgentRuntime {
           previewReady: application.musicPreviewReady?.() ?? false,
         }),
         model,
+        ...(thinkingLevel ? { thinkingLevel } : {}),
         tools,
         messages: restoredMessages,
       },

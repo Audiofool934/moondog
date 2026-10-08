@@ -660,6 +660,13 @@ Switch providers at any time with `/model`; your conversation and listening prof
 Selections are saved for the next launch.
 A model without credentials stays offline and shows the matching authentication command.
 
+`/effort` chooses how hard the model thinks, for example `/effort high`.
+The picker lists only the levels that the current model supports.
+`/effort default` removes the setting. Thinking is then off where the model allows it; Claude 5.5 models use `high`.
+The effort applies to conversation and profile builds, is saved with the model, and carries over when you switch models with `/model`.
+If a new model does not support the saved level, Moondog uses the nearest level that it supports.
+`MOONDOG_EFFORT` sets it together with `MOONDOG_PROVIDER` and `MOONDOG_MODEL`.
+
 | Model family | Provider ID | Environment variable instead of a saved API key |
 | --- | --- | --- |
 | GLM | `zai` | `ZAI_API_KEY` |
