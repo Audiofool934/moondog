@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { CombinedAutocompleteProvider, Editor } from "@earendil-works/pi-tui";
+import { FreshCompletionEditor } from "../../src/surfaces/cli/brand-components.mjs";
 import { withCommandCompletions } from "../../src/surfaces/cli/command-completions.mjs";
 
 function fixture(basePath = process.cwd()) {
@@ -31,10 +32,10 @@ function fixture(basePath = process.cwd()) {
   return { provider, suggestions, commands, modelLookups };
 }
 
-function editorFixture(context, provider) {
+function editorFixture(context, provider, EditorClass = Editor) {
   const identity = (value) => value;
   let renders = 0;
-  const editor = new Editor({ terminal: { rows: 24 }, requestRender() { renders += 1; } }, {
+  const editor = new EditorClass({ terminal: { rows: 24 }, requestRender() { renders += 1; } }, {
     borderColor: identity,
     selectList: Object.fromEntries(["selectedPrefix", "selectedText", "description", "scrollInfo", "noMatch"].map((key) => [key, identity])),
   });
@@ -171,6 +172,20 @@ test("fully typed legal arguments submit on the first Enter after autocomplete f
     assert.equal(submissions.length, before + 1, input);
     assert.equal(submissions.at(-1), input);
     assert.equal(editor.getText(), "");
+  }
+});
+
+test("Enter right after the last typed character submits that text, not a stale suggestion", async (context) => {
+  const { provider } = fixture();
+  const { editor, type } = editorFixture(context, provider, FreshCompletionEditor);
+  const submissions = [];
+  editor.onSubmit = (text) => { submissions.push(text); };
+  // A fast typist's last keys share one input chunk, so Pi handles them before its suggestions refresh.
+  for (const [shown, rest, expected] of [["/theme pape", "r", "/theme paper"], ["/th", "eme", "/theme"]]) {
+    await type(shown);
+    assert.equal(editor.isShowingAutocomplete(), true, shown);
+    for (const key of [...rest, "\r"]) editor.handleInput(key);
+    assert.equal(submissions.at(-1), expected);
   }
 });
 
