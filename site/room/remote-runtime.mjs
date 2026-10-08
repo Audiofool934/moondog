@@ -4,6 +4,7 @@ import { needsApp } from "./browser-application.mjs";
 
 const unreachable = "I can't reach Moondog's demo server right now. `/taste` still works here.";
 const unchecked = "I couldn't confirm you're a person. Reload the page and try again.";
+const tickTheBox = "Tick the check below the room to continue.";
 
 export class RemoteRuntime {
   // humanCheck, when given, returns a Turnstile token for each new conversation.
@@ -29,8 +30,12 @@ export class RemoteRuntime {
         if (!this.session) {
           let turnstileToken;
           if (this.humanCheck) {
-            try { turnstileToken = await this.humanCheck({ signal: controller.signal }); }
+            // When Cloudflare needs a click, say so where the visitor is looking, then clear it.
+            let asked = false;
+            const onInteractive = () => { asked = true; callbacks.onTextReplace?.(tickTheBox); };
+            try { turnstileToken = await this.humanCheck({ signal: controller.signal, onInteractive }); }
             catch { if (controller.signal.aborted) throw controller.signal.reason; return notice(unchecked, callbacks); }
+            if (asked) callbacks.onTextReplace?.("");
           }
           const opened = await fetch(`${this.url}/v1/sessions`, {
             method: "POST",
