@@ -11,7 +11,37 @@ for (const note of document.querySelectorAll("[data-check]")) note.hidden = !sit
 
 const frame = document.querySelector("[data-room]");
 const humanCheck = siteKey ? createHumanCheck(siteKey, document.querySelector("[data-room-check]")) : undefined;
-const room = openRoom(frame.querySelector("[data-room-screen]"), { agentUrl, humanCheck });
+const room = openRoom(frame.querySelector("[data-room-screen]"), { agentUrl, humanCheck, onPreview: playPreview });
+
+// Apple Music previews the agent plays, next to a link to the full song.
+function playPreview(track) {
+  const player = document.querySelector("[data-player]");
+  const audio = player.querySelector("audio");
+  const toggle = player.querySelector("[data-player-toggle]");
+  let preview;
+  let link;
+  try {
+    preview = new URL(track.preview_url);
+    link = new URL(track.catalog_url);
+  } catch { return; }
+  if (preview.protocol !== "https:" || preview.hostname !== "audio-ssl.itunes.apple.com") return;
+  if (link.protocol !== "https:" || link.hostname !== "music.apple.com") return;
+  player.querySelector("[data-player-title]").textContent = track.title;
+  player.querySelector("[data-player-artist]").textContent = `by ${track.artist_credit}`;
+  player.querySelector("[data-player-link]").href = link.href;
+  player.hidden = false;
+  audio.src = preview.href;
+  const show = () => {
+    toggle.textContent = audio.paused ? "Play" : "Pause";
+    toggle.setAttribute("aria-pressed", String(!audio.paused));
+  };
+  audio.onplay = show;
+  audio.onpause = show;
+  audio.onended = show;
+  toggle.onclick = () => (audio.paused ? audio.play().catch(() => {}) : audio.pause());
+  // Browsers may block sound until the visitor presses Play; the button is ready either way.
+  audio.play().catch(() => {}).finally(show);
+}
 // The spectrum fades once the room has drawn its first frame.
 requestAnimationFrame(() => { frame.dataset.state = "ready"; });
 

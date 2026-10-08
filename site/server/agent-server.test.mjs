@@ -11,13 +11,14 @@ import { DailyLimits } from "./limits.mjs";
 
 const origin = "http://localhost:8737";
 
-async function start(t, overrides = {}, { verifyHuman } = {}) {
+async function start(t, overrides = {}, { verifyHuman, musicCatalog } = {}) {
   const faux = fauxProvider();
   const config = { ...configFromEnvironment({}), port: 0, host: "127.0.0.1", origins: [origin], provider: "faux", model: "faux-1", ...overrides };
   const agent = await startAgentServer(config, {
     modelsFactory: () => { const models = createModels(); models.setProvider(faux.provider); return models; },
     log: () => {},
     ...(verifyHuman ? { verifyHuman } : {}),
+    ...(musicCatalog ? { musicCatalog } : {}),
   });
   t.after(() => agent.close());
   const call = (path, init = {}) => fetch(`http://127.0.0.1:${agent.port}${path}`, {
@@ -106,4 +107,23 @@ test("the day's spending survives a restart, and a new day starts from zero", as
   clock = Date.parse("2026-10-08T00:00:01Z");
   const nextDay = new DailyLimits({ ...options, now: () => clock });
   assert.equal(nextDay.budgetLeft(), 3);
+});
+
+test("a preview the agent plays reaches the page as a stream event", async (t) => {
+  const track = { title: "Wind of Change", artist_credit: "Scorpions", release: "Crazy World", preview_url: "https://audio-ssl.itunes.apple.com/itunes-assets/original.m4a", catalog_url: "https://music.apple.com/us/album/crazy-world/2" };
+  const musicCatalog = {
+    async findPreview(input) { assert.deepEqual(input, { title: "Wind of Change", artist: "Scorpions" }); return { state: "resolved", source: {}, track }; },
+    async searchTracks() { return { state: "not_found", source: {}, queries: [], result_count: 0, tracks: [] }; },
+    async findArtistReleases() { return { state: "not_found" }; },
+  };
+  const { faux, turn, open } = await start(t, {}, { musicCatalog });
+  faux.setResponses([
+    fauxAssistantMessage([fauxToolCall("moondog_music_preview", { title: "Wind of Change", artist: "Scorpions" })], { stopReason: "toolUse" }),
+    fauxAssistantMessage([fauxText("Here's a 30-second preview.")]),
+  ]);
+  const events = await turn(await open(), "Play Wind of Change by Scorpions");
+  const preview = events.find((event) => event.type === "preview");
+  assert.equal(preview.track.preview_url, track.preview_url);
+  assert.equal(preview.track.catalog_url, track.catalog_url);
+  assert.equal(events.at(-1).result.text, "Here's a 30-second preview.");
 });

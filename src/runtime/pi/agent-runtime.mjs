@@ -163,7 +163,8 @@ function agentCapabilityAllowed(descriptor) {
     ]).has(descriptor.capability_id) &&
       descriptor.effect === "read_external") ||
     (descriptor.capability_id.startsWith("spotify.") &&
-      spotifyCapabilityEffects.has(descriptor.effect))
+      spotifyCapabilityEffects.has(descriptor.effect)) ||
+    (descriptor.capability_id === "music.preview.play" && descriptor.effect === "play_preview")
   );
 }
 
@@ -4290,6 +4291,25 @@ function projectOpenMusicSimilarity(value) {
   };
 }
 
+// The model learns what played and where the full song is; the audio address stays with the host.
+function projectMusicPreview(value) {
+  if (!isPlainObject(value)) throw new Error("domain_result_invalid:music_preview");
+  const state = cleanOutputText(value.state, 64, "music_preview_state");
+  if (state === "not_found") return { state, played: false };
+  if (state !== "resolved" || !isPlainObject(value.track)) throw new Error("domain_result_invalid:music_preview_state");
+  return {
+    state,
+    played: value.played === true,
+    preview_seconds: 30,
+    track: {
+      title: cleanOutputText(value.track.title, 256, "music_preview_title"),
+      artist_credit: cleanOutputText(value.track.artist_credit, 256, "music_preview_artist"),
+      release: optionalOutputText(value.track.release, 256, "music_preview_release"),
+      apple_music_url: optionalOutputText(value.track.catalog_url, 2_048, "music_preview_url"),
+    },
+  };
+}
+
 function projectAppleMusicTrackSearch(value) {
   if (!isPlainObject(value) || !isPlainObject(value.source)) {
     throw new Error("domain_result_invalid:music_catalog_search");
@@ -4731,6 +4751,28 @@ function createToolFactories(
           (value) => {
             if (value.candidate_set_id) onExternalCandidateSet?.(value, { playbackLookup: true });
           },
+        ),
+      }),
+    ],
+    [
+      "music.preview.play",
+      (descriptor) => ({
+        name: descriptor.tool_name,
+        label: descriptor.label,
+        description:
+          "Play a 30-second Apple Music preview of one named recording in the listener's player. Give the exact title and the artist. The listener hears it right away. One recording per call; for several songs, preview the one they asked about or the best first pick and name the rest.",
+        parameters: Type.Object(
+          {
+            title: Type.String({ minLength: 1, maxLength: 256 }),
+            artist: Type.String({ minLength: 1, maxLength: 256 }),
+          },
+          { additionalProperties: false },
+        ),
+        executionMode: "sequential",
+        execute: executeDomain(
+          async (_toolCallId, parameters) =>
+            application.playMusicPreview({ title: parameters.title, artist: parameters.artist }),
+          projectMusicPreview,
         ),
       }),
     ],
@@ -5904,7 +5946,26 @@ function toolForModel(tool) {
   };
 }
 
-function systemPrompt() {
+// What this session can actually do. It comes last, so it overrides the general playback rules above.
+function sessionAvailability({ spotifyReady, previewReady }) {
+  if (spotifyReady) return "";
+  const lines = [
+    "Session availability:",
+    "- Spotify is not connected in this session, so no Spotify tools exist here. Never call moondog_spotify_* tools, and ignore the Spotify steps in the rules above.",
+  ];
+  if (previewReady) {
+    lines.push(
+      "- To let the listener hear a song, including any request to play or queue one, find the recording from your knowledge (or moondog_music_catalog_search when unsure) and call moondog_music_preview with its title and artist. It plays a 30-second Apple Music preview in their player.",
+      "- After a preview plays, say in one short line that it is a 30-second preview and that the full song is on Apple Music. Queueing and full playback are not available here; for several songs, preview one and name the others.",
+      "- Do not suggest linking Spotify or another account to play music here.",
+    );
+  } else {
+    lines.push("- You cannot play or queue music in this session. Say so once, briefly, then help with what you can: the song, its story, and what to try next.");
+  }
+  return `\n\n${lines.join("\n")}`;
+}
+
+function systemPrompt({ spotifyReady = true, previewReady = false } = {}) {
   return `You are Moondog, a personal music agent and curator.
 
 ${listenerProfileSkill}
@@ -6036,7 +6097,7 @@ Voice:
 - Moondog lives on a lunar record and grew up on Pink Floyd. An occasional light nod to their songs or ideas is welcome when it truly fits the moment, at most once in a conversation, and never at the expense of a clear answer. Never quote more than a short line of any lyric.
 - No hype, no exclamation marks, no filler openings or closing offers. Use plain hyphens, never em dashes.
 
-Respond in the language used by the user unless asked otherwise; product.reply_language is that language, or the listener's chosen language when a message does not show one.`;
+Respond in the language used by the user unless asked otherwise; product.reply_language is that language, or the listener's chosen language when a message does not show one.${sessionAvailability({ spotifyReady, previewReady })}`;
 }
 
 function contextMessage(snapshot) {
@@ -6851,7 +6912,10 @@ export class PiAgentRuntime {
 
     this.agent = new Agent({
       initialState: {
-        systemPrompt: systemPrompt(),
+        systemPrompt: systemPrompt({
+          spotifyReady: application.spotifyReady?.() ?? false,
+          previewReady: application.musicPreviewReady?.() ?? false,
+        }),
         model,
         tools,
         messages: restoredMessages,

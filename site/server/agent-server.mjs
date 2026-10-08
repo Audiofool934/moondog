@@ -69,10 +69,10 @@ const notices = {
   check_failed: "I couldn't confirm you're a person. Reload the page and try again.",
 };
 
-// The demo agent reads and plans; it never writes, builds, or acts on a service.
-const allowedEffects = new Set(["read_local", "read_runtime", "read_external", "derive_local"]);
+// The demo agent reads, plans, and plays previews on the page; it never writes, builds, or acts on a service.
+const allowedEffects = new Set(["read_local", "read_runtime", "read_external", "derive_local", "play_preview"]);
 
-export async function startAgentServer(config = configFromEnvironment(), { credentials, modelsFactory, verifyHuman = verifyTurnstile, log = console.log } = {}) {
+export async function startAgentServer(config = configFromEnvironment(), { credentials, modelsFactory, verifyHuman = verifyTurnstile, musicCatalog: catalogOverride, log = console.log } = {}) {
   const work = await mkdtemp(path.join(tmpdir(), "moondog-agent-"));
   const { environment, databasePath: template } = await prepareFictionalHistory(path.join(work, "listener"));
   // Moondog modules read their folders from the environment; keep them inside this server's work folder.
@@ -94,7 +94,7 @@ export async function startAgentServer(config = configFromEnvironment(), { crede
   const limits = new DailyLimits({ ...config, stateFile: config.stateDir ? path.join(config.stateDir, "daily-limits.json") : null });
   const sessions = new Map();
   let activeTurns = 0;
-  const musicCatalog = createAppleMusicCatalog();
+  const musicCatalog = catalogOverride ?? createAppleMusicCatalog();
   const artistIdentityResolver = createWikidataArtistResolver();
   const musicSimilarity = createOpenMusicSimilarity({ identityResolver: artistIdentityResolver });
   const modelEnvironment = { ...process.env, MOONDOG_PROVIDER: config.provider, MOONDOG_MODEL: config.model };
@@ -124,8 +124,15 @@ export async function startAgentServer(config = configFromEnvironment(), { crede
       musicCatalog,
       musicSimilarity,
       artistIdentityResolver,
+      // A preview plays in the visitor's page, as a stream event of the current turn.
+      musicPreviewPlayer: {
+        play: async (track) => session.emit?.({
+          type: "preview",
+          track: { title: track.title, artist_credit: track.artist_credit, preview_url: track.preview_url, catalog_url: track.catalog_url },
+        }),
+      },
     });
-    const session = { id, address, folder, store, application, runtime: null, turns: 0, modelCalls: 0, busy: false, lastUsed: Date.now() };
+    const session = { id, address, folder, store, application, runtime: null, turns: 0, modelCalls: 0, busy: false, lastUsed: Date.now(), emit: null };
     session.runtime = await createConfiguredRuntime(application, modelEnvironment, {
       credentials,
       modelsFactory,
@@ -207,6 +214,7 @@ export async function startAgentServer(config = configFromEnvironment(), { crede
     if (!limits.claimTurn(address)) return notice("daily_limit");
 
     session.busy = true;
+    session.emit = emit;
     session.turns += 1;
     session.modelCalls = 0;
     session.lastUsed = Date.now();
@@ -243,6 +251,7 @@ export async function startAgentServer(config = configFromEnvironment(), { crede
       limits.spend(usage);
       activeTurns -= 1;
       session.busy = false;
+      session.emit = null;
       session.lastUsed = Date.now();
       response.end();
       const day = limits.summary();
