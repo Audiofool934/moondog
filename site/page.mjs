@@ -1,12 +1,17 @@
 // The project page: the live room, on-screen keys for touch screens, and copy buttons.
+import { createHumanCheck } from "./room/human-check.mjs";
 import { openRoom } from "./room/room.mjs";
 
-// The build sets MOONDOG_AGENT_URL when the public agent is running.
+// The build sets MOONDOG_AGENT_URL when the public agent is running,
+// and MOONDOG_TURNSTILE_SITE_KEY when Cloudflare checks visitors first.
 const agentUrl = MOONDOG_AGENT_URL;
+const siteKey = agentUrl ? MOONDOG_TURNSTILE_SITE_KEY : "";
 for (const note of document.querySelectorAll("[data-agent]")) note.hidden = (note.dataset.agent === "online") !== Boolean(agentUrl);
+for (const note of document.querySelectorAll("[data-check]")) note.hidden = !siteKey;
 
 const frame = document.querySelector("[data-room]");
-const room = openRoom(frame.querySelector("[data-room-screen]"), { agentUrl });
+const humanCheck = siteKey ? createHumanCheck(siteKey, document.querySelector("[data-room-check]")) : undefined;
+const room = openRoom(frame.querySelector("[data-room-screen]"), { agentUrl, humanCheck });
 // The spectrum fades once the room has drawn its first frame.
 requestAnimationFrame(() => { frame.dataset.state = "ready"; });
 

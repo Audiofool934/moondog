@@ -1,5 +1,5 @@
 # Runs the public agent next to an existing reverse proxy.
-# Put DEEPSEEK_API_KEY and the settings below in site/server/.env (never commit it).
+# Put DEEPSEEK_API_KEY, TURNSTILE_SECRET_KEY, and the settings below in site/server/.env (never commit it).
 services:
   moondog-agent:
     build:

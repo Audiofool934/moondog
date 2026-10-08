@@ -52,6 +52,7 @@ jobs:
         # Empty until the public agent runs; then the room sends messages there.
         env:
           MOONDOG_AGENT_URL: ${{ vars.MOONDOG_AGENT_URL }}
+          MOONDOG_TURNSTILE_SITE_KEY: ${{ vars.MOONDOG_TURNSTILE_SITE_KEY }}
         run: node site/build.mjs --snapshot
       - name: Upload the page
         if: github.event_name != 'pull_request'
