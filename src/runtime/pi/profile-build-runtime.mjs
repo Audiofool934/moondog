@@ -57,14 +57,14 @@ function tool(name, description, parameters, action) {
 }
 
 export class ProfileBuildRuntime {
-  constructor({ models, model, provider, modelId, agentFactory = options => new Agent(options), maxTurns = 32,
+  constructor({ models, model, provider, modelId, thinkingLevel, agentFactory = options => new Agent(options), maxTurns = 32,
     modelFetch, modelRetryDelay }) {
-    Object.assign(this, { models, model, provider, modelId, agentFactory, maxTurns, modelFetch, modelRetryDelay });
+    Object.assign(this, { models, model, provider, modelId, thinkingLevel, agentFactory, maxTurns, modelFetch, modelRetryDelay });
     this.activeAgent = null;
   }
 
   publicStatus() {
-    return { state: "configured", provider: this.provider, model: this.modelId,
+    return { state: "configured", provider: this.provider, model: this.modelId, ...(this.thinkingLevel ? { thinking_level: this.thinkingLevel } : {}),
       worker_version: PROFILE_BUILD_WORKER_VERSION, external_effects: "disabled" };
   }
 
@@ -99,7 +99,7 @@ export class ProfileBuildRuntime {
     ];
     const agent = this.agentFactory({
       initialState: {
-        model: this.model, tools, messages: [],
+        model: this.model, ...(this.thinkingLevel ? { thinkingLevel: this.thinkingLevel } : {}), tools, messages: [],
         systemPrompt: [...COMMON, ...(check ? CHECKER : WRITER),
           ...(revision ? ["Revise the candidate: fix every listed issue, keep everything that is sound, and submit the complete revised profile."] : []),
           ...(!check && session.language && session.language !== "en" ? [`Write the summary and insights in ${LOCALES[session.language]?.name ?? "English"}. Keep artist, album, song and playlist names exactly as they are.`] : []),

@@ -104,6 +104,7 @@ const slashCommands = [
   { name: "tools", description: N_("See which music tools are available") },
   { name: "doctor", description: N_("Check your setup") },
   { name: "model", description: N_("Choose the model Moondog talks through") },
+  { name: "effort", description: N_("Choose how hard the model thinks") },
   { name: "auth", description: N_("Sign in to a model provider") },
   { name: "web", description: N_("Look things up on public music sites") },
   { name: "spotify", description: N_("Connect and control Spotify") },
@@ -353,6 +354,7 @@ export async function runMoondogTui({
     modelReady: runtimeStatus.state === "configured",
     provider: runtimeStatus.provider,
     model: runtimeStatus.model,
+    effort: runtimeStatus.thinking_level,
     spotifyReady: application.spotifyReady?.() ?? false,
     place: homeVisible ? "" : conversationTitle,
   }));
@@ -835,6 +837,8 @@ export async function runMoondogTui({
     tui.requestRender(true);
   };
 
+  // A model switch keeps the saved effort; the new runtime limits it to what the model supports.
+  const runtimeSelection = (provider, model, effort) => ({ provider, model, ...(effort ? { effort } : {}) });
   const replaceRuntime = async (selection) => {
     if (typeof rebuildRuntime !== "function") {
       throw new Error(tr("Runtime rebuilding is unavailable in this launch mode."));
@@ -953,7 +957,7 @@ export async function runMoondogTui({
     // switch after its settings write or authentication work has begun.
     setBusy(true);
     setFooter(tr("Loading {model}...", { model: `${providerId}/${modelId}` }));
-    const status = await replaceRuntime({ provider: providerId, model: modelId });
+    const status = await replaceRuntime(runtimeSelection(providerId, modelId, runtimeStatus.effort));
     addMoondogMessage(
       status.state === "configured"
         ? tr("Now talking through `{model}`. This conversation and what I remember carry over.", { model: `${providerId}/${modelId}` })
@@ -965,6 +969,45 @@ export async function runMoondogTui({
       status.state === "configured" ? tr("Model ready.") : tr("Model saved, not connected yet."),
       status.state === "configured" ? success : warning,
     );
+  };
+
+  const selectEffort = async (args) => {
+    if (args.length > 1) throw new Error(tr("Use /effort, or /effort <level>."));
+    if (runtimeStatus.state !== "configured") throw new Error(tr("Choose a model with /model first."));
+    const model = `${runtimeStatus.provider}/${runtimeStatus.model}`;
+    const levels = runtimeStatus.effort_levels ?? [];
+    if (levels.length < 2) throw new Error(tr("`{model}` has no effort levels to choose from.", { model }));
+    let effort = args[0]?.toLowerCase();
+    if (effort && effort !== "default" && !levels.includes(effort)) {
+      throw new Error(tr("`{model}` supports: {levels}, or default.", { model, levels: levels.join(", ") }));
+    }
+    if (!effort) {
+      const descriptions = {
+        off: tr("No extra thinking"),
+        minimal: tr("The least thinking"),
+        low: tr("Quick answers"),
+        medium: tr("Between speed and depth"),
+        high: tr("Thinks more before answering"),
+        xhigh: tr("Thinks longer; slower and costs more"),
+        max: tr("Thinks the most; slowest and costs the most"),
+      };
+      const selected = await choose([
+        { value: "default", label: "default", description: tr("Moondog's default: thinking off where the model allows it") },
+        ...levels.map(level => ({ value: level, label: level, description: descriptions[level] ?? "" })),
+      ], runtimeStatus.effort ?? "default", tr("Choose how hard {model} thinks", { model }));
+      if (!selected) {
+        setFooter(tr("Effort unchanged."));
+        return;
+      }
+      effort = selected.value;
+    }
+    setBusy(true);
+    const status = await replaceRuntime(runtimeSelection(runtimeStatus.provider, runtimeStatus.model,
+      effort === "default" ? undefined : effort));
+    addMoondogMessage(status.thinking_level
+      ? tr("`{model}` now thinks at `{effort}`. This conversation carries over.", { model, effort: status.thinking_level })
+      : tr("`{model}` is back to Moondog's default effort.", { model }));
+    setFooter(tr("Effort saved."), success);
   };
 
   const authenticate = async (args) => {
@@ -1012,7 +1055,7 @@ export async function runMoondogTui({
 
     if (typeof rebuildRuntime === "function") {
       const currentSelection = runtimeStatus.provider && runtimeStatus.model
-        ? { provider: runtimeStatus.provider, model: runtimeStatus.model }
+        ? runtimeSelection(runtimeStatus.provider, runtimeStatus.model, runtimeStatus.effort)
         : undefined;
       const status = await replaceRuntime(currentSelection);
       addMoondogMessage(
@@ -1618,6 +1661,10 @@ export async function runMoondogTui({
     }
     if (command === "model") {
       await selectModel(args);
+      return;
+    }
+    if (command === "effort") {
+      await selectEffort(args);
       return;
     }
     if (command === "auth") {

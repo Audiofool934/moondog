@@ -4,6 +4,8 @@ import path from "node:path";
 import { resolveMoondogAuthFile } from "./persistent-credential-store.mjs";
 
 const SETTINGS_VERSION = 1;
+// Pi's thinking levels. Each model supports a subset; the runtime clamps to it.
+export const EFFORT_LEVELS = Object.freeze(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
 
 function settingsError(message, cause) {
   const error = new Error(message, cause ? { cause } : undefined);
@@ -27,7 +29,11 @@ function normalizeSelection(value) {
       "Moondog runtime settings require a provider and model.",
     );
   }
-  return { provider, model };
+  if (value.effort === undefined) return { provider, model };
+  if (!EFFORT_LEVELS.includes(value.effort)) {
+    throw settingsError("Moondog runtime settings use an unknown effort level.");
+  }
+  return { provider, model, effort: value.effort };
 }
 
 export function resolveMoondogSettingsFile(environment = process.env) {
@@ -58,7 +64,9 @@ export async function readPiRuntimeSelection(environment = process.env) {
     typeof document !== "object" ||
     Array.isArray(document) ||
     document.version !== SETTINGS_VERSION ||
-    Object.keys(document).sort().join(",") !== "model,provider,version"
+    !["model,provider,version", "effort,model,provider,version"].includes(
+      Object.keys(document).sort().join(","),
+    )
   ) {
     throw settingsError("Moondog runtime settings use an unsupported shape.");
   }

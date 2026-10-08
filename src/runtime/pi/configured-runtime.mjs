@@ -1,8 +1,10 @@
+import { clampThinkingLevel, getSupportedThinkingLevels } from "@earendil-works/pi-ai";
+
 import { PiAgentRuntime } from "./agent-runtime.mjs";
 import { createPiAuthContext } from "./authentication.mjs";
 import { getPublicPiModelCatalog } from "./public-model-catalog.mjs";
 import { createPersistentCredentialStore } from "./persistent-credential-store.mjs";
-import { readPiRuntimeSelection } from "./runtime-settings.mjs";
+import { EFFORT_LEVELS, readPiRuntimeSelection } from "./runtime-settings.mjs";
 
 export class OfflineAgentRuntime {
   constructor(reason = "model_not_configured", selection) {
@@ -56,16 +58,21 @@ export async function createConfiguredRuntime(
         ? {
             provider: environment.MOONDOG_PROVIDER,
             model: environment.MOONDOG_MODEL,
+            effort: environment.MOONDOG_EFFORT?.trim().toLowerCase() || undefined,
           }
         : await settingsReader(environment);
   const provider = configuredSelection?.provider?.trim().toLowerCase();
   const modelId = configuredSelection?.model?.trim();
+  const effort = configuredSelection?.effort;
 
   if (!provider && !modelId) {
     return new OfflineAgentRuntime();
   }
   if (!provider || !modelId) {
     return new OfflineAgentRuntime("model_configuration_incomplete");
+  }
+  if (effort !== undefined && !EFFORT_LEVELS.includes(effort)) {
+    return new OfflineAgentRuntime("effort_unknown", { provider, model: modelId });
   }
 
   const credentialStore =
@@ -86,6 +93,7 @@ export async function createConfiguredRuntime(
     return new OfflineAgentRuntime("provider_authentication_required", {
       provider,
       model: modelId,
+      ...(effort ? { effort } : {}),
     });
   }
 
@@ -95,5 +103,9 @@ export async function createConfiguredRuntime(
     model,
     provider,
     modelId,
+    // Without a saved effort, keep Pi's default and send no effort setting.
+    effort,
+    effortLevels: getSupportedThinkingLevels(model),
+    thinkingLevel: effort ? clampThinkingLevel(model, effort) : undefined,
   });
 }

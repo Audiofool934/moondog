@@ -63,11 +63,11 @@ export class ListeningHeader {
   invalidate() {}
   render(width) {
     const theme = this.getTheme();
-    const { profileReady, modelReady, spotifyReady, provider, model, place } = this.getStatus();
+    const { profileReady, modelReady, spotifyReady, provider, model, effort, place } = this.getStatus();
     const compact = width < 60;
     const clean = (value) => sanitizeTerminalText(stripVTControlCharacters(String(value ?? "")))
       .replace(/\s+/gu, " ").trim();
-    const modelName = clean(model);
+    const modelName = [clean(model), clean(effort)].filter(Boolean).join(" · ");
     const providerName = clean(provider);
     const placeName = clean(place);
     const lead = "  /  ";

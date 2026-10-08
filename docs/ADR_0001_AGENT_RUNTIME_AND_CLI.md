@@ -266,7 +266,7 @@ Moondog persists the user's explicit provider and model selection separately fro
 
 The TUI reads Pi's built-in provider and model catalog through `/model` and starts OpenAI Codex login through `/auth`.
 
-`MOONDOG_PROVIDER` and `MOONDOG_MODEL` remain non-interactive runtime overrides.
+`MOONDOG_PROVIDER` and `MOONDOG_MODEL` remain non-interactive runtime overrides, with optional `MOONDOG_EFFORT`.
 
 ## Why OpenClaw Is an Adapter
 
