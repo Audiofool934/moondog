@@ -142,6 +142,31 @@ main, .liner { width: var(--page); margin-inline: auto; }
 }
 
 .room-check { margin-top: 10px; }
+.room-player {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 10px;
+  padding: 10px 14px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  font-size: 15px;
+  line-height: 1.4;
+}
+.room-player[hidden] { display: none; }
+.room-player p { flex: 1; margin: 0; min-width: 0; }
+.room-player-note { color: var(--muted); font-size: 14px; }
+.room-player button {
+  min-width: 64px;
+  padding: 6px 12px;
+  border: 1px solid var(--ink);
+  border-radius: 4px;
+  background: var(--ink);
+  color: var(--paper);
+  font: 14px var(--serif);
+  cursor: pointer;
+}
+.room-player a { white-space: nowrap; }
 .room-check[hidden] { display: none; }
 .room-keys { display: none; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .for-touch { display: none; }

@@ -115,6 +115,18 @@ function safeAppleMusicUrl(value) {
   }
 }
 
+// Apple serves 30-second previews only from its own audio host.
+function safePreviewUrl(value) {
+  const cleaned = safeText(value, 2_048);
+  if (!cleaned) return null;
+  try {
+    const url = new URL(cleaned);
+    return url.protocol === "https:" && url.hostname === "audio-ssl.itunes.apple.com" ? url.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
 function releaseDate(value) {
   if (typeof value !== "string") return null;
   const matched = /^(\d{4}-\d{2}-\d{2})T/u.exec(value);
@@ -214,6 +226,8 @@ function normalizeTrack(raw) {
   if (primaryGenre) track.primary_genre = primaryGenre;
   if (catalogUrl) track.catalog_url = catalogUrl;
   if (date) track.release_date = date;
+  const previewUrl = safePreviewUrl(raw.previewUrl);
+  if (previewUrl) track.preview_url = previewUrl;
   return track;
 }
 
@@ -541,6 +555,23 @@ export function createAppleMusicCatalog({
         queries: cleanedQueries,
         result_count: tracks.length,
         tracks,
+      };
+    },
+
+    // One named recording with a playable preview: the exact title first, then a version of it.
+    async findPreview({ title, artist } = {}) {
+      const cleanedTitle = cleanInputText(title, APPLE_MUSIC_CATALOG_LIMITS.discoveryQueryLengthMax, "apple_music_catalog_query_invalid", "track title");
+      const cleanedArtist = cleanInputText(artist, APPLE_MUSIC_CATALOG_LIMITS.discoveryQueryLengthMax, "apple_music_catalog_query_invalid", "artist");
+      const wantedTitle = normalizeForMatch(cleanedTitle);
+      const wantedArtist = normalizeForMatch(cleanedArtist);
+      const results = (await client.searchTracks(`${cleanedArtist} ${cleanedTitle}`))
+        .filter((track) => track.preview_url && normalizeForMatch(track.artist_credit).includes(wantedArtist));
+      const track = results.find((candidate) => normalizeForMatch(candidate.title) === wantedTitle) ??
+        results.find((candidate) => normalizeForMatch(candidate.title).startsWith(wantedTitle));
+      return {
+        state: track ? "resolved" : "not_found",
+        source: sourceMetadata(now),
+        ...(track ? { track } : {}),
       };
     },
 

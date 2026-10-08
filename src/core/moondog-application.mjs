@@ -171,6 +171,7 @@ export class MoondogApplication {
     spotifyConnection = null,
     musicCatalog = null,
     musicSimilarity = null,
+    musicPreviewPlayer = null,
     artistIdentityResolver = null,
     webResearch = null,
     locale = DEFAULT_LOCALE,
@@ -193,6 +194,8 @@ export class MoondogApplication {
     this.spotifyConnection = spotifyConnection;
     this.musicCatalog = musicCatalog;
     this.musicSimilarity = musicSimilarity;
+    // Hosts that can play audio (the website) pass { play(track) }; the terminal does not.
+    this.musicPreviewPlayer = musicPreviewPlayer;
     this.artistIdentityResolver = artistIdentityResolver;
     this.webResearch = webResearch;
     this.spotifyResolutions = new Map();
@@ -391,6 +394,19 @@ export class MoondogApplication {
       throw new Error("Moondog's external music catalog is not ready.");
     }
     return this.musicCatalog;
+  }
+
+  musicPreviewReady() {
+    return this.musicCatalogReady() &&
+      typeof this.musicCatalog.findPreview === "function" &&
+      typeof this.musicPreviewPlayer?.play === "function";
+  }
+
+  async playMusicPreview({ title, artist } = {}) {
+    if (!this.musicPreviewReady()) throw new Error("Music previews are unavailable");
+    const found = await this.musicCatalog.findPreview({ title, artist });
+    if (found.state === "resolved") await this.musicPreviewPlayer.play(structuredClone(found.track));
+    return { ...found, played: found.state === "resolved" };
   }
 
   musicDiscoveryReady() {
@@ -2676,6 +2692,7 @@ export class MoondogApplication {
         musicDiscoveryReady: this.musicDiscoveryReady(),
         musicSimilarityReady: this.musicSimilarityReady(),
         webResearchReady: this.webResearchReady(),
+      musicPreviewReady: this.musicPreviewReady(),
       }),
     };
   }
@@ -2697,6 +2714,7 @@ export class MoondogApplication {
       musicDiscoveryReady: this.musicDiscoveryReady(),
       musicSimilarityReady: this.musicSimilarityReady(),
       webResearchReady: this.webResearchReady(),
+      musicPreviewReady: this.musicPreviewReady(),
     });
   }
 

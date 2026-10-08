@@ -852,6 +852,7 @@ export default {
   "Look at why it's in your profile": "プロフィールにある理由を見る",
   "Build a playlist plan": "プレイリストのプランを作る",
   "Find current artist releases": "アーティストの最新リリースを探す",
+  "Play a preview": "プレビューを再生",
   "Search outside your library": "ライブラリの外を探す",
   "Find music nearby": "近い音楽を探す",
   "Remember what you've told me": "教えてもらったことを覚える",

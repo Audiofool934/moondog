@@ -62,6 +62,8 @@ const copyStatic = async () => {
   // The page may talk to the agent's origin and nowhere else.
   const page = path.join(outdir, "index.html");
   let html = (await readFile(page, "utf8")).replace("connect-src 'none'", `connect-src ${agentUrl || "'none'"}`);
+  // With the agent, previews play from Apple's audio host.
+  if (agentUrl) html = html.replace("default-src 'self';", "default-src 'self'; media-src https://audio-ssl.itunes.apple.com;");
   // Turnstile runs Cloudflare's script, which shows its check in a frame.
   if (agentUrl && turnstileSiteKey) {
     html = html.replace("script-src 'self'", "script-src 'self' https://challenges.cloudflare.com")

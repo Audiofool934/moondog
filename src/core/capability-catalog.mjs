@@ -224,6 +224,19 @@ const catalog = [
     },
   },
   {
+    id: "music.preview.play",
+    version: "1",
+    state: "enabled",
+    effect: "play_preview",
+    description:
+      "Play a 30-second Apple Music preview of one named recording in the host's player.",
+    requires_music_preview: true,
+    agent_tool: {
+      name: "moondog_music_preview",
+      label: N_("Play a preview"),
+    },
+  },
+  {
     id: "music.discovery.artist_similarity",
     version: "1",
     state: "enabled",
@@ -560,6 +573,7 @@ function withRuntimeAvailability(
   webResearchReady,
   profileExplorationReady,
   profileBuildReady,
+  musicPreviewReady,
 ) {
   if (capability.requires_profile_build && !profileBuildReady) {
     return { ...capability, state: "blocked", blocked_by: "profile_build_not_ready" };
@@ -657,6 +671,13 @@ function withRuntimeAvailability(
       blocked_by: "music_similarity_not_ready",
     };
   }
+  if (capability.requires_music_preview && !musicPreviewReady) {
+    return {
+      ...capability,
+      state: "blocked",
+      blocked_by: "music_preview_not_ready",
+    };
+  }
   return capability;
 }
 
@@ -676,6 +697,7 @@ export function listCapabilities({
   webResearchReady = false,
   profileExplorationReady = false,
   profileBuildReady = false,
+  musicPreviewReady = false,
 } = {}) {
   return structuredClone(
     catalog.map((capability) =>
@@ -696,6 +718,7 @@ export function listCapabilities({
         webResearchReady,
         profileExplorationReady,
         profileBuildReady,
+        musicPreviewReady,
       ),
     ),
   );

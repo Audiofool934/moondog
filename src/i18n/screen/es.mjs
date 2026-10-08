@@ -852,6 +852,7 @@ export default {
   "Look at why it's in your profile": "Ver por qué está en tu perfil",
   "Build a playlist plan": "Crear un plan de playlist",
   "Find current artist releases": "Buscar lanzamientos recientes de artistas",
+  "Play a preview": "Reproducir un avance",
   "Search outside your library": "Buscar fuera de tu biblioteca",
   "Find music nearby": "Buscar música cercana",
   "Remember what you've told me": "Recordar lo que me has dicho",

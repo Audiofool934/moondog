@@ -852,6 +852,7 @@ export default {
   "Look at why it's in your profile": "看看它为什么在你的资料里",
   "Build a playlist plan": "制定歌单方案",
   "Find current artist releases": "查找艺人的最新发行",
+  "Play a preview": "播放试听片段",
   "Search outside your library": "在你的曲库之外搜索",
   "Find music nearby": "找附近的音乐",
   "Remember what you've told me": "记住你告诉我的",

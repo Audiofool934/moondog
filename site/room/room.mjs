@@ -15,7 +15,7 @@ const PALETTES = {
 };
 
 // With an agent URL, messages go to Moondog's public agent; without one, the room has no model.
-export function openRoom(container, { agentUrl = "", humanCheck } = {}) {
+export function openRoom(container, { agentUrl = "", humanCheck, onPreview } = {}) {
   const dark = matchMedia("(prefers-color-scheme: dark)").matches;
   const xterm = new Terminal({
     fontFamily: '"SF Mono", Menlo, "DejaVu Sans Mono", "Cascadia Mono", Consolas, monospace',
@@ -49,7 +49,7 @@ export function openRoom(container, { agentUrl = "", humanCheck } = {}) {
 
   const run = () => runMoondogTui({
     application: new BrowserApplication(snapshot),
-    runtime: agentUrl ? new RemoteRuntime(agentUrl, { humanCheck }) : new PreviewRuntime(),
+    runtime: agentUrl ? new RemoteRuntime(agentUrl, { humanCheck, onPreview }) : new PreviewRuntime(),
     terminal: new XtermTerminal(xterm),
     signalTarget: signals,
     environment,

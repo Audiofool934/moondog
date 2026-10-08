@@ -43,6 +43,12 @@
         <div class="room-screen" data-room-screen role="application" aria-label="Moondog listening room. Click to type."></div>
       </div>
       <div class="room-check" data-room-check hidden></div>
+      <div class="room-player" data-player hidden>
+        <button type="button" data-player-toggle aria-pressed="false">Play</button>
+        <p><strong data-player-title></strong> <span data-player-artist></span><br><span class="room-player-note">30-second preview</span></p>
+        <a data-player-link href="https://music.apple.com/" target="_blank" rel="noopener">Listen on Apple Music</a>
+        <audio preload="none"></audio>
+      </div>
       <div class="room-keys" aria-label="Keys for touch screens">
         <button type="button" data-command="/taste">/taste</button>
         <button type="button" data-command="/help">/help</button>
@@ -52,7 +58,7 @@
         <button type="button" data-key="enter">Enter</button>
         <button type="button" data-key="esc">Esc</button>
       </div>
-      <p class="room-note">This is the real room, running in your browser with a fictional listener. <span class="for-mouse">Click inside and type <code>/taste</code>, or press Tab to look around.</span><span class="for-touch">Tap <code>/taste</code> above to open the profile, or tap the room to type.</span> <span data-agent="offline">Nothing you type leaves this page.</span><span data-agent="online" hidden>Messages you type go to Moondog's demo server and on to DeepSeek, which writes the replies. Conversations aren't kept.</span><span data-check hidden> Cloudflare checks that you're a person before a conversation starts.</span></p>
+      <p class="room-note">This is the real room, running in your browser with a fictional listener. <span class="for-mouse">Click inside and type <code>/taste</code>, or press Tab to look around.</span><span class="for-touch">Tap <code>/taste</code> above to open the profile, or tap the room to type.</span> <span data-agent="offline">Nothing you type leaves this page.</span><span data-agent="online" hidden>Messages you type go to Moondog's demo server and on to DeepSeek, which writes the replies. Conversations aren't kept, and song previews come from Apple Music.</span><span data-check hidden> Cloudflare checks that you're a person before a conversation starts.</span></p>
     </section>
 
     <section class="tracks" aria-label="What Moondog does">
