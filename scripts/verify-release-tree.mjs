@@ -170,8 +170,12 @@ async function publicHistoryBlobs() {
         return [objectId, { type, size: Number(size) }];
       }),
   );
-  return records.filter((record) => blobMetadata.get(record.objectId)?.type === "blob");
+  return records
+    .filter((record) => blobMetadata.get(record.objectId)?.type === "blob")
+    .map((record) => ({ ...record, size: blobMetadata.get(record.objectId).size }));
 }
+
+const historyBatchBytes = 16 * 1024 * 1024;
 
 async function readBlobBatch(objectIds) {
   if (objectIds.length === 0) return new Map();
@@ -211,11 +215,24 @@ async function verifyPublicHistory() {
         `public Git history contains ${record.relativePath}: ${issues.join(", ")}`,
       );
     }
-    if (!uniqueBlobs.has(record.objectId)) uniqueBlobs.set(record.objectId, record.relativePath);
+    if (!uniqueBlobs.has(record.objectId)) uniqueBlobs.set(record.objectId, record);
   }
-  const contents = await readBlobBatch([...uniqueBlobs.keys()]);
+  // Read history in bounded batches; the whole history no longer fits one Git output buffer.
+  const contents = new Map();
+  let batch = [];
+  let batchBytes = 0;
+  for (const { objectId, size } of uniqueBlobs.values()) {
+    if (batch.length && batchBytes + size > historyBatchBytes) {
+      for (const entry of await readBlobBatch(batch)) contents.set(...entry);
+      batch = [];
+      batchBytes = 0;
+    }
+    batch.push(objectId);
+    batchBytes += size;
+  }
+  for (const entry of await readBlobBatch(batch)) contents.set(...entry);
   assert(contents.size === uniqueBlobs.size, "Git did not return every public-history blob");
-  for (const [objectId, relativePath] of uniqueBlobs) {
+  for (const [objectId, { relativePath }] of uniqueBlobs) {
     const issues = scanForbiddenContent(contents.get(objectId));
     assert(
       issues.length === 0,
