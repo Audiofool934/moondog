@@ -64,3 +64,17 @@ test("runtime settings reject fields outside the small persisted contract", asyn
     (error) => error?.code === "runtime_settings_invalid",
   );
 });
+
+test("runtime settings keep an optional effort level and reject unknown ones", async (context) => {
+  const fixture = await settingsFixture(context);
+  const selection = { provider: "anthropic", model: "claude-sonnet-5-5", effort: "high" };
+  assert.deepEqual(await writePiRuntimeSelection(selection, fixture.environment), selection);
+  assert.deepEqual(await readPiRuntimeSelection(fixture.environment), selection);
+
+  await writePiRuntimeSelection({ provider: "anthropic", model: "claude-sonnet-5-5" }, fixture.environment);
+  assert.equal((await readPiRuntimeSelection(fixture.environment)).effort, undefined);
+  await assert.rejects(
+    writePiRuntimeSelection({ ...selection, effort: "turbo" }, fixture.environment),
+    { code: "runtime_settings_invalid" },
+  );
+});
