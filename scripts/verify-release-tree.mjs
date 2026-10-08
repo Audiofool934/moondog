@@ -170,7 +170,31 @@ async function publicHistoryBlobs() {
         return [objectId, { type, size: Number(size) }];
       }),
   );
-  return records.filter((record) => blobMetadata.get(record.objectId)?.type === "blob");
+  return records
+    .filter((record) => blobMetadata.get(record.objectId)?.type === "blob")
+    .map((record) => ({ ...record, size: blobMetadata.get(record.objectId).size }));
+}
+
+// Each `git cat-file --batch` read stays under the 64 MiB output cap; history
+// as a whole has outgrown one read.
+const maximumBlobBatchBytes = 32 * 1024 * 1024;
+
+function blobBatches(blobs) {
+  const batches = [];
+  let batch = [];
+  let batchBytes = 0;
+  for (const [objectId, { size }] of blobs) {
+    const entryBytes = size + 128;
+    if (batch.length > 0 && batchBytes + entryBytes > maximumBlobBatchBytes) {
+      batches.push(batch);
+      batch = [];
+      batchBytes = 0;
+    }
+    batch.push(objectId);
+    batchBytes += entryBytes;
+  }
+  if (batch.length > 0) batches.push(batch);
+  return batches;
 }
 
 async function readBlobBatch(objectIds) {
@@ -211,16 +235,19 @@ async function verifyPublicHistory() {
         `public Git history contains ${record.relativePath}: ${issues.join(", ")}`,
       );
     }
-    if (!uniqueBlobs.has(record.objectId)) uniqueBlobs.set(record.objectId, record.relativePath);
+    if (!uniqueBlobs.has(record.objectId)) uniqueBlobs.set(record.objectId, record);
   }
-  const contents = await readBlobBatch([...uniqueBlobs.keys()]);
-  assert(contents.size === uniqueBlobs.size, "Git did not return every public-history blob");
-  for (const [objectId, relativePath] of uniqueBlobs) {
-    const issues = scanForbiddenContent(contents.get(objectId));
-    assert(
-      issues.length === 0,
-      `public Git history blob ${objectId.slice(0, 12)}${relativePath ? ` (${relativePath})` : ""} contains ${issues.join(", ")}`,
-    );
+  for (const batch of blobBatches(uniqueBlobs)) {
+    const contents = await readBlobBatch(batch);
+    assert(contents.size === batch.length, "Git did not return every public-history blob");
+    for (const objectId of batch) {
+      const { relativePath } = uniqueBlobs.get(objectId);
+      const issues = scanForbiddenContent(contents.get(objectId));
+      assert(
+        issues.length === 0,
+        `public Git history blob ${objectId.slice(0, 12)}${relativePath ? ` (${relativePath})` : ""} contains ${issues.join(", ")}`,
+      );
+    }
   }
   return uniqueBlobs.size;
 }
