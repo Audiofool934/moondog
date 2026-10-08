@@ -12,10 +12,16 @@ services:
     read_only: true
     tmpfs:
       - /tmp:size=256m
+    # Keeps the day's spending across restarts, so the daily budget holds.
+    volumes:
+      - moondog-agent-state:/var/lib/moondog-agent
     mem_limit: 768m
     # Join the proxy's network so it can reach moondog-agent:8787; publish no ports.
     networks:
       - proxy
+
+volumes:
+  moondog-agent-state:
 
 networks:
   proxy:

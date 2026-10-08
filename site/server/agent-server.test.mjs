@@ -3,7 +3,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createModels, fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall } from "@earendil-works/pi-ai";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { configFromEnvironment, startAgentServer } from "./agent-server.mjs";
+import { DailyLimits } from "./limits.mjs";
 
 const origin = "http://localhost:8737";
 
@@ -84,4 +88,22 @@ test("with a Turnstile secret, a conversation starts only after Cloudflare confi
   assert.equal((await open({ turnstileToken: "bad" })).status, 403);
   assert.equal((await open({ turnstileToken: "good" })).status, 201);
   assert.deepEqual(checked, ["bad", "good"]);
+});
+
+test("the day's spending survives a restart, and a new day starts from zero", async (t) => {
+  const folder = await mkdtemp(path.join(tmpdir(), "moondog-limits-"));
+  t.after(() => rm(folder, { recursive: true, force: true }));
+  const stateFile = path.join(folder, "daily-limits.json");
+  const options = { dailyBudgetUsd: 3, sessionsPerAddress: 6, turnsPerAddress: 30, stateFile };
+  let clock = Date.parse("2026-10-07T12:00:00Z");
+  const first = new DailyLimits({ ...options, now: () => clock });
+  first.claimTurn("203.0.113.9");
+  first.spend(2.5);
+  assert.doesNotMatch(await readFile(stateFile, "utf8"), /203\.0\.113\.9/u, "addresses stay in memory");
+  const restarted = new DailyLimits({ ...options, now: () => clock });
+  assert.equal(restarted.budgetLeft(), 0.5);
+  assert.equal(restarted.summary().turns, 1);
+  clock = Date.parse("2026-10-08T00:00:01Z");
+  const nextDay = new DailyLimits({ ...options, now: () => clock });
+  assert.equal(nextDay.budgetLeft(), 3);
 });
