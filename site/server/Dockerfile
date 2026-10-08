@@ -15,7 +15,9 @@ COPY src ./src
 COPY site/room/fictional-history.mjs ./site/room/fictional-history.mjs
 COPY site/server/agent-server.mjs site/server/limits.mjs ./site/server/
 
-ENV NODE_ENV=production PORT=8787
+# The day's spending is saved here; mount a volume so it survives restarts.
+RUN mkdir -p /var/lib/moondog-agent && chown node:node /var/lib/moondog-agent
+ENV NODE_ENV=production PORT=8787 MOONDOG_AGENT_STATE_DIR=/var/lib/moondog-agent
 USER node
 EXPOSE 8787
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s \

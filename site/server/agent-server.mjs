@@ -35,6 +35,8 @@ export function configFromEnvironment(environment = process.env) {
     maxSessions: numberFrom(environment.MOONDOG_AGENT_MAX_SESSIONS, 300),
     sessionIdleMs: numberFrom(environment.MOONDOG_AGENT_SESSION_IDLE_MINUTES, 30) * 60_000,
     turnTimeoutMs: numberFrom(environment.MOONDOG_AGENT_TURN_TIMEOUT_SECONDS, 150) * 1000,
+    // A writable folder that outlives the container, so the daily budget survives restarts.
+    stateDir: environment.MOONDOG_AGENT_STATE_DIR?.trim() || null,
     // With a Turnstile secret, each new conversation needs a token from Cloudflare's check on the page.
     turnstileSecret: environment.TURNSTILE_SECRET_KEY?.trim() || null,
   };
@@ -89,7 +91,7 @@ export async function startAgentServer(config = configFromEnvironment(), { crede
     }
   }
 
-  const limits = new DailyLimits(config);
+  const limits = new DailyLimits({ ...config, stateFile: config.stateDir ? path.join(config.stateDir, "daily-limits.json") : null });
   const sessions = new Map();
   let activeTurns = 0;
   const musicCatalog = createAppleMusicCatalog();
