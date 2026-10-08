@@ -2574,16 +2574,11 @@ function projectProfileSummary(value) {
       coverage.loved_or_favorited,
       "coverage_preference",
     ),
-    aggregate_play_count: safeNonnegativeInteger(
-      coverage.aggregate_play_count,
-      "coverage_play_count",
-    ),
-    non_computed_rating: safeNonnegativeInteger(
-      coverage.non_computed_rating,
-      "coverage_rating",
-    ),
   };
+  // Library play counts and ratings come only from an Apple Music library.
   const optionalIntegerCoverage = [
+    ["aggregate_play_count", "coverage_play_count"],
+    ["non_computed_rating", "coverage_rating"],
     ["effective_listening_events", "coverage_listening_events"],
     ["profiled_listening_events", "coverage_profiled_events"],
     ["listening_tracks", "coverage_listening_tracks"],
@@ -2628,16 +2623,19 @@ function projectProfileSummary(value) {
     artist_facets: projectItems(value.artist_facets, "facet"),
     genre_facets: projectItems(value.genre_facets, "facet"),
     coverage: projectedCoverage,
-    source: {
+    limitations: safeStringArray(value.limitations, 8, 500, "limitation"),
+  };
+  // A library snapshot has a source; listening history has listening_source below.
+  if (value.source !== undefined) {
+    result.source = {
       kind: cleanOutputText(value.source?.kind, 128, "source_kind"),
       captured_at: cleanOutputText(
         value.source?.captured_at,
         64,
         "source_captured_at",
       ),
-    },
-    limitations: safeStringArray(value.limitations, 8, 500, "limitation"),
-  };
+    };
+  }
   if (
     value.listening_behavior !== undefined ||
     value.curated_preferences !== undefined ||

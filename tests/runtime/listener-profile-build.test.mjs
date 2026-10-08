@@ -416,3 +416,24 @@ test("saved profile CLI reads and unchanged builds bypass unrelated startup serv
   });
   await assert.rejects(access(marker), { code: "ENOENT" });
 });
+
+test("the agent reads the profile summary of a listener who imported only Spotify", async t => {
+  const state = await fixture(t, bundle(3));
+  const faux = fauxProvider();
+  const models = createModels();
+  models.setProvider(faux.provider);
+  const runtime = new PiAgentRuntime({ application: state.application, models, model: faux.getModel(), provider: "faux", modelId: "faux-1" });
+  faux.setResponses([
+    fauxAssistantMessage([fauxToolCall("moondog_profile_summary", {})], { stopReason: "toolUse" }),
+    context => {
+      const result = context.messages.find(message => message.role === "toolResult" && message.toolName === "moondog_profile_summary");
+      assert.equal(result.isError, false, result.content[0].text);
+      const summary = JSON.parse(result.content[0].text);
+      assert.equal(summary.coverage.aggregate_play_count, undefined);
+      assert.equal(summary.source, undefined);
+      assert.equal(summary.listening_source.kind, "private_effective_listening_evidence");
+      return fauxAssistantMessage([fauxText("Mostly one artist so far.")]);
+    },
+  ]);
+  assert.equal((await runtime.prompt("What does my listening say?")).text, "Mostly one artist so far.");
+});
