@@ -11,6 +11,7 @@ import {
   wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
 
+import { FreshCompletionEditor } from "./brand-components.mjs";
 import { sanitizeTerminalText } from "./format-output.mjs";
 import { IMPORT_GUIDE_URLS } from "./import-guides.mjs";
 import { SPOTIFY_LIBRARY_SCOPES } from "../../integrations/spotify/library-snapshot.mjs";
@@ -66,7 +67,7 @@ export class HistoryImportView {
       ["selectedPrefix", "selectedText", "description", "scrollInfo", "noMatch"]
         .map((key) => [key, (text) => this.getTheme().selectListTheme[key](text)]),
     );
-    this.editor = new Editor(tui, {
+    this.editor = new FreshCompletionEditor(tui, {
       borderColor: (text) => this.getTheme().faint(text), selectList,
     }, { paddingX: 1, autocompleteMaxVisible: 3 });
     const completion = new CombinedAutocompleteProvider([], process.cwd(), null);

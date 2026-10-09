@@ -1,4 +1,4 @@
-import { CURSOR_MARKER, Editor, Text, getCellDimensions, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { CURSOR_MARKER, Editor, Text, getCellDimensions, getKeybindings, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { stripVTControlCharacters } from "node:util";
 import { sanitizeTerminalText } from "./format-output.mjs";
 import { LOGO_MOTION_FRAMES, renderLunarRecordLayers, renderMoondogWordmark } from "./terminal-art.mjs";
@@ -63,11 +63,11 @@ export class ListeningHeader {
   invalidate() {}
   render(width) {
     const theme = this.getTheme();
-    const { profileReady, modelReady, spotifyReady, provider, model, place } = this.getStatus();
+    const { profileReady, modelReady, spotifyReady, provider, model, effort, place } = this.getStatus();
     const compact = width < 60;
     const clean = (value) => sanitizeTerminalText(stripVTControlCharacters(String(value ?? "")))
       .replace(/\s+/gu, " ").trim();
-    const modelName = clean(model);
+    const modelName = [clean(model), clean(effort)].filter(Boolean).join(" · ");
     const providerName = clean(provider);
     const placeName = clean(place);
     const lead = "  /  ";
@@ -164,8 +164,31 @@ export class AgentWork {
   }
 }
 
+/** Pi's editor, except Enter and Tab never apply suggestions made for older text. */
+export class FreshCompletionEditor extends Editor {
+  // Pi refreshes suggestions asynchronously. A key in the same input chunk as the
+  // last typed character still sees the list for the earlier text, and applying
+  // it with that shorter prefix garbles the line ("/theme pape" + "r" + Enter).
+  applyAutocompleteSuggestions(suggestions, state) {
+    super.applyAutocompleteSuggestions(suggestions, state);
+    this.suggestedFor = this.completionInput();
+  }
+  completionInput() {
+    return `${this.state.cursorLine}:${this.state.cursorCol}:${this.getText()}`;
+  }
+  handleInput(data) {
+    const keys = getKeybindings();
+    if (this.autocompleteState && this.suggestedFor !== this.completionInput()
+      && (keys.matches(data, "tui.select.confirm") || keys.matches(data, "tui.input.tab"))) {
+      // Enter then submits exactly what was typed; Tab asks for fresh suggestions.
+      this.cancelAutocomplete();
+    }
+    super.handleInput(data);
+  }
+}
+
 /** Keep Pi's editing, paste, IME, history, and autocomplete intact. */
-export class ListeningEditor extends Editor {
+export class ListeningEditor extends FreshCompletionEditor {
   constructor(tui, theme, getTheme, getState) {
     super(tui, theme, { paddingX: 1, autocompleteMaxVisible: 5 });
     this.getTheme = getTheme;

@@ -105,6 +105,7 @@ test("openai-codex runtime uses the persisted Moondog OAuth credential", async (
     pi_version: "1.0.1",
     provider,
     model,
+    effort_levels: runtime.publicStatus().effort_levels,
     session_persistence: "process_local_only",
     external_effects: "disabled",
   });
@@ -210,4 +211,29 @@ test("configured runtime can reuse model resolution through a dedicated runtime 
   assert.equal(received.modelId, "deepseek-v4-flash");
   assert.equal(received.model.id, "deepseek-v4-flash");
   assert.equal(typeof received.models.streamSimple, "function");
+});
+
+test("a saved effort reaches the agent, limited to what the model supports", async (context) => {
+  const credentials = await credentialFixture(context);
+  const configurations = [];
+  const runtimeFactory = (configuration) => {
+    configurations.push(configuration);
+    return { publicStatus: () => ({ state: "configured" }) };
+  };
+  const environment = { ANTHROPIC_API_KEY: "RUNTIME_API_KEY_SENTINEL" };
+  for (const effort of [undefined, "high", "off"]) {
+    await createConfiguredRuntime(applicationStub(), environment, {
+      credentials, runtimeFactory,
+      selection: { provider: "anthropic", model: "claude-sonnet-5-5", effort },
+    });
+  }
+  // No saved effort keeps Pi's default; Sonnet 5.5 cannot turn thinking off.
+  assert.deepEqual(configurations.map(({ effort, thinkingLevel }) => [effort, thinkingLevel]),
+    [[undefined, undefined], ["high", "high"], ["off", "low"]]);
+  assert.ok(!configurations[0].effortLevels.includes("off"));
+
+  const unknown = await createConfiguredRuntime(applicationStub(), {
+    ...environment, MOONDOG_PROVIDER: "anthropic", MOONDOG_MODEL: "claude-sonnet-5-5", MOONDOG_EFFORT: "turbo",
+  }, { credentials, runtimeFactory });
+  assert.equal(unknown.publicStatus().reason, "effort_unknown");
 });

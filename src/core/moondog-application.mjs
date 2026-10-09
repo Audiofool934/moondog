@@ -172,6 +172,7 @@ export class MoondogApplication {
     musicCatalog = null,
     musicSimilarity = null,
     musicPreviewPlayer = null,
+    agentHostNotes = [],
     artistIdentityResolver = null,
     webResearch = null,
     locale = DEFAULT_LOCALE,
@@ -196,6 +197,8 @@ export class MoondogApplication {
     this.musicSimilarity = musicSimilarity;
     // Hosts that can play audio (the website) pass { play(track) }; the terminal does not.
     this.musicPreviewPlayer = musicPreviewPlayer;
+    // Hosts can tell the agent where it runs; the terminal passes none.
+    this.hostNotes = Array.isArray(agentHostNotes) ? agentHostNotes.filter((note) => typeof note === "string") : [];
     this.artistIdentityResolver = artistIdentityResolver;
     this.webResearch = webResearch;
     this.spotifyResolutions = new Map();
@@ -396,6 +399,10 @@ export class MoondogApplication {
     return this.musicCatalog;
   }
 
+  agentHostNotes() {
+    return [...this.hostNotes];
+  }
+
   musicPreviewReady() {
     return this.musicCatalogReady() &&
       typeof this.musicCatalog.findPreview === "function" &&
@@ -403,7 +410,11 @@ export class MoondogApplication {
   }
 
   // Plays up to six named songs, or one album, as a queue in the host's player.
-  async playMusicPreview({ tracks, album } = {}) {
+  // Songs by excludeArtists (the artists a listener named as favorites) are left out.
+  async playMusicPreview({ tracks, album, excludeArtists = [] } = {}) {
+    const fold = (value) => String(value ?? "").normalize("NFKD").replace(/\p{M}/gu, "").toLocaleLowerCase("en-US").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+    const excluded = (Array.isArray(excludeArtists) ? excludeArtists : []).map(fold).filter(Boolean);
+    const byExcluded = (artist) => excluded.some((name) => ` ${fold(artist)} `.includes(` ${name} `));
     if (!this.musicPreviewReady()) throw new Error("Music previews are unavailable");
     if (Boolean(album) === (Array.isArray(tracks) && tracks.length > 0)) {
       throw new Error("Give either up to six songs or one album.");
@@ -415,11 +426,15 @@ export class MoondogApplication {
     } else {
       const played = [];
       const notFound = [];
+      const leftOut = [];
       for (const wanted of tracks.slice(0, 6)) {
+        if (byExcluded(wanted.artist)) { leftOut.push(wanted); continue; }
         const result = await this.musicCatalog.findPreview({ title: wanted.title, artist: wanted.artist });
-        if (result.state === "resolved") played.push(result.track); else notFound.push(wanted);
+        if (result.state !== "resolved") notFound.push(wanted);
+        else if (byExcluded(result.track.artist_credit)) leftOut.push(wanted);
+        else played.push(result.track);
       }
-      found = { kind: "tracks", played, not_found: notFound };
+      found = { kind: "tracks", played, not_found: notFound, left_out: leftOut };
     }
     if (found.played.length) {
       await this.musicPreviewPlayer.play(structuredClone(found.played), found.album ? { album: structuredClone(found.album) } : {});

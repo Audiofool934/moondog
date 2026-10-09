@@ -4309,6 +4309,7 @@ function projectMusicPreview(value) {
       artist: cleanOutputText(wanted?.artist, 256, "music_preview_missing_artist"),
     })),
   };
+  if (Array.isArray(value.left_out) && value.left_out.length) result.left_out_by_excluded_artist = value.left_out.length;
   if (isPlainObject(value.album)) {
     result.album = {
       ...song(value.album),
@@ -4782,18 +4783,19 @@ function createToolFactories(
           name: descriptor.tool_name,
           label: descriptor.label,
           description:
-            "Play 30-second Apple Music previews in the listener's player, one after another. Give either tracks (up to six named recordings, in the order to play) or album (its title and artist) to play that album's songs in order. The listener hears the first one right away and can skip through the rest.",
+            "Play 30-second Apple Music previews in the listener's player, one after another. Give either tracks (up to six named recordings, in the order to play) or album (its title and artist) to play that album's songs in order. exclude_artists leaves out songs by those artists. The listener hears the first one right away and can skip through the rest. Describe only the songs in playing_in_order; do not mention songs that were left out or not found unless the listener asked for them by name.",
           parameters: Type.Object(
             {
               tracks: Type.Optional(Type.Array(song, { minItems: 1, maxItems: 6 })),
               album: Type.Optional(song),
+              exclude_artists: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 256 }), { maxItems: 10 })),
             },
             { additionalProperties: false },
           ),
           executionMode: "sequential",
           execute: executeDomain(
             async (_toolCallId, parameters) =>
-              application.playMusicPreview({ tracks: parameters.tracks, album: parameters.album }),
+              application.playMusicPreview({ tracks: parameters.tracks, album: parameters.album, excludeArtists: parameters.exclude_artists }),
             projectMusicPreview,
             (value) => { if (value.playing_in_order.length) onMusicPreview?.(); },
           ),
@@ -5990,7 +5992,16 @@ function sessionAvailability({ spotifyReady, previewReady }) {
   return `\n\n${lines.join("\n")}`;
 }
 
-function systemPrompt({ spotifyReady = true, previewReady = false } = {}) {
+// Notes from the host about where this session runs, such as the public website demo.
+function hostNotes(notes) {
+  const lines = (Array.isArray(notes) ? notes : [])
+    .filter((note) => typeof note === "string" && note.trim())
+    .slice(0, 8)
+    .map((note) => `- ${note.trim()}`);
+  return lines.length ? `\n\nAbout this session:\n${lines.join("\n")}` : "";
+}
+
+function systemPrompt({ spotifyReady = true, previewReady = false, notes = [] } = {}) {
   return `You are Moondog, a personal music agent and curator.
 
 ${listenerProfileSkill}
@@ -6122,7 +6133,7 @@ Voice:
 - Moondog lives on a lunar record and grew up on Pink Floyd. An occasional light nod to their songs or ideas is welcome when it truly fits the moment, at most once in a conversation, and never at the expense of a clear answer. Never quote more than a short line of any lyric.
 - No hype, no exclamation marks, no filler openings or closing offers. Use plain hyphens, never em dashes.
 
-Respond in the language used by the user unless asked otherwise; product.reply_language is that language, or the listener's chosen language when a message does not show one.${sessionAvailability({ spotifyReady, previewReady })}`;
+Respond in the language used by the user unless asked otherwise; product.reply_language is that language, or the listener's chosen language when a message does not show one.${sessionAvailability({ spotifyReady, previewReady })}${hostNotes(notes)}`;
 }
 
 function contextMessage(snapshot) {
@@ -6744,7 +6755,7 @@ async function trustedContextSnapshot(application, runtimeStatus, query) {
 }
 
 export class PiAgentRuntime {
-  constructor({ application, models, model, provider, modelId, modelFetch, modelRetryDelay }) {
+  constructor({ application, models, model, provider, modelId, effort, effortLevels, thinkingLevel, modelFetch, modelRetryDelay }) {
     this.application = application;
     this.models = models;
     this.model = model;
@@ -6755,6 +6766,8 @@ export class PiAgentRuntime {
       pi_version: "1.0.1",
       provider,
       model: modelId,
+      ...(effort ? { effort, thinking_level: thinkingLevel } : {}),
+      ...(effortLevels ? { effort_levels: effortLevels } : {}),
       session_persistence: persistentMemoryReady
         ? "local_sqlite"
         : "process_local_only",
@@ -6945,8 +6958,10 @@ export class PiAgentRuntime {
         systemPrompt: systemPrompt({
           spotifyReady: application.spotifyReady?.() ?? false,
           previewReady: application.musicPreviewReady?.() ?? false,
+          notes: application.agentHostNotes?.() ?? [],
         }),
         model,
+        ...(thinkingLevel ? { thinkingLevel } : {}),
         tools,
         messages: restoredMessages,
       },
