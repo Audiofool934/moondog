@@ -9,6 +9,7 @@ import {
   fauxAssistantMessage,
   fauxProvider,
   fauxText,
+  fauxThinking,
   fauxToolCall,
 } from "@earendil-works/pi-ai";
 
@@ -971,6 +972,27 @@ test("Pi adapter returns an aborted outcome and preserves streamed text", async 
   assert.ok(streamed.length >= 3);
   assert.ok(result.text.startsWith(streamed));
   assert.doesNotMatch(result.text, /Runtime error|Request was aborted/);
+});
+
+test("Pi adapter separates text blocks split by interleaved thinking", async () => {
+  const { faux, runtime } = configuredRuntime(fakeApplication());
+  faux.setResponses([
+    fauxAssistantMessage([
+      fauxText("Search for the New Sound - Jimmy Giuffre"),
+      fauxThinking("That one is not really modal."),
+      fauxText("Correction: that one isn't really modal. Try Maiden Voyage - Herbie Hancock."),
+    ]),
+  ]);
+  const expected = "Search for the New Sound - Jimmy Giuffre\n\n" +
+    "Correction: that one isn't really modal. Try Maiden Voyage - Herbie Hancock.";
+
+  let streamed = "";
+  const result = await runtime.prompt("Suggest a modal jazz record.", {
+    onTextDelta(delta) { streamed += delta; },
+  });
+
+  assert.equal(result.text, expected);
+  assert.equal(streamed, expected);
 });
 
 test("memory mutations commit only with a completed authoritative turn", async () => {

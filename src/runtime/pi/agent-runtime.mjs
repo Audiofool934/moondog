@@ -4368,22 +4368,27 @@ function projectAppleMusicTrackSearch(value) {
   };
 }
 
+// Separate text blocks (for example around interleaved thinking) are separate
+// paragraphs; joining them directly runs two sentences together.
+const TEXT_BLOCK_SEPARATOR = "\n\n";
+
+function joinTextBlocks(content) {
+  return content
+    .filter((block) => block.type === "text" && block.text?.trim())
+    .map((block) => block.text)
+    .join(TEXT_BLOCK_SEPARATOR);
+}
+
 function extractAssistantText(message) {
   if (message?.role !== "assistant" || !Array.isArray(message.content)) {
     return "";
   }
-  return message.content
-    .filter((block) => block.type === "text")
-    .map((block) => block.text)
-    .join("");
+  return joinTextBlocks(message.content);
 }
 
 function extractMessageText(message) {
   if (!Array.isArray(message?.content)) return "";
-  return message.content
-    .filter((block) => block.type === "text")
-    .map((block) => block.text)
-    .join("");
+  return joinTextBlocks(message.content);
 }
 
 function compactCompletedPromptHistory(agent, startIndex, responseText) {
@@ -7102,6 +7107,7 @@ export class PiAgentRuntime {
         (capabilityId) => promptState.discoveryConnections.get(capabilityId) === true,
       );
     let streamedText = "";
+    let pendingTextSeparator = "";
     let finalText = "";
     let finalStopReason;
     let promptScopeStarted = false;
@@ -7299,9 +7305,21 @@ export class PiAgentRuntime {
 
           if (
             event.type === "message_update" &&
+            event.assistantMessageEvent.type === "text_start"
+          ) {
+            const { contentIndex, partial } = event.assistantMessageEvent;
+            pendingTextSeparator = partial?.content?.slice(0, contentIndex)
+              .some((block) => block.type === "text" && block.text?.trim())
+              ? TEXT_BLOCK_SEPARATOR : "";
+          }
+
+          if (
+            event.type === "message_update" &&
             event.assistantMessageEvent.type === "text_delta"
           ) {
-            streamedText += event.assistantMessageEvent.delta;
+            const delta = pendingTextSeparator + event.assistantMessageEvent.delta;
+            pendingTextSeparator = "";
+            streamedText += delta;
             if (
               replaceableStreaming &&
               !promptState.validatedPlaylistPlan &&
@@ -7311,7 +7329,7 @@ export class PiAgentRuntime {
               !promptState.spotifyPlaylistEditWrite &&
               !promptState.spotifyPlaybackFailures.length
             ) {
-              callbacks.onTextDelta?.(event.assistantMessageEvent.delta);
+              callbacks.onTextDelta?.(delta);
               textWasRendered = true;
             }
           }
