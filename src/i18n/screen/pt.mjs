@@ -906,4 +906,6 @@ export default {
   "Previews stopped.": "Prévias interrompidas.",
   "Skipped.": "Prévia pulada.",
   "loading": "carregando",
+  "couldn't load": "não carregou",
+  "None of these previews could load. Check your connection, then ask again.": "Nenhuma destas prévias carregou. Confira sua conexão e peça de novo.",
 };

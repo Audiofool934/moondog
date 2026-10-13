@@ -906,4 +906,6 @@ export default {
   "Previews stopped.": "プレビューを止めました。",
   "Skipped.": "スキップしました。",
   "loading": "読み込み中",
+  "couldn't load": "読み込めませんでした",
+  "None of these previews could load. Check your connection, then ask again.": "どのプレビューも読み込めませんでした。接続を確認して、もう一度頼んでください。",
 };

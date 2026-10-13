@@ -51,7 +51,8 @@ export async function findSystemPlayer({ platform = process.platform, environmen
 /**
  * The listening room's preview player, or null when this system has no player.
  * play(tracks, { album }) replaces the queue. subscribe(listener) reports a new queue,
- * a song still loading, each song as it starts, and the end of playback.
+ * a song still loading, a song that could not load, each song as it starts, and the
+ * end of playback.
  */
 export async function createTerminalPreviewPlayer({
   platform,
@@ -121,7 +122,7 @@ export async function createTerminalPreviewPlayer({
     const fetchFile = (index) => {
       if (!downloads.has(index)) {
         const own = new AbortController();
-        const pending = { ready: false, abort: () => own.abort() };
+        const pending = { ready: false, abort: () => own.abort(), skipped: () => own.signal.aborted };
         pending.file = download(tracks[index].preview, AbortSignal.any([controller.signal, own.signal]))
           .catch(() => null)
           .then((file) => { pending.ready = true; return file; });
@@ -142,7 +143,11 @@ export async function createTerminalPreviewPlayer({
           if (controller.signal.aborted) break;
           // The next preview downloads while this one plays.
           if (index + 1 < tracks.length) void fetchFile(index + 1);
-          if (!file) continue;
+          if (!file) {
+            // An error, a timeout, or an oversized file; a listener's /skip is not a failure.
+            if (!pending.skipped()) emit({ type: "failed", ...song });
+            continue;
+          }
           emit({ type: "playing", ...song });
           await playFile(file);
           await rm(file, { force: true });

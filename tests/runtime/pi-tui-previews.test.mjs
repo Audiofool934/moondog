@@ -142,3 +142,27 @@ test("a room without a player of its own has no /skip or /stop", async (context)
     await until(() => plain.body().includes(`I don't know /${command}.`));
   }
 });
+
+test("a preview that cannot load is marked in the note, and the note says when none could", async (context) => {
+  const player = previewPlayer();
+  const fixture = launch(context, { previewPlayer: player, runtime: {
+    async prompt(_text, callbacks) {
+      player.emit({ type: "queue", tracks, album: null });
+      player.emit({ type: "loading", track: tracks[0], position: 1, count: 2 });
+      callbacks.onTextDelta("Two 30-second previews are playing.");
+      return { status: "completed", text: "Two 30-second previews are playing." };
+    },
+  } });
+  await until(() => fixture.body().includes("New conversation"));
+  fixture.submit("Play me Wind of Change and something like it");
+  await until(() => fixture.body().includes("Two 30-second previews are playing."));
+  player.emit({ type: "failed", track: tracks[0], position: 1, count: 2 });
+  // The mark follows the failed song, before the next one; a long address may wrap it.
+  await until(() => /1\. Wind of Change - Scorpions · Apple Music[^]*?·\s+couldn't load\s+2\. Teardrop/u.test(fixture.body()));
+  assert.equal(fixture.body().match(/couldn't load/gu).length, 1);
+  assert.doesNotMatch(fixture.body(), /None of these previews could load/u);
+  player.emit({ type: "failed", track: tracks[1], position: 2, count: 2 });
+  player.emit({ type: "stopped" });
+  await until(() => fixture.body().includes("None of these previews could load. Check your connection, then ask again."));
+  assert.doesNotMatch(fixture.body(), /♪ Wind of Change · Scorpions/u, "nothing is left playing");
+});

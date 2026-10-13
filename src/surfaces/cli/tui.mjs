@@ -602,7 +602,9 @@ export async function runMoondogTui({
   };
   // Each preview sits next to its song on Apple Music. The note joins the reply in progress;
   // terminals that support it show each link as clickable "Apple Music" text.
-  const addPreviewNote = ({ tracks = [], album = null } = {}) => {
+  // A song that fails to load is marked in the note, so silence is never left unexplained.
+  let previewNote = null;
+  const previewNoteText = ({ tracks, album, failed }) => {
     const link = (url) => `[Apple Music](${String(url).replaceAll("(", "%28").replaceAll(")", "%29")})`;
     const lines = [`${theme.plain ? "" : "♪ "}${tr("30-second previews from Apple Music")}`];
     if (album?.title) {
@@ -611,14 +613,26 @@ export async function runMoondogTui({
     }
     lines.push("", ...tracks.map((track, index) => {
       const artist = track.artist_credit && track.artist_credit !== album?.artist_credit ? ` - ${safeInlineText(track.artist_credit)}` : "";
-      return `${index + 1}. ${safeInlineText(track.title)}${artist} · ${link(track.catalog_url)}`;
+      return `${index + 1}. ${safeInlineText(track.title)}${artist} · ${link(track.catalog_url)}${failed.has(index) ? ` · _${tr("couldn't load")}_` : ""}`;
     }));
-    transcript.addChild(new Markdown(sanitizeTerminalText(lines.join("\n")), 1, 1, markdownTheme, textStyle));
+    if (tracks.length && failed.size === tracks.length) lines.push("", `_${tr("None of these previews could load. Check your connection, then ask again.")}_`);
+    return sanitizeTerminalText(lines.join("\n"));
+  };
+  const addPreviewNote = ({ tracks = [], album = null } = {}) => {
+    previewNote = { tracks, album, failed: new Set() };
+    previewNote.markdown = new Markdown(previewNoteText(previewNote), 1, 1, markdownTheme, textStyle);
+    transcript.addChild(previewNote.markdown);
     tui.requestRender();
+  };
+  const markPreviewFailed = ({ position } = {}) => {
+    if (!previewNote || !Number.isInteger(position) || position < 1 || position > previewNote.tracks.length) return;
+    previewNote.failed.add(position - 1);
+    previewNote.markdown.setText(previewNoteText(previewNote));
   };
   const stopWatchingPreviews = previewControls ? previewPlayer.subscribe((event) => {
     if (cleanedUp) return;
     if (event?.type === "queue") addPreviewNote(event);
+    else if (event?.type === "failed") markPreviewFailed(event);
     else if (event?.type === "loading" || event?.type === "playing") nowPlaying = event;
     else if (event?.type === "stopped") nowPlaying = null;
     tui.requestRender();

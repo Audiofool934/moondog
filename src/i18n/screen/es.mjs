@@ -906,4 +906,6 @@ export default {
   "Previews stopped.": "Avances detenidos.",
   "Skipped.": "Avance saltado.",
   "loading": "cargando",
+  "couldn't load": "no se pudo cargar",
+  "None of these previews could load. Check your connection, then ask again.": "No se pudo cargar ninguno de estos avances. Revisa tu conexión y vuelve a pedirlo.",
 };

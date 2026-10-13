@@ -69,7 +69,7 @@ function record(player) {
   return events;
 }
 const summary = (events) => events.map((event) => event.type === "playing" ? `${event.position}/${event.count} ${event.track.title}`
-  : event.type === "loading" ? `loading ${event.position}/${event.count} ${event.track.title}` : event.type);
+  : ["loading", "failed"].includes(event.type) ? `${event.type} ${event.position}/${event.count} ${event.track.title}` : event.type);
 
 test("the room finds a system player on PATH, or none", async (t) => {
   const { bin, environment } = await silentPlayers(t, ["afplay", "ffplay", "mpv"]);
@@ -104,7 +104,8 @@ test("previews play one after another from temporary files, each next to its App
     album: { title: "Fixture Album", artist_credit: "Fixture Artist", catalog_url: "https://music.apple.com/us/album/fixture/1" },
   }, "only https previews from Apple's audio host, with links on music.apple.com, join the queue");
   assert.deepEqual(summary(events.slice(1)),
-    ["loading 1/3 Song one", "1/3 Song one", "loading 3/3 Song two", "3/3 Song two", "stopped"], "a preview that fails to download is passed over");
+    ["loading 1/3 Song one", "1/3 Song one", "failed 2/3 Song missing", "loading 3/3 Song two", "3/3 Song two", "stopped"],
+    "a preview that fails to download is reported, then passed over");
   assert.deepEqual(apple.fetched, [preview("one"), preview("missing"), preview("two")]);
   assert.deepEqual((await players.played()).map(({ args, bytes }) => `${args} ${bytes}`), ["1 audio of one", "1 audio of two"]);
   const [folder] = await readdir(players.temporaryRoot);
@@ -164,6 +165,7 @@ test("skip while a preview is still loading moves on to the next song", async (t
   assert.deepEqual(summary(events), ["queue", "loading 1/2 Song slow"]);
   assert.equal(player.skip(), true);
   await until(() => events.at(-1)?.type === "stopped");
-  assert.deepEqual(summary(events), ["queue", "loading 1/2 Song slow", "loading 2/2 Song two", "2/2 Song two", "stopped"]);
+  assert.deepEqual(summary(events), ["queue", "loading 1/2 Song slow", "loading 2/2 Song two", "2/2 Song two", "stopped"],
+    "a download the listener skipped is not reported as a failure");
   assert.deepEqual((await players.played()).map(({ bytes }) => bytes), ["audio of two"]);
 });
