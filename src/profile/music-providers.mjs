@@ -2,6 +2,7 @@ export const MUSIC_PROVIDER_LABELS = Object.freeze({
   spotify_account_data: "Spotify",
   spotify_web_api: "Spotify",
   youtube_music: "YouTube Music",
+  lastfm: "Last.fm",
   qq_music: "QQ Music",
   netease: "NetEase Cloud Music",
 });

@@ -196,6 +196,7 @@ export async function runMoondogTui({
   prepareRecentImport,
   refreshImportedData,
   openImportHelp,
+  lastfm,
   providers = listPiProviders,
   models = listPiModels,
   refreshModels,
@@ -260,6 +261,9 @@ export async function runMoondogTui({
   let importProvider = null;
   let importFileReturn = "start";
   let importAuthController = null;
+  // Reading Last.fm can take minutes, so Esc can stop it; the access state says whether a key is set.
+  let lastfmController = null;
+  let lastfmAccess = null;
   let profileReturnHome = false;
   let profileSnapshot = null;
   let profileNeedsRefresh = false;
@@ -664,6 +668,7 @@ export async function runMoondogTui({
     homeMotion = null;
     localCommandController?.abort();
     importAuthController?.abort();
+    lastfmController?.abort();
     lyricController?.abort();
     updateCheckController.abort();
     preparedImport?.close?.();
@@ -1166,7 +1171,7 @@ export async function runMoondogTui({
 
   const setImportPage = (page, details = {}) => {
     importPage = page;
-    importView?.setState({ page, origin: importOrigin, provider: importProvider, spotify: application.spotifyStatus?.(), ...details });
+    importView?.setState({ page, origin: importOrigin, provider: importProvider, spotify: application.spotifyStatus?.(), lastfm: lastfmAccess, ...details });
     tui.requestRender(true);
   };
 
@@ -1259,6 +1264,68 @@ export async function runMoondogTui({
     }
   };
 
+  // Last.fm is read by username, newest scrobbles first, with live counts; Esc stops it.
+  const inspectLastfm = async (username) => {
+    discardPreparedImport();
+    importOrigin = "lastfm";
+    const view = importView;
+    const controller = new AbortController();
+    lastfmController = controller;
+    setBusy(true);
+    setImportPage("working", { message: tr("Asking Last.fm for your scrobbles..."), cancellable: true });
+    setFooter(tr("Reading from Last.fm. Nothing is added until you say so."));
+    const onProgress = ({ stage, count, total }) => {
+      if (cleanedUp || importView !== view || controller.signal.aborted) return;
+      const message = stage === "loved"
+        ? tr("Reading your loved tracks: {count}...", { count: tr.number(count) })
+        : total > 0
+          ? tr("Reading your scrobbles: {count} of {total}...", { count: tr.number(count), total: tr.number(total) })
+          : tr("Reading your scrobbles: {count}...", { count: tr.number(count) });
+      setImportPage("working", { message, cancellable: true });
+    };
+    try {
+      if (typeof prepareImport !== "function") throw new Error(tr("Reading Last.fm isn't available when Moondog is started this way."));
+      const prepared = await prepareImport(username, { provider: "lastfm", onProgress, signal: controller.signal });
+      if (cleanedUp || importView !== view) { prepared.close?.(); return; }
+      preparedImport = prepared;
+      setImportPage("preview", { preview: prepared.preview });
+      setFooter(tr("Here's what Last.fm has. Nothing is added until you import it."), success);
+    } catch (error) {
+      if (cleanedUp || importView !== view) return;
+      if (controller.signal.aborted) {
+        setImportPage("lastfmUser");
+        setFooter(tr("Stopped. Nothing imported."));
+        return;
+      }
+      const access = ["lastfm_key_missing", "lastfm_key_invalid"].includes(error?.code);
+      setImportPage(access ? "lastfmSetup" : "lastfmUser", { error: sanitizeTerminalText(error.message) });
+      setFooter(tr("Nothing imported. Your profile is unchanged."), warning);
+    } finally {
+      if (lastfmController === controller) lastfmController = null;
+      setBusy(false);
+      if (!cleanedUp && importView === view) tui.setFocus(view);
+    }
+  };
+
+  const configureLastfm = async (apiKey) => {
+    const view = importView;
+    setBusy(true);
+    try {
+      if (typeof lastfm?.save !== "function") throw new Error(tr("Last.fm access isn't available when Moondog is started this way."));
+      lastfmAccess = await lastfm.save(apiKey);
+      if (cleanedUp || importView !== view) return;
+      setImportPage("lastfmUser");
+      setFooter(tr("Last.fm access saved. Now type your username."), success);
+    } catch (error) {
+      if (cleanedUp || importView !== view) return;
+      setImportPage("lastfmKey", { error: sanitizeTerminalText(error.message) });
+      setFooter(tr("Nothing saved. Your key is still there to fix."), warning);
+    } finally {
+      setBusy(false);
+      if (!cleanedUp && importView === view) tui.setFocus(view);
+    }
+  };
+
   const connectImportSpotify = async (clientId) => {
     const view = importView;
     const configuring = clientId !== undefined;
@@ -1324,6 +1391,8 @@ export async function runMoondogTui({
       if (cleanedUp) return;
       const insertedEvents = receipt.inserted_events ?? 0;
       const supersededEvents = receipt.superseded_events ?? 0;
+      // Scrobbles that repeat another service's plays are kept but count once.
+      const mirroredEvents = receipt.mirrored_events ?? 0;
       const playDelta = receipt.effective_event_delta ?? insertedEvents - supersededEvents;
       const playCountChange = playDelta === 0 ? tr("The profile's play count is unchanged.")
         : playDelta > 0 ? tr.n(playDelta, "The profile has {count} more play.", "The profile has {count} more plays.")
@@ -1334,10 +1403,10 @@ export async function runMoondogTui({
       const counts = preview.kind === "library"
         ? receipt.already_imported ? tr("You've imported this library before, so nothing changed.")
           : tr.n(receipt.library_tracks ?? preview.tracks, "Saved {count} song from your library. A library shows what you keep, not when you played it, so no plays were added.", "Saved {count} songs from your library. A library shows what you keep, not when you played it, so no plays were added.")
-        : insertedEvents === 0 && !receipt.inserted_profile_evidence && !supersededEvents
+        : insertedEvents === 0 && !receipt.inserted_profile_evidence && !supersededEvents && !mirroredEvents
         ? tr("Already up to date. There was nothing new in this one.")
         : [
-          ...(insertedEvents || supersededEvents || !evidence ? [supersededEvents
+          ...(insertedEvents || supersededEvents || mirroredEvents || !evidence ? [supersededEvents || mirroredEvents
             ? `${tr.n(insertedEvents, "Saved {count} new listening record.", "Saved {count} new listening records.")} ${playCountChange}`
             : receipt.duplicate_events
               ? tr("{plays}, {duplicates} I already had.", { plays: tr.n(insertedEvents, "{count} new play", "{count} new plays"), duplicates: tr.number(receipt.duplicate_events) })
@@ -1351,6 +1420,7 @@ export async function runMoondogTui({
         [view?.previewSource(preview)[0] ?? preview.sourceLabel, preview.fileName].filter(Boolean).join(" · "),
         counts,
         ...(supersededEvents ? [tr.n(supersededEvents, "Reconciled {count} overlapping record, keeping the more detailed listening evidence.", "Reconciled {count} overlapping records, keeping the more detailed listening evidence.")] : []),
+        ...(mirroredEvents ? [tr.n(mirroredEvents, "{count} play was already here from another service, so it counts once.", "{count} plays were already here from another service, so they count once.")] : []),
         tr("Everything from before is still here, including your choices. `/import` adds another source any time."),
       ].join("\n\n"));
       setImportPage("working", { message: tr("Saved. Reading it...") });
@@ -1382,11 +1452,13 @@ export async function runMoondogTui({
     }
   };
 
-  const handleImportAction = async ({ type, path: filePath, clientId } = {}) => {
+  const handleImportAction = async ({ type, path: filePath, clientId, username, apiKey } = {}) => {
     if (busy || cleanedUp || !importView) return;
     if (type === "inspect") { await inspectImport(filePath); return; }
     if (type === "commit") { await commitInspectedImport(); return; }
     if (type === "recent") { await inspectRecentListening(); return; }
+    if (type === "inspectLastfm") { await inspectLastfm(username); return; }
+    if (type === "configureLastfm") { await configureLastfm(apiKey); return; }
     if (type === "connectSpotify" || type === "configureSpotify") {
       await connectImportSpotify(type === "configureSpotify" ? clientId : undefined);
       return;
@@ -1397,8 +1469,8 @@ export async function runMoondogTui({
       await openProfile();
       return;
     }
-    if (["openSpotify", "openSpotifySetup", "openAppleHelp", "openApplePrivacy", "openYouTube", "openQQ", "openNetEase"].includes(type)) {
-      const destination = { openSpotify: "spotify", openSpotifySetup: "spotifySetup", openAppleHelp: "apple", openApplePrivacy: "applePrivacy", openYouTube: "youtube", openQQ: "qq", openNetEase: "netease" }[type];
+    if (["openSpotify", "openSpotifySetup", "openAppleHelp", "openApplePrivacy", "openYouTube", "openQQ", "openNetEase", "openLastfm", "openLastfmApi"].includes(type)) {
+      const destination = { openSpotify: "spotify", openSpotifySetup: "spotifySetup", openAppleHelp: "apple", openApplePrivacy: "applePrivacy", openYouTube: "youtube", openQQ: "qq", openNetEase: "netease", openLastfm: "lastfm", openLastfmApi: "lastfmApi" }[type];
       const url = IMPORT_GUIDE_URLS[destination];
       try {
         if (typeof openImportHelp !== "function") throw new Error(tr("Can't open a browser from here."));
@@ -1413,17 +1485,22 @@ export async function runMoondogTui({
       if (importPage === "start") { closeImport(); return; }
       if (importPage === "preview") {
         discardPreparedImport();
-        setImportPage(importOrigin === "quick" ? "quick" : "file");
-      } else setImportPage({ waiting: "spotifyHistory", file: importFileReturn, setup: "quick", client: "setup", empty: "quick", quick: "spotify", spotifyHistory: "spotify", appleQuick: "apple", appleHistory: "apple", youtubeQuick: "youtube_music", youtubeHistory: "youtube_music" }[importPage] ?? "start");
-    } else if (["start", "file", "spotify", "waiting", "other", "quick", "setup", "client", "spotifyHistory", "apple", "appleQuick", "appleHistory", "youtube_music", "youtubeQuick", "youtubeHistory", "qq_music", "netease"].includes(type)) {
+        setImportPage({ quick: "quick", lastfm: "lastfmUser" }[importOrigin] ?? "file");
+      } else setImportPage({ waiting: "spotifyHistory", file: importFileReturn, setup: "quick", client: "setup", empty: "quick", quick: "spotify", spotifyHistory: "spotify", appleQuick: "apple", appleHistory: "apple", youtubeQuick: "youtube_music", youtubeHistory: "youtube_music", lastfmSetup: "lastfm", lastfmUser: "lastfm", lastfmKey: "lastfmSetup" }[importPage] ?? "start");
+    } else if (["start", "file", "spotify", "waiting", "other", "quick", "setup", "client", "spotifyHistory", "apple", "appleQuick", "appleHistory", "youtube_music", "youtubeQuick", "youtubeHistory", "qq_music", "netease", "lastfm", "lastfmSetup", "lastfmUser", "lastfmKey"].includes(type)) {
       discardPreparedImport();
-      if (["spotify", "apple", "other", "youtube_music", "qq_music", "netease"].includes(type)) importProvider = type;
+      if (["spotify", "apple", "other", "youtube_music", "qq_music", "netease", "lastfm"].includes(type)) importProvider = type;
       if (type === "file" && !["preview", "file"].includes(importPage)) importFileReturn = importPage;
+      // Whether a Last.fm key is set decides the first step, so ask each time the page opens.
+      if (type === "lastfm") lastfmAccess = await lastfm?.status?.().catch(() => null) ?? null;
+      if (cleanedUp || !importView) return;
       setImportPage(type);
     }
-    setFooter(importPage === "file"
-      ? tr("Paste or drag in a file. Tab completes the path, Enter reads it.")
-      : tr("Pick a step."));
+    setFooter({
+      file: tr("Paste or drag in a file. Tab completes the path, Enter reads it."),
+      lastfmUser: tr("Type your Last.fm username, then press Enter."),
+      lastfmKey: tr("Paste the API key, then press Enter."),
+    }[importPage] ?? tr("Pick a step."));
     tui.setFocus(importView);
   };
 
@@ -2093,6 +2170,7 @@ export async function runMoondogTui({
     if (importView) {
       if (busy) {
         if (importPage === "signin" && (matchesKey(data, "escape") || matchesKey(data, "ctrl+c"))) importAuthController?.abort();
+        if (importPage === "working" && (matchesKey(data, "escape") || matchesKey(data, "ctrl+c"))) lastfmController?.abort();
         return { consume: true };
       }
       if (matchesKey(data, "ctrl+c")) {
