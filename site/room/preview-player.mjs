@@ -16,6 +16,9 @@ const https = (value, allowed) => {
 const previewHost = (host) => host === "audio-ssl.itunes.apple.com";
 const linkHost = (host) => host === "music.apple.com";
 const artworkHost = (host) => host.endsWith(".mzstatic.com");
+// Now Playing shows a larger cover than the player does; Apple's image host makes any size.
+const largeArtwork = (url) => url.replace(/\/\d+x\d+bb\.(jpg|png|webp)$/u, "/600x600bb.$1");
+const session = typeof navigator === "object" && "mediaSession" in navigator ? navigator.mediaSession : null;
 const clock = (seconds) => (Number.isFinite(seconds) ? `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, "0")}` : "0:00");
 
 export function createPreviewPlayer(root) {
@@ -60,6 +63,14 @@ export function createPreviewPlayer(root) {
     const cover = track.artwork ?? album?.artwork;
     art.hidden = !cover;
     if (cover) art.src = cover;
+    if (session && typeof MediaMetadata === "function") {
+      session.metadata = new MediaMetadata({
+        title: track.title,
+        artist: track.artist_credit,
+        album: album?.title ?? "",
+        artwork: cover ? [{ src: largeArtwork(cover), sizes: "600x600" }] : [],
+      });
+    }
     audio.src = track.preview;
     renderTime();
     // Browsers may hold sound until the visitor presses Play; the button is ready either way.
@@ -72,16 +83,29 @@ export function createPreviewPlayer(root) {
   audio.addEventListener("loadedmetadata", renderTime);
   audio.addEventListener("ended", () => (index < queue.length - 1 ? load(index + 1) : renderState()));
   toggle.addEventListener("click", () => (audio.paused ? audio.play().catch(() => {}) : audio.pause()));
-  previous.addEventListener("click", () => {
+  const goPrevious = () => {
     if (audio.currentTime > 3 || index === 0) { audio.currentTime = 0; renderTime(); renderState(); }
     else load(index - 1);
-  });
-  next.addEventListener("click", () => load(index + 1));
+  };
+  const goNext = () => { if (index < queue.length - 1) load(index + 1); };
+  previous.addEventListener("click", goPrevious);
+  next.addEventListener("click", goNext);
   const seekTo = (seconds) => {
     if (!Number.isFinite(audio.duration)) return;
     audio.currentTime = Math.max(0, Math.min(audio.duration, seconds));
     renderTime();
   };
+  // Media keys and the system's Now Playing reach the player where the browser offers them.
+  const actions = {
+    play: () => audio.play().catch(() => {}),
+    pause: () => audio.pause(),
+    previoustrack: goPrevious,
+    nexttrack: goNext,
+    seekto: ({ seekTime }) => seekTo(seekTime),
+  };
+  for (const [action, handler] of Object.entries(session ? actions : {})) {
+    try { session.setActionHandler(action, handler); } catch {}
+  }
   seek.addEventListener("click", (event) => {
     const box = seek.getBoundingClientRect();
     seekTo(((event.clientX - box.left) / box.width) * audio.duration);

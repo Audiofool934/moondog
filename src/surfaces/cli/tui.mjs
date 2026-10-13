@@ -26,6 +26,7 @@ import {
 } from "./format-output.mjs";
 
 import { createMoondogTheme } from "./brand-theme.mjs";
+import { SeasonsChart } from "./seasons-chart.mjs";
 import { LOGO_MOTION_INTERVAL_MS } from "./terminal-art.mjs";
 import { buildTasteProfileModel } from "./taste-profile-model.mjs";
 import { TasteProfileView } from "./taste-profile-view.mjs";
@@ -564,14 +565,33 @@ export async function runMoondogTui({
   const revealMessageStart = (added) => {
     tui.pendingReveal = (tui.pendingReveal ?? 0) + added;
   };
-  const addMoondogMessage = (markdown) => {
+  // A message is Markdown, or a list of Markdown parts and components such as charts.
+  const addMoondogMessage = (message) => {
     enterConversation();
     const width = Math.max(1, transcriptScroll.getContentWidth(terminal.columns));
     const before = conversation.render(width).length;
     addLabel("Moondog");
-    transcript.addChild(new Markdown(sanitizeTerminalText(markdown), 1, 1, markdownTheme, textStyle));
+    for (const part of Array.isArray(message) ? message : [message]) {
+      transcript.addChild(typeof part === "string" ? new Markdown(sanitizeTerminalText(part), 1, 1, markdownTheme, textStyle) : part);
+    }
     revealMessageStart(Math.max(0, conversation.render(width).length - before));
     tui.requestRender();
+  };
+  // The report's seasons draw as a chart in place of their list; the heading and note stay.
+  const addTasteReport = (value) => {
+    const markdown = formatLocalResult("taste", value, tr);
+    const seasons = value?.listening_behavior?.listening_seasons?.seasons ?? [];
+    const heading = `\n## ${tr("Seasons")}\n`;
+    const start = markdown.indexOf(heading);
+    if (seasons.length < 2 || start < 0) return addMoondogMessage(markdown);
+    const next = markdown.indexOf("\n## ", start + heading.length);
+    const end = next < 0 ? markdown.length : next;
+    const intro = markdown.slice(start, end).split("\n").filter((line) => !line.startsWith("- ")).join("\n");
+    addMoondogMessage([
+      markdown.slice(0, start) + intro,
+      new SeasonsChart(seasons, { getTheme, tr, environment }),
+      ...(end < markdown.length ? [markdown.slice(end)] : []),
+    ]);
   };
 
   const removeLifecycleListeners = () => {
@@ -807,7 +827,7 @@ export async function runMoondogTui({
       return;
     }
     if (typeof application.getProfileSummary !== "function") {
-      addMoondogMessage(formatLocalResult("taste", await application.runLocalCommand("taste", runtimeStatus), tr));
+      addTasteReport(await application.runLocalCommand("taste", runtimeStatus));
       return;
     }
     const snapshot = await application.getProfileSummary({ maxItems: 10 });
@@ -1560,7 +1580,7 @@ export async function runMoondogTui({
     if (command === "taste" || (command === "profile" && !args.length)) {
       if (args.length > 1 || (args[0] && args[0] !== "report")) throw new Error(tr("Use /taste, or /taste report."));
       if (args[0] === "report") {
-        addMoondogMessage(formatLocalResult("taste", await application.runLocalCommand("taste", runtimeStatus), tr));
+        addTasteReport(await application.runLocalCommand("taste", runtimeStatus));
         setFooter(tr("Full report above. /taste opens the profile."));
       } else await openProfile();
       return;
