@@ -3,9 +3,13 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { setTimeout } from "node:timers/promises";
 
-import { LastfmError, lastfmUsername, readLastfmHistory } from "../../src/integrations/lastfm/history.mjs";
+import { LASTFM_LIMITS, LastfmError, lastfmUsername, readLastfmHistory } from "../../src/integrations/lastfm/history.mjs";
 import { readLastfmConfiguration, writeLastfmConfiguration } from "../../src/integrations/lastfm/settings.mjs";
+import { projectListenBrainzHistory } from "../../src/integrations/listenbrainz/history-file.mjs";
+import { projectSpotifyExtendedStreamingHistory } from "../../src/integrations/spotify/extended-streaming-history.mjs";
+import { musicHash } from "../../src/profile/music-import-bundle.mjs";
 import { openListeningHistoryStore } from "../../src/profile/listening-history-store.mjs";
 
 const subjectId = "4f1c8a52-7d3e-4b8a-9c11-2b6f0e5d7a90";
@@ -155,4 +159,124 @@ test("the API key is saved on this machine and an environment key wins", async (
   const fromEnvironment = await readLastfmConfiguration({ ...environment, MOONDOG_LASTFM_API_KEY: "a".repeat(32) });
   assert.equal(fromEnvironment.source, "environment");
   await assert.rejects(readLastfmConfiguration({ ...environment, MOONDOG_LASTFM_API_ROOT: "http://example.com/" }), { code: "lastfm_settings_invalid" });
+});
+
+// Plays the listener also made on Spotify: when each started, how long it lasted, and what it was.
+const at = (time) => Date.parse(`2026-10-01T${time}Z`) / 1_000;
+const spotifyPlays = [
+  { start: at("10:00:00"), seconds: 200, artist: "Mara Vale", title: "Song 1", uri: "1" },
+  { start: at("11:00:00"), seconds: 180, artist: "North Window", title: "Song 2", uri: "2" },
+  // Skipped after ten seconds, too short for Last.fm to scrobble.
+  { start: at("12:00:00"), seconds: 10, artist: "Ash Meridian", title: "Song 3", uri: "3" },
+];
+// Last.fm's copies start within seconds of Spotify's; the last one was played somewhere else.
+const scrobbled = [
+  { uts: at("10:00:04"), artist: "Mara Vale", name: "Song 1", album: "" },
+  { uts: at("11:00:00"), artist: "North Window", name: "Song 2", album: "" },
+  { uts: at("13:00:00"), artist: "Drift Assembly", name: "Song 9", album: "" },
+];
+
+function spotifyHistory(plays) {
+  const records = plays.map((play) => ({
+    // Spotify records when a play ended.
+    ts: new Date((play.start + play.seconds) * 1_000).toISOString().replace(".000Z", "Z"),
+    ms_played: play.seconds * 1_000,
+    master_metadata_track_name: play.title,
+    master_metadata_album_artist_name: play.artist,
+    master_metadata_album_album_name: "Fixture",
+    spotify_track_uri: `spotify:track:${play.uri.padStart(22, "0")}`,
+    reason_start: "clickrow", reason_end: "trackdone", shuffle: false, skipped: false, offline: false, incognito_mode: false,
+  }));
+  return projectSpotifyExtendedStreamingHistory({
+    subjectId, records, archiveSha256: musicHash(JSON.stringify(records)), archiveSizeBytes: 4_096,
+    memberNames: ["Streaming_History_Audio_2026.json"], capturedAt,
+  });
+}
+
+async function storeFor(context) {
+  const root = await mkdtemp(path.join(tmpdir(), "moondog-lastfm-mirrors-"));
+  context.after(() => rm(root, { recursive: true, force: true }));
+  const store = await openListeningHistoryStore({ databasePath: path.join(root, "listening-history.sqlite") });
+  context.after(() => store.close());
+  return store;
+}
+
+const counted = (store) => store.subjectDataStatus({ subjectId }).effective_listening_events;
+
+test("a scrobble that repeats a Spotify play counts once, whichever was imported first", async (context) => {
+  const lastfmLater = await storeFor(context);
+  lastfmLater.ingestImport(spotifyHistory(spotifyPlays));
+  const later = lastfmLater.ingestImport((await read(fakeLastfm({ history: scrobbled }))).bundle);
+  assert.equal(later.inserted_events, 3, "every scrobble is kept");
+  assert.equal(later.mirrored_events, 2);
+  assert.equal(later.effective_event_delta, 1);
+  assert.equal(counted(lastfmLater), 4, "three Spotify plays and the one scrobble from elsewhere");
+
+  const lastfmFirst = await storeFor(context);
+  lastfmFirst.ingestImport((await read(fakeLastfm({ history: scrobbled }))).bundle);
+  const spotifyLater = lastfmFirst.ingestImport(spotifyHistory(spotifyPlays));
+  assert.equal(spotifyLater.mirrored_events, 2);
+  assert.equal(spotifyLater.effective_event_delta, 1);
+  assert.equal(counted(lastfmFirst), 4);
+  // Repeating an import links nothing new and changes no count.
+  assert.equal(lastfmFirst.ingestImport(spotifyHistory(spotifyPlays)).mirrored_events, undefined);
+  assert.equal(counted(lastfmFirst), 4);
+});
+
+test("a song played twice in a row pairs each scrobble with its own play", async (context) => {
+  const store = await storeFor(context);
+  store.ingestImport(spotifyHistory([
+    { start: at("10:00:00"), seconds: 200, artist: "Mara Vale", title: "Song 1", uri: "1" },
+    { start: at("10:03:20"), seconds: 200, artist: "Mara Vale", title: "Song 1", uri: "1" },
+  ]));
+  const receipt = store.ingestImport((await read(fakeLastfm({ history: [
+    { uts: at("10:00:01"), artist: "mara vale", name: "Song 1", album: "" },
+    { uts: at("10:03:21"), artist: "Mara Vale", name: "song 1", album: "" },
+  ] }))).bundle);
+  assert.equal(receipt.mirrored_events, 2);
+  assert.equal(counted(store), 2);
+});
+
+test("a ListenBrainz listen and its Last.fm copy count once, and different songs never match", async (context) => {
+  const store = await storeFor(context);
+  const listens = [
+    { listened_at: at("10:00:00"), track_metadata: { artist_name: "Mara Vale", track_name: "Song 1" } },
+    { listened_at: at("11:00:00"), track_metadata: { artist_name: "North Window", track_name: "Other Song" } },
+  ];
+  store.ingestImport(projectListenBrainzHistory({
+    subjectId, document: { payload: { count: listens.length, listens, user_id: "rj" } },
+    fileSha256: "a".repeat(64), fileSizeBytes: 512, memberName: "listens.json", capturedAt,
+  }));
+  const receipt = store.ingestImport((await read(fakeLastfm({ history: [
+    { uts: at("10:00:00"), artist: "Mara Vale", name: "Song 1", album: "" },
+    { uts: at("11:00:00"), artist: "North Window", name: "Song 2", album: "" },
+  ] }))).bundle);
+  assert.equal(receipt.mirrored_events, 1);
+  assert.equal(counted(store), 3);
+});
+
+test("requests are paced across readers, however fast Last.fm answers", async () => {
+  // A shorter interval than the real 250 ms keeps the test quick; the pacing is the same.
+  const interval = 40;
+  const starts = [];
+  const fake = fakeLastfm({ history: scrobbles(1_000) });
+  const fetchImpl = (url, options) => { starts.push(performance.now()); return fake.fetchImpl(url, options); };
+  await read(fake, { fetchImpl, sleep: setTimeout, limits: { ...LASTFM_LIMITS, requestIntervalMs: interval } });
+  assert.equal(starts.length, 6, "five pages of scrobbles and one of loved tracks");
+  // Event-loop delays can shift one start, but the k-th request never starts before k intervals have passed.
+  for (let index = 1; index < starts.length; index += 1) {
+    const elapsed = starts[index] - starts[0];
+    assert.ok(elapsed >= index * interval - 3, `request ${index + 1} started ${elapsed.toFixed(1)} ms after the first`);
+  }
+});
+
+test("a page that fails for good stops the other readers instead of reading on", async () => {
+  const fake = fakeLastfm({ history: scrobbles(2_000) });
+  const fetchImpl = (url, options) => new URL(url).searchParams.get("page") === "3"
+    ? Promise.resolve(new Response(JSON.stringify({ error: 7, message: "Invalid resource" }), { status: 400 }))
+    : fake.fetchImpl(url, options);
+  await assert.rejects(read(fake, { fetchImpl }), { code: "lastfm_failed" });
+  const pages = fake.requests.filter((request) => request.method === "user.getrecenttracks").length;
+  assert.ok(pages < 6, `read ${pages} of 10 pages after page 3 failed`);
+  assert.ok(!fake.requests.some((request) => request.method === "user.getlovedtracks"));
 });

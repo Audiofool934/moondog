@@ -947,4 +947,5 @@ export default {
   "Nothing saved. Your key is still there to fix.": "Nada foi salvo. Sua chave continua aí para você corrigir.",
   "Type your Last.fm username, then press Enter.": "Digite seu nome de usuário do Last.fm e pressione Enter.",
   "Paste the API key, then press Enter.": "Cole a chave de API e pressione Enter.",
+  "{count} plays were already here from another service, so they count once.": { one: "{count} reprodução já estava aqui de outro serviço, então conta uma vez só.", other: "{count} reproduções já estavam aqui de outro serviço, então contam uma vez só." },
 };

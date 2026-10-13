@@ -1391,6 +1391,8 @@ export async function runMoondogTui({
       if (cleanedUp) return;
       const insertedEvents = receipt.inserted_events ?? 0;
       const supersededEvents = receipt.superseded_events ?? 0;
+      // Scrobbles that repeat another service's plays are kept but count once.
+      const mirroredEvents = receipt.mirrored_events ?? 0;
       const playDelta = receipt.effective_event_delta ?? insertedEvents - supersededEvents;
       const playCountChange = playDelta === 0 ? tr("The profile's play count is unchanged.")
         : playDelta > 0 ? tr.n(playDelta, "The profile has {count} more play.", "The profile has {count} more plays.")
@@ -1401,10 +1403,10 @@ export async function runMoondogTui({
       const counts = preview.kind === "library"
         ? receipt.already_imported ? tr("You've imported this library before, so nothing changed.")
           : tr.n(receipt.library_tracks ?? preview.tracks, "Saved {count} song from your library. A library shows what you keep, not when you played it, so no plays were added.", "Saved {count} songs from your library. A library shows what you keep, not when you played it, so no plays were added.")
-        : insertedEvents === 0 && !receipt.inserted_profile_evidence && !supersededEvents
+        : insertedEvents === 0 && !receipt.inserted_profile_evidence && !supersededEvents && !mirroredEvents
         ? tr("Already up to date. There was nothing new in this one.")
         : [
-          ...(insertedEvents || supersededEvents || !evidence ? [supersededEvents
+          ...(insertedEvents || supersededEvents || mirroredEvents || !evidence ? [supersededEvents || mirroredEvents
             ? `${tr.n(insertedEvents, "Saved {count} new listening record.", "Saved {count} new listening records.")} ${playCountChange}`
             : receipt.duplicate_events
               ? tr("{plays}, {duplicates} I already had.", { plays: tr.n(insertedEvents, "{count} new play", "{count} new plays"), duplicates: tr.number(receipt.duplicate_events) })
@@ -1418,6 +1420,7 @@ export async function runMoondogTui({
         [view?.previewSource(preview)[0] ?? preview.sourceLabel, preview.fileName].filter(Boolean).join(" · "),
         counts,
         ...(supersededEvents ? [tr.n(supersededEvents, "Reconciled {count} overlapping record, keeping the more detailed listening evidence.", "Reconciled {count} overlapping records, keeping the more detailed listening evidence.")] : []),
+        ...(mirroredEvents ? [tr.n(mirroredEvents, "{count} play was already here from another service, so it counts once.", "{count} plays were already here from another service, so they count once.")] : []),
         tr("Everything from before is still here, including your choices. `/import` adds another source any time."),
       ].join("\n\n"));
       setImportPage("working", { message: tr("Saved. Reading it...") });

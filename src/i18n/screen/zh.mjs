@@ -947,4 +947,5 @@ export default {
   "Nothing saved. Your key is still there to fix.": "什么都没保存。你的密钥还在，可以修改。",
   "Type your Last.fm username, then press Enter.": "输入你的 Last.fm 用户名，然后按 Enter。",
   "Paste the API key, then press Enter.": "粘贴 API 密钥，然后按 Enter。",
+  "{count} plays were already here from another service, so they count once.": "{count} 次播放已经从其他服务导入过，所以只算一次。",
 };

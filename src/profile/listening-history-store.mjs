@@ -101,6 +101,18 @@ const schema = `
       REFERENCES import_batches(import_batch_id)
   ) STRICT;
 
+  -- A Last.fm scrobble that repeats a play another service recorded stays stored,
+  -- linked to that play, and is left out of every count.
+  CREATE TABLE IF NOT EXISTS listening_event_mirrors (
+    mirror_event_id TEXT PRIMARY KEY NOT NULL,
+    original_event_id TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (mirror_event_id)
+      REFERENCES listening_events(listening_event_id),
+    FOREIGN KEY (original_event_id)
+      REFERENCES listening_events(listening_event_id)
+  ) STRICT;
+
   CREATE TABLE IF NOT EXISTS profile_import_batches (
     profile_import_id TEXT PRIMARY KEY NOT NULL,
     subject_id TEXT NOT NULL,
@@ -575,6 +587,104 @@ function insertBundleRecords(bundle, statements) {
   return { insertedTracks, insertedEvents };
 }
 
+const SCROBBLE_SOURCE_KEY = "lastfm.music_import";
+// Scrobbles record when a song started. Spotify records when a play ended, so its start is
+// the end minus the listening time; Account Data times are rounded to the minute.
+const MIRROR_TOLERANCE_MS = 150_000;
+const DAY_MS = 86_400_000;
+const foldLabel = (value) => String(value ?? "").normalize("NFKC").toLocaleLowerCase("und")
+  .replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+const lexicalCompare = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
+
+/**
+ * Many Last.fm scrobbles repeat plays that Spotify or ListenBrainz recorded too. Each scrobble
+ * that matches another service's play (same artist and title, starting within a few minutes)
+ * is linked to it once, whichever was imported first, so the play counts once.
+ */
+function reconcileScrobbleMirrors(database, subjectId, earliest, latest, createdAt) {
+  if (!subjectId || !earliest || !latest) return 0;
+  const scrobbled = database.prepare(
+    "SELECT 1 FROM import_batches WHERE subject_id = ? AND source_key = ? LIMIT 1",
+  ).get(subjectId, SCROBBLE_SOURCE_KEY);
+  if (!scrobbled) return 0;
+  const rows = database.prepare(
+    `SELECT e.listening_event_id AS id, e.occurred_at AS at,
+      e.record_json AS event_json, t.record_json AS track_json
+    FROM listening_events e
+    JOIN track_refs t
+      ON t.track_ref_id = e.track_ref_id AND t.revision = e.track_ref_revision
+    WHERE e.subject_id = ? AND e.occurred_at BETWEEN ? AND ?
+      AND NOT EXISTS (
+        SELECT 1 FROM listening_event_supersessions s
+        WHERE s.superseded_event_id = e.listening_event_id
+      )
+      AND NOT EXISTS (
+        SELECT 1 FROM listening_event_mirrors m
+        WHERE m.mirror_event_id = e.listening_event_id
+          OR m.original_event_id = e.listening_event_id
+      )`,
+  ).all(
+    subjectId,
+    new Date(Date.parse(earliest) - DAY_MS).toISOString(),
+    new Date(Date.parse(latest) + DAY_MS).toISOString(),
+  );
+  const scrobbles = new Map();
+  const plays = [];
+  for (const row of rows) {
+    const event = JSON.parse(row.event_json);
+    const track = JSON.parse(row.track_json);
+    const artist = foldLabel(track.artist_credits?.[0]?.name);
+    const title = foldLabel(track.title);
+    if (!artist || !title) continue;
+    const key = `${artist}\u0000${title}`;
+    const at = Date.parse(row.at);
+    const system = String(event.provenance?.external_ref?.system ?? "");
+    if (system === "lastfm") {
+      if (!scrobbles.has(key)) scrobbles.set(key, []);
+      scrobbles.get(key).push({ id: row.id, start: at });
+      continue;
+    }
+    const length = Number.isSafeInteger(event.played_ms) ? event.played_ms
+      : Number.isSafeInteger(track.duration_ms) ? track.duration_ms : null;
+    // A Spotify play of unknown length can't be placed precisely enough to match.
+    if (system.startsWith("spotify") && length === null) continue;
+    plays.push({ id: row.id, key, start: system.startsWith("spotify") ? at - length : at });
+  }
+  const pairs = [];
+  for (const list of scrobbles.values()) list.sort((left, right) => left.start - right.start);
+  for (const play of plays) {
+    const list = scrobbles.get(play.key);
+    if (!list) continue;
+    let low = 0;
+    let high = list.length;
+    while (low < high) {
+      const middle = (low + high) >> 1;
+      if (list[middle].start < play.start - MIRROR_TOLERANCE_MS) low = middle + 1;
+      else high = middle;
+    }
+    for (let index = low; index < list.length && list[index].start <= play.start + MIRROR_TOLERANCE_MS; index += 1) {
+      pairs.push({ gap: Math.abs(list[index].start - play.start), play: play.id, scrobble: list[index].id });
+    }
+  }
+  // Closest pairs first, so each play and each scrobble is used once.
+  pairs.sort((left, right) => left.gap - right.gap ||
+    lexicalCompare(left.scrobble, right.scrobble) || lexicalCompare(left.play, right.play));
+  const insert = database.prepare(
+    `INSERT INTO listening_event_mirrors (mirror_event_id, original_event_id, created_at)
+    VALUES (?, ?, ?)`,
+  );
+  const usedPlays = new Set();
+  const usedScrobbles = new Set();
+  let linked = 0;
+  for (const pair of pairs) {
+    if (usedPlays.has(pair.play) || usedScrobbles.has(pair.scrobble)) continue;
+    usedPlays.add(pair.play);
+    usedScrobbles.add(pair.scrobble);
+    linked += insert.run(pair.scrobble, pair.play, createdAt).changes;
+  }
+  return linked;
+}
+
 function preserveExtendedHistoryMatches(bundle, retainedMatch) {
   const candidates = bundle.reconciliationCandidates;
   if (bundle.importBatch.sourceFormat !== "spotify_extended_streaming_history_music_v1") return candidates;
@@ -729,6 +839,10 @@ export class ListeningHistoryStore {
           AND NOT EXISTS (
             SELECT 1 FROM listening_event_supersessions s
             WHERE s.superseded_event_id = e.listening_event_id
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM listening_event_mirrors m
+            WHERE m.mirror_event_id = e.listening_event_id
           )`,
       )
       .get(normalized).count;
@@ -1083,6 +1197,7 @@ export class ListeningHistoryStore {
     this.#database.exec("BEGIN IMMEDIATE");
     let insertedTracks;
     let insertedEvents;
+    let mirroredEvents = 0;
     try {
       if (subjectId !== undefined) {
         this.localSubjectId({ preferredSubjectId: subjectId });
@@ -1091,6 +1206,8 @@ export class ListeningHistoryStore {
         bundle,
         statements,
       ));
+      const times = bundle.listeningEvents.map((record) => record.occurred_at).sort();
+      mirroredEvents = reconcileScrobbleMirrors(this.#database, subjectId, times[0], times.at(-1), bundle.capturedAt);
       this.#database.exec("COMMIT");
     } catch (error) {
       this.#database.exec("ROLLBACK");
@@ -1104,6 +1221,7 @@ export class ListeningHistoryStore {
       inserted_events: insertedEvents,
       duplicate_events: bundle.listeningEvents.length - insertedEvents,
       inserted_track_refs: insertedTracks,
+      ...(mirroredEvents ? { mirrored_events: mirroredEvents } : {}),
       cursor_after_ms: this.sourceCursor(bundle.sourceKey),
       profile_effects: insertedEvents > 0 ? "updated" : "unchanged",
     };
@@ -1200,6 +1318,7 @@ export class ListeningHistoryStore {
     let insertedTracks = 0;
     let insertedEvents = 0;
     let supersededEvents = 0;
+    let mirroredEvents = 0;
     let insertedProfileEvidence = 0;
     let alreadyImported = false;
     let profileAlreadyImported = bundle.profileImport === undefined;
@@ -1382,6 +1501,9 @@ export class ListeningHistoryStore {
           );
         }
       }
+      mirroredEvents = reconcileScrobbleMirrors(
+        this.#database, batch.subjectId, batch.earliestOccurredAt, batch.latestOccurredAt, batch.importedAt,
+      );
       this.#database.exec("COMMIT");
     } catch (error) {
       this.#database.exec("ROLLBACK");
@@ -1400,7 +1522,8 @@ export class ListeningHistoryStore {
       duplicate_events: batch.inputRecords - insertedEvents,
       inserted_track_refs: insertedTracks,
       superseded_events: supersededEvents,
-      effective_event_delta: insertedEvents - supersededEvents,
+      ...(mirroredEvents ? { mirrored_events: mirroredEvents } : {}),
+      effective_event_delta: insertedEvents - supersededEvents - mirroredEvents,
       cursor_after_ms: this.sourceCursor(bundle.sourceKey),
       earliest_occurred_at: batch.earliestOccurredAt,
       latest_occurred_at: batch.latestOccurredAt,
@@ -1444,6 +1567,10 @@ export class ListeningHistoryStore {
           AND NOT EXISTS (
             SELECT 1 FROM listening_event_supersessions
             WHERE superseded_event_id = listening_events.listening_event_id
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM listening_event_mirrors m
+            WHERE m.mirror_event_id = listening_events.listening_event_id
           )
         ORDER BY occurred_at DESC, listening_event_id DESC
         LIMIT ?`,
@@ -1544,6 +1671,10 @@ export class ListeningHistoryStore {
             SELECT 1 FROM listening_event_supersessions s
             WHERE s.superseded_event_id = e.listening_event_id
           )
+          AND NOT EXISTS (
+            SELECT 1 FROM listening_event_mirrors m
+            WHERE m.mirror_event_id = e.listening_event_id
+          )
         ORDER BY e.occurred_at, e.listening_event_id`,
       )
       .all(normalizedSubjectId)
@@ -1606,6 +1737,10 @@ export class ListeningHistoryStore {
           AND NOT EXISTS (
             SELECT 1 FROM listening_event_supersessions
             WHERE superseded_event_id = listening_events.listening_event_id
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM listening_event_mirrors m
+            WHERE m.mirror_event_id = listening_events.listening_event_id
           )
         GROUP BY track_ref_id
         ORDER BY play_count DESC, track_ref_id`,
@@ -2091,6 +2226,10 @@ export class ListeningHistoryStore {
           WHERE NOT EXISTS (
             SELECT 1 FROM listening_event_supersessions
             WHERE superseded_event_id = listening_events.listening_event_id
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM listening_event_mirrors m
+            WHERE m.mirror_event_id = listening_events.listening_event_id
           )`,
         )
         .get().count,

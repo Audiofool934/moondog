@@ -10,7 +10,9 @@ export const LASTFM_LIMITS = Object.freeze({
   maximumScrobbles: 500_000,
   maximumLovedTracks: 20_000,
   pageSize: 200,
-  // Last.fm asks clients to stay well under five requests a second.
+  // Last.fm can suspend a key that keeps making several calls a second, so request starts
+  // are paced across all readers; a few readers at once only hide each answer's wait.
+  requestIntervalMs: 250,
   concurrency: 3,
   attempts: 5,
 });
@@ -47,11 +49,23 @@ const fold = (value) => value.normalize("NFKC").toLocaleLowerCase("und");
 const trackKey = (artist, title) => musicHash(JSON.stringify(["lastfm-track-v1", fold(artist), fold(title)]));
 const retryable = new Set([8, 11, 16, 29]);
 
-async function lastfmCall({ root, apiKey, method, params, fetchImpl, signal, sleep, attempts }) {
+/** Spaces request starts at least `interval` apart, whichever reader asks. */
+function requestPacer(interval, sleep, now, signal) {
+  let next = 0;
+  return async () => {
+    const at = now();
+    const wait = Math.max(0, next - at);
+    next = Math.max(at, next) + interval;
+    if (wait) await sleep(wait, undefined, { signal });
+  };
+}
+
+async function lastfmCall({ root, apiKey, method, params, fetchImpl, signal, sleep, pace, attempts }) {
   const url = new URL(root);
   url.search = new URLSearchParams({ method, ...params, api_key: apiKey, format: "json" }).toString();
   for (let attempt = 1; ; attempt += 1) {
     signal?.throwIfAborted();
+    await pace();
     const timeout = AbortSignal.timeout(20_000);
     let response;
     let body = null;
@@ -80,13 +94,25 @@ async function lastfmCall({ root, apiKey, method, params, fetchImpl, signal, sle
   }
 }
 
-/** Pages 1..pages of a paged method, a few at a time; page 1 is already in hand. */
-async function remainingPages(pages, read, concurrency) {
+/**
+ * Pages 2..pages of a paged method, a few at a time; page 1 is already in hand.
+ * The first page that fails stops the others, and the error waits until they have settled.
+ */
+async function remainingPages(pages, read, concurrency, stop) {
   let next = 2;
+  let failure;
   const worker = async () => {
-    while (next <= pages) await read(next++);
+    while (next <= pages && !failure) {
+      try {
+        await read(next++);
+      } catch (error) {
+        failure ??= error;
+        stop.abort(failure);
+      }
+    }
   };
   await Promise.all(Array.from({ length: Math.max(0, Math.min(concurrency, pages - 1)) }, worker));
+  if (failure) throw failure;
 }
 
 export async function readLastfmHistory({
@@ -99,14 +125,19 @@ export async function readLastfmHistory({
   signal,
   onProgress = () => {},
   sleep = delay,
+  now = Date.now,
   limits = LASTFM_LIMITS,
 } = {}) {
   const user = lastfmUsername(username);
   const access = configuration ?? await readLastfmConfiguration(environment);
   if (!access?.apiKey) fail("Moondog needs a Last.fm API key before it can read your history.", "lastfm_key_missing");
+  // One read shares one pace and one stop, so a failed page also stops its siblings.
+  const stop = new AbortController();
+  const readSignal = signal ? AbortSignal.any([signal, stop.signal]) : stop.signal;
+  const pace = requestPacer(limits.requestIntervalMs, sleep, now, readSignal);
   const call = (method, params) => lastfmCall({
     root: access.root, apiKey: access.apiKey, method, params: { user, ...params },
-    fetchImpl, signal, sleep, attempts: limits.attempts,
+    fetchImpl, signal: readSignal, sleep, pace, attempts: limits.attempts,
   });
   const until = Math.floor(Date.parse(capturedAt) / 1_000);
   const pageSize = limits.pageSize;
@@ -132,7 +163,7 @@ export async function readLastfmHistory({
   await remainingPages(pages, async (page) => {
     takeScrobbles(await call("user.getrecenttracks", { limit: pageSize, page, to: until }));
     onProgress({ stage: "scrobbles", count: scrobbles.length, total: expected });
-  }, limits.concurrency);
+  }, limits.concurrency, stop);
 
   const loved = [];
   const takeLoved = (body) => {
@@ -149,7 +180,7 @@ export async function readLastfmHistory({
   await remainingPages(lovedPages, async (page) => {
     takeLoved(await call("user.getlovedtracks", { limit: pageSize, page }));
     onProgress({ stage: "loved", count: loved.length });
-  }, limits.concurrency);
+  }, limits.concurrency, stop);
 
   if (!scrobbles.length && !loved.length) {
     fail("This Last.fm profile has no scrobbles or loved tracks yet.", "lastfm_history_empty");

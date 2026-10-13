@@ -947,4 +947,5 @@ export default {
   "Nothing saved. Your key is still there to fix.": "何も保存していません。キーはそのまま残っているので直せます。",
   "Type your Last.fm username, then press Enter.": "Last.fm のユーザー名を入力して Enter を押してください。",
   "Paste the API key, then press Enter.": "API キーを貼り付けて Enter を押してください。",
+  "{count} plays were already here from another service, so they count once.": "{count} 回の再生は別のサービスからすでに入っていたので、1 回として数えます。",
 };
