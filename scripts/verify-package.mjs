@@ -29,9 +29,10 @@ const maximumPackedBytes = 2_600_000;
 // library import adds one more entry and about 20 KB; the language module
 // adds five entries and about 35 KB, mostly message catalogs. Screen text
 // catalogs add about 100 KB and one entry per language; Japanese and
-// Portuguese add four entries and about 250 KB.
-const maximumUnpackedBytes = 5_000_000;
-const maximumEntries = 134;
+// Portuguese add four entries and about 250 KB. The seasons chart and the
+// desktop app's hooks add one entry and about 5 KB.
+const maximumUnpackedBytes = 5_006_000;
+const maximumEntries = 135;
 const packageOnlyPrivateSentinelPattern = new RegExp(
   ["PRIVATE", "(?:IP|PLATFORM)", "SENTINEL"].join("_"),
   "u",
