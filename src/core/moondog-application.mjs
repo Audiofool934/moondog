@@ -409,6 +409,13 @@ export class MoondogApplication {
       typeof this.musicPreviewPlayer?.play === "function";
   }
 
+  // Finds one album cover for the terminal to draw; the image never reaches the model.
+  async findAlbumCover({ query } = {}) {
+    const catalog = this.requireMusicCatalog();
+    if (typeof catalog.findCover !== "function") throw new Error("Album covers are unavailable.");
+    return catalog.findCover({ query });
+  }
+
   // Plays up to six named songs, or one album, as a queue in the host's player.
   // Songs by excludeArtists (the artists a listener named as favorites) are left out.
   async playMusicPreview({ tracks, album, excludeArtists = [] } = {}) {

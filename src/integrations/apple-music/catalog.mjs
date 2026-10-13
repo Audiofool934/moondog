@@ -629,6 +629,29 @@ export function createAppleMusicCatalog({
       };
     },
 
+    // One album's cover, from a free-text search such as "Radiohead In Rainbows".
+    async findCover({ query } = {}) {
+      if (typeof client.searchAlbums !== "function") fail("apple_music_catalog_unavailable", "Album covers are unavailable.");
+      // Apple's album search often misses famous albums that its song search finds first,
+      // so rank both by how many query words the artist, album, and song name contain.
+      const words = new Set(normalizeForMatch(query).split(" ").filter(Boolean));
+      const wordsOf = (...values) => new Set(values.flatMap((value) => normalizeForMatch(value ?? "").split(" ")).filter(Boolean));
+      const score = ({ album, song }) => {
+        const named = wordsOf(album.artist_credit, album.title);
+        const matched = [...words].filter((word) => named.has(word) || wordsOf(song).has(word)).length;
+        // Among equal matches, the plainest title wins: the original over a tribute, live set, or single.
+        const extra = [...named].filter((word) => !words.has(word)).length;
+        return matched * 2 - (releaseSuffixPattern.test(album.title) ? 1 : 0) - extra * 0.05;
+      };
+      const [songs, albums] = await Promise.all([client.searchTracks(query), client.searchAlbums(query)]);
+      const candidates = [
+        ...songs.map((track) => ({ song: track.title, album: { title: track.release, artist_credit: track.artist_credit, artwork_url: track.artwork_url } })),
+        ...albums.map((album) => ({ album })),
+      ].filter(({ album }) => album.artwork_url);
+      const album = candidates.reduce((best, candidate) => (!best || score(candidate) > score(best) ? candidate : best), null)?.album;
+      return { state: album ? "resolved" : "not_found", source: sourceMetadata(now), ...(album ? { album } : {}) };
+    },
+
     // One named album's previews, in order: the exact title first, then an edition of it.
     async findAlbumPreviews({ title, artist } = {}) {
       if (typeof client.searchAlbums !== "function" || typeof client.albumTracks !== "function") {

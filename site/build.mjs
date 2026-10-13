@@ -19,7 +19,7 @@ const shim = (name) => path.join(here, "room", "shims", name);
 const builtins = {
   crypto: "crypto.mjs", fs: "fs.mjs", "fs/promises": "fs-promises.mjs", os: "os.mjs", path: "path.mjs",
   util: "util.mjs", events: "events.mjs", child_process: "misc.mjs", module: "misc.mjs", url: "misc.mjs",
-  perf_hooks: "misc.mjs", "timers/promises": "misc.mjs",
+  perf_hooks: "misc.mjs", "timers/promises": "misc.mjs", zlib: "misc.mjs",
 };
 const replaced = new Set(["model-catalog.mjs", "public-model-catalog.mjs", "authentication.mjs"]);
 const staticFiles = ["index.html", "style.css", "static"];

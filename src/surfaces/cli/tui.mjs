@@ -2,6 +2,7 @@ import { LOCALES, N_, liveScreenTranslator, normalizeLocale } from "../../i18n/i
 import {
   CombinedAutocompleteProvider,
   Container,
+  getCellDimensions,
   Markdown,
   matchesKey,
   ProcessTerminal,
@@ -27,6 +28,7 @@ import {
 
 import { createMoondogTheme } from "./brand-theme.mjs";
 import { LOGO_MOTION_INTERVAL_MS } from "./terminal-art.mjs";
+import { fetchCover, renderCover } from "./cover-art.mjs";
 import { buildTasteProfileModel } from "./taste-profile-model.mjs";
 import { TasteProfileView } from "./taste-profile-view.mjs";
 import { lyricTrackKey } from "../../core/lyric-profile.mjs";
@@ -90,6 +92,7 @@ const slashCommands = [
   { name: "update", description: N_("Check for or install a Moondog release") },
   { name: "home", description: N_("Back to the record sleeve") },
   { name: "lyrics", description: N_("Your lyric library, or sync more songs") },
+  { name: "cover", description: N_("Draw an album cover in the conversation") },
   { name: "import", description: N_("Bring in your listening history or library") },
   { name: "theme", description: N_("Paper, charcoal, or your terminal colors") },
   { name: "language", description: N_("The language Moondog replies in") },
@@ -570,6 +573,33 @@ export async function runMoondogTui({
     const before = conversation.render(width).length;
     addLabel("Moondog");
     transcript.addChild(new Markdown(sanitizeTerminalText(markdown), 1, 1, markdownTheme, textStyle));
+    revealMessageStart(Math.max(0, conversation.render(width).length - before));
+    tui.requestRender();
+  };
+
+  // A cover drawn in characters: color half-blocks when the terminal has color, braille or ASCII otherwise.
+  const addCoverMessage = (image, album) => {
+    enterConversation();
+    const width = Math.max(1, transcriptScroll.getContentWidth(terminal.columns));
+    const before = conversation.render(width).length;
+    addLabel("Moondog");
+    let cached;
+    transcript.addChild({
+      invalidate() { cached = undefined; },
+      render: (available) => {
+        const { widthPx, heightPx } = getCellDimensions();
+        const key = [available, theme, sleeve.artMode, heightPx / widthPx].join("\0");
+        if (cached?.key === key) return cached.lines;
+        const style = sleeve.artMode === "ascii" || sleeve.artMode === "text" ? "ascii" : theme.plain ? "braille" : "blocks";
+        const art = renderCover(image, {
+          columns: Math.min(32, available - 2), cellAspect: heightPx / widthPx, style,
+          depth: theme.colorDepth >= 24 ? 24 : 8, lightBackground: theme.mode === "paper",
+        });
+        const caption = new Text([bold(sanitizeTerminalText(album.title)), theme.muted(sanitizeTerminalText(album.artist_credit))].join("\n"), 1, 0).render(available);
+        cached = { key, lines: ["", ...art.map((line) => ` ${line}`), "", ...caption, ""] };
+        return cached.lines;
+      },
+    });
     revealMessageStart(Math.max(0, conversation.render(width).length - before));
     tui.requestRender();
   };
@@ -1634,6 +1664,17 @@ export async function runMoondogTui({
         : tr("{language}: replies use it unless you write in another language.", { language: LOCALES[locale].nativeName }), success);
       return;
     }
+    if (command === "cover") {
+      if (!args[0]) throw new Error(tr("Name an album after /cover, such as /cover Radiohead In Rainbows."));
+      if (typeof application.findAlbumCover !== "function") throw new Error(tr("Album covers aren't available when Moondog is started this way."));
+      const result = await application.findAlbumCover({ query: args[0] });
+      if (result.state !== "resolved") { addMoondogMessage(tr("I couldn't find a cover for {query}.", { query: args[0] })); return; }
+      const image = await fetchCover(result.album.artwork_url, { pixels: 128, signal: localCommandController?.signal });
+      if (cleanedUp) return;
+      addCoverMessage(image, result.album);
+      setFooter(`${result.album.title} · ${result.album.artist_credit}`);
+      return;
+    }
     if (command === "art") {
       if (args.length > 1 || (args[0] && !["auto", "braille", "ascii", "off", "text"].includes(args[0]))) {
         throw new Error(tr("Use /art, or /art braille, ascii, off, or auto."));
@@ -1829,12 +1870,12 @@ export async function runMoondogTui({
       try {
         if (!["home", "theme", "art", "motion", "model", "resume", "rewind", "new", "taste", "profile", "import"].includes(command)) enterConversation();
         if (command !== "auth") editor.addToHistory(value);
-        localCommandController = ["web", "lyrics", "model", "update", "profile"].includes(command) ? new AbortController() : null;
+        localCommandController = ["web", "lyrics", "model", "update", "profile", "cover"].includes(command) ? new AbortController() : null;
         const controller = localCommandController;
         setBusy(true, controller ? () => controller.abort() : null);
         setFooter(`/${command}...`);
         const argumentText = value.slice(1).trim().slice(rawCommand.length).trim();
-        const parsedArgs = command === "import" ? argumentText ? [argumentText] : []
+        const parsedArgs = ["import", "cover"].includes(command) ? argumentText ? [argumentText] : []
           : ["profile", "spotify", "web"].includes(command)
           ? parseTuiArguments(argumentText)
           : args;
@@ -1843,7 +1884,7 @@ export async function runMoondogTui({
         if (cleanedUp) return;
         enterConversation();
         const cancelled = localCommandController?.signal.aborted;
-        addMoondogMessage(cancelled ? command === "web" ? tr("Stopped the lookup.") : command === "model" ? tr("Stopped the catalog check. Model unchanged.") : command === "update" ? tr("Stopped the update check. No update installed.") : command === "profile" ? tr("Stopped the profile build. Saved progress and your previous reading are kept. Use /profile build to continue.") : tr("Stopped the lyric sync.") : tr("That didn't work: {error}", { error: error.message }));
+        addMoondogMessage(cancelled ? command === "web" ? tr("Stopped the lookup.") : command === "model" ? tr("Stopped the catalog check. Model unchanged.") : command === "update" ? tr("Stopped the update check. No update installed.") : command === "cover" ? tr("Stopped the cover lookup.") : command === "profile" ? tr("Stopped the profile build. Saved progress and your previous reading are kept. Use /profile build to continue.") : tr("Stopped the lyric sync.") : tr("That didn't work: {error}", { error: error.message }));
         setFooter(cancelled ? tr("Cancelled.") : tr("/{command} didn't work.", { command }), cancelled ? dim : failure);
       } finally {
         localCommandController = null;

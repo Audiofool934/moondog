@@ -231,6 +231,7 @@ export function createMoondogTheme({ mode = "auto", environment = process.env } 
   return {
     mode: resolvedMode,
     plain: depth === 0,
+    colorDepth: depth,
     palette,
     text,
     muted,
