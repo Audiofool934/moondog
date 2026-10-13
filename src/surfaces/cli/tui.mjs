@@ -2,6 +2,8 @@ import { LOCALES, N_, liveScreenTranslator, normalizeLocale } from "../../i18n/i
 import {
   CombinedAutocompleteProvider,
   Container,
+  getCapabilities,
+  hyperlink,
   Markdown,
   matchesKey,
   ProcessTerminal,
@@ -22,6 +24,7 @@ import { supportedAuthProviderIds } from "../../runtime/pi/authentication.mjs";
 import {
   formatLocalResult,
   helpText,
+  safeInlineText,
   sanitizeTerminalText,
 } from "./format-output.mjs";
 
@@ -108,6 +111,8 @@ const slashCommands = [
   { name: "auth", description: N_("Sign in to a model provider") },
   { name: "web", description: N_("Look things up on public music sites") },
   { name: "spotify", description: N_("Connect and control Spotify") },
+  { name: "skip", description: N_("Skip to the next song preview") },
+  { name: "stop", description: N_("Stop the song previews") },
   { name: "reload", description: N_("Reload model settings and sign-ins") },
   { name: "remember", description: N_("Ask Moondog to remember something") },
   { name: "forget", description: N_("Forget one memory by ID") },
@@ -195,6 +200,9 @@ export async function runMoondogTui({
   models = listPiModels,
   refreshModels,
   saveLanguage,
+  // The terminal's preview player. The room shows what it plays (subscribe) and
+  // gives the listener /skip and /stop.
+  previewPlayer,
   environment = process.env,
 }) {
   if (providers === listPiProviders && models === listPiModels) {
@@ -206,7 +214,11 @@ export async function runMoondogTui({
   // Screen text follows the listener's language and switches with /language.
   const tr = liveScreenTranslator(() => application.locale);
   setBrandText(tr);
-  const localizedCommands = slashCommands.map(({ name, description }) => ({ name, get description() { return tr.marked(description); } }));
+  // /skip and /stop exist only where the room controls the previews itself.
+  const previewControls = typeof previewPlayer?.subscribe === "function" &&
+    typeof previewPlayer.skip === "function" && typeof previewPlayer.stop === "function";
+  const commands = slashCommands.filter(({ name }) => previewControls || !["skip", "stop"].includes(name));
+  const localizedCommands = commands.map(({ name, description }) => ({ name, get description() { return tr.marked(description); } }));
   let activeRuntime = runtime;
   application.startNewSession?.("tui_start");
   activeRuntime.reset();
@@ -262,6 +274,9 @@ export async function runMoondogTui({
   const queuedLineCount = () => messageQueue.length === 0
     ? 0
     : Math.min(messageQueue.length, 4) + (messageQueue.length > 4 ? 1 : 0);
+  // The preview now playing sits on its own line above the draft.
+  let nowPlaying = null;
+  const nowPlayingRows = () => (nowPlaying && !profileView && !importView ? 1 : 0);
   let cancelWork = null;
   let cancellationRequested = false;
   let workStartedAt = 0;
@@ -310,7 +325,7 @@ export async function runMoondogTui({
   };
   const sleeve = new RecordSleeve({ terminal, getTheme, environment, getState: () => ({
     focused: homeFocused, selected: homeSelected, motionEnabled,
-    editorRows: (editor.rowCount || 3) + queuedLineCount(),
+    editorRows: (editor.rowCount || 3) + queuedLineCount() + nowPlayingRows(),
   }), getNextLyric: () => {
     try {
       homeLyric = homeLyricSeeds ? lyrics.selectHome(homeLyricSeeds) : null;
@@ -376,7 +391,7 @@ export async function runMoondogTui({
     render(width) {
       const lines = conversation.render(width);
       const footerRows = terminal.rows >= 20 ? 2 : 1;
-      const bodyRows = Math.max(1, terminal.rows - 2 - footerRows - queuedLineCount() - (editor.rowCount || 3));
+      const bodyRows = Math.max(1, terminal.rows - 2 - footerRows - queuedLineCount() - nowPlayingRows() - (editor.rowCount || 3));
       while (lines.length < bodyRows) lines.push(paintBrandLine("", width, theme));
       return lines;
     },
@@ -415,6 +430,18 @@ export async function runMoondogTui({
     render(width) {
       if (profileView || importView) return [];
       const lines = [];
+      if (nowPlaying) {
+        const { track, position, count, type } = nowPlaying;
+        const prefix = `  ${theme.plain ? ">" : "♪"} `;
+        // Where the terminal can't open links, the note in the conversation shows the address.
+        const apple = getCapabilities().hyperlinks ? hyperlink("Apple Music", track.catalog_url) : "Apple Music";
+        const controls = `  ${position}/${count}${type === "loading" ? ` · ${tr("loading")}` : ""} · ${apple} · /skip · /stop`;
+        const song = sanitizeTerminalText(`${track.title} · ${track.artist_credit}`).replace(/\s+/gu, " ").trim();
+        const room = width - visibleWidth(prefix) - visibleWidth(controls);
+        lines.push(paintBrandLine(room >= 12
+          ? theme.accent(prefix) + theme.text(truncateToWidth(song, room, "…")) + theme.faint(controls)
+          : theme.accent(prefix) + theme.text(truncateToWidth(song, Math.max(1, width - visibleWidth(prefix)), "…")), width, theme));
+      }
       if (messageQueue.length) {
         const hidden = Math.max(0, messageQueue.length - 4);
         const shown = messageQueue.slice(-4);
@@ -573,6 +600,49 @@ export async function runMoondogTui({
     revealMessageStart(Math.max(0, conversation.render(width).length - before));
     tui.requestRender();
   };
+  // Each preview sits next to its song on Apple Music. The note joins the reply in progress;
+  // terminals that support it show each link as clickable "Apple Music" text.
+  // A song that fails to load is marked in the note, so silence is never left unexplained.
+  let previewNote = null;
+  const previewNoteText = ({ tracks, album, failed }) => {
+    const link = (url) => `[Apple Music](${String(url).replaceAll("(", "%28").replaceAll(")", "%29")})`;
+    const lines = [`${theme.plain ? "" : "♪ "}${tr("30-second previews from Apple Music")}`];
+    if (album?.title) {
+      lines.push([`${safeInlineText(album.title)}${album.artist_credit ? ` - ${safeInlineText(album.artist_credit)}` : ""}`,
+        ...(album.catalog_url ? [link(album.catalog_url)] : [])].join(" · "));
+    }
+    lines.push("", ...tracks.map((track, index) => {
+      const artist = track.artist_credit && track.artist_credit !== album?.artist_credit ? ` - ${safeInlineText(track.artist_credit)}` : "";
+      return `${index + 1}. ${safeInlineText(track.title)}${artist} · ${link(track.catalog_url)}${failed.has(index) ? ` · _${tr("couldn't load")}_` : ""}`;
+    }));
+    if (tracks.length && failed.size === tracks.length) lines.push("", `_${tr("None of these previews could load. Check your connection, then ask again.")}_`);
+    return sanitizeTerminalText(lines.join("\n"));
+  };
+  const addPreviewNote = ({ tracks = [], album = null } = {}) => {
+    previewNote = { tracks, album, failed: new Set() };
+    previewNote.markdown = new Markdown(previewNoteText(previewNote), 1, 1, markdownTheme, textStyle);
+    transcript.addChild(previewNote.markdown);
+    tui.requestRender();
+  };
+  const markPreviewFailed = ({ position } = {}) => {
+    if (!previewNote || !Number.isInteger(position) || position < 1 || position > previewNote.tracks.length) return;
+    previewNote.failed.add(position - 1);
+    previewNote.markdown.setText(previewNoteText(previewNote));
+  };
+  const stopWatchingPreviews = previewControls ? previewPlayer.subscribe((event) => {
+    if (cleanedUp) return;
+    if (event?.type === "queue") addPreviewNote(event);
+    else if (event?.type === "failed") markPreviewFailed(event);
+    else if (event?.type === "loading" || event?.type === "playing") nowPlaying = event;
+    else if (event?.type === "stopped") nowPlaying = null;
+    tui.requestRender();
+  }) : null;
+  // These act at once, even while Moondog is answering.
+  const controlPreviews = (command) => {
+    const acted = command === "stop" ? previewPlayer.stop() : previewPlayer.skip();
+    if (!busy) setFooter(!acted ? tr("No previews are playing.") : command === "stop" ? tr("Previews stopped.") : tr("Skipped."));
+    tui.requestRender();
+  };
 
   const removeLifecycleListeners = () => {
     signalTarget.removeListener("SIGTERM", handleSigterm);
@@ -587,6 +657,7 @@ export async function runMoondogTui({
     if (cleanedUp) return;
     try { application.conversationPending?.({ draft: editor.getText(), queued: [...messageQueue] }); } catch { /* Terminal cleanup must still run when storage is unavailable. */ }
     cleanedUp = true;
+    stopWatchingPreviews?.();
     clearInterval(indicator);
     indicator = null;
     clearInterval(homeMotion);
@@ -1816,7 +1887,11 @@ export async function runMoondogTui({
         shutdown();
         return;
       }
-      if (!slashCommands.some((entry) => entry.name === command)) {
+      if (previewControls && (command === "skip" || command === "stop")) {
+        controlPreviews(command);
+        return;
+      }
+      if (!commands.some((entry) => entry.name === command)) {
         enterConversation();
         addMoondogMessage(tr("I don't know `/{command}`. Type `/help` to see what I do know.", { command }));
         return;
@@ -1989,6 +2064,10 @@ export async function runMoondogTui({
     if (busy || rewindPending) {
       if (pending === "/quit" || pending === "/exit") {
         shutdown();
+        return;
+      }
+      if (previewControls && (pending === "/skip" || pending === "/stop")) {
+        controlPreviews(pending.slice(1));
         return;
       }
       if (pending) {

@@ -74,6 +74,7 @@ const exactAllowedPaths = new Set([
 
 const allowedPathPrefixes = [
   ".github/",
+  "app/",
   "assets/",
   "contracts/",
   "docs/",

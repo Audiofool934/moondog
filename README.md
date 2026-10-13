@@ -139,6 +139,7 @@ The [model setup guide](docs/TERMINAL_GUIDE.md#enable-agent-conversation) lists 
 While an answer is on the way, each step appears in the conversation as it starts.
 The steps stay above the reply, with a count of what finished, what failed, and what was not confirmed.
 The agent can use musical knowledge and web research to find candidates, then verify the recordings on Spotify before playing or queueing them.
+Without Spotify, it plays 30-second Apple Music previews from the terminal instead, each next to a link to the full song.
 For example, “Pon doce de salsa clásica a la cola” asks it to add up to twelve verified songs directly; your history guides the choice without limiting it to your library.
 What it reads about the wider music world stays separate from what it knows about you.
 
@@ -169,6 +170,7 @@ Read the [connection and data details](docs/TERMINAL_GUIDE.md) before you connec
 | Enter while Moondog is working | Queue the next message. It sends when this one finishes. |
 | `/resume`, `/new` | Pick up a saved conversation, or start a fresh one. |
 | `/home` | Back to the sleeve, without clearing the conversation. |
+| `/skip`, `/stop` | Skip to the next song preview, or stop the previews. |
 | `/lyrics` | See which line is on the sleeve, and which song it came from. |
 | `/theme paper` | Black ink on white. |
 | `/theme charcoal` | Moonlight on a black sky. |

@@ -195,7 +195,8 @@ export class MoondogApplication {
     this.spotifyConnection = spotifyConnection;
     this.musicCatalog = musicCatalog;
     this.musicSimilarity = musicSimilarity;
-    // Hosts that can play audio (the website) pass { play(track) }; the terminal does not.
+    // Hosts that can play audio pass { play(tracks, { album }) }: the website, and the
+    // terminal when the system has a player.
     this.musicPreviewPlayer = musicPreviewPlayer;
     // Hosts can tell the agent where it runs; the terminal passes none.
     this.hostNotes = Array.isArray(agentHostNotes) ? agentHostNotes.filter((note) => typeof note === "string") : [];
@@ -403,10 +404,12 @@ export class MoondogApplication {
     return [...this.hostNotes];
   }
 
+  // Previews stand in for playback only where Spotify can't play the full songs.
   musicPreviewReady() {
     return this.musicCatalogReady() &&
       typeof this.musicCatalog.findPreview === "function" &&
-      typeof this.musicPreviewPlayer?.play === "function";
+      typeof this.musicPreviewPlayer?.play === "function" &&
+      !this.spotifyReady();
   }
 
   // Plays up to six named songs, or one album, as a queue in the host's player.
@@ -3146,6 +3149,7 @@ export class MoondogApplication {
       this.domainServices?.close?.();
       this.musicCatalog?.close?.();
       this.musicSimilarity?.close?.();
+      this.musicPreviewPlayer?.close?.();
       this.webResearch?.close?.();
     }
   }
