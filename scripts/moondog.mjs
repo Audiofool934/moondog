@@ -47,6 +47,7 @@ import { IMPORT_GUIDE_URLS } from "../src/surfaces/cli/import-guides.mjs";
 import { runMoondogTui } from "../src/surfaces/cli/tui.mjs";
 import { createLyricService } from "../src/core/lyric-service.mjs";
 import { createAppleMusicCatalog } from "../src/integrations/apple-music/catalog.mjs";
+import { createTerminalPreviewPlayer } from "../src/integrations/apple-music/terminal-preview-player.mjs";
 import {
   createOpenMusicSimilarity,
   createWikidataArtistResolver,
@@ -837,6 +838,10 @@ async function main() {
   // The desktop app (app/) stands in for the terminal: it registers its screen and
   // preview player here before the room starts. Without it, nothing changes.
   const host = globalThis[Symbol.for("moondog.host")] ?? null;
+  // The listening room plays previews through the system's player when there is one.
+  // One-shot commands get none: they would exit in the middle of the first song.
+  // In the desktop app, the window's own player plays them instead.
+  const previewPlayer = options.command || host ? null : await createTerminalPreviewPlayer();
   const application = new MoondogApplication({
     ...domainState,
     locale: await resolveListenerLocale(),
@@ -844,7 +849,7 @@ async function main() {
     memoryStore,
     spotifyConnection,
     musicCatalog,
-    musicPreviewPlayer: host?.musicPreviewPlayer ?? null,
+    musicPreviewPlayer: host?.musicPreviewPlayer ?? previewPlayer,
     musicSimilarity,
     artistIdentityResolver,
   });
@@ -935,6 +940,7 @@ async function main() {
       application,
       runtime,
       terminal: host?.terminal,
+      previewPlayer,
       lyrics,
       checkUpdates: options => updater.startupCheck(options),
       runUpdate: (args, options) => runUpdateCommand({ args, updater, deferInstall: true, ...options }),
