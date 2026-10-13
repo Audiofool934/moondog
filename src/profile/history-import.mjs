@@ -10,6 +10,7 @@ import { projectSpotifyLibrarySnapshot } from "../integrations/spotify/library-s
 import { buildAppleMusicLibraryImport } from "../importers/apple-music-library/index.mjs";
 import { readYouTubeMusicTakeout } from "../integrations/youtube-music/takeout.mjs";
 import { readPublicPlaylist } from "../integrations/public-playlists.mjs";
+import { readLastfmHistory } from "../integrations/lastfm/history.mjs";
 
 /**
  * Spotify quick start: the latest plays plus the listener's library (saves,
@@ -114,7 +115,11 @@ function literalPath(input) {
   return path.resolve(decoded);
 }
 
-export async function prepareHistoryImport({ filePath, subjectId, provider: selectedProvider, capturedAt = new Date().toISOString(), fetchImpl } = {}) {
+export async function prepareHistoryImport({ filePath, subjectId, provider: selectedProvider, capturedAt = new Date().toISOString(), fetchImpl, onProgress, signal } = {}) {
+  // Last.fm is read by username (or profile link) rather than from a file.
+  if (selectedProvider === "lastfm") {
+    return readLastfmHistory({ username: filePath, subjectId, capturedAt, onProgress, signal, ...(fetchImpl ? { fetchImpl } : {}) });
+  }
   if (/https?:\/\//iu.test(filePath ?? "") && !String(filePath).startsWith("file:")) {
     return readPublicPlaylist({ input: filePath, subjectId, capturedAt, provider: selectedProvider, fetchImpl });
   }

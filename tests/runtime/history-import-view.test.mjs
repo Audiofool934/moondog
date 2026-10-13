@@ -45,7 +45,7 @@ test("import actions remain host-owned and the profile shortcut follows readines
   view.handleInput("\x1b[B");
   view.handleInput("\r");
   assert.deepEqual(actions.pop(), { type: "youtube_music" });
-  for (const type of ["qq_music", "netease", "other"]) {
+  for (const type of ["lastfm", "qq_music", "netease", "other"]) {
     view.handleInput("\x1b[B"); view.handleInput("\r");
     assert.deepEqual(actions.pop(), { type });
   }

@@ -598,6 +598,7 @@ async function createGuidedImportFixture(context, options = {}) {
     prepareRecentImport: () => options.prepareRecentImport ? options.prepareRecentImport(prepared) : prepared,
     runSpotify: options.runSpotify,
     openImportHelp: options.openImportHelp,
+    lastfm: options.lastfm,
     async refreshImportedData(receipt) {
       calls.refreshes += 1;
       calls.refreshReceipt = receipt;
@@ -689,6 +690,99 @@ test("Spotify quick start previews the library with recent plays and saves both 
   fixture.terminal.send("\x1b");
   await fixture.outputIncludes("Your Spotify is in");
   assert.match(fixture.screen(), /^ 22 saved songs, albums, follows, playlist entries, and\s+Spotify top picks/mu);
+});
+
+const lastfmPreview = {
+  source: "lastfm", sourceLabel: "Last.fm", fileName: "last.fm/user/rj", kind: "history",
+  listeningEvents: 450, tracks: 21, eventsWithPlayedMs: 0, lovedTracks: 2, profileEvidence: 2, truncated: false,
+};
+
+async function openLastfmGuide(fixture) {
+  await fixture.submit("/import", "Bring your music");
+  for (let step = 0; step < 3; step += 1) fixture.terminal.send("\x1b[B");
+  fixture.terminal.send("\r");
+  await fixture.outputIncludes("Import from Last.fm");
+}
+
+test("Last.fm asks for a key once, reads by username with live counts, and adds nothing until confirmed", async (context) => {
+  let configured = false;
+  let release;
+  const saved = [];
+  const fixture = await createGuidedImportFixture(context, {
+    preview: lastfmPreview,
+    lastfm: {
+      status: async () => ({ configured, source: configured ? "settings" : null }),
+      async save(apiKey) {
+        if (!/^[a-f0-9]{32}$/u.test(apiKey)) throw new Error("A Last.fm API key is 32 letters and numbers.");
+        saved.push(apiKey);
+        configured = true;
+        return { configured, source: "settings" };
+      },
+    },
+    async prepareImport(username, prepared) {
+      fixture.calls.importOptions.onProgress({ stage: "scrobbles", count: 200, total: 450 });
+      await new Promise((resolve) => { release = resolve; });
+      return prepared;
+    },
+  });
+  const { terminal, calls } = fixture;
+  await openLastfmGuide(fixture);
+  assert.match(fixture.screen(), /Reading Last\.fm needs a free API key/u);
+  terminal.send("\r");
+  await fixture.outputIncludes("Copy the API key it shows");
+  terminal.send("\x1b[B");
+  terminal.send("\r");
+  await fixture.outputIncludes("Paste your Last.fm API key");
+  terminal.send("not-a-key");
+  terminal.send("\r");
+  await fixture.outputIncludes("32 letters and numbers");
+  for (let step = 0; step < "not-a-key".length; step += 1) terminal.send("\x7f");
+  terminal.send("0123456789abcdef0123456789abcdef");
+  terminal.send("\r");
+  await fixture.outputIncludes("Your Last.fm username");
+  assert.deepEqual(saved, ["0123456789abcdef0123456789abcdef"]);
+
+  terminal.send("rj");
+  terminal.send("\r");
+  await fixture.outputIncludes("Reading your scrobbles: 200 of 450");
+  assert.match(fixture.screen(), /Esc cancels/u);
+  assert.equal(calls.paths.at(-1), "rj");
+  assert.equal(calls.importOptions.provider, "lastfm");
+  assert.ok(calls.importOptions.signal instanceof AbortSignal);
+  release();
+  await fixture.outputIncludes("Last.fm scrobbles");
+  assert.match(fixture.screen(), /450 plays · 21 tracks/u);
+  assert.match(fixture.screen(), /Also 2 loved tracks/u);
+  assert.match(fixture.screen(), /Last\.fm counts a play after half a song or four minutes/u);
+  assert.equal(calls.commits, 0);
+  terminal.send("\r");
+  await fixture.outputIncludes("Your listening profile");
+  assert.equal(calls.commits, 1);
+  assert.deepEqual(fixture.prompts, []);
+});
+
+test("Esc stops a Last.fm read and returns to the username with nothing imported", async (context) => {
+  const fixture = await createGuidedImportFixture(context, {
+    preview: lastfmPreview,
+    lastfm: { status: async () => ({ configured: true, source: "settings" }), save: async () => ({ configured: true }) },
+    async prepareImport() {
+      const { signal } = fixture.calls.importOptions;
+      await new Promise((resolve, reject) => signal.addEventListener("abort", () => reject(signal.reason), { once: true }));
+    },
+  });
+  const { terminal, calls } = fixture;
+  await openLastfmGuide(fixture);
+  assert.match(fixture.screen(), /Enter my Last\.fm username/u);
+  terminal.send("\r");
+  await fixture.outputIncludes("Your Last.fm username");
+  terminal.send("rj");
+  terminal.send("\r");
+  await fixture.outputIncludes("Esc cancels");
+  terminal.send("\x1b");
+  await fixture.outputIncludes("Stopped. Nothing imported.");
+  assert.match(fixture.screen(), /Your Last\.fm username/u);
+  assert.ok(calls.importOptions.signal.aborted);
+  assert.equal(calls.commits, 0);
 });
 
 test("an older recent-plays-only sign-in is asked to reconnect for the library but can still import recent plays", async (context) => {
@@ -854,7 +948,7 @@ test("Apple selection opens its XML path, saves a library receipt, and refreshes
   assert.deepEqual(fixture.prompts, []);
 });
 
-for (const [provider, moves] of [["youtube_music", 2], ["qq_music", 3], ["netease", 4]]) {
+for (const [provider, moves] of [["youtube_music", 2], ["qq_music", 4], ["netease", 5]]) {
   test(`${provider} selection passes its identity, previews a collection and opens the profile after confirmation`, async (context) => {
     const receipt = { provider, inserted_events: 0, inserted_profile_evidence: 3 };
     const fixture = await createGuidedImportFixture(context, {

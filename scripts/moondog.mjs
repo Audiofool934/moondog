@@ -44,6 +44,7 @@ import { openListeningHistoryStore } from "../src/profile/listening-history-stor
 import { commitSpotifyQuickImport, prepareHistoryImport, prepareSpotifyQuickImport } from "../src/profile/history-import.mjs";
 import { persistAppleLibraryImport, refreshAppleLibraryImport } from "../src/profile/apple-library-import.mjs";
 import { IMPORT_GUIDE_URLS } from "../src/surfaces/cli/import-guides.mjs";
+import { readLastfmConfiguration, writeLastfmConfiguration } from "../src/integrations/lastfm/settings.mjs";
 import { runMoondogTui } from "../src/surfaces/cli/tui.mjs";
 import { createLyricService } from "../src/core/lyric-service.mjs";
 import { createAppleMusicCatalog } from "../src/integrations/apple-music/catalog.mjs";
@@ -305,7 +306,7 @@ async function runListenBrainzSurface(options) {
   }
 }
 
-async function prepareTuiHistoryImport(filePath, { recentPage, librarySnapshot, libraryUnavailable, provider } = {}) {
+async function prepareTuiHistoryImport(filePath, { recentPage, librarySnapshot, libraryUnavailable, provider, onProgress, signal } = {}) {
   const historyStore = await openListeningHistoryStore();
   try {
     const appleSubjectId = await optionalAppleMusicSubjectId();
@@ -314,7 +315,7 @@ async function prepareTuiHistoryImport(filePath, { recentPage, librarySnapshot, 
       create: true,
     });
     const prepared = recentPage ? prepareSpotifyQuickImport({ page: recentPage, librarySnapshot, libraryUnavailable, subjectId }) : await prepareHistoryImport({
-      filePath, subjectId, provider, capturedAt: new Date().toISOString(),
+      filePath, subjectId, provider, capturedAt: new Date().toISOString(), onProgress, signal,
     });
     let closed = false;
     let committed = false;
@@ -959,6 +960,14 @@ async function main() {
         return prepareTuiHistoryImport(undefined, { recentPage, librarySnapshot, libraryUnavailable });
       },
       openImportHelp,
+      // The room asks whether a Last.fm key is set, and saves one the listener pastes.
+      lastfm: {
+        status: async () => {
+          const access = await readLastfmConfiguration().catch(() => undefined);
+          return { configured: Boolean(access?.apiKey), source: access?.source ?? null };
+        },
+        save: async (apiKey) => ({ configured: true, source: (await writeLastfmConfiguration(apiKey)).source }),
+      },
       saveLanguage: locale => writeLanguagePreference(locale),
       refreshImportedData: async (receipt) => {
         if (receipt?.provider === "apple-music-library") await refreshAppleLibraryImport();
