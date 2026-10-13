@@ -2336,6 +2336,7 @@ export function projectListeningProfile({
           if (system.startsWith("spotify")) return "spotify";
           if (system.startsWith("listenbrainz")) return "listenbrainz";
           if (system === "youtube_music") return "youtube_music";
+          if (system === "lastfm") return "lastfm";
           return "other";
         })
         .filter(Boolean),

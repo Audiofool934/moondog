@@ -102,17 +102,36 @@ export class HistoryImportView {
       this.clientEditor.setText(text);
       this.emit("configureSpotify", { clientId: text.trim() });
     };
+    // Last.fm takes a username to read and, once, an API key to read it with.
+    this.lastfmUserEditor = new Editor(tui, { borderColor: (text) => this.getTheme().faint(text), selectList }, { paddingX: 1 });
+    this.lastfmUserEditor.onSubmit = (text) => {
+      this.lastfmUserEditor.setText(text);
+      this.emit("inspectLastfm", { username: text.trim() });
+    };
+    this.lastfmKeyEditor = new Editor(tui, { borderColor: (text) => this.getTheme().faint(text), selectList }, { paddingX: 1 });
+    this.lastfmKeyEditor.onSubmit = (text) => {
+      this.lastfmKeyEditor.setText(text);
+      this.emit("configureLastfm", { apiKey: text.trim() });
+    };
+  }
+
+  // The line editor for the current page, if it has one.
+  pageEditor(page = this.state.page) {
+    return { file: this.editor, client: this.clientEditor, lastfmUser: this.lastfmUserEditor, lastfmKey: this.lastfmKeyEditor }[page] ?? null;
+  }
+
+  focusEditors() {
+    for (const page of ["file", "client", "lastfmUser", "lastfmKey"]) this.pageEditor(page).focused = this._focused && this.state.page === page;
   }
 
   get focused() { return this._focused; }
   set focused(value) {
     this._focused = Boolean(value);
-    this.editor.focused = this._focused && this.state.page === "file";
-    this.clientEditor.focused = this._focused && this.state.page === "client";
+    this.focusEditors();
     if (!value) this.editor.setText(this.getPath());
   }
 
-  invalidate() { this.editor.invalidate(); this.clientEditor.invalidate(); }
+  invalidate() { for (const page of ["file", "client", "lastfmUser", "lastfmKey"]) this.pageEditor(page).invalidate(); }
   getPath() { return this.editor.getExpandedText(); }
   setPath(value) { this.editor.setText(String(value ?? "")); }
 
@@ -124,13 +143,13 @@ export class HistoryImportView {
       this.pasteActive = false;
       this.pasteTail = "";
       this.editor.setText(this.getPath());
-      // A pasted Client ID must replace the old one, not join it. A failed save keeps the text to fix.
+      // A pasted Client ID or API key must replace the old one, not join it. A failed save keeps the text to fix.
       if (next.page === "client" && this.state.page !== "working") this.clientEditor.setText("");
+      if (next.page === "lastfmKey" && this.state.page !== "working") this.lastfmKeyEditor.setText("");
     }
     this.state = next;
     if (typeof state?.profileReady === "boolean") this.profileReady = state.profileReady;
-    this.editor.focused = this._focused && next.page === "file";
-    this.clientEditor.focused = this._focused && next.page === "client";
+    this.focusEditors();
   }
 
   emit(type, detail = {}) { this.onAction?.({ type, ...detail }); }
@@ -153,6 +172,9 @@ export class HistoryImportView {
         tr("Your plays from the past year, plus your library and playlists. For older plays and listening time, use Extended streaming history.")];
       case "youtube-music": return [clean(preview.sourceLabel),
         tr("Your library songs and YouTube Music plays, read in English or Chinese. Regular YouTube videos are left out. Google doesn't say how long you listened, and history you deleted or paused can't come back.")];
+      case "lastfm": return [tr("Last.fm scrobbles"), preview.truncated
+        ? tr("Your latest {count} scrobbles, the most Moondog reads at once, and your loved tracks.", { count: tr.number(preview.listeningEvents) })
+        : tr("Every scrobble Last.fm counted, and your loved tracks.")];
       case "public-playlist": return [clean(preview.sourceLabel), Number.isFinite(preview.totalTracks)
         ? tr("{read} of {total} songs could be read; the service hides some. Only this playlist is added. It shows what you keep, not what you played, and it may not be one you made.", { read: tr.number(preview.availableTracks), total: tr.number(preview.totalTracks) })
         : tr("{read} songs could be read; the service hides some. Only this playlist is added. It shows what you keep, not what you played, and it may not be one you made.", { read: tr.number(preview.availableTracks) })];
@@ -218,6 +240,34 @@ export class HistoryImportView {
           tr("Regular YouTube playlist CSVs and uploaded audio don't work yet. If the ZIP is over 256 MB, unzip it and bring in the music files one at a time."),
         ],
         actions: [{ type: "file", label: tr("Choose my Takeout file") }, { type: "openYouTube", label: tr("Open Google Takeout") }, back],
+      };
+      case "lastfm": {
+        const ready = Boolean(this.state.lastfm?.configured);
+        return {
+          title: tr("Import from Last.fm"),
+          paragraphs: [
+            tr("Type your Last.fm username. Moondog reads every scrobble Last.fm counted, going back years, and your loved tracks."),
+            tr("Your profile's recent listening has to be public. A long history takes a minute or two."),
+            tr("Listening data comes from Last.fm. Nothing is added until you say so."),
+            website(IMPORT_GUIDE_URLS.lastfm),
+            ...(ready ? [] : [tr("Reading Last.fm needs a free API key, made once on this computer.")]),
+          ],
+          actions: [
+            ready ? { type: "lastfmUser", label: tr("Enter my Last.fm username") } : { type: "lastfmSetup", label: tr("Set up Last.fm access") },
+            { type: "openLastfm", label: tr("Open Last.fm") }, back,
+          ],
+        };
+      }
+      case "lastfmSetup": return {
+        title: tr("Set up Last.fm access"),
+        paragraphs: [
+          tr("For now, Moondog reads Last.fm with an API key you make yourself. It takes a minute."),
+          `1. ${tr("Sign in to Last.fm and create an API account. Any name works, such as Moondog.")}`,
+          `2. ${tr("Copy the API key it shows. You don't need the shared secret.")}`,
+          `3. ${tr("Paste the key here. It stays on this computer.")}`,
+          website(IMPORT_GUIDE_URLS.lastfmApi),
+        ],
+        actions: [{ type: "openLastfmApi", label: tr("Open the Last.fm API page") }, { type: "lastfmKey", label: tr("Enter my API key") }, back],
       };
       case "qq_music":
       case "netease": {
@@ -383,17 +433,23 @@ export class HistoryImportView {
             library || collection ? tr("As of {date}", { date: day(preview.capturedAt) ?? tr("an unknown date") }) : first && last ? tr("{first} to {last}", { first, last }) : tr("No dates in this file."),
             library || collection ? tr("This shows what you keep, so no plays will be added.") : recent
               ? tr("Spotify doesn't say how long you listened to recent plays.")
+              : preview.source === "lastfm"
+                ? tr("Last.fm counts a play after half a song or four minutes. It doesn't say how long you listened.")
               : preview.eventsWithPlayedMs === preview.listeningEvents
                 ? tr("Listening time is known for every play.")
                 : tr("Listening time is known for {known} of {total} plays.", { known: tr.number(preview.eventsWithPlayedMs), total: tr.number(preview.listeningEvents) }),
-            ...(preview.profileEvidence > 0 ? [tr.n(preview.profileEvidence, "Also {count} saved song, follow, or playlist entry", "Also {count} saved songs, follows, or playlist entries")] : []),
+            ...(preview.source === "lastfm" && preview.lovedTracks > 0
+              ? [tr.n(preview.lovedTracks, "Also {count} loved track", "Also {count} loved tracks")]
+              : preview.profileEvidence > 0 ? [tr.n(preview.profileEvidence, "Also {count} saved song, follow, or playlist entry", "Also {count} saved songs, follows, or playlist entries")] : []),
             ...(preview.skippedRecords > 0 ? [tr.n(preview.skippedRecords, "Left out {count} podcast, video, or incomplete entry", "Left out {count} podcasts, videos, or incomplete entries")] : []),
             note,
             ...(preview.sampleTracks ?? []).map((track) => `  ${clean(track)}`),
           ].filter(Boolean),
           actions: [
             { type: "commit", label: tr("Add to my profile") },
-            recent ? { type: "recent", label: tr("Refresh recent listening") } : { type: "file", label: tr("Choose a different file") }, back,
+            recent ? { type: "recent", label: tr("Refresh recent listening") }
+              : preview.source === "lastfm" ? { type: "lastfmUser", label: tr("Use a different username") }
+              : { type: "file", label: tr("Choose a different file") }, back,
           ],
         };
       }
@@ -403,7 +459,7 @@ export class HistoryImportView {
           tr("Pick your music service. Start with what you've played lately, or go all the way back."),
           this.profileReady ? tr("Anything you bring in joins your profile. Your choices stay as they are.") : tr("You'll see what's inside before anything is added. It all stays on this machine."),
         ],
-        actions: [{ type: "spotify", label: "Spotify" }, { type: "apple", label: "Apple Music" }, { type: "youtube_music", label: "YouTube Music" }, { type: "qq_music", label: "QQ Music / QQ 音乐" }, { type: "netease", label: "NetEase / 网易云音乐" }, { type: "other", label: tr("Other sources") }, ...profile],
+        actions: [{ type: "spotify", label: "Spotify" }, { type: "apple", label: "Apple Music" }, { type: "youtube_music", label: "YouTube Music" }, { type: "lastfm", label: "Last.fm" }, { type: "qq_music", label: "QQ Music / QQ 音乐" }, { type: "netease", label: "NetEase / 网易云音乐" }, { type: "other", label: tr("Other sources") }, ...profile],
       };
     }
   }
@@ -412,8 +468,7 @@ export class HistoryImportView {
     if (this.state.page === "working") return;
     if (data.includes("\x1b[200~")) this.pasteActive = true;
     if (this.pasteActive) {
-      if (this.state.page === "file") this.editor.handleInput(data);
-      if (this.state.page === "client") this.clientEditor.handleInput(data);
+      this.pageEditor()?.handleInput(data);
       const paste = this.pasteTail + data;
       this.pasteActive = !paste.includes("\x1b[201~");
       this.pasteTail = this.pasteActive ? paste.slice(-5) : "";
@@ -430,8 +485,8 @@ export class HistoryImportView {
       } else this.editor.handleInput(data);
       return;
     }
-    if (this.state.page === "client") {
-      this.clientEditor.handleInput(data);
+    if (["client", "lastfmUser", "lastfmKey"].includes(this.state.page)) {
+      this.pageEditor().handleInput(data);
       return;
     }
     const { actions } = this.pageContent();
@@ -449,17 +504,20 @@ export class HistoryImportView {
   renderFile(width, height, theme) {
     const client = this.state.page === "client";
     const playlist = ["qq_music", "netease"].includes(this.state.provider);
-    const input = client ? this.clientEditor : this.editor;
+    const input = this.pageEditor() ?? this.editor;
     const error = clean(this.state.error?.message ?? this.state.error);
     const errorLines = error ? wrapTextWithAnsi(error, width).slice(0, Math.min(3, Math.max(1, height - 6))).map(theme.error) : [];
     const tr = this.getText();
     const fileKind = { apple: tr("Apple Music library XML"), spotify: tr("Original Spotify history ZIP"),
       youtube_music: tr("Takeout ZIP, music library CSV or watch-history JSON"), other: "ListenBrainz JSON" }[this.state.provider] ?? tr("Music export file or public playlist link");
-    const header = client
+    const lastfm = { lastfmUser: [theme.bold(tr("Your Last.fm username")), theme.muted(tr("Or your profile link: last.fm/user/<username>")), theme.text(tr("Username"))],
+      lastfmKey: [theme.bold(tr("Paste your Last.fm API key")), theme.muted(tr("32 letters and numbers. Not the shared secret.")), theme.text("API key")] }[this.state.page];
+    const header = lastfm ?? (client
       ? [theme.bold(tr("Enter your Spotify Client ID")), theme.muted(tr("From your app settings. No client secret.")), theme.text("Client ID")]
       : playlist ? [theme.bold(tr("Paste your playlist share link")), theme.muted(this.state.provider === "qq_music" ? tr("QQ Music public playlist") : tr("NetEase Cloud Music public playlist")), theme.text(tr("Link (or the copied share text)"))]
-      : [theme.bold(tr("Choose your music file")), theme.muted(fileKind), theme.text(tr("File path"))];
-    const hint = client ? theme.muted(tr("Enter save · Esc back")) : playlist ? theme.muted(tr("Paste link · Enter preview · Esc back")) : theme.muted(width >= 64 ? tr("Paste or drag one path · Tab completes · Enter inspect · Esc back")
+      : [theme.bold(tr("Choose your music file")), theme.muted(fileKind), theme.text(tr("File path"))]);
+    const hint = this.state.page === "lastfmUser" ? theme.muted(tr("Enter read · Esc back"))
+      : client || this.state.page === "lastfmKey" ? theme.muted(tr("Enter save · Esc back")) : playlist ? theme.muted(tr("Paste link · Enter preview · Esc back")) : theme.muted(width >= 64 ? tr("Paste or drag one path · Tab completes · Enter inspect · Esc back")
       : width >= 38 ? tr("Paste/drag · Tab path · ↵ inspect · Esc") : tr("Tab path · ↵ inspect · Esc"));
     const budget = Math.max(1, height - header.length - errorLines.length - 1);
     input.setAutocompleteMaxVisible(Math.max(1, Math.min(4, budget - 8)));
@@ -487,12 +545,12 @@ export class HistoryImportView {
     const theme = this.getTheme();
     const tr = this.getText();
     let lines;
-    if (["file", "client"].includes(this.state.page)) {
+    if (["file", "client", "lastfmUser", "lastfmKey"].includes(this.state.page)) {
       lines = this.renderFile(inner, height, theme);
     } else if (this.state.page === "working") {
       const message = clean(this.state.message) || tr("Working on it…");
       lines = [theme.bold(tr("Your listening history")), "", ...wrapTextWithAnsi(message, inner).map(theme.text)];
-      if (height >= 5) lines.push("", theme.muted(tr("One moment.")));
+      if (height >= 5) lines.push("", theme.muted(this.state.cancellable ? tr("Esc cancels") : tr("One moment.")));
     } else if (this.state.page === "signin") {
       // Spotify reports a wrong Client ID or redirect URI only in the browser, so say what to look for here.
       const url = clean(this.state.url);

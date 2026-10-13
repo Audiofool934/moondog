@@ -85,6 +85,7 @@ When the import finishes, your profile opens in the same TUI session.
 | Spotify | Recent plays after you connect, or the whole history from the ZIP Spotify emails you. |
 | Apple Music | The Library.xml you export from Music on a Mac. |
 | YouTube Music | A Google Takeout export. |
+| Last.fm | Your scrobbles and loved tracks, read by username. |
 | QQ Music and NetEase | Any public playlist, from its share link. |
 | ListenBrainz | A saved listens file. |
 

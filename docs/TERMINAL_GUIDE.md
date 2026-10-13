@@ -288,7 +288,7 @@ Keep the generated ZIP under the ignored `outputs/` directory rather than adding
 ## Import and inspect listening history
 
 Start with `/import`, or choose **Import your music** from the home screen.
-Choose **Spotify**, **Apple Music**, **YouTube Music**, **QQ Music** or **NetEase Cloud Music** first.
+Choose **Spotify**, **Apple Music**, **YouTube Music**, **Last.fm**, **QQ Music** or **NetEase Cloud Music** first.
 The guide explains the available quick-start and past-history routes for that service.
 All imports work without a model and open the cumulative Profile after confirmation.
 Other existing sources remain available under **Other sources**.
@@ -298,6 +298,7 @@ Other existing sources remain available under **Other sources**.
 | Spotify | Connect for your library, top artists and tracks, and up to 50 recent plays, with current developer-app setup requirements | Account Data or Extended Streaming History ZIP |
 | Apple Music | Export Library.xml from Music on Mac | Privacy-request guide only; archive parsing is not available |
 | YouTube Music | Takeout music-library-songs.csv or a ZIP containing it | Takeout watch-history.json or a ZIP containing it |
+| Last.fm | Your username, with a free API key you make once | Every scrobble and your loved tracks, read from Last.fm |
 | QQ Music | Paste a public playlist share link | Account history import is not available |
 | NetEase Cloud Music | Paste a public playlist share link | Account history import is not available |
 
@@ -310,6 +311,16 @@ History requires a music-specific header or music.youtube.com watch URL, a valid
 Ordinary YouTube viewing, unrecognized action titles and incomplete entries are skipped and counted in the preview.
 Channel names are not assumed to be recording artists, and missing played duration stays unknown.
 General YouTube playlist CSVs, HTML history and uploaded audio files are not imported.
+
+**Last.fm:** type your username, or paste your profile link (`last.fm/user/<username>`).
+Moondog reads every scrobble, newest first, up to the moment the read started, and then your loved tracks.
+A long history takes a minute or two; the count shows as it goes, and Esc stops it without importing anything.
+Your profile must show recent listening publicly; in Last.fm Settings > Privacy, turn off "Hide recent listening information".
+Reading needs a Last.fm API key: the guide links to Last.fm's API page, where you create an API account and copy its key, not the shared secret.
+The key is saved in `lastfm.json` next to your other Moondog settings, and `MOONDOG_LASTFM_API_KEY` overrides it.
+Loved tracks count as songs you keep, and scrobbles as plays; Last.fm does not say how long you listened.
+Importing again adds only the scrobbles that are new since the last import.
+Listening data comes from [Last.fm](https://www.last.fm/).
 Limits are 256 MB per ZIP, 64 MB per selected file, 100 selected members and 100,000 music records per import.
 For large exports, extract just the supported files and import them separately.
 Google's [music export schema](https://developers.google.com/data-portability/schema-reference/youtube) and [activity schema](https://developers.google.com/data-portability/schema-reference/my_activity) describe the source fields.

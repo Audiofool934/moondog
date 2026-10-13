@@ -327,7 +327,7 @@ function normalizedProfileInput(value, batch) {
       record.provenance.source_kind !== "import" ||
       !(record.provenance.source_system === "spotify_account_data" ||
         (record.provenance.source_system === "spotify_web_api" && profileImport.source_key === "spotify.web_api_library") ||
-        (["youtube_music", "qq_music", "netease"].includes(record.provenance.source_system) &&
+        (["youtube_music", "qq_music", "netease", "lastfm"].includes(record.provenance.source_system) &&
           profileImport.source_key === `${record.provenance.source_system}.music_import`)) ||
       !profileImport.member_names.includes(record.provenance.source_member) ||
       record.provenance.profile_import_id?.toLowerCase() !== profileImportId ||
