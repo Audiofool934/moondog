@@ -15,6 +15,7 @@ For the predecessor's relationship to this project, see the public [DJ Claw line
 - [Enable agent conversation](#enable-agent-conversation)
 - [Local music data control](#local-music-data-control)
 - [Grounded catalog discovery](#grounded-catalog-discovery)
+- [Song previews without Spotify](#song-previews-without-spotify)
 - [Spotify connected actions](#spotify-connected-actions)
 - [Conversation and memory](#local-memory)
 - [Verify a checkout](#verify-a-checkout)
@@ -976,6 +977,18 @@ npm run eval:review -- form \
 The public summary contains no track, seed, reviewer, model, prompt, artifact-path, or profile details.
 
 Read the full sampling, privacy, rubric, and interpretation contract in [Discovery Human Evaluation](DISCOVERY_HUMAN_EVALUATION.md).
+
+## Song previews without Spotify
+
+When Spotify is not connected, the agent plays 30-second Apple Music previews instead.
+Ask it to play a song, an album, or what it recommends, and the previews play one after another through your computer's own player: `afplay` on macOS, or `ffplay` or `mpv` on Linux.
+Each set of previews appears in the conversation, with every song next to a link to the full song on Apple Music.
+The line above your draft names the song that is playing now.
+`/skip` moves to the next preview and `/stop` ends them, even while Moondog is still answering.
+Moondog downloads each preview from Apple's audio host to a temporary file and removes the file after it plays.
+Leaving the room stops the sound and removes the rest.
+Without one of those players, the agent says that it cannot play music here.
+With Spotify connected, the agent plays the full songs on Spotify instead.
 
 ## Spotify connected actions
 

@@ -47,6 +47,7 @@ import { IMPORT_GUIDE_URLS } from "../src/surfaces/cli/import-guides.mjs";
 import { runMoondogTui } from "../src/surfaces/cli/tui.mjs";
 import { createLyricService } from "../src/core/lyric-service.mjs";
 import { createAppleMusicCatalog } from "../src/integrations/apple-music/catalog.mjs";
+import { createTerminalPreviewPlayer } from "../src/integrations/apple-music/terminal-preview-player.mjs";
 import {
   createOpenMusicSimilarity,
   createWikidataArtistResolver,
@@ -834,6 +835,9 @@ async function main() {
     identityResolver: artistIdentityResolver,
   });
   const webResearch = await createCodexWebResearch();
+  // The listening room plays previews through the system's player when there is one.
+  // One-shot commands get none: they would exit in the middle of the first song.
+  const previewPlayer = options.command ? null : await createTerminalPreviewPlayer();
   const application = new MoondogApplication({
     ...domainState,
     locale: await resolveListenerLocale(),
@@ -841,6 +845,7 @@ async function main() {
     memoryStore,
     spotifyConnection,
     musicCatalog,
+    musicPreviewPlayer: previewPlayer,
     musicSimilarity,
     artistIdentityResolver,
   });
@@ -930,6 +935,7 @@ async function main() {
     exitRequest = await runMoondogTui({
       application,
       runtime,
+      previewPlayer,
       lyrics,
       checkUpdates: options => updater.startupCheck(options),
       runUpdate: (args, options) => runUpdateCommand({ args, updater, deferInstall: true, ...options }),

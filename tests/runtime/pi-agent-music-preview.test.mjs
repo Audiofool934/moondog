@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import test from "node:test";
 
 import { createModels, fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall } from "@earendil-works/pi-ai";
@@ -6,6 +9,7 @@ import { createModels, fauxAssistantMessage, fauxProvider, fauxText, fauxToolCal
 import { listAgentCapabilityDescriptors } from "../../src/core/capability-catalog.mjs";
 import { MoondogApplication } from "../../src/core/moondog-application.mjs";
 import { createAppleMusicCatalog, createAppleMusicCatalogClient } from "../../src/integrations/apple-music/catalog.mjs";
+import { createTerminalPreviewPlayer } from "../../src/integrations/apple-music/terminal-preview-player.mjs";
 import { PiAgentRuntime } from "../../src/runtime/pi/agent-runtime.mjs";
 
 const now = () => Date.parse("2026-10-08T05:00:00.000Z");
@@ -93,6 +97,41 @@ test("previews are offered only when the host can play them", () => {
   assert.ok(!ids({ musicCatalogReady: true }).includes("music.preview.play"));
   assert.ok(ids({ musicCatalogReady: true, musicPreviewReady: true }).includes("music.preview.play"));
   assert.equal(new MoondogApplication({ musicCatalog: scorpionsCatalog() }).musicPreviewReady(), false);
+  assert.equal(application().musicPreviewReady(), true);
+  assert.equal(application({ spotify: true }).musicPreviewReady(), false, "with Spotify connected, the agent plays the full songs there");
+});
+
+test("in the terminal, the agent's pick plays from Apple's audio host through the system player", async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), "moondog-terminal-preview-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const log = path.join(root, "played.log");
+  // A silent stand-in for afplay that records what it was given.
+  await writeFile(path.join(root, "afplay"), `#!/bin/sh\nprintf '%s\\n' "$(cat "$1")" >> "${log}"\n`);
+  await chmod(path.join(root, "afplay"), 0o755);
+  const downloads = [];
+  const player = await createTerminalPreviewPlayer({
+    platform: "darwin",
+    environment: { PATH: root },
+    temporaryRoot: root,
+    fetchImpl: async (url) => { downloads.push(url); return new Response(`audio at ${new URL(url).pathname}`); },
+  });
+  const app = new MoondogApplication({ importsRoot: "/private/moondog-synthetic-missing-source", musicCatalog: scorpionsCatalog(), musicPreviewPlayer: player });
+  t.after(() => app.close());
+  const events = [];
+  player.subscribe((event) => events.push(event));
+  const { faux, runtime } = runtimeFor(app);
+  faux.setResponses([
+    fauxAssistantMessage([fauxToolCall("moondog_music_preview", { tracks: [{ title: "Wind of Change", artist: "Scorpions" }] })], { stopReason: "toolUse" }),
+    fauxAssistantMessage([fauxText("Here's a 30-second preview. The full song is on Apple Music.")]),
+  ]);
+  await runtime.prompt("Play Wind of Change by Scorpions");
+  for (const deadline = performance.now() + 5000; events.at(-1)?.type !== "stopped";) {
+    assert.ok(performance.now() < deadline, "the preview did not finish");
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  assert.deepEqual(events[0].tracks, [{ title: "Wind of Change", artist_credit: "Scorpions", catalog_url: "https://music.apple.com/us/album/crazy-world/2" }]);
+  assert.deepEqual(downloads, ["https://audio-ssl.itunes.apple.com/itunes-assets/original.m4a"]);
+  assert.equal(await readFile(log, "utf8"), "audio at /itunes-assets/original.m4a\n");
 });
 
 test("without Spotify, a request to play a song becomes a preview in the listener's player", async () => {
