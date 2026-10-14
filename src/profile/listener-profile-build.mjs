@@ -12,20 +12,63 @@ const DUPLICATED_PROVIDER_KINDS = new Set([
   "playlist_track_added", "library_track_saved", "library_album_saved", "library_artist_followed",
 ]);
 
-function sectionSemantics(section) {
+const RANKED_LISTENING_SECTIONS = new Set(["history_artists", "history_tracks", "recent_artists", "recent_tracks"]);
+const PLAY_COUNT_SECTIONS = new Set([...RANKED_LISTENING_SECTIONS, "history_releases"]);
+// Below this share of plays with a recorded duration, minutes can't compare artists, years or
+// sources (Last.fm and many ListenBrainz files record none), so the build compares by plays.
+const TIMED_PLAY_SHARE = 0.95;
+
+function measurement(listening) {
+  const plays = listening?.coverage?.effective_listening_events ?? 0;
+  const timed = listening?.coverage?.events_with_played_duration;
+  const time = !plays || timed === undefined || timed >= plays * TIMED_PLAY_SHARE ? "complete" : timed === 0 ? "none" : "partial";
+  // A history without a single skip almost always comes from sources that don't record skips.
+  const rows = Object.entries(listening?.sections ?? {})
+    .filter(([section]) => RANKED_LISTENING_SECTIONS.has(section)).flatMap(([, rows]) => rows);
+  const unskipped = rows.some(row => row.explicit_skips === 0) && !rows.some(row => row.explicit_skips > 0);
+  return { plays, timed, time, unskipped };
+}
+
+const without = (row, keys) => Object.fromEntries(Object.entries(row).filter(([key]) => !keys.includes(key)));
+
+// An unknown measure stays unknown: a missing duration, skip or play count never becomes a zero
+// the model could read as "never played" or "never skipped". Rows that lose a measure are marked,
+// because the host's prose explanations of those rows still state it.
+function measuredRows(section, rows, { time, unskipped }, withheld) {
+  const unrecordedKeys = row => section.startsWith("apple_")
+    ? (row.tracks_with_play_count === 0 && row.play_count === 0 ? ["play_count"] : [])
+    : [...(time !== "complete" ? ["listening_minutes"] : []),
+      ...(unskipped && PLAY_COUNT_SECTIONS.has(section) ? ["explicit_skips", "engaged_play_count"] : [])];
+  const next = rows.map(row => {
+    const keys = unrecordedKeys(row).filter(key => key in row);
+    const topArtist = time !== "complete" && row.top_artist && "listening_minutes" in row.top_artist;
+    if (!keys.length && !topArtist) return row;
+    const measured = { ...without(row, keys), ...(topArtist ? { top_artist: without(row.top_artist, ["listening_minutes"]) } : {}) };
+    withheld.add(measured);
+    return measured;
+  });
+  if (time === "complete" || !PLAY_COUNT_SECTIONS.has(section)) return next;
+  return next.sort((left, right) => (right.engaged_play_count ?? 0) - (left.engaged_play_count ?? 0) ||
+    (right.play_count ?? 0) - (left.play_count ?? 0));
+}
+
+function sectionSemantics(section, { time = "complete" } = {}) {
   const common = {
     ordering: "Catalog order, not chronology or preference strength unless explicitly stated.",
     limitations: "Row position and repeated rows are not independent evidence of importance. Use the row's dated fields for time claims.",
   };
-  if (["history_artists", "history_tracks", "recent_artists", "recent_tracks"].includes(section)) {
-    return { ordering: "Ranked by measured listening duration, descending.",
+  if (RANKED_LISTENING_SECTIONS.has(section)) {
+    return { ordering: time === "complete" ? "Ranked by measured listening duration, descending."
+      : "Ranked by plays, descending, because listening time is not known for every play.",
       limitations: "Attention in the imported history is not a direct statement of liking. Recent and lifetime views overlap; do not add their totals." };
   }
   if (section === "history_years") return { ...common,
-    ordering: "top_artist is selected by measured listening duration, not play count. Row position is not a preference ranking.",
+    ordering: time === "complete" ? "top_artist is selected by measured listening duration, not play count. Row position is not a preference ranking."
+      : "top_artist is selected by measured listening duration where the year records it, otherwise by plays. Row position is not a preference ranking.",
     limitations: "Years have unequal coverage. Sparse or missing imported records do not establish a gap in the listener's actual listening." };
   if (section === "saved_tracks") return {
-    ordering: "Measured listening duration descending, then playlist membership count descending, then title.",
+    ordering: time === "complete" ? "Measured listening duration descending, then playlist membership count descending, then title."
+      : "Not a preference ranking; listening time is not known for every play.",
     limitations: "Row order is not save or addition chronology. Missing listening minutes mean no matched duration in this import, not proof the listener never played a saved track.",
   };
   if (section === "playlist_tracks") return { ...common,
@@ -58,30 +101,41 @@ function text(value, maximum, field) {
 }
 
 export function createListenerProfileInput({ subjectId, evidenceRevision, listening, apple }) {
-  const sections = { ...listening?.sections, ...apple?.sections };
+  const measured = measurement(listening);
+  const withheld = new Set();
+  const sections = Object.fromEntries(Object.entries({ ...listening?.sections, ...apple?.sections })
+    .map(([section, rows]) => [section, measuredRows(section, rows, measured, withheld)]));
   const context = listening?.context ?? {};
+  const coverage = { ...listening?.coverage, ...apple?.coverage };
+  if (measured.time === "none") delete coverage.listening_hours;
   const evidence = new Map();
+  const unrecorded = new Set();
   for (const [section, rows] of Object.entries(sections).sort(([a], [b]) => a.localeCompare(b))) {
     for (const row of rows) {
       const reference_id = `ev_${profileDigest([section, row]).slice(0, 32)}`;
       evidence.set(reference_id, { reference_id, section, data: structuredClone(row) });
+      if (withheld.has(row)) unrecorded.add(reference_id);
     }
   }
   const manifest = {
     analysis_version: LISTENER_PROFILE_ANALYSIS_VERSION,
-    coverage: { ...listening?.coverage, ...apple?.coverage },
+    coverage,
     sources: listening?.sources ?? [], context,
-    sections: Object.entries(sections).map(([section, rows]) => ({ section, rows: rows.length, ...sectionSemantics(section) })),
+    sections: Object.entries(sections).map(([section, rows]) => ({ section, rows: rows.length, ...sectionSemantics(section, measured) })),
     evidence_rows: evidence.size,
     limitations: [
       "Every supported record contributes to local analysis before the dossier selects rows. Rows are aggregates or observations, not a count of distinct plays.",
       "History measures attention. Apple snapshot counts are separate from dated plays; private-session plays and superseded overlaps do not become behavioral evidence.",
       "Provider labels are not listener assertions or measured audio features.",
+      ...(measured.time === "none" ? ["No play in this history records how long it lasted, so listening time is unknown, not zero; rows rank by plays."] : []),
+      ...(measured.time === "partial" ? [`Listening time is known for only ${measured.timed} of ${measured.plays} plays, so minutes and hours cannot compare artists, years or sources; rows rank by plays, and coverage.listening_hours covers only the timed plays.`] : []),
+      ...(measured.unskipped ? ["No play in this history is marked as skipped. These sources may not record skips, so skips and engaged plays are unknown, and having no skips says nothing about approval."] : []),
     ],
   };
   // Rows are content-addressed, so the ordered references cover every evidence value.
   const input_digest = profileDigest({ subjectId, evidenceRevision, manifest, evidence: [...evidence.keys()] });
-  return { subjectId, input_digest, manifest, evidence };
+  // Unrecorded measures change the evidence rows, so the digest already covers this set.
+  return { subjectId, input_digest, manifest, evidence, unrecorded };
 }
 
 export function modelEvidence(entry, offset = 0, limit = 12) {

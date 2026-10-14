@@ -101,7 +101,8 @@ The current priority is to complete and validate the personal listening loop in 
   Preserve supported musical detail and distinguish current attention from enduring taste; prioritize errors that materially distort that understanding over exhaustive factual or citation perfection.
   Profile engine v2 (2026-10-06) writes from a locally computed dossier in one session, makes one whole-profile check, and revises at most once, with resumable checkpoints.
   On one large private archive a complete build now takes minutes instead of hours, and the reading names musical threads rather than listing counts.
-  The first-build quality target still needs fresh builds across varied inputs.
+  Fresh builds on 2026-10-14 for four fictional listeners with different sources found one material, general failure: measures a source never recorded reached the model as zeros.
+  With those measures kept unknown, fresh builds on a fast model and a stronger model avoided every planted trap for all four listeners.
   A dedicated user-facing profile inspection workflow remains an undecided later feature, not a dependency of this outcome.
 - [x] Build a persistent listener-profile revision from complete imported evidence, using deterministic digests, model-led investigation, and traceable claims.
   `/profile build` saves typed findings and frozen cited evidence, resumes interrupted work, and reuses an unchanged input.

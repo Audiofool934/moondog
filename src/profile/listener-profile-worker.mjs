@@ -76,7 +76,9 @@ export async function runListenerProfileBuild({
       if (entry.data.evidence_id) {
         try {
           const detail = await application.explainProfileEvidence({ evidenceId: entry.data.evidence_id });
-          result.explanation = { basis: detail.basis_summary, limitation: detail.interpretation_limit ?? detail.limitation };
+          // The prose basis restates the row's measures, including any this input leaves out as unrecorded.
+          result.explanation = { ...(input.unrecorded?.has(referenceId) ? {} : { basis: detail.basis_summary }),
+            limitation: detail.interpretation_limit ?? detail.limitation };
         } catch { /* The frozen row remains the source for aggregate-only evidence. */ }
       }
       inspected.add(referenceId);
