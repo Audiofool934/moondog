@@ -913,7 +913,7 @@ export default {
   "Every scrobble Last.fm counted, and your loved tracks.": "Last.fm 记下的每一条聆听记录，以及你喜爱的曲目。",
   "Import from Last.fm": "从 Last.fm 导入",
   "Type your Last.fm username. Moondog reads every scrobble Last.fm counted, going back years, and your loved tracks.": "输入你的 Last.fm 用户名。Moondog 会读取 Last.fm 记下的每一条聆听记录，可以追溯好几年，也会读取你喜爱的曲目。",
-  "Your profile's recent listening has to be public. A long history takes a minute or two.": "你主页上的最近聆听需要设为公开。历史很长的话，需要一两分钟。",
+  "Your profile's recent listening has to be public. A long history can take several minutes.": "你主页上的最近聆听需要设为公开。历史很长的话，可能需要几分钟。",
   "Listening data comes from Last.fm. Nothing is added until you say so.": "聆听数据来自 Last.fm。在你确认之前，不会添加任何内容。",
   "Reading Last.fm needs a free API key, made once on this computer.": "读取 Last.fm 需要一个免费的 API 密钥，在这台电脑上设置一次即可。",
   "Enter my Last.fm username": "输入我的 Last.fm 用户名",

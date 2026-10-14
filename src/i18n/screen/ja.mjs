@@ -913,7 +913,7 @@ export default {
   "Every scrobble Last.fm counted, and your loved tracks.": "Last.fm が数えたすべてのスクロブルと、お気に入りのトラック。",
   "Import from Last.fm": "Last.fm から取り込む",
   "Type your Last.fm username. Moondog reads every scrobble Last.fm counted, going back years, and your loved tracks.": "Last.fm のユーザー名を入力してください。Moondog は Last.fm が数えたスクロブルを何年分もさかのぼって読み、お気に入りのトラックも読みます。",
-  "Your profile's recent listening has to be public. A long history takes a minute or two.": "プロフィールの最近の再生は公開にしておく必要があります。履歴が長いと 1〜2 分かかります。",
+  "Your profile's recent listening has to be public. A long history can take several minutes.": "プロフィールの最近の再生は公開にしておく必要があります。履歴が長いと数分かかることがあります。",
   "Listening data comes from Last.fm. Nothing is added until you say so.": "再生データは Last.fm から取得します。あなたが決めるまで何も追加しません。",
   "Reading Last.fm needs a free API key, made once on this computer.": "Last.fm を読むには無料の API キーが必要です。このコンピュータで一度だけ作成します。",
   "Enter my Last.fm username": "Last.fm のユーザー名を入力",

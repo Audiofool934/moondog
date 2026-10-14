@@ -10,8 +10,9 @@ const apiKeyPattern = /^[a-f0-9]{32}$/u;
 export const LASTFM_API_ROOT = "https://ws.audioscrobbler.com/2.0/";
 export const LASTFM_API_ACCOUNT_URL = "https://www.last.fm/api/account/create";
 
-// Moondog's own key, once the project registers one; until then each listener adds theirs.
-export const LASTFM_PROJECT_API_KEY = "";
+// Moondog's own key, registered to the project. Reading public listening needs only this
+// key, so it ships with the source; a listener's own key in settings or the environment wins.
+export const LASTFM_PROJECT_API_KEY = "396133c344735725f65b322ece17a2da";
 
 function settingsError(message, cause) {
   const error = new Error(message, cause ? { cause } : undefined);

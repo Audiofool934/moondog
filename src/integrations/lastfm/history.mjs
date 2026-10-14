@@ -11,7 +11,8 @@ export const LASTFM_LIMITS = Object.freeze({
   maximumLovedTracks: 20_000,
   pageSize: 200,
   // Last.fm can suspend a key that keeps making several calls a second, so request starts
-  // are paced across all readers; a few readers at once only hide each answer's wait.
+  // are paced across all readers. A full page can take Last.fm 2 to 17 seconds to answer;
+  // three readers hide part of that wait, and more were not faster in practice.
   requestIntervalMs: 250,
   concurrency: 3,
   attempts: 5,
@@ -48,6 +49,8 @@ const fold = (value) => value.normalize("NFKC").toLocaleLowerCase("und");
 // Last.fm identifies a track by its artist and title; the album changes from scrobble to scrobble.
 const trackKey = (artist, title) => musicHash(JSON.stringify(["lastfm-track-v1", fold(artist), fold(title)]));
 const retryable = new Set([8, 11, 16, 29]);
+// The list each paged method must answer with.
+const listFor = { "user.getrecenttracks": "recenttracks", "user.getlovedtracks": "lovedtracks" };
 
 /** Spaces request starts at least `interval` apart, whichever reader asks. */
 function requestPacer(interval, sleep, now, signal) {
@@ -81,8 +84,12 @@ async function lastfmCall({ root, apiKey, method, params, fetchImpl, signal, sle
       fail("Could not reach Last.fm. Check your connection and try again.", "lastfm_unreachable");
     }
     const code = Number(body?.error) || 0;
-    if (response.ok && body && !code) return body;
-    if (retryable.has(code) || response.status === 429 || response.status >= 500) {
+    const list = listFor[method];
+    if (response.ok && body && !code && (!list || (body[list] && typeof body[list] === "object"))) return body;
+    // Last.fm sometimes answers 200 with a page that isn't its JSON; that is retried like a busy answer,
+    // so a broken first page can't pass for an empty history.
+    const unreadable = response.ok && !code;
+    if (unreadable || retryable.has(code) || response.status === 429 || response.status >= 500) {
       if (attempt < attempts) { await sleep((code === 29 || response.status === 429 ? 2_000 : 500) * 2 ** attempt, undefined, { signal }); continue; }
       if (code === 29 || response.status === 429) fail("Last.fm asked Moondog to slow down. Wait a minute, then try again.", "lastfm_rate_limited");
       fail("Last.fm is having trouble right now. Try again in a little while.", "lastfm_unavailable");

@@ -913,7 +913,7 @@ export default {
   "Every scrobble Last.fm counted, and your loved tracks.": "Cada scrobble que contó Last.fm, y tus canciones favoritas.",
   "Import from Last.fm": "Importar desde Last.fm",
   "Type your Last.fm username. Moondog reads every scrobble Last.fm counted, going back years, and your loved tracks.": "Escribe tu nombre de usuario de Last.fm. Moondog lee cada scrobble que contó Last.fm, de años atrás, y tus canciones favoritas.",
-  "Your profile's recent listening has to be public. A long history takes a minute or two.": "La escucha reciente de tu perfil tiene que ser pública. Un historial largo tarda uno o dos minutos.",
+  "Your profile's recent listening has to be public. A long history can take several minutes.": "La escucha reciente de tu perfil tiene que ser pública. Un historial largo puede tardar varios minutos.",
   "Listening data comes from Last.fm. Nothing is added until you say so.": "Los datos de escucha vienen de Last.fm. No se añade nada hasta que lo digas.",
   "Reading Last.fm needs a free API key, made once on this computer.": "Para leer Last.fm hace falta una clave de API gratuita, que se crea una sola vez en este ordenador.",
   "Enter my Last.fm username": "Escribir mi usuario de Last.fm",

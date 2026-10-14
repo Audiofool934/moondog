@@ -247,7 +247,7 @@ export class HistoryImportView {
           title: tr("Import from Last.fm"),
           paragraphs: [
             tr("Type your Last.fm username. Moondog reads every scrobble Last.fm counted, going back years, and your loved tracks."),
-            tr("Your profile's recent listening has to be public. A long history takes a minute or two."),
+            tr("Your profile's recent listening has to be public. A long history can take several minutes."),
             tr("Listening data comes from Last.fm. Nothing is added until you say so."),
             website(IMPORT_GUIDE_URLS.lastfm),
             ...(ready ? [] : [tr("Reading Last.fm needs a free API key, made once on this computer.")]),
