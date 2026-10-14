@@ -6,7 +6,7 @@ import test from "node:test";
 import { setTimeout } from "node:timers/promises";
 
 import { LASTFM_LIMITS, LastfmError, lastfmUsername, readLastfmHistory } from "../../src/integrations/lastfm/history.mjs";
-import { readLastfmConfiguration, writeLastfmConfiguration } from "../../src/integrations/lastfm/settings.mjs";
+import { LASTFM_PROJECT_API_KEY, readLastfmConfiguration, writeLastfmConfiguration } from "../../src/integrations/lastfm/settings.mjs";
 import { projectListenBrainzHistory } from "../../src/integrations/listenbrainz/history-file.mjs";
 import { projectSpotifyExtendedStreamingHistory } from "../../src/integrations/spotify/extended-streaming-history.mjs";
 import { musicHash } from "../../src/profile/music-import-bundle.mjs";
@@ -121,7 +121,10 @@ test("Last.fm errors become plain advice, and busy answers are retried", async (
   await assert.rejects(read(fakeLastfm({ history }), { username: "someone-else" }), { code: "lastfm_user_not_found" });
   await assert.rejects(read(fakeLastfm({ history, errors: [17] })), (error) => error.code === "lastfm_user_private" && /Hide recent listening/u.test(error.message));
   await assert.rejects(read(fakeLastfm({ history }), { configuration: { ...configuration, apiKey: "f".repeat(32) } }), { code: "lastfm_key_invalid" });
-  await assert.rejects(read(fakeLastfm({ history }), { configuration: null, environment: { MOONDOG_CONFIG_HOME: "/nonexistent-moondog-config" } }), { code: "lastfm_key_missing" });
+  // With nothing set up, the read uses Moondog's own key; this stand-in only knows the test key.
+  const unconfigured = fakeLastfm({ history });
+  await assert.rejects(read(unconfigured, { configuration: null, environment: { MOONDOG_CONFIG_HOME: "/nonexistent-moondog-config" } }), { code: "lastfm_key_invalid" });
+  assert.equal(unconfigured.requests[0].api_key, LASTFM_PROJECT_API_KEY);
   const busy = fakeLastfm({ history, errors: [29, 16] });
   assert.equal((await read(busy)).bundle.listening_events.length, 3);
   await assert.rejects(read(fakeLastfm({ history, errors: [29, 29, 29, 29, 29] })), { code: "lastfm_rate_limited" });
@@ -152,7 +155,7 @@ test("the API key is saved on this machine and an environment key wins", async (
   const root = await mkdtemp(path.join(tmpdir(), "moondog-lastfm-key-"));
   context.after(() => rm(root, { recursive: true, force: true }));
   const environment = { MOONDOG_CONFIG_HOME: root };
-  assert.equal(await readLastfmConfiguration(environment), undefined);
+  assert.deepEqual(await readLastfmConfiguration(environment), { apiKey: LASTFM_PROJECT_API_KEY, source: "moondog", root: "https://ws.audioscrobbler.com/2.0/" });
   await assert.rejects(writeLastfmConfiguration("not-a-key", environment), { code: "lastfm_settings_invalid" });
   await writeLastfmConfiguration(apiKey.toUpperCase(), environment);
   assert.deepEqual(await readLastfmConfiguration(environment), { apiKey, source: "settings", root: "https://ws.audioscrobbler.com/2.0/" });
@@ -271,12 +274,24 @@ test("requests are paced across readers, however fast Last.fm answers", async ()
 });
 
 test("a page that fails for good stops the other readers instead of reading on", async () => {
-  const fake = fakeLastfm({ history: scrobbles(2_000) });
+  const fake = fakeLastfm({ history: scrobbles(4_000) });
   const fetchImpl = (url, options) => new URL(url).searchParams.get("page") === "3"
     ? Promise.resolve(new Response(JSON.stringify({ error: 7, message: "Invalid resource" }), { status: 400 }))
     : fake.fetchImpl(url, options);
   await assert.rejects(read(fake, { fetchImpl }), { code: "lastfm_failed" });
   const pages = fake.requests.filter((request) => request.method === "user.getrecenttracks").length;
-  assert.ok(pages < 6, `read ${pages} of 10 pages after page 3 failed`);
+  // Page 1, then at most one page per reader already under way when page 3 failed.
+  assert.ok(pages <= 1 + LASTFM_LIMITS.concurrency, `read ${pages} of 20 pages after page 3 failed`);
   assert.ok(!fake.requests.some((request) => request.method === "user.getlovedtracks"));
+});
+
+test("a 200 answer that isn't Last.fm's list is read again, never taken for an empty history", async () => {
+  const fake = fakeLastfm({ history: scrobbles(3) });
+  let broken = 1;
+  const flaky = (url, options) => broken-- > 0
+    ? Promise.resolve(new Response("<html>busy</html>", { status: 200, headers: { "content-type": "text/html" } }))
+    : fake.fetchImpl(url, options);
+  assert.equal((await read(fake, { fetchImpl: flaky })).bundle.listening_events.length, 3);
+  const listless = () => Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+  await assert.rejects(read(fake, { fetchImpl: listless }), { code: "lastfm_unavailable" });
 });
