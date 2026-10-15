@@ -95,6 +95,47 @@ test("the model receives collection ordering before it can infer chronology from
   assert.match(description.limitations ?? "", /not.*(save|add|chronolog)/iu);
 });
 
+test("a measure the sources never recorded reaches the model as unknown, not zero", () => {
+  const history = timed => createListenerProfileInput({ subjectId, evidenceRevision: "fictional", listening: {
+    coverage: { effective_listening_events: 1000, events_with_played_duration: timed, listening_hours: 10 },
+    sections: { history_artists: [
+      { name: "Long tracks", play_count: 100, engaged_play_count: 100, explicit_skips: 0, listening_minutes: 600 },
+      { name: "Most played", play_count: 900, engaged_play_count: 900, explicit_skips: 0, listening_minutes: 0 }],
+    history_years: [{ year: 2020, event_count: 1000, listening_minutes: 600,
+      top_artist: { name: "Long tracks", play_count: 100, listening_minutes: 600 } }] } } });
+  const rows = value => [...value.evidence.values()].filter(entry => entry.section === "history_artists").map(entry => entry.data);
+
+  // Last.fm records no durations or skips: rank by plays and leave out the false zeros.
+  const scrobbles = history(0);
+  assert.deepEqual(rows(scrobbles).map(row => row.name), ["Most played", "Long tracks"]);
+  assert.doesNotMatch(JSON.stringify([...scrobbles.evidence.values()]), /listening_minutes|explicit_skips|engaged_play_count/u);
+  assert.equal(scrobbles.manifest.coverage.listening_hours, undefined);
+  assert.match(scrobbles.manifest.limitations.join(" "), /listening time is unknown, not zero/u);
+  assert.match(scrobbles.manifest.limitations.join(" "), /says nothing about approval/u);
+  assert.match(listenerProfileDossier(scrobbles).sections.history_artists.ordering, /by plays/u);
+  // The host's prose explanations still state those zeros, so the build marks every row that lost one.
+  assert.equal(scrobbles.unrecorded.size, scrobbles.evidence.size);
+
+  // Durations from only some sources can't compare artists, so minutes leave and the note gives the share.
+  const mixed = history(400);
+  assert.deepEqual(rows(mixed).map(row => row.name), ["Most played", "Long tracks"]);
+  assert.equal(mixed.manifest.coverage.listening_hours, 10);
+  assert.match(mixed.manifest.limitations.join(" "), /known for only 400 of 1000 plays/u);
+
+  // A fully timed history keeps its minutes and its ranking by listening time.
+  const timed = history(1000);
+  assert.deepEqual(rows(timed).map(row => [row.name, row.listening_minutes]), [["Long tracks", 600], ["Most played", 0]]);
+  assert.doesNotMatch(timed.manifest.limitations.join(" "), /listening time/iu);
+
+  // An Apple artist none of whose tracks carry a play count has unknown plays, not zero plays.
+  const library = createListenerProfileInput({ subjectId, evidenceRevision: "fictional", apple: { sections: { apple_artists: [
+    { name: "Counted", library_tracks: 3, play_count: 0, tracks_with_play_count: 3 },
+    { name: "Uncounted", library_tracks: 9, play_count: 0, tracks_with_play_count: 0 }] } } });
+  assert.deepEqual([...library.evidence.values()].map(entry => [entry.data.name, entry.data.play_count]),
+    [["Counted", 0], ["Uncounted", undefined]]);
+  assert.deepEqual([...library.unrecorded].map(ref => library.evidence.get(ref).data.name), ["Uncounted"]);
+});
+
 test("evidence search reaches rows beyond the dossier and values beyond the first continuation", () => {
   const value = createListenerProfileInput({ subjectId, evidenceRevision: "long-field", listening: { sections: {
     playlist_tracks: Array.from({ length: 40 }, (_, index) => ({ label: `Song ${index}`,

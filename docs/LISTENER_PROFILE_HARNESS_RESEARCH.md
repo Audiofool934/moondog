@@ -228,6 +228,22 @@ This is a small private sample of one listener, not proof of stable quality acro
 Private profiles and individual feedback remain local; shared tests use fictional evidence.
 See the [terminal guide](TERMINAL_GUIDE.md#saved-listener-profiles) and [builder tests](../tests/runtime/listener-profile-build.test.mjs).
 
+### Varied fictional listeners (2026-10-14)
+
+Fresh first builds for four fictional listeners tested the acceptance cases across source types.
+The sources were a Spotify Extended history, Last.fm scrobbles with loved tracks, an Apple library alone, and ListenBrainz listens followed by Spotify Account Data.
+Each listener paired real music with synthetic listening patterns, and the rubric was written before any build was read.
+The one material, general failure was that measures a source never records reached the model as zeros.
+An Apple artist with no counted track showed zero plays, and Last.fm and ListenBrainz rows showed zero minutes and zero skips.
+Under partial time coverage, rows also ranked by minutes, so a few timed recent plays outranked hundreds of untimed older plays.
+The readings then called an uncounted collection unplayed, ranked a 451-play artist as minor, and called every play engaged.
+The build input now leaves an unrecorded measure out of the rows, ranks by plays when fewer than 95% of plays have a duration, and states both in the manifest.
+The evidence tool leaves out the host's prose explanation for those rows, because that text restates the zeros.
+The writer and the check treat an unrecorded count, time or skip as unknown, not as low or unfamiliar.
+A fully timed Spotify history that records skips keeps an identical input, so its saved reading stays current.
+After the change, fresh builds with a fast model and a stronger model avoided every planted trap for all four listeners.
+A fading older interest is still easy to miss, because the dossier has no per-artist trend across years.
+
 ## First-build quality target (2026-10-05)
 
 The next priority is a useful and reliable profile from the listener's initial import and one requested build.
@@ -249,7 +265,7 @@ Compilation checks finding types and the existence of every evidence reference, 
 Profile engine v2 implements the whole-profile check described above, bound to the exact candidate, with one revision.
 Agreement between model stages is not proof that the final interpretation is correct.
 Add specialized checks only for observed failures with a material effect on that understanding; do not grow listener-specific rules or repeated review machinery to chase perfect agreement.
-The first-build quality target has early evidence on one private archive and still needs fresh builds across varied inputs.
+The first-build quality target has evidence from one private archive and from four fictional listeners with varied sources; see [Varied fictional listeners](#varied-fictional-listeners-2026-10-14).
 
 ### Acceptance cases
 
