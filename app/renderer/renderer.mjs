@@ -42,9 +42,18 @@ const port = await new Promise((resolve) => {
   });
 });
 
+let previewId = null;
+player.subscribe((event) => port.postMessage({ type: "preview-event", id: previewId, event }));
 port.onmessage = ({ data }) => {
   if (data?.type === "output") xterm.write(data.data);
-  if (data?.type === "preview") player.play(data.tracks, data.album);
+  if (data?.type === "preview") {
+    previewId = data.id;
+    player.play(data.tracks, data.album);
+  }
+  if (data?.type === "preview-control" && data.id === previewId) {
+    if (data.action === "skip") player.skip();
+    if (data.action === "stop") player.stop();
+  }
 };
 xterm.onData((data) => port.postMessage({ type: "input", data }));
 const sendSize = () => port.postMessage({ type: "resize", cols: xterm.cols, rows: xterm.rows });

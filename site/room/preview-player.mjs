@@ -18,10 +18,10 @@ const linkHost = (host) => host === "music.apple.com";
 const artworkHost = (host) => host.endsWith(".mzstatic.com");
 // Now Playing shows a larger cover than the player does; Apple's image host makes any size.
 const largeArtwork = (url) => url.replace(/\/\d+x\d+bb\.(jpg|png|webp)$/u, "/600x600bb.$1");
-const session = typeof navigator === "object" && "mediaSession" in navigator ? navigator.mediaSession : null;
 const clock = (seconds) => (Number.isFinite(seconds) ? `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, "0")}` : "0:00");
 
 export function createPreviewPlayer(root) {
+  const session = typeof navigator === "object" && "mediaSession" in navigator ? navigator.mediaSession : null;
   const find = (selector) => root.querySelector(selector);
   const audio = find("audio");
   const art = find("[data-player-art]");
@@ -33,13 +33,29 @@ export function createPreviewPlayer(root) {
   let queue = [];
   let album = null;
   let index = 0;
+  let generation = 0;
+  let attempt = 0;
+  let state = "stopped";
+  const listeners = new Set();
+  const publicTrack = ({ title, artist_credit, link }) => ({ title, artist_credit, catalog_url: link });
+  const emit = (event) => {
+    for (const listener of listeners) {
+      try { listener(event); } catch {}
+    }
+  };
+  const report = (type) => {
+    if (!queue.length || state === type) return;
+    state = type;
+    if (session) session.playbackState = type === "playing" ? "playing" : "paused";
+    emit({ type, track: publicTrack(queue[index]), position: index + 1, count: queue.length });
+  };
 
   const renderState = () => {
-    const playing = !audio.paused && !audio.ended;
+    const playing = queue.length && !audio.paused && !audio.ended;
     toggle.innerHTML = playing ? icons.pause : icons.play;
     toggle.setAttribute("aria-label", playing ? "Pause" : "Play");
-    previous.disabled = index === 0 && audio.currentTime < 3;
-    next.disabled = index >= queue.length - 1;
+    previous.disabled = !queue.length || (index === 0 && audio.currentTime < 3);
+    next.disabled = !queue.length;
   };
 
   const renderTime = () => {
@@ -51,7 +67,80 @@ export function createPreviewPlayer(root) {
     find("[data-player-time]").textContent = `${clock(current)} / ${clock(duration)}`;
   };
 
+  const stop = () => {
+    if (!queue.length) return false;
+    generation += 1;
+    attempt += 1;
+    queue = [];
+    album = null;
+    index = 0;
+    state = "stopped";
+    audio.pause();
+    audio.removeAttribute("src");
+    audio.load();
+    if (session) {
+      session.metadata = null;
+      session.playbackState = "none";
+      try { session.setPositionState?.(); } catch {}
+    }
+    setMediaActions(false);
+    root.hidden = true;
+    renderState();
+    renderTime();
+    emit({ type: "stopped" });
+    return true;
+  };
+
+  const skip = () => {
+    if (!queue.length) return false;
+    if (index < queue.length - 1) load(index + 1);
+    else stop();
+    return true;
+  };
+
+  const failed = () => {
+    report("failed");
+    skip();
+  };
+
+  const resume = () => {
+    if (!queue.length) return false;
+    const ownGeneration = generation;
+    const ownAttempt = ++attempt;
+    const current = () => queue.length && generation === ownGeneration && attempt === ownAttempt;
+    report("loading");
+    const rejected = (error) => {
+      if (!current()) return;
+      // An autoplay policy leaves the current preview ready for an explicit Play.
+      if (error?.name === "NotAllowedError") report("paused");
+      else failed();
+      renderState();
+    };
+    try {
+      Promise.resolve(audio.play()).then(() => {
+        if (!current()) return;
+        if (!audio.paused && !audio.ended) report("playing");
+        renderState();
+      }, rejected);
+    } catch (error) { rejected(error); }
+    return true;
+  };
+
+  const pause = () => {
+    if (!queue.length) return false;
+    attempt += 1;
+    audio.pause();
+    report("paused");
+    renderState();
+    return true;
+  };
+
   const load = (position) => {
+    generation += 1;
+    attempt += 1;
+    // Ignore the old element's pause while replacing its source.
+    state = "loading";
+    audio.pause();
     index = Math.max(0, Math.min(position, queue.length - 1));
     const track = queue[index];
     find("[data-player-title]").textContent = track.title;
@@ -72,40 +161,57 @@ export function createPreviewPlayer(root) {
       });
     }
     audio.src = track.preview;
+    state = null;
+    report("loading");
     renderTime();
-    // Browsers may hold sound until the visitor presses Play; the button is ready either way.
-    audio.play().catch(() => {}).finally(renderState);
+    renderState();
+    resume();
   };
 
   audio.addEventListener("play", renderState);
-  audio.addEventListener("pause", renderState);
-  audio.addEventListener("timeupdate", renderTime);
+  audio.addEventListener("playing", () => {
+    if (queue.length && !audio.paused && !audio.ended) report("playing");
+    renderState();
+  });
+  audio.addEventListener("pause", () => {
+    if (queue.length && state !== "loading" && audio.paused && !audio.ended) {
+      attempt += 1;
+      report("paused");
+    }
+    renderState();
+  });
+  audio.addEventListener("timeupdate", () => { renderTime(); renderState(); });
   audio.addEventListener("loadedmetadata", renderTime);
-  audio.addEventListener("ended", () => (index < queue.length - 1 ? load(index + 1) : renderState()));
-  toggle.addEventListener("click", () => (audio.paused ? audio.play().catch(() => {}) : audio.pause()));
+  audio.addEventListener("ended", () => { if (audio.ended) skip(); });
+  audio.addEventListener("error", () => { if (queue.length && audio.error) failed(); });
+  toggle.addEventListener("click", () => (audio.paused ? resume() : pause()));
   const goPrevious = () => {
+    if (!queue.length) return false;
     if (audio.currentTime > 3 || index === 0) { audio.currentTime = 0; renderTime(); renderState(); }
     else load(index - 1);
+    return true;
   };
-  const goNext = () => { if (index < queue.length - 1) load(index + 1); };
   previous.addEventListener("click", goPrevious);
-  next.addEventListener("click", goNext);
+  next.addEventListener("click", skip);
   const seekTo = (seconds) => {
-    if (!Number.isFinite(audio.duration)) return;
+    if (!queue.length || !Number.isFinite(audio.duration)) return;
     audio.currentTime = Math.max(0, Math.min(audio.duration, seconds));
     renderTime();
   };
   // Media keys and the system's Now Playing reach the player where the browser offers them.
   const actions = {
-    play: () => audio.play().catch(() => {}),
-    pause: () => audio.pause(),
+    play: resume,
+    pause,
+    stop,
     previoustrack: goPrevious,
-    nexttrack: goNext,
+    nexttrack: skip,
     seekto: ({ seekTime }) => seekTo(seekTime),
   };
-  for (const [action, handler] of Object.entries(session ? actions : {})) {
-    try { session.setActionHandler(action, handler); } catch {}
-  }
+  const setMediaActions = (active) => {
+    for (const [action, handler] of Object.entries(session ? actions : {})) {
+      try { session.setActionHandler(action, active ? handler : null); } catch {}
+    }
+  };
   seek.addEventListener("click", (event) => {
     const box = seek.getBoundingClientRect();
     seekTo(((event.clientX - box.left) / box.width) * audio.duration);
@@ -118,17 +224,34 @@ export function createPreviewPlayer(root) {
   return {
     // A new set of previews replaces the queue and starts from its first song.
     play(tracks, albumInfo) {
-      queue = (Array.isArray(tracks) ? tracks : []).map((track) => ({
-        title: String(track?.title ?? ""),
-        artist_credit: String(track?.artist_credit ?? ""),
+      const accepted = (Array.isArray(tracks) ? tracks : []).map((track) => ({
+        title: String(track?.title ?? "").trim(),
+        artist_credit: String(track?.artist_credit ?? "").trim(),
         preview: https(track?.preview_url, previewHost),
         link: https(track?.catalog_url, linkHost),
         artwork: https(track?.artwork_url, artworkHost),
       })).filter((track) => track.title && track.preview && track.link).slice(0, 30);
-      if (!queue.length) return;
-      album = albumInfo?.title ? { title: String(albumInfo.title), artwork: https(albumInfo.artwork_url, artworkHost) } : null;
+      if (!accepted.length) return false;
+      stop();
+      queue = accepted;
+      album = albumInfo?.title ? {
+        title: String(albumInfo.title), artist_credit: String(albumInfo.artist_credit ?? ""),
+        catalog_url: https(albumInfo.catalog_url, linkHost), artwork: https(albumInfo.artwork_url, artworkHost),
+      } : null;
+      emit({
+        type: "queue", tracks: queue.map(publicTrack),
+        album: album ? { title: album.title, artist_credit: album.artist_credit, catalog_url: album.catalog_url } : null,
+      });
+      setMediaActions(true);
       root.hidden = false;
       load(0);
+      return true;
+    },
+    skip,
+    stop,
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
     },
   };
 }

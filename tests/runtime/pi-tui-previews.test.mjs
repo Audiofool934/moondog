@@ -89,6 +89,8 @@ test("the room shows what is playing, links each preview to Apple Music, and con
   await until(() => /♪ Wind of Change · Scorpions\s+1\/2 · loading · Apple Music · \/skip · \/stop/u.test(fixture.body()));
   player.emit({ type: "playing", track: tracks[0], position: 1, count: 2 });
   await until(() => /♪ Wind of Change · Scorpions\s+1\/2 · Apple Music · \/skip · \/stop/u.test(fixture.body()));
+  player.emit({ type: "paused", track: tracks[0], position: 1, count: 2 });
+  await until(() => /♪ Wind of Change · Scorpions\s+1\/2 · paused · Apple Music · \/skip · \/stop/u.test(fixture.body()));
 
   // While Moondog is still answering, /skip acts at once instead of waiting in the queue.
   fixture.submit("/skip");

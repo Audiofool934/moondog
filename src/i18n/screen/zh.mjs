@@ -906,6 +906,7 @@ export default {
   "Previews stopped.": "试听已停止。",
   "Skipped.": "已跳过。",
   "loading": "加载中",
+  "paused": "已暂停",
   "couldn't load": "加载失败",
   "None of these previews could load. Check your connection, then ask again.": "这些试听都没能加载。请检查网络连接后再试一次。",
   "Last.fm scrobbles": "Last.fm 聆听记录",

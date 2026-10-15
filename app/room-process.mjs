@@ -2,6 +2,7 @@
 // The window draws it: output, keys, and size travel over a message port, and so do the
 // previews the agent plays.
 import { StdinBuffer } from "@earendil-works/pi-tui";
+import { createWindowPreviewPlayer } from "./preview-player.mjs";
 
 const port = await new Promise((resolve) => {
   process.parentPort.once("message", ({ ports: [roomPort] }) => resolve(roomPort));
@@ -79,16 +80,7 @@ globalThis[Symbol.for("moondog.host")] = {
     process.exit(process.exitCode ?? 0);
   },
   // The agent's previews play in the window's player, next to links to the full songs.
-  musicPreviewPlayer: {
-    play: async (tracks, { album } = {}) => port.postMessage({
-      type: "preview",
-      tracks: tracks.map((track) => ({
-        title: track.title, artist_credit: track.artist_credit,
-        preview_url: track.preview_url, catalog_url: track.catalog_url, artwork_url: track.artwork_url,
-      })),
-      album: album ? { title: album.title, artist_credit: album.artist_credit, catalog_url: album.catalog_url, artwork_url: album.artwork_url } : null,
-    }),
-  },
+  musicPreviewPlayer: createWindowPreviewPlayer(port),
 };
 
 // The room is the `moondog` command with no arguments.

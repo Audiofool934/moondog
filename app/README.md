@@ -19,6 +19,8 @@ To try it on fictional data, set `MOONDOG_STATE_HOME` and `MOONDOG_CONFIG_HOME` 
 ## What the window adds
 
 - Sound: previews the agent picks play in a player under the room, with media keys and the system's Now Playing.
+- Control: `/skip` moves to the next preview and `/stop` clears the queue, including while the agent is answering.
+  The room follows the player's current song, loading and paused state, and marks previews that could not load.
 - Presence: closing the window hides it, and the room and its music keep going until you quit.
 - Mixed blocks: a room component can mark cells for the window to paint with graphics, while its labels stay terminal text.
 - Files: dropping a file types its path into the room, as a terminal does, so `/import` and a drop work together.

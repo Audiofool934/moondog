@@ -440,7 +440,8 @@ export async function runMoondogTui({
         const prefix = `  ${theme.plain ? ">" : "♪"} `;
         // Where the terminal can't open links, the note in the conversation shows the address.
         const apple = getCapabilities().hyperlinks ? hyperlink("Apple Music", track.catalog_url) : "Apple Music";
-        const controls = `  ${position}/${count}${type === "loading" ? ` · ${tr("loading")}` : ""} · ${apple} · /skip · /stop`;
+        const state = type === "loading" ? tr("loading") : type === "paused" ? tr("paused") : "";
+        const controls = `  ${position}/${count}${state ? ` · ${state}` : ""} · ${apple} · /skip · /stop`;
         const song = sanitizeTerminalText(`${track.title} · ${track.artist_credit}`).replace(/\s+/gu, " ").trim();
         const room = width - visibleWidth(prefix) - visibleWidth(controls);
         lines.push(paintBrandLine(room >= 12
@@ -657,7 +658,7 @@ export async function runMoondogTui({
     if (cleanedUp) return;
     if (event?.type === "queue") addPreviewNote(event);
     else if (event?.type === "failed") markPreviewFailed(event);
-    else if (event?.type === "loading" || event?.type === "playing") nowPlaying = event;
+    else if (["loading", "playing", "paused"].includes(event?.type)) nowPlaying = event;
     else if (event?.type === "stopped") nowPlaying = null;
     tui.requestRender();
   }) : null;

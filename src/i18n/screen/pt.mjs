@@ -906,6 +906,7 @@ export default {
   "Previews stopped.": "Prévias interrompidas.",
   "Skipped.": "Prévia pulada.",
   "loading": "carregando",
+  "paused": "em pausa",
   "couldn't load": "não carregou",
   "None of these previews could load. Check your connection, then ask again.": "Nenhuma destas prévias carregou. Confira sua conexão e peça de novo.",
   "Last.fm scrobbles": "Scrobbles do Last.fm",

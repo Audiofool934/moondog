@@ -842,7 +842,7 @@ async function main() {
   // The listening room plays previews through the system's player when there is one.
   // One-shot commands get none: they would exit in the middle of the first song.
   // In the desktop app, the window's own player plays them instead.
-  const previewPlayer = options.command || host ? null : await createTerminalPreviewPlayer();
+  const previewPlayer = options.command ? null : host ? host.musicPreviewPlayer : await createTerminalPreviewPlayer();
   const application = new MoondogApplication({
     ...domainState,
     locale: await resolveListenerLocale(),
@@ -850,7 +850,7 @@ async function main() {
     memoryStore,
     spotifyConnection,
     musicCatalog,
-    musicPreviewPlayer: host?.musicPreviewPlayer ?? previewPlayer,
+    musicPreviewPlayer: previewPlayer,
     musicSimilarity,
     artistIdentityResolver,
   });
