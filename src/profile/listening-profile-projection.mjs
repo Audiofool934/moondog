@@ -114,6 +114,21 @@ function unskippedNote(aggregate) {
     : ` (${aggregate.skipKnownCount - aggregate.skippedCount} of the ${aggregate.skipKnownCount} with skip data not skipped)`;
 }
 
+// Minutes gate and rank listen-again picks, and appear in their rows, only when
+// every play recorded its length; otherwise the play counts decide. A pick row
+// also leaves out skips that no play recorded, instead of stating zero.
+function fullyTimed(aggregate) {
+  return aggregate.timedPlayCount === aggregate.playCount;
+}
+
+function pickMinutes(aggregate, key) {
+  return fullyTimed(aggregate) ? { [key]: minutes(aggregate.playedMs) } : {};
+}
+
+function pickSkips(aggregate, key) {
+  return aggregate.skipKnownCount > 0 ? { [key]: aggregate.skippedCount } : {};
+}
+
 function aggregateEvidenceId(subjectId, kind, key) {
   return uuidV5(
     `${subjectId}\0${kind}\0${key}`,
@@ -1875,9 +1890,10 @@ function rediscoverySignal(track, evidence, direct) {
 }
 
 function rediscoveryPeakYear(track) {
+  const byTime = fullyTimed(track);
   return [...track.years.entries()]
     .sort(([leftYear, left], [rightYear, right]) => {
-      if (right.playedMs !== left.playedMs) {
+      if (byTime && right.playedMs !== left.playedMs) {
         return right.playedMs - left.playedMs;
       }
       if (right.playCount !== left.playCount) {
@@ -1892,6 +1908,7 @@ function rediscoveryPeakYear(track) {
       explicit_skips: aggregate.skippedCount,
       listening_minutes: minutes(aggregate.playedMs),
       played_ms: aggregate.playedMs,
+      plays: aggregate,
     }))[0] ?? null;
 }
 
@@ -1905,7 +1922,7 @@ function rediscoveryTracks(
   const latestMs = Date.parse(eventAnalysis.latest ?? "");
   if (!Number.isFinite(latestMs)) return [];
   const avoids = combinedAvoids(direct.avoids, evidence.avoids);
-  return [...eventAnalysis.lifetime.tracks.values()]
+  const candidates = [...eventAnalysis.lifetime.tracks.values()]
     .map((track) => {
       const lastPlayedMs = Date.parse(track.lastPlayedAt);
       const quietDays = Math.floor((latestMs - lastPlayedMs) / dayMs);
@@ -1922,15 +1939,17 @@ function rediscoveryTracks(
         quietDays >= recentWindowDays &&
         track.playCount >= rediscoveryMinimumPlays &&
         track.engagedPlayCount >= rediscoveryMinimumEngagedPlays &&
-        track.playedMs >= rediscoveryMinimumPlayedMs &&
+        (!fullyTimed(track) || track.playedMs >= rediscoveryMinimumPlayedMs) &&
         track.engagedPlayCount >= track.skippedCount &&
         !avoids.some((item) => assertionMatchesTrack(item, track)),
-    )
+    );
+  const byTime = candidates.every(({ track }) => fullyTimed(track));
+  return candidates
     .sort((left, right) => {
       if (right.signal.rank !== left.signal.rank) {
         return right.signal.rank - left.signal.rank;
       }
-      if (right.track.playedMs !== left.track.playedMs) {
+      if (byTime && right.track.playedMs !== left.track.playedMs) {
         return right.track.playedMs - left.track.playedMs;
       }
       if (right.track.engagedPlayCount !== left.track.engagedPlayCount) {
@@ -1972,8 +1991,8 @@ function rediscoveryTracks(
         identity_status: track.identityStatus,
         play_count: track.playCount,
         engaged_play_count: track.engagedPlayCount,
-        listening_minutes: minutes(track.playedMs),
-        explicit_skips: track.skippedCount,
+        ...pickMinutes(track, "listening_minutes"),
+        ...pickSkips(track, "explicit_skips"),
         first_played_at: track.firstPlayedAt,
         last_played_at: track.lastPlayedAt,
         quiet_days: quietDays,
@@ -1982,7 +2001,7 @@ function rediscoveryTracks(
           ? {
               peak_year: peak.year,
               peak_year_play_count: peak.play_count,
-              peak_year_listening_minutes: peak.listening_minutes,
+              ...pickMinutes(peak.plays, "peak_year_listening_minutes"),
             }
           : {}),
         evidence_id: evidenceId,
@@ -2018,7 +2037,7 @@ function historicalReturnTracks(
   explanations,
 ) {
   const avoids = combinedAvoids(direct.avoids, evidence.avoids);
-  return [...eventAnalysis.lifetime.tracks.values()]
+  const candidates = [...eventAnalysis.lifetime.tracks.values()]
     .map((track) => ({
       track,
       returns: historicalReturnGaps(track),
@@ -2029,10 +2048,12 @@ function historicalReturnTracks(
         returns.length > 0 &&
         track.playCount >= historicalReturnMinimumPlays &&
         track.engagedPlayCount >= historicalReturnMinimumEngagedPlays &&
-        track.playedMs >= historicalReturnMinimumPlayedMs &&
+        (!fullyTimed(track) || track.playedMs >= historicalReturnMinimumPlayedMs) &&
         track.engagedPlayCount >= track.skippedCount &&
         !avoids.some((item) => assertionMatchesTrack(item, track)),
-    )
+    );
+  const byTime = candidates.every(({ track }) => fullyTimed(track));
+  return candidates
     .sort((left, right) => {
       if (right.returns.length !== left.returns.length) {
         return right.returns.length - left.returns.length;
@@ -2047,7 +2068,7 @@ function historicalReturnTracks(
       if (right.signal.rank !== left.signal.rank) {
         return right.signal.rank - left.signal.rank;
       }
-      if (right.track.playedMs !== left.track.playedMs) {
+      if (byTime && right.track.playedMs !== left.track.playedMs) {
         return right.track.playedMs - left.track.playedMs;
       }
       if (right.track.engagedPlayCount !== left.track.engagedPlayCount) {
@@ -2091,8 +2112,8 @@ function historicalReturnTracks(
         identity_status: track.identityStatus,
         play_count: track.playCount,
         engaged_play_count: track.engagedPlayCount,
-        listening_minutes: minutes(track.playedMs),
-        explicit_skips: track.skippedCount,
+        ...pickMinutes(track, "listening_minutes"),
+        ...pickSkips(track, "explicit_skips"),
         first_played_at: track.firstPlayedAt,
         last_played_at: track.lastPlayedAt,
         return_count: returns.length,
@@ -2142,7 +2163,8 @@ function timeCapsuleTracks(
     if (
       !peak ||
       peak.engaged_play_count < timeCapsuleMinimumEngagedPlays ||
-      peak.listening_minutes < minutes(timeCapsuleMinimumPlayedMs) ||
+      (fullyTimed(peak.plays) &&
+        peak.listening_minutes < minutes(timeCapsuleMinimumPlayedMs)) ||
       peak.engaged_play_count < peak.explicit_skips
     ) {
       continue;
@@ -2157,11 +2179,14 @@ function timeCapsuleTracks(
   }
   if (byYear.size < timeCapsuleMinimumYears) return [];
 
+  const byTime = [...byYear.values()].every((values) =>
+    values.every(({ track }) => fullyTimed(track)),
+  );
   const rankedYears = [...byYear.entries()]
     .sort(([left], [right]) => left - right)
     .map(([year, values]) => {
       values.sort((left, right) => {
-        if (right.peak.played_ms !== left.peak.played_ms) {
+        if (byTime && right.peak.played_ms !== left.peak.played_ms) {
           return right.peak.played_ms - left.peak.played_ms;
         }
         if (
@@ -2172,7 +2197,7 @@ function timeCapsuleTracks(
         if (right.signal.rank !== left.signal.rank) {
           return right.signal.rank - left.signal.rank;
         }
-        if (right.track.playedMs !== left.track.playedMs) {
+        if (byTime && right.track.playedMs !== left.track.playedMs) {
           return right.track.playedMs - left.track.playedMs;
         }
         const titleOrder = lexicalCompare(left.track.title, right.track.title);
@@ -2181,7 +2206,9 @@ function timeCapsuleTracks(
       return {
         year,
         values,
-        strength: values[0].peak.played_ms,
+        strength: byTime
+          ? values[0].peak.played_ms
+          : values[0].peak.engaged_play_count,
       };
     });
   const selectedYears = evenlySpaced(rankedYears, maximum).sort(
@@ -2223,10 +2250,10 @@ function timeCapsuleTracks(
       capsule_year: year,
       year_play_count: peak.play_count,
       year_engaged_play_count: peak.engaged_play_count,
-      year_listening_minutes: peak.listening_minutes,
-      year_explicit_skips: peak.explicit_skips,
+      ...pickMinutes(peakPlays, "year_listening_minutes"),
+      ...pickSkips(peakPlays, "year_explicit_skips"),
       lifetime_play_count: track.playCount,
-      lifetime_listening_minutes: minutes(track.playedMs),
+      ...pickMinutes(track, "lifetime_listening_minutes"),
       representative_signal: signal.value,
       evidence_id: evidenceId,
     };
@@ -2397,6 +2424,9 @@ export function projectListeningProfile({
     .filter(Boolean)
     .sort()
     .at(-1) ?? null;
+  const lengthNote = events.eligible.some((row) => !row.timed)
+    ? " if every play has a recorded length"
+    : "";
   return {
     summary: {
       schema_version: LISTENING_PROFILE_SCHEMA_VERSION,
@@ -2552,8 +2582,8 @@ export function projectListeningProfile({
             ]
           : []),
         "A song counts as new the first time it shows up in your history, which is not always when you found it.",
-        "Songs worth another listen need at least 3 plays, 2 of them not skipped, 10 minutes in all, and nothing in the last 90 days. They are nudges to listen again, not claims that you love them.",
-        "Songs that came back need at least 3 plays, none skipped, 10 minutes in all, and one gap of at least 180 days. That is a pattern, not proof you missed them or left them on purpose.",
+        `Songs worth another listen need at least 3 plays, 2 of them not skipped, 10 minutes in all${lengthNote}, and nothing in the last 90 days. They are nudges to listen again, not claims that you love them.`,
+        `Songs that came back need at least 3 plays, none skipped, 10 minutes in all${lengthNote}, and one gap of at least 180 days. That is a pattern, not proof you missed them or left them on purpose.`,
         "The Time Machine needs at least two years with enough listening and picks at most one song per year. A pick does not mean the song defined that year, or that you still love it.",
         "An artist counts as staying with you after at least two years in your history, including the latest. How much your top artists change year to year says nothing about whether your taste really changed.",
         "A record counts as one you went deep on after at least three of its tracks. That does not mean you played the whole album, in order, or that you own or like it.",

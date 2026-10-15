@@ -5,12 +5,17 @@ import path from "node:path";
 import test from "node:test";
 import { setTimeout } from "node:timers/promises";
 
+import { createModels, fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall } from "@earendil-works/pi-ai";
+
+import { createListeningProfileDomainServices } from "../../src/core/listening-profile-domain-services.mjs";
+import { MoondogApplication } from "../../src/core/moondog-application.mjs";
 import { LASTFM_LIMITS, LastfmError, lastfmUsername, readLastfmHistory } from "../../src/integrations/lastfm/history.mjs";
 import { LASTFM_PROJECT_API_KEY, readLastfmConfiguration, writeLastfmConfiguration } from "../../src/integrations/lastfm/settings.mjs";
 import { projectListenBrainzHistory } from "../../src/integrations/listenbrainz/history-file.mjs";
 import { projectSpotifyExtendedStreamingHistory } from "../../src/integrations/spotify/extended-streaming-history.mjs";
 import { musicHash } from "../../src/profile/music-import-bundle.mjs";
 import { openListeningHistoryStore } from "../../src/profile/listening-history-store.mjs";
+import { PiAgentRuntime } from "../../src/runtime/pi/agent-runtime.mjs";
 
 const subjectId = "4f1c8a52-7d3e-4b8a-9c11-2b6f0e5d7a90";
 const apiKey = "0123456789abcdef0123456789abcdef";
@@ -286,6 +291,57 @@ test("an explanation states only the listening time and skips that were recorded
   // With both measures recorded for every play, the explanation reads as it always has.
   assert.equal(basis(behavior.repeat_tracks, "Song 2 - North Window"),
     "1 play, 4 minutes in all, from 2026-10-01 to 2026-10-01. Never skipped.");
+});
+
+test("songs to hear again come from plays alone when no play records its length", async (context) => {
+  const store = await storeFor(context);
+  const plays = (artist, name, dates) => dates.map((date) => ({ uts: Date.parse(`${date}T12:00:00Z`) / 1_000, artist, name, album: "" }));
+  store.ingestImport((await read(fakeLastfm({ history: [
+    ...plays("Mara Vale", "Old Signal", ["2019-02-01", "2019-03-01", "2019-04-01", "2019-05-01"]),
+    ...plays("North Window", "Second Wind", ["2020-01-10", "2020-02-10", "2020-03-10", "2022-06-01", "2022-07-01", "2022-08-01"]),
+    ...plays("Drift Assembly", "Northern Relay", ["2024-01-05", "2024-02-05", "2024-03-05", "2026-09-30"]),
+  ] }))).bundle);
+  const behavior = store.profileSummary({ subjectId, maxItems: 10 }).listening_behavior;
+  const picks = [...behavior.rediscovery_tracks, ...behavior.historical_return_tracks, ...behavior.time_capsule_tracks];
+  const basis = (row) => store.explainProfileEvidence({ subjectId, evidenceId: row.evidence_id }).basis_summary;
+
+  assert.deepEqual(behavior.rediscovery_tracks.map((row) => row.label), ["Second Wind", "Old Signal"]);
+  assert.deepEqual(behavior.historical_return_tracks.map((row) => row.label), ["Northern Relay", "Second Wind"]);
+  assert.deepEqual(behavior.time_capsule_tracks.map((row) => [row.capsule_year, row.label]),
+    [[2019, "Old Signal"], [2020, "Second Wind"], [2024, "Northern Relay"]]);
+  assert.equal(basis(behavior.time_capsule_tracks[0]),
+    "2019 is this song's biggest year in your history: 4 plays. Songs you asked me to keep out are never picked.");
+  // Last.fm records neither length nor skips, so no pick states them, as zero or otherwise.
+  for (const row of picks) {
+    assert.deepEqual(Object.keys(row).filter((key) => /minutes|skips/u.test(key)), [], row.label);
+    assert.doesNotMatch(basis(row), /minute|skip/u);
+  }
+
+  // The chat agent's tools take the same picks.
+  const application = new MoondogApplication({ importsRoot: path.join(tmpdir(), "moondog-missing-imports"),
+    domainServices: createListeningProfileDomainServices({ listeningHistoryStore: store, subjectId }) });
+  context.after(() => application.close());
+  const faux = fauxProvider();
+  const models = createModels();
+  models.setProvider(faux.provider);
+  const runtime = new PiAgentRuntime({ application, models, model: faux.getModel(), provider: "faux", modelId: "faux-1" });
+  const tools = ["moondog_rediscovery_candidates", "moondog_historical_return_candidates", "moondog_time_capsule_candidates"];
+  const results = new Map();
+  faux.setResponses([
+    fauxAssistantMessage(tools.map((tool) => fauxToolCall(tool, {})), { stopReason: "toolUse" }),
+    (conversation) => {
+      for (const message of conversation.messages.filter((item) => item.role === "toolResult")) {
+        const text = message.content[0].text;
+        results.set(message.toolName, text.startsWith("{") ? JSON.parse(text) : { error: text });
+      }
+      return fauxAssistantMessage([fauxText("Fictional reply.")]);
+    },
+  ]);
+  await runtime.prompt("Find songs I could hear again.");
+  for (const tool of tools) {
+    assert.equal(results.get(tool)?.state, "ready", results.get(tool)?.error ?? tool);
+    assert.doesNotMatch(JSON.stringify(results.get(tool).tracks), /minutes"|skips"/u, tool);
+  }
 });
 
 test("requests are paced across readers, however fast Last.fm answers", async () => {
