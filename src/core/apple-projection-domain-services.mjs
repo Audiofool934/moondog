@@ -410,6 +410,11 @@ function safeHistoryCount(value) {
   return value;
 }
 
+// A pick leaves out minutes or skips that its plays never recorded.
+function optionalHistoryCount(context, key) {
+  return context[key] === undefined ? {} : { [key]: safeHistoryCount(context[key]) };
+}
+
 function safeHistoryExternalRefs(value) {
   if (value === undefined) return [];
   if (!Array.isArray(value)) {
@@ -489,10 +494,13 @@ function safeHistoryTrack(raw) {
   if (hasRediscovery) {
     const rediscovery = raw.rediscovery;
     const engagedPlayCount = safeHistoryCount(rediscovery.engaged_play_count);
-    const explicitSkips = safeHistoryCount(rediscovery.explicit_skips);
-    const listeningMinutes = safeHistoryCount(rediscovery.listening_minutes);
+    const explicitSkips = optionalHistoryCount(rediscovery, "explicit_skips");
+    const listeningMinutes = optionalHistoryCount(rediscovery, "listening_minutes");
     const quietDays = safeHistoryCount(rediscovery.quiet_days);
-    if (engagedPlayCount > playCount || explicitSkips > playCount) {
+    if (
+      engagedPlayCount > playCount ||
+      (explicitSkips.explicit_skips ?? 0) > playCount
+    ) {
       fail("history_candidate_invalid", "A listening-history candidate is invalid.");
     }
     const rediscoverySignal = cleanText(
@@ -514,7 +522,9 @@ function safeHistoryTrack(raw) {
     const peakFields = [
       rediscovery.peak_year,
       rediscovery.peak_year_play_count,
-      rediscovery.peak_year_listening_minutes,
+      ...(rediscovery.peak_year_listening_minutes === undefined
+        ? []
+        : [rediscovery.peak_year_listening_minutes]),
     ];
     if (peakFields.some((value) => value !== undefined)) {
       if (
@@ -526,9 +536,9 @@ function safeHistoryTrack(raw) {
       }
     }
     track.rediscovery = {
-      listening_minutes: listeningMinutes,
+      ...listeningMinutes,
       engaged_play_count: engagedPlayCount,
-      explicit_skips: explicitSkips,
+      ...explicitSkips,
       first_played_at: firstPlayedAt,
       last_played_at: lastPlayedAt,
       quiet_days: quietDays,
@@ -537,8 +547,7 @@ function safeHistoryTrack(raw) {
         ? {
             peak_year: rediscovery.peak_year,
             peak_year_play_count: rediscovery.peak_year_play_count,
-            peak_year_listening_minutes:
-              rediscovery.peak_year_listening_minutes,
+            ...optionalHistoryCount(rediscovery, "peak_year_listening_minutes"),
           }
         : {}),
       evidence_id: rediscovery.evidence_id.toLowerCase(),
@@ -548,9 +557,10 @@ function safeHistoryTrack(raw) {
     const engagedPlayCount = safeHistoryCount(
       historicalReturn.engaged_play_count,
     );
-    const explicitSkips = safeHistoryCount(historicalReturn.explicit_skips);
-    const listeningMinutes = safeHistoryCount(
-      historicalReturn.listening_minutes,
+    const explicitSkips = optionalHistoryCount(historicalReturn, "explicit_skips");
+    const listeningMinutes = optionalHistoryCount(
+      historicalReturn,
+      "listening_minutes",
     );
     const returnCount = safeHistoryCount(historicalReturn.return_count);
     const longestGapDays = safeHistoryCount(
@@ -579,7 +589,7 @@ function safeHistoryTrack(raw) {
       latestReturnGapDays < 1 ||
       latestReturnGapDays > longestGapDays ||
       engagedPlayCount > playCount ||
-      explicitSkips > playCount ||
+      (explicitSkips.explicit_skips ?? 0) > playCount ||
       Date.parse(firstPlayedAt) > Date.parse(latestReturnAt) ||
       Date.parse(latestReturnAt) > Date.parse(lastPlayedAt) ||
       !rediscoverySignals.has(historicalReturnSignal) ||
@@ -588,9 +598,9 @@ function safeHistoryTrack(raw) {
       fail("history_candidate_invalid", "A listening-history candidate is invalid.");
     }
     track.historical_return = {
-      listening_minutes: listeningMinutes,
+      ...listeningMinutes,
       engaged_play_count: engagedPlayCount,
-      explicit_skips: explicitSkips,
+      ...explicitSkips,
       first_played_at: firstPlayedAt,
       last_played_at: lastPlayedAt,
       return_count: returnCount,
@@ -607,12 +617,14 @@ function safeHistoryTrack(raw) {
     const yearEngagedPlayCount = safeHistoryCount(
       capsule.year_engaged_play_count,
     );
-    const yearListeningMinutes = safeHistoryCount(
-      capsule.year_listening_minutes,
+    const yearListeningMinutes = optionalHistoryCount(
+      capsule,
+      "year_listening_minutes",
     );
-    const yearExplicitSkips = safeHistoryCount(capsule.year_explicit_skips);
-    const lifetimeListeningMinutes = safeHistoryCount(
-      capsule.lifetime_listening_minutes,
+    const yearExplicitSkips = optionalHistoryCount(capsule, "year_explicit_skips");
+    const lifetimeListeningMinutes = optionalHistoryCount(
+      capsule,
+      "lifetime_listening_minutes",
     );
     const representativeSignal = cleanText(
       capsule.representative_signal,
@@ -624,8 +636,9 @@ function safeHistoryTrack(raw) {
       year > 9999 ||
       yearPlayCount > playCount ||
       yearEngagedPlayCount > yearPlayCount ||
-      yearExplicitSkips > yearPlayCount ||
-      yearListeningMinutes > lifetimeListeningMinutes ||
+      (yearExplicitSkips.year_explicit_skips ?? 0) > yearPlayCount ||
+      (yearListeningMinutes.year_listening_minutes ?? 0) >
+        (lifetimeListeningMinutes.lifetime_listening_minutes ?? Infinity) ||
       !rediscoverySignals.has(representativeSignal) ||
       !isUuid(capsule.evidence_id)
     ) {
@@ -635,9 +648,9 @@ function safeHistoryTrack(raw) {
       year,
       year_play_count: yearPlayCount,
       year_engaged_play_count: yearEngagedPlayCount,
-      year_listening_minutes: yearListeningMinutes,
-      year_explicit_skips: yearExplicitSkips,
-      lifetime_listening_minutes: lifetimeListeningMinutes,
+      ...yearListeningMinutes,
+      ...yearExplicitSkips,
+      ...lifetimeListeningMinutes,
       representative_signal: representativeSignal,
       evidence_id: capsule.evidence_id.toLowerCase(),
     };

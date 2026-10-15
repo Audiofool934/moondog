@@ -78,6 +78,11 @@ function safeCount(value, label) {
   return value;
 }
 
+// A pick leaves out minutes or skips that its plays never recorded.
+function optionalCount(context, key, label) {
+  return context[key] === undefined ? {} : { [key]: safeCount(context[key], label) };
+}
+
 function safeTimestamp(value, label) {
   const cleaned = cleanText(value, 64, label);
   const parsed = Date.parse(cleaned);
@@ -89,15 +94,19 @@ function safeTimestamp(value, label) {
 
 function safeExternalRefs(value) {
   if (value === undefined) return [];
-  if (!Array.isArray(value) || value.length > 1) {
+  if (!Array.isArray(value)) {
     throw new TypeError("Listening-history provider identity is invalid");
   }
-  return value.map((reference) => {
+  // Only a Spotify track ID is kept for playback. Last.fm, ListenBrainz and
+  // Spotify account-data identities stay in the store.
+  const references = value.filter((reference) => reference?.system === "spotify");
+  if (references.length > 1) {
+    throw new TypeError("Listening-history provider identity is invalid");
+  }
+  return references.map((reference) => {
     if (
-      !reference ||
       typeof reference !== "object" ||
       Array.isArray(reference) ||
-      reference.system !== "spotify" ||
       reference.entity_type !== "spotify.track" ||
       typeof reference.external_id !== "string" ||
       !SPOTIFY_TRACK_ID.test(reference.external_id)
@@ -191,18 +200,16 @@ function safeHistoryTrack(value) {
       throw new TypeError("Rediscovery signal is invalid");
     }
     track.rediscovery = {
-      listening_minutes: safeCount(
-        context.listening_minutes,
+      ...optionalCount(
+        context,
+        "listening_minutes",
         "Rediscovery listening minutes",
       ),
       engaged_play_count: safeCount(
         context.engaged_play_count,
         "Rediscovery engaged plays",
       ),
-      explicit_skips: safeCount(
-        context.explicit_skips,
-        "Rediscovery skips",
-      ),
+      ...optionalCount(context, "explicit_skips", "Rediscovery skips"),
       first_played_at: safeTimestamp(
         context.first_played_at,
         "Rediscovery first play",
@@ -220,8 +227,9 @@ function safeHistoryTrack(value) {
               context.peak_year_play_count,
               "Rediscovery peak-year plays",
             ),
-            peak_year_listening_minutes: safeCount(
-              context.peak_year_listening_minutes,
+            ...optionalCount(
+              context,
+              "peak_year_listening_minutes",
               "Rediscovery peak-year minutes",
             ),
           }
@@ -263,8 +271,9 @@ function safeHistoryTrack(value) {
       context.engaged_play_count,
       "Historical-return engaged plays",
     );
-    const explicitSkips = safeCount(
-      context.explicit_skips,
+    const explicitSkips = optionalCount(
+      context,
+      "explicit_skips",
       "Historical-return skips",
     );
     if (
@@ -273,7 +282,7 @@ function safeHistoryTrack(value) {
       latestReturnGapDays < 1 ||
       latestReturnGapDays > longestGapDays ||
       engagedPlayCount > playCount ||
-      explicitSkips > playCount ||
+      (explicitSkips.explicit_skips ?? 0) > playCount ||
       Date.parse(firstPlayedAt) > Date.parse(latestReturnAt) ||
       Date.parse(latestReturnAt) > Date.parse(lastPlayedAt) ||
       !historySupportSignals.has(historicalReturnSignal) ||
@@ -282,12 +291,13 @@ function safeHistoryTrack(value) {
       throw new TypeError("Historical-return candidate is invalid");
     }
     track.historical_return = {
-      listening_minutes: safeCount(
-        context.listening_minutes,
+      ...optionalCount(
+        context,
+        "listening_minutes",
         "Historical-return listening minutes",
       ),
       engaged_play_count: engagedPlayCount,
-      explicit_skips: explicitSkips,
+      ...explicitSkips,
       first_played_at: firstPlayedAt,
       last_played_at: lastPlayedAt,
       return_count: returnCount,
@@ -313,16 +323,15 @@ function safeHistoryTrack(value) {
         context.year_engaged_play_count,
         "Time Machine engaged plays",
       ),
-      year_listening_minutes: safeCount(
-        context.year_listening_minutes,
+      ...optionalCount(
+        context,
+        "year_listening_minutes",
         "Time Machine year minutes",
       ),
-      year_explicit_skips: safeCount(
-        context.year_explicit_skips,
-        "Time Machine year skips",
-      ),
-      lifetime_listening_minutes: safeCount(
-        context.lifetime_listening_minutes,
+      ...optionalCount(context, "year_explicit_skips", "Time Machine year skips"),
+      ...optionalCount(
+        context,
+        "lifetime_listening_minutes",
         "Time Machine lifetime minutes",
       ),
       representative_signal: cleanText(

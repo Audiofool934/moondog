@@ -5,12 +5,17 @@ import path from "node:path";
 import test from "node:test";
 import { setTimeout } from "node:timers/promises";
 
+import { createModels, fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall } from "@earendil-works/pi-ai";
+
+import { createListeningProfileDomainServices } from "../../src/core/listening-profile-domain-services.mjs";
+import { MoondogApplication } from "../../src/core/moondog-application.mjs";
 import { LASTFM_LIMITS, LastfmError, lastfmUsername, readLastfmHistory } from "../../src/integrations/lastfm/history.mjs";
-import { readLastfmConfiguration, writeLastfmConfiguration } from "../../src/integrations/lastfm/settings.mjs";
+import { LASTFM_PROJECT_API_KEY, readLastfmConfiguration, writeLastfmConfiguration } from "../../src/integrations/lastfm/settings.mjs";
 import { projectListenBrainzHistory } from "../../src/integrations/listenbrainz/history-file.mjs";
 import { projectSpotifyExtendedStreamingHistory } from "../../src/integrations/spotify/extended-streaming-history.mjs";
 import { musicHash } from "../../src/profile/music-import-bundle.mjs";
 import { openListeningHistoryStore } from "../../src/profile/listening-history-store.mjs";
+import { PiAgentRuntime } from "../../src/runtime/pi/agent-runtime.mjs";
 
 const subjectId = "4f1c8a52-7d3e-4b8a-9c11-2b6f0e5d7a90";
 const apiKey = "0123456789abcdef0123456789abcdef";
@@ -121,7 +126,10 @@ test("Last.fm errors become plain advice, and busy answers are retried", async (
   await assert.rejects(read(fakeLastfm({ history }), { username: "someone-else" }), { code: "lastfm_user_not_found" });
   await assert.rejects(read(fakeLastfm({ history, errors: [17] })), (error) => error.code === "lastfm_user_private" && /Hide recent listening/u.test(error.message));
   await assert.rejects(read(fakeLastfm({ history }), { configuration: { ...configuration, apiKey: "f".repeat(32) } }), { code: "lastfm_key_invalid" });
-  await assert.rejects(read(fakeLastfm({ history }), { configuration: null, environment: { MOONDOG_CONFIG_HOME: "/nonexistent-moondog-config" } }), { code: "lastfm_key_missing" });
+  // With nothing set up, the read uses Moondog's own key; this stand-in only knows the test key.
+  const unconfigured = fakeLastfm({ history });
+  await assert.rejects(read(unconfigured, { configuration: null, environment: { MOONDOG_CONFIG_HOME: "/nonexistent-moondog-config" } }), { code: "lastfm_key_invalid" });
+  assert.equal(unconfigured.requests[0].api_key, LASTFM_PROJECT_API_KEY);
   const busy = fakeLastfm({ history, errors: [29, 16] });
   assert.equal((await read(busy)).bundle.listening_events.length, 3);
   await assert.rejects(read(fakeLastfm({ history, errors: [29, 29, 29, 29, 29] })), { code: "lastfm_rate_limited" });
@@ -152,7 +160,7 @@ test("the API key is saved on this machine and an environment key wins", async (
   const root = await mkdtemp(path.join(tmpdir(), "moondog-lastfm-key-"));
   context.after(() => rm(root, { recursive: true, force: true }));
   const environment = { MOONDOG_CONFIG_HOME: root };
-  assert.equal(await readLastfmConfiguration(environment), undefined);
+  assert.deepEqual(await readLastfmConfiguration(environment), { apiKey: LASTFM_PROJECT_API_KEY, source: "moondog", root: "https://ws.audioscrobbler.com/2.0/" });
   await assert.rejects(writeLastfmConfiguration("not-a-key", environment), { code: "lastfm_settings_invalid" });
   await writeLastfmConfiguration(apiKey.toUpperCase(), environment);
   assert.deepEqual(await readLastfmConfiguration(environment), { apiKey, source: "settings", root: "https://ws.audioscrobbler.com/2.0/" });
@@ -185,7 +193,8 @@ function spotifyHistory(plays) {
     master_metadata_album_artist_name: play.artist,
     master_metadata_album_album_name: "Fixture",
     spotify_track_uri: `spotify:track:${play.uri.padStart(22, "0")}`,
-    reason_start: "clickrow", reason_end: "trackdone", shuffle: false, skipped: false, offline: false, incognito_mode: false,
+    reason_start: "clickrow", reason_end: "trackdone", shuffle: false,
+    skipped: play.skipped === undefined ? false : play.skipped, offline: false, incognito_mode: false,
   }));
   return projectSpotifyExtendedStreamingHistory({
     subjectId, records, archiveSha256: musicHash(JSON.stringify(records)), archiveSizeBytes: 4_096,
@@ -255,6 +264,86 @@ test("a ListenBrainz listen and its Last.fm copy count once, and different songs
   assert.equal(counted(store), 3);
 });
 
+test("an explanation states only the listening time and skips that were recorded", async (context) => {
+  const store = await storeFor(context);
+  // Spotify's extended history records both measures, but leaves some skips null.
+  store.ingestImport(spotifyHistory([
+    { start: at("10:00:00"), seconds: 200, artist: "Mara Vale", title: "Song 1", uri: "1" },
+    { start: at("11:00:00"), seconds: 180, artist: "Mara Vale", title: "Song 1", uri: "1", skipped: null },
+    { start: at("12:00:00"), seconds: 240, artist: "North Window", title: "Song 2", uri: "2" },
+  ]));
+  // Last.fm records neither, for an artist Spotify also played and for one only Last.fm saw.
+  store.ingestImport((await read(fakeLastfm({ history: [
+    { uts: at("14:00:00"), artist: "Mara Vale", name: "Song 4", album: "" },
+    { uts: at("15:00:00"), artist: "Drift Assembly", name: "Song 9", album: "" },
+    { uts: at("16:00:00"), artist: "Drift Assembly", name: "Song 9", album: "" },
+  ] }))).bundle);
+  const behavior = store.profileSummary({ subjectId, maxItems: 50 }).listening_behavior;
+  const basis = (rows, name) => store.explainProfileEvidence({ subjectId, evidenceId: rows.find((row) =>
+    (row.name ?? `${row.label} - ${row.artist_credit}`) === name).evidence_id }).basis_summary;
+
+  assert.equal(basis(behavior.enduring_artists, "Drift Assembly"), "2 plays across 1 track, from 2026-10-01 to 2026-10-01.");
+  assert.equal(basis(behavior.repeat_tracks, "Song 9 - Drift Assembly"), "2 plays, from 2026-10-01 to 2026-10-01.");
+  assert.equal(basis(behavior.enduring_artists, "Mara Vale"),
+    "3 plays across 2 tracks, 6 minutes across the 2 timed plays, from 2026-10-01 to 2026-10-01.");
+  assert.equal(basis(behavior.repeat_tracks, "Song 1 - Mara Vale"),
+    "2 plays, 6 minutes in all, from 2026-10-01 to 2026-10-01. Never skipped in the 1 play with skip data.");
+  // With both measures recorded for every play, the explanation reads as it always has.
+  assert.equal(basis(behavior.repeat_tracks, "Song 2 - North Window"),
+    "1 play, 4 minutes in all, from 2026-10-01 to 2026-10-01. Never skipped.");
+});
+
+test("songs to hear again come from plays alone when no play records its length", async (context) => {
+  const store = await storeFor(context);
+  const plays = (artist, name, dates) => dates.map((date) => ({ uts: Date.parse(`${date}T12:00:00Z`) / 1_000, artist, name, album: "" }));
+  store.ingestImport((await read(fakeLastfm({ history: [
+    ...plays("Mara Vale", "Old Signal", ["2019-02-01", "2019-03-01", "2019-04-01", "2019-05-01"]),
+    ...plays("North Window", "Second Wind", ["2020-01-10", "2020-02-10", "2020-03-10", "2022-06-01", "2022-07-01", "2022-08-01"]),
+    ...plays("Drift Assembly", "Northern Relay", ["2024-01-05", "2024-02-05", "2024-03-05", "2026-09-30"]),
+  ] }))).bundle);
+  const behavior = store.profileSummary({ subjectId, maxItems: 10 }).listening_behavior;
+  const picks = [...behavior.rediscovery_tracks, ...behavior.historical_return_tracks, ...behavior.time_capsule_tracks];
+  const basis = (row) => store.explainProfileEvidence({ subjectId, evidenceId: row.evidence_id }).basis_summary;
+
+  assert.deepEqual(behavior.rediscovery_tracks.map((row) => row.label), ["Second Wind", "Old Signal"]);
+  assert.deepEqual(behavior.historical_return_tracks.map((row) => row.label), ["Northern Relay", "Second Wind"]);
+  assert.deepEqual(behavior.time_capsule_tracks.map((row) => [row.capsule_year, row.label]),
+    [[2019, "Old Signal"], [2020, "Second Wind"], [2024, "Northern Relay"]]);
+  assert.equal(basis(behavior.time_capsule_tracks[0]),
+    "2019 is this song's biggest year in your history: 4 plays. Songs you asked me to keep out are never picked.");
+  // Last.fm records neither length nor skips, so no pick states them, as zero or otherwise.
+  for (const row of picks) {
+    assert.deepEqual(Object.keys(row).filter((key) => /minutes|skips/u.test(key)), [], row.label);
+    assert.doesNotMatch(basis(row), /minute|skip/u);
+  }
+
+  // The chat agent's tools take the same picks.
+  const application = new MoondogApplication({ importsRoot: path.join(tmpdir(), "moondog-missing-imports"),
+    domainServices: createListeningProfileDomainServices({ listeningHistoryStore: store, subjectId }) });
+  context.after(() => application.close());
+  const faux = fauxProvider();
+  const models = createModels();
+  models.setProvider(faux.provider);
+  const runtime = new PiAgentRuntime({ application, models, model: faux.getModel(), provider: "faux", modelId: "faux-1" });
+  const tools = ["moondog_rediscovery_candidates", "moondog_historical_return_candidates", "moondog_time_capsule_candidates"];
+  const results = new Map();
+  faux.setResponses([
+    fauxAssistantMessage(tools.map((tool) => fauxToolCall(tool, {})), { stopReason: "toolUse" }),
+    (conversation) => {
+      for (const message of conversation.messages.filter((item) => item.role === "toolResult")) {
+        const text = message.content[0].text;
+        results.set(message.toolName, text.startsWith("{") ? JSON.parse(text) : { error: text });
+      }
+      return fauxAssistantMessage([fauxText("Fictional reply.")]);
+    },
+  ]);
+  await runtime.prompt("Find songs I could hear again.");
+  for (const tool of tools) {
+    assert.equal(results.get(tool)?.state, "ready", results.get(tool)?.error ?? tool);
+    assert.doesNotMatch(JSON.stringify(results.get(tool).tracks), /minutes"|skips"/u, tool);
+  }
+});
+
 test("requests are paced across readers, however fast Last.fm answers", async () => {
   // A shorter interval than the real 250 ms keeps the test quick; the pacing is the same.
   const interval = 40;
@@ -271,12 +360,24 @@ test("requests are paced across readers, however fast Last.fm answers", async ()
 });
 
 test("a page that fails for good stops the other readers instead of reading on", async () => {
-  const fake = fakeLastfm({ history: scrobbles(2_000) });
+  const fake = fakeLastfm({ history: scrobbles(4_000) });
   const fetchImpl = (url, options) => new URL(url).searchParams.get("page") === "3"
     ? Promise.resolve(new Response(JSON.stringify({ error: 7, message: "Invalid resource" }), { status: 400 }))
     : fake.fetchImpl(url, options);
   await assert.rejects(read(fake, { fetchImpl }), { code: "lastfm_failed" });
   const pages = fake.requests.filter((request) => request.method === "user.getrecenttracks").length;
-  assert.ok(pages < 6, `read ${pages} of 10 pages after page 3 failed`);
+  // Page 1, then at most one page per reader already under way when page 3 failed.
+  assert.ok(pages <= 1 + LASTFM_LIMITS.concurrency, `read ${pages} of 20 pages after page 3 failed`);
   assert.ok(!fake.requests.some((request) => request.method === "user.getlovedtracks"));
+});
+
+test("a 200 answer that isn't Last.fm's list is read again, never taken for an empty history", async () => {
+  const fake = fakeLastfm({ history: scrobbles(3) });
+  let broken = 1;
+  const flaky = (url, options) => broken-- > 0
+    ? Promise.resolve(new Response("<html>busy</html>", { status: 200, headers: { "content-type": "text/html" } }))
+    : fake.fetchImpl(url, options);
+  assert.equal((await read(fake, { fetchImpl: flaky })).bundle.listening_events.length, 3);
+  const listless = () => Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+  await assert.rejects(read(fake, { fetchImpl: listless }), { code: "lastfm_unavailable" });
 });

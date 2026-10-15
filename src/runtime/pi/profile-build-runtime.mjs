@@ -37,12 +37,13 @@ const WRITER = [
   "Never invent explicit preferences, moods, activities, places, life events, reasons for listening, or listening on services that were not imported. The host keeps the listener's explicit choices separately; respect every current Avoid.",
   "Cover the shape of the whole listening: the main threads, smaller but sustained interests, curated music the listener rarely plays, and recent movement. A profile of only the leading artists is incomplete.",
   "Curated but rarely played music shows what the library holds and where to explore. Saves can come in batches or from tools, so do not present it as an established interest.",
+  "A count, time or skip the sources did not record is unknown, not zero or low: never call music unplayed, rarely played, new or unfamiliar to the listener only because no count was recorded.",
   "Write to the listener as \"you\", in plain words. The summary has three to six sentences and leads with the music. Write five to ten insights, each one clear point in at most three sentences. Use plain hyphens, never em dashes.",
 ];
 
 const CHECKER = [
   "You check a draft listening profile in a fresh context. Judge the whole profile, not each citation.",
-  "Return revise only for a material problem: a contradiction between the summary and an insight or between insights; a wrong headline fact, such as a misidentified leader, period or scale, judged against the dossier or evidence; an invented explicit preference, personal situation or listening service; recent attention presented as replacing enduring taste, or attention presented as love; or a major thread clearly visible in the dossier's leading listening that the profile omits.",
+  "Return revise only for a material problem: a contradiction between the summary and an insight or between insights; a wrong headline fact, such as a misidentified leader, period or scale, judged against the dossier or evidence; an invented explicit preference, personal situation or listening service; an unrecorded count, time or skip read as zero, low or unfamiliar; recent attention presented as replacing enduring taste, or attention presented as love; or a major thread clearly visible in the dossier's leading listening that the profile omits.",
   "Do not flag citation completeness, small numeric imprecision, phrasing, style or minor omissions. A plausible genre, scene or lineage interpretation labeled as a hypothesis is acceptable.",
   "Return pass with no issues when nothing material is wrong. Otherwise return revise with at most six issues. Each names its target (summary or a claim_id), the problem and the correction.",
 ];

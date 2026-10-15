@@ -314,10 +314,10 @@ General YouTube playlist CSVs, HTML history and uploaded audio files are not imp
 
 **Last.fm:** type your username, or paste your profile link (`last.fm/user/<username>`).
 Moondog reads every scrobble, newest first, up to the moment the read started, and then your loved tracks.
-A long history takes a minute or two; the count shows as it goes, and Esc stops it without importing anything.
+A long history can take several minutes, because Last.fm sends 200 scrobbles at a time; the count shows as it goes, and Esc stops it without importing anything.
 Your profile must show recent listening publicly; in Last.fm Settings > Privacy, turn off "Hide recent listening information".
-Reading needs a Last.fm API key: the guide links to Last.fm's API page, where you create an API account and copy its key, not the shared secret.
-The key is saved in `lastfm.json` next to your other Moondog settings, and `MOONDOG_LASTFM_API_KEY` overrides it.
+Moondog reads Last.fm with its own API key, so a username is all it needs.
+To use your own key instead, set `MOONDOG_LASTFM_API_KEY`; if Last.fm ever refuses Moondog's key, the guide asks for yours and saves it in `lastfm.json` next to your other Moondog settings.
 Loved tracks count as songs you keep, and scrobbles as plays; Last.fm does not say how long you listened.
 Importing again adds only the scrobbles that are new since the last import.
 Listening data comes from [Last.fm](https://www.last.fm/).

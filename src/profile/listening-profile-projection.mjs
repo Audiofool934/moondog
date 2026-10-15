@@ -86,6 +86,49 @@ function signalNote(value) {
   return value === "historical attention only" ? "" : ` It helps ${signalPhrase(value)}.`;
 }
 
+// Last.fm and most ListenBrainz plays record no duration, and only Spotify's
+// extended history records skips. A basis states each measure for the plays
+// that recorded it, so an unrecorded one never reads as no time or no skips.
+function listeningTime(aggregate) {
+  if (aggregate.timedPlayCount === 0) return "";
+  const time = `${minutes(aggregate.playedMs)} minutes`;
+  return aggregate.timedPlayCount === aggregate.playCount
+    ? `, ${time} in all`
+    : `, ${time} across the ${plural(aggregate.timedPlayCount, "timed play")}`;
+}
+
+function skipSentence(aggregate) {
+  if (aggregate.skipKnownCount === 0) return "";
+  const skips = aggregate.skippedCount === 0
+    ? "Never skipped"
+    : `Skipped ${plural(aggregate.skippedCount, "time")}`;
+  return aggregate.skipKnownCount === aggregate.playCount
+    ? ` ${skips}.`
+    : ` ${skips} in the ${plural(aggregate.skipKnownCount, "play")} with skip data.`;
+}
+
+function unskippedNote(aggregate) {
+  if (aggregate.skipKnownCount === 0) return "";
+  return aggregate.skipKnownCount === aggregate.playCount
+    ? ` (${aggregate.engagedPlayCount} not skipped)`
+    : ` (${aggregate.skipKnownCount - aggregate.skippedCount} of the ${aggregate.skipKnownCount} with skip data not skipped)`;
+}
+
+// Minutes gate and rank listen-again picks, and appear in their rows, only when
+// every play recorded its length; otherwise the play counts decide. A pick row
+// also leaves out skips that no play recorded, instead of stating zero.
+function fullyTimed(aggregate) {
+  return aggregate.timedPlayCount === aggregate.playCount;
+}
+
+function pickMinutes(aggregate, key) {
+  return fullyTimed(aggregate) ? { [key]: minutes(aggregate.playedMs) } : {};
+}
+
+function pickSkips(aggregate, key) {
+  return aggregate.skipKnownCount > 0 ? { [key]: aggregate.skippedCount } : {};
+}
+
 function aggregateEvidenceId(subjectId, kind, key) {
   return uuidV5(
     `${subjectId}\0${kind}\0${key}`,
@@ -572,13 +615,19 @@ function aggregateEvents(subjectId, eventRows, explanations) {
       incognitoEventsExcluded += 1;
       continue;
     }
+    const skipped =
+      event?.event_type === "play_skipped" ||
+      event?.extensions?.["spotify.skipped"] === true;
     eligible.push({
       event,
       track: row.track,
       playedMs,
-      skipped:
-        event?.event_type === "play_skipped" ||
-        event?.extensions?.["spotify.skipped"] === true,
+      timed: hasPlayedDuration,
+      skipped,
+      // Only Spotify's extended history says whether a play was skipped, and
+      // not for every play.
+      skipKnown:
+        skipped || typeof event?.extensions?.["spotify.skipped"] === "boolean",
     });
   }
   const earliest = eligible.reduce(
@@ -613,6 +662,8 @@ function aggregateEvents(subjectId, eventRows, explanations) {
         engagedPlayCount: 0,
         skippedCount: 0,
         playedMs: 0,
+        timedPlayCount: 0,
+        skipKnownCount: 0,
         firstPlayedAt: occurredAt,
         lastPlayedAt: occurredAt,
         engagedPlayedAt: [],
@@ -620,6 +671,8 @@ function aggregateEvents(subjectId, eventRows, explanations) {
       };
       track.playCount += 1;
       track.playedMs += row.playedMs;
+      if (row.timed) track.timedPlayCount += 1;
+      if (row.skipKnown) track.skipKnownCount += 1;
       if (row.skipped) track.skippedCount += 1;
       else {
         track.engagedPlayCount += 1;
@@ -634,9 +687,13 @@ function aggregateEvents(subjectId, eventRows, explanations) {
           engagedPlayCount: 0,
           skippedCount: 0,
           playedMs: 0,
+          timedPlayCount: 0,
+          skipKnownCount: 0,
         };
         yearAggregate.playCount += 1;
         yearAggregate.playedMs += row.playedMs;
+        if (row.timed) yearAggregate.timedPlayCount += 1;
+        if (row.skipKnown) yearAggregate.skipKnownCount += 1;
         if (row.skipped) yearAggregate.skippedCount += 1;
         else yearAggregate.engagedPlayCount += 1;
         track.years.set(year, yearAggregate);
@@ -649,6 +706,7 @@ function aggregateEvents(subjectId, eventRows, explanations) {
         engagedPlayCount: 0,
         skippedCount: 0,
         playedMs: 0,
+        timedPlayCount: 0,
         trackRefs: new Set(),
         years: new Map(),
         firstPlayedAt: occurredAt,
@@ -656,6 +714,7 @@ function aggregateEvents(subjectId, eventRows, explanations) {
       };
       artist.playCount += 1;
       artist.playedMs += row.playedMs;
+      if (row.timed) artist.timedPlayCount += 1;
       if (row.skipped) artist.skippedCount += 1;
       else artist.engagedPlayCount += 1;
       artist.trackRefs.add(trackKey);
@@ -693,7 +752,7 @@ function aggregateEvents(subjectId, eventRows, explanations) {
             evidenceId,
             dimension: "taste.artist_familiarity",
             value: item.name,
-            basis: `${plural(item.playCount, "play")} across ${plural(item.trackRefs.size, "track")}, ${minutes(item.playedMs)} minutes in all${windowKind === "recent" ? `, in the ${recentWindowDays} days up to ${day(latest)}` : `, from ${day(item.firstPlayedAt)} to ${day(item.lastPlayedAt)}`}.`,
+            basis: `${plural(item.playCount, "play")} across ${plural(item.trackRefs.size, "track")}${listeningTime(item)}${windowKind === "recent" ? `, in the ${recentWindowDays} days up to ${day(latest)}` : `, from ${day(item.firstPlayedAt)} to ${day(item.lastPlayedAt)}`}.`,
             name: `listening-artist-${windowKind}`,
             confidence: confidenceForCount(item.playCount),
             limitation:
@@ -733,7 +792,7 @@ function aggregateEvents(subjectId, eventRows, explanations) {
             evidenceId,
             dimension: "taste.track_familiarity",
             value: `${item.title} - ${item.artist}`,
-            basis: `${plural(item.playCount, "play")}, ${minutes(item.playedMs)} minutes in all${windowKind === "recent" ? `, in the ${recentWindowDays} days up to ${day(latest)}` : `, from ${day(item.firstPlayedAt)} to ${day(item.lastPlayedAt)}`}. ${item.skippedCount === 0 ? "Never skipped" : `Skipped ${plural(item.skippedCount, "time")}`}.`,
+            basis: `${plural(item.playCount, "play")}${listeningTime(item)}${windowKind === "recent" ? `, in the ${recentWindowDays} days up to ${day(latest)}` : `, from ${day(item.firstPlayedAt)} to ${day(item.lastPlayedAt)}`}.${skipSentence(item)}`,
             name: `listening-track-${windowKind}`,
             confidence: confidenceForCount(item.playCount),
             limitation:
@@ -879,7 +938,7 @@ function artistRelationships(subjectId, eventAnalysis, explanations) {
           evidenceId,
           dimension: "taste.artist_continuity",
           value: artist.name,
-          basis: `${artist.name} shows up in ${plural(activeYears, "year")} of your history, from ${firstYear} to ${lastYear}: ${plural(artist.playCount, "play")}, ${minutes(artist.playedMs)} minutes in all.`,
+          basis: `${artist.name} shows up in ${plural(activeYears, "year")} of your history, from ${firstYear} to ${lastYear}: ${plural(artist.playCount, "play")}${listeningTime(artist)}.`,
           name: "listening-artist-continuity",
           confidence: confidenceForCount(artist.playCount),
           limitation:
@@ -1001,12 +1060,14 @@ function releaseDepth(subjectId, eventAnalysis, explanations) {
       playCount: 0,
       engagedPlayCount: 0,
       playedMs: 0,
+      timedPlayCount: 0,
       years: new Set(),
     };
     release.trackRefs.add(metadata.trackRefId);
     release.playCount += 1;
     if (!row.skipped) release.engagedPlayCount += 1;
     release.playedMs += row.playedMs;
+    if (row.timed) release.timedPlayCount += 1;
     if (Number.isInteger(year)) release.years.add(year);
     releases.set(key, release);
   }
@@ -1043,7 +1104,7 @@ function releaseDepth(subjectId, eventAnalysis, explanations) {
           evidenceId,
           dimension: "taste.release_depth",
           value: `${release.title} - ${release.artist}`,
-          basis: `You played ${plural(release.trackRefs.size, "different track")} from ${release.title}: ${plural(release.playCount, "play")}, ${minutes(release.playedMs)} minutes in all${years.length > 0 ? `, across ${plural(years.length, "year")}` : ""}.`,
+          basis: `You played ${plural(release.trackRefs.size, "different track")} from ${release.title}: ${plural(release.playCount, "play")}${listeningTime(release)}${years.length > 0 ? `, across ${plural(years.length, "year")}` : ""}.`,
           name: "listening-release-depth",
           confidence: confidenceForCount(release.engagedPlayCount),
           limitation:
@@ -1829,9 +1890,10 @@ function rediscoverySignal(track, evidence, direct) {
 }
 
 function rediscoveryPeakYear(track) {
+  const byTime = fullyTimed(track);
   return [...track.years.entries()]
     .sort(([leftYear, left], [rightYear, right]) => {
-      if (right.playedMs !== left.playedMs) {
+      if (byTime && right.playedMs !== left.playedMs) {
         return right.playedMs - left.playedMs;
       }
       if (right.playCount !== left.playCount) {
@@ -1846,6 +1908,7 @@ function rediscoveryPeakYear(track) {
       explicit_skips: aggregate.skippedCount,
       listening_minutes: minutes(aggregate.playedMs),
       played_ms: aggregate.playedMs,
+      plays: aggregate,
     }))[0] ?? null;
 }
 
@@ -1859,7 +1922,7 @@ function rediscoveryTracks(
   const latestMs = Date.parse(eventAnalysis.latest ?? "");
   if (!Number.isFinite(latestMs)) return [];
   const avoids = combinedAvoids(direct.avoids, evidence.avoids);
-  return [...eventAnalysis.lifetime.tracks.values()]
+  const candidates = [...eventAnalysis.lifetime.tracks.values()]
     .map((track) => {
       const lastPlayedMs = Date.parse(track.lastPlayedAt);
       const quietDays = Math.floor((latestMs - lastPlayedMs) / dayMs);
@@ -1876,15 +1939,17 @@ function rediscoveryTracks(
         quietDays >= recentWindowDays &&
         track.playCount >= rediscoveryMinimumPlays &&
         track.engagedPlayCount >= rediscoveryMinimumEngagedPlays &&
-        track.playedMs >= rediscoveryMinimumPlayedMs &&
+        (!fullyTimed(track) || track.playedMs >= rediscoveryMinimumPlayedMs) &&
         track.engagedPlayCount >= track.skippedCount &&
         !avoids.some((item) => assertionMatchesTrack(item, track)),
-    )
+    );
+  const byTime = candidates.every(({ track }) => fullyTimed(track));
+  return candidates
     .sort((left, right) => {
       if (right.signal.rank !== left.signal.rank) {
         return right.signal.rank - left.signal.rank;
       }
-      if (right.track.playedMs !== left.track.playedMs) {
+      if (byTime && right.track.playedMs !== left.track.playedMs) {
         return right.track.playedMs - left.track.playedMs;
       }
       if (right.track.engagedPlayCount !== left.track.engagedPlayCount) {
@@ -1908,7 +1973,7 @@ function rediscoveryTracks(
           evidenceId,
           dimension: "listening.rediscovery_candidate",
           value: `${track.title} - ${track.artist}`,
-          basis: `${plural(track.playCount, "play")} (${track.engagedPlayCount} not skipped), ${minutes(track.playedMs)} minutes in all, from ${day(track.firstPlayedAt)} to ${day(track.lastPlayedAt)}. Then nothing for ${plural(quietDays, "day")}, up to the latest play in your history. The strongest reason to bring it back is ${signalPhrase(signal.value)}.`,
+          basis: `${plural(track.playCount, "play")}${unskippedNote(track)}${listeningTime(track)}, from ${day(track.firstPlayedAt)} to ${day(track.lastPlayedAt)}. Then nothing for ${plural(quietDays, "day")}, up to the latest play in your history. The strongest reason to bring it back is ${signalPhrase(signal.value)}.`,
           name: "listening-track-rediscovery",
           confidence:
             signal.rank === 4
@@ -1926,8 +1991,8 @@ function rediscoveryTracks(
         identity_status: track.identityStatus,
         play_count: track.playCount,
         engaged_play_count: track.engagedPlayCount,
-        listening_minutes: minutes(track.playedMs),
-        explicit_skips: track.skippedCount,
+        ...pickMinutes(track, "listening_minutes"),
+        ...pickSkips(track, "explicit_skips"),
         first_played_at: track.firstPlayedAt,
         last_played_at: track.lastPlayedAt,
         quiet_days: quietDays,
@@ -1936,7 +2001,7 @@ function rediscoveryTracks(
           ? {
               peak_year: peak.year,
               peak_year_play_count: peak.play_count,
-              peak_year_listening_minutes: peak.listening_minutes,
+              ...pickMinutes(peak.plays, "peak_year_listening_minutes"),
             }
           : {}),
         evidence_id: evidenceId,
@@ -1972,7 +2037,7 @@ function historicalReturnTracks(
   explanations,
 ) {
   const avoids = combinedAvoids(direct.avoids, evidence.avoids);
-  return [...eventAnalysis.lifetime.tracks.values()]
+  const candidates = [...eventAnalysis.lifetime.tracks.values()]
     .map((track) => ({
       track,
       returns: historicalReturnGaps(track),
@@ -1983,10 +2048,12 @@ function historicalReturnTracks(
         returns.length > 0 &&
         track.playCount >= historicalReturnMinimumPlays &&
         track.engagedPlayCount >= historicalReturnMinimumEngagedPlays &&
-        track.playedMs >= historicalReturnMinimumPlayedMs &&
+        (!fullyTimed(track) || track.playedMs >= historicalReturnMinimumPlayedMs) &&
         track.engagedPlayCount >= track.skippedCount &&
         !avoids.some((item) => assertionMatchesTrack(item, track)),
-    )
+    );
+  const byTime = candidates.every(({ track }) => fullyTimed(track));
+  return candidates
     .sort((left, right) => {
       if (right.returns.length !== left.returns.length) {
         return right.returns.length - left.returns.length;
@@ -2001,7 +2068,7 @@ function historicalReturnTracks(
       if (right.signal.rank !== left.signal.rank) {
         return right.signal.rank - left.signal.rank;
       }
-      if (right.track.playedMs !== left.track.playedMs) {
+      if (byTime && right.track.playedMs !== left.track.playedMs) {
         return right.track.playedMs - left.track.playedMs;
       }
       if (right.track.engagedPlayCount !== left.track.engagedPlayCount) {
@@ -2026,7 +2093,7 @@ function historicalReturnTracks(
           evidenceId,
           dimension: "listening.historical_return",
           value: `${track.title} - ${track.artist}`,
-          basis: `${plural(track.playCount, "play")} (${track.engagedPlayCount} not skipped), ${minutes(track.playedMs)} minutes in all, from ${day(track.firstPlayedAt)} to ${day(track.lastPlayedAt)}. It came back ${returns.length === 1 ? "once" : `${returns.length} times`} after ${historicalReturnMinimumGapDays}+ days away; the longest time away was ${plural(longestGapDays, "day")}.${signalNote(signal.value)}`,
+          basis: `${plural(track.playCount, "play")}${unskippedNote(track)}${listeningTime(track)}, from ${day(track.firstPlayedAt)} to ${day(track.lastPlayedAt)}. It came back ${returns.length === 1 ? "once" : `${returns.length} times`} after ${historicalReturnMinimumGapDays}+ days away; the longest time away was ${plural(longestGapDays, "day")}.${signalNote(signal.value)}`,
           name: "listening-track-historical-return",
           confidence: confidenceForCount(
             track.engagedPlayCount + returns.length,
@@ -2045,8 +2112,8 @@ function historicalReturnTracks(
         identity_status: track.identityStatus,
         play_count: track.playCount,
         engaged_play_count: track.engagedPlayCount,
-        listening_minutes: minutes(track.playedMs),
-        explicit_skips: track.skippedCount,
+        ...pickMinutes(track, "listening_minutes"),
+        ...pickSkips(track, "explicit_skips"),
         first_played_at: track.firstPlayedAt,
         last_played_at: track.lastPlayedAt,
         return_count: returns.length,
@@ -2096,7 +2163,8 @@ function timeCapsuleTracks(
     if (
       !peak ||
       peak.engaged_play_count < timeCapsuleMinimumEngagedPlays ||
-      peak.listening_minutes < minutes(timeCapsuleMinimumPlayedMs) ||
+      (fullyTimed(peak.plays) &&
+        peak.listening_minutes < minutes(timeCapsuleMinimumPlayedMs)) ||
       peak.engaged_play_count < peak.explicit_skips
     ) {
       continue;
@@ -2111,11 +2179,14 @@ function timeCapsuleTracks(
   }
   if (byYear.size < timeCapsuleMinimumYears) return [];
 
+  const byTime = [...byYear.values()].every((values) =>
+    values.every(({ track }) => fullyTimed(track)),
+  );
   const rankedYears = [...byYear.entries()]
     .sort(([left], [right]) => left - right)
     .map(([year, values]) => {
       values.sort((left, right) => {
-        if (right.peak.played_ms !== left.peak.played_ms) {
+        if (byTime && right.peak.played_ms !== left.peak.played_ms) {
           return right.peak.played_ms - left.peak.played_ms;
         }
         if (
@@ -2126,7 +2197,7 @@ function timeCapsuleTracks(
         if (right.signal.rank !== left.signal.rank) {
           return right.signal.rank - left.signal.rank;
         }
-        if (right.track.playedMs !== left.track.playedMs) {
+        if (byTime && right.track.playedMs !== left.track.playedMs) {
           return right.track.playedMs - left.track.playedMs;
         }
         const titleOrder = lexicalCompare(left.track.title, right.track.title);
@@ -2135,7 +2206,9 @@ function timeCapsuleTracks(
       return {
         year,
         values,
-        strength: values[0].peak.played_ms,
+        strength: byTime
+          ? values[0].peak.played_ms
+          : values[0].peak.engaged_play_count,
       };
     });
   const selectedYears = evenlySpaced(rankedYears, maximum).sort(
@@ -2148,6 +2221,7 @@ function timeCapsuleTracks(
         ({ track }) => !usedArtists.has(normalizedText(track.artist)),
       ) ?? values[0];
     const { track, peak, signal } = selected;
+    const peakPlays = track.years.get(year);
     usedArtists.add(normalizedText(track.artist));
     const evidenceId = aggregateEvidenceId(
       subjectId,
@@ -2160,7 +2234,7 @@ function timeCapsuleTracks(
         evidenceId,
         dimension: "listening.time_capsule_representative",
         value: `${track.title} - ${track.artist}`,
-        basis: `${year} is this song's biggest year in your history: ${plural(peak.play_count, "play")} (${peak.engaged_play_count} not skipped), ${peak.listening_minutes} minutes in all. Songs you asked me to keep out are never picked.${signalNote(signal.value)}`,
+        basis: `${year} is this song's biggest year in your history: ${plural(peak.play_count, "play")}${unskippedNote(peakPlays)}${listeningTime(peakPlays)}. Songs you asked me to keep out are never picked.${signalNote(signal.value)}`,
         name: "listening-time-capsule",
         confidence: confidenceForCount(peak.engaged_play_count, 0.55, 0.88),
         limitation:
@@ -2176,10 +2250,10 @@ function timeCapsuleTracks(
       capsule_year: year,
       year_play_count: peak.play_count,
       year_engaged_play_count: peak.engaged_play_count,
-      year_listening_minutes: peak.listening_minutes,
-      year_explicit_skips: peak.explicit_skips,
+      ...pickMinutes(peakPlays, "year_listening_minutes"),
+      ...pickSkips(peakPlays, "year_explicit_skips"),
       lifetime_play_count: track.playCount,
-      lifetime_listening_minutes: minutes(track.playedMs),
+      ...pickMinutes(track, "lifetime_listening_minutes"),
       representative_signal: signal.value,
       evidence_id: evidenceId,
     };
@@ -2350,6 +2424,9 @@ export function projectListeningProfile({
     .filter(Boolean)
     .sort()
     .at(-1) ?? null;
+  const lengthNote = events.eligible.some((row) => !row.timed)
+    ? " if every play has a recorded length"
+    : "";
   return {
     summary: {
       schema_version: LISTENING_PROFILE_SCHEMA_VERSION,
@@ -2505,8 +2582,8 @@ export function projectListeningProfile({
             ]
           : []),
         "A song counts as new the first time it shows up in your history, which is not always when you found it.",
-        "Songs worth another listen need at least 3 plays, 2 of them not skipped, 10 minutes in all, and nothing in the last 90 days. They are nudges to listen again, not claims that you love them.",
-        "Songs that came back need at least 3 plays, none skipped, 10 minutes in all, and one gap of at least 180 days. That is a pattern, not proof you missed them or left them on purpose.",
+        `Songs worth another listen need at least 3 plays, 2 of them not skipped, 10 minutes in all${lengthNote}, and nothing in the last 90 days. They are nudges to listen again, not claims that you love them.`,
+        `Songs that came back need at least 3 plays, none skipped, 10 minutes in all${lengthNote}, and one gap of at least 180 days. That is a pattern, not proof you missed them or left them on purpose.`,
         "The Time Machine needs at least two years with enough listening and picks at most one song per year. A pick does not mean the song defined that year, or that you still love it.",
         "An artist counts as staying with you after at least two years in your history, including the latest. How much your top artists change year to year says nothing about whether your taste really changed.",
         "A record counts as one you went deep on after at least three of its tracks. That does not mean you played the whole album, in order, or that you own or like it.",
