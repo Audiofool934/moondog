@@ -421,6 +421,30 @@ test("a saved choice survives refresh failure and retry does not write it twice"
   assert.deepEqual(fixture.prompts, []);
 });
 
+test("opening Why it's here again replaces the earlier explanation above the subject's own lines", async (context) => {
+  const fixture = await createTasteFixture(context);
+  const { terminal } = fixture;
+  // The right-hand column of the profile, where the selected subject's lines show.
+  const detail = () => terminal.body.split("\n").filter((line) => line.includes(" │ "))
+    .map((line) => line.split(" │ ")[1].trimEnd()).join("\n").trim();
+  await fixture.launch();
+  await fixture.submit("/taste", "Your listening profile");
+  terminal.send("Blue Hour Index");
+  await waitFor(() => detail().startsWith("Blue Hour Index\n"), "the selected track", terminal);
+  const own = detail().split("\n\n").slice(1).join("\n\n");
+  for (const source of ["Most played", "Lately"]) {
+    await fixture.chooseAction("Why it's here", "Which evidence?");
+    terminal.send(source);
+    terminal.send("\r");
+    await waitFor(() => !terminal.body.includes("Which evidence?") && detail().includes(`Why it's here\n${source}`),
+      `the ${source} explanation`, terminal);
+  }
+  const shown = detail();
+  assert.equal(shown.split("Why it's here").length - 1, 1, shown);
+  assert.ok(shown.endsWith(`\n\n${own}`), shown);
+  assert.deepEqual(fixture.profileActions, []);
+});
+
 test("escaping profile actions returns to browsing, then home with the draft; taste report remains available", async (context) => {
   const fixture = await createTasteFixture(context);
   const { terminal } = fixture;
