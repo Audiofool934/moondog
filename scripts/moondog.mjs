@@ -836,9 +836,13 @@ async function main() {
     identityResolver: artistIdentityResolver,
   });
   const webResearch = await createCodexWebResearch();
+  // The desktop app (app/) stands in for the terminal: it registers its screen and
+  // preview player here before the room starts. Without it, nothing changes.
+  const host = globalThis[Symbol.for("moondog.host")] ?? null;
   // The listening room plays previews through the system's player when there is one.
   // One-shot commands get none: they would exit in the middle of the first song.
-  const previewPlayer = options.command ? null : await createTerminalPreviewPlayer();
+  // In the desktop app, the window's own player plays them instead.
+  const previewPlayer = options.command ? null : host ? host.musicPreviewPlayer : await createTerminalPreviewPlayer();
   const application = new MoondogApplication({
     ...domainState,
     locale: await resolveListenerLocale(),
@@ -927,7 +931,7 @@ async function main() {
       throw new Error(`Unknown command: ${options.command}`);
     }
 
-    if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    if (!host && (!process.stdin.isTTY || !process.stdout.isTTY)) {
       throw new Error(
         "The listening room needs an interactive terminal. For a quick check without one, try moondog status.",
       );
@@ -936,6 +940,7 @@ async function main() {
     exitRequest = await runMoondogTui({
       application,
       runtime,
+      terminal: host?.terminal,
       previewPlayer,
       lyrics,
       checkUpdates: options => updater.startupCheck(options),
@@ -976,7 +981,8 @@ async function main() {
         if (selection) await writePiRuntimeSelection(selection);
         return createConfiguredRuntime(application, process.env, { selection });
       },
-      runAuth: (provider) =>
+      // Sign-in asks for a key on the terminal's own input, which the app does not have yet.
+      runAuth: host ? undefined : (provider) =>
         runAuthCommand({
           args: ["login", provider],
         }),
@@ -1043,4 +1049,8 @@ main()
     process.stderr.write(`moondog: ${sanitizeTerminalText(error.message)}\n`);
     process.exitCode = 1;
   })
-  .finally(() => closeSpotifyResolutionCache());
+  .finally(() => {
+    closeSpotifyResolutionCache();
+    // The desktop app closes when its room does.
+    globalThis[Symbol.for("moondog.host")]?.closed?.();
+  });

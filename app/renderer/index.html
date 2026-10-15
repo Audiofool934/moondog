@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://*.mzstatic.com; media-src https://audio-ssl.itunes.apple.com; font-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>Moondog</title>
+  <link rel="stylesheet" href="renderer.css">
+</head>
+<body>
+  <div class="titlebar" aria-hidden="true"></div>
+  <main class="room"><div class="room-screen" data-room role="application" aria-label="Moondog listening room"></div></main>
+  <footer class="player" data-player hidden aria-label="Preview player">
+    <img class="player-art" data-player-art alt="" width="40" height="40" hidden>
+    <p class="player-now" aria-live="polite"><strong data-player-title></strong><span data-player-artist></span></p>
+    <div class="player-controls">
+      <button type="button" data-player-prev aria-label="Previous"><svg viewBox="0 0 24 24" aria-hidden="true"><polygon points="19 20 9 12 19 4" /><rect x="4" y="4" width="2.5" height="16" /></svg></button>
+      <button type="button" class="player-toggle" data-player-toggle aria-label="Play"><svg viewBox="0 0 24 24" aria-hidden="true"><polygon points="7 4 20 12 7 20" /></svg></button>
+      <button type="button" data-player-next aria-label="Next"><svg viewBox="0 0 24 24" aria-hidden="true"><polygon points="5 4 15 12 5 20" /><rect x="17.5" y="4" width="2.5" height="16" /></svg></button>
+    </div>
+    <div class="player-track">
+      <div class="player-seek" data-player-seek role="slider" tabindex="0" aria-label="Seek" aria-valuemin="0" aria-valuemax="30" aria-valuenow="0"><span data-player-bar></span></div>
+      <span class="player-time" data-player-time>0:00 / 0:30</span>
+    </div>
+    <p class="player-meta"><span data-player-position></span><a data-player-link href="https://music.apple.com/" target="_blank" rel="noopener">Apple Music ↗</a></p>
+    <audio preload="none"></audio>
+  </footer>
+  <script type="module" src="renderer.js"></script>
+</body>
+</html>

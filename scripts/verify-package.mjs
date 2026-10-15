@@ -31,9 +31,10 @@ const maximumPackedBytes = 2_600_000;
 // catalogs add about 100 KB and one entry per language; Japanese and
 // Portuguese add four entries and about 250 KB. The terminal preview player
 // adds one entry and about 15 KB. The Last.fm import adds two entries and
-// about 40 KB.
-const maximumUnpackedBytes = 5_140_000;
-const maximumEntries = 137;
+// about 40 KB. The seasons chart and the desktop app's hooks add one entry and
+// about 5 KB.
+const maximumUnpackedBytes = 5_146_000;
+const maximumEntries = 138;
 const packageOnlyPrivateSentinelPattern = new RegExp(
   ["PRIVATE", "(?:IP|PLATFORM)", "SENTINEL"].join("_"),
   "u",

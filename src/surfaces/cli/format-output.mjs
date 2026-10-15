@@ -66,7 +66,7 @@ function formatInteger(value) {
   return Number.isInteger(value) ? value.toLocaleString("en-US") : "unknown";
 }
 
-function formatListeningTime(minutes, tr) {
+export function formatListeningTime(minutes, tr) {
   if (!Number.isFinite(minutes) || minutes < 0) return tr("unknown duration");
   if (minutes < 120) return tr("{minutes} min", { minutes: Math.round(minutes) });
   return tr("{hours} h", { hours: tr.number(Math.round((minutes / 60) * 10) / 10) });
