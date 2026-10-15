@@ -86,6 +86,12 @@ function safeNonnegativeInteger(value, field, { optional = false } = {}) {
   return value;
 }
 
+// A listen-again pick leaves out minutes or skips that its plays never recorded.
+function optionalInteger(source, key, field) {
+  const value = safeNonnegativeInteger(source[key], field, { optional: true });
+  return value === undefined ? {} : { [key]: value };
+}
+
 function safeNonnegativeNumber(value, field, { optional = false } = {}) {
   if (value === undefined && optional) return undefined;
   if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
@@ -336,12 +342,14 @@ function projectRediscoveryCandidateSet(value) {
           track.rediscovery.engaged_play_count,
           "rediscovery_engaged_play_count",
         ),
-        listening_minutes: safeNonnegativeInteger(
-          track.rediscovery.listening_minutes,
+        ...optionalInteger(
+          track.rediscovery,
+          "listening_minutes",
           "rediscovery_listening_minutes",
         ),
-        explicit_skips: safeNonnegativeInteger(
-          track.rediscovery.explicit_skips,
+        ...optionalInteger(
+          track.rediscovery,
+          "explicit_skips",
           "rediscovery_explicit_skips",
         ),
         first_played_at: cleanOutputText(
@@ -550,12 +558,14 @@ function projectHistoricalReturnCandidateSet(value) {
           context.engaged_play_count,
           "historical_return_engaged_play_count",
         ),
-        listening_minutes: safeNonnegativeInteger(
-          context.listening_minutes,
+        ...optionalInteger(
+          context,
+          "listening_minutes",
           "historical_return_listening_minutes",
         ),
-        explicit_skips: safeNonnegativeInteger(
-          context.explicit_skips,
+        ...optionalInteger(
+          context,
+          "explicit_skips",
           "historical_return_explicit_skips",
         ),
         first_played_at: firstPlayedAt,
@@ -614,7 +624,9 @@ function projectHistoricalReturnCandidateSet(value) {
         track.longest_gap_days < minimumGapDays ||
         track.play_count < minimumPlays ||
         track.engaged_play_count < minimumEngagedPlays ||
-        track.listening_minutes < minimumListeningMinutes,
+        // Without a recorded length on every play, the play counts decide.
+        (track.listening_minutes !== undefined &&
+          track.listening_minutes < minimumListeningMinutes),
     )
   ) {
     throw new Error("domain_result_invalid:historical_return_candidate_set");
@@ -899,16 +911,19 @@ function projectTimeCapsuleCandidateSet(value) {
           track.time_capsule.year_engaged_play_count,
           "time_capsule_year_engaged_play_count",
         ),
-        year_listening_minutes: safeNonnegativeInteger(
-          track.time_capsule.year_listening_minutes,
+        ...optionalInteger(
+          track.time_capsule,
+          "year_listening_minutes",
           "time_capsule_year_listening_minutes",
         ),
-        year_explicit_skips: safeNonnegativeInteger(
-          track.time_capsule.year_explicit_skips,
+        ...optionalInteger(
+          track.time_capsule,
+          "year_explicit_skips",
           "time_capsule_year_explicit_skips",
         ),
-        lifetime_listening_minutes: safeNonnegativeInteger(
-          track.time_capsule.lifetime_listening_minutes,
+        ...optionalInteger(
+          track.time_capsule,
+          "lifetime_listening_minutes",
           "time_capsule_lifetime_listening_minutes",
         ),
         representative_signal: signal,
@@ -1102,14 +1117,8 @@ function projectBehaviorTrack(value) {
       value.engaged_play_count,
       "behavior_track_engaged_plays",
     ),
-    listening_minutes: safeNonnegativeInteger(
-      value.listening_minutes,
-      "behavior_track_minutes",
-    ),
-    explicit_skips: safeNonnegativeInteger(
-      value.explicit_skips,
-      "behavior_track_skips",
-    ),
+    ...optionalInteger(value, "listening_minutes", "behavior_track_minutes"),
+    ...optionalInteger(value, "explicit_skips", "behavior_track_skips"),
     last_played_at: cleanOutputText(
       value.last_played_at,
       64,
@@ -1342,20 +1351,23 @@ function projectTimeCapsuleBehaviorTrack(value) {
       value.year_engaged_play_count,
       "time_capsule_behavior_year_engaged_plays",
     ),
-    year_listening_minutes: safeNonnegativeInteger(
-      value.year_listening_minutes,
+    ...optionalInteger(
+      value,
+      "year_listening_minutes",
       "time_capsule_behavior_year_minutes",
     ),
-    year_explicit_skips: safeNonnegativeInteger(
-      value.year_explicit_skips,
+    ...optionalInteger(
+      value,
+      "year_explicit_skips",
       "time_capsule_behavior_year_skips",
     ),
     lifetime_play_count: safeNonnegativeInteger(
       value.lifetime_play_count,
       "time_capsule_behavior_lifetime_plays",
     ),
-    lifetime_listening_minutes: safeNonnegativeInteger(
-      value.lifetime_listening_minutes,
+    ...optionalInteger(
+      value,
+      "lifetime_listening_minutes",
       "time_capsule_behavior_lifetime_minutes",
     ),
     representative_signal: cleanOutputText(
