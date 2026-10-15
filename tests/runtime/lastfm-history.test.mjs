@@ -188,7 +188,8 @@ function spotifyHistory(plays) {
     master_metadata_album_artist_name: play.artist,
     master_metadata_album_album_name: "Fixture",
     spotify_track_uri: `spotify:track:${play.uri.padStart(22, "0")}`,
-    reason_start: "clickrow", reason_end: "trackdone", shuffle: false, skipped: false, offline: false, incognito_mode: false,
+    reason_start: "clickrow", reason_end: "trackdone", shuffle: false,
+    skipped: play.skipped === undefined ? false : play.skipped, offline: false, incognito_mode: false,
   }));
   return projectSpotifyExtendedStreamingHistory({
     subjectId, records, archiveSha256: musicHash(JSON.stringify(records)), archiveSizeBytes: 4_096,
@@ -256,6 +257,35 @@ test("a ListenBrainz listen and its Last.fm copy count once, and different songs
   ] }))).bundle);
   assert.equal(receipt.mirrored_events, 1);
   assert.equal(counted(store), 3);
+});
+
+test("an explanation states only the listening time and skips that were recorded", async (context) => {
+  const store = await storeFor(context);
+  // Spotify's extended history records both measures, but leaves some skips null.
+  store.ingestImport(spotifyHistory([
+    { start: at("10:00:00"), seconds: 200, artist: "Mara Vale", title: "Song 1", uri: "1" },
+    { start: at("11:00:00"), seconds: 180, artist: "Mara Vale", title: "Song 1", uri: "1", skipped: null },
+    { start: at("12:00:00"), seconds: 240, artist: "North Window", title: "Song 2", uri: "2" },
+  ]));
+  // Last.fm records neither, for an artist Spotify also played and for one only Last.fm saw.
+  store.ingestImport((await read(fakeLastfm({ history: [
+    { uts: at("14:00:00"), artist: "Mara Vale", name: "Song 4", album: "" },
+    { uts: at("15:00:00"), artist: "Drift Assembly", name: "Song 9", album: "" },
+    { uts: at("16:00:00"), artist: "Drift Assembly", name: "Song 9", album: "" },
+  ] }))).bundle);
+  const behavior = store.profileSummary({ subjectId, maxItems: 50 }).listening_behavior;
+  const basis = (rows, name) => store.explainProfileEvidence({ subjectId, evidenceId: rows.find((row) =>
+    (row.name ?? `${row.label} - ${row.artist_credit}`) === name).evidence_id }).basis_summary;
+
+  assert.equal(basis(behavior.enduring_artists, "Drift Assembly"), "2 plays across 1 track, from 2026-10-01 to 2026-10-01.");
+  assert.equal(basis(behavior.repeat_tracks, "Song 9 - Drift Assembly"), "2 plays, from 2026-10-01 to 2026-10-01.");
+  assert.equal(basis(behavior.enduring_artists, "Mara Vale"),
+    "3 plays across 2 tracks, 6 minutes across the 2 timed plays, from 2026-10-01 to 2026-10-01.");
+  assert.equal(basis(behavior.repeat_tracks, "Song 1 - Mara Vale"),
+    "2 plays, 6 minutes in all, from 2026-10-01 to 2026-10-01. Never skipped in the 1 play with skip data.");
+  // With both measures recorded for every play, the explanation reads as it always has.
+  assert.equal(basis(behavior.repeat_tracks, "Song 2 - North Window"),
+    "1 play, 4 minutes in all, from 2026-10-01 to 2026-10-01. Never skipped.");
 });
 
 test("requests are paced across readers, however fast Last.fm answers", async () => {
