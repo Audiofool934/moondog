@@ -837,15 +837,18 @@ export async function runMoondogTui({
       }
       const explanation = await application.explainProfileEvidence({ evidenceId: evidence.id });
       if (cleanedUp || !profileView) return;
-      const detailLines = [
+      const explanationLines = [
         tr("Why it's here"), evidence.source, "",
         explanation.basis_summary,
         "", tr("What it can't tell me"), explanation.interpretation_limit,
         ...(Number.isFinite(explanation.confidence) ? ["", tr("How sure: {percent}%", { percent: Math.round(explanation.confidence * 100) })] : []),
-        "", ...subject.detailLines,
-      ].filter((line) => typeof line === "string").map(sanitizeTerminalText);
+        "",
+      ];
+      // Add to the rebuilt subject's own lines; the selected subject may still show an earlier explanation.
       const model = buildTasteProfileModel(profileSnapshot, tr);
-      model.subjects = model.subjects.map((item) => item.key === subject.key ? { ...item, detailLines } : item);
+      model.subjects = model.subjects.map((item) => item.key === subject.key ? {
+        ...item, detailLines: [...explanationLines, ...item.detailLines].filter((line) => typeof line === "string").map(sanitizeTerminalText),
+      } : item);
       profileView.setModel(model);
       setFooter(tr("Here's the evidence. PgUp/PgDn to scroll, Enter for actions."));
       return;
