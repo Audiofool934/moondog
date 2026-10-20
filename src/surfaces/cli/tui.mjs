@@ -1775,6 +1775,8 @@ export async function runMoondogTui({
       }
       if (!locale) { setFooter(tr("Language unchanged.")); return; }
       application.locale = locale;
+      // A chosen language also becomes the conversation's, so the next short reply follows it.
+      application.conversationLocale = locale;
       await saveLanguage?.(locale);
       const pinned = normalizeLocale(environment.MOONDOG_LANGUAGE);
       transcript.invalidate();

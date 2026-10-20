@@ -1,5 +1,7 @@
 import { createSpotifyWebApiClient } from "./web-api-client.mjs";
 import { readSpotifyLibrarySnapshot } from "./library-snapshot.mjs";
+import { execFile } from "node:child_process";
+import { hostname } from "node:os";
 import { setTimeout as delay } from "node:timers/promises";
 
 export const SPOTIFY_SERVICE_LIMITS = Object.freeze({
@@ -543,13 +545,33 @@ function fitDeviceMessage(lead, devices, tail) {
     : message;
 }
 
-// With nothing active, the obvious device is the only one, or the only computer:
-// the machine running Moondog. Anything else stays an explicit choice.
-export function preferredIdleDevice(devices) {
+// Spotify names a desktop device after its computer, so "Audiofool's MacBook Pro" and the
+// host name "Audiofools-MacBook-Pro.local" are one machine once case and punctuation go.
+const deviceNameKey = name => typeof name === "string"
+  ? name.normalize("NFKC").toLocaleLowerCase("en-US").replace(/\.local$/u, "").replace(/[^\p{L}\p{N}]+/gu, "") : "";
+
+let computerName;
+// The name Spotify gives this computer: the Mac's Computer Name, or else the host name.
+// It stays on this machine; it only picks between devices Spotify already listed.
+export function thisComputerName() {
+  computerName ??= new Promise(resolve => {
+    if (process.platform !== "darwin") return resolve(hostname());
+    execFile("/usr/sbin/scutil", ["--get", "ComputerName"], { timeout: 1_000 },
+      (error, stdout) => resolve(error ? hostname() : String(stdout).trim()));
+  });
+  return computerName;
+}
+
+// With nothing active, the obvious device is the only one, or the machine running Moondog:
+// the only computer, or the one named like this computer. Anything else stays an explicit choice.
+export function preferredIdleDevice(devices, { thisComputer } = {}) {
   const usable = devices.filter(device => device.is_restricted !== true);
   if (usable.length === 1) return usable[0];
   const computers = usable.filter(device => device.type?.toLocaleLowerCase("en-US") === "computer");
-  return computers.length === 1 ? computers[0] : null;
+  if (computers.length === 1) return computers[0];
+  const here = deviceNameKey(thisComputer);
+  const matches = here ? computers.filter(device => deviceNameKey(device.name) === here) : [];
+  return matches.length === 1 ? matches[0] : null;
 }
 
 function listedDevices(result) {
@@ -671,6 +693,8 @@ export function createSpotifyService(options = {}) {
   const readinessTimeout = options.playbackReadinessTimeoutMs ?? SPOTIFY_SERVICE_LIMITS.playbackReadinessTimeoutMs;
   if (!Number.isInteger(readinessTimeout) || readinessTimeout < 1 || readinessTimeout > 5_000) throw new TypeError("Invalid Spotify playback preparation timeout.");
   const readinessSleep = options.playbackReadinessSleep ?? ((ms, { signal }) => delay(ms, undefined, { signal }));
+  // Tests name the computer, or pass null for none; otherwise the system names it, once.
+  const thisComputer = async () => (options.thisComputerName !== undefined ? options.thisComputerName : thisComputerName());
 
   async function preparedResume(input, { signal, preferredDeviceId, allowDeviceSwitch = input.deviceId !== undefined, allowTransfer = true, excludedDeviceNames = [], onDeviceSelected, beforeDispatch } = {}) {
     const effects = [];
@@ -764,7 +788,8 @@ export function createSpotifyService(options = {}) {
     };
     try {
       let state = await snapshot();
-      const id = input.deviceId ?? state.active ?? preferredDeviceId ?? (state.truncated ? null : preferredIdleDevice(state.devices)?.id);
+      const id = input.deviceId ?? state.active ?? preferredDeviceId ??
+        (state.truncated ? null : preferredIdleDevice(state.devices, { thisComputer: await thisComputer() })?.id);
       if (id) selected = find(state, id);
       else {
         if (state.truncated || state.devices.length !== 1) stop(state.devices.length ? "spotify_device_ambiguous" : "spotify_device_not_found",
@@ -854,7 +879,7 @@ export function createSpotifyService(options = {}) {
       const active = devices.find(device => device.is_active === true && device.is_restricted !== true) ??
         (player?.device?.is_active === true ? devices.find(device => device.id === player.device.id && device.is_restricted !== true) : undefined);
       if (active) return { ...describe(active), active: true };
-      const idle = preferredIdleDevice(devices);
+      const idle = preferredIdleDevice(devices, { thisComputer: await thisComputer() });
       if (idle) return { ...describe(idle), active: false };
       failBeforeDispatch(devices.length ? "spotify_device_ambiguous" : "spotify_device_not_found", devices.length
         ? `Nothing is playing, and several Spotify devices are available (${devices.map(device => device.name).slice(0, 5).join(", ")}). Say which one to use.`

@@ -17,7 +17,9 @@ For each message, Moondog decides the reply language in this order:
 2. The message's script: kana means Japanese, and Han characters without kana mean Chinese.
    Japanese written only in kanji therefore reads as Chinese, and the explicit request or your setting decides.
 3. Common words and commands, such as "pon", "quiero", "the", or "play", scored per language.
-4. Your chosen language, from `/language`, then `MOONDOG_LANGUAGE`, then your system's `LANG`.
+4. The language of the conversation so far, so a reply such as "2" or "ok" doesn't switch languages mid-conversation.
+   Choosing a language with `/language` also sets it.
+5. Your chosen language, from `/language`, then `MOONDOG_LANGUAGE`, then your system's `LANG`.
 
 Quoted titles and track metadata are removed before any of this, because song names travel across languages.
 

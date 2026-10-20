@@ -29,7 +29,7 @@ export default {
   "failure.songNotSent": " No se envió la petición de reproducción.",
   "failure.preparationStopped": ({ evidence }) => `Las comprobaciones del dispositivo no terminaron (${evidence}); no se envió ninguna petición de reproducción. Revisa el estado del dispositivo en Spotify antes de volver a intentarlo.`,
   "failure.queueRequestRequired": "No se añadió ninguna canción: no pude relacionar esta respuesta con una petición para la cola. Para seguir, pide de forma explícita añadir música a la cola.",
-  "failure.notSent": ({ code }) => `Esta entrada de la herramienta se rechazó en local (${code}); no se envió ninguna petición de reproducción a Spotify. Corrígela con una referencia guardada o busca de nuevo. Una nueva petición explícita de reproducción puede seguir adelante.`,
+  "failure.notSent": ({ code }) => `No envié nada a Spotify: no pude relacionarlo con las canciones que encontré (${code}). Vuelve a pedirlo con el nombre de la canción o del artista y la busco de nuevo.`,
   "failure.outcome.lookup": "La búsqueda en Spotify no terminó",
   "failure.outcome.unknown": "No se sabe con certeza el resultado de la acción en Spotify",
   "failure.outcome.unconfirmed": "Spotify no confirmó la acción de reproducción",

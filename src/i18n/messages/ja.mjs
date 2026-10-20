@@ -29,7 +29,7 @@ export default {
   "failure.songNotSent": " 再生リクエストは送っていません。",
   "failure.preparationStopped": ({ evidence }) => `再生前のデバイス確認が完了しませんでした（${evidence}）。再生リクエストは送っていません。Spotify のデバイスの状態を確認してから、もう一度試してください。`,
   "failure.queueRequestRequired": "曲は追加していません。この返事をキューへの追加リクエストと結びつけられませんでした。続けるには、キューに追加したいとはっきり伝えてください。",
-  "failure.notSent": ({ code }) => `ツールへの入力がローカルで拒否されました（${code}）。Spotify には再生リクエストを送っていません。保持している曲の参照で直すか、もう一度検索してください。新しく再生を頼めば、そのまま進められます。`,
+  "failure.notSent": ({ code }) => `Spotify には何も送っていません。さっき見つけた曲と結び付けられませんでした（${code}）。曲名かアーティスト名を添えてもう一度頼んでください。改めて探します。`,
   "failure.outcome.lookup": "Spotify での検索が完了しませんでした",
   "failure.outcome.unknown": "Spotify での操作結果がわかりません",
   "failure.outcome.unconfirmed": "Spotify が再生操作を確認しませんでした",
