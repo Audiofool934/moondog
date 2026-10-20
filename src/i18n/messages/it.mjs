@@ -39,14 +39,6 @@ export default {
   "failure.general": ({ targets, outcome, evidence, reason, playbackNotSent, recovered }) =>
     `${targets ? `Destinazione: ${targets}.\n` : ""}${outcome} (${evidence}). ${reason}${playbackNotSent ? " La richiesta di riproduzione non è stata inviata." : ""} ${recovered ? "Un recupero limitato del dispositivo si è concluso; non ci sono stati altri tentativi." : "L'azione non è stata ritentata."} Leggi lo stato della riproduzione e i dispositivi disponibili per approfondire.`,
 
-  "lookup.noVerifiedMatch": "Non ho trovato una corrispondenza verificata su Spotify. Non è stata inviata alcuna riproduzione né aggiunta alla coda. Aggiungi un album o una versione per affinare la ricerca.",
-  "lookup.noResults": "Questa ricerca non ha trovato brani corrispondenti. Non è stata inviata alcuna riproduzione né aggiunta alla coda. Modifica il titolo o l'artista e cerca di nuovo.",
-  "lookup.choices": "La ricerca è terminata, ma non è stata inviata alcuna riproduzione né aggiunta alla coda.",
-  "lookup.chooseNumber": "Rispondi con un numero per quella versione precisa, oppure chiedimi di scegliere.",
-
-  "named.queued": ({ title, artist }) => `Messo in coda: ${title} - ${artist}.`,
-  "named.playing": ({ title, artist }) => `Riproduzione di ${title} - ${artist} avviata su Spotify.`,
-
   "queue.unverified": ({ one }) => `Spotify ${one ? "l'ha accettato" : "li ha accettati"}, ma non sono riuscito a leggere la tua coda per controllare.`,
   "queue.confirmedPlaying": ({ one }) => one ? "Riproduzione confermata su Spotify." : "Confermato su Spotify: il primo è in riproduzione e gli altri sono nella tua coda.",
   "queue.confirmed": ({ count }) => count === 1 ? "Confermato nella tua coda di Spotify." : `Confermati nella tua coda di Spotify: tutti e ${count}.`,
@@ -69,8 +61,6 @@ export default {
   "queue.observationTruncated": "Il controllo dei doppioni copre solo la parte limitata della coda restituita da Spotify; le voci non visibili potrebbero ancora essere doppioni.",
   "queue.notAddedHeading": "Non aggiunti:",
   "queue.earlierReceipt": "Questo è l'esito della richiesta di coda precedente; questo chiarimento non ha aggiunto di nuovo i brani.",
-  "queue.invalidCount": "Nessun brano è stato messo in coda su Spotify. Indica un numero intero preciso da 1 a 12.",
-  "queue.notCompleted": "Nessun brano è stato messo in coda su Spotify. La tua richiesta esplicita basta come autorizzazione: non servono una playlist né altre conferme. Non è stata completata un'operazione di coda verificabile.",
 
   "playlist.partialUnknown": ({ name }) => `Spotify ha creato la playlist privata "${name}", ma l'aggiunta dei brani non è stata confermata. Controllala prima di decidere se riprovare.`,
   "playlist.partialEmpty": ({ name }) => `Spotify ha creato la playlist privata "${name}", ma non ha aggiunto i brani. La playlist vuota ora esiste; controllala prima di decidere se riprovare.`,

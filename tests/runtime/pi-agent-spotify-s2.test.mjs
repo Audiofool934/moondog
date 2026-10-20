@@ -869,10 +869,8 @@ test("agent queues the pending plan in order without saving a playlist", async (
   const queued = await runtime.prompt("ok cool. add to my queue");
 
   assert.equal(queued.status, "completed");
-  assert.match(queued.text, /Queued 2 on Spotify:/u);
-  assert.match(queued.text, /- Midnight Lines - Mara Vale/u);
-  assert.match(queued.text, /- Glass Highway - North Window/u);
-  assert.equal(queued.text.includes("Which one did you mean?"), false);
+  // The model writes the reply; the structured receipt records what Spotify accepted.
+  assert.deepEqual(queued.spotify_queue_plan.queued.map(track => track.title), ["Midnight Lines", "Glass Highway"]);
   assert.equal(JSON.stringify(queued.spotify_queue_plan).includes("spotify:track:"), false);
   assert.equal(application.pendingSpotifyPlaylistStatus().state, "available");
   assert.deepEqual(service.calls, [
@@ -932,9 +930,8 @@ test("a pending-plan queue stops after a later Spotify add fails", async () => {
 
   const queued = await runtime.prompt("add to my queue");
 
-  assert.match(queued.text, /Queued 1 on Spotify, then stopped at "Glass Highway" - North Window/u);
-  assert.match(queued.text, /- Midnight Lines - Mara Vale/u);
-  assert.equal(queued.text.includes("I queued both."), false);
+  assert.deepEqual(queued.spotify_queue_plan.queued.map(track => track.title), ["Midnight Lines"]);
+  assert.equal(queued.spotify_queue_plan.stopped.title, "Glass Highway");
   assert.equal(JSON.stringify(queued.spotify_queue_plan).includes("spotify:track:"), false);
   assert.equal(application.pendingSpotifyPlaylistStatus().state, "available");
   assert.deepEqual(service.calls, [
@@ -1895,65 +1892,6 @@ for (const outcome of ["accepted", "unmatched", "cancelled"]) {
   });
 }
 
-for (const scenario of ["named_resume", "extra_candidate", "raw_uri", "other_track", "unnamed_request", "invalid_receipt", "separate_discovery", "put_on", "chinese_play"]) {
-  test(`external candidates require validation outside named-song playback: ${scenario}`, async () => {
-    const { application, calls } = catalogPlaybackApplication({ extraCandidate: scenario === "extra_candidate" });
-    const { faux, runtime } = configuredRuntime(application);
-    if (scenario === "invalid_receipt") {
-      application.spotifyConnection.service.addToQueue = async (input) => {
-        calls.push(["queue.add", input]);
-        return { provider: "spotify", ok: false };
-      };
-    }
-    faux.setResponses([
-      fauxAssistantMessage([fauxToolCall("moondog_music_catalog_search", { queries: ["Can You Hear the Music"], limit: scenario === "extra_candidate" ? 2 : 1 })], { stopReason: "toolUse" }),
-      ...(scenario === "separate_discovery" ? [
-        fauxAssistantMessage([fauxToolCall("moondog_music_catalog_search", { queries: ["More recommendations"], limit: 1 })], { stopReason: "toolUse" }),
-      ] : []),
-      (context) => {
-        const [catalog] = toolResults(context, "moondog_music_catalog_search");
-        const track = catalog.tracks.find((entry) => entry.title === "Can You Hear the Music");
-        return fauxAssistantMessage([fauxToolCall("moondog_spotify_resolve_tracks", { track_refs: [{ track_ref_id: track.track_ref_id }] })], { stopReason: "toolUse" });
-      },
-      (context) => {
-        const [catalog] = toolResults(context, "moondog_music_catalog_search");
-        const track = catalog.tracks.find((entry) => entry.title === "Can You Hear the Music");
-        if (scenario === "other_track") {
-          application.spotifyResolutions.set("another-trusted-track", { uri: "spotify:track:another" });
-        }
-        const action = scenario === "named_resume"
-          ? fauxToolCall("moondog_spotify_player_control", { action: "resume", track_refs: [track.track_ref_id] })
-          : fauxToolCall("moondog_spotify_queue_add", scenario === "raw_uri" ? { uri: "spotify:track:another" } : { track_ref_id: scenario === "other_track" ? "another-trusted-track" : track.track_ref_id });
-        return fauxAssistantMessage([action], { stopReason: "toolUse" });
-      },
-      fauxAssistantMessage([fauxText("Ungrounded recommendation sentinel.")]),
-    ]);
-    const prompt = scenario === "unnamed_request" ? "Recommend and queue something"
-      : scenario === "put_on" ? "Put on Can You Hear the Music"
-      : scenario === "chinese_play" ? "放一首 Can You Hear the Music"
-      : "Play Can You Hear the Music and tell me what you found";
-    const result = await runtime.prompt(prompt);
-    assert.equal(calls.length, scenario === "raw_uri" ? 0 : 1);
-    assert.doesNotMatch(result.text, /Ungrounded recommendation sentinel/u);
-    if (scenario === "raw_uri") {
-      assert.match(result.text, /spotify_playback_source_untrusted/u);
-    } else if (scenario === "named_resume") {
-      assert.equal(result.text, "Started playback of Can You Hear the Music - Mara Vale on Spotify.");
-    } else if (["extra_candidate", "put_on", "chinese_play"].includes(scenario)) {
-      assert.match(result.text, /Can You Hear the Music/u);
-      assert.doesNotMatch(result.text, /could not validate|Unrelated Discovery/u);
-      assert.match(result.text, scenario === "chinese_play" ? /已加入队列/u : /Queued/u);
-    } else if (scenario === "invalid_receipt") {
-      assert.match(result.text, /outcome is uncertain/u);
-      assert.equal(result.spotify_write_receipts[0].state, "unknown");
-      assert.doesNotMatch(result.text, /playlist plan/u);
-    } else {
-      assert.match(result.text, /could not validate this playlist plan/u);
-    }
-    application.close();
-  });
-}
-
 test("pending-plan resume schema rejects mixed sources and non-playback actions", () => {
   const { application } = spotifyApplication();
   const { runtime } = configuredRuntime(application);
@@ -1973,16 +1911,4 @@ test("pending-plan resume schema rejects mixed sources and non-playback actions"
     { action: "resume", pending_plan: true, position_ms: 10 },
   ]) assert.equal(validate(parameters), false, JSON.stringify(parameters));
   application.close();
-});
-
-test("repeated model calls for one pending-plan playback do not replay the accepted write", async t => {
-  const { application, service } = spotifyApplication(); t.after(() => application.close());
-  const { faux, runtime } = configuredRuntime(application);
-  await proposeTwoTrackPlan(faux, runtime);
-  const play = () => fauxAssistantMessage([fauxToolCall("moondog_spotify_player_control", { action: "resume", pending_plan: true })], { stopReason: "toolUse" });
-  faux.setResponses([play(), play(), fauxAssistantMessage([fauxText("Started the plan.")])]);
-  const result = await runtime.prompt("Play the pending plan now");
-  assert.equal(service.calls.filter(([action]) => action === "resume").length, 1);
-  assert.equal(result.spotify_write_receipts[0].state, "accepted");
-  assert.equal(result.spotify_playback_failures[0].code, "spotify_playback_already_accepted");
 });

@@ -39,14 +39,6 @@ export default {
   "failure.general": ({ targets, outcome, evidence, reason, playbackNotSent, recovered }) =>
     `${targets ? `Alvo: ${targets}.\n` : ""}${outcome} (${evidence}). ${reason}${playbackNotSent ? " O pedido de reprodução não foi enviado." : ""} ${recovered ? "Uma tentativa limitada de recuperar o dispositivo terminou; não houve nova tentativa." : "A ação não foi repetida."} Consulte o estado da reprodução e os dispositivos disponíveis para entender melhor.`,
 
-  "lookup.noVerifiedMatch": "Não encontrei nenhum resultado verificado no Spotify. Nenhuma ação de reprodução ou de fila foi enviada. Adicione o álbum ou a versão para refinar a busca.",
-  "lookup.noResults": "A busca não encontrou músicas correspondentes. Nenhuma ação de reprodução ou de fila foi enviada. Ajuste o título ou o artista e busque de novo.",
-  "lookup.choices": "A busca terminou, mas nenhuma ação de reprodução ou de fila foi enviada.",
-  "lookup.chooseNumber": "Responda com um número para essa versão exata, ou peça para eu escolher.",
-
-  "named.queued": ({ title, artist }) => `Adicionada à fila: ${title} - ${artist}.`,
-  "named.playing": ({ title, artist }) => `Tocando no Spotify: ${title} - ${artist}.`,
-
   "queue.unverified": ({ one }) => `O Spotify ${one ? "aceitou" : "aceitou todas"}, mas não consegui ler sua fila para conferir.`,
   "queue.confirmedPlaying": ({ one }) => one ? "Confirmado: está tocando no Spotify." : "Confirmado no Spotify: a primeira está tocando e as outras estão na sua fila.",
   "queue.confirmed": ({ count }) => count === 1 ? "Confirmado na sua fila do Spotify." : `Confirmadas na sua fila do Spotify: todas as ${count}.`,
@@ -69,8 +61,6 @@ export default {
   "queue.observationTruncated": "A checagem de repetidas só cobre a parte da fila que o Spotify mostra; o que não aparece ainda pode repetir alguma.",
   "queue.notAddedHeading": "Não adicionadas:",
   "queue.earlierReceipt": "Este é o resultado da fila anterior; este esclarecimento não adicionou as músicas de novo.",
-  "queue.invalidCount": "Nenhuma música foi adicionada ao Spotify. Diga uma quantidade exata entre 1 e 12 músicas.",
-  "queue.notCompleted": "Nenhuma música foi adicionada ao Spotify. Seu pedido de fila já basta; não precisa de playlist nem de outra confirmação. Uma operação de fila verificada não foi concluída.",
 
   "playlist.partialUnknown": ({ name }) => `O Spotify criou a playlist privada "${name}", mas não confirmou que as músicas foram adicionadas. Confira antes de decidir se tenta de novo.`,
   "playlist.partialEmpty": ({ name }) => `O Spotify criou a playlist privada "${name}", mas não adicionou as músicas. A playlist vazia já existe; confira antes de decidir se tenta de novo.`,

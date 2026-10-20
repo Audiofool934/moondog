@@ -39,14 +39,6 @@ export default {
   "failure.general": ({ targets, outcome, evidence, reason, playbackNotSent, recovered }) =>
     `${targets ? `Cible : ${targets}.\n` : ""}${outcome} (${evidence}). ${reason}${playbackNotSent ? " La demande de lecture n'a pas été envoyée." : ""} ${recovered ? "Une récupération limitée de l'appareil s'est terminée ; aucune autre tentative n'a été faite." : "L'action n'a pas été retentée."} Lisez l'état de la lecture et les appareils disponibles pour aller plus loin.`,
 
-  "lookup.noVerifiedMatch": "Aucune correspondance Spotify vérifiée n'a été trouvée. Aucune lecture ni aucun ajout à la file d'attente n'a été envoyé. Précisez un album ou une version pour affiner la recherche.",
-  "lookup.noResults": "Cette recherche n'a renvoyé aucun morceau correspondant. Aucune lecture ni aucun ajout à la file d'attente n'a été envoyé. Précisez le titre ou l'artiste pour chercher à nouveau.",
-  "lookup.choices": "La recherche est terminée, mais aucune lecture ni aucun ajout à la file d'attente n'a été envoyé.",
-  "lookup.chooseNumber": "Répondez avec un numéro pour cette version précise, ou demandez-moi de choisir.",
-
-  "named.queued": ({ title, artist }) => `Ajouté à la file d'attente : ${title} - ${artist}.`,
-  "named.playing": ({ title, artist }) => `Lecture de ${title} - ${artist} lancée sur Spotify.`,
-
   "queue.unverified": ({ one }) => `Spotify ${one ? "l'a accepté" : "les a acceptés"}, mais je n'ai pas pu lire votre file d'attente pour vérifier.`,
   "queue.confirmedPlaying": ({ one }) => one ? "Lecture confirmée sur Spotify." : "Confirmé sur Spotify : le premier est en lecture et les autres sont dans votre file d'attente.",
   "queue.confirmed": ({ count }) => count === 1 ? "Confirmé dans votre file d'attente Spotify." : `Confirmé dans votre file d'attente Spotify : les ${count}.`,
@@ -69,8 +61,6 @@ export default {
   "queue.observationTruncated": "Le dédoublonnage ne couvre que l'extrait limité de la file que Spotify renvoie ; des entrées non visibles peuvent encore faire doublon.",
   "queue.notAddedHeading": "Non ajoutés :",
   "queue.earlierReceipt": "Voici le reçu de l'ajout précédent ; cette précision n'a pas ajouté les morceaux une seconde fois.",
-  "queue.invalidCount": "Aucun morceau n'a été ajouté à la file d'attente Spotify. Indiquez un nombre entier précis entre 1 et 12.",
-  "queue.notCompleted": "Aucun morceau n'a été ajouté à la file d'attente Spotify. Votre demande explicite suffit : aucune playlist ni confirmation supplémentaire n'est nécessaire. C'est l'opération vérifiée sur la file qui n'a pas abouti.",
 
   "playlist.partialUnknown": ({ name }) => `Spotify a créé la playlist privée « ${name} », mais l'ajout de ses morceaux n'a pas été confirmé. Vérifiez-la avant de décider de réessayer.`,
   "playlist.partialEmpty": ({ name }) => `Spotify a créé la playlist privée « ${name} », mais n'a pas ajouté ses morceaux. La playlist vide existe désormais ; vérifiez-la avant de décider de réessayer.`,

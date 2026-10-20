@@ -40,14 +40,6 @@ export default {
   "failure.general": ({ targets, outcome, evidence, reason, playbackNotSent, recovered }) =>
     `${targets ? `Target: ${targets}.\n` : ""}${outcome} (${evidence}). ${reason}${playbackNotSent ? " The song play request was not sent." : ""} ${recovered ? "One bounded device recovery ended; no further retry was made." : "The action was not retried."} Read playback state and available devices to diagnose further.`,
 
-  "lookup.noVerifiedMatch": "No verified Spotify match was found. No play or queue action was sent. Add an album or version to refine the search.",
-  "lookup.noResults": "This search returned no matching songs. No play or queue action was sent. Refine the title or artist to search again.",
-  "lookup.choices": "The lookup completed, but no play or queue action was sent.",
-  "lookup.chooseNumber": "Reply with a number for that exact version, or ask me to choose.",
-
-  "named.queued": ({ title, artist }) => `Queued ${title} - ${artist}.`,
-  "named.playing": ({ title, artist }) => `Started playback of ${title} - ${artist} on Spotify.`,
-
   "queue.unverified": ({ one }) => `Spotify accepted ${one ? "it" : "them"}, but I couldn't read your queue to double-check.`,
   "queue.confirmedPlaying": ({ one }) => one ? "Confirmed playing on Spotify." : "Confirmed on Spotify: the first is playing and the rest are in your queue.",
   "queue.confirmed": ({ count }) => count === 1 ? "Confirmed in your Spotify queue." : `Confirmed in your Spotify queue: all ${count}.`,
@@ -70,8 +62,6 @@ export default {
   "queue.observationTruncated": "Deduplication covers Spotify's bounded queue snapshot; unseen entries may still duplicate a selection.",
   "queue.notAddedHeading": "Not added:",
   "queue.earlierReceipt": "This is the earlier queue receipt; this clarification did not add the songs again.",
-  "queue.invalidCount": "No songs were queued on Spotify. Specify one exact whole-number count from 1 to 12 songs.",
-  "queue.notCompleted": "No songs were queued on Spotify. Your explicit queue request already authorizes the action; no playlist or additional confirmation is required. A verified queue operation was not completed.",
 
   "playlist.partialUnknown": ({ name }) => `Spotify created the private playlist "${name}", but adding its tracks was not confirmed. Inspect it before deciding whether to retry.`,
   "playlist.partialEmpty": ({ name }) => `Spotify created the private playlist "${name}", but did not add its tracks. The empty playlist now exists; inspect it before deciding whether to retry.`,

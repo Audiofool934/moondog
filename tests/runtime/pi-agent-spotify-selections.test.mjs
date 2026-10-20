@@ -39,34 +39,6 @@ async function fixture(context) {
   return { application, runtime, faux, writes, client };
 }
 
-test("Spotify-only search references support next-turn play, queue and save with no imported library", async (context) => {
-  const { application, runtime, faux, writes } = await fixture(context);
-  let firstRef;
-  faux.setResponses([toolUse("moondog_spotify_search", { query: "Midnight Lines" }), (input) => {
-    const result = results(input, "moondog_spotify_search")[0];
-    firstRef = result.items[0].track_ref_id;
-    assert.match(firstRef, /^[a-f0-9-]{36}$/u);
-    assert.doesNotMatch(JSON.stringify(result), /spotify:|fictional1/u);
-    return fauxAssistantMessage([fauxText("1. Midnight Lines by Mara Vale.")]);
-  }]);
-  assert.equal((await runtime.prompt("Find Midnight Lines on Spotify")).status, "completed");
-  assert.equal(writes.length, 0);
-  faux.setResponses([toolUse("moondog_spotify_player_control", { action: "resume", track_refs: [firstRef] }),
-    toolUse("moondog_spotify_queue_add", { track_ref_id: firstRef }),
-    toolUse("moondog_spotify_library_save", { track_refs: [{ track_ref_id: firstRef }] }),
-    fauxAssistantMessage([fauxText("Played, queued and saved the first result.")])]);
-  assert.equal((await runtime.prompt("Play, queue and save the first result")).status, "completed");
-  assert.deepEqual(writes, [["play", [song.uri]], ["queue", [song.uri]], ["save", [song.uri]]]);
-  const replacement = await application.spotifySearchTracks({ query: "another result" });
-  // A newly read ordering cannot retarget the host-displayed choice. Only a
-  // successfully displayed replacement (or reset/expiry) replaces that map.
-  assert.equal(application.requireSpotifyResolution(firstRef).uri, song.uri);
-  application.presentSpotifyChoices(replacement.items.map(item => item.item_ref_id));
-  await assert.rejects(application.spotifyAddToQueue({ trackRefId: firstRef }), { code: "spotify_track_not_resolved" });
-  assert.throws(() => application.spotifyControl({ action: "resume", trackRefs: ["forged-reference"] }), { code: "spotify_track_not_resolved" });
-  assert.equal(writes.length, 3);
-});
-
 test("live reads and follow-up paraphrases never reach generic memory or later sessions", async (context) => {
   const { application, runtime, faux, writes } = await fixture(context);
   let trackRef;
@@ -291,7 +263,6 @@ test("quick private-playlist edits do not retain tool metadata or inferred taste
   assert.equal(application.currentSessionTurns().length, 0);
   assert.deepEqual(application.memorySummary().memories, []);
 });
-
 
 test("a failed named-device control keeps visible device names out of generic memory", async (context) => {
   const { application, runtime, faux, client, writes } = await fixture(context);

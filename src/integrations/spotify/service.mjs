@@ -574,6 +574,18 @@ export function preferredIdleDevice(devices, { thisComputer } = {}) {
   return matches.length === 1 ? matches[0] : null;
 }
 
+function refusedMove(error, target, player) {
+  if (error?.outcomeUnknown || error?.name === "AbortError") return error;
+  const stayed = player?.device?.name ? clipText(player.device.name, 80) : null;
+  const refused = new SpotifyServiceError("spotify_device_refused",
+    `Spotify would not move playback to ${clipText(target.name, 80)}, either as a transfer or as a song started there. ` +
+    `${stayed ? `Playback stays on ${stayed}${player.is_playing === false ? ", paused" : ""}. ` : ""}` +
+    "The Spotify app on that device usually needs to be open and played once before it accepts remote control.");
+  refused.status = error?.status;
+  refused.playbackStayedOn = stayed;
+  return refused;
+}
+
 function listedDevices(result) {
   return (Array.isArray(result?.devices) ? result.devices : []).filter(
     (device) =>
@@ -798,6 +810,10 @@ export function createSpotifyService(options = {}) {
       }
       onDeviceSelected?.(selected.id);
       input = { ...input, deviceId: selected.id }; // Frozen before any write.
+      // A plain resume on the device that is already playing has nothing to do.
+      if (!input.uris && !input.contextUri && input.positionMs === undefined && state.active === selected.id && state.player.is_playing === true) {
+        return { ...actionReceipt("playback.resume"), already: true, device: { name: selected.name, type: selected.type ?? "unknown" } };
+      }
       state = await prepare(state);
       for (;;) {
         signal?.throwIfAborted(); phase = "resume";
@@ -1227,7 +1243,15 @@ export function createSpotifyService(options = {}) {
     async pause(value, { signal } = {}) {
       signal?.throwIfAborted();
       const input = inputObject(value);
-      await client.pause({ deviceId: optionalDeviceId(input.deviceId) }, { signal });
+      try {
+        await client.pause({ deviceId: optionalDeviceId(input.deviceId) }, { signal });
+      } catch (error) {
+        // Spotify refuses to pause a player that is already paused; that is the requested state.
+        if (error?.status !== 403 || error.outcomeUnknown) throw error;
+        const player = await Promise.resolve().then(() => client.getCurrentPlayback({ signal })).catch(() => null);
+        if (player?.state === "available" && player.is_playing === false) return { ...actionReceipt("playback.pause"), already: true };
+        throw error;
+      }
       return actionReceipt("playback.pause");
     },
 
@@ -1312,26 +1336,40 @@ export function createSpotifyService(options = {}) {
           "Pass either a Spotify device ID or a device name.",
         );
       }
-      const play = input.play ?? false;
-      if (deviceId) {
-        onDeviceSelected?.(deviceId);
-        await client.transfer({ deviceId, play }, { signal });
-        return actionReceipt("playback.transfer");
-      }
-      if (!hasName) {
+      if (!deviceId && !hasName) {
         fail("invalid_device_id", "A Spotify device identifier is required.");
       }
-      const device = await resolveNamedDevice(client, input.deviceName, { signal });
+      // Reads before the move are best effort: a failed read never blocks the move itself.
+      const tryRead = (read) => Promise.resolve().then(read).catch(() => null);
+      const device = deviceId
+        ? listedDevices(await tryRead(() => client.getDevices({ signal }))).find((entry) => entry.id === deviceId) ?? { id: deviceId, name: "the selected device" }
+        : await resolveNamedDevice(client, input.deviceName, { signal });
       onDeviceSelected?.(device.id);
       signal?.throwIfAborted();
-      await client.transfer({ deviceId: device.id, play }, { signal });
-      return {
-        ...actionReceipt("playback.transfer"),
-        device: {
-          name: device.name,
-          type: device.type || "unknown",
-        },
-      };
+      const display = { name: device.name, type: device.type || "unknown" };
+      const player = await tryRead(() => client.getCurrentPlayback({ signal }));
+      signal?.throwIfAborted();
+      const playing = player?.state === "available" && player.is_playing === true;
+      const play = input.play ?? playing;
+      if (player?.device?.id === device.id && player.device.is_active !== false && (!play || playing)) {
+        return { ...actionReceipt("playback.transfer"), already: true, device: display };
+      }
+      try {
+        await client.transfer({ deviceId: device.id, play }, { signal });
+        return { ...actionReceipt("playback.transfer"), device: display };
+      } catch (error) {
+        // Spotify sometimes refuses a transfer that it accepts as a play request aimed at
+        // the device. Start the same song there, at the same moment, once.
+        const item = player?.item?.uri;
+        if (![403, 404, 502].includes(error?.status) || error.outcomeUnknown || !item || signal?.aborted) throw refusedMove(error, display, player);
+        try {
+          await client.resume({ deviceId: device.id, uris: [item], ...(Number.isInteger(player.progress_ms) ? { positionMs: player.progress_ms } : {}) }, { signal });
+        } catch (fallback) {
+          throw refusedMove(fallback, display, player);
+        }
+        if (!play) await client.pause({ deviceId: device.id }, { signal }).catch(() => {});
+        return { ...actionReceipt("playback.transfer"), device: display, method: "play_on_device" };
+      }
     },
 
     async addToQueue(value, { signal } = {}) {

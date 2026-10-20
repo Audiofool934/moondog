@@ -165,19 +165,7 @@ test("screen text follows the live language and pluralizes per language", () => 
 });
 
 test("the words Moondog reads itself work in every supported language", async () => {
-  const { playbackFollowupIntent, queueCancellationRequested, unheardRequested, playbackDeviceExplicitlyRequested } =
-    await import("../../src/core/spotify-listening-intent.mjs");
-  const followups = [
-    ["3", "ordinal:3"], ["第三个", "ordinal:3"], ["retry", "retry"],
-    ["la tercera", "ordinal:3"], ["pon la 2", "ordinal:2"], ["otra vez", "retry"], ["otra versión", "alternative"], ["ponla en el altavoz", "retarget"],
-    ["a terceira", "ordinal:3"], ["coloca a 2", "ordinal:2"], ["de novo", "retry"], ["outra versão", "alternative"], ["toca na caixa de som", "retarget"],
-    ["3番", "ordinal:3"], ["三つ目", "ordinal:3"], ["もう一度", "retry"], ["別のバージョンにして", "alternative"], ["スピーカーで再生して", "retarget"],
-    ["ジャズをSpotifyで再生して", null],
-  ];
-  for (const [text, expected] of followups) {
-    const intent = playbackFollowupIntent(text);
-    assert.equal(intent ? `${intent.kind}${intent.ordinal ? `:${intent.ordinal}` : ""}` : null, expected, text);
-  }
+  const { queueCancellationRequested, unheardRequested } = await import("../../src/core/spotify-listening-intent.mjs");
   for (const text of ["cancel", "别加了", "cancela", "no añadas nada a la cola", "não adiciona nada na fila", "キャンセル", "キューに入れないで"]) {
     assert.equal(queueCancellationRequested(text), true, text);
   }
@@ -186,8 +174,5 @@ test("the words Moondog reads itself work in every supported language", async ()
   }
   for (const text of ["songs I've never heard", "canciones que no haya escuchado", "músicas que eu ainda não ouvi", "聴いたことのない曲"]) {
     assert.equal(unheardRequested(text), true, text);
-  }
-  for (const text of ["ponla en mi altavoz", "toca no meu celular", "スマホで再生して"]) {
-    assert.equal(playbackDeviceExplicitlyRequested(text, { deviceName: text.includes("altavoz") ? "speaker" : "phone" }), true, text);
   }
 });

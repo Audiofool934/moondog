@@ -39,14 +39,6 @@ export default {
   "failure.general": ({ targets, outcome, evidence, reason, playbackNotSent, recovered }) =>
     `${targets ? `Objetivo: ${targets}.\n` : ""}${outcome} (${evidence}). ${reason}${playbackNotSent ? " No se envió la petición de reproducción." : ""} ${recovered ? "Terminó un intento acotado de recuperar el dispositivo; no se volvió a intentar." : "La acción no se volvió a intentar."} Consulta el estado de la reproducción y los dispositivos disponibles para saber más.`,
 
-  "lookup.noVerifiedMatch": "No encontré ninguna coincidencia verificada en Spotify. No se envió ninguna acción de reproducción ni de cola. Añade el álbum o la versión para afinar la búsqueda.",
-  "lookup.noResults": "La búsqueda no encontró canciones que coincidan. No se envió ninguna acción de reproducción ni de cola. Ajusta el título o el artista y busca de nuevo.",
-  "lookup.choices": "La búsqueda terminó, pero no se envió ninguna acción de reproducción ni de cola.",
-  "lookup.chooseNumber": "Responde con un número para esa versión exacta, o pídeme que elija yo.",
-
-  "named.queued": ({ title, artist }) => `Añadida a la cola: ${title} - ${artist}.`,
-  "named.playing": ({ title, artist }) => `Sonando en Spotify: ${title} - ${artist}.`,
-
   "queue.unverified": ({ one }) => `Spotify ${one ? "la aceptó" : "las aceptó"}, pero no pude leer tu cola para comprobarlo.`,
   "queue.confirmedPlaying": ({ one }) => one ? "Confirmado: está sonando en Spotify." : "Confirmado en Spotify: la primera está sonando y el resto están en tu cola.",
   "queue.confirmed": ({ count }) => count === 1 ? "Confirmado en tu cola de Spotify." : `Confirmadas en tu cola de Spotify: las ${count}.`,
@@ -69,8 +61,6 @@ export default {
   "queue.observationTruncated": "La comprobación de repetidas solo cubre la parte de la cola que muestra Spotify; lo que no se ve podría repetir alguna.",
   "queue.notAddedHeading": "Sin añadir:",
   "queue.earlierReceipt": "Este es el resultado de la cola anterior; esta aclaración no volvió a añadir las canciones.",
-  "queue.invalidCount": "No se añadió ninguna canción a Spotify. Indica una cantidad exacta entre 1 y 12 canciones.",
-  "queue.notCompleted": "No se añadió ninguna canción a Spotify. Tu petición para la cola ya basta; no hace falta una playlist ni otra confirmación. No se completó una operación de cola verificada.",
 
   "playlist.partialUnknown": ({ name }) => `Spotify creó la playlist privada "${name}", pero no confirmó que se añadieran las canciones. Revísala antes de decidir si lo intentas de nuevo.`,
   "playlist.partialEmpty": ({ name }) => `Spotify creó la playlist privada "${name}", pero no añadió las canciones. La playlist vacía ya existe; revísala antes de decidir si lo intentas de nuevo.`,

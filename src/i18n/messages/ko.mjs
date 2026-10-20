@@ -39,14 +39,6 @@ export default {
   "failure.general": ({ targets, outcome, evidence, reason, playbackNotSent, recovered }) =>
     `${targets ? `대상: ${targets}.\n` : ""}${outcome} (${evidence}). ${reason}${playbackNotSent ? " 곡 재생 요청은 보내지 않았습니다." : ""} ${recovered ? "제한된 기기 복구를 한 번 마쳤고, 더 이상 다시 시도하지 않았습니다." : "작업을 다시 시도하지 않았습니다."} 재생 상태와 사용 가능한 기기를 읽으면 더 자세히 살펴볼 수 있습니다.`,
 
-  "lookup.noVerifiedMatch": "Spotify에서 확인된 일치 항목을 찾지 못했습니다. 재생이나 대기열 작업은 보내지 않았습니다. 앨범이나 버전을 덧붙이면 더 정확하게 찾을 수 있습니다.",
-  "lookup.noResults": "이번 검색에서 맞는 곡을 찾지 못했습니다. 재생이나 대기열 작업은 보내지 않았습니다. 제목이나 아티스트를 바꿔 다시 찾아 주세요.",
-  "lookup.choices": "검색은 끝났지만 재생이나 대기열 작업은 보내지 않았습니다.",
-  "lookup.chooseNumber": "원하는 버전의 번호로 답하거나, 저에게 골라 달라고 해 주세요.",
-
-  "named.queued": ({ title, artist }) => `대기열에 넣었습니다: ${title} - ${artist}.`,
-  "named.playing": ({ title, artist }) => `Spotify에서 ${title} - ${artist} 재생을 시작했습니다.`,
-
   "queue.unverified": () => "Spotify가 받아들였지만, 대기열을 읽어 다시 확인하지는 못했습니다.",
   "queue.confirmedPlaying": ({ one }) => one ? "Spotify에서 재생 중인 것을 확인했습니다." : "Spotify에서 확인했습니다. 첫 곡이 재생 중이고 나머지는 대기열에 있습니다.",
   "queue.confirmed": ({ count }) => count === 1 ? "Spotify 대기열에서 확인했습니다." : `Spotify 대기열에서 ${count}곡 모두 확인했습니다.`,
@@ -69,8 +61,6 @@ export default {
   "queue.observationTruncated": "Spotify가 돌려준 대기열의 일부만 확인했습니다. 보이지 않는 부분에 같은 곡이 있을 수 있습니다.",
   "queue.notAddedHeading": "추가하지 않은 곡:",
   "queue.earlierReceipt": "이것은 앞선 대기열 작업의 결과입니다. 이번 설명으로 곡을 다시 넣지는 않았습니다.",
-  "queue.invalidCount": "Spotify 대기열에 곡을 넣지 않았습니다. 1부터 12 사이의 정수로 곡 수를 말해 주세요.",
-  "queue.notCompleted": "Spotify 대기열에 곡을 넣지 않았습니다. 분명한 대기열 요청만으로 충분하며 플레이리스트나 추가 확인은 필요 없습니다. 확인 가능한 대기열 작업이 완료되지 않았을 뿐입니다.",
 
   "playlist.partialUnknown": ({ name }) => `Spotify에 비공개 플레이리스트 "${name}" 생성은 끝났지만, 곡 추가는 확인되지 않았습니다. 다시 시도할지 정하기 전에 확인해 주세요.`,
   "playlist.partialEmpty": ({ name }) => `Spotify에 비공개 플레이리스트 "${name}" 생성은 끝났지만 곡은 추가하지 않았습니다. 빈 플레이리스트가 생겼으니 다시 시도할지 정하기 전에 확인해 주세요.`,

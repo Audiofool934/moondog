@@ -38,8 +38,12 @@ for (const type of ["tracks", "albums", "shows"]) test(`library ${type} uses cur
     await application.spotifyControl({ action: "resume", contextRefId: result.items[0].item_ref_id });
     assert.deepEqual(calls.at(-1).body, { context_uri: "spotify:album:fictional" });
     application.endPrompt();
+    // A later read keeps earlier references working for the session.
     await application.spotifyBrowseLibrary({ type: "tracks" });
-    assert.throws(() => application.spotifyControl({ action: "resume", contextRefId: result.items[0].item_ref_id }), { code: "spotify_item_not_available" });
+    application.beginPrompt({ text: "Play that album again" });
+    await application.spotifyControl({ action: "resume", contextRefId: result.items[0].item_ref_id });
+    assert.deepEqual(calls.at(-1).body, { context_uri: "spotify:album:fictional" });
+    application.endPrompt();
   }
 });
 

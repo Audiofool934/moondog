@@ -39,14 +39,6 @@ export default {
   "failure.general": ({ targets, outcome, evidence, reason, playbackNotSent, recovered }) =>
     `${targets ? `目標：${targets}。\n` : ""}${outcome}（${evidence}）。${reason}${playbackNotSent ? "歌曲播放請求尚未送出。" : ""}${recovered ? "已結束一次有限的裝置復原流程，不再重試。" : "沒有自動重試。"}可以讀取播放狀態和裝置清單繼續診斷。`,
 
-  "lookup.noVerifiedMatch": "在 Spotify 上沒有找到可確認的符合歌曲，沒有送出播放或加入佇列操作。可以補上專輯或版本再搜尋。",
-  "lookup.noResults": "這次搜尋沒有找到符合的歌曲，沒有送出播放或加入佇列操作。可以調整歌名或藝人再搜尋。",
-  "lookup.choices": "搜尋完成了，但沒有送出播放或加入佇列操作。",
-  "lookup.chooseNumber": "回覆編號就能選那個版本，也可以讓我挑一個。",
-
-  "named.queued": ({ title, artist }) => `已加入佇列：《${title}》- ${artist}。`,
-  "named.playing": ({ title, artist }) => `已在 Spotify 開始播放《${title}》- ${artist}。`,
-
   "queue.unverified": () => "Spotify 已接受，但我沒辦法讀取你的佇列再確認一次。",
   "queue.confirmedPlaying": ({ one }) => one ? "已在 Spotify 確認正在播放。" : "已在 Spotify 確認：第一首正在播放，其餘都在佇列裡。",
   "queue.confirmed": ({ count }) => count === 1 ? "已在 Spotify 佇列裡確認。" : `已在 Spotify 佇列裡確認這 ${count} 首。`,
@@ -69,8 +61,6 @@ export default {
   "queue.observationTruncated": "只檢查了 Spotify 回傳的有限佇列片段，沒顯示的部分仍可能重複。",
   "queue.notAddedHeading": "沒有加入：",
   "queue.earlierReceipt": "這是上一次佇列操作的結果；這次說明沒有再次加入歌曲。",
-  "queue.invalidCount": "沒有向 Spotify 加入歌曲。請說一個 1 到 12 之間的整數首數。",
-  "queue.notCompleted": "這次沒有向 Spotify 加入歌曲。你明確的佇列請求已經足夠，不需要建立播放清單或再次確認；只是可驗證的佇列操作沒有完成。",
 
   "playlist.partialUnknown": ({ name }) => `Spotify 已建立私人播放清單「${name}」，但加入曲目的結果尚未確認。請先檢查再決定是否重試。`,
   "playlist.partialEmpty": ({ name }) => `Spotify 已建立私人播放清單「${name}」，但沒有加入曲目；這個空的播放清單已經存在，請先檢查再決定是否重試。`,

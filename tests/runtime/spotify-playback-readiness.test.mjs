@@ -181,28 +181,6 @@ for (const boundary of ["before", "after-transfer", "during-poll", "after-play"]
   assert.equal(f.state.writes.length, boundary === "before" ? 0 : boundary === "after-play" ? 2 : 1);
 });
 
-test("full model/Spotify trace records preparation and exact song, blocks a subsequent model replay", async t => {
-  const f = fixture(t, { devices: [device("mac", false)], playback: { is_playing: false }, playStatuses: [404, 204] });
-  const result = await f.prompt("播放玫瑰少年 JOLIN", playTrace([tool("moondog_spotify_player_control", { action: "resume" })]));
-  assert.deepEqual(f.state.writes.map(write => write.route), ["/v1/me/player", "/v1/me/player/play", "/v1/me/player/play"]);
-  assert.deepEqual(f.state.writes[1], f.state.writes[2]);
-  assert.deepEqual(result.spotify_write_receipts.map(receipt => receipt.action), ["playback.transfer", "playback.resume"]);
-  assert.equal(result.spotify_write_receipts[1].recovered_no_active_device, true);
-  assert.match(result.text, /玫瑰少年/u);
-  assert.doesNotMatch(result.text, /错误的模型声明/u);
-});
-
-test("explicit retry preserves the implicitly chosen device and recording when another device becomes active", async t => {
-  const f = fixture(t, { playStatuses: [404, 404] });
-  await f.prompt("播放玫瑰少年 JOLIN", playTrace());
-  f.state.devices = [device("mac", false), device("phone")]; f.state.playback.device = device("phone");
-  const result = await f.prompt("retry", [tool("moondog_spotify_player_control", { action: "resume" }), say()]);
-  assert.equal(f.state.writes.length, 2);
-  assert.match(result.text, /spotify_device_changed/u);
-  assert.deepEqual(f.app.spotifyPlaybackAttempt.parameters.uris, [song.uri]);
-  assert.equal(f.app.spotifyPlaybackAttempt.parameters.deviceId, "mac");
-});
-
 test("cancelled preparation retains accepted transfer in runtime audit and truthful final text", async t => {
   const f = fixture(t, { devices: [device("mac", false)], playback: { is_playing: false } });
   f.state.onWrite = () => f.runtime.abort();
@@ -229,48 +207,12 @@ test("queue requests never invoke playback preparation or transfer", async t => 
   assert.ok(!f.state.reads.includes("/v1/me/player"));
 });
 
-for (const text of ["播放玫瑰少年 JOLIN", "Play a song by Mac DeMarco", "播放玫瑰少年，不要在 Mac 上播放", "Play Rose, not on Mac"]) test(`model device arguments never invent or override listener intent: ${text}`, async t => {
-  const f = fixture(t, { devices: [device("mac", false), device("phone")], playback: { is_playing: false, device: device("phone") } });
-  const result = await f.prompt(text, playTrace([], "Mac"));
-  assert.equal(f.state.writes.length, 0);
-  assert.equal(result.spotify_playback_failures[0].code, "spotify_device_selection_not_authorized");
-});
-
 for (const text of ["在 Mac 上播放玫瑰少年 JOLIN", "Play Rose by JOLIN on my Mac"]) test(`listener-selected device prepares then plays only requested song: ${text}`, async t => {
   const f = fixture(t, { devices: [device("mac", false), device("phone")], playback: { is_playing: false, device: device("phone") } });
   await f.prompt(text, playTrace([], "Mac"));
   assert.deepEqual(f.state.writes.map(write => write.route), ["/v1/me/player", "/v1/me/player/play"]);
   assert.equal(f.state.writes[1].device, "mac");
   assert.deepEqual(f.state.writes[1].body, { uris: [song.uri] });
-});
-
-for (const duplicate of [false, true]) test(`named listener device via retained ref respects duplicate-name ambiguity=${duplicate}`, async t => {
-  const f = fixture(t, { devices: [device("mac", false), ...(duplicate ? [{ ...device("other", false), name: "Fictional Mac" }] : [])], playback: { is_playing: false } });
-  const trace = playTrace();
-  trace.splice(1, 0, tool("moondog_spotify_devices"));
-  trace[2] = context => {
-    const read = name => JSON.parse(context.messages.filter(message => message.toolName === name && message.role === "toolResult").at(-1).content[0].text);
-    return tool("moondog_spotify_player_control", { action: "resume", item_ref_id: read("moondog_spotify_search").items[0].item_ref_id, device_ref_id: read("moondog_spotify_devices").devices[0].device_ref_id });
-  };
-  await f.prompt("在 Fictional Mac 播放玫瑰少年 JOLIN", trace);
-  assert.equal(f.state.writes.length, duplicate ? 0 : 2);
-});
-
-test("a second accepted-play attempt cannot vary selector/position or erase the retained retry device", async t => {
-  const f = fixture(t);
-  const trace = playTrace();
-  const second = context => {
-    const result = JSON.parse(context.messages.filter(message => message.toolName === "moondog_spotify_search" && message.role === "toolResult").at(-1).content[0].text);
-    return tool("moondog_spotify_player_control", { action: "resume", item_ref_id: result.items[0].item_ref_id, device_name: "Mac", position_ms: 0 });
-  };
-  trace.splice(2, 0, second, tool("moondog_spotify_player_control", { action: "resume" }));
-  await f.prompt("在 Mac 上播放玫瑰少年 JOLIN", trace);
-  assert.equal(f.state.writes.length, 1);
-  assert.equal(f.app.spotifyPlaybackAttempt.outcome, "accepted");
-  assert.equal(f.app.spotifyPlaybackAttempt.parameters.deviceId, "mac");
-  f.state.devices = [device("mac", false), device("phone")]; f.state.playback.device = device("phone");
-  await f.prompt("重试", [tool("moondog_spotify_player_control", { action: "resume" }), say()]);
-  assert.equal(f.state.writes.length, 1);
 });
 
 test("explicit device preference applies to a later inactive choice and clears on reset", async t => {
@@ -304,25 +246,5 @@ test("unknown flags remain unknown in model-visible player and device results", 
     assert.equal(read("moondog_spotify_now_playing").is_playing, null);
     return say();
   }]);
-  assert.equal(f.state.writes.length, 0);
-});
-
-test("named song on a device cannot warm up old content through standalone transfer", async t => {
-  const f = fixture(t);
-  await f.prompt("在 Mac 上播放玫瑰少年 JOLIN", [tool("moondog_spotify_device_transfer", { device_name: "Mac", play: true }), say()]);
-  assert.equal(f.state.writes.length, 0);
-});
-
-for (const text of ["播放玫瑰少年 JOLIN，不要切换设备", "Play Rose, don't transfer playback"]) test(`negated transfer cannot be bypassed by standalone or implicit preparation: ${text}`, async t => {
-  const f = fixture(t, { devices: [device("mac", false)], playback: { is_playing: false } });
-  await f.prompt(text, [tool("moondog_spotify_device_transfer", { device_name: "Mac", play: true }), ...playTrace()]);
-  assert.equal(f.state.writes.length, 1);
-  assert.equal(f.state.writes[0].route, "/v1/me/player/play");
-  assert.equal(f.state.writes[0].device, "mac");
-});
-
-for (const text of ["播放玫瑰少年，不要在 Mac 上播放", "Play Rose, not on Mac"]) test(`an excluded device cannot become an implicit fallback: ${text}`, async t => {
-  const f = fixture(t);
-  await f.prompt(text, playTrace());
   assert.equal(f.state.writes.length, 0);
 });

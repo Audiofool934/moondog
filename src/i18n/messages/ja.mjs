@@ -39,14 +39,6 @@ export default {
   "failure.general": ({ targets, outcome, evidence, reason, playbackNotSent, recovered }) =>
     `${targets ? `対象: ${targets}。\n` : ""}${outcome}（${evidence}）。${reason}${playbackNotSent ? "再生リクエストは送っていません。" : ""}${recovered ? "デバイスの復旧を一度だけ試して終了しました。これ以上は再試行しません。" : "自動では再試行していません。"}再生状態と使えるデバイスを確認すると、原因を詳しく調べられます。`,
 
-  "lookup.noVerifiedMatch": "Spotify で確認できる一致は見つかりませんでした。再生やキューへの追加は送っていません。アルバム名やバージョンを加えて検索し直してください。",
-  "lookup.noResults": "一致する曲は見つかりませんでした。再生やキューへの追加は送っていません。曲名やアーティスト名を変えて検索し直してください。",
-  "lookup.choices": "検索は完了しましたが、再生やキューへの追加は送っていません。",
-  "lookup.chooseNumber": "そのバージョンの番号を返信するか、こちらで選ぶよう頼んでください。",
-
-  "named.queued": ({ title, artist }) => `キューに追加しました: ${title} - ${artist}。`,
-  "named.playing": ({ title, artist }) => `Spotify で再生を始めました: ${title} - ${artist}。`,
-
   "queue.unverified": () => "Spotify は受け付けましたが、キューを読み取って確認できませんでした。",
   "queue.confirmedPlaying": ({ one }) => one ? "Spotify で再生中であることを確認しました。" : "Spotify で確認しました。1 曲目が再生中で、残りはキューに入っています。",
   "queue.confirmed": ({ count }) => count === 1 ? "Spotify のキューに入っていることを確認しました。" : `Spotify のキューに ${count} 曲すべて入っていることを確認しました。`,
@@ -69,8 +61,6 @@ export default {
   "queue.observationTruncated": "重複の確認は Spotify が表示するキューの範囲だけです。表示されていない部分と重なる可能性があります。",
   "queue.notAddedHeading": "まだ追加していない曲:",
   "queue.earlierReceipt": "これは前回のキュー操作の結果です。今回の補足では曲を再度追加していません。",
-  "queue.invalidCount": "Spotify には曲を追加していません。1 から 12 曲のあいだで、曲数をはっきり指定してください。",
-  "queue.notCompleted": "Spotify には曲を追加していません。キューへの追加はリクエストだけで足ります。プレイリストや追加の確認は不要です。確認できるキュー操作は完了しませんでした。",
 
   "playlist.partialUnknown": ({ name }) => `Spotify に非公開プレイリスト「${name}」を作成しましたが、曲の追加は確認できませんでした。再試行する前にプレイリストを確認してください。`,
   "playlist.partialEmpty": ({ name }) => `Spotify に非公開プレイリスト「${name}」を作成しましたが、曲は追加されませんでした。空のプレイリストが残っています。再試行する前に確認してください。`,

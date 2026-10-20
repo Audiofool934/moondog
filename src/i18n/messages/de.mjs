@@ -39,14 +39,6 @@ export default {
   "failure.general": ({ targets, outcome, evidence, reason, playbackNotSent, recovered }) =>
     `${targets ? `Ziel: ${targets}.\n` : ""}${outcome} (${evidence}). ${reason}${playbackNotSent ? " Die Wiedergabe-Anfrage wurde nicht gesendet." : ""} ${recovered ? "Eine begrenzte Gerätewiederherstellung ist beendet; es gab keinen weiteren Versuch." : "Die Aktion wurde nicht wiederholt."} Lies den Wiedergabestatus und die verfügbaren Geräte, um weiter einzugrenzen.`,
 
-  "lookup.noVerifiedMatch": "Es wurde kein bestätigter Treffer auf Spotify gefunden. Es wurde keine Wiedergabe und nichts für die Warteschlange gesendet. Nenne ein Album oder eine Version, um die Suche einzugrenzen.",
-  "lookup.noResults": "Diese Suche hat keine passenden Songs gefunden. Es wurde keine Wiedergabe und nichts für die Warteschlange gesendet. Passe Titel oder Künstler an und suche erneut.",
-  "lookup.choices": "Die Suche ist fertig, aber es wurde keine Wiedergabe und nichts für die Warteschlange gesendet.",
-  "lookup.chooseNumber": "Antworte mit einer Nummer für genau diese Version, oder lass mich wählen.",
-
-  "named.queued": ({ title, artist }) => `Zur Warteschlange hinzugefügt: ${title} - ${artist}.`,
-  "named.playing": ({ title, artist }) => `Wiedergabe von ${title} - ${artist} auf Spotify gestartet.`,
-
   "queue.unverified": ({ one }) => `Spotify hat ${one ? "ihn" : "sie"} angenommen, aber ich konnte deine Warteschlange nicht lesen, um das zu prüfen.`,
   "queue.confirmedPlaying": ({ one }) => one ? "Wiedergabe auf Spotify bestätigt." : "Auf Spotify bestätigt: Der erste läuft, die übrigen stehen in deiner Warteschlange.",
   "queue.confirmed": ({ count }) => count === 1 ? "In deiner Spotify-Warteschlange bestätigt." : `In deiner Spotify-Warteschlange bestätigt: alle ${count}.`,
@@ -69,8 +61,6 @@ export default {
   "queue.observationTruncated": "Doppelungen wurden nur im begrenzten Ausschnitt der Warteschlange geprüft, den Spotify liefert; nicht sichtbare Einträge können noch doppelt sein.",
   "queue.notAddedHeading": "Nicht hinzugefügt:",
   "queue.earlierReceipt": "Das ist das Ergebnis der früheren Warteschlangen-Aktion; diese Klarstellung hat die Songs nicht erneut hinzugefügt.",
-  "queue.invalidCount": "Es wurden keine Songs zur Spotify-Warteschlange hinzugefügt. Nenne eine genaue ganze Zahl von 1 bis 12.",
-  "queue.notCompleted": "Es wurden keine Songs zur Spotify-Warteschlange hinzugefügt. Deine ausdrückliche Bitte reicht als Freigabe; eine Playlist oder weitere Bestätigung ist nicht nötig. Nur die überprüfbare Warteschlangen-Aktion wurde nicht abgeschlossen.",
 
   "playlist.partialUnknown": ({ name }) => `Spotify hat die private Playlist „${name}“ erstellt, aber das Hinzufügen der Titel wurde nicht bestätigt. Prüfe sie, bevor du entscheidest, ob du es erneut versuchst.`,
   "playlist.partialEmpty": ({ name }) => `Spotify hat die private Playlist „${name}“ erstellt, aber keine Titel hinzugefügt. Die leere Playlist existiert jetzt; prüfe sie, bevor du entscheidest, ob du es erneut versuchst.`,

@@ -10,50 +10,6 @@ function number(value) {
   return digits[value] ?? null;
 }
 
-// Spanish ordinals and small numbers for "la tercera", "pon la 2", "número dos".
-const spanishOrdinals = { primer: 1, primero: 1, primera: 1, segundo: 2, segunda: 2, tercer: 3, tercero: 3, tercera: 3,
-  cuarto: 4, cuarta: 4, quinto: 5, quinta: 5, sexto: 6, sexta: 6, séptimo: 7, séptima: 7, septimo: 7, septima: 7,
-  octavo: 8, octava: 8, noveno: 9, novena: 9, décimo: 10, décima: 10, decimo: 10, decima: 10,
-  dos: 2, tres: 3, cuatro: 4, cinco: 5, seis: 6, siete: 7, ocho: 8, nueve: 9, diez: 10 };
-const spanishOrdinal = new RegExp(`^(?:(?:pon|ponme|reproduce|toca|elige|escoge|quiero)\\s+)?(?:(?:la|el)\\s+)?(?:n[uú]mero\\s+)?(\\d{1,2}|${Object.keys(spanishOrdinals).join("|")})(?:\\s+(?:versi[oó]n|opci[oó]n|canci[oó]n))?$`, "iu");
-
-// Portuguese ordinals and small numbers for "a terceira", "coloca a 2", "número dois".
-const portugueseOrdinals = { primeira: 1, primeiro: 1, segunda: 2, segundo: 2, terceira: 3, terceiro: 3, quarta: 4, quarto: 4,
-  quinta: 5, quinto: 5, sexta: 6, sexto: 6, sétima: 7, sétimo: 7, setima: 7, setimo: 7, oitava: 8, oitavo: 8, nona: 9, nono: 9,
-  décima: 10, décimo: 10, decima: 10, decimo: 10, dois: 2, duas: 2, três: 3, tres: 3, quatro: 4, cinco: 5, seis: 6, sete: 7,
-  oito: 8, nove: 9, dez: 10 };
-const portugueseOrdinal = new RegExp(`^(?:(?:coloca|coloque|toca|toque|põe|bota|escolhe|escolha|quero)\\s+)?(?:(?:a|o)\\s+)?(?:n[uú]mero\\s+)?(\\d{1,2}|${Object.keys(portugueseOrdinals).join("|")})(?:\\s+(?:vers[aã]o|op[cç][aã]o|m[uú]sica))?$`, "iu");
-// Japanese: "3番", "3番目", "三つ目", "2番を再生して".
-const japaneseOrdinal = /^(\d{1,2}|[一二三四五六七八九十])\s*(?:番目?|つ目)(?:の(?:曲|バージョン))?(?:を)?(?:再生|かけて|流して|お願い)?(?:して)?(?:ください)?$/u;
-
-export function playbackFollowupIntent(text) {
-  if (typeof text !== "string" || text.length > 500) return null;
-  const value = text.normalize("NFKC").trim().replace(/[.!。！]+$/u, "").replace(/^[¡¿]+|[?]+$/gu, "");
-  const ordinal = value.match(/^(?:(?:play|choose|number)\s*|(?:播放|选|来|第)\s*)?(\d{1,2}|[一二三四五六七八九十])(?:\s*(?:个|首|号|那个|这个|版本))?$/iu);
-  if (ordinal) return { kind: "ordinal", ordinal: number(ordinal[1]) };
-  const spanish = value.match(spanishOrdinal);
-  if (spanish) return { kind: "ordinal", ordinal: /^\d/u.test(spanish[1]) ? Number(spanish[1]) : spanishOrdinals[spanish[1].toLocaleLowerCase("es")] };
-  const portuguese = value.match(portugueseOrdinal);
-  if (portuguese) return { kind: "ordinal", ordinal: /^\d/u.test(portuguese[1]) ? Number(portuguese[1]) : portugueseOrdinals[portuguese[1].toLocaleLowerCase("pt")] };
-  const japanese = value.replace(/[。！]$/u, "").match(japaneseOrdinal);
-  if (japanese) return { kind: "ordinal", ordinal: number(japanese[1]) };
-  if (/^(?:please\s+)?(?:retry|try (?:it )?again|play (?:it )?again|重试|再试(?:一次|一下)?|再来一次)$/iu.test(value) ||
-      /^(?:por favor\s+)?(?:otra vez|de nuevo|reint[eé]ntalo|reintenta(?:r)?|int[eé]ntalo (?:otra vez|de nuevo)|vuelve a intentarlo|pon(?:la|lo) (?:otra vez|de nuevo))(?:\s+por favor)?$/iu.test(value) ||
-      /^(?:por favor\s+)?(?:de novo|outra vez|tenta (?:de novo|outra vez|novamente)|tente (?:de novo|novamente)|toca (?:de novo|outra vez))(?:\s+por favor)?$/iu.test(value) ||
-      /^(?:もう一度|もう一回|再試行|リトライ)(?:再生)?(?:して|お願い)?(?:ください)?[。！]?$/u.test(value)) return { kind: "retry" };
-  if (/^(?:(?:please|can you|could you|would you)\s+)?(?:play|put)\s+(?:it|that|this|the (?:same |selected )?(?:song|track|version))\s+(?:on|through|using)\s+\S/iu.test(value) ||
-      /^(?:请|可以|能不能|能否)?(?:在|用).{1,128}(?:播放|放)(?:它|这首|那首|同一首|刚才那首)|^(?:请)?(?:把|将)(?:它|这首|那首|同一首|刚才那首).{0,12}(?:放到|换到|转到|在).{1,128}(?:播放|上放|上播)/u.test(value) ||
-      /^(?:(?:por favor|puedes)\s+)?(?:pon|reproduce|toca)(?:la|lo)\s+en\s+\S/iu.test(value) ||
-      /^(?:(?:por favor|pode)\s+)?(?:toca|toque|coloca|coloque|põe)(?:-a|-o)?\s+n[oa]\s+\S/iu.test(value) ||
-      /^(?:(?:それ|この曲|同じ曲|さっきの曲)を.{1,64}|[^をのはがに]{1,32})で(?:再生|かけて|流して)(?:して)?(?:ください)?[。！]?$/u.test(value)) return { kind: "retarget" };
-  if (/^(?:换(?:一|另一个|个)|换一个(?:版本)?|另一个版本|换个版本|再换一版)(?:[，,。\s].*|不好听|这(?:个)?版本不好听)?$/u.test(value) ||
-      /^(?:try|play|choose|pick|put on) (?:a |an )?(?:different|another) (?:one|version|mix)(?:[,.!\s].*)?$/iu.test(value) ||
-      /^(?:(?:pon|prueba|elige|busca|quiero)\s+)?otra versi[oó]n(?:[,.!\s].*)?$|^c[aá]mbia(?:la|lo)? (?:de|por otra) versi[oó]n/iu.test(value) ||
-      /^(?:(?:coloca|toca|escolhe|quero)\s+)?outra vers[aã]o(?:[,.!\s].*)?$|^troca (?:de|a) vers[aã]o/iu.test(value) ||
-      /^(?:別の|ほかの|他の)バージョン/u.test(value)) return { kind: "alternative" };
-  return null;
-}
-
 const englishCounts = { zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9,
   ten: 10, eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19,
   twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60, seventy: 70, eighty: 80, ninety: 90, hundred: 100, thousand: 1000, million: 1000000 };
@@ -162,53 +118,4 @@ export function queueListeningIntent(text, previous = null) {
     queue_only: correction || !/\b(?:play|resume|pause|skip|next|previous|seek|volume|shuffle|repeat|transfer|save|create|follow|unfollow)\b|播放|暂停|下一首|上一首|音量|切换设备|保存|创建|关注/iu.test(affirmative),
     ...(correction && previous.attempted ? { clarification_only: true } : {}),
     excludeKnown: unheardRequested(value) || (correction && previous.excludeKnown === true) };
-}
-
-export function trackVersionFamily(name) {
-  return String(name ?? "").normalize("NFKC").toLocaleLowerCase("en-US")
-    .split(/[([（【]|\s[-—–]\s|\b(?:dj|remix|mix|version)\b/iu)[0]
-    .replace(/[^\p{L}\p{N}]+/gu, "");
-}
-
-export function playbackDeviceExplicitlyRequested(text, { deviceId, deviceName, deviceRefId, ordinal } = {}) {
-  if (typeof text !== "string") return false;
-  // IDs are allowed only when the listener actually supplied the token. A name
-  // must occur as a device target, not inside a song/artist such as Mac DeMarco.
-  const negated = name => {
-    const escaped = name.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
-    return new RegExp(`(?:\\b(?:not|never|don't|do not|without|avoid)\\b|不要|别|不用|不能|禁止)[^,，。;；!?！？]{0,100}${escaped}`, "iu").test(text.normalize("NFKC").replace(/[‘’]/gu, "'"));
-  };
-  if (deviceId !== undefined || deviceRefId !== undefined) return !negated(deviceId ?? deviceRefId) && text.split(/\s+/u).some(token => token === (deviceId ?? deviceRefId));
-  if (typeof deviceName !== "string" || !deviceName.trim()) return false;
-  const value = text.normalize("NFKC").toLocaleLowerCase("en-US").trim();
-  const query = deviceName.normalize("NFKC").toLocaleLowerCase("en-US").trim();
-  const aliases = [["computer", "desktop", "laptop", "电脑", "计算机", "ordenador", "computadora", "portátil", "computador", "notebook", "パソコン"],
-    ["phone", "smartphone", "手机", "móvil", "celular", "teléfono", "telefone", "スマホ", "携帯"],
-    ["speaker", "音箱", "音响", "altavoz", "bocina", "parlante", "caixa de som", "alto-falante", "スピーカー"]];
-  const ordinalWords = ["first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth", "tenth"];
-  const chinese = Object.keys(digits).find(key => digits[key] === ordinal && key !== "两") ?? String(ordinal);
-  const names = ordinal === undefined ? aliases.find(group => group.includes(query)) ?? [query] :
-    [`${ordinal}${ordinal === 1 ? "st" : ordinal === 2 ? "nd" : ordinal === 3 ? "rd" : "th"} ${query}`,
-      ...(ordinalWords[ordinal - 1] ? [`${ordinalWords[ordinal - 1]} ${query}`] : []),
-      ...[String(ordinal), chinese].flatMap(value => [`第${value}台${query}`, `第${value}个${query}`, `第${value}台 ${query}`, `第${value}个 ${query}`])];
-  if (names.some(negated)) return false;
-  return names.some(name => {
-    const escaped = name.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
-    return value === name || new RegExp(`(?:\\b(?:on|onto|to|using|use|via|through|set|en|al|desde|no|na|pelo|pela)\\s+(?:(?:my|the|this|mi|el|la|este|esta|meu|minha|o|a)\\s+)?["“']?|(?:在|用|使用|切到|切换到|转到|通过)(?:我的|这台|这个)?\\s*)${escaped}(?:\\b|[上里播放，。]|$)`, "iu").test(value) ||
-      new RegExp(`${escaped}\\s*で(?:再生|かけて|流して|聴)`, "u").test(value) ||
-      new RegExp(`${escaped}\\s*(?:上|里)(?:播放|听|放|继续|恢复)`, "iu").test(value);
-  });
-}
-
-export function playbackDeviceConstraints(text = "") {
-  const value = text.normalize("NFKC").replace(/[‘’]/gu, "'");
-  const noTransfer = /(?:\b(?:not|never|don't|do not|stop|avoid|without)\b[^,，。;；!?！？]{0,60}\b(?:switch|transfer|move)|(?:不要|别|不用|停止|禁止|不能)[^,，。;；!?！？]{0,30}(?:切换|切到|换到|转移|转到))/iu.test(value);
-  const excludedNames = [];
-  for (const match of value.matchAll(/(?:\b(?:not|never|don't|do not)\s+(?:(?:play|switch|transfer|move)\s+)?(?:on|to|using)\s+(?:(?:my|the)\s+)?)([^,.;!?\n]{1,128})/giu)) excludedNames.push(match[1].trim());
-  for (const match of value.matchAll(/(?:不要|别|禁止)(?:在|用|使用|切换到|切到|转到)\s*([^，。；！？\n]{1,128}?)(?:上播放|上听|播放|上|听|$)/gu)) excludedNames.push(match[1].trim());
-  return { allowTransfer: !noTransfer, excludedDeviceNames: excludedNames };
-}
-
-export function standaloneDeviceTransferRequested(text) {
-  return typeof text === "string" && /\b(?:switch|transfer|move)\b|切换|切到|换到|转移|转到/iu.test(text) && playbackDeviceConstraints(text).allowTransfer;
 }

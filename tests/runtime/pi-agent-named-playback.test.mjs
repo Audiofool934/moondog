@@ -71,53 +71,6 @@ function catalogTrace({ title, artist }, { stopAfterResolve = false, queue = fal
     }]), answer("UNSUPPORTED_CAUSE: no active device; try restarting. UNTRUSTED_PLAYLIST.")];
 }
 
-test("reported Chinese library → external lookup → resolver failure remains a playback lookup", async t => {
-  const f = fixture(t, { count: 0 });
-  f.faux.setResponses(catalogTrace(f, { stopAfterResolve: true }));
-  const result = await f.runtime.prompt(exactPrompt);
-  assert.equal(f.writes.length, 0);
-  assert.match(result.text, /没有在 Spotify 找到可确认的匹配歌曲/u);
-  assert.doesNotMatch(result.text, /playlist plan|UNSUPPORTED|UNTRUSTED|设备/u);
-});
-
-for (const route of ["catalog", "spotify"]) {
-  for (const prompt of [exactPrompt, "随便播放一首刘森的音乐"]) {
-    test(`playback rejection is preserved with active-device evidence: ${route} ${prompt}`, async t => {
-      const f = fixture(t, { status: 400 });
-      const play = context => tool("moondog_spotify_player_control", { action: "resume", track_refs: [results(context, "moondog_spotify_search")[0].items[0].track_ref_id] });
-      const trace = route === "catalog" ? catalogTrace(f).slice(0, -1)
-        : [tool("moondog_spotify_search", { query: `${f.title} ${f.artist}` }), play];
-      f.faux.setResponses([...trace, tool("moondog_spotify_now_playing"), tool("moondog_spotify_devices"),
-        // A model retry is also stopped before it reaches Spotify.
-        tool("moondog_spotify_player_control", { action: "resume" }), answer("UNSUPPORTED_CAUSE: the device is inactive. UNTRUSTED_PLAYLIST.")]);
-      let rendered = "";
-      const result = await f.runtime.prompt(prompt, { onTextDelta: value => { rendered += value; }, onTextReplace: value => { rendered = value; } });
-      assert.equal(f.writes.length, 1);
-      assert.match(result.text, /HTTP 400/u);
-      assert.match(result.text, /具体原因未获证实/u);
-      assert.doesNotMatch(result.text, /playlist plan|UNSUPPORTED|UNTRUSTED|PRIVATE_|FICTIONAL_TOKEN|设备未激活/u);
-      assert.equal(rendered, result.text);
-      assert.equal(result.spotify_playback_failures[0].status, 400);
-      assert.equal(result.spotify_playback_failures[0].reason, null);
-      assert.ok(f.requests.some(([method, pathname]) => method === "GET" && pathname === "/v1/me/player"));
-    });
-  }
-}
-
-for (const [status, reason, cancel] of [[404, "NO_ACTIVE_DEVICE", false], [403, "RESTRICTION_VIOLATED", false], [503, "PRIVATE_REASON_SENTINEL", true]]) {
-  test(`bounded playback failure and cancellation receipts: ${status}`, async t => {
-    const f = fixture(t, { status, reason, cancel });
-    f.faux.setResponses(catalogTrace(f));
-    const result = await f.runtime.prompt(exactPrompt);
-    assert.equal(f.writes.length, status === 404 && reason === "NO_ACTIVE_DEVICE" && !cancel ? 2 : 1);
-    assert.equal(result.status, cancel ? "aborted" : "completed");
-    assert.match(result.text, new RegExp(`HTTP ${status}`, "u"));
-    assert.doesNotMatch(JSON.stringify(result), /PRIVATE_|FICTIONAL_TOKEN|UNSUPPORTED|playlist plan/u);
-    if (!cancel) assert.match(result.text, new RegExp(reason, "u"));
-    else assert.equal(result.spotify_write_receipts[0].state, "unknown");
-  });
-}
-
 for (const [prompt, title, artist] of [
   [exactPrompt, "天长地久", "刘森"], ["播放《天长地久》，刘森", "天长地久", "刘森"],
   ["请播放刘森的『天长地久』", "天长地久", "刘森"],
@@ -134,71 +87,6 @@ for (const [prompt, title, artist] of [
     assert.deepEqual(f.writes, [{ pathname: "/v1/me/player/play", body: { uris: ["spotify:track:fictional0"] } }]);
     assert.equal(result.spotify_write_receipts[0].state, "accepted");
     assert.doesNotMatch(result.text, /playlist plan/u);
-  });
-}
-
-for (const count of [0, 2]) {
-  test(`Spotify lookup with ${count} results does not invent a playback action`, async t => {
-    const f = fixture(t, { count });
-    f.faux.setResponses([tool("moondog_spotify_search", { query: "天长地久 刘森" }), answer("Playing now. UNTRUSTED_PLAYLIST.")]);
-    const result = await f.runtime.prompt(exactPrompt);
-    assert.equal(f.writes.length, 0);
-    assert.match(result.text, /未发送播放或加入队列操作/u);
-    assert.doesNotMatch(result.text, /playlist plan|Playing now|UNTRUSTED/u);
-    if (count > 1) assert.match(result.text, /回复编号选择/u);
-  });
-}
-
-test("mixed playback and discovery still withholds unvalidated recommendation text", async t => {
-  const f = fixture(t);
-  f.faux.setResponses(catalogTrace(f));
-  const result = await f.runtime.prompt(`${exactPrompt}，再推荐一些相似的歌曲`);
-  assert.equal(f.writes.length, 1);
-  assert.match(result.text, /playlist plan/u);
-  assert.doesNotMatch(result.text, /UNTRUSTED/u);
-  assert.equal(result.spotify_write_receipts[0].state, "accepted");
-});
-
-for (const route of ["spotify", "catalog"]) {
-  test(`a failed Spotify lookup keeps HTTP evidence without claiming a playlist or device failure: ${route}`, async t => {
-    const f = fixture(t, { searchStatus: 400 });
-    f.faux.setResponses(route === "spotify"
-      ? [tool("moondog_spotify_search", { query: "天长地久 刘森" }), answer("Device inactive. UNSUPPORTED.")]
-      : catalogTrace(f, { stopAfterResolve: true }));
-    const result = await f.runtime.prompt(exactPrompt);
-    assert.equal(f.writes.length, 0);
-    assert.match(result.text, /Spotify 查询未完成.*HTTP 400/u);
-    assert.doesNotMatch(result.text, /playlist plan|UNSUPPORTED|PRIVATE_|inactive/u);
-  });
-}
-
-test("a later playback failure retains an earlier accepted receipt and blocks further playback writes", async t => {
-  const f = fixture(t, { status: 400, failAfter: 1 });
-  const readRef = context => results(context, "moondog_spotify_search")[0].items[0].track_ref_id;
-  f.faux.setResponses([tool("moondog_spotify_search", { query: "天长地久 刘森" }),
-    context => tool("moondog_spotify_player_control", { action: "resume", track_refs: [readRef(context)] }),
-    context => tool("moondog_spotify_queue_add", { track_ref_id: readRef(context) }),
-    tool("moondog_spotify_player_control", { action: "next" }), answer("All actions succeeded. UNSUPPORTED.")]);
-  const result = await f.runtime.prompt("Play the song, queue it, then skip to the next song.");
-  assert.equal(f.writes.length, 2);
-  assert.equal(result.spotify_write_receipts[0].state, "accepted");
-  assert.match(result.text, /Spotify accepted/u);
-  assert.match(result.text, /HTTP 400/u);
-  assert.doesNotMatch(result.text, /UNSUPPORTED/u);
-});
-
-for (const [prompt, title, artist] of [
-  ["随便播放一首刘森的音乐", "天长地久", "刘森"],
-  ["播放刘森的『发现』", "发现", "刘森"],
-  ["Play 'Discover Me' by Mara Vale", "Discover Me", "Mara Vale"],
-]) {
-  test(`catalog fallback preserves successful direct playback: ${prompt}`, async t => {
-    const f = fixture(t, { title, artist });
-    f.faux.setResponses(catalogTrace(f));
-    const result = await f.runtime.prompt(prompt);
-    assert.equal(f.writes.length, 1);
-    assert.doesNotMatch(result.text, /playlist plan|UNSUPPORTED/u);
-    assert.match(result.text, new RegExp(title, "u"));
   });
 }
 
@@ -234,32 +122,6 @@ test("UI callback errors cannot erase accepted Spotify effects", async t => {
   assert.equal(result.status, "interrupted");
   assert.equal(result.spotify_write_receipts[0].state, "accepted");
   assert.doesNotMatch(result.text, /PRIVATE_/u);
-});
-
-test("saving a found track alone never confirms a requested playback action", async t => {
-  const f = fixture(t);
-  f.faux.setResponses([tool("moondog_spotify_search", { query: "天长地久 刘森" }), context =>
-    tool("moondog_spotify_library_save", { track_refs: [{ track_ref_id: results(context, "moondog_spotify_search")[0].items[0].track_ref_id }] }),
-  answer("CLAIMED_PLAYING_SENTINEL")]);
-  const result = await f.runtime.prompt(`${exactPrompt}，并保存到我的曲库`);
-  assert.equal(f.writes.length, 1);
-  assert.equal(f.writes[0].pathname, "/v1/me/library");
-  assert.match(result.text, /未发送播放/u);
-  assert.doesNotMatch(result.text, /CLAIMED_PLAYING/u);
-  assert.equal(result.spotify_write_receipts[0].action, "library.save");
-  assert.match(result.text, /Spotify 已接受/u);
-});
-
-
-test("changing volume alone cannot confirm requested named-song playback", async t => {
-  const f = fixture(t);
-  f.faux.setResponses([tool("moondog_spotify_search", { query: "天长地久 刘森" }),
-    tool("moondog_spotify_player_control", { action: "volume", percent: 30 }), answer("CLAIMED_PLAYING_SENTINEL")]);
-  const result = await f.runtime.prompt(`${exactPrompt}，并把音量调到30%`);
-  assert.deepEqual(f.writes.map(write => write.pathname), ["/v1/me/player/volume"]);
-  assert.match(result.text, /未发送播放或加入队列操作/u);
-  assert.match(result.text, /Spotify 已接受音量调整/u);
-  assert.doesNotMatch(result.text, /CLAIMED_PLAYING/u);
 });
 
 test("a broken observer waits for parallel reads to settle before permitting another turn", async t => {
