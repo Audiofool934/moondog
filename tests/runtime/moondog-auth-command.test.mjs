@@ -240,6 +240,15 @@ test("API login failure is provider-specific without exposing error secrets", as
   );
 });
 
+test("Ctrl+C at a sign-in prompt is a cancel, not a failure", async () => {
+  const fixture = commandFixture({ manualCodePrompt: true });
+  const login = runAuthCommand({ args: ["login", providerId], interactive: true, ...fixture });
+  await new Promise((resolve) => setImmediate(resolve));
+  fixture.input.write("\x03");
+  await assert.rejects(login, { code: "auth_login_cancelled", message: "OpenAI Codex login was cancelled." });
+  assert.equal(fixture.state.stored, false);
+});
+
 test("API logout reports environment credentials still configured", async (context) => {
   const root = await mkdtemp(path.join(tmpdir(), "moondog-api-key-logout-"));
   context.after(() => rm(root, { recursive: true, force: true }));

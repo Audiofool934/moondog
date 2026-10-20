@@ -181,6 +181,9 @@ export class MoondogApplication {
     this.importsRoot = importsRoot;
     // The listener's language: replies follow each message, and fall back to this.
     this.locale = normalizeLocale(locale) ?? DEFAULT_LOCALE;
+    // The language of the conversation so far. A reply such as "2" or "ok" carries none of
+    // its own, so it keeps this one rather than switching to the setting mid-conversation.
+    this.conversationLocale = null;
     this.domainServices = domainServices;
     this.domainServicesError =
       typeof domainServicesError === "string" &&

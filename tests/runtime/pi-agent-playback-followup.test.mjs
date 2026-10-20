@@ -98,7 +98,15 @@ test("misplaced exact references resolve, and a second model call cannot replay 
   assert.equal(f.writes.length, 1);
   assert.equal(result.spotify_playback_failures[0].code, "spotify_playback_already_accepted");
   assert.equal(result.spotify_write_receipts[0].state, "accepted");
-  assert.doesNotMatch(result.text, /未获确认|不确定|本地被拒绝/u);
+  assert.doesNotMatch(result.text, /未获确认|不确定|没有向 Spotify 发送任何内容/u);
+});
+
+test("a reply with no words of its own, such as 2, keeps the conversation's language", async t => {
+  const f = fixture(t); await f.search();
+  const result = await f.prompt("2。", [tool({ uri: "not-a-uri" }), answer()]);
+  assert.equal(f.writes.length, 0);
+  assert.match(result.text, /没有向 Spotify 发送任何内容/u);
+  assert.doesNotMatch(result.text, /Nothing was sent/u);
 });
 
 test("two locally rejected model calls send no requests, and a fresh explicit selection works", async t => {
@@ -107,7 +115,7 @@ test("two locally rejected model calls send no requests, and a fresh explicit se
   assert.equal(f.writes.length, 0);
   assert.equal(result.spotify_playback_failures.length, 2);
   assert.ok(result.spotify_playback_failures.every(f => f.not_sent && !f.outcome_unknown));
-  assert.match(result.text, /本地被拒绝.*没有向 Spotify 发送播放请求/u);
+  assert.match(result.text, /没有向 Spotify 发送任何内容/u);
   assert.doesNotMatch(result.text, /设备|未获确认|不确定|错误地声称/u);
   await f.prompt("DJ铁柱版来一个", [tool({ item_ref_id: item.item_ref_id }), answer()]);
   assert.equal(f.writes.length, 1);
@@ -176,7 +184,7 @@ test("a later local rejection cannot hide behind an earlier accepted playback re
   const result = await f.prompt("先播放第一首，再播放另一首", [tool({ item_ref_id: item.item_ref_id }), tool({ uri: "invalid" }), answer()]);
   assert.equal(f.writes.length, 1);
   assert.match(result.text, /Spotify 已接受/u);
-  assert.match(result.text, /本地被拒绝/u);
+  assert.match(result.text, /没有向 Spotify 发送任何内容/u);
 });
 
 for (const pasted of ["spotify:track:fictionalUser_other", "https://open.spotify.com/track/fictionalUser-other"]) {
@@ -193,7 +201,7 @@ test("success for a different selection cannot erase an earlier locally rejected
   const result = await f.prompt("播放第一个版本，再播放第二个版本", [tool({ uri: `spotify:track:${first.item_ref_id}` }),
     tool({ item_ref_id: second.item_ref_id }), answer("两个版本都播放了。")]);
   assert.equal(f.writes.length, 1);
-  assert.match(result.text, /本地被拒绝/u);
+  assert.match(result.text, /没有向 Spotify 发送任何内容/u);
   assert.match(result.text, /Spotify 已接受/u);
   assert.doesNotMatch(result.text, /两个版本都播放了/u);
 });

@@ -206,6 +206,22 @@ test("Spotify queue does not guess between inactive devices", async () => {
   assert.deepEqual(fixture.calls, []);
 });
 
+test("with nothing playing, Spotify plays on the computer Moondog runs on, and asks only when that is unclear", async () => {
+  const fixture = fakeClient();
+  fixture.client.getDevices = async () => ({ provider: "spotify", devices: [
+    { id: "fictional-pc", name: "PC", type: "Computer", is_active: false },
+    { id: "fictional-mac", name: "Mara’s MacBook Pro", type: "Computer", is_active: false },
+  ] });
+  // Spotify writes the Mac's name with a curly apostrophe; the system name may use a straight one.
+  const here = createSpotifyService({ client: fixture.client, thisComputerName: "Mara's MacBook Pro" });
+  assert.deepEqual(await here.queueTarget({}), { deviceId: "fictional-mac", device: { name: "Mara’s MacBook Pro", type: "Computer" }, active: false });
+
+  for (const thisComputerName of ["Studio Mini", null]) {
+    const elsewhere = createSpotifyService({ client: fixture.client, thisComputerName });
+    await assert.rejects(elsewhere.queueTarget({}), { code: "spotify_device_ambiguous" });
+  }
+});
+
 test("Spotify service creates a private playlist with tracks and returns a receipt", async () => {
   const calls = [];
   const client = {
