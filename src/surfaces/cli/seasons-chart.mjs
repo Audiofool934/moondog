@@ -2,8 +2,9 @@ import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 import { formatListeningTime, sanitizeTerminalText } from "./format-output.mjs";
 
-// The last twelve quarters as bars: listening time per quarter, with its new songs and
-// leading artist beside each bar. Every terminal draws the bars with block characters.
+// The last twelve quarters as bars: listening time per quarter, or plays when the history
+// didn't record how long every play lasted, with its new songs and leading artist beside
+// each bar. Every terminal draws the bars with block characters.
 // In Moondog's own window (MOONDOG_HOST=app), each bar row also carries an invisible
 // OSC 7717 mark: block id, row, bar width, and the chart's numbers, so any row that is
 // in view is enough. The window paints graphics over exactly those cells; the labels
@@ -36,13 +37,19 @@ export class SeasonsChart {
   render(width) {
     const theme = this.getTheme();
     const tr = this.tr;
-    const minutes = this.seasons.map((season) => (Number.isFinite(season.listening_minutes) ? season.listening_minutes : 0));
-    const most = Math.max(1, ...minutes);
+    // Minutes compare quarters only when every quarter with plays has them. Otherwise every
+    // bar counts plays: Last.fm and ListenBrainz record no play lengths, and unknown isn't zero.
+    const timed = this.seasons.every((season) => !(season.event_count > 0) || Number.isFinite(season.listening_minutes));
+    const amounts = this.seasons.map((season) => {
+      const amount = timed ? season.listening_minutes : season.event_count;
+      return Number.isFinite(amount) ? amount : 0;
+    });
+    const most = Math.max(1, ...amounts);
     const details = this.seasons.map((season) => {
       if (!Number.isInteger(season.event_count) || season.event_count === 0) return tr("nothing in your history");
       const artist = inline(season.leading_artist?.name);
       return [
-        formatListeningTime(season.listening_minutes, tr),
+        timed ? formatListeningTime(season.listening_minutes, tr) : tr.n(season.event_count, "{count} play", "{count} plays"),
         season.first_observed_tracks > 0 ? tr("{count} new", { count: tr.number(season.first_observed_tracks) }) : null,
         artist || null,
       ].filter(Boolean).join(" · ");
@@ -52,10 +59,11 @@ export class SeasonsChart {
     const barWidth = Math.max(8, Math.min(30, width - 1 - 7 - 2 - 2 - detailWidth));
     const payload = btoa(JSON.stringify({
       kind: "seasons",
+      measure: timed ? "minutes" : "plays",
       rows: this.seasons.map((season, row) => ({
         quarter: Number(season.key.slice(-1)),
-        minutes: minutes[row],
-        fraction: minutes[row] / most,
+        amount: amounts[row],
+        fraction: amounts[row] / most,
         newSongs: Number.isInteger(season.first_observed_tracks) ? season.first_observed_tracks : 0,
         empty: !(season.event_count > 0),
       })),
@@ -70,7 +78,7 @@ export class SeasonsChart {
       const [year, quarter] = season.key.split("-");
       // The year shows where it changes, so the column reads as a calendar.
       const label = row === 0 || quarter === "Q1" ? `${year} ${quarter}` : `     ${quarter}`;
-      const bar = minutes[row] > 0 ? textBar(minutes[row] / most, barWidth) : "·";
+      const bar = amounts[row] > 0 ? textBar(amounts[row] / most, barWidth) : "·";
       const mark = this.marked ? `\x1b]${BLOCK_MARK};${this.id};${row};${barWidth};${payload}\x07` : "";
       const line = ` ${theme.muted(label)}  ${mark}${theme.text(bar)}${" ".repeat(Math.max(0, barWidth - visibleWidth(bar)))}  ${theme.muted(details[row])}`;
       return truncateToWidth(line, width, "");

@@ -93,8 +93,8 @@ const svg = (name, attributes = {}) => {
   return element;
 };
 
-// Listening time per quarter as thin bars on faint tracks, one row per quarter. Years are
-// divided by hairlines, and each new song is a dot after its quarter's bar.
+// Listening time, or plays, per quarter as thin bars on faint tracks, one row per quarter.
+// Years are divided by hairlines, and each new song is a dot after its quarter's bar.
 export function renderSeasons(value, { width: outer, height, cell, bleed }, { animate }) {
   const styles = getComputedStyle(document.documentElement);
   const color = (name, fallback) => value.colors?.[name] || styles.getPropertyValue(fallback).trim();
