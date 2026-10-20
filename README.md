@@ -176,7 +176,7 @@ Read the [connection and data details](docs/TERMINAL_GUIDE.md) before you connec
 | `/theme paper` | Black ink on white. |
 | `/theme charcoal` | Moonlight on a black sky. |
 | `/theme terminal` | Your terminal's own colors. |
-| `/language` | Choose Moondog's language: English, Español, Português (Brasil), 日本語, or 简体中文. |
+| `/language` | Choose the language Moondog replies in: English, 简体中文, 繁體中文, 日本語, 한국어, Español, Français, Deutsch, Português (Brasil), or Italiano. Screens follow in English, Español, Português (Brasil), 日本語, and 简体中文. |
 
 Each launch starts a new conversation.
 Your profile, and anything Moondog remembers, carry over.
