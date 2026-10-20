@@ -1644,8 +1644,8 @@ test("TUI can start OAuth and resume with reloaded authentication", async () => 
   assert.equal(terminal.stopCount, 2);
 });
 
-for (const command of ["/auth deepseek", "/spotify login"]) {
-  test(`${command} redraws immediately after an asynchronous login cancellation`, async (context) => {
+for (const [command, code] of [["/auth deepseek", "auth_login_cancelled"], ["/spotify login", "spotify_auth_aborted"]]) {
+  test(`${command} redraws immediately and says the sign-in was cancelled`, async (context) => {
     const terminal = new FakeTerminal();
     const signalTarget = new EventEmitter();
     let cancelLogin;
@@ -1664,10 +1664,11 @@ for (const command of ["/auth deepseek", "/spotify login"]) {
     // A real login waits outside the TUI while its queued render is cancelled.
     await new Promise((resolve) => setTimeout(resolve, 30));
     terminal.output = "";
-    cancelLogin(new Error("Fixture login was cancelled."));
-    await waitFor(() => terminal.output.includes("Fixture login was cancelled."));
+    cancelLogin(Object.assign(new Error("Fixture login was cancelled."), { code }));
+    await waitFor(() => terminal.output.includes("Sign-in cancelled."));
     assert.equal(terminal.startCount, 2);
-    assert.match(terminal.output, /didn't work\./u);
+    assert.match(terminal.output, /Cancelled\./u);
+    assert.doesNotMatch(terminal.output, /didn't work/u, "a cancel the listener chose is not a failure");
     terminal.send("/help");
     terminal.send("\r");
     await waitFor(() => terminal.output.includes("Type / to browse every command"));

@@ -1998,8 +1998,10 @@ export async function runMoondogTui({
         if (cleanedUp) return;
         enterConversation();
         const cancelled = localCommandController?.signal.aborted;
-        addMoondogMessage(cancelled ? command === "web" ? tr("Stopped the lookup.") : command === "model" ? tr("Stopped the catalog check. Model unchanged.") : command === "update" ? tr("Stopped the update check. No update installed.") : command === "profile" ? tr("Stopped the profile build. Saved progress and your previous reading are kept. Use /profile build to continue.") : tr("Stopped the lyric sync.") : tr("That didn't work: {error}", { error: error.message }));
-        setFooter(cancelled ? tr("Cancelled.") : tr("/{command} didn't work.", { command }), cancelled ? dim : failure);
+        // Ctrl+C during a sign-in is the listener's choice, not a failure.
+        const signInCancelled = !cancelled && ["auth_login_cancelled", "spotify_auth_aborted"].includes(error?.code);
+        addMoondogMessage(signInCancelled ? tr("Sign-in cancelled.") : cancelled ? command === "web" ? tr("Stopped the lookup.") : command === "model" ? tr("Stopped the catalog check. Model unchanged.") : command === "update" ? tr("Stopped the update check. No update installed.") : command === "profile" ? tr("Stopped the profile build. Saved progress and your previous reading are kept. Use /profile build to continue.") : tr("Stopped the lyric sync.") : tr("That didn't work: {error}", { error: error.message }));
+        setFooter(cancelled || signInCancelled ? tr("Cancelled.") : tr("/{command} didn't work.", { command }), cancelled || signInCancelled ? dim : failure);
       } finally {
         localCommandController = null;
         setBusy(false);
