@@ -21,6 +21,8 @@ function eventRow({
       event_type: "play_observed",
       extensions: {
         "spotify.incognito_mode": incognito,
+        // Spotify's extended history says whether each play was skipped.
+        ...(source === "spotify-extended-history" ? { "spotify.skipped": false } : {}),
       },
       provenance: {
         external_ref: {

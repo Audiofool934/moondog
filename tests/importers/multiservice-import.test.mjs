@@ -62,7 +62,8 @@ test("Takeout ZIP previews music only, validates contracts, and imports a cumula
   assert.equal(store.ingestImport(extracted.bundle).inserted_events, 0);
   const listening = store.profileSummary({ subjectId });
   assert.equal(listening.coverage.effective_listening_events, 2);
-  assert.equal(listening.coverage.listening_hours, 0);
+  // YouTube Music history records no durations, so listening time is unknown, not zero.
+  assert.equal(listening.coverage.listening_hours, undefined);
   assert.deepEqual(listening.source.providers, ["youtube_music"]);
   const profile = createListeningHistoryProfileProjection(listening);
   assert.equal(profile.coverage.spotify_saved_tracks, 0);
