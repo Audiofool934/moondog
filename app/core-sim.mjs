@@ -2,6 +2,7 @@
 // with drawn stand-in covers, so the whole app can be tried and checked without touching a
 // Spotify account. The model is the one your settings choose; nothing else is read or kept.
 //   cd app && npm run simulated
+import { rmSync } from "node:fs";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -21,6 +22,10 @@ const port = await new Promise((resolve) => {
 const send = (message) => port.postMessage(message);
 const state = await mkdtemp(path.join(tmpdir(), "moondog-window-simulated-"));
 const environment = { ...process.env, MOONDOG_STATE_HOME: state, MOONDOG_UPDATE_CHECK: "off", MOONDOG_LYRICS: "off" };
+// Quitting the app stops this process; its simulated state goes with it.
+const forget = () => rmSync(state, { recursive: true, force: true });
+process.once("SIGTERM", () => { forget(); process.exit(0); });
+process.once("exit", forget);
 
 // Each album gets its own drawn cover: two colors and a ring, because the window itself has none.
 const hues = new Map();

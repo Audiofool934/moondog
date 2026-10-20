@@ -8,7 +8,7 @@
 // Each scenario passes when every turn leaves Spotify in the expected state, no tool call
 // fails, and every reply is plain language in the listener's language.
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -199,5 +199,7 @@ const out = options.out ?? path.join(process.env.MOONDOG_STATE_HOME, "report");
 await mkdir(out, { recursive: true });
 const report = path.join(out, `playback-eval-${new Date().toISOString().replace(/[:.]/gu, "-")}.md`);
 await writeFile(report, lines.join("\n"));
+// With the report saved elsewhere, the simulated state has nothing left to keep.
+if (options.out) await rm(process.env.MOONDOG_STATE_HOME, { recursive: true, force: true });
 console.log(`\n${lines.slice(2, 3 + selected.length + 2).join("\n")}\nReport: ${report}`);
 process.exit(passed === results.length && before === after ? 0 : 1);
