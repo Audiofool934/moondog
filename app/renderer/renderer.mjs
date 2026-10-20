@@ -144,10 +144,14 @@ function replyNode(turn) {
   reply.append(text);
   return reply;
 }
+// The streaming reply redraws on its own; the rest of the conversation stays put.
+let liveNode = null;
+const nearBottom = (scroll) => scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 80;
 function renderConversation() {
   const column = $("column");
   const scroll = $("scroll");
-  const pinned = scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 80;
+  const pinned = nearBottom(scroll) || !column.childElementCount;
+  liveNode = null;
   column.replaceChildren();
   if (!state.turns.length) {
     const empty = make("div", "empty");
@@ -160,14 +164,28 @@ function renderConversation() {
       const you = make("div", "you");
       you.append(make("p", "", turn.text));
       column.append(you);
-    } else column.append(replyNode(turn));
+    } else {
+      const node = replyNode(turn);
+      if (turn.streaming && turn.id === state.streaming) liveNode = node;
+      column.append(node);
+    }
   }
-  if (pinned || state.streaming) scroll.scrollTop = scroll.scrollHeight;
+  if (pinned) scroll.scrollTop = scroll.scrollHeight;
   renderTitle();
   renderComposer();
 }
+function renderLive() {
+  const turn = state.turns.find((entry) => entry.role === "assistant" && entry.id === state.streaming);
+  if (!turn || !liveNode?.isConnected) { renderConversation(); return; }
+  const scroll = $("scroll");
+  const pinned = nearBottom(scroll);
+  const next = replyNode(turn);
+  liveNode.replaceWith(next);
+  liveNode = next;
+  if (pinned) scroll.scrollTop = scroll.scrollHeight;
+}
 let frame = 0;
-const renderSoon = () => { if (!frame) frame = requestAnimationFrame(() => { frame = 0; renderConversation(); }); };
+const renderSoon = () => { if (!frame) frame = requestAnimationFrame(() => { frame = 0; (state.streaming ? renderLive : renderConversation)(); }); };
 
 // The composer
 const input = $("input");
