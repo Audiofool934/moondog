@@ -33,9 +33,10 @@ const maximumPackedBytes = 2_600_000;
 // adds one entry and about 15 KB. The Last.fm import adds two entries and
 // about 40 KB. The seasons chart and the desktop app's hooks add one entry and
 // about 5 KB. The shared check for unrecorded listening measures adds one
-// entry and about 1 KB.
+// entry and about 1 KB. Replies in Traditional Chinese, Korean, French,
+// German and Italian add five entries and about 60 KB.
 const maximumUnpackedBytes = 5_146_000;
-const maximumEntries = 139;
+const maximumEntries = 144;
 const packageOnlyPrivateSentinelPattern = new RegExp(
   ["PRIVATE", "(?:IP|PLATFORM)", "SENTINEL"].join("_"),
   "u",
