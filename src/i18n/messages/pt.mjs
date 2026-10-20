@@ -29,7 +29,7 @@ export default {
   "failure.songNotSent": " O pedido de reprodução não foi enviado.",
   "failure.preparationStopped": ({ evidence }) => `As verificações do dispositivo não terminaram (${evidence}); nenhum pedido de reprodução foi enviado. Confira o estado do dispositivo no Spotify antes de tentar de novo.`,
   "failure.queueRequestRequired": "Nenhuma música foi adicionada: não consegui ligar esta resposta a um pedido de fila. Para continuar, peça explicitamente para adicionar música à fila.",
-  "failure.notSent": ({ code }) => `Esta entrada da ferramenta foi recusada localmente (${code}); nenhum pedido de reprodução foi enviado ao Spotify. Corrija com uma referência guardada ou busque de novo. Um novo pedido explícito de reprodução pode seguir.`,
+  "failure.notSent": ({ code }) => `Não enviei nada ao Spotify: não consegui relacionar isso com as músicas que encontrei (${code}). Peça de novo com o nome da música ou do artista, e eu procuro outra vez.`,
   "failure.outcome.lookup": "A busca no Spotify não terminou",
   "failure.outcome.unknown": "Não se sabe ao certo o resultado da ação no Spotify",
   "failure.outcome.unconfirmed": "O Spotify não confirmou a ação de reprodução",

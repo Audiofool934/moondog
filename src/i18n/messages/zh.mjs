@@ -29,7 +29,7 @@ export default {
   "failure.songNotSent": " 尚未发送歌曲播放请求。",
   "failure.preparationStopped": ({ evidence }) => `播放前的设备检查未完成（${evidence}），没有发送歌曲播放请求。请检查 Spotify 设备状态后再试。`,
   "failure.queueRequestRequired": "这次没有加入歌曲：我没能把这条回复关联到入队请求。需要明确要加入播放队列，才能继续。",
-  "failure.notSent": ({ code }) => `一次工具参数在本地被拒绝（${code}），该次尝试没有向 Spotify 发送播放请求。请使用保留的歌曲引用修正参数，或重新搜索；后续明确的播放请求可以直接继续。`,
+  "failure.notSent": ({ code }) => `没有向 Spotify 发送任何内容：我没能把它对应到刚才找到的歌曲（${code}）。请带上歌名或歌手再说一次，我会重新搜索。`,
   "failure.outcome.lookup": "Spotify 查询未完成",
   "failure.outcome.unknown": "Spotify 操作结果尚不确定",
   "failure.outcome.unconfirmed": "Spotify 播放操作未获确认",

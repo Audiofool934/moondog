@@ -6311,9 +6311,10 @@ const READINESS_FAILURES = new Set(["spotify_device_selection_required", "spotif
   "spotify_device_ambiguous", "spotify_device_restricted", "spotify_device_changed", "spotify_device_state_unconfirmed",
   "spotify_device_not_ready", "spotify_playback_restricted"]);
 
-// The reply language for one listener message: what they wrote in, else their setting.
+// The reply language for one listener message: what they wrote in, else the conversation's
+// language so far, else their setting.
 function replyTranslator(text, application) {
-  return translator(messageLocale(text, application?.locale));
+  return translator(messageLocale(text, application?.conversationLocale ?? application?.locale));
 }
 
 function groundedPlaylistPresentation(plan, t) {
@@ -7106,8 +7107,9 @@ export class PiAgentRuntime {
     const settlement = Promise.withResolvers();
     this.promptSettlement = settlement.promise;
     const historyStartIndex = this.agent.state.messages.length;
-    // One reply language per turn, from the message itself or the listener's setting.
+    // One reply language per turn, from the message itself, the conversation or the listener's setting.
     const t = replyTranslator(text, this.application);
+    if (this.application) this.application.conversationLocale = t.locale;
     const promptState = {
       promptText: text,
       t,
