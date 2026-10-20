@@ -856,6 +856,13 @@ function safeListeningSeasons(profile) {
         item?.signature_track?.listening_minutes;
       const signatureExplicitSkips = item?.signature_track?.explicit_skips;
       const active = Number.isInteger(eventCount) && eventCount > 0;
+      // The projection leaves out engaged plays, skips and minutes that no play recorded.
+      const invalidCount = (value) =>
+        value !== undefined && (!Number.isInteger(value) || value < 0);
+      const invalidMinutes = (value) =>
+        value !== undefined && (!Number.isFinite(value) || value < 0);
+      const exceeds = (part, whole) =>
+        part !== undefined && whole !== undefined && part > whole;
       if (
         index === null ||
         startMonthIndex === null ||
@@ -872,11 +879,9 @@ function safeListeningSeasons(profile) {
         activeMonthCount > retainedMonthCount ||
         !Number.isInteger(eventCount) ||
         eventCount < 0 ||
-        !Number.isInteger(engagedPlayCount) ||
-        engagedPlayCount < 0 ||
-        engagedPlayCount > eventCount ||
-        !Number.isFinite(listeningMinutes) ||
-        listeningMinutes < 0 ||
+        invalidCount(engagedPlayCount) ||
+        exceeds(engagedPlayCount, eventCount) ||
+        invalidMinutes(listeningMinutes) ||
         !Number.isInteger(distinctTracks) ||
         distinctTracks < 0 ||
         distinctTracks > eventCount ||
@@ -887,8 +892,8 @@ function safeListeningSeasons(profile) {
         firstObservedTracks + returningTracks !== distinctTracks ||
         (!active &&
           (activeMonthCount !== 0 ||
-            engagedPlayCount !== 0 ||
-            listeningMinutes !== 0 ||
+            (engagedPlayCount ?? 0) !== 0 ||
+            (listeningMinutes ?? 0) !== 0 ||
             distinctTracks !== 0 ||
             leadingArtist !== null ||
             signatureTitle !== null)) ||
@@ -900,29 +905,27 @@ function safeListeningSeasons(profile) {
             !Number.isInteger(leadingEventCount) ||
             leadingEventCount < 1 ||
             leadingEventCount > eventCount ||
-            !Number.isInteger(leadingEngagedPlayCount) ||
-            leadingEngagedPlayCount < 0 ||
-            leadingEngagedPlayCount > leadingEventCount ||
-            leadingEngagedPlayCount > engagedPlayCount ||
-            !Number.isFinite(leadingListeningMinutes) ||
-            leadingListeningMinutes < 0 ||
-            leadingListeningMinutes > listeningMinutes ||
+            invalidCount(leadingEngagedPlayCount) ||
+            exceeds(leadingEngagedPlayCount, leadingEventCount) ||
+            exceeds(leadingEngagedPlayCount, engagedPlayCount) ||
+            invalidMinutes(leadingListeningMinutes) ||
+            exceeds(leadingListeningMinutes, listeningMinutes) ||
             !Number.isInteger(leadingDistinctTracks) ||
             leadingDistinctTracks < 1 ||
             leadingDistinctTracks > distinctTracks ||
             !Number.isInteger(signaturePlayCount) ||
             signaturePlayCount < 1 ||
             signaturePlayCount > eventCount ||
-            !Number.isInteger(signatureEngagedPlayCount) ||
-            signatureEngagedPlayCount < 0 ||
-            !Number.isInteger(signatureExplicitSkips) ||
-            signatureExplicitSkips < 0 ||
-            signatureEngagedPlayCount + signatureExplicitSkips !==
-              signaturePlayCount ||
-            signatureEngagedPlayCount > engagedPlayCount ||
-            !Number.isFinite(signatureListeningMinutes) ||
-            signatureListeningMinutes < 0 ||
-            signatureListeningMinutes > listeningMinutes))
+            invalidCount(signatureEngagedPlayCount) ||
+            invalidCount(signatureExplicitSkips) ||
+            (signatureEngagedPlayCount === undefined) !==
+              (signatureExplicitSkips === undefined) ||
+            (signatureEngagedPlayCount !== undefined &&
+              signatureEngagedPlayCount + signatureExplicitSkips !==
+                signaturePlayCount) ||
+            exceeds(signatureEngagedPlayCount, engagedPlayCount) ||
+            invalidMinutes(signatureListeningMinutes) ||
+            exceeds(signatureListeningMinutes, listeningMinutes)))
       ) {
         return null;
       }
@@ -933,7 +936,9 @@ function safeListeningSeasons(profile) {
         retained_month_count: retainedMonthCount,
         active_month_count: activeMonthCount,
         event_count: eventCount,
-        listening_minutes: listeningMinutes,
+        ...(listeningMinutes === undefined
+          ? {}
+          : { listening_minutes: listeningMinutes }),
         distinct_tracks: distinctTracks,
         first_observed_tracks: firstObservedTracks,
         returning_tracks: returningTracks,
