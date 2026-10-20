@@ -3,6 +3,8 @@
 // with xterm.js and adds what a terminal can't: a preview player with media keys,
 // and a room that keeps playing after the window closes.
 import { app, BrowserWindow, dialog, MessageChannelMain, nativeTheme, shell, utilityProcess } from "electron";
+import { execFile } from "node:child_process";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -20,11 +22,21 @@ const terminalIdentity = [
   "WT_SESSION", "TMUX", "STY", "COLUMNS", "LINES",
 ];
 
-function roomEnvironment() {
+// Opened from Finder or the Dock, the app gets a minimal PATH, and the room couldn't find
+// programs such as codex for web research. The packaged app gives it the PATH a login shell sets.
+const loginShellPath = !app.isPackaged ? Promise.resolve(null) : new Promise((resolve) => {
+  execFile(os.userInfo().shell || "/bin/zsh", ["-lc", 'printf "\\n__MOONDOG_PATH__%s\\n" "$PATH"'], { timeout: 3000 },
+    (_error, stdout) => resolve(String(stdout ?? "").match(/__MOONDOG_PATH__(.+)/u)?.[1] ?? null));
+});
+
+function roomEnvironment(shellPath) {
   const environment = { ...process.env };
   for (const name of terminalIdentity) delete environment[name];
   return {
     ...environment,
+    ...(shellPath ? { PATH: shellPath } : {}),
+    // The packaged app updates as a whole, so the npm update notice doesn't apply.
+    ...(app.isPackaged ? { MOONDOG_UPDATE_CHECK: "off" } : {}),
     TERM: "xterm-256color",
     COLORTERM: "truecolor",
     COLORFGBG: nativeTheme.shouldUseDarkColors ? "15;0" : "0;15",
@@ -40,14 +52,15 @@ let window = null;
 let room = null;
 let quitting = false;
 
-function openRoom() {
+async function openRoom() {
+  const shellPath = await loginShellPath;
   const { port1, port2 } = new MessageChannelMain();
   let errors = "";
   const debugPort = Number(process.env.MOONDOG_APP_DEBUG_PORT);
   room = utilityProcess.fork(path.join(here, "room-process.mjs"), [], {
     serviceName: "Moondog room",
     stdio: "pipe",
-    env: roomEnvironment(),
+    env: roomEnvironment(shellPath),
     // Automated checks can also reach the room process, one port above the window's.
     execArgv: debugPort ? [`--inspect=127.0.0.1:${debugPort + 1}`] : [],
   });

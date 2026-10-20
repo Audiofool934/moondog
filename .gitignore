@@ -61,3 +61,7 @@ dist/
 *.log
 *.tmp
 *.temp
+
+# The desktop app's packaging work and output (app/pack.mjs).
+app/build/
+app/release/

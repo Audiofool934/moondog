@@ -55,6 +55,20 @@ Rules for new blocks:
 - Facts and actions exist in both forms; hover, motion, and precision may be graphics-only.
 - A marked region keeps a blank cell on each side, which the graphics may bleed into.
 
+## Build the app
+
+`npm run pack` builds an unsigned Moondog.app for Apple silicon, as a DMG and a zip in `release/`.
+`npm run release` builds the same app, signed with the Developer ID and notarized by Apple, so it opens without a warning.
+
+- The app carries the room exactly as the npm package ships it: `npm pack` decides the files, and `npm ci --omit=dev` adds their dependencies.
+- Signing needs the Developer ID Application certificate in the login keychain.
+  Notarization reads the keychain profile `moondog-notary`, made once with `xcrun notarytool store-credentials moondog-notary --team-id <your team ID>`, which asks for the Apple ID and an app-specific password.
+  `MOONDOG_SIGNING_IDENTITY` and `MOONDOG_NOTARY_PROFILE` choose a different certificate or profile.
+- Opened from the Dock or Finder, the app has a minimal `PATH`, so the room gets the `PATH` of a login shell, as in a terminal.
+  Programs such as `codex`, which web research needs, keep working.
+- The packaged room has no npm update notice, because the app updates as a whole.
+
 ## Not yet
 
-- There is no packaged, signed build.
+- The app does not update itself yet; install a new build over the old one.
+- The build is for Apple silicon only.
