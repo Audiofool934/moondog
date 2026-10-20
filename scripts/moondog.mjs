@@ -981,10 +981,15 @@ async function main() {
         if (selection) await writePiRuntimeSelection(selection);
         return createConfiguredRuntime(application, process.env, { selection });
       },
-      // Sign-in asks for a key on the terminal's own input, which the app does not have yet.
-      runAuth: host ? undefined : (provider) =>
+      // In the desktop app, sign-in prompts read and write through the window.
+      runAuth: (provider) =>
         runAuthCommand({
           args: ["login", provider],
+          ...(host && {
+            input: host.terminalStreams.input,
+            output: host.terminalStreams.output,
+            progressOutput: host.terminalStreams.output,
+          }),
         }),
       runWeb: (args, options) => runWebCommand({ args, webResearch, ...options }),
       runProfileAction: (args) => runProfileCommand({
@@ -1020,7 +1025,7 @@ async function main() {
           args,
           signal,
           stdout: capture,
-          stderr: stderr ?? (args[0] === "login" ? process.stderr : capture),
+          stderr: stderr ?? (args[0] === "login" ? host?.terminalStreams.output ?? process.stderr : capture),
           resolutionCache: await spotifyResolutionCacheIfConfigured(),
         });
         if (["import-history", "sync-recent"].includes(args[0])) {

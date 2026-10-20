@@ -25,6 +25,7 @@ To try it on fictional data, set `MOONDOG_STATE_HOME` and `MOONDOG_CONFIG_HOME` 
 - Mixed blocks: a room component can mark cells for the window to paint with graphics, while its labels stay terminal text.
 - Files: dropping a file types its path into the room, as a terminal does, so `/import` and a drop work together.
 - Links open in your browser, and a busy room shows in the Dock.
+- Sign-in works as in a terminal: `/auth` and `/spotify login` clear the window for their steps, Ctrl+C cancels them, and their addresses are links.
 
 ## How it fits together
 
@@ -32,6 +33,8 @@ To try it on fictional data, set `MOONDOG_STATE_HOME` and `MOONDOG_CONFIG_HOME` 
 - `room-process.mjs` runs `scripts/moondog.mjs` unchanged, with a stand-in terminal and preview player it registers first.
 - `renderer/` draws the room with xterm.js, shows the player, and paints the blocks.
 - Output, keys, size, and previews travel over one message port between the room process and the window.
+- `window-terminal.mjs` is the room's terminal. When the room steps aside for a sign-in, it acts like a plain terminal for the prompt.
+- Quit sends the room SIGTERM, which it handles as it does in a terminal, so a draft you haven't sent is kept.
 
 ## Mixed blocks
 
@@ -54,7 +57,4 @@ Rules for new blocks:
 
 ## Not yet
 
-- Model sign-in (`/auth`) asks for a key on the terminal's own input, so the app turns it off for now; sign in once with `moondog`, and the app uses the same sign-in.
-- `/spotify login` still opens the browser, but the steps it prints for a terminal don't show in the app yet.
-- Quitting stops the room process at once instead of asking it to close.
 - There is no packaged, signed build.

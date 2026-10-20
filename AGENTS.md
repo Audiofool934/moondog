@@ -7,6 +7,9 @@
 - Keep existing browser prototypes as reference; do not make them the default entrypoint or expand them as part of general project advancement.
 - The project page in `site/` is in scope.
   It runs the real TUI in the browser on fictional data; keep that room code shared with the terminal app rather than forking its behavior for the page.
+- The desktop app in `app/` is in scope, first for the project owner's daily use and then for developers.
+  It hosts the same listening room as the terminal and adds only what a terminal can't, such as sound, graphics over room components, and file drops.
+  Keep the room code shared; do not fork room behavior for the window, and give every graphic a text form the terminal shows.
 - Reuse the shared profile, correction, import, and agent services when adding terminal interactions.
 - Present the listening-profile result immediately after a successful TUI import, in the same terminal session; do not require a browser or a separate command to see it.
 

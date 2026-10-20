@@ -1,6 +1,7 @@
 // The window's page: the real room drawn by xterm.js, and a player for the previews the agent picks.
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
+import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
 import { createPreviewPlayer } from "../../site/room/preview-player.mjs";
 import { attachBlocks, renderSeasons } from "./blocks.mjs";
@@ -26,6 +27,8 @@ const xterm = new Terminal({
 });
 const fit = new FitAddon();
 xterm.loadAddon(fit);
+// Sign-in prints plain addresses, which a terminal lets you click; so does the window.
+xterm.loadAddon(new WebLinksAddon((_event, uri) => window.open(uri)));
 xterm.open(container);
 fit.fit();
 // Room components that mark their cells get graphics painted over them.
