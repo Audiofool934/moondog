@@ -89,10 +89,11 @@ const EXPLICIT_REQUEST = new RegExp([
   String.raw`((?:\p{Script=Hangul}+\s)?\p{Script=Hangul}{1,6}어)\s*로\s*(?:대답|답|말|설명|써|작성|응답|얘기|이야기)`,
 ].join("|"), "giu");
 
-// Common characters whose Simplified and Traditional forms differ. Text that
-// uses only shared characters, like most names, decides nothing.
-const SIMPLIFIED = new Set("这们个来说时为会对后么过还发没问题听乐让给种点样经现从动进实与关开长东车门间爱气应头边见话认识办学体机无声华专辑队设电脑网络语写欢请谢帮换单张节数几吗调轻静觉场线团类风随暂继续该别荐试");
-const TRADITIONAL = new Set("這們個來說時為會對後麼過還發沒問題聽樂讓給種點樣經現從動進實與關開長東車門間愛氣應頭邊見話認識辦學體機無聲華專輯隊設電腦網絡語寫歡請謝幫換單張節數幾嗎調輕靜覺場線團類風隨暫繼續該別薦試裝佇");
+// Common characters whose Simplified and Traditional forms differ, including the
+// ones artist names and song titles use most. Text that uses only shared
+// characters decides nothing.
+const SIMPLIFIED = new Set("这们个来说时为会对后么过还发没问题听乐让给种点样经现从动进实与关开长东车门间爱气应头边见话认识办学体机无声华专辑队设电脑网络语写欢请谢帮换单张节数几吗调轻静觉场线团类风随暂继续该别荐试陈张刘杨黄赵吴郑许邓蒋孙马罗萧叶苏卢钟颜谭龙凤伟辉丽泪恋忆梦云飞岁湾国广岛离远谁娇录缘戏树桥涛剧艺术圣诞旧历压转响闹拥怀忧伤宝贝铁银钱号楼双归乡齐剑侠诗词兴举热愿读独奖优层简伦");
+const TRADITIONAL = new Set("這們個來說時為會對後麼過還發沒問題聽樂讓給種點樣經現從動進實與關開長東車門間愛氣應頭邊見話認識辦學體機無聲華專輯隊設電腦網絡語寫歡請謝幫換單張節數幾嗎調輕靜覺場線團類風隨暫繼續該別薦試裝佇陳誇張劉楊黃趙吳鄭許鄧蔣孫馬羅蕭葉蘇盧鍾顏譚龍鳳偉輝麗淚戀憶夢雲飛歲灣國廣島離遠誰嬌錄緣戲樹橋濤劇藝術聖誕舊歷壓轉響鬧擁懷憂傷寶貝鐵銀錢號樓雙歸鄉齊劍俠詩詞興舉熱願讀獨獎優層簡倫");
 
 function chineseLocale(prose, configured) {
   let simplified = 0;

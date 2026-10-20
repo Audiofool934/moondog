@@ -86,6 +86,8 @@ test("a reply follows the message's language, then the listener's setting", () =
     ["幫我放一首周杰倫的歌", "zh", "zh-Hant"],
     ["来点爵士乐", "zh-Hant", "zh"],
     ["播放伍佰", "zh-Hant", "zh-Hant"],
+    ["播放陳奕迅的浮誇", "en", "zh-Hant"],
+    ["播放陈奕迅的浮夸", "zh-Hant", "zh"],
     ["播放伍佰", "en", "zh"],
     ["請用英文回答", "zh-Hant", "en"],
     ["用繁體中文回答", "en", "zh-Hant"],

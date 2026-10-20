@@ -2,8 +2,9 @@
 // app is to its command line. The core runs in its own Node process (core-process.mjs); the
 // window draws conversations, the conversation, and what is playing, and keeps the music
 // going after it closes.
-import { app, BrowserWindow, dialog, ipcMain, Menu, MessageChannelMain, nativeTheme, shell, utilityProcess } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, MessageChannelMain, nativeTheme, screen, shell, utilityProcess } from "electron";
 import { execFile } from "node:child_process";
+import { readFileSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -121,10 +122,41 @@ async function openCore() {
   window.webContents.postMessage("room", null, [port1]);
 }
 
+// The window opens where it was, if that place is still on a screen.
+const boundsFile = () => path.join(app.getPath("userData"), "window.json");
+function savedBounds() {
+  try {
+    const bounds = JSON.parse(readFileSync(boundsFile(), "utf8"));
+    const visible = screen.getAllDisplays().some(({ workArea: area }) =>
+      bounds.x < area.x + area.width - 80 && bounds.x + bounds.width > area.x + 80 && bounds.y >= area.y - 10 && bounds.y < area.y + area.height - 80);
+    return visible && [bounds.x, bounds.y, bounds.width, bounds.height].every(Number.isInteger) ? bounds : null;
+  } catch { return null; }
+}
+let boundsTimer = null;
+const saveBounds = () => {
+  clearTimeout(boundsTimer);
+  boundsTimer = setTimeout(() => {
+    try { writeFileSync(boundsFile(), JSON.stringify(window.getNormalBounds())); } catch { /* The next launch uses the default size. */ }
+  }, 400);
+};
+
+// Right-click offers what the text under the pointer allows, in the window's language.
+function contextMenu(params) {
+  const t = windowStrings(locale);
+  const items = [
+    ...(params.dictionarySuggestions ?? []).slice(0, 4).map((word) => ({ label: word, click: () => window.webContents.replaceMisspelling(word) })),
+    ...(params.dictionarySuggestions?.length ? [{ type: "separator" }] : []),
+    ...(params.isEditable ? [{ label: t("menuCut"), role: "cut", enabled: params.editFlags.canCut }] : []),
+    ...(params.selectionText || params.isEditable ? [{ label: t("menuCopy"), role: "copy", enabled: params.editFlags.canCopy }] : []),
+    ...(params.isEditable ? [{ label: t("menuPaste"), role: "paste", enabled: params.editFlags.canPaste }, { label: t("menuSelectAll"), role: "selectAll" }] : []),
+  ];
+  if (items.length) Menu.buildFromTemplate(items).popup({ window });
+}
+
 function createWindow() {
+  const bounds = savedBounds();
   window = new BrowserWindow({
-    width: 1240,
-    height: 800,
+    ...(bounds ?? { width: 1240, height: 800 }),
     minWidth: 760,
     minHeight: 520,
     title: "Moondog",
@@ -147,6 +179,9 @@ function createWindow() {
     return { action: "deny" };
   });
   window.webContents.on("will-navigate", (event) => event.preventDefault());
+  window.webContents.on("context-menu", (_event, params) => contextMenu(params));
+  window.on("resize", saveBounds);
+  window.on("move", saveBounds);
   // Automated checks open the window without taking focus from the listener.
   window.once("ready-to-show", () => (process.env.MOONDOG_APP_DEBUG_PORT ? window.showInactive() : window.show()));
   window.webContents.once("did-finish-load", openCore);

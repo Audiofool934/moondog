@@ -80,6 +80,26 @@ const scenarios = [
       { text: "好，放刚才 Beyond 的海阔天空", expect: (s) => check(s.current?.id === "simHaiKuoTianKong" && s.playing,
         `expected 海闊天空, got ${s.current?.name ?? "nothing"}`) },
     ] },
+  // The same everyday requests in the other reply languages, with no language-specific parsing.
+  { name: "play-french", language: "fr", setup: {},
+    turns: [{ text: "mets Nude de Radiohead", expect: (s) => check(s.current?.id === "simNude" && s.playing && s.active === "simMac",
+      `expected Nude playing on the Mac, got ${s.current?.name ?? "nothing"} on ${s.active ?? "no device"}`) }] },
+  { name: "queue-german", language: "de", setup: { active: "simMac", playing: "simReckoner" },
+    turns: [{ text: "füg drei Lieder von Beyond zur Warteschlange hinzu", expect: (s) => {
+      const beyond = s.queue.filter((track) => artistOf(track) === "Beyond");
+      return check(s.current?.id === "simReckoner" && beyond.length === 3 && new Set(beyond.map((track) => track.id)).size === 3,
+        `expected three Beyond songs queued after Reckoner, got [${s.queue.map((track) => track.name).join(", ")}]`);
+    } }] },
+  { name: "move-italian", language: "it", setup: { active: "simMac", playing: "simNude", refuseTransfersTo: ["simPC"] },
+    turns: [{ text: "sposta la musica sul PC", expect: (s) => check(s.active === "simPC" && s.playing && s.current?.id === "simNude",
+      `expected Nude playing on the PC, got ${s.current?.name ?? "nothing"} on ${s.active}${s.playing ? "" : " (paused)"}`) }] },
+  { name: "pause-korean", language: "ko", setup: { active: "simMac", playing: "simShiLuoShaZhou" },
+    turns: [
+      { text: "일시 정지해 줘", expect: (s) => check(!s.playing, "expected paused") },
+      { text: "다시 틀어 줘", expect: (s) => check(s.playing && s.current?.id === "simShiLuoShaZhou", `expected 失落沙洲 playing, got ${s.current?.name}${s.playing ? "" : " (paused)"}`) },
+    ] },
+  { name: "play-traditional", language: "zh-Hant", setup: {},
+    turns: [{ text: "播放陳奕迅的浮誇", expect: (s) => check(s.current?.id === "simFuKua" && s.playing, `expected 浮誇, got ${s.current?.name ?? "nothing"}`) }] },
 ];
 
 const JARGON = /\bspotify_[a-z_]+\b|\bHTTP \d{3}\b|\b(?:item|track|device|playlist)_ref(?:_id)?\b|\bNO_ACTIVE_DEVICE\b|\bRestriction violated\b|\b(?:403|404|429)\b/iu;
