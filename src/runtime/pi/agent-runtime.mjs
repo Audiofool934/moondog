@@ -6731,8 +6731,10 @@ async function trustedContextSnapshot(application, runtimeStatus, query) {
 }
 
 export class PiAgentRuntime {
-  constructor({ application, models, model, provider, modelId, effort, effortLevels, thinkingLevel, modelFetch, modelRetryDelay }) {
+  constructor({ application, models, model, provider, modelId, effort, effortLevels, thinkingLevel, modelFetch, modelRetryDelay, toolTrace = null }) {
     this.application = application;
+    // The command passes a local trace of tool calls; tests and other hosts leave it out.
+    this.toolTrace = toolTrace;
     this.models = models;
     this.model = model;
     const persistentMemoryReady = application.memoryStatus?.().state === "ready";
@@ -7302,6 +7304,8 @@ export class PiAgentRuntime {
           }
 
           if (event.type === "tool_execution_start") {
+            this.toolTrace?.record({ session: this.application.ensureMemorySession?.()?.session_id ?? null, prompt: text.slice(0, 200),
+              call: event.toolCallId, tool: event.toolName, state: "start", args: event.args });
             const descriptor = this.capabilityByToolName.get(event.toolName);
             promptState.toolExecutionStarted = true;
             if (streamedText.length > 0) {
@@ -7319,6 +7323,9 @@ export class PiAgentRuntime {
           }
 
           if (event.type === "tool_execution_end") {
+            this.toolTrace?.record({ session: this.application.ensureMemorySession?.()?.session_id ?? null, call: event.toolCallId,
+              tool: event.toolName, state: event.isError ? "error" : "done",
+              result: event.result?.content?.map((part) => part.text ?? "").join("") ?? "" });
             const descriptor = this.capabilityByToolName.get(event.toolName);
             let projected;
             try { projected = JSON.parse(event.result?.content?.find((block) => block.type === "text")?.text); } catch { /* Failed/withheld projection cannot establish a selection. */ }

@@ -46,6 +46,7 @@ export async function createConfiguredRuntime(
     runtimeFactory = (configuration) => new PiAgentRuntime(configuration),
     selection,
     settingsReader = readPiRuntimeSelection,
+    toolTrace = null,
   } = {},
 ) {
   const environmentSelectsModel =
@@ -107,5 +108,6 @@ export async function createConfiguredRuntime(
     effort,
     effortLevels: getSupportedThinkingLevels(model),
     thinkingLevel: effort ? clampThinkingLevel(model, effort) : undefined,
+    ...(toolTrace ? { toolTrace } : {}),
   });
 }

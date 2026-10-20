@@ -15,6 +15,7 @@ import { readAppleMusicSourceStatus } from "../src/core/apple-library-source-sta
 import { createListeningProfileDomainServices } from "../src/core/listening-profile-domain-services.mjs";
 import { runMemoryReflection } from "../src/memory/reflection-worker.mjs";
 import { createConfiguredRuntime } from "../src/runtime/pi/configured-runtime.mjs";
+import { createToolTrace } from "../src/runtime/pi/tool-trace.mjs";
 import { writePiRuntimeSelection } from "../src/runtime/pi/runtime-settings.mjs";
 import {
   formatLocalResult,
@@ -858,7 +859,9 @@ async function main() {
   let lyrics = null;
   let exitRequest;
   try {
-    const runtime = await createConfiguredRuntime(application);
+    // The command keeps a local trace of the agent's tool calls in the state directory.
+    const toolTrace = createToolTrace(process.env);
+    const runtime = await createConfiguredRuntime(application, process.env, { toolTrace });
     const runtimeStatus = runtime.publicStatus();
 
     if (localCommands.has(options.command)) {
@@ -980,7 +983,7 @@ async function main() {
       },
       rebuildRuntime: async (selection) => {
         if (selection) await writePiRuntimeSelection(selection);
-        return createConfiguredRuntime(application, process.env, { selection });
+        return createConfiguredRuntime(application, process.env, { selection, toolTrace });
       },
       // In the desktop app, sign-in prompts read and write through the window.
       runAuth: (provider) =>

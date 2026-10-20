@@ -9,7 +9,7 @@ import { PiAgentRuntime } from "../../src/runtime/pi/agent-runtime.mjs";
 
 // Playback, queue and device moves are reversible: the model acts on the listener's words in any
 // language and writes the reply, while Spotify's real state and the structured receipts stay true.
-function fixture(t, setup = {}) {
+function fixture(t, setup = {}, { toolTrace } = {}) {
   const spotify = createSimulatedSpotify({ devices: [{ id: "simMac", name: "Fictional MacBook Pro", type: "Computer" }, { id: "simPC", name: "PC", type: "Computer" }], ...setup });
   const client = createSpotifyWebApiClient({ tokenProvider: async () => "SIMULATED", fetchImpl: spotify.fetchImpl });
   const application = new MoondogApplication({ importsRoot: "/tmp/fictional-playback-contract-no-imports",
@@ -17,7 +17,7 @@ function fixture(t, setup = {}) {
       missingScopes: () => [], publicStatus: () => ({ provider: "spotify", state: "ready" }) } });
   t.after(() => application.close());
   const faux = fauxProvider(), models = createModels(); models.setProvider(faux.provider);
-  const runtime = new PiAgentRuntime({ application, models, model: faux.getModel(), provider: "faux", modelId: "faux-1" });
+  const runtime = new PiAgentRuntime({ application, models, model: faux.getModel(), provider: "faux", modelId: "faux-1", toolTrace });
   const call = (name, args = {}) => fauxAssistantMessage([fauxToolCall(name, args)], { stopReason: "toolUse" });
   const say = text => fauxAssistantMessage([fauxText(text)]);
   const lastResult = context => context.messages.filter(message => message.role === "toolResult").at(-1);
@@ -107,4 +107,14 @@ test("a queue request with nothing playing starts the first song on this compute
   assert.equal(result.text, "Listo: suena Radiohead y hay dos más en la cola.");
   assert.deepEqual([f.spotify.state.active, f.spotify.state.playing, f.spotify.state.queue.length], ["simMac", true, 2]);
   assert.equal(result.spotify_queue_plan.queued.length, 3);
+});
+
+test("every tool call goes to the local trace with what the model asked and what came back", async t => {
+  const records = [];
+  const f = fixture(t, {}, { toolTrace: { record: entry => records.push(entry) } });
+  await f.prompt("play Nude", [f.call("moondog_spotify_search", { query: "Nude Radiohead" }), f.say("Found it.")]);
+  assert.deepEqual(records.map(entry => [entry.tool, entry.state]), [["moondog_spotify_search", "start"], ["moondog_spotify_search", "done"]]);
+  assert.deepEqual(records[0].args, { query: "Nude Radiohead" });
+  assert.match(records[1].result, /"name":"Nude"/u);
+  assert.equal(records[0].call, records[1].call);
 });
