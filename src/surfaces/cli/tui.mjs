@@ -1787,7 +1787,7 @@ export async function runMoondogTui({
     if (command === "language") {
       const wanted = args.join(" ").trim().toLocaleLowerCase();
       const match = Object.entries(LOCALES).find(([code, value]) =>
-        [code, value.name.toLocaleLowerCase(), value.nativeName.toLocaleLowerCase()].includes(wanted));
+        [code.toLocaleLowerCase(), value.name.toLocaleLowerCase(), value.nativeName.toLocaleLowerCase()].includes(wanted));
       if (wanted && !match) throw new Error(tr("Use /language, or /language {codes}.", { codes: Object.keys(LOCALES).join(", ") }));
       let locale = match?.[0];
       if (!locale) {
