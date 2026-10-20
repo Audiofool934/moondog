@@ -200,7 +200,9 @@ function createAuthInteraction({
 function wrapLoginError(error, provider) {
   const name = provider === DEFAULT_AUTH_PROVIDER ? "OpenAI Codex" : provider;
   if (error?.name === "AbortError" || error?.code === "ABORT_ERR") {
-    return new Error(`${name} login was cancelled.`);
+    const cancelled = new Error(`${name} login was cancelled.`);
+    cancelled.code = "auth_login_cancelled";
+    return cancelled;
   }
   if (
     typeof error?.code === "string" &&
