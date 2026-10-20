@@ -1,7 +1,7 @@
 import { Agent } from "@earendil-works/pi-agent-core";
 import { Type } from "@earendil-works/pi-ai";
 import { readFileSync } from "node:fs";
-import { messageLocale, translator } from "../../i18n/index.mjs";
+import { LOCALES, messageLocale, translator } from "../../i18n/index.mjs";
 import { PROFILE_SECTIONS } from "../../profile/profile-exploration.mjs";
 import { compactListenerProfile } from "../../profile/listener-profile-build.mjs";
 
@@ -6176,7 +6176,7 @@ Voice:
 - Moondog lives on a lunar record and grew up on Pink Floyd. An occasional light nod to their songs or ideas is welcome when it truly fits the moment, at most once in a conversation, and never at the expense of a clear answer. Never quote more than a short line of any lyric.
 - No hype, no exclamation marks, no filler openings or closing offers. Use plain hyphens, never em dashes.
 
-Respond in the language used by the user unless asked otherwise; product.reply_language is that language, or the listener's chosen language when a message does not show one.${sessionAvailability({ spotifyReady, previewReady })}${hostNotes(notes)}`;
+Respond in the language used by the user unless asked otherwise; product.reply_language is that language, or the listener's chosen language when a message does not show one. Write Chinese in the script product.reply_language names, even when song titles use the other script.${sessionAvailability({ spotifyReady, previewReady })}${hostNotes(notes)}`;
 }
 
 function contextMessage(snapshot) {
@@ -6322,6 +6322,12 @@ const READINESS_FAILURES = new Set(["spotify_device_selection_required", "spotif
 // language so far, else their setting.
 function replyTranslator(text, application) {
   return translator(messageLocale(text, application?.conversationLocale ?? application?.locale));
+}
+
+// The language by name, so the model also knows which Chinese script to write.
+function replyLanguage(text, application) {
+  const { locale } = replyTranslator(text, application);
+  return `${LOCALES[locale]?.name ?? "English"} (${locale})`;
 }
 
 function groundedPlaylistPresentation(plan, t) {
@@ -6659,7 +6665,7 @@ async function trustedContextSnapshot(application, runtimeStatus, query) {
         spotify_read_selections: application.spotifyReadContext?.() ?? [],
         spotify_quick_edit_context: application.spotifyQuickEditContextStatus?.() ?? null,
         spotify_playback_context: application.spotifyPlaybackContextStatus?.() ?? null,
-        reply_language: replyTranslator(query, application).locale,
+        reply_language: replyLanguage(query, application),
       },
       profile: { state: profile.state },
       listener_model: compactListenerProfile(listenerModel),
@@ -6709,7 +6715,7 @@ async function trustedContextSnapshot(application, runtimeStatus, query) {
         spotify_read_selections: application.spotifyReadContext?.() ?? [],
         spotify_quick_edit_context: application.spotifyQuickEditContextStatus?.() ?? null,
         spotify_playback_context: application.spotifyPlaybackContextStatus?.() ?? null,
-        reply_language: replyTranslator(query, application).locale,
+        reply_language: replyLanguage(query, application),
       },
       profile: { state: "unavailable" },
       memory: { state: "unavailable" },

@@ -1,106 +1,144 @@
-// Moondog's desktop app: the real listening room in a window.
-// The room runs unchanged in its own Node process (room-process.mjs). The window draws it
-// with xterm.js and adds what a terminal can't: a preview player with media keys,
-// and a room that keeps playing after the window closes.
-import { app, BrowserWindow, dialog, MessageChannelMain, nativeTheme, shell, utilityProcess } from "electron";
+// Moondog for Mac: a native window on the same core as the `moondog` command, as a desktop
+// app is to its command line. The core runs in its own Node process (core-process.mjs); the
+// window draws conversations, the conversation, and what is playing, and keeps the music
+// going after it closes.
+import { app, BrowserWindow, dialog, ipcMain, Menu, MessageChannelMain, nativeTheme, shell, utilityProcess } from "electron";
 import { execFile } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { windowLocale, windowStrings } from "./strings.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 // For automated checks: lets a DevTools client drive the window.
 if (process.env.MOONDOG_APP_DEBUG_PORT) app.commandLine.appendSwitch("remote-debugging-port", process.env.MOONDOG_APP_DEBUG_PORT);
 
-// The room's paper and charcoal, from src/surfaces/cli/brand-theme.mjs.
-const background = () => (nativeTheme.shouldUseDarkColors ? "#0c0c0c" : "#f4f4f4");
+// The window's canvas, from app/renderer/style.css.
+const background = () => (nativeTheme.shouldUseDarkColors ? "#1A1A19" : "#F8F8F6");
+let locale = "en";
 
-// Variables that would make the room think it runs inside another terminal.
-const terminalIdentity = [
-  "TERM_PROGRAM", "TERM_PROGRAM_VERSION", "TERM_SESSION_ID", "TERMINAL_EMULATOR", "KITTY_WINDOW_ID",
-  "GHOSTTY_RESOURCES_DIR", "WEZTERM_PANE", "ITERM_SESSION_ID", "WARP_SESSION_ID", "WARP_TERMINAL_SESSION_UUID",
-  "WT_SESSION", "TMUX", "STY", "COLUMNS", "LINES",
-];
-
-// Opened from Finder or the Dock, the app gets a minimal PATH, and the room couldn't find
+// Opened from Finder or the Dock, the app gets a minimal PATH, and the core couldn't find
 // programs such as codex for web research. The packaged app gives it the PATH a login shell sets.
 const loginShellPath = !app.isPackaged ? Promise.resolve(null) : new Promise((resolve) => {
   execFile(os.userInfo().shell || "/bin/zsh", ["-lc", 'printf "\\n__MOONDOG_PATH__%s\\n" "$PATH"'], { timeout: 3000 },
     (_error, stdout) => resolve(String(stdout ?? "").match(/__MOONDOG_PATH__(.+)/u)?.[1] ?? null));
 });
 
-function roomEnvironment(shellPath) {
+function coreEnvironment(shellPath) {
   const environment = { ...process.env };
-  for (const name of terminalIdentity) delete environment[name];
+  // Without a terminal's locale, the core speaks the system's language unless the listener chose one.
+  if (!environment.LC_ALL && !environment.LC_MESSAGES && !environment.LANG) {
+    environment.LANG = `${{ zh: "zh_CN", "zh-Hant": "zh_TW", pt: "pt_BR" }[locale] ?? locale}.UTF-8`;
+  }
   return {
     ...environment,
     ...(shellPath ? { PATH: shellPath } : {}),
     // The packaged app updates as a whole, so the npm update notice doesn't apply.
     ...(app.isPackaged ? { MOONDOG_UPDATE_CHECK: "off" } : {}),
-    TERM: "xterm-256color",
-    COLORTERM: "truecolor",
-    COLORFGBG: nativeTheme.shouldUseDarkColors ? "15;0" : "0;15",
-    TERM_PROGRAM: "moondog-app",
-    // Room components may mark cells for the window to paint (app/renderer/blocks.mjs).
-    MOONDOG_HOST: "app",
-    // xterm.js draws OSC 8 links, and the window opens them in the browser.
-    PI_HYPERLINKS: "1",
   };
 }
 
 let window = null;
-let room = null;
+let core = null;
 let quitting = false;
+const command = (name) => () => window?.webContents.send("command", name);
 
-async function openRoom() {
+function buildMenu() {
+  const t = windowStrings(locale);
+  const dev = !app.isPackaged;
+  Menu.setApplicationMenu(Menu.buildFromTemplate([
+    { label: "Moondog", submenu: [
+      { label: t("menuAbout"), role: "about" },
+      { type: "separator" },
+      { label: t("menuHide"), role: "hide" },
+      { label: t("menuHideOthers"), role: "hideOthers" },
+      { label: t("menuShowAll"), role: "unhide" },
+      { type: "separator" },
+      { label: t("menuQuit"), role: "quit" },
+    ] },
+    { label: t("menuEdit"), submenu: [
+      { label: t("menuUndo"), role: "undo" },
+      { label: t("menuRedo"), role: "redo" },
+      { type: "separator" },
+      { label: t("menuCut"), role: "cut" },
+      { label: t("menuCopy"), role: "copy" },
+      { label: t("menuPaste"), role: "paste" },
+      { label: t("menuSelectAll"), role: "selectAll" },
+    ] },
+    { label: t("menuConversation"), submenu: [
+      { label: t("menuNew"), accelerator: "CmdOrCtrl+N", click: command("new") },
+      { label: t("menuStop"), accelerator: "CmdOrCtrl+.", click: command("stop") },
+    ] },
+    { label: t("menuPlayback"), submenu: [
+      // The page handles these keys itself, so typing a space or moving the cursor still works.
+      { label: t("menuPlayPause"), accelerator: "Space", registerAccelerator: false, click: command("toggle-playback") },
+      { label: t("menuNext"), accelerator: "CmdOrCtrl+Right", registerAccelerator: false, click: command("next") },
+      { label: t("menuPrevious"), accelerator: "CmdOrCtrl+Left", registerAccelerator: false, click: command("previous") },
+    ] },
+    { label: t("menuView"), submenu: [
+      { label: t("menuSidebar"), accelerator: "CmdOrCtrl+Alt+S", click: command("toggle-sidebar") },
+      { label: t("menuPlayer"), accelerator: "CmdOrCtrl+Alt+P", click: command("toggle-inspector") },
+      { type: "separator" },
+      ...(dev ? [{ role: "reload" }, { role: "toggleDevTools" }, { type: "separator" }] : []),
+      { label: t("menuFullScreen"), role: "togglefullscreen" },
+    ] },
+    { label: t("menuWindow"), role: "windowMenu", submenu: [
+      { label: t("menuMinimize"), role: "minimize" },
+      { label: t("menuZoom"), role: "zoom" },
+      { label: t("menuClose"), role: "close" },
+      { type: "separator" },
+      { label: t("menuFront"), role: "front" },
+    ] },
+  ]));
+}
+
+async function openCore() {
   const shellPath = await loginShellPath;
   const { port1, port2 } = new MessageChannelMain();
   let errors = "";
   const debugPort = Number(process.env.MOONDOG_APP_DEBUG_PORT);
-  room = utilityProcess.fork(path.join(here, "room-process.mjs"), [], {
-    serviceName: "Moondog room",
+  // Development can run the window on a simulated Spotify (core-sim.mjs, not packaged).
+  const entry = process.env.MOONDOG_APP_SIMULATED === "1" && !app.isPackaged ? "core-sim.mjs" : "core-process.mjs";
+  core = utilityProcess.fork(path.join(here, entry), [], {
+    serviceName: "Moondog",
     stdio: "pipe",
-    env: roomEnvironment(shellPath),
-    // Automated checks can also reach the room process, one port above the window's.
+    env: coreEnvironment(shellPath),
+    // Automated checks can also reach the core process, one port above the window's.
     execArgv: debugPort ? [`--inspect=127.0.0.1:${debugPort + 1}`] : [],
   });
-  room.stdout.on("data", (chunk) => process.stdout.write(chunk));
-  room.stderr.on("data", (chunk) => {
+  core.stdout.on("data", (chunk) => process.stdout.write(chunk));
+  core.stderr.on("data", (chunk) => {
     process.stderr.write(chunk);
     errors = `${errors}${chunk}`.slice(-4000);
   });
-  room.on("message", (message) => {
-    if (message?.type === "title") window?.setTitle(message.title || "Moondog");
-    // A busy room shows in the Dock while the window is away.
-    if (message?.type === "progress") window?.setProgressBar(message.active ? 2 : -1, { mode: "indeterminate" });
-  });
-  room.once("exit", (code) => {
-    room = null;
+  core.once("exit", (code) => {
+    core = null;
     if (quitting) return;
-    if (code) dialog.showErrorBox("The room stopped", errors.trim() || `The room process exited with code ${code}.`);
+    if (code) dialog.showErrorBox("Moondog stopped", errors.trim() || `The core process exited with code ${code}.`);
     app.quit();
   });
-  room.postMessage({ type: "port" }, [port2]);
+  core.postMessage({ type: "port" }, [port2]);
   window.webContents.postMessage("room", null, [port1]);
 }
 
 function createWindow() {
   window = new BrowserWindow({
-    width: 1120,
-    height: 760,
-    minWidth: 640,
-    minHeight: 420,
+    width: 1240,
+    height: 800,
+    minWidth: 760,
+    minHeight: 520,
     title: "Moondog",
     backgroundColor: background(),
     titleBarStyle: "hiddenInset",
-    trafficLightPosition: { x: 14, y: 13 },
+    trafficLightPosition: { x: 20, y: 19 },
     show: false,
     webPreferences: {
       preload: path.join(here, "preload.cjs"),
       contextIsolation: true,
       sandbox: true,
-      // Previews keep playing and the room keeps drawing while the window is hidden.
+      // Previews keep playing while the window is hidden.
       backgroundThrottling: false,
+      spellcheck: true,
     },
   });
   // Links open in the listener's browser; the window itself never navigates away.
@@ -111,8 +149,8 @@ function createWindow() {
   window.webContents.on("will-navigate", (event) => event.preventDefault());
   // Automated checks open the window without taking focus from the listener.
   window.once("ready-to-show", () => (process.env.MOONDOG_APP_DEBUG_PORT ? window.showInactive() : window.show()));
-  window.webContents.once("did-finish-load", openRoom);
-  // Closing the window hides it; the room and its music keep going until Quit.
+  window.webContents.once("did-finish-load", openCore);
+  // Closing the window hides it; the core and its music keep going until Quit.
   window.on("close", (event) => {
     if (quitting) return;
     event.preventDefault();
@@ -121,9 +159,22 @@ function createWindow() {
   void window.loadFile(path.join(here, "dist", "index.html"));
 }
 
+// The page reports the language the core speaks, which a saved choice can set.
+ipcMain.on("language", (_event, value) => {
+  if (typeof value !== "string" || value === locale) return;
+  locale = windowLocale([value]);
+  buildMenu();
+});
+// A reply in progress shows in the Dock while the window is away.
+ipcMain.on("busy", (_event, busy) => window?.setProgressBar(busy === true ? 2 : -1, { mode: "indeterminate" }));
+nativeTheme.on("updated", () => window?.setBackgroundColor(background()));
 app.on("before-quit", () => {
   quitting = true;
-  room?.kill();
+  core?.kill();
 });
 app.on("activate", () => window?.show());
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  locale = windowLocale(app.getPreferredSystemLanguages());
+  buildMenu();
+  createWindow();
+});

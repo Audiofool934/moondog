@@ -153,6 +153,15 @@ function normalizeArtistNames(rawArtists) {
   return result;
 }
 
+// Cover art a window can draw: one Spotify CDN image, the largest that is at most 640 pixels.
+function coverImage(images) {
+  const usable = (Array.isArray(images) ? images : []).filter((image) =>
+    typeof image?.url === "string" && /^https:\/\/i\.scdn\.co\/image\/[A-Za-z0-9_-]{1,128}$/u.test(image.url));
+  const sized = usable.filter((image) => !Number.isInteger(image.width) || image.width <= 640)
+    .sort((left, right) => (right.width ?? 0) - (left.width ?? 0));
+  return (sized[0] ?? usable.at(-1))?.url;
+}
+
 function normalizePlayableItem(raw) {
   if (!isPlainObject(raw)) return null;
   const type = ["track", "episode", "ad", "unknown"].includes(raw.type)
@@ -173,6 +182,8 @@ function normalizePlayableItem(raw) {
   if (publisher) item.publisher = publisher;
   if (durationMs !== undefined) item.duration_ms = durationMs;
   if (typeof raw.explicit === "boolean") item.explicit = raw.explicit;
+  const image = coverImage(raw.album?.images ?? raw.images ?? raw.show?.images);
+  if (image) item.image = image;
   return item;
 }
 

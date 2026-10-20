@@ -1,42 +1,27 @@
-// The window's page: the real room drawn by xterm.js, and a player for the previews the agent picks.
-import { Terminal } from "@xterm/xterm";
-import { FitAddon } from "@xterm/addon-fit";
-import { WebLinksAddon } from "@xterm/addon-web-links";
-import "@xterm/xterm/css/xterm.css";
-import { createPreviewPlayer } from "../../site/room/preview-player.mjs";
-import { attachBlocks, renderSeasons } from "./blocks.mjs";
+// The window's page: conversations on the left, the conversation in the middle, and what is
+// playing on the right. The core process does the listening work; this page only draws it.
+import { languageTag, windowLocale, windowStrings } from "../strings.mjs";
+import { renderMarkdown } from "./markdown.mjs";
+import { createPreviews } from "./previews.mjs";
 import "./style.css";
 
-// The room's own paper and charcoal colors, from src/surfaces/cli/brand-theme.mjs.
-const PALETTES = {
-  paper: { background: "#f4f4f4", foreground: "#141414", cursor: "#141414", cursorAccent: "#f4f4f4", selectionBackground: "#14141433" },
-  charcoal: { background: "#0c0c0c", foreground: "#e4e4e4", cursor: "#e4e4e4", cursorAccent: "#0c0c0c", selectionBackground: "#e4e4e433" },
+const $ = (selector) => document.querySelector(`[data-${selector}]`);
+const make = (tag, className, text) => {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
 };
 
-const dark = matchMedia("(prefers-color-scheme: dark)").matches;
-const container = document.querySelector("[data-room]");
-const xterm = new Terminal({
-  fontFamily: '"SF Mono", Menlo, "DejaVu Sans Mono", monospace',
-  fontSize: 13,
-  lineHeight: 1,
-  scrollback: 0,
-  cursorBlink: true,
-  theme: PALETTES[dark ? "charcoal" : "paper"],
-  // OSC 8 links open in the browser; the main process refuses everything but https.
-  linkHandler: { activate: (_event, uri) => window.open(uri) },
-});
-const fit = new FitAddon();
-xterm.loadAddon(fit);
-// Sign-in prints plain addresses, which a terminal lets you click; so does the window.
-xterm.loadAddon(new WebLinksAddon((_event, uri) => window.open(uri)));
-xterm.open(container);
-fit.fit();
-// Room components that mark their cells get graphics painted over them.
-attachBlocks(xterm, { seasons: renderSeasons });
+let locale = windowLocale(navigator.languages);
+let t = windowStrings(locale);
+const state = { sessions: [], current: null, turns: [], model: null, spotify: "unavailable", player: null, streaming: null, ready: false, waiting: null };
+const store = {
+  get: (key) => { try { return localStorage.getItem(key); } catch { return null; } },
+  set: (key, value) => { try { localStorage.setItem(key, value); } catch { /* A private window keeps the default. */ } },
+};
 
-const player = createPreviewPlayer(document.querySelector("[data-player]"));
-
-// The main process sends the port that reaches the room process.
+// The main process sends the port that reaches the core process.
 const port = await new Promise((resolve) => {
   window.addEventListener("message", function receive(event) {
     if (event.source !== window || event.data !== "moondog-room") return;
@@ -44,37 +29,411 @@ const port = await new Promise((resolve) => {
     resolve(event.ports[0]);
   });
 });
+const send = (message) => port.postMessage(message);
+const previews = createPreviews({ send, onChange: () => renderInspector() });
 
-let previewId = null;
-player.subscribe((event) => port.postMessage({ type: "preview-event", id: previewId, event }));
-port.onmessage = ({ data }) => {
-  if (data?.type === "output") xterm.write(data.data);
-  if (data?.type === "preview") {
-    previewId = data.id;
-    player.play(data.tracks, data.album);
+// Words
+function applyLanguage(next) {
+  locale = next;
+  t = windowStrings(locale);
+  document.documentElement.lang = languageTag(locale);
+  $("new-label").textContent = t("newConversation");
+  $("input").placeholder = t("placeholder");
+  $("toggle-sidebar").setAttribute("aria-label", t("conversations"));
+  $("toggle-inspector").setAttribute("aria-label", t("player"));
+  $("now-label").textContent = t("nowPlaying");
+  $("next-label").textContent = t("upNext");
+  $("previous").setAttribute("aria-label", t("previous"));
+  $("next").setAttribute("aria-label", t("next"));
+}
+
+// Conversations
+const dayStart = (date) => new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+function groupOf(updatedAt) {
+  const days = Math.round((dayStart(new Date()) - dayStart(new Date(updatedAt))) / 86_400_000);
+  return days <= 0 ? "today" : days === 1 ? "yesterday" : days < 7 ? "previous7" : "older";
+}
+function renderSessions() {
+  const nav = $("sessions");
+  nav.replaceChildren();
+  let group = null;
+  for (const session of state.sessions) {
+    const name = groupOf(session.updatedAt);
+    if (name !== group) { nav.append(make("h2", "", t(name))); group = name; }
+    const row = make("button", "", session.title || t("untitled"));
+    row.type = "button";
+    row.title = session.title || t("untitled");
+    row.dataset.session = session.id;
+    if (session.id === state.current) row.setAttribute("aria-current", "true");
+    row.addEventListener("click", () => openSession(session.id));
+    nav.append(row);
   }
-  if (data?.type === "preview-control" && data.id === previewId) {
-    if (data.action === "skip") player.skip();
-    if (data.action === "stop") player.stop();
-  }
+  renderTitle();
+}
+function renderTitle() {
+  const session = state.sessions.find((entry) => entry.id === state.current);
+  const first = state.turns.find((entry) => entry.role === "user")?.text;
+  const title = session?.title || first || "";
+  $("title").textContent = title.replace(/\s+/gu, " ").trim();
+  document.title = title ? `${title.slice(0, 60)} - Moondog` : "Moondog";
+}
+function openSession(id) {
+  if (state.streaming || id === state.current) return;
+  send(id ? { type: "open", id } : { type: "new" });
+}
+
+// The conversation
+const KINDS = [
+  [/^moondog_spotify_player_control$/u, (args) => ({ pause: "pause", next: "skip", previous: "skip" })[args?.action] ?? "play"],
+  [/^moondog_spotify_(?:search|discover|resolve_tracks|catalog_items)$/u, "search"],
+  [/^moondog_spotify_queue_(?:add|batch|similar)$/u, "queue"],
+  [/^moondog_spotify_devices$/u, "devices"],
+  [/^moondog_spotify_device_transfer$/u, "move"],
+  [/^moondog_spotify_(?:player_status|now_playing|queue_status)$/u, "status"],
+  [/^moondog_web_/u, "web"],
+  [/^moondog_(?:playlist_plan|spotify_playlist_)/u, "playlist"],
+  [/^moondog_music_preview$/u, "previews"],
+  [/^moondog_memory_/u, "memory"],
+  [/^moondog_music_/u, "search"],
+  [/^moondog_(?:profile_|library_|rediscovery|historical_return|time_capsule|back_to_back|spotify_top|spotify_history|spotify_library)/u, "profile"],
+];
+const kindOf = (tool, args) => {
+  const found = KINDS.find(([pattern]) => pattern.test(tool));
+  return found ? (typeof found[1] === "function" ? found[1](args) : found[1]) : "other";
 };
-xterm.onData((data) => port.postMessage({ type: "input", data }));
-const sendSize = () => port.postMessage({ type: "resize", cols: xterm.cols, rows: xterm.rows });
-xterm.onResize(sendSize);
-// The player takes room from the bottom when it appears, so the room refits.
-new ResizeObserver(() => fit.fit()).observe(container);
-sendSize();
 
-// A dropped file types its path into the room, as in a terminal: `/import ` and then a drop.
-const quote = (path) => (/^[\w./~-]+$/u.test(path) ? path : `"${path.replaceAll('"', '\\"')}"`);
-window.addEventListener("dragover", (event) => event.preventDefault());
-window.addEventListener("drop", (event) => {
-  event.preventDefault();
-  const paths = [...(event.dataTransfer?.files ?? [])].map((file) => window.moondogApp?.pathForFile(file)).filter(Boolean);
-  if (!paths.length) return;
-  port.postMessage({ type: "input", data: `\x1b[200~${paths.map(quote).join(" ")}\x1b[201~` });
-  xterm.focus();
+// After a turn, a song it started shows as one quiet line with its cover. Covers are kept by
+// title as the player reports them, because the player's next read can arrive after the turn.
+const covers = new Map();
+const playedTarget = (turn) => (turn.receipts ?? []).find((receipt) => receipt.action === "playback.resume" && receipt.state === "accepted")?.targets?.[0];
+function playedLine(turn) {
+  const target = playedTarget(turn);
+  if (!target?.title) return null;
+  const line = make("p", "played");
+  if (covers.has(target.title)) {
+    const image = make("img");
+    image.src = covers.get(target.title);
+    image.alt = "";
+    line.append(image);
+  }
+  line.append(make("span", "", target.title), make("span", "by", target.artist_credit ?? ""));
+  return line;
+}
+
+function replyNode(turn) {
+  const reply = make("div", `reply${turn.streaming ? " streaming" : ""}${turn.failed ? " failed" : ""}`);
+  const played = turn.streaming ? null : playedLine(turn);
+  if (played) reply.append(played);
+  // What Moondog is doing shows while it works; the reply says what it did.
+  if (turn.streaming && turn.activity?.length) {
+    const line = make("p", "activity");
+    // One entry per kind of work, in the order it started; a failure marks only that kind.
+    const kinds = new Map();
+    for (const call of turn.activity) {
+      const kind = kindOf(call.tool, call.args);
+      const previous = kinds.get(kind);
+      kinds.set(kind, previous === "running" || call.state === "running" ? "running" : call.state === "failed" && previous !== "done" ? "failed" : "done");
+    }
+    for (const [kind, status] of kinds) line.append(make("span", status, t(`activity.${kind}`)));
+    reply.append(line);
+  }
+  const text = make("div", "text");
+  if (turn.text) text.append(renderMarkdown(turn.text));
+  else if (turn.streaming) text.append(make("p", "", ""));
+  reply.append(text);
+  return reply;
+}
+function renderConversation() {
+  const column = $("column");
+  const scroll = $("scroll");
+  const pinned = scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 80;
+  column.replaceChildren();
+  if (!state.turns.length) {
+    const empty = make("div", "empty");
+    empty.append(make("p", "", t("empty")));
+    column.append(empty);
+    column.style.height = "100%";
+  } else column.style.height = "";
+  for (const turn of state.turns) {
+    if (turn.role === "user") {
+      const you = make("div", "you");
+      you.append(make("p", "", turn.text));
+      column.append(you);
+    } else column.append(replyNode(turn));
+  }
+  if (pinned || state.streaming) scroll.scrollTop = scroll.scrollHeight;
+  renderTitle();
+  renderComposer();
+}
+let frame = 0;
+const renderSoon = () => { if (!frame) frame = requestAnimationFrame(() => { frame = 0; renderConversation(); }); };
+
+// The composer
+const input = $("input");
+function renderComposer() {
+  const button = $("send");
+  const streaming = Boolean(state.streaming);
+  button.disabled = !streaming && !input.value.trim();
+  button.setAttribute("aria-label", streaming ? t("stop") : t("send"));
+  button.querySelector("use").setAttribute("href", streaming ? "#i-stop" : "#i-up");
+  const model = state.model?.model ?? "";
+  const pretty = model.match(/^claude-(opus|sonnet|haiku|fable)-(\d+)-(\d+)/u);
+  $("model").textContent = pretty ? `${pretty[1][0].toUpperCase()}${pretty[1].slice(1)} ${pretty[2]}.${pretty[3]}` : model;
+  $("device").textContent = state.player?.now?.device ?? "";
+}
+const grow = () => {
+  input.style.height = "auto";
+  const limit = innerHeight * 0.4;
+  input.style.height = `${Math.min(input.scrollHeight, limit)}px`;
+  input.style.overflowY = input.scrollHeight > limit ? "auto" : "hidden";
+};
+function submit() {
+  if (state.streaming) { send({ type: "cancel" }); return; }
+  const text = input.value.trim();
+  if (!text) return;
+  // A message typed while the core starts waits for it, shown as sent.
+  if (!state.ready) {
+    state.waiting = text;
+    state.turns.push({ role: "user", text, waiting: true });
+    input.value = "";
+    grow();
+    renderConversation();
+    return;
+  }
+  if (state.model?.state !== "configured") {
+    state.turns.push({ role: "user", text }, { role: "assistant", text: t("offline"), failed: true });
+    input.value = "";
+    grow();
+    renderConversation();
+    return;
+  }
+  send({ type: "prompt", text });
+  input.value = "";
+  grow();
+  renderComposer();
+}
+$("form").addEventListener("submit", (event) => { event.preventDefault(); submit(); });
+input.addEventListener("input", () => { grow(); renderComposer(); });
+input.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && !event.shiftKey && !event.isComposing && event.keyCode !== 229) { event.preventDefault(); submit(); }
+  if (event.key === "Escape" && state.streaming) { event.preventDefault(); send({ type: "cancel" }); }
 });
 
-xterm.focus();
-window.addEventListener("focus", () => xterm.focus());
+// What is playing
+const clock = (ms) => {
+  const seconds = Math.max(0, Math.floor((ms ?? 0) / 1000));
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+};
+function nowPlaying() {
+  const preview = previews.state();
+  if (preview) return { ...preview, preview: true };
+  const now = state.player?.now;
+  if (!now) return null;
+  const progressMs = now.playing ? now.progressMs + (Date.now() - now.observedAt) : now.progressMs;
+  return { ...now, progressMs: now.durationMs ? Math.min(progressMs, now.durationMs) : progressMs, next: state.player.next ?? [] };
+}
+function renderInspector() {
+  const now = nowPlaying();
+  const cover = $("cover");
+  cover.hidden = !now?.image;
+  if (now?.image && cover.getAttribute("src") !== now.image) cover.src = now.image;
+  $("blank").hidden = Boolean(now?.image);
+  $("art").classList.toggle("unplayed", !now?.image);
+  $("controls").hidden = !now;
+  const toggle = $("toggle");
+  toggle.setAttribute("aria-label", now?.playing ? t("pause") : t("play"));
+  toggle.querySelector("use").setAttribute("href", now?.playing ? "#i-pause" : "#i-play");
+  const badge = $("badge");
+  badge.hidden = !now?.preview;
+  badge.textContent = t("preview");
+  $("song").textContent = now ? now.title : t("nothingPlaying");
+  $("artist").textContent = now ? now.artists.join(", ") : (state.spotify === "ready" ? t("nothingHint") : t("spotifyOff"));
+  const album = $("album");
+  album.replaceChildren();
+  if (now?.preview && now.link) {
+    const link = make("a", "", t("fullSong"));
+    link.href = now.link;
+    link.target = "_blank";
+    album.append(link);
+  } else if (now?.album) album.textContent = now.album;
+  $("progress").hidden = !now?.durationMs;
+  if (now?.durationMs) {
+    $("bar").style.width = `${Math.min(100, (now.progressMs / now.durationMs) * 100)}%`;
+    $("elapsed").textContent = clock(now.progressMs);
+    $("duration").textContent = clock(now.durationMs);
+  }
+  $("device-row").hidden = !now?.device;
+  $("device-name").textContent = now?.device ?? "";
+  const next = now?.next ?? [];
+  $("next-panel").hidden = !next.length;
+  $("queue").replaceChildren(...next.map((track) => {
+    const item = make("li");
+    if (track.image) {
+      const image = make("img");
+      image.src = track.image;
+      image.alt = "";
+      item.append(image);
+    } else item.append(make("span", "thumb"));
+    const words = make("div");
+    words.append(make("strong", "", track.title), make("span", "", track.artists.join(", ")));
+    item.append(words);
+    return item;
+  }));
+  $("spotify-dot").classList.toggle("on", state.spotify === "ready");
+  $("status").textContent = state.spotify === "ready" ? "Spotify" : t("spotifyOff").split(/[.。]/u)[0];
+  renderComposer();
+}
+setInterval(() => { if (nowPlaying()?.playing) renderInspector(); }, 500);
+
+function control(action) {
+  if (previews.active()) {
+    if (action === "toggle") previews.toggle();
+    if (action === "next") previews.next();
+    if (action === "previous") previews.previous();
+    return;
+  }
+  const now = state.player?.now;
+  if (!now) return;
+  if (action === "toggle") {
+    // The cover answers at once; the next read from Spotify confirms it.
+    send({ type: "control", action: now.playing ? "pause" : "resume" });
+    state.player.now = { ...now, playing: !now.playing, progressMs: nowPlaying().progressMs, observedAt: Date.now() };
+    renderInspector();
+  } else send({ type: "control", action });
+}
+$("toggle").addEventListener("click", () => control("toggle"));
+$("next").addEventListener("click", () => control("next"));
+$("previous").addEventListener("click", () => control("previous"));
+
+// Panels: a narrow window folds the player, then the conversations; a click always wins.
+const layout = $("window");
+const panels = { sidebar: store.get("moondog.sidebar") !== "hidden", inspector: store.get("moondog.inspector") !== "hidden" };
+const room = { sidebar: 820, inspector: 1080 };
+const forced = { sidebar: false, inspector: false };
+const shown = (name) => panels[name] && (forced[name] || innerWidth >= room[name]);
+function renderPanels() {
+  layout.classList.toggle("no-sidebar", !shown("sidebar"));
+  layout.classList.toggle("no-inspector", !shown("inspector"));
+}
+function togglePanel(name) {
+  const visible = shown(name);
+  panels[name] = !visible;
+  forced[name] = !visible;
+  store.set(`moondog.${name}`, panels[name] ? "shown" : "hidden");
+  renderPanels();
+}
+addEventListener("resize", renderPanels);
+$("toggle-sidebar").addEventListener("click", () => togglePanel("sidebar"));
+$("toggle-inspector").addEventListener("click", () => togglePanel("inspector"));
+$("new").addEventListener("click", () => openSession(null));
+
+// Keys: typing anywhere goes to the composer; Space, ⌘← and ⌘→ play, go back and skip.
+document.addEventListener("keydown", (event) => {
+  if (event.target === input || event.target.closest?.("input, textarea")) return;
+  if (event.key === " " && !event.metaKey && !event.ctrlKey) { event.preventDefault(); control("toggle"); return; }
+  if (event.metaKey && event.key === "ArrowRight") { event.preventDefault(); control("next"); return; }
+  if (event.metaKey && event.key === "ArrowLeft") { event.preventDefault(); control("previous"); return; }
+  if (event.key === "Escape" && state.streaming) { send({ type: "cancel" }); return; }
+  if (event.key.length === 1 && !event.metaKey && !event.ctrlKey && !event.altKey) input.focus();
+});
+// Commands from the menu bar.
+window.moondogApp?.onCommand?.((command) => {
+  if (command === "new") openSession(null);
+  if (command === "stop" && state.streaming) send({ type: "cancel" });
+  if (command === "toggle-playback") control("toggle");
+  if (command === "next") control("next");
+  if (command === "previous") control("previous");
+  if (command === "toggle-sidebar") togglePanel("sidebar");
+  if (command === "toggle-inspector") togglePanel("inspector");
+});
+document.addEventListener("visibilitychange", () => send({ type: "visible", visible: !document.hidden }));
+window.addEventListener("focus", () => { if (!getSelection()?.toString()) input.focus(); });
+
+// Messages from the core
+function streamingTurn(id) {
+  return state.turns.find((turn) => turn.role === "assistant" && turn.id === id);
+}
+port.onmessage = ({ data }) => {
+  if (!data?.type) return;
+  if (data.type === "preview" || data.type === "preview-control") { previews.receive(data); renderInspector(); return; }
+  if (data.type === "ready" || data.type === "status") {
+    if (data.locale) applyLanguage(data.locale);
+    state.model = data.model ?? state.model;
+    state.spotify = data.spotify ?? state.spotify;
+    window.moondogApp?.setLanguage?.(locale);
+  }
+  if (data.type === "ready" || data.type === "sessions") {
+    state.sessions = data.sessions ?? [];
+    state.current = data.current ?? state.current;
+    renderSessions();
+  }
+  if (data.type === "ready" || data.type === "session") {
+    state.current = data.current ?? null;
+    state.turns = (data.transcript ?? []).map((turn) => ({ ...turn }));
+    renderSessions();
+    renderConversation();
+    input.focus();
+  }
+  if (data.type === "ready") {
+    state.ready = true;
+    const waiting = state.waiting;
+    state.waiting = null;
+    if (waiting) { input.value = waiting; submit(); }
+  }
+  if (data.type === "turn") {
+    window.moondogApp?.setBusy?.(data.state === "start");
+    if (data.state === "start") {
+      state.streaming = data.id;
+      state.turns.push({ role: "user", text: data.text }, { role: "assistant", id: data.id, text: "", activity: [], streaming: true });
+    } else {
+      const turn = streamingTurn(data.id);
+      if (turn) {
+        turn.streaming = false;
+        if (data.state === "end") {
+          turn.receipts = data.receipts ?? [];
+          turn.text = data.text || turn.text || (data.status === "aborted" ? t("stopped") : "");
+          if (data.status === "aborted" && !data.text) turn.failed = true;
+        } else {
+          turn.text = data.connection ? t("unreachable") : data.message;
+          turn.failed = true;
+        }
+      }
+      state.streaming = null;
+    }
+    renderConversation();
+  }
+  if (data.type === "text") {
+    const turn = streamingTurn(data.id);
+    if (turn) {
+      turn.text = data.replace !== undefined ? data.replace : `${turn.text}${data.delta ?? ""}`;
+      renderSoon();
+    }
+  }
+  if (data.type === "activity") {
+    const turn = streamingTurn(data.id);
+    if (turn) {
+      const existing = turn.activity.find((call) => call.call === data.call);
+      if (existing) existing.state = data.state;
+      else turn.activity.push({ call: data.call, tool: data.tool, args: data.args, state: data.state });
+      renderSoon();
+    }
+  }
+  if (data.type === "player") {
+    state.spotify = data.spotify === "ready" ? "ready" : state.spotify === "ready" && data.spotify === "error" ? "ready" : "unavailable";
+    state.player = { now: data.now, next: data.next ?? [] };
+    let learned = false;
+    for (const track of [data.now, ...(data.next ?? [])]) {
+      if (track?.image && covers.get(track.title) !== track.image) { covers.set(track.title, track.image); learned = true; }
+    }
+    // Redraw the conversation only when a played line just got its cover.
+    if (learned && !state.streaming && state.turns.some((turn) => { const target = playedTarget(turn); return target && covers.has(target.title); })) renderSoon();
+    renderInspector();
+  }
+};
+
+applyLanguage(locale);
+renderPanels();
+renderConversation();
+renderInspector();
+send({ type: "visible", visible: !document.hidden });
+input.focus();

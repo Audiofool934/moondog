@@ -1,5 +1,5 @@
-// Builds Moondog.app for Apple silicon: the window from this folder, and the room as the
-// npm package ships it, so the app runs the same room as `moondog` in a terminal.
+// Builds Moondog.app for Apple silicon: the window from this folder, and the core as the
+// npm package ships it, so the app runs the same core as `moondog` in a terminal.
 //   node pack.mjs          unsigned, for a quick local check
 //   node pack.mjs --sign   signed with the Developer ID and notarized; Apple's notary
 //                          service reads the keychain profile in MOONDOG_NOTARY_PROFILE
@@ -43,10 +43,10 @@ const artifacts = await build({
     // The app and the room it carries share one version.
     extraMetadata: { version },
     directories: { output: "release", buildResources: "build-resources" },
-    files: ["package.json", "main.mjs", "preload.cjs", "room-process.mjs", "window-terminal.mjs", "preview-player.mjs",
+    files: ["package.json", "main.mjs", "preload.cjs", "core-process.mjs", "window-room.mjs", "preview-player.mjs", "strings.mjs",
       "dist/**/*", "!dist/**/*.map"],
     asar: false,
-    // The room sits beside the window's folder, where room-process.mjs imports ../scripts/moondog.mjs.
+    // The core sits beside the window's folder, where core-process.mjs imports ../scripts/moondog.mjs.
     // electron-builder leaves node_modules out of extra resources unless it is named on its own.
     extraResources: [{ from: "build/room", to: ".", filter: ["**/*"] },
       { from: "build/room/node_modules", to: "node_modules", filter: ["**/*"] }],

@@ -937,7 +937,8 @@ async function main() {
       );
     }
     lyrics = await createLyricService().catch(() => null);
-    exitRequest = await runMoondogTui({
+    // The desktop app draws its own window on this same application and agent.
+    exitRequest = await (host?.runRoom ?? runMoondogTui)({
       application,
       runtime,
       terminal: host?.terminal,
