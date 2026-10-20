@@ -15,7 +15,9 @@ import { projectListenBrainzHistory } from "../../src/integrations/listenbrainz/
 import { projectSpotifyExtendedStreamingHistory } from "../../src/integrations/spotify/extended-streaming-history.mjs";
 import { musicHash } from "../../src/profile/music-import-bundle.mjs";
 import { openListeningHistoryStore } from "../../src/profile/listening-history-store.mjs";
+import { createListeningHistoryProfileProjection } from "../../src/profile/spotify-archive-taste.mjs";
 import { PiAgentRuntime } from "../../src/runtime/pi/agent-runtime.mjs";
+import { createTasteprintView } from "../../src/surfaces/html/tasteprint.mjs";
 
 const subjectId = "4f1c8a52-7d3e-4b8a-9c11-2b6f0e5d7a90";
 const apiKey = "0123456789abcdef0123456789abcdef";
@@ -381,6 +383,9 @@ test("a history with no lengths or skips never reads as zero minutes, zero skips
   ]);
   await runtime.prompt("What do you know about my listening?");
   assert.equal(tool.listening_behavior.enduring_artists.length, 3);
+  // The Tasteprint page keeps its seasons without minutes or skips.
+  const tasteprint = createTasteprintView(createListeningHistoryProfileProjection(summary), { generatedAt: capturedAt });
+  assert.ok(tasteprint.behavior.listening_seasons?.seasons.length > 0);
 
   // A measure field, not a pick threshold such as rediscovery_minimum_listening_minutes.
   const measures = (value, at = "") => Array.isArray(value) ? value.flatMap((item, index) => measures(item, `${at}[${index}]`))
