@@ -610,8 +610,9 @@ export async function runMoondogTui({
     tui.requestRender();
   };
   // The report's seasons draw as a chart in place of their list; the heading and note stay.
-  const addTasteReport = (value) => {
-    const markdown = formatLocalResult("taste", value, tr);
+  // `before` and `after` are Markdown that frames the report in the same message.
+  const addTasteReport = (value, { before, after } = {}) => {
+    const markdown = [before, formatLocalResult("taste", value, tr), after].filter(Boolean).join("\n\n");
     const seasons = value?.listening_behavior?.listening_seasons?.seasons ?? [];
     const heading = `\n## ${tr("Seasons")}\n`;
     const start = markdown.indexOf(heading);
@@ -619,10 +620,12 @@ export async function runMoondogTui({
     const next = markdown.indexOf("\n## ", start + heading.length);
     const end = next < 0 ? markdown.length : next;
     const intro = markdown.slice(start, end).split("\n").filter((line) => !line.startsWith("- ")).join("\n");
+    // Each Markdown part already pads a line above and below, so the chart sits one blank
+    // line from its neighbours, like any other section.
     addMoondogMessage([
-      markdown.slice(0, start) + intro,
+      (markdown.slice(0, start) + intro).trimEnd(),
       new SeasonsChart(seasons, { getTheme, tr, environment }),
-      ...(end < markdown.length ? [markdown.slice(end)] : []),
+      ...(end < markdown.length ? [markdown.slice(end).trimStart()] : []),
     ]);
   };
   // Each preview sits next to its song on Apple Music. The note joins the reply in progress;
@@ -928,7 +931,7 @@ export async function runMoondogTui({
     profileView.onReport = () => {
       const snapshot = profileSnapshot;
       closeProfile();
-      addMoondogMessage(formatLocalResult("taste", snapshot, tr));
+      addTasteReport(snapshot);
       setFooter(tr("Full report above. /taste opens the profile again."));
     };
     homeFocused = false;
@@ -1173,11 +1176,10 @@ export async function runMoondogTui({
     void updateHomeLyrics();
     try {
       const profile = await application.runLocalCommand("taste", runtimeStatus);
-      addMoondogMessage([
-        tr("Here's everything I can read so far, including anything you imported before."),
-        formatLocalResult("taste", profile, tr),
-        tr("Type `/taste` to open any song or artist and see why it's here. `/taste report` brings this report back."),
-      ].join("\n\n"));
+      addTasteReport(profile, {
+        before: tr("Here's everything I can read so far, including anything you imported before."),
+        after: tr("Type `/taste` to open any song or artist and see why it's here. `/taste report` brings this report back."),
+      });
       if (typeof application.getProfileSummary === "function") await openProfile({ imported: true });
       else setFooter(tr("Imported. /taste opens your profile."), success);
     } catch (error) {
