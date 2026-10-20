@@ -86,7 +86,7 @@ function safeNonnegativeInteger(value, field, { optional = false } = {}) {
   return value;
 }
 
-// A listen-again pick leaves out minutes or skips that its plays never recorded.
+// A row leaves out minutes, skips or engaged plays that its plays never recorded.
 function optionalInteger(source, key, field) {
   const value = safeNonnegativeInteger(source[key], field, { optional: true });
   return value === undefined ? {} : { [key]: value };
@@ -693,6 +693,7 @@ function projectBackToBackCandidateSet(value) {
       const explicitSkips = safeNonnegativeInteger(
         context.explicit_skips,
         "back_to_back_explicit_skips",
+        { optional: true },
       );
       const burstCount = safeNonnegativeInteger(
         context.burst_count,
@@ -718,7 +719,7 @@ function projectBackToBackCandidateSet(value) {
       );
       if (
         engagedPlayCount > playCount ||
-        explicitSkips > playCount ||
+        (explicitSkips ?? 0) > playCount ||
         burstCount < 1 ||
         maximumConsecutivePlays < 2 ||
         playsInBursts < maximumConsecutivePlays ||
@@ -750,7 +751,9 @@ function projectBackToBackCandidateSet(value) {
         identity_status: identityStatus,
         play_count: playCount,
         engaged_play_count: engagedPlayCount,
-        explicit_skips: explicitSkips,
+        ...(explicitSkips === undefined
+          ? {}
+          : { explicit_skips: explicitSkips }),
         burst_count: burstCount,
         maximum_consecutive_plays: maximumConsecutivePlays,
         plays_in_bursts: playsInBursts,
@@ -1064,22 +1067,21 @@ function projectBehaviorArtist(value) {
   return {
     name: cleanOutputText(value.name, 512, "behavior_artist_name"),
     play_count: safeNonnegativeInteger(value.play_count, "behavior_play_count"),
-    engaged_play_count: safeNonnegativeInteger(
-      value.engaged_play_count,
+    ...optionalInteger(
+      value,
+      "engaged_play_count",
       "behavior_engaged_play_count",
     ),
-    listening_minutes: safeNonnegativeInteger(
-      value.listening_minutes,
+    ...optionalInteger(
+      value,
+      "listening_minutes",
       "behavior_listening_minutes",
     ),
     distinct_tracks: safeNonnegativeInteger(
       value.distinct_tracks,
       "behavior_distinct_tracks",
     ),
-    explicit_skips: safeNonnegativeInteger(
-      value.explicit_skips,
-      "behavior_explicit_skips",
-    ),
+    ...optionalInteger(value, "explicit_skips", "behavior_explicit_skips"),
     last_played_at: cleanOutputText(
       value.last_played_at,
       64,
@@ -1113,8 +1115,9 @@ function projectBehaviorTrack(value) {
     ),
     identity_status: identityStatus,
     play_count: safeNonnegativeInteger(value.play_count, "behavior_track_plays"),
-    engaged_play_count: safeNonnegativeInteger(
-      value.engaged_play_count,
+    ...optionalInteger(
+      value,
+      "engaged_play_count",
       "behavior_track_engaged_plays",
     ),
     ...optionalInteger(value, "listening_minutes", "behavior_track_minutes"),
@@ -1228,6 +1231,7 @@ function projectBackToBackBehaviorTrack(value) {
   const explicitSkips = safeNonnegativeInteger(
     value.explicit_skips,
     "back_to_back_behavior_explicit_skips",
+    { optional: true },
   );
   const burstCount = safeNonnegativeInteger(
     value.burst_count,
@@ -1259,7 +1263,7 @@ function projectBackToBackBehaviorTrack(value) {
   if (
     !new Set(["resolved", "provisional"]).has(identityStatus) ||
     engagedPlayCount > playCount ||
-    explicitSkips > playCount ||
+    (explicitSkips ?? 0) > playCount ||
     burstCount < 1 ||
     maximumConsecutivePlays < 2 ||
     playsInBursts < maximumConsecutivePlays ||
@@ -1289,7 +1293,7 @@ function projectBackToBackBehaviorTrack(value) {
     identity_status: identityStatus,
     play_count: playCount,
     engaged_play_count: engagedPlayCount,
-    explicit_skips: explicitSkips,
+    ...(explicitSkips === undefined ? {} : { explicit_skips: explicitSkips }),
     burst_count: burstCount,
     maximum_consecutive_plays: maximumConsecutivePlays,
     plays_in_bursts: playsInBursts,
@@ -1400,8 +1404,9 @@ function projectHistoryArcItem(value) {
       value.event_count,
       "history_arc_event_count",
     ),
-    listening_minutes: safeNonnegativeInteger(
-      value.listening_minutes,
+    ...optionalInteger(
+      value,
+      "listening_minutes",
       "history_arc_listening_minutes",
     ),
     distinct_tracks: safeNonnegativeInteger(
@@ -1427,8 +1432,9 @@ function projectHistoryArcItem(value) {
         value.top_artist.play_count,
         "history_arc_top_artist_plays",
       ),
-      listening_minutes: safeNonnegativeInteger(
-        value.top_artist.listening_minutes,
+      ...optionalInteger(
+        value.top_artist,
+        "listening_minutes",
         "history_arc_top_artist_minutes",
       ),
     };
@@ -1486,14 +1492,19 @@ function projectListeningSeason(value) {
     value.event_count,
     "listening_season_events",
   );
+  // A season leaves out engaged plays and minutes that its plays never recorded.
   const engagedPlayCount = safeNonnegativeInteger(
     value.engaged_play_count,
     "listening_season_engaged_plays",
+    { optional: true },
   );
   const listeningMinutes = safeNonnegativeInteger(
     value.listening_minutes,
     "listening_season_minutes",
+    { optional: true },
   );
+  const exceeds = (part, whole) =>
+    part !== undefined && whole !== undefined && part > whole;
   const distinctTracks = safeNonnegativeInteger(
     value.distinct_tracks,
     "listening_season_tracks",
@@ -1517,7 +1528,7 @@ function projectListeningSeason(value) {
     retainedMonthCount > 3 ||
     retainedMonthCount !== endMonthIndex - startMonthIndex + 1 ||
     activeMonthCount > retainedMonthCount ||
-    engagedPlayCount > eventCount ||
+    exceeds(engagedPlayCount, eventCount) ||
     distinctTracks > eventCount ||
     firstObservedTracks + returningTracks !== distinctTracks
   ) {
@@ -1530,8 +1541,12 @@ function projectListeningSeason(value) {
     retained_month_count: retainedMonthCount,
     active_month_count: activeMonthCount,
     event_count: eventCount,
-    engaged_play_count: engagedPlayCount,
-    listening_minutes: listeningMinutes,
+    ...(engagedPlayCount === undefined
+      ? {}
+      : { engaged_play_count: engagedPlayCount }),
+    ...(listeningMinutes === undefined
+      ? {}
+      : { listening_minutes: listeningMinutes }),
     distinct_tracks: distinctTracks,
     first_observed_tracks: firstObservedTracks,
     returning_tracks: returningTracks,
@@ -1539,8 +1554,8 @@ function projectListeningSeason(value) {
   if (eventCount === 0) {
     if (
       activeMonthCount !== 0 ||
-      engagedPlayCount !== 0 ||
-      listeningMinutes !== 0 ||
+      (engagedPlayCount ?? 0) !== 0 ||
+      (listeningMinutes ?? 0) !== 0 ||
       distinctTracks !== 0 ||
       value.leading_artist !== undefined ||
       value.signature_track !== undefined
@@ -1559,10 +1574,12 @@ function projectListeningSeason(value) {
   const leadingEngagedPlayCount = safeNonnegativeInteger(
     value.leading_artist.engaged_play_count,
     "listening_season_leading_artist_engaged",
+    { optional: true },
   );
   const leadingListeningMinutes = safeNonnegativeInteger(
     value.leading_artist.listening_minutes,
     "listening_season_leading_artist_minutes",
+    { optional: true },
   );
   const leadingDistinctTracks = safeNonnegativeInteger(
     value.leading_artist.distinct_tracks,
@@ -1575,29 +1592,36 @@ function projectListeningSeason(value) {
   const signatureEngagedPlayCount = safeNonnegativeInteger(
     value.signature_track.engaged_play_count,
     "listening_season_signature_engaged",
+    { optional: true },
   );
   const signatureListeningMinutes = safeNonnegativeInteger(
     value.signature_track.listening_minutes,
     "listening_season_signature_minutes",
+    { optional: true },
   );
   const signatureExplicitSkips = safeNonnegativeInteger(
     value.signature_track.explicit_skips,
     "listening_season_signature_skips",
+    { optional: true },
   );
   if (
     activeMonthCount < 1 ||
     leadingEventCount < 1 ||
     leadingEventCount > eventCount ||
-    leadingEngagedPlayCount > leadingEventCount ||
-    leadingEngagedPlayCount > engagedPlayCount ||
-    leadingListeningMinutes > listeningMinutes ||
+    exceeds(leadingEngagedPlayCount, leadingEventCount) ||
+    exceeds(leadingEngagedPlayCount, engagedPlayCount) ||
+    exceeds(leadingListeningMinutes, listeningMinutes) ||
     leadingDistinctTracks < 1 ||
     leadingDistinctTracks > distinctTracks ||
     signaturePlayCount < 1 ||
     signaturePlayCount > eventCount ||
-    signatureEngagedPlayCount + signatureExplicitSkips !== signaturePlayCount ||
-    signatureEngagedPlayCount > engagedPlayCount ||
-    signatureListeningMinutes > listeningMinutes
+    (signatureEngagedPlayCount === undefined) !==
+      (signatureExplicitSkips === undefined) ||
+    (signatureEngagedPlayCount !== undefined &&
+      signatureEngagedPlayCount + signatureExplicitSkips !==
+        signaturePlayCount) ||
+    exceeds(signatureEngagedPlayCount, engagedPlayCount) ||
+    exceeds(signatureListeningMinutes, listeningMinutes)
   ) {
     throw new Error("domain_result_invalid:listening_season_anchor_shape");
   }
@@ -1608,7 +1632,9 @@ function projectListeningSeason(value) {
       "listening_season_leading_artist_name",
     ),
     event_count: leadingEventCount,
-    listening_minutes: leadingListeningMinutes,
+    ...(leadingListeningMinutes === undefined
+      ? {}
+      : { listening_minutes: leadingListeningMinutes }),
     distinct_tracks: leadingDistinctTracks,
   };
   result.signature_track = {
@@ -1623,7 +1649,9 @@ function projectListeningSeason(value) {
       "listening_season_signature_artist",
     ),
     play_count: signaturePlayCount,
-    listening_minutes: signatureListeningMinutes,
+    ...(signatureListeningMinutes === undefined
+      ? {}
+      : { listening_minutes: signatureListeningMinutes }),
   };
   const release = optionalOutputText(
     value.signature_track.release,
@@ -1780,8 +1808,9 @@ function projectArtistRelationship(value) {
       value.play_count,
       "artist_relationship_plays",
     ),
-    listening_minutes: safeNonnegativeInteger(
-      value.listening_minutes,
+    ...optionalInteger(
+      value,
+      "listening_minutes",
       "artist_relationship_minutes",
     ),
     evidence_id: projectEvidenceId(value.evidence_id),
@@ -1910,14 +1939,12 @@ function projectReleaseDepth(value) {
       value.play_count,
       "release_depth_plays",
     ),
-    engaged_play_count: safeNonnegativeInteger(
-      value.engaged_play_count,
+    ...optionalInteger(
+      value,
+      "engaged_play_count",
       "release_depth_engaged_plays",
     ),
-    listening_minutes: safeNonnegativeInteger(
-      value.listening_minutes,
-      "release_depth_minutes",
-    ),
+    ...optionalInteger(value, "listening_minutes", "release_depth_minutes"),
     ...(firstYear !== undefined ? { first_year: firstYear } : {}),
     ...(lastYear !== undefined ? { last_year: lastYear } : {}),
     active_years: activeYears,
@@ -2332,10 +2359,7 @@ function projectListeningBehavior(value) {
       context.effective_events_profiled,
       "listening_profiled_events",
     ),
-    explicit_skips: safeNonnegativeInteger(
-      context.explicit_skips,
-      "listening_explicit_skips",
-    ),
+    ...optionalInteger(context, "explicit_skips", "listening_explicit_skips"),
     trackdone_endings: safeNonnegativeInteger(
       context.trackdone_endings,
       "listening_trackdone_endings",

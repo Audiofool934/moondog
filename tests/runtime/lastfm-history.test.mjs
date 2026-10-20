@@ -344,6 +344,64 @@ test("songs to hear again come from plays alone when no play records its length"
   }
 });
 
+test("a history with no lengths or skips never reads as zero minutes, zero skips or unplayed", async (context) => {
+  const store = await storeFor(context);
+  // Fictional scrobbles of three whole albums: one that came back, one that went quiet, one recent.
+  const album = (artist, title, dates) => dates.flatMap((date) => [1, 2, 3].map((track) => ({
+    uts: Date.parse(`${date}T20:0${track}:00Z`) / 1_000, artist, name: `${title} ${track}`, album: title })));
+  store.ingestImport((await read(fakeLastfm({ history: [
+    ...album("Mara Vale", "Night Survey", ["2022-02-01", "2022-05-01", "2023-03-01", "2026-09-20"]),
+    ...album("North Window", "Glass Weather", ["2023-01-10", "2023-02-10", "2023-03-10", "2024-06-01"]),
+    ...album("Drift Assembly", "Northern Relay", ["2024-01-05", "2024-02-05", "2026-09-30"]),
+  ] }))).bundle);
+  const domainServices = createListeningProfileDomainServices({ listeningHistoryStore: store, subjectId });
+  const application = new MoondogApplication({ importsRoot: path.join(tmpdir(), "moondog-missing-imports"), domainServices });
+  context.after(() => application.close());
+
+  const summary = store.profileSummary({ subjectId, maxItems: 10 });
+  const behavior = summary.listening_behavior;
+  for (const section of ["rediscovery_tracks", "historical_return_tracks", "time_capsule_tracks", "release_depth", "artist_relationships"]) {
+    assert.ok(behavior[section].length > 0, `${section} has rows to check`);
+  }
+  const input = domainServices.getProfileBuildContext().input;
+  const evidenceIds = [...new Set(JSON.stringify(summary).match(/"evidence_id":"[0-9a-f-]{36}"/gu).map((match) => match.slice(15, -1)))];
+  const bases = evidenceIds.map((evidenceId) => store.explainProfileEvidence({ subjectId, evidenceId }).basis_summary);
+
+  const faux = fauxProvider();
+  const models = createModels();
+  models.setProvider(faux.provider);
+  const runtime = new PiAgentRuntime({ application, models, model: faux.getModel(), provider: "faux", modelId: "faux-1" });
+  let tool;
+  faux.setResponses([
+    fauxAssistantMessage([fauxToolCall("moondog_profile_summary", { max_items: 10 })], { stopReason: "toolUse" }),
+    (conversation) => {
+      tool = JSON.parse(conversation.messages.find((message) => message.role === "toolResult").content[0].text);
+      return fauxAssistantMessage([fauxText("Fictional reply.")]);
+    },
+  ]);
+  await runtime.prompt("What do you know about my listening?");
+  assert.equal(tool.listening_behavior.enduring_artists.length, 3);
+
+  // A measure field, not a pick threshold such as rediscovery_minimum_listening_minutes.
+  const measures = (value, at = "") => Array.isArray(value) ? value.flatMap((item, index) => measures(item, `${at}[${index}]`))
+    : value && typeof value === "object" ? Object.entries(value).flatMap(([key, item]) => [
+      ...(/minutes|skips|hours/u.test(key) && !/minimum|maximum|gap/u.test(key) ? [`${at}.${key}`] : []),
+      ...measures(item, `${at}.${key}`)])
+    : [];
+  // Only the paused Studio and Tasteprint pages read the monthly pulse.
+  const { monthly_activity: _monthlyActivity, ...listening } = behavior;
+  const checked = {
+    summary: { ...summary, listening_behavior: listening },
+    tool,
+    input: [input.manifest, ...[...input.evidence.values()].map((entry) => entry.data)],
+  };
+  for (const [name, value] of Object.entries(checked)) {
+    assert.deepEqual(measures(value), [], `${name} states only what the plays recorded`);
+    assert.doesNotMatch(JSON.stringify(value), /\b0 minutes|never skipped|unplayed/iu, name);
+  }
+  for (const basis of bases) assert.doesNotMatch(basis, /minute|skip|unplayed/iu);
+});
+
 test("requests are paced across readers, however fast Last.fm answers", async () => {
   // A shorter interval than the real 250 ms keeps the test quick; the pacing is the same.
   const interval = 40;

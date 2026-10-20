@@ -657,7 +657,7 @@ function safeHistoryTrack(raw) {
   } else {
     const context = raw.back_to_back;
     const engagedPlayCount = safeHistoryCount(context.engaged_play_count);
-    const explicitSkips = safeHistoryCount(context.explicit_skips);
+    const explicitSkips = optionalHistoryCount(context, "explicit_skips");
     const burstCount = safeHistoryCount(context.burst_count);
     const maximumConsecutivePlays = safeHistoryCount(
       context.maximum_consecutive_plays,
@@ -679,7 +679,7 @@ function safeHistoryTrack(raw) {
       playsInBursts < burstCount * 2 ||
       playsInBursts > playCount ||
       engagedPlayCount > playCount ||
-      explicitSkips > playCount ||
+      (explicitSkips.explicit_skips ?? 0) > playCount ||
       !backToBackSignals.has(sequenceSignal) ||
       !isUuid(context.evidence_id)
     ) {
@@ -687,7 +687,7 @@ function safeHistoryTrack(raw) {
     }
     track.back_to_back = {
       engaged_play_count: engagedPlayCount,
-      explicit_skips: explicitSkips,
+      ...explicitSkips,
       burst_count: burstCount,
       maximum_consecutive_plays: maximumConsecutivePlays,
       plays_in_bursts: playsInBursts,

@@ -238,7 +238,9 @@ An Apple artist with no counted track showed zero plays, and Last.fm and ListenB
 Under partial time coverage, rows also ranked by minutes, so a few timed recent plays outranked hundreds of untimed older plays.
 The readings then called an uncounted collection unplayed, ranked a 451-play artist as minor, and called every play engaged.
 The build input now leaves an unrecorded measure out of the rows, ranks by plays when fewer than 95% of plays have a duration, and states both in the manifest.
-The evidence tool leaves out the host's prose explanation for those rows, because that text restates the zeros.
+One helper, `src/profile/recorded-measures.mjs`, decides which measures a set of plays recorded.
+The projection's rows, explanations and picks, the agent's profile summary, and the build input all use it, so none of them states a zero for a measure no play recorded.
+The evidence tool leaves out the host's prose explanation only for rows that lose a recorded measure in the build, because that text still states it.
 The writer and the check treat an unrecorded count, time or skip as unknown, not as low or unfamiliar.
 A fully timed Spotify history that records skips keeps an identical input, so its saved reading stays current.
 After the change, fresh builds with a fast model and a stronger model avoided every planted trap for all four listeners.

@@ -1,5 +1,6 @@
 import { uuidV5 } from "../core/uuid-v5.mjs";
 import { musicProviderLabel } from "./music-providers.mjs";
+import { recordedMeasures } from "./recorded-measures.mjs";
 
 export const LISTENING_PROFILE_SCHEMA_VERSION = "listening-profile/1";
 export const LISTENING_PROFILE_EVIDENCE_NAMESPACE =
@@ -86,47 +87,58 @@ function signalNote(value) {
   return value === "historical attention only" ? "" : ` It helps ${signalPhrase(value)}.`;
 }
 
-// Last.fm and most ListenBrainz plays record no duration, and only Spotify's
-// extended history records skips. A basis states each measure for the plays
-// that recorded it, so an unrecorded one never reads as no time or no skips.
+// A basis states each measure for the plays that recorded it, so an unrecorded
+// one never reads as no time or no skips.
 function listeningTime(aggregate) {
-  if (aggregate.timedPlayCount === 0) return "";
-  const time = `${minutes(aggregate.playedMs)} minutes`;
-  return aggregate.timedPlayCount === aggregate.playCount
-    ? `, ${time} in all`
-    : `, ${time} across the ${plural(aggregate.timedPlayCount, "timed play")}`;
+  const { time } = recordedMeasures(aggregate);
+  if (time === "none") return "";
+  const minutesText = `${minutes(aggregate.playedMs)} minutes`;
+  return time === "all"
+    ? `, ${minutesText} in all`
+    : `, ${minutesText} across the ${plural(aggregate.timedPlayCount, "timed play")}`;
 }
 
 function skipSentence(aggregate) {
-  if (aggregate.skipKnownCount === 0) return "";
-  const skips = aggregate.skippedCount === 0
+  const { skips } = recordedMeasures(aggregate);
+  if (skips === "none") return "";
+  const skipped = aggregate.skippedCount === 0
     ? "Never skipped"
     : `Skipped ${plural(aggregate.skippedCount, "time")}`;
-  return aggregate.skipKnownCount === aggregate.playCount
-    ? ` ${skips}.`
-    : ` ${skips} in the ${plural(aggregate.skipKnownCount, "play")} with skip data.`;
+  return skips === "all"
+    ? ` ${skipped}.`
+    : ` ${skipped} in the ${plural(aggregate.skipKnownCount, "play")} with skip data.`;
 }
 
 function unskippedNote(aggregate) {
-  if (aggregate.skipKnownCount === 0) return "";
-  return aggregate.skipKnownCount === aggregate.playCount
+  const { skips } = recordedMeasures(aggregate);
+  if (skips === "none") return "";
+  return skips === "all"
     ? ` (${aggregate.engagedPlayCount} not skipped)`
     : ` (${aggregate.skipKnownCount - aggregate.skippedCount} of the ${aggregate.skipKnownCount} with skip data not skipped)`;
 }
 
-// Minutes gate and rank listen-again picks, and appear in their rows, only when
-// every play recorded its length; otherwise the play counts decide. A pick row
-// also leaves out skips that no play recorded, instead of stating zero.
+// Minutes gate and rank listen-again picks only when every play recorded its
+// length; otherwise the play counts decide.
 function fullyTimed(aggregate) {
-  return aggregate.timedPlayCount === aggregate.playCount;
+  return recordedMeasures(aggregate).time === "all";
 }
 
-function pickMinutes(aggregate, key) {
+// A row states minutes only when every play recorded its length, because a
+// partial total undercounts and can't compare rows. It states skips, and plays
+// not skipped, only when some play recorded whether it was skipped.
+function recordedMinutes(aggregate, key = "listening_minutes") {
   return fullyTimed(aggregate) ? { [key]: minutes(aggregate.playedMs) } : {};
 }
 
-function pickSkips(aggregate, key) {
-  return aggregate.skipKnownCount > 0 ? { [key]: aggregate.skippedCount } : {};
+function recordedSkips(aggregate, key = "explicit_skips") {
+  return recordedMeasures(aggregate).skips === "none" ? {} : { [key]: aggregate.skippedCount };
+}
+
+// Summary rows use this. Listen-again and back-to-back picks always state
+// engaged_play_count: their play floors count a play without skip data as
+// engaged, and the agent's candidate checks read it.
+function recordedEngagedPlays(aggregate, key = "engaged_play_count") {
+  return recordedMeasures(aggregate).skips === "none" ? {} : { [key]: aggregate.engagedPlayCount };
 }
 
 function aggregateEvidenceId(subjectId, kind, key) {
@@ -207,13 +219,15 @@ function aggregateHistoryArc(rows) {
     }
 
     const aggregate = years.get(year) ?? {
-      eventCount: 0,
+      playCount: 0,
       playedMs: 0,
+      timedPlayCount: 0,
       trackRefs: new Set(),
       artists: new Map(),
     };
-    aggregate.eventCount += 1;
+    aggregate.playCount += 1;
     aggregate.playedMs += row.playedMs;
+    if (row.timed) aggregate.timedPlayCount += 1;
     aggregate.trackRefs.add(metadata.trackRefId);
 
     const artistKey = normalizedText(metadata.artist);
@@ -221,9 +235,11 @@ function aggregateHistoryArc(rows) {
       name: metadata.artist,
       playCount: 0,
       playedMs: 0,
+      timedPlayCount: 0,
     };
     artist.playCount += 1;
     artist.playedMs += row.playedMs;
+    if (row.timed) artist.timedPlayCount += 1;
     if (metadata.artistKnown) aggregate.artists.set(artistKey, artist);
     years.set(year, aggregate);
   }
@@ -242,8 +258,8 @@ function aggregateHistoryArc(rows) {
 
       return {
         year,
-        event_count: aggregate.eventCount,
-        listening_minutes: minutes(aggregate.playedMs),
+        event_count: aggregate.playCount,
+        ...recordedMinutes(aggregate),
         distinct_tracks: aggregate.trackRefs.size,
         first_observed_tracks: firstObservedTracks,
         ...(topArtist
@@ -251,7 +267,7 @@ function aggregateHistoryArc(rows) {
               top_artist: {
                 name: topArtist.name,
                 play_count: topArtist.playCount,
-                listening_minutes: minutes(topArtist.playedMs),
+                ...recordedMinutes(topArtist),
               },
             }
           : {}),
@@ -331,46 +347,58 @@ function aggregateListeningSeasons(subjectId, eventAnalysis, explanations) {
     }
 
     const aggregate = aggregates.get(observedSeasonIndex) ?? {
-      eventCount: 0,
+      playCount: 0,
       engagedPlayCount: 0,
       playedMs: 0,
+      timedPlayCount: 0,
+      skipKnownCount: 0,
       activeMonths: new Set(),
       trackRefs: new Set(),
       artists: new Map(),
       tracks: new Map(),
     };
-    aggregate.eventCount += 1;
+    aggregate.playCount += 1;
     if (!row.skipped) aggregate.engagedPlayCount += 1;
     aggregate.playedMs += row.playedMs;
+    if (row.timed) aggregate.timedPlayCount += 1;
+    if (row.skipKnown) aggregate.skipKnownCount += 1;
     aggregate.activeMonths.add(observedMonthIndex);
     aggregate.trackRefs.add(trackKey);
 
     const artistKey = normalizedText(metadata.artist);
     const artist = aggregate.artists.get(artistKey) ?? {
       name: metadata.artist,
-      eventCount: 0,
+      playCount: 0,
       engagedPlayCount: 0,
       playedMs: 0,
+      timedPlayCount: 0,
+      skipKnownCount: 0,
       trackRefs: new Set(),
     };
-    artist.eventCount += 1;
+    artist.playCount += 1;
     if (!row.skipped) artist.engagedPlayCount += 1;
     artist.playedMs += row.playedMs;
+    if (row.timed) artist.timedPlayCount += 1;
+    if (row.skipKnown) artist.skipKnownCount += 1;
     artist.trackRefs.add(trackKey);
     if (metadata.artistKnown) aggregate.artists.set(artistKey, artist);
 
     const track = aggregate.tracks.get(trackKey) ?? {
       ...metadata,
       trackKey,
-      eventCount: 0,
+      playCount: 0,
       engagedPlayCount: 0,
       skippedCount: 0,
       playedMs: 0,
+      timedPlayCount: 0,
+      skipKnownCount: 0,
     };
-    track.eventCount += 1;
+    track.playCount += 1;
     if (row.skipped) track.skippedCount += 1;
     else track.engagedPlayCount += 1;
     track.playedMs += row.playedMs;
+    if (row.timed) track.timedPlayCount += 1;
+    if (row.skipKnown) track.skipKnownCount += 1;
     aggregate.tracks.set(trackKey, track);
     aggregates.set(observedSeasonIndex, aggregate);
   }
@@ -404,8 +432,8 @@ function aggregateListeningSeasons(subjectId, eventAnalysis, explanations) {
         if (right.engagedPlayCount !== left.engagedPlayCount) {
           return right.engagedPlayCount - left.engagedPlayCount;
         }
-        if (right.eventCount !== left.eventCount) {
-          return right.eventCount - left.eventCount;
+        if (right.playCount !== left.playCount) {
+          return right.playCount - left.playCount;
         }
         return lexicalCompare(left.name, right.name);
       },
@@ -418,8 +446,8 @@ function aggregateListeningSeasons(subjectId, eventAnalysis, explanations) {
         if (right.engagedPlayCount !== left.engagedPlayCount) {
           return right.engagedPlayCount - left.engagedPlayCount;
         }
-        if (right.eventCount !== left.eventCount) {
-          return right.eventCount - left.eventCount;
+        if (right.playCount !== left.playCount) {
+          return right.playCount - left.playCount;
         }
         const titleOrder = lexicalCompare(left.title, right.title);
         if (titleOrder !== 0) return titleOrder;
@@ -435,9 +463,14 @@ function aggregateListeningSeasons(subjectId, eventAnalysis, explanations) {
       end_month: monthKey(lastMonthIndex),
       retained_month_count: lastMonthIndex - firstMonthIndex + 1,
       active_month_count: aggregate?.activeMonths.size ?? 0,
-      event_count: aggregate?.eventCount ?? 0,
-      engaged_play_count: aggregate?.engagedPlayCount ?? 0,
-      listening_minutes: minutes(aggregate?.playedMs ?? 0),
+      event_count: aggregate?.playCount ?? 0,
+      // A season with no plays has a true zero for each measure the history records.
+      ...(aggregate
+        ? { ...recordedEngagedPlays(aggregate), ...recordedMinutes(aggregate) }
+        : {
+            ...(eventAnalysis.recorded.skips === "none" ? {} : { engaged_play_count: 0 }),
+            ...(eventAnalysis.recorded.time === "none" ? {} : { listening_minutes: 0 }),
+          }),
       distinct_tracks: trackRefs.size,
       first_observed_tracks: firstObservedTracks,
       returning_tracks: trackRefs.size - firstObservedTracks,
@@ -445,9 +478,9 @@ function aggregateListeningSeasons(subjectId, eventAnalysis, explanations) {
         ? {
             leading_artist: {
               name: leadingArtist.name,
-              event_count: leadingArtist.eventCount,
-              engaged_play_count: leadingArtist.engagedPlayCount,
-              listening_minutes: minutes(leadingArtist.playedMs),
+              event_count: leadingArtist.playCount,
+              ...recordedEngagedPlays(leadingArtist),
+              ...recordedMinutes(leadingArtist),
               distinct_tracks: leadingArtist.trackRefs.size,
             },
           }
@@ -461,10 +494,10 @@ function aggregateListeningSeasons(subjectId, eventAnalysis, explanations) {
               ...(signatureTrack.release
                 ? { release: signatureTrack.release }
                 : {}),
-              play_count: signatureTrack.eventCount,
-              engaged_play_count: signatureTrack.engagedPlayCount,
-              listening_minutes: minutes(signatureTrack.playedMs),
-              explicit_skips: signatureTrack.skippedCount,
+              play_count: signatureTrack.playCount,
+              ...recordedEngagedPlays(signatureTrack),
+              ...recordedMinutes(signatureTrack),
+              ...recordedSkips(signatureTrack),
             },
           }
         : {}),
@@ -707,6 +740,7 @@ function aggregateEvents(subjectId, eventRows, explanations) {
         skippedCount: 0,
         playedMs: 0,
         timedPlayCount: 0,
+        skipKnownCount: 0,
         trackRefs: new Set(),
         years: new Map(),
         firstPlayedAt: occurredAt,
@@ -715,6 +749,7 @@ function aggregateEvents(subjectId, eventRows, explanations) {
       artist.playCount += 1;
       artist.playedMs += row.playedMs;
       if (row.timed) artist.timedPlayCount += 1;
+      if (row.skipKnown) artist.skipKnownCount += 1;
       if (row.skipped) artist.skippedCount += 1;
       else artist.engagedPlayCount += 1;
       artist.trackRefs.add(trackKey);
@@ -762,10 +797,10 @@ function aggregateEvents(subjectId, eventRows, explanations) {
         return {
           name: item.name,
           play_count: item.playCount,
-          engaged_play_count: item.engagedPlayCount,
-          listening_minutes: minutes(item.playedMs),
+          ...recordedEngagedPlays(item),
+          ...recordedMinutes(item),
           distinct_tracks: item.trackRefs.size,
-          explicit_skips: item.skippedCount,
+          ...recordedSkips(item),
           last_played_at: item.lastPlayedAt,
           evidence_id: evidenceId,
         };
@@ -806,9 +841,9 @@ function aggregateEvents(subjectId, eventRows, explanations) {
           ...(item.release ? { release: item.release } : {}),
           identity_status: item.identityStatus,
           play_count: item.playCount,
-          engaged_play_count: item.engagedPlayCount,
-          listening_minutes: minutes(item.playedMs),
-          explicit_skips: item.skippedCount,
+          ...recordedEngagedPlays(item),
+          ...recordedMinutes(item),
+          ...recordedSkips(item),
           last_played_at: item.lastPlayedAt,
           evidence_id: evidenceId,
         };
@@ -845,6 +880,11 @@ function aggregateEvents(subjectId, eventRows, explanations) {
   const rowsWithOfflineState = eligible.filter(
     (row) => typeof row.event.extensions?.["spotify.offline"] === "boolean",
   );
+  const recorded = recordedMeasures({
+    playCount: eligible.length,
+    timedPlayCount: eligible.filter((row) => row.timed).length,
+    skipKnownCount: eligible.filter((row) => row.skipKnown).length,
+  });
   const context = {
     reference_date: latest,
     recent_window_days: recentWindowDays,
@@ -861,7 +901,9 @@ function aggregateEvents(subjectId, eventRows, explanations) {
       ({ reason }) => normalizedText(reason.trim()) === "trackdone",
     ).length,
     skip_state_events: rowsWithSkipState.length,
-    explicit_skips: eligible.filter((row) => row.skipped).length,
+    ...(recorded.skips === "none"
+      ? {}
+      : { explicit_skips: eligible.filter((row) => row.skipped).length }),
     shuffle_state_events: rowsWithShuffleState.length,
     shuffle_events: rowsWithShuffleState.filter(
       (row) => row.event.extensions?.["spotify.shuffle"] === true,
@@ -880,6 +922,7 @@ function aggregateEvents(subjectId, eventRows, explanations) {
     rawPlayedMs,
     eventsWithPlayedDuration,
     profiledPlayedMs: eligible.reduce((sum, row) => sum + row.playedMs, 0),
+    recorded,
     lifetime,
     recent,
     historyArc,
@@ -952,7 +995,7 @@ function artistRelationships(subjectId, eventAnalysis, explanations) {
         active_years: activeYears,
         span_years: spanYears,
         play_count: artist.playCount,
-        listening_minutes: minutes(artist.playedMs),
+        ...recordedMinutes(artist),
         evidence_id: evidenceId,
       };
     });
@@ -1061,6 +1104,7 @@ function releaseDepth(subjectId, eventAnalysis, explanations) {
       engagedPlayCount: 0,
       playedMs: 0,
       timedPlayCount: 0,
+      skipKnownCount: 0,
       years: new Set(),
     };
     release.trackRefs.add(metadata.trackRefId);
@@ -1068,6 +1112,7 @@ function releaseDepth(subjectId, eventAnalysis, explanations) {
     if (!row.skipped) release.engagedPlayCount += 1;
     release.playedMs += row.playedMs;
     if (row.timed) release.timedPlayCount += 1;
+    if (row.skipKnown) release.skipKnownCount += 1;
     if (Number.isInteger(year)) release.years.add(year);
     releases.set(key, release);
   }
@@ -1116,8 +1161,8 @@ function releaseDepth(subjectId, eventAnalysis, explanations) {
         artist_credit: release.artist,
         distinct_tracks: release.trackRefs.size,
         play_count: release.playCount,
-        engaged_play_count: release.engagedPlayCount,
-        listening_minutes: minutes(release.playedMs),
+        ...recordedEngagedPlays(release),
+        ...recordedMinutes(release),
         ...(Number.isInteger(firstYear) ? { first_year: firstYear } : {}),
         ...(Number.isInteger(lastYear) ? { last_year: lastYear } : {}),
         active_years: years.length,
@@ -1368,7 +1413,7 @@ function backToBackTracks(
         play_count: lifetime?.playCount ?? item.playsInBursts,
         engaged_play_count:
           lifetime?.engagedPlayCount ?? item.playsInBursts,
-        explicit_skips: lifetime?.skippedCount ?? 0,
+        ...(lifetime ? recordedSkips(lifetime) : {}),
         burst_count: item.burstCount,
         maximum_consecutive_plays: item.maximumConsecutivePlays,
         plays_in_bursts: item.playsInBursts,
@@ -1533,7 +1578,7 @@ function evidenceGroups(records, eventAnalysis, explanations) {
       label: record.entity.label,
       artist_credit: record.entity.artist_credit,
       ...(record.entity.release ? { release: record.entity.release } : {}),
-      ...(metric ? { listening_minutes: minutes(metric.playedMs) } : {}),
+      ...(metric ? recordedMinutes(metric) : {}),
       evidence_id: record.profile_evidence_id,
     }));
 
@@ -1571,7 +1616,7 @@ function evidenceGroups(records, eventAnalysis, explanations) {
     })
     .map(({ record, metric }) => ({
       name: record.entity.label,
-      ...(metric ? { listening_minutes: minutes(metric.playedMs) } : {}),
+      ...(metric ? recordedMinutes(metric) : {}),
       evidence_id: record.profile_evidence_id,
     }));
 
@@ -1991,8 +2036,8 @@ function rediscoveryTracks(
         identity_status: track.identityStatus,
         play_count: track.playCount,
         engaged_play_count: track.engagedPlayCount,
-        ...pickMinutes(track, "listening_minutes"),
-        ...pickSkips(track, "explicit_skips"),
+        ...recordedMinutes(track),
+        ...recordedSkips(track),
         first_played_at: track.firstPlayedAt,
         last_played_at: track.lastPlayedAt,
         quiet_days: quietDays,
@@ -2001,7 +2046,7 @@ function rediscoveryTracks(
           ? {
               peak_year: peak.year,
               peak_year_play_count: peak.play_count,
-              ...pickMinutes(peak.plays, "peak_year_listening_minutes"),
+              ...recordedMinutes(peak.plays, "peak_year_listening_minutes"),
             }
           : {}),
         evidence_id: evidenceId,
@@ -2112,8 +2157,8 @@ function historicalReturnTracks(
         identity_status: track.identityStatus,
         play_count: track.playCount,
         engaged_play_count: track.engagedPlayCount,
-        ...pickMinutes(track, "listening_minutes"),
-        ...pickSkips(track, "explicit_skips"),
+        ...recordedMinutes(track),
+        ...recordedSkips(track),
         first_played_at: track.firstPlayedAt,
         last_played_at: track.lastPlayedAt,
         return_count: returns.length,
@@ -2250,10 +2295,10 @@ function timeCapsuleTracks(
       capsule_year: year,
       year_play_count: peak.play_count,
       year_engaged_play_count: peak.engaged_play_count,
-      ...pickMinutes(peakPlays, "year_listening_minutes"),
-      ...pickSkips(peakPlays, "year_explicit_skips"),
+      ...recordedMinutes(peakPlays, "year_listening_minutes"),
+      ...recordedSkips(peakPlays, "year_explicit_skips"),
       lifetime_play_count: track.playCount,
-      ...pickMinutes(track, "lifetime_listening_minutes"),
+      ...recordedMinutes(track, "lifetime_listening_minutes"),
       representative_signal: signal.value,
       evidence_id: evidenceId,
     };
@@ -2424,9 +2469,9 @@ export function projectListeningProfile({
     .filter(Boolean)
     .sort()
     .at(-1) ?? null;
-  const lengthNote = events.eligible.some((row) => !row.timed)
-    ? " if every play has a recorded length"
-    : "";
+  const lengthNote = events.recorded.time === "all"
+    ? ""
+    : " if every play has a recorded length";
   return {
     summary: {
       schema_version: LISTENING_PROFILE_SCHEMA_VERSION,
@@ -2440,7 +2485,9 @@ export function projectListeningProfile({
         cross_format_linked_events: crossFormatLinkedRows.length,
         cross_format_ambiguous_tracks: crossFormatAmbiguousTracks,
         cross_format_ambiguous_events: crossFormatAmbiguousRows.length,
-        listening_hours: hours(events.profiledPlayedMs),
+        ...(events.recorded.time === "none"
+          ? {}
+          : { listening_hours: hours(events.profiledPlayedMs) }),
         earliest_played_at: events.earliest,
         latest_played_at: events.latest,
         profile_evidence_records: deduplicatedEvidence.length,
