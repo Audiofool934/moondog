@@ -7499,8 +7499,8 @@ To confirm, reply: ${preview.confirmation}`].join("\n\n");
       if (
         promptState.externalCandidateSetCreated &&
         !promptState.playlistPlanAttempted &&
-        // A song the model actually played or queued is reported in its own words.
-        !promptState.spotifyPlayback.length && !promptState.spotifyWriteReceipts.length
+        // A song the model played, queued or failed to play is reported in its own words.
+        !promptState.spotifyPlayback.length && !promptState.spotifyWriteReceipts.length && !promptState.spotifyPlaybackFailures.length
       ) {
         const safeFailureText = [renderUnvalidatedPlaylistPlan(t), ...spotifyEffectTexts()].join("\n\n");
         replaceRenderedText(safeFailureText);
