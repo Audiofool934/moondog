@@ -12,6 +12,7 @@ Current explicit choices always override inferred interests; historical listenin
 Report the actual source counts, date ranges, exclusions, and missing sources before describing taste.
 A Spotify account connection's recent plays cannot represent a lifetime archive.
 An Apple library is a snapshot, and its aggregate play counts cannot be added to timestamped listening events.
+A row leaves out listening minutes, skips, or engaged plays that its sources never recorded; a missing measure is unknown, not zero or low.
 
 The compact `moondog_profile_summary` contains examples, not the universe of evidence.
 For a personalized recommendation or generation brief, use the summary for orientation and explore relevant full sections when selecting anchors.

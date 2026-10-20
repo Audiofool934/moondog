@@ -26,6 +26,16 @@ function optionalNumber(value, { integer = false, minimum = 0 } = {}) {
   return value;
 }
 
+// The projection leaves out a measure that no play recorded: an absent value
+// is unknown, while a present value must still be valid.
+function recordedNumber(value, options) {
+  return value === undefined ? undefined : optionalNumber(value, options);
+}
+
+function exceeds(part, whole) {
+  return part !== undefined && whole !== undefined && part > whole;
+}
+
 function list(value, maximum, projector) {
   if (!Array.isArray(value)) return [];
   return value.slice(0, maximum).map(projector).filter(Boolean);
@@ -186,10 +196,10 @@ function listeningSeasonArtistSignal(item) {
     integer: true,
     minimum: 1,
   });
-  const engagedPlayCount = optionalNumber(item.engaged_play_count, {
+  const engagedPlayCount = recordedNumber(item.engaged_play_count, {
     integer: true,
   });
-  const listeningMinutes = optionalNumber(item.listening_minutes);
+  const listeningMinutes = recordedNumber(item.listening_minutes);
   const distinctTracks = optionalNumber(item.distinct_tracks, {
     integer: true,
     minimum: 1,
@@ -198,19 +208,19 @@ function listeningSeasonArtistSignal(item) {
     !name ||
     eventCount === null ||
     engagedPlayCount === null ||
-    engagedPlayCount > eventCount ||
+    exceeds(engagedPlayCount, eventCount) ||
     listeningMinutes === null ||
     distinctTracks === null
   ) {
     return null;
   }
-  return {
+  return compactObject({
     name,
     event_count: eventCount,
     engaged_play_count: engagedPlayCount,
     listening_minutes: listeningMinutes,
     distinct_tracks: distinctTracks,
-  };
+  });
 }
 
 function listeningSeasonTrackSignal(item) {
@@ -221,11 +231,11 @@ function listeningSeasonTrackSignal(item) {
     integer: true,
     minimum: 1,
   });
-  const engagedPlayCount = optionalNumber(item.engaged_play_count, {
+  const engagedPlayCount = recordedNumber(item.engaged_play_count, {
     integer: true,
   });
-  const listeningMinutes = optionalNumber(item.listening_minutes);
-  const explicitSkips = optionalNumber(item.explicit_skips, {
+  const listeningMinutes = recordedNumber(item.listening_minutes);
+  const explicitSkips = recordedNumber(item.explicit_skips, {
     integer: true,
   });
   if (
@@ -233,10 +243,12 @@ function listeningSeasonTrackSignal(item) {
     !artistCredit ||
     playCount === null ||
     engagedPlayCount === null ||
-    engagedPlayCount > playCount ||
+    exceeds(engagedPlayCount, playCount) ||
     listeningMinutes === null ||
     explicitSkips === null ||
-    engagedPlayCount + explicitSkips !== playCount
+    (engagedPlayCount === undefined) !== (explicitSkips === undefined) ||
+    (engagedPlayCount !== undefined &&
+      engagedPlayCount + explicitSkips !== playCount)
   ) {
     return null;
   }
@@ -267,10 +279,10 @@ function listeningSeasonSignal(item) {
     integer: true,
   });
   const eventCount = optionalNumber(item.event_count, { integer: true });
-  const engagedPlayCount = optionalNumber(item.engaged_play_count, {
+  const engagedPlayCount = recordedNumber(item.engaged_play_count, {
     integer: true,
   });
-  const listeningMinutes = optionalNumber(item.listening_minutes);
+  const listeningMinutes = recordedNumber(item.listening_minutes);
   const distinctTracks = optionalNumber(item.distinct_tracks, {
     integer: true,
   });
@@ -296,7 +308,7 @@ function listeningSeasonSignal(item) {
     activeMonthCount > retainedMonthCount ||
     eventCount === null ||
     engagedPlayCount === null ||
-    engagedPlayCount > eventCount ||
+    exceeds(engagedPlayCount, eventCount) ||
     listeningMinutes === null ||
     distinctTracks === null ||
     distinctTracks > eventCount ||
@@ -305,8 +317,8 @@ function listeningSeasonSignal(item) {
     firstObservedTracks + returningTracks !== distinctTracks ||
     (eventCount === 0 &&
       (activeMonthCount !== 0 ||
-        engagedPlayCount !== 0 ||
-        listeningMinutes !== 0 ||
+        (engagedPlayCount ?? 0) !== 0 ||
+        (listeningMinutes ?? 0) !== 0 ||
         distinctTracks !== 0 ||
         leadingArtist !== null ||
         signatureTrack !== null)) ||
@@ -317,13 +329,13 @@ function listeningSeasonSignal(item) {
         signatureTrack === null)) ||
     (leadingArtist &&
       (leadingArtist.event_count > eventCount ||
-        leadingArtist.engaged_play_count > engagedPlayCount ||
-        leadingArtist.listening_minutes > listeningMinutes ||
+        exceeds(leadingArtist.engaged_play_count, engagedPlayCount) ||
+        exceeds(leadingArtist.listening_minutes, listeningMinutes) ||
         leadingArtist.distinct_tracks > distinctTracks)) ||
     (signatureTrack &&
       (signatureTrack.play_count > eventCount ||
-        signatureTrack.engaged_play_count > engagedPlayCount ||
-        signatureTrack.listening_minutes > listeningMinutes))
+        exceeds(signatureTrack.engaged_play_count, engagedPlayCount) ||
+        exceeds(signatureTrack.listening_minutes, listeningMinutes)))
   ) {
     return null;
   }

@@ -96,34 +96,47 @@ test("the model receives collection ordering before it can infer chronology from
 });
 
 test("a measure the sources never recorded reaches the model as unknown, not zero", () => {
-  const history = timed => createListenerProfileInput({ subjectId, evidenceRevision: "fictional", listening: {
-    coverage: { effective_listening_events: 1000, events_with_played_duration: timed, listening_hours: 10 },
-    sections: { history_artists: [
-      { name: "Long tracks", play_count: 100, engaged_play_count: 100, explicit_skips: 0, listening_minutes: 600 },
-      { name: "Most played", play_count: 900, engaged_play_count: 900, explicit_skips: 0, listening_minutes: 0 }],
-    history_years: [{ year: 2020, event_count: 1000, listening_minutes: 600,
-      top_artist: { name: "Long tracks", play_count: 100, listening_minutes: 600 } }] } } });
+  // Listening rows come from the projection, which leaves out what no play recorded.
+  const history = (timed, { artists, year }) => createListenerProfileInput({ subjectId, evidenceRevision: "fictional", listening: {
+    coverage: { effective_listening_events: 1000, events_with_played_duration: timed, ...(timed ? { listening_hours: 10 } : {}) },
+    sections: { history_artists: artists, history_years: [{ year: 2020, event_count: 1000, ...year }] } } });
   const rows = value => [...value.evidence.values()].filter(entry => entry.section === "history_artists").map(entry => entry.data);
+  const named = (value, references) => [...references].map(ref => value.evidence.get(ref).data.name ?? value.evidence.get(ref).data.year);
 
-  // Last.fm records no durations or skips: rank by plays and leave out the false zeros.
-  const scrobbles = history(0);
+  // Last.fm records no durations or skips: rank by plays, and say why those measures are missing.
+  const scrobbles = history(0, {
+    artists: [{ name: "Long tracks", play_count: 100 }, { name: "Most played", play_count: 900 }],
+    year: { top_artist: { name: "Most played", play_count: 900 } },
+  });
   assert.deepEqual(rows(scrobbles).map(row => row.name), ["Most played", "Long tracks"]);
   assert.doesNotMatch(JSON.stringify([...scrobbles.evidence.values()]), /listening_minutes|explicit_skips|engaged_play_count/u);
   assert.equal(scrobbles.manifest.coverage.listening_hours, undefined);
   assert.match(scrobbles.manifest.limitations.join(" "), /listening time is unknown, not zero/u);
   assert.match(scrobbles.manifest.limitations.join(" "), /says nothing about approval/u);
   assert.match(listenerProfileDossier(scrobbles).sections.history_artists.ordering, /by plays/u);
-  // The host's prose explanations still state those zeros, so the build marks every row that lost one.
-  assert.equal(scrobbles.unrecorded.size, scrobbles.evidence.size);
+  // Their prose explanations leave those measures out too, so no row needs marking.
+  assert.equal(scrobbles.unrecorded.size, 0);
 
   // Durations from only some sources can't compare artists, so minutes leave and the note gives the share.
-  const mixed = history(400);
+  const mixed = history(400, {
+    artists: [{ name: "Long tracks", play_count: 100, engaged_play_count: 100, explicit_skips: 0, listening_minutes: 600 },
+      { name: "Most played", play_count: 900, engaged_play_count: 880, explicit_skips: 20 }],
+    year: { top_artist: { name: "Long tracks", play_count: 100, listening_minutes: 600 } },
+  });
   assert.deepEqual(rows(mixed).map(row => row.name), ["Most played", "Long tracks"]);
+  assert.doesNotMatch(JSON.stringify([...mixed.evidence.values()]), /listening_minutes/u);
   assert.equal(mixed.manifest.coverage.listening_hours, 10);
   assert.match(mixed.manifest.limitations.join(" "), /known for only 400 of 1000 plays/u);
+  assert.doesNotMatch(mixed.manifest.limitations.join(" "), /approval/u);
+  // Their prose explanations still state the recorded minutes the build left out.
+  assert.deepEqual(named(mixed, mixed.unrecorded).sort(), [2020, "Long tracks"].sort());
 
   // A fully timed history keeps its minutes and its ranking by listening time.
-  const timed = history(1000);
+  const timed = history(1000, {
+    artists: [{ name: "Long tracks", play_count: 100, engaged_play_count: 100, explicit_skips: 0, listening_minutes: 600 },
+      { name: "Most played", play_count: 900, engaged_play_count: 880, explicit_skips: 20, listening_minutes: 0 }],
+    year: { listening_minutes: 600, top_artist: { name: "Long tracks", play_count: 100, listening_minutes: 600 } },
+  });
   assert.deepEqual(rows(timed).map(row => [row.name, row.listening_minutes]), [["Long tracks", 600], ["Most played", 0]]);
   assert.doesNotMatch(timed.manifest.limitations.join(" "), /listening time/iu);
 

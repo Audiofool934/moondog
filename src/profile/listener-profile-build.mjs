@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 
+import { recordedShare } from "./recorded-measures.mjs";
+
 export const LISTENER_PROFILE_ANALYSIS_VERSION = "listener-profile/2";
 export const LISTENER_PROFILE_SYNTHESIS_VERSION = "listener-synthesis/4";
 // A saved reading is current only after its whole-profile check has run.
@@ -21,53 +23,54 @@ const TIMED_PLAY_SHARE = 0.95;
 function measurement(listening) {
   const plays = listening?.coverage?.effective_listening_events ?? 0;
   const timed = listening?.coverage?.events_with_played_duration;
-  const time = !plays || timed === undefined || timed >= plays * TIMED_PLAY_SHARE ? "complete" : timed === 0 ? "none" : "partial";
-  // A history without a single skip almost always comes from sources that don't record skips.
+  const time = timed === undefined ? "all" : recordedShare(plays, timed, TIMED_PLAY_SHARE);
+  // Listening rows state skips only where some play recorded them, so no row with skips means
+  // no play in the history recorded one.
   const rows = Object.entries(listening?.sections ?? {})
     .filter(([section]) => RANKED_LISTENING_SECTIONS.has(section)).flatMap(([, rows]) => rows);
-  const unskipped = rows.some(row => row.explicit_skips === 0) && !rows.some(row => row.explicit_skips > 0);
+  const unskipped = rows.length > 0 && !rows.some(row => row.explicit_skips !== undefined);
   return { plays, timed, time, unskipped };
 }
 
 const without = (row, keys) => Object.fromEntries(Object.entries(row).filter(([key]) => !keys.includes(key)));
 
-// An unknown measure stays unknown: a missing duration, skip or play count never becomes a zero
-// the model could read as "never played" or "never skipped". Rows that lose a measure are marked,
-// because the host's prose explanations of those rows still state it.
-function measuredRows(section, rows, { time, unskipped }, withheld) {
+// Listening rows already leave out what their plays never recorded. Here a row also drops minutes
+// that can't compare it with others, and an Apple facet drops a play count none of its tracks
+// carry. Rows that lose a measure are marked, because the host's prose explanations still state it.
+function measuredRows(section, rows, { time }, withheld) {
   const unrecordedKeys = row => section.startsWith("apple_")
-    ? (row.tracks_with_play_count === 0 && row.play_count === 0 ? ["play_count"] : [])
-    : [...(time !== "complete" ? ["listening_minutes"] : []),
-      ...(unskipped && PLAY_COUNT_SECTIONS.has(section) ? ["explicit_skips", "engaged_play_count"] : [])];
+    ? (recordedShare(row.library_tracks, row.tracks_with_play_count) === "none" ? ["play_count"] : [])
+    : time !== "all" ? ["listening_minutes"] : [];
   const next = rows.map(row => {
     const keys = unrecordedKeys(row).filter(key => key in row);
-    const topArtist = time !== "complete" && row.top_artist && "listening_minutes" in row.top_artist;
+    const topArtist = time !== "all" && row.top_artist && "listening_minutes" in row.top_artist;
     if (!keys.length && !topArtist) return row;
     const measured = { ...without(row, keys), ...(topArtist ? { top_artist: without(row.top_artist, ["listening_minutes"]) } : {}) };
     withheld.add(measured);
     return measured;
   });
-  if (time === "complete" || !PLAY_COUNT_SECTIONS.has(section)) return next;
-  return next.sort((left, right) => (right.engaged_play_count ?? 0) - (left.engaged_play_count ?? 0) ||
-    (right.play_count ?? 0) - (left.play_count ?? 0));
+  if (time === "all" || !PLAY_COUNT_SECTIONS.has(section)) return next;
+  // A row without skip data counts every play as engaged.
+  const engaged = row => row.engaged_play_count ?? row.play_count ?? 0;
+  return next.sort((left, right) => engaged(right) - engaged(left) || (right.play_count ?? 0) - (left.play_count ?? 0));
 }
 
-function sectionSemantics(section, { time = "complete" } = {}) {
+function sectionSemantics(section, { time = "all" } = {}) {
   const common = {
     ordering: "Catalog order, not chronology or preference strength unless explicitly stated.",
     limitations: "Row position and repeated rows are not independent evidence of importance. Use the row's dated fields for time claims.",
   };
   if (RANKED_LISTENING_SECTIONS.has(section)) {
-    return { ordering: time === "complete" ? "Ranked by measured listening duration, descending."
+    return { ordering: time === "all" ? "Ranked by measured listening duration, descending."
       : "Ranked by plays, descending, because listening time is not known for every play.",
       limitations: "Attention in the imported history is not a direct statement of liking. Recent and lifetime views overlap; do not add their totals." };
   }
   if (section === "history_years") return { ...common,
-    ordering: time === "complete" ? "top_artist is selected by measured listening duration, not play count. Row position is not a preference ranking."
+    ordering: time === "all" ? "top_artist is selected by measured listening duration, not play count. Row position is not a preference ranking."
       : "top_artist is selected by measured listening duration where the year records it, otherwise by plays. Row position is not a preference ranking.",
     limitations: "Years have unequal coverage. Sparse or missing imported records do not establish a gap in the listener's actual listening." };
   if (section === "saved_tracks") return {
-    ordering: time === "complete" ? "Measured listening duration descending, then playlist membership count descending, then title."
+    ordering: time === "all" ? "Measured listening duration descending, then playlist membership count descending, then title."
       : "Not a preference ranking; listening time is not known for every play.",
     limitations: "Row order is not save or addition chronology. Missing listening minutes mean no matched duration in this import, not proof the listener never played a saved track.",
   };
@@ -107,7 +110,6 @@ export function createListenerProfileInput({ subjectId, evidenceRevision, listen
     .map(([section, rows]) => [section, measuredRows(section, rows, measured, withheld)]));
   const context = listening?.context ?? {};
   const coverage = { ...listening?.coverage, ...apple?.coverage };
-  if (measured.time === "none") delete coverage.listening_hours;
   const evidence = new Map();
   const unrecorded = new Set();
   for (const [section, rows] of Object.entries(sections).sort(([a], [b]) => a.localeCompare(b))) {
@@ -128,7 +130,7 @@ export function createListenerProfileInput({ subjectId, evidenceRevision, listen
       "History measures attention. Apple snapshot counts are separate from dated plays; private-session plays and superseded overlaps do not become behavioral evidence.",
       "Provider labels are not listener assertions or measured audio features.",
       ...(measured.time === "none" ? ["No play in this history records how long it lasted, so listening time is unknown, not zero; rows rank by plays."] : []),
-      ...(measured.time === "partial" ? [`Listening time is known for only ${measured.timed} of ${measured.plays} plays, so minutes and hours cannot compare artists, years or sources; rows rank by plays, and coverage.listening_hours covers only the timed plays.`] : []),
+      ...(measured.time === "some" ? [`Listening time is known for only ${measured.timed} of ${measured.plays} plays, so minutes and hours cannot compare artists, years or sources; rows rank by plays, and coverage.listening_hours covers only the timed plays.`] : []),
       ...(measured.unskipped ? ["No play in this history is marked as skipped. These sources may not record skips, so skips and engaged plays are unknown, and having no skips says nothing about approval."] : []),
     ],
   };
