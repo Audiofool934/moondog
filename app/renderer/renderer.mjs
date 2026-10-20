@@ -419,7 +419,9 @@ port.onmessage = ({ data }) => {
     }
   }
   if (data.type === "player") {
-    state.spotify = data.spotify === "ready" ? "ready" : state.spotify === "ready" && data.spotify === "error" ? "ready" : "unavailable";
+    // A read that fails, such as a network blip, keeps the last known player on screen.
+    if (data.spotify === "error") return;
+    state.spotify = data.spotify === "ready" ? "ready" : "unavailable";
     state.player = { now: data.now, next: data.next ?? [] };
     let learned = false;
     for (const track of [data.now, ...(data.next ?? [])]) {
