@@ -15,7 +15,8 @@ const make = (tag, className, text) => {
 
 let locale = windowLocale(navigator.languages);
 let t = windowStrings(locale);
-const state = { sessions: [], current: null, turns: [], model: null, spotify: "unavailable", player: null, streaming: null, ready: false, waiting: null };
+// Spotify's state is unknown (null) until the core first reads it.
+const state = { sessions: [], current: null, turns: [], model: null, spotify: null, player: null, streaming: null, ready: false, waiting: null };
 const store = {
   get: (key) => { try { return localStorage.getItem(key); } catch { return null; } },
   set: (key, value) => { try { localStorage.setItem(key, value); } catch { /* A private window keeps the default. */ } },
@@ -247,7 +248,7 @@ function renderInspector() {
   badge.hidden = !now?.preview;
   badge.textContent = t("preview");
   $("song").textContent = now ? now.title : t("nothingPlaying");
-  $("artist").textContent = now ? now.artists.join(", ") : (state.spotify === "ready" ? t("nothingHint") : t("spotifyOff"));
+  $("artist").textContent = now ? now.artists.join(", ") : state.spotify === "ready" ? t("nothingHint") : state.spotify ? t("spotifyOff") : "";
   const album = $("album");
   album.replaceChildren();
   if (now?.preview && now.link) {
@@ -280,7 +281,7 @@ function renderInspector() {
     return item;
   }));
   $("spotify-dot").classList.toggle("on", state.spotify === "ready");
-  $("status").textContent = state.spotify === "ready" ? "Spotify" : t("spotifyOff").split(/[.。]/u)[0];
+  $("status").textContent = state.spotify === "ready" ? "Spotify" : state.spotify ? t("spotifyOff").split(/[.。]/u)[0] : "";
   renderComposer();
 }
 setInterval(() => { if (nowPlaying()?.playing) renderInspector(); }, 500);
