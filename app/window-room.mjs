@@ -34,7 +34,7 @@ const errorText = (error) => String(error?.message ?? error ?? "").slice(0, 400)
 export function runWindowRoom(services, { port, send }) {
   const { application: base, rebuildRuntime, toolTrace = null, openConversation, modelSettings, saveLanguage, savePlaybackService,
     prepareImport, prepareRecentImport, refreshImportedData, lastfm, runSpotify } = services;
-  // Slot 0 is the core's own application and agent; it is never closed before quit.
+  // Slot 0 is the core's own application and agent. The core closes every conversation after the room ends.
   const slots = [{ application: base, runtime: services.runtime, turn: null, live: null, stale: null, close: null }];
   let current = slots[0];
   let visible = true;
@@ -50,8 +50,16 @@ export function runWindowRoom(services, { port, send }) {
     updatedAt: session.updated_at ?? session.started_at, branch: Boolean(session.parent_session_id),
     pinned: Boolean(session.pinned_at), folderId: session.folder_id ?? null, customTitle: session.custom_title === true,
   }));
+  // A conversation on its first reply has nothing saved yet, so the list shows it from the live turn.
+  const listed = () => {
+    const saved = sessions();
+    const ids = new Set(saved.map((session) => session.id));
+    const fresh = slots.filter((slot) => slot.live && !ids.has(sessionOf(slot))).map((slot) => ({ id: sessionOf(slot),
+      title: slot.live.user.replace(/\s+/gu, " ").trim().slice(0, 80), updatedAt: new Date().toISOString(), branch: false, pinned: false, folderId: null, customTitle: false }));
+    return [...saved.filter((session) => session.pinned), ...fresh, ...saved.filter((session) => !session.pinned)];
+  };
   const folders = () => (base.listConversationFolders?.() ?? []).map((folder) => ({ id: folder.folder_id ?? folder.id, name: folder.name, position: folder.position ?? 0 }));
-  const sendSessions = () => send({ type: "sessions", sessions: sessions(), folders: folders(), current: sessionOf(current),
+  const sendSessions = () => send({ type: "sessions", sessions: listed(), folders: folders(), current: sessionOf(current),
     running: slots.filter((slot) => slot.turn).map(sessionOf) });
 
   // A running turn is kept live in its slot; the saved entry for it is still "running", so the
@@ -203,7 +211,8 @@ export function runWindowRoom(services, { port, send }) {
     if (slot.turn || typeof text !== "string" || !text.trim()) return;
     const id = randomUUID();
     const session = sessionOf(slot);
-    slot.turn = { id };
+    const settled = Promise.withResolvers();
+    slot.turn = { id, settled: settled.promise };
     slot.live = { id, user: text, text: "", activity: [] };
     send({ type: "turn", session, id, state: "start", text });
     sendSessions();
@@ -236,6 +245,7 @@ export function runWindowRoom(services, { port, send }) {
       unsubscribe();
       slot.turn = null;
       slot.live = null;
+      settled.resolve();
       // A model or service change made while this turn ran applies now.
       if (slot.stale) await rebuild(slot, slot.stale.selection).catch(() => {});
       sendSessions();
@@ -484,10 +494,11 @@ export function runWindowRoom(services, { port, send }) {
         if (data.type === "quit") {
           closed = true;
           clearTimeout(pollTimer);
-          for (const slot of slots) if (slot.turn) slot.runtime.abort?.();
+          // Stopped turns settle before the core closes each conversation after the room ends.
+          const settling = slots.filter((slot) => slot.turn).map((slot) => { slot.runtime.abort?.(); return slot.turn.settled; });
           signIn?.controller.abort();
           closeImport();
-          for (const slot of slots.slice(1)) { try { slot.close?.(); } catch { /* Quitting anyway. */ } }
+          await Promise.race([Promise.allSettled(settling), new Promise((done) => setTimeout(done, 2000))]);
           resolve({});
           return;
         }
