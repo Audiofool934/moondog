@@ -197,7 +197,9 @@ function createAuthInteraction({
   };
 }
 
-function wrapLoginError(error, provider) {
+// Pi's login errors can carry provider response bodies. Every surface that signs
+// in shows only these fixed messages and codes.
+export function wrapLoginError(error, provider) {
   const name = provider === DEFAULT_AUTH_PROVIDER ? "OpenAI Codex" : provider;
   if (error?.name === "AbortError" || error?.code === "ABORT_ERR") {
     const cancelled = new Error(`${name} login was cancelled.`);
