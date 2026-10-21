@@ -188,7 +188,7 @@ export function createSettings({ state, send, t, prettyModel = String }) {
       const detail = signedIn ? (provider.source && provider.source !== "saved" ? tr("signedInFrom", { source: provider.source === "environment" ? tr("theEnvironment") : provider.source }) : tr("signedIn"))
         : provider.signIn === "oauth" ? tr("signInWithBrowser") : provider.signIn === "api_key" ? tr("needsApiKey") : tr("setInEnvironment");
       // Only a key Moondog saved can be signed out here; one from the environment stays in effect.
-      const action = signedIn ? (provider.source === "saved" ? button(tr("signOut"), "quiet small", () => send({ type: "sign-out", provider: provider.id })) : null)
+      const action = signedIn ? (provider.source === "saved" ? button(tr("signOut"), "quiet small", () => send({ type: "sign-out", provider: provider.id }), `sign-out:${provider.id}`) : null)
         : provider.signIn === "environment_only" ? null : button(tr("signIn"), "small", () => {
           data.error = null;
           data.auth = { provider: provider.id, providerName: provider.name, lines: [] };
@@ -343,7 +343,7 @@ export function createSettings({ state, send, t, prettyModel = String }) {
     else if (!data.memories.length) list.append(note(tr("noMemories")));
     else for (const entry of data.memories) {
       const item = make("div", "memory");
-      item.append(make("p", "", entry.text), button(tr("forget"), "quiet small", () => send({ type: "forget", id: entry.id })));
+      item.append(make("p", "", entry.text), button(tr("forget"), "quiet small", () => send({ type: "forget", id: entry.id }), `forget:${entry.id}`));
       list.append(item);
     }
     part.append(list);
@@ -381,7 +381,9 @@ export function createSettings({ state, send, t, prettyModel = String }) {
     const views = { general, model, playback, library, memory, about };
     body.replaceChildren(views[section]());
     close.setAttribute("aria-label", tr("close"));
-    if (focused) card.querySelector(`[data-key="${CSS.escape(focused)}"]`)?.focus();
+    // A key shared by several controls is not restored, so the focus never lands on another item's button.
+    const matches = focused ? card.querySelectorAll(`[data-key="${CSS.escape(focused)}"]`) : [];
+    if (matches.length === 1) matches[0].focus();
   }
 
   // Messages from the core that this sheet draws.

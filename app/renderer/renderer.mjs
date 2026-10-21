@@ -46,7 +46,7 @@ const sidebar = createSidebar({ root: $("sessions"), state, send, t: tr, open: (
 // A native menu opens at the pointer, or under its control when the keyboard pressed it.
 function menuPoint(event) {
   const control = event.currentTarget;
-  if (event.detail !== 0 || !control?.getBoundingClientRect) return { x: event.clientX, y: event.clientY };
+  if (event.type !== "click" || event.detail !== 0 || !control?.getBoundingClientRect) return { x: event.clientX, y: event.clientY };
   const box = control.getBoundingClientRect();
   return { x: box.left, y: box.bottom + 4 };
 }

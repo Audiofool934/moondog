@@ -557,7 +557,9 @@ export function runWindowRoom(services, { port, send, quit = null }) {
       await Promise.race([Promise.allSettled(settling), new Promise((done) => setTimeout(done, 2000))]);
       resolve({});
     })();
-    quit?.addEventListener("abort", () => void stop(), { once: true });
+    // A quit that came while the core was still starting has already happened.
+    if (quit?.aborted) void stop();
+    else quit?.addEventListener("abort", () => void stop(), { once: true });
     port.on("message", async ({ data }) => {
       if (!data?.type) return;
       try {
