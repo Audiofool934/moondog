@@ -99,29 +99,39 @@ export function catalogNames() {
 export function createSimulatedSpotify({ devices = [
   { id: "simMac", name: "Fictional MacBook Pro", type: "Computer" },
   { id: "simPC", name: "PC", type: "Computer" },
-], active = null, refuseMovesTo = [], refuseTransfersTo = [], playing = null, queue = [] } = {}) {
+], active = null, refuseMovesTo = [], refuseTransfersTo = [], refuseContexts = [], playing = null, queue = [] } = {}) {
   // refuseMovesTo refuses every way onto a device; refuseTransfersTo refuses only the transfer call,
   // as Spotify sometimes does while still accepting a play request aimed at that device.
+  // refuseContexts lists album URIs whose play is refused, while their songs still play alone.
+  // context is the album or list of songs being played, and contextIndex the song reached in it:
+  // queued songs play first, then the context goes on from there.
   const state = { active, current: playing ? tracks.find((track) => track.id === playing) ?? null : null, playing: Boolean(playing),
-    progressMs: 42_000, queue: queue.map((id) => tracks.find((track) => track.id === id)).filter(Boolean), context: null, writes: [], unknown: [] };
+    progressMs: 42_000, queue: queue.map((id) => tracks.find((track) => track.id === id)).filter(Boolean),
+    context: null, contextIndex: -1, contextUri: null, writes: [], unknown: [] };
   const json = (value, status = 200) => Response.json(value, { status });
   const empty = () => new Response(null, { status: 204 });
   const refused = () => json({ error: { status: 403, message: "Player command failed: Restriction violated", reason: "UNKNOWN" } }, 403);
   const noDevice = () => json({ error: { status: 404, message: "Player command failed: No active device found", reason: "NO_ACTIVE_DEVICE" } }, 404);
   const deviceView = (device) => ({ ...device, is_active: device.id === state.active, is_private_session: false, is_restricted: false,
     supports_volume: true, volume_percent: 60 });
-  const playFrom = (list, index) => {
+  const playFrom = (list, index, contextUri = null) => {
     state.context = list;
-    state.current = list[index] ?? list[0] ?? state.current;
+    state.contextIndex = list[index] ? index : 0;
+    state.contextUri = contextUri;
+    state.current = list[state.contextIndex] ?? state.current;
     state.playing = true;
     state.progressMs = 0;
   };
+  // Where a play body's offset starts: a position, a song in the list, or the first song.
+  // An offset naming a song outside the list is refused (the simulator's choice).
+  const offsetIndex = (list, offset) => (typeof offset?.uri === "string" ? list.findIndex((track) => track.uri === offset.uri) : Number(offset?.position ?? 0));
   const advance = () => {
     const next = state.queue.shift();
     if (next) { state.current = next; state.progressMs = 0; return; }
-    const index = state.context?.indexOf(state.current) ?? -1;
-    if (index >= 0 && state.context[index + 1]) { state.current = state.context[index + 1]; state.progressMs = 0; }
+    if (state.context?.[state.contextIndex + 1]) { state.contextIndex += 1; state.current = state.context[state.contextIndex]; state.progressMs = 0; }
   };
+  // Spotify's queue shows the listener's queue first, then the rest of what is playing.
+  const upcoming = () => [...state.queue, ...(state.context ?? []).slice(state.contextIndex + 1)];
 
   async function fetchImpl(url, init = {}) {
     const parsed = new URL(url);
@@ -148,11 +158,15 @@ export function createSimulatedSpotify({ devices = [
         state.active = target;
         if (body?.uris?.length) {
           const list = body.uris.map((uri) => tracks.find((track) => track.uri === uri)).filter(Boolean);
-          playFrom(list, Number(body.offset?.position ?? 0));
+          const index = offsetIndex(list, body.offset);
+          if (index < 0) return respond(json({ error: { status: 400, message: "Invalid offset" } }, 400));
+          playFrom(list, index);
         } else if (body?.context_uri) {
           const value = [...albums.values()].find((entry) => entry.uri === body.context_uri);
-          if (!value) return respond(json({ error: { status: 404, message: "Context not found" } }, 404));
-          playFrom(value.tracks, Number(body.offset?.position ?? 0));
+          if (!value || refuseContexts.includes(body.context_uri)) return respond(json({ error: { status: 404, message: "Context not found" } }, 404));
+          const index = offsetIndex(value.tracks, body.offset);
+          if (index < 0) return respond(json({ error: { status: 400, message: "Invalid offset" } }, 400));
+          playFrom(value.tracks, index, value.uri);
         } else {
           if (!state.current) return respond(json({ error: { status: 404, message: "Nothing to resume" } }, 404));
           state.playing = true;
@@ -206,10 +220,10 @@ export function createSimulatedSpotify({ devices = [
       if (!state.active) return empty();
       return json({ device: deviceView(devices.find((device) => device.id === state.active)), is_playing: state.playing,
         item: state.current ? publicTrack(state.current) : null, progress_ms: state.progressMs, shuffle_state: false, repeat_state: "off",
-        currently_playing_type: "track", context: null, timestamp: Date.now() });
+        currently_playing_type: "track", context: state.contextUri ? { type: "album", uri: state.contextUri } : null, timestamp: Date.now() });
     }
     if (path === "/me/player/currently-playing") return state.current ? json({ item: publicTrack(state.current), is_playing: state.playing, progress_ms: state.progressMs }) : empty();
-    if (path === "/me/player/queue") return json({ currently_playing: state.current ? publicTrack(state.current) : null, queue: state.queue.map(publicTrack) });
+    if (path === "/me/player/queue") return json({ currently_playing: state.current ? publicTrack(state.current) : null, queue: upcoming().map(publicTrack) });
     if (path === "/me/player/recently-played") return json({ items: [], next: null, cursors: null });
     if (path === "/me") return json({ id: "simulatedListener", display_name: "Fictional listener", product: "premium", country: "TW", type: "user" });
     if (path.startsWith("/me/top/")) return json({ items: [], total: 0, next: null });

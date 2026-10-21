@@ -248,3 +248,46 @@ test("unknown flags remain unknown in model-visible player and device results", 
   }]);
   assert.equal(f.state.writes.length, 0);
 });
+
+const inAlbum = { contextUri: "spotify:album:roseAlbum", offsetUri: song.uri };
+const albumBody = { context_uri: inAlbum.contextUri, offset: { uri: song.uri } };
+
+test("a song started inside its album plays alone once when Spotify definitely refuses the album", async t => {
+  for (const status of [400, 404]) {
+    const f = fixture(t, { playStatuses: [status, 204], reason: "UNKNOWN" });
+    const receipt = await f.service.resume(inAlbum, { trackFallback: true });
+    assert.equal(receipt.state, "accepted");
+    assert.deepEqual(f.state.writes.map(write => [write.device, write.body]), [["mac", albumBody], ["mac", { uris: [song.uri] }]], String(status));
+  }
+  const accepted = fixture(t);
+  await accepted.service.resume(inAlbum, { trackFallback: true });
+  assert.deepEqual(accepted.state.writes.map(write => write.body), [albumBody]);
+});
+
+for (const [status, reason, fallback] of [[401, "UNKNOWN", true], [403, "UNKNOWN", true], [429, "UNKNOWN", true], [500, "UNKNOWN", true],
+  ["network", null, true], [400, "UNKNOWN", false]]) {
+  test(`a refused album start is not replayed as the song alone for ${status}, fallback=${fallback}`, async t => {
+    const f = fixture(t, { playStatuses: [status, 204], reason });
+    await assert.rejects(f.service.resume(inAlbum, { trackFallback: fallback }));
+    assert.deepEqual(f.state.writes.map(write => write.body), [albumBody]);
+  });
+}
+
+test("the song alone is sent once, and NO_ACTIVE_DEVICE still recovers the album itself", async t => {
+  const twice = fixture(t, { playStatuses: [400, 400], reason: "UNKNOWN" });
+  await assert.rejects(twice.service.resume(inAlbum, { trackFallback: true }));
+  assert.equal(twice.state.writes.length, 2);
+  const idle = fixture(t, { playStatuses: [404, 204] });
+  const receipt = await idle.service.resume(inAlbum, { trackFallback: true });
+  assert.equal(receipt.recovered_no_active_device, true);
+  assert.deepEqual(idle.state.writes.map(write => write.body), [albumBody, albumBody]);
+});
+
+test("Spotify starts partway only into an album or a playlist", async t => {
+  const f = fixture(t);
+  await assert.rejects(f.service.resume({ contextUri: "spotify:artist:jolin", offsetUri: song.uri }), { code: "invalid_spotify_offset", actionNotDispatched: true });
+  await assert.rejects(f.service.resume({ contextUri: "spotify:artist:jolin", offsetPosition: 2 }), { code: "invalid_spotify_offset" });
+  assert.deepEqual([f.state.reads, f.state.writes], [[], []]);
+  await f.service.resume({ contextUri: "spotify:playlist:mix", offsetUri: song.uri });
+  assert.deepEqual(f.state.writes.map(write => write.body), [{ context_uri: "spotify:playlist:mix", offset: { uri: song.uri } }]);
+});

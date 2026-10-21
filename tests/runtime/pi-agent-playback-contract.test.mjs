@@ -118,3 +118,83 @@ test("every tool call goes to the local trace with what the model asked and what
   assert.match(records[1].result, /"name":"Nude"/u);
   assert.equal(records[0].call, records[1].call);
 });
+
+const playBodies = f => f.spotify.state.writes.filter(write => write.path === "/me/player/play").map(write => write.body);
+const modelSaw = context => context.messages.filter(message => message.role === "toolResult").map(message => message.content[0].text).join("\n");
+
+test("a song played alone starts inside its album, so the album goes on after it", async t => {
+  const f = fixture(t);
+  let seen;
+  const result = await f.prompt("我要听伍佰的被动", [f.call("moondog_spotify_search", { query: "伍佰 被动" }),
+    c => f.call("moondog_spotify_player_control", { action: "resume", item_ref_id: f.found(c, "被動") }),
+    c => { seen = modelSaw(c); return f.say("在放《被動》了。"); }]);
+  assert.deepEqual(playBodies(f), [{ context_uri: "spotify:album:albumShuZhiGuNiao", offset: { uri: "spotify:track:simBeidong" } }]);
+  assert.deepEqual(result.spotify_write_receipts[0].targets.map(target => target.title), ["被動"], "the target names the song, not the album");
+  assert.doesNotMatch(seen, /spotify:/u, "album and track URIs stay with the host");
+  assert.doesNotMatch(JSON.stringify(f.application.spotifyReadContext()), /spotify:/u);
+  const service = f.application.spotifyConnection.service;
+  assert.deepEqual((await service.queue()).queue.map(item => item.name), ["你是我的花朵", "樹枝孤鳥", "牽掛"]);
+  await service.next({});
+  assert.equal(f.spotify.state.current.id, "simNiShiWoDeHuaDuo");
+});
+
+test("when Spotify will not start the album, the song still plays alone", async t => {
+  const f = fixture(t, { refuseContexts: ["spotify:album:albumInRainbows"] });
+  const result = await f.prompt("play Nude", [f.call("moondog_spotify_search", { query: "Nude Radiohead" }),
+    c => f.call("moondog_spotify_player_control", { action: "resume", item_ref_id: f.found(c, "Nude") }), f.say("Playing Nude.")]);
+  assert.deepEqual(f.spotify.state.writes.map(write => [write.path, write.status, write.body]), [
+    ["/me/player/play", 404, { context_uri: "spotify:album:albumInRainbows", offset: { uri: "spotify:track:simNude" } }],
+    ["/me/player/play", 204, { uris: ["spotify:track:simNude"] }]]);
+  assert.equal(result.spotify_playback_failures, undefined);
+  assert.equal(result.spotify_write_receipts[0].targets[0].title, "Nude");
+  assert.equal(f.spotify.state.current.id, "simNude");
+});
+
+test("several songs, and a pasted song link, play as given", async t => {
+  const f = fixture(t);
+  const refs = c => JSON.parse(c.messages.filter(message => message.toolName === "moondog_spotify_search").at(-1).content[0].text).items
+    .filter(item => ["Nude", "Reckoner"].includes(item.name)).map(item => item.track_ref_id);
+  await f.prompt("play Nude, then Reckoner", [f.call("moondog_spotify_search", { query: "Radiohead" }),
+    c => f.call("moondog_spotify_player_control", { action: "resume", track_refs: refs(c) }), f.say("Playing both.")]);
+  await f.prompt("play spotify:track:simWeirdFishes", [f.call("moondog_spotify_player_control", { action: "resume", uri: "spotify:track:simWeirdFishes" }), f.say("Playing it.")]);
+  assert.deepEqual(playBodies(f), [{ uris: ["spotify:track:simNude", "spotify:track:simReckoner"] }, { uris: ["spotify:track:simWeirdFishes"] }]);
+});
+
+test("the same song asked for by reference and by link in one turn plays once", async t => {
+  const f = fixture(t, { active: "simMac", playing: "simReckoner" });
+  let second;
+  await f.prompt("play Nude: spotify:track:simNude", [f.call("moondog_spotify_search", { query: "Nude Radiohead" }),
+    c => f.call("moondog_spotify_player_control", { action: "resume", item_ref_id: f.found(c, "Nude") }),
+    f.call("moondog_spotify_player_control", { action: "resume", uri: "spotify:track:simNude" }),
+    c => { second = JSON.parse(f.lastResult(c).content[0].text); return f.say("Playing Nude."); }]);
+  assert.equal(f.plays(), 1);
+  assert.equal(second.already, true);
+  assert.equal(second.targets[0].title, "Nude");
+});
+
+test("an episode, or a song whose album no read has shown, plays as it is", async t => {
+  const resumed = [];
+  const service = {
+    searchTracks: async () => ({ provider: "spotify", items: [
+      { type: "episode", uri: "spotify:episode:fictionalTalk", name: "Fictional Talk", artists: [] },
+      { uri: "spotify:track:fictionalLoose", id: "fictionalLoose", name: "Loose", artists: ["Fictional Artist"] },
+      { uri: "spotify:track:fictionalHome", id: "fictionalHome", name: "Home", artists: ["Fictional Artist"], album_uri: "spotify:album:fictionalHomeAlbum" },
+    ] }),
+    resume: async (parameters, options) => {
+      resumed.push([parameters, options.trackFallback]);
+      return { provider: "spotify", ok: true, effect: "write_external", action: "playback.resume", state: "accepted" };
+    },
+  };
+  const application = new MoondogApplication({ importsRoot: "/tmp/fictional-playback-contract-no-imports",
+    spotifyConnection: { service, ready: () => true, missingScopes: () => [], publicStatus: () => ({ provider: "spotify", state: "ready" }) } });
+  t.after(() => application.close());
+  const { items } = await application.spotifySearchTracks({ query: "fictional" });
+  assert.doesNotMatch(JSON.stringify(items), /spotify:/u);
+  for (const item of items) {
+    application.beginPrompt({ text: "play it" });
+    await application.spotifyControl({ action: "resume", itemRefId: item.item_ref_id });
+    application.endPrompt();
+  }
+  assert.deepEqual(resumed, [[{ uris: ["spotify:episode:fictionalTalk"] }, false], [{ uris: ["spotify:track:fictionalLoose"] }, false],
+    [{ contextUri: "spotify:album:fictionalHomeAlbum", offsetUri: "spotify:track:fictionalHome" }, true]]);
+});

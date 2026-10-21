@@ -574,6 +574,13 @@ export function preferredIdleDevice(devices, { thisComputer } = {}) {
   return matches.length === 1 ? matches[0] : null;
 }
 
+// Spotify answered and refused the request itself. Sign-in, permission and rate limits
+// are left out: sending something else would not get past them.
+function definiteRefusal(error) {
+  return Number.isInteger(error?.status) && error.status >= 400 && error.status < 500 &&
+    ![401, 403, 429].includes(error.status) && error.outcomeUnknown === false && error.reason !== "NO_ACTIVE_DEVICE";
+}
+
 function refusedMove(error, target, player) {
   if (error?.outcomeUnknown || error?.name === "AbortError") return error;
   const stayed = player?.device?.name ? clipText(player.device.name, 80) : null;
@@ -708,11 +715,11 @@ export function createSpotifyService(options = {}) {
   // Tests name the computer, or pass null for none; otherwise the system names it, once.
   const thisComputer = async () => (options.thisComputerName !== undefined ? options.thisComputerName : thisComputerName());
 
-  async function preparedResume(input, { signal, preferredDeviceId, allowDeviceSwitch = input.deviceId !== undefined, allowTransfer = true, excludedDeviceNames = [], onDeviceSelected, beforeDispatch } = {}) {
+  async function preparedResume(input, { signal, preferredDeviceId, allowDeviceSwitch = input.deviceId !== undefined, allowTransfer = true, excludedDeviceNames = [], onDeviceSelected, beforeDispatch, trackFallback = false } = {}) {
     const effects = [];
     const deadline = Date.now() + readinessTimeout;
     let snapshots = 0, readRecoveries = 0, playAttempts = 0, writeStarted = false, phase = "read";
-    let recovered = false, selected;
+    let recovered = false, fellBack = false, selected;
     const stop = (code, message) => failBeforeDispatch(code, message);
     // Reads and delays are bounded even if an injected transport ignores abort.
     // Dispatched writes retain the client's separate settlement deadline.
@@ -819,7 +826,15 @@ export function createSpotifyService(options = {}) {
         signal?.throwIfAborted(); phase = "resume";
         try { await client.resume(input, { signal, beforeDispatch: () => { signal?.throwIfAborted(); beforeDispatch?.(); writeStarted = true; playAttempts++; } }); break; }
         catch (error) {
-          // A definite NO_ACTIVE_DEVICE rejection is the sole recoverable
+          // A song started inside its album can meet an album Spotify will not start
+          // there. A definite refusal played nothing, so send the song alone once.
+          if (trackFallback && !fellBack && input.contextUri && input.offsetUri && definiteRefusal(error) && !signal?.aborted) {
+            fellBack = true;
+            const { contextUri: _contextUri, offsetUri, ...rest } = input;
+            input = { ...rest, uris: [offsetUri] };
+            continue;
+          }
+          // A definite NO_ACTIVE_DEVICE rejection is the other recoverable
           // play response. No queue/skip/transfer or uncertain write is replayed.
           if (playAttempts !== 1 || error?.status !== 404 || error.reason !== "NO_ACTIVE_DEVICE" || error.outcomeUnknown !== false || signal?.aborted) throw error;
           recovered = true;
@@ -1229,6 +1244,10 @@ export function createSpotifyService(options = {}) {
       }
       if (offsetPosition !== undefined && offsetUri !== undefined) {
         fail("conflicting_offset", "Choose one Spotify playback offset.");
+      }
+      // Spotify starts partway only into an album or a playlist, not an artist.
+      if ((offsetPosition !== undefined || offsetUri !== undefined) && contextUri && !/^spotify:(?:album|playlist):/u.test(contextUri)) {
+        fail("invalid_spotify_offset", "Spotify can start partway only into an album or a playlist.");
       }
       return preparedResume({
         deviceId: optionalDeviceId(input.deviceId),

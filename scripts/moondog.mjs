@@ -67,6 +67,7 @@ import {
 import { deriveArtistReleaseHintsFromSpotifyArchive } from "../src/profile/spotify-archive-catalog-hints.mjs";
 import { runMoondogStudio } from "../src/surfaces/web/studio.mjs";
 import { resolveListenerLocale, writeLanguagePreference } from "../src/i18n/preferences.mjs";
+import { resolvePlaybackService, writePlaybackPreference } from "../src/core/playback-preferences.mjs";
 
 const localCommands = new Set([
   "status",
@@ -847,13 +848,13 @@ async function main() {
   const previewPlayer = options.command ? null : host ? host.musicPreviewPlayer : await createTerminalPreviewPlayer();
   // The main application and every conversation the window opens beside it are built from
   // this one list, so they cannot drift apart. Each passes in what may change after launch:
-  // its domain services, the Spotify connection and the language.
-  const applicationOptions = ({ domainServices, domainServicesError, spotifyConnection, locale }) => ({
-    domainServices, domainServicesError, spotifyConnection, locale,
+  // its domain services, the Spotify connection, the language and the music service.
+  const applicationOptions = ({ domainServices, domainServicesError, spotifyConnection, locale, playbackService }) => ({
+    domainServices, domainServicesError, spotifyConnection, locale, playbackService,
     webResearch, memoryStore, musicCatalog, musicPreviewPlayer: previewPlayer, musicSimilarity, artistIdentityResolver,
   });
   const application = new MoondogApplication(applicationOptions({
-    ...domainState, spotifyConnection, locale: await resolveListenerLocale(),
+    ...domainState, spotifyConnection, locale: await resolveListenerLocale(), playbackService: await resolvePlaybackService(),
   }));
   // The conversations the window runs beside the main one, each with its own application and agent.
   const conversations = new Set();
@@ -971,6 +972,7 @@ async function main() {
           domainServicesError: application.domainServicesError,
           spotifyConnection: application.spotifyConnection,
           locale: application.locale,
+          playbackService: application.playbackService,
         }),
         ownsServices: false,
       });
@@ -1030,6 +1032,14 @@ async function main() {
         save: async (apiKey) => ({ configured: true, source: (await writeLastfmConfiguration(apiKey)).source }),
       },
       saveLanguage: locale => writeLanguagePreference(locale),
+      // The agent's tools and instructions follow the service, so the caller rebuilds the
+      // runtime afterwards, between turns.
+      // The choice is saved once and set on the main application and every open conversation.
+      savePlaybackService: async (service) => {
+        const saved = await writePlaybackPreference(service);
+        for (const target of [application, ...[...conversations].map((conversation) => conversation.application)]) target.setPlaybackService(saved);
+        return saved;
+      },
       refreshImportedData: async (receipt) => {
         if (receipt?.provider === "apple-music-library") await refreshAppleLibraryImport();
         replaceDomainServices(await loadDomainServices());

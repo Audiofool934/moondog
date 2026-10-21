@@ -61,7 +61,8 @@ async function openConversation({ sessionId = null, reason = "user_new" } = {}) 
   if (sessionId && bound.some((candidate) => candidate.memorySession?.session_id === sessionId)) {
     throw new Error("That conversation is already open.");
   }
-  const conversationApplication = new MoondogApplication({ ...shared, locale: application.locale, domainServices: domainServices.fork(), ownsServices: false });
+  const conversationApplication = new MoondogApplication({ ...shared, locale: application.locale, playbackService: application.playbackService,
+    domainServices: domainServices.fork(), ownsServices: false });
   // There is no memory store here: sessions live in the main application, and every conversation shares them.
   conversationApplication.localConversations = application.localConversations;
   const conversation = { application: conversationApplication, runtime: null,
@@ -85,7 +86,13 @@ const readOnly = () => { throw Object.assign(new Error("The simulated window doe
 const modelSettings = Object.freeze({ providers: settings.providers, models: settings.models, current: settings.current, signIn: readOnly, signOut: readOnly });
 const rebuildRuntime = (selection, target = application) => createConfiguredRuntime(target, environment, selection ? { selection } : {});
 
-await runWindowRoom({ application, runtime, openConversation, modelSettings, rebuildRuntime }, { port, send });
+// The music service choice also lasts only until the window closes.
+const savePlaybackService = async (service) => {
+  for (const target of [application, ...[...conversations].map((conversation) => conversation.application)]) target.setPlaybackService(service);
+  return service;
+};
+
+await runWindowRoom({ application, runtime, openConversation, modelSettings, rebuildRuntime, savePlaybackService }, { port, send });
 for (const conversation of conversations) conversation.close();
 application.close();
 port.close();
