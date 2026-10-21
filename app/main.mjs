@@ -71,10 +71,12 @@ function buildMenu() {
       { label: t("menuStop"), accelerator: "CmdOrCtrl+.", click: command("stop") },
     ] },
     { label: t("menuPlayback"), submenu: [
-      // The page handles these keys itself, so typing a space or moving the cursor still works.
-      { label: t("menuPlayPause"), accelerator: "Space", registerAccelerator: false, click: command("toggle-playback") },
-      { label: t("menuNext"), accelerator: "CmdOrCtrl+Right", registerAccelerator: false, click: command("next") },
-      { label: t("menuPrevious"), accelerator: "CmdOrCtrl+Left", registerAccelerator: false, click: command("previous") },
+      // No key equivalents: on macOS every menu accelerator is live (registerAccelerator is Linux and
+      // Windows only), so Space or Cmd+arrows here would toggle and skip music while you type.
+      // The keyboard's own media keys already play, pause and skip.
+      { label: t("menuPlayPause"), click: command("toggle-playback") },
+      { label: t("menuNext"), click: command("next") },
+      { label: t("menuPrevious"), click: command("previous") },
     ] },
     { label: t("menuView"), submenu: [
       { label: t("menuSidebar"), accelerator: "CmdOrCtrl+Alt+S", click: command("toggle-sidebar") },

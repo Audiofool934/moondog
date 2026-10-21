@@ -342,16 +342,47 @@ function togglePanel(name) {
   renderPanels();
 }
 addEventListener("resize", renderPanels);
+
+// Dragging a panel's inner edge sets its width; a double-click restores the default.
+const widths = { sidebar: [200, 440], inspector: [260, 480] };
+for (const name of ["sidebar", "inspector"]) {
+  const property = `--${name}-width`;
+  const saved = Number(store.get(`moondog.${name}.width`));
+  if (saved >= widths[name][0] && saved <= widths[name][1]) layout.style.setProperty(property, `${saved}px`);
+  const grip = document.querySelector(`[data-grip="${name}"]`);
+  grip.addEventListener("pointerdown", (event) => {
+    event.preventDefault();
+    grip.setPointerCapture(event.pointerId);
+    grip.classList.add("dragging");
+    layout.classList.add("resizing");
+    const move = (moved) => {
+      const width = name === "sidebar" ? moved.clientX : innerWidth - moved.clientX;
+      const clamped = Math.round(Math.min(widths[name][1], Math.max(widths[name][0], width)));
+      layout.style.setProperty(property, `${clamped}px`);
+    };
+    const up = () => {
+      grip.removeEventListener("pointermove", move);
+      grip.classList.remove("dragging");
+      layout.classList.remove("resizing");
+      store.set(`moondog.${name}.width`, String(parseInt(getComputedStyle(layout).getPropertyValue(property), 10) || ""));
+    };
+    grip.addEventListener("pointermove", move);
+    grip.addEventListener("pointerup", up, { once: true });
+    grip.addEventListener("pointercancel", up, { once: true });
+  });
+  grip.addEventListener("dblclick", () => {
+    layout.style.removeProperty(property);
+    store.set(`moondog.${name}.width`, "");
+  });
+}
 $("toggle-sidebar").addEventListener("click", () => togglePanel("sidebar"));
 $("toggle-inspector").addEventListener("click", () => togglePanel("inspector"));
 $("new").addEventListener("click", () => openSession(null));
 
-// Keys: typing anywhere goes to the composer; Space, ⌘← and ⌘→ play, go back and skip.
+// Keys: typing anywhere goes to the composer. No key here plays, pauses or skips: a chat window is
+// typed in all the time, and the keyboard's media keys already control the music.
 document.addEventListener("keydown", (event) => {
   if (event.target === input || event.target.closest?.("input, textarea")) return;
-  if (event.key === " " && !event.metaKey && !event.ctrlKey) { event.preventDefault(); control("toggle"); return; }
-  if (event.metaKey && event.key === "ArrowRight") { event.preventDefault(); control("next"); return; }
-  if (event.metaKey && event.key === "ArrowLeft") { event.preventDefault(); control("previous"); return; }
   if (event.key === "Escape" && state.streaming) { send({ type: "cancel" }); return; }
   if (event.key.length === 1 && !event.metaKey && !event.ctrlKey && !event.altKey) input.focus();
 });

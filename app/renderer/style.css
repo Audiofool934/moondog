@@ -4,7 +4,6 @@
   --press: #EFEEEA; --bubble: #EFEEEA; --sleeve: 0 18px 36px -20px rgba(28, 28, 27, 0.5);
   --sans: -apple-system, "SF Pro Text", "PingFang SC", "PingFang TC", "Hiragino Sans", "Apple SD Gothic Neo", sans-serif;
   --serif: "New York", ui-serif, "Songti SC", "Songti TC", "Hiragino Mincho ProN", "AppleMyungjo", serif;
-  --sidebar: 272px; --inspector: 320px;
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
@@ -22,7 +21,16 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 svg.icon { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; flex: none; }
 [hidden] { display: none !important; }
 
-.window { display: grid; grid-template-columns: var(--sidebar) minmax(0, 1fr) var(--inspector); grid-template-rows: 52px minmax(0, 1fr); height: 100vh; }
+.window { --sidebar: var(--sidebar-width, 272px); --inspector: var(--inspector-width, 320px);
+  position: relative; display: grid; grid-template-columns: var(--sidebar) minmax(0, 1fr) var(--inspector); grid-template-rows: 52px minmax(0, 1fr); height: 100vh; }
+/* A panel's inner edge drags to resize it; the edge shows only while the pointer is on it. */
+.grip { position: absolute; top: 52px; bottom: 0; width: 9px; z-index: 3; cursor: col-resize; -webkit-app-region: no-drag; }
+.grip[data-grip="sidebar"] { left: calc(var(--sidebar) - 5px); }
+.grip[data-grip="inspector"] { right: calc(var(--inspector) - 5px); }
+.grip::after { content: ""; position: absolute; top: 0; bottom: 0; left: 4px; width: 1px; background: transparent; transition: background 120ms ease; }
+.grip:hover::after, .grip.dragging::after { background: var(--hair); }
+.window.no-sidebar .grip[data-grip="sidebar"], .window.no-inspector .grip[data-grip="inspector"] { display: none; }
+.window.resizing, .window.resizing * { cursor: col-resize !important; user-select: none; }
 .window.no-sidebar { --sidebar: 0px; }
 .window.no-inspector { --inspector: 0px; }
 .window.no-sidebar .sidebar, .window.no-inspector .inspector { display: none; }

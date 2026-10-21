@@ -944,6 +944,7 @@ async function main() {
     exitRequest = await (host?.runRoom ?? runMoondogTui)({
       application,
       runtime,
+      toolTrace,
       terminal: host?.terminal,
       previewPlayer,
       lyrics,

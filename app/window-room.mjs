@@ -8,6 +8,12 @@ const PLAYER_POLL_MS = { visible: 4_000, hidden: 30_000 };
 const PLAYER_TOOLS = /^moondog_spotify_(?:player_control|queue_add|queue_batch|queue_similar|device_transfer|playlist_write)$/u;
 
 const coverOf = (item) => (typeof item?.image === "string" ? item.image : null);
+// Spotify pads the queue of a one-song play with that same song, and lists a repeated song once per
+// repeat; up next shows what actually comes next, each song once in a row.
+export function upNext(queue, current) {
+  return queue.filter((item, index) => item?.uri !== current?.uri && item?.uri !== queue[index - 1]?.uri);
+}
+
 const trackOf = (item) => item && {
   title: item.name ?? "",
   artists: item.artists ?? (item.publisher ? [item.publisher] : []),
@@ -16,7 +22,7 @@ const trackOf = (item) => item && {
   durationMs: Number.isInteger(item.duration_ms) ? item.duration_ms : null,
 };
 
-export function runWindowRoom({ application, runtime: firstRuntime, rebuildRuntime }, { port, send }) {
+export function runWindowRoom({ application, runtime: firstRuntime, rebuildRuntime, toolTrace = null }, { port, send }) {
   let runtime = firstRuntime;
   let turn = null;
   let visible = true;
@@ -43,10 +49,23 @@ export function runWindowRoom({ application, runtime: firstRuntime, rebuildRunti
     if (application.spotifyReady?.() !== true || !service) return { type: "player", spotify: "unavailable", now: null, next: [] };
     const [player, queue] = await Promise.all([service.currentPlayer(), service.queue?.().catch(() => null)]);
     const item = player?.state === "available" ? player.item : null;
+    notePlayer(player, item);
     return { type: "player", spotify: "ready",
       now: item ? { ...trackOf(item), playing: player.is_playing === true, progressMs: player.progress_ms ?? 0,
         device: player.device?.name ?? null, observedAt: Date.now() } : null,
-      next: (queue?.queue ?? []).slice(0, 8).map(trackOf) };
+      next: upNext(queue?.queue ?? [], item).slice(0, 8).map(trackOf) };
+  }
+  // The local trace keeps each change between playing and stopped, with the song, position and device,
+  // so a pause nobody asked for can be told apart from the end of a song or another device.
+  let lastPlaying = null;
+  function notePlayer(player, item) {
+    const playing = player?.state === "available" && player.is_playing === true;
+    if (lastPlaying !== null && playing !== lastPlaying) {
+      toolTrace?.record({ source: "player", state: playing ? "playing" : "stopped", title: item?.name ?? null,
+        progressMs: player?.progress_ms ?? null, durationMs: item?.duration_ms ?? null, device: player?.device?.name ?? null,
+        repeat: player?.repeat_state ?? null, context: player?.context?.type ?? null });
+    }
+    lastPlaying = playing;
   }
   // One read at a time; a request while one runs reads again right after it.
   let again = false;
@@ -100,6 +119,7 @@ export function runWindowRoom({ application, runtime: firstRuntime, rebuildRunti
   async function control(action) {
     const service = application.spotifyConnection?.service;
     if (!service || application.spotifyReady?.() !== true || !["pause", "resume", "next", "previous"].includes(action)) return;
+    toolTrace?.record({ source: "window", tool: "player_control", state: "start", args: { action } });
     try {
       await service[action]({});
     } catch (error) {
