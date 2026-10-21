@@ -135,3 +135,112 @@ test("application session controls remain useful without persistent memory", () 
     application.close();
   }
 });
+
+test("application renames, pins, files and deletes saved conversations through the store", async () => {
+  await withApplication(async ({ application }) => {
+    const first = application.ensureMemorySession();
+    application.recordCompletedTurn("A first listening request.", "First reply.");
+    const second = application.startNewSession();
+    application.recordCompletedTurn("A second listening request.", "Second reply.");
+    const folder = application.saveConversationFolder({ name: "Mornings" });
+    assert.deepEqual(application.listConversationFolders(), [folder]);
+    application.labelSavedSession(first.session_id, { title: "Morning records", pinned: true, folderId: folder.folder_id });
+    const [pinned] = application.listSavedSessions();
+    assert.equal(pinned.session_id, first.session_id);
+    assert.equal(pinned.title, "Morning records");
+    assert.equal(pinned.custom_title, true);
+    assert.equal(pinned.folder_id, folder.folder_id);
+    assert.ok(pinned.pinned_at);
+    assert.deepEqual(application.deleteConversationFolder(folder.folder_id), { deleted: true, folder_id: folder.folder_id, unfiled: 1 });
+
+    assert.deepEqual(application.deleteSavedSession(first.session_id),
+      { deleted: true, session_id: first.session_id, reparented: 0, started_new_session: false });
+    assert.equal(application.ensureMemorySession().session_id, second.session_id);
+
+    application.beginConversationEntry("A turn in progress.");
+    assert.throws(() => application.deleteSavedSession(second.session_id), /Wait for the current conversation turn/);
+    application.finishConversationEntry({ status: "completed", text: "Done." });
+
+    seedPendingState(application);
+    assert.equal(application.deleteSavedSession(second.session_id).started_new_session, true);
+    assert.notEqual(application.ensureMemorySession().session_id, second.session_id);
+    assertPendingStateCleared(application);
+    assert.deepEqual(application.listSavedSessions(), []);
+  });
+});
+
+test("a conversation deleted by another process moves this one to a new conversation", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "moondog-session-deleted-"));
+  const databasePath = path.join(root, "memory.sqlite");
+  const routeKey = "local:main";
+  let application;
+  let other;
+  try {
+    application = new MoondogApplication({ memoryStore: await openLocalMemoryStore({ databasePath }) });
+    other = await openLocalMemoryStore({ databasePath });
+    // The other process opens its own conversation, which closes this one, then deletes it.
+    const deleteElsewhere = (sessionId) => {
+      other.rotateSession(routeKey, "app_start");
+      other.deleteConversation(sessionId, { routeKey });
+    };
+    const deleted = application.ensureMemorySession().session_id;
+    application.recordCompletedTurn("Deleted from the window.", "Gone.");
+    deleteElsewhere(deleted);
+    application.recordCompletedTurn("A request after the delete.", "Still here.");
+    const next = application.ensureMemorySession().session_id;
+    assert.notEqual(next, deleted);
+    assert.deepEqual(application.currentConversationTurns().map((turn) => turn.text), ["A request after the delete.", "Still here."]);
+
+    deleteElsewhere(next);
+    assert.deepEqual(application.conversationEntries(), []);
+    assert.notEqual(application.ensureMemorySession().session_id, next);
+    assert.deepEqual(application.conversationPending({ draft: "A draft", queued: [] }), { draft: "A draft", queued: [] });
+  } finally {
+    other?.close();
+    application?.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("conversation labels, folders and deletes work without persistent memory", () => {
+  const application = new MoondogApplication();
+  try {
+    const rootSession = application.startNewSession();
+    application.recordCompletedTurn("First process-local request", "First answer");
+    application.recordCompletedTurn("Second process-local request", "Second answer");
+    const [, second] = application.conversationEntries();
+    const branch = application.rewindConversation(second.entry_id);
+    assert.equal(application.listSavedSessions().find((session) => session.session_id === branch.session_id).parent_session_id,
+      rootSession.session_id);
+
+    const folder = application.saveConversationFolder({ name: "Process-local" });
+    assert.deepEqual(application.saveConversationFolder({ folderId: folder.folder_id, name: "Renamed", position: 4 }),
+      { ...folder, name: "Renamed", position: 4 });
+    assert.throws(() => application.labelSavedSession(rootSession.session_id, { folderId: "missing-folder" }), /folder not found/);
+    const label = application.labelSavedSession(rootSession.session_id, { title: "Original", pinned: true, folderId: folder.folder_id });
+    assert.equal(label.title, "Original");
+    assert.ok(label.pinned_at);
+    const [pinned, other] = application.listSavedSessions();
+    assert.deepEqual({ ...pinned, updated_at: undefined, started_at: undefined }, {
+      session_id: rootSession.session_id, started_at: undefined, updated_at: undefined, turn_count: 4, title: "Original",
+      custom_title: true, pinned_at: label.pinned_at, folder_id: folder.folder_id,
+    });
+    assert.equal(other.session_id, branch.session_id);
+    assert.equal(other.custom_title, false);
+    assert.equal(other.pinned_at, null);
+    assert.deepEqual(application.deleteConversationFolder(folder.folder_id), { deleted: true, folder_id: folder.folder_id, unfiled: 1 });
+    assert.deepEqual(application.listConversationFolders(), []);
+    assert.equal(application.listSavedSessions()[0].folder_id, null);
+
+    assert.deepEqual(application.deleteSavedSession(rootSession.session_id),
+      { deleted: true, session_id: rootSession.session_id, reparented: 1, started_new_session: false });
+    const [orphan] = application.listSavedSessions();
+    assert.equal(orphan.session_id, branch.session_id);
+    assert.equal(orphan.parent_session_id, undefined);
+    assert.equal(application.deleteSavedSession(branch.session_id).started_new_session, true);
+    assert.deepEqual(application.listSavedSessions(), []);
+    assert.throws(() => application.deleteSavedSession(branch.session_id), /Saved conversation not found/);
+  } finally {
+    application.close();
+  }
+});

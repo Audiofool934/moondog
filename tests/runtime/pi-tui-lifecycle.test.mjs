@@ -178,7 +178,7 @@ async function createSavedConversationFixture(context, histories = [], { configu
     assert.ok(stripVTControlCharacters(terminal.output).includes(expected), `Expected TUI output: ${expected}`);
   };
   return {
-    application, memoryStore, terminal, runtime, saved, outputIncludes,
+    application, memoryStore, terminal, runtime, saved, outputIncludes, databasePath,
     async launch() {
       terminal.output = "";
       running = runMoondogTui({
@@ -344,6 +344,40 @@ test("/new clears the resumed runtime and starts a separate conversation without
   await fixture.submit("A separate new request", "Fixture response: A separate new request");
   assert.deepEqual(runtime.prompts, [{ text: "A separate new request", history: [], sessionId: newId }]);
   assert.deepEqual(new Set(application.listSavedSessions().map((session) => session.session_id)), new Set([saved[0].session_id, newId]));
+});
+
+test("/new, /resume and the next message still work after another process deletes the open conversation", async (context) => {
+  const fixture = await createSavedConversationFixture(context, [
+    { user: "A saved synthetic record discussion", assistant: "The saved record reply." },
+  ]);
+  const { application, saved } = fixture;
+  const other = await openLocalMemoryStore({ databasePath: fixture.databasePath });
+  context.after(() => other.close());
+  // The window opens its own conversation, which closes the terminal's, then deletes it.
+  const deleteElsewhere = () => {
+    const id = application.ensureMemorySession().session_id;
+    other.rotateSession("local:main", "app_start");
+    other.deleteConversation(id);
+    return id;
+  };
+  await fixture.launch();
+  await fixture.submit("A request deleted from the window", "Fixture response: A request deleted from the window");
+  const first = deleteElsewhere();
+  await fixture.submit("/new", "A fresh start.");
+  assert.notEqual(application.ensureMemorySession().session_id, first);
+
+  await fixture.submit("Another request deleted from the window", "Fixture response: Another request deleted from the window");
+  const second = deleteElsewhere();
+  await fixture.submit(`/resume ${saved[0].session_id}`, "Back in:");
+  assert.equal(application.ensureMemorySession().session_id, saved[0].session_id);
+
+  await fixture.submit("/new", "A fresh start.");
+  await fixture.submit("A request before its delete", "Fixture response: A request before its delete");
+  const third = deleteElsewhere();
+  await fixture.submit("A request after its delete", "Fixture response: A request after its delete");
+  assert.ok(![first, second, third].includes(application.ensureMemorySession().session_id));
+  assert.deepEqual(application.currentConversationTurns().map((turn) => turn.text),
+    ["A request after its delete", "Fixture response: A request after its delete"]);
 });
 
 test("up and down recall lines from the open conversation only", async (context) => {

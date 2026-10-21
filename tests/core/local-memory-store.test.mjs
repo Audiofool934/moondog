@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { openLocalMemoryStore } from "../../src/memory/local-memory-store.mjs";
+import { MOONDOG_MEMORY_SCHEMA_VERSION, openLocalMemoryStore } from "../../src/memory/local-memory-store.mjs";
 
 async function withMemoryStore(callback, options = {}) {
   const root = await mkdtemp(path.join(tmpdir(), "moondog-memory-"));
@@ -123,6 +123,9 @@ test("saved session summaries exclude empty routes and preserve conversations ac
         updated_at: "2026-09-10T09:03:00.000Z",
         turn_count: 2,
         title: "Make a walking playlist.",
+        custom_title: false,
+        pinned_at: null,
+        folder_id: null,
       },
       {
         session_id: first.session_id,
@@ -130,6 +133,9 @@ test("saved session summaries exclude empty routes and preserve conversations ac
         updated_at: "2026-09-10T09:01:00.000Z",
         turn_count: 2,
         title: "Find a quiet record for tonight.",
+        custom_title: false,
+        pinned_at: null,
+        folder_id: null,
       },
     ]);
     assert.deepEqual(store.listSessions({ limit: 1 }), [summaries[0]]);
@@ -229,6 +235,169 @@ test("resuming rolls back the active session closure if the target cannot reopen
       assert.throws(() => store.resumeSession(saved.session_id), /test session reopen failure/);
       assert.deepEqual(readSessions(), before);
       assert.equal(store.resumeOrStartSession().session_id, active.session_id);
+    } finally {
+      inspection.close();
+    }
+  });
+});
+
+test("deleting a root conversation keeps its durable memories and re-roots its branches", async () => {
+  let now = Date.parse("2026-10-20T09:00:00.000Z");
+  await withMemoryStore(async ({ store, databasePath }) => {
+    const root = store.startSession();
+    store.appendCompletedTurn(root.session_id, { user: "I always want vinyl-first suggestions.", assistant: "Noted." });
+    store.appendCompletedTurn(root.session_id, { user: "Something for a slow Sunday.", assistant: "Try this quiet trio." });
+    const explicit = store.remember({ text: "Prefers vinyl-first suggestions", kind: "preference", sourceSessionId: root.session_id });
+    // Reflection promotes one dialogue episode, so a memory cites raw text from this conversation.
+    const run = store.beginReflection({ provider: "faux", model: "faux-1" });
+    const [stated, mood] = run.episodes;
+    store.completeReflection({ runId: run.run_id, leaseToken: run.lease_token, proposals: [
+      { action: "candidate_memory", assertion_mode: "explicit", confidence: 0.95, episode_ids: [stated.episode_id],
+        kind: "preference", rationale: "A direct statement.", statement: "Wants vinyl-first suggestions" },
+      { action: "ignore", episode_ids: [mood.episode_id], reason: "A one-off mood." },
+    ] });
+    const reflected = store.listMemories().find((memory) => memory.text === "Wants vinyl-first suggestions");
+
+    const rootEntries = store.readConversationEntries(root.session_id);
+    const child = store.forkConversation(root.session_id, rootEntries[1].entry_id);
+    const entry = store.beginConversationEntry(child.session_id, "Something for a slow Saturday.");
+    store.finishConversationEntry(child.session_id, entry, { text: "Try this warm record.", status: "completed" });
+    const grandchild = store.forkConversation(child.session_id, store.readConversationEntries(child.session_id)[1].entry_id);
+    store.rotateSession();
+
+    assert.deepEqual(store.deleteConversation(root.session_id), { deleted: true, session_id: root.session_id, reparented: 1 });
+
+    const { DatabaseSync } = await import("node:sqlite");
+    const inspection = new DatabaseSync(databasePath, { readOnly: true });
+    try {
+      assert.deepEqual(inspection.prepare("PRAGMA foreign_key_check").all(), []);
+      for (const table of ["sessions", "turns", "conversation_entries", "conversation_branches", "episodes"]) {
+        assert.equal(inspection.prepare(`SELECT COUNT(*) AS count FROM ${table} WHERE session_id = ?`).get(root.session_id).count, 0, table);
+      }
+      assert.equal(inspection.prepare("SELECT COUNT(*) AS count FROM episodes WHERE kind = 'dialogue'").get().count, 0);
+      assert.deepEqual(inspection.prepare("SELECT session_id, root_session_id, parent_session_id FROM conversation_branches ORDER BY rowid")
+        .all().map((row) => ({ ...row })), [
+        { session_id: child.session_id, root_session_id: child.session_id, parent_session_id: null },
+        { session_id: grandchild.session_id, root_session_id: child.session_id, parent_session_id: child.session_id },
+      ]);
+    } finally {
+      inspection.close();
+    }
+
+    const memories = store.listMemories();
+    assert.deepEqual(memories.map((memory) => memory.text).sort(), ["Prefers vinyl-first suggestions", "Wants vinyl-first suggestions"]);
+    assert.deepEqual(memories.find((memory) => memory.memory_id === explicit.memory_id).evidence_episode_ids, explicit.evidence_episode_ids);
+    assert.deepEqual(memories.find((memory) => memory.memory_id === reflected.memory_id).evidence_episode_ids, []);
+    const fresh = store.resumeOrStartSession();
+    const recall = store.context({ query: "slow Sunday vinyl", currentSessionId: fresh.session_id });
+    assert.deepEqual(recall.recent_episodes.map((episode) => episode.summary), ["Prefers vinyl-first suggestions"]);
+    assert.deepEqual(recall.recent_sessions, []);
+
+    const listed = store.listSessions();
+    assert.deepEqual(listed.map((session) => session.session_id).sort(), [child.session_id, grandchild.session_id].sort());
+    assert.equal(listed.find((session) => session.session_id === child.session_id).parent_session_id, undefined);
+    assert.deepEqual(store.readConversationEntries(child.session_id).map((row) => row.user_text),
+      ["I always want vinyl-first suggestions.", "Something for a slow Saturday."]);
+    assert.throws(() => store.deleteConversation(root.session_id), /not found for this route/);
+  }, { clock: () => new Date(now += 1_000) });
+});
+
+test("deleting refuses an open conversation and one on another route, and changes nothing", async () => {
+  await withMemoryStore(async ({ store, databasePath }) => {
+    const open = store.startSession();
+    store.appendCompletedTurn(open.session_id, { user: "Still open somewhere else.", assistant: "Kept." });
+    const other = store.startSession({ routeKey: "local:other" });
+    store.appendCompletedTurn(other.session_id, { user: "Another route.", assistant: "Kept too." });
+    store.closeSession(other.session_id);
+    const { DatabaseSync } = await import("node:sqlite");
+    const inspection = new DatabaseSync(databasePath, { readOnly: true });
+    try {
+      const snapshot = () => ["sessions", "turns", "episodes"].map((table) => inspection.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get().count);
+      const before = snapshot();
+      assert.throws(() => store.deleteConversation(open.session_id), /open in another Moondog window or terminal/);
+      assert.throws(() => store.deleteConversation(other.session_id), /not found for this route/);
+      assert.throws(() => store.deleteConversation(null), /Session ID is invalid/);
+      assert.deepEqual(snapshot(), before);
+      assert.equal(store.sessionExists(open.session_id), true);
+      assert.equal(store.sessionExists("unknown-session"), false);
+    } finally {
+      inspection.close();
+    }
+  });
+});
+
+test("renamed, pinned and filed conversations round trip through the saved list", async () => {
+  let now = Date.parse("2026-10-20T10:00:00.000Z");
+  await withMemoryStore(async ({ store, reopen }) => {
+    const sessions = [];
+    for (const user of ["Find a quiet record.", "Make a walking playlist.", "Play something bright."]) {
+      const session = store.rotateSession();
+      store.appendCompletedTurn(session.session_id, { user, assistant: "Here you go." });
+      sessions.push(session.session_id);
+    }
+    const [quiet, walking, bright] = sessions;
+    const order = () => store.listSessions().map((session) => session.session_id);
+    assert.deepEqual(order(), [bright, walking, quiet]);
+
+    assert.deepEqual(store.labelConversation(quiet, { title: "  Sunday \n records " }),
+      { session_id: quiet, title: "Sunday records", pinned_at: null, folder_id: null });
+    const pinned = store.labelConversation(walking, { pinned: true });
+    assert.equal(store.labelConversation(walking, { pinned: true }).pinned_at, pinned.pinned_at, "pinning again keeps the first pin time");
+    assert.deepEqual(order(), [walking, bright, quiet]);
+
+    const evenings = store.saveConversationFolder({ name: "Evenings" });
+    const walks = store.saveConversationFolder({ name: "Walks" });
+    assert.deepEqual([evenings.position, walks.position], [0, 1]);
+    assert.deepEqual(store.saveConversationFolder({ folderId: evenings.folder_id, name: "Late evenings" }),
+      { ...evenings, name: "Late evenings" });
+    assert.throws(() => store.saveConversationFolder({ folderId: "missing-folder", name: "Nope" }), /folder not found/);
+    assert.throws(() => store.saveConversationFolder({ name: " " }), /Folder name must not be empty/);
+    store.labelConversation(quiet, { folderId: evenings.folder_id });
+    assert.throws(() => store.labelConversation(bright, { folderId: "missing-folder" }), /folder not found/);
+    assert.throws(() => store.labelConversation(bright, { title: "Elsewhere" }, { routeKey: "local:other" }), /not found for this route/);
+    assert.throws(() => store.labelConversation(bright, { color: "red" }), /Conversation label is invalid/);
+    assert.throws(() => store.labelConversation(bright, { pinned: "yes" }), /Conversation pin is invalid/);
+
+    store = await reopen();
+    const listed = store.listSessions();
+    assert.deepEqual(listed.map(({ session_id, title, custom_title, pinned_at, folder_id }) => ({ session_id, title, custom_title, pinned_at, folder_id })), [
+      { session_id: walking, title: "Make a walking playlist.", custom_title: false, pinned_at: pinned.pinned_at, folder_id: null },
+      { session_id: bright, title: "Play something bright.", custom_title: false, pinned_at: null, folder_id: null },
+      { session_id: quiet, title: "Sunday records", custom_title: true, pinned_at: null, folder_id: evenings.folder_id },
+    ]);
+    assert.deepEqual(store.listConversationFolders().map((folder) => folder.name), ["Late evenings", "Walks"]);
+
+    assert.deepEqual(store.labelConversation(quiet, { title: "" }),
+      { session_id: quiet, title: null, pinned_at: null, folder_id: evenings.folder_id });
+    assert.equal(store.listSessions().at(-1).title, "Find a quiet record.");
+    assert.deepEqual(store.deleteConversationFolder(evenings.folder_id), { deleted: true, folder_id: evenings.folder_id, unfiled: 1 });
+    assert.equal(store.listSessions().at(-1).folder_id, null);
+    assert.deepEqual(store.listConversationFolders().map((folder) => folder.folder_id), [walks.folder_id]);
+    store.labelConversation(walking, { pinned: false });
+    assert.deepEqual(order(), [bright, walking, quiet]);
+  }, { clock: () => new Date(now += 1_000) });
+});
+
+test("a database from an older core gains the label tables and keeps its schema version", async () => {
+  await withMemoryStore(async ({ store, databasePath, reopen }) => {
+    const saved = store.startSession();
+    store.appendCompletedTurn(saved.session_id, { user: "Keep this one.", assistant: "Kept." });
+    store.close();
+    const { DatabaseSync } = await import("node:sqlite");
+    const older = new DatabaseSync(databasePath);
+    older.exec("DROP TABLE conversation_labels; DROP TABLE conversation_folders;");
+    older.close();
+
+    store = await reopen();
+    const folder = store.saveConversationFolder({ name: "Kept" });
+    store.labelConversation(saved.session_id, { title: "Renamed", folderId: folder.folder_id });
+    assert.equal(store.listSessions()[0].title, "Renamed");
+    store.close();
+    // Older cores open only schema versions 0 to 3, so the new tables must not bump it.
+    const inspection = new DatabaseSync(databasePath, { readOnly: true });
+    try {
+      assert.equal(MOONDOG_MEMORY_SCHEMA_VERSION, 3);
+      assert.equal(inspection.prepare("PRAGMA user_version").get().user_version, 3);
     } finally {
       inspection.close();
     }

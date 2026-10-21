@@ -11,7 +11,7 @@ import {
   listCapabilities,
 } from "./capability-catalog.mjs";
 import { recoverArtistReleasesWithCrossCatalogIdentity } from "../integrations/cross-catalog-artist-identity.mjs";
-import { normalizeMemoryContent } from "../memory/local-memory-store.mjs";
+import { normalizeConversationFolder, normalizeConversationLabel, normalizeMemoryContent } from "../memory/local-memory-store.mjs";
 import { queueListeningIntent, queueCancellationRequested, unheardRequested } from "./spotify-listening-intent.mjs";
 import { DEFAULT_LOCALE, normalizeLocale } from "../i18n/index.mjs";
 
@@ -194,6 +194,8 @@ export class MoondogApplication {
     this.memoryRouteKey = memoryRouteKey;
     this.memorySession = null;
     this.localConversations = new Map();
+    // Without a memory store, folders live here with the conversations, so the simulated window works.
+    this.localFolders = new Map();
     this.conversationEntry = null;
     this.spotifyConnection = spotifyConnection;
     this.musicCatalog = musicCatalog;
@@ -740,13 +742,81 @@ export class MoondogApplication {
 
   listSavedSessions({ limit = 200 } = {}) {
     if (!this.memoryStore) return [...this.localConversations.values()].filter(row => row.entries.length || row.pending.draft)
-      .reverse().slice(0, limit).map(row => ({ session_id: row.session_id, started_at: row.started_at,
+      .reverse().sort((left, right) => Number(!left.label.pinned_at) - Number(!right.label.pinned_at))
+      .slice(0, limit).map(row => ({ session_id: row.session_id, started_at: row.started_at,
         updated_at: row.entries.at(-1)?.created_at ?? row.started_at, turn_count: row.entries.length * 2,
-        title: row.entries[0]?.user_text ?? row.pending.draft, ...(row.parent_session_id ? { parent_session_id: row.parent_session_id, last_message: row.pending.draft || row.entries.at(-1)?.user_text || '' } : {}) }));
+        title: row.label.title ?? row.entries[0]?.user_text ?? row.pending.draft, custom_title: row.label.title !== null,
+        pinned_at: row.label.pinned_at, folder_id: row.label.folder_id,
+        ...(row.parent_session_id ? { parent_session_id: row.parent_session_id, last_message: row.pending.draft || row.entries.at(-1)?.user_text || '' } : {}) }));
     return this.memoryStore.listSessions({
       routeKey: this.memoryRouteKey,
       limit,
     });
+  }
+
+  // patch is { title?, pinned?, folderId? }; a missing key keeps its value.
+  labelSavedSession(sessionId, patch) {
+    if (this.memoryStore) return this.memoryStore.labelConversation(sessionId, patch, { routeKey: this.memoryRouteKey });
+    const label = normalizeConversationLabel(patch);
+    const row = this.localConversations.get(sessionId);
+    if (!row) throw new Error("Saved conversation not found");
+    if (label.folderId && !this.localFolders.has(label.folderId)) throw new Error("Conversation folder not found.");
+    if (label.title !== undefined) row.label.title = label.title;
+    if (label.pinned !== undefined) row.label.pinned_at = label.pinned ? row.label.pinned_at ?? new Date().toISOString() : null;
+    if (label.folderId !== undefined) row.label.folder_id = label.folderId;
+    return { session_id: sessionId, ...structuredClone(row.label) };
+  }
+
+  // Deleting the open conversation starts a new one first. The caller then resets its agent,
+  // as after startNewSession; started_new_session says when that happened.
+  deleteSavedSession(sessionId) {
+    if (this.conversationEntry) throw new Error("Wait for the current conversation turn to finish");
+    const current = typeof sessionId === "string" && this.memorySession?.session_id === sessionId;
+    if (current) this.startNewSession("delete");
+    if (this.memoryStore) {
+      return { ...this.memoryStore.deleteConversation(sessionId, { routeKey: this.memoryRouteKey }), started_new_session: current };
+    }
+    const row = this.localConversations.get(sessionId);
+    if (!row) throw new Error("Saved conversation not found");
+    let reparented = 0;
+    for (const other of this.localConversations.values()) {
+      if (other.parent_session_id !== sessionId) continue;
+      if (row.parent_session_id) other.parent_session_id = row.parent_session_id;
+      else delete other.parent_session_id;
+      reparented += 1;
+    }
+    this.localConversations.delete(sessionId);
+    return { deleted: true, session_id: sessionId, reparented, started_new_session: current };
+  }
+
+  listConversationFolders() {
+    if (this.memoryStore) return this.memoryStore.listConversationFolders();
+    return [...this.localFolders.values()].sort((left, right) => left.position - right.position).map(folder => ({ ...folder }));
+  }
+
+  saveConversationFolder(folder) {
+    if (this.memoryStore) return this.memoryStore.saveConversationFolder(folder);
+    const { folderId, name, position } = normalizeConversationFolder(folder);
+    if (folderId) {
+      const saved = this.localFolders.get(folderId);
+      if (!saved) throw new Error("Conversation folder not found.");
+      Object.assign(saved, { name, position: position ?? saved.position });
+      return { ...saved };
+    }
+    const positions = [...this.localFolders.values()].map(saved => saved.position);
+    const created = { folder_id: randomUUID(), name, position: position ?? (positions.length ? Math.max(...positions) + 1 : 0),
+      created_at: new Date().toISOString() };
+    this.localFolders.set(created.folder_id, created);
+    return { ...created };
+  }
+
+  deleteConversationFolder(folderId) {
+    if (this.memoryStore) return this.memoryStore.deleteConversationFolder(folderId);
+    let unfiled = 0;
+    for (const row of this.localConversations.values()) {
+      if (row.label.folder_id === folderId) { row.label.folder_id = null; unfiled += 1; }
+    }
+    return { deleted: this.localFolders.delete(folderId), folder_id: folderId, unfiled };
   }
 
   resumeSession(sessionId) {
@@ -777,13 +847,22 @@ export class MoondogApplication {
 
   #newLocalConversation() {
     const session = { session_id: randomUUID(), started_at: new Date().toISOString(), route_key: this.memoryRouteKey };
-    this.localConversations.set(session.session_id, { ...session, entries: [], pending: { draft: '', queued: [] } });
+    this.localConversations.set(session.session_id, { ...session, entries: [], pending: { draft: '', queued: [] },
+      label: { title: null, pinned_at: null, folder_id: null } });
     return session;
+  }
+
+  // Another process can delete a conversation after it closed this one. Move to a new
+  // conversation then, instead of failing every later read and write on the missing row.
+  #leaveDeletedSession() {
+    if (!this.memoryStore || !this.memorySession || this.conversationEntry) return;
+    if (!this.memoryStore.sessionExists(this.memorySession.session_id)) this.startNewSession("session_deleted");
   }
 
   beginConversationEntry(text) {
     if (this.conversationEntry) throw new Error("A conversation turn is already active");
     if (typeof text !== 'string' || !text.trim() || text.length > 8_000) throw new TypeError("Conversation input is invalid");
+    this.#leaveDeletedSession();
     const sessionId = this.ensureMemorySession().session_id;
     const entryId = this.memoryStore ? this.memoryStore.beginConversationEntry(sessionId, text) : randomUUID();
     if (!this.memoryStore) {
@@ -807,6 +886,7 @@ export class MoondogApplication {
   }
 
   conversationEntries({ limit = 200 } = {}) {
+    this.#leaveDeletedSession();
     const sessionId = this.ensureMemorySession().session_id;
     return this.memoryStore ? this.memoryStore.readConversationEntries(sessionId, { limit })
       : structuredClone(this.localConversations.get(sessionId).entries.slice(-Math.min(500, limit)));
