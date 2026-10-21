@@ -87,7 +87,7 @@ function notice(text) {
   clearTimeout(noticeTimer);
   if (text) noticeTimer = setTimeout(() => { node.hidden = true; }, 6000);
 }
-const NOTICES = { too_many_running: "noticeTooMany", delete_running: "noticeDeleteRunning", delete_open_elsewhere: "noticeDeleteElsewhere",
+const NOTICES = { too_many_running: "noticeTooMany", model_unknown: "noticeModelUnknown", delete_running: "noticeDeleteRunning", delete_open_elsewhere: "noticeDeleteElsewhere",
   delete_failed: "noticeDeleteFailed", transfer_failed: "noticeTransferFailed" };
 
 // The conversation
@@ -279,9 +279,17 @@ let providers = [];
 async function pickModel(event) {
   const model = state.model ?? {};
   const signedIn = providers.filter((provider) => provider.signedIn);
-  const items = signedIn.map((provider) => ({ id: `provider:${provider.id}`, label: provider.name, submenu: (providerModels.get(provider.id) ?? [])
-    .map((entry) => ({ id: `model:${provider.id}:${entry.id}`, label: entry.name ?? entry.id, checked: provider.id === model.provider && entry.id === model.model })) }))
-    .filter((item) => item.submenu.length);
+  // A long catalog shows its first models here and the rest in settings.
+  const items = signedIn.map((provider) => {
+    const models = providerModels.get(provider.id) ?? [];
+    const shown = models.slice(0, 24);
+    const chosen = models.find((entry) => provider.id === model.provider && entry.id === model.model);
+    if (chosen && !shown.includes(chosen)) shown.unshift(chosen);
+    const submenu = shown.map((entry) => ({ id: `model:${provider.id}:${entry.id}`, label: entry.name ?? entry.id,
+      checked: provider.id === model.provider && entry.id === model.model }));
+    if (models.length > 24) submenu.push({ type: "separator" }, { id: "settings", label: t("moreModels") });
+    return { id: `provider:${provider.id}`, label: provider.name, submenu };
+  }).filter((item) => item.submenu.length);
   if (model.effortLevels?.length) {
     items.push({ type: "separator" }, { id: "effort", label: t("effort"), submenu: ["default", ...model.effortLevels].map((level) => ({ id: `effort:${level}`,
       label: level === "default" ? t("effortDefault") : t(`effort.${level}`) === `effort.${level}` ? level : t(`effort.${level}`), checked: (model.effort ?? "default") === level })) });

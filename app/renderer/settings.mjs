@@ -162,8 +162,10 @@ export function createSettings({ state, send, t, prettyModel = String }) {
     const list = make("div", "choices");
     for (const provider of data.providers) {
       const signedIn = provider.signedIn === true;
-      const detail = signedIn ? tr("signedIn") : provider.signIn === "oauth" ? tr("signInWithBrowser") : provider.signIn === "api_key" ? tr("needsApiKey") : tr("setInEnvironment");
-      const action = signedIn ? button(tr("signOut"), "quiet small", () => send({ type: "sign-out", provider: provider.id }))
+      const detail = signedIn ? (provider.source && provider.source !== "saved" ? tr("signedInFrom", { source: provider.source === "environment" ? tr("theEnvironment") : provider.source }) : tr("signedIn"))
+        : provider.signIn === "oauth" ? tr("signInWithBrowser") : provider.signIn === "api_key" ? tr("needsApiKey") : tr("setInEnvironment");
+      // Only a key Moondog saved can be signed out here; one from the environment stays in effect.
+      const action = signedIn ? (provider.source === "saved" ? button(tr("signOut"), "quiet small", () => send({ type: "sign-out", provider: provider.id })) : null)
         : provider.signIn === "environment_only" ? null : button(tr("signIn"), "small", () => {
           data.auth = { provider: provider.id, providerName: provider.name, lines: [] };
           send({ type: "sign-in", provider: provider.id });
@@ -254,18 +256,12 @@ export function createSettings({ state, send, t, prettyModel = String }) {
       return part;
     }
     if (job?.stage === "preview") {
+      // The words come from the core, written as the terminal writes them.
       const preview = job.preview;
       const facts = make("ul", "facts");
-      const add = (text) => facts.append(make("li", "", text));
-      add(`${preview.source}${preview.fileName ? ` · ${preview.fileName}` : ""}`);
-      if (preview.plays) add(tr("importPlays", { count: preview.plays.toLocaleString(state.locale) }));
-      if (preview.tracks) add(tr("importTracks", { count: preview.tracks.toLocaleString(state.locale) }));
-      if (preview.loved) add(tr("importLoved", { count: preview.loved.toLocaleString(state.locale) }));
-      if (preview.earliest && preview.latest) {
-        const format = new Intl.DateTimeFormat(state.locale, { year: "numeric", month: "short" });
-        add(`${format.format(new Date(preview.earliest))} - ${format.format(new Date(preview.latest))}`);
-      }
-      part.append(make("p", "", preview.empty ? tr("importEmpty") : tr("importPreview")), facts);
+      for (const paragraph of preview.paragraphs ?? []) facts.append(make("li", "", paragraph));
+      part.replaceChildren(heading(preview.title ?? tr("importHistory")), note(preview.notice ?? tr("importNote")),
+        ...(preview.empty ? [make("p", "", tr("importEmpty"))] : []), facts);
       const actions = make("div", "actions");
       if (!preview.empty) actions.append(button(tr("addToProfile"), "primary", () => send({ type: "import-commit" })));
       actions.append(button(tr("back"), "quiet", () => { send({ type: "import-cancel" }); data.importing = null; render(); }));
@@ -362,7 +358,11 @@ export function createSettings({ state, send, t, prettyModel = String }) {
     if (message.type === "auth-prompt" && data.auth) data.auth.prompt = { id: message.id, kind: message.kind, message: message.message, placeholder: message.placeholder, options: message.options };
     if (message.type === "auth-prompt-closed" && data.auth?.prompt?.id === message.id) data.auth.prompt = null;
     if (message.type === "auth-event" && data.auth) {
-      if (message.kind === "auth_url") { data.auth.url = message.url; window.open(message.url, "_blank"); data.auth.lines = [t()("finishInBrowser")]; }
+      if (message.kind === "auth_url") {
+        data.auth.url = message.url;
+        if (!message.opened) window.open(message.url, "_blank");
+        data.auth.lines = [t()("finishInBrowser")];
+      }
       if (message.kind === "device_code") { data.auth.code = message.userCode; data.auth.url = message.url; data.auth.lines = [t()("enterCode")]; }
       if (message.kind === "info" || message.kind === "progress") data.auth.lines = [message.message];
     }

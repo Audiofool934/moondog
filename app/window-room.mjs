@@ -6,6 +6,7 @@
 import { randomUUID } from "node:crypto";
 import { LOCALES, normalizeLocale, screenTranslator } from "../src/i18n/index.mjs";
 import { formatLocalResult } from "../src/surfaces/cli/format-output.mjs";
+import { HistoryImportView } from "../src/surfaces/cli/history-import-view.mjs";
 
 const PLAYER_POLL_MS = { visible: 4_000, hidden: 30_000 };
 // Tools whose results can change what Spotify is playing or what comes next.
@@ -281,7 +282,8 @@ export function runWindowRoom(services, { port, send }) {
   const prompts = new Map();
   async function sendModels() {
     if (!modelSettings) return send({ type: "models", providers: [] });
-    send({ type: "models", providers: await modelSettings.providers() });
+    // The running provider comes first, as in the terminal's /model.
+    send({ type: "models", providers: await modelSettings.providers({ current: current.runtime.publicStatus?.().provider ?? undefined }) });
   }
   async function sendProviderModels(provider, force = false) {
     if (!modelSettings) return;
@@ -310,7 +312,8 @@ export function runWindowRoom(services, { port, send }) {
     try {
       await modelSettings.signIn(provider, interaction);
       send({ type: "sign-in", provider, state: "done" });
-      await rebuildAll(modelSettings.current?.() ?? undefined);
+      // The saved selection now has a key to use; each agent is rebuilt from it, as /auth does.
+      await rebuildAll(undefined);
     } catch (error) {
       send({ type: "sign-in", provider, state: controller.signal.aborted ? "cancelled" : "error", message: errorText(error) });
     } finally {
@@ -327,8 +330,9 @@ export function runWindowRoom(services, { port, send }) {
     const controller = new AbortController();
     signIn = { provider: "spotify", controller };
     const sink = { write: (text) => {
+      // The sign-in opens the browser itself; the window shows the address in case it did not.
       const url = String(text).match(/https:\/\/accounts\.spotify\.com\/[^\s"'<>]+/u)?.[0];
-      if (url) send({ type: "auth-event", provider: "spotify", kind: "auth_url", url });
+      if (url) send({ type: "auth-event", provider: "spotify", kind: "auth_url", url, opened: true });
     } };
     try {
       if (clientId) await runSpotify(["configure", clientId], { signal: controller.signal, stderr: sink });
@@ -346,12 +350,13 @@ export function runWindowRoom(services, { port, send }) {
   // Import: one prepared import at a time, nothing saved until the listener adds it.
   let importing = null;
   const closeImport = () => { try { importing?.prepared?.close?.(); } catch { /* Already closed. */ } importing = null; };
-  const previewOf = (prepared) => {
+  // The terminal's import view writes the preview's words; the window shows the same ones, in the listener's language.
+  const previewOf = (prepared, kind) => {
     const preview = prepared.preview ?? {};
-    return { provider: prepared.provider, source: preview.sourceLabel ?? preview.source ?? prepared.provider, fileName: preview.fileName ?? null,
-      kind: preview.kind ?? null, plays: preview.listeningEvents ?? null, tracks: preview.tracks ?? null, loved: preview.lovedTracks ?? null,
-      evidence: preview.profileEvidence ?? null, earliest: preview.earliestListeningAt ?? null, latest: preview.latestListeningAt ?? null,
-      empty: !preview.listeningEvents && !preview.tracks && !preview.profileEvidence };
+    const view = new HistoryImportView({ tui: { requestRender() {} }, getTheme: () => ({}), getRows: () => 40, getText: () => screenTranslator(base.locale) });
+    view.setState({ page: "preview", preview, origin: kind === "spotify" ? "quick" : kind });
+    const { title, notice, paragraphs } = view.pageContent();
+    return { title, notice, paragraphs, empty: !preview.listeningEvents && !preview.tracks && !preview.profileEvidence && !preview.library };
   };
   async function prepare(kind, value) {
     if (importing?.working) return;
@@ -366,7 +371,7 @@ export function runWindowRoom(services, { port, send }) {
           : await prepareImport(value, {});
       if (controller.signal.aborted) { prepared?.close?.(); importing = null; return send({ type: "import", stage: "cancelled" }); }
       importing = { working: false, controller, prepared };
-      send({ type: "import", stage: "preview", preview: previewOf(prepared) });
+      send({ type: "import", stage: "preview", preview: previewOf(prepared, kind) });
     } catch (error) {
       importing = null;
       send({ type: "import", stage: controller.signal.aborted ? "cancelled" : "error", code: error?.code ?? null, message: errorText(error) });
@@ -437,6 +442,9 @@ export function runWindowRoom(services, { port, send }) {
     "provider-models": (data) => sendProviderModels(String(data.provider ?? ""), data.force === true),
     model: async (data) => {
       const selection = { provider: String(data.provider ?? ""), model: String(data.model ?? ""), ...(data.effort ? { effort: String(data.effort) } : {}) };
+      // The rebuild saves the selection before it checks it, so the model is checked against the catalog first.
+      const listed = (await modelSettings?.models(selection.provider))?.models ?? [];
+      if (!listed.some((entry) => entry.id === selection.model)) return send({ type: "notice", code: "model_unknown" });
       await rebuildAll(selection);
     },
     effort: async (data) => {
