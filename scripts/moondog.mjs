@@ -15,6 +15,7 @@ import { readAppleMusicSourceStatus } from "../src/core/apple-library-source-sta
 import { createListeningProfileDomainServices } from "../src/core/listening-profile-domain-services.mjs";
 import { runMemoryReflection } from "../src/memory/reflection-worker.mjs";
 import { createConfiguredRuntime } from "../src/runtime/pi/configured-runtime.mjs";
+import { createModelSettings } from "../src/runtime/pi/model-settings.mjs";
 import { createToolTrace } from "../src/runtime/pi/tool-trace.mjs";
 import { writePiRuntimeSelection } from "../src/runtime/pi/runtime-settings.mjs";
 import {
@@ -986,11 +987,14 @@ async function main() {
         if (selection) await writePiRuntimeSelection(selection);
         return createConfiguredRuntime(application, process.env, { selection, toolTrace });
       },
-      // In the desktop app, sign-in prompts read and write through the window.
+      // The desktop window lists models and signs in here, with no terminal.
+      modelSettings: createModelSettings({ environment: process.env }),
+      // A host with its own terminal streams takes the sign-in prompts. The
+      // desktop window has none and uses modelSettings instead.
       runAuth: (provider) =>
         runAuthCommand({
           args: ["login", provider],
-          ...(host && {
+          ...(host?.terminalStreams && {
             input: host.terminalStreams.input,
             output: host.terminalStreams.output,
             progressOutput: host.terminalStreams.output,
@@ -1030,7 +1034,7 @@ async function main() {
           args,
           signal,
           stdout: capture,
-          stderr: stderr ?? (args[0] === "login" ? host?.terminalStreams.output ?? process.stderr : capture),
+          stderr: stderr ?? (args[0] === "login" ? host?.terminalStreams?.output ?? process.stderr : capture),
           resolutionCache: await spotifyResolutionCacheIfConfigured(),
         });
         if (["import-history", "sync-recent"].includes(args[0])) {
