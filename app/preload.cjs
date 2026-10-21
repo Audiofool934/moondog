@@ -8,4 +8,8 @@ contextBridge.exposeInMainWorld("moondogApp", {
   onCommand: (callback) => ipcRenderer.on("command", (_event, name) => callback(String(name))),
   setLanguage: (locale) => ipcRenderer.send("language", String(locale)),
   setBusy: (busy) => ipcRenderer.send("busy", busy === true),
+  showMenu: (items, at) => ipcRenderer.invoke("menu", { items, ...(at ?? {}) }),
+  confirm: (options) => ipcRenderer.invoke("confirm", options),
+  chooseFile: (options) => ipcRenderer.invoke("choose-file", options),
+  version: () => ipcRenderer.invoke("version"),
 });

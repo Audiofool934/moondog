@@ -51,6 +51,8 @@ function buildMenu() {
     { label: "Moondog", submenu: [
       { label: t("menuAbout"), role: "about" },
       { type: "separator" },
+      { label: t("menuSettings"), accelerator: "CmdOrCtrl+,", click: command("settings") },
+      { type: "separator" },
       { label: t("menuHide"), role: "hide" },
       { label: t("menuHideOthers"), role: "hideOthers" },
       { label: t("menuShowAll"), role: "unhide" },
@@ -195,6 +197,31 @@ function createWindow() {
   });
   void window.loadFile(path.join(here, "dist", "index.html"));
 }
+
+// Native menus for the page: a conversation's actions, and the model, device and service pickers.
+// The page sends plain items { id, label, checked, enabled, type, submenu }; the chosen id comes back.
+const menuTemplate = (items, choose) => items.map((item) => item.type === "separator" ? { type: "separator" } : {
+  label: String(item.label ?? ""), enabled: item.enabled !== false,
+  ...(item.checked !== undefined ? { type: "checkbox", checked: item.checked === true } : {}),
+  ...(Array.isArray(item.submenu) ? { submenu: menuTemplate(item.submenu, choose) } : { click: () => choose(item.id) }),
+});
+ipcMain.handle("menu", (_event, { items, x, y }) => new Promise((resolve) => {
+  let chosen = null;
+  const menu = Menu.buildFromTemplate(menuTemplate(Array.isArray(items) ? items : [], (id) => { chosen = id; }));
+  menu.popup({ window, ...(Number.isFinite(x) && Number.isFinite(y) ? { x: Math.round(x), y: Math.round(y) } : {}), callback: () => resolve(chosen) });
+}));
+// A confirmation for something that cannot be undone, such as deleting a conversation.
+ipcMain.handle("confirm", async (_event, { message, detail, confirm, cancel }) => {
+  const { response } = await dialog.showMessageBox(window, { type: "warning", message: String(message ?? ""), detail: String(detail ?? ""),
+    buttons: [String(confirm ?? "OK"), String(cancel ?? "Cancel")], defaultId: 1, cancelId: 1 });
+  return response === 0;
+});
+ipcMain.handle("choose-file", async (_event, { title } = {}) => {
+  const { canceled, filePaths } = await dialog.showOpenDialog(window, { title: String(title ?? ""), properties: ["openFile"],
+    filters: [{ name: "Music history", extensions: ["zip", "json", "xml", "csv"] }] });
+  return canceled ? null : filePaths[0] ?? null;
+});
+ipcMain.handle("version", () => app.getVersion());
 
 // The page reports the language the core speaks, which a saved choice can set.
 ipcMain.on("language", (_event, value) => {
