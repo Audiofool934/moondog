@@ -46,12 +46,39 @@ const service = createSpotifyService({ client, thisComputerName: "Fictional MacB
 const shown = Object.freeze({ ...service,
   currentPlayer: async (options) => { const player = await service.currentPlayer(options); return { ...player, item: drawn(player.item) }; },
   queue: async (options) => { const queue = await service.queue(options); return { ...queue, queue: queue.queue.map(drawn) }; } });
-const application = new MoondogApplication({ importsRoot: path.join(state, "imports"), locale: await resolveListenerLocale(environment),
-  domainServices: createSyntheticDomainServices({ subjectScope: { subjectId: "window-simulated" } }),
-  musicPreviewPlayer: createWindowPreviewPlayer(port),
-  spotifyConnection: { service: shown, ready: () => true, missingScopes: () => [], publicStatus: () => ({ provider: "spotify", state: "ready" }) } });
+const domainServices = createSyntheticDomainServices({ subjectScope: { subjectId: "window-simulated" } });
+const shared = { importsRoot: path.join(state, "imports"), musicPreviewPlayer: createWindowPreviewPlayer(port),
+  spotifyConnection: { service: shown, ready: () => true, missingScopes: () => [], publicStatus: () => ({ provider: "spotify", state: "ready" }) } };
+const application = new MoondogApplication({ ...shared, locale: await resolveListenerLocale(environment), domainServices });
 const runtime = await createConfiguredRuntime(application, environment);
-await runWindowRoom({ application, runtime }, { port, send });
+
+// As in the real app, each conversation the window runs beside the main one has its own
+// application on the same Spotify and player, with a fork of the domain services.
+const conversations = new Set();
+async function openConversation({ sessionId = null, reason = "user_new" } = {}) {
+  const bound = [application, ...[...conversations].map((conversation) => conversation.application)];
+  if (sessionId && bound.some((candidate) => candidate.memorySession?.session_id === sessionId)) {
+    throw new Error("That conversation is already open.");
+  }
+  const conversationApplication = new MoondogApplication({ ...shared, locale: application.locale, domainServices: domainServices.fork(), ownsServices: false });
+  // There is no memory store here: sessions live in the main application, and every conversation shares them.
+  conversationApplication.localConversations = application.localConversations;
+  const conversation = { application: conversationApplication, runtime: null,
+    close() { conversations.delete(conversation); conversationApplication.close(); } };
+  conversations.add(conversation);
+  try {
+    if (sessionId) conversationApplication.resumeSession(sessionId);
+    else conversationApplication.startNewSession(reason);
+    conversation.runtime = await createConfiguredRuntime(conversationApplication, environment);
+    return conversation;
+  } catch (error) {
+    conversation.close();
+    throw error;
+  }
+}
+
+await runWindowRoom({ application, runtime, openConversation }, { port, send });
+for (const conversation of conversations) conversation.close();
 application.close();
 port.close();
 process.exit(0);

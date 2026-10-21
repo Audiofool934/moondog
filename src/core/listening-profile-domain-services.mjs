@@ -423,6 +423,7 @@ export class ListeningProfileDomainServices {
   #subjectId;
   #candidateSets = new Map();
   #profileBuildInput;
+  #ownsStore = true;
 
   constructor({ listeningHistoryStore, subjectId } = {}) {
     if (
@@ -438,6 +439,18 @@ export class ListeningProfileDomainServices {
     }
     this.#store = listeningHistoryStore;
     this.#subjectId = subjectId.toLowerCase();
+  }
+
+  // Each conversation that runs beside another gets a fork: the same store with its own
+  // candidate sets, so one conversation's prompt never clears another's. Only the
+  // original closes the store.
+  fork() {
+    const fork = new ListeningProfileDomainServices({
+      listeningHistoryStore: this.#store,
+      subjectId: this.#subjectId,
+    });
+    fork.#ownsStore = false;
+    return fork;
   }
 
   status() {
@@ -1092,7 +1105,7 @@ export class ListeningProfileDomainServices {
 
   close() {
     this.resetCandidateSets();
-    this.#store.close();
+    if (this.#ownsStore) this.#store.close();
   }
 }
 

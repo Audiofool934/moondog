@@ -244,3 +244,35 @@ test("conversation labels, folders and deletes work without persistent memory", 
     application.close();
   }
 });
+
+test("a conversation that shares its services closes only its own domain-services fork", async (context) => {
+  const root = await mkdtemp(path.join(tmpdir(), "moondog-shared-services-"));
+  context.after(() => rm(root, { recursive: true, force: true }));
+  const closes = [];
+  const service = (name) => ({ resetCandidateSets() {}, close() { closes.push(name); } });
+  const memoryStore = await openLocalMemoryStore({ databasePath: path.join(root, "memory.sqlite") });
+  const shared = { memoryStore, memoryRouteKey: "tui:shared-test", musicCatalog: service("catalog"),
+    musicSimilarity: service("similarity"), musicPreviewPlayer: service("player"), webResearch: service("web") };
+  const application = new MoondogApplication({ ...shared, domainServices: service("main") });
+  const conversation = new MoondogApplication({ ...shared, domainServices: service("fork"), ownsServices: false });
+  try {
+    const session = conversation.startNewSession("user_new");
+    conversation.recordCompletedTurn("A turn in the second conversation.", "Its reply.");
+    seedPendingState(conversation);
+    conversation.close();
+    assert.deepEqual(closes, ["fork"]);
+    assert.equal(conversation.memorySession, null);
+    assert.deepEqual(conversation.pendingSpotifyPlaylistStatus(), { state: "none" });
+
+    // The main application still reads and writes the shared store.
+    assert.ok(application.listSavedSessions().some((saved) => saved.session_id === session.session_id));
+    application.resumeSession(session.session_id);
+    assert.deepEqual(application.currentConversationTurns().map((turn) => turn.text), ["A turn in the second conversation.", "Its reply."]);
+    application.recordCompletedTurn("Back in the main application.", "Still open.");
+    assert.equal(application.currentConversationTurns().length, 4);
+  } finally {
+    application.close();
+  }
+  assert.deepEqual(closes, ["fork", "main", "catalog", "similarity", "player", "web"]);
+  assert.throws(() => memoryStore.status());
+});

@@ -177,7 +177,11 @@ export class MoondogApplication {
     webResearch = null,
     locale = DEFAULT_LOCALE,
     now = Date.now,
+    // A conversation the desktop window runs beside the main one shares the main one's
+    // services and owns only its domain-services fork, so closing it leaves the rest open.
+    ownsServices = true,
   } = {}) {
+    this.ownsServices = ownsServices !== false;
     this.importsRoot = importsRoot;
     // The listener's language: replies follow each message, and fall back to this.
     this.locale = normalizeLocale(locale) ?? DEFAULT_LOCALE;
@@ -3098,12 +3102,10 @@ export class MoondogApplication {
       this.promptProfileSeed = null;
       this.pendingPlaylistPromptTransaction = null;
     } finally {
-      this.memoryStore?.close?.();
-      this.domainServices?.close?.();
-      this.musicCatalog?.close?.();
-      this.musicSimilarity?.close?.();
-      this.musicPreviewPlayer?.close?.();
-      this.webResearch?.close?.();
+      const owned = this.ownsServices
+        ? [this.memoryStore, this.domainServices, this.musicCatalog, this.musicSimilarity, this.musicPreviewPlayer, this.webResearch]
+        : [this.domainServices];
+      for (const service of owned) service?.close?.();
     }
   }
 
