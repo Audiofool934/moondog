@@ -20,7 +20,7 @@ import {
   listPiProviders,
 } from "../../runtime/pi/model-catalog.mjs";
 import { getPublicPiModelCatalog } from "../../runtime/pi/public-model-catalog.mjs";
-import { supportedAuthProviderIds } from "../../runtime/pi/authentication.mjs";
+import { serviceKeyProviders, supportedAuthProviderIds } from "../../runtime/pi/authentication.mjs";
 import {
   formatLocalResult,
   helpText,
@@ -109,7 +109,7 @@ const slashCommands = [
   { name: "doctor", description: N_("Check your setup") },
   { name: "model", description: N_("Choose the model Moondog talks through") },
   { name: "effort", description: N_("Choose how hard the model thinks") },
-  { name: "auth", description: N_("Sign in to a model provider") },
+  { name: "auth", description: N_("Sign in to a model or web search service") },
   { name: "web", description: N_("Look things up on public music sites") },
   { name: "spotify", description: N_("Connect and control Spotify") },
   { name: "skip", description: N_("Skip to the next song preview") },
@@ -540,7 +540,8 @@ export async function runMoondogTui({
   }, { shrink: 0 });
   editor.setAutocompleteProvider(
     new CombinedAutocompleteProvider(withCommandCompletions(localizedCommands, {
-      providers, models, authProviderIds: supportedAuthProviderIds, tr,
+      // Service keys, such as Brave Search, have no models, so only /auth offers them.
+      providers: () => [...providers(), ...serviceKeyProviders], models, authProviderIds: supportedAuthProviderIds, tr,
     }), process.cwd(), null),
   );
   tui.setFocus(editor);
@@ -1121,9 +1122,10 @@ export async function runMoondogTui({
       throw new Error(tr("Sign-in isn't available when Moondog is started this way."));
     }
 
-    const availableProviders = providers().filter((provider) =>
+    const availableProviders = [...providers(), ...serviceKeyProviders].filter((provider) =>
       supportedAuthProviderIds.includes(provider.id),
     );
+    const serviceKey = (id) => serviceKeyProviders.find((provider) => provider.id === id);
     let providerId = args[0]?.toLowerCase() ?? runtimeStatus.provider;
     if (!providerId || !supportedAuthProviderIds.includes(providerId)) {
       if (args[0]) throw new Error(tr("I can't sign in to that provider. Type /auth to see the ones I can."));
@@ -1131,10 +1133,10 @@ export async function runMoondogTui({
         availableProviders.map((provider) => ({
           value: provider.id,
           label: provider.name,
-          description: `${provider.id} - ${provider.id === "openai-codex" ? tr("ChatGPT sign-in") : tr("API key")}`,
+          description: `${provider.id} - ${provider.id === "openai-codex" ? tr("ChatGPT sign-in") : serviceKey(provider.id) ? tr("Web search key") : tr("API key")}`,
         })),
         runtimeStatus.provider ?? "openai-codex",
-        tr("Sign in to a model provider"),
+        tr("Sign in to a model or web search service"),
       );
       if (!selectedProvider) {
         setFooter(tr("Sign-in cancelled."));
@@ -1161,8 +1163,13 @@ export async function runMoondogTui({
         ? runtimeSelection(runtimeStatus.provider, runtimeStatus.model, runtimeStatus.effort)
         : undefined;
       const status = await replaceRuntime(currentSelection);
+      const search = application.webLookup?.("search");
       addMoondogMessage(
-        status.state === "configured"
+        serviceKey(providerId)
+          ? search
+            ? tr("Saved the {service} key. Web search goes through {provider}.", { service: serviceKey(providerId).name, provider: search.name })
+            : tr("Saved the {service} key, but web search still isn't ready. Run `/web status` to see why.", { service: serviceKey(providerId).name })
+          : status.state === "configured"
           ? tr("Signed in. Talking through `{model}`.", { model: `${status.provider}/${status.model}` })
           : tr("Signed in. Run `/model {provider}` to pick a model.", { provider: providerId }),
       );
@@ -1749,7 +1756,8 @@ export async function runMoondogTui({
     }
     if (command === "web") {
       if (typeof runWeb !== "function") throw new Error(tr("Web lookups aren't available when Moondog is started this way."));
-      setFooter(tr("Looking it up with Codex... Ctrl+C cancels."));
+      const lookup = ["search", "read"].includes(args[0]) ? application.webLookup?.(args[0]) : null;
+      if (lookup) setFooter(tr("Looking it up with {provider}... Ctrl+C cancels.", { provider: lookup.name }));
       addMoondogMessage(await runWeb(args, { signal: localCommandController.signal }));
       setFooter(tr("Done."), success);
       return;

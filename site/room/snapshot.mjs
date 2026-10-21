@@ -43,7 +43,7 @@ try {
   }
   // The model menu shows the real provider list, but nothing can connect from the page.
   const { listPiModels, listPiProviders } = await import("../../src/runtime/pi/model-catalog.mjs");
-  const { supportedAuthProviderIds } = await import("../../src/runtime/pi/authentication.mjs");
+  const { serviceKeyProviders, supportedAuthProviderIds } = await import("../../src/runtime/pi/authentication.mjs");
   const providers = listPiProviders();
   const snapshot = {
     schema: "moondog.web-room-snapshot.v0",
@@ -51,6 +51,7 @@ try {
     providers,
     models: Object.fromEntries(providers.map(({ id }) => [id, listPiModels(id)])),
     authProviderIds: [...supportedAuthProviderIds],
+    serviceKeyProviders: serviceKeyProviders.map((provider) => ({ ...provider })),
     profileSummary,
     evidence,
     lyricSeeds: await application.getLyricSeeds(),

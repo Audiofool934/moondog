@@ -14,14 +14,14 @@ const catalog = [
   },
   {
     id: "web.search", version: "1", state: "enabled", effect: "read_external",
-    description: "Search public music reviews, news, interviews and event information through the local Codex CLI.",
-    requires_web_research: true,
+    description: "Search public music reviews, news, interviews and event information through {provider}.",
+    requires_web: "search",
     agent_tool: { name: "moondog_web_search", label: N_("Search the public web") },
   },
   {
     id: "web.read", version: "1", state: "enabled", effect: "read_external",
-    description: "Read and summarize a public web page with dated source attribution through the local Codex CLI.",
-    requires_web_research: true,
+    description: "Read a public web page with dated source attribution through {provider}.",
+    requires_web: "read",
     agent_tool: { name: "moondog_web_read", label: N_("Read a public web page") },
   },
   {
@@ -570,7 +570,7 @@ function withRuntimeAvailability(
   musicCatalogReady,
   musicDiscoveryReady,
   musicSimilarityReady,
-  webResearchReady,
+  webProviders,
   profileExplorationReady,
   profileBuildReady,
   musicPreviewReady,
@@ -581,8 +581,12 @@ function withRuntimeAvailability(
   if (capability.requires_profile_exploration && !profileExplorationReady) {
     return { ...capability, state: "blocked", blocked_by: "profile_exploration_not_ready" };
   }
-  if (capability.requires_web_research && !webResearchReady) {
-    return { ...capability, state: "blocked", blocked_by: "codex_web_not_ready" };
+  if (capability.requires_web) {
+    // The description names the service in use, or the ones that could be set up.
+    const provider = webProviders[capability.requires_web];
+    capability = { ...capability, description: capability.description.replace("{provider}", provider ??
+      (capability.requires_web === "search" ? "DeepSeek, Brave Search or the Codex CLI, once one is set up" : "DeepSeek or the Codex CLI, once one is set up")) };
+    if (!provider) return { ...capability, state: "blocked", blocked_by: `web_${capability.requires_web}_not_ready` };
   }
   if (capability.requires_domain_services && !domainServicesReady) {
     return {
@@ -694,7 +698,8 @@ export function listCapabilities({
   musicCatalogReady = false,
   musicDiscoveryReady = false,
   musicSimilarityReady = false,
-  webResearchReady = false,
+  webSearchProvider = null,
+  webReadProvider = null,
   profileExplorationReady = false,
   profileBuildReady = false,
   musicPreviewReady = false,
@@ -715,7 +720,7 @@ export function listCapabilities({
         musicCatalogReady,
         musicDiscoveryReady,
         musicSimilarityReady,
-        webResearchReady,
+        { search: webSearchProvider, read: webReadProvider },
         profileExplorationReady,
         profileBuildReady,
         musicPreviewReady,

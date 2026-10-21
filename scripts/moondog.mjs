@@ -30,7 +30,7 @@ import { migrateLegacyAppleMusicData } from "../src/core/apple-data-migration.mj
 import { runCatalogCommand } from "../src/surfaces/cli/catalog-command.mjs";
 import { runProfileCommand } from "../src/surfaces/cli/profile-command.mjs";
 import { runListenerProfileCommand, savedProfileActions } from "../src/surfaces/cli/listener-profile-command.mjs";
-import { createCodexWebResearch } from "../src/integrations/web/codex-web.mjs";
+import { createWebResearch } from "../src/integrations/web/web-research.mjs";
 import { runWebCommand } from "../src/surfaces/cli/web-command.mjs";
 import { openSpotifyConnection } from "../src/integrations/spotify/connection.mjs";
 import {
@@ -467,7 +467,7 @@ async function main() {
     if (options.dryRun || options.offline || options.html || options.card || options.save || options.from || options.output) {
       throw new Error("Usage: moondog web status|search|read [arguments] [--json].");
     }
-    const webResearch = await createCodexWebResearch();
+    const webResearch = await createWebResearch();
     const controller = new AbortController();
     const abort = () => controller.abort();
     process.once("SIGINT", abort);
@@ -836,7 +836,7 @@ async function main() {
   const musicSimilarity = createOpenMusicSimilarity({
     identityResolver: artistIdentityResolver,
   });
-  const webResearch = await createCodexWebResearch();
+  const webResearch = await createWebResearch();
   // The desktop app (app/) stands in for the terminal: it registers its screen and
   // preview player here before the room starts. Without it, nothing changes.
   const host = globalThis[Symbol.for("moondog.host")] ?? null;
@@ -983,6 +983,8 @@ async function main() {
       },
       rebuildRuntime: async (selection) => {
         if (selection) await writePiRuntimeSelection(selection);
+        // A key saved with /auth, or a Codex sign-in since, takes effect with the new runtime's tools.
+        await webResearch.refresh();
         return createConfiguredRuntime(application, process.env, { selection, toolTrace });
       },
       // In the desktop app, sign-in prompts read and write through the window.

@@ -9,6 +9,10 @@ export default {
   "citations.heading": "Öffentliche Musikquellen (getrennt von deinen persönlichen Hördaten):",
   "citations.item": ({ label, url, storefront, date }) => `- [${label}](<${url}>) - ${storefront}-Store, abgerufen am ${date}.`,
   "citations.scope": "Geltungsbereich: Diese öffentlichen Katalogseiten belegen weder persönliche Vorlieben noch einen vollständigen Hörverlauf noch die Verfügbarkeit auf anderen Plattformen.",
+  "web.sources.heading": ({ providers }) => `Öffentliche Webquellen (${providers})`,
+  "web.sources.headingUnnamed": "Öffentliche Webquellen",
+  "web.sources.published": ({ date }) => `Datum der Quelle: ${date}`,
+  "web.sources.retrieved": ({ date }) => `abgerufen: ${date}`,
 
   "external.neighbors": ({ seed }) => seed ? `ListenBrainz-Hörer-Nachbarn von ${seed}` : "ListenBrainz-Hörer-Nachbarn",
   "external.listenbrainz": ({ neighbor, date }) => `${neighbor} (Wikidata-Identität, CC0, abgerufen am ${date}; das ist keine klangliche Ähnlichkeit)`,

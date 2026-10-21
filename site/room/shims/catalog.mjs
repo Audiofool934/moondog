@@ -5,6 +5,7 @@ import snapshot from "../../generated/snapshot.json";
 export const listPiProviders = () => snapshot.providers;
 export const listPiModels = (providerId) => snapshot.models[providerId] ?? [];
 export const supportedAuthProviderIds = Object.freeze([...snapshot.authProviderIds]);
+export const serviceKeyProviders = Object.freeze([...(snapshot.serviceKeyProviders ?? [])]);
 export async function getPublicPiModelCatalog() {
   return { providers: listPiProviders, models: listPiModels, refresh: async () => [] };
 }

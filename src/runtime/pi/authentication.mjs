@@ -3,12 +3,19 @@ import { homedir } from "node:os";
 
 import { createModels } from "@earendil-works/pi-ai";
 
-import { createPersistentCredentialStore } from "./persistent-credential-store.mjs";
+import { createPersistentCredentialStore, serviceApiKeyIds } from "./persistent-credential-store.mjs";
 import { apiKeyPiProviderIds, loadPiProvider } from "./provider-registry.mjs";
+
+// Keys for services that are not models share the same sign-in and private store;
+// each one also needs its id in the store's serviceApiKeyIds.
+export const serviceKeyProviders = Object.freeze([
+  Object.freeze({ id: "brave", name: "Brave Search", variable: "BRAVE_SEARCH_API_KEY" }),
+]);
 
 export const supportedAuthProviderIds = Object.freeze([
   "openai-codex",
   ...apiKeyPiProviderIds,
+  ...serviceApiKeyIds,
 ]);
 
 export function createPiAuthContext(environment = process.env) {
@@ -69,7 +76,21 @@ export async function createPiAuthentication({
     loadedProviders.add(providerId);
   };
 
+  // Pi knows only model providers; a service key is read and written here, in the same store.
+  const serviceStatus = async (service) => {
+    const stored = await credentials.read(service.id);
+    const variable = environment[service.variable]?.trim() ? service.variable : null;
+    return {
+      provider: service.id,
+      state: stored ? "stored" : variable ? "environment" : "not_configured",
+      type: stored || variable ? "api_key" : null,
+      ...(!stored && variable ? { source: variable } : {}),
+    };
+  };
+  const service = (providerId) => serviceKeyProviders.find((entry) => entry.id === providerId);
+
   const status = async (providerId) => {
+    if (service(providerId)) return serviceStatus(service(providerId));
     await ensureProvider(providerId);
     const auth = await models.checkAuth(providerId);
     const fromEnvironment = auth?.type === "api_key" &&
@@ -84,6 +105,14 @@ export async function createPiAuthentication({
 
   return {
     async login(providerId, interaction) {
+      const entry = service(providerId);
+      if (entry) {
+        interaction.signal?.throwIfAborted();
+        const key = await interaction.prompt({ type: "secret", message: `Enter ${entry.name} API key` });
+        interaction.signal?.throwIfAborted();
+        await credentials.modify(entry.id, async () => ({ type: "api_key", key: typeof key === "string" ? key.trim() : key }));
+        return serviceStatus(entry);
+      }
       await ensureProvider(providerId);
       await models.login(
         providerId,
@@ -96,6 +125,10 @@ export async function createPiAuthentication({
     status,
 
     async logout(providerId) {
+      if (service(providerId)) {
+        await credentials.delete(providerId);
+        return serviceStatus(service(providerId));
+      }
       await ensureProvider(providerId);
       await models.logout(providerId);
       return status(providerId);

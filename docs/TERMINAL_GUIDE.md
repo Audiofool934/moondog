@@ -623,9 +623,22 @@ Read the [Private Tasteprint](PRIVATE_TASTEPRINT.md) contract before sharing an 
 
 ## Public web research in the TUI
 
-Moondog can search reviews, music news, interviews and concert information, or summarize a public page, through a locally installed and signed-in Codex CLI.
+Moondog can search reviews, music news, interviews and concert information, and read public pages.
 Pi remains the main agent and TUI.
-No separate search-service API key is required.
+Three services can do the lookups:
+
+| Service | Search | Page reading | Set up with | Cost |
+| --- | --- | --- | --- | --- |
+| DeepSeek Search and Fetch | yes | yes | `/auth deepseek`, or `DEEPSEEK_API_KEY` | $0.75 per 1,000 successful requests, for each tool |
+| Brave Search | yes | no | `/auth brave`, or `BRAVE_SEARCH_API_KEY` | $5 per 1,000 requests, with a free monthly credit |
+| Codex CLI | yes | yes | Install it and run `codex login` | Your ChatGPT plan's Codex allowance |
+
+Search uses DeepSeek when a DeepSeek key is set, then Brave Search, then the Codex CLI.
+Page reading uses DeepSeek, then the Codex CLI.
+The DeepSeek key is the same one `/auth deepseek` saves for DeepSeek models.
+A key saved with `/auth` comes before the environment variable, as for model keys.
+`MOONDOG_WEB_SEARCH_PROVIDER` (`deepseek`, `brave` or `codex`) and `MOONDOG_WEB_READ_PROVIDER` (`deepseek` or `codex`) choose a service instead.
+A chosen service that is not set up stays unavailable; Moondog does not fall back silently.
 
 ```text
 /web status
@@ -633,28 +646,40 @@ No separate search-service API key is required.
 /web read https://encyclopediaofarkansas.net/entries/moondog-2774/
 ```
 
+`/web status` shows which service does each lookup, and what to set up when none is ready.
+It does not make a request.
 These commands work without a listening import or a configured Pi conversation model.
 After selecting a Pi model, ordinary conversation can also call `moondog_web_search` and `moondog_web_read`, with source links retained in the final response.
+The heading over those links names the service that found them.
 From the shell, use `npm run moondog -- web search "artist interview" --json` or the corresponding `status` and `read` commands.
+A key saved with `/auth` during a session takes effect at once; `/reload` checks a new Codex sign-in.
 
-Install a current [Codex CLI](https://developers.openai.com/codex/cli/) and run `codex login` if `/web status` reports unavailable, then restart Moondog.
-This backend reuses the CLI's login, independently of Moondog's `/auth`, and consumes that Codex account's usage allowance.
-`/web status` checks the executable and login only; it does not prove live web connectivity.
-The adapter was exercised with Codex CLI 0.152.0.
-An absolute `MOONDOG_CODEX_BIN` can select another executable; `MOONDOG_CODEX_MODEL` can optionally select the search model.
-Otherwise Codex uses its default model with low reasoning effort; its user configuration is not loaded into the research subprocess.
-
-Each request has a two-minute timeout and a maximum of six native web operations, returns up to five sources, and caches successful results for five minutes within the running process.
+Each request has a timeout, returns up to five sources, and caches successful results for five minutes within the running process.
 Ctrl+C cancels the active request.
-Only the supplied public query or URL is added to the bounded subprocess prompt, with no automatic profile, history, conversation or local-file attachment.
-Search queries and requested URLs are sent to Codex's remote service.
-The subprocess starts in a temporary empty directory, disables local shell, app and plugin tools, and removes its temporary schema on completion.
+Only the supplied public query or URL leaves the machine, with no automatic profile, history, conversation or local-file attachment.
+Moondog checks that a URL is a public `http` or `https` address before it asks a service to read it.
 
-Results are generated summaries with source links, retrieval times and publication dates when available, not full article exports or independent verification of every statement.
-The adapter requires evidence that Codex invoked native web search or opened the requested URL before returning a result.
-Source URLs themselves come from Codex's structured answer because CLI events do not expose the underlying web result bodies.
-Page reading is limited to public content accessible to the native web tool; it cannot log in, bypass paywalls or operate an interactive website.
+What each service returns:
+
+- DeepSeek and Brave return search-engine results: titles, URLs, snippets and publication dates as the engine gives them.
+  Moondog removes duplicate pages and keeps the first five.
+  DeepSeek queries can be up to 128 characters and support `site:`, `-site:`, quoted phrases, `lang:` and `after:`.
+- DeepSeek Fetch returns the page's own text, cut to its first 12,000 characters.
+  A page that DeepSeek cannot or may not fetch is reported as unavailable.
+- The Codex CLI returns a generated summary with source links.
+  Moondog requires evidence that Codex ran a native web search or opened the requested URL.
+  Its source URLs come from Codex's structured answer, because CLI events do not expose the underlying web results.
+  The subprocess starts in a temporary empty directory, disables local shell, app and plugin tools, and allows up to six web operations in two minutes.
+  An absolute `MOONDOG_CODEX_BIN` can select another executable; `MOONDOG_CODEX_MODEL` can select the search model.
+  The adapter was exercised with Codex CLI 0.160.0.
+
+No service can log in, bypass paywalls or operate an interactive website.
+Results are not independent verification of every statement.
 Web evidence does not become personal listening evidence or a trusted playlist candidate.
+Brave's terms allow only transient storage of its results.
+The five-minute in-memory cache is transient.
+The local tool trace records only which service answered, the status and the number of sources, not the result text.
+A reply keeps the titles and links of the sources it cites.
 
 ## Enable agent conversation
 

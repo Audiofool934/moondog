@@ -9,6 +9,10 @@ export default {
   "citations.heading": "공개 음악 출처(개인 청취 증거와는 별개):",
   "citations.item": ({ label, url, storefront, date }) => `- [${label}](<${url}>) - ${storefront} 스토어, ${date}에 확인.`,
   "citations.scope": "범위: 이 공개 카탈로그 페이지는 개인 취향, 전체 청취 기록, 다른 플랫폼에서의 이용 가능 여부를 증명하지 않습니다.",
+  "web.sources.heading": ({ providers }) => `공개 웹 출처(${providers})`,
+  "web.sources.headingUnnamed": "공개 웹 출처",
+  "web.sources.published": ({ date }) => `출처 날짜: ${date}`,
+  "web.sources.retrieved": ({ date }) => `확인: ${date}`,
 
   "external.neighbors": ({ seed }) => seed ? `${seed}에서 이어지는 ListenBrainz 청취자 이웃` : "ListenBrainz 청취자 이웃",
   "external.listenbrainz": ({ neighbor, date }) => `${neighbor} (Wikidata 식별 정보, CC0, ${date}에 확인. 오디오 유사도가 아닙니다)`,

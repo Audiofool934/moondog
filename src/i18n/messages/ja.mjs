@@ -9,6 +9,10 @@ export default {
   "citations.heading": "公開されている音楽情報（個人の再生記録とは別のものです）:",
   "citations.item": ({ label, url, storefront, date }) => `- [${label}](<${url}>) - ${storefront} ストア、${date} に取得。`,
   "citations.scope": "範囲: これらの公開カタログページは、個人の好み、完全な再生履歴、他サービスでの配信状況を示すものではありません。",
+  "web.sources.heading": ({ providers }) => `公開 Web の出典（${providers}）`,
+  "web.sources.headingUnnamed": "公開 Web の出典",
+  "web.sources.published": ({ date }) => `出典の日付：${date}`,
+  "web.sources.retrieved": ({ date }) => `取得：${date}`,
 
   "external.neighbors": ({ seed }) => seed ? `ListenBrainz で ${seed} を聴く人たちに近いアーティスト` : "ListenBrainz で近いリスナーが聴くアーティスト",
   "external.listenbrainz": ({ neighbor, date }) => `${neighbor}（Wikidata の識別情報、CC0、${date} に取得。音が似ているという意味ではありません）`,

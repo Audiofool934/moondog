@@ -10,6 +10,10 @@ export default {
   "citations.heading": "Public music sources (separate from personal listening evidence):",
   "citations.item": ({ label, url, storefront, date }) => `- [${label}](<${url}>) - ${storefront} storefront, retrieved ${date}.`,
   "citations.scope": "Scope: these public catalog pages do not establish personal preference, complete listening history, or cross-platform availability.",
+  "web.sources.heading": ({ providers }) => `Public web sources (${providers})`,
+  "web.sources.headingUnnamed": "Public web sources",
+  "web.sources.published": ({ date }) => `source date: ${date}`,
+  "web.sources.retrieved": ({ date }) => `retrieved: ${date}`,
 
   "external.neighbors": ({ seed }) => seed ? `ListenBrainz listener-neighbors of ${seed}` : "ListenBrainz listener-neighbors",
   "external.listenbrainz": ({ neighbor, date }) => `${neighbor} (Wikidata identity, CC0, retrieved ${date}; this is not audio similarity)`,
