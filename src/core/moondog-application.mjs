@@ -14,8 +14,20 @@ import { recoverArtistReleasesWithCrossCatalogIdentity } from "../integrations/c
 import { normalizeMemoryContent } from "../memory/local-memory-store.mjs";
 import { queueListeningIntent, queueCancellationRequested, unheardRequested } from "./spotify-listening-intent.mjs";
 import { DEFAULT_LOCALE, normalizeLocale } from "../i18n/index.mjs";
+import { DEFAULT_PLAYBACK_SERVICE, normalizePlaybackService } from "./playback-preferences.mjs";
 
 const minimumNodeVersion = [22, 19, 0];
+
+// The Spotify writes that play music. Another chosen music service leaves them out;
+// Spotify reads, saves and playlists stay.
+const spotifyPlaybackCapabilities = new Set([
+  "spotify.player.control", "spotify.queue.add", "spotify.queue.similar", "spotify.queue.batch", "spotify.device.transfer",
+]);
+
+// What the model sees of a retained Spotify item: no provider identifiers.
+function modelSpotifyItem({ uri: _uri, album_uri: _albumUri, ...item }) {
+  return structuredClone(item);
+}
 
 function spotifyPlaybackTarget(value, types) {
   if (typeof value !== "string") return null;
@@ -176,9 +188,12 @@ export class MoondogApplication {
     artistIdentityResolver = null,
     webResearch = null,
     locale = DEFAULT_LOCALE,
+    playbackService = DEFAULT_PLAYBACK_SERVICE,
     now = Date.now,
   } = {}) {
     this.importsRoot = importsRoot;
+    // The music service the listener chose to play songs: "spotify" or "apple_music".
+    this.playbackService = normalizePlaybackService(playbackService) ?? DEFAULT_PLAYBACK_SERVICE;
     // The listener's language: replies follow each message, and fall back to this.
     this.locale = normalizeLocale(locale) ?? DEFAULT_LOCALE;
     // The language of the conversation so far. A reply such as "2" or "ok" carries none of
@@ -412,12 +427,26 @@ export class MoondogApplication {
     return [...this.hostNotes];
   }
 
-  // Previews stand in for playback only where Spotify can't play the full songs.
+  // Previews stand in for playback where Spotify doesn't play the songs: it is not
+  // connected, or the listener chose Apple Music.
   musicPreviewReady() {
     return this.musicCatalogReady() &&
       typeof this.musicCatalog.findPreview === "function" &&
       typeof this.musicPreviewPlayer?.play === "function" &&
-      !this.spotifyReady();
+      !this.spotifyPlaybackReady();
+  }
+
+  // Spotify plays music only when it is connected and it is the chosen service.
+  spotifyPlaybackReady() {
+    return this.spotifyReady() && this.playbackService === "spotify";
+  }
+
+  // The caller rebuilds the agent runtime afterwards: its tools and instructions follow this.
+  setPlaybackService(service) {
+    const value = normalizePlaybackService(service);
+    if (!value) throw new Error(`Unsupported music service: ${service}`);
+    this.playbackService = value;
+    return value;
   }
 
   // Plays up to six named songs, or one album, as a queue in the host's player.
@@ -902,13 +931,13 @@ export class MoondogApplication {
   spotifyReadContext() {
     return [...this.spotifyReadSelections.entries(), ...(this.spotifyDeviceSelections.size ? [["devices", [...this.spotifyDeviceSelections.values()].map(({ id: _id, ...device }) => device)]] : [])].map(([source, items]) => ({
       source,
-      items: items.map(({ uri: _uri, ...item }) => structuredClone(item)),
+      items: items.map(modelSpotifyItem),
     }));
   }
 
   spotifyPlaybackContextStatus() {
     const transaction = this.pendingPlaylistPromptTransaction;
-    const project = (item) => { const { uri: _uri, ...value } = item; return structuredClone(value); };
+    const project = modelSpotifyItem;
     const choices = this.#recentSpotifyContext(this.spotifyDisplayedChoices) ? this.spotifyDisplayedChoices.items : [];
     const attempt = this.#recentSpotifyContext(this.spotifyPlaybackAttempt) ? this.spotifyPlaybackAttempt : null;
     return { displayed_choices: choices.map((item, index) => ({ number: index + 1, ...project(item) })),
@@ -1075,6 +1104,12 @@ export class MoondogApplication {
         result.item_ref_id = this.spotifyRefsByUri.get(item.uri) ?? randomUUID();
         if (result.type === "track") result.track_ref_id = result.item_ref_id;
         result.uri = item.uri;
+        // The album lets a song played alone go on into the rest of it. Like uri, the model
+        // never sees it. A later read without it keeps the album seen before.
+        const albumUri = result.type !== "track" ? undefined :
+          typeof item.album_uri === "string" && /^spotify:album:[A-Za-z0-9]{1,128}$/u.test(item.album_uri) ? item.album_uri :
+            this.spotifyKnownItems.get(result.item_ref_id)?.album_uri;
+        if (albumUri) result.album_uri = albumUri;
         this.spotifyRefsByUri.set(item.uri, result.item_ref_id);
         // The newest read of an item wins; the oldest items leave first past the bound.
         this.spotifyKnownItems.delete(result.item_ref_id);
@@ -1085,7 +1120,7 @@ export class MoondogApplication {
     });
     // A fixed set of bounded read surfaces survives turns, never session reset.
     this.spotifyReadSelections.set(source, items);
-    return items.map(({ uri: _uri, ...item }) => structuredClone(item));
+    return items.map(modelSpotifyItem);
   }
 
   async spotifyNowPlaying({ signal } = {}) {
@@ -1135,9 +1170,22 @@ export class MoondogApplication {
     return value;
   }
 
+  // One song played alone starts inside its album, so music goes on after it ends.
+  // An episode, or a song whose album no read has shown, plays as it is.
+  #soloTrackSource(uri) {
+    // The newest read of the song carries its album forward; an older retained read may still name it.
+    const albumUri = this.spotifyKnownItems.get(this.spotifyRefsByUri.get(uri))?.album_uri ??
+      this.spotifyHostReadItems().find(item => item.uri === uri && item.type === "track" && item.album_uri)?.album_uri;
+    return albumUri ? { contextUri: albumUri, offsetUri: uri } : { uris: [uri] };
+  }
+
   #resumeSpotifySelection(parameters, { signal } = {}) {
     const transaction = this.pendingPlaylistPromptTransaction;
-    const selectionKey = deviceId => parameters.uris || parameters.contextUri ? JSON.stringify([parameters.uris ?? null, parameters.contextUri ?? null,
+    // An album started at one song plays that song: it counts as the same selection as
+    // the song alone, and its target names the song, not the album.
+    const songs = parameters.uris ?? (parameters.offsetUri ? [parameters.offsetUri] : null);
+    const context = parameters.offsetUri ? null : parameters.contextUri ?? null;
+    const selectionKey = deviceId => songs || context ? JSON.stringify([songs, context,
       deviceId ?? null, parameters.positionMs ?? null]) : null;
     let key = selectionKey(parameters.deviceId);
     // Asking for the same song twice in one turn plays it once and reports the first receipt;
@@ -1148,7 +1196,7 @@ export class MoondogApplication {
       const { deviceId: _deviceId, ...receipt } = structuredClone(accepted);
       return Promise.resolve({ ...receipt, already: true });
     }
-    const items = (parameters.uris ?? (parameters.contextUri ? [parameters.contextUri] : [])).map(uri => this.spotifyHostReadItems().find(item => item.uri === uri)).filter(Boolean).map(item => structuredClone(item));
+    const items = (songs ?? (context ? [context] : [])).map(uri => this.spotifyHostReadItems().find(item => item.uri === uri)).filter(Boolean).map(item => structuredClone(item));
     const attempt = parameters.uris || parameters.contextUri ? { parameters: structuredClone(parameters), items,
       observedAt: this.spotifyContextClock(), turn: this.spotifyContextTurn, epoch: this.spotifyContextEpoch, outcome: "unconfirmed" } : null;
     if (attempt) this.spotifyPlaybackAttempt = attempt;
@@ -1157,6 +1205,8 @@ export class MoondogApplication {
     return this.requireSpotifyService().resume(parameters, { signal,
       preferredDeviceId: this.spotifyPreferredPlaybackDevice,
       allowDeviceSwitch: explicitDevice,
+      // If Spotify will not start the album at this song, the song plays alone.
+      trackFallback: parameters.offsetUri !== undefined,
       beforeDispatch: () => { if (transaction && attempt) this.#requireCurrentPlaybackAttempt(transaction, attempt); },
       onDeviceSelected: deviceId => {
         key = selectionKey(deviceId);
@@ -1187,13 +1237,15 @@ export class MoondogApplication {
     if (sources.length > 1 || (sources.length && action !== "resume")) throw spotifyResolutionError("spotify_playback_source_conflict", "Choose one playback source for resume.");
     if (parameters.itemRefId !== undefined) {
       const { itemRefId, ...rest } = parameters;
-      parameters = { ...rest, uris: [this.requireSpotifyReadItem(itemRefId, ["track", "episode"]).uri] };
+      parameters = { ...rest, ...this.#soloTrackSource(this.requireSpotifyReadItem(itemRefId, ["track", "episode"]).uri) };
     } else if (parameters.contextRefId !== undefined) {
       const { contextRefId, ...rest } = parameters;
       parameters = { ...rest, contextUri: this.requireSpotifyReadItem(contextRefId, ["album", "artist", "playlist"]).uri };
     } else if (parameters.trackRefs !== undefined) {
       const { trackRefs, ...rest } = parameters;
-      parameters = { ...rest, uris: this.requireSpotifyTrackUris(trackRefs) };
+      const uris = this.requireSpotifyTrackUris(trackRefs);
+      // Several songs are the listener's own sequence and play as given.
+      parameters = { ...rest, ...(uris.length === 1 ? this.#soloTrackSource(uris[0]) : { uris }) };
     } else if (parameters.uris !== undefined) {
       if (!Array.isArray(parameters.uris) || parameters.uris.length < 1 || parameters.uris.length > 12) throw spotifyResolutionError("invalid_spotify_uris", "Choose from 1 to 12 Spotify playback items.");
       parameters = { ...parameters, uris: parameters.uris.map(value => this.resolveSpotifyPlaybackUri(value, ["track", "episode"])) };
@@ -1319,7 +1371,7 @@ export class MoondogApplication {
       truncated ||= result.truncated === true || result.has_more === true;
     }
     const items = this.spotifyReadSelections.get("discovery") ?? [];
-    return { provider: "spotify", items: items.map(({ uri: _uri, ...item }) => structuredClone(item)),
+    return { provider: "spotify", items: items.map(modelSpotifyItem),
       queries_used: used + queries.length, queries_remaining: 6 - used - queries.length,
       state: items.length ? "verified_candidates" : failures.length ? "unavailable" : "no_matches",
       failures, skipped_avoided_count: skippedAvoids, skipped_known_count: skippedKnown, truncated,
@@ -1404,7 +1456,9 @@ export class MoondogApplication {
     this.transientSpotifyContext = true;
     const result = await this.requireSpotifyService().catalogChildren({ type: item.type, id: item.uri.split(":")[2], limit, offset }, { signal });
     signal?.throwIfAborted();
-    return { ...result, items: this.#registerSpotifyReadItems("catalog_children", result.items ?? []) };
+    // An album's own track list names no album, so each song keeps the one it came from.
+    const children = (result.items ?? []).map(child => item.type === "album" && child && typeof child === "object" ? { ...child, album_uri: item.uri } : child);
+    return { ...result, items: this.#registerSpotifyReadItems("catalog_children", children) };
   }
 
   spotifySaveLibraryItems({ itemRefs } = {}, { signal } = {}) {
@@ -2615,8 +2669,14 @@ export class MoondogApplication {
         musicSimilarityReady: this.musicSimilarityReady(),
         webResearchReady: this.webResearchReady(),
       musicPreviewReady: this.musicPreviewReady(),
-      }),
+      }).map(capability => capability.state === "enabled" && this.#playbackServiceExcludes(capability.id)
+        ? { ...capability, state: "blocked", blocked_by: "playback_service_not_spotify" } : capability),
     };
+  }
+
+  // With another music service chosen, Spotify does not play or queue anything.
+  #playbackServiceExcludes(capabilityId) {
+    return this.playbackService !== "spotify" && spotifyPlaybackCapabilities.has(capabilityId);
   }
 
   agentCapabilityDescriptors() {
@@ -2637,7 +2697,7 @@ export class MoondogApplication {
       musicSimilarityReady: this.musicSimilarityReady(),
       webResearchReady: this.webResearchReady(),
       musicPreviewReady: this.musicPreviewReady(),
-    });
+    }).filter(descriptor => !this.#playbackServiceExcludes(descriptor.capability_id));
   }
 
   async findArtistReleases(input) {

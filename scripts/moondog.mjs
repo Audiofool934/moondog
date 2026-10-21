@@ -66,6 +66,7 @@ import {
 import { deriveArtistReleaseHintsFromSpotifyArchive } from "../src/profile/spotify-archive-catalog-hints.mjs";
 import { runMoondogStudio } from "../src/surfaces/web/studio.mjs";
 import { resolveListenerLocale, writeLanguagePreference } from "../src/i18n/preferences.mjs";
+import { resolvePlaybackService, writePlaybackPreference } from "../src/core/playback-preferences.mjs";
 
 const localCommands = new Set([
   "status",
@@ -847,6 +848,7 @@ async function main() {
   const application = new MoondogApplication({
     ...domainState,
     locale: await resolveListenerLocale(),
+    playbackService: await resolvePlaybackService(),
     webResearch,
     memoryStore,
     spotifyConnection,
@@ -974,6 +976,9 @@ async function main() {
         save: async (apiKey) => ({ configured: true, source: (await writeLastfmConfiguration(apiKey)).source }),
       },
       saveLanguage: locale => writeLanguagePreference(locale),
+      // The agent's tools and instructions follow the service, so the caller rebuilds the
+      // runtime afterwards, between turns.
+      savePlaybackService: async service => application.setPlaybackService(await writePlaybackPreference(service)),
       refreshImportedData: async (receipt) => {
         if (receipt?.provider === "apple-music-library") await refreshAppleLibraryImport();
         const next = await loadDomainServices();

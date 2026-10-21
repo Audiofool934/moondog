@@ -162,6 +162,13 @@ function coverImage(images) {
   return (sized[0] ?? usable.at(-1))?.url;
 }
 
+// A track's album, kept so a song played alone can go on into the rest of its album.
+// Hosts keep it next to the track URI and never show it to the model.
+function albumUri(raw) {
+  const uri = raw?.album?.uri;
+  return typeof uri === "string" && /^spotify:album:[A-Za-z0-9]{1,128}$/u.test(uri) ? uri : undefined;
+}
+
 function normalizePlayableItem(raw) {
   if (!isPlainObject(raw)) return null;
   const type = ["track", "episode", "ad", "unknown"].includes(raw.type)
@@ -179,6 +186,7 @@ function normalizePlayableItem(raw) {
   if (name) item.name = name;
   if (artists.length > 0) item.artists = artists;
   if (album) item.album = album;
+  if (type === "track" && albumUri(raw)) item.album_uri = albumUri(raw);
   if (publisher) item.publisher = publisher;
   if (durationMs !== undefined) item.duration_ms = durationMs;
   if (typeof raw.explicit === "boolean") item.explicit = raw.explicit;
@@ -310,6 +318,7 @@ function normalizeTrackSearchItem(raw) {
   };
   const album = safeText(raw.album?.name);
   if (album) item.album = album;
+  if (albumUri(raw)) item.album_uri = albumUri(raw);
   const durationMs = safeInteger(raw.duration_ms, 0, 86_400_000);
   if (durationMs !== undefined) item.duration_ms = durationMs;
   const popularity = safeInteger(raw.popularity, 0, 100);
@@ -387,6 +396,7 @@ function normalizeRecentlyPlayedItem(raw) {
   const artists = normalizeArtistNames(raw.track.artists);
   if (!playedAt || !id || !name || !album || artists.length === 0) return null;
   const track = { id, name, artists, album };
+  if (albumUri(raw.track)) track.album_uri = albumUri(raw.track);
   const durationMs = safeInteger(raw.track.duration_ms, 0, 86_400_000);
   if (durationMs !== undefined) track.duration_ms = durationMs;
   const isrc = safeText(raw.track.external_ids?.isrc, 32);

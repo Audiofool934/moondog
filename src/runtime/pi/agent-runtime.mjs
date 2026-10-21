@@ -6012,18 +6012,23 @@ function toolForModel(tool) {
 }
 
 // What this session can actually do. It comes last, so it overrides the general playback rules above.
-function sessionAvailability({ spotifyReady, previewReady }) {
-  if (spotifyReady) return "";
+// Spotify can be connected for reading while the listener chose another service to play music.
+function sessionAvailability({ spotifyReady, spotifyPlaybackReady = spotifyReady, previewReady }) {
+  if (spotifyPlaybackReady) return "";
   const lines = [
     "Session availability:",
-    "- Spotify is not connected in this session, so no Spotify tools exist here. Never call moondog_spotify_* tools, and ignore the Spotify steps in the rules above.",
+    spotifyReady
+      ? "- The listener chose Apple Music to play music, so no Spotify tool plays, pauses, skips, queues or moves music here. Ignore the Spotify playback and queue steps in the rules above. Spotify search, library, history and what is playing on Spotify can still be read."
+      : "- Spotify is not connected in this session, so no Spotify tools exist here. Never call moondog_spotify_* tools, and ignore the Spotify steps in the rules above.",
   ];
   if (previewReady) {
     lines.push(
       "- To let the listener hear music, including any request to play or queue it, call moondog_music_preview: tracks for named songs (up to six, in the order to play) or album for a whole album. It finds each recording in the Apple Music catalog itself and reports any it cannot find, so pass songs straight to it. The previews play one after another in their player.",
       "- When you recommend songs here, pass them to moondog_music_preview so the listener can hear them, and pick songs not already played in this conversation. Build a playlist plan only when they ask for a playlist; this overrides the plan step in other tool instructions.",
       "- After previews start, say in one short line that they are 30-second previews and that the full songs are on Apple Music. Full playback is not available here.",
-      "- Do not suggest linking Spotify or another account to play music here.",
+      spotifyReady
+        ? "- Do not suggest switching to Spotify or linking another account to play music here."
+        : "- Do not suggest linking Spotify or another account to play music here.",
     );
   } else {
     lines.push("- You cannot play or queue music in this session. Say so once, briefly, then help with what you can: the song, its story, and what to try next.");
@@ -6040,7 +6045,7 @@ function hostNotes(notes) {
   return lines.length ? `\n\nAbout this session:\n${lines.join("\n")}` : "";
 }
 
-function systemPrompt({ spotifyReady = true, previewReady = false, notes = [] } = {}) {
+function systemPrompt({ spotifyReady = true, spotifyPlaybackReady = spotifyReady, previewReady = false, notes = [] } = {}) {
   return `You are Moondog, a personal music agent and curator.
 
 ${listenerProfileSkill}
@@ -6176,7 +6181,7 @@ Voice:
 - Moondog lives on a lunar record and grew up on Pink Floyd. An occasional light nod to their songs or ideas is welcome when it truly fits the moment, at most once in a conversation, and never at the expense of a clear answer. Never quote more than a short line of any lyric.
 - No hype, no exclamation marks, no filler openings or closing offers. Use plain hyphens, never em dashes.
 
-Respond in the language used by the user unless asked otherwise; product.reply_language is that language, or the listener's chosen language when a message does not show one. Write Chinese in the script product.reply_language names, even when song titles use the other script.${sessionAvailability({ spotifyReady, previewReady })}${hostNotes(notes)}`;
+Respond in the language used by the user unless asked otherwise; product.reply_language is that language, or the listener's chosen language when a message does not show one. Write Chinese in the script product.reply_language names, even when song titles use the other script.${sessionAvailability({ spotifyReady, spotifyPlaybackReady, previewReady })}${hostNotes(notes)}`;
 }
 
 function contextMessage(snapshot) {
@@ -6935,6 +6940,8 @@ export class PiAgentRuntime {
       initialState: {
         systemPrompt: systemPrompt({
           spotifyReady: application.spotifyReady?.() ?? false,
+          // Hosts without a choice of music service play through Spotify whenever it is ready.
+          spotifyPlaybackReady: application.spotifyPlaybackReady?.() ?? application.spotifyReady?.() ?? false,
           previewReady: application.musicPreviewReady?.() ?? false,
           notes: application.agentHostNotes?.() ?? [],
         }),

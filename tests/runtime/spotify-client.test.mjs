@@ -987,6 +987,25 @@ test("Spotify client returns bounded normalized catalog search results", async (
   assert.equal(JSON.stringify(result).includes("is_local"), false);
 });
 
+test("a track keeps its album's URI so a song played alone can go on into its album", async () => {
+  const track = (id, albumUri) => ({ type: "track", uri: `spotify:track:${id}`, id, name: id, artists: [{ name: "Artist" }],
+    album: { name: "Album", ...(albumUri ? { uri: albumUri } : {}) } });
+  const episode = { type: "episode", uri: "spotify:episode:talk", name: "Talk", album: { name: "Not an album", uri: "spotify:album:notReally" } };
+  const client = createSpotifyWebApiClient({ tokenProvider: async () => "token", fetchImpl: async (url) => {
+    const { pathname } = new URL(url);
+    if (pathname === "/v1/search") return jsonResponse({ tracks: { items: [track("kept", "spotify:album:fictionalAlbum"), track("odd", "spotify:album:bad/id"), track("none")], total: 3 } });
+    if (pathname === "/v1/me/player/queue") return jsonResponse({ currently_playing: track("now", "spotify:album:nowAlbum"), queue: [episode] });
+    return jsonResponse({ items: [{ played_at: "2026-10-01T10:00:00Z", track: track("earlier", "spotify:album:earlierAlbum") }] });
+  } });
+  const search = await client.searchTracks({ query: "x", limit: 3 });
+  assert.deepEqual(search.items.map((item) => item.album_uri), ["spotify:album:fictionalAlbum", undefined, undefined]);
+  const queue = await client.getQueue();
+  assert.equal(queue.currently_playing.album_uri, "spotify:album:nowAlbum");
+  assert.equal(queue.queue[0].album_uri, undefined, "an episode has no album to go on into");
+  const recent = await client.getRecentlyPlayed({ limit: 1 });
+  assert.equal(recent.items[0].track.album_uri, "spotify:album:earlierAlbum");
+});
+
 test("Spotify client creates private playlists and adds tracks with receipts", async () => {
   const requests = [];
   const responses = [

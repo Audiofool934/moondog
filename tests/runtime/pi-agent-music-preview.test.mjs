@@ -207,6 +207,36 @@ test("with Spotify connected, the prompt keeps its Spotify playback rules", asyn
   await runtime.prompt("Hi");
 });
 
+test("the chosen music service decides which tools play music, and the rebuilt runtime says so", () => {
+  const playback = ["moondog_spotify_player_control", "moondog_spotify_queue_add", "moondog_spotify_queue_batch", "moondog_spotify_device_transfer"];
+  const reads = ["moondog_spotify_search", "moondog_spotify_now_playing", "moondog_spotify_queue_status", "moondog_spotify_devices"];
+  const app = application({ spotify: true });
+  const offered = () => runtimeFor(app).runtime.agent.state;
+  let state = offered();
+  let names = state.tools.map((tool) => tool.name);
+  for (const name of [...playback, ...reads]) assert.ok(names.includes(name), name);
+  assert.ok(!names.includes("moondog_music_preview"));
+  assert.doesNotMatch(state.systemPrompt, /Session availability/u);
+
+  app.setPlaybackService("apple_music");
+  assert.equal(app.spotifyReady(), true);
+  assert.equal(app.spotifyPlaybackReady(), false);
+  assert.equal(app.musicPreviewReady(), true);
+  state = offered();
+  names = state.tools.map((tool) => tool.name);
+  for (const name of playback) assert.ok(!names.includes(name), name);
+  for (const name of [...reads, "moondog_music_preview"]) assert.ok(names.includes(name), name);
+  assert.match(state.systemPrompt, /The listener chose Apple Music to play music/u);
+  assert.doesNotMatch(state.systemPrompt, /Spotify is not connected in this session/u);
+  const blocked = app.toolsStatus().capabilities.filter((capability) => capability.blocked_by === "playback_service_not_spotify").map((capability) => capability.id);
+  assert.deepEqual(blocked.sort(), ["spotify.device.transfer", "spotify.player.control", "spotify.queue.add", "spotify.queue.batch"]);
+
+  // Without Spotify, Apple Music is the only way to play either way.
+  const offline = application();
+  offline.setPlaybackService("apple_music");
+  assert.match(runtimeFor(offline).runtime.agent.state.systemPrompt, /Spotify is not connected in this session/u);
+});
+
 test("host notes reach the agent's instructions, and the terminal passes none", async () => {
   const withNotes = runtimeFor(new MoondogApplication({ agentHostNotes: ["This is Moondog's public demo on its website."] }));
   withNotes.faux.setResponses([(context) => {
