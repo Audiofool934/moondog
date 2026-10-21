@@ -1767,7 +1767,7 @@ test("TUI offers API providers before any model is selected", async (context) =>
   context.after(async () => { signalTarget.emit("SIGTERM"); await running; });
   await waitForStart(terminal);
   terminal.send("/auth"); terminal.send("\r");
-  await waitFor(() => stripVTControlCharacters(terminal.output).includes("Sign in to a model provider"));
+  await waitFor(() => stripVTControlCharacters(terminal.output).includes("Sign in to a model or web search service"));
   assert.match(stripVTControlCharacters(terminal.output), /Moonshot AI \(Kimi\)/);
   terminal.send("\r");
   await waitFor(() => terminal.output.includes("Signed in."));

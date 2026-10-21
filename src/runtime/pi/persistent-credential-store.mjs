@@ -18,10 +18,13 @@ import { apiKeyPiProviderIds } from "./provider-registry.mjs";
 const AUTH_DOCUMENT_VERSION = 1;
 const MAX_AUTH_FILE_BYTES = 64 * 1024;
 const LOCK_TIMEOUT_MS = 30_000;
+// API keys for services other than models, such as Brave Search for web lookups.
+export const serviceApiKeyIds = Object.freeze(["brave"]);
+const apiKeyProviderIds = Object.freeze([...apiKeyPiProviderIds, ...serviceApiKeyIds]);
 const SUPPORTED_CREDENTIAL_PROVIDERS = new Set([
   "openai-codex",
   "spotify",
-  ...apiKeyPiProviderIds,
+  ...apiKeyProviderIds,
 ]);
 const POSIX_PERMISSIONS_APPLY = process.platform !== "win32";
 
@@ -170,7 +173,7 @@ function validateCredential(providerId, value) {
   if (providerId === "spotify") {
     return validateSpotifyCredential(value);
   }
-  if (apiKeyPiProviderIds.includes(providerId)) {
+  if (apiKeyProviderIds.includes(providerId)) {
     assertPlainRecord(value, `${providerId} credential`);
     assertExactKeys(value, ["type", "key"], `${providerId} credential shape`);
     if (

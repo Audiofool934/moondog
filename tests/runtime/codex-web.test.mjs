@@ -20,7 +20,7 @@ function fakeCodex({ events, authCode = 0 } = {}) {
     for (const event of events ?? [
       { type: "item.completed", item: { type: "agent_message", text: "progress, not the answer" } },
       { type: "item.started", item: { type: "web_search" } },
-      { type: "item.completed", item: { type: "web_search", query: request.url ?? request.query, action: { type: request.kind === "read" ? "other" : "search" } } },
+      { type: "item.completed", item: { type: "web_search", query: request.url ?? request.query, action: { type: request.kind === "read" ? "open_page" : "search" } } },
       { type: "item.completed", item: { type: "agent_message", text: JSON.stringify(answer) } },
       { type: "turn.completed" },
     ]) options.onEvent(event);

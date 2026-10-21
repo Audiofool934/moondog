@@ -9,6 +9,10 @@ export default {
   "citations.heading": "公開音樂來源（與私人聆聽證據分開）：",
   "citations.item": ({ label, url, storefront, date }) => `- [${label}](<${url}>) - ${storefront} 商店，檢索於 ${date}。`,
   "citations.scope": "範圍：這些公開目錄頁面無法證明個人偏好、完整聆聽紀錄或跨平台可用性。",
+  "web.sources.heading": ({ providers }) => `公開網頁來源（${providers}）`,
+  "web.sources.headingUnnamed": "公開網頁來源",
+  "web.sources.published": ({ date }) => `來源日期：${date}`,
+  "web.sources.retrieved": ({ date }) => `檢索於 ${date}`,
 
   "external.neighbors": ({ seed }) => seed ? `ListenBrainz 聽眾相鄰，從 ${seed} 出發` : "ListenBrainz 聽眾相鄰",
   "external.listenbrainz": ({ neighbor, date }) => `${neighbor}（Wikidata 身分，CC0，檢索於 ${date}；這不是音訊相似度）`,

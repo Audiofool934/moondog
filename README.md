@@ -147,7 +147,7 @@ What it reads about the wider music world stays separate from what it knows abou
 | Optional connection | What it adds |
 | --- | --- |
 | A model through Pi | Conversation, discovery, and playlists built together. |
-| Codex CLI | `/web` lookups with links to their sources, through your own signed-in Codex CLI. |
+| A web search service | `/web` lookups with links to their sources, through DeepSeek (`/auth deepseek`, which also reads pages), Brave Search (`/auth brave`), or your own signed-in Codex CLI. |
 | Spotify sign-in | Playback, and private playlists made only when you ask. |
 
 Your profile never touches the network.

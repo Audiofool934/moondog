@@ -3,6 +3,7 @@ import { Writable } from "node:stream";
 
 import {
   createPiAuthentication,
+  serviceKeyProviders,
   supportedAuthProviderIds,
 } from "../../runtime/pi/authentication.mjs";
 import { sanitizeTerminalText } from "./format-output.mjs";
@@ -20,7 +21,8 @@ Commands:
 - \`moondog auth status [provider] [--json]\` - inspect saved or environment credentials
 - \`moondog auth logout <provider> [--json]\` - remove that provider's saved credential
 
-API key providers: ${supportedAuthProviderIds.filter((id) => id !== DEFAULT_AUTH_PROVIDER).join(", ")}.
+API key providers: ${supportedAuthProviderIds.filter((id) => id !== DEFAULT_AUTH_PROVIDER && !serviceKeyProviders.some((service) => service.id === id)).join(", ")}.
+Web search keys: ${serviceKeyProviders.map((service) => `${service.id} for ${service.name} (or ${service.variable})`).join(", ")}; a deepseek key also searches and reads pages.
 Use zai for GLM, moonshotai or moonshotai-cn for Kimi, xai for Grok, openai for GPT, and anthropic for Claude.
 Moondog keeps credentials in its own private local store.
 API keys are entered interactively, never as command arguments.
@@ -345,7 +347,9 @@ export async function runAuthCommand({
         "API key saved locally. It will be checked by the provider when you send a request.",
       );
     }
-    writeLine(output, "Next, return to Moondog and run /model.");
+    writeLine(output, serviceKeyProviders.some((service) => service.id === provider)
+      ? "Next, run moondog web status, or /web status in Moondog, to see which service searches."
+      : "Next, return to Moondog and run /model.");
     if (!apiKeyLogin) {
       writeLine(output, "For a non-interactive launch, use environment overrides:");
       writeLine(output, "  export MOONDOG_PROVIDER=openai-codex");

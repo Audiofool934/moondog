@@ -9,6 +9,10 @@ export default {
   "citations.heading": "公开音乐来源（与私人听歌证据分开）：",
   "citations.item": ({ label, url, storefront, date }) => `- [${label}](<${url}>) - ${storefront} storefront，检索于 ${date}。`,
   "citations.scope": "范围：这些公开 catalog 页面不证明个人偏好、完整听歌历史或全平台可用性。",
+  "web.sources.heading": ({ providers }) => `公开网页来源（${providers}）`,
+  "web.sources.headingUnnamed": "公开网页来源",
+  "web.sources.published": ({ date }) => `来源日期：${date}`,
+  "web.sources.retrieved": ({ date }) => `检索于 ${date}`,
 
   "external.neighbors": ({ seed }) => seed ? `ListenBrainz 听友相邻，从 ${seed} 出发` : "ListenBrainz 听友相邻",
   "external.listenbrainz": ({ neighbor, date }) => `${neighbor}（Wikidata 身份，CC0，检索于 ${date}；这不是音频相似）`,

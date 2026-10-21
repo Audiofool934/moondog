@@ -40,7 +40,8 @@ test("Pi searches and reads with bounded inputs, then retains host-rendered sour
   const result = await runtime.prompt("搜索并读一篇艺术家访谈", { onTextDelta: (delta) => { rendered += delta; }, onTextReplace: (text) => { rendered = text; } });
   assert.deepEqual(calls, [{ query: "artist interview" }, { url: "https://example.com/interview" }]);
   assert.equal(result.web_sources.length, 1);
-  assert.match(result.text, /Public web sources/);
+  // The heading follows the reply language and names the service that found the sources.
+  assert.match(result.text, /公开网页来源（Codex CLI）/);
   assert.match(result.text, /https:\/\/example.com\/interview/);
   assert.equal(rendered, result.text);
   application.close();

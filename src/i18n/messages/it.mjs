@@ -9,6 +9,10 @@ export default {
   "citations.heading": "Fonti musicali pubbliche (separate dai tuoi dati d'ascolto personali):",
   "citations.item": ({ label, url, storefront, date }) => `- [${label}](<${url}>) - store ${storefront}, consultato il ${date}.`,
   "citations.scope": "Ambito: queste pagine di catalogo pubbliche non dimostrano preferenze personali, una cronologia d'ascolto completa né la disponibilità su altre piattaforme.",
+  "web.sources.heading": ({ providers }) => `Fonti web pubbliche (${providers})`,
+  "web.sources.headingUnnamed": "Fonti web pubbliche",
+  "web.sources.published": ({ date }) => `data della fonte: ${date}`,
+  "web.sources.retrieved": ({ date }) => `consultato: ${date}`,
 
   "external.neighbors": ({ seed }) => seed ? `vicini d'ascolto ListenBrainz di ${seed}` : "vicini d'ascolto ListenBrainz",
   "external.listenbrainz": ({ neighbor, date }) => `${neighbor} (identità Wikidata, CC0, consultata il ${date}; non è una somiglianza sonora)`,

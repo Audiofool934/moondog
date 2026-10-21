@@ -11,6 +11,7 @@ import {
   listCapabilities,
 } from "./capability-catalog.mjs";
 import { recoverArtistReleasesWithCrossCatalogIdentity } from "../integrations/cross-catalog-artist-identity.mjs";
+import { webProviderName } from "../integrations/web/web-result.mjs";
 import { normalizeConversationFolder, normalizeConversationLabel, normalizeMemoryContent } from "../memory/local-memory-store.mjs";
 import { queueListeningIntent, queueCancellationRequested, unheardRequested } from "./spotify-listening-intent.mjs";
 import { DEFAULT_LOCALE, normalizeLocale } from "../i18n/index.mjs";
@@ -2721,19 +2722,31 @@ export class MoondogApplication {
     };
   }
 
-  webResearchReady() {
-    return this.webResearch?.publicStatus().state === "configured";
+  /** Who serves a web search or page read, or null when nothing is set up for it. */
+  webLookup(kind) {
+    const status = this.webResearch?.publicStatus();
+    // A single backend reports one status for both operations.
+    const entry = status?.[kind] ?? status;
+    return entry?.state === "configured" ? { provider: entry.provider ?? null, name: webProviderName(entry.provider) ?? "a web service" } : null;
+  }
+
+  webLookupStatus() {
+    return this.webResearch?.publicStatus?.() ?? { state: "unavailable" };
+  }
+
+  webLookupOptions() {
+    return { webSearchProvider: this.webLookup("search")?.name ?? null, webReadProvider: this.webLookup("read")?.name ?? null };
   }
 
   async searchWeb(input, options) {
     this.consumeListeningWebCall();
-    if (!this.webResearchReady()) throw new Error("Codex web search is unavailable. Run /web status for setup details.");
+    if (!this.webLookup("search")) throw new Error("Web search isn't set up. Run /web status for setup details.");
     return this.webResearch.search(input, options);
   }
 
   async readWeb(input, options) {
     this.consumeListeningWebCall();
-    if (!this.webResearchReady()) throw new Error("Codex web reading is unavailable. Run /web status for setup details.");
+    if (!this.webLookup("read")) throw new Error("Web page reading isn't set up. Run /web status for setup details.");
     return this.webResearch.read(input, options);
   }
 
@@ -2763,7 +2776,7 @@ export class MoondogApplication {
         musicCatalogReady: this.musicCatalogReady(),
         musicDiscoveryReady: this.musicDiscoveryReady(),
         musicSimilarityReady: this.musicSimilarityReady(),
-        webResearchReady: this.webResearchReady(),
+        ...this.webLookupOptions(),
       musicPreviewReady: this.musicPreviewReady(),
       }).map(capability => capability.state === "enabled" && this.#playbackServiceExcludes(capability.id)
         ? { ...capability, state: "blocked", blocked_by: "playback_service_not_spotify" } : capability),
@@ -2791,7 +2804,7 @@ export class MoondogApplication {
       musicCatalogReady: this.musicCatalogReady(),
       musicDiscoveryReady: this.musicDiscoveryReady(),
       musicSimilarityReady: this.musicSimilarityReady(),
-      webResearchReady: this.webResearchReady(),
+      ...this.webLookupOptions(),
       musicPreviewReady: this.musicPreviewReady(),
     }).filter(descriptor => !this.#playbackServiceExcludes(descriptor.capability_id));
   }
@@ -3192,7 +3205,7 @@ export class MoondogApplication {
       source: await this.sourceStatus(),
       profile: await this.profileStatus(),
       memory: this.memoryStatus(),
-      web_research: this.webResearch?.publicStatus?.() ?? { provider: "codex_cli", state: "unavailable" },
+      web_research: this.webLookupStatus(),
       music_catalog: {
         provider: "apple_music",
         state: this.musicCatalogReady() ? "configured" : "unavailable",
@@ -3216,12 +3229,15 @@ export class MoondogApplication {
     const profile = await this.profileStatus();
     const spotify = this.spotifyStatus();
     const checks = [
-      {
-        id: "web.codex_cli",
-        ok: this.webResearchReady(),
-        state: this.webResearchReady() ? "configured" : "unavailable",
-        optional_for_local_commands: true,
-      },
+      ...["search", "read"].map((kind) => {
+        const lookup = this.webLookup(kind);
+        const status = this.webLookupStatus();
+        return {
+          id: `web.${kind}`, ok: Boolean(lookup), state: lookup ? "configured" : "unavailable",
+          actual: lookup?.name ?? (status[kind] ?? status).reason ?? "unavailable",
+          optional_for_local_commands: true,
+        };
+      }),
       {
         id: "node.version",
         ok: versionAtLeast(process.versions.node, minimumNodeVersion),

@@ -77,7 +77,7 @@ A model or music service chosen there lasts until the app quits, and sign-in and
   Notarization reads the keychain profile `moondog-notary`, made once with `xcrun notarytool store-credentials moondog-notary --team-id <your team ID>`, which asks for the Apple ID and an app-specific password.
   `MOONDOG_SIGNING_IDENTITY` and `MOONDOG_NOTARY_PROFILE` choose a different certificate or profile.
 - Opened from the Dock or Finder, the app has a minimal `PATH`, so the core gets the `PATH` of a login shell, as in a terminal.
-  Programs such as `codex`, which web research needs, keep working.
+  Programs such as `codex`, which web research can use, keep working.
 - The packaged core has no npm update notice, because the app updates as a whole.
 
 ## Not yet

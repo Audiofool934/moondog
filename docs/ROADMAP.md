@@ -78,7 +78,7 @@ The current priority is to complete and validate the personal listening loop in 
 
 ### Terminal listening loop
 
-- [x] Search public reviews, news, interviews and concert information and read public pages from the TUI and Pi agent through the local Codex CLI, with source links, bounded calls, cancellation and a short process-local cache.
+- [x] Search public reviews, news, interviews and concert information and read public pages from the TUI and Pi agent through DeepSeek Search and Fetch, Brave Search or the local Codex CLI, with source links, bounded calls, cancellation and a short process-local cache.
 
 - [x] Make `npm start` enter the TUI and keep browser demonstrations behind explicit commands.
 - [x] View and refresh the local Listening Time Machine, listening patterns, and direct assertions through `/taste`.
