@@ -342,6 +342,8 @@ export function runWindowRoom(services, { port, send }) {
   // Spotify sign-in prints its address on stderr, as in a terminal; the window opens it.
   async function connectSpotify(clientId) {
     if (typeof runSpotify !== "function") return;
+    // Connecting replaces every conversation's Spotify reads, so it waits for running replies.
+    if (busy()) return send({ type: "sign-in", provider: "spotify", state: "error", code: "connect_while_answering" });
     const controller = new AbortController();
     signIn = { provider: "spotify", controller };
     const sink = { write: (text) => {

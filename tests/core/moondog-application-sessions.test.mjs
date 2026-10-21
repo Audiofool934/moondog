@@ -269,6 +269,9 @@ test("a conversation that shares its services closes only its own domain-service
     assert.deepEqual(closes, ["fork"]);
     assert.equal(conversation.memorySession, null);
     assert.deepEqual(conversation.pendingSpotifyPlaylistStatus(), { state: "none" });
+    // A reply that finishes after the close can't bind to whichever conversation is active now.
+    assert.throws(() => conversation.ensureMemorySession(), /This conversation is closed/);
+    assert.throws(() => conversation.recordCompletedTurn("Too late.", "Nowhere to go."), /This conversation is closed/);
 
     // The main application still reads and writes the shared store.
     assert.ok(application.listSavedSessions().some((saved) => saved.session_id === session.session_id));

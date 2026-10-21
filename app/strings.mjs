@@ -37,6 +37,7 @@ const STRINGS = {
     "effort.minimal": "Minimal", "effort.low": "Low", "effort.medium": "Medium", "effort.high": "High", "effort.xhigh": "Extra high", "effort.max": "Max",
     signedInFrom: "Signed in with {source}", theEnvironment: "the environment", "effort.off": "Off",
     noticeModelUnknown: "That model isn't in the provider's list anymore. Choose another.",
+    connectWhileAnswering: "Wait for the reply to finish, then connect Spotify.",
     moreProviders: "Show {count} more providers that read a key from the environment",
     providers: "Providers", noProviders: "Model sign-in isn't available here. Use moondog in a terminal and choose /model.", signedIn: "Signed in", signInWithBrowser: "Sign in with your browser", needsApiKey: "Needs an API key", setInEnvironment: "Set in the environment",
     signIn: "Sign in", signOut: "Sign out", signInFirst: "Sign in to see this provider's models.", signingIn: "Signing in to {provider}",
@@ -104,6 +105,8 @@ const STRINGS = {
     memory: "记忆", memoryNote: "Moondog 在对话之间记住的关于你的事。有不对的，就让它忘掉。", rememberPlaceholder: "Moondog 应该知道的事", remember: "记住",
     noMemories: "还没有内容。", forget: "忘掉", version: "版本 {version}", shortcuts: "快捷键",
     moreProviders: "显示另外 {count} 个从环境变量读取密钥的服务商",
+
+    connectWhileAnswering: "等回复结束后再连接 Spotify。",
   },
   "zh-Hant": {
     newConversation: "新對話", today: "今天", yesterday: "昨天", previous7: "過去 7 天", older: "更早",
@@ -153,6 +156,8 @@ const STRINGS = {
     memory: "記憶", memoryNote: "Moondog 在對話之間記住的關於你的事。有不對的，就讓它忘掉。", rememberPlaceholder: "Moondog 應該知道的事", remember: "記住",
     noMemories: "還沒有內容。", forget: "忘掉", version: "版本 {version}", shortcuts: "快速鍵",
     moreProviders: "顯示另外 {count} 個從環境變數讀取金鑰的供應商",
+
+    connectWhileAnswering: "等回覆結束後再連接 Spotify。",
   },
   ja: {
     newConversation: "新しい会話", today: "今日", yesterday: "昨日", previous7: "過去 7 日間", older: "それ以前",
@@ -202,6 +207,8 @@ const STRINGS = {
     memory: "記憶", memoryNote: "Moondog が会話をまたいで覚えている、あなたについてのことです。間違っているものは忘れさせてください。", rememberPlaceholder: "Moondog に知っておいてほしいこと", remember: "覚える",
     noMemories: "まだありません。", forget: "忘れる", version: "バージョン {version}", shortcuts: "ショートカット",
     moreProviders: "環境変数からキーを読むプロバイダーをあと {count} 件表示",
+
+    connectWhileAnswering: "応答が終わってから Spotify に接続してください。",
   },
   ko: {
     newConversation: "새 대화", today: "오늘", yesterday: "어제", previous7: "지난 7일", older: "이전",
@@ -251,6 +258,8 @@ const STRINGS = {
     memory: "기억", memoryNote: "Moondog가 여러 대화에 걸쳐 기억하는 내 정보입니다. 틀린 내용은 잊게 하세요.", rememberPlaceholder: "Moondog가 알아야 할 내용", remember: "기억하기",
     noMemories: "아직 없습니다.", forget: "잊기", version: "버전 {version}", shortcuts: "단축키",
     moreProviders: "환경 변수에서 키를 읽는 제공업체 {count}개 더 보기",
+
+    connectWhileAnswering: "응답이 끝난 뒤 Spotify를 연결하세요.",
   },
   es: {
     newConversation: "Nueva conversación", today: "Hoy", yesterday: "Ayer", previous7: "Últimos 7 días", older: "Anteriores",
@@ -300,6 +309,8 @@ const STRINGS = {
     memory: "Memoria", memoryNote: "Lo que Moondog guarda sobre ti entre conversaciones. Olvida lo que esté mal.", rememberPlaceholder: "Algo que Moondog debería saber", remember: "Recordar",
     noMemories: "Nada todavía.", forget: "Olvidar", version: "Versión {version}", shortcuts: "Atajos",
     moreProviders: "Mostrar {count} proveedores más que leen la clave del entorno",
+
+    connectWhileAnswering: "Espera a que termine la respuesta y luego conecta Spotify.",
   },
   fr: {
     newConversation: "Nouvelle conversation", today: "Aujourd'hui", yesterday: "Hier", previous7: "7 derniers jours", older: "Plus anciennes",
@@ -349,6 +360,8 @@ const STRINGS = {
     memory: "Mémoire", memoryNote: "Ce que Moondog garde sur vous d'une conversation à l'autre. Oubliez ce qui est faux.", rememberPlaceholder: "Quelque chose que Moondog devrait savoir", remember: "Mémoriser",
     noMemories: "Rien pour l'instant.", forget: "Oublier", version: "Version {version}", shortcuts: "Raccourcis",
     moreProviders: "Afficher {count} autres fournisseurs qui lisent leur clé dans l'environnement",
+
+    connectWhileAnswering: "Attendez la fin de la réponse, puis connectez Spotify.",
   },
   de: {
     newConversation: "Neue Unterhaltung", today: "Heute", yesterday: "Gestern", previous7: "Letzte 7 Tage", older: "Älter",
@@ -398,6 +411,8 @@ const STRINGS = {
     memory: "Gedächtnis", memoryNote: "Was Moondog sich zwischen Unterhaltungen über dich merkt. Lass Moondog vergessen, was nicht stimmt.", rememberPlaceholder: "Etwas, das Moondog wissen sollte", remember: "Merken",
     noMemories: "Noch nichts.", forget: "Vergessen", version: "Version {version}", shortcuts: "Tastaturkurzbefehle",
     moreProviders: "{count} weitere Anbieter zeigen, die ihren Schlüssel aus der Umgebung lesen",
+
+    connectWhileAnswering: "Warte, bis die Antwort fertig ist, und verbinde dann Spotify.",
   },
   pt: {
     newConversation: "Nova conversa", today: "Hoje", yesterday: "Ontem", previous7: "Últimos 7 dias", older: "Anteriores",
@@ -447,6 +462,8 @@ const STRINGS = {
     memory: "Memória", memoryNote: "O que o Moondog guarda sobre você entre as conversas. Remova o que estiver errado.", rememberPlaceholder: "Algo que o Moondog deveria saber", remember: "Guardar",
     noMemories: "Nada ainda.", forget: "Esquecer", version: "Versão {version}", shortcuts: "Atalhos",
     moreProviders: "Mostrar mais {count} provedores que leem a chave do ambiente",
+
+    connectWhileAnswering: "Espere a resposta terminar e depois conecte o Spotify.",
   },
   it: {
     newConversation: "Nuova conversazione", today: "Oggi", yesterday: "Ieri", previous7: "Ultimi 7 giorni", older: "Meno recenti",
@@ -496,6 +513,8 @@ const STRINGS = {
     memory: "Memoria", memoryNote: "Quello che Moondog ricorda di te tra una conversazione e l'altra. Fagli dimenticare ciò che è sbagliato.", rememberPlaceholder: "Qualcosa che Moondog dovrebbe sapere", remember: "Ricorda",
     noMemories: "Ancora niente.", forget: "Dimentica", version: "Versione {version}", shortcuts: "Scorciatoie da tastiera",
     moreProviders: "Mostra altri {count} fornitori che leggono la chiave dall'ambiente",
+
+    connectWhileAnswering: "Aspetta che la risposta finisca, poi collega Spotify.",
   },
 };
 

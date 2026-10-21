@@ -868,6 +868,9 @@ export class MoondogApplication {
   }
 
   ensureMemorySession() {
+    // A conversation closed beside others shares their store; binding again would write into
+    // whichever conversation is active on the route, so it refuses instead.
+    if (this.closed && !this.ownsServices) throw new Error("This conversation is closed.");
     if (!this.memoryStore) return this.memorySession ??= this.#newLocalConversation();
     this.memorySession ??= this.memoryStore.resumeOrStartSession(
       this.memoryRouteKey,
@@ -3155,6 +3158,7 @@ export class MoondogApplication {
   }
 
   close() {
+    this.closed = true;
     try {
       this.resetSpotifyReadContext();
       this.memorySession = null;

@@ -532,7 +532,7 @@ port.onmessage = ({ data }) => {
   }
   if (data.type === "provider-models") providerModels.set(data.provider, data.models ?? []);
   if (data.type === "devices" && devicePicker) void showDevices(data.devices ?? []);
-  if (data.type === "sign-in" && data.state === "error") notice(data.message || t("signInFailed"));
+  if (data.type === "sign-in" && data.state === "error") notice(data.code === "connect_while_answering" ? t("connectWhileAnswering") : data.message || t("signInFailed"));
   if (data.type === "import" && data.stage === "refresh-failed") notice(t("importRefreshFailed"));
   if (data.type === "notice") notice(t(NOTICES[data.code] ?? "noticeFailed") + (NOTICES[data.code] ? "" : data.message ? `: ${data.message}` : ""));
   if (data.type === "ready" || data.type === "status") {
