@@ -115,6 +115,21 @@ const schema = `
     queued_json TEXT NOT NULL DEFAULT '[]'
   ) STRICT;
 
+  -- Additive tables keep the schema version, so older cores still open this database.
+  CREATE TABLE IF NOT EXISTS conversation_folders (
+    folder_id TEXT PRIMARY KEY NOT NULL,
+    name TEXT NOT NULL,
+    position INTEGER NOT NULL,
+    created_at TEXT NOT NULL
+  ) STRICT;
+
+  CREATE TABLE IF NOT EXISTS conversation_labels (
+    session_id TEXT PRIMARY KEY NOT NULL REFERENCES sessions(session_id),
+    title TEXT,
+    pinned_at TEXT,
+    folder_id TEXT REFERENCES conversation_folders(folder_id)
+  ) STRICT;
+
   CREATE TABLE IF NOT EXISTS memory_claims (
     memory_id TEXT PRIMARY KEY NOT NULL,
     kind TEXT NOT NULL CHECK (kind IN ('fact', 'preference', 'constraint', 'goal')),
@@ -243,6 +258,46 @@ function cleanText(value, maximum, label) {
 
 export function normalizeMemoryContent(value) {
   return cleanText(value, 2_000, "Memory");
+}
+
+function cleanSessionId(value) {
+  if (typeof value !== "string" || !value || value.length > 128) {
+    throw new TypeError("Session ID is invalid");
+  }
+  return value;
+}
+
+// A partial patch: a missing key keeps its value, and a null or empty title clears it.
+// The in-memory conversations reuse this, so both paths accept the same input.
+export function normalizeConversationLabel(patch) {
+  if (!patch || typeof patch !== "object" || Array.isArray(patch) ||
+      Object.keys(patch).some((key) => !["title", "pinned", "folderId"].includes(key))) {
+    throw new TypeError("Conversation label is invalid");
+  }
+  const label = {};
+  if (patch.title !== undefined) {
+    label.title = patch.title === null || (typeof patch.title === "string" && !patch.title.trim())
+      ? null : cleanText(patch.title, 160, "Conversation title");
+  }
+  if (patch.pinned !== undefined) {
+    if (typeof patch.pinned !== "boolean") throw new TypeError("Conversation pin is invalid");
+    label.pinned = patch.pinned;
+  }
+  if (patch.folderId !== undefined) {
+    label.folderId = patch.folderId === null ? null : cleanText(patch.folderId, 128, "Folder ID");
+  }
+  return label;
+}
+
+export function normalizeConversationFolder({ folderId, name, position } = {}) {
+  if (position !== undefined && (!Number.isSafeInteger(position) || position < 0)) {
+    throw new TypeError("Folder position is invalid");
+  }
+  return {
+    folderId: folderId === undefined || folderId === null ? null : cleanText(folderId, 128, "Folder ID"),
+    name: cleanText(name, 80, "Folder name"),
+    position,
+  };
 }
 
 function cleanKind(value) {
@@ -855,28 +910,144 @@ export class LocalMemoryStore {
         CASE WHEN EXISTS (SELECT 1 FROM conversation_entries WHERE session_id = s.session_id)
           THEN (SELECT SUM(1 + (assistant_text != '')) FROM conversation_entries WHERE session_id = s.session_id)
           ELSE (SELECT COUNT(*) FROM turns WHERE session_id = s.session_id) END AS turn_count,
-        COALESCE((SELECT user_text FROM conversation_entries WHERE session_id = s.session_id ORDER BY position LIMIT 1),
+        COALESCE(l.title, (SELECT user_text FROM conversation_entries WHERE session_id = s.session_id ORDER BY position LIMIT 1),
           (SELECT content FROM turns WHERE session_id = s.session_id AND role = 'user' ORDER BY position LIMIT 1),
           b.draft, '') AS title,
+        l.title IS NOT NULL AS custom_title, l.pinned_at, l.folder_id,
         b.parent_session_id,
         COALESCE(NULLIF(b.draft, ''), (SELECT user_text FROM conversation_entries WHERE session_id = s.session_id ORDER BY position DESC LIMIT 1), '') AS last_message
       FROM sessions s LEFT JOIN conversation_branches b ON b.session_id = s.session_id
+        LEFT JOIN conversation_labels l ON l.session_id = s.session_id
       WHERE s.route_key = ? AND (
         EXISTS (SELECT 1 FROM conversation_entries WHERE session_id = s.session_id) OR
         EXISTS (SELECT 1 FROM turns WHERE session_id = s.session_id) OR b.draft != '')
-      ORDER BY updated_at DESC, s.started_at DESC, s.rowid DESC LIMIT ?
+      ORDER BY l.pinned_at IS NULL, updated_at DESC, s.started_at DESC, s.rowid DESC LIMIT ?
     `).all(route, bounded).map(row => ({
       session_id: row.session_id, started_at: row.started_at, updated_at: row.updated_at,
       turn_count: row.turn_count, title: row.title,
+      custom_title: row.custom_title === 1, pinned_at: row.pinned_at ?? null, folder_id: row.folder_id ?? null,
       ...(row.parent_session_id ? { parent_session_id: row.parent_session_id, last_message: row.last_message } : {}),
     }));
   }
 
+  sessionExists(sessionId) {
+    this.#assertOpen();
+    return Boolean(this.#database.prepare("SELECT 1 FROM sessions WHERE session_id = ?").get(sessionId));
+  }
+
+  labelConversation(sessionId, patch, { routeKey = "local:main" } = {}) {
+    this.#assertOpen();
+    const id = cleanSessionId(sessionId);
+    const route = cleanText(routeKey, 128, "Session route");
+    const label = normalizeConversationLabel(patch);
+    this.#database.exec("BEGIN IMMEDIATE");
+    try {
+      if (!this.#database.prepare("SELECT 1 FROM sessions WHERE session_id = ? AND route_key = ?").get(id, route)) {
+        throw new Error("Saved conversation not found for this route.");
+      }
+      if (label.folderId && !this.#database.prepare("SELECT 1 FROM conversation_folders WHERE folder_id = ?").get(label.folderId)) {
+        throw new Error("Conversation folder not found.");
+      }
+      const current = this.#database.prepare("SELECT title, pinned_at, folder_id FROM conversation_labels WHERE session_id = ?").get(id);
+      const next = {
+        title: label.title !== undefined ? label.title : current?.title ?? null,
+        // Pinning again keeps the first pin time.
+        pinned_at: label.pinned === undefined ? current?.pinned_at ?? null
+          : label.pinned ? current?.pinned_at ?? isoTimestamp(this.#clock) : null,
+        folder_id: label.folderId !== undefined ? label.folderId : current?.folder_id ?? null,
+      };
+      if (next.title === null && next.pinned_at === null && next.folder_id === null) {
+        this.#database.prepare("DELETE FROM conversation_labels WHERE session_id = ?").run(id);
+      } else {
+        this.#database.prepare(`INSERT INTO conversation_labels(session_id, title, pinned_at, folder_id) VALUES (?, ?, ?, ?)
+          ON CONFLICT(session_id) DO UPDATE SET title = excluded.title, pinned_at = excluded.pinned_at, folder_id = excluded.folder_id`)
+          .run(id, next.title, next.pinned_at, next.folder_id);
+      }
+      this.#database.exec("COMMIT");
+      return { session_id: id, ...next };
+    } catch (error) { this.#database.exec("ROLLBACK"); throw error; }
+  }
+
+  listConversationFolders() {
+    this.#assertOpen();
+    return this.#database.prepare(`SELECT folder_id, name, position, created_at FROM conversation_folders
+      ORDER BY position, created_at, folder_id`).all().map(row => ({ ...row }));
+  }
+
+  // Without a folder ID this creates a folder; with one it renames or moves that folder.
+  saveConversationFolder(folder) {
+    this.#assertOpen();
+    const { folderId, name, position } = normalizeConversationFolder(folder);
+    this.#database.exec("BEGIN IMMEDIATE");
+    try {
+      let id = folderId;
+      if (id) {
+        const changed = this.#database.prepare("UPDATE conversation_folders SET name = ?, position = COALESCE(?, position) WHERE folder_id = ?")
+          .run(name, position ?? null, id);
+        if (changed.changes !== 1) throw new Error("Conversation folder not found.");
+      } else {
+        id = randomUUID();
+        const last = this.#database.prepare("SELECT MAX(position) AS position FROM conversation_folders").get().position;
+        this.#database.prepare("INSERT INTO conversation_folders(folder_id, name, position, created_at) VALUES (?, ?, ?, ?)")
+          .run(id, name, position ?? (last === null ? 0 : last + 1), isoTimestamp(this.#clock));
+      }
+      const row = this.#database.prepare("SELECT folder_id, name, position, created_at FROM conversation_folders WHERE folder_id = ?").get(id);
+      this.#database.exec("COMMIT");
+      return { ...row };
+    } catch (error) { this.#database.exec("ROLLBACK"); throw error; }
+  }
+
+  // Deleting a folder keeps its conversations; they return to the unfiled list.
+  deleteConversationFolder(folderId) {
+    this.#assertOpen();
+    const id = cleanText(folderId, 128, "Folder ID");
+    this.#database.exec("BEGIN IMMEDIATE");
+    try {
+      const unfiled = this.#database.prepare("UPDATE conversation_labels SET folder_id = NULL WHERE folder_id = ?").run(id).changes;
+      this.#database.prepare("DELETE FROM conversation_labels WHERE title IS NULL AND pinned_at IS NULL AND folder_id IS NULL").run();
+      const deleted = this.#database.prepare("DELETE FROM conversation_folders WHERE folder_id = ?").run(id).changes === 1;
+      this.#database.exec("COMMIT");
+      return { deleted, folder_id: id, unfiled };
+    } catch (error) { this.#database.exec("ROLLBACK"); throw error; }
+  }
+
+  // Removes one conversation and its transcript but keeps durable memories, so a
+  // preference stated in it still holds. Its branches stay, re-parented and re-rooted.
+  deleteConversation(sessionId, { routeKey = "local:main" } = {}) {
+    this.#assertOpen();
+    const id = cleanSessionId(sessionId);
+    const route = cleanText(routeKey, 128, "Session route");
+    const run = (sql, ...values) => this.#database.prepare(sql).run(...values).changes;
+    this.#database.exec("BEGIN IMMEDIATE");
+    try {
+      const session = this.#database.prepare("SELECT status FROM sessions WHERE session_id = ? AND route_key = ?").get(id, route);
+      if (!session) throw new Error("Saved conversation not found for this route.");
+      // Each surface closes the conversation it leaves, so an active one is probably open in another process.
+      if (session.status === "active") throw new Error("This conversation is open in another Moondog window or terminal.");
+      // Foreign keys are checked at once, so every reference to the session goes before its row.
+      const parent = this.#database.prepare("SELECT parent_session_id FROM conversation_branches WHERE session_id = ?").get(id)?.parent_session_id ?? null;
+      const reparented = run("UPDATE conversation_branches SET parent_session_id = ? WHERE parent_session_id = ?", parent, id);
+      const heir = this.#database.prepare(`SELECT b.session_id FROM conversation_branches b JOIN sessions s ON s.session_id = b.session_id
+        WHERE b.root_session_id = ? AND b.session_id != ? ORDER BY s.started_at, s.rowid LIMIT 1`).get(id, id)?.session_id;
+      if (heir) run("UPDATE conversation_branches SET root_session_id = ? WHERE root_session_id = ? AND session_id != ?", heir, id, id);
+      // Dialogue episodes hold the raw user text. With no session they would be recalled
+      // in every conversation, so they go; explicit memories and retractions stay.
+      run(`DELETE FROM claim_episode_refs WHERE episode_id IN
+        (SELECT episode_id FROM episodes WHERE session_id = ? AND kind = 'dialogue')`, id);
+      run("DELETE FROM episodes WHERE session_id = ? AND kind = 'dialogue'", id);
+      run("UPDATE episodes SET session_id = NULL WHERE session_id = ?", id);
+      run("UPDATE memory_claims SET source_session_id = NULL WHERE source_session_id = ?", id);
+      for (const table of ["conversation_labels", "conversation_entries", "turns", "conversation_branches", "sessions"]) {
+        run(`DELETE FROM ${table} WHERE session_id = ?`, id);
+      }
+      this.#database.exec("COMMIT");
+      return { deleted: true, session_id: id, reparented };
+    } catch (error) { this.#database.exec("ROLLBACK"); throw error; }
+  }
+
   resumeSession(sessionId, { routeKey = "local:main" } = {}) {
     this.#assertOpen();
-    if (typeof sessionId !== "string" || !sessionId || sessionId.length > 128) {
-      throw new TypeError("Session ID is invalid");
-    }
+    cleanSessionId(sessionId);
     const route = cleanText(routeKey, 128, "Session route");
     this.#database.exec("BEGIN IMMEDIATE");
     try {

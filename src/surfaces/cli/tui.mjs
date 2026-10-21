@@ -1672,7 +1672,7 @@ export async function runMoondogTui({
       return;
     }
     storeRecall();
-    savePendingConversation();
+    try { savePendingConversation(); } catch { /* A conversation deleted elsewhere must not keep the listener in it. */ }
     conversationTitle = "";
     application.resumeSession(selected.value);
     if (!recallBySession.has(selected.value)) {
@@ -1930,7 +1930,7 @@ export async function runMoondogTui({
     if (command === "new") {
       if (args.length) throw new Error(tr("/new doesn't take anything after it."));
       storeRecall();
-      savePendingConversation();
+      try { savePendingConversation(); } catch { /* A conversation deleted elsewhere must not keep the listener in it. */ }
       application.startNewSession?.("user_new");
       editor.setText('');
       messageQueue.splice(0);
