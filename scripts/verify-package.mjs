@@ -36,9 +36,10 @@ const maximumPackedBytes = 2_600_000;
 // entry and about 1 KB. Replies in Traditional Chinese, Korean, French,
 // German and Italian add five entries and about 60 KB. The local tool trace
 // adds one entry and about 2 KB. Web search through DeepSeek and Brave adds
-// four entries and about 33 KB.
-const maximumUnpackedBytes = 5_180_000;
-const maximumEntries = 149;
+// four entries and about 33 KB. The desktop window's model settings and
+// playback preference add two entries and about 27 KB.
+const maximumUnpackedBytes = 5_210_000;
+const maximumEntries = 151;
 const packageOnlyPrivateSentinelPattern = new RegExp(
   ["PRIVATE", "(?:IP|PLATFORM)", "SENTINEL"].join("_"),
   "u",
