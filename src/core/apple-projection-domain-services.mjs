@@ -1211,6 +1211,7 @@ export class AppleProjectionDomainServices {
   #subjectId;
   #candidateSets = new Map();
   #profileBuildInput;
+  #ownsStores = true;
 
   constructor({ projection, listeningHistoryStore = null, subjectId = null }) {
     if (!projection) throw new TypeError("A trusted Apple projection is required");
@@ -1220,6 +1221,19 @@ export class AppleProjectionDomainServices {
     this.#projection = projection;
     this.#listeningHistoryStore = listeningHistoryStore;
     this.#subjectId = subjectId?.toLowerCase() ?? null;
+  }
+
+  // Each conversation that runs beside another gets a fork: the same projection and history
+  // with its own candidate sets, so one conversation's prompt never clears another's. Only
+  // the original closes them.
+  fork() {
+    const fork = new AppleProjectionDomainServices({
+      projection: this.#projection,
+      listeningHistoryStore: this.#listeningHistoryStore,
+      subjectId: this.#subjectId,
+    });
+    fork.#ownsStores = false;
+    return fork;
   }
 
   status() {
@@ -2424,6 +2438,7 @@ export class AppleProjectionDomainServices {
 
   close() {
     this.resetCandidateSets();
+    if (!this.#ownsStores) return;
     try {
       this.#projection.close();
     } finally {

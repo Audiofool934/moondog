@@ -491,3 +491,37 @@ test("candidate sets expire at prompt boundaries and active storage is capped", 
     "candidate_set_unavailable",
   );
 });
+
+test("forks over one fixture keep their own candidate sets and outside tracks", async () => {
+  const base = createSyntheticDomainServices({ subjectScope: trustedSubject });
+  const first = base.fork();
+  const second = base.fork();
+  const search = await first.searchLibrary({ query: "night", limit: 2 });
+  const outside = {
+    track_ref_id: "fork-outside-track",
+    title: "Fictional Outside Song",
+    artist_credit: "Fictional Outside Artist",
+    release: "Fictional Outside Album",
+    candidate_scope: "external_catalog",
+    catalog_provider: "apple_music",
+  };
+  first.registerExternalCandidateSet({ tracks: [outside], source: { provider: "apple_music" } });
+
+  // Another conversation's prompt boundaries leave this one's sets in place.
+  assert.deepEqual(second.beginPrompt(), { invalidated_candidate_sets: 0 });
+  assert.deepEqual(second.endPrompt(), { invalidated_candidate_sets: 0 });
+  base.resetCandidateSets();
+  assert.equal((await first.buildPlaylistPlan(planArguments(search, 2))).track_count, 2);
+  assert.equal(first.getTrustedTracks([outside.track_ref_id])[0].title, outside.title);
+
+  // A fork cannot use another fork's sets or outside tracks, but reads the same fixture.
+  await assertDomainRejects(second.buildPlaylistPlan(planArguments(search, 2)), "candidate_set_unavailable");
+  assert.throws(() => second.getTrustedTracks([outside.track_ref_id]), DomainServiceError);
+  assert.deepEqual((await second.searchLibrary({ query: "night", limit: 2 })).tracks, search.tracks);
+  assert.deepEqual(await second.getProfileSummary({ maxItems: 3 }), await base.getProfileSummary({ maxItems: 3 }));
+
+  first.close();
+  assert.deepEqual(first.resetCandidateSets(), { invalidated_candidate_sets: 0 });
+  const later = await second.searchLibrary({ query: "night", limit: 1 });
+  assert.equal((await second.buildPlaylistPlan(planArguments(later, 1))).track_count, 1);
+});

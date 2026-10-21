@@ -962,6 +962,21 @@ export class SyntheticDomainServices {
     }
   }
 
+  // Each conversation that runs beside another gets a fork. It shares the fixture's tracks,
+  // profile and evidence, which never change after construction, and keeps its own candidate
+  // sets and outside tracks, so one conversation's prompt never clears another's.
+  fork() {
+    const fork = new SyntheticDomainServices({
+      subjectScope: this.#subjectId,
+      fixture: { tracks: [] },
+    });
+    fork.#tracks = this.#tracks;
+    fork.#tracksById = new Map(this.#tracks.map((track) => [track.trackRefId, track]));
+    fork.#profile = this.#profile;
+    fork.#evidenceById = this.#evidenceById;
+    return fork;
+  }
+
   status() {
     return {
       state: "ready",
@@ -988,6 +1003,11 @@ export class SyntheticDomainServices {
     }
     this.#externalTrackIds.clear();
     return { invalidated_candidate_sets: invalidated };
+  }
+
+  // There is no store to close; a closed instance only lets go of its prompt state.
+  close() {
+    this.resetCandidateSets();
   }
 
   async searchLibrary(argumentsValue) {

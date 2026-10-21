@@ -52,6 +52,47 @@ for (const adapter of ["history", "apple"]) {
     await assert.rejects(services.buildPlaylistPlan(planInput), /currently marked Avoid/u);
     assert.equal(services.filterDiscoveryTracks([{ ...tracks[0], artist_credit: "Different artist" }]).length, 1);
   });
+
+  test(`${adapter} forks share the store, keep their own candidate sets, and leave closing it to the original`, async (context) => {
+    const root = await mkdtemp(path.join(tmpdir(), "moondog-domain-fork-"));
+    context.after(() => rm(root, { recursive: true, force: true }));
+    const store = await openListeningHistoryStore({ databasePath: path.join(root, "history.sqlite") });
+    let projectionCloses = 0;
+    const services = adapter === "history"
+      ? createListeningProfileDomainServices({ listeningHistoryStore: store, subjectId })
+      : createAppleProjectionDomainServices({
+        listeningHistoryStore: store, subjectId,
+        projection: { searchLibrary: () => ({ tracks: [] }), close() { projectionCloses += 1; } },
+      });
+    const first = services.fork();
+    const second = services.fork();
+    const tracks = [{ track_ref_id: "33333333-3333-4333-8333-333333333333",
+      title: "Fictional Fork Song", artist_credit: "Fictional Fork Artist", release: "Fictional Album",
+      candidate_scope: "external_catalog", catalog_provider: "apple_music" }];
+    const source = { provider: "apple_music", catalog: "itunes_search_api", storefront: "US",
+      retrieved_at: capturedAt, coverage: "Fictional catalog." };
+    const candidates = first.registerExternalCandidateSet({ tracks, source });
+    const planInput = { intent: "Try 1 discovery.", requestedTrackCount: 1,
+      candidateSetIds: [candidates.candidate_set_id],
+      trackRefs: [{ trackRefId: tracks[0].track_ref_id, selectionReason: "Fictional suggestion." }],
+      orderingNotes: "One song." };
+
+    // The other conversation's prompt boundaries, and the original's, leave this fork's set in place.
+    second.beginPrompt();
+    second.endPrompt();
+    services.resetCandidateSets();
+    assert.equal((await first.buildPlaylistPlan(planInput)).tracks.length, 1);
+    await assert.rejects(second.buildPlaylistPlan(planInput), /unavailable or expired/u);
+
+    // Closing the forks leaves the shared store open; closing the original closes it.
+    first.close();
+    second.close();
+    assert.equal(projectionCloses, 0);
+    assert.equal(services.registerExternalCandidateSet({ tracks, source }).result_count, 1);
+    services.close();
+    assert.equal(projectionCloses, adapter === "apple" ? 1 : 0);
+    assert.throws(() => store.subjectDataStatus({ subjectId }));
+  });
 }
 
 function extendedRecord(ts, msPlayed) {
