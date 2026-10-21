@@ -21,11 +21,11 @@ function groupOf(updatedAt) {
   return days <= 0 ? "today" : days === 1 ? "yesterday" : days < 7 ? "previous7" : "older";
 }
 
-export function createSidebar({ root, state, send, t, open, store }) {
+export function createSidebar({ root, state, send, t, open, store, menuPoint }) {
   const collapsed = new Set(JSON.parse(store.get("moondog.folders.collapsed") ?? "[]"));
   let renaming = null;
   let naming = null;
-  const menu = (items, event) => window.moondogApp?.showMenu?.(items, event ? { x: event.clientX, y: event.clientY } : undefined);
+  const menu = (items, event) => window.moondogApp?.showMenu?.(items, event ? menuPoint(event) : undefined);
 
   async function sessionMenu(session, event) {
     const folders = state.folders.filter((folder) => folder.id !== session.folderId);
@@ -79,7 +79,8 @@ export function createSidebar({ root, state, send, t, open, store }) {
       if (event.key === "Enter" && !event.isComposing) { event.preventDefault(); finish(true); }
       if (event.key === "Escape") { event.preventDefault(); finish(false); }
     });
-    field.addEventListener("blur", () => finish(true));
+    // A redraw that removes the field is not the listener leaving it.
+    field.addEventListener("blur", () => { if (field.isConnected) finish(true); });
     requestAnimationFrame(() => { field.focus(); field.select(); });
     return field;
   }
@@ -118,12 +119,12 @@ export function createSidebar({ root, state, send, t, open, store }) {
     node.addEventListener("dragover", (event) => {
       if (!event.dataTransfer.types.includes("application/x-moondog-session")) return;
       event.preventDefault();
-      node.classList.add("drop");
+      node.classList.add("drop-target");
     });
-    node.addEventListener("dragleave", () => node.classList.remove("drop"));
+    node.addEventListener("dragleave", () => node.classList.remove("drop-target"));
     node.addEventListener("drop", (event) => {
       const id = event.dataTransfer.getData("application/x-moondog-session");
-      node.classList.remove("drop");
+      node.classList.remove("drop-target");
       if (!id) return;
       event.preventDefault();
       event.stopPropagation();
@@ -131,7 +132,14 @@ export function createSidebar({ root, state, send, t, open, store }) {
     });
   }
 
+  // The core's updates wait while a name is being typed, so the field and its text stay.
+  let waiting = false;
+  function refresh() {
+    if (root.querySelector(".rename") && root.contains(document.activeElement)) { waiting = true; return; }
+    render();
+  }
   function render() {
+    waiting = false;
     root.replaceChildren();
     const sessions = state.sessions;
     const pinned = sessions.filter((session) => session.pinned);
@@ -169,7 +177,12 @@ export function createSidebar({ root, state, send, t, open, store }) {
           store.set("moondog.folders.collapsed", JSON.stringify([...collapsed]));
           render();
         });
-        header.append(toggle);
+        const more = make("button", "more");
+        more.type = "button";
+        more.setAttribute("aria-label", t()("folderActions"));
+        more.append(icon("more"));
+        more.addEventListener("click", (event) => { event.stopPropagation(); void folderMenu(folder, event); });
+        header.append(toggle, more);
         header.addEventListener("contextmenu", (event) => { event.preventDefault(); void folderMenu(folder, event); });
       }
       dropTarget(header, folder.id);
@@ -191,5 +204,5 @@ export function createSidebar({ root, state, send, t, open, store }) {
     root.append(loose);
   }
 
-  return { render, startNewFolder: () => { naming = {}; render(); } };
+  return { render: refresh, startNewFolder: () => { naming = {}; render(); }, get waiting() { return waiting; } };
 }

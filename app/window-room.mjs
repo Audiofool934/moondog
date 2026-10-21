@@ -31,11 +31,11 @@ const trackOf = (item) => item && {
 };
 const errorText = (error) => String(error?.message ?? error ?? "").slice(0, 400);
 
-export function runWindowRoom(services, { port, send }) {
+export function runWindowRoom(services, { port, send, quit = null }) {
   const { application: base, rebuildRuntime, toolTrace = null, openConversation, modelSettings, saveLanguage, savePlaybackService,
     prepareImport, prepareRecentImport, refreshImportedData, lastfm, runSpotify } = services;
   // Slot 0 is the core's own application and agent. The core closes every conversation after the room ends.
-  const slots = [{ application: base, runtime: services.runtime, turn: null, live: null, stale: null, close: null }];
+  const slots = [{ application: base, runtime: services.runtime, turn: null, live: null, stale: null, rebuilding: null, close: null }];
   let current = slots[0];
   let visible = true;
   let pollTimer = null;
@@ -76,8 +76,15 @@ export function runWindowRoom(services, { port, send }) {
   const sendSession = (slot) => send({ type: "session", current: sessionOf(slot), transcript: transcript(slot),
     live: slot.live ? structuredClone(slot.live) : null });
 
+  // A model chosen while the shown conversation answers applies when its reply ends; the window shows it already.
+  function modelOf(slot) {
+    const running = slot.runtime.publicStatus?.() ?? {};
+    const chosen = slot.stale?.selection;
+    return chosen ? { ...running, state: "configured", provider: chosen.provider, model: chosen.model, effort: chosen.effort ?? null,
+      effort_levels: chosen.provider === running.provider && chosen.model === running.model ? running.effort_levels : [] } : running;
+  }
   function status() {
-    const model = current.runtime.publicStatus?.() ?? {};
+    const model = modelOf(current);
     const spotify = base.spotifyStatus?.() ?? {};
     return {
       locale: base.locale,
@@ -157,7 +164,12 @@ export function runWindowRoom(services, { port, send }) {
   async function devices() {
     const service = base.spotifyConnection?.service;
     if (!service || base.spotifyReady?.() !== true) return send({ type: "devices", devices: [] });
-    const listed = (await service.devices()).devices ?? [];
+    let listed;
+    try {
+      listed = (await service.devices()).devices ?? [];
+    } catch (error) {
+      return send({ type: "devices", devices: [], error: errorText(error) });
+    }
     deviceIds = new Map(listed.map((device, index) => [String(index), device.id]));
     send({ type: "devices", devices: listed.map((device, index) => ({ ref: String(index), name: device.name, type: device.type ?? "unknown",
       active: device.is_active === true, restricted: device.is_restricted === true })) });
@@ -172,6 +184,8 @@ export function runWindowRoom(services, { port, send }) {
     } catch (error) {
       send({ type: "notice", code: "transfer_failed", message: errorText(error) });
     }
+    // The device list shows where music plays now, whether or not the move worked.
+    await devices();
     await refreshPlayer();
     setTimeout(() => void refreshPlayer(), 1200);
   }
@@ -191,8 +205,10 @@ export function runWindowRoom(services, { port, send }) {
     }
     if (typeof openConversation !== "function" || slots.length >= MAX_SLOTS) return null;
     const opened = await openConversation(id ? { sessionId: id } : { reason: "user_new" });
-    const slot = { application: opened.application, runtime: opened.runtime, turn: null, live: null, stale: null, close: opened.close };
+    const slot = { application: opened.application, runtime: opened.runtime, turn: null, live: null, stale: null, rebuilding: null, close: opened.close };
     slots.push(slot);
+    // A model chosen while every agent was answering is not saved yet, so this one would start without it.
+    if (pending) await rebuild(slot, pending);
     return slot;
   }
   async function openSession(id) {
@@ -208,7 +224,11 @@ export function runWindowRoom(services, { port, send }) {
 
   async function prompt(text) {
     const slot = current;
-    if (slot.turn || typeof text !== "string" || !text.trim()) return;
+    if (typeof text !== "string" || !text.trim()) return;
+    // A new agent being built, or an import replacing the profile under every agent, finishes first.
+    if (saving) send({ type: "notice", code: "waiting_for_import" });
+    while (slot.rebuilding || saving) await (slot.rebuilding ?? saving).catch(() => {});
+    if (slot.turn) return;
     const id = randomUUID();
     const session = sessionOf(slot);
     const settled = Promise.withResolvers();
@@ -248,25 +268,39 @@ export function runWindowRoom(services, { port, send }) {
       settled.resolve();
       // A model or service change made while this turn ran applies now.
       if (slot.stale) await rebuild(slot, slot.stale.selection).catch(() => {});
+      if (slot === current) sendStatus();
       sendSessions();
       void refreshPlayer();
     }
   }
 
-  // A rebuilt agent keeps the conversation so far; the selection is saved once by the core.
+  // A rebuilt agent keeps the conversation so far; the core saves a selection when it builds with one.
+  // A choice made while every agent answers waits in `pending` until one of them is rebuilt.
+  let pending = null;
   async function rebuild(slot, selection) {
-    slot.stale = null;
-    const previous = slot.runtime;
-    const next = slot === slots[0] ? await rebuildRuntime(selection) : await rebuildRuntime(selection, slot.application);
-    next.restoreSession?.();
-    slot.runtime = next;
-    try { previous.reset?.(); } catch { /* A finished agent has nothing left to clear. */ }
+    const work = (async () => {
+      slot.stale = null;
+      const previous = slot.runtime;
+      const next = slot === slots[0] ? await rebuildRuntime(selection) : await rebuildRuntime(selection, slot.application);
+      next.restoreSession?.();
+      slot.runtime = next;
+      if (selection && selection === pending) pending = null;
+      try { previous.reset?.(); } catch { /* A finished agent has nothing left to clear. */ }
+    })();
+    slot.rebuilding = work;
+    try {
+      await work;
+    } finally {
+      if (slot.rebuilding === work) slot.rebuilding = null;
+    }
   }
   async function rebuildAll(selection) {
     if (typeof rebuildRuntime !== "function") return;
+    if (selection) pending = selection;
     for (const slot of slots) {
-      if (slot.turn) slot.stale = { selection };
-      else await rebuild(slot, selection);
+      const chosen = selection ?? pending ?? slot.stale?.selection;
+      if (slot.turn) slot.stale = { selection: chosen };
+      else await rebuild(slot, chosen ?? undefined);
     }
     sendStatus();
   }
@@ -276,10 +310,15 @@ export function runWindowRoom(services, { port, send }) {
     if (holder?.turn) return send({ type: "notice", code: "delete_running" });
     // The core refuses a delete while its own turn runs, so an idle slot does it: the one holding the
     // conversation, which then moves to a new one, or any other.
-    const doer = holder ?? slots.find((slot) => !slot.turn) ?? slots[0];
+    const doer = holder ?? slots.find((slot) => !slot.turn) ?? null;
     try {
-      const result = doer.application.deleteSavedSession(id);
-      if (result?.started_new_session) doer.runtime.reset?.();
+      if (doer) {
+        const result = doer.application.deleteSavedSession(id);
+        if (result?.started_new_session) doer.runtime.reset?.();
+      } else if (base.memoryStore) {
+        // Every agent is answering and none holds this conversation, so the store deletes it directly.
+        base.memoryStore.deleteConversation(id, { routeKey: base.memoryRouteKey });
+      } else slots[0].application.deleteSavedSession(id);
     } catch (error) {
       send({ type: "notice", code: /another Moondog/u.test(errorText(error)) ? "delete_open_elsewhere" : "delete_failed", message: errorText(error) });
     }
@@ -305,8 +344,10 @@ export function runWindowRoom(services, { port, send }) {
     const result = await modelSettings.models(provider, { force });
     send({ type: "provider-models", provider, models: result.models ?? result, refresh: result.refresh ?? null });
   }
+  // One sign-in at a time; each clears only its own when it ends.
   async function startSignIn(provider) {
-    if (!modelSettings || signIn) return;
+    if (!modelSettings) return;
+    if (signIn) return send({ type: "sign-in", provider, state: "error", code: "sign_in_busy" });
     const controller = new AbortController();
     signIn = { provider, controller };
     const interaction = {
@@ -334,7 +375,7 @@ export function runWindowRoom(services, { port, send }) {
     } finally {
       for (const pending of prompts.values()) pending.reject(new Error("closed"));
       prompts.clear();
-      signIn = null;
+      if (signIn?.controller === controller) signIn = null;
       await sendModels().catch(() => {});
     }
   }
@@ -344,6 +385,7 @@ export function runWindowRoom(services, { port, send }) {
     if (typeof runSpotify !== "function") return;
     // Connecting replaces every conversation's Spotify reads, so it waits for running replies.
     if (busy()) return send({ type: "sign-in", provider: "spotify", state: "error", code: "connect_while_answering" });
+    if (signIn) return send({ type: "sign-in", provider: "spotify", state: "error", code: "sign_in_busy" });
     const controller = new AbortController();
     signIn = { provider: "spotify", controller };
     const sink = { write: (text) => {
@@ -358,14 +400,16 @@ export function runWindowRoom(services, { port, send }) {
     } catch (error) {
       send({ type: "sign-in", provider: "spotify", state: controller.signal.aborted ? "cancelled" : "error", message: errorText(error) });
     } finally {
-      signIn = null;
+      if (signIn?.controller === controller) signIn = null;
       await rebuildAll(undefined).catch(() => {});
       await refreshPlayer();
     }
   }
 
-  // Import: one prepared import at a time, nothing saved until the listener adds it.
+  // Import: one prepared import at a time, nothing saved until the listener adds it. While one is
+  // saved, `saving` holds new replies back, because the profile under every agent is replaced.
   let importing = null;
+  let saving = null;
   const closeImport = () => { try { importing?.prepared?.close?.(); } catch { /* Already closed. */ } importing = null; };
   // The terminal's import view writes the preview's words; the window shows the same ones, in the listener's language.
   const previewOf = (prepared, kind) => {
@@ -399,6 +443,8 @@ export function runWindowRoom(services, { port, send }) {
     if (busy()) return send({ type: "import", stage: "error", code: "import_while_answering" });
     importing.working = true;
     send({ type: "import", stage: "saving" });
+    const saved = Promise.withResolvers();
+    saving = saved.promise;
     try {
       const receipt = await importing.prepared.commit();
       closeImport();
@@ -417,6 +463,9 @@ export function runWindowRoom(services, { port, send }) {
     } catch (error) {
       if (importing) importing.working = false;
       send({ type: "import", stage: "error", code: error?.code ?? null, message: errorText(error) });
+    } finally {
+      saving = null;
+      saved.resolve();
     }
   }
 
@@ -466,7 +515,7 @@ export function runWindowRoom(services, { port, send }) {
       await rebuildAll(selection);
     },
     effort: async (data) => {
-      const model = current.runtime.publicStatus?.() ?? {};
+      const model = current.stale?.selection ?? pending ?? current.runtime.publicStatus?.() ?? {};
       if (!model.provider || !model.model) return;
       await rebuildAll({ provider: model.provider, model: model.model, ...(data.effort && data.effort !== "default" ? { effort: String(data.effort) } : {}) });
     },
@@ -496,20 +545,23 @@ export function runWindowRoom(services, { port, send }) {
   };
 
   return new Promise((resolve) => {
+    // Quitting stops running replies and lets them settle, so each is saved as interrupted with what it
+    // did; the core then closes every conversation. The app asks through `quit`.
+    let stopping = null;
+    const stop = () => stopping ??= (async () => {
+      closed = true;
+      clearTimeout(pollTimer);
+      const settling = slots.filter((slot) => slot.turn).map((slot) => { slot.runtime.abort?.(); return slot.turn.settled; });
+      signIn?.controller.abort();
+      closeImport();
+      await Promise.race([Promise.allSettled(settling), new Promise((done) => setTimeout(done, 2000))]);
+      resolve({});
+    })();
+    quit?.addEventListener("abort", () => void stop(), { once: true });
     port.on("message", async ({ data }) => {
       if (!data?.type) return;
       try {
-        if (data.type === "quit") {
-          closed = true;
-          clearTimeout(pollTimer);
-          // Stopped turns settle before the core closes each conversation after the room ends.
-          const settling = slots.filter((slot) => slot.turn).map((slot) => { slot.runtime.abort?.(); return slot.turn.settled; });
-          signIn?.controller.abort();
-          closeImport();
-          await Promise.race([Promise.allSettled(settling), new Promise((done) => setTimeout(done, 2000))]);
-          resolve({});
-          return;
-        }
+        if (data.type === "quit") return void await stop();
         await handlers[data.type]?.(data);
       } catch (error) {
         send({ type: "notice", code: data.type, message: errorText(error) });

@@ -28,18 +28,28 @@ const store = {
   set: (key, value) => { try { localStorage.setItem(key, value); } catch { /* A private window keeps the default. */ } },
 };
 
-// The main process sends the port that reaches the core process.
-const port = await new Promise((resolve) => {
+// The main process sends the port that reaches the core process. The page draws and takes typing
+// before it arrives; messages wait in the outbox until then.
+const portReady = new Promise((resolve) => {
   window.addEventListener("message", function receive(event) {
     if (event.source !== window || event.data !== "moondog-room") return;
     window.removeEventListener("message", receive);
     resolve(event.ports[0]);
   });
 });
-const send = (message) => port.postMessage(message);
+let port = null;
+const outbox = [];
+const send = (message) => (port ? port.postMessage(message) : outbox.push(message));
 const previews = createPreviews({ send, onChange: () => renderInspector() });
 const settings = createSettings({ state, send, t: tr, prettyModel: (model) => prettyModel(model) });
-const sidebar = createSidebar({ root: $("sessions"), state, send, t: tr, open: (id) => openSession(id), store });
+const sidebar = createSidebar({ root: $("sessions"), state, send, t: tr, open: (id) => openSession(id), store, menuPoint: (event) => menuPoint(event) });
+// A native menu opens at the pointer, or under its control when the keyboard pressed it.
+function menuPoint(event) {
+  const control = event.currentTarget;
+  if (event.detail !== 0 || !control?.getBoundingClientRect) return { x: event.clientX, y: event.clientY };
+  const box = control.getBoundingClientRect();
+  return { x: box.left, y: box.bottom + 4 };
+}
 
 // Words
 function applyLanguage(next) {
@@ -58,6 +68,8 @@ function applyLanguage(next) {
   $("next").setAttribute("aria-label", t("next"));
   $("drop-hint").textContent = t("dropToImport");
   window.moondogApp?.setLanguage?.(locale);
+  renderSessions();
+  renderConversation();
 }
 
 // Conversations
@@ -87,7 +99,7 @@ function notice(text) {
   clearTimeout(noticeTimer);
   if (text) noticeTimer = setTimeout(() => { node.hidden = true; }, 6000);
 }
-const NOTICES = { too_many_running: "noticeTooMany", model_unknown: "noticeModelUnknown", delete_running: "noticeDeleteRunning", delete_open_elsewhere: "noticeDeleteElsewhere",
+const NOTICES = { too_many_running: "noticeTooMany", model_unknown: "noticeModelUnknown", waiting_for_import: "noticeWaitingForImport", delete_running: "noticeDeleteRunning", delete_open_elsewhere: "noticeDeleteElsewhere",
   delete_failed: "noticeDeleteFailed", transfer_failed: "noticeTransferFailed" };
 
 // The conversation
@@ -102,7 +114,7 @@ const KINDS = [
   [/^moondog_(?:playlist_plan|spotify_playlist_)/u, "playlist"],
   [/^moondog_music_preview$/u, "previews"],
   [/^moondog_memory_/u, "memory"],
-  [/^moondog_music_/u, "search"],
+  [/^moondog_music_/u, "catalog"],
   [/^moondog_(?:profile_|library_|rediscovery|historical_return|time_capsule|back_to_back|spotify_top|spotify_history|spotify_library)/u, "profile"],
 ];
 const kindOf = (tool, args) => {
@@ -133,7 +145,7 @@ function replyNode(turn) {
   const played = turn.streaming ? null : playedLine(turn);
   if (played) reply.append(played);
   // What Moondog is doing shows while it works; the reply says what it did.
-  if (turn.streaming && turn.activity?.length) {
+  if (turn.streaming && (turn.activity?.length || turn.retrying)) {
     const line = make("p", "activity");
     // One entry per kind of work, in the order it started; a failure marks only that kind.
     const kinds = new Map();
@@ -143,6 +155,7 @@ function replyNode(turn) {
       kinds.set(kind, previous === "running" || call.state === "running" ? "running" : call.state === "failed" && previous !== "done" ? "failed" : "done");
     }
     for (const [kind, status] of kinds) line.append(make("span", status, t(`activity.${kind}`)));
+    if (turn.retrying) line.append(make("span", "running", t("retrying")));
     reply.append(line);
   }
   const text = make("div", "text");
@@ -153,11 +166,15 @@ function replyNode(turn) {
 }
 // The streaming reply redraws on its own; the rest of the conversation stays put.
 let liveNode = null;
+let drawn = undefined;
 const nearBottom = (scroll) => scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 80;
 function renderConversation() {
   const column = $("column");
   const scroll = $("scroll");
-  const pinned = nearBottom(scroll) || !column.childElementCount;
+  // Another conversation opens at its latest turn; the same one keeps where the listener scrolled.
+  const opened = drawn !== state.current;
+  drawn = state.current;
+  const pinned = opened || nearBottom(scroll) || !column.childElementCount;
   liveNode = null;
   column.replaceChildren();
   if (!state.turns.length) {
@@ -229,6 +246,8 @@ function submit() {
   if (!text) return;
   // A message typed while the core starts waits for it, shown as sent.
   if (!state.ready) {
+    // One message waits for the core; more stay in the composer until it is ready.
+    if (state.waiting) return;
     state.waiting = text;
     state.turns.push({ role: "user", text, waiting: true });
     clearComposer();
@@ -248,7 +267,8 @@ function submit() {
 $("form").addEventListener("submit", (event) => { event.preventDefault(); submit(); });
 input.addEventListener("input", () => { grow(); renderComposer(); });
 input.addEventListener("keydown", (event) => {
-  if (event.key === "Enter" && !event.shiftKey && !event.isComposing && event.keyCode !== 229) { event.preventDefault(); submit(); }
+  // Enter sends; while a reply runs it does nothing, so a typed follow-up waits instead of stopping the reply.
+  if (event.key === "Enter" && !event.shiftKey && !event.isComposing && event.keyCode !== 229) { event.preventDefault(); if (!state.streaming) submit(); }
   if (event.key === "Escape" && state.streaming) { event.preventDefault(); send({ type: "cancel" }); }
 });
 
@@ -267,7 +287,10 @@ const COMMANDS = [
     send({ type: "remember", text });
     notice(t("remembered"));
   } },
-  { name: "folder", description: "cmdFolder", run: () => { sidebar.startNewFolder(); } },
+  { name: "folder", description: "cmdFolder", run: () => {
+    if (!shown("sidebar")) togglePanel("sidebar");
+    sidebar.startNewFolder();
+  } },
   { name: "settings", description: "cmdSettings", run: () => settings.show() },
   { name: "help", description: "cmdHelp", run: () => settings.show("about") },
 ];
@@ -277,6 +300,7 @@ createPalette({ input, anchor: $("form"), t: tr, commands: () => COMMANDS });
 const providerModels = new Map();
 let providers = [];
 async function pickModel(event) {
+  const at = menuPoint(event);
   const model = state.model ?? {};
   const signedIn = providers.filter((provider) => provider.signedIn);
   // A long catalog shows its first models here and the rest in settings.
@@ -295,7 +319,7 @@ async function pickModel(event) {
       label: level === "default" ? t("effortDefault") : t(`effort.${level}`) === `effort.${level}` ? level : t(`effort.${level}`), checked: (model.effort ?? "default") === level })) });
   }
   items.push({ type: "separator" }, { id: "settings", label: t("modelSettings") });
-  const chosen = await window.moondogApp?.showMenu?.(items, { x: event.clientX, y: event.clientY });
+  const chosen = await window.moondogApp?.showMenu?.(items, at);
   if (!chosen) return;
   if (chosen === "settings") return settings.show("model");
   if (chosen.startsWith("effort:")) return send({ type: "effort", effort: chosen.slice(7) });
@@ -304,7 +328,7 @@ async function pickModel(event) {
 }
 let devicePicker = null;
 function pickDevice(event) {
-  devicePicker = { x: event.clientX, y: event.clientY };
+  devicePicker = menuPoint(event);
   send({ type: "devices" });
 }
 async function showDevices(devices) {
@@ -318,11 +342,12 @@ async function showDevices(devices) {
   else if (chosen?.startsWith("device:")) send({ type: "transfer", ref: chosen.slice(7) });
 }
 async function pickService(event) {
+  const at = menuPoint(event);
   const chosen = await window.moondogApp?.showMenu?.([
     { id: "spotify", label: "Spotify", checked: state.playbackService === "spotify" },
     { id: "apple_music", label: "Apple Music", checked: state.playbackService === "apple_music" },
     { type: "separator" }, { id: "settings", label: t("playbackSettings") },
-  ], { x: event.clientX, y: event.clientY });
+  ], at);
   if (chosen === "settings") settings.show("playback");
   else if (chosen) send({ type: "music-service", service: chosen });
 }
@@ -346,6 +371,22 @@ function nowPlaying() {
   return { ...now, progressMs: now.durationMs ? Math.min(progressMs, now.durationMs) : progressMs, next: state.player.next ?? [] };
 }
 const serviceName = () => (state.playbackService === "apple_music" ? "Apple Music" : "Spotify");
+const fullSong = make("a");
+fullSong.target = "_blank";
+let drawnQueue = "";
+function queueItem(track) {
+  const item = make("li");
+  if (track.image) {
+    const image = make("img");
+    image.src = track.image;
+    image.alt = "";
+    item.append(image);
+  } else item.append(make("span", "thumb"));
+  const words = make("div");
+  words.append(make("strong", "", track.title), make("span", "", track.artists.join(", ")));
+  item.append(words);
+  return item;
+}
 function renderInspector() {
   const now = nowPlaying();
   const cover = $("cover");
@@ -363,14 +404,13 @@ function renderInspector() {
   $("song").textContent = now ? now.title : t("nothingPlaying");
   const ready = state.playbackService === "apple_music" || state.spotify === "ready";
   $("artist").textContent = now ? now.artists.join(", ") : ready ? t("nothingHint") : state.spotify ? t("spotifyOff") : "";
+  // The inspector redraws several times a second while music plays, so its nodes change only when their content does.
   const album = $("album");
-  album.replaceChildren();
   if (now?.preview && now.link) {
-    const link = make("a", "", t("fullSong"));
-    link.href = now.link;
-    link.target = "_blank";
-    album.append(link);
-  } else if (now?.album) album.textContent = now.album;
+    if (fullSong.getAttribute("href") !== now.link) fullSong.href = now.link;
+    if (fullSong.textContent !== t("fullSong")) fullSong.textContent = t("fullSong");
+    if (album.firstChild !== fullSong) album.replaceChildren(fullSong);
+  } else if (album.firstChild === fullSong || album.textContent !== (now?.album ?? "")) album.textContent = now?.album ?? "";
   $("progress").hidden = !now?.durationMs;
   if (now?.durationMs) {
     $("bar").style.width = `${Math.min(100, (now.progressMs / now.durationMs) * 100)}%`;
@@ -383,19 +423,11 @@ function renderInspector() {
   $("repeat").textContent = t("repeatOne");
   const next = now?.next ?? [];
   $("next-panel").hidden = !next.length;
-  $("queue").replaceChildren(...next.map((track) => {
-    const item = make("li");
-    if (track.image) {
-      const image = make("img");
-      image.src = track.image;
-      image.alt = "";
-      item.append(image);
-    } else item.append(make("span", "thumb"));
-    const words = make("div");
-    words.append(make("strong", "", track.title), make("span", "", track.artists.join(", ")));
-    item.append(words);
-    return item;
-  }));
+  const shownQueue = JSON.stringify(next.map((track) => [track.title, track.artists, track.image]));
+  if (shownQueue !== drawnQueue) {
+    drawnQueue = shownQueue;
+    $("queue").replaceChildren(...next.map(queueItem));
+  }
   const on = state.playbackService === "apple_music" || state.spotify === "ready";
   $("spotify-dot").classList.toggle("on", on);
   $("status").textContent = state.spotify === null ? "" : on ? serviceName() : t("spotifyOff").split(/[.。]/u)[0];
@@ -499,6 +531,7 @@ window.addEventListener("drop", (event) => {
 document.addEventListener("keydown", (event) => {
   if (settings.open) return;
   if (event.target === input || event.target.closest?.("input, textarea")) return;
+  if (event.key === " " && event.target.closest?.("button, a, select, [role=button]")) return;
   if (event.key === "Escape" && state.streaming) { send({ type: "cancel" }); return; }
   if (event.key.length === 1 && !event.metaKey && !event.ctrlKey && !event.altKey) input.focus();
 });
@@ -521,8 +554,9 @@ function streamingTurn(id) {
   return state.turns.find((turn) => turn.role === "assistant" && turn.id === id);
 }
 const onScreen = (data) => !data.session || data.session === state.current;
+const SIGN_IN_ERRORS = { connect_while_answering: "connectWhileAnswering", sign_in_busy: "signInBusy" };
 const SETTINGS_MESSAGES = new Set(["models", "provider-models", "devices", "memories", "auth-prompt", "auth-prompt-closed", "auth-event", "sign-in", "import"]);
-port.onmessage = ({ data }) => {
+function receive({ data }) {
   if (!data?.type) return;
   if (data.type === "preview" || data.type === "preview-control") { previews.receive(data); renderInspector(); return; }
   if (SETTINGS_MESSAGES.has(data.type)) settings.receive(data);
@@ -531,8 +565,11 @@ port.onmessage = ({ data }) => {
     for (const provider of providers) if (provider.signedIn && !providerModels.has(provider.id)) send({ type: "provider-models", provider: provider.id });
   }
   if (data.type === "provider-models") providerModels.set(data.provider, data.models ?? []);
-  if (data.type === "devices" && devicePicker) void showDevices(data.devices ?? []);
-  if (data.type === "sign-in" && data.state === "error") notice(data.code === "connect_while_answering" ? t("connectWhileAnswering") : data.message || t("signInFailed"));
+  if (data.type === "devices" && devicePicker) {
+    if (data.error) { devicePicker = null; notice(t("noticeDevicesFailed")); } else void showDevices(data.devices ?? []);
+  }
+  if (data.type === "player-error") notice(t("noticePlaybackFailed"));
+  if (data.type === "sign-in" && data.state === "error") notice(SIGN_IN_ERRORS[data.code] ? t(SIGN_IN_ERRORS[data.code]) : data.message || t("signInFailed"));
   if (data.type === "import" && data.stage === "refresh-failed") notice(t("importRefreshFailed"));
   if (data.type === "notice") notice(t(NOTICES[data.code] ?? "noticeFailed") + (NOTICES[data.code] ? "" : data.message ? `: ${data.message}` : ""));
   if (data.type === "ready" || data.type === "status") {
@@ -568,7 +605,11 @@ port.onmessage = ({ data }) => {
     send({ type: "models" });
     const waiting = state.waiting;
     state.waiting = null;
-    if (waiting) { input.value = waiting; submit(); }
+    if (waiting && state.model?.state === "configured") send({ type: "prompt", text: waiting });
+    else if (waiting) {
+      state.turns.push({ role: "user", text: waiting }, { role: "assistant", text: t("offline"), failed: true });
+      renderConversation();
+    }
   }
   if (data.type === "local" && onScreen(data)) localNote(data.markdown);
   if (data.type === "turn" && onScreen(data)) {
@@ -592,9 +633,14 @@ port.onmessage = ({ data }) => {
     }
     renderConversation();
   }
+  if (data.type === "retry" && onScreen(data)) {
+    const turn = streamingTurn(data.id);
+    if (turn) { turn.retrying = true; renderSoon(); }
+  }
   if (data.type === "text" && onScreen(data)) {
     const turn = streamingTurn(data.id);
     if (turn) {
+      turn.retrying = false;
       turn.text = data.replace !== undefined ? data.replace : `${turn.text}${data.delta ?? ""}`;
       renderSoon();
     }
@@ -621,7 +667,7 @@ port.onmessage = ({ data }) => {
     if (learned && !state.streaming && state.turns.some((turn) => { const target = playedTarget(turn); return target && covers.has(target.title); })) renderSoon();
     renderInspector();
   }
-};
+}
 
 applyLanguage(locale);
 renderPanels();
@@ -629,3 +675,8 @@ renderConversation();
 renderInspector();
 send({ type: "visible", visible: !document.hidden });
 input.focus();
+
+// The core's port arrives last; what was sent before it waits in the outbox.
+port = await portReady;
+port.onmessage = receive;
+for (const message of outbox.splice(0)) port.postMessage(message);

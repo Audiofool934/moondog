@@ -8,9 +8,12 @@ const port = await new Promise((resolve) => {
   process.parentPort.once("message", ({ ports: [roomPort] }) => resolve(roomPort));
 });
 const send = (message) => port.postMessage(message);
+// The app asks to quit here, so running replies can stop and be saved before the process ends.
+const quit = new AbortController();
+process.parentPort.on("message", ({ data }) => { if (data?.type === "quit") quit.abort(); });
 
 globalThis[Symbol.for("moondog.host")] = {
-  runRoom: (services) => runWindowRoom(services, { port, send }),
+  runRoom: (services) => runWindowRoom(services, { port, send, quit: quit.signal }),
   // The port would keep this process alive after the room closes.
   closed: () => {
     port.close();

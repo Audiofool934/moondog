@@ -218,9 +218,9 @@ ipcMain.handle("confirm", async (_event, { message, detail, confirm, cancel }) =
     buttons: [String(confirm ?? "OK"), String(cancel ?? "Cancel")], defaultId: 1, cancelId: 1 });
   return response === 0;
 });
-ipcMain.handle("choose-file", async (_event, { title } = {}) => {
+ipcMain.handle("choose-file", async (_event, { title, filterName } = {}) => {
   const { canceled, filePaths } = await dialog.showOpenDialog(window, { title: String(title ?? ""), properties: ["openFile"],
-    filters: [{ name: "Music history", extensions: ["zip", "json", "xml", "csv"] }] });
+    filters: [{ name: String(filterName ?? "Listening history"), extensions: ["zip", "json", "xml", "csv"] }] });
   return canceled ? null : filePaths[0] ?? null;
 });
 ipcMain.handle("version", () => app.getVersion());
@@ -234,9 +234,22 @@ ipcMain.on("language", (_event, value) => {
 // A reply in progress shows in the Dock while the window is away.
 ipcMain.on("busy", (_event, busy) => window?.setProgressBar(busy === true ? 2 : -1, { mode: "indeterminate" }));
 nativeTheme.on("updated", () => window?.setBackgroundColor(background()));
-app.on("before-quit", () => {
+// Quitting first asks the core to stop its replies and close its conversations, so each one is
+// saved as it ended; a core that takes too long is stopped.
+let stopping = false;
+app.on("before-quit", (event) => {
   quitting = true;
-  core?.kill();
+  if (!core) return;
+  event.preventDefault();
+  if (stopping) return;
+  stopping = true;
+  const running = core;
+  const timer = setTimeout(() => running.kill(), 5000);
+  running.once("exit", () => {
+    clearTimeout(timer);
+    app.quit();
+  });
+  running.postMessage({ type: "quit" });
 });
 app.on("activate", () => window?.show());
 app.whenReady().then(() => {

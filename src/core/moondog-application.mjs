@@ -1517,12 +1517,13 @@ export class MoondogApplication {
   }
 
   // Spotify lists the listener's queue first, then the rest of the album playing. That rest
-  // is not queued, so a later song of the album can still be queued. A song the listener
-  // queued from the same album at the very end of their queue looks the same and is not held back.
+  // is not queued, so a later song of the album can still be queued. The rest lists each song
+  // once, so a song seen twice was also queued by the listener and stays held back.
   #observedQueueUris(observed, player = null) {
     const album = /^spotify:album:/u.test(player?.context?.uri ?? "") ? player.context.uri : null;
     const queue = [...(observed.queue ?? [])];
-    while (album && queue.at(-1)?.album_uri === album) queue.pop();
+    const rest = new Set();
+    while (album && queue.at(-1)?.album_uri === album && !rest.has(queue.at(-1).uri)) rest.add(queue.pop().uri);
     const seen = new Set([observed.currently_playing?.uri, ...queue.map(track => track.uri)].filter(Boolean));
     for (const [uri, acceptedAt] of this.recentSimilarQueueUris) {
       if (Date.now() - acceptedAt > 15 * 60_000) this.recentSimilarQueueUris.delete(uri);

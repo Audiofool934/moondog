@@ -6,12 +6,17 @@ const make = (tag, className, text) => {
   if (text !== undefined) node.textContent = text;
   return node;
 };
-const button = (label, className = "", onClick) => {
+// Each control carries a key, so the focus comes back to it when the sheet redraws.
+const button = (label, className = "", onClick, key = `button:${className}:${label}`) => {
   const node = make("button", className, label);
   node.type = "button";
+  node.dataset.key = key;
   if (onClick) node.addEventListener("click", onClick);
   return node;
 };
+// Spotify names device types in English; the window says them in the listener's language.
+const DEVICE_TYPES = { computer: "device.computer", smartphone: "device.smartphone", speaker: "device.speaker", tv: "device.tv",
+  tablet: "device.tablet", automobile: "device.car" };
 const SECTIONS = ["general", "model", "playback", "library", "memory", "about"];
 
 export function createSettings({ state, send, t, prettyModel = String }) {
@@ -20,6 +25,7 @@ export function createSettings({ state, send, t, prettyModel = String }) {
   const card = make("div", "sheet-card");
   card.setAttribute("role", "dialog");
   card.setAttribute("aria-modal", "true");
+  card.setAttribute("aria-labelledby", "settings-title");
   const nav = make("nav", "sheet-nav");
   const body = make("div", "sheet-body");
   const close = button("", "sheet-close", () => hide());
@@ -36,17 +42,23 @@ export function createSettings({ state, send, t, prettyModel = String }) {
 
   let section = "general";
   // What the core told this sheet; the sheet asks again each time it opens a section.
-  const data = { providers: null, models: new Map(), expanded: null, devices: null, memories: null, auth: null, importing: null, version: null };
+  const data = { providers: null, models: new Map(), expanded: null, devices: null, devicesError: null, memories: null, auth: null, error: null,
+    importing: null, version: null };
+  const windowNode = document.querySelector("[data-window]");
 
+  // While the sheet is open, the window behind it takes no focus or clicks.
   function show(name = section) {
+    if (name !== section) data.error = null;
     section = SECTIONS.includes(name) ? name : "general";
     sheet.hidden = false;
+    if (windowNode) windowNode.inert = true;
     refresh();
     render();
-    requestAnimationFrame(() => card.querySelector("[data-focus]")?.focus() ?? close.focus());
+    requestAnimationFrame(() => (card.querySelector("[data-focus]") ?? card.querySelector(".sheet-nav .on") ?? close).focus());
   }
   function hide() {
     sheet.hidden = true;
+    if (windowNode) windowNode.inert = false;
     document.querySelector("[data-input]")?.focus();
   }
   function refresh() {
@@ -65,7 +77,7 @@ export function createSettings({ state, send, t, prettyModel = String }) {
   const note = (text) => make("p", "note", text);
   function choice({ label, detail, checked, onChoose, trailing, disabled }) {
     const item = make("div", `choice${checked ? " checked" : ""}`);
-    const main = button("", "choice-main", disabled ? null : onChoose);
+    const main = button("", "choice-main", disabled ? null : onChoose, `choice:${label}`);
     main.disabled = Boolean(disabled);
     main.setAttribute("aria-pressed", String(Boolean(checked)));
     const words = make("span", "choice-words");
@@ -118,18 +130,25 @@ export function createSettings({ state, send, t, prettyModel = String }) {
       field.placeholder = prompt.placeholder ?? "";
       field.autocomplete = "off";
       field.spellcheck = false;
-      field.dataset.focus = "";
+      field.dataset.key = `auth-field:${prompt.id}`;
+      // A redraw keeps what was typed; the answer itself goes to the core only.
+      field.value = prompt.draft ?? "";
+      field.addEventListener("input", () => { prompt.draft = field.value; });
       form.append(label, field, button(tr("continue"), "primary"));
       form.addEventListener("submit", (event) => {
         event.preventDefault();
         send({ type: "auth-answer", id: prompt.id, value: field.value });
         field.value = "";
+        prompt.draft = "";
         auth.prompt = null;
         auth.lines = [tr("checking")];
         render();
       });
       panel.append(form);
-      requestAnimationFrame(() => field.focus());
+      if (!prompt.focused) {
+        prompt.focused = true;
+        requestAnimationFrame(() => field.focus());
+      }
     }
     panel.append(button(tr("cancel"), "quiet", () => { send({ type: "sign-in-cancel" }); }));
     return panel;
@@ -149,13 +168,14 @@ export function createSettings({ state, send, t, prettyModel = String }) {
       for (const level of ["default", ...current.effortLevels]) {
         const chosen = (current.effort ?? "default") === level;
         const segment = button(level === "default" ? tr("effortDefault") : tr(`effort.${level}`) === `effort.${level}` ? level : tr(`effort.${level}`), chosen ? "segment on" : "segment",
-          () => send({ type: "effort", effort: level }));
+          () => send({ type: "effort", effort: level }), `effort:${level}`);
         segment.setAttribute("aria-pressed", String(chosen));
         efforts.append(segment);
       }
       part.append(make("p", "label", tr("effort")), efforts);
     }
     if (data.auth) { part.append(signInPanel()); return part; }
+    if (data.error) part.append(make("p", "error", data.error));
     part.append(heading(tr("providers")));
     if (!data.providers) { part.append(note(tr("loading"))); return part; }
     if (!data.providers.length) { part.append(note(data.providersError ?? tr("noProviders"))); return part; }
@@ -170,6 +190,7 @@ export function createSettings({ state, send, t, prettyModel = String }) {
       // Only a key Moondog saved can be signed out here; one from the environment stays in effect.
       const action = signedIn ? (provider.source === "saved" ? button(tr("signOut"), "quiet small", () => send({ type: "sign-out", provider: provider.id })) : null)
         : provider.signIn === "environment_only" ? null : button(tr("signIn"), "small", () => {
+          data.error = null;
           data.auth = { provider: provider.id, providerName: provider.name, lines: [] };
           send({ type: "sign-in", provider: provider.id });
           render();
@@ -212,7 +233,9 @@ export function createSettings({ state, send, t, prettyModel = String }) {
     part.append(services);
 
     part.append(heading(tr("spotifyAccount")));
+    if (data.error) part.append(make("p", "error", data.error));
     if (data.auth?.provider === "spotify") part.append(signInPanel());
+    else if (data.auth) part.append(note(tr("signInBusy")));
     else if (state.spotify === "ready") {
       part.append(note(tr("spotifyConnected")), button(tr("disconnect"), "quiet", () => send({ type: "sign-out", provider: "spotify" })));
     } else {
@@ -221,7 +244,6 @@ export function createSettings({ state, send, t, prettyModel = String }) {
       if (!state.spotifyAccount?.clientId) {
         form.append(make("label", "", tr("spotifyClientId")));
         field = make("input");
-        field.placeholder = "Client ID";
         field.spellcheck = false;
         form.append(field);
       }
@@ -230,6 +252,7 @@ export function createSettings({ state, send, t, prettyModel = String }) {
         event.preventDefault();
         const clientId = field?.value.trim();
         if (field && !clientId) return;
+        data.error = null;
         data.auth = { provider: "spotify", providerName: "Spotify", lines: [tr("openingBrowser")] };
         send({ type: "sign-in", provider: "spotify", ...(clientId ? { clientId } : {}) });
         render();
@@ -241,9 +264,11 @@ export function createSettings({ state, send, t, prettyModel = String }) {
       part.append(heading(tr("devices")));
       const list = make("div", "choices");
       if (!data.devices) list.append(note(tr("loading")));
+      else if (data.devicesError) list.append(note(tr("noticeDevicesFailed")));
       else if (!data.devices.length) list.append(note(tr("noDevices")));
       else for (const device of data.devices) {
-        list.append(choice({ label: device.name, detail: device.type, checked: device.active, disabled: device.restricted,
+        const type = DEVICE_TYPES[String(device.type).toLowerCase()];
+        list.append(choice({ label: device.name, detail: type ? tr(type) : null, checked: device.active, disabled: device.restricted,
           onChoose: () => { send({ type: "transfer", ref: device.ref }); data.devices = data.devices.map((entry) => ({ ...entry, active: entry.ref === device.ref })); render(); } }));
       }
       part.append(list, button(tr("refresh"), "quiet small", () => { data.devices = null; send({ type: "devices" }); render(); }));
@@ -281,7 +306,7 @@ export function createSettings({ state, send, t, prettyModel = String }) {
     sources.append(choice({ label: tr("importSpotifyQuick"), detail: state.spotify === "ready" ? tr("importSpotifyQuickNote") : tr("connectSpotifyFirst"),
       disabled: state.spotify !== "ready", onChoose: () => send({ type: "import-spotify" }) }));
     sources.append(choice({ label: tr("importFile"), detail: tr("importFileNote"), onChoose: async () => {
-      const path = await window.moondogApp?.chooseFile?.({ title: tr("importFile") });
+      const path = await window.moondogApp?.chooseFile?.({ title: tr("importFile"), filterName: tr("musicHistoryFiles") });
       if (path) send({ type: "import-file", path });
     } }));
     part.append(sources);
@@ -344,22 +369,26 @@ export function createSettings({ state, send, t, prettyModel = String }) {
   function render() {
     if (sheet.hidden) return;
     const tr = t();
-    nav.replaceChildren(make("p", "sheet-title", tr("settings")));
+    const focused = card.contains(document.activeElement) ? document.activeElement.dataset.key : null;
+    const title = make("p", "sheet-title", tr("settings"));
+    title.id = "settings-title";
+    nav.replaceChildren(title);
     for (const name of SECTIONS) {
-      const item = button(tr(`section.${name}`), name === section ? "on" : "", () => { section = name; refresh(); render(); });
+      const item = button(tr(`section.${name}`), name === section ? "on" : "", () => { section = name; data.error = null; refresh(); render(); }, `nav:${name}`);
       item.setAttribute("aria-current", String(name === section));
       nav.append(item);
     }
     const views = { general, model, playback, library, memory, about };
     body.replaceChildren(views[section]());
     close.setAttribute("aria-label", tr("close"));
+    if (focused) card.querySelector(`[data-key="${CSS.escape(focused)}"]`)?.focus();
   }
 
   // Messages from the core that this sheet draws.
   function receive(message) {
     if (message.type === "models") { data.providers = message.providers ?? []; data.providersError = message.error ?? null; }
     if (message.type === "provider-models") data.models.set(message.provider, message.models ?? []);
-    if (message.type === "devices") data.devices = message.devices ?? [];
+    if (message.type === "devices") { data.devices = message.devices ?? []; data.devicesError = message.error ?? null; }
     if (message.type === "memories") data.memories = message.memories ?? [];
     if (message.type === "auth-prompt" && data.auth) data.auth.prompt = { id: message.id, kind: message.kind, message: message.message, placeholder: message.placeholder, options: message.options };
     if (message.type === "auth-prompt-closed" && data.auth?.prompt?.id === message.id) data.auth.prompt = null;
@@ -372,9 +401,10 @@ export function createSettings({ state, send, t, prettyModel = String }) {
       if (message.kind === "device_code") { data.auth.code = message.userCode; data.auth.url = message.url; data.auth.lines = [t()("enterCode")]; }
       if (message.kind === "info" || message.kind === "progress") data.auth.lines = [message.message];
     }
-    if (message.type === "sign-in") {
-      data.auth = null;
-      if (message.state === "error") data.error = message.message;
+    // A refused second sign-in leaves the running one on screen; any other end clears its own panel.
+    if (message.type === "sign-in" && message.code !== "sign_in_busy") {
+      if (!data.auth || data.auth.provider === message.provider) data.auth = null;
+      data.error = message.state === "error" ? (message.code === "connect_while_answering" ? t()("connectWhileAnswering") : message.message || t()("signInFailed")) : null;
       send({ type: "models" });
     }
     if (message.type === "import") {
