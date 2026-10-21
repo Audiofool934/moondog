@@ -7379,6 +7379,7 @@ export class PiAgentRuntime {
           !this.application.spotifyPlaybackContextStatus?.().queue_request?.clarification_only &&
           queueCountValid &&
           this.capabilityByToolName.has("moondog_spotify_discover") &&
+          this.capabilityByToolName.has("moondog_spotify_queue_batch") &&
           !promptState.abortRequested && finalStopReason !== "aborted" && !this.agent.state.errorMessage &&
           !promptState.presentationFailure && !promptState.spotifyWriteReceipts.length && !promptState.spotifyPlaybackFailures.some(failure => !failure.not_sent || failure.preparation_stopped) &&
           (!promptState.spotifyQueuePlan || ["no_candidates", "no_playback"].includes(promptState.spotifyQueuePlan.state)) &&

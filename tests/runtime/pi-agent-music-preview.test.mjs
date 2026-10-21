@@ -237,6 +237,37 @@ test("the chosen music service decides which tools play music, and the rebuilt r
   assert.match(runtimeFor(offline).runtime.agent.state.systemPrompt, /Spotify is not connected in this session/u);
 });
 
+test("with Apple Music chosen, a queue request answered with previews is not sent on to Spotify's queue", async () => {
+  const played = [];
+  const app = application({ played, spotify: true });
+  app.setPlaybackService("apple_music");
+  const { faux, runtime } = runtimeFor(app);
+  assert.ok(runtime.agent.state.tools.some((tool) => tool.name === "moondog_spotify_discover"), "Spotify reads stay");
+  let continued = false;
+  faux.setResponses([
+    fauxAssistantMessage([fauxToolCall("moondog_music_preview", { tracks: [{ title: "Wind of Change", artist: "Scorpions" }] })], { stopReason: "toolUse" }),
+    fauxAssistantMessage([fauxText("Here's a 30-second preview. The full song is on Apple Music.")]),
+    () => { continued = true; return fauxAssistantMessage([fauxText("Queued on Spotify.")]); },
+  ]);
+  const result = await runtime.prompt("Queue three Scorpions songs");
+  assert.equal(continued, false, "no host continuation asks for moondog_spotify_queue_batch");
+  assert.match(result.text, /30-second preview/u);
+  assert.equal(played.length, 1);
+});
+
+test("with Apple Music chosen, a queue request carries no Spotify queue budgets or playlist block", () => {
+  const app = application({ spotify: true });
+  app.beginPrompt({ text: "Queue three Scorpions songs" });
+  assert.equal(app.spotifyPlaybackContextStatus().queue_request.requested, 3);
+  assert.throws(() => app.requireSpotifyPlaylistCreationFlow(), { code: "spotify_queue_not_playlist" });
+  app.endPrompt();
+  app.setPlaybackService("apple_music");
+  app.beginPrompt({ text: "Queue three Scorpions songs" });
+  assert.equal(app.spotifyPlaybackContextStatus().queue_request, null);
+  assert.doesNotThrow(() => app.requireSpotifyPlaylistCreationFlow());
+  app.endPrompt();
+});
+
 test("host notes reach the agent's instructions, and the terminal passes none", async () => {
   const withNotes = runtimeFor(new MoondogApplication({ agentHostNotes: ["This is Moondog's public demo on its website."] }));
   withNotes.faux.setResponses([(context) => {

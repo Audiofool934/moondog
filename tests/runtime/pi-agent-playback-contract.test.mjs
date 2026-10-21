@@ -198,3 +198,17 @@ test("an episode, or a song whose album no read has shown, plays as it is", asyn
   assert.deepEqual(resumed, [[{ uris: ["spotify:episode:fictionalTalk"] }, false], [{ uris: ["spotify:track:fictionalLoose"] }, false],
     [{ contextUri: "spotify:album:fictionalHomeAlbum", offsetUri: "spotify:track:fictionalHome" }, true]]);
 });
+
+test("a later song of the album playing is still queued, while the listener's own queue and the playing song are not queued twice", async t => {
+  const f = fixture(t, { active: "simMac", playing: "simReckoner", queue: ["simLeiQiao"] });
+  await f.prompt("我要听伍佰的被动", [f.call("moondog_spotify_search", { query: "伍佰 被动" }),
+    c => f.call("moondog_spotify_player_control", { action: "resume", item_ref_id: f.found(c, "被動") }), f.say("在放《被動》了。")]);
+  const titles = ["被動", "牽掛", "淚橋", "突然的自我", "挪威的森林"];
+  const refs = c => JSON.parse(f.lastResult(c).content[0].text).items.filter(item => titles.includes(item.name))
+    .sort((left, right) => titles.indexOf(left.name) - titles.indexOf(right.name)).map(item => item.item_ref_id);
+  const result = await f.prompt("queue three more Wu Bai songs", [f.call("moondog_spotify_search", { query: "伍佰", limit: 10 }),
+    c => f.call("moondog_spotify_queue_batch", { item_refs: refs(c), count: 3 }), f.say("Queued three more.")]);
+  assert.deepEqual(f.spotify.state.queue.map(track => track.id), ["simLeiQiao", "simQianGua", "simTuRanDeZiWo", "simNuoWeiDeSenLin"]);
+  assert.deepEqual(result.spotify_queue_plan.queued.map(track => track.title), ["牽掛", "突然的自我", "挪威的森林"]);
+  assert.equal(result.spotify_queue_plan.skipped_duplicate_count, 2, "the playing song and the listener's own queued song");
+});

@@ -1489,9 +1489,11 @@ export class MoondogApplication {
     this.requireSpotifyWriteScopes(["user-modify-playback-state"]);
     this.requireSpotifyScopes(["user-read-playback-state"]);
     transaction.queueBatchAttempted = true;
-    let observed;
+    let observed, player;
     try {
-      observed = await this.requireSpotifyService().queue({ signal });
+      const service = this.requireSpotifyService();
+      // The player names the album playing. Without it, every listed song counts as queued.
+      [observed, player] = await Promise.all([service.queue({ signal }), service.currentPlayer({ signal }).catch(() => null)]);
       signal?.throwIfAborted();
     } catch (error) {
       transaction.queueBatchAttempted = false;
@@ -1499,7 +1501,7 @@ export class MoondogApplication {
       error.outcomeUnknown = false;
       throw error;
     }
-    const seenUris = this.#observedQueueUris(observed);
+    const seenUris = this.#observedQueueUris(observed, player);
     const tracks = items.map(item => ({ track_ref_id: item.item_ref_id, title: item.name, artist_credit: item.artists.join(", "), artists: item.artists }));
     const resolved = new Map(items.map(item => [item.item_ref_id, item.uri]));
     this.transientSpotifyContext = true;
@@ -1514,8 +1516,14 @@ export class MoondogApplication {
     return result;
   }
 
-  #observedQueueUris(observed) {
-    const seen = new Set([observed.currently_playing?.uri, ...(observed.queue ?? []).map(track => track.uri)].filter(Boolean));
+  // Spotify lists the listener's queue first, then the rest of the album playing. That rest
+  // is not queued, so a later song of the album can still be queued. A song the listener
+  // queued from the same album at the very end of their queue looks the same and is not held back.
+  #observedQueueUris(observed, player = null) {
+    const album = /^spotify:album:/u.test(player?.context?.uri ?? "") ? player.context.uri : null;
+    const queue = [...(observed.queue ?? [])];
+    while (album && queue.at(-1)?.album_uri === album) queue.pop();
+    const seen = new Set([observed.currently_playing?.uri, ...queue.map(track => track.uri)].filter(Boolean));
     for (const [uri, acceptedAt] of this.recentSimilarQueueUris) {
       if (Date.now() - acceptedAt > 15 * 60_000) this.recentSimilarQueueUris.delete(uri);
       else seen.add(uri);
@@ -1634,12 +1642,8 @@ export class MoondogApplication {
     // stops the operation instead of silently abandoning deduplication.
     const observed = await service.queue({ signal });
     signal?.throwIfAborted();
-    const seenUris = new Set([item.uri, observed.currently_playing?.uri, ...(observed.queue ?? []).map((track) => track.uri)].filter(Boolean));
-    const now = Date.now();
-    for (const [uri, acceptedAt] of this.recentSimilarQueueUris) {
-      if (now - acceptedAt > 15 * 60_000) this.recentSimilarQueueUris.delete(uri);
-      else seenUris.add(uri);
-    }
+    const seenUris = this.#observedQueueUris(observed, player);
+    if (item.uri) seenUris.add(item.uri);
     const resolvedByRef = new Map((resolution.resolutions ?? [])
       .filter((entry) => entry.status === "resolved" && /^spotify:track:[A-Za-z0-9]{1,128}$/u.test(entry.spotify?.uri ?? ""))
       .map((entry) => [entry.track_ref_id, entry.spotify.uri]));
@@ -3082,7 +3086,8 @@ export class MoondogApplication {
     this.spotifyContextTurn += 1;
     if (queueCancellationRequested(text)) this.cancelSpotifyQueueRequest();
     const previousQueue = this.#recentSpotifyContext(this.spotifyQueueRequest) ? this.spotifyQueueRequest : null;
-    const queueIntent = queueListeningIntent(text, previousQueue);
+    // Only Spotify queues songs, so its queue rules apply only while Spotify plays music.
+    const queueIntent = this.spotifyPlaybackReady() ? queueListeningIntent(text, previousQueue) : null;
     if (queueIntent) this.spotifyQueueRequest = { ...(queueIntent.clarification_only ? previousQueue : {}), ...queueIntent, observedAt: this.spotifyContextClock(), turn: this.spotifyContextTurn, epoch: this.spotifyContextEpoch };
     this.pendingPlaylistPromptTransaction = {
       userText: text,

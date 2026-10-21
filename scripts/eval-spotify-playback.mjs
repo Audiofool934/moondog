@@ -67,6 +67,16 @@ const scenarios = [
       return check(s.current?.id === "simBeidong" && ids.length === 3 && new Set(ids).size === 3 && s.queue.every(isWuBai) && !ids.includes("simBeidong"),
         `expected three other Wu Bai songs queued after 被動, got [${s.queue.map((track) => track.name).join(", ")}] after ${s.current?.name}`);
     } }] },
+  // A song played alone goes on into its album; a later song of that album can still be queued.
+  { name: "play-then-queue", language: "zh", setup: { active: "simMac", playing: "simReckoner" },
+    turns: [
+      { text: "我要听伍佰的被动", expect: (s) => check(s.current?.id === "simBeidong" && s.playing, `expected 被動, got ${s.current?.name ?? "nothing"}`) },
+      { text: "把伍佰的牵挂和突然的自我加到队列里", expect: (s) => {
+        const ids = s.queue.map((track) => track.id);
+        return check(s.current?.id === "simBeidong" && ids.length === 2 && ids.includes("simQianGua") && ids.includes("simTuRanDeZiWo"),
+          `expected 牽掛 and 突然的自我 queued after 被動, got [${s.queue.map((track) => track.name).join(", ")}] after ${s.current?.name}`);
+      } },
+    ] },
   { name: "queue-from-idle", language: "es", setup: {},
     turns: [{ text: "pon tres canciones de Radiohead en la cola", expect: (s) => {
       const radiohead = [s.current, ...s.queue].filter((track) => artistOf(track) === "Radiohead");
