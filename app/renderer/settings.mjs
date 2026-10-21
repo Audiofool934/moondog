@@ -160,7 +160,10 @@ export function createSettings({ state, send, t, prettyModel = String }) {
     if (!data.providers) { part.append(note(tr("loading"))); return part; }
     if (!data.providers.length) { part.append(note(data.providersError ?? tr("noProviders"))); return part; }
     const list = make("div", "choices");
-    for (const provider of data.providers) {
+    // Providers that only read a key from the environment wait behind one button, unless one is in use.
+    const usable = (provider) => provider.signedIn === true || provider.signIn !== "environment_only";
+    const hidden = data.providers.filter((provider) => !usable(provider));
+    for (const provider of data.showAllProviders ? data.providers : data.providers.filter(usable)) {
       const signedIn = provider.signedIn === true;
       const detail = signedIn ? (provider.source && provider.source !== "saved" ? tr("signedInFrom", { source: provider.source === "environment" ? tr("theEnvironment") : provider.source }) : tr("signedIn"))
         : provider.signIn === "oauth" ? tr("signInWithBrowser") : provider.signIn === "api_key" ? tr("needsApiKey") : tr("setInEnvironment");
@@ -191,6 +194,9 @@ export function createSettings({ state, send, t, prettyModel = String }) {
       }
     }
     part.append(list);
+    if (hidden.length && !data.showAllProviders) {
+      part.append(button(tr("moreProviders", { count: hidden.length }), "quiet small", () => { data.showAllProviders = true; render(); }));
+    }
     return part;
   }
 
@@ -376,6 +382,8 @@ export function createSettings({ state, send, t, prettyModel = String }) {
       else if (message.stage === "progress") data.importing = { ...data.importing, stage: "progress", count: message.count };
       else if (!["refresh-failed", "lastfm-key-saved"].includes(message.stage)) data.importing = { ...message };
       if (message.stage === "preview" || message.stage === "reading") { if (sheet.hidden) show("library"); else section = "library"; }
+      // The profile it built is posted in the conversation, so the sheet steps aside to show it.
+      if (message.stage === "done") hide();
     }
     render();
   }

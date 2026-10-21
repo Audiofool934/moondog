@@ -96,8 +96,6 @@ export function runWindowRoom(services, { port, send }) {
   async function readPlayer() {
     const service = base.spotifyConnection?.service;
     if (base.spotifyReady?.() !== true || !service) return { type: "player", spotify: "unavailable", now: null, next: [] };
-    // With Apple Music chosen, the player shows the previews the window plays, not Spotify.
-    if (base.playbackService === "apple_music") return { type: "player", spotify: "ready", now: null, next: [] };
     const [player, queue] = await Promise.all([service.currentPlayer(), service.queue?.().catch(() => null)]);
     const item = player?.state === "available" ? player.item : null;
     notePlayer(player, item);

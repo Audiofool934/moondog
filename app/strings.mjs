@@ -37,6 +37,7 @@ const STRINGS = {
     "effort.minimal": "Minimal", "effort.low": "Low", "effort.medium": "Medium", "effort.high": "High", "effort.xhigh": "Extra high", "effort.max": "Max",
     signedInFrom: "Signed in with {source}", theEnvironment: "the environment", "effort.off": "Off",
     noticeModelUnknown: "That model isn't in the provider's list anymore. Choose another.",
+    moreProviders: "Show {count} more providers that read a key from the environment",
     providers: "Providers", noProviders: "Model sign-in isn't available here. Use moondog in a terminal and choose /model.", signedIn: "Signed in", signInWithBrowser: "Sign in with your browser", needsApiKey: "Needs an API key", setInEnvironment: "Set in the environment",
     signIn: "Sign in", signOut: "Sign out", signInFirst: "Sign in to see this provider's models.", signingIn: "Signing in to {provider}",
     openSignInPage: "Open the sign-in page", finishInBrowser: "Finish signing in in your browser.", enterCode: "Enter this code on the sign-in page.", checking: "Checking…",
@@ -102,6 +103,7 @@ const STRINGS = {
     importDone: "已加入。你的资料已是最新。", importAlready: "这份历史已经导入过了。", importWhileAnswering: "请等回复结束，再加入导入的内容。", importFailed: "Moondog 没能读取这份历史。",
     memory: "记忆", memoryNote: "Moondog 在对话之间记住的关于你的事。有不对的，就让它忘掉。", rememberPlaceholder: "Moondog 应该知道的事", remember: "记住",
     noMemories: "还没有内容。", forget: "忘掉", version: "版本 {version}", shortcuts: "快捷键",
+    moreProviders: "显示另外 {count} 个从环境变量读取密钥的服务商",
   },
   "zh-Hant": {
     newConversation: "新對話", today: "今天", yesterday: "昨天", previous7: "過去 7 天", older: "更早",
@@ -150,6 +152,7 @@ const STRINGS = {
     importDone: "已加入。你的資料已是最新。", importAlready: "這份紀錄已經匯入過了。", importWhileAnswering: "請等回覆結束，再加入匯入的內容。", importFailed: "Moondog 沒能讀取這份紀錄。",
     memory: "記憶", memoryNote: "Moondog 在對話之間記住的關於你的事。有不對的，就讓它忘掉。", rememberPlaceholder: "Moondog 應該知道的事", remember: "記住",
     noMemories: "還沒有內容。", forget: "忘掉", version: "版本 {version}", shortcuts: "快速鍵",
+    moreProviders: "顯示另外 {count} 個從環境變數讀取金鑰的供應商",
   },
   ja: {
     newConversation: "新しい会話", today: "今日", yesterday: "昨日", previous7: "過去 7 日間", older: "それ以前",
@@ -198,6 +201,7 @@ const STRINGS = {
     importDone: "追加しました。プロフィールは最新です。", importAlready: "この履歴はすでに取り込まれています。", importWhileAnswering: "返答が終わってから、取り込みを追加してください。", importFailed: "Moondog はこの履歴を読み込めませんでした。",
     memory: "記憶", memoryNote: "Moondog が会話をまたいで覚えている、あなたについてのことです。間違っているものは忘れさせてください。", rememberPlaceholder: "Moondog に知っておいてほしいこと", remember: "覚える",
     noMemories: "まだありません。", forget: "忘れる", version: "バージョン {version}", shortcuts: "ショートカット",
+    moreProviders: "環境変数からキーを読むプロバイダーをあと {count} 件表示",
   },
   ko: {
     newConversation: "새 대화", today: "오늘", yesterday: "어제", previous7: "지난 7일", older: "이전",
@@ -246,6 +250,7 @@ const STRINGS = {
     importDone: "추가했습니다. 프로필이 최신 상태입니다.", importAlready: "이미 가져온 기록입니다.", importWhileAnswering: "응답이 끝난 뒤 가져온 기록을 추가하세요.", importFailed: "Moondog가 이 기록을 읽지 못했습니다.",
     memory: "기억", memoryNote: "Moondog가 여러 대화에 걸쳐 기억하는 내 정보입니다. 틀린 내용은 잊게 하세요.", rememberPlaceholder: "Moondog가 알아야 할 내용", remember: "기억하기",
     noMemories: "아직 없습니다.", forget: "잊기", version: "버전 {version}", shortcuts: "단축키",
+    moreProviders: "환경 변수에서 키를 읽는 제공업체 {count}개 더 보기",
   },
   es: {
     newConversation: "Nueva conversación", today: "Hoy", yesterday: "Ayer", previous7: "Últimos 7 días", older: "Anteriores",
@@ -294,6 +299,7 @@ const STRINGS = {
     importDone: "Añadido. Tu perfil está al día.", importAlready: "Este historial ya se importó.", importWhileAnswering: "Espera a que termine la respuesta y luego añade la importación.", importFailed: "Moondog no pudo leer este historial.",
     memory: "Memoria", memoryNote: "Lo que Moondog guarda sobre ti entre conversaciones. Olvida lo que esté mal.", rememberPlaceholder: "Algo que Moondog debería saber", remember: "Recordar",
     noMemories: "Nada todavía.", forget: "Olvidar", version: "Versión {version}", shortcuts: "Atajos",
+    moreProviders: "Mostrar {count} proveedores más que leen la clave del entorno",
   },
   fr: {
     newConversation: "Nouvelle conversation", today: "Aujourd'hui", yesterday: "Hier", previous7: "7 derniers jours", older: "Plus anciennes",
@@ -342,6 +348,7 @@ const STRINGS = {
     importDone: "Ajouté. Votre profil est à jour.", importAlready: "Cet historique a déjà été importé.", importWhileAnswering: "Attendez la fin de la réponse, puis ajoutez l'importation.", importFailed: "Moondog n'a pas pu lire cet historique.",
     memory: "Mémoire", memoryNote: "Ce que Moondog garde sur vous d'une conversation à l'autre. Oubliez ce qui est faux.", rememberPlaceholder: "Quelque chose que Moondog devrait savoir", remember: "Mémoriser",
     noMemories: "Rien pour l'instant.", forget: "Oublier", version: "Version {version}", shortcuts: "Raccourcis",
+    moreProviders: "Afficher {count} autres fournisseurs qui lisent leur clé dans l'environnement",
   },
   de: {
     newConversation: "Neue Unterhaltung", today: "Heute", yesterday: "Gestern", previous7: "Letzte 7 Tage", older: "Älter",
@@ -390,6 +397,7 @@ const STRINGS = {
     importDone: "Hinzugefügt. Dein Profil ist aktuell.", importAlready: "Dieser Verlauf wurde bereits importiert.", importWhileAnswering: "Warte, bis die Antwort fertig ist, und füge dann den Import hinzu.", importFailed: "Moondog konnte diesen Verlauf nicht lesen.",
     memory: "Gedächtnis", memoryNote: "Was Moondog sich zwischen Unterhaltungen über dich merkt. Lass Moondog vergessen, was nicht stimmt.", rememberPlaceholder: "Etwas, das Moondog wissen sollte", remember: "Merken",
     noMemories: "Noch nichts.", forget: "Vergessen", version: "Version {version}", shortcuts: "Tastaturkurzbefehle",
+    moreProviders: "{count} weitere Anbieter zeigen, die ihren Schlüssel aus der Umgebung lesen",
   },
   pt: {
     newConversation: "Nova conversa", today: "Hoje", yesterday: "Ontem", previous7: "Últimos 7 dias", older: "Anteriores",
@@ -438,6 +446,7 @@ const STRINGS = {
     importDone: "Adicionado. Seu perfil está atualizado.", importAlready: "Este histórico já foi importado.", importWhileAnswering: "Espere a resposta terminar e depois adicione a importação.", importFailed: "O Moondog não conseguiu ler este histórico.",
     memory: "Memória", memoryNote: "O que o Moondog guarda sobre você entre as conversas. Remova o que estiver errado.", rememberPlaceholder: "Algo que o Moondog deveria saber", remember: "Guardar",
     noMemories: "Nada ainda.", forget: "Esquecer", version: "Versão {version}", shortcuts: "Atalhos",
+    moreProviders: "Mostrar mais {count} provedores que leem a chave do ambiente",
   },
   it: {
     newConversation: "Nuova conversazione", today: "Oggi", yesterday: "Ieri", previous7: "Ultimi 7 giorni", older: "Meno recenti",
@@ -486,6 +495,7 @@ const STRINGS = {
     importDone: "Aggiunto. Il tuo profilo è aggiornato.", importAlready: "Questa cronologia è già stata importata.", importWhileAnswering: "Aspetta che la risposta finisca, poi aggiungi l'importazione.", importFailed: "Moondog non è riuscito a leggere questa cronologia.",
     memory: "Memoria", memoryNote: "Quello che Moondog ricorda di te tra una conversazione e l'altra. Fagli dimenticare ciò che è sbagliato.", rememberPlaceholder: "Qualcosa che Moondog dovrebbe sapere", remember: "Ricorda",
     noMemories: "Ancora niente.", forget: "Dimentica", version: "Versione {version}", shortcuts: "Scorciatoie da tastiera",
+    moreProviders: "Mostra altri {count} fornitori che leggono la chiave dall'ambiente",
   },
 };
 

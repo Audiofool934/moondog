@@ -53,7 +53,9 @@ svg.icon { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-w
 .new:hover kbd { opacity: 1; }
 .sessions { flex: 1; min-height: 0; overflow-y: auto; margin-top: 14px; padding-bottom: 8px; scrollbar-width: thin; }
 .sessions h2 { font-size: 12px; font-weight: 400; color: var(--graphite); margin: 18px 0 4px; padding-inline-start: 10px; }
-.sessions h2:first-child { margin-top: 0; }
+/* Only the list's first heading sits flush; folders keep a little room from what comes before. */
+.sessions > h2:first-child, .sessions > .loose:first-child > h2:first-child { margin-top: 0; }
+.sessions > .folder:first-of-type:not(:first-child) { margin-top: 14px; }
 .sessions .row { position: relative; display: flex; align-items: center; height: 32px; border-radius: 7px; }
 .sessions .row:hover, .sessions .row[aria-current="true"] { background: var(--press); }
 .sessions .open { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; height: 100%; padding: 0 10px; text-align: start; font-size: 14px; color: var(--ink); }
