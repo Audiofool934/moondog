@@ -195,6 +195,12 @@ test("a conversation deleted by another process moves this one to a new conversa
     assert.deepEqual(application.conversationEntries(), []);
     assert.notEqual(application.ensureMemorySession().session_id, next);
     assert.deepEqual(application.conversationPending({ draft: "A draft", queued: [] }), { draft: "A draft", queued: [] });
+
+    // Remembering after a delete elsewhere keeps the memory in a new conversation.
+    const third = application.ensureMemorySession().session_id;
+    deleteElsewhere(third);
+    assert.equal(application.rememberMemory({ text: "Quiet records in the morning.", kind: "preference" }).text, "Quiet records in the morning.");
+    assert.notEqual(application.ensureMemorySession().session_id, third);
   } finally {
     other?.close();
     application?.close();

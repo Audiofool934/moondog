@@ -294,8 +294,13 @@ export function runWindowRoom(services, { port, send }) {
   const prompts = new Map();
   async function sendModels() {
     if (!modelSettings) return send({ type: "models", providers: [] });
-    // The running provider comes first, as in the terminal's /model.
-    send({ type: "models", providers: await modelSettings.providers({ current: current.runtime.publicStatus?.().provider ?? undefined }) });
+    // The running provider comes first, as in the terminal's /model. A credential folder with unsafe
+    // permissions refuses the whole list; its fixed message says what to fix.
+    try {
+      send({ type: "models", providers: await modelSettings.providers({ current: current.runtime.publicStatus?.().provider ?? undefined }) });
+    } catch (error) {
+      send({ type: "models", providers: [], error: errorText(error) });
+    }
   }
   async function sendProviderModels(provider, force = false) {
     if (!modelSettings) return;
@@ -432,7 +437,7 @@ export function runWindowRoom(services, { port, send }) {
   function memories() {
     const summary = base.memorySummary?.({ limit: 100 });
     send({ type: "memories", state: summary?.state ?? "unavailable", memories: (summary?.memories ?? []).map((memory) => ({
-      id: memory.memory_id, text: memory.content, kind: memory.kind, updatedAt: memory.updated_at })) });
+      id: memory.memory_id, text: memory.text, kind: memory.kind, updatedAt: memory.updated_at })) });
   }
 
   const handlers = {

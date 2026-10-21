@@ -648,6 +648,8 @@ export class MoondogApplication {
 
   rememberMemory({ text, kind, horizon, origin = "explicit_user" }) {
     if (!this.memoryStore) throw new Error("Persistent memory is unavailable");
+    // A conversation deleted elsewhere can't hold the memory's source; a new one does.
+    this.#leaveDeletedSession();
     const session = this.ensureMemorySession();
     return this.memoryStore.remember({
       text,
@@ -692,6 +694,7 @@ export class MoondogApplication {
 
   forgetMemory(memoryId) {
     if (!this.memoryStore) throw new Error("Persistent memory is unavailable");
+    this.#leaveDeletedSession();
     const session = this.ensureMemorySession();
     return this.memoryStore.forget(memoryId, {
       sourceSessionId: session.session_id,
@@ -935,6 +938,7 @@ export class MoondogApplication {
   }
 
   conversationPending(pending) {
+    this.#leaveDeletedSession();
     const sessionId = this.ensureMemorySession().session_id;
     if (this.memoryStore) return this.memoryStore.conversationPending(sessionId, pending);
     const row = this.localConversations.get(sessionId);

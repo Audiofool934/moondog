@@ -158,7 +158,7 @@ export function createSettings({ state, send, t, prettyModel = String }) {
     if (data.auth) { part.append(signInPanel()); return part; }
     part.append(heading(tr("providers")));
     if (!data.providers) { part.append(note(tr("loading"))); return part; }
-    if (!data.providers.length) { part.append(note(tr("noProviders"))); return part; }
+    if (!data.providers.length) { part.append(note(data.providersError ?? tr("noProviders"))); return part; }
     const list = make("div", "choices");
     for (const provider of data.providers) {
       const signedIn = provider.signedIn === true;
@@ -351,7 +351,7 @@ export function createSettings({ state, send, t, prettyModel = String }) {
 
   // Messages from the core that this sheet draws.
   function receive(message) {
-    if (message.type === "models") data.providers = message.providers ?? [];
+    if (message.type === "models") { data.providers = message.providers ?? []; data.providersError = message.error ?? null; }
     if (message.type === "provider-models") data.models.set(message.provider, message.models ?? []);
     if (message.type === "devices") data.devices = message.devices ?? [];
     if (message.type === "memories") data.memories = message.memories ?? [];
