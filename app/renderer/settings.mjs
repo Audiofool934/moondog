@@ -54,7 +54,8 @@ export function createSettings({ state, send, t, prettyModel = String }) {
     if (windowNode) windowNode.inert = true;
     refresh();
     render();
-    requestAnimationFrame(() => (card.querySelector("[data-focus]") ?? card.querySelector(".sheet-nav .on") ?? close).focus());
+    // A sign-in that still waits for an answer gets the focus back; otherwise the open section does.
+    requestAnimationFrame(() => (card.querySelector('[data-key^="auth-field:"]') ?? card.querySelector(".sheet-nav .on") ?? close).focus());
   }
   function hide() {
     sheet.hidden = true;
@@ -74,6 +75,12 @@ export function createSettings({ state, send, t, prettyModel = String }) {
   });
 
   const heading = (text) => make("h3", "", text);
+  // An error inside the sheet is announced, since the notice behind it is hidden while the sheet is open.
+  const failure = (text) => {
+    const node = make("p", "error", text);
+    node.setAttribute("role", "alert");
+    return node;
+  };
   const note = (text) => make("p", "note", text);
   // A status redraw rebuilds the open section. These fields keep what the listener is typing.
   function keptField(key, placeholder = "") {
@@ -185,7 +192,7 @@ export function createSettings({ state, send, t, prettyModel = String }) {
       part.append(make("p", "label", tr("effort")), efforts);
     }
     if (data.auth) { part.append(signInPanel()); return part; }
-    if (data.error) part.append(make("p", "error", data.error));
+    if (data.error) part.append(failure(data.error));
     part.append(heading(tr("providers")));
     if (!data.providers) { part.append(note(tr("loading"))); return part; }
     if (!data.providers.length) { part.append(note(data.providersError ?? tr("noProviders"))); return part; }
@@ -243,7 +250,7 @@ export function createSettings({ state, send, t, prettyModel = String }) {
     part.append(services);
 
     part.append(heading(tr("spotifyAccount")));
-    if (data.error) part.append(make("p", "error", data.error));
+    if (data.error) part.append(failure(data.error));
     if (data.auth?.provider === "spotify") part.append(signInPanel());
     else if (data.auth) part.append(note(tr("signInBusy")));
     else if (state.spotify === "ready") {
@@ -311,7 +318,7 @@ export function createSettings({ state, send, t, prettyModel = String }) {
       return part;
     }
     if (job?.stage === "done") part.append(make("p", "done", job.receipt?.already ? tr("importAlready") : tr("importDone")));
-    if (job?.stage === "error") part.append(make("p", "error", job.code === "import_while_answering" ? tr("importWhileAnswering") : job.message || tr("importFailed")));
+    if (job?.stage === "error") part.append(failure(job.code === "import_while_answering" ? tr("importWhileAnswering") : job.message || tr("importFailed")));
 
     const sources = make("div", "choices");
     sources.append(choice({ label: tr("importSpotifyQuick"), detail: state.spotify === "ready" ? tr("importSpotifyQuickNote") : tr("connectSpotifyFirst"),
