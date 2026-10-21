@@ -35,7 +35,7 @@ const STRINGS = {
     language: "Language", languageNote: "Moondog replies in this language, here and in the terminal.",
     currentModel: "Current model", noModel: "No model is connected", effort: "Thinking effort", effortDefault: "Default",
     "effort.minimal": "Minimal", "effort.low": "Low", "effort.medium": "Medium", "effort.high": "High", "effort.xhigh": "Extra high", "effort.max": "Max",
-    providers: "Providers", signedIn: "Signed in", signInWithBrowser: "Sign in with your browser", needsApiKey: "Needs an API key", setInEnvironment: "Set in the environment",
+    providers: "Providers", noProviders: "Model sign-in isn't available here. Use moondog in a terminal and choose /model.", signedIn: "Signed in", signInWithBrowser: "Sign in with your browser", needsApiKey: "Needs an API key", setInEnvironment: "Set in the environment",
     signIn: "Sign in", signOut: "Sign out", signInFirst: "Sign in to see this provider's models.", signingIn: "Signing in to {provider}",
     openSignInPage: "Open the sign-in page", finishInBrowser: "Finish signing in in your browser.", enterCode: "Enter this code on the sign-in page.", checking: "Checking…",
     musicService: "Music service", connected: "Connected", notConnected: "Not connected", appleMusicNote: "Plays 30-second previews here. Full Apple Music playback is coming.",

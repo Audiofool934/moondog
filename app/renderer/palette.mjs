@@ -27,7 +27,9 @@ export function createPalette({ input, anchor, t, commands }) {
     const found = query();
     // Once a full command name has a space after it, the list steps aside for its words.
     if (!found || (found.hasSpace && commands().some((command) => command.name === found.name))) return hide();
-    matches = commands().filter((command) => command.name.startsWith(found.name) || tr(command.description).toLowerCase().includes(found.name));
+    // A name that starts with what was typed wins; the descriptions are searched only when no name matches.
+    const named = commands().filter((command) => command.name.startsWith(found.name));
+    matches = named.length ? named : commands().filter((command) => tr(command.description).toLowerCase().includes(found.name));
     if (!matches.length) return hide();
     index = Math.min(index, matches.length - 1);
     list.replaceChildren(...matches.map((command, position) => {

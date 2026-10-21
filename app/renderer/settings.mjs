@@ -14,7 +14,7 @@ const button = (label, className = "", onClick) => {
 };
 const SECTIONS = ["general", "model", "playback", "library", "memory", "about"];
 
-export function createSettings({ state, send, t }) {
+export function createSettings({ state, send, t, prettyModel = String }) {
   const sheet = make("div", "sheet");
   sheet.hidden = true;
   const card = make("div", "sheet-card");
@@ -140,8 +140,9 @@ export function createSettings({ state, send, t }) {
     const part = make("div");
     const current = state.model ?? {};
     part.append(heading(tr("currentModel")));
-    const now = make("p", "current", current.model ?? tr("noModel"));
-    if (current.model && current.provider) now.append(make("span", "", current.provider));
+    const providerName = data.providers?.find((provider) => provider.id === current.provider)?.name ?? current.provider;
+    const now = make("p", "current", current.model ? prettyModel(current.model) : tr("noModel"));
+    if (current.model && current.provider) now.append(make("span", "", `${providerName}, ${current.model}`));
     part.append(now);
     if (current.effortLevels?.length) {
       const efforts = make("div", "segments");
@@ -157,6 +158,7 @@ export function createSettings({ state, send, t }) {
     if (data.auth) { part.append(signInPanel()); return part; }
     part.append(heading(tr("providers")));
     if (!data.providers) { part.append(note(tr("loading"))); return part; }
+    if (!data.providers.length) { part.append(note(tr("noProviders"))); return part; }
     const list = make("div", "choices");
     for (const provider of data.providers) {
       const signedIn = provider.signedIn === true;

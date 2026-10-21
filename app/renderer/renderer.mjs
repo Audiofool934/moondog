@@ -38,7 +38,7 @@ const port = await new Promise((resolve) => {
 });
 const send = (message) => port.postMessage(message);
 const previews = createPreviews({ send, onChange: () => renderInspector() });
-const settings = createSettings({ state, send, t: tr });
+const settings = createSettings({ state, send, t: tr, prettyModel: (model) => prettyModel(model) });
 const sidebar = createSidebar({ root: $("sessions"), state, send, t: tr, open: (id) => openSession(id), store });
 
 // Words

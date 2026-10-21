@@ -205,10 +205,12 @@ const menuTemplate = (items, choose) => items.map((item) => item.type === "separ
   ...(item.checked !== undefined ? { type: "checkbox", checked: item.checked === true } : {}),
   ...(Array.isArray(item.submenu) ? { submenu: menuTemplate(item.submenu, choose) } : { click: () => choose(item.id) }),
 });
+// On macOS the menu can report closing before the chosen item's click runs, so a click answers at
+// once and closing answers "nothing" only a moment later.
 ipcMain.handle("menu", (_event, { items, x, y }) => new Promise((resolve) => {
-  let chosen = null;
-  const menu = Menu.buildFromTemplate(menuTemplate(Array.isArray(items) ? items : [], (id) => { chosen = id; }));
-  menu.popup({ window, ...(Number.isFinite(x) && Number.isFinite(y) ? { x: Math.round(x), y: Math.round(y) } : {}), callback: () => resolve(chosen) });
+  const menu = Menu.buildFromTemplate(menuTemplate(Array.isArray(items) ? items : [], (id) => resolve(id)));
+  menu.popup({ window, ...(Number.isFinite(x) && Number.isFinite(y) ? { x: Math.round(x), y: Math.round(y) } : {}),
+    callback: () => setTimeout(() => resolve(null), 150) });
 }));
 // A confirmation for something that cannot be undone, such as deleting a conversation.
 ipcMain.handle("confirm", async (_event, { message, detail, confirm, cancel }) => {

@@ -135,10 +135,10 @@ svg.icon { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-w
 
 /* Slash commands open above the composer. */
 .palette { position: absolute; inset: auto 0 calc(100% + 8px) 0; background: var(--surface); border: 1px solid var(--hair); border-radius: 12px; padding: 6px;
-  box-shadow: 0 12px 32px -16px rgba(0, 0, 0, 0.35); max-height: 300px; overflow-y: auto; z-index: 4; }
+  box-shadow: 0 12px 32px -16px rgba(0, 0, 0, 0.35); max-height: 300px; overflow-y: auto; scrollbar-width: none; z-index: 4; }
 .palette-item { display: flex; align-items: baseline; gap: 14px; padding: 7px 10px; border-radius: 7px; font-size: 13px; }
 .palette-item.on { background: var(--press); }
-.palette-name { color: var(--ink); white-space: nowrap; flex: none; }
+.palette-name { color: var(--ink); white-space: nowrap; flex: none; min-width: 8.5em; }
 .palette-what { color: var(--graphite); min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* A short notice above the composer, and the whole window while a file is dragged over it. */
