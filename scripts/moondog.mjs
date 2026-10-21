@@ -844,17 +844,32 @@ async function main() {
   // One-shot commands get none: they would exit in the middle of the first song.
   // In the desktop app, the window's own player plays them instead.
   const previewPlayer = options.command ? null : host ? host.musicPreviewPlayer : await createTerminalPreviewPlayer();
-  const application = new MoondogApplication({
-    ...domainState,
-    locale: await resolveListenerLocale(),
-    webResearch,
-    memoryStore,
-    spotifyConnection,
-    musicCatalog,
-    musicPreviewPlayer: previewPlayer,
-    musicSimilarity,
-    artistIdentityResolver,
+  // The main application and every conversation the window opens beside it are built from
+  // this one list, so they cannot drift apart. Each passes in what may change after launch:
+  // its domain services, the Spotify connection and the language.
+  const applicationOptions = ({ domainServices, domainServicesError, spotifyConnection, locale }) => ({
+    domainServices, domainServicesError, spotifyConnection, locale,
+    webResearch, memoryStore, musicCatalog, musicPreviewPlayer: previewPlayer, musicSimilarity, artistIdentityResolver,
   });
+  const application = new MoondogApplication(applicationOptions({
+    ...domainState, spotifyConnection, locale: await resolveListenerLocale(),
+  }));
+  // The conversations the window runs beside the main one, each with its own application and agent.
+  const conversations = new Set();
+  // An import replaces the domain services under the main application and every open
+  // conversation. The old ones close last, once every fork over them has been replaced.
+  const replaceDomainServices = (next) => {
+    const previous = application.domainServices;
+    application.domainServices = next.domainServices;
+    application.domainServicesError = next.domainServicesError;
+    for (const { application: conversation } of conversations) {
+      const fork = conversation.domainServices;
+      conversation.domainServices = next.domainServices?.fork?.() ?? null;
+      conversation.domainServicesError = next.domainServicesError;
+      fork?.close?.();
+    }
+    previous?.close?.();
+  };
 
   let lyrics = null;
   let exitRequest;
@@ -940,11 +955,51 @@ async function main() {
       );
     }
     lyrics = await createLyricService().catch(() => null);
+    // The window answers in several sessions at the same time: each busy session gets its own
+    // application on the shared services, with its own fork of the domain services, and its own
+    // agent. The terminal never opens one.
+    const openConversation = async ({ sessionId = null, reason = "user_new" } = {}) => {
+      // Two agents writing one session would mix their turns.
+      const bound = [application, ...[...conversations].map((conversation) => conversation.application)];
+      if (sessionId && bound.some((candidate) => candidate.memorySession?.session_id === sessionId)) {
+        throw new Error("That conversation is already open.");
+      }
+      const conversationApplication = new MoondogApplication({
+        ...applicationOptions({
+          domainServices: application.domainServices?.fork?.() ?? null,
+          domainServicesError: application.domainServicesError,
+          spotifyConnection: application.spotifyConnection,
+          locale: application.locale,
+        }),
+        ownsServices: false,
+      });
+      const conversation = {
+        application: conversationApplication,
+        runtime: null,
+        close() {
+          conversations.delete(conversation);
+          conversationApplication.close();
+        },
+      };
+      // It joins before its agent is built, so an import in the meantime reaches it too.
+      conversations.add(conversation);
+      try {
+        // The agent reads the session's turns when it is built, so the session comes first.
+        if (sessionId) conversationApplication.resumeSession(sessionId);
+        else conversationApplication.startNewSession(reason);
+        conversation.runtime = await createConfiguredRuntime(conversationApplication, process.env, { toolTrace });
+        return conversation;
+      } catch (error) {
+        conversation.close();
+        throw error;
+      }
+    };
     // The desktop app draws its own window on this same application and agent.
     exitRequest = await (host?.runRoom ?? runMoondogTui)({
       application,
       runtime,
       toolTrace,
+      openConversation,
       terminal: host?.terminal,
       previewPlayer,
       lyrics,
@@ -976,15 +1031,12 @@ async function main() {
       saveLanguage: locale => writeLanguagePreference(locale),
       refreshImportedData: async (receipt) => {
         if (receipt?.provider === "apple-music-library") await refreshAppleLibraryImport();
-        const next = await loadDomainServices();
-        const previous = application.domainServices;
-        application.domainServices = next.domainServices;
-        application.domainServicesError = next.domainServicesError;
-        previous?.close?.();
+        replaceDomainServices(await loadDomainServices());
       },
-      rebuildRuntime: async (selection) => {
+      // The window also rebuilds the agent of each conversation it opened.
+      rebuildRuntime: async (selection, target = application) => {
         if (selection) await writePiRuntimeSelection(selection);
-        return createConfiguredRuntime(application, process.env, { selection, toolTrace });
+        return createConfiguredRuntime(target, process.env, { selection, toolTrace });
       },
       // In the desktop app, sign-in prompts read and write through the window.
       runAuth: (provider) =>
@@ -1034,18 +1086,18 @@ async function main() {
           resolutionCache: await spotifyResolutionCacheIfConfigured(),
         });
         if (["import-history", "sync-recent"].includes(args[0])) {
-          const next = await loadDomainServices();
-          const previous = application.domainServices;
-          application.domainServices = next.domainServices;
-          application.domainServicesError = next.domainServicesError;
-          previous?.close?.();
+          replaceDomainServices(await loadDomainServices());
         }
-        application.setSpotifyConnection(await loadSpotifyConnection());
+        const connection = await loadSpotifyConnection();
+        application.setSpotifyConnection(connection);
+        for (const conversation of conversations) conversation.application.setSpotifyConnection(connection);
         return output.trim();
       },
     });
   } finally {
     lyrics?.close();
+    // Conversations close first: their domain services are forks of the main application's.
+    for (const conversation of conversations) conversation.close();
     application.close();
   }
   if (exitRequest?.update) {
