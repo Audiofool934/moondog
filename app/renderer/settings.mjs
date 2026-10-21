@@ -43,7 +43,7 @@ export function createSettings({ state, send, t, prettyModel = String }) {
   let section = "general";
   // What the core told this sheet; the sheet asks again each time it opens a section.
   const data = { providers: null, models: new Map(), expanded: null, devices: null, devicesError: null, memories: null, auth: null, error: null,
-    importing: null, version: null };
+    importing: null, version: null, drafts: { remember: "", lastfm: "", spotifyClientId: "" } };
   const windowNode = document.querySelector("[data-window]");
 
   // While the sheet is open, the window behind it takes no focus or clicks.
@@ -75,9 +75,19 @@ export function createSettings({ state, send, t, prettyModel = String }) {
 
   const heading = (text) => make("h3", "", text);
   const note = (text) => make("p", "note", text);
-  function choice({ label, detail, checked, onChoose, trailing, disabled }) {
+  // A status redraw rebuilds the open section. These fields keep what the listener is typing.
+  function keptField(key, placeholder = "") {
+    const field = make("input");
+    field.dataset.key = `field:${key}`;
+    field.spellcheck = false;
+    field.placeholder = placeholder;
+    field.value = data.drafts[key] ?? "";
+    field.addEventListener("input", () => { data.drafts[key] = field.value; });
+    return field;
+  }
+  function choice({ label, detail, checked, onChoose, trailing, disabled, key }) {
     const item = make("div", `choice${checked ? " checked" : ""}`);
-    const main = button("", "choice-main", disabled ? null : onChoose, `choice:${label}`);
+    const main = button("", "choice-main", disabled ? null : onChoose, key ?? `choice:${label}`);
     main.disabled = Boolean(disabled);
     main.setAttribute("aria-pressed", String(Boolean(checked)));
     const words = make("span", "choice-words");
@@ -194,7 +204,7 @@ export function createSettings({ state, send, t, prettyModel = String }) {
           data.auth = { provider: provider.id, providerName: provider.name, lines: [] };
           send({ type: "sign-in", provider: provider.id });
           render();
-        });
+        }, `sign-in:${provider.id}`);
       list.append(choice({ label: provider.name, detail, checked: provider.id === current.provider, trailing: action,
         onChoose: () => {
           data.expanded = data.expanded === provider.id ? null : provider.id;
@@ -243,8 +253,7 @@ export function createSettings({ state, send, t, prettyModel = String }) {
       let field = null;
       if (!state.spotifyAccount?.clientId) {
         form.append(make("label", "", tr("spotifyClientId")));
-        field = make("input");
-        field.spellcheck = false;
+        field = keptField("spotifyClientId");
         form.append(field);
       }
       form.append(button(tr("connectSpotify"), "primary"));
@@ -253,6 +262,7 @@ export function createSettings({ state, send, t, prettyModel = String }) {
         const clientId = field?.value.trim();
         if (field && !clientId) return;
         data.error = null;
+        data.drafts.spotifyClientId = "";
         data.auth = { provider: "spotify", providerName: "Spotify", lines: [tr("openingBrowser")] };
         send({ type: "sign-in", provider: "spotify", ...(clientId ? { clientId } : {}) });
         render();
@@ -269,6 +279,7 @@ export function createSettings({ state, send, t, prettyModel = String }) {
       else for (const device of data.devices) {
         const type = DEVICE_TYPES[String(device.type).toLowerCase()];
         list.append(choice({ label: device.name, detail: type ? tr(type) : null, checked: device.active, disabled: device.restricted,
+          key: `device:${device.ref}`,
           onChoose: () => { send({ type: "transfer", ref: device.ref }); data.devices = data.devices.map((entry) => ({ ...entry, active: entry.ref === device.ref })); render(); } }));
       }
       part.append(list, button(tr("refresh"), "quiet small", () => { data.devices = null; send({ type: "devices" }); render(); }));
@@ -311,13 +322,14 @@ export function createSettings({ state, send, t, prettyModel = String }) {
     } }));
     part.append(sources);
     const form = make("form", "inline-form");
-    const field = make("input");
-    field.placeholder = tr("lastfmUsername");
-    field.spellcheck = false;
+    const field = keptField("lastfm", tr("lastfmUsername"));
     form.append(field, button(tr("read"), "small"));
     form.addEventListener("submit", (event) => {
       event.preventDefault();
-      if (field.value.trim()) send({ type: "import-lastfm", username: field.value.trim() });
+      if (!field.value.trim()) return;
+      send({ type: "import-lastfm", username: field.value.trim() });
+      data.drafts.lastfm = "";
+      field.value = "";
     });
     part.append(make("p", "label", "Last.fm"), form, note(tr("dropHint")));
     return part;
@@ -328,13 +340,13 @@ export function createSettings({ state, send, t, prettyModel = String }) {
     const part = make("div");
     part.append(heading(tr("memory")), note(tr("memoryNote")));
     const form = make("form", "inline-form");
-    const field = make("input");
-    field.placeholder = tr("rememberPlaceholder");
+    const field = keptField("remember", tr("rememberPlaceholder"));
     form.append(field, button(tr("remember"), "small"));
     form.addEventListener("submit", (event) => {
       event.preventDefault();
       if (!field.value.trim()) return;
       send({ type: "remember", text: field.value.trim() });
+      data.drafts.remember = "";
       field.value = "";
     });
     part.append(form);

@@ -1045,6 +1045,8 @@ async function main() {
         replaceDomainServices(await loadDomainServices());
       },
       // The window also rebuilds the agent of each conversation it opened.
+      // A choice made while a reply runs is saved here, before that reply ends, so quitting does not drop it.
+      saveRuntimeSelection: (selection) => writePiRuntimeSelection(selection),
       rebuildRuntime: async (selection, target = application) => {
         if (selection) await writePiRuntimeSelection(selection);
         // A key saved with /auth, or a Codex sign-in since, takes effect with the new runtime's tools.

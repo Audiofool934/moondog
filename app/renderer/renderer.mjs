@@ -99,7 +99,7 @@ function notice(text) {
   clearTimeout(noticeTimer);
   if (text) noticeTimer = setTimeout(() => { node.hidden = true; }, 6000);
 }
-const NOTICES = { too_many_running: "noticeTooMany", model_unknown: "noticeModelUnknown", waiting_for_import: "noticeWaitingForImport", delete_running: "noticeDeleteRunning", delete_open_elsewhere: "noticeDeleteElsewhere",
+const NOTICES = { too_many_running: "noticeTooMany", model_unknown: "noticeModelUnknown", waiting_for_import: "noticeWaitingForImport", message_busy: "noticeMessageBusy", delete_running: "noticeDeleteRunning", delete_open_elsewhere: "noticeDeleteElsewhere",
   delete_failed: "noticeDeleteFailed", transfer_failed: "noticeTransferFailed" };
 
 // The conversation
@@ -569,9 +569,18 @@ function receive({ data }) {
     if (data.error) { devicePicker = null; notice(t("noticeDevicesFailed")); } else void showDevices(data.devices ?? []);
   }
   if (data.type === "player-error") notice(t("noticePlaybackFailed"));
-  if (data.type === "sign-in" && data.state === "error") notice(SIGN_IN_ERRORS[data.code] ? t(SIGN_IN_ERRORS[data.code]) : data.message || t("signInFailed"));
+  // The sheet already shows a sign-in error. sign_in_busy is the exception: the sheet keeps the running panel.
+  if (data.type === "sign-in" && data.state === "error" && !(settings.open && data.code !== "sign_in_busy")) notice(SIGN_IN_ERRORS[data.code] ? t(SIGN_IN_ERRORS[data.code]) : data.message || t("signInFailed"));
   if (data.type === "import" && data.stage === "refresh-failed") notice(t("importRefreshFailed"));
-  if (data.type === "notice") notice(t(NOTICES[data.code] ?? "noticeFailed") + (NOTICES[data.code] ? "" : data.message ? `: ${data.message}` : ""));
+  if (data.type === "notice") {
+    // The core did not take this message. Put it back so the listener can send it again.
+    if (data.code === "message_busy" && data.text && !input.value.trim()) {
+      input.value = data.text;
+      grow();
+      renderComposer();
+    }
+    notice(t(NOTICES[data.code] ?? "noticeFailed") + (NOTICES[data.code] ? "" : data.message ? `: ${data.message}` : ""));
+  }
   if (data.type === "ready" || data.type === "status") {
     if (data.locale && data.locale !== locale) applyLanguage(data.locale);
     for (const key of ["model", "spotify", "spotifyAccount", "playbackService", "locales"]) if (data[key] !== undefined) state[key] = data[key];
@@ -651,6 +660,8 @@ function receive({ data }) {
       const existing = turn.activity.find((call) => call.call === data.call);
       if (existing) existing.state = data.state;
       else turn.activity.push({ call: data.call, tool: data.tool, args: data.args, state: data.state });
+      // A tool starting means the retried model call went through, so "Trying again" does not stay up.
+      turn.retrying = false;
       renderSoon();
     }
   }

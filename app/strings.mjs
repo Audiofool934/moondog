@@ -41,6 +41,7 @@ const STRINGS = {
     noticePlaybackFailed: "Spotify didn't take that. Check that a device is open and try again.",
     noticeDevicesFailed: "Moondog couldn't read your Spotify devices. Try again in a moment.",
     noticeWaitingForImport: "Moondog is saving your import. Your message goes next.",
+    noticeMessageBusy: "Moondog is still sending your last message. This one stays in the box.",
     commands: "Commands",
     "activity.catalog": "Searching music catalogs",
     retrying: "Trying again",
@@ -122,7 +123,7 @@ const STRINGS = {
     moreProviders: "显示另外 {count} 个从环境变量读取密钥的服务商",
 
     connectWhileAnswering: "等回复结束后再连接 Spotify。",
-    noticePlaybackFailed: "Spotify 没有执行这个操作。请确认有设备开着，再试一次。", noticeDevicesFailed: "Moondog 读不到你的 Spotify 设备，请稍后再试。", noticeWaitingForImport: "Moondog 正在保存导入的内容，你的消息随后发送。", commands: "命令",
+    noticePlaybackFailed: "Spotify 没有执行这个操作。请确认有设备开着，再试一次。", noticeDevicesFailed: "Moondog 读不到你的 Spotify 设备，请稍后再试。", noticeWaitingForImport: "Moondog 正在保存导入的内容，你的消息随后发送。", noticeMessageBusy: "上一条还在发送。这一条留在输入框里。", commands: "命令",
     "activity.catalog": "正在查找音乐目录", retrying: "正在重试", "device.computer": "电脑", "device.smartphone": "手机",
     "device.speaker": "音箱", "device.tv": "电视", "device.tablet": "平板", "device.car": "汽车",
     musicHistoryFiles: "聆听历史", folderActions: "文件夹操作", signInBusy: "请先完成或取消正在进行的登录。",
@@ -178,7 +179,7 @@ const STRINGS = {
     moreProviders: "顯示另外 {count} 個從環境變數讀取金鑰的供應商",
 
     connectWhileAnswering: "等回覆結束後再連接 Spotify。",
-    noticePlaybackFailed: "Spotify 沒有執行這個操作。請確認有裝置開著，再試一次。", noticeDevicesFailed: "Moondog 讀不到你的 Spotify 裝置，請稍後再試。", noticeWaitingForImport: "Moondog 正在儲存匯入的內容，你的訊息隨後送出。", commands: "指令",
+    noticePlaybackFailed: "Spotify 沒有執行這個操作。請確認有裝置開著，再試一次。", noticeDevicesFailed: "Moondog 讀不到你的 Spotify 裝置，請稍後再試。", noticeWaitingForImport: "Moondog 正在儲存匯入的內容，你的訊息隨後送出。", noticeMessageBusy: "上一則還在傳送。這一則留在輸入框裡。", commands: "指令",
     "activity.catalog": "正在查找音樂目錄", retrying: "正在重試", "device.computer": "電腦", "device.smartphone": "手機",
     "device.speaker": "喇叭", "device.tv": "電視", "device.tablet": "平板", "device.car": "汽車",
     musicHistoryFiles: "聆聽紀錄", folderActions: "資料夾動作", signInBusy: "請先完成或取消進行中的登入。",
@@ -234,7 +235,7 @@ const STRINGS = {
     moreProviders: "環境変数からキーを読むプロバイダーをあと {count} 件表示",
 
     connectWhileAnswering: "応答が終わってから Spotify に接続してください。",
-    noticePlaybackFailed: "Spotify がその操作を受け付けませんでした。デバイスが開いているか確かめて、もう一度お試しください。", noticeDevicesFailed: "Spotify のデバイスを読み込めませんでした。少し待ってからお試しください。", noticeWaitingForImport: "取り込んだ内容を保存しています。メッセージはそのあとに送ります。", commands: "コマンド",
+    noticePlaybackFailed: "Spotify がその操作を受け付けませんでした。デバイスが開いているか確かめて、もう一度お試しください。", noticeDevicesFailed: "Spotify のデバイスを読み込めませんでした。少し待ってからお試しください。", noticeWaitingForImport: "取り込んだ内容を保存しています。メッセージはそのあとに送ります。", noticeMessageBusy: "前のメッセージを送信中です。こちらは入力欄に残します。", commands: "コマンド",
     "activity.catalog": "音楽カタログを検索中", retrying: "再試行中", "device.computer": "コンピュータ", "device.smartphone": "スマートフォン",
     "device.speaker": "スピーカー", "device.tv": "テレビ", "device.tablet": "タブレット", "device.car": "車",
     musicHistoryFiles: "再生履歴", folderActions: "フォルダの操作", signInBusy: "進行中のサインインを先に終えるか、キャンセルしてください。",
@@ -290,7 +291,7 @@ const STRINGS = {
     moreProviders: "환경 변수에서 키를 읽는 제공업체 {count}개 더 보기",
 
     connectWhileAnswering: "응답이 끝난 뒤 Spotify를 연결하세요.",
-    noticePlaybackFailed: "Spotify가 그 요청을 처리하지 않았습니다. 기기가 켜져 있는지 확인한 뒤 다시 시도하세요.", noticeDevicesFailed: "Spotify 기기 목록을 읽지 못했습니다. 잠시 후 다시 시도하세요.", noticeWaitingForImport: "가져온 기록을 저장하는 중입니다. 메시지는 그다음에 보냅니다.", commands: "명령",
+    noticePlaybackFailed: "Spotify가 그 요청을 처리하지 않았습니다. 기기가 켜져 있는지 확인한 뒤 다시 시도하세요.", noticeDevicesFailed: "Spotify 기기 목록을 읽지 못했습니다. 잠시 후 다시 시도하세요.", noticeWaitingForImport: "가져온 기록을 저장하는 중입니다. 메시지는 그다음에 보냅니다.", noticeMessageBusy: "이전 메시지를 아직 보내는 중입니다. 이 메시지는 입력창에 남습니다.", commands: "명령",
     "activity.catalog": "음악 카탈로그 검색 중", retrying: "다시 시도하는 중", "device.computer": "컴퓨터", "device.smartphone": "휴대폰",
     "device.speaker": "스피커", "device.tv": "TV", "device.tablet": "태블릿", "device.car": "자동차",
     musicHistoryFiles: "청취 기록", folderActions: "폴더 작업", signInBusy: "진행 중인 로그인을 먼저 끝내거나 취소하세요.",
@@ -346,7 +347,7 @@ const STRINGS = {
     moreProviders: "Mostrar {count} proveedores más que leen la clave del entorno",
 
     connectWhileAnswering: "Espera a que termine la respuesta y luego conecta Spotify.",
-    noticePlaybackFailed: "Spotify no lo aceptó. Comprueba que haya un dispositivo abierto e inténtalo de nuevo.", noticeDevicesFailed: "Moondog no pudo leer tus dispositivos de Spotify. Inténtalo de nuevo en un momento.", noticeWaitingForImport: "Moondog está guardando tu importación. Tu mensaje va después.", commands: "Comandos",
+    noticePlaybackFailed: "Spotify no lo aceptó. Comprueba que haya un dispositivo abierto e inténtalo de nuevo.", noticeDevicesFailed: "Moondog no pudo leer tus dispositivos de Spotify. Inténtalo de nuevo en un momento.", noticeWaitingForImport: "Moondog está guardando tu importación. Tu mensaje va después.", noticeMessageBusy: "Moondog aún envía tu mensaje anterior. Este se queda en el cuadro.", commands: "Comandos",
     "activity.catalog": "Buscando en catálogos de música", retrying: "Reintentando", "device.computer": "Ordenador", "device.smartphone": "Teléfono",
     "device.speaker": "Altavoz", "device.tv": "TV", "device.tablet": "Tableta", "device.car": "Coche",
     musicHistoryFiles: "Historial de escucha", folderActions: "Acciones de la carpeta", signInBusy: "Primero termina o cancela el inicio de sesión en curso.",
@@ -402,7 +403,7 @@ const STRINGS = {
     moreProviders: "Afficher {count} autres fournisseurs qui lisent leur clé dans l'environnement",
 
     connectWhileAnswering: "Attendez la fin de la réponse, puis connectez Spotify.",
-    noticePlaybackFailed: "Spotify n'a pas pris en compte cette action. Vérifiez qu'un appareil est ouvert, puis réessayez.", noticeDevicesFailed: "Moondog n'a pas pu lire vos appareils Spotify. Réessayez dans un instant.", noticeWaitingForImport: "Moondog enregistre votre import. Votre message partira juste après.", commands: "Commandes",
+    noticePlaybackFailed: "Spotify n'a pas pris en compte cette action. Vérifiez qu'un appareil est ouvert, puis réessayez.", noticeDevicesFailed: "Moondog n'a pas pu lire vos appareils Spotify. Réessayez dans un instant.", noticeWaitingForImport: "Moondog enregistre votre import. Votre message partira juste après.", noticeMessageBusy: "Moondog envoie encore votre message précédent. Celui-ci reste dans le champ.", commands: "Commandes",
     "activity.catalog": "Recherche dans les catalogues musicaux", retrying: "Nouvel essai", "device.computer": "Ordinateur", "device.smartphone": "Téléphone",
     "device.speaker": "Enceinte", "device.tv": "TV", "device.tablet": "Tablette", "device.car": "Voiture",
     musicHistoryFiles: "Historique d'écoute", folderActions: "Actions du dossier", signInBusy: "Terminez ou annulez d'abord la connexion en cours.",
@@ -458,7 +459,7 @@ const STRINGS = {
     moreProviders: "{count} weitere Anbieter zeigen, die ihren Schlüssel aus der Umgebung lesen",
 
     connectWhileAnswering: "Warte, bis die Antwort fertig ist, und verbinde dann Spotify.",
-    noticePlaybackFailed: "Spotify hat das nicht angenommen. Prüfe, ob ein Gerät geöffnet ist, und versuche es noch einmal.", noticeDevicesFailed: "Moondog konnte deine Spotify-Geräte nicht lesen. Versuche es gleich noch einmal.", noticeWaitingForImport: "Moondog speichert deinen Import. Deine Nachricht folgt danach.", commands: "Befehle",
+    noticePlaybackFailed: "Spotify hat das nicht angenommen. Prüfe, ob ein Gerät geöffnet ist, und versuche es noch einmal.", noticeDevicesFailed: "Moondog konnte deine Spotify-Geräte nicht lesen. Versuche es gleich noch einmal.", noticeWaitingForImport: "Moondog speichert deinen Import. Deine Nachricht folgt danach.", noticeMessageBusy: "Moondog sendet noch deine vorige Nachricht. Diese bleibt im Feld.", commands: "Befehle",
     "activity.catalog": "Musikkataloge werden durchsucht", retrying: "Neuer Versuch", "device.computer": "Computer", "device.smartphone": "Telefon",
     "device.speaker": "Lautsprecher", "device.tv": "Fernseher", "device.tablet": "Tablet", "device.car": "Auto",
     musicHistoryFiles: "Hörverlauf", folderActions: "Ordneraktionen", signInBusy: "Schließe die laufende Anmeldung zuerst ab oder brich sie ab.",
@@ -514,7 +515,7 @@ const STRINGS = {
     moreProviders: "Mostrar mais {count} provedores que leem a chave do ambiente",
 
     connectWhileAnswering: "Espere a resposta terminar e depois conecte o Spotify.",
-    noticePlaybackFailed: "O Spotify não aceitou. Confira se há um dispositivo aberto e tente de novo.", noticeDevicesFailed: "O Moondog não conseguiu ler seus dispositivos do Spotify. Tente de novo em instantes.", noticeWaitingForImport: "O Moondog está salvando sua importação. Sua mensagem vai em seguida.", commands: "Comandos",
+    noticePlaybackFailed: "O Spotify não aceitou. Confira se há um dispositivo aberto e tente de novo.", noticeDevicesFailed: "O Moondog não conseguiu ler seus dispositivos do Spotify. Tente de novo em instantes.", noticeWaitingForImport: "O Moondog está salvando sua importação. Sua mensagem vai em seguida.", noticeMessageBusy: "O Moondog ainda está enviando a mensagem anterior. Esta fica na caixa.", commands: "Comandos",
     "activity.catalog": "Buscando em catálogos de música", retrying: "Tentando de novo", "device.computer": "Computador", "device.smartphone": "Celular",
     "device.speaker": "Alto-falante", "device.tv": "TV", "device.tablet": "Tablet", "device.car": "Carro",
     musicHistoryFiles: "Histórico de audição", folderActions: "Ações da pasta", signInBusy: "Primeiro conclua ou cancele o login em andamento.",
@@ -570,7 +571,7 @@ const STRINGS = {
     moreProviders: "Mostra altri {count} fornitori che leggono la chiave dall'ambiente",
 
     connectWhileAnswering: "Aspetta che la risposta finisca, poi collega Spotify.",
-    noticePlaybackFailed: "Spotify non l'ha accettato. Controlla che ci sia un dispositivo aperto e riprova.", noticeDevicesFailed: "Moondog non è riuscito a leggere i tuoi dispositivi Spotify. Riprova tra poco.", noticeWaitingForImport: "Moondog sta salvando l'importazione. Il tuo messaggio parte subito dopo.", commands: "Comandi",
+    noticePlaybackFailed: "Spotify non l'ha accettato. Controlla che ci sia un dispositivo aperto e riprova.", noticeDevicesFailed: "Moondog non è riuscito a leggere i tuoi dispositivi Spotify. Riprova tra poco.", noticeWaitingForImport: "Moondog sta salvando l'importazione. Il tuo messaggio parte subito dopo.", noticeMessageBusy: "Moondog sta ancora inviando il messaggio precedente. Questo resta nel campo.", commands: "Comandi",
     "activity.catalog": "Ricerca nei cataloghi musicali", retrying: "Nuovo tentativo", "device.computer": "Computer", "device.smartphone": "Telefono",
     "device.speaker": "Altoparlante", "device.tv": "TV", "device.tablet": "Tablet", "device.car": "Auto",
     musicHistoryFiles: "Cronologia d'ascolto", folderActions: "Azioni della cartella", signInBusy: "Prima completa o annulla l'accesso in corso.",

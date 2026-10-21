@@ -32,10 +32,10 @@ const trackOf = (item) => item && {
 const errorText = (error) => String(error?.message ?? error ?? "").slice(0, 400);
 
 export function runWindowRoom(services, { port, send, quit = null }) {
-  const { application: base, rebuildRuntime, toolTrace = null, openConversation, modelSettings, saveLanguage, savePlaybackService,
+  const { application: base, rebuildRuntime, saveRuntimeSelection, toolTrace = null, openConversation, modelSettings, saveLanguage, savePlaybackService,
     prepareImport, prepareRecentImport, refreshImportedData, lastfm, runSpotify } = services;
   // Slot 0 is the core's own application and agent. The core closes every conversation after the room ends.
-  const slots = [{ application: base, runtime: services.runtime, turn: null, live: null, stale: null, rebuilding: null, close: null }];
+  const slots = [{ application: base, runtime: services.runtime, turn: null, live: null, stale: null, rebuilding: null, waiting: false, close: null }];
   let current = slots[0];
   let visible = true;
   let pollTimer = null;
@@ -183,16 +183,21 @@ export function runWindowRoom(services, { port, send, quit = null }) {
       await service.transfer({ deviceId });
     } catch (error) {
       send({ type: "notice", code: "transfer_failed", message: errorText(error) });
+      await devices();
+      await refreshPlayer();
+      return;
     }
-    // The device list shows where music plays now, whether or not the move worked.
-    await devices();
+    // Spotify reports the new device late. An immediate list still marks the old one, and would
+    // replace the check the window already moved. Read the list with the delayed player refresh.
     await refreshPlayer();
-    setTimeout(() => void refreshPlayer(), 1200);
+    setTimeout(() => { void refreshPlayer(); void devices(); }, 1200);
   }
 
   // Conversations
   async function slotForOpening(id) {
-    const reusable = (!current.turn && current) || slots.find((slot) => !slot.turn);
+    // A slot holding a message that waits for an import or a rebuild is not free. Reusing it would
+    // send that message in the conversation opened meanwhile.
+    const reusable = (!current.turn && !current.waiting && current) || slots.find((slot) => !slot.turn && !slot.waiting);
     if (reusable) {
       if (id) {
         reusable.application.resumeSession(id);
@@ -205,7 +210,7 @@ export function runWindowRoom(services, { port, send, quit = null }) {
     }
     if (typeof openConversation !== "function" || slots.length >= MAX_SLOTS) return null;
     const opened = await openConversation(id ? { sessionId: id } : { reason: "user_new" });
-    const slot = { application: opened.application, runtime: opened.runtime, turn: null, live: null, stale: null, rebuilding: null, close: opened.close };
+    const slot = { application: opened.application, runtime: opened.runtime, turn: null, live: null, stale: null, rebuilding: null, waiting: false, close: opened.close };
     slots.push(slot);
     // A model chosen while every agent was answering is not saved yet, so this one would start without it.
     if (pending) await rebuild(slot, pending);
@@ -225,12 +230,24 @@ export function runWindowRoom(services, { port, send, quit = null }) {
   async function prompt(text) {
     const slot = current;
     if (typeof text !== "string" || !text.trim()) return;
-    // A new agent being built, or an import replacing the profile under every agent, finishes first.
-    if (saving) send({ type: "notice", code: "waiting_for_import" });
-    while (slot.rebuilding || saving) await (slot.rebuilding ?? saving).catch(() => {});
-    if (slot.turn) return;
-    const id = randomUUID();
+    // A second message cannot start while the first is in a turn or waiting to start. The window
+    // put the text back in the composer; dropping it here would lose it.
+    if (slot.turn || slot.waiting) return send({ type: "notice", code: "message_busy", text });
     const session = sessionOf(slot);
+    // A new agent being built, or an import replacing the profile under every agent, finishes first.
+    // The slot stays reserved for this conversation until the message starts.
+    if (saving || slot.rebuilding) {
+      slot.waiting = true;
+      if (saving) send({ type: "notice", code: "waiting_for_import" });
+      while (slot.rebuilding || saving) await (slot.rebuilding ?? saving).catch(() => {});
+      if (closed || sessionOf(slot) !== session || slot.turn) {
+        slot.waiting = false;
+        if (!closed) send({ type: "notice", code: "message_busy", text, session });
+        return;
+      }
+    }
+    slot.waiting = false;
+    const id = randomUUID();
     const settled = Promise.withResolvers();
     slot.turn = { id, settled: settled.promise };
     slot.live = { id, user: text, text: "", activity: [] };
@@ -278,25 +295,38 @@ export function runWindowRoom(services, { port, send, quit = null }) {
   // A choice made while every agent answers waits in `pending` until one of them is rebuilt.
   let pending = null;
   async function rebuild(slot, selection) {
-    const work = (async () => {
+    const earlier = slot.rebuilding;
+    let finish = () => {};
+    const work = new Promise((resolve) => { finish = resolve; });
+    // Set before any await, so a prompt in this turn waits for this rebuild and not an older one.
+    slot.rebuilding = work;
+    try {
+      if (earlier) await earlier.catch(() => {});
+      // A newer choice queued behind this one does the swap. This one must not finish last and replace it.
+      if (slot.rebuilding !== work) return;
       slot.stale = null;
       const previous = slot.runtime;
       const next = slot === slots[0] ? await rebuildRuntime(selection) : await rebuildRuntime(selection, slot.application);
+      if (slot.rebuilding !== work) {
+        try { next.reset?.(); } catch { /* The newer rebuild owns the slot. */ }
+        return;
+      }
       next.restoreSession?.();
       slot.runtime = next;
       if (selection && selection === pending) pending = null;
       try { previous.reset?.(); } catch { /* A finished agent has nothing left to clear. */ }
-    })();
-    slot.rebuilding = work;
-    try {
-      await work;
     } finally {
+      finish();
       if (slot.rebuilding === work) slot.rebuilding = null;
     }
   }
   async function rebuildAll(selection) {
     if (typeof rebuildRuntime !== "function") return;
-    if (selection) pending = selection;
+    if (selection) {
+      pending = selection;
+      // Save before the reply ends. The rebuild that applies it can still be waiting on that reply.
+      await saveRuntimeSelection?.(selection).catch(() => {});
+    }
     for (const slot of slots) {
       const chosen = selection ?? pending ?? slot.stale?.selection;
       if (slot.turn) slot.stale = { selection: chosen };
@@ -310,7 +340,7 @@ export function runWindowRoom(services, { port, send, quit = null }) {
     if (holder?.turn) return send({ type: "notice", code: "delete_running" });
     // The core refuses a delete while its own turn runs, so an idle slot does it: the one holding the
     // conversation, which then moves to a new one, or any other.
-    const doer = holder ?? slots.find((slot) => !slot.turn) ?? null;
+    const doer = (holder && !holder.waiting ? holder : null) ?? slots.find((slot) => !slot.turn && !slot.waiting) ?? null;
     try {
       if (doer) {
         const result = doer.application.deleteSavedSession(id);
