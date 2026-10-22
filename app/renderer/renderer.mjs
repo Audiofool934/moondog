@@ -6,6 +6,7 @@ import { createPalette } from "./palette.mjs";
 import { createPreviews } from "./previews.mjs";
 import { createSettings } from "./settings.mjs";
 import { createSidebar } from "./sidebar.mjs";
+import { mountRecord, renderWordmark } from "./lunar.mjs";
 import "./style.css";
 
 const $ = (selector) => document.querySelector(`[data-${selector}]`);
@@ -154,8 +155,25 @@ function replyNode(turn) {
       const previous = kinds.get(kind);
       kinds.set(kind, previous === "running" || call.state === "running" ? "running" : call.state === "failed" && previous !== "done" ? "failed" : "done");
     }
-    for (const [kind, status] of kinds) line.append(make("span", status, t(`activity.${kind}`)));
-    if (turn.retrying) line.append(make("span", "running", t("retrying")));
+    // A running step leads with the band turning: the same mark the terminal uses for work in progress.
+    for (const [kind, status] of kinds) {
+      const step = make("span", status, t(`activity.${kind}`));
+      if (status === "running") {
+        const phase = make("span", "phase", "◐");
+        phase.dataset.phase = "";
+        phase.setAttribute("aria-hidden", "true");
+        step.prepend(phase);
+      }
+      line.append(step);
+    }
+    if (turn.retrying) {
+      const again = make("span", "running", t("retrying"));
+      const phase = make("span", "phase", "◐");
+      phase.dataset.phase = "";
+      phase.setAttribute("aria-hidden", "true");
+      again.prepend(phase);
+      line.append(again);
+    }
     reply.append(line);
   }
   const text = make("div", "text");
@@ -167,6 +185,8 @@ function replyNode(turn) {
 // The streaming reply redraws on its own; the rest of the conversation stays put.
 let liveNode = null;
 let drawn = undefined;
+let drawnTurns = 0;
+let sleeve = null;
 const nearBottom = (scroll) => scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 80;
 function renderConversation() {
   const column = $("column");
@@ -175,25 +195,44 @@ function renderConversation() {
   const opened = drawn !== state.current;
   drawn = state.current;
   const pinned = opened || nearBottom(scroll) || !column.childElementCount;
+  const fresh = opened ? state.turns.length : Math.max(0, state.turns.length - drawnTurns);
   liveNode = null;
+  sleeve?.stop();
+  sleeve = null;
   column.replaceChildren();
   if (!state.turns.length) {
+    // The record sleeve the terminal opens with, drawn at the window's own resolution.
     const empty = make("div", "empty");
-    empty.append(make("p", "", t("empty")));
+    const stage = make("div", "stage");
+    const well = make("div", "record-well");
+    const record = make("pre", "record");
+    record.setAttribute("aria-hidden", "true");
+    well.append(record);
+    const copy = make("div", "sleeve-copy");
+    const wordmark = make("pre", "wordmark");
+    renderWordmark(wordmark);
+    wordmark.setAttribute("aria-hidden", "true");
+    copy.append(wordmark, make("p", "lyric", t("empty")));
+    stage.append(well, copy);
+    empty.append(stage);
     column.append(empty);
     column.style.height = "100%";
+    sleeve = mountRecord(record, well);
   } else column.style.height = "";
-  for (const turn of state.turns) {
+  state.turns.forEach((turn, index) => {
+    let node;
     if (turn.role === "user") {
-      const you = make("div", "you");
-      you.append(make("p", "", turn.text));
-      column.append(you);
+      node = make("div", "you");
+      node.append(make("p", "", turn.text));
     } else {
-      const node = replyNode(turn);
+      node = replyNode(turn);
       if (turn.streaming && turn.id === state.streaming) liveNode = node;
-      column.append(node);
     }
-  }
+    // Only what just arrived moves; a redraw of the same conversation stays still.
+    if (!opened && index >= state.turns.length - fresh) node.classList.add("arrive");
+    column.append(node);
+  });
+  drawnTurns = state.turns.length;
   if (pinned) scroll.scrollTop = scroll.scrollHeight;
   renderTitle();
   renderComposer();
@@ -373,9 +412,25 @@ function nowPlaying() {
 const serviceName = () => (state.playbackService === "apple_music" ? "Apple Music" : "Spotify");
 const fullSong = make("a");
 fullSong.target = "_blank";
+// The progress is a ruler of ticks, not a bar: the played part is inked, the head stands up.
+const TICKS = 44;
+let rulerDrawn = false;
+function renderRuler(fraction) {
+  const ruler = $("ruler");
+  if (!rulerDrawn) {
+    ruler.replaceChildren(...Array.from({ length: TICKS }, () => make("i")));
+    rulerDrawn = true;
+  }
+  const head = Math.round(Math.min(1, Math.max(0, fraction)) * (TICKS - 1));
+  Array.from(ruler.children).forEach((tick, index) => {
+    tick.classList.toggle("on", index < head);
+    tick.classList.toggle("head", index === head);
+  });
+}
 let drawnQueue = "";
-function queueItem(track) {
+function queueItem(track, index) {
   const item = make("li");
+  item.append(make("span", "no", `${String.fromCharCode(65 + Math.floor(index / 26))}${(index % 26) + 1}`));
   if (track.image) {
     const image = make("img");
     image.src = track.image;
@@ -413,7 +468,7 @@ function renderInspector() {
   } else if (album.firstChild === fullSong || album.textContent !== (now?.album ?? "")) album.textContent = now?.album ?? "";
   $("progress").hidden = !now?.durationMs;
   if (now?.durationMs) {
-    $("bar").style.width = `${Math.min(100, (now.progressMs / now.durationMs) * 100)}%`;
+    renderRuler(now.progressMs / now.durationMs);
     $("elapsed").textContent = clock(now.progressMs);
     $("duration").textContent = clock(now.durationMs);
   }
@@ -426,7 +481,7 @@ function renderInspector() {
   const shownQueue = JSON.stringify(next.map((track) => [track.title, track.artists, track.image]));
   if (shownQueue !== drawnQueue) {
     drawnQueue = shownQueue;
-    $("queue").replaceChildren(...next.map(queueItem));
+    $("queue").replaceChildren(...next.map((track, index) => queueItem(track, index)));
   }
   const on = state.playbackService === "apple_music" || state.spotify === "ready";
   $("spotify-dot").classList.toggle("on", on);
@@ -470,7 +525,10 @@ function togglePanel(name) {
   panels[name] = !visible;
   forced[name] = !visible;
   store.set(`moondog.${name}`, panels[name] ? "shown" : "hidden");
+  // The grid animates only for this deliberate move; dragging a grip stays exact.
+  layout.classList.add("animating");
   renderPanels();
+  setTimeout(() => layout.classList.remove("animating"), 300);
 }
 addEventListener("resize", renderPanels);
 
@@ -678,6 +736,16 @@ function receive({ data }) {
     if (learned && !state.streaming && state.turns.some((turn) => { const target = playedTarget(turn); return target && covers.has(target.title); })) renderSoon();
     renderInspector();
   }
+}
+
+// The turning mark: four quarter-turns of a record, one every beat of the work.
+const TURNS = ["◐", "◓", "◑", "◒"];
+if (!matchMedia("(prefers-reduced-motion: reduce)").matches) {
+  let step = 0;
+  setInterval(() => {
+    step = (step + 1) % TURNS.length;
+    for (const node of document.querySelectorAll("[data-phase]")) node.textContent = TURNS[step];
+  }, 700);
 }
 
 applyLanguage(locale);

@@ -15,7 +15,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 if (process.env.MOONDOG_APP_DEBUG_PORT) app.commandLine.appendSwitch("remote-debugging-port", process.env.MOONDOG_APP_DEBUG_PORT);
 
 // The window's canvas, from app/renderer/style.css.
-const background = () => (nativeTheme.shouldUseDarkColors ? "#1A1A19" : "#F8F8F6");
+const background = () => (nativeTheme.shouldUseDarkColors ? "#141413" : "#F7F6F2");
 let locale = "en";
 
 // Opened from Finder or the Dock, the app gets a minimal PATH, and the core couldn't find
