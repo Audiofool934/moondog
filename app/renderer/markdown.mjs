@@ -46,15 +46,24 @@ export function renderMarkdown(source) {
   const lines = String(source ?? "").replace(/\r\n?/gu, "\n").split("\n");
   let paragraph = [];
   let list = null;
+  let quote = [];
+  // Consecutive lines become one paragraph with line breaks, or one quotation for lines that start with ">".
+  const breakLines = (target, rows) => rows.forEach((line, index) => {
+    if (index) target.append(document.createElement("br"));
+    inline(line, target);
+  });
   const flush = () => {
     if (paragraph.length) {
       const p = document.createElement("p");
-      paragraph.forEach((line, index) => {
-        if (index) p.append(document.createElement("br"));
-        inline(line, p);
-      });
+      breakLines(p, paragraph);
       fragment.append(p);
       paragraph = [];
+    }
+    if (quote.length) {
+      const blockquote = document.createElement("blockquote");
+      breakLines(blockquote, quote);
+      fragment.append(blockquote);
+      quote = [];
     }
   };
   const closeList = () => { list = null; };
@@ -63,8 +72,13 @@ export function renderMarkdown(source) {
     const bullet = line.match(/^\s{0,3}[-*•]\s+(.*)$/u);
     const numbered = line.match(/^\s{0,3}(\d{1,3})[.)]\s+(.*)$/u);
     const heading = line.match(/^\s{0,3}#{1,4}\s+(.*)$/u);
+    const quoted = line.match(/^\s{0,3}>\s?(.*)$/u);
     if (!line.trim()) { flush(); closeList(); continue; }
-    if (heading) {
+    if (quoted) {
+      if (paragraph.length) flush();
+      closeList();
+      quote.push(quoted[1]);
+    } else if (heading) {
       flush(); closeList();
       const h = document.createElement("h3");
       inline(heading[1], h);
@@ -86,6 +100,7 @@ export function renderMarkdown(source) {
       inline(line.trim(), list.lastElementChild);
     } else {
       closeList();
+      if (quote.length) flush();
       paragraph.push(line);
     }
   }

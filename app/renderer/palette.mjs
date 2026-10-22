@@ -1,20 +1,18 @@
 // Slash commands in the composer: typing "/" lists what Moondog can do here, filtered as you type.
-// Up and Down choose, Enter or Tab runs, Esc closes. A command with words after it, such as
-// /remember, runs with them when you press Enter.
-const make = (tag, className, text) => {
-  const node = document.createElement(tag);
-  if (className) node.className = className;
-  if (text !== undefined) node.textContent = text;
-  return node;
-};
+// Each row names what the command opens, with the command beside it. Up and Down choose, Enter or
+// Tab runs, Esc closes. A command with words after it, such as /remember, runs with them on Enter.
+import { make } from "./ui.mjs";
 
 export function createPalette({ input, anchor, t, commands }) {
   const list = make("div", "palette");
   list.setAttribute("role", "listbox");
+  list.id = "palette";
   list.hidden = true;
   anchor.append(list);
   let matches = [];
   let index = 0;
+  // A pointer parked over the list does not steal the choice until it actually moves.
+  let pointerMoved = false;
 
   const query = () => {
     const value = input.value;
@@ -27,25 +25,46 @@ export function createPalette({ input, anchor, t, commands }) {
     const found = query();
     // Once a full command name has a space after it, the list steps aside for its words.
     if (!found || (found.hasSpace && commands().some((command) => command.name === found.name))) return hide();
-    // A name that starts with what was typed wins; the descriptions are searched only when no name matches.
+    // A command whose name starts with what was typed wins; its label is searched only when no name matches.
     const named = commands().filter((command) => command.name.startsWith(found.name));
-    matches = named.length ? named : commands().filter((command) => tr(command.description).toLowerCase().includes(found.name));
+    matches = named.length ? named : commands().filter((command) => tr(command.label).toLowerCase().includes(found.name));
     if (!matches.length) return hide();
     index = Math.min(index, matches.length - 1);
     list.replaceChildren(...matches.map((command, position) => {
       const item = make("div", `palette-item${position === index ? " on" : ""}`);
+      item.id = `palette-${command.name}`;
       item.setAttribute("role", "option");
       item.setAttribute("aria-selected", String(position === index));
-      item.append(make("span", "palette-name", `/${command.name}${command.argument ? ` ${tr(command.argument)}` : ""}`), make("span", "palette-what", tr(command.description)));
+      // The command leads; its name in the window's language follows only where it says more, as "Shortcuts" does for /help.
+      const label = tr(command.label);
+      item.append(make("span", "palette-command", `/${command.name}${command.argument ? ` ${tr(command.argument)}` : ""}`));
+      if (label.toLowerCase().replace(/\s+/gu, "") !== command.name) item.append(make("span", "palette-name", label));
+      item.addEventListener("pointermove", () => {
+        if (!pointerMoved || index === position) { pointerMoved = true; return; }
+        index = position;
+        mark();
+      });
       item.addEventListener("mousedown", (event) => { event.preventDefault(); index = position; run(); });
       return item;
     }));
+    if (list.hidden) pointerMoved = false;
     list.hidden = false;
+    input.setAttribute("aria-controls", "palette");
+    input.setAttribute("aria-activedescendant", list.children[index]?.id ?? "");
+  }
+  function mark() {
+    [...list.children].forEach((item, position) => {
+      item.classList.toggle("on", position === index);
+      item.setAttribute("aria-selected", String(position === index));
+    });
+    list.children[index]?.scrollIntoView({ block: "nearest" });
+    input.setAttribute("aria-activedescendant", list.children[index]?.id ?? "");
   }
   function hide() {
     list.hidden = true;
     matches = [];
     index = 0;
+    input.removeAttribute("aria-activedescendant");
   }
   function run() {
     const found = query();
@@ -72,12 +91,12 @@ export function createPalette({ input, anchor, t, commands }) {
     const found = query();
     const exact = found && commands().some((command) => command.name === found.name);
     if (list.hidden && !(event.key === "Enter" && exact && !event.shiftKey && !event.isComposing)) return;
-    if (event.key === "ArrowDown") { event.preventDefault(); index = (index + 1) % matches.length; render(); }
-    else if (event.key === "ArrowUp") { event.preventDefault(); index = (index - 1 + matches.length) % matches.length; render(); }
+    if (event.key === "ArrowDown") { event.preventDefault(); index = (index + 1) % matches.length; mark(); }
+    else if (event.key === "ArrowUp") { event.preventDefault(); index = (index - 1 + matches.length) % matches.length; mark(); }
     else if ((event.key === "Enter" || event.key === "Tab") && !event.shiftKey && !event.isComposing) {
       if (run()) { event.preventDefault(); event.stopImmediatePropagation(); }
     } else if (event.key === "Escape") { event.preventDefault(); event.stopImmediatePropagation(); hide(); }
   }, { capture: true });
 
-  return { hide, get open() { return !list.hidden; } };
+  return { hide, refresh() { if (!list.hidden) render(); }, get open() { return !list.hidden; } };
 }

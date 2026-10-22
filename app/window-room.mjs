@@ -22,8 +22,14 @@ export function upNext(queue, current) {
   return queue.filter((item, index) => !uri(item) || (uri(item) !== uri(current) && uri(item) !== uri(queue[index - 1])));
 }
 
+// A song's page in Spotify, where the listener can save it or add it to a playlist.
+const spotifyLink = (uri) => {
+  const [, kind, id] = String(uri ?? "").match(/^spotify:(track|episode):([A-Za-z0-9]+)$/u) ?? [];
+  return kind ? `https://open.spotify.com/${kind}/${id}` : null;
+};
 const trackOf = (item) => item && {
   title: item.name ?? "",
+  link: spotifyLink(item.uri),
   artists: item.artists ?? (item.publisher ? [item.publisher] : []),
   album: item.album ?? null,
   image: coverOf(item),
@@ -108,7 +114,9 @@ export function runWindowRoom(services, { port, send, quit = null }) {
     notePlayer(player, item);
     return { type: "player", spotify: "ready",
       now: item ? { ...trackOf(item), playing: player.is_playing === true, progressMs: player.progress_ms ?? 0,
-        device: player.device?.name ?? null, repeat: player.repeat_state ?? "off", shuffle: player.shuffle_state === true, observedAt: Date.now() } : null,
+        device: player.device?.name ?? null, deviceType: player.device?.type ?? null, repeat: player.repeat_state ?? "off", shuffle: player.shuffle_state === true,
+        // What Spotify won't do right now, such as skip on a free account, so the window can say so before a press fails.
+        disallows: player.disallowed_actions ?? [], observedAt: Date.now() } : null,
       next: upNext(queue?.queue ?? [], item).slice(0, 8).map(trackOf) };
   }
   // The local trace keeps each change between playing and stopped, with the song, position and device,
@@ -145,12 +153,14 @@ export function runWindowRoom(services, { port, send, quit = null }) {
     pollTimer = setTimeout(async () => { await refreshPlayer(); schedulePlayer(); }, visible ? PLAYER_POLL_MS.visible : PLAYER_POLL_MS.hidden);
   };
 
-  async function control(action, via) {
+  async function control(action, via, positionMs) {
     const service = base.spotifyConnection?.service;
-    if (!service || base.spotifyReady?.() !== true || !["pause", "resume", "next", "previous"].includes(action)) return;
+    if (!service || base.spotifyReady?.() !== true || !["pause", "resume", "next", "previous", "seek"].includes(action)) return;
     toolTrace?.record({ source: "window", tool: "player_control", state: "start", args: { action, via: via ?? "button" } });
     try {
-      await service[action]({});
+      // A seek is a click on the song's progress; the rest are the transport buttons and the menu.
+      if (action === "seek") await service.seek({ positionMs: Math.max(0, Math.round(Number(positionMs) || 0)) });
+      else await service[action]({});
     } catch (error) {
       send({ type: "player-error", action, message: errorText(error) });
     }
@@ -524,7 +534,7 @@ export function runWindowRoom(services, { port, send, quit = null }) {
     cancel: () => { if (current.turn) current.runtime.abort?.(); },
     new: () => openSession(null),
     open: (data) => openSession(String(data.id ?? "")),
-    control: (data) => control(String(data.action ?? ""), data.via),
+    control: (data) => control(String(data.action ?? ""), data.via, data.positionMs),
     visible: (data) => { visible = data.visible !== false; if (visible) void refreshPlayer(); schedulePlayer(); },
     // Conversations: rename, pin, file, delete, and folders.
     label: (data) => { base.labelSavedSession?.(String(data.id), data.patch ?? {}); sendSessions(); },

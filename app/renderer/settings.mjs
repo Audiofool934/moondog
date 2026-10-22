@@ -1,444 +1,798 @@
-// Settings: one sheet over the conversation, a short list of sections on the left and the
-// section on the right. Every change goes to the core, which saves it where the terminal reads it.
-const make = (tag, className, text) => {
-  const node = document.createElement(tag);
-  if (className) node.className = className;
-  if (text !== undefined) node.textContent = text;
-  return node;
-};
-// Each control carries a key, so the focus comes back to it when the sheet redraws.
-// A button without its own action submits the form it sits in.
-const button = (label, className = "", onClick, key = `button:${className}:${label}`) => {
+// Settings: one sheet over the window, the places on the left and the open one on the right. Every
+// change goes to the core, which saves it where the terminal reads it. A choice shows at once and
+// the core's next status confirms it, so nothing waits on a rebuild to look chosen.
+import { languageTag } from "../strings.mjs";
+import { icon, make, name, scrollbar, setIcon, turning } from "./ui.mjs";
+
+const SECTIONS = ["general", "model", "playback", "library", "memory", "about"];
+const ICONS = { general: "globe", model: "model", playback: "speaker", library: "import", memory: "memory", about: "info" };
+// Spotify names device types in English; the icon says the kind, so no word is needed.
+const DEVICE_ICONS = { computer: "laptop", smartphone: "phone", tablet: "phone", tv: "tv" };
+const REDIRECT_URI = "http://127.0.0.1:43821/callback";
+const SPOTIFY_DASHBOARD = "https://developer.spotify.com/dashboard";
+const LASTFM_KEY_PAGE = "https://www.last.fm/api/account/create";
+const SITE = "https://moondog.audiofool.ai";
+// The core's error codes the listener can act on. Anything else reads as a plain failure; the raw
+// message goes to the console only.
+const SIGN_IN_ERRORS = { connect_while_answering: "waitForReply", sign_in_busy: "signInBusy" };
+const IMPORT_ERRORS = { import_while_answering: "waitForReply" };
+const LASTFM_ACCESS = new Set(["lastfm_key_missing", "lastfm_key_invalid"]);
+// Notices about a settings action, shown in the sheet when the renderer passes them on: where they
+// show, what they say, and which shown-at-once choice they take back.
+const NOTICES = { model_unknown: ["model", "noticeModelUnknown", "model"], transfer_failed: ["playback", "noticeTransferFailed"],
+  "sign-out": [null, "noticeFailed", "spotify"], "music-service": ["playback", "noticeFailed", "service"], language: ["general", "noticeFailed", "locale"],
+  model: ["model", "noticeFailed", "model"], effort: ["model", "noticeFailed", "effort"] };
+// Window keys on the left, player keys on the right.
+const SHORTCUTS = [["⌘N", "newConversation"], ["⌘,", "settings"], ["⌘.", "stopReply"], ["/", "commands"], ["⌥⌘S", "conversations"],
+  ["⌥⌘P", "player"], ["⌃⌘P", "playPause"], ["⌃⌘→", "nextSong"], ["⌃⌘←", "previousSong"]];
+const warn = (what, message) => { if (message) console.warn(`[moondog] ${what}: ${message}`); };
+
+// Each control carries a key, so the focus comes back to it when the section redraws. A button
+// without its own action submits the form it sits in, so a click and Enter do the same thing.
+function button(label, className, onClick, key) {
   const node = make("button", className, label);
   node.type = onClick ? "button" : "submit";
-  node.dataset.key = key;
+  node.dataset.key = key ?? `button:${className}:${label}`;
   if (onClick) node.addEventListener("click", onClick);
   return node;
-};
-// Spotify names device types in English; the window says them in the listener's language.
-const DEVICE_TYPES = { computer: "device.computer", smartphone: "device.smartphone", speaker: "device.speaker", tv: "device.tv",
-  tablet: "device.tablet", automobile: "device.car" };
-const SECTIONS = ["general", "model", "playback", "library", "memory", "about"];
+}
+function link(text, href) {
+  const node = make("a", "link", text);
+  node.href = href;
+  node.target = "_blank";
+  node.rel = "noreferrer";
+  node.dataset.key = `link:${href}`;
+  node.append(icon("external"));
+  return node;
+}
+// The same turning mark the conversation shows while Moondog works, in step with it. The offset is
+// fixed when the work starts, so a redraw draws the same mark and keeps the one already turning.
+function phase(offset) {
+  const mark = make("span", "phase");
+  const strip = make("i", "", "◐\n◓\n◑\n◒");
+  strip.style.animationDelay = `-${offset}ms`;
+  mark.append(strip);
+  mark.setAttribute("aria-hidden", "true");
+  return mark;
+}
 
 export function createSettings({ state, send, t, prettyModel = String }) {
+  const say = (key, params) => t()(key, params);
   const sheet = make("div", "sheet");
   sheet.hidden = true;
   const card = make("div", "sheet-card");
   card.setAttribute("role", "dialog");
   card.setAttribute("aria-modal", "true");
-  card.setAttribute("aria-labelledby", "settings-title");
+  card.tabIndex = -1;
   const nav = make("nav", "sheet-nav");
-  const body = make("div", "sheet-body");
-  const close = button("", "sheet-close", () => hide());
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.setAttribute("class", "icon");
-  const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
-  use.setAttribute("href", "#i-close");
-  svg.append(use);
-  close.append(svg);
+  const body = make("div", "sheet-body frame");
+  const scroller = make("div", "sheet-scroll");
+  body.append(scroller);
+  const close = make("button", "tool sheet-close");
+  close.type = "button";
+  close.dataset.key = "close";
+  close.append(icon("close"));
+  close.addEventListener("click", () => hide());
   card.append(nav, body, close);
   sheet.append(card);
   document.body.append(sheet);
+  scrollbar(scroller);
   sheet.addEventListener("mousedown", (event) => { if (event.target === sheet) hide(); });
+  const windowNode = document.querySelector("[data-window]");
+
+  // The places are built once and only their state changes, so a message from the core never
+  // replaces the row under the pointer.
+  const tabs = new Map();
+  for (const id of SECTIONS) {
+    const tab = make("button", "sheet-tab");
+    tab.type = "button";
+    tab.dataset.key = `nav:${id}`;
+    const label = make("span");
+    tab.append(icon(ICONS[id]), label);
+    tab.addEventListener("click", () => go(id));
+    nav.append(tab);
+    tabs.set(id, { tab, label });
+  }
 
   let section = "general";
-  // What the core told this sheet; the sheet asks again each time it opens a section.
-  const data = { providers: null, models: new Map(), expanded: null, devices: null, devicesError: null, memories: null, auth: null, error: null,
-    importing: null, version: null, drafts: { remember: "", lastfm: "", spotifyClientId: "" } };
-  const windowNode = document.querySelector("[data-window]");
+  let isOpen = false;
+  let closing = 0;
+  let content = null;
+  let copiedTimer = 0;
+  // What the core told this sheet; the sheet asks again each time a section opens.
+  const data = { providers: null, providersError: false, models: new Map(), modelsFailed: new Set(), expanded: undefined, signingOut: new Set(),
+    devices: null, devicesError: false, devicesLoading: false, memories: null, auth: null, error: null, importing: null, version: null, copied: null, focus: null, phaseOffset: null,
+    lastfm: { username: "", needsKey: false, keyError: false, savingKey: false },
+    drafts: { remember: "", lastfm: "", lastfmKey: "", spotifyClientId: "" } };
+
+  // A choice stands until the core's next status, which always brings a new model object and says
+  // what really happened.
+  const pending = new Map();
+  const expect = (kind, value) => pending.set(kind, { value, status: state.model });
+  function expected(kind, actual) {
+    const entry = pending.get(kind);
+    if (entry && entry.status === state.model) return entry.value;
+    pending.delete(kind);
+    return actual;
+  }
 
   // While the sheet is open, the window behind it takes no focus or clicks.
   function show(name = section) {
-    if (name !== section) data.error = null;
-    section = SECTIONS.includes(name) ? name : "general";
+    const next = SECTIONS.includes(name) ? name : "general";
+    const wasOpen = isOpen;
+    const moved = next !== section;
+    if (moved) { data.error = null; scroller.scrollTop = 0; }
+    section = next;
+    clearTimeout(closing);
+    delete sheet.dataset.state;
     sheet.hidden = false;
+    if (!wasOpen) {
+      content = null;
+      // Each opening starts with the provider in use unfolded.
+      data.expanded = undefined;
+    }
+    isOpen = true;
     if (windowNode) windowNode.inert = true;
     refresh();
-    render();
-    // A sign-in that still waits for an answer gets the focus back; otherwise the open section does.
-    requestAnimationFrame(() => (card.querySelector('[data-key^="auth-field:"]') ?? card.querySelector(".sheet-nav .on") ?? close).focus());
+    render({ entering: wasOpen && moved });
+    // A sign-in that waits for an answer takes the focus; otherwise the sheet itself does, so the
+    // arrow keys move between places and Tab reaches the first one.
+    requestAnimationFrame(() => {
+      const waiting = card.querySelector('[data-key^="auth-field:"]');
+      if (waiting || !card.contains(document.activeElement)) (waiting ?? card).focus({ preventScroll: true });
+    });
   }
   function hide() {
-    sheet.hidden = true;
+    if (!isOpen) return;
+    isOpen = false;
     if (windowNode) windowNode.inert = false;
+    sheet.dataset.state = "closing";
+    closing = setTimeout(() => { sheet.hidden = true; delete sheet.dataset.state; }, 120);
     document.querySelector("[data-input]")?.focus();
   }
+  function go(name) {
+    if (name === section || !SECTIONS.includes(name)) return;
+    section = name;
+    data.error = null;
+    scroller.scrollTop = 0;
+    refresh();
+    render({ entering: true });
+  }
   function refresh() {
+    // The status and the memories come back for every section.
     send({ type: "settings" });
     if (section === "model") send({ type: "models" });
-    if (section === "playback") send({ type: "devices" });
-    if (section === "memory") send({ type: "memories" });
+    if (section === "playback") { data.devicesLoading = true; send({ type: "devices" }); }
     if (section === "about" && !data.version) void window.moondogApp?.version?.().then((version) => { data.version = version; render(); });
   }
+
   document.addEventListener("keydown", (event) => {
-    if (sheet.hidden) return;
-    if (event.key === "Escape" && !data.auth?.prompt) { event.preventDefault(); hide(); }
+    if (!isOpen) return;
+    // A sign-in waiting for an answer keeps the sheet, so a stray Escape cannot lose it.
+    if (event.key === "Escape") {
+      if (!data.auth?.prompt) { event.preventDefault(); hide(); }
+      return;
+    }
+    const target = event.target;
+    const step = { ArrowDown: 1, ArrowUp: -1, ArrowRight: 1, ArrowLeft: -1 }[event.key];
+    if (!step || event.metaKey || event.altKey || event.ctrlKey) return;
+    const vertical = event.key === "ArrowDown" || event.key === "ArrowUp";
+    if (vertical && (target === card || target.closest?.(".sheet-nav"))) {
+      event.preventDefault();
+      const next = SECTIONS[Math.max(0, Math.min(SECTIONS.length - 1, SECTIONS.indexOf(section) + step))];
+      go(next);
+      tabs.get(next).tab.focus();
+    } else if (vertical && target.classList?.contains("choice-main")) {
+      const rows = [...scroller.querySelectorAll(".choice-main:not(:disabled)")];
+      const next = rows[rows.indexOf(target) + step];
+      if (next) { event.preventDefault(); next.focus(); }
+    } else if (!vertical && target.classList?.contains("segment")) {
+      const segments = [...target.parentElement.children];
+      const next = segments[segments.indexOf(target) + step];
+      if (!next) return;
+      event.preventDefault();
+      // The click redraws the section, so the focus goes to the redrawn segment.
+      const key = next.dataset.key;
+      next.click();
+      card.querySelector(`[data-key="${CSS.escape(key)}"]`)?.focus();
+    }
   });
 
-  const heading = (text) => make("h3", "", text);
-  // An error inside the sheet is announced, since the notice behind it is hidden while the sheet is open.
-  const failure = (text) => {
-    const node = make("p", "error", text);
-    node.setAttribute("role", "alert");
+  // Small parts.
+  const group = (title, ...children) => {
+    const node = make("section", "group");
+    if (title) node.append(make("h3", "group-title", title));
+    node.append(...children.filter(Boolean));
     return node;
   };
   const note = (text) => make("p", "note", text);
-  // A status redraw rebuilds the open section. These fields keep what the listener is typing.
-  function keptField(key, placeholder = "") {
-    const field = make("input");
+  // Something still on its way shows the turning mark, never the word "Loading".
+  const waiting = () => {
+    const line = make("p", "note waiting");
+    line.setAttribute("aria-label", say("loading"));
+    line.append(turning());
+    return line;
+  };
+  // An error inside the sheet is announced, since the notice behind it is covered while the sheet is open.
+  const failure = (key) => {
+    const node = make("p", "alert");
+    node.setAttribute("role", "alert");
+    node.append(icon("info"), make("span", "", say(key)));
+    return node;
+  };
+  const sectionError = () => (data.error && (!data.error.section || data.error.section === section) ? failure(data.error.key) : null);
+  // A redraw rebuilds the open section. These fields keep what the listener is typing.
+  function keptField(key, placeholder, secret = false) {
+    const field = make("input", "text-field");
+    field.type = secret ? "password" : "text";
     field.dataset.key = `field:${key}`;
     field.spellcheck = false;
+    field.autocomplete = "off";
     field.placeholder = placeholder;
+    field.setAttribute("aria-label", placeholder);
     field.value = data.drafts[key] ?? "";
     field.addEventListener("input", () => { data.drafts[key] = field.value; });
     return field;
   }
-  function choice({ label, detail, checked, onChoose, trailing, disabled, key }) {
-    const item = make("div", `choice${checked ? " checked" : ""}`);
-    const main = button("", "choice-main", disabled ? null : onChoose, key ?? `choice:${label}`);
+  // A field and its button on one row. The button waits until there is something to send.
+  function inlineForm({ key, placeholder, action, primary = false, secret = false, onSubmit, after = [] }) {
+    const form = make("form", "inline");
+    const field = keptField(key, placeholder, secret);
+    const submit = button(action, primary ? "button primary small" : "button small", null, `submit:${key}`);
+    const sync = () => { submit.disabled = !field.value.trim(); };
+    field.addEventListener("input", sync);
+    sync();
+    form.append(field, submit, ...after);
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const value = field.value.trim();
+      if (value) onSubmit(value, field, sync);
+    });
+    return form;
+  }
+  function choice({ label, detail, chosen, expanded, action, onChoose, trailing, disabled, key, lead }) {
+    const item = make("div", `choice${disabled ? " off" : ""}`);
+    const main = make("button", "choice-main");
+    main.type = "button";
+    main.dataset.key = key ?? `choice:${label}`;
     main.disabled = Boolean(disabled);
-    main.setAttribute("aria-pressed", String(Boolean(checked)));
+    // A row that opens a list says so; a row that picks one of several says whether it is the one.
+    if (expanded !== undefined) main.setAttribute("aria-expanded", String(expanded));
+    else if (!action) { main.setAttribute("role", "radio"); main.setAttribute("aria-checked", String(Boolean(chosen))); }
+    if (onChoose && !disabled) main.addEventListener("click", onChoose);
+    if (lead) main.append(lead);
     const words = make("span", "choice-words");
     words.append(make("span", "choice-label", label));
     if (detail) words.append(make("span", "choice-detail", detail));
     main.append(words);
-    if (checked) main.append(make("span", "check", "✓"));
+    // A row that does something rather than choosing something points the way it goes.
+    if (action && !chosen) main.append(icon("chevron", "icon go"));
     item.append(main);
     if (trailing) item.append(trailing);
+    // The check keeps one column down the right edge, after any button the row carries.
+    if (chosen) (trailing ? item : main).append(icon("check", "icon check"));
     return item;
   }
+  const choices = (rows, className = "choices") => {
+    const list = make("div", className);
+    list.append(...rows);
+    return list;
+  };
+  // A value to paste elsewhere, with a button that copies it and says so for a moment.
+  function copyChip(text, key, className = "chip", label = "") {
+    const chip = make("div", className);
+    if (label) { chip.setAttribute("role", "group"); chip.setAttribute("aria-label", label); }
+    const value = make("code", "", text);
+    const copy = make("button", "tool");
+    copy.type = "button";
+    copy.dataset.key = `copy:${key}`;
+    const done = data.copied === key;
+    copy.append(icon(done ? "check" : "copy"));
+    name(copy, say(done ? "copied" : "copy"));
+    copy.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch (error) {
+        // Without the clipboard, the value is selected so ⌘C copies it.
+        warn("copy", error?.message);
+        getSelection()?.selectAllChildren(value);
+        return;
+      }
+      data.copied = key;
+      setIcon(copy, "check");
+      name(copy, say("copied"));
+      clearTimeout(copiedTimer);
+      copiedTimer = setTimeout(() => {
+        data.copied = null;
+        const shown = card.querySelector(`[data-key="copy:${CSS.escape(key)}"]`);
+        if (shown) { setIcon(shown, "copy"); name(shown, say("copy")); }
+      }, 1400);
+    });
+    chip.append(value, copy);
+    return chip;
+  }
 
+  // Language: the list, the current one checked.
   function general() {
-    const tr = t();
-    const part = make("div");
-    part.append(heading(tr("language")), note(tr("languageNote")));
-    const list = make("div", "choices");
-    for (const entry of state.locales ?? []) {
-      list.append(choice({ label: entry.nativeName, detail: entry.nativeName === entry.name ? null : entry.name, checked: entry.code === state.locale,
-        onChoose: () => send({ type: "language", locale: entry.code }) }));
-    }
-    part.append(list);
-    return part;
+    const locales = state.locales ?? [];
+    if (!locales.length) return [waiting()];
+    const current = expected("locale", state.locale);
+    // Each language under its own name, with its name in the window's language beneath when they differ.
+    let names = null;
+    try { names = new Intl.DisplayNames([languageTag(state.locale)], { type: "language", languageDisplay: "standard" }); } catch { /* The English names stand in. */ }
+    const local = (entry) => { const said = names?.of(languageTag(entry.code)) ?? entry.name; return said === entry.nativeName ? null : said; };
+    return [sectionError(), choices(locales.map((entry) => choice({ label: entry.nativeName, detail: local(entry),
+      chosen: entry.code === current, key: `locale:${entry.code}`,
+      onChoose: () => { expect("locale", entry.code); send({ type: "language", locale: entry.code }); render(); } })))].filter(Boolean);
   }
 
   function signInPanel() {
-    const tr = t();
     const auth = data.auth;
     const panel = make("div", "auth");
-    panel.append(make("p", "auth-title", tr("signingIn", { provider: auth.providerName ?? auth.provider })));
-    for (const line of auth.lines ?? []) panel.append(note(line));
-    if (auth.url) {
-      const link = make("a", "", tr("openSignInPage"));
-      link.href = auth.url;
-      link.target = "_blank";
-      panel.append(link);
-    }
-    if (auth.code) panel.append(make("p", "code", auth.code));
+    const head = make("div", "auth-head");
+    head.append(make("p", "auth-title", say("signingIn", { provider: auth.providerName ?? auth.provider })),
+      button(say("cancel"), "button quiet small", () => { send({ type: "sign-in-cancel" }); data.auth = null; render(); }, "auth:cancel"));
+    panel.append(head);
+    // The provider's own words, when it sends any, say more than a generic line.
+    const line = auth.info ?? (auth.status ? say(auth.status) : null);
+    if (line) panel.append(make("p", "auth-line", line));
+    if (auth.code) panel.append(copyChip(auth.code, "device-code", "chip code"));
+    if (auth.url) panel.append(link(say("openSignInPage"), auth.url));
     const prompt = auth.prompt;
     if (prompt?.kind === "select") {
-      const options = make("div", "choices");
-      for (const option of prompt.options ?? []) options.append(choice({ label: option.label, detail: option.description,
-        onChoose: () => { send({ type: "auth-answer", id: prompt.id, value: option.id }); auth.prompt = null; render(); } }));
-      panel.append(make("p", "", prompt.message), options);
+      panel.append(make("p", "auth-line", prompt.message), choices((prompt.options ?? []).map((option) => choice({ label: option.label, detail: option.description,
+        action: true, key: `auth-option:${option.id}`,
+        onChoose: () => { send({ type: "auth-answer", id: prompt.id, value: option.id }); auth.prompt = null; auth.status = "checking"; auth.info = null; render(); } }))));
     } else if (prompt) {
-      const form = make("form", "auth-form");
-      const label = make("label", "", prompt.message);
-      const field = make("input");
+      const form = make("form", "inline");
+      const field = make("input", "text-field");
       field.type = prompt.kind === "secret" ? "password" : "text";
       field.placeholder = prompt.placeholder ?? "";
       field.autocomplete = "off";
       field.spellcheck = false;
+      field.setAttribute("aria-label", prompt.message ?? "");
       field.dataset.key = `auth-field:${prompt.id}`;
       // A redraw keeps what was typed; the answer itself goes to the core only.
       field.value = prompt.draft ?? "";
       field.addEventListener("input", () => { prompt.draft = field.value; });
-      form.append(label, field, button(tr("continue"), "primary"));
+      form.append(field, button(say("continue"), "button primary small", null, `auth-submit:${prompt.id}`));
       form.addEventListener("submit", (event) => {
         event.preventDefault();
         send({ type: "auth-answer", id: prompt.id, value: field.value });
         field.value = "";
         prompt.draft = "";
         auth.prompt = null;
-        auth.lines = [tr("checking")];
+        auth.status = "checking";
+        auth.info = null;
         render();
       });
+      if (prompt.message) panel.append(make("p", "auth-line", prompt.message));
       panel.append(form);
       if (!prompt.focused) {
         prompt.focused = true;
         requestAnimationFrame(() => field.focus());
       }
     }
-    panel.append(button(tr("cancel"), "quiet", () => { send({ type: "sign-in-cancel" }); }));
     return panel;
   }
 
+  // Model: what answers now, how hard it thinks, and where else it could come from.
+  const prettyOf = (provider, id) => {
+    const pretty = prettyModel(id);
+    if (pretty && pretty !== id) return pretty;
+    return data.models.get(provider)?.find((entry) => entry.id === id)?.name ?? id;
+  };
   function model() {
-    const tr = t();
-    const part = make("div");
     const current = state.model ?? {};
-    part.append(heading(tr("currentModel")));
-    const providerName = data.providers?.find((provider) => provider.id === current.provider)?.name ?? current.provider;
-    const now = make("p", "current", current.model ? prettyModel(current.model) : tr("noModel"));
-    if (current.model && current.provider) now.append(make("span", "", `${providerName}, ${current.model}`));
-    part.append(now);
-    if (current.effortLevels?.length) {
-      const efforts = make("div", "segments");
-      for (const level of ["default", ...current.effortLevels]) {
-        const chosen = (current.effort ?? "default") === level;
-        const segment = button(level === "default" ? tr("effortDefault") : tr(`effort.${level}`) === `effort.${level}` ? level : tr(`effort.${level}`), chosen ? "segment on" : "segment",
-          () => send({ type: "effort", effort: level }), `effort:${level}`);
-        segment.setAttribute("aria-pressed", String(chosen));
-        efforts.append(segment);
-      }
-      part.append(make("p", "label", tr("effort")), efforts);
+    const active = expected("model", current.model ? { provider: current.provider, model: current.model } : null);
+    const switching = active && (active.provider !== current.provider || active.model !== current.model);
+    // The model in use is the checked row under its account; only its absence needs saying.
+    const parts = [];
+    if (!active) parts.push(group(null, make("p", "now-name none", say("noModel"))));
+    // Which model answers comes first; how hard it thinks follows. A model sign-in replaces the list while it runs.
+    if (data.auth && data.auth.provider !== "spotify") parts.push(group(null, signInPanel()));
+    else parts.push(group(say("providers"), sectionError(), providerList(active)));
+    if (current.effortLevels?.length && !switching) parts.push(group(say("effort"), efforts(current)));
+    return parts;
+  }
+  function efforts(current) {
+    const chosen = expected("effort", current.effort ?? "default");
+    const track = make("div", "segments");
+    track.setAttribute("role", "radiogroup");
+    track.setAttribute("aria-label", say("effort"));
+    for (const level of ["default", ...current.effortLevels]) {
+      const label = level === "default" ? say("effortDefault") : say(`effort.${level}`) === `effort.${level}` ? level : say(`effort.${level}`);
+      const segment = button(label, "segment", () => {
+        if (chosen === level) return;
+        expect("effort", level);
+        send({ type: "effort", effort: level });
+        render();
+      }, `effort:${level}`);
+      segment.setAttribute("role", "radio");
+      segment.setAttribute("aria-checked", String(chosen === level));
+      // One stop for the group; the arrow keys move inside it.
+      segment.tabIndex = chosen === level ? 0 : -1;
+      track.append(segment);
     }
-    if (data.auth) { part.append(signInPanel()); return part; }
-    if (data.error) part.append(failure(data.error));
-    part.append(heading(tr("providers")));
-    if (!data.providers) { part.append(note(tr("loading"))); return part; }
-    if (!data.providers.length) { part.append(note(data.providersError ?? tr("noProviders"))); return part; }
-    const list = make("div", "choices");
-    // Providers that only read a key from the environment wait behind one button, unless one is in use.
-    const usable = (provider) => provider.signedIn === true || provider.signIn !== "environment_only";
-    const hidden = data.providers.filter((provider) => !usable(provider));
-    for (const provider of data.showAllProviders ? data.providers : data.providers.filter(usable)) {
+    return track;
+  }
+  function providerList(active) {
+    if (!data.providers) return waiting();
+    // Providers that only read a key from the environment can't be signed in here, so they show only once in use.
+    const usable = data.providers.filter((provider) => provider.signedIn === true || provider.signIn !== "environment_only");
+    if (data.providersError || !usable.length) return failure("noProviders");
+    // The provider in use starts open, so its models are one look away.
+    const open = data.expanded === undefined ? usable.find((provider) => provider.id === active?.provider && provider.signedIn)?.id ?? null : data.expanded;
+    const rows = [];
+    for (const provider of usable) {
       const signedIn = provider.signedIn === true;
-      const detail = signedIn ? (provider.source && provider.source !== "saved" ? tr("signedInFrom", { source: provider.source === "environment" ? tr("theEnvironment") : provider.source }) : tr("signedIn"))
-        : provider.signIn === "oauth" ? tr("signInWithBrowser") : provider.signIn === "api_key" ? tr("needsApiKey") : tr("setInEnvironment");
       // Only a key Moondog saved can be signed out here; one from the environment stays in effect.
-      const action = signedIn ? (provider.source === "saved" ? button(tr("signOut"), "quiet small", () => send({ type: "sign-out", provider: provider.id }), `sign-out:${provider.id}`) : null)
-        : provider.signIn === "environment_only" ? null : button(tr("signIn"), "small", () => {
+      const canSignOut = signedIn && provider.source === "saved";
+      let trailing = null;
+      if (canSignOut) {
+        trailing = button(say("signOut"), "button quiet small", () => {
+          data.signingOut.add(provider.id);
+          send({ type: "sign-out", provider: provider.id });
+          render();
+        }, `sign-out:${provider.id}`);
+        trailing.disabled = data.signingOut.has(provider.id);
+      } else if (!signedIn) {
+        trailing = button(say("signIn"), "button small", () => {
           data.error = null;
-          data.auth = { provider: provider.id, providerName: provider.name, lines: [] };
+          data.auth = { provider: provider.id, providerName: provider.name, status: null, info: null };
           send({ type: "sign-in", provider: provider.id });
           render();
         }, `sign-in:${provider.id}`);
-      list.append(choice({ label: provider.name, detail, checked: provider.id === current.provider, trailing: action,
-        onChoose: () => {
-          data.expanded = data.expanded === provider.id ? null : provider.id;
-          if (data.expanded && !data.models.has(provider.id)) send({ type: "provider-models", provider: provider.id });
-          render();
-        } }));
-      if (data.expanded === provider.id) {
-        const models = data.models.get(provider.id);
-        const inner = make("div", "choices inner");
-        if (!models) inner.append(note(tr("loading")));
-        else if (!signedIn && provider.signIn !== "environment_only") inner.append(note(tr("signInFirst")));
-        else for (const entry of models) {
-          inner.append(choice({ label: entry.name ?? entry.id, detail: entry.name && entry.name !== entry.id ? entry.id : null,
-            checked: provider.id === current.provider && entry.id === current.model,
-            onChoose: () => send({ type: "model", provider: provider.id, model: entry.id }) }));
-        }
-        list.append(inner);
+        // One sign-in at a time; the core would refuse a second.
+        trailing.disabled = Boolean(data.auth);
+      }
+      const expanded = open === provider.id;
+      rows.push(choice({ label: provider.name, detail: signedIn && !canSignOut ? say("signedIn") : null, expanded, trailing,
+        key: `provider:${provider.id}`, lead: icon("chevron", "icon disclose"),
+        onChoose: () => { data.expanded = expanded ? null : provider.id; render(); } }));
+      if (expanded) {
+        wantModels(provider);
+        rows.push(modelList(provider, active));
       }
     }
-    part.append(list);
-    if (hidden.length && !data.showAllProviders) {
-      part.append(button(tr("moreProviders", { count: hidden.length }), "quiet small", () => { data.showAllProviders = true; render(); }));
-    }
-    return part;
+    return choices(rows);
+  }
+  // Each provider's models are asked for once; the renderer asks for the signed-in ones on its own.
+  const requested = new Set();
+  function wantModels(provider) {
+    if (provider.signedIn !== true || data.models.has(provider.id) || requested.has(provider.id)) return;
+    requested.add(provider.id);
+    send({ type: "provider-models", provider: provider.id });
+  }
+  function modelList(provider, active) {
+    const models = data.models.get(provider.id);
+    const retry = () => { data.modelsFailed.delete(provider.id); requested.delete(provider.id); wantModels(provider); render(); };
+    const inner = provider.signedIn !== true ? [note(say("signInFirst"))]
+      : data.modelsFailed.has(provider.id) ? [failure("noticeFailed"), button(say("tryAgain"), "button quiet small", retry, `retry:${provider.id}`)]
+        : !models ? [waiting()]
+          : models.map((entry) => choice({ label: entry.name ?? entry.id, key: `model:${provider.id}:${entry.id}`,
+            chosen: active?.provider === provider.id && active?.model === entry.id,
+            onChoose: () => {
+              if (active?.provider === provider.id && active?.model === entry.id) return;
+              expect("model", { provider: provider.id, model: entry.id });
+              send({ type: "model", provider: provider.id, model: entry.id });
+              render();
+            } }));
+    return choices(inner, "choices inner");
   }
 
+  // Playback: the music service, then Spotify's account or its devices.
   function playback() {
-    const tr = t();
-    const part = make("div");
-    part.append(heading(tr("musicService")));
-    const services = make("div", "choices");
-    services.append(choice({ label: "Spotify", detail: state.spotify === "ready" ? tr("connected") : tr("notConnected"),
-      checked: state.playbackService === "spotify", onChoose: () => send({ type: "music-service", service: "spotify" }) }));
-    services.append(choice({ label: "Apple Music", detail: tr("appleMusicNote"), checked: state.playbackService === "apple_music",
-      onChoose: () => send({ type: "music-service", service: "apple_music" }) }));
-    part.append(services);
-
-    part.append(heading(tr("spotifyAccount")));
-    if (data.error) part.append(failure(data.error));
-    if (data.auth?.provider === "spotify") part.append(signInPanel());
-    else if (data.auth) part.append(note(tr("signInBusy")));
-    else if (state.spotify === "ready") {
-      part.append(note(tr("spotifyConnected")), button(tr("disconnect"), "quiet", () => send({ type: "sign-out", provider: "spotify" })));
-    } else {
-      const form = make("form", "auth-form");
-      let field = null;
-      if (!state.spotifyAccount?.clientId) {
-        form.append(make("label", "", tr("spotifyClientId")));
-        field = keptField("spotifyClientId");
-        form.append(field);
-      }
-      form.append(button(tr("connectSpotify"), "primary"));
-      form.addEventListener("submit", (event) => {
-        event.preventDefault();
-        const clientId = field?.value.trim();
-        if (field && !clientId) return;
-        data.error = null;
-        data.drafts.spotifyClientId = "";
-        data.auth = { provider: "spotify", providerName: "Spotify", lines: [tr("openingBrowser")] };
-        send({ type: "sign-in", provider: "spotify", ...(clientId ? { clientId } : {}) });
-        render();
-      });
-      part.append(note(tr("spotifyNeedsApp")), form);
+    const service = expected("service", state.playbackService ?? "spotify");
+    const ready = expected("spotify", state.spotify) === "ready";
+    const chooseService = (next) => () => {
+      if (next === service) return;
+      expect("service", next);
+      send({ type: "music-service", service: next });
+      render();
+    };
+    const disconnect = ready ? button(say("disconnect"), "button quiet small", () => {
+      expect("spotify", "unavailable");
+      send({ type: "sign-out", provider: "spotify" });
+      render();
+    }, "spotify:disconnect") : null;
+    const parts = [group(say("musicService"), sectionError(), choices([
+      choice({ label: "Spotify", detail: ready ? null : say("notConnected"), chosen: service === "spotify", trailing: disconnect,
+        key: "service:spotify", onChoose: chooseService("spotify") }),
+      choice({ label: "Apple Music", detail: say("appleMusicNote"), chosen: service === "apple_music", key: "service:apple_music",
+        onChoose: chooseService("apple_music") }),
+    ]))];
+    if (service !== "spotify") return parts;
+    if (data.auth?.provider === "spotify") parts.push(group(null, signInPanel()));
+    else if (!ready) parts.push(group(null, data.auth ? note(say("signInBusy")) : connectSpotify()));
+    else parts.push(devices());
+    return parts;
+  }
+  function connectSpotify() {
+    const start = (clientId) => {
+      data.error = null;
+      data.drafts.spotifyClientId = "";
+      data.auth = { provider: "spotify", providerName: "Spotify", status: "openingBrowser", info: null };
+      send({ type: "sign-in", provider: "spotify", ...(clientId ? { clientId } : {}) });
+      render();
+    };
+    const stack = make("div", "stack");
+    if (state.spotifyAccount?.clientId) {
+      stack.append(button(say("connectSpotify"), "button primary", () => start(null), "spotify:connect"));
+      return stack;
     }
-
-    if (state.spotify === "ready") {
-      part.append(heading(tr("devices")));
-      const list = make("div", "choices");
-      if (!data.devices) list.append(note(tr("loading")));
-      else if (data.devicesError) list.append(note(tr("noticeDevicesFailed")));
-      else if (!data.devices.length) list.append(note(tr("noDevices")));
-      else for (const device of data.devices) {
-        const type = DEVICE_TYPES[String(device.type).toLowerCase()];
-        list.append(choice({ label: device.name, detail: type ? tr(type) : null, checked: device.active, disabled: device.restricted,
-          key: `device:${device.ref}`,
-          onChoose: () => { send({ type: "transfer", ref: device.ref }); data.devices = data.devices.map((entry) => ({ ...entry, active: entry.ref === device.ref })); render(); } }));
-      }
-      part.append(list, button(tr("refresh"), "quiet small", () => { data.devices = null; send({ type: "devices" }); render(); }));
+    // Spotify wants each listener's own app. The note links to where it is made.
+    const text = say("spotifyNeedsApp");
+    const words = make("p", "note");
+    const at = text.indexOf("developer.spotify.com");
+    if (at < 0) words.textContent = text;
+    else {
+      const site = make("a", "", "developer.spotify.com");
+      site.href = SPOTIFY_DASHBOARD;
+      site.target = "_blank";
+      site.rel = "noreferrer";
+      words.append(text.slice(0, at), site, text.slice(at + "developer.spotify.com".length));
     }
+    stack.append(words, copyChip(REDIRECT_URI, "redirect", "chip", say("redirectUri")),
+      inlineForm({ key: "spotifyClientId", placeholder: say("spotifyClientId"), action: say("connectSpotify"), primary: true, onSubmit: (clientId) => start(clientId) }));
+    return stack;
+  }
+  function devices() {
+    const head = make("div", "group-head");
+    const again = make("button", "tool");
+    again.type = "button";
+    again.dataset.key = "devices:refresh";
+    again.append(icon("refresh"));
+    name(again, say("refresh"));
+    again.addEventListener("click", () => { data.devicesLoading = true; send({ type: "devices" }); render(); });
+    head.append(make("h3", "group-title", say("devices")), again);
+    const list = !data.devices ? waiting()
+      : data.devicesError ? failure("noticeDevicesFailed")
+        : !data.devices.length ? note(say("noDevices"))
+          : choices(data.devices.map((device) => choice({ label: device.name, chosen: device.active, disabled: device.restricted,
+            key: `device:${device.ref}`, lead: icon(DEVICE_ICONS[String(device.type).toLowerCase()] ?? "speaker", "icon kind"),
+            onChoose: () => {
+              if (device.active) return;
+              send({ type: "transfer", ref: device.ref });
+              // Spotify reports the new device late, so the check moves now.
+              data.devices = data.devices.map((entry) => ({ ...entry, active: entry.ref === device.ref }));
+              render();
+            } })));
+    const part = make("section", "group");
+    part.append(head, list);
     return part;
   }
 
+  // Import: two ways in, then Last.fm by name. The core reads first and saves only what is added.
+  const importLine = (job) => (job.stage === "saving" ? say("importSaving")
+    : job.count ? say("importReadingCount", { count: Number(job.count).toLocaleString(state.locale) }) : say("importReading"));
   function library() {
-    const tr = t();
-    const part = make("div");
     const job = data.importing;
-    part.append(heading(tr("importHistory")), note(tr("importNote")));
     if (job && ["reading", "progress", "saving"].includes(job.stage)) {
-      part.append(make("p", "working", job.stage === "saving" ? tr("importSaving") : job.count ? tr("importReadingCount", { count: job.count.toLocaleString(state.locale) }) : tr("importReading")));
-      if (job.stage !== "saving") part.append(button(tr("stop"), "quiet", () => send({ type: "import-cancel" })));
-      return part;
+      data.phaseOffset ??= Math.round(performance.now() % 2400);
+      const line = make("div", "working");
+      const words = make("span", "", importLine(job));
+      words.dataset.progressText = "";
+      line.append(phase(data.phaseOffset), words);
+      if (job.stage !== "saving") line.append(button(say("stop"), "button quiet small", () => send({ type: "import-cancel" }), "import:stop"));
+      return [line];
     }
-    if (job?.stage === "preview") {
-      // The words come from the core, written as the terminal writes them.
-      const preview = job.preview;
+    data.phaseOffset = null;
+    if (job?.stage === "preview") return preview(job);
+    const parts = [];
+    // A missing Last.fm key is not a failure to report: the key field that replaces the username says what to do.
+    if (job?.stage === "error" && job.code !== "lastfm_key_missing") parts.push(failure(IMPORT_ERRORS[job.code] ?? "importFailed"));
+    const spotifyReady = state.spotify === "ready";
+    parts.push(choices([
+      choice({ label: say("importSpotifyQuick"), detail: say(spotifyReady ? "importSpotifyQuickNote" : "connectSpotifyFirst"), action: true,
+        disabled: !spotifyReady, key: "import:spotify", onChoose: () => send({ type: "import-spotify" }) }),
+      choice({ label: say("importFile"), detail: say("importFileNote"), action: true, key: "import:file", onChoose: async () => {
+        const path = await window.moondogApp?.chooseFile?.({ title: say("importFile"), filterName: say("musicHistoryFiles") });
+        if (path) send({ type: "import-file", path });
+      } }),
+    ]));
+    parts.push(data.lastfm.needsKey ? lastfmKey() : inlineForm({ key: "lastfm", placeholder: say("lastfmUsername"), action: say("continue"),
+      onSubmit: (username) => { data.lastfm.username = username; send({ type: "import-lastfm", username }); } }));
+    return parts;
+  }
+  // Reading Last.fm needs an API key on this computer. Once it is saved, the same username is read again.
+  function lastfmKey() {
+    const stack = make("div", "stack");
+    if (data.lastfm.keyError) stack.append(failure("noticeFailed"));
+    const form = inlineForm({ key: "lastfmKey", placeholder: say("lastfmKey"), action: say("save"), after: [link("last.fm/api", LASTFM_KEY_PAGE)],
+      onSubmit: (key) => { data.lastfm.savingKey = true; data.lastfm.keyError = false; send({ type: "lastfm-key", key }); render(); } });
+    if (data.lastfm.savingKey) form.querySelector("button").disabled = true;
+    stack.append(form);
+    return stack;
+  }
+  function preview(job) {
+    // The words come from the core, written as the terminal writes them.
+    const { title, paragraphs = [], empty } = job.preview ?? {};
+    const parts = [make("h3", "preview-title", title ?? say("importHistory"))];
+    if (empty) parts.push(make("p", "facts-empty", say("importEmpty")));
+    else {
       const facts = make("ul", "facts");
-      for (const paragraph of preview.paragraphs ?? []) facts.append(make("li", "", paragraph));
-      part.replaceChildren(heading(preview.title ?? tr("importHistory")), note(preview.notice ?? tr("importNote")),
-        ...(preview.empty ? [make("p", "", tr("importEmpty"))] : []), facts);
-      const actions = make("div", "actions");
-      if (!preview.empty) actions.append(button(tr("addToProfile"), "primary", () => send({ type: "import-commit" })));
-      actions.append(button(tr("back"), "quiet", () => { send({ type: "import-cancel" }); data.importing = null; render(); }));
-      part.append(actions);
-      return part;
+      for (const paragraph of paragraphs) if (paragraph) facts.append(make("li", "", paragraph));
+      parts.push(facts);
     }
-    if (job?.stage === "done") part.append(make("p", "done", job.receipt?.already ? tr("importAlready") : tr("importDone")));
-    if (job?.stage === "error") part.append(failure(job.code === "import_while_answering" ? tr("importWhileAnswering") : job.message || tr("importFailed")));
-
-    const sources = make("div", "choices");
-    sources.append(choice({ label: tr("importSpotifyQuick"), detail: state.spotify === "ready" ? tr("importSpotifyQuickNote") : tr("connectSpotifyFirst"),
-      disabled: state.spotify !== "ready", onChoose: () => send({ type: "import-spotify" }) }));
-    sources.append(choice({ label: tr("importFile"), detail: tr("importFileNote"), onChoose: async () => {
-      const path = await window.moondogApp?.chooseFile?.({ title: tr("importFile"), filterName: tr("musicHistoryFiles") });
-      if (path) send({ type: "import-file", path });
-    } }));
-    part.append(sources);
-    const form = make("form", "inline-form");
-    const field = keptField("lastfm", tr("lastfmUsername"));
-    form.append(field, button(tr("read"), "small"));
-    form.addEventListener("submit", (event) => {
-      event.preventDefault();
-      if (!field.value.trim()) return;
-      send({ type: "import-lastfm", username: field.value.trim() });
-      data.drafts.lastfm = "";
-      field.value = "";
-    });
-    part.append(make("p", "label", "Last.fm"), form, note(tr("dropHint")));
-    return part;
+    const actions = make("div", "actions");
+    if (!empty) actions.append(button(say("addToProfile"), "button primary", () => send({ type: "import-commit" }), "import:commit"));
+    actions.append(button(say("cancel"), "button quiet", () => { send({ type: "import-cancel" }); data.importing = null; render(); }, "import:back"));
+    if (job.error) parts.push(failure(job.error));
+    parts.push(actions);
+    return parts;
   }
 
+  // Memory: what Moondog keeps about the listener, and a way to add or forget a line.
   function memory() {
-    const tr = t();
-    const part = make("div");
-    part.append(heading(tr("memory")), note(tr("memoryNote")));
-    const form = make("form", "inline-form");
-    const field = keptField("remember", tr("rememberPlaceholder"));
-    form.append(field, button(tr("remember"), "small"));
-    form.addEventListener("submit", (event) => {
-      event.preventDefault();
-      if (!field.value.trim()) return;
-      send({ type: "remember", text: field.value.trim() });
-      data.drafts.remember = "";
-      field.value = "";
-    });
-    part.append(form);
-    const list = make("div", "memories");
-    if (!data.memories) list.append(note(tr("loading")));
-    else if (!data.memories.length) list.append(note(tr("noMemories")));
-    else for (const entry of data.memories) {
-      const item = make("div", "memory");
-      item.append(make("p", "", entry.text), button(tr("forget"), "quiet small", () => send({ type: "forget", id: entry.id }), `forget:${entry.id}`));
-      list.append(item);
-    }
-    part.append(list);
-    return part;
+    const form = inlineForm({ key: "remember", placeholder: say("rememberPlaceholder"), action: say("remember"),
+      onSubmit: (text, field, sync) => {
+        send({ type: "remember", text });
+        data.drafts.remember = "";
+        field.value = "";
+        sync();
+        field.focus();
+      } });
+    const list = !data.memories ? waiting()
+      : !data.memories.length ? note(say("noMemories"))
+        : choices(data.memories.map((entry) => {
+          const item = make("div", "memory");
+          item.append(make("p", "", entry.text), button(say("forget"), "button quiet small", () => {
+            // The line goes at once; the core's list follows. The focus moves to the next line's Forget.
+            const at = data.memories.findIndex((other) => other.id === entry.id);
+            const next = data.memories[at + 1] ?? data.memories[at - 1];
+            data.memories = data.memories.filter((other) => other.id !== entry.id);
+            send({ type: "forget", id: entry.id });
+            render();
+            card.querySelector(`[data-key="${CSS.escape(next ? `forget:${next.id}` : "field:remember")}"]`)?.focus();
+          }, `forget:${entry.id}`));
+          return item;
+        }), "choices memories");
+    return [group(null, form), group(null, list)];
   }
 
   function about() {
-    const tr = t();
-    const part = make("div");
-    part.append(heading("Moondog"), note(data.version ? tr("version", { version: data.version }) : ""));
-    const link = make("a", "", "moondog.audiofool.ai");
-    link.href = "https://moondog.audiofool.ai";
-    link.target = "_blank";
-    part.append(link, heading(tr("shortcuts")));
+    const title = make("p", "about-name", "Moondog");
+    if (data.version) title.append(make("span", "", ` ${data.version}`));
     const keys = make("dl", "keys");
-    for (const [key, what] of [["⌘N", tr("newConversation")], ["⌘,", tr("settings")], ["⌘.", tr("stop")], ["/", tr("commands")], ["⌥⌘S", tr("conversations")], ["⌥⌘P", tr("player")]]) {
-      keys.append(make("dt", "", key), make("dd", "", what));
+    keys.style.gridTemplateRows = `repeat(${Math.ceil(SHORTCUTS.length / 2)}, auto)`;
+    for (const [combo, label] of SHORTCUTS) {
+      const pair = make("div", "key");
+      const term = make("dt");
+      term.append(make("kbd", "", combo));
+      pair.append(term, make("dd", "", say(label)));
+      keys.append(pair);
     }
-    part.append(keys);
-    return part;
+    return [group(null, title, link(SITE.replace("https://", ""), SITE)), group(say("shortcuts"), keys)];
   }
 
-  function render() {
-    if (sheet.hidden) return;
-    const tr = t();
-    const focused = card.contains(document.activeElement) ? document.activeElement.dataset.key : null;
-    const title = make("p", "sheet-title", tr("settings"));
-    title.id = "settings-title";
-    nav.replaceChildren(title);
-    for (const name of SECTIONS) {
-      const item = button(tr(`section.${name}`), name === section ? "on" : "", () => { section = name; data.error = null; refresh(); render(); }, `nav:${name}`);
-      item.setAttribute("aria-current", String(name === section));
-      nav.append(item);
+  function render({ entering = false } = {}) {
+    if (!isOpen) return;
+    card.setAttribute("aria-label", say("settings"));
+    close.setAttribute("aria-label", say("close"));
+    for (const [id, { tab, label }] of tabs) {
+      label.textContent = say(`section.${id}`);
+      tab.classList.toggle("on", id === section);
+      tab.setAttribute("aria-current", String(id === section));
     }
+    const active = document.activeElement;
+    const focused = card.contains(active) ? active.dataset.key : null;
+    const wanted = data.focus;
+    data.focus = null;
+    const fresh = make("div", `sheet-section${entering ? " entering" : ""}`);
+    fresh.dataset.section = section;
     const views = { general, model, playback, library, memory, about };
-    body.replaceChildren(views[section]());
-    close.setAttribute("aria-label", tr("close"));
+    fresh.append(...views[section]());
+    // The core often repeats itself. An unchanged section keeps its nodes, so the row under the
+    // pointer and the field being typed in are never replaced. Passing states, such as the refresh
+    // turning, are set on both before they are compared, so they alone never cause a redraw.
+    for (const root of [content, fresh]) root?.querySelector('[data-key="devices:refresh"]')?.classList.toggle("spinning", data.devicesLoading);
+    if (!entering && content?.dataset.section === section && content.isConnected && content.innerHTML === fresh.innerHTML) return;
+    if (content?.isConnected) content.replaceWith(fresh); else scroller.replaceChildren(fresh);
+    content = fresh;
+    // A field that takes the place of the one being typed in takes its focus too.
+    const handoff = wanted && card.querySelector(`[data-key="${CSS.escape(wanted)}"]`);
+    if (handoff && (!focused || !card.querySelector(`[data-key="${CSS.escape(focused)}"]`))) { handoff.focus({ preventScroll: true }); return; }
+    if (!focused) return;
     // A key shared by several controls is not restored, so the focus never lands on another item's button.
-    const matches = focused ? card.querySelectorAll(`[data-key="${CSS.escape(focused)}"]`) : [];
-    if (matches.length === 1) matches[0].focus();
+    const matches = card.querySelectorAll(`[data-key="${CSS.escape(focused)}"]`);
+    if (matches.length === 1 && !matches[0].disabled) matches[0].focus({ preventScroll: true });
+    else if (!card.contains(document.activeElement)) tabs.get(section).tab.focus({ preventScroll: true });
+  }
+
+  // Reading progress changes many times a second; only its words change.
+  function patchProgress() {
+    const words = scroller.querySelector("[data-progress-text]");
+    if (!words || section !== "library") return false;
+    words.textContent = importLine(data.importing);
+    return true;
   }
 
   // Messages from the core that this sheet draws.
   function receive(message) {
-    if (message.type === "models") { data.providers = message.providers ?? []; data.providersError = message.error ?? null; }
-    if (message.type === "provider-models") data.models.set(message.provider, message.models ?? []);
-    if (message.type === "devices") { data.devices = message.devices ?? []; data.devicesError = message.error ?? null; }
+    if (message.type === "models") {
+      data.providers = message.providers ?? [];
+      data.providersError = Boolean(message.error);
+      data.signingOut.clear();
+      warn("providers", message.error);
+    }
+    if (message.type === "provider-models") { data.models.set(message.provider, message.models ?? []); data.modelsFailed.delete(message.provider); }
+    if (message.type === "devices") {
+      data.devices = message.devices ?? [];
+      data.devicesError = Boolean(message.error);
+      data.devicesLoading = false;
+      warn("devices", message.error);
+    }
     if (message.type === "memories") data.memories = message.memories ?? [];
-    if (message.type === "auth-prompt" && data.auth) data.auth.prompt = { id: message.id, kind: message.kind, message: message.message, placeholder: message.placeholder, options: message.options };
+    if (message.type === "auth-prompt" && data.auth) {
+      data.auth.prompt = { id: message.id, kind: message.kind, message: message.message, placeholder: message.placeholder, options: message.options };
+    }
     if (message.type === "auth-prompt-closed" && data.auth?.prompt?.id === message.id) data.auth.prompt = null;
     if (message.type === "auth-event" && data.auth) {
       if (message.kind === "auth_url") {
         data.auth.url = message.url;
         if (!message.opened) window.open(message.url, "_blank");
-        data.auth.lines = [t()("finishInBrowser")];
+        data.auth.status = "finishInBrowser";
+        data.auth.info = null;
       }
-      if (message.kind === "device_code") { data.auth.code = message.userCode; data.auth.url = message.url; data.auth.lines = [t()("enterCode")]; }
-      if (message.kind === "info" || message.kind === "progress") data.auth.lines = [message.message];
+      if (message.kind === "device_code") { data.auth.code = message.userCode; data.auth.url = message.url; data.auth.status = "enterCode"; data.auth.info = null; }
+      if (message.kind === "info" || message.kind === "progress") data.auth.info = message.message || null;
     }
     // A refused second sign-in leaves the running one on screen; any other end clears its own panel.
     if (message.type === "sign-in" && message.code !== "sign_in_busy") {
       if (!data.auth || data.auth.provider === message.provider) data.auth = null;
-      data.error = message.state === "error" ? (message.code === "connect_while_answering" ? t()("connectWhileAnswering") : message.message || t()("signInFailed")) : null;
+      const where = message.provider === "spotify" ? "playback" : "model";
+      data.error = message.state === "error" ? { section: where, key: SIGN_IN_ERRORS[message.code] ?? "signInFailed" } : null;
+      if (message.state === "error") warn("sign-in", message.message);
+      // Spotify reads as connected while the core rebuilds with it.
+      if (message.provider === "spotify" && message.state === "done") expect("spotify", "ready");
       send({ type: "models" });
     }
     if (message.type === "import") {
-      if (message.stage === "cancelled") data.importing = null;
-      else if (message.stage === "progress") data.importing = { ...data.importing, stage: "progress", count: message.count };
-      else if (!["refresh-failed", "lastfm-key-saved"].includes(message.stage)) data.importing = { ...message };
-      if (message.stage === "preview" || message.stage === "reading") { if (sheet.hidden) show("library"); else section = "library"; }
+      const stage = message.stage;
+      const shown = data.importing;
+      if (stage === "progress") {
+        data.importing = { ...shown, stage: "progress", count: message.count };
+        if (isOpen && patchProgress()) return;
+      } else if (stage === "cancelled") data.importing = null;
+      else if (stage === "saving") data.importing = { stage, preview: shown?.preview };
+      else if (stage === "error") {
+        warn("import", message.message);
+        if (LASTFM_ACCESS.has(message.code)) { data.lastfm.needsKey = true; data.lastfm.savingKey = false; data.focus = "field:lastfmKey"; }
+        // A failed save keeps its preview, so the listener can add it again once the reply ends.
+        data.importing = shown?.preview ? { stage: "preview", preview: shown.preview, error: IMPORT_ERRORS[message.code] ?? "importFailed" } : { ...message };
+      } else if (stage === "lastfm-key-saved") {
+        data.lastfm = { ...data.lastfm, needsKey: false, savingKey: false, keyError: false };
+        data.drafts.lastfmKey = "";
+        if (data.lastfm.username) send({ type: "import-lastfm", username: data.lastfm.username });
+      } else if (stage !== "refresh-failed") data.importing = { ...message };
       // The profile it built is posted in the conversation, so the sheet steps aside to show it.
-      if (message.stage === "done") hide();
+      if (stage === "done") {
+        data.importing = null;
+        data.drafts.lastfm = "";
+        data.lastfm.username = "";
+        hide();
+        return;
+      }
+      // A file dropped on the window, or an import started elsewhere, brings the sheet to Import.
+      if ((stage === "preview" || stage === "reading") && (!isOpen || section !== "library")) {
+        if (isOpen) go("library"); else show("library");
+        return;
+      }
+    }
+    if (message.type === "notice") {
+      if (message.code === "lastfm-key") { data.lastfm.savingKey = false; data.lastfm.keyError = true; }
+      else if (message.code === "provider-models") { for (const id of requested) if (!data.models.has(id)) data.modelsFailed.add(id); }
+      else if (NOTICES[message.code]) {
+        const [where, key, kind] = NOTICES[message.code];
+        data.error = { section: where, key };
+        // The choice that failed shows as it really is again.
+        if (kind) pending.delete(kind);
+        if (message.code === "sign-out") data.signingOut.clear();
+      } else return;
     }
     render();
   }
 
-  return { show, hide, render, receive, get open() { return !sheet.hidden; } };
+  return { show, hide, render, receive, get open() { return isOpen; } };
 }

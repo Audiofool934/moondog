@@ -159,7 +159,8 @@ function drawing(columns, rows, cellAspect) {
   return { dots, width, height, radius, centerX, centerY, pixel, circle, disc, line, polygon, paintLayer };
 }
 
-function braille(columns, rows, phase, cellAspect) {
+// The record as a field of dots, two across and four down per terminal cell, each marked with its layer.
+function paint(columns, rows, phase, cellAspect) {
   const art = drawing(columns, rows, cellAspect);
   const { radius, pixel, circle, disc, line, polygon, paintLayer } = art;
   const detail = radius >= 39 ? 2 : radius >= 27 ? 1 : 0;
@@ -234,6 +235,12 @@ function braille(columns, rows, phase, cellAspect) {
   const contact = [Math.cos(angle) * 0.928, Math.sin(angle) * 0.928];
   disc(contact[0], contact[1], pixel * (0.95 + pulse * 0.15));
 
+  return art;
+}
+
+function braille(columns, rows, phase, cellAspect) {
+  const art = paint(columns, rows, phase, cellAspect);
+  const { radius } = art;
   const bit = [[1, 8], [2, 16], [4, 32], [64, 128]];
   const tones = [];
   const lines = Array.from({ length: rows }, (_, row) => {
@@ -322,6 +329,17 @@ export function renderLunarRecordLayers({ columns = 56, rows = 24, style = "brai
   }
   const aspect = Number.isFinite(cellAspect) ? Math.min(3, Math.max(1.5, cellAspect)) : 2;
   return braille(width, height, frame, aspect);
+}
+
+/**
+ * The same record as dots rather than Braille characters, for surfaces that draw their own dots,
+ * such as the desktop window's canvas. Dots sit on a square grid of width x height, row by row;
+ * each holds 0 or the RECORD_LAYERS value that inked it.
+ */
+export function renderLunarRecordDots({ columns = 56, rows = 28, phase = 0 } = {}) {
+  const frame = Number.isFinite(phase) ? ((Math.floor(phase) % LOGO_MOTION_FRAMES) + LOGO_MOTION_FRAMES) % LOGO_MOTION_FRAMES : 0;
+  const { dots, width, height } = paint(Math.max(10, Math.floor(columns)), Math.max(5, Math.floor(rows)), frame, 2);
+  return { dots, width, height };
 }
 
 /** Five-pixel letterforms, packed into three terminal rows without color or escapes. */

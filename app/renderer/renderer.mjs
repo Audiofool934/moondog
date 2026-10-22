@@ -4,18 +4,13 @@ import { languageTag, windowLocale, windowStrings } from "../strings.mjs";
 import { renderMarkdown } from "./markdown.mjs";
 import { createPalette } from "./palette.mjs";
 import { createPreviews } from "./previews.mjs";
+import { mountRecord } from "./record.mjs";
 import { createSettings } from "./settings.mjs";
 import { createSidebar } from "./sidebar.mjs";
-import { mountRecord, renderWordmark } from "./lunar.mjs";
+import { make, name, scrollbar, setIcon, tooltips, turning } from "./ui.mjs";
 import "./style.css";
 
 const $ = (selector) => document.querySelector(`[data-${selector}]`);
-const make = (tag, className, text) => {
-  const node = document.createElement(tag);
-  if (className) node.className = className;
-  if (text !== undefined) node.textContent = text;
-  return node;
-};
 
 let locale = windowLocale(navigator.languages);
 let t = windowStrings(locale);
@@ -44,13 +39,17 @@ const send = (message) => (port ? port.postMessage(message) : outbox.push(messag
 const previews = createPreviews({ send, onChange: () => renderInspector() });
 const settings = createSettings({ state, send, t: tr, prettyModel: (model) => prettyModel(model) });
 const sidebar = createSidebar({ root: $("sessions"), state, send, t: tr, open: (id) => openSession(id), store, menuPoint: (event) => menuPoint(event) });
+const tips = tooltips();
 // A native menu opens at the pointer, or under its control when the keyboard pressed it.
 function menuPoint(event) {
-  const control = event.currentTarget;
-  if (event.type !== "click" || event.detail !== 0 || !control?.getBoundingClientRect) return { x: event.clientX, y: event.clientY };
-  const box = control.getBoundingClientRect();
-  return { x: box.left, y: box.bottom + 4 };
+  const control = event?.currentTarget;
+  if (((event?.type === "click" && event.detail === 0) || event?.type === "keydown") && control?.getBoundingClientRect) {
+    const box = control.getBoundingClientRect();
+    return { x: box.left, y: box.bottom + 4 };
+  }
+  return event ? { x: event.clientX, y: event.clientY } : undefined;
 }
+const menu = (items, event) => window.moondogApp?.showMenu?.(items, menuPoint(event));
 
 // Words
 function applyLanguage(next) {
@@ -58,19 +57,30 @@ function applyLanguage(next) {
   state.locale = next;
   t = windowStrings(locale);
   document.documentElement.lang = languageTag(locale);
-  $("new-label").textContent = t("newConversation");
-  $("input").placeholder = t("placeholder");
-  $("toggle-sidebar").setAttribute("aria-label", t("conversations"));
-  $("toggle-inspector").setAttribute("aria-label", t("player"));
-  $("settings-button").setAttribute("aria-label", t("settings"));
-  $("now-label").textContent = t("nowPlaying");
+  input.placeholder = t("placeholder");
+  name($("toggle-sidebar"), t("conversations"), "⌥⌘S");
+  name($("toggle-inspector"), t("player"), "⌥⌘P");
+  name($("new"), t("newConversation"), "⌘N");
+  name($("settings-button"), t("settings"), "⌘,");
+  name($("previous"), t("previous"), "⌃⌘←");
+  name($("next"), t("next"), "⌃⌘→");
+  $("device-row").dataset.tip = t("devices");
+  $("track").setAttribute("aria-label", t("position"));
+  name($("jump"), t("latest"));
+  name($("repeat"), t("repeatOne"));
+  name($("stop-previews"), t("stopPreviews"));
+  // The song link names itself for the service it opens; clearing it makes the next draw name it again.
+  $("external").removeAttribute("href");
+  $("now").setAttribute("aria-label", t("nowPlaying"));
   $("next-label").textContent = t("upNext");
-  $("previous").setAttribute("aria-label", t("previous"));
-  $("next").setAttribute("aria-label", t("next"));
   $("drop-hint").textContent = t("dropToImport");
+  $("connect").textContent = t("connectSpotify");
+  $("connect-player").textContent = t("connectSpotify");
   window.moondogApp?.setLanguage?.(locale);
+  palette?.refresh();
   renderSessions();
-  renderConversation();
+  renderConversation({ redraw: true });
+  renderInspector();
 }
 
 // Conversations
@@ -78,16 +88,19 @@ function renderSessions() {
   sidebar.render();
   renderTitle();
 }
+// The open conversation's name sits in the bar only when the list that already shows it is folded away.
 function renderTitle() {
   const session = state.sessions.find((entry) => entry.id === state.current);
   const first = state.turns.find((entry) => entry.role === "user")?.text;
-  const title = session?.title || first || "";
-  $("title").textContent = title.replace(/\s+/gu, " ").trim();
+  const title = (session?.title || first || "").replace(/\s+/gu, " ").trim();
+  $("title").textContent = shown("sidebar") ? "" : title;
   document.title = title ? `${title.slice(0, 60)} - Moondog` : "Moondog";
 }
 // Another conversation can open while this one is still answering; it keeps going in the core.
 function openSession(id) {
   if (id && id === state.current) return;
+  // An empty new conversation is already the new conversation.
+  if (!id && !state.turns.length && !state.streaming) { input.focus(); return; }
   send(id ? { type: "open", id } : { type: "new" });
 }
 
@@ -98,12 +111,12 @@ function notice(text) {
   node.textContent = text;
   node.hidden = !text;
   clearTimeout(noticeTimer);
-  if (text) noticeTimer = setTimeout(() => { node.hidden = true; }, 6000);
+  if (text) noticeTimer = setTimeout(() => { node.hidden = true; }, 5000);
 }
-const NOTICES = { too_many_running: "noticeTooMany", model_unknown: "noticeModelUnknown", waiting_for_import: "noticeWaitingForImport", message_busy: "noticeMessageBusy", delete_running: "noticeDeleteRunning", delete_open_elsewhere: "noticeDeleteElsewhere",
-  delete_failed: "noticeDeleteFailed", transfer_failed: "noticeTransferFailed" };
+const NOTICES = { too_many_running: "noticeTooMany", model_unknown: "noticeModelUnknown", waiting_for_import: "noticeWaitingForImport", message_busy: "noticeMessageBusy",
+  delete_running: "noticeDeleteRunning", delete_open_elsewhere: "noticeDeleteElsewhere", delete_failed: "noticeDeleteFailed", transfer_failed: "noticeTransferFailed" };
 
-// The conversation
+// ── The conversation ─────────────────────────────────────────────────────────────────────────
 const KINDS = [
   [/^moondog_spotify_player_control$/u, (args) => ({ pause: "pause", next: "skip", previous: "skip" })[args?.action] ?? "play"],
   [/^moondog_spotify_(?:search|discover|resolve_tracks|catalog_items)$/u, "search"],
@@ -115,240 +128,377 @@ const KINDS = [
   [/^moondog_(?:playlist_plan|spotify_playlist_)/u, "playlist"],
   [/^moondog_music_preview$/u, "previews"],
   [/^moondog_memory_/u, "memory"],
-  [/^moondog_music_/u, "catalog"],
+  [/^moondog_music_/u, "search"],
   [/^moondog_(?:profile_|library_|rediscovery|historical_return|time_capsule|back_to_back|spotify_top|spotify_history|spotify_library)/u, "profile"],
 ];
 const kindOf = (tool, args) => {
   const found = KINDS.find(([pattern]) => pattern.test(tool));
   return found ? (typeof found[1] === "function" ? found[1](args) : found[1]) : "other";
 };
+// The step Moondog is on: the latest kind of work still running, or a retry.
+function stepOf(turn) {
+  if (!turn.streaming) return null;
+  if (turn.retrying) return t("retrying");
+  const running = [...(turn.activity ?? [])].reverse().find((call) => call.state === "running");
+  if (running) return t(`activity.${kindOf(running.tool, running.args)}`);
+  // Before the first word, the mark alone says Moondog is on it.
+  return turn.text ? null : "";
+}
 
-// After a turn, a song it started shows as one quiet line with its cover. Covers are kept by
-// title as the player reports them, because the player's next read can arrive after the turn.
+// After a turn, a song it started shows once with its cover. Covers are kept by title as the
+// player reports them, because the player's next read can arrive after the turn.
 const covers = new Map();
 const playedTarget = (turn) => (turn.receipts ?? []).find((receipt) => receipt.action === "playback.resume" && receipt.state === "accepted")?.targets?.[0];
 function playedLine(turn) {
   const target = playedTarget(turn);
   if (!target?.title) return null;
   const line = make("p", "played");
-  if (covers.has(target.title)) {
-    const image = make("img");
-    image.src = covers.get(target.title);
-    image.alt = "";
-    line.append(image);
-  }
-  line.append(make("span", "", target.title), make("span", "by", target.artist_credit ?? ""));
+  line.append(thumb(covers.get(target.title)));
+  line.append(make("strong", "", target.title));
+  if (target.artist_credit) line.append(make("span", "", target.artist_credit));
   return line;
 }
 
-function replyNode(turn) {
-  const reply = make("div", `reply${turn.streaming ? " streaming" : ""}${turn.failed ? " failed" : ""}${turn.local ? " local" : ""}`);
-  const played = turn.streaming ? null : playedLine(turn);
-  if (played) reply.append(played);
-  // What Moondog is doing shows while it works; the reply says what it did.
-  if (turn.streaming && (turn.activity?.length || turn.retrying)) {
-    const line = make("p", "activity");
-    // One entry per kind of work, in the order it started; a failure marks only that kind.
-    const kinds = new Map();
-    for (const call of turn.activity) {
-      const kind = kindOf(call.tool, call.args);
-      const previous = kinds.get(kind);
-      kinds.set(kind, previous === "running" || call.state === "running" ? "running" : call.state === "failed" && previous !== "done" ? "failed" : "done");
-    }
-    // A running step leads with the band turning: the same mark the terminal uses for work in progress.
-    for (const [kind, status] of kinds) {
-      const step = make("span", status, t(`activity.${kind}`));
-      if (status === "running") {
-        const phase = make("span", "phase", "◐");
-        phase.dataset.phase = "";
-        phase.setAttribute("aria-hidden", "true");
-        step.prepend(phase);
-      }
-      line.append(step);
-    }
-    if (turn.retrying) {
-      const again = make("span", "running", t("retrying"));
-      const phase = make("span", "phase", "◐");
-      phase.dataset.phase = "";
-      phase.setAttribute("aria-hidden", "true");
-      again.prepend(phase);
-      line.append(again);
-    }
-    reply.append(line);
+const phase = turning;
+// Streaming words redraw block by block: finished paragraphs stay as they are, only the growing one is redrawn.
+function patchText(host, memo, text) {
+  const blocks = text ? text.replace(/\r\n?/gu, "\n").split(/\n[ \t]*\n/u) : [];
+  let same = 0;
+  while (same < blocks.length - 1 && same < memo.blocks.length && memo.blocks[same] === blocks[same]) same += 1;
+  for (const group of memo.nodes.splice(same)) for (const node of group) node.remove();
+  memo.blocks.length = same;
+  for (let at = same; at < blocks.length; at += 1) {
+    const fragment = renderMarkdown(blocks[at]);
+    memo.nodes.push([...fragment.childNodes]);
+    memo.blocks.push(blocks[at]);
+    host.append(fragment);
   }
-  const text = make("div", "text");
-  if (turn.text) text.append(renderMarkdown(turn.text));
-  else if (turn.streaming) text.append(make("p", "", ""));
-  reply.append(text);
-  return reply;
 }
-// The streaming reply redraws on its own; the rest of the conversation stays put.
-let liveNode = null;
-let drawn = undefined;
-let drawnTurns = 0;
-let sleeve = null;
-const nearBottom = (scroll) => scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 80;
-function renderConversation() {
-  const column = $("column");
-  const scroll = $("scroll");
-  // Another conversation opens at its latest turn; the same one keeps where the listener scrolled.
-  const opened = drawn !== state.current;
-  drawn = state.current;
-  const pinned = opened || nearBottom(scroll) || !column.childElementCount;
-  const fresh = opened ? state.turns.length : Math.max(0, state.turns.length - drawnTurns);
-  liveNode = null;
-  sleeve?.stop();
-  sleeve = null;
-  column.replaceChildren();
-  if (!state.turns.length) {
-    // The record sleeve the terminal opens with, drawn at the window's own resolution.
-    const empty = make("div", "empty");
-    const stage = make("div", "stage");
-    const well = make("div", "record-well");
-    const record = make("pre", "record");
-    record.setAttribute("aria-hidden", "true");
-    well.append(record);
-    const copy = make("div", "sleeve-copy");
-    const wordmark = make("pre", "wordmark");
-    renderWordmark(wordmark);
-    wordmark.setAttribute("aria-hidden", "true");
-    copy.append(wordmark, make("p", "lyric", t("empty")));
-    stage.append(well, copy);
-    empty.append(stage);
-    column.append(empty);
-    column.style.height = "100%";
-    sleeve = mountRecord(record, well);
-  } else column.style.height = "";
-  state.turns.forEach((turn, index) => {
-    let node;
-    if (turn.role === "user") {
-      node = make("div", "you");
-      node.append(make("p", "", turn.text));
-    } else {
-      node = replyNode(turn);
-      if (turn.streaming && turn.id === state.streaming) liveNode = node;
+// One slot at the top of a reply holds the step Moondog is on, then the song it started, so the
+// words below never jump when one gives way to the other. An empty slot folds away smoothly.
+function drawStatus(node, turn) {
+  const parts = node.parts;
+  const step = stepOf(turn);
+  const target = turn.streaming ? null : playedTarget(turn);
+  const key = step !== null ? `step|${step}` : target?.title ? `played|${target.title}|${covers.get(target.title) ?? ""}` : "";
+  if (parts.status === key) return;
+  const wasStep = parts.status?.startsWith("step|");
+  parts.status = key;
+  if (!key) {
+    const slot = parts.slot;
+    parts.slot = null;
+    if (!slot) return;
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches) { slot.remove(); return; }
+    slot.animate([{ height: `${slot.offsetHeight}px`, marginBottom: "10px", opacity: 1 }, { height: "0px", marginBottom: "0px", opacity: 0 }],
+      { duration: 200, easing: "cubic-bezier(0.4, 0, 0.2, 1)" }).finished.then(() => slot.remove(), () => slot.remove());
+    return;
+  }
+  if (!parts.slot) {
+    parts.slot = make("div", "status");
+    parts.slot.setAttribute("aria-live", "polite");
+    node.prepend(parts.slot);
+  }
+  let content;
+  if (step !== null) {
+    content = make("span", "activity");
+    content.append(phase());
+    if (step) content.append(make("span", "", step));
+    // The same kind of step keeps its line; a new step rolls in over the last.
+    if (!wasStep) content.classList.add("still");
+  } else content = playedLine(turn);
+  parts.slot.replaceChildren(content);
+}
+// A reply updates in place: the words redraw as they arrive, the status changes only when it changes.
+function drawReply(node, turn, index) {
+  const className = `turn reply${turn.streaming ? " streaming" : ""}${turn.failed ? " failed" : ""}${turn.local ? " local" : ""}`;
+  if (node.className.replace(" arrive", "") !== className) node.className = `${className}${node.classList.contains("arrive") ? " arrive" : ""}`;
+  const parts = node.parts ??= { memo: { blocks: [], nodes: [] } };
+  drawStatus(node, turn);
+  if (!parts.text) { parts.text = make("div", "text"); node.append(parts.text); }
+  if (parts.words !== turn.text) {
+    // A replaced reply (the core rewrote it) starts over; an appended one keeps its finished blocks.
+    if (!turn.text?.startsWith(parts.words ?? "")) { parts.text.replaceChildren(); parts.memo = { blocks: [], nodes: [] }; }
+    patchText(parts.text, parts.memo, turn.text ?? "");
+    parts.words = turn.text;
+  }
+  // A reply that failed or stopped offers the one thing to do next.
+  const action = turn.offline ? "model" : turn.failed && !turn.local && index === state.turns.length - 1 && previousUser(index) ? "retry" : null;
+  if (parts.action !== action) {
+    parts.actions?.remove();
+    parts.actions = null;
+    if (action) {
+      parts.actions = make("div", "actions");
+      const button = make("button", "button small", action === "model" ? t("chooseModel") : t("tryAgain"));
+      button.type = "button";
+      button.addEventListener("click", (event) => (action === "model" ? void pickModel(event) : retry(index)));
+      parts.actions.append(button);
+      node.append(parts.actions);
     }
-    // Only what just arrived moves; a redraw of the same conversation stays still.
-    if (!opened && index >= state.turns.length - fresh) node.classList.add("arrive");
-    column.append(node);
+    parts.action = action;
+  }
+}
+const previousUser = (index) => state.turns.slice(0, index).findLast((entry) => entry.role === "user")?.text ?? null;
+function retry(index) {
+  const text = previousUser(index);
+  if (!text || state.streaming) return;
+  state.turns.splice(index - 1, 2);
+  renderConversation();
+  submitText(text);
+}
+
+const scroller = $("scroll");
+const column = $("column");
+const room = $("room");
+let nodes = [];
+let drawn = undefined;
+let record = null;
+let frame = 0;
+// Following: the view stays with the latest words until the listener scrolls up, and comes back
+// when they return to the bottom. Only pin() writes the scroll position.
+let following = true;
+let own = -1;
+let lastTop = 0;
+const gap = () => scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
+const selecting = () => { const selection = getSelection(); return selection && !selection.isCollapsed && column.contains(selection.anchorNode); };
+function follow(on) {
+  following = on;
+  scroller.dataset.following = String(on);
+  renderJump();
+}
+function pin() {
+  if (!following || selecting()) { renderJump(); return; }
+  scroller.scrollTop = scroller.scrollHeight;
+  own = lastTop = scroller.scrollTop;
+}
+
+// The room before anything is said: the record alone over the composer. Leaving it, the composer
+// glides down to its place instead of jumping there.
+function renderEmpty(empty) {
+  if (room.classList.contains("empty") === empty && (empty ? record : true)) return;
+  const composer = $("composer");
+  const before = composer.getBoundingClientRect().top;
+  room.classList.toggle("empty", empty);
+  $("stage").hidden = !empty;
+  if (empty && !record) record = mountRecord($("record"));
+  if (!empty && record) { record.stop(); record = null; }
+  record?.turn(nowPlaying()?.playing);
+  const after = composer.getBoundingClientRect().top;
+  if (!empty && before !== after && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    composer.animate([{ transform: `translateY(${before - after}px)` }, { transform: "none" }], { duration: 420, easing: "cubic-bezier(0.16, 1, 0.3, 1)" });
+    column.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 260, delay: 80, easing: "ease-out", fill: "backwards" });
+  }
+}
+
+function renderConversation({ redraw = false } = {}) {
+  if (frame) { cancelAnimationFrame(frame); frame = 0; }
+  const opened = drawn !== state.current || redraw;
+  drawn = state.current;
+  if (opened) { column.replaceChildren(); nodes = []; drawnAsks = null; chosen = null; follow(true); }
+  renderEmpty(!state.turns.length);
+  state.turns.forEach((turn, index) => {
+    const key = turn.role === "user" ? `u|${turn.text}` : `a|${turn.id ?? index}|${turn.local ? "l" : ""}`;
+    let entry = nodes[index];
+    if (!entry || entry.key !== key) {
+      const node = turn.role === "user" ? make("div", "you") : make("div", "turn reply");
+      if (turn.role === "user") node.append(make("p", "", turn.text));
+      // Only what just arrived moves; a conversation opened or redrawn stays still.
+      if (!opened) node.classList.add("arrive");
+      if (entry) entry.node.replaceWith(node); else column.append(node);
+      entry = nodes[index] = { key, node };
+    }
+    if (turn.role !== "user") drawReply(entry.node, turn, index);
   });
-  drawnTurns = state.turns.length;
-  if (pinned) scroll.scrollTop = scroll.scrollHeight;
+  for (const extra of nodes.splice(state.turns.length)) extra.node.remove();
+  pin();
+  renderTurns();
   renderTitle();
   renderComposer();
 }
-function renderLive() {
-  const turn = state.turns.find((entry) => entry.role === "assistant" && entry.id === state.streaming);
-  if (!turn || !liveNode?.isConnected) { renderConversation(); return; }
-  const scroll = $("scroll");
-  const pinned = nearBottom(scroll);
-  const next = replyNode(turn);
-  liveNode.replaceWith(next);
-  liveNode = next;
-  if (pinned) scroll.scrollTop = scroll.scrollHeight;
-}
-let frame = 0;
-const renderSoon = () => { if (!frame) frame = requestAnimationFrame(() => { frame = 0; (state.streaming ? renderLive : renderConversation)(); }); };
+const renderSoon = () => { if (!frame) frame = requestAnimationFrame(() => { frame = 0; renderConversation(); }); };
 
-// The composer
+// New words, a cover arriving, a reply settling or a taller composer change the room's height; the
+// view stays with the latest turn unless the listener scrolled away from it.
+const pinning = new ResizeObserver(pin);
+pinning.observe(column);
+pinning.observe(scroller);
+scroller.addEventListener("wheel", (event) => {
+  chosen = null;
+  if (event.deltaY < 0 && scroller.scrollHeight > scroller.clientHeight) follow(false);
+}, { passive: true });
+let scrollFrame = 0;
+scroller.addEventListener("scroll", () => {
+  const top = scroller.scrollTop;
+  if (top !== own) {
+    // A column that shrank (a step line folding) clamps the view upward too; only a view that left the bottom stops following.
+    if (top < lastTop - 1 && gap() > 2) { if (following) follow(false); } else if (gap() < 2 && !following) follow(true);
+  }
+  lastTop = top;
+  if (!scrollFrame) scrollFrame = requestAnimationFrame(() => { scrollFrame = 0; renderJump(); markTurn(); });
+}, { passive: true });
+function renderJump() { const jump = $("jump"); const hide = following || gap() < 120; if (jump.hidden !== hide) jump.hidden = hide; }
+$("jump").addEventListener("click", () => {
+  chosen = null;
+  follow(true);
+  scroller.scrollTo({ top: scroller.scrollHeight, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+});
+scrollbar(scroller, { inset: 50, onGrab: () => { chosen = null; follow(false); }, onRelease: () => { if (gap() < 2) follow(true); } });
+
+// Requests along the right edge of the conversation: hover one to read it, click to go back to it.
+const turnRail = make("nav", "turns");
+scroller.parentElement.append(turnRail);
+let drawnAsks = "";
+// A mark clicked stays the marked one until the listener scrolls by hand.
+let chosen = null;
+function renderTurns() {
+  const asks = nodes.filter((entry, index) => state.turns[index]?.role === "user");
+  const key = asks.length < 3 ? "" : asks.map((entry) => entry.key).join("\n");
+  if (key === drawnAsks) { markTurn(); return; }
+  drawnAsks = key;
+  turnRail.hidden = !key;
+  turnRail.replaceChildren(...(key ? asks : []).map((entry) => {
+    const mark = make("button");
+    mark.type = "button";
+    const words = entry.node.textContent.replace(/\s+/gu, " ").trim();
+    name(mark, words.length > 90 ? `${words.slice(0, 88)}…` : words);
+    mark.dataset.tipAt = "left";
+    mark.addEventListener("click", () => {
+      follow(false);
+      chosen = mark;
+      markTurn();
+      scroller.scrollTo({ top: Math.max(0, entry.node.offsetTop - 64), behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+    });
+    mark.target = entry.node;
+    // One mark is in the Tab order; the arrow keys walk the rest.
+    mark.addEventListener("keydown", (event) => {
+      if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+      event.preventDefault();
+      const to = event.key === "ArrowDown" ? mark.nextElementSibling : mark.previousElementSibling;
+      to?.focus();
+      to?.click();
+    });
+    return mark;
+  }));
+  markTurn();
+}
+function markTurn() {
+  if (turnRail.hidden) return;
+  const line = scroller.scrollTop + scroller.clientHeight * 0.35;
+  let here = null;
+  for (const mark of turnRail.children) if (mark.target.offsetTop <= line) here = mark;
+  if (gap() < 2) here = turnRail.lastChild;
+  if (chosen?.isConnected) here = chosen;
+  here ??= turnRail.firstChild;
+  for (const mark of turnRail.children) { mark.classList.toggle("here", mark === here); mark.tabIndex = mark === here ? 0 : -1; }
+}
+
+// ── The composer ─────────────────────────────────────────────────────────────────────────────
 const input = $("input");
-const prettyModel = (model) => {
-  const pretty = String(model ?? "").match(/^claude-(opus|sonnet|haiku|fable)-(\d+)-(\d+)/u);
-  return pretty ? `${pretty[1][0].toUpperCase()}${pretty[1].slice(1)} ${pretty[2]}.${pretty[3]}` : String(model ?? "");
-};
+const providerModels = new Map();
+let providers = [];
+// Claude models read as their family and version; others by the name their provider gives them.
+// A model goes by the name its account lists it under, the same here, in Settings and in the menu.
+function prettyModel(model, provider = state.model?.provider) {
+  const named = providerModels.get(provider)?.find((entry) => entry.id === model)?.name;
+  if (named) return named;
+  const claude = String(model ?? "").match(/^claude-(opus|sonnet|haiku|fable)-(\d+)-(\d+)/u);
+  return claude ? `Claude ${claude[1][0].toUpperCase()}${claude[1].slice(1)} ${claude[2]}.${claude[3]}` : String(model ?? "");
+}
+// The menu greys out what would do nothing: transport without a song, Stop Response without a reply.
+function syncMenu() {
+  window.moondogApp?.setPlayback?.({ controllable: Boolean(nowPlaying()), streaming: Boolean(state.streaming) });
+}
 function renderComposer() {
   const button = $("send");
   const streaming = Boolean(state.streaming);
-  button.disabled = !streaming && !input.value.trim();
-  button.setAttribute("aria-label", streaming ? t("stop") : t("send"));
-  button.querySelector("use").setAttribute("href", streaming ? "#i-stop" : "#i-up");
-  $("model").textContent = state.model?.model ? prettyModel(state.model.model) : state.model ? t("chooseModel") : "";
-  $("device").textContent = state.player?.now?.device ?? "";
+  button.disabled = !streaming && (!input.value.trim() || Boolean(state.waiting && !state.ready));
+  name(button, streaming ? t("stop") : t("send"), streaming ? "⌘." : "↩");
+  setIcon(button, streaming ? "stop" : "up");
+  const model = $("model");
+  model.textContent = state.model?.model ? prettyModel(state.model.model) : state.model ? t("chooseModel") : "";
+  // Without a model Moondog can't answer, so the way to choose one reads as a button.
+  model.classList.toggle("needed", Boolean(state.model) && !state.model.model);
+  syncMenu();
 }
-const grow = () => {
-  input.style.height = "auto";
-  const limit = innerHeight * 0.4;
-  input.style.height = `${Math.min(input.scrollHeight, limit)}px`;
-  input.style.overflowY = input.scrollHeight > limit ? "auto" : "hidden";
-};
+// The composer grows with its words up to 40% of the window (field-sizing in style.css), then scrolls.
 function clearComposer() {
   input.value = "";
-  grow();
 }
-function localNote(markdown) {
-  state.turns.push({ role: "assistant", text: markdown, local: true });
+function submitText(text) {
+  // A message typed while the core starts waits for it, shown as sent; more stay in the composer.
+  if (!state.ready) {
+    if (state.waiting) return false;
+    state.waiting = text;
+    state.turns.push({ role: "user", text, waiting: true });
+    renderConversation();
+    return true;
+  }
+  if (state.model?.state !== "configured") {
+    state.turns.push({ role: "user", text }, { role: "assistant", text: t("offline"), failed: true, offline: true, local: true });
+    renderConversation();
+    return true;
+  }
+  // The words show at once; the core's start of the turn adopts them.
+  state.turns.push({ role: "user", text, pending: true });
   renderConversation();
+  send({ type: "prompt", text });
+  return true;
 }
 function submit() {
   if (state.streaming) { send({ type: "cancel" }); return; }
   const text = input.value.trim();
   if (!text) return;
-  // A message typed while the core starts waits for it, shown as sent.
-  if (!state.ready) {
-    // One message waits for the core; more stay in the composer until it is ready.
-    if (state.waiting) return;
-    state.waiting = text;
-    state.turns.push({ role: "user", text, waiting: true });
-    clearComposer();
-    renderConversation();
-    return;
-  }
-  if (state.model?.state !== "configured") {
-    state.turns.push({ role: "user", text }, { role: "assistant", text: t("offline"), failed: true });
-    clearComposer();
-    renderConversation();
-    return;
-  }
-  send({ type: "prompt", text });
-  clearComposer();
+  // A mistyped command stays in the composer instead of going to Moondog as a message.
+  const command = text.match(/^\/([A-Za-z]+)$/u)?.[1];
+  if (command && !COMMANDS.some((entry) => entry.name === command.toLowerCase())) { notice(t("unknownCommand", { name: command })); return; }
+  follow(true);
+  if (submitText(text)) clearComposer();
   renderComposer();
 }
 $("form").addEventListener("submit", (event) => { event.preventDefault(); submit(); });
-input.addEventListener("input", () => { grow(); renderComposer(); });
+input.addEventListener("input", () => renderComposer());
 input.addEventListener("keydown", (event) => {
   // Enter sends; while a reply runs it does nothing, so a typed follow-up waits instead of stopping the reply.
   if (event.key === "Enter" && !event.shiftKey && !event.isComposing && event.keyCode !== 229) { event.preventDefault(); if (!state.streaming) submit(); }
   if (event.key === "Escape" && state.streaming) { event.preventDefault(); send({ type: "cancel" }); }
+  // The conversation scrolls from the composer, so reading back never needs the mouse.
+  if (event.key === "PageUp" || event.key === "PageDown") {
+    event.preventDefault();
+    chosen = null;
+    if (event.key === "PageUp") follow(false);
+    scroller.scrollBy({ top: (event.key === "PageUp" ? -1 : 1) * scroller.clientHeight * 0.85, behavior: "smooth" });
+  }
 });
 
-// Slash commands
+// Slash commands: each one is named by what it opens, with its command beside it.
 const COMMANDS = [
-  { name: "new", description: "cmdNew", run: () => openSession(null) },
-  { name: "model", description: "cmdModel", run: () => settings.show("model") },
-  { name: "effort", description: "cmdEffort", run: () => settings.show("model") },
-  { name: "language", description: "cmdLanguage", run: () => settings.show("general") },
-  { name: "service", description: "cmdService", run: () => settings.show("playback") },
-  { name: "device", description: "cmdDevice", run: () => settings.show("playback") },
-  { name: "import", description: "cmdImport", run: () => settings.show("library") },
-  { name: "memory", description: "cmdMemory", run: () => settings.show("memory") },
-  { name: "remember", description: "cmdRemember", argument: "cmdRememberArgument", run: (text) => {
-    if (!text) return;
-    send({ type: "remember", text });
-    notice(t("remembered"));
-  } },
-  { name: "folder", description: "cmdFolder", run: () => {
+  { name: "new", label: "newConversation", run: () => openSession(null) },
+  { name: "model", label: "section.model", run: () => settings.show("model") },
+  { name: "language", label: "language", run: () => settings.show("general") },
+  { name: "service", label: "musicService", run: () => settings.show("playback") },
+  { name: "device", label: "devices", run: () => pickDevice(null) },
+  { name: "import", label: "importHistory", run: () => settings.show("library") },
+  { name: "memory", label: "memory", run: () => settings.show("memory") },
+  { name: "remember", label: "remember", argument: "cmdRememberArgument", run: (text) => { if (text) { send({ type: "remember", text }); notice(t("remembered")); } } },
+  { name: "folder", label: "newFolder", run: () => {
     if (!shown("sidebar")) togglePanel("sidebar");
     sidebar.startNewFolder();
   } },
-  { name: "settings", description: "cmdSettings", run: () => settings.show() },
-  { name: "help", description: "cmdHelp", run: () => settings.show("about") },
+  { name: "settings", label: "settings", run: () => settings.show() },
+  { name: "help", label: "shortcuts", run: () => settings.show("about") },
 ];
-createPalette({ input, anchor: $("form"), t: tr, commands: () => COMMANDS });
+const palette = createPalette({ input, anchor: $("form"), t: tr, commands: () => COMMANDS });
 
-// Pickers: the model, the device and the music service open as native menus where they show.
-const providerModels = new Map();
-let providers = [];
+// Pickers open as native menus where they show.
 async function pickModel(event) {
-  const at = menuPoint(event);
   const model = state.model ?? {};
   const signedIn = providers.filter((provider) => provider.signedIn);
   // A long catalog shows its first models here and the rest in settings.
   const items = signedIn.map((provider) => {
     const models = providerModels.get(provider.id) ?? [];
-    const shown = models.slice(0, 24);
+    const shownModels = models.slice(0, 24);
     const chosen = models.find((entry) => provider.id === model.provider && entry.id === model.model);
-    if (chosen && !shown.includes(chosen)) shown.unshift(chosen);
-    const submenu = shown.map((entry) => ({ id: `model:${provider.id}:${entry.id}`, label: entry.name ?? entry.id,
+    if (chosen && !shownModels.includes(chosen)) shownModels.unshift(chosen);
+    const submenu = shownModels.map((entry) => ({ id: `model:${provider.id}:${entry.id}`, label: entry.name ?? entry.id,
       checked: provider.id === model.provider && entry.id === model.model }));
     if (models.length > 24) submenu.push({ type: "separator" }, { id: "settings", label: t("moreModels") });
     return { id: `provider:${provider.id}`, label: provider.name, submenu };
@@ -357,86 +507,141 @@ async function pickModel(event) {
     items.push({ type: "separator" }, { id: "effort", label: t("effort"), submenu: ["default", ...model.effortLevels].map((level) => ({ id: `effort:${level}`,
       label: level === "default" ? t("effortDefault") : t(`effort.${level}`) === `effort.${level}` ? level : t(`effort.${level}`), checked: (model.effort ?? "default") === level })) });
   }
-  items.push({ type: "separator" }, { id: "settings", label: t("modelSettings") });
-  const chosen = await window.moondogApp?.showMenu?.(items, at);
+  items.push(...(items.length ? [{ type: "separator" }] : []), { id: "settings", label: t("modelSettings") });
+  const chosen = await menu(items, event);
   if (!chosen) return;
   if (chosen === "settings") return settings.show("model");
   if (chosen.startsWith("effort:")) return send({ type: "effort", effort: chosen.slice(7) });
   const [, provider, ...rest] = chosen.split(":");
   if (chosen.startsWith("model:")) send({ type: "model", provider, model: rest.join(":") });
 }
+// Where music plays: Spotify's devices, then the service itself. The menu opens once the devices are read.
 let devicePicker = null;
 function pickDevice(event) {
-  devicePicker = menuPoint(event);
-  send({ type: "devices" });
+  devicePicker = { at: menuPoint(event) ?? anchorPoint() };
+  if (state.playbackService === "spotify" && state.spotify === "ready") send({ type: "devices" });
+  else void showDevices([]);
 }
+const anchorPoint = () => { const box = $("form").getBoundingClientRect(); return { x: box.left + 12, y: box.top - 8 }; };
 async function showDevices(devices) {
-  const at = devicePicker;
+  const at = devicePicker?.at;
   devicePicker = null;
-  const items = devices.map((device) => ({ id: `device:${device.ref}`, label: device.name, checked: device.active, enabled: !device.restricted }));
-  if (!items.length) items.push({ id: "none", label: t("noDevices"), enabled: false });
-  items.push({ type: "separator" }, { id: "settings", label: t("playbackSettings") });
+  const items = [];
+  if (state.playbackService === "spotify" && state.spotify === "ready") {
+    items.push(...devices.map((device) => ({ id: `device:${device.ref}`, label: device.name, checked: device.active, enabled: !device.restricted })));
+    if (!devices.length) items.push({ id: "none", label: t("noDevices"), enabled: false });
+    items.push({ type: "separator" });
+  }
+  items.push({ id: "service:spotify", label: "Spotify", checked: state.playbackService === "spotify" },
+    { id: "service:apple_music", label: "Apple Music", checked: state.playbackService === "apple_music" },
+    { type: "separator" }, { id: "settings", label: t("playbackSettings") });
   const chosen = await window.moondogApp?.showMenu?.(items, at);
   if (chosen === "settings") settings.show("playback");
   else if (chosen?.startsWith("device:")) send({ type: "transfer", ref: chosen.slice(7) });
-}
-async function pickService(event) {
-  const at = menuPoint(event);
-  const chosen = await window.moondogApp?.showMenu?.([
-    { id: "spotify", label: "Spotify", checked: state.playbackService === "spotify" },
-    { id: "apple_music", label: "Apple Music", checked: state.playbackService === "apple_music" },
-    { type: "separator" }, { id: "settings", label: t("playbackSettings") },
-  ], at);
-  if (chosen === "settings") settings.show("playback");
-  else if (chosen) send({ type: "music-service", service: chosen });
+  else if (chosen?.startsWith("service:") && chosen.slice(8) !== state.playbackService) {
+    if (previews.active() && chosen === "service:spotify") previews.stop();
+    send({ type: "music-service", service: chosen.slice(8) });
+  }
 }
 $("model").addEventListener("click", (event) => void pickModel(event));
-$("device").addEventListener("click", (event) => pickDevice(event));
 $("device-row").addEventListener("click", (event) => pickDevice(event));
-$("status-button").addEventListener("click", (event) => void pickService(event));
 $("settings-button").addEventListener("click", () => settings.show());
+$("connect").addEventListener("click", () => settings.show("playback"));
+$("connect-player").addEventListener("click", () => settings.show("playback"));
 
-// What is playing
+// ── What is playing ──────────────────────────────────────────────────────────────────────────
 const clock = (ms) => {
   const seconds = Math.max(0, Math.floor((ms ?? 0) / 1000));
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 };
+// A preview in the window shows while it plays, or while Spotify has nothing playing; a paused
+// preview never hides the song Spotify is playing.
 function nowPlaying() {
   const preview = previews.state();
-  if (preview) return { ...preview, preview: true };
   const now = state.player?.now;
+  if (preview && (preview.playing || !now?.playing)) return { ...preview, preview: true };
   if (!now) return null;
   const progressMs = now.playing ? now.progressMs + (Date.now() - now.observedAt) : now.progressMs;
   return { ...now, progressMs: now.durationMs ? Math.min(progressMs, now.durationMs) : progressMs, next: state.player.next ?? [] };
 }
-const serviceName = () => (state.playbackService === "apple_music" ? "Apple Music" : "Spotify");
-const fullSong = make("a");
-fullSong.target = "_blank";
-// The progress is a ruler of ticks, not a bar: the played part is inked, the head stands up.
-const TICKS = 44;
-let rulerDrawn = false;
-function renderRuler(fraction) {
-  const ruler = $("ruler");
-  if (!rulerDrawn) {
-    ruler.replaceChildren(...Array.from({ length: TICKS }, () => make("i")));
-    rulerDrawn = true;
-  }
-  const head = Math.round(Math.min(1, Math.max(0, fraction)) * (TICKS - 1));
-  Array.from(ruler.children).forEach((tick, index) => {
-    tick.classList.toggle("on", index < head);
-    tick.classList.toggle("head", index === head);
-  });
+const can = (now, action) => Boolean(now) && (now.preview || !(now.disallows ?? []).includes(action));
+const DEVICE_ICONS = { computer: "laptop", smartphone: "phone", tablet: "phone", speaker: "speaker", tv: "tv", castvideo: "tv", castaudio: "speaker", avr: "speaker", stb: "tv" };
+// The inspector redraws several times a second while music plays, so a node changes only when its content does.
+const set = (node, key, value) => { if (node[key] !== value) node[key] = value; };
+
+// A new cover fades in over the last, and lights the panel behind it.
+function showCover(frameNode, src, className) {
+  const live = [...frameNode.querySelectorAll(`img.${className}:not(.leaving)`)];
+  if ((live.at(-1)?.getAttribute("src") ?? null) === (src ?? null)) return;
+  // A cover still loading is replaced, not faded over.
+  for (const node of live) if (!node.classList.contains("on")) node.remove();
+  const old = [...frameNode.querySelectorAll(`img.${className}`)];
+  if (!src) { old.forEach((node) => node.remove()); return; }
+  const image = make("img", className);
+  image.alt = "";
+  image.decoding = "async";
+  image.addEventListener("load", () => {
+    image.classList.add("on");
+    if (className === "cover" && old.length) image.classList.add("entering");
+    for (const node of old) {
+      node.classList.add("leaving");
+      setTimeout(() => node.remove(), className === "glow" ? 900 : 420);
+    }
+  }, { once: true });
+  image.addEventListener("error", () => image.remove(), { once: true });
+  image.src = src;
+  frameNode.append(image);
 }
+
+// The progress line moves on the compositor: one custom property per tick, eased over the second
+// it covers, and set without easing when the song jumps (a seek, a new song).
+let seeking = null;
+let drawnSong = "";
+function renderProgress(now, { jump = false } = {}) {
+  const progress = $("progress");
+  set(progress, "hidden", !now?.durationMs);
+  if (!now?.durationMs) return;
+  const track = $("track");
+  track.classList.toggle("seekable", can(now, "seeking"));
+  const fraction = Math.min(1, Math.max(0, seeking ? seeking.fraction : now.progressMs / now.durationMs));
+  const song = `${now.title}|${now.durationMs}|${now.preview ? "p" : "s"}`;
+  const still = jump || seeking || song !== drawnSong || !now.playing;
+  drawnSong = song;
+  track.classList.toggle("still", Boolean(still));
+  track.style.setProperty("--f", fraction.toFixed(4));
+  set($("elapsed"), "textContent", clock(fraction * now.durationMs));
+  set($("duration"), "textContent", clock(now.durationMs));
+  track.setAttribute("aria-valuemax", String(Math.round(now.durationMs / 1000)));
+  track.setAttribute("aria-valuenow", String(Math.round(fraction * now.durationMs / 1000)));
+  track.setAttribute("aria-valuetext", `${clock(fraction * now.durationMs)} / ${clock(now.durationMs)}`);
+  track.setAttribute("aria-disabled", String(!can(now, "seeking")));
+  set($("badge"), "hidden", !now.preview);
+  set($("badge"), "textContent", t("preview"));
+}
+// The clock ticks on the second, so the digits change in step with the music.
+let tickTimer = 0;
+function tick() {
+  clearTimeout(tickTimer);
+  const now = nowPlaying();
+  if (!now?.playing || document.hidden) return;
+  if (!seeking) renderProgress(now);
+  tickTimer = setTimeout(tick, 1000 - (now.progressMs % 1000) + 4);
+}
+document.addEventListener("visibilitychange", tick);
 let drawnQueue = "";
-function queueItem(track, index) {
+// A small cover that can't load gives way to a plain sleeve, never a broken-image mark.
+function thumb(src, lazy = false) {
+  if (!src) return make("span", "thumb");
+  const image = make("img");
+  image.alt = "";
+  if (lazy) image.loading = "lazy";
+  image.addEventListener("error", () => image.replaceWith(make("span", "thumb")), { once: true });
+  image.src = src;
+  return image;
+}
+function queueItem(track) {
   const item = make("li");
-  item.append(make("span", "no", `${String.fromCharCode(65 + Math.floor(index / 26))}${(index % 26) + 1}`));
-  if (track.image) {
-    const image = make("img");
-    image.src = track.image;
-    image.alt = "";
-    item.append(image);
-  } else item.append(make("span", "thumb"));
+  item.append(thumb(track.image, true));
   const words = make("div");
   words.append(make("strong", "", track.title), make("span", "", track.artists.join(", ")));
   item.append(words);
@@ -444,116 +649,236 @@ function queueItem(track, index) {
 }
 function renderInspector() {
   const now = nowPlaying();
-  const cover = $("cover");
-  cover.hidden = !now?.image;
-  if (now?.image && cover.getAttribute("src") !== now.image) cover.src = now.image;
-  $("blank").hidden = Boolean(now?.image);
-  $("art").classList.toggle("unplayed", !now?.image);
-  $("controls").hidden = !now;
-  const toggle = $("toggle");
-  toggle.setAttribute("aria-label", now?.playing ? t("pause") : t("play"));
-  toggle.querySelector("use").setAttribute("href", now?.playing ? "#i-pause" : "#i-play");
-  const badge = $("badge");
-  badge.hidden = !now?.preview;
-  badge.textContent = t("preview");
-  $("song").textContent = now ? now.title : t("nothingPlaying");
-  const ready = state.playbackService === "apple_music" || state.spotify === "ready";
-  $("artist").textContent = now ? now.artists.join(", ") : ready ? t("nothingHint") : state.spotify ? t("spotifyOff") : "";
-  // The inspector redraws several times a second while music plays, so its nodes change only when their content does.
-  const album = $("album");
-  if (now?.preview && now.link) {
-    if (fullSong.getAttribute("href") !== now.link) fullSong.href = now.link;
-    if (fullSong.textContent !== t("fullSong")) fullSong.textContent = t("fullSong");
-    if (album.firstChild !== fullSong) album.replaceChildren(fullSong);
-  } else if (album.firstChild === fullSong || album.textContent !== (now?.album ?? "")) album.textContent = now?.album ?? "";
-  $("progress").hidden = !now?.durationMs;
-  if (now?.durationMs) {
-    renderRuler(now.progressMs / now.durationMs);
-    $("elapsed").textContent = clock(now.progressMs);
-    $("duration").textContent = clock(now.durationMs);
+  const art = $("art");
+  showCover(art, now?.image ?? null, "cover");
+  showCover($("ambient"), now?.image ?? null, "glow");
+  set($("blank"), "hidden", Boolean(now));
+  art.classList.toggle("unplayed", !now);
+  set($("blank"), "textContent", t("nothingPlaying"));
+  set($("song"), "textContent", now?.title ?? "");
+  set($("artist"), "textContent", now ? now.artists.join(", ") : "");
+  set($("album"), "textContent", now?.album ?? "");
+  renderProgress(now);
+
+  set($("transport"), "hidden", !now);
+  if (now) {
+    const toggle = $("toggle");
+    name(toggle, now.playing ? t("pause") : t("play"), "⌃⌘P");
+    setIcon(toggle, now.playing ? "pause" : "play");
+    set(toggle, "disabled", !can(now, now.playing ? "pausing" : "resuming"));
+    set($("next"), "disabled", !can(now, "skipping_next"));
+    set($("previous"), "disabled", !can(now, "skipping_prev"));
   }
-  $("device-row").hidden = !now?.device;
-  $("device-name").textContent = now?.device ?? "";
-  $("repeat").hidden = now?.repeat !== "track";
-  $("repeat").textContent = t("repeatOne");
+  const spotifyNow = now && !now.preview;
+  set($("where"), "hidden", !(spotifyNow ? now.device || now.link : now?.preview));
+  set($("device-row"), "hidden", !spotifyNow || !now.device);
+  if (spotifyNow) {
+    set($("device-name"), "textContent", now.device ?? "");
+    setIcon($("device-row"), DEVICE_ICONS[String(now.deviceType ?? "").toLowerCase()] ?? "speaker");
+  }
+  set($("repeat"), "hidden", !spotifyNow || now.repeat !== "track");
+  set($("stop-previews"), "hidden", !now?.preview);
+  // The song's own page: Apple Music for a preview, Spotify for a song Spotify plays.
+  const external = $("external");
+  set(external, "hidden", !now?.link);
+  if (now?.link && external.getAttribute("href") !== now.link) {
+    external.href = now.link;
+    name(external, now.preview ? t("fullSong") : t("openInSpotify"));
+  }
+  // Spotify not connected: the panel offers the one thing that fixes it instead of explaining.
+  const offline = state.playbackService === "spotify" && state.spotify === "unavailable" && !now;
+  set($("connect-player"), "hidden", !offline);
+  set($("connect"), "hidden", !offline || shown("inspector"));
+
   const next = now?.next ?? [];
-  $("next-panel").hidden = !next.length;
+  set($("next-panel"), "hidden", !next.length);
   const shownQueue = JSON.stringify(next.map((track) => [track.title, track.artists, track.image]));
   if (shownQueue !== drawnQueue) {
     drawnQueue = shownQueue;
-    $("queue").replaceChildren(...next.map((track, index) => queueItem(track, index)));
+    $("queue").replaceChildren(...next.map(queueItem));
   }
-  const on = state.playbackService === "apple_music" || state.spotify === "ready";
-  $("spotify-dot").classList.toggle("on", on);
-  $("status").textContent = state.spotify === null ? "" : on ? serviceName() : t("spotifyOff").split(/[.。]/u)[0];
-  renderComposer();
+  // With the player folded away, the song stays in reach at the end of the bar.
+  const mini = $("mini");
+  set(mini, "hidden", !now || shown("inspector"));
+  if (now && !shown("inspector")) {
+    const cover = $("mini-cover");
+    if (now.image && cover.getAttribute("src") !== now.image) cover.src = now.image;
+    if (!now.image) cover.removeAttribute("src");
+    cover.onerror = () => cover.removeAttribute("src");
+    set($("mini-song"), "textContent", [now.title, now.artists[0]].filter(Boolean).join(" · "));
+    // The mini player reads as the song it shows; a tooltip gives the whole line only when it is cut off.
+    const song = $("mini-song");
+    if (song.scrollWidth > song.clientWidth) mini.dataset.tip = song.textContent; else delete mini.dataset.tip;
+  }
+  // The bar title keeps clear of the song shown beside it.
+  const reserve = mini.hidden ? "" : `${mini.offsetWidth + 70}px`;
+  if (layout.style.getPropertyValue("--bar-reserve") !== reserve) layout.style.setProperty("--bar-reserve", reserve);
+  record?.turn(now?.playing);
+  tick();
+  syncMenu();
 }
-setInterval(() => { if (nowPlaying()?.playing) renderInspector(); }, 500);
 
 function control(action, via = "button") {
-  if (previews.active()) {
+  const now = nowPlaying();
+  if (now?.preview) {
     if (action === "toggle") previews.toggle();
     if (action === "next") previews.next();
     if (action === "previous") previews.previous();
     return;
   }
-  const now = state.player?.now;
-  if (!now) return;
+  const playing = state.player?.now;
+  if (!playing) return;
+  // The menu and the Dock follow the same rules as the buttons: what Spotify won't do is not tried.
+  const rule = { toggle: playing.playing ? "pausing" : "resuming", next: "skipping_next", previous: "skipping_prev" }[action];
+  if (!can(now, rule)) return;
+  const at = { observedAt: Date.now() };
   if (action === "toggle") {
-    // The cover answers at once; the next read from Spotify confirms it.
-    send({ type: "control", action: now.playing ? "pause" : "resume", via });
-    state.player.now = { ...now, playing: !now.playing, progressMs: nowPlaying().progressMs, observedAt: Date.now() };
-    renderInspector();
-  } else send({ type: "control", action, via });
+    // The button answers at once; the next read from Spotify confirms it.
+    send({ type: "control", action: playing.playing ? "pause" : "resume", via });
+    state.player.now = { ...playing, playing: !playing.playing, progressMs: now.progressMs, ...at };
+  } else {
+    send({ type: "control", action, via });
+    // Next shows the song that comes next at once; previous restarts the song, as Spotify does after its first seconds.
+    const [upcoming, ...rest] = state.player.next ?? [];
+    if (action === "next" && upcoming) {
+      state.player = { now: { ...playing, ...upcoming, playing: true, progressMs: 0, ...at }, next: rest };
+    } else if (action === "previous" && now.progressMs > 3000) state.player.now = { ...playing, progressMs: 0, ...at };
+    else return;
+  }
+  renderInspector();
+  renderProgress(nowPlaying(), { jump: true });
 }
 $("toggle").addEventListener("click", () => control("toggle"));
 $("next").addEventListener("click", () => control("next"));
 $("previous").addEventListener("click", () => control("previous"));
+$("mini").addEventListener("click", () => togglePanel("inspector"));
+$("stop-previews").addEventListener("click", () => previews.stop());
 
-// Panels: a narrow window folds the player, then the conversations; a click always wins.
+// Taking hold of the progress line moves the song there when you let go; the arrow keys move it by
+// five seconds (fifteen with Shift), Home and End to either end.
+let seekedAt = 0;
+function seekTo(positionMs) {
+  seekedAt = Date.now();
+  const now = nowPlaying();
+  if (!now?.durationMs || !can(now, "seeking")) return;
+  const position = Math.round(Math.min(now.durationMs - 1000, Math.max(0, positionMs)));
+  if (now.preview) previews.seek(position);
+  else if (state.player?.now) {
+    send({ type: "control", action: "seek", positionMs: position });
+    state.player.now = { ...state.player.now, progressMs: position, observedAt: Date.now() };
+  }
+  renderInspector();
+  renderProgress(nowPlaying(), { jump: true });
+}
+$("track").addEventListener("pointerdown", (event) => {
+  const now = nowPlaying();
+  const track = event.currentTarget;
+  if (!now?.durationMs || !can(now, "seeking") || event.button !== 0) return;
+  event.preventDefault();
+  track.setPointerCapture(event.pointerId);
+  track.classList.add("dragging");
+  const drag = new AbortController();
+  const at = (moved) => {
+    const box = track.getBoundingClientRect();
+    seeking = { fraction: Math.min(1, Math.max(0, (moved.clientX - box.left) / box.width)) };
+    renderProgress(nowPlaying());
+  };
+  at(event);
+  // Letting go seeks; a cancelled drag (the pointer captured elsewhere) puts the line back.
+  const end = (commit) => () => {
+    drag.abort();
+    track.classList.remove("dragging");
+    const fraction = seeking?.fraction;
+    seeking = null;
+    if (commit && fraction !== undefined) seekTo(fraction * now.durationMs);
+    else renderInspector();
+  };
+  track.addEventListener("pointermove", at, { signal: drag.signal });
+  track.addEventListener("pointerup", end(true), { signal: drag.signal });
+  track.addEventListener("pointercancel", end(false), { signal: drag.signal });
+});
+// Held or repeated keys move the line at once and send one seek when the keys rest, so Spotify
+// gets one request instead of a burst, and a late read can't pull the line back mid-way.
+let keySeek = null;
+$("track").addEventListener("keydown", (event) => {
+  const now = nowPlaying();
+  if (!now?.durationMs || !can(now, "seeking")) return;
+  const step = event.shiftKey ? 15_000 : 5_000;
+  const from = keySeek?.ms ?? now.progressMs;
+  const to = { ArrowLeft: from - step, ArrowRight: from + step, Home: 0, End: now.durationMs - 1000 }[event.key];
+  if (to === undefined) return;
+  event.preventDefault();
+  clearTimeout(keySeek?.timer);
+  const ms = Math.min(now.durationMs - 1000, Math.max(0, to));
+  keySeek = { ms, timer: setTimeout(() => { keySeek = null; seekTo(ms); }, 250) };
+  seeking = { fraction: ms / now.durationMs };
+  renderProgress(now, { jump: true });
+  seeking = null;
+});
+
+// ── Panels ───────────────────────────────────────────────────────────────────────────────────
+// A narrow window folds the player, then the conversations; a click always wins.
 const layout = $("window");
 const panels = { sidebar: store.get("moondog.sidebar") !== "hidden", inspector: store.get("moondog.inspector") !== "hidden" };
-const room = { sidebar: 820, inspector: 1080 };
+const roomFor = { sidebar: 820, inspector: 1060 };
 const forced = { sidebar: false, inspector: false };
-const shown = (name) => panels[name] && (forced[name] || innerWidth >= room[name]);
+function shown(panel) { return panels[panel] && (forced[panel] || innerWidth >= roomFor[panel]); }
 function renderPanels() {
   layout.classList.toggle("no-sidebar", !shown("sidebar"));
   layout.classList.toggle("no-inspector", !shown("inspector"));
+  $("toggle-sidebar").setAttribute("aria-pressed", String(shown("sidebar")));
+  $("toggle-inspector").setAttribute("aria-pressed", String(shown("inspector")));
+  renderTitle();
 }
-function togglePanel(name) {
-  const visible = shown(name);
-  panels[name] = !visible;
-  forced[name] = !visible;
-  store.set(`moondog.${name}`, panels[name] ? "shown" : "hidden");
-  // The grid animates only for this deliberate move; dragging a grip stays exact.
+let settleTimer = 0;
+// The room keeps at least this much width; opening one panel folds the other when both won't fit.
+const ROOM_MIN = 440;
+const widthOf = (panel) => parseInt(getComputedStyle(layout).getPropertyValue(`--${panel}-width`), 10) || (panel === "sidebar" ? 248 : 320);
+function makeRoom(opened) {
+  const other = opened === "sidebar" ? "inspector" : "sidebar";
+  if (shown(opened) && shown(other) && innerWidth - widthOf(opened) - widthOf(other) < ROOM_MIN) { panels[other] = false; forced[other] = false; }
+}
+function togglePanel(panel) {
+  const visible = shown(panel);
+  panels[panel] = !visible;
+  // A click overrides the width rule only where the width rule would hide the panel.
+  forced[panel] = !visible && innerWidth < roomFor[panel];
+  if (!visible) makeRoom(panel);
+  store.set(`moondog.${panel}`, panels[panel] ? "shown" : "hidden");
+  // The columns slide only for this deliberate move; dragging a grip stays exact.
   layout.classList.add("animating");
   renderPanels();
-  setTimeout(() => layout.classList.remove("animating"), 300);
+  renderInspector();
+  clearTimeout(settleTimer);
+  settleTimer = setTimeout(() => layout.classList.remove("animating"), 300);
 }
-addEventListener("resize", renderPanels);
+addEventListener("resize", () => {
+  for (const panel of ["inspector", "sidebar"]) if (forced[panel]) makeRoom(panel);
+  renderPanels();
+  renderInspector();
+});
 
 // Dragging a panel's inner edge sets its width; a double-click restores the default.
-const widths = { sidebar: [200, 440], inspector: [260, 480] };
-for (const name of ["sidebar", "inspector"]) {
-  const property = `--${name}-width`;
-  const saved = Number(store.get(`moondog.${name}.width`));
-  if (saved >= widths[name][0] && saved <= widths[name][1]) layout.style.setProperty(property, `${saved}px`);
-  const grip = document.querySelector(`[data-grip="${name}"]`);
+const widths = { sidebar: [200, 420], inspector: [272, 460] };
+for (const panel of ["sidebar", "inspector"]) {
+  const property = `--${panel}-width`;
+  const saved = Number(store.get(`moondog.${panel}.width`));
+  if (saved >= widths[panel][0] && saved <= widths[panel][1]) layout.style.setProperty(property, `${saved}px`);
+  const grip = document.querySelector(`[data-grip="${panel}"]`);
   grip.addEventListener("pointerdown", (event) => {
     event.preventDefault();
     grip.setPointerCapture(event.pointerId);
     grip.classList.add("dragging");
     layout.classList.add("resizing");
     const move = (moved) => {
-      const width = name === "sidebar" ? moved.clientX : innerWidth - moved.clientX;
-      const clamped = Math.round(Math.min(widths[name][1], Math.max(widths[name][0], width)));
-      layout.style.setProperty(property, `${clamped}px`);
+      const width = panel === "sidebar" ? moved.clientX : innerWidth - moved.clientX;
+      layout.style.setProperty(property, `${Math.round(Math.min(widths[panel][1], Math.max(widths[panel][0], width)))}px`);
     };
     const up = () => {
       grip.removeEventListener("pointermove", move);
       grip.classList.remove("dragging");
       layout.classList.remove("resizing");
-      store.set(`moondog.${name}.width`, String(parseInt(getComputedStyle(layout).getPropertyValue(property), 10) || ""));
+      store.set(`moondog.${panel}.width`, String(parseInt(getComputedStyle(layout).getPropertyValue(property), 10) || ""));
     };
     grip.addEventListener("pointermove", move);
     grip.addEventListener("pointerup", up, { once: true });
@@ -561,12 +886,14 @@ for (const name of ["sidebar", "inspector"]) {
   });
   grip.addEventListener("dblclick", () => {
     layout.style.removeProperty(property);
-    store.set(`moondog.${name}.width`, "");
+    store.set(`moondog.${panel}.width`, "");
   });
 }
 $("toggle-sidebar").addEventListener("click", () => togglePanel("sidebar"));
 $("toggle-inspector").addEventListener("click", () => togglePanel("inspector"));
 $("new").addEventListener("click", () => openSession(null));
+scrollbar($("sessions"));
+scrollbar($("inspector-scroll"));
 
 // A music history file dropped anywhere goes to import, which shows what it read before saving.
 let dragDepth = 0;
@@ -584,10 +911,11 @@ window.addEventListener("drop", (event) => {
   if (path) { send({ type: "import-file", path }); settings.show("library"); }
 });
 
-// Keys: typing anywhere goes to the composer. No key here plays, pauses or skips: a chat window is
-// typed in all the time, and the keyboard's media keys already control the music.
+// Keys: typing anywhere goes to the composer. No plain key plays, pauses or skips, because a chat
+// window is typed in all the time; ⌃⌘P, ⌃⌘→ and ⌃⌘← in the Playback menu do.
 document.addEventListener("keydown", (event) => {
-  if (settings.open) return;
+  // Escape that just closed Settings is spent; it must not also stop the reply behind it.
+  if (settings.open || event.defaultPrevented) return;
   if (event.target === input || event.target.closest?.("input, textarea")) return;
   if (event.key === " " && event.target.closest?.("button, a, select, [role=button]")) return;
   if (event.key === "Escape" && state.streaming) { send({ type: "cancel" }); return; }
@@ -595,6 +923,7 @@ document.addEventListener("keydown", (event) => {
 });
 // Commands from the menu bar.
 window.moondogApp?.onCommand?.((command) => {
+  if (settings.open && !["settings", "stop", "toggle-playback", "next", "previous"].includes(command)) return;
   if (command === "new") openSession(null);
   if (command === "stop" && state.streaming) send({ type: "cancel" });
   if (command === "settings") settings.show();
@@ -607,13 +936,13 @@ window.moondogApp?.onCommand?.((command) => {
 document.addEventListener("visibilitychange", () => send({ type: "visible", visible: !document.hidden }));
 window.addEventListener("focus", () => { if (!settings.open && !getSelection()?.toString() && !document.activeElement?.closest?.(".rename")) input.focus(); });
 
-// Messages from the core
+// ── Messages from the core ───────────────────────────────────────────────────────────────────
 function streamingTurn(id) {
   return state.turns.find((turn) => turn.role === "assistant" && turn.id === id);
 }
 const onScreen = (data) => !data.session || data.session === state.current;
-const SIGN_IN_ERRORS = { connect_while_answering: "connectWhileAnswering", sign_in_busy: "signInBusy" };
-const SETTINGS_MESSAGES = new Set(["models", "provider-models", "devices", "memories", "auth-prompt", "auth-prompt-closed", "auth-event", "sign-in", "import"]);
+const SIGN_IN_ERRORS = { connect_while_answering: "waitForReply", sign_in_busy: "signInBusy" };
+const SETTINGS_MESSAGES = new Set(["models", "provider-models", "devices", "memories", "auth-prompt", "auth-prompt-closed", "auth-event", "sign-in", "import", "notice"]);
 function receive({ data }) {
   if (!data?.type) return;
   if (data.type === "preview" || data.type === "preview-control") { previews.receive(data); renderInspector(); return; }
@@ -622,22 +951,26 @@ function receive({ data }) {
     providers = data.providers ?? [];
     for (const provider of providers) if (provider.signedIn && !providerModels.has(provider.id)) send({ type: "provider-models", provider: provider.id });
   }
-  if (data.type === "provider-models") providerModels.set(data.provider, data.models ?? []);
+  if (data.type === "provider-models") { providerModels.set(data.provider, data.models ?? []); renderComposer(); }
   if (data.type === "devices" && devicePicker) {
     if (data.error) { devicePicker = null; notice(t("noticeDevicesFailed")); } else void showDevices(data.devices ?? []);
   }
   if (data.type === "player-error") notice(t("noticePlaybackFailed"));
-  // The sheet already shows a sign-in error. sign_in_busy is the exception: the sheet keeps the running panel.
-  if (data.type === "sign-in" && data.state === "error" && !(settings.open && data.code !== "sign_in_busy")) notice(SIGN_IN_ERRORS[data.code] ? t(SIGN_IN_ERRORS[data.code]) : data.message || t("signInFailed"));
+  // The sheet shows its own sign-in errors. sign_in_busy is the exception: the sheet keeps the running panel.
+  if (data.type === "sign-in" && data.state === "error" && !(settings.open && data.code !== "sign_in_busy")) notice(SIGN_IN_ERRORS[data.code] ? t(SIGN_IN_ERRORS[data.code]) : t("signInFailed"));
   if (data.type === "import" && data.stage === "refresh-failed") notice(t("importRefreshFailed"));
   if (data.type === "notice") {
     // The core did not take this message. Put it back so the listener can send it again.
-    if (data.code === "message_busy" && data.text && !input.value.trim()) {
-      input.value = data.text;
-      grow();
-      renderComposer();
+    const pending = state.turns.findLastIndex((turn) => turn.pending && (!data.text || turn.text === data.text));
+    if ((data.code === "message_busy" || data.code === "prompt") && pending >= 0) {
+      const [turn] = state.turns.splice(pending, 1);
+      renderConversation();
+      if (!input.value.trim()) { input.value = turn.text; renderComposer(); }
     }
-    notice(t(NOTICES[data.code] ?? "noticeFailed") + (NOTICES[data.code] ? "" : data.message ? `: ${data.message}` : ""));
+    if (data.message) console.warn(`[moondog] ${data.code}: ${data.message}`);
+    // A refused switch leaves the open conversation marked as open.
+    if (data.code === "too_many_running") renderSessions();
+    notice(t(NOTICES[data.code] ?? "noticeFailed"));
   }
   if (data.type === "ready" || data.type === "status") {
     if (data.locale && data.locale !== locale) applyLanguage(data.locale);
@@ -655,8 +988,10 @@ function receive({ data }) {
     renderSessions();
   }
   if (data.type === "ready" || data.type === "session") {
+    // A message waiting for the core stays on screen until the core takes it.
+    const waiting = data.type === "ready" ? state.turns.filter((turn) => turn.waiting) : [];
     state.current = data.current ?? null;
-    state.turns = (data.transcript ?? []).map((turn) => ({ ...turn }));
+    state.turns = [...(data.transcript ?? []).map((turn) => ({ ...turn })), ...waiting];
     state.streaming = null;
     if (data.live) {
       state.turns.push({ role: "user", text: data.live.user },
@@ -664,7 +999,8 @@ function receive({ data }) {
       state.streaming = data.live.id;
     }
     renderSessions();
-    renderConversation();
+    renderConversation({ redraw: true });
+    syncMenu();
     if (!settings.open) input.focus();
   }
   if (data.type === "ready") {
@@ -672,16 +1008,21 @@ function receive({ data }) {
     send({ type: "models" });
     const waiting = state.waiting;
     state.waiting = null;
-    if (waiting && state.model?.state === "configured") send({ type: "prompt", text: waiting });
-    else if (waiting) {
-      state.turns.push({ role: "user", text: waiting }, { role: "assistant", text: t("offline"), failed: true });
-      renderConversation();
+    if (waiting) {
+      state.turns = state.turns.filter((turn) => !turn.waiting);
+      renderConversation({ redraw: true });
+      submitText(waiting);
     }
   }
-  if (data.type === "local" && onScreen(data)) localNote(data.markdown);
+  if (data.type === "local" && onScreen(data)) {
+    state.turns.push({ role: "assistant", text: data.markdown, local: true });
+    renderConversation();
+  }
   if (data.type === "turn" && onScreen(data)) {
     if (data.state === "start") {
       state.streaming = data.id;
+      const pending = state.turns.findLastIndex((turn) => turn.pending && turn.text === data.text);
+      if (pending >= 0) state.turns.splice(pending, 1);
       state.turns.push({ role: "user", text: data.text }, { role: "assistant", id: data.id, text: "", activity: [], streaming: true });
     } else {
       const turn = streamingTurn(data.id);
@@ -692,13 +1033,15 @@ function receive({ data }) {
           turn.text = data.text || turn.text || (data.status === "aborted" ? t("stopped") : "");
           if (data.status === "aborted" && !data.text) turn.failed = true;
         } else {
-          turn.text = data.connection ? t("unreachable") : data.message;
+          if (data.message) console.warn(`[moondog] turn failed: ${data.message}`);
+          turn.text = data.connection ? t("unreachable") : t("noticeFailed");
           turn.failed = true;
         }
       }
       if (state.streaming === data.id) state.streaming = null;
     }
     renderConversation();
+    renderInspector();
   }
   if (data.type === "retry" && onScreen(data)) {
     const turn = streamingTurn(data.id);
@@ -727,33 +1070,32 @@ function receive({ data }) {
     // A read that fails, such as a network blip, keeps the last known player on screen.
     if (data.spotify === "error") return;
     state.spotify = data.spotify === "ready" ? "ready" : "unavailable";
-    state.player = { now: data.now, next: data.next ?? [] };
+    // Spotify's position arrives a little late. On the same playing song, a small step backwards is
+    // that delay, not the music, so the clock keeps going instead of ticking back.
+    const before = state.player?.now;
+    let now = data.now;
+    // Right after a seek, a read that was already on its way still has the old position.
+    if (now && before && before.title === now.title && Date.now() - seekedAt < 1500) now = { ...now, progressMs: before.progressMs, observedAt: before.observedAt };
+    else if (now?.playing && before?.playing && before.title === now.title && before.durationMs === now.durationMs) {
+      const expected = before.progressMs + (now.observedAt - before.observedAt);
+      if (now.progressMs < expected && expected - now.progressMs < 1500) now = { ...now, progressMs: before.progressMs, observedAt: before.observedAt };
+    }
+    state.player = { now, next: data.next ?? [] };
     let learned = false;
     for (const track of [data.now, ...(data.next ?? [])]) {
       if (track?.image && covers.get(track.title) !== track.image) { covers.set(track.title, track.image); learned = true; }
     }
     // Redraw the conversation only when a played line just got its cover.
-    if (learned && !state.streaming && state.turns.some((turn) => { const target = playedTarget(turn); return target && covers.has(target.title); })) renderSoon();
+    if (learned && state.turns.some((turn) => { const target = playedTarget(turn); return target && covers.has(target.title); })) renderSoon();
     renderInspector();
   }
 }
 
-// The turning mark: four quarter-turns of a record, one every beat of the work.
-const TURNS = ["◐", "◓", "◑", "◒"];
-if (!matchMedia("(prefers-reduced-motion: reduce)").matches) {
-  let step = 0;
-  setInterval(() => {
-    step = (step + 1) % TURNS.length;
-    for (const node of document.querySelectorAll("[data-phase]")) node.textContent = TURNS[step];
-  }, 700);
-}
-
 applyLanguage(locale);
 renderPanels();
-renderConversation();
-renderInspector();
 send({ type: "visible", visible: !document.hidden });
 input.focus();
+void tips;
 
 // The core's port arrives last; what was sent before it waits in the outbox.
 port = await portReady;

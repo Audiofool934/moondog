@@ -1,0 +1,97 @@
+/* Moondog's window: ink on paper by day, moonlight on night after dark. There is no accent colour;
+   the cover and the record bring the only colour. Every colour, size, corner and duration lives
+   here, and the rules in the other sheets name these tokens instead of values. */
+:root {
+  /* Ink is one colour at several strengths, so text, lines and fills always agree. */
+  --ink-rgb: 27 26 23;
+  --canvas: #F7F6F2;
+  --side: #F1EFEA;
+  --surface: #FFFFFF;
+  --raised: #FFFFFF;
+  --bubble: #ECEAE4;
+  --shade-rgb: 31 27 20;
+
+  --text: rgb(var(--ink-rgb) / 0.93);
+  --text-2: rgb(var(--ink-rgb) / 0.66);
+  --text-3: rgb(var(--ink-rgb) / 0.46);
+  --text-4: rgb(var(--ink-rgb) / 0.3);
+  --line: rgb(var(--ink-rgb) / 0.085);
+  --line-2: rgb(var(--ink-rgb) / 0.14);
+  /* Hover is a breath and the open thing a clear fill, so pointing at a row never looks like opening it. */
+  --hover: rgb(var(--ink-rgb) / 0.04);
+  --press: rgb(var(--ink-rgb) / 0.075);
+  --current: rgb(var(--ink-rgb) / 0.09);
+  --solid: rgb(var(--ink-rgb) / 0.93);
+  --on-solid: var(--canvas);
+  --thumb: rgb(var(--ink-rgb) / 0.22);
+  --thumb-held: rgb(var(--ink-rgb) / 0.4);
+
+  /* Elevation: a hairline that is the ink itself, and shadows that pool under the object. */
+  --edge: 0 0 0 1px rgb(var(--ink-rgb) / 0.07);
+  --lift: var(--edge), 0 1px 2px rgb(var(--shade-rgb) / 0.05), 0 8px 18px -8px rgb(var(--shade-rgb) / 0.12);
+  --float: var(--edge), 0 2px 4px rgb(var(--shade-rgb) / 0.04), 0 14px 28px -10px rgb(var(--shade-rgb) / 0.16), 0 36px 70px -28px rgb(var(--shade-rgb) / 0.22);
+  --sleeve: 0 0 0 0.5px rgb(0 0 0 / 0.12), 0 2px 4px rgb(0 0 0 / 0.06), 0 18px 38px -16px rgb(0 0 0 / 0.42);
+  --scrim: rgb(var(--shade-rgb) / 0.2);
+
+  --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "PingFang TC", "Hiragino Sans", "Apple SD Gothic Neo", sans-serif;
+  --serif: "New York", ui-serif, "Songti SC", "Songti TC", "Hiragino Mincho ProN", "AppleMyungjo", Georgia, serif;
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
+
+  /* Type: UI text is small and steady; Moondog's replies are the one place that reads like a page. */
+  --t-caption: 11px;
+  --t-small: 12px;
+  --t-ui: 13px;
+  --t-body: 14.5px;
+  --t-reply: 16px;
+  --t-song: 16px;
+  --t-title: 16px;
+
+  /* Corners: the sleeve is nearly square and the record is round. */
+  --r-1: 4px;
+  --r-2: 6px;
+  --r-3: 9px;
+  --r-4: 12px;
+
+  --bar: 44px;
+  --control: 28px;
+  --row: 30px;
+  --column: 680px;
+
+  /* Motion follows state: hover paints at once and only the return eases. Entrances move on
+     transform alone. Nothing waits on an animation. */
+  --out: cubic-bezier(0.16, 1, 0.3, 1);
+  --soft: cubic-bezier(0.4, 0, 0.2, 1);
+  --spring: cubic-bezier(0.34, 1.4, 0.64, 1);
+  --quick: 110ms;
+  --enter: 200ms;
+  --panel: 260ms;
+
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ink-rgb: 237 234 227;
+    --canvas: #141413;
+    --side: #0F0F0E;
+    --surface: #1D1D1B;
+    --raised: #222220;
+    --bubble: #262624;
+    --shade-rgb: 0 0 0;
+    --text: rgb(var(--ink-rgb) / 0.92);
+    --text-2: rgb(var(--ink-rgb) / 0.62);
+    --text-3: rgb(var(--ink-rgb) / 0.42);
+    --text-4: rgb(var(--ink-rgb) / 0.26);
+    --line: rgb(var(--ink-rgb) / 0.08);
+    --line-2: rgb(var(--ink-rgb) / 0.14);
+    --hover: rgb(var(--ink-rgb) / 0.045);
+    --press: rgb(var(--ink-rgb) / 0.085);
+    --current: rgb(var(--ink-rgb) / 0.11);
+    --edge: 0 0 0 1px rgb(var(--ink-rgb) / 0.08);
+    --lift: var(--edge), 0 1px 2px rgb(0 0 0 / 0.3), 0 10px 22px -8px rgb(0 0 0 / 0.5);
+    --float: var(--edge), 0 2px 4px rgb(0 0 0 / 0.3), 0 16px 32px -10px rgb(0 0 0 / 0.55), 0 40px 80px -30px rgb(0 0 0 / 0.7);
+    --sleeve: 0 0 0 0.5px rgb(255 255 255 / 0.06), 0 2px 4px rgb(0 0 0 / 0.3), 0 22px 44px -16px rgb(0 0 0 / 0.85);
+    --scrim: rgb(0 0 0 / 0.42);
+    color-scheme: dark;
+  }
+}

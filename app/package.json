@@ -10,7 +10,8 @@
     "start": "node build.mjs && electron .",
     "pack": "node pack.mjs",
     "release": "node pack.mjs --sign",
-    "simulated": "node build.mjs && MOONDOG_APP_SIMULATED=1 electron ."
+    "simulated": "node build.mjs && MOONDOG_APP_SIMULATED=1 electron .",
+    "harness": "node build.mjs && electron harness.mjs"
   },
   "devDependencies": {
     "electron": "^44.7.0",

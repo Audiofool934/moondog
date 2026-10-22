@@ -1,0 +1,163 @@
+/* Settings: one sheet over the window. The places on the left, the open one on the right, and nothing
+   between them but space. Rows bleed past the text column, so every word lines up on one edge and
+   hover paints a little wider than what it names. */
+
+/* ── The sheet ───────────────────────────────────────────────────────────────────────────── */
+.sheet { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; background: var(--scrim);
+  -webkit-backdrop-filter: blur(8px) saturate(1.1); backdrop-filter: blur(8px) saturate(1.1); -webkit-app-region: no-drag;
+  animation: sheet-fade 140ms var(--soft) both; }
+.sheet-card { position: relative; width: min(760px, calc(100vw - 48px)); height: min(560px, calc(100vh - 80px));
+  display: grid; grid-template-columns: 200px minmax(0, 1fr); overflow: hidden; border-radius: var(--r-3);
+  background: var(--canvas); box-shadow: var(--float); animation: sheet-in 180ms var(--out) both; }
+.sheet-card:focus, .sheet-card:focus-visible { outline: none; }
+/* Closing is quicker than opening and never blocks a click on the window behind. */
+.sheet[data-state="closing"] { pointer-events: none; animation: sheet-fade-out 120ms var(--soft) forwards; }
+.sheet[data-state="closing"] .sheet-card { animation: sheet-out 120ms var(--soft) forwards; }
+@keyframes sheet-fade { from { opacity: 0; } }
+@keyframes sheet-fade-out { to { opacity: 0; } }
+@keyframes sheet-in { from { opacity: 0; transform: translateY(6px) scale(0.99); } }
+@keyframes sheet-out { to { opacity: 0; transform: scale(0.985); } }
+.sheet-close { position: absolute; top: 10px; right: 10px; z-index: 4; }
+
+/* The places: one quiet row each, the open one filled. */
+.sheet-nav { display: flex; flex-direction: column; gap: 1px; min-height: 0; padding: 12px 10px; overflow-y: auto; scrollbar-width: none; background: var(--side); }
+.sheet-tab { flex: none; height: var(--row); display: flex; align-items: center; gap: 10px; padding: 0 10px; border-radius: var(--r-2); text-align: start;
+  font-size: var(--t-ui); color: var(--text-2); transition: background-color var(--quick) var(--soft), color var(--quick) var(--soft); }
+.sheet-tab:hover { background: var(--hover); color: var(--text); transition: none; }
+.sheet-tab:active { background: var(--press); }
+.sheet-tab.on { background: var(--current); color: var(--text); }
+.sheet-tab .icon { width: 15px; height: 15px; }
+.sheet-tab span { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sheet-tab:focus-visible { border-radius: var(--r-2); outline-offset: -2px; }
+
+/* The open place scrolls on its own, with the window's overlay scrollbar, and fades at its edges. */
+.sheet-body { min-width: 0; height: 100%; }
+.sheet-scroll { height: 100%; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; padding: 26px 52px 32px 32px;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 18px, #000 calc(100% - 24px), transparent); }
+.sheet-section { max-width: 520px; }
+.sheet-section.entering { animation: sheet-section-in 160ms var(--out) both; }
+@keyframes sheet-section-in { from { opacity: 0; transform: translateY(3px); } }
+
+/* ── Parts ───────────────────────────────────────────────────────────────────────────────── */
+.sheet .group + .group, .sheet .sheet-section > * + .group { margin-top: 28px; }
+.sheet .group-title { margin: 0 0 8px; font-size: var(--t-small); font-weight: 600; line-height: 1.4; color: var(--text-3); }
+.sheet .group-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; height: 24px; margin: -4px 0 4px; }
+.sheet .group-head .group-title { margin: 0; }
+.sheet .group-head .tool { width: 24px; height: 24px; margin-inline-end: -5px; }
+.sheet .group-head .tool .icon { width: 14px; height: 14px; }
+.sheet .tool.spinning .icon { animation: sheet-spin 800ms linear infinite; }
+@keyframes sheet-spin { to { transform: rotate(360deg); } }
+
+.sheet p { margin: 0; }
+.sheet .note { font-size: var(--t-small); line-height: 1.5; color: var(--text-3); }
+.sheet .note a { color: var(--text-2); text-decoration: underline; text-decoration-color: var(--line-2); text-underline-offset: 2px; }
+.sheet .note a:hover { color: var(--text); text-decoration-color: currentColor; }
+.sheet .alert { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 12px; font-size: var(--t-small); line-height: 1.5; color: var(--text-2); }
+.sheet .alert .icon { width: 14px; height: 14px; margin-top: 2.5px; color: var(--text-3); }
+.sheet .link { display: inline-flex; align-items: center; gap: 4px; border-radius: var(--r-1); font-size: var(--t-ui); color: var(--text-2);
+  text-decoration: none; transition: color var(--quick) var(--soft); }
+.sheet .link:hover { color: var(--text); transition: none; }
+.sheet .link .icon { width: 12px; height: 12px; opacity: 0.7; }
+.sheet .stack { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; }
+.sheet .stack > .inline { align-self: stretch; }
+
+/* Choice rows: a label, an optional line under it, and a check on the chosen one. */
+.sheet .choices { display: flex; flex-direction: column; gap: 1px; margin-inline: -10px; }
+.sheet .choices > .note, .sheet .choices > .alert { padding: 8px 10px; margin: 0; }
+.sheet .choices > .button { align-self: flex-start; margin: 0 0 4px 4px; }
+.sheet .choice { display: flex; align-items: center; min-height: 36px; border-radius: var(--r-2); transition: background-color var(--quick) var(--soft); }
+.sheet .choice:hover { background: var(--hover); transition: none; }
+.sheet .choice:has(> .choice-main:active) { background: var(--press); }
+.sheet .choice.off { opacity: 0.45; }
+.sheet .choice.off:hover { background: none; }
+.sheet .choice-main { flex: 1; min-width: 0; align-self: stretch; display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-radius: var(--r-2); text-align: start; }
+.sheet .choice-main:focus-visible { border-radius: var(--r-2); outline-offset: -2px; }
+.sheet .choice-words { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.sheet .choice-label { font-size: var(--t-ui); line-height: 1.35; color: var(--text); overflow-wrap: anywhere; }
+.sheet .choice-detail { font-size: var(--t-small); line-height: 1.35; color: var(--text-3); overflow-wrap: anywhere; }
+.sheet .choice .check { width: 16px; height: 16px; color: var(--text); stroke-width: 1.7; }
+.sheet .choice .kind { color: var(--text-2); }
+.sheet .choice > .button { flex: none; margin-inline-end: 6px; }
+.sheet .choice > .check { flex: none; margin: 0 10px 0 4px; }
+/* A provider unfolds its models; they sit under its name, not under its chevron. */
+.sheet .choice .disclose { width: 12px; height: 12px; margin-inline-end: -4px; color: var(--text-4); transition: transform var(--enter) var(--out); }
+.sheet .choice-main[aria-expanded="true"] .disclose { transform: rotate(90deg); color: var(--text-3); }
+.sheet .choices.inner { margin: 0 0 6px 18px; }
+
+/* Text fields, and a field with its button on one row. */
+.sheet .text-field { flex: 1; min-width: 0; height: 30px; padding: 0 10px; border: 0; border-radius: var(--r-2); outline: 0;
+  background: var(--surface); box-shadow: inset 0 0 0 1px var(--line-2); font-size: var(--t-ui); color: var(--text);
+  transition: box-shadow var(--quick) var(--soft); }
+.sheet .text-field::placeholder { color: var(--text-4); }
+.sheet .text-field:focus { box-shadow: inset 0 0 0 1px rgb(var(--ink-rgb) / 0.35); }
+.sheet .text-field:focus-visible { outline: none; }
+.sheet .inline { display: flex; align-items: center; gap: 8px; }
+.sheet .inline .button { height: 30px; padding: 0 12px; }
+.sheet .inline .link { flex: none; margin-inline-start: 4px; font-size: var(--t-small); }
+.sheet .choices + .inline { margin-top: 12px; }
+
+/* A value to paste elsewhere, with its copy button. */
+.sheet .chip { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; height: 30px; padding: 0 2px 0 10px; border-radius: var(--r-2); background: var(--hover); }
+.sheet .chip code { min-width: 0; font: 12px var(--mono); color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; user-select: all; }
+.sheet .chip .tool { width: 26px; height: 26px; }
+.sheet .chip .tool .icon { width: 14px; height: 14px; }
+.sheet .chip.code { height: 40px; padding-inline-start: 14px; }
+.sheet .chip.code code { font-size: 17px; font-weight: 600; letter-spacing: 0.12em; }
+
+/* Thinking: a segmented control, the chosen segment raised. */
+.sheet .segments { display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 2px; border-radius: 7px; background: var(--hover); }
+.sheet .segment { height: 24px; padding: 0 10px; border-radius: 5px; font-size: var(--t-small); font-weight: 500; color: var(--text-2);
+  transition: background-color var(--quick) var(--soft), color var(--quick) var(--soft), box-shadow var(--quick) var(--soft); }
+.sheet .segment:hover { color: var(--text); transition: none; }
+.sheet .segment[aria-checked="true"] { background: var(--surface); color: var(--text); box-shadow: var(--edge), 0 1px 2px rgb(var(--shade-rgb) / 0.06); }
+.sheet .segment:focus-visible { border-radius: 5px; outline-offset: 0; }
+
+/* ── Places ──────────────────────────────────────────────────────────────────────────────── */
+/* Model: what answers now, large enough to read at a glance. */
+.sheet .now-name { font-size: var(--t-title); font-weight: 600; line-height: 1.3; letter-spacing: -0.01em; color: var(--text); overflow-wrap: anywhere; }
+.sheet .now-name.none { color: var(--text-3); }
+.sheet .now-provider { min-height: 17px; margin-top: 2px; font-size: var(--t-small); line-height: 1.4; color: var(--text-3); }
+
+/* A sign-in in progress: the one place that sits on a fill, since it waits on the listener. */
+.sheet .auth { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding: 14px 16px 16px; border-radius: var(--r-3); background: var(--hover); }
+.sheet .auth > .inline, .sheet .auth > .choices { align-self: stretch; }
+.sheet .auth > .choices { margin-inline: -6px; }
+.sheet .auth .choice:hover { background: var(--hover); }
+.sheet .auth-head { align-self: stretch; display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 24px; margin: -2px -6px -2px 0; }
+.sheet .auth-title { font-size: var(--t-ui); font-weight: 600; color: var(--text); }
+.sheet .auth-line { font-size: var(--t-small); line-height: 1.5; color: var(--text-2); }
+.sheet .auth .chip { background: var(--surface); box-shadow: var(--edge); }
+
+/* Import: a working line with the conversation's turning mark, then the preview. */
+.sheet .working { display: flex; align-items: center; gap: 10px; min-height: 36px; font-size: var(--t-ui); color: var(--text); font-variant-numeric: tabular-nums; }
+.sheet .working .button { margin-inline-start: auto; }
+.sheet .preview-title { margin: 0; font-size: var(--t-title); font-weight: 600; line-height: 1.35; color: var(--text); }
+.sheet .preview-notice { margin-top: 3px; font-size: var(--t-small); line-height: 1.5; color: var(--text-3); }
+.sheet .facts { display: grid; gap: 6px; margin: 18px 0 0; padding: 0; list-style: none; font-size: var(--t-ui); line-height: 1.5; color: var(--text-2);
+  font-variant-numeric: tabular-nums; }
+.sheet .facts li { overflow-wrap: anywhere; }
+.sheet .facts li:first-child { font-weight: 500; color: var(--text); }
+.sheet .facts-empty { margin-top: 18px; font-size: var(--t-ui); color: var(--text-2); }
+.sheet .actions { display: flex; gap: 8px; margin-top: 22px; }
+.sheet .facts + .alert, .sheet .facts-empty + .alert { margin: 18px 0 -10px; }
+
+/* Memory: each line on its own row, Forget only where the pointer or the focus is. */
+.sheet .memory { display: flex; align-items: center; gap: 12px; min-height: 36px; padding: 7px 6px 7px 10px; border-radius: var(--r-2);
+  transition: background-color var(--quick) var(--soft); }
+.sheet .memory:hover { background: var(--hover); transition: none; }
+.sheet .memory p { flex: 1; min-width: 0; font-size: var(--t-ui); line-height: 1.45; color: var(--text); overflow-wrap: anywhere; }
+.sheet .memory .button { flex: none; opacity: 0; transition: opacity var(--quick) var(--soft); }
+.sheet .memory:hover .button, .sheet .memory:focus-within .button { opacity: 1; transition: none; }
+.sheet .memories > .note { padding: 0 10px; }
+
+/* About: the name and its version, the site, and the keys. */
+.sheet .about-name { font-size: var(--t-title); font-weight: 600; line-height: 1.35; color: var(--text); }
+.sheet .about-name span { font-weight: 500; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.sheet .about-name + .link { margin-top: 4px; }
+.sheet .keys { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-flow: column; gap: 10px 24px; margin: 4px 0 0; }
+.sheet .key { display: grid; grid-template-columns: 48px minmax(0, 1fr); align-items: center; min-width: 0; }
+.sheet .key dt, .sheet .key dd { margin: 0; }
+.sheet .key dd { min-width: 0; font-size: var(--t-ui); line-height: 1.35; color: var(--text-2); overflow-wrap: anywhere; }
+.sheet kbd { display: inline-grid; place-items: center; min-width: 22px; height: 20px; padding: 0 6px; border-radius: var(--r-1); background: var(--hover);
+  box-shadow: inset 0 -1px 0 var(--line-2); font: 500 11px/1 var(--sans); letter-spacing: 0.04em; color: var(--text-2); }
+.sheet .choice .go { width: 12px; height: 12px; margin-inline-start: auto; color: var(--text-4); flex: none; }

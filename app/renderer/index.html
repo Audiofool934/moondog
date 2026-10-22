@@ -8,75 +8,113 @@
 </head>
 <body>
   <svg width="0" height="0" style="position:absolute" aria-hidden="true">
-    <symbol id="i-sidebar" viewBox="0 0 16 16"><rect x="1.75" y="2.5" width="12.5" height="11" rx="2.2"/><path d="M5.75 2.75v10.5"/></symbol>
-    <symbol id="i-panel" viewBox="0 0 16 16"><rect x="1.75" y="2.5" width="12.5" height="11" rx="2.2"/><path d="M10.25 2.75v10.5"/></symbol>
-    <symbol id="i-new" viewBox="0 0 16 16"><path d="M8 3.2v9.6M3.2 8h9.6"/></symbol>
-    <symbol id="i-up" viewBox="0 0 16 16"><path d="M8 12.6V3.6M4.2 7.2 8 3.4l3.8 3.8"/></symbol>
-    <symbol id="i-stop" viewBox="0 0 16 16"><rect x="4.6" y="4.6" width="6.8" height="6.8" rx="1.4" fill="currentColor" stroke="none"/></symbol>
-    <symbol id="i-laptop" viewBox="0 0 16 16"><rect x="3" y="3.5" width="10" height="7" rx="1.2"/><path d="M1.6 12.6h12.8"/></symbol>
-    <symbol id="i-record" viewBox="0 0 48 48"><circle cx="24" cy="24" r="17"/><circle cx="24" cy="24" r="6"/><circle cx="24" cy="24" r="1"/></symbol>
-    <symbol id="i-play" viewBox="0 0 24 24"><path d="M7.5 5.2v13.6a.9.9 0 0 0 1.37.77l10.6-6.8a.9.9 0 0 0 0-1.54L8.87 4.43A.9.9 0 0 0 7.5 5.2z"/></symbol>
-    <symbol id="i-pause" viewBox="0 0 24 24"><rect x="6.5" y="5" width="3.6" height="14" rx="1"/><rect x="13.9" y="5" width="3.6" height="14" rx="1"/></symbol>
-    <symbol id="i-next" viewBox="0 0 24 24"><path d="M5.5 6.2v11.6l8.6-5.8z"/><rect x="15.6" y="6" width="2.6" height="12" rx="1"/></symbol>
-    <symbol id="i-prev" viewBox="0 0 24 24"><path d="M18.5 6.2v11.6L9.9 12z"/><rect x="5.8" y="6" width="2.6" height="12" rx="1"/></symbol>
-    <symbol id="i-more" viewBox="0 0 16 16"><circle cx="3.6" cy="8" r="0.9" fill="currentColor" stroke="none"/><circle cx="8" cy="8" r="0.9" fill="currentColor" stroke="none"/><circle cx="12.4" cy="8" r="0.9" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-sidebar" viewBox="0 0 16 16"><rect x="1.75" y="2.75" width="12.5" height="10.5" rx="2.25"/><path d="M5.75 3v10"/></symbol>
+    <symbol id="i-panel" viewBox="0 0 16 16"><rect x="1.75" y="2.75" width="12.5" height="10.5" rx="2.25"/><path d="M10.25 3v10"/></symbol>
+    <symbol id="i-compose" viewBox="0 0 16 16"><path d="M13.25 8.5v3.75a1.5 1.5 0 0 1-1.5 1.5h-8a1.5 1.5 0 0 1-1.5-1.5v-8a1.5 1.5 0 0 1 1.5-1.5H7.5"/><path d="M11.6 2.15a1.27 1.27 0 0 1 1.8 1.8L8.25 9.1l-2.35.6.6-2.35z"/></symbol>
+    <symbol id="i-up" viewBox="0 0 16 16"><path d="M8 12.75v-9.5M4 7.1 8 3.1l4 4"/></symbol>
+    <symbol id="i-down" viewBox="0 0 16 16"><path d="M8 3.25v9.5M4 8.9l4 4 4-4"/></symbol>
+    <symbol id="i-stop" viewBox="0 0 16 16"><rect x="4.5" y="4.5" width="7" height="7" rx="1.6" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-laptop" viewBox="0 0 16 16"><rect x="3" y="3.5" width="10" height="7" rx="1.2"/><path d="M1.5 12.75h13"/></symbol>
+    <symbol id="i-phone" viewBox="0 0 16 16"><rect x="4.5" y="1.75" width="7" height="12.5" rx="1.75"/><path d="M7.25 12h1.5"/></symbol>
+    <symbol id="i-speaker" viewBox="0 0 16 16"><rect x="3.75" y="1.75" width="8.5" height="12.5" rx="1.75"/><circle cx="8" cy="9.6" r="2.4"/><circle cx="8" cy="4.6" r=".55" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-tv" viewBox="0 0 16 16"><rect x="1.75" y="3" width="12.5" height="8.5" rx="1.4"/><path d="M5.5 14h5"/></symbol>
+    <symbol id="i-record" viewBox="0 0 48 48"><circle cx="24" cy="24" r="17"/><circle cx="24" cy="24" r="11.5" opacity=".45"/><circle cx="24" cy="24" r="5"/><circle cx="24" cy="24" r=".9" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5.6v12.8a1 1 0 0 0 1.52.85l10.24-6.4a1 1 0 0 0 0-1.7L9.52 4.75A1 1 0 0 0 8 5.6z"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 24 24"><rect x="6.5" y="5" width="3.8" height="14" rx="1.2"/><rect x="13.7" y="5" width="3.8" height="14" rx="1.2"/></symbol>
+    <symbol id="i-next" viewBox="0 0 24 24"><path d="M5.5 6.6v10.8a.8.8 0 0 0 1.24.67l7.9-5.4a.8.8 0 0 0 0-1.33l-7.9-5.4A.8.8 0 0 0 5.5 6.6z"/><rect x="16" y="6" width="2.6" height="12" rx="1.1"/></symbol>
+    <symbol id="i-prev" viewBox="0 0 24 24"><path d="M18.5 6.6v10.8a.8.8 0 0 1-1.24.67l-7.9-5.4a.8.8 0 0 1 0-1.33l7.9-5.4a.8.8 0 0 1 1.24.66z"/><rect x="5.4" y="6" width="2.6" height="12" rx="1.1"/></symbol>
+    <symbol id="i-more" viewBox="0 0 16 16"><circle cx="3.5" cy="8" r="1" fill="currentColor" stroke="none"/><circle cx="8" cy="8" r="1" fill="currentColor" stroke="none"/><circle cx="12.5" cy="8" r="1" fill="currentColor" stroke="none"/></symbol>
     <symbol id="i-folder" viewBox="0 0 16 16"><path d="M2 4.6c0-.8.6-1.4 1.4-1.4h2.8l1.5 1.6h4.9c.8 0 1.4.6 1.4 1.4v5.6c0 .8-.6 1.4-1.4 1.4H3.4c-.8 0-1.4-.6-1.4-1.4z"/></symbol>
-    <symbol id="i-folder-open" viewBox="0 0 16 16"><path d="M2 11.8V4.6c0-.8.6-1.4 1.4-1.4h2.8l1.5 1.6h4.1c.8 0 1.4.6 1.4 1.4v.9"/><path d="M2.3 12.4 4 7.9c.2-.5.6-.8 1.1-.8h8.6c.6 0 1 .6.8 1.1l-1.5 3.9c-.2.5-.6.8-1.1.8H2.9"/></symbol>
-    <symbol id="i-close" viewBox="0 0 16 16"><path d="M4.2 4.2l7.6 7.6M11.8 4.2l-7.6 7.6"/></symbol>
+    <symbol id="i-chevron" viewBox="0 0 16 16"><path d="M6 4l4 4-4 4"/></symbol>
+    <symbol id="i-close" viewBox="0 0 16 16"><path d="M4.25 4.25l7.5 7.5M11.75 4.25l-7.5 7.5"/></symbol>
     <symbol id="i-settings" viewBox="0 0 16 16"><path d="M2.5 4.5h6M11.5 4.5h2M2.5 11.5h2M7.5 11.5h6"/><circle cx="10" cy="4.5" r="1.5"/><circle cx="6" cy="11.5" r="1.5"/></symbol>
+    <symbol id="i-check" viewBox="0 0 16 16"><path d="M3.5 8.4l2.9 2.9 6.1-6.6"/></symbol>
+    <symbol id="i-external" viewBox="0 0 16 16"><path d="M9.5 2.75h3.75V6.5M13 3 7.5 8.5"/><path d="M11.75 9.5v2.5a1.25 1.25 0 0 1-1.25 1.25H4A1.25 1.25 0 0 1 2.75 12V5.5A1.25 1.25 0 0 1 4 4.25h2.5"/></symbol>
+    <symbol id="i-repeat-one" viewBox="0 0 16 16"><path d="M3 7.25V6.5a2 2 0 0 1 2-2h7.5M10.75 2.75l1.75 1.75-1.75 1.75M13 8.75v.75a2 2 0 0 1-2 2H3.5M5.25 13.25 3.5 11.5l1.75-1.75"/><path d="M7.4 7.2 8.3 6.6v3" stroke-width="1.2"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 16 16"><path d="M13 8a5 5 0 1 1-1.46-3.54M13 2.75V5h-2.25"/></symbol>
+    <symbol id="i-globe" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.75"/><path d="M2.5 8h11M8 2.25c1.6 1.6 2.4 3.5 2.4 5.75S9.6 12.15 8 13.75C6.4 12.15 5.6 10.25 5.6 8S6.4 3.85 8 2.25z"/></symbol>
+    <symbol id="i-model" viewBox="0 0 16 16"><path d="M8 2.25c.35 2.6 1.15 3.4 3.75 3.75C9.15 6.35 8.35 7.15 8 9.75 7.65 7.15 6.85 6.35 4.25 6 6.85 5.65 7.65 4.85 8 2.25z"/><path d="M12 9.5c.2 1.3.6 1.7 1.9 1.9-1.3.2-1.7.6-1.9 1.9-.2-1.3-.6-1.7-1.9-1.9 1.3-.2 1.7-.6 1.9-1.9z"/></symbol>
+    <symbol id="i-import" viewBox="0 0 16 16"><path d="M8 2.5v7.25M5 7l3 3 3-3"/><path d="M2.75 10.25v1.5a1.5 1.5 0 0 0 1.5 1.5h7.5a1.5 1.5 0 0 0 1.5-1.5v-1.5"/></symbol>
+    <symbol id="i-memory" viewBox="0 0 16 16"><path d="M4.25 2.75h7.5v10.5L8 10.6l-3.75 2.65z"/></symbol>
+    <symbol id="i-info" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.75"/><path d="M8 7.25v3.5"/><circle cx="8" cy="5.1" r=".6" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 16 16"><rect x="5.25" y="5.25" width="8" height="8" rx="1.5"/><path d="M10.75 5.25V4a1.25 1.25 0 0 0-1.25-1.25H4A1.25 1.25 0 0 0 2.75 4v5.5A1.25 1.25 0 0 0 4 10.75h1.25"/></symbol>
   </svg>
+
   <div class="window" data-window>
     <header class="bar">
-      <div class="start"><button type="button" data-toggle-sidebar><svg class="icon"><use href="#i-sidebar"/></svg></button></div>
-      <div class="title" data-title></div>
-      <div class="end"><button type="button" data-toggle-inspector><svg class="icon"><use href="#i-panel"/></svg></button></div>
+      <div class="bar-start">
+        <button type="button" class="tool" data-toggle-sidebar data-tip-at="below"><svg class="icon"><use href="#i-sidebar"/></svg></button>
+        <button type="button" class="tool" data-new data-tip-at="below"><svg class="icon"><use href="#i-compose"/></svg></button>
+      </div>
+      <div class="bar-title" data-title></div>
+      <div class="bar-end">
+        <button type="button" class="mini" data-mini hidden><img alt="" data-mini-cover><span class="mini-song" data-mini-song></span></button>
+        <button type="button" class="tool" data-toggle-inspector data-tip-at="below"><svg class="icon"><use href="#i-panel"/></svg></button>
+      </div>
     </header>
 
     <aside class="sidebar" data-sidebar>
-      <button type="button" class="new" data-new><svg class="icon"><use href="#i-new"/></svg><span data-new-label></span><kbd>⌘N</kbd></button>
-      <nav class="sessions" data-sessions></nav>
+      <div class="frame"><nav class="sessions" data-sessions></nav></div>
       <div class="foot">
-        <button type="button" class="status" data-status-button><span class="dot" data-spotify-dot></span><span data-status></span></button>
-        <button type="button" class="gear" data-settings-button><svg class="icon"><use href="#i-settings"/></svg></button>
+        <button type="button" class="tool" data-settings-button><svg class="icon"><use href="#i-settings"/></svg></button>
+        <button type="button" class="link-button" data-connect hidden></button>
       </div>
     </aside>
 
-    <main class="room">
-      <div class="scroll" data-scroll><div class="column" data-column></div></div>
-      <div class="composer">
+    <main class="room" data-room>
+      <div class="stage" data-stage hidden><canvas class="record" aria-hidden="true" data-record></canvas></div>
+      <div class="frame"><div class="scroll" data-scroll><div class="column" data-column></div></div></div>
+      <div class="composer" data-composer>
+        <button type="button" class="jump" data-jump hidden><svg class="icon"><use href="#i-down"/></svg></button>
+        <p class="notice" data-notice role="status" hidden></p>
         <form class="field" data-form>
           <textarea rows="1" data-input spellcheck="true" autofocus></textarea>
-          <button type="submit" data-send disabled><svg class="icon"><use href="#i-up"/></svg></button>
+          <button type="button" class="model" data-model></button>
+          <button type="submit" class="send" data-send disabled><svg class="icon"><use href="#i-up"/></svg></button>
         </form>
-        <div class="under"><button type="button" data-device></button><button type="button" data-model></button></div>
       </div>
     </main>
 
+    <aside class="inspector" data-inspector>
+      <div class="ambient" aria-hidden="true" data-ambient></div>
+      <div class="frame"><div class="inspector-scroll" data-inspector-scroll>
+        <section class="now" data-now>
+          <div class="art" data-art>
+            <img alt="" data-cover hidden>
+            <div class="blank" data-blank><svg class="icon"><use href="#i-record"/></svg></div>
+          </div>
+          <div class="song">
+            <h2 data-song></h2>
+            <p class="artist" data-artist></p>
+            <p class="album" data-album></p>
+          </div>
+          <div class="progress" data-progress hidden>
+            <div class="track" data-track role="slider" tabindex="0" aria-valuemin="0"><div class="fill" data-fill></div><div class="knob" data-knob></div></div>
+            <div class="times"><span data-elapsed></span><span class="badge" data-badge hidden></span><span data-duration></span></div>
+          </div>
+          <div class="transport" data-transport hidden>
+            <button type="button" class="tool" data-previous><svg class="icon fill"><use href="#i-prev"/></svg></button>
+            <button type="button" class="tool play" data-toggle><svg class="icon fill"><use href="#i-pause"/></svg></button>
+            <button type="button" class="tool" data-next><svg class="icon fill"><use href="#i-next"/></svg></button>
+          </div>
+          <div class="where" data-where hidden>
+            <button type="button" class="device" data-device-row><svg class="icon"><use href="#i-laptop"/></svg><span data-device-name></span></button>
+            <span class="repeat" data-repeat hidden><svg class="icon"><use href="#i-repeat-one"/></svg></span>
+            <a class="external" data-external hidden target="_blank"><svg class="icon"><use href="#i-external"/></svg></a>
+            <button type="button" class="external" data-stop-previews hidden><svg class="icon"><use href="#i-close"/></svg></button>
+          </div>
+          <button type="button" class="button primary connect" data-connect-player hidden></button>
+        </section>
+        <section class="next" data-next-panel hidden>
+          <h3 data-next-label></h3>
+          <ol data-queue></ol>
+        </section>
+      </div></div>
+    </aside>
+
     <div class="grip" data-grip="sidebar"></div>
     <div class="grip" data-grip="inspector"></div>
-    <p class="notice" data-notice role="status" hidden></p>
-    <div class="drop" data-drop hidden><p data-drop-hint></p></div>
-    <aside class="inspector" data-inspector>
-      <section class="panel now">
-        <h2><span class="side" data-side aria-hidden="true">A</span><span data-now-label></span><span class="badge" data-badge hidden></span></h2>
-        <div class="art" data-art>
-          <img alt="" data-cover hidden>
-          <div class="blank" data-blank><svg class="icon"><use href="#i-record"/></svg></div>
-          <div class="controls" data-controls hidden>
-            <button type="button" data-previous><svg class="icon"><use href="#i-prev"/></svg></button>
-            <button type="button" class="toggle" data-toggle><svg class="icon"><use href="#i-pause"/></svg></button>
-            <button type="button" data-next><svg class="icon"><use href="#i-next"/></svg></button>
-          </div>
-        </div>
-        <div class="song"><h3 data-song></h3><p data-artist></p><p data-album></p></div>
-        <div class="progress" data-progress hidden><div class="ruler" data-ruler aria-hidden="true"></div><div class="times"><span data-elapsed></span><span data-duration></span></div></div>
-        <button type="button" class="device" data-device-row hidden><svg class="icon"><use href="#i-laptop"/></svg><span data-device-name></span><span class="repeat" data-repeat hidden></span></button>
-      </section>
-      <section class="panel next" data-next-panel hidden>
-        <h2 data-next-label></h2>
-        <ol data-queue></ol>
-      </section>
-    </aside>
+    <div class="drop" data-drop hidden><svg class="icon"><use href="#i-record"/></svg><p data-drop-hint></p></div>
   </div>
   <script type="module" src="renderer.js"></script>
 </body>

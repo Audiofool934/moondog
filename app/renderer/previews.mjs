@@ -101,6 +101,8 @@ export function createPreviews({ send, onChange }) {
       else audio.pause();
     },
     next() { if (queue.length) (index + 1 < queue.length ? load(index + 1) : stop()); },
+    stop() { stop(); },
+    seek(ms) { if (queue.length && Number.isFinite(ms)) { audio.currentTime = Math.max(0, ms / 1000); onChange(); } },
     previous() { if (queue.length) (audio.currentTime > 3 || index === 0 ? (audio.currentTime = 0) : load(index - 1)); },
     state() {
       const track = current();

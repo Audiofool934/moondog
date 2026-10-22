@@ -42,6 +42,9 @@ function coreEnvironment(shellPath) {
 let window = null;
 let core = null;
 let quitting = false;
+// What the page last said it can do; the menu greys out what would do nothing.
+const playback = { controllable: false, streaming: false };
+let dockMenu = null;
 const command = (name) => () => window?.webContents.send("command", name);
 
 function buildMenu() {
@@ -70,15 +73,14 @@ function buildMenu() {
     ] },
     { label: t("menuConversation"), submenu: [
       { label: t("menuNew"), accelerator: "CmdOrCtrl+N", click: command("new") },
-      { label: t("menuStop"), accelerator: "CmdOrCtrl+.", click: command("stop") },
+      { id: "stop", label: t("menuStop"), accelerator: "CmdOrCtrl+.", click: command("stop"), enabled: playback.streaming },
     ] },
     { label: t("menuPlayback"), submenu: [
-      // No key equivalents: on macOS every menu accelerator is live (registerAccelerator is Linux and
-      // Windows only), so Space or Cmd+arrows here would toggle and skip music while you type.
-      // The keyboard's own media keys already play, pause and skip.
-      { label: t("menuPlayPause"), click: command("toggle-playback") },
-      { label: t("menuNext"), click: command("next") },
-      { label: t("menuPrevious"), click: command("previous") },
+      // On macOS every menu accelerator is live, even while typing, so these use Control and Command
+      // together: Space or Command with an arrow would play, pause and skip in the middle of a sentence.
+      { id: "toggle-playback", label: t("menuPlayPause"), accelerator: "Ctrl+Cmd+P", click: command("toggle-playback"), enabled: playback.controllable },
+      { id: "next", label: t("menuNext"), accelerator: "Ctrl+Cmd+Right", click: command("next"), enabled: playback.controllable },
+      { id: "previous", label: t("menuPrevious"), accelerator: "Ctrl+Cmd+Left", click: command("previous"), enabled: playback.controllable },
     ] },
     { label: t("menuView"), submenu: [
       { label: t("menuSidebar"), accelerator: "CmdOrCtrl+Alt+S", click: command("toggle-sidebar") },
@@ -95,6 +97,13 @@ function buildMenu() {
       { label: t("menuFront"), role: "front" },
     ] },
   ]));
+  // The Dock icon's menu reaches the music while the window is closed.
+  dockMenu = Menu.buildFromTemplate([
+    { id: "toggle-playback", label: t("menuPlayPause"), click: command("toggle-playback"), enabled: playback.controllable },
+    { id: "next", label: t("menuNext"), click: command("next"), enabled: playback.controllable },
+    { id: "previous", label: t("menuPrevious"), click: command("previous"), enabled: playback.controllable },
+  ]);
+  app.dock?.setMenu(dockMenu);
 }
 
 async function openCore() {
@@ -166,15 +175,16 @@ function createWindow() {
     title: "Moondog",
     backgroundColor: background(),
     titleBarStyle: "hiddenInset",
-    trafficLightPosition: { x: 20, y: 19 },
+    // Centered on the page's 44px bar (app/renderer/tokens.css --bar).
+    trafficLightPosition: { x: 18, y: 15 },
     show: false,
     webPreferences: {
       preload: path.join(here, "preload.cjs"),
       contextIsolation: true,
       sandbox: true,
-      // Previews keep playing while the window is hidden.
-      backgroundThrottling: false,
       spellcheck: true,
+      // The agent starts previews from the core, without a click in the window.
+      autoplayPolicy: "no-user-gesture-required",
     },
   });
   // Links open in the listener's browser; the window itself never navigates away.
@@ -231,8 +241,25 @@ ipcMain.on("language", (_event, value) => {
   locale = windowLocale([value]);
   buildMenu();
 });
-// A reply in progress shows in the Dock while the window is away.
-ipcMain.on("busy", (_event, busy) => window?.setProgressBar(busy === true ? 2 : -1, { mode: "indeterminate" }));
+// A reply in progress shows in the Dock while the window is away, and keeps the hidden window
+// drawing at full speed until it ends. An idle hidden window is throttled, so its timers rest
+// while the music plays for hours; previews still play, because a window making sound is never throttled.
+ipcMain.on("busy", (_event, busy) => {
+  window?.setProgressBar(busy === true ? 2 : -1, { mode: "indeterminate" });
+  window?.webContents.setBackgroundThrottling(busy !== true);
+});
+ipcMain.on("playback", (_event, next) => {
+  const controllable = next?.controllable === true;
+  const streaming = next?.streaming === true;
+  if (controllable === playback.controllable && streaming === playback.streaming) return;
+  Object.assign(playback, { controllable, streaming });
+  for (const menu of [Menu.getApplicationMenu(), dockMenu]) {
+    for (const id of ["toggle-playback", "next", "previous"]) { const item = menu?.getMenuItemById(id); if (item) item.enabled = controllable; }
+  }
+  const menu = Menu.getApplicationMenu();
+  const stop = menu?.getMenuItemById("stop");
+  if (stop) stop.enabled = streaming;
+});
 nativeTheme.on("updated", () => window?.setBackgroundColor(background()));
 // Quitting first asks the core to stop its replies and close its conversations, so each one is
 // saved as it ended; a core that takes too long is stopped.
