@@ -3,7 +3,6 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { InteractiveTasteprintDemoSession } from "../../src/demo/moondog-interactive-tasteprint-demo.mjs";
 
 import {
   contractSchemaIds,
@@ -244,39 +243,4 @@ test("active corrections are filtered before bounds and revision time cannot run
     )?.state,
     "active",
   );
-});
-
-test("temporary corrections filter every selection, preserve history, and restore on retraction", () => {
-  const selectionKeys = ["time_capsule_tracks", "rediscovery_tracks", "historical_return_tracks", "back_to_back_tracks"];
-  const tracks = [
-    { label: "Same Song", artist_credit: "First Artist" },
-    { label: "Same Song", artist_credit: "Second Artist" },
-  ];
-  const base = {
-    coverage: {}, strong_preferences: [], curated_preferences: {}, limitations: [],
-    listening_behavior: {
-      ...Object.fromEntries(selectionKeys.map((key) => [key, tracks])),
-      repeat_tracks: tracks,
-      history_arc: [{ year: 2024, play_count: 8 }],
-    },
-  };
-  const original = structuredClone(base);
-  for (const kind of ["demo", "private_session"]) {
-    const session = new InteractiveTasteprintDemoSession({ kind, baseProfileFactory: () => structuredClone(base) });
-    const correction = session.record({
-      entityType: "track", label: "Same Song", artistCredit: "First Artist", stance: "avoid",
-      occurredAt: "2026-09-05T00:00:00Z",
-    });
-    const avoided = session.profile();
-    for (const key of selectionKeys) assert.deepEqual(avoided.listening_behavior[key], [tracks[1]]);
-    assert.deepEqual(avoided.listening_behavior.repeat_tracks, tracks);
-    assert.deepEqual(avoided.listening_behavior.history_arc, base.listening_behavior.history_arc);
-    session.retract({ correctionId: correction.correction_id, occurredAt: "2026-09-05T00:01:00Z" });
-    for (const key of selectionKeys) assert.deepEqual(session.profile().listening_behavior[key], tracks);
-    session.record({ entityType: "artist", label: "First Artist", stance: "avoid", occurredAt: "2026-09-05T00:02:00Z" });
-    for (const key of selectionKeys) assert.deepEqual(session.profile().listening_behavior[key], [tracks[1]]);
-    session.record({ entityType: "artist", label: "First Artist", stance: "like", occurredAt: "2026-09-05T00:03:00Z" });
-    for (const key of selectionKeys) assert.deepEqual(session.profile().listening_behavior[key], tracks);
-  }
-  assert.deepEqual(base, original);
 });

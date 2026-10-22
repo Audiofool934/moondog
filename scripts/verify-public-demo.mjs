@@ -61,25 +61,15 @@ if (
 ) {
   fail("the plan does not contain six unique trusted tracks");
 }
-const studioStep = value.next_steps?.find(
-  (step) => step.id === "open_private_studio",
-);
-const visualTourStep = value.next_steps?.find(
-  (step) => step.id === "open_visual_tour",
+const roomStep = value.next_steps?.find(
+  (step) => step.id === "open_listening_room",
 );
 if (
-  visualTourStep?.checkout_command !== "npm run demo:studio" ||
-  visualTourStep?.installed_command !== "moondog studio --demo" ||
-  !visualTourStep?.data_boundary?.includes("rejects imports")
+  roomStep?.checkout_command !== "npm start" ||
+  roomStep?.installed_command !== "moondog" ||
+  !roomStep?.data_boundary?.includes("before anything is saved")
 ) {
-  fail("the demo does not provide a bounded path into the zero-data visual tour");
-}
-if (
-  studioStep?.checkout_command !== "npm run studio" ||
-  studioStep?.installed_command !== "moondog studio" ||
-  !studioStep?.data_boundary?.includes("explicit button press")
-) {
-  fail("the demo does not provide a bounded path into private Studio");
+  fail("the demo does not point to the listening room for the listener's own history");
 }
 
 const serialized = JSON.stringify(value);

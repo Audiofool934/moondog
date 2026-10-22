@@ -25,7 +25,6 @@ import {
 } from "../../src/demo/fictional-spotify-history.mjs";
 import { readSpotifyHistoryArchive } from "../../src/integrations/spotify/history-archive.mjs";
 import { projectTasteFromSpotifyArchive } from "../../src/profile/spotify-archive-taste.mjs";
-import { startMoondogStudio } from "../../src/surfaces/web/studio.mjs";
 
 const execFileAsync = promisify(execFile);
 const repositoryRoot = path.resolve(
@@ -62,22 +61,6 @@ async function exists(filePath) {
     if (error?.code === "ENOENT") return false;
     throw error;
   }
-}
-
-function studioSession(studio) {
-  return new URL(studio.url).searchParams.get("session");
-}
-
-async function postArchive(studio, archive) {
-  return fetch(new URL("/api/import", studio.origin), {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/zip",
-      Origin: studio.origin,
-      "X-Moondog-Session": studioSession(studio),
-    },
-    body: archive,
-  });
 }
 
 test("fictional Extended History is byte-stable, minimal, and powers the real Taste projection", async () => {
@@ -282,7 +265,7 @@ test("fictional history generation refuses ambiguous or destructive destinations
   }
 });
 
-test("the installed-style CLI artifact works through one-off Taste and private Studio import", async (context) => {
+test("the installed-style CLI artifact works through one-off Taste", async (context) => {
   const root = await mkdtemp(path.join(tmpdir(), "moondog-demo-history-cli-"));
   const stateRoot = path.join(root, "state");
   const environment = {
@@ -291,9 +274,7 @@ test("the installed-style CLI artifact works through one-off Taste and private S
     MOONDOG_CONFIG_HOME: path.join(root, "config"),
     NO_COLOR: "1",
   };
-  let studio = null;
   context.after(async () => {
-    await studio?.close();
     await rm(root, { recursive: true, force: true });
   });
 
@@ -367,30 +348,4 @@ test("the installed-style CLI artifact works through one-off Taste and private S
     ],
   );
   assert.equal(await exists(stateRoot), false);
-
-  const temporaryRoot = path.join(root, "studio-temporary");
-  await mkdir(temporaryRoot, { mode: 0o700 });
-  studio = await startMoondogStudio({
-    environment,
-    temporaryRoot,
-    now: () => new Date(capturedAt),
-  });
-  const response = await postArchive(studio, await readFile(archivePath));
-  const imported = await response.json();
-  assert.equal(response.status, 200);
-  assert.equal(imported.profile_kind, "private");
-  assert.equal(imported.coverage.effective_listening_events, 52);
-  assert.equal(imported.source.data_scope, "lifetime_extended_streaming_history");
-  assert.equal(imported.time_machine.ready, true);
-  assert.equal(imported.time_machine.landmark_count, 4);
-  assert.equal(imported.historical_returns.ready, true);
-  assert.equal(imported.historical_returns.return_track_count, 4);
-  assert.equal(imported.historical_returns.minimum_gap_days, 180);
-  assert.equal(imported.back_to_back.ready, true);
-  assert.equal(imported.back_to_back.track_count, 3);
-  assert.equal(imported.back_to_back.minimum_consecutive_plays, 2);
-  assert.deepEqual(
-    imported.time_machine.landmarks.map((landmark) => landmark.year),
-    [2023, 2024, 2025, 2026],
-  );
 });

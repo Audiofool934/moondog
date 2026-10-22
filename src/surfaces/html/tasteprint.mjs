@@ -826,7 +826,6 @@ export function createTasteprintView(
   profile,
   {
     generatedAt = new Date().toISOString(),
-    syntheticDemo = false,
   } = {},
 ) {
   if (!isPlainObject(profile)) {
@@ -834,9 +833,6 @@ export function createTasteprintView(
   }
   if (typeof generatedAt !== "string" || Number.isNaN(Date.parse(generatedAt))) {
     throw new TypeError("Tasteprint generatedAt must be an ISO timestamp.");
-  }
-  if (typeof syntheticDemo !== "boolean") {
-    throw new TypeError("Tasteprint syntheticDemo must be a boolean.");
   }
   const coverage = isPlainObject(profile.coverage) ? profile.coverage : {};
   const behavior = isPlainObject(profile.listening_behavior)
@@ -872,12 +868,9 @@ export function createTasteprintView(
   return {
     tasteprint_version: "moondog-tasteprint/1",
     generated_at: new Date(generatedAt).toISOString(),
-    synthetic_demo: syntheticDemo,
     privacy: {
-      classification: syntheticDemo
-        ? "public_synthetic_demo"
-        : "private_local_tasteprint",
-      contains_personal_music_context: !syntheticDemo,
+      classification: "private_local_tasteprint",
+      contains_personal_music_context: true,
       network_requests: "none",
     },
     profile_version: cleanText(profile.profile_version, 80) || "unknown",
@@ -1842,7 +1835,6 @@ function crossFormatIdentityCoverage(coverage) {
 
 export function renderTasteprintHtml(profile, options = {}) {
   const view = createTasteprintView(profile, options);
-  const syntheticDemo = view.synthetic_demo === true;
   const coverage = view.coverage;
   const context = view.behavior.context;
   const profiledEvents =
@@ -2012,7 +2004,7 @@ export function renderTasteprintHtml(profile, options = {}) {
   <meta name="robots" content="noindex, nofollow, noarchive">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
   <meta name="color-scheme" content="light">
-  <title>${syntheticDemo ? "Moondog Synthetic Tasteprint Demo" : "Private Moondog Tasteprint"}</title>
+  <title>Private Moondog Tasteprint</title>
   <style>
     :root {
       --paper: #eee8de;
@@ -2314,20 +2306,6 @@ export function renderTasteprintHtml(profile, options = {}) {
 
     .section.dark { color: #f5f1e9; background: var(--night); border-color: #10100f; }
 
-    .demo-chip {
-      display: inline-flex;
-      margin: 0 0 22px;
-      padding: 7px 10px;
-      border: 1px solid #5f7182;
-      border-radius: 999px;
-      color: #c8d9e8;
-      background: rgba(111, 140, 168, 0.12);
-      font-size: 9px;
-      font-weight: 850;
-      letter-spacing: 0.14em;
-      text-transform: uppercase;
-    }
-
     .section-heading {
       display: grid;
       grid-template-columns: minmax(0, 1fr) minmax(220px, 360px);
@@ -2500,20 +2478,6 @@ export function renderTasteprintHtml(profile, options = {}) {
       background:
         radial-gradient(circle at 100% 0%, rgba(111, 140, 168, 0.16), transparent 28rem),
         rgba(248, 244, 237, 0.94);
-    }
-
-    .pattern-demo-chip {
-      display: inline-flex;
-      margin: 0 0 22px;
-      padding: 7px 10px;
-      border: 1px solid #a8bac9;
-      border-radius: 999px;
-      color: #4f708f;
-      background: rgba(237, 243, 247, 0.86);
-      font-size: 9px;
-      font-weight: 850;
-      letter-spacing: 0.14em;
-      text-transform: uppercase;
     }
 
     .pattern-grid {
@@ -2993,7 +2957,7 @@ export function renderTasteprintHtml(profile, options = {}) {
 <body>
   <main class="shell">
     <header class="hero">
-      <p class="eyebrow">${syntheticDemo ? "Moondog listening report, fictional demo" : "Moondog listening report, private"}</p>
+      <p class="eyebrow">Moondog listening report, private</p>
       <h1>${escapeHtml(spanLabel(view.timeline.days))}, seen clearly.</h1>
       <p class="hero-copy">${escapeHtml(heroCopy)}</p>
       <div class="hero-meta" aria-label="Tasteprint snapshot metadata">
@@ -3003,9 +2967,9 @@ export function renderTasteprintHtml(profile, options = {}) {
       </div>
     </header>
 
-    <aside class="privacy" aria-label="${syntheticDemo ? "Synthetic demo boundary" : "Privacy boundary"}">
+    <aside class="privacy" aria-label="Privacy boundary">
       <span class="privacy-mark" aria-hidden="true">L</span>
-      <div><strong>${syntheticDemo ? "A fictional demo" : "Private, made on this machine"}</strong><p>${syntheticDemo ? "Every artist, track, and number on this page is made up. The page loads nothing from the internet." : "This page is about you. It loads nothing from the internet. Share it only if you are happy for others to see the artists, tracks, and numbers on it."}</p></div>
+      <div><strong>Private, made on this machine</strong><p>This page is about you. It loads nothing from the internet. Share it only if you are happy for others to see the artists, tracks, and numbers on it.</p></div>
     </aside>
 
     <section class="overview" aria-label="Listening coverage">
@@ -3020,7 +2984,6 @@ export function renderTasteprintHtml(profile, options = {}) {
     ${sectionNavigator}
 
     <section class="section dark" id="taste-shape">
-      ${syntheticDemo ? '<p class="demo-chip">Fictional public profile</p>' : ""}
       <div class="section-heading"><h2>Shine On</h2><p>The artists who stayed with you across the years, and the ones you have played in the last ${escapeHtml(number(recentWindow))} days. Bars compare within each list only.</p></div>
       <div class="two-column">
         <article class="panel"><span class="panel-label">All of your history</span><h3>Across the years</h3>${artistRows(view.behavior.enduring_artists)}</article>
@@ -3045,7 +3008,6 @@ export function renderTasteprintHtml(profile, options = {}) {
     </section>` : ""}
 
     ${hasListeningPatterns ? `<section class="section pattern-section" id="listening-patterns">
-      ${syntheticDemo ? '<p class="pattern-demo-chip">Fictional archive preview</p>' : ""}
       <div class="section-heading"><h2>Inside a listening stretch</h2><p>Spotify's extended history shows how plays cluster, which songs you played again right away, and which records you went deep on. These are patterns, not a read on your mood, routine, or taste.</p></div>
       <div class="two-column pattern-grid">
         ${view.behavior.session_summary ? `<article class="panel session-panel"><span class="panel-label">${escapeHtml(number(view.behavior.session_summary.gap_minutes))}-minute breaks</span><h3>Listening stretches</h3><p class="panel-intro">Plays are grouped together until a longer break starts a new stretch.</p>${sessionShape(view.behavior.session_summary)}</article>` : ""}
@@ -3094,7 +3056,7 @@ export function renderTasteprintHtml(profile, options = {}) {
       <div class="limitations">${view.limitations.map((item) => `<p>${escapeHtml(item)}</p>`).join("")}</div>
     </section>
 
-    <footer><span>Moondog listening report / ${syntheticDemo ? "fictional demo" : "private, made on this machine"} / works offline</span><span>Generated ${escapeHtml(view.generated_at)}</span></footer>
+    <footer><span>Moondog listening report / private, made on this machine / works offline</span><span>Generated ${escapeHtml(view.generated_at)}</span></footer>
   </main>
 </body>
 </html>
@@ -3103,7 +3065,6 @@ export function renderTasteprintHtml(profile, options = {}) {
 
 export function renderTasteprintCardHtml(profile, options = {}) {
   const view = createTasteprintView(profile, options);
-  const syntheticDemo = view.synthetic_demo === true;
   const coverage = view.coverage;
   const recentWindow = view.behavior.context.recent_window_days ?? 90;
   const enduringArtists = view.behavior.enduring_artists.slice(0, 3);
@@ -3168,7 +3129,7 @@ export function renderTasteprintCardHtml(profile, options = {}) {
   <meta name="robots" content="noindex, nofollow, noarchive">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
   <meta name="color-scheme" content="light">
-  <title>${syntheticDemo ? "Moondog Synthetic Tasteprint Card Demo" : "Private Moondog Tasteprint Card"}</title>
+  <title>Private Moondog Tasteprint Card</title>
   <style>
     :root {
       color: #1b1b19;
@@ -3532,7 +3493,7 @@ export function renderTasteprintCardHtml(profile, options = {}) {
 <body>
   <main class="taste-card" data-artifact="moondog-tasteprint-card/1">
     <section class="identity" aria-labelledby="card-title">
-      <div class="brand-row"><span>Moondog</span><span>${syntheticDemo ? "Fictional demo" : "Private recap"}</span></div>
+      <div class="brand-row"><span>Moondog</span><span>Private recap</span></div>
       <p class="card-kicker">Tasteprint card / across the years</p>
       <h1 id="card-title">${escapeHtml(headline)}</h1>
       <p class="span">${escapeHtml(spanLabel(view.timeline.days))}, read from your own listening history.</p>
@@ -3545,7 +3506,7 @@ export function renderTasteprintCardHtml(profile, options = {}) {
 
     <section class="content" aria-label="Tasteprint recap">
       <header class="content-header">
-        <p class="content-title">${syntheticDemo ? "Fictional public profile" : "Private listening recap"}</p>
+        <p class="content-title">Private listening recap</p>
         <p class="content-range">${escapeHtml(rangeLabel)}</p>
       </header>
 
@@ -3571,8 +3532,8 @@ export function renderTasteprintCardHtml(profile, options = {}) {
         <aside class="boundary" aria-label="Interpretation and privacy boundary">
           <span class="boundary-mark" aria-hidden="true">L</span>
           <div>
-            <strong>${syntheticDemo ? "A fictional demo" : "Read it before you share it"}</strong>
-            <p>${syntheticDemo ? "Every artist, track, date, and number on this card is made up." : "This card is about you. Check every artist, track, date, and number on it before you share it."}</p>
+            <strong>Read it before you share it</strong>
+            <p>This card is about you. Check every artist, track, date, and number on it before you share it.</p>
             <p>${escapeHtml(boundary)}</p>
             ${correctionCount > 0 ? `<span class="direct-signal">${escapeHtml(number(correctionCount))} of your own ${correctionCount === 1 ? "choice" : "choices"} applied</span>` : ""}
           </div>
