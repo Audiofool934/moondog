@@ -63,4 +63,7 @@ const artifacts = await build({
     dmg: { title: "Moondog ${version}" },
   },
 });
+// The DMG and the zip are what ships. The unpacked app electron-builder leaves beside them
+// would show up in Spotlight and Launchpad as a second Moondog, so it goes.
+await rm(path.join(here, "release", "mac-arm64"), { recursive: true, force: true });
 for (const artifact of artifacts) console.log(path.relative(here, artifact));
