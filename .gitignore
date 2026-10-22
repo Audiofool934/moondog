@@ -27,6 +27,9 @@ node_modules/
 .pnpm-store/
 .playwright-cli/
 
+# Local agent settings and worktrees
+.claude/
+
 # Browser automation state
 browser-profile/
 browser-artifacts/
