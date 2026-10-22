@@ -2,7 +2,8 @@
 
 This folder builds Moondog's project page.
 Its hero is the real listening room, running in the browser with a fictional listener.
-The page makes no network requests, and its content security policy enforces that.
+By default the page makes no network requests, and its content security policy enforces that.
+A build with `MOONDOG_AGENT_URL` also lets the page talk to the [public agent](#the-public-agent), and a Turnstile site key adds Cloudflare's visitor check.
 
 ## Run it
 

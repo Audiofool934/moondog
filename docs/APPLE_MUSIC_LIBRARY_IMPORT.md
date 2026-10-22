@@ -10,36 +10,32 @@ It is not a complete listening-history source.
 
 The importer is local-only and does not contact Apple, Spotify, a private legacy host, or any other network service.
 
-## Guided terminal import
+## Import in the terminal
 
-Use `/import > Apple Music > Quick start with library XML` in the Pi TUI.
-The guide explains Music on Mac's File > Library > Export Library command and accepts the resulting XML file.
-You can also enter `/import "/absolute/path/to/Library.xml"` directly.
-Moondog previews the library before saving, imports the exact inspected snapshot, automatically rebuilds the projection, and opens the cumulative Profile in the same terminal.
-The lower-level inspect, import and rebuild commands below remain available separately.
+In Music on a Mac, choose File > Library > Export Library.
+Save `Library.xml` outside the repository.
 
-## Safe Inspection
+In the listening room, use `/import > Apple Music > Quick start with library XML`.
+The guide explains the export and accepts the XML file.
+You can also enter the path directly:
 
-Export `Library.xml` from Apple Music, keep it outside the repository, and run:
-
-```bash
-npm run inspect:apple-library -- --input /absolute/path/to/Library.xml
+```text
+/import "/absolute/path/to/Library.xml"
 ```
 
-Inspection reads the file and prints only aggregate counts, field coverage, source size, and data-semantics flags.
+## Preview
 
-It does not print track names, artists, albums, playlist names, provider identifiers, or local paths.
+Moondog reads and parses the whole file in memory before it saves anything.
 
-It does not write files.
+The preview shows the file name, the number of songs, the export date, and a note that a library shows what you keep, not when you played each song.
+
+It does not show track names, artists, albums, playlist names, provider identifiers, or local paths.
+
+Nothing is written until you choose **Add to my profile**.
 
 ## Private Import
 
-Run:
-
-```bash
-npm run import:apple-library -- \
-  --input /absolute/path/to/Library.xml
-```
+When you add the library, Moondog saves the exact snapshot it previewed, even if the file changes afterward.
 
 Moondog creates or reuses one stable private local music subject automatically.
 
@@ -47,9 +43,7 @@ If Spotify history was imported first, the Apple batch reuses that subject.
 
 If earlier verified Apple batches already exist, the import reuses their subject and requires it to match the local listening store.
 
-`--subject-id <uuid>` remains an advanced explicit override and must agree with both existing sources.
-
-The command writes one private batch into Moondog's local state directory, next to your listening history (`~/.local/state/moondog` unless `MOONDOG_STATE_HOME` or `XDG_STATE_HOME` says otherwise):
+The import writes one private batch into Moondog's local state directory, next to your listening history (`~/.local/state/moondog` unless `MOONDOG_STATE_HOME` or `XDG_STATE_HOME` says otherwise):
 
 ```text
 apple-music-library/imports/<import-batch-id>/
@@ -60,8 +54,7 @@ apple-music-library/imports/<import-batch-id>/
 ```
 
 Nothing is written inside the source checkout.
-Earlier versions kept this data in the checkout's `data/imports/` and `data/private/` folders; Moondog copies it into the state directory once and leaves the original in place.
-Those folders, `Library.xml`, and Apple Music library bundles stay ignored by Git.
+`Library.xml`, Apple Music library bundles, and the checkout's `data/imports/` and `data/private/` folders stay ignored by Git.
 
 Batch directories use mode `0700`, and files use mode `0600`.
 
@@ -70,6 +63,8 @@ Writes are staged in a private temporary directory and renamed into place only a
 An existing matching batch is verified and treated as an idempotent no-op.
 
 An existing mismatched or corrupted batch fails closed and is never overwritten.
+
+After the batch is saved, Moondog rebuilds the disposable A1 projection and opens the cumulative profile in the same terminal session.
 
 ## Output Semantics
 
@@ -143,23 +138,16 @@ The real export must never be copied into Git or converted into a committed fixt
 
 ## Disposable A1 Projection
 
-After at least one verified private import exists, rebuild the local A1 projection with:
+Every Apple Music `/import` rebuilds the local A1 projection from all verified import batches.
+Importing a library that is already saved adds no batch, but it still rebuilds the projection.
 
-```bash
-npm run rebuild:apple-projection
-```
-
-The command infers the trusted subject only when all selected verified batches agree on one subject.
-
-An optional `--subject-id` value can explicitly select one subject when multiple subjects are present.
-
-The command does not print subject identifiers, provider identifiers, track metadata, or private paths.
+The rebuild infers the trusted subject only when all verified batches agree on one subject.
 
 The projection is written to `apple-music-library/projection.sqlite` in the same state directory, with file mode `0600` inside private directories.
 
 Runtime reads and local-data control can point at an isolated existing import root and disposable projection with `MOONDOG_APPLE_IMPORTS_ROOT` and `MOONDOG_APPLE_PROJECTION_PATH`.
 Both overrides must be absolute paths.
-When they are unset, the repository-local paths documented above remain the defaults.
+When they are unset, the state-directory paths documented above remain the defaults.
 
 It contains canonical TrackRefs, provider-neutral observations, conservative ProfileEvidence v2 records, profile summary rows, and a bounded FTS5 library index.
 
@@ -169,7 +157,7 @@ The same verified input produces the same logical projection digest.
 
 The SQLite file is derived and disposable.
 
-Deleting it does not delete the canonical import batches, and rerunning the rebuild recreates it.
+Deleting it does not delete the canonical import batches, and the next Apple Music `/import` recreates it.
 
 The Moondog CLI opens this projection read-only and enables A1 library and profile tools only when validation succeeds.
 
@@ -181,9 +169,13 @@ Removing one batch means deleting only its exact UUID-named directory under `app
 
 The original Apple Music XML export is not copied or changed by Moondog.
 
-Verify the exact batch ID from its manifest or the import command output before deleting anything.
+Verify the exact batch ID from its manifest before deleting anything.
 
 Rebuild the disposable projection after removing an import batch so its derived view matches the remaining canonical inputs.
+To rebuild it, use `/import` again with a Library.xml file whose batch you kept.
+
+To set all Apple data aside instead, run `moondog data inspect --scope apple` and then `moondog data reset --scope apple --confirm <token>`.
+The reset archives the import batches and the projection rather than deleting them.
 
 ## Next Data Source
 

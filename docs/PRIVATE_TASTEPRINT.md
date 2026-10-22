@@ -2,39 +2,31 @@
 
 Moondog can turn its bounded local ProfileProjection into a readable terminal summary, a complete self-contained visual HTML artifact, or a compact recap card.
 
-Both views use the same profile logic that supplies the local agent.
+All three views use the same profile logic that supplies the local agent.
 
 The HTML renderer does not read raw exports or invent a second taste model.
 
-## Start with the local Studio
+## Start with the report
 
-Run:
+Inside the listening room, type:
 
-```bash
-npm run studio
+```text
+/taste report
 ```
 
-Moondog opens a session-token-protected page on `127.0.0.1` for drag-and-drop import.
+The room shows the whole report in the conversation.
+It reads the same profile as `/taste`.
 
-Studio accepts Spotify Account Data or Extended Streaming History ZIPs and official saved ListenBrainz response or submission JSON.
+From the shell, save the report as a private page that works offline:
 
-The browser does not send the history file outside the Mac, the private temporary working copy is removed after import, and the generated Tasteprint contains no scripts or external requests.
+```bash
+moondog taste --html
+moondog taste --card
+```
 
-Studio also recognizes an existing persistent profile when it opens.
-Its **Correct the reading** panel can add an artist or track preference or avoidance, refresh the private Tasteprint, show all active corrections, and retract one without changing listening events.
-When any correction is active, Studio's Tasteprint link opens directly at the rendered correction evidence.
-Every qualifying ready profile exposes the Listening Time Machine as the primary visual action, with Listening Pulse, Listening Seasons, Music that came back, the compact recap card, and complete Tasteprint alongside it.
-The Studio summary carries only bounded month, year, title, artist, aggregate-count, return-count, and gap display fields for these previews and links directly to the full evidence panels.
-The card is generated in memory from the same current projection, carries the same session token and latest-artifact check as the complete Tasteprint, and is not automatically published or saved as a second Studio file.
-Choose **Download private HTML** to save the exact self-contained card through a same-origin token-protected response.
-The downloaded file contains no session URL, scripts, external assets, or network requests and remains private local output that must be reviewed before sharing.
-
-Without a history file or existing profile, choose **Try the real importer with fictional history** on the first screen to enter the same outcome and correction loop with unmistakably synthetic artists, tracks, and aggregates.
-Studio creates the deterministic 52-play fictional Extended Streaming History ZIP in a private temporary directory, passes it through the production Spotify importer, and removes the ZIP before presenting the profile.
-That profile includes a 36-month Listening Pulse with 15 active retained months and 13 fixed UTC calendar quarters with 12 active Listening Seasons, so blank and partial-window semantics are visible in the production-importer demo.
-The fictional profile, its direct signals, and its rendered Tasteprint remain only in process memory, create no local database or artifact file, and disappear when Studio stops.
-A real Spotify or ListenBrainz import immediately replaces fictional mode, and demo corrections never join the private profile.
-The first screen also links to a static fictional recap card so the output can be inspected before starting the interactive demo.
+`--html` writes the complete Tasteprint, and `--card` writes the compact recap card.
+Neither file contains scripts or external requests.
+The sections below describe each path.
 
 ## Persist a Spotify profile
 
@@ -66,7 +58,7 @@ The import receipt exposes the effective event delta and reconciled overlap coun
 
 When those exact overlaps connect one provisional TrackRef to exactly one resolved TrackRef, the read-time projection joins remaining effective plays under the resolved identity for behavioral aggregation.
 Stored events and TrackRefs remain unchanged, while sources that overlap multiple resolved targets fail closed and remain separate.
-The CLI, Studio, and complete Tasteprint expose aggregate counts for linked identities and affected effective events without exposing either TrackRef.
+The CLI and the complete Tasteprint expose aggregate counts for linked identities and affected effective events without exposing either TrackRef.
 
 The rendered profile includes all effective evidence already stored for that subject, so it can grow across Account Data, Extended Streaming History, and later recent-listening syncs.
 
@@ -134,7 +126,7 @@ moondog taste --html --output /private/path/tasteprint.html
 Add `--json` to receive machine-readable artifact metadata instead of the short terminal receipt.
 
 Each HTML Tasteprint includes a script-free section navigator after the coverage cards.
-The navigator lists only sections that exist in that artifact and supports direct fragment links from Studio or a local browser.
+The navigator lists only sections that exist in that artifact and supports direct fragment links in a local browser.
 
 When the profile contains qualifying history, the complete artifact adds a **Worth another listen** panel before the broader track lists.
 Each row names the track and artist, reports the bounded quiet period, shows its strongest calendar year when available, and states whether the ranking was supported by a direct preference, saved-library state, private-playlist curation, or historical attention alone.
@@ -176,14 +168,14 @@ It has no external effect unless the listener separately requests an authorized 
 When eligible effective listening history exists, the complete artifact also adds **Listening Pulse** inside the listening-through-time section.
 The grid represents continuous UTC calendar months and uses aggregate listening minutes for an intensity scale that is relative only to the same profile.
 Each cell exposes only its month, eligible event count, listening minutes, and distinct-track count.
-The complete Tasteprint represents at most the latest 240 retained months, while Studio previews at most the latest 72 and reports earlier months omitted from that bounded preview.
+The complete Tasteprint represents at most the latest 240 retained months.
 A blank cell means no eligible retained event appears in that UTC month, not proof that no listening occurred.
-Incognito events, raw timestamps, event sequences, source paths, evidence identifiers, and provider track identities remain outside the rendered view and Studio API.
+Incognito events, raw timestamps, event sequences, source paths, evidence identifiers, and provider track identities remain outside the rendered view.
 
 When eligible effective listening history exists, the same section adds **Listening Seasons** as deterministic UTC calendar quarters.
 Every represented quarter remains chronological, including empty quarters and partially retained first or last windows.
 An active season reports aggregate event, time, and track counts, the split between tracks first observed in retained history and tracks seen in an earlier retained season, one leading artist, and one signature track.
-The profile projection keeps at most the latest 80 seasons, the complete Tasteprint shows the latest 12, and Studio and the Agent profile summary show the latest six while reporting their omitted earlier seasons.
+The profile projection keeps at most the latest 80 seasons, the complete Tasteprint shows the latest 12, and the Agent profile summary shows the latest six while reporting its omitted earlier seasons.
 First observed means first appearance in retained eligible history, not discovery.
 An empty season means no eligible retained event appears in the window, not proof of no listening through another provider or outside the available archive.
 The leading artist and signature track describe only that quarter and do not establish mood, identity, a life event, or permanent taste change.
@@ -216,31 +208,21 @@ The file uses mode `0600` and an existing destination is never overwritten.
 
 ## Correct the projection
 
-Persistent corrections require a local music identity, created by a saved Spotify import or an Apple Music import.
+Persistent corrections require a local music identity, created by a saved import such as a Spotify ZIP or an Apple Music library.
 A one-off command preview intentionally disappears when the command exits and cannot retain a later correction.
-The session-only Studio path for one or two explicitly supplied Spotify ZIPs supports in-memory corrections that disappear when Studio stops.
-The clearly labeled Studio fictional demo is the other in-memory correction path and intentionally retains nothing after the process exits.
 
-In Studio, use the **Correct the reading** panel after import or whenever an existing persistent profile is ready.
-Choose Artist or Track, choose Like or Avoid, add an optional private note, and apply the direct signal.
-The active list provides the corresponding retract action and every successful mutation produces a refreshed private Tasteprint.
+In the listening room, type `/taste`, open a song or artist, and choose **I like this** or **Keep it out**.
+**Undo my choice** retracts that correction.
+The profile updates in place.
 
-Use **Correct this track** beside a Time Machine landmark, historical return, or back-to-back track to fill the exact title and artist without retyping.
-Choose Like or Avoid explicitly before applying that prefilled correction.
-The shortcut writes nothing until you press **Apply to Tasteprint**, and **Back to listening view** returns to the originating section with keyboard focus.
-The **Correct a reading** shortcut above the listening panels also reaches the form directly on narrow screens.
-
-Temporary sessions filter active avoidances from all four listen-again selections: Time Machine, Worth another listen, Music that came back, and Played back to back.
-These sessions re-filter their original bounded candidate lists and do not invent replacement landmarks.
-Any year without a selected landmark remains visible in the listening arc and coverage explanation.
-Retraction or a superseding Like restores eligible original candidates.
+An active avoidance removes the matching track or artist from all four listen-again selections: Time Machine, Worth another listen, Music that came back, and Played back to back.
+Retraction or a superseding Like restores eligible candidates.
 Historical counts, monthly activity, and descriptive listening records remain unchanged by an avoidance.
 
-After changing persistent data through the CLI or another local process, use **Refresh profile** in Studio.
-The current projection refreshes both the full Tasteprint and recap card only when the underlying profile changes.
-A reset clears the active artifact links after refresh; previously downloaded files remain independent local copies.
+A saved Tasteprint or recap card does not change after a correction.
+Run `moondog taste --html` or `moondog taste --card` again to save a new file.
 
-For terminal automation, record a direct artist or track stance with:
+From the shell, or with `/profile correct` in the room, record a direct artist or track stance:
 
 ```bash
 moondog profile correct --artist "Pink Floyd" --avoid \

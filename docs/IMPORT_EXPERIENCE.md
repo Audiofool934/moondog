@@ -35,18 +35,15 @@ Missing timestamps or played duration remain unknown; a collection of songs does
 
 ## Expansion sequence
 
-1. Add YouTube Music through official exported files, validating actual library, playlist and activity samples before declaring the corresponding data types supported.
-   Separate music activity from ordinary YouTube viewing and retain only the listening facts supplied by the source.
-2. Validate QQ Music and NetEase Cloud Music favorites and playlist acquisition, then ship the simplest reliable user path for each service.
-   Confirm link accessibility, file contents and song identity with representative samples instead of assuming a shared export format.
-3. Extend historical coverage as actual provider exports become available, including the Apple privacy archive path currently limited to guidance.
-   A personal-information copy request alone does not establish that complete listening history will be supplied.
+YouTube Music, QQ Music, NetEase Cloud Music and Last.fm are shipped; the coverage below describes them.
+The next step is to extend historical coverage as actual provider exports become available, including the Apple privacy archive path currently limited to guidance.
+A personal-information copy request alone does not establish that complete listening history will be supplied.
 
 For each new service, ship a usable end-to-end import slice and update its visible support description together.
 
 ## Implemented service coverage
 
-`/import` starts with **Spotify**, **Apple Music**, **YouTube Music**, **QQ Music** and **NetEase Cloud Music**, plus Other sources for ListenBrainz.
+`/import` starts with **Spotify**, **Apple Music**, **YouTube Music**, **Last.fm**, **QQ Music** and **NetEase Cloud Music**, plus Other sources for ListenBrainz.
 Spotify and Apple retain the paths described below.
 YouTube Music offers saved-library and past-listening entrypoints with a Google Takeout request/download guide.
 Its importer accepts the original ZIP or extracted music-library-songs CSV and watch-history JSON.
@@ -62,7 +59,9 @@ No credentials, cookies, creator profiles, comments or audio are persisted.
 The public website metadata responses are compatibility adapters rather than a guaranteed public developer API, so network, private-playlist and format failures leave the input available for recovery.
 The current QQ and NetEase responses were checked live against public playlists; Takeout parsing was validated against official schemas and synthetic fixtures rather than a private user export.
 
-All three new paths retain the inspected bundle, require confirmation, commit into the shared private subject and open the cumulative profile in the same session.
+Last.fm reads a listener's public scrobbles and loved tracks by username, with no sign-in.
+
+The YouTube Music, QQ Music and NetEase paths retain the inspected bundle, require confirmation, commit into the shared private subject and open the cumulative profile in the same session.
 Repeated identical imports are idempotent, and overlapping YouTube observations use stable provider/video/time fingerprints across ZIP and extracted files.
 Snapshots add observations without claiming to synchronize removed playlist entries.
 Collection evidence and profile summaries carry their real source labels; Spotify-specific counters remain specific to Spotify.

@@ -99,7 +99,7 @@ The Pi `AgentTool` interface is an adapter for a Moondog capability, not the cap
 
 `beforeToolCall` can perform runtime preflight, but every real executor must still pass through the Moondog capability runner so that non-Pi entry points cannot bypass policy.
 
-`afterToolCall` can bridge results into `ToolReceipt`, but Pi's transcript is not the canonical audit store.
+`afterToolCall` can bridge results into Moondog's own action receipts, but Pi's transcript is not the canonical audit store.
 
 ## Memory and Profile
 
@@ -282,7 +282,8 @@ OpenClaw remains valuable when Telegram, always-on delivery, or unattended sched
 
 Pi explicitly does not provide a built-in permission system for filesystem, process, network, or credential access.
 
-Moondog must preserve its own fail-closed `CapabilityPolicy`, `ToolInvocation`, and `ToolReceipt` boundary.
+Moondog must preserve its own fail-closed capability policy, invocation, and receipt boundary in its capability runner.
+Amendment, 2026-10-22: the JSON Schema contracts once drafted for these records (`CapabilityPolicy`, `ToolInvocation`, `ToolReceipt`) were removed, because no runtime path validated against them; the boundary lives in the capability runner and its tests.
 
 Model-provided actor, subject, permission, account, confirmation, or budget fields are untrusted.
 
