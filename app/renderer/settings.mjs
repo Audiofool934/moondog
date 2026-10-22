@@ -7,9 +7,10 @@ const make = (tag, className, text) => {
   return node;
 };
 // Each control carries a key, so the focus comes back to it when the sheet redraws.
+// A button without its own action submits the form it sits in.
 const button = (label, className = "", onClick, key = `button:${className}:${label}`) => {
   const node = make("button", className, label);
-  node.type = "button";
+  node.type = onClick ? "button" : "submit";
   node.dataset.key = key;
   if (onClick) node.addEventListener("click", onClick);
   return node;
