@@ -74,8 +74,11 @@ A model or music service chosen there lasts until the app quits, and sign-in and
 
 - The app carries the core exactly as the npm package ships it: `npm pack` decides the files, and `npm ci --omit=dev` adds their dependencies.
 - Signing needs the Developer ID Application certificate in the login keychain.
-  Notarization reads the keychain profile `moondog-notary`, made once with `xcrun notarytool store-credentials moondog-notary --team-id <your team ID>`, which asks for the Apple ID and an app-specific password.
-  `MOONDOG_SIGNING_IDENTITY` and `MOONDOG_NOTARY_PROFILE` choose a different certificate or profile.
+  Notarization uses `MOONDOG_NOTARY_PROFILE`, then the shared `APPLE_NOTARY_PROFILE`, then `mac-mini-notary`.
+  The Mac mini stores one `mac-mini-notary` profile for all products in the same developer team.
+  To configure another machine, run `xcrun notarytool store-credentials mac-mini-notary --team-id <your team ID>` and enter the Apple ID and app-specific password at the secure prompts.
+  `MOONDOG_SIGNING_IDENTITY` selects a different certificate.
+  Keep passwords in Keychain; profile names and environment variables contain no password.
 - Opened from the Dock or Finder, the app has a minimal `PATH`, so the core gets the `PATH` of a login shell, as in a terminal.
   Programs such as `codex`, which web research can use, keep working.
 - The packaged core has no npm update notice, because the app updates as a whole.

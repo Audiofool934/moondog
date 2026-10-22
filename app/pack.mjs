@@ -3,7 +3,7 @@
 //   node pack.mjs          unsigned, for a quick local check
 //   node pack.mjs --sign   signed with the Developer ID and notarized; Apple's notary
 //                          service reads the keychain profile in MOONDOG_NOTARY_PROFILE
-//                          (default moondog-notary, made with `xcrun notarytool store-credentials`)
+//                          or APPLE_NOTARY_PROFILE (default mac-mini-notary).
 import { execFile } from "node:child_process";
 import { cp, mkdir, readFile, rm } from "node:fs/promises";
 import path from "node:path";
@@ -33,7 +33,7 @@ await run("npm", ["ci", "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fu
 await run(process.execPath, [path.join(here, "build.mjs")]);
 
 const { version } = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
-if (sign) process.env.APPLE_KEYCHAIN_PROFILE = process.env.MOONDOG_NOTARY_PROFILE ?? "moondog-notary";
+if (sign) process.env.APPLE_KEYCHAIN_PROFILE = process.env.MOONDOG_NOTARY_PROFILE ?? process.env.APPLE_NOTARY_PROFILE ?? "mac-mini-notary";
 const artifacts = await build({
   projectDir: here,
   targets: Platform.MAC.createTarget(["dmg", "zip"], Arch.arm64),
