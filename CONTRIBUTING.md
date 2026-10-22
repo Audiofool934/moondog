@@ -21,7 +21,7 @@ Before changing code, describe:
 3. The personal data, network, model, and music-service boundaries involved.
 4. The observable evidence that would prove the change works.
 
-Read the [product charter](docs/PRODUCT_CHARTER.md), [public roadmap](docs/ROADMAP.md), and [release-readiness checklist](docs/PUBLIC_RELEASE_READINESS.md) before proposing a new capability.
+Read the [product charter](docs/PRODUCT_CHARTER.md), [public roadmap](docs/ROADMAP.md), and [release status](docs/PUBLIC_RELEASE_READINESS.md) before proposing a new capability.
 
 Use the structured bug or product-idea form in the canonical repository.
 Do not attach private listening data to an issue or pull request.
@@ -36,35 +36,19 @@ Install the locked dependency set without lifecycle scripts:
 npm ci --ignore-scripts
 ```
 
+Open the listening room:
+
+```bash
+npm start
+```
+
 Run the deterministic zero-auth product loop:
 
 ```bash
 npm run demo
 ```
 
-Open the script-free product overview with only fictional public assets:
-
-```bash
-npm run showcase
-```
-
-The local showcase binds only to `127.0.0.1`, serves an exact public-file allowlist, and makes no analytics or external network request.
-
-Create a private host-ready review bundle without publishing it:
-
-```bash
-npm run export:showcase -- --output /absolute/path/to/moondog-showcase
-```
-
-Inspect `manifest.json` and the exported root `index.html` before selecting or configuring any external hosting target.
-
-Open the dedicated zero-data Studio tour with its fictional in-memory profile already prepared:
-
-```bash
-npm run demo:studio
-```
-
-Use the first-screen action to inspect the Time Machine, profile-correction loop, and Tasteprint path without reading or creating private local state.
+To try changes without touching your own profile, point Moondog at empty folders with absolute `MOONDOG_STATE_HOME` and `MOONDOG_CONFIG_HOME` paths.
 
 Exercise the production Spotify importer with a generated fictional archive:
 
@@ -80,6 +64,14 @@ npm run moondog -- taste \
 The generator reads no private state and produces only the fixed fictional Moondog catalog through a deterministic ZIP writer.
 It refuses relative paths and existing destinations.
 Keep the generated ZIP under ignored `outputs/`; do not add generated archives to a commit or pull request.
+
+The desktop app and the project page have their own dependencies:
+
+- [`app/`](app/README.md): `cd app && npm ci && npm start`, or `npm run simulated` to try the window on a simulated Spotify.
+- [`site/`](site/README.md): `cd site && npm ci && npm run dev`.
+
+`npm run generate:demo-screens` regenerates the README terminal screenshots from the real room with fictional history.
+It needs `tmux` and a Chrome or Chromium browser.
 
 ## Protect private listener data
 
@@ -110,7 +102,7 @@ Match the proof to the kind of change:
 - Documentation changes should keep commands executable and claims narrower than their evidence.
 
 Do not manually edit generated artifacts when a repository generator exists.
-Regenerate the synthetic Tasteprint HTML with `npm run generate:tasteprint-demo` after changing its renderer or source profile.
+Regenerate the README terminal screenshots with `npm run generate:demo-screens` after changing what the sleeve or the profile shows.
 
 ## Verify the change
 

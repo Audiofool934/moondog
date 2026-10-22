@@ -70,7 +70,7 @@ The monthly layer retains only event count, engaged-play count, listening minute
 The quarterly layer adds active retained months, tracks first observed within retained eligible history versus tracks seen earlier, one aggregate leading artist, and one aggregate signature track.
 
 The profile keeps at most the latest 240 months and latest 80 quarters.
-The complete Tasteprint shows at most the latest 12 represented quarters, while Studio and the Agent profile summary show at most the latest six and report what their bounded views omit.
+The complete Tasteprint shows at most the latest 12 represented quarters, while the Agent profile summary shows at most the latest six and reports what its bounded view omits.
 
 Incognito events do not contribute to either view.
 Raw timestamps, event sequences, TrackRefs, evidence identifiers, source paths, and provider identity stay outside the rendered and model-visible projections.
@@ -83,7 +83,6 @@ Moondog compares consecutive retained plays for each normalized track identity a
 A track qualifies for **Music that came back** only when at least one observed gap reaches 180 days, the track has at least three effective plays, at least three plays without an explicit skip signal, at least ten listening minutes, engaged plays are not outnumbered by explicit skips, and no active artist or track avoidance applies.
 
 The profile records only bounded music metadata, effective and engaged play counts, aggregate listening minutes, first and last retained timestamps, return count, longest gap, latest return gap, a bounded support label, and an evidence identifier.
-Studio further reduces that result to at most four track labels, artist credits, return counts, gap lengths, and the latest return date.
 The Agent candidate tool exposes bounded recurrence evidence and opaque track references while provider identifiers stay inside the host.
 
 A long gap followed by another retained play is recurrence in the available archive.
@@ -97,7 +96,6 @@ A sequence begins when the same resolved track appears in adjacent retained rows
 At least two adjacent eligible plays are required.
 
 The profile records only bounded music metadata, effective and engaged play counts, burst count, longest consecutive sequence, plays and listening minutes inside qualifying bursts, latest burst time, a sequence label, and an evidence identifier.
-Studio further reduces that result to at most four music labels, sequence aggregates, and the latest observed date.
 The Agent candidate tool exposes bounded sequence evidence and opaque track references while provider identifiers stay inside the host.
 
 Active artist or track avoidances are excluded.
@@ -137,7 +135,7 @@ The projection reports only aggregate session count, median plays, median listen
 
 The grouping is not a provider session log.
 It does not establish continuous playback, activity, attention, satisfaction, mood, routine, location, time zone, or intent.
-Per-session timestamps and raw event sequences are not placed in the Tasteprint or Studio response.
+Per-session timestamps and raw event sequences are not placed in the Tasteprint.
 
 ## Privacy boundary
 

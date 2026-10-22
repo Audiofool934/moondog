@@ -13,14 +13,16 @@ body:
       label: Product surface
       description: Where did the problem appear?
       options:
-        - Deterministic demo
-        - Studio
-        - Tasteprint
+        - Listening room in the terminal
+        - Desktop app
+        - Project page
+        - Import (Spotify, Apple Music, YouTube Music, Last.fm, ListenBrainz, QQ Music, or NetEase)
+        - Profile, report, or Tasteprint page
+        - Agent conversation or model sign-in
+        - Spotify connection or playback
         - CLI command
-        - Interactive TUI
-        - Spotify connection or action
-        - Apple Music import
-        - Packaging or installation
+        - Deterministic demo
+        - Packaging, installation, or updates
         - Documentation
         - Other
     validations:

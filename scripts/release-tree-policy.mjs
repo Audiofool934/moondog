@@ -136,7 +136,6 @@ export const requiredReleasePaths = new Set([
   "docs/PRODUCT_CHARTER.md",
   "docs/PUBLIC_RELEASE_READINESS.md",
   "docs/ROADMAP.md",
-  "docs/verification/linux-node-22.19.0.json",
   "package-lock.json",
   "package.json",
   "scripts/export-public-source.mjs",

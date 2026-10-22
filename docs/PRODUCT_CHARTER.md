@@ -2,43 +2,28 @@
 
 ## Status
 
-The current Spotify priority is a smooth conversational listening experience and useful device control. Bounded track, album, playlist, podcast, and device metadata may be shown to the agent as untrusted data; metadata blindness is not a product goal. Credential safety, correct action authority, explicit destructive intent, cancellation, and truthful receipts remain required. Live results are conversation context rather than automatic durable preference assertions.
+Moondog is a local listening room.
+It turns the listening history and library data that a listener supplies into an evidence-based profile.
+With a connected model, an agent uses that profile to talk about music, find music, and plan playlists.
+It can also control Spotify after the listener connects Spotify.
 
-As of 2026-09-05, the active product surface is the Pi-based TUI.
-GUI and Studio development is paused.
-Listening-history review, profile correction, and grounded discovery should be delivered and evaluated in the terminal.
-Existing Studio descriptions below record prototype behavior and are not current interface commitments.
+Moondog has three surfaces:
 
-Moondog has the M0 foundation and a working A1 curator, with bounded A2 memory, A3 external discovery, and A4 connected-action slices in active development.
-
-The provider-neutral contract foundation, private Apple and Spotify evidence projection, bounded Agent tools, prompt-local external candidates, conversational playlist revision, and guarded Spotify creation and existing-playlist editing exist, but the product contract is not complete.
-
-The first temporal rediscovery loop now turns meaningful older attention into bounded listen-again candidates, gives them a prompt-local private-history scope, and preserves exact provider identity only inside the host.
-
-The first historical-return loop now turns repeated long-gap recurrence into bounded Music that came back evidence and a dedicated prompt-local Agent candidate set.
-It excludes active avoidances and treats recurrence as an archive pattern rather than liking, nostalgia, intentional absence, or current preference.
-
-The first played-back-to-back loop now turns adjacent same-track Spotify Extended History plays into bounded sequence evidence and a dedicated prompt-local Agent candidate set.
-It requires at least two non-skipped plays of 30 seconds within a 30-minute gap and does not infer repeat mode, intention, liking, or preference.
-
-The first Listening Time Machine now turns qualifying multi-year history into deterministic chronological landmarks, balances selections across the retained year span, prefers different artists where the evidence permits, and works without an Apple Music projection.
-Studio now presents that result as the primary qualifying first-run outcome and keeps the deeper correction workbench immediately adjacent.
-
-The first Listening Pulse and Listening Seasons views now preserve the chronology between yearly landmarks through continuous UTC months and deterministic UTC calendar quarters.
-They expose bounded aggregate attention, first-observed-versus-seen-earlier track mix, and within-quarter anchors without retaining raw event sequences or claiming discovery, mood, identity, or life events.
-
-The source-checkout Studio now turns one or two explicitly supplied Spotify ZIPs into a complete session-only private profile without dependency installation.
-It keeps the archives unchanged, reconciles both export formats in memory, opens no persistent profile store, and discards the profile and corrections when the process stops.
-
-The first continuity-and-change view now distinguishes artists present across retained years from adjacent-year top-artist turnover.
-It keeps recurring attention, movement between listening-time leaders, and direct listener preference as separate evidence rather than collapsing them into one persona score.
-
-The first listening-pattern view now distinguishes multi-track release depth from approximate listening-session shape.
-It turns album metadata and UTC track-stop gaps into bounded descriptive evidence without claiming full-album completion, attention, mood, routine, location, or intent.
-
-The first client is now a local CLI with a simple TUI.
+- The terminal listening room is the main surface.
+  It is a local CLI and TUI built on Pi.
+- The desktop app in `app/` is a native client on the same core.
+  It shares the profile, settings, and sign-ins with the terminal.
+- The project page in `site/` runs the real terminal room in the browser on fictional data.
 
 Pi supplies replaceable agent-loop, model, and terminal adapters, while Moondog owns profile, memory, policy, persistence, and connectors.
+
+Moondog has the M0 foundation and a working A1 curator, with bounded A2 memory, A3 external discovery, and A4 connected-action slices in active development.
+The provider-neutral contract foundation, private listening-evidence projection, bounded Agent tools, prompt-local external candidates, conversational playlist revision, and guarded Spotify creation and existing-playlist editing exist, but the product contract is not complete.
+
+The current Spotify priority is a smooth conversational listening experience and useful device control.
+Bounded track, album, playlist, podcast, and device metadata may be shown to the agent as untrusted data; metadata blindness is not a product goal.
+Credential safety, correct action authority, explicit destructive intent, cancellation, and truthful receipts remain required.
+Live results are conversation context rather than automatic durable preference assertions.
 
 This document defines the initial product thesis, scope, and milestone sequence.
 
@@ -160,7 +145,7 @@ A small set of carefully selected recommendations is more valuable than a large 
 
 Choose the first listening-data source, profile schema, knowledge sources, and evaluation tasks, and establish the first client.
 
-Current progress includes the provider-neutral v1 foundation, `LibraryTrackObservation v1`, `ListeningEvent v1`, coexisting `ProfileEvidence v1` and `ProfileEvidence v2`, synthetic fixtures, strict validation, local semantic conformance tests, and private Apple Music, Spotify, and ListenBrainz importers.
+Current progress includes the provider-neutral v1 foundation, `LibraryTrackObservation v1`, `ListeningEvent v1`, `ProfileEvidence v2`, synthetic fixtures, strict validation, local semantic conformance tests, and private Apple Music, Spotify, and ListenBrainz importers.
 
 Apple Music Library XML is the first catalog and profile-seed source.
 
@@ -176,6 +161,9 @@ A Spotify Extended Streaming History subject additionally supplies a played-back
 The same temporal projection now reports artists present across at least two retained UTC years including the latest year, plus adjacent-year top-artist turnover over bounded listening-time rankings.
 These signals describe retained history and do not assert uninterrupted affinity, discovery, genre breadth, identity, or permanent taste change.
 
+The same projection reports Listening Pulse over continuous UTC calendar months and Listening Seasons over fixed UTC calendar quarters.
+They expose bounded aggregate attention, the mix of first-observed and seen-earlier tracks, and within-quarter anchors without retaining raw event sequences or claiming discovery, mood, identity, or life events.
+
 The projection now also reports releases with at least three distinct retained tracks and approximate Spotify Extended History sessions separated by gaps longer than 30 minutes.
 It exposes only bounded release labels and aggregate session shape, while per-session timestamps, raw sequences, provider track identities, incognito events, and invasive export metadata remain outside the view.
 
@@ -187,21 +175,19 @@ Exact cross-format overlap evidence now joins remaining provisional Account Data
 Official saved ListenBrainz response and submission JSON now provide the first independent portability proof for the Spotify-first listening-event model.
 The importer is offline, uses service-resolved `mbid_mapping` recording identity when available, preserves missing played duration as unknown, and excludes usernames, client metadata, tags, URLs, and the raw source payload from persistent records.
 
-Apple catalog retrieval, Wikidata artist identity, ListenBrainz listening-derived artist adjacency, and a durable live discovery evaluation command now form the first multi-source grounded discovery layer.
+Apple catalog retrieval, Wikidata artist identity, and ListenBrainz listening-derived artist adjacency now form the first multi-source grounded discovery layer.
 
 The public catalog CLI now closes the exact-name ambiguity loop by returning allowlisted Apple Music artist pages and accepting one selected page as a numeric catalog identity only after the looked-up artist name matches exactly.
 One short-lived cached lookup supplies both artist identity and releases, while mismatched names, non-Apple pages, and conflicting identity hints fail closed without reading a personal profile.
-
-A private provider-blind human review contract now covers relevance, serendipity, canonical-recording quality, explanation usefulness, tamper detection, and aggregate-only reporting.
 
 Spotify write resolution now distinguishes recognized live, remastered, edited, and collaboration variants before provider identifiers can enter an action.
 
 Existing Spotify playlist edits now retain playlist IDs, item URIs, and snapshot IDs inside the host, require a complete no-effect preview, and accept only a later confirmation of that exact draft.
 The first slice is intentionally limited to owned private non-collaborative playlists of at most 100 ordinary tracks and fails closed on stale snapshots or unsupported items.
 
-Completed independent human ratings, revision-aware profile materialization, and broader cross-catalog identity coverage remain open.
+Broader cross-catalog identity coverage remains open.
 
-The target interface decision is now a local CLI/TUI.
+The first client is a local CLI and TUI.
 
 The A1 plan supersedes the earlier requirement to build a complete profile revision layer first.
 
@@ -209,7 +195,13 @@ PF0 now promotes Apple aggregate snapshots into provider-neutral `LibraryTrackOb
 
 This projection supports A1 without claiming that aggregate Play Count proves liking or that one library snapshot is complete listening history.
 
-The broader profile claim, revision, feedback, correction, and persistence model remains deferred until A1 interaction provides concrete requirements.
+A listener correction records a direct like or avoid stance for an artist or track as a typed `TasteEvent`.
+It changes the next profile projection without changing listening events, and the listener can supersede or retract it.
+Corrections cover artists and tracks only.
+
+With a connected model, a requested profile build saves a revisable reading of the evidence.
+A cancelled build can resume, and new imports or corrections mark the saved reading for an update.
+Each saved finding can be traced to its evidence.
 
 ### M1: Music Knowledge Conversation
 

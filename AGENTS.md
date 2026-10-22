@@ -3,8 +3,8 @@
 ## Current Product Surface
 
 - Build and evaluate the personal listening loop in the Pi-based TUI.
-- GUI and Studio development is paused until the project owner explicitly reopens that scope.
-- Keep existing browser prototypes as reference; do not make them the default entrypoint or expand them as part of general project advancement.
+- The browser Studio and the static showcase were removed on 2026-10-22; Git history keeps them for reference.
+  Do not rebuild a separate browser product unless the project owner reopens that scope.
 - The project page in `site/` is in scope.
   It runs the real TUI in the browser on fictional data; keep that room code shared with the terminal app rather than forking its behavior for the page.
 - The desktop app in `app/` is in scope, first for the project owner's daily use and then for developers.

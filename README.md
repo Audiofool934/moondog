@@ -36,7 +36,17 @@ npm start
 [@audiofool/moondog](https://www.npmjs.com/package/@audiofool/moondog) 0.1.0 is the published package.
 To see the agent work through fictional data, with no sign-in at all, run `npm run demo` from the checkout.
 
-The source version supports `moondog update` and `/update`, with stable (`latest`) and preview (`beta`) channels. Startup checks show a quiet notification; installation happens only when you request it. See [updating and release channels](docs/UPDATES.md), including the one-time upgrade needed for the older npm 0.1.0 package.
+The source version supports `moondog update` and `/update`, with stable (`latest`) and preview (`beta`) channels.
+Startup checks show a quiet notification; installation happens only when you request it.
+See [updating and release channels](docs/UPDATES.md), including the one-time upgrade needed for the older npm 0.1.0 package.
+
+## Other ways in
+
+[Moondog for Mac](app/README.md) is a native window on the same core as the terminal room.
+It shares your profile, settings, sign-ins, and conversations with `moondog`, and draws its own conversation, now playing, and up next.
+Run it from this checkout with `cd app && npm ci && npm start`.
+
+The [project page](site/README.md) runs the real room in a browser on fictional listening data.
 
 ## The sleeve
 
@@ -188,12 +198,9 @@ Your profile, and anything Moondog remembers, carry over.
 - [Product charter](docs/PRODUCT_CHARTER.md) and [public roadmap](docs/ROADMAP.md): where Moondog is headed, and what it will not do.
 - [Voice](docs/VOICE.md): how Moondog talks, and where Pink Floyd shows up.
 - [Runtime architecture](docs/ADR_0001_AGENT_RUNTIME_AND_CLI.md) and [data contracts](contracts/README.md): how the pieces fit together.
-- [Contribution guide](CONTRIBUTING.md) and [release readiness](docs/PUBLIC_RELEASE_READINESS.md): local setup, checks, and how private data is kept out.
+- [Contribution guide](CONTRIBUTING.md): local setup, checks, and how private data is kept out.
+- [Release status](docs/PUBLIC_RELEASE_READINESS.md): what is published, and what the checks cover.
 - [Translating Moondog](docs/TRANSLATING.md): how replies choose a language, and how to add one.
-
-The source candidate is 0.2.0-beta.1, and the work happens in the TUI.
-GUI and Studio development is paused.
-The earlier [browser prototypes](docs/TERMINAL_GUIDE.md#archived-gui-prototypes-paused) remain for reference.
 
 ## License
 

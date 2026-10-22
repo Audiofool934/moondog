@@ -2,15 +2,26 @@
 
 Moondog's current product is the Pi-based terminal listening room.
 This guide covers the local listening loop, optional connected capabilities, and the detailed contracts behind them.
-The browser prototypes remain available as archived reference material at the end.
+Earlier browser prototypes were removed; Git history keeps them.
 For the predecessor's relationship to this project, see the public [DJ Claw lineage boundary](DJ_CLAW_LINEAGE.md).
 
 - [Install and launch](#install-and-launch)
+- [Other ways in](#other-ways-in)
 - [Use the listening room](#use-the-listening-room)
-- [Try fictional history](#try-fictional-history)
-- [Import and inspect listening history](#import-and-inspect-listening-history)
-- [Read the evidence](#read-the-evidence)
+- [Language](#language)
 - [Personal lyric library](#personal-lyric-library)
+- [Try fictional history](#try-fictional-history)
+- [Exercise the real importer with fictional history](#exercise-the-real-importer-with-fictional-history)
+- [Import and inspect listening history](#import-and-inspect-listening-history)
+- [Bring independent ListenBrainz history](#bring-independent-listenbrainz-history)
+- [Read the evidence](#read-the-evidence)
+- [See the pulse between the landmarks](#see-the-pulse-between-the-landmarks)
+- [Read the seasons inside the pulse](#read-the-seasons-inside-the-pulse)
+- [See what stayed and what changed](#see-what-stayed-and-what-changed)
+- [See how listening gathers](#see-how-listening-gathers)
+- [Correct what Moondog gets wrong](#correct-what-moondog-gets-wrong)
+- [Private Tasteprint reports](#private-tasteprint-reports)
+- [Saved listener profiles](#saved-listener-profiles)
 - [Public web research](#public-web-research-in-the-tui)
 - [Enable agent conversation](#enable-agent-conversation)
 - [Local music data control](#local-music-data-control)
@@ -19,7 +30,6 @@ For the predecessor's relationship to this project, see the public [DJ Claw line
 - [Spotify connected actions](#spotify-connected-actions)
 - [Conversation and memory](#local-memory)
 - [Verify a checkout](#verify-a-checkout)
-- [Archived browser prototypes](#archived-gui-prototypes-paused)
 
 ## Install and launch
 
@@ -47,6 +57,12 @@ The same app is also published as the public npm package `@audiofool/moondog`.
 The launcher selects the first Node executable on `PATH` that satisfies Node `>=22.19.0`.
 Set `MOONDOG_NODE` to an explicit compatible Node executable when an override is needed.
 Run `moondog doctor` or `moondog status` to inspect the local runtime.
+
+## Other ways in
+
+The desktop app in `app/` is a native window on the same core, and it shares the same profile, settings, and sign-ins as the terminal room.
+From a checkout with dependencies installed, start it with `cd app && npm ci && npm start`; the [desktop app README](../app/README.md) has the details.
+The project page in `site/` runs the real listening room in the browser on fictional data, as the [project page README](../site/README.md) describes.
 
 ## Use the listening room
 
@@ -253,6 +269,7 @@ profile.summary -> profile.explain -> library.search -> playlist.plan
 ```
 
 You will see a six-track plan move from explicit preference anchors toward measured unfamiliarity, with each selection tied to bounded evidence and a host-validated candidate set.
+The demo ends with one next step: open the listening room (`npm start` from a checkout, `moondog` when installed) and type `/import`.
 
 Use `npm run --silent demo -- --json` to inspect the complete machine-readable trace and playlist plan.
 
@@ -281,8 +298,6 @@ The one-off `taste --from` command above also leaves persistent profile state un
 
 Use `/import "/absolute/path/to/moondog-fictional-history.zip"` inside the TUI to exercise persistent import and immediate profile review.
 That explicit action adds fictional listening events to your configured local profile, so use a separate `MOONDOG_STATE_HOME` when you want to keep demonstration state isolated.
-The archived Studio also accepts this ZIP.
-Studio then treats the fictional archive exactly like a user-selected history ZIP, so that action intentionally creates local profile state.
 Keep the generated ZIP under the ignored `outputs/` directory rather than adding it to the source tree.
 
 ## Import and inspect listening history
@@ -389,8 +404,6 @@ moondog listenbrainz import-history /path/to/listen-history.json
 moondog taste
 ```
 
-The same JSON can be dropped directly into `moondog studio` alongside Spotify ZIPs.
-
 This path is local and offline, needs no ListenBrainz token, leaves the source JSON unchanged, and adds idempotently to the same private local subject as existing Spotify history.
 Provider-specific track identities remain separate unless they already share canonical recording identity, so cross-provider distinct-track totals can still include unresolved duplicates.
 
@@ -416,10 +429,10 @@ For older detailed activity, choose **Apple Music > Past listening history guide
 It opens [Apple Data & Privacy](https://privacy.apple.com/) and explains how to request Apple Media Services information, wait for the ready notification and download the prepared files.
 Apple privacy archives cannot be imported by this release; the guide makes this clear and links back to the usable library XML route.
 
-Follow [Apple Music Library Import](APPLE_MUSIC_LIBRARY_IMPORT.md) to inspect and import a private library XML.
-Then run `npm run rebuild:apple-projection` to create the disposable local SQLite projection.
+[Apple Music Library Import](APPLE_MUSIC_LIBRARY_IMPORT.md) describes what the importer reads and keeps.
+Each import rebuilds the disposable local SQLite projection.
 The rebuild infers one trusted subject only when all verified local Apple import batches agree.
-Spotify-only and ListenBrainz-only users can skip these steps.
+Spotify-only and ListenBrainz-only users can skip Apple import.
 An Apple Music library is a catalog snapshot, not complete listening history.
 
 ### One-off previews and saved reports
@@ -451,7 +464,7 @@ To keep both archives, run `moondog spotify import-history` once for each ZIP in
 Moondog creates one stable local music identity, merges repeat imports idempotently, reconciles exact Account Data and Extended History overlaps regardless of import order, and renders the cumulative profile rather than a disposable snapshot.
 
 When an exact overlap uniquely connects a provisional Account Data track to one resolved Extended History track, Moondog also joins any remaining effective plays under that resolved identity for behavioral aggregation.
-The original events and TrackRefs remain intact, multi-target cases stay separate, and the CLI, Studio, and complete Tasteprint report both applied links and ambiguous identities deliberately withheld from linking.
+The original events and TrackRefs remain intact, multi-target cases stay separate, and the CLI and complete Tasteprint report both applied links and ambiguous identities deliberately withheld from linking.
 
 Afterward, `moondog taste`, `/taste`, and the agent's `profile.summary` and `profile.explain` tools work from Spotify evidence even when no Apple library has been configured.
 
@@ -519,8 +532,8 @@ Planning has no external effect, and a connected-service write still requires th
 
 **Listening Pulse** groups eligible effective events into continuous UTC calendar-month cells so a long archive keeps its changing density instead of collapsing into lifetime totals.
 Each cell uses listening minutes for a profile-local intensity scale and exposes only aggregate event, minute, and distinct-track counts.
-The complete Tasteprint represents up to the latest 240 retained months, while Studio previews at most the latest 72 and reports how many earlier months remain outside that bounded view.
-A blank cell means no eligible retained event appears in that UTC month, not proof that no listening occurred, and raw timestamps, event sequences, source paths, evidence identifiers, and provider track identities remain outside both surfaces.
+The complete Tasteprint represents up to the latest 240 retained months.
+A blank cell means no eligible retained event appears in that UTC month, not proof that no listening occurred, and raw timestamps, event sequences, source paths, evidence identifiers, and provider track identities remain outside the Tasteprint.
 
 ## Read the seasons inside the pulse
 
@@ -528,7 +541,7 @@ A blank cell means no eligible retained event appears in that UTC month, not pro
 Every represented quarter stays in chronological order, including empty and partially retained windows.
 An active quarter reports aggregate listening time, event and track counts, the split between tracks first observed in retained history and tracks seen earlier, one leading artist, and one signature track.
 First observed means first appearance in the retained eligible history, not discovery, and an empty quarter is not proof of no listening outside the available archive.
-The profile keeps at most the latest 80 quarters, the complete Tasteprint shows the latest 12, Studio and Agent preview the latest six, and every layer reports what its bounded view omits.
+The profile keeps at most the latest 80 quarters, the complete Tasteprint shows the latest 12, the Agent previews the latest six, and every layer reports what its bounded view omits.
 Incognito events, raw timestamps, event sequences, source paths, evidence identifiers, TrackRefs, and provider track identities stay outside the public and model-visible projections.
 
 ## See what stayed and what changed
@@ -543,9 +556,7 @@ It shows how much of the later year's Top 10 carried forward, how many names ent
 
 These are descriptions of the retained archive, not uninterrupted loyalty, discovery, genre breadth, or identity.
 They do not claim permanent taste change, and they remain separate from direct listener corrections.
-
-Studio exposes only a bounded preview of these relationships and aggregate transition counts.
-The source path, evidence identifiers, and provider track identities stay out of the page and API response.
+The source path, evidence identifiers, and provider track identities stay out of the Tasteprint.
 
 ## See how listening gathers
 
@@ -563,7 +574,7 @@ It is explicitly an approximation, not a provider session log or a claim about a
 The view reports track breadth, effective plays, listening time, and active retained years without claiming full-album playback, track order, completion, ownership, or preference.
 
 Both views exclude incognito events and expose only bounded aggregates and music labels.
-Raw timestamps, source paths, evidence identifiers, Spotify track identities, account fields, IP addresses, device fingerprints, and location fields remain outside the Studio response and rendered Tasteprint.
+Raw timestamps, source paths, evidence identifiers, Spotify track identities, account fields, IP addresses, device fingerprints, and location fields remain outside the rendered Tasteprint.
 
 ## Correct what Moondog gets wrong
 
@@ -573,7 +584,6 @@ When the projection gets that distinction wrong, record a direct listener assert
 Inside the TUI, open `/taste` and press Enter on a track or artist to see **Why it's here**, or choose **I like this**, **Keep it out**, or **Undo my choice**.
 Explicit `/profile correct` and `/profile retract` commands also return to the refreshed profile.
 Use `/profile help` for options and quote names that contain spaces.
-The existing **Correct the reading** panel in `moondog studio` remains a paused prototype.
 
 For terminal automation, use:
 
@@ -620,6 +630,59 @@ Tasteprint works without a model, Spotify connection, or external request after 
 Use `/taste report` for the full report in the TUI, or `/taste` for the interactive listening profile.
 
 Read the [Private Tasteprint](PRIVATE_TASTEPRINT.md) contract before sharing an artifact or screenshot.
+
+## Saved listener profiles
+
+`/taste` still opens immediately after an import and works without a model.
+For a durable model reading of everything you imported, connect a model with `/model` and run `/profile build`.
+This sends a compact summary of your music evidence to that configured model; it does not upload the original archive or enable playback or account tools.
+
+```text
+/profile build
+/profile saved
+/profile explain 1
+```
+
+Moondog first computes a dossier locally from every supported record.
+It lists the leading artists, tracks and albums across your history, recent movement against lifetime rank, yearly coverage, your curation and library, distinctive provider signals, and every explicit choice, each row with a reference.
+One model session writes the reading from that dossier and can search the complete evidence catalog for anything it leaves out.
+The reading names the musical threads in your listening, such as scenes, lineages and eras.
+It keeps enduring listening, recent attention, curation and explicit choices apart.
+Interpretations are marked as interpretations, and each finding cites a few rows of evidence.
+
+A second, fresh session checks the whole draft.
+It looks only for material problems: contradictions, wrong headline facts, invented preferences or personal context, recent attention presented as a change of enduring taste, or a major thread left out.
+Citation completeness and phrasing are not grounds for a revision.
+When the check finds a problem, the build revises the draft once and checks it again, then saves it.
+A concern that the final check still raises is saved with the reading and shown under it, rather than blocking the profile.
+These are model judgments, not a guarantee that every interpretation is correct.
+
+A finding is a measured observation, an interpretation, or one of your own choices.
+`/profile saved` shows the summary, the findings and your explicit choices; `/profile saved 0` lists every saved finding.
+`/profile explain <number>` opens the frozen supporting and conflicting evidence for that finding.
+The normal listening agent receives the compact current reading in a fresh conversation and can retrieve further saved evidence.
+
+A new import, correction, or synthesis version can mark the saved reading as needing an update.
+Run `/profile build` again to update it; an identical input reuses the current reading without calling a model.
+Use `/profile build --force` to start a fresh interpretation with the current model.
+
+Ctrl+C stops the build and keeps the saved draft and the previous version.
+The terminal shows whether the build is writing, checking or revising the profile.
+One `/profile build` continues across model sessions as needed, up to eight per build.
+If you cancel, a model request fails, or the model stops making progress, the previous profile stays available and the unfinished build keeps its draft.
+Run `/profile build` again to continue from that draft rather than starting over.
+For DeepSeek, transient connection failures before a response starts receive up to two short retries of the same model request, with progress shown in the terminal.
+Saved draft and check tools are not replayed by these retries.
+Authentication, quota, HTTP errors, and broken response streams stop with a diagnostic.
+Credential-bearing authentication details are redacted.
+If evidence changes during the build, the new version is rejected and the previous version stays available.
+Saved profiles and evidence snapshots live in the private listening database and are included in `data export --scope listening` or `--scope profile`.
+Resetting the corresponding scope archives that database, including its saved readings.
+An Apple-only reset removes the Apple projection; combined readings remain in the listening scope as historical snapshots until that scope is reset too.
+
+The same commands work outside the TUI as `moondog profile build`, `moondog profile saved`, and `moondog profile explain 1`, with optional `--json` output.
+Synthetic tests verify the build, correction, interruption, and recovery behavior.
+They do not establish the taste quality of a particular model; recognizable interests and useful recommendations still need listener evaluation.
 
 ## Public web research in the TUI
 
@@ -815,7 +878,7 @@ moondog data reset \
   --confirm reset-profile-0123456789abcdef
 ```
 
-Close Moondog Studio and other Moondog processes before reset.
+Close other Moondog windows and processes before reset.
 
 Reset rechecks the token, refuses busy databases, moves each selected path to a timestamped sibling archive, and writes a private recovery manifest.
 
@@ -953,67 +1016,6 @@ Every resolved external discovery result remains an intermediate candidate set.
 
 The agent must call the local planner before returning a track list, and the runtime fails closed if a model tries to render unplanned external candidates.
 
-## Discovery evaluation
-
-Run the three live read-only discovery scenarios against the configured model and local profile with:
-
-```bash
-npm run eval:discovery -- --seed Portishead
-```
-
-Use a seed artist that exists in the local imported library.
-
-The command records the prompt, bounded tool trace, provider coverage, candidate set, planner result, checks, and score under the Git-ignored `runs/` directory.
-
-Use `--scenario profile_grounded_external_catalog`, `--scenario trusted_seed_open_artist_similarity`, or `--scenario profile_grounded_open_artist_similarity` to run one scenario, and `--json` for machine-readable output.
-
-The gate checks provider provenance, exact trusted candidate membership, requested count, track identity uniqueness, artist and release concentration, novelty-claim boundaries, and local-validation boundaries.
-
-It intentionally does not claim to measure subjective music quality, actual personal novelty, or audio similarity.
-
-Generate a private provider-blind human review packet from any completed discovery artifact with:
-
-```bash
-npm run eval:review -- create \
-  --input runs/discovery-evaluation-<timestamp>.json
-```
-
-The command also writes a self-contained, no-network local review form that downloads a validator-compatible JSON review.
-
-The packet scores every recommendation from 1 to 5 for relevance, serendipity, canonical-recording quality, and explanation usefulness, plus a `would_listen` answer.
-
-Provider, model, tool trace, raw prompt, source identifiers, and the raw listening profile are withheld from the judge packet.
-
-Profile-grounded runs can include a bounded provider-neutral view of preference tracks, familiar tracks, artist facets, and genre facets so an independent judge has enough visible context to evaluate relevance.
-
-Counts, evidence IDs, provider signals, and raw history never enter that view.
-
-Completed reviews are integrity-checked before an aggregate-only summary can be exported.
-
-```bash
-npm run eval:review -- status
-
-npm run eval:review -- validate \
-  --review runs/completed-<packet-id>-judge-01.json
-
-npm run eval:review -- summarize \
-  --review runs/completed-<packet-id>-judge-01.json \
-  --manifest runs/discovery-human-review-<packet-id>.manifest.json
-```
-
-`status` inventories private packets, manifests, browser forms, completed reviews, invalid artifacts, and the remaining provider-level claim-gate gap without printing music titles, reviewer IDs, profile details, or absolute paths.
-
-If a packet is missing its browser form, regenerate only that local surface without rerunning discovery:
-
-```bash
-npm run eval:review -- form \
-  --packet runs/discovery-human-review-<packet-id>.json
-```
-
-The public summary contains no track, seed, reviewer, model, prompt, artifact-path, or profile details.
-
-Read the full sampling, privacy, rubric, and interpretation contract in [Discovery Human Evaluation](DISCOVERY_HUMAN_EVALUATION.md).
-
 ## Song previews without Spotify
 
 When Spotify is not connected, the agent plays 30-second Apple Music previews instead.
@@ -1047,6 +1049,7 @@ moondog spotify status --json
 If Spotify was authorized before A4 S4, run `moondog spotify login` again to grant the private-playlist read scope in addition to the playlist, library, playback, and recent-listening scopes.
 
 `moondog spotify status` reports whether the current authorization has the complete connected-action scope set.
+[Spotify refresh transactions](SPOTIFY_REFRESH.md) explains how Moondog refreshes Spotify sign-ins.
 
 Inspect the current player and available devices:
 
@@ -1274,6 +1277,59 @@ The shell and TUI can show account, device, queue, and catalog-resolution data, 
 
 Playlist deletion, uncertain history-difference review, and reviewed promotion into revision-aware `TasteEvent` claims remain later Spotify slices.
 
+### Spotify top artists and tracks
+
+Ask for your top artists or tracks with `short_term` (about four weeks), `medium_term` (about six months, default), or `long_term` (about one year). Each read returns up to 10 items, default 5. This is Spotify-calculated affinity, not play counts, complete listening history, or an explicit preference. Top tracks have temporary references for later explicit play, queue, or save requests. All metadata stays untrusted and this conversation remains out of generic memory; an explicit quoted user preference can still be saved.
+
+This needs `user-top-read`. Existing credentials are not changed automatically. If Moondog reports the missing scope, run `/spotify login` yourself and approve it in Spotify; other authorized features remain available. The recent-listening-only import connection still requests only its existing scope. No reauthorization is performed by the top-items tool. See [Spotify's top-items API](https://developer.spotify.com/documentation/web-api/reference/get-users-top-artists-and-tracks).
+
+### Browse saved music and recent listening
+
+Ask “What have I saved lately?” or “Show my saved albums.” `moondog_spotify_library_browse` reads one page of tracks, albums, or shows (default 10, maximum 20), with save timestamps and an explicit next offset. An album's returned `item_ref_id` can start that album through the player tool's `context_ref_id`. Track references support explicit play, queue, and save requests in later turns.
+
+`moondog_spotify_history_recent` reads up to 50 recent tracks (default 20), their UTC play timestamps, and provider cursors. Specify either `after` or `before` in Unix milliseconds. This is the history Spotify currently exposes, not a complete day or lifetime archive. Neither browsing nor reading recent activity imports a profile or turns listening into an asserted preference. Results remain transient conversation context until replaced or reset.
+
+### Select and control a Spotify device
+
+Device listings include an opaque `device_ref_id`, current volume, and volume support when Spotify provides them. Use a reference to select one of two devices with the same name. Playback, queue, and volume tools accept a device name or reference and recheck it before dispatch; disappeared or restricted devices require a new selection. A generic “phone” can select a Smartphone, while a request for “iPhone” must match a name rather than an unrelated phone brand. Spotify may restrict volume control on particular devices; use its app or hardware control in that case.
+
+A transfer preserves playback state unless the user asks to start or continue playback. Dispatched writes have a 15-second settlement deadline independent of caller cancellation. Accepted responses still produce receipts after cancellation. A timeout before a definite response produces an uncertain receipt, never an automatic replay. A definite HTTP rejection remains a known rejection even if its body stalls.
+
+### Exact quick playlist edits
+
+One exact rename or unambiguous single-track removal can now complete in one turn:
+
+- `Rename playlist "Night Drive" to "Late Lights".`
+- `Remove "Midnight Lines" by "Mara Vale" from playlist "Night Drive".`
+- `请把歌单「Night Drive」重命名为「夜灯」`
+- `请从歌单「Night Drive」移除「Midnight Lines」歌手「Mara Vale」`
+
+The host reads the actual current user message, lists and inspects the target, and derives the exact edit itself. A model-provided name, intent claim, or instruction inside Spotify metadata cannot authorize a different edit. Ordinary playlist and occurrence references expire at prompt end. The target must be owned by the connected account, explicitly private and non-collaborative, with at most 100 ordinary available tracks. Quick name selection also requires a complete first playlist page (up to 50); larger or incomplete lists keep the preview flow.
+
+After a successful inspection, a host-rendered footer identifies the selected playlist and, when unique, song. You can then say `Rename my playlist to "Late Lights"` or `Remove that song from my playlist`. A bounded track read such as now-playing can select the song while retaining the inspected playlist. `Remove that song from playlist "Night Drive"` also works: the song retains its actual identity, even when another recording has the same title. The model uses `recent_context: true` for a playlist pronoun; it cannot supply a replacement target.
+
+These selections live only in the current session, for at most ten minutes and three subsequent prompts. Each prompt freezes its previous displayed selection; new reads within that prompt cannot change what its pronouns mean. Multiple distinct results, an empty or failed replacement read, session/connection reset, or an edit/preview attempt clears the relevant selection. Cancelled or failed responses cannot establish unseen selections. The host rechecks the owned/private playlist snapshot and selection age before a write, including after any token-refresh wait immediately before dispatch. Missing or stale context, vague pronouns such as bare “it”, and duplicate occurrences use the preview flow. An exact quick-edit request cannot apply an older pending edit, save a different playlist, or authorize another Spotify mutation. Spotify metadata remains untrusted data and transient selections are excluded from generic durable memory.
+
+Duplicate playlist names (including public or followed names on that page), duplicate occurrences, ambiguous recordings, other request wording and bulk edits retain exact preview and a later confirmation. The quick tool performs at most one attempt per turn. A changed name, owner, privacy flag, item count, identity or snapshot blocks the write at preflight. Removal uses `DELETE /playlists/{id}/items` with one item URI and the inspected snapshot; rename uses `PUT /playlists/{id}` with only the exact name. Spotify's rename endpoint has no atomic compare-and-set, and its removal snapshot semantics can allow newer changes: these preflight checks cannot eliminate simultaneous edits from another client.
+
+Cancellation before dispatch stops the edit. A dispatched request settles into an accepted or uncertain receipt, even if the turn is cancelled. No 401, 429, transport failure or uncertain result triggers an automatic write replay. Inspect the playlist before a new explicit attempt after uncertainty. Quick-edit dialogue stays transient, with the same exception for verified explicit user preferences.
+
+API references: [change playlist details](https://developer.spotify.com/documentation/web-api/reference/change-playlist-details), [remove playlist items](https://developer.spotify.com/documentation/web-api/reference/remove-items-playlist).
+
+### Remove a playlist from your library
+
+Ask to remove a playlist and Moondog first displays the exact target and confirmation phrase. Send that phrase in a later turn to remove the owned private, non-collaborative playlist from your library. The current API operation is **unfollow/remove from library**, not global deletion; the playlist can continue to exist for other listeners. The host rechecks ownership, privacy, name and snapshot before the single DELETE request. Public, shared, changed, and unverified targets are refused. Cancellation, rejection, and uncertain results never cause an automatic repeat.
+
+Spotify's current `DELETE /me/library` reference lists `playlist-modify-public` for playlist removal, even though Moondog's removal feature accepts only owned private playlists. Login now requests this permission alongside `user-top-read`; older credentials remain usable for already-granted features and show a reauthorization message for missing permissions. Moondog does not launch login or grant new permissions automatically. See the [current endpoint](https://developer.spotify.com/documentation/web-api/reference/remove-library-items) and [deprecated unfollow endpoint](https://developer.spotify.com/documentation/web-api/reference/unfollow-playlist).
+
+### Albums, podcasts, playlists and followed artists
+
+`moondog_spotify_search` accepts one type per request: track, album, artist, playlist, show, or episode. Album/artist/playlist references start context playback. `moondog_spotify_catalog_items` lists bounded album tracks or show episodes. Episode references can be queued or saved; direct episode start via the playback `uris` field is not documented by Spotify and is not advertised as supported.
+
+Library browsing also lists playlists and followed artists. Artist pagination uses the returned `next_after` cursor rather than an offset and requires `user-follow-read`. Typed `item_refs` let the library-save tool save tracks, albums, episodes, shows or playlists. The library-remove tool previews one item and requires the exact later-turn confirmation phrase before unsaving it. Playlist removal retains the owned/private/non-collaborative checks. Catalog metadata is bounded untrusted data: it may be shown and used as selection evidence, but it cannot authorize an action or provide instructions. Names resembling paths are still names in these typed Spotify projections; credentials and raw provider payloads remain outside the tool result.
+
+Exact ordinary commands such as “Rename my playlist Night Drive to Late Lights” and “Remove Midnight Lines from my playlist Night Drive” can use the same guarded quick-edit path as quoted names. Ambiguous names, duplicate tracks, and bulk edits still use an inspectable preview.
+
 ## Local memory
 
 Moondog now keeps its initial persistent relationship state in a local SQLite database outside the checkout by default.
@@ -1375,11 +1431,17 @@ npm ci --ignore-scripts
 npm run verify
 ```
 
-The gate first verifies the exact Git-visible release tree and public branch history against path, secret, private-network, symlink, file-count, and byte ceilings.
+The gate runs these steps in order:
 
-It then verifies the zero-auth demo contract, public documentation and recording contracts, public roadmap and issue-form structure, and privacy boundaries, compiles every current schema, validates the synthetic fixtures, and runs the complete test suite.
+1. `verify:release-tree` checks the exact Git-visible release tree and public branch history against path, secret, private-network, symlink, file-count, and byte ceilings.
+2. `verify:demo-history` checks the fictional Spotify history generator.
+3. `verify:demo` checks the zero-auth offline demo.
+4. `verify:community` checks that every relative link in tracked Markdown files resolves, and checks the private-data boundaries, issue forms, and CI shape.
+5. `verify:package` checks the installed npm package, as described below.
+6. `validate:contracts` compiles every current schema and validates the synthetic fixtures.
+7. `npm test` runs the complete test suite.
 
-It also packs an explicit reviewed runtime allowlist, installs that tarball into an empty consumer project through an isolated temporary npm cache, and exercises the installed `moondog` binary through CLI help, fictional history generation, one- and two-archive in-memory Taste projection, the six-track offline demo, Studio startup, its no-state production-importer fictional correction loop, one- and two-archive session-only Studio, first and repeated persistent Spotify and ListenBrainz imports, multi-source private Tasteprint rendering, temporary-upload cleanup, a visible retractable listener correction, read-only data inspection, checksummed export, and recoverable reset.
+The package step packs an explicit reviewed runtime allowlist, installs that tarball into an empty consumer project through an isolated temporary npm cache, and exercises the installed `moondog` binary through CLI help, fictional history generation, one- and two-archive in-memory Taste projection, the six-track offline demo, persistent Spotify imports of both export formats, first and repeated ListenBrainz imports, multi-source private Tasteprint rendering, a visible retractable listener correction, read-only data inspection, checksummed export, and recoverable reset.
 
 The isolated cache prevents a developer machine's stale or preloaded package metadata from standing in for a clean public dependency resolution.
 
@@ -1421,266 +1483,3 @@ npm run verify:clean-linux
 ```
 
 The Linux proof mounts only the verified temporary snapshot, removes its container afterward, and keeps the downloaded base image in Docker's cache.
-
-## Archived GUI prototypes (paused)
-
-The following Studio and showcase material documents existing prototypes.
-It is retained for reference and is outside the current TUI development scope.
-`npm run demo:studio` explicitly opens the fictional browser demo; `npm start` opens the TUI.
-
-### Tour the whole product with zero data and zero install
-
-From a source checkout with Node.js `>=22.19.0`, run:
-
-```bash
-npm run showcase
-```
-
-No dependency installation is required for this first look.
-This source-checkout command opens a script-free product overview on `127.0.0.1` with the real fictional Time Machine, Tasteprint, recap card, and grounded agent walkthrough.
-It serves an exact allowlist of seven files, reads no private store, makes no external request, loads no analytics, and cannot bind to a public network interface.
-Every visible Tasteprint and Time Machine name, track, date, and count is fictional demonstration data.
-The dated catalog panel is the explicit exception: it records one public Apple Music US observation from 2026-09-03 and states its storefront boundary.
-
-You can also inspect the [static page](../showcase/index.html) directly.
-The complete interactive fictional path also starts before dependency installation with `npm run demo:studio`.
-Install the locked dependencies only when you move on to the full CLI, real history, or connected integrations.
-
-The tour also revisits the exact question that exposed the original product gap: `刘森最新的单曲是哪首？`.
-A live read-only probe on 2026-09-03 returned four exact-name candidates, then resolved the intended artist by feeding one displayed Apple Music artist page back into the CLI.
-The selected page produced 《天长地久》, dated 2026-05-09, as the newest already released single in the Apple Music US storefront.
-The captured public-catalog answer records the identity-selection basis, retrieval date, and one-storefront limitation instead of presenting model memory as current fact.
-It also shows that the disambiguation hint is not a preference claim and that private listening evidence remains separate from public music-world evidence.
-An independent live `Hikki` probe on 2026-09-03 also exercised the automatic public alias path: an exact Wikidata alias linked one MusicBrainz identity to Apple Music artist `18756224`, whose direct lookup returned Hikaru Utada without choosing among Apple's same-name search candidates.
-The catalog panel now shows the exact archive-assisted command that turns an explicitly supplied Spotify history ZIP into the same grounded answer without a model.
-That command is inert text inside the showcase itself, which never opens or reads a ZIP.
-
-Prepare an owner-reviewable, host-ready copy without publishing it:
-
-```bash
-npm run export:showcase -- --output /absolute/path/to/moondog-showcase
-```
-
-The exporter refuses an existing destination, rewrites only the verified local asset references for a root `index.html`, and records every public file's byte count and SHA-256 value in `manifest.json`.
-The resulting directory contains only fictional public demonstration material and performs no hosting, upload, license decision, or repository change.
-
-### Try the visual product with zero data
-
-With Node.js `>=22.19.0`, run this directly from the source checkout:
-
-```bash
-npm run demo:studio
-```
-
-No dependency installation is required for this interactive first look.
-The command opens a loopback-only fictional Listening Time Machine, monthly Listening Pulse, and fixed-quarter Listening Seasons through the real Studio interface.
-At first use it creates the deterministic 52-play fictional Extended Streaming History ZIP in a private temporary directory, passes that file through the production Spotify importer, removes the file, and opens the resulting four-year route, 36-month Listening Pulse with 15 active retained months, 13 retained quarters with 12 active Listening Seasons, three played-back-to-back tracks, 15 approximate listening stretches, and two multi-track release-depth records.
-It supports the real apply-and-retract correction loop and exposes the complete synthetic Tasteprint and compact recap card.
-This mode never opens the private listening-history store, rejects every user-supplied history import, makes no network or provider request, writes no persistent profile, and disappears when the process stops.
-Its dedicated source-checkout launcher keeps the production Spotify importer and profile projection while avoiding the model, Apple-library, and connected-service dependency graph.
-
-From a linked source checkout, the equivalent command is `moondog studio --demo`.
-
-### Open your real history without importing it
-
-When you are ready to see your own listening arc, open one Spotify Account Data or Extended Streaming History ZIP directly from the source checkout:
-
-```bash
-npm --silent run demo:studio -- --from "/path/to/spotify-history.zip"
-```
-
-No dependency installation is required for this private session.
-From a linked source checkout, use `moondog studio --from <spotify-history.zip>`.
-
-If Spotify supplied both standard Account Data and Extended Streaming History, select both without creating persistent state:
-
-```bash
-npm --silent run demo:studio -- \
-  --from "/path/to/account-data.zip" \
-  --from "/path/to/extended-history.zip"
-```
-
-The linked-checkout form is `moondog studio --from <account-data.zip> --from <extended-history.zip>`.
-Moondog imports both archives under one temporary identity, reconciles exact cross-format overlaps regardless of selection order, and projects the combined result from an in-memory SQLite database.
-The two ZIPs must be distinct, their combined size must stay within Studio's displayed limit, and both original files remain unchanged.
-
-This opens the full private Tasteprint, Listening Time Machine, Listening Pulse, Listening Seasons, and continuity-and-change map on `127.0.0.1`, but it does not create or open Moondog's persistent listening-history database.
-The source path and private provider identifiers stay out of the page and API response, the import surface is disabled, and no OAuth, model, provider, cloud, or network request is made.
-The `--silent` option also stops npm from repeating the expanded script command in its own output, although the path you type may still remain in your shell history.
-You can apply and retract direct profile corrections, but those corrections stay only in the current process.
-Stopping Studio discards the in-memory profile and corrections, while the original ZIP's bytes and modification time remain unchanged.
-
-### Persistent Studio reference
-
-No Apple Music import, Spotify OAuth, model, or external network request is required:
-
-```bash
-npm run studio
-```
-
-Studio opens a private `127.0.0.1` page where you can drag in Spotify Account Data, Extended Streaming History, or official saved ListenBrainz JSON, inspect the cumulative profile, and correct its reading without returning to the terminal.
-
-Every qualifying ready profile exposes its Listening Time Machine as the primary visual action, with a monthly Listening Pulse, fixed-quarter Listening Seasons, Music that came back, continuity-and-change, listening-pattern, bounded one-screen recap-card, and complete evidence-backed Tasteprint views alongside it.
-Eligible Spotify Extended Streaming History also adds a **Played back to back** view without treating adjacent playback as a declaration of taste.
-Studio previews the chronological year landmarks, latest 72 retained UTC months, long-gap track returns, returning artists, approximate session shape, and multi-track release depth before asking for a correction, then links directly to the corresponding evidence inside the Tasteprint.
-Both surfaces state how many retained years have a landmark and name any year that remains visible in the listening arc without one.
-The adjacent download action saves the exact self-contained card as private HTML, so it remains usable after Studio stops without uploading it anywhere.
-Before importing anything, Studio also links to a clearly fictional card rendered by the same production code.
-
-The browser sends the selected history file only to the Moondog process on the same Mac, the working copy is removed after import, and the resulting Tasteprint joins one persistent local music identity.
-
-After import, the same page can record a direct artist or track preference or avoidance, refresh the private Tasteprint, list every active correction, and retract one without changing the underlying plays.
-Use **Correct this track** beside a chronological landmark, returning track, or back-to-back sequence to prefill the title and artist, choose a stance, and return to the updated listening view.
-Temporary avoidances now filter every listen-again selection while retaining the historical record and explaining any unrepresented year.
-Use **Refresh profile** after a CLI correction or local reset to bring the full Tasteprint and recap card up to date.
-When a correction is active, Studio links directly to the corresponding evidence section in the refreshed Tasteprint.
-
-No history file ready yet?
-Choose **Try the real importer with fictional history** on the first screen to reach the differentiated multi-year result without leaving Studio.
-Studio generates the same deterministic 52-play archive used by `moondog demo-history`, runs it through the production importer in memory, and removes the temporary ZIP before presenting the result.
-The same in-memory profile exposes its fictional chronological landmarks and Tasteprint, supports apply and retract, and labels every artist, track, and aggregate as synthetic demonstration data.
-That interactive profile and its corrections stay only in the Studio process, write no database or Tasteprint file, and disappear when Studio stops.
-
-### First-run Usability Field Kit
-
-This existing protocol evaluates the archived Studio entrypoint and CLI handoff.
-It is not a validation protocol for the current terminal-first home and profile flow.
-
-Create a versioned product-first protocol and a self-contained local observer form with:
-
-```bash
-npm run eval:usability -- create
-```
-
-The eight-task path uses only Moondog's fictional local experience and starts with the zero-install Studio, fictional Listening Time Machine and listening patterns, recap boundary, one correction and retraction, and portable HTML download before asking the newcomer to install the complete CLI, run the zero-auth agent demo, and exercise the real one-off Taste importer.
-
-It records the first hesitation before assistance, the first successful product outcome, every bounded privacy or capability misunderstanding, the stopping point, elapsed time, and facilitator help.
-
-Use an opaque participant label containing no name, email address, account handle, or other direct identifier.
-
-Do not import a participant's music history, enter credentials, connect a provider, perform a provider write, or publish an artifact during the session.
-
-Validate completed private session files and inspect the collection gate with:
-
-```bash
-npm run eval:usability -- validate \
-  --protocol runs/first-run-usability-<protocol-id>.protocol.json \
-  --session runs/completed-first-run-usability-<protocol-id>-newcomer-01.json
-
-npm run eval:usability -- status
-```
-
-`status` reports protocols, forms, valid sessions, unique newcomer counts, duplicates, invalid artifacts, and the remaining three-session gap without printing participant IDs, private notes, absolute paths, or music data.
-
-After three unique independent newcomer sessions against one protocol, create the aggregate-only result with `npm run eval:usability -- summarize`.
-
-The public aggregate keeps task rates, time to first success, bounded observation task and category counts, environment counts, and repeated blocked tasks while omitting participant IDs, exact session timestamps, free text, paths, credentials, and music data.
-
-Read the complete setup, collection, privacy, validation, and interpretation contract in [First-run Usability Evaluation](FIRST_RUN_USABILITY.md).
-
-### Spotify top artists and tracks
-
-Ask for your top artists or tracks with `short_term` (about four weeks), `medium_term` (about six months, default), or `long_term` (about one year). Each read returns up to 10 items, default 5. This is Spotify-calculated affinity, not play counts, complete listening history, or an explicit preference. Top tracks have temporary references for later explicit play, queue, or save requests. All metadata stays untrusted and this conversation remains out of generic memory; an explicit quoted user preference can still be saved.
-
-This needs `user-top-read`. Existing credentials are not changed automatically. If Moondog reports the missing scope, run `/spotify login` yourself and approve it in Spotify; other authorized features remain available. The recent-listening-only import connection still requests only its existing scope. No reauthorization is performed by the top-items tool. See [Spotify's top-items API](https://developer.spotify.com/documentation/web-api/reference/get-users-top-artists-and-tracks).
-
-### Exact quick playlist edits
-
-One exact rename or unambiguous single-track removal can now complete in one turn:
-
-- `Rename playlist "Night Drive" to "Late Lights".`
-- `Remove "Midnight Lines" by "Mara Vale" from playlist "Night Drive".`
-- `请把歌单「Night Drive」重命名为「夜灯」`
-- `请从歌单「Night Drive」移除「Midnight Lines」歌手「Mara Vale」`
-
-The host reads the actual current user message, lists and inspects the target, and derives the exact edit itself. A model-provided name, intent claim, or instruction inside Spotify metadata cannot authorize a different edit. Ordinary playlist and occurrence references expire at prompt end. The target must be owned by the connected account, explicitly private and non-collaborative, with at most 100 ordinary available tracks. Quick name selection also requires a complete first playlist page (up to 50); larger or incomplete lists keep the preview flow.
-
-After a successful inspection, a host-rendered footer identifies the selected playlist and, when unique, song. You can then say `Rename my playlist to "Late Lights"` or `Remove that song from my playlist`. A bounded track read such as now-playing can select the song while retaining the inspected playlist. `Remove that song from playlist "Night Drive"` also works: the song retains its actual identity, even when another recording has the same title. The model uses `recent_context: true` for a playlist pronoun; it cannot supply a replacement target.
-
-These selections live only in the current session, for at most ten minutes and three subsequent prompts. Each prompt freezes its previous displayed selection; new reads within that prompt cannot change what its pronouns mean. Multiple distinct results, an empty or failed replacement read, session/connection reset, or an edit/preview attempt clears the relevant selection. Cancelled or failed responses cannot establish unseen selections. The host rechecks the owned/private playlist snapshot and selection age before a write, including after any token-refresh wait immediately before dispatch. Missing or stale context, vague pronouns such as bare “it”, and duplicate occurrences use the preview flow. An exact quick-edit request cannot apply an older pending edit, save a different playlist, or authorize another Spotify mutation. Spotify metadata remains untrusted data and transient selections are excluded from generic durable memory.
-
-Duplicate playlist names (including public or followed names on that page), duplicate occurrences, ambiguous recordings, other request wording and bulk edits retain exact preview and a later confirmation. The quick tool performs at most one attempt per turn. A changed name, owner, privacy flag, item count, identity or snapshot blocks the write at preflight. Removal uses `DELETE /playlists/{id}/items` with one item URI and the inspected snapshot; rename uses `PUT /playlists/{id}` with only the exact name. Spotify's rename endpoint has no atomic compare-and-set, and its removal snapshot semantics can allow newer changes: these preflight checks cannot eliminate simultaneous edits from another client.
-
-Cancellation before dispatch stops the edit. A dispatched request settles into an accepted or uncertain receipt, even if the turn is cancelled. No 401, 429, transport failure or uncertain result triggers an automatic write replay. Inspect the playlist before a new explicit attempt after uncertainty. Quick-edit dialogue stays transient, with the same exception for verified explicit user preferences.
-
-API references: [change playlist details](https://developer.spotify.com/documentation/web-api/reference/change-playlist-details), [remove playlist items](https://developer.spotify.com/documentation/web-api/reference/remove-items-playlist).
-
-### Browse saved music and recent listening
-
-Ask “What have I saved lately?” or “Show my saved albums.” `moondog_spotify_library_browse` reads one page of tracks, albums, or shows (default 10, maximum 20), with save timestamps and an explicit next offset. An album's returned `item_ref_id` can start that album through the player tool's `context_ref_id`. Track references support explicit play, queue, and save requests in later turns.
-
-`moondog_spotify_history_recent` reads up to 50 recent tracks (default 20), their UTC play timestamps, and provider cursors. Specify either `after` or `before` in Unix milliseconds. This is the history Spotify currently exposes, not a complete day or lifetime archive. Neither browsing nor reading recent activity imports a profile or turns listening into an asserted preference. Results remain transient conversation context until replaced or reset.
-
-### Select and control a Spotify device
-
-Device listings include an opaque `device_ref_id`, current volume, and volume support when Spotify provides them. Use a reference to select one of two devices with the same name. Playback, queue, and volume tools accept a device name or reference and recheck it before dispatch; disappeared or restricted devices require a new selection. A generic “phone” can select a Smartphone, while a request for “iPhone” must match a name rather than an unrelated phone brand. Spotify may restrict volume control on particular devices; use its app or hardware control in that case.
-
-A transfer preserves playback state unless the user asks to start or continue playback. Dispatched writes have a 15-second settlement deadline independent of caller cancellation. Accepted responses still produce receipts after cancellation. A timeout before a definite response produces an uncertain receipt, never an automatic replay. A definite HTTP rejection remains a known rejection even if its body stalls.
-
-### Remove a playlist from your library
-
-Ask to remove a playlist and Moondog first displays the exact target and confirmation phrase. Send that phrase in a later turn to remove the owned private, non-collaborative playlist from your library. The current API operation is **unfollow/remove from library**, not global deletion; the playlist can continue to exist for other listeners. The host rechecks ownership, privacy, name and snapshot before the single DELETE request. Public, shared, changed, and unverified targets are refused. Cancellation, rejection, and uncertain results never cause an automatic repeat.
-
-Spotify's current `DELETE /me/library` reference lists `playlist-modify-public` for playlist removal, even though Moondog's removal feature accepts only owned private playlists. Login now requests this permission alongside `user-top-read`; older credentials remain usable for already-granted features and show a reauthorization message for missing permissions. Moondog does not launch login or grant new permissions automatically. See the [current endpoint](https://developer.spotify.com/documentation/web-api/reference/remove-library-items) and [deprecated unfollow endpoint](https://developer.spotify.com/documentation/web-api/reference/unfollow-playlist).
-
-### Albums, podcasts, playlists and followed artists
-
-`moondog_spotify_search` accepts one type per request: track, album, artist, playlist, show, or episode. Album/artist/playlist references start context playback. `moondog_spotify_catalog_items` lists bounded album tracks or show episodes. Episode references can be queued or saved; direct episode start via the playback `uris` field is not documented by Spotify and is not advertised as supported.
-
-Library browsing also lists playlists and followed artists. Artist pagination uses the returned `next_after` cursor rather than an offset and requires `user-follow-read`. Typed `item_refs` let the library-save tool save tracks, albums, episodes, shows or playlists. The library-remove tool previews one item and requires the exact later-turn confirmation phrase before unsaving it. Playlist removal retains the owned/private/non-collaborative checks. Catalog metadata is bounded untrusted data: it may be shown and used as selection evidence, but it cannot authorize an action or provide instructions. Names resembling paths are still names in these typed Spotify projections; credentials and raw provider payloads remain outside the tool result.
-
-Exact ordinary commands such as “Rename my playlist Night Drive to Late Lights” and “Remove Midnight Lines from my playlist Night Drive” can use the same guarded quick-edit path as quoted names. Ambiguous names, duplicate tracks, and bulk edits still use an inspectable preview.
-
-
-## Saved listener profiles
-
-`/taste` still opens immediately after an import and works without a model.
-For a durable model reading of everything you imported, connect a model with `/model` and run `/profile build`.
-This sends a compact summary of your music evidence to that configured model; it does not upload the original archive or enable playback or account tools.
-
-```text
-/profile build
-/profile saved
-/profile explain 1
-```
-
-Moondog first computes a dossier locally from every supported record.
-It lists the leading artists, tracks and albums across your history, recent movement against lifetime rank, yearly coverage, your curation and library, distinctive provider signals, and every explicit choice, each row with a reference.
-One model session writes the reading from that dossier and can search the complete evidence catalog for anything it leaves out.
-The reading names the musical threads in your listening, such as scenes, lineages and eras.
-It keeps enduring listening, recent attention, curation and explicit choices apart.
-Interpretations are marked as interpretations, and each finding cites a few rows of evidence.
-
-A second, fresh session checks the whole draft.
-It looks only for material problems: contradictions, wrong headline facts, invented preferences or personal context, recent attention presented as a change of enduring taste, or a major thread left out.
-Citation completeness and phrasing are not grounds for a revision.
-When the check finds a problem, the build revises the draft once and checks it again, then saves it.
-A concern that the final check still raises is saved with the reading and shown under it, rather than blocking the profile.
-These are model judgments, not a guarantee that every interpretation is correct.
-
-A finding is a measured observation, an interpretation, or one of your own choices.
-`/profile saved` shows the summary, the findings and your explicit choices; `/profile saved 0` lists every saved finding.
-`/profile explain <number>` opens the frozen supporting and conflicting evidence for that finding.
-The normal listening agent receives the compact current reading in a fresh conversation and can retrieve further saved evidence.
-
-A new import, correction, or synthesis version can mark the saved reading as needing an update.
-Run `/profile build` again to update it; an identical input reuses the current reading without calling a model.
-Use `/profile build --force` to start a fresh interpretation with the current model.
-
-Ctrl+C stops the build and keeps the saved draft and the previous version.
-The terminal shows whether the build is writing, checking or revising the profile.
-One `/profile build` continues across model sessions as needed, up to eight per build.
-If you cancel, a model request fails, or the model stops making progress, the previous profile stays available and the unfinished build keeps its draft.
-Run `/profile build` again to continue from that draft rather than starting over.
-For DeepSeek, transient connection failures before a response starts receive up to two short retries of the same model request, with progress shown in the terminal.
-Saved draft and check tools are not replayed by these retries.
-Authentication, quota, HTTP errors, and broken response streams stop with a diagnostic.
-Credential-bearing authentication details are redacted.
-If evidence changes during the build, the new version is rejected and the previous version stays available.
-Saved profiles and evidence snapshots live in the private listening database and are included in `data export --scope listening` or `--scope profile`.
-Resetting the corresponding scope archives that database, including its saved readings.
-An Apple-only reset removes the Apple projection; combined readings remain in the listening scope as historical snapshots until that scope is reset too.
-
-The same commands work outside the TUI as `moondog profile build`, `moondog profile saved`, and `moondog profile explain 1`, with optional `--json` output.
-Synthetic tests verify the build, correction, interruption, and recovery behavior.
-They do not establish the taste quality of a particular model; recognizable interests and useful recommendations still need listener evaluation.
