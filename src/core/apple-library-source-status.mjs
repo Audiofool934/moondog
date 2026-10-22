@@ -1,27 +1,11 @@
 import { lstat, readFile, readdir } from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 
 import { resolveMoondogStateDirectory } from "./state-directory.mjs";
-
-const repositoryRoot = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "../..",
-);
-
-// Earlier versions kept Apple Music data inside the source checkout.
-export const legacyAppleMusicImportsRoot = path.join(
-  repositoryRoot,
-  "data",
-  "imports",
-  "apple-music-library",
-);
 
 export function defaultAppleMusicImportsRootFor(environment = process.env) {
   return path.join(resolveMoondogStateDirectory(environment), "apple-music-library", "imports");
 }
-
-export const defaultAppleMusicImportsRoot = defaultAppleMusicImportsRootFor();
 
 export function resolveAppleMusicImportsRoot(environment = process.env) {
   const configured = environment.MOONDOG_APPLE_IMPORTS_ROOT?.trim();

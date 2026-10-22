@@ -303,12 +303,8 @@ function ascii(columns, rows, phase) {
  * and the default 2 suits a typical 1:2 terminal cell.
  * phase advances the moon surface and groove highlights through an eight-second loop.
  * The portrait and cartridge stay fixed; scheduling and motion preferences belong to the caller.
+ * Every cell also gets a RECORD_LAYERS tone, so each layer can take its own ink.
  */
-export function renderLunarRecord(options = {}) {
-  return renderLunarRecordLayers(options).lines;
-}
-
-/** The same drawing with a RECORD_LAYERS tone for every cell, so each layer can take its own ink. */
 export function renderLunarRecordLayers({ columns = 56, rows = 24, style = "braille", phase = 0, cellAspect = 2 } = {}) {
   const width = Number.isFinite(columns) ? Math.max(0, Math.floor(columns)) : 56;
   const height = Number.isFinite(rows) ? Math.max(0, Math.floor(rows)) : 24;

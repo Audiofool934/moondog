@@ -2,13 +2,13 @@
 
 Status: selected by the project owner on 2026-09-02.
 
-This directory contains the selected Moondog logo and poster pair.
-The assets are stored together so the standalone symbol and poster lockup remain visually consistent.
+This directory contains the selected Moondog logo.
+The logo is a square crop of a 1024 x 1536 poster with the `MOONDOG` wordmark.
+The poster is no longer in the tree; Git history keeps it at commit `d0f9e0d`.
 
 ## Assets
 
 - [`moondog-logo-1x1.png`](moondog-logo-1x1.png) is the centered square logo without a wordmark.
-- [`moondog-poster-2x3.png`](moondog-poster-2x3.png) is the complete poster with the exact `MOONDOG` wordmark.
 - [`EXPORT_MANIFEST.md`](EXPORT_MANIFEST.md) records dimensions, checksums, and export provenance.
 
 ## Design logic
@@ -21,7 +21,7 @@ The poster keeps the circular symbol and `MOONDOG` wordmark visually separate so
 
 ## Preservation notes
 
-The poster is a byte-for-byte copy of the selected image.
+The poster was a byte-for-byte copy of the selected image.
 The square logo is a deterministic crop of that poster and was not regenerated or repainted.
 Do not redraw, recolor, add facial features, or replace the concentric crater and earcup relationship without a new design decision.
 Selection and repository storage do not by themselves authorize public release or publication.

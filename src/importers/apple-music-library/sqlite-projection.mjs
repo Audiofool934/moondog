@@ -9,7 +9,6 @@ import {
   unlink,
 } from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 
 import {
   canonicalizeJson,
@@ -26,14 +25,6 @@ export const APPLE_SQLITE_PROJECTION_VERSION = 1;
 export const APPLE_LIBRARY_SEARCH_HARD_LIMIT = 25;
 export const APPLE_LIBRARY_SEARCH_HARD_OFFSET = 10_000;
 export const APPLE_PROFILE_SUMMARY_HARD_LIMIT = 50;
-// Earlier versions kept the projection inside the source checkout.
-export const legacyAppleMusicProjectionPath = fileURLToPath(
-  new URL(
-    "../../../data/private/apple-music-library/projection.sqlite",
-    import.meta.url,
-  ),
-);
-
 export function defaultAppleMusicProjectionPathFor(environment = process.env) {
   return path.join(resolveMoondogStateDirectory(environment), "apple-music-library", "projection.sqlite");
 }

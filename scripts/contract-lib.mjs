@@ -25,11 +25,7 @@ export const contractSchemaIdsByVersion = new Map([
   ["listening-event:1", "urn:moondog:contract:listening-event:1"],
   ["taste-event:1", "urn:moondog:contract:taste-event:1"],
   ["library-track-observation:1", "urn:moondog:contract:library-track-observation:1"],
-  ["profile-evidence:1", "urn:moondog:contract:profile-evidence:1"],
   ["profile-evidence:2", "urn:moondog:contract:profile-evidence:2"],
-  ["capability-policy:1", "urn:moondog:contract:capability-policy:1"],
-  ["tool-invocation:1", "urn:moondog:contract:tool-invocation:1"],
-  ["tool-receipt:1", "urn:moondog:contract:tool-receipt:1"],
 ]);
 
 export const contractCurrentVersions = new Map([
@@ -38,9 +34,6 @@ export const contractCurrentVersions = new Map([
   ["taste-event", 1],
   ["library-track-observation", 1],
   ["profile-evidence", 2],
-  ["capability-policy", 1],
-  ["tool-invocation", 1],
-  ["tool-receipt", 1],
 ]);
 
 export function contractSchemaId(contractName, schemaVersion) {

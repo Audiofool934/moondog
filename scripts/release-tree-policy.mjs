@@ -172,7 +172,6 @@ export const requiredIgnoredPaths = [
   "profile.db",
   "profile.sqlite",
   "profile.sqlite3",
-  "runs/discovery/private-review.json",
 ];
 
 export function validateReleasePath(relativePath) {
