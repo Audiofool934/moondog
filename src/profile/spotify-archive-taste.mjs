@@ -235,10 +235,6 @@ export function createSpotifyListeningProfileProjection(listening, options) {
   return createListeningProfileProjection(listening, options);
 }
 
-export function createSpotifyArchiveProfileProjection(listening, options) {
-  return createSpotifyListeningProfileProjection(listening, options);
-}
-
 function validatedArchivePaths(value) {
   if (
     !Array.isArray(value) ||

@@ -743,11 +743,3 @@ export function listAgentCapabilityDescriptors(options = {}) {
       label: capability.agent_tool.label,
     }));
 }
-
-export function getAgentCapabilityByToolName(toolName, options = {}) {
-  return (
-    listAgentCapabilityDescriptors(options).find(
-      (capability) => capability.tool_name === toolName,
-    ) ?? null
-  );
-}

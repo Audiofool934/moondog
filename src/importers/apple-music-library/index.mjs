@@ -3,7 +3,6 @@ import {
   normalizeAppleMusicLibrary,
   summarizeAppleMusicLibrary,
 } from "./normalize.mjs";
-import { writeAppleMusicImportBatch } from "./import-batch.mjs";
 
 export {
   AppleMusicImportError,
@@ -33,7 +32,6 @@ export {
   computeAppleSqliteLogicalDigest,
   defaultAppleMusicProjectionPath,
   defaultAppleMusicProjectionPathFor,
-  legacyAppleMusicProjectionPath,
   openAppleMusicSqliteProjection,
   rebuildAppleMusicSqliteProjection,
 } from "./sqlite-projection.mjs";
@@ -59,18 +57,4 @@ export async function buildAppleMusicLibraryImport(
 ) {
   const parsed = await readAppleMusicLibrary(inputPath, { limits });
   return normalizeAppleMusicLibrary(parsed, { subjectId });
-}
-
-export async function importAppleMusicLibraryFile(
-  inputPath,
-  { subjectId, outputRoot, outputBoundary, limits } = {},
-) {
-  const records = await buildAppleMusicLibraryImport(inputPath, {
-    subjectId,
-    limits,
-  });
-  return writeAppleMusicImportBatch(records, {
-    outputRoot,
-    boundaryRoot: outputBoundary,
-  });
 }

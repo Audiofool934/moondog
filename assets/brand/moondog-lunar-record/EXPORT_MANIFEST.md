@@ -16,7 +16,7 @@ No generative edit, repainting, recoloring, resizing, or content addition was ap
 
 ## Poster
 
-File: `moondog-poster-2x3.png`
+File: `moondog-poster-2x3.png`, removed from the tree. Git history keeps it at commit `d0f9e0d`.
 
 Dimensions: 1024 x 1536 pixels.
 
@@ -35,5 +35,5 @@ The final repository exports were copied and cropped deterministically on 2026-0
 
 ## Verification
 
-Both PNG files were opened and visually inspected after they were copied into the Moondog repository.
+Both PNG files were opened and visually inspected after they were copied into the Moondog repository on 2026-09-02.
 The stored checksums match the approved source exports.

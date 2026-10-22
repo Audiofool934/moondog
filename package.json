@@ -60,11 +60,6 @@
     "export:public-source": "node --disable-warning=ExperimentalWarning scripts/export-public-source.mjs",
     "verify": "npm run verify:release-tree && npm run verify:demo-history && npm run verify:demo && npm run verify:community && npm run verify:package && npm run validate:contracts && npm test",
     "doctor": "node --disable-warning=ExperimentalWarning scripts/moondog.mjs doctor",
-    "inspect:apple-library": "node scripts/import-apple-music-library.mjs inspect",
-    "import:apple-library": "node scripts/import-apple-music-library.mjs import",
-    "rebuild:apple-projection": "node --disable-warning=ExperimentalWarning scripts/rebuild-apple-music-projection.mjs",
-    "eval:discovery": "node --disable-warning=ExperimentalWarning scripts/evaluate-discovery.mjs",
-    "eval:review": "node --disable-warning=ExperimentalWarning scripts/review-discovery.mjs",
     "validate:contracts": "node scripts/validate-contracts.mjs",
     "test": "node --test tests/contracts/*.test.mjs tests/core/*.test.mjs tests/importers/*.test.mjs tests/runtime/*.test.mjs"
   },

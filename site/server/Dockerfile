@@ -8,7 +8,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends unzip && rm -rf
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
-COPY assets/brand ./assets/brand
+COPY assets/brand/moondog-lunar-record/moondog-logo-1x1.png ./assets/brand/moondog-lunar-record/
 COPY contracts ./contracts
 COPY scripts ./scripts
 COPY src ./src

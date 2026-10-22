@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { execFile as execFileCallback } from "node:child_process";
 import {
   mkdir,
   mkdtemp,
@@ -14,7 +13,6 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
 
 import { canonicalizeJson } from "../../scripts/contract-semantics.mjs";
 import {
@@ -31,10 +29,6 @@ const fixturePath = fileURLToPath(
 const fixtureBuffer = await readFile(fixturePath);
 const fixtureXml = fixtureBuffer.toString("utf8");
 const subjectId = "11111111-2222-4333-8444-555555555555";
-const execFile = promisify(execFileCallback);
-const cliPath = fileURLToPath(
-  new URL("../../scripts/import-apple-music-library.mjs", import.meta.url),
-);
 
 function parsedFixture() {
   return parseAppleMusicLibraryBuffer(Buffer.from(fixtureBuffer));
@@ -382,7 +376,7 @@ test("text limits cover numeric plist leaves", () => {
   );
 });
 
-test("CLI parser failures never echo private source text", async (t) => {
+test("parser failures never echo private source text", async (t) => {
   const temporaryRoot = await mkdtemp(path.join(tmpdir(), "moondog-cli-test-"));
   t.after(() => rm(temporaryRoot, { recursive: true, force: true }));
   const inputPath = path.join(temporaryRoot, "invalid.xml");
@@ -392,14 +386,11 @@ test("CLI parser failures never echo private source text", async (t) => {
     fixtureXml.replace("Synthetic Alpha", `&${marker};`),
   );
 
-  await assert.rejects(
-    execFile(process.execPath, [cliPath, "inspect", "--input", inputPath]),
-    (error) => {
-      assert.equal(error.stderr.includes(marker), false);
-      assert.match(error.stderr, /plist_parse_diagnostic/);
-      return true;
-    },
-  );
+  await assert.rejects(inspectAppleMusicLibraryFile(inputPath), (error) => {
+    assert.equal(error.code, "plist_parse_diagnostic");
+    assert.equal(error.message.includes(marker), false);
+    return true;
+  });
 });
 
 test("private batch writes atomically, uses private modes, and is idempotent", async (t) => {
