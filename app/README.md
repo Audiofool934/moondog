@@ -53,7 +53,9 @@ A model or music service chosen there lasts until the app quits, and sign-in and
 - Import: choose a Spotify, Apple Music, ListenBrainz or Last.fm export, read recent Spotify listening, read a Last.fm account (the window asks for a Last.fm API key the first time), or drop a file anywhere on the window.
   The preview uses the terminal's words, nothing is saved until you add it, and the updated profile then shows in the conversation.
 - Apple Music plays 30-second previews in the window, with media keys and the system's Now Playing; full Apple Music playback is not built yet.
-- No accent color. Cover art brings the color. Icon buttons name themselves, with their keys, in a tooltip.
+- No accent color. Cover art brings the color: the song playing tints the window with its strongest colours, faintly, and they drift into the next song's over a few seconds; its cover glows from the player's corner.
+  Icon buttons name themselves, with their keys, in a tooltip.
+- The bottom-left corner holds Moondog's mark, whose tonearm rests on the record while music plays, the switch between Spotify and Apple Music, and Settings.
 - Keys: Enter sends and Shift+Enter starts a new line. `⌘.` or Esc stops a reply.
   Typing anywhere goes to the composer. No plain key plays, pauses or skips, because a chat window is typed in all the time.
   `⌃⌘P` plays or pauses, and `⌃⌘→` and `⌃⌘←` skip, from the Playback menu; the media keys work too.

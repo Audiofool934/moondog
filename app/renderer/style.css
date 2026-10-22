@@ -54,6 +54,32 @@ img { -webkit-user-drag: none; }
   transition: width var(--quick) var(--soft), background-color var(--quick) var(--soft); }
 .rail:hover .thumb, .rail.held .thumb { width: 7px; background: var(--thumb-held); }
 
+/* ── The room's light ─────────────────────────────────────────────────────────────────────── */
+/* The cover playing lights the window: its strongest colours as three soft fields that drift into
+   place when the song changes, and the cover itself, blurred past recognition, glowing from the
+   player's corner. Both stay far too faint to compete with the words. */
+@property --mood-1 { syntax: "<color>"; inherits: true; initial-value: transparent; }
+@property --mood-2 { syntax: "<color>"; inherits: true; initial-value: transparent; }
+@property --mood-3 { syntax: "<color>"; inherits: true; initial-value: transparent; }
+.mood { position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none;
+  transition: --mood-1 2.4s var(--soft), --mood-2 3.2s var(--soft), --mood-3 4s var(--soft); }
+.mood::before { content: ""; position: absolute; inset: -14%;
+  background:
+    radial-gradient(44% 50% at 86% 18%, var(--mood-1), color-mix(in srgb, var(--mood-1) 45%, transparent) 42%, transparent 100%),
+    radial-gradient(42% 46% at 68% 88%, var(--mood-2), color-mix(in srgb, var(--mood-2) 45%, transparent) 42%, transparent 100%),
+    radial-gradient(48% 54% at 34% 40%, var(--mood-3), color-mix(in srgb, var(--mood-3) 45%, transparent) 42%, transparent 100%);
+  animation: drift 56s ease-in-out infinite alternate paused; will-change: transform; }
+/* While music plays, the light moves as slowly as weather. */
+.mood.playing::before { animation-play-state: running; }
+@keyframes drift { to { transform: translate(-3%, 2.5%) scale(1.07) rotate(2deg); } }
+.ambient { position: absolute; top: 0; right: 0; bottom: 0; width: min(70%, 980px); z-index: 0; overflow: hidden; pointer-events: none;
+  mask-image: radial-gradient(130% 95% at 100% 0%, #000 18%, rgb(0 0 0 / 0.6) 42%, rgb(0 0 0 / 0.2) 62%, transparent 82%); }
+.ambient img { position: absolute; inset: -12%; width: 124%; height: 124%; object-fit: cover; filter: blur(84px) saturate(1.5);
+  opacity: 0; transition: opacity 1.6s var(--soft); will-change: opacity; }
+.ambient img.on { opacity: 0.2; }
+@media (prefers-color-scheme: dark) { .ambient img.on { opacity: 0.3; } }
+@media (prefers-reduced-transparency: reduce) { .ambient, .mood { display: none; } }
+
 /* ── The window ───────────────────────────────────────────────────────────────────────────── */
 .window { --sidebar: var(--sidebar-width, 248px); --inspector: var(--inspector-width, 320px);
   position: relative; display: grid; grid-template-columns: var(--sidebar) minmax(0, 1fr) var(--inspector); height: 100vh; }
@@ -61,9 +87,9 @@ img { -webkit-user-drag: none; }
 .window.no-sidebar { --sidebar: 0px; }
 .window.no-inspector { --inspector: 0px; }
 /* Each panel keeps its own width while its column opens or closes, so it slides instead of reflowing. */
-.sidebar { grid-column: 1; grid-row: 1; min-width: 0; overflow: hidden; background: var(--side); contain: layout paint; }
-.room { grid-column: 2; grid-row: 1; }
-.inspector { grid-column: 3; grid-row: 1; min-width: 0; overflow: hidden; contain: layout paint; }
+.sidebar { position: relative; z-index: 1; grid-column: 1; grid-row: 1; min-width: 0; overflow: hidden; background: var(--side); contain: layout paint; }
+.room { z-index: 1; grid-column: 2; grid-row: 1; }
+.inspector { z-index: 1; grid-column: 3; grid-row: 1; min-width: 0; overflow: hidden; contain: layout paint; }
 .sidebar > *, .inspector > .frame { width: var(--sidebar-width, 248px); }
 .inspector > .frame { width: var(--inspector-width, 320px); }
 .window.no-sidebar .sidebar, .window.no-inspector .inspector { visibility: hidden; }
@@ -143,16 +169,39 @@ img { -webkit-user-drag: none; }
 .folder .row .open { padding-inline-start: 51px; }
 .loose { min-height: 32px; }
 .drop-target { background: var(--press) !important; }
-.foot { flex: none; display: flex; align-items: center; gap: 4px; padding: 8px 10px 12px; }
+/* The corner: Moondog's mark, where the music comes from, and settings. */
+.foot { flex: none; display: flex; align-items: center; gap: 8px; padding: 8px 8px 12px 14px; container-type: inline-size; }
+.foot .tool { margin-inline-start: auto; }
+.mark { width: 24px; height: 24px; flex: none; color: var(--text-2); overflow: visible; }
+.mark .rim, .mark .groove { fill: none; stroke: currentColor; }
+.mark .rim { stroke-width: 0.075; opacity: 0.55; }
+.mark .groove { stroke-width: 0.05; opacity: 0.22; }
+.mark .ink { fill: currentColor; }
+.mark .halo { fill: var(--side); stroke: var(--side); stroke-width: 0.18; stroke-linejoin: round; }
+.mark .band, .mark .arm { fill: none; stroke: currentColor; stroke-linecap: round; }
+.mark .band { stroke-width: 0.1; }
+.mark .arm { stroke-width: 0.065; }
+.mark .cup { fill: var(--side); stroke: currentColor; stroke-width: 0.075; }
+.mark .eye { fill: var(--side); }
+/* The tonearm rests on the record while music plays and swings off it when the music stops. */
+.mark-arm { transform-box: fill-box; transform-origin: 100% 0%; transform: rotate(-28deg); transition: transform 900ms var(--spring); }
+.mark.playing .mark-arm { transform: none; }
+.sources { display: inline-flex; gap: 2px; min-width: 0; padding: 2px; border-radius: 7px; background: var(--hover); }
+.sources button { height: 22px; min-width: 0; padding: 0 8px; border-radius: 5px; font-size: var(--t-small); font-weight: 500; color: var(--text-3); white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; transition: color var(--quick) var(--soft), background-color var(--quick) var(--soft); }
+.sources button:hover { color: var(--text); transition: none; }
+.sources button[aria-checked="true"] { background: var(--surface); color: var(--text); box-shadow: var(--edge), 0 1px 2px rgb(0 0 0 / 0.06); }
+/* A narrow list keeps the switch and lets the mark go. */
+@container (max-width: 212px) { .foot .mark { display: none; } }
+.sidebar > .connect-line { width: auto; align-self: flex-start; margin: 0 10px 0 12px; }
 
 /* ── The conversation ─────────────────────────────────────────────────────────────────────── */
 .room { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .room > .frame { flex: 1; }
-.scroll { position: relative; height: 100%; overflow-y: auto; scrollbar-width: none; padding: 0 44px; overflow-anchor: none; overscroll-behavior: contain; }
+.scroll { position: relative; height: 100%; overflow-y: auto; scrollbar-width: none; padding: 0 44px; overflow-anchor: none; overscroll-behavior: contain;
+  /* Words fade under the bar and above the composer into whatever light is behind them. */
+  mask-image: linear-gradient(to bottom, transparent 0, transparent calc(var(--bar) - 14px), #000 calc(var(--bar) + 14px), #000 calc(100% - 22px), transparent); }
 .scroll[data-following="false"] { overflow-anchor: auto; }
-.room > .frame::before, .room > .frame::after { content: ""; position: absolute; left: 0; right: 0; z-index: 1; pointer-events: none; }
-.room > .frame::before { top: 0; height: calc(var(--bar) + 18px); background: linear-gradient(var(--canvas) calc(var(--bar) - 10px), transparent); }
-.room > .frame::after { bottom: 0; height: 22px; background: linear-gradient(transparent, var(--canvas)); }
 .column { max-width: var(--column); margin: 0 auto; padding: calc(var(--bar) + 18px) 0 30px; }
 
 /* Before anything is said, the record stands alone over the composer. */
@@ -268,16 +317,8 @@ img { -webkit-user-drag: none; }
 /* ── What is playing ──────────────────────────────────────────────────────────────────────── */
 .inspector { position: relative; display: flex; flex-direction: column; padding-top: var(--bar); }
 .inspector > .frame { flex: 1; }
-/* The cover lights the panel behind it: its own colours, blurred far past recognition. */
-.ambient { position: absolute; inset: 0 0 auto 0; height: 78%; overflow: hidden; pointer-events: none;
-  mask-image: linear-gradient(to bottom, #000 25%, transparent), linear-gradient(to right, transparent, #000 56px); mask-composite: intersect; }
-.inspector > .frame::after { content: ""; position: absolute; inset: auto 0 0 0; height: 22px; z-index: 1; pointer-events: none; background: linear-gradient(transparent, var(--canvas)); }
-.ambient img { position: absolute; inset: -20% -30%; width: 160%; height: 140%; object-fit: cover; filter: blur(56px) saturate(1.6);
-  opacity: 0; transition: opacity 900ms var(--soft); will-change: opacity; }
-@media (prefers-reduced-transparency: reduce) { .ambient { display: none; } }
-.ambient img.on { opacity: 0.2; }
-@media (prefers-color-scheme: dark) { .ambient img.on { opacity: 0.34; } }
-.inspector-scroll { height: 100%; overflow-y: auto; scrollbar-width: none; padding: 8px 24px 28px; }
+.inspector-scroll { height: 100%; overflow-y: auto; scrollbar-width: none; padding: 8px 24px 28px;
+  mask-image: linear-gradient(to bottom, transparent 0, #000 10px, #000 calc(100% - 24px), transparent); }
 .art { position: relative; width: 100%; aspect-ratio: 1; border-radius: var(--r-1); overflow: hidden; background: var(--hover); box-shadow: var(--sleeve); }
 .art img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
 .art img.entering { animation: cover-in 420ms var(--out) both; }

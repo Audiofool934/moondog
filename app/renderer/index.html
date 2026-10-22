@@ -41,6 +41,8 @@
   </svg>
 
   <div class="window" data-window>
+    <div class="mood" aria-hidden="true" data-mood></div>
+    <div class="ambient" aria-hidden="true" data-ambient></div>
     <header class="bar">
       <div class="bar-start">
         <button type="button" class="tool" data-toggle-sidebar data-tip-at="below"><svg class="icon"><use href="#i-sidebar"/></svg></button>
@@ -55,9 +57,13 @@
 
     <aside class="sidebar" data-sidebar>
       <div class="frame"><nav class="sessions" data-sessions></nav></div>
-      <div class="foot">
+      <button type="button" class="link-button connect-line" data-connect hidden></button>
+      <div class="foot" data-foot>
+        <div class="sources" role="radiogroup" data-sources>
+          <button type="button" role="radio" data-source="spotify">Spotify</button>
+          <button type="button" role="radio" data-source="apple_music">Apple Music</button>
+        </div>
         <button type="button" class="tool" data-settings-button><svg class="icon"><use href="#i-settings"/></svg></button>
-        <button type="button" class="link-button" data-connect hidden></button>
       </div>
     </aside>
 
@@ -76,7 +82,6 @@
     </main>
 
     <aside class="inspector" data-inspector>
-      <div class="ambient" aria-hidden="true" data-ambient></div>
       <div class="frame"><div class="inspector-scroll" data-inspector-scroll>
         <section class="now" data-now>
           <div class="art" data-art>

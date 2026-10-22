@@ -159,6 +159,20 @@ function drawing(columns, rows, cellAspect) {
   return { dots, width, height, radius, centerX, centerY, pixel, circle, disc, line, polygon, paintLayer };
 }
 
+// The portrait and the tonearm in the record's unit coordinates: the disc has radius 1 around 0,0.
+const shapes = {
+  headband: bezier([-0.42, -0.03], [-0.47, -0.31], [-0.27, -0.58], [-0.18, -0.59]),
+  ear: [-0.365, -0.005],
+  nose: [0.53, 0.045],
+  arm: [[1.17, -1.095], [0.91, -0.8]],
+  cartridge: [[0.92, -0.845], [0.998, -0.777], [0.808, -0.567], [0.73, -0.635]],
+};
+
+/** The shapes the record is drawn from, for surfaces that draw it as vectors, such as the window's small mark. */
+export function lunarRecordShapes() {
+  return structuredClone({ dog, eye, ...shapes, earRadius: 0.17, grooves: [1, 0.91, 0.8, 0.66] });
+}
+
 // The record as a field of dots, two across and four down per terminal cell, each marked with its layer.
 function paint(columns, rows, phase, cellAspect) {
   const art = drawing(columns, rows, cellAspect);
@@ -203,7 +217,7 @@ function paint(columns, rows, phase, cellAspect) {
 
   paintLayer(RECORD_LAYERS.figure);
   // Like the logo, a clear halo separates the dog from the grooves around it.
-  const headband = bezier([-0.42, -0.03], [-0.47, -0.31], [-0.27, -0.58], [-0.18, -0.59]);
+  const { headband, ear, nose, arm, cartridge } = shapes;
   line([...dog, dog[0]], pixel * 4.5, false);
   line(headband, Math.max(pixel * 7, 0.11), false);
   polygon(dog, false);
@@ -212,8 +226,7 @@ function paint(columns, rows, phase, cellAspect) {
 
   line(headband, Math.max(pixel * 3.5, 0.065));
   line(headband, Math.max(pixel * 1.2, 0.025), false);
-  const earX = -0.365;
-  const earY = -0.005;
+  const [earX, earY] = ear;
   const earRadius = detail > 0 ? 0.157 : 0.17;
   disc(earX, earY, earRadius + pixel * 1.6, false);
   circle(earX, earY, earRadius, pixel * 1.1);
@@ -222,10 +235,9 @@ function paint(columns, rows, phase, cellAspect) {
   else disc(earX, earY, pixel * 0.9);
   // A small eye and nose keep the dog readable before the hatch pattern resolves.
   disc(eye[0], eye[1], pixel * 1.05, false);
-  disc(0.53, 0.045, pixel * 0.85);
+  disc(nose[0], nose[1], pixel * 0.85);
 
-  line([[1.17, -1.095], [0.91, -0.8]], Math.max(pixel * 1.8, 0.03));
-  const cartridge = [[0.92, -0.845], [0.998, -0.777], [0.808, -0.567], [0.73, -0.635]];
+  line(arm, Math.max(pixel * 1.8, 0.03));
   polygon(cartridge, true);
   line([...cartridge, cartridge[0]], pixel);
   disc(0.914, -0.764, Math.max(pixel * 0.7, 0.021), false);

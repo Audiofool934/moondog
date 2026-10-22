@@ -4,6 +4,8 @@ import { languageTag, windowLocale, windowStrings } from "../strings.mjs";
 import { renderMarkdown } from "./markdown.mjs";
 import { createPalette } from "./palette.mjs";
 import { createPreviews } from "./previews.mjs";
+import { createMark } from "./mark.mjs";
+import { coverPalette, moodColours } from "./mood.mjs";
 import { mountRecord } from "./record.mjs";
 import { createSettings } from "./settings.mjs";
 import { createSidebar } from "./sidebar.mjs";
@@ -76,6 +78,7 @@ function applyLanguage(next) {
   $("drop-hint").textContent = t("dropToImport");
   $("connect").textContent = t("connectSpotify");
   $("connect-player").textContent = t("connectSpotify");
+  $("sources").setAttribute("aria-label", t("musicService"));
   window.moondogApp?.setLanguage?.(locale);
   palette?.refresh();
   renderSessions();
@@ -595,6 +598,45 @@ function showCover(frameNode, src, className) {
 
 // The progress line moves on the compositor: one custom property per tick, eased over the second
 // it covers, and set without easing when the song jumps (a seek, a new song).
+// The cover's colours light the window; a new song's colours drift in as the last ones fade.
+const moodNode = $("mood");
+const dark = matchMedia("(prefers-color-scheme: dark)");
+let moodSource = undefined;
+let moodPalette = null;
+function paintMood() {
+  moodColours(moodPalette, dark.matches).forEach((colour, index) => moodNode.style.setProperty(`--mood-${index + 1}`, colour));
+}
+function renderMood(now) {
+  moodNode.classList.toggle("playing", Boolean(now?.playing));
+  const source = now?.image ?? null;
+  if (source === moodSource) return;
+  moodSource = source;
+  void coverPalette(source).then((palette) => {
+    if (moodSource !== source) return;
+    moodPalette = palette;
+    paintMood();
+  });
+}
+dark.addEventListener("change", paintMood);
+
+// The mark in the corner, and where the music comes from beside it.
+const mark = createMark();
+$("foot").prepend(mark.node);
+function renderSources() {
+  for (const button of document.querySelectorAll("[data-source]")) button.setAttribute("aria-checked", String(button.dataset.source === state.playbackService));
+}
+for (const button of document.querySelectorAll("[data-source]")) {
+  button.addEventListener("click", () => {
+    const service = button.dataset.source;
+    if (service === state.playbackService) return;
+    if (previews.active() && service === "spotify") previews.stop();
+    // The switch shows the choice at once; the core's status confirms it.
+    state.playbackService = service;
+    send({ type: "music-service", service });
+    renderInspector();
+  });
+}
+
 let seeking = null;
 let drawnSong = "";
 function renderProgress(now, { jump = false } = {}) {
@@ -714,6 +756,9 @@ function renderInspector() {
   const reserve = mini.hidden ? "" : `${mini.offsetWidth + 70}px`;
   if (layout.style.getPropertyValue("--bar-reserve") !== reserve) layout.style.setProperty("--bar-reserve", reserve);
   record?.turn(now?.playing);
+  mark.playing(now?.playing);
+  renderMood(now);
+  renderSources();
   tick();
   syncMenu();
 }
