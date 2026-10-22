@@ -10,6 +10,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { Arch, build, Platform } from "electron-builder";
+import { buildMusicHelper, MUSIC_USAGE } from "./native/build.mjs";
 
 const run = promisify(execFile);
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -31,6 +32,9 @@ await run("npm", ["ci", "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fu
 
 // The window's page.
 await run(process.execPath, [path.join(here, "build.mjs")]);
+// The Apple Music helper sits beside the app's own executable, so MusicKit knows it as Moondog;
+// electron-builder signs it with the app.
+const music = await buildMusicHelper({ bundle: false });
 
 const { version } = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
 if (sign) process.env.APPLE_KEYCHAIN_PROFILE = process.env.MOONDOG_NOTARY_PROFILE ?? process.env.APPLE_NOTARY_PROFILE ?? "mac-mini-notary";
@@ -50,6 +54,7 @@ const artifacts = await build({
     // electron-builder leaves node_modules out of extra resources unless it is named on its own.
     extraResources: [{ from: "build/room", to: ".", filter: ["**/*"] },
       { from: "build/room/node_modules", to: "node_modules", filter: ["**/*"] }],
+    extraFiles: music ? [{ from: "native/build/moondog-music", to: "MacOS/moondog-music" }] : [],
     mac: {
       category: "public.app-category.music",
       icon: path.join(root, "assets/brand/moondog-lunar-record/moondog-logo-1x1.png"),
@@ -57,6 +62,7 @@ const artifacts = await build({
       gatekeeperAssess: false,
       entitlements: "build-resources/entitlements.mac.plist",
       entitlementsInherit: "build-resources/entitlements.mac.plist",
+      extendInfo: { NSAppleMusicUsageDescription: MUSIC_USAGE },
       identity: sign ? identity : null,
       notarize: sign,
     },

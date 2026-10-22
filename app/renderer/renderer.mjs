@@ -39,7 +39,8 @@ let port = null;
 const outbox = [];
 const send = (message) => (port ? port.postMessage(message) : outbox.push(message));
 const previews = createPreviews({ send, onChange: () => renderInspector() });
-const settings = createSettings({ state, send, t: tr, prettyModel: (model) => prettyModel(model) });
+const settings = createSettings({ state, send, t: tr, prettyModel: (model) => prettyModel(model),
+  appleMusic: { status: () => previews.fullStatus(), check: (command) => previews.check(command) } });
 const sidebar = createSidebar({ root: $("sessions"), state, send, t: tr, open: (id) => openSession(id), store, menuPoint: (event) => menuPoint(event) });
 const tips = tooltips();
 // A native menu opens at the pointer, or under its control when the keyboard pressed it.
@@ -562,12 +563,13 @@ const clock = (ms) => {
 function nowPlaying() {
   const preview = previews.state();
   const now = state.player?.now;
-  if (preview && (preview.playing || !now?.playing)) return { ...preview, preview: true };
+  // local: it plays in the window (whole songs or previews); preview: it is a 30-second preview.
+  if (preview && (preview.playing || !now?.playing)) return { ...preview, local: true, preview: !preview.full };
   if (!now) return null;
   const progressMs = now.playing ? now.progressMs + (Date.now() - now.observedAt) : now.progressMs;
   return { ...now, progressMs: now.durationMs ? Math.min(progressMs, now.durationMs) : progressMs, next: state.player.next ?? [] };
 }
-const can = (now, action) => Boolean(now) && (now.preview || !(now.disallows ?? []).includes(action));
+const can = (now, action) => Boolean(now) && (now.local || !(now.disallows ?? []).includes(action));
 const DEVICE_ICONS = { computer: "laptop", smartphone: "phone", tablet: "phone", speaker: "speaker", tv: "tv", castvideo: "tv", castaudio: "speaker", avr: "speaker", stb: "tv" };
 // The inspector redraws several times a second while music plays, so a node changes only when its content does.
 const set = (node, key, value) => { if (node[key] !== value) node[key] = value; };
@@ -646,7 +648,7 @@ function renderProgress(now, { jump = false } = {}) {
   const track = $("track");
   track.classList.toggle("seekable", can(now, "seeking"));
   const fraction = Math.min(1, Math.max(0, seeking ? seeking.fraction : now.progressMs / now.durationMs));
-  const song = `${now.title}|${now.durationMs}|${now.preview ? "p" : "s"}`;
+  const song = `${now.title}|${now.durationMs}|${now.local ? "w" : "s"}`;
   const still = jump || seeking || song !== drawnSong || !now.playing;
   drawnSong = song;
   track.classList.toggle("still", Boolean(still));
@@ -711,21 +713,22 @@ function renderInspector() {
     set($("next"), "disabled", !can(now, "skipping_next"));
     set($("previous"), "disabled", !can(now, "skipping_prev"));
   }
-  const spotifyNow = now && !now.preview;
-  set($("where"), "hidden", !(spotifyNow ? now.device || now.link : now?.preview));
+  const spotifyNow = now && !now.local;
+  set($("where"), "hidden", !(spotifyNow ? now.device || now.link : now?.local));
   set($("device-row"), "hidden", !spotifyNow || !now.device);
   if (spotifyNow) {
     set($("device-name"), "textContent", now.device ?? "");
     setIcon($("device-row"), DEVICE_ICONS[String(now.deviceType ?? "").toLowerCase()] ?? "speaker");
   }
   set($("repeat"), "hidden", !spotifyNow || now.repeat !== "track");
-  set($("stop-previews"), "hidden", !now?.preview);
+  set($("stop-previews"), "hidden", !now?.local);
+  name($("stop-previews"), now?.preview ? t("stopPreviews") : t("stop"));
   // The song's own page: Apple Music for a preview, Spotify for a song Spotify plays.
   const external = $("external");
   set(external, "hidden", !now?.link);
   if (now?.link && external.getAttribute("href") !== now.link) {
     external.href = now.link;
-    name(external, now.preview ? t("fullSong") : t("openInSpotify"));
+    name(external, now.local ? t("fullSong") : t("openInSpotify"));
   }
   // Spotify not connected: the panel offers the one thing that fixes it instead of explaining.
   const offline = state.playbackService === "spotify" && state.spotify === "unavailable" && !now;
@@ -765,7 +768,7 @@ function renderInspector() {
 
 function control(action, via = "button") {
   const now = nowPlaying();
-  if (now?.preview) {
+  if (now?.local) {
     if (action === "toggle") previews.toggle();
     if (action === "next") previews.next();
     if (action === "previous") previews.previous();
@@ -807,7 +810,7 @@ function seekTo(positionMs) {
   const now = nowPlaying();
   if (!now?.durationMs || !can(now, "seeking")) return;
   const position = Math.round(Math.min(now.durationMs - 1000, Math.max(0, positionMs)));
-  if (now.preview) previews.seek(position);
+  if (now.local) previews.seek(position);
   else if (state.player?.now) {
     send({ type: "control", action: "seek", positionMs: position });
     state.player.now = { ...state.player.now, progressMs: position, observedAt: Date.now() };
@@ -1020,6 +1023,8 @@ function receive({ data }) {
   if (data.type === "ready" || data.type === "status") {
     if (data.locale && data.locale !== locale) applyLanguage(data.locale);
     for (const key of ["model", "spotify", "spotifyAccount", "playbackService", "locales"]) if (data[key] !== undefined) state[key] = data[key];
+    // With Apple Music chosen, the window learns once whether it can play whole songs.
+    if (state.playbackService === "apple_music" && !previews.fullStatus()) void previews.check();
     renderComposer();
     renderInspector();
     settings.render();

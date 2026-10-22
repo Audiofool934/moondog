@@ -65,6 +65,7 @@ dist/
 *.tmp
 *.temp
 
-# The desktop app's packaging work and output (app/pack.mjs).
+# The desktop app's packaging work and output (app/pack.mjs), and its Apple Music helper build.
 app/build/
 app/release/
+app/native/build/

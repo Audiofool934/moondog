@@ -3,8 +3,8 @@
 // window draws conversations, the conversation, and what is playing, and keeps the music
 // going after it closes.
 import { app, BrowserWindow, dialog, ipcMain, Menu, MessageChannelMain, nativeTheme, screen, shell, utilityProcess } from "electron";
-import { execFile } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { execFile, spawn } from "node:child_process";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -235,6 +235,69 @@ ipcMain.handle("choose-file", async (_event, { title, filterName } = {}) => {
 });
 ipcMain.handle("version", () => app.getVersion());
 
+// Apple Music's whole songs come from a helper MusicKit knows as Moondog (native/music.swift): it sits
+// beside the app's own executable when packaged, and in its own bundle for development. It starts the
+// first time the window asks and goes when the app quits. One JSON object per line each way.
+const MUSIC_COMMANDS = new Set(["check", "authorize", "play", "pause", "resume", "next", "previous", "seek", "stop"]);
+let musicHelper = null;
+let musicSequence = 0;
+const musicWaiting = new Map();
+const musicHelperFile = () => (app.isPackaged ? path.join(path.dirname(app.getPath("exe")), "moondog-music")
+  : path.join(here, "native", "build", "Moondog Music.app", "Contents", "MacOS", "moondog-music"));
+function startMusicHelper() {
+  if (musicHelper || process.platform !== "darwin" || !existsSync(musicHelperFile())) return musicHelper;
+  const helper = spawn(musicHelperFile(), [], { stdio: ["pipe", "pipe", "ignore"] });
+  musicHelper = helper;
+  let buffer = "";
+  helper.stdout.setEncoding("utf8");
+  helper.stdout.on("data", (chunk) => {
+    buffer += chunk;
+    for (let end = buffer.indexOf("\n"); end >= 0; end = buffer.indexOf("\n")) {
+      const line = buffer.slice(0, end);
+      buffer = buffer.slice(end + 1);
+      let message;
+      try { message = JSON.parse(line); } catch { continue; }
+      if (message.type === "answer" && musicWaiting.has(message.id)) { musicWaiting.get(message.id)(message); musicWaiting.delete(message.id); }
+      else if (message.type === "state") window?.webContents.send("apple-music", message);
+    }
+  });
+  // A helper that fails to start or stops answers everything waiting, and the window hears it went.
+  let gone = false;
+  const lost = () => {
+    if (gone) return;
+    gone = true;
+    if (musicHelper === helper) musicHelper = null;
+    for (const resolve of musicWaiting.values()) resolve({ error: "helperExited", canPlay: false });
+    musicWaiting.clear();
+    window?.webContents.send("apple-music", { type: "exited" });
+  };
+  helper.once("exit", lost);
+  helper.once("error", lost);
+  helper.stdin.on("error", () => {});
+  return helper;
+}
+ipcMain.handle("apple-music", (_event, command) => new Promise((resolve) => {
+  if (!MUSIC_COMMANDS.has(command?.type)) return resolve({ error: "unknownCommand" });
+  if (quitting) return resolve({ error: "unavailable", canPlay: false });
+  const helper = startMusicHelper();
+  if (!helper) return resolve({ error: "unavailable", canPlay: false });
+  // Only what each command needs crosses over: catalog ids are digits, a position is a number.
+  const message = { type: command.type, id: ++musicSequence };
+  if (command.type === "play") {
+    // A queue with any id that isn't a catalog id goes back whole, so the window plays previews instead.
+    const ids = Array.isArray(command.ids) ? command.ids.map(String) : [];
+    if (!ids.length || ids.length > 100 || !ids.every((id) => /^\d{1,20}$/u.test(id))) return resolve({ error: "invalidIds" });
+    message.ids = ids;
+    message.start = Number.isInteger(command.start) ? command.start : 0;
+    if (typeof command.token === "string" && command.token.length <= 80) message.token = command.token;
+  }
+  if (command.type === "seek") message.ms = Number.isFinite(command.ms) ? Math.max(0, command.ms) : 0;
+  musicWaiting.set(message.id, resolve);
+  helper.stdin.write(`${JSON.stringify(message)}\n`);
+  // Asking the listener waits for their answer; anything else answers quickly or not at all.
+  setTimeout(() => { if (musicWaiting.delete(message.id)) resolve({ error: "timeout", canPlay: false }); }, command.type === "authorize" ? 300_000 : 20_000);
+}));
+
 // The page reports the language the core speaks, which a saved choice can set.
 ipcMain.on("language", (_event, value) => {
   if (typeof value !== "string" || value === locale) return;
@@ -266,6 +329,8 @@ nativeTheme.on("updated", () => window?.setBackgroundColor(background()));
 let stopping = false;
 app.on("before-quit", (event) => {
   quitting = true;
+  // The helper stops its songs and exits when its pipe closes.
+  musicHelper?.stdin.end();
   if (!core) return;
   event.preventDefault();
   if (stopping) return;

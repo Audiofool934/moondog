@@ -52,7 +52,9 @@ A model or music service chosen there lasts until the app quits, and sign-in and
   Changes are saved where the terminal reads them; the window never sees a key or token.
 - Import: choose a Spotify, Apple Music, ListenBrainz or Last.fm export, read recent Spotify listening, read a Last.fm account (the window asks for a Last.fm API key the first time), or drop a file anywhere on the window.
   The preview uses the terminal's words, nothing is saved until you add it, and the updated profile then shows in the conversation.
-- Apple Music plays 30-second previews in the window, with media keys and the system's Now Playing; full Apple Music playback is not built yet.
+- Apple Music plays whole songs where it can and 30-second previews where it can't.
+  Whole songs come from a small helper beside the app's executable (`native/music.swift`) that plays the Apple Music catalog through MusicKit, so they need an Apple Music subscription and the listener's permission, which Settings › Playback asks for once.
+  Until the helper can play, the window plays previews in itself, with media keys and the system's Now Playing.
 - No accent color. Cover art brings the color: the song playing tints the window with its strongest colours, faintly, and they drift into the next song's over a few seconds; its cover glows from the player's corner.
   Icon buttons name themselves, with their keys, in a tooltip.
 - The bottom-left corner holds Moondog's mark, whose tonearm rests on the record while music plays, the switch between Spotify and Apple Music, and Settings.
@@ -77,6 +79,16 @@ A model or music service chosen there lasts until the app quits, and sign-in and
   Replies render from Markdown into DOM text nodes (`markdown.mjs`), so a reply can't inject markup.
 - Menus for a conversation and the model, device and service pickers are native menus, built in `main.mjs` from plain items the page sends.
 - One message port carries everything between the core and the window, including the previews the agent plays.
+
+## Whole Apple Music songs
+
+MusicKit gives an app its developer token only when MusicKit is turned on for the app's identifier.
+Once, in the Apple Developer account of team DAK5S3455A: Certificates, Identifiers & Profiles › Identifiers › register or open the App ID `ai.audiofool.moondog` › App Services › check MusicKit › Save.
+No build or setting in this repository changes after that; the helper's check starts answering yes, and Settings › Playback says "Full songs".
+Until then the helper reports `developerTokenRequestFailed` and the window keeps playing previews.
+
+`node native/build.mjs` builds the helper on its own: `native/build/moondog-music` for packaging, and `native/build/Moondog Music.app`, signed with the Developer ID, for `npm start`.
+To ask it directly, run `"native/build/Moondog Music.app/Contents/MacOS/moondog-music"` and type `{"id":1,"type":"check"}`.
 
 ## Look at every state
 
@@ -103,6 +115,6 @@ It needs no model, no music service and none of your data.
 ## Not yet
 
 - The first-time setup and the full taste report happen in the terminal (`moondog`).
-- Apple Music plays previews only.
+- Whole Apple Music songs wait for MusicKit to be turned on for the app's identifier (see above); the terminal plays previews.
 - The app does not update itself yet; install a new build over the old one.
 - The build is for Apple silicon only.

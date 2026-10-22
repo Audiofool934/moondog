@@ -23,6 +23,26 @@ window.Audio = FakeAudio;
 // The real preload's bridge, minus what needs the main process: menus and dialogs answer "nothing".
 window.moondogApp = { pathForFile: () => null, onCommand() {}, setLanguage() {}, setBusy() {}, setPlayback() {}, showMenu: async () => null,
   confirm: async () => false, chooseFile: async () => null, version: async () => "0.2.0-beta.1" };
+// A stand-in for the Apple Music helper. It says it can play whole songs only in the state that asks
+// it to, as the real one does once MusicKit is enabled for the app, and plays them silently.
+const music = { whole: false, listeners: [], playing: null };
+const WHOLE = ["Pink Moon", "Place to Be", "Road"];
+const musicState = () => music.listeners.forEach((listener) => listener({ type: "state", token: music.playing.token, status: music.playing.status, positionMs: music.playing.positionMs,
+  index: music.playing.index, song: { title: WHOLE[music.playing.index], artist: "Nick Drake", album: "Pink Moon", durationMs: 124_000 } }));
+window.moondogApp.appleMusic = async (command) => {
+  if (command.type === "check" || command.type === "authorize") return music.whole ? { authorization: "authorized", canPlay: true } : { authorization: "notDetermined", canPlay: false };
+  if (!music.whole) return { error: "unavailable" };
+  if (command.type === "play") music.playing = { index: command.start ?? 0, status: "playing", positionMs: 47_000, token: command.token };
+  if (!music.playing) return {};
+  if (command.type === "pause") music.playing.status = "paused";
+  if (command.type === "resume") music.playing.status = "playing";
+  if (command.type === "next") music.playing = { ...music.playing, index: Math.min(WHOLE.length - 1, music.playing.index + 1), positionMs: 0 };
+  if (command.type === "seek") music.playing.positionMs = command.ms;
+  if (command.type === "stop") music.playing.status = "stopped";
+  setTimeout(musicState, 30);
+  return {};
+};
+window.moondogApp.onAppleMusic = (listener) => music.listeners.push(listener);
 
 // Covers are drawn, not fetched: the page allows data: images and the harness needs no network.
 const cover = ([a, b, c], shape) => `data:image/svg+xml;utf8,${encodeURIComponent(
@@ -173,6 +193,14 @@ const STATES = {
   tooltip() { STATES.reply(); return { hover: "[data-new]" }; },
   "turn-tip"() { STATES.long(); return { hover: ".turns button:nth-child(2)" }; },
   narrow() { STATES.reply(); },
+  // Whole Apple Music songs through the helper, once Apple allows them.
+  whole() {
+    music.whole = true;
+    ready({ transcript: [{ role: "user", text: "Play Pink Moon, the whole album" }, { role: "assistant", id: "t0", text: "Starting *Pink Moon* from the top." }], playbackService: "apple_music" });
+    silent();
+    setTimeout(() => send({ type: "preview", id: "p2", tracks: WHOLE.map((title, index) => ({ title, artist_credit: "Nick Drake",
+      preview_url: "https://audio-ssl.itunes.apple.com/harness.m4a", catalog_url: `https://music.apple.com/album/harness?i=14408412${65 + index}` })) }), 200);
+  },
   preview() {
     ready({ transcript: [{ role: "user", text: "Play me a few previews of Nick Drake" }, { role: "assistant", id: "t0", text: "Here are three previews from *Pink Moon*." }], playbackService: "apple_music" });
     silent();

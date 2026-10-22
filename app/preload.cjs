@@ -13,4 +13,7 @@ contextBridge.exposeInMainWorld("moondogApp", {
   confirm: (options) => ipcRenderer.invoke("confirm", options),
   chooseFile: (options) => ipcRenderer.invoke("choose-file", options),
   version: () => ipcRenderer.invoke("version"),
+  // Whole Apple Music songs through the app's MusicKit helper, where this Mac allows them.
+  appleMusic: (command) => ipcRenderer.invoke("apple-music", command),
+  onAppleMusic: (callback) => ipcRenderer.on("apple-music", (_event, message) => callback(message)),
 });

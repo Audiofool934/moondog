@@ -56,7 +56,7 @@ function phase(offset) {
   return mark;
 }
 
-export function createSettings({ state, send, t, prettyModel = String }) {
+export function createSettings({ state, send, t, prettyModel = String, appleMusic = null }) {
   const say = (key, params) => t()(key, params);
   const sheet = make("div", "sheet");
   sheet.hidden = true;
@@ -162,7 +162,12 @@ export function createSettings({ state, send, t, prettyModel = String }) {
     // The status and the memories come back for every section.
     send({ type: "settings" });
     if (section === "model") send({ type: "models" });
-    if (section === "playback") { data.devicesLoading = true; send({ type: "devices" }); }
+    if (section === "playback") {
+      data.devicesLoading = true;
+      send({ type: "devices" });
+      // Whether Apple Music can play whole songs here can change outside the window, so Playback asks again.
+      void appleMusic?.check().then(() => render());
+    }
     if (section === "about" && !data.version) void window.moondogApp?.version?.().then((version) => { data.version = version; render(); });
   }
 
@@ -496,11 +501,16 @@ export function createSettings({ state, send, t, prettyModel = String }) {
       send({ type: "sign-out", provider: "spotify" });
       render();
     }, "spotify:disconnect") : null;
+    // Whole Apple Music songs need the listener's permission once; until then, and without it, previews play.
+    const whole = appleMusic?.status();
+    const allowWhole = whole?.authorization === "notDetermined" && whole.reason !== "developerTokenRequestFailed" ? button(say("allowFullSongs"), "button small", () => {
+      void appleMusic.check("authorize").then(() => render());
+    }, "apple-music:allow") : null;
     const parts = [group(say("musicService"), sectionError(), choices([
       choice({ label: "Spotify", detail: ready ? null : say("notConnected"), chosen: service === "spotify", trailing: disconnect,
         key: "service:spotify", onChoose: chooseService("spotify") }),
-      choice({ label: "Apple Music", detail: say("appleMusicNote"), chosen: service === "apple_music", key: "service:apple_music",
-        onChoose: chooseService("apple_music") }),
+      choice({ label: "Apple Music", detail: say(whole?.canPlay ? "fullSongs" : "appleMusicNote"), chosen: service === "apple_music", key: "service:apple_music",
+        trailing: allowWhole, onChoose: chooseService("apple_music") }),
     ]))];
     if (service !== "spotify") return parts;
     if (data.auth?.provider === "spotify") parts.push(group(null, signInPanel()));

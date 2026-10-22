@@ -61,6 +61,8 @@ const STRINGS = {
     nextSong: "Next song",
     previousSong: "Previous song",
     unknownCommand: "There's no /{name} command.",
+    fullSongs: "Full songs",
+    allowFullSongs: "Play full songs",
   },
   zh: {
     newConversation: "新对话", today: "今天", yesterday: "昨天", previous7: "过去 7 天", older: "更早",
@@ -114,6 +116,8 @@ const STRINGS = {
     nextSong: "下一首",
     previousSong: "上一首",
     unknownCommand: "没有 /{name} 这个命令。",
+    fullSongs: "完整歌曲",
+    allowFullSongs: "播放完整歌曲",
   },
   "zh-Hant": {
     newConversation: "新對話", today: "今天", yesterday: "昨天", previous7: "過去 7 天", older: "更早",
@@ -167,6 +171,8 @@ const STRINGS = {
     nextSong: "下一首",
     previousSong: "上一首",
     unknownCommand: "沒有 /{name} 這個指令。",
+    fullSongs: "完整歌曲",
+    allowFullSongs: "播放完整歌曲",
   },
   ja: {
     newConversation: "新しい会話", today: "今日", yesterday: "昨日", previous7: "過去 7 日間", older: "それ以前",
@@ -220,6 +226,8 @@ const STRINGS = {
     nextSong: "次の曲",
     previousSong: "前の曲",
     unknownCommand: "/{name} というコマンドはありません。",
+    fullSongs: "フル再生",
+    allowFullSongs: "フル再生を許可",
   },
   ko: {
     newConversation: "새 대화", today: "오늘", yesterday: "어제", previous7: "지난 7일", older: "이전",
@@ -273,6 +281,8 @@ const STRINGS = {
     nextSong: "다음 곡",
     previousSong: "이전 곡",
     unknownCommand: "/{name} 명령이 없습니다.",
+    fullSongs: "전곡 재생",
+    allowFullSongs: "전곡 재생 허용",
   },
   es: {
     newConversation: "Nueva conversación", today: "Hoy", yesterday: "Ayer", previous7: "Últimos 7 días", older: "Anteriores",
@@ -326,6 +336,8 @@ const STRINGS = {
     nextSong: "Siguiente canción",
     previousSong: "Canción anterior",
     unknownCommand: "No hay ningún comando /{name}.",
+    fullSongs: "Canciones completas",
+    allowFullSongs: "Reproducir canciones completas",
   },
   fr: {
     newConversation: "Nouvelle conversation", today: "Aujourd'hui", yesterday: "Hier", previous7: "7 derniers jours", older: "Plus anciennes",
@@ -379,6 +391,8 @@ const STRINGS = {
     nextSong: "Morceau suivant",
     previousSong: "Morceau précédent",
     unknownCommand: "La commande /{name} n'existe pas.",
+    fullSongs: "Morceaux complets",
+    allowFullSongs: "Lire les morceaux complets",
   },
   de: {
     newConversation: "Neue Unterhaltung", today: "Heute", yesterday: "Gestern", previous7: "Letzte 7 Tage", older: "Älter",
@@ -432,6 +446,8 @@ const STRINGS = {
     nextSong: "Nächster Song",
     previousSong: "Vorheriger Song",
     unknownCommand: "Den Befehl /{name} gibt es nicht.",
+    fullSongs: "Ganze Songs",
+    allowFullSongs: "Ganze Songs abspielen",
   },
   pt: {
     newConversation: "Nova conversa", today: "Hoje", yesterday: "Ontem", previous7: "Últimos 7 dias", older: "Anteriores",
@@ -485,6 +501,8 @@ const STRINGS = {
     nextSong: "Próxima música",
     previousSong: "Música anterior",
     unknownCommand: "Não existe o comando /{name}.",
+    fullSongs: "Músicas completas",
+    allowFullSongs: "Tocar músicas completas",
   },
   it: {
     newConversation: "Nuova conversazione", today: "Oggi", yesterday: "Ieri", previous7: "Ultimi 7 giorni", older: "Meno recenti",
@@ -538,6 +556,8 @@ const STRINGS = {
     nextSong: "Brano successivo",
     previousSong: "Brano precedente",
     unknownCommand: "Il comando /{name} non esiste.",
+    fullSongs: "Brani completi",
+    allowFullSongs: "Riproduci brani completi",
   },
 };
 
