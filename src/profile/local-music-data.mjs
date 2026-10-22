@@ -673,7 +673,7 @@ async function checkpointSqlite(filePath) {
   } catch (error) {
     fail(
       "local_music_data_busy",
-      "Local music data is busy. Close Moondog Studio and other Moondog processes before reset.",
+      "Local music data is busy. Close other Moondog windows and processes before reset.",
       { cause: error },
     );
   } finally {

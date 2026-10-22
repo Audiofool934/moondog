@@ -10,10 +10,6 @@ import {
   renderTasteprintHtml,
 } from "../../src/surfaces/html/tasteprint.mjs";
 import { writeTasteprintArtifact } from "../../src/surfaces/html/tasteprint-artifact.mjs";
-import {
-  createPublicTasteprintDemoProfile,
-  PUBLIC_TASTEPRINT_DEMO_GENERATED_AT,
-} from "../../src/demo/moondog-tasteprint-demo.mjs";
 
 const privateEvidenceId = "11111111-2222-4333-8444-555555555555";
 
@@ -823,76 +819,6 @@ test("partial provider snapshots render only populated provider panels", () => {
   assert.doesNotMatch(html, /<h3>Top artists<\/h3>/u);
   assert.doesNotMatch(html, /<h3>Top songs<\/h3>/u);
   assert.doesNotMatch(html, /Spotify did not rank anything here/u);
-});
-
-test("public Tasteprint demo is deterministic and unmistakably synthetic", () => {
-  const profile = createPublicTasteprintDemoProfile();
-  const options = {
-    generatedAt: PUBLIC_TASTEPRINT_DEMO_GENERATED_AT,
-    syntheticDemo: true,
-  };
-  const view = createTasteprintView(profile, options);
-  const first = renderTasteprintHtml(profile, options);
-  const second = renderTasteprintHtml(createPublicTasteprintDemoProfile(), options);
-  const firstCard = renderTasteprintCardHtml(profile, options);
-  const secondCard = renderTasteprintCardHtml(
-    createPublicTasteprintDemoProfile(),
-    options,
-  );
-
-  assert.equal(view.synthetic_demo, true);
-  assert.equal(view.privacy.classification, "public_synthetic_demo");
-  assert.equal(view.privacy.contains_personal_music_context, false);
-  assert.deepEqual(
-    view.behavior.history_arc.map((item) => item.year),
-    [2023, 2024, 2025, 2026],
-  );
-  assert.equal(view.behavior.history_arc[2].first_observed_tracks, 743);
-  assert.equal(view.behavior.monthly_activity.represented_month_count, 36);
-  assert.equal(view.behavior.monthly_activity.active_month_count, 36);
-  assert.equal(view.behavior.listening_seasons.represented_season_count, 13);
-  assert.equal(view.behavior.listening_seasons.preview_season_count, 12);
-  assert.equal(view.behavior.listening_seasons.preview_omitted_season_count, 1);
-  assert.equal(view.behavior.listening_seasons.seasons[0].key, "2023-Q4");
-  assert.equal(view.behavior.listening_seasons.seasons.at(-1).key, "2026-Q3");
-  assert.equal(view.behavior.rediscovery_tracks[0].label, "Quiet Coordinates");
-  assert.equal(
-    view.behavior.historical_return_tracks[0].label,
-    "Quiet Coordinates",
-  );
-  assert.equal(view.behavior.historical_return_tracks[0].return_count, 2);
-  assert.equal(view.behavior.release_depth[0].title, "Night Transit");
-  assert.equal(view.behavior.session_summary.session_count, 2_500);
-  assert.equal(first, second);
-  assert.equal(firstCard, secondCard);
-  assert.match(first, /A fictional demo/u);
-  assert.match(first, /is made up/u);
-  assert.match(first, /Mara Vale/u);
-  assert.match(first, /Wish You Were Here/u);
-  assert.match(first, /Coming Back to Life/u);
-  assert.match(first, /Listening Pulse/u);
-  assert.match(first, /36 months with listening/u);
-  assert.match(first, /Listening Seasons/u);
-  assert.match(first, /13 seasons with listening/u);
-  assert.match(first, /latest 12 of 13 seasons/u);
-  assert.match(first, /Blue Hour Index/u);
-  assert.match(first, /not proof you missed them/u);
-  assert.match(first, /Quiet Coordinates/u);
-  assert.match(first, /Inside a listening stretch/u);
-  assert.match(first, /Records you went deep on/u);
-  assert.match(first, /Fictional archive preview/u);
-  assert.doesNotMatch(first, /Private, made on this machine/u);
-  assert.doesNotMatch(first, /evidence[_-]?id/iu);
-  assert.doesNotMatch(first, /track[_-]?ref/iu);
-  assert.doesNotMatch(first, /\/Users\//u);
-  assert.match(firstCard, /A fictional demo/u);
-  assert.match(firstCard, /Fictional public profile/u);
-  assert.match(firstCard, /is made up/u);
-  assert.doesNotMatch(firstCard, /Private recap/u);
-  assert.doesNotMatch(firstCard, /Read it before you share it/u);
-  assert.doesNotMatch(firstCard, /evidence[_-]?id/iu);
-  assert.doesNotMatch(firstCard, /track[_-]?ref/iu);
-  assert.doesNotMatch(firstCard, /\/Users\//u);
 });
 
 test("tasteprint artifact defaults to a private state directory and refuses overwrite", async (context) => {

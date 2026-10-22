@@ -65,30 +65,12 @@ const offlineSteps = Object.freeze({
 
 const demoNextSteps = Object.freeze([
   Object.freeze({
-    id: "open_visual_tour",
-    title: "Open the visual Listening Time Machine",
-    checkout_command: "npm run demo:studio",
-    installed_command: "moondog studio --demo",
-    data_boundary:
-      "The fictional tour stays on 127.0.0.1, reads no private history, rejects imports, and keeps corrections only in process memory.",
-  }),
-  Object.freeze({
-    id: "open_session_studio",
-    title: "Open your history without importing it",
-    checkout_command:
-      "npm --silent run demo:studio -- --from /absolute/path/to/spotify-history.zip",
-    installed_command:
-      "moondog studio --from /absolute/path/to/spotify-history.zip",
-    data_boundary:
-      "No dependency installation is required. The archive stays unchanged, the private profile and corrections live only in process memory, and no model, provider, cloud, or network request is made.",
-  }),
-  Object.freeze({
-    id: "open_private_studio",
+    id: "open_listening_room",
     title: "Bring your own listening history",
-    checkout_command: "npm run studio",
-    installed_command: "moondog studio",
+    checkout_command: "npm start",
+    installed_command: "moondog",
     data_boundary:
-      "Studio stays on 127.0.0.1. The fictional preview saves nothing. Import changes private local state only after an explicit button press.",
+      "Your listening room opens in this terminal. Type /import there; Moondog shows what is inside an export before anything is saved.",
   }),
 ]);
 

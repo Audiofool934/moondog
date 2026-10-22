@@ -68,6 +68,7 @@ const exactAllowedPaths = new Set([
   "README.md",
   "package-lock.json",
   "package.json",
+  // The showcase was removed, but its page stays in the public history the release check scans.
   "showcase/index.html",
   "tests/fixtures/apple-music-library/minimal.xml",
 ]);
@@ -129,9 +130,6 @@ export const requiredReleasePaths = new Set([
   "README.md",
   "assets/brand/moondog-lunar-record/EXPORT_MANIFEST.md",
   "assets/brand/moondog-lunar-record/moondog-logo-1x1.png",
-  "assets/demo/moondog-offline-demo.gif",
-  "assets/demo/moondog-studio-tour.gif",
-  "assets/demo/moondog-tasteprint-demo.html",
   "contracts/v1/definitions.schema.json",
   "contracts/v2/profile-evidence.schema.json",
   "docs/PRIVATE_TASTEPRINT.md",
@@ -142,15 +140,10 @@ export const requiredReleasePaths = new Set([
   "package-lock.json",
   "package.json",
   "scripts/export-public-source.mjs",
-  "scripts/export-showcase.mjs",
-  "scripts/capture-studio-tour.mjs",
-  "scripts/demo-studio.mjs",
   "scripts/moondog",
   "scripts/public-source-tree.mjs",
-  "scripts/showcase.mjs",
   "scripts/verify-clean-source.mjs",
   "scripts/verify-release-tree.mjs",
-  "scripts/verify-showcase.mjs",
   "src/demo/fictional-spotify-history.mjs",
   "src/demo/moondog-demo.mjs",
   "src/integrations/spotify/extended-streaming-history.mjs",
@@ -158,11 +151,7 @@ export const requiredReleasePaths = new Set([
   "src/profile/local-music-data.mjs",
   "src/surfaces/cli/data-command.mjs",
   "src/surfaces/cli/profile-command.mjs",
-  "src/surfaces/web/showcase.mjs",
-  "src/surfaces/web/studio.mjs",
-  "tests/runtime/moondog-showcase.test.mjs",
   "tests/runtime/moondog-demo-history.test.mjs",
-  "tests/core/showcase-export.test.mjs",
 ]);
 
 export const requiredIgnoredPaths = [

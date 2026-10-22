@@ -393,7 +393,7 @@ test("a history with no lengths or skips never reads as zero minutes, zero skips
       ...(/minutes|skips|hours/u.test(key) && !/minimum|maximum|gap/u.test(key) ? [`${at}.${key}`] : []),
       ...measures(item, `${at}.${key}`)])
     : [];
-  // Only the paused Studio and Tasteprint pages read the monthly pulse.
+  // Only the Tasteprint page reads the monthly pulse.
   const { monthly_activity: _monthlyActivity, ...listening } = behavior;
   const checked = {
     summary: { ...summary, listening_behavior: listening },

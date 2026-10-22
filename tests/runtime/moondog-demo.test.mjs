@@ -78,30 +78,12 @@ test("demo uses a synthetic ready profile and returns an inspectable read-only t
   assert.equal(value.result.playlist_plan.track_count, 2);
   assert.deepEqual(value.next_steps, [
     {
-      id: "open_visual_tour",
-      title: "Open the visual Listening Time Machine",
-      checkout_command: "npm run demo:studio",
-      installed_command: "moondog studio --demo",
-      data_boundary:
-        "The fictional tour stays on 127.0.0.1, reads no private history, rejects imports, and keeps corrections only in process memory.",
-    },
-    {
-      id: "open_session_studio",
-      title: "Open your history without importing it",
-      checkout_command:
-        "npm --silent run demo:studio -- --from /absolute/path/to/spotify-history.zip",
-      installed_command:
-        "moondog studio --from /absolute/path/to/spotify-history.zip",
-      data_boundary:
-        "No dependency installation is required. The archive stays unchanged, the private profile and corrections live only in process memory, and no model, provider, cloud, or network request is made.",
-    },
-    {
-      id: "open_private_studio",
+      id: "open_listening_room",
       title: "Bring your own listening history",
-      checkout_command: "npm run studio",
-      installed_command: "moondog studio",
+      checkout_command: "npm start",
+      installed_command: "moondog",
       data_boundary:
-        "Studio stays on 127.0.0.1. The fictional preview saves nothing. Import changes private local state only after an explicit button press.",
+        "Your listening room opens in this terminal. Type /import there; Moondog shows what is inside an export before anything is saved.",
     },
   ]);
 
@@ -110,9 +92,8 @@ test("demo uses a synthetic ready profile and returns an inspectable read-only t
   assert.match(output, /profile\.summary - completed/u);
   assert.match(output, /A bounded demo plan/u);
   assert.match(output, /Keep exploring/u);
-  assert.match(output, /npm run demo:studio/u);
-  assert.match(output, /npm --silent run demo:studio -- --from \/absolute\/path\/to\/spotify-history\.zip/u);
-  assert.match(output, /npm run studio/u);
+  assert.match(output, /From this checkout: `npm start`/u);
+  assert.match(output, /Type \/import there/u);
   assert.doesNotMatch(output, /\/Users\//u);
 });
 
@@ -163,7 +144,7 @@ test("offline demo exercises the grounded product loop without a model", async (
   assert.match(output, /Midnight Lines - Mara Vale/u);
   assert.match(output, /deterministic/u);
   assert.match(output, /Bring your own listening history/u);
-  assert.match(output, /moondog studio/u);
+  assert.match(output, /From an installed CLI: `moondog`/u);
   assert.doesNotMatch(output, /\/Users\//u);
 });
 
@@ -190,7 +171,7 @@ test("offline demo is a zero-configuration CLI path", () => {
     assert.match(result.stdout, /playlist\.plan - completed/u);
     assert.match(result.stdout, /without saving or playing anything/u);
     assert.match(result.stdout, /Keep exploring/u);
-    assert.match(result.stdout, /npm run studio/u);
+    assert.match(result.stdout, /From this checkout: `npm start`/u);
     assert.deepEqual(readdirSync(configHome), []);
   } finally {
     rmSync(configHome, { recursive: true, force: true });

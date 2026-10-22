@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-// Regenerates the README terminal screenshots and the Tasteprint preview PNGs.
+// Regenerates the README terminal screenshots.
 // The terminal views come from the real TUI driven in a private tmux server with
 // fictional history, so no personal data, model, or music service is involved.
 
@@ -21,7 +21,6 @@ const demoDirectory = path.join(repositoryRoot, "assets", "demo");
 const columns = 100;
 const rows = 34;
 const terminalSize = { width: 956, height: 740 };
-const previewSize = { width: 1240, height: 840 };
 
 const palette = { background: "#0c0c0c", foreground: "#e4e4e4", muted: "#9e9e9e" };
 
@@ -296,32 +295,11 @@ async function captureTerminal({ root, browser, profile }) {
   return files.map((file) => file.path);
 }
 
-async function capturePreviews({ browser, profile }) {
-  const page = (name) => pathToFileURL(path.join(demoDirectory, name)).href;
-  const previews = [
-    ["moondog-tasteprint-preview.png", `${page("moondog-tasteprint-demo.html")}?capture=1#taste-shape`],
-    ["moondog-time-machine-preview.png", `${page("moondog-tasteprint-demo.html")}#time-machine`],
-    ["moondog-listening-patterns-preview.png", `${page("moondog-tasteprint-demo.html")}#listening-patterns`],
-    ["moondog-tasteprint-card-preview.png", page("moondog-tasteprint-card-demo.html")],
-  ];
-  for (const [name, url] of previews) {
-    // One-shot headless screenshots render blank when the URL has a fragment,
-    // so load the page in a full-size frame that scrolls itself instead.
-    const wrapperPath = path.join(profile, "..", `${name}.html`);
-    await writeFile(wrapperPath, `<!doctype html><body style="margin:0;overflow:hidden"><iframe src="${url}" scrolling="no" style="display:block;border:0;width:${previewSize.width}px;height:${previewSize.height}px"></iframe></body>`, "utf8");
-    await screenshot({ browser, url: pathToFileURL(wrapperPath).href, outputPath: path.join(demoDirectory, name), size: previewSize, profile });
-  }
-  return previews.map(([name]) => name);
-}
-
 const root = await mkdtemp(path.join(tmpdir(), "moondog-demo-screens-"));
 try {
   const browser = await resolveBrowser();
   const profile = path.join(root, "browser");
-  const written = [
-    ...await captureTerminal({ root, browser, profile }),
-    ...await capturePreviews({ browser, profile }),
-  ];
+  const written = await captureTerminal({ root, browser, profile });
   process.stdout.write(`Captured ${written.join(", ")} into assets/demo. Inspect each image before committing.\n`);
 } finally {
   await rm(root, { recursive: true, force: true });

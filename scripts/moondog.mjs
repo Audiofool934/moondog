@@ -65,7 +65,6 @@ import {
   SPOTIFY_ARCHIVE_SET_MAXIMUM,
 } from "../src/profile/spotify-archive-taste.mjs";
 import { deriveArtistReleaseHintsFromSpotifyArchive } from "../src/profile/spotify-archive-catalog-hints.mjs";
-import { runMoondogStudio } from "../src/surfaces/web/studio.mjs";
 import { resolveListenerLocale, writeLanguagePreference } from "../src/i18n/preferences.mjs";
 import { resolvePlaybackService, writePlaybackPreference } from "../src/core/playback-preferences.mjs";
 
@@ -481,31 +480,6 @@ async function main() {
       process.removeListener("SIGTERM", abort);
       webResearch.close();
     }
-    return;
-  }
-
-  if (options.command === "studio") {
-    const demoOnly =
-      options.rest.length === 1 && options.rest[0] === "--demo";
-    if (
-      (options.rest.length > 0 && !demoOnly) ||
-      (demoOnly && options.from) ||
-      options.json ||
-      options.dryRun ||
-      options.offline ||
-      options.html ||
-      options.card ||
-      options.save ||
-      options.output
-    ) {
-      throw new Error(
-        "Usage: moondog studio [--demo | --from <spotify-history.zip> [--from <spotify-history.zip>]].",
-      );
-    }
-    await runMoondogStudio({
-      demoOnly,
-      archivePaths: options.fromArchives,
-    });
     return;
   }
 
