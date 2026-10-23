@@ -55,9 +55,10 @@ img { -webkit-user-drag: none; }
 .rail:hover .thumb, .rail.held .thumb { width: 7px; background: var(--thumb-held); }
 
 /* ── The room's light ─────────────────────────────────────────────────────────────────────── */
-/* The cover playing lights the window: its strongest colours as three soft fields that drift into
-   place when the song changes, and the cover itself, blurred past recognition, glowing from the
-   player's corner. Both stay far too faint to compete with the words. */
+/* The cover playing lights the whole window, edge to edge: its strongest colours as three soft
+   fields that drift into place when the song changes, and the cover itself, blurred past
+   recognition, brightest at the player's corner and thinning toward the far edge without leaving
+   it. Both stay far too faint to compete with the words. */
 @property --mood-1 { syntax: "<color>"; inherits: true; initial-value: transparent; }
 @property --mood-2 { syntax: "<color>"; inherits: true; initial-value: transparent; }
 @property --mood-3 { syntax: "<color>"; inherits: true; initial-value: transparent; }
@@ -65,16 +66,16 @@ img { -webkit-user-drag: none; }
   transition: --mood-1 2.4s var(--soft), --mood-2 3.2s var(--soft), --mood-3 4s var(--soft); }
 .mood::before { content: ""; position: absolute; inset: -14%;
   background:
-    radial-gradient(44% 50% at 86% 18%, var(--mood-1), color-mix(in srgb, var(--mood-1) 45%, transparent) 42%, transparent 100%),
-    radial-gradient(42% 46% at 68% 88%, var(--mood-2), color-mix(in srgb, var(--mood-2) 45%, transparent) 42%, transparent 100%),
-    radial-gradient(48% 54% at 34% 40%, var(--mood-3), color-mix(in srgb, var(--mood-3) 45%, transparent) 42%, transparent 100%);
+    radial-gradient(46% 52% at 86% 16%, var(--mood-1), color-mix(in srgb, var(--mood-1) 45%, transparent) 42%, transparent 100%),
+    radial-gradient(50% 58% at 10% 82%, var(--mood-2), color-mix(in srgb, var(--mood-2) 45%, transparent) 42%, transparent 100%),
+    radial-gradient(52% 58% at 44% 36%, var(--mood-3), color-mix(in srgb, var(--mood-3) 45%, transparent) 42%, transparent 100%);
   animation: drift 56s ease-in-out infinite alternate paused; will-change: transform; }
 /* While music plays, the light moves as slowly as weather. */
 .mood.playing::before { animation-play-state: running; }
 @keyframes drift { to { transform: translate(-3%, 2.5%) scale(1.07) rotate(2deg); } }
-.ambient { position: absolute; top: 0; right: 0; bottom: 0; width: min(70%, 980px); z-index: 0; overflow: hidden; pointer-events: none;
-  mask-image: radial-gradient(130% 95% at 100% 0%, #000 18%, rgb(0 0 0 / 0.6) 42%, rgb(0 0 0 / 0.2) 62%, transparent 82%); }
-.ambient img { position: absolute; inset: -12%; width: 124%; height: 124%; object-fit: cover; filter: blur(84px) saturate(1.5);
+.ambient { position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none;
+  mask-image: radial-gradient(150% 125% at 100% 0%, #000 10%, rgb(0 0 0 / 0.66) 34%, rgb(0 0 0 / 0.4) 62%, rgb(0 0 0 / 0.26) 100%); }
+.ambient img { position: absolute; inset: -12%; width: 124%; height: 124%; object-fit: cover; filter: blur(110px) saturate(1.5);
   opacity: 0; transition: opacity 1.6s var(--soft); will-change: opacity; }
 .ambient img.on { opacity: 0.2; }
 @media (prefers-color-scheme: dark) { .ambient img.on { opacity: 0.3; } }
@@ -87,7 +88,7 @@ img { -webkit-user-drag: none; }
 .window.no-sidebar { --sidebar: 0px; }
 .window.no-inspector { --inspector: 0px; }
 /* Each panel keeps its own width while its column opens or closes, so it slides instead of reflowing. */
-.sidebar { position: relative; z-index: 1; grid-column: 1; grid-row: 1; min-width: 0; overflow: hidden; background: var(--side); contain: layout paint; }
+.sidebar { position: relative; z-index: 1; grid-column: 1; grid-row: 1; min-width: 0; overflow: hidden; contain: layout paint; }
 .room { z-index: 1; grid-column: 2; grid-row: 1; }
 .inspector { z-index: 1; grid-column: 3; grid-row: 1; min-width: 0; overflow: hidden; contain: layout paint; }
 .sidebar > *, .inspector > .frame { width: var(--sidebar-width, 248px); }
@@ -103,6 +104,9 @@ img { -webkit-user-drag: none; }
 .bar-start { display: flex; align-items: center; gap: 2px; padding-inline-start: 80px; }
 .bar-start { grid-column: 1; }
 .bar-end { grid-column: 3; display: flex; align-items: center; justify-content: flex-end; gap: 6px; padding-inline-end: 10px; min-width: 0; }
+/* The title inherits the bar's drag region and runs under the controls when a panel folds. The
+   controls come after it, in the page and in paint, so their buttons stay clickable over it. */
+.bar-start, .bar-end { position: relative; z-index: 1; }
 /* The title centers on the conversation, not on whatever space the bar has left. */
 .bar-title { position: absolute; top: 0; bottom: 0; left: var(--sidebar); right: var(--inspector); padding-inline: var(--bar-reserve, 150px);
   line-height: var(--bar); text-align: center; font-size: var(--t-small); font-weight: 500; color: var(--text-3);
@@ -127,9 +131,9 @@ img { -webkit-user-drag: none; }
 /* ── Conversations ────────────────────────────────────────────────────────────────────────── */
 .sidebar { display: flex; flex-direction: column; padding-top: var(--bar); }
 .sidebar > .frame { flex: 1; }
-.sessions { height: 100%; overflow-y: auto; scrollbar-width: none; overscroll-behavior: contain; padding: 6px 10px 16px; }
-/* Edges fade into the panel as lists scroll under them: painted over the list, not masked into it. */
-.sidebar > .frame::after { content: ""; position: absolute; inset: auto 0 0 0; height: 18px; z-index: 1; pointer-events: none; background: linear-gradient(transparent, var(--side)); }
+/* The list fades out at its foot into whatever light is behind it. */
+.sessions { height: 100%; overflow-y: auto; scrollbar-width: none; overscroll-behavior: contain; padding: 6px 10px 16px;
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 18px), transparent); }
 .sessions h2 { margin: 18px 0 4px; padding-inline-start: 10px; font-size: var(--t-caption); font-weight: 600; color: var(--text-3);
   letter-spacing: 0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sessions > h2:first-child, .sessions > .loose:first-child > h2:first-child { margin-top: 2px; }
@@ -153,7 +157,7 @@ img { -webkit-user-drag: none; }
 .row:hover .more, .folder-head:hover .more, .more:focus-visible { opacity: 1; }
 .row .more:hover, .folder-head .more:hover { background: var(--press); color: var(--text); }
 .rename { width: 100%; height: var(--row); margin-bottom: 1px; padding: 0 10px; border: 0; border-radius: var(--r-2); outline: 0;
-  font-size: var(--t-ui); color: var(--text); background: var(--surface); box-shadow: inset 0 0 0 1px var(--line-2); }
+  font-size: var(--t-ui); color: var(--text); background: var(--glass); box-shadow: inset 0 0 0 1px var(--line-2); }
 .folder { margin-top: 18px; }
 .folder + .folder { margin-top: 2px; }
 .sessions > .folder:first-child { margin-top: 0; }
@@ -177,12 +181,10 @@ img { -webkit-user-drag: none; }
 .mark .rim { stroke-width: 0.075; opacity: 0.55; }
 .mark .groove { stroke-width: 0.05; opacity: 0.22; }
 .mark .ink { fill: currentColor; }
-.mark .halo { fill: var(--side); stroke: var(--side); stroke-width: 0.18; stroke-linejoin: round; }
 .mark .band, .mark .arm { fill: none; stroke: currentColor; stroke-linecap: round; }
 .mark .band { stroke-width: 0.1; }
 .mark .arm { stroke-width: 0.065; }
-.mark .cup { fill: var(--side); stroke: currentColor; stroke-width: 0.075; }
-.mark .eye { fill: var(--side); }
+.mark .cup { fill: none; stroke: currentColor; stroke-width: 0.075; }
 /* The tonearm rests on the record while music plays and swings off it when the music stops. */
 .mark-arm { transform-box: fill-box; transform-origin: 100% 0%; transform: rotate(-28deg); transition: transform 900ms var(--spring); }
 .mark.playing .mark-arm { transform: none; }
@@ -190,7 +192,7 @@ img { -webkit-user-drag: none; }
 .sources button { height: 22px; min-width: 0; padding: 0 8px; border-radius: 5px; font-size: var(--t-small); font-weight: 500; color: var(--text-3); white-space: nowrap;
   overflow: hidden; text-overflow: ellipsis; transition: color var(--quick) var(--soft), background-color var(--quick) var(--soft); }
 .sources button:hover { color: var(--text); transition: none; }
-.sources button[aria-checked="true"] { background: var(--surface); color: var(--text); box-shadow: var(--edge), 0 1px 2px rgb(0 0 0 / 0.06); }
+.sources button[aria-checked="true"] { background: var(--glass); color: var(--text); box-shadow: var(--glass-edge); }
 /* A narrow list keeps the switch and lets the mark go. */
 @container (max-width: 212px) { .foot .mark { display: none; } }
 .sidebar > .connect-line { width: auto; align-self: flex-start; margin: 0 10px 0 12px; }
@@ -215,7 +217,7 @@ img { -webkit-user-drag: none; }
 
 .turn { margin: 0 0 30px; }
 .you { display: flex; justify-content: flex-end; margin: 0 0 22px; }
-.you p { margin: 0; max-width: 78%; background: var(--bubble); border-radius: var(--r-4) var(--r-4) var(--r-1) var(--r-4); padding: 8px 14px 9px;
+.you p { margin: 0; max-width: 78%; background: var(--glass); box-shadow: var(--glass-edge); border-radius: var(--r-4) var(--r-4) var(--r-1) var(--r-4); padding: 8px 14px 9px;
   font-size: var(--t-body); line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
 .reply .text { font-family: var(--serif); font-size: var(--t-reply); line-height: 1.7; overflow-wrap: anywhere; text-wrap: pretty; }
 .reply .text > :first-child { margin-top: 0; }
@@ -273,8 +275,8 @@ img { -webkit-user-drag: none; }
 /* ── The composer ─────────────────────────────────────────────────────────────────────────── */
 .composer { position: relative; flex: none; padding: 4px 44px 18px; }
 .field { position: relative; max-width: var(--column); margin: 0 auto; display: flex; align-items: flex-end; gap: 4px; padding: 8px 8px 8px 16px;
-  border-radius: var(--r-4); background: var(--surface); box-shadow: var(--lift); transition: box-shadow 160ms var(--soft); }
-.field:focus-within { box-shadow: 0 0 0 1px rgb(var(--ink-rgb) / 0.16), 0 1px 2px rgb(var(--shade-rgb) / 0.05), 0 10px 24px -10px rgb(var(--shade-rgb) / 0.18); }
+  border-radius: var(--r-4); background: var(--glass); box-shadow: var(--glass-edge); transition: box-shadow 160ms var(--soft); }
+.field:focus-within { box-shadow: inset 0 0 0 1px rgb(var(--ink-rgb) / 0.15); }
 .field textarea { flex: 1; min-width: 96px; resize: none; border: 0; outline: 0; background: transparent; color: var(--text); font-size: var(--t-body); line-height: 1.55;
   field-sizing: content; min-height: 28px; max-height: 40vh; padding: 3px 0 2px; overflow-y: auto; scrollbar-width: none; }
 .field textarea::placeholder { color: var(--text-4); }
@@ -290,14 +292,16 @@ img { -webkit-user-drag: none; }
 .send:disabled { background: rgb(var(--ink-rgb) / 0.12); color: var(--surface); }
 .send .icon { width: 15px; height: 15px; stroke-width: 2; }
 .jump { position: absolute; left: 50%; bottom: calc(100% + 8px); width: 32px; height: 32px; margin-left: -16px; border-radius: 50%; display: grid; place-items: center;
-  background: var(--raised); color: var(--text-2); box-shadow: var(--lift); z-index: 3; animation: pop var(--enter) var(--out) both; }
+  background: var(--glass); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); color: var(--text-2); box-shadow: var(--glass-edge);
+  z-index: 3; animation: pop var(--enter) var(--out) both; }
 .jump:hover { color: var(--text); }
 @keyframes pop { from { opacity: 0; transform: translateY(4px) scale(0.92); } }
 @keyframes rise { from { opacity: 0; transform: translateY(3px); } }
 
 /* Slash commands open above the composer, as a short menu. */
 .palette { position: absolute; inset: auto 0 calc(100% + 8px) 0; z-index: 4; max-height: 360px; overflow-y: auto; scrollbar-width: none; padding: 4px;
-  border-radius: var(--r-3); background: var(--raised); box-shadow: var(--float); animation: rise 150ms var(--out) both; }
+  border-radius: var(--r-3); background: color-mix(in srgb, var(--raised) 82%, transparent); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
+  box-shadow: var(--float); animation: rise 150ms var(--out) both; }
 .palette-item { display: flex; align-items: center; gap: 12px; height: 32px; padding: 0 10px; border-radius: var(--r-2); font-size: var(--t-ui); color: var(--text); }
 .palette-item.on { background: var(--current); }
 .palette-command { font: 12.5px var(--mono); color: var(--text); white-space: nowrap; }

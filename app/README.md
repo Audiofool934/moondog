@@ -55,7 +55,8 @@ A model or music service chosen there lasts until the app quits, and sign-in and
 - Apple Music plays whole songs where it can and 30-second previews where it can't.
   Whole songs come from a small helper beside the app's executable (`native/music.swift`) that plays the Apple Music catalog through MusicKit, so they need an Apple Music subscription and the listener's permission, which Settings › Playback asks for once.
   Until the helper can play, the window plays previews in itself, with media keys and the system's Now Playing.
-- No accent color. Cover art brings the color: the song playing tints the window with its strongest colours, faintly, and they drift into the next song's over a few seconds; its cover glows from the player's corner.
+- No accent color. Cover art brings the color: the song playing tints the window with its strongest colours, faintly, and they drift into the next song's over a few seconds; its cover glows from the player's corner across to the far edge.
+  The window is one pane: no panel has a ground of its own, and the composer and your words sit on the light as a thin film, not as cards.
   Icon buttons name themselves, with their keys, in a tooltip.
 - The bottom-left corner holds Moondog's mark, whose tonearm rests on the record while music plays, the switch between Spotify and Apple Music, and Settings.
 - Keys: Enter sends and Shift+Enter starts a new line. `⌘.` or Esc stops a reply.

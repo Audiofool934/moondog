@@ -33,6 +33,12 @@
   --sleeve: 0 0 0 0.5px rgb(0 0 0 / 0.12), 0 2px 4px rgb(0 0 0 / 0.06), 0 18px 38px -16px rgb(0 0 0 / 0.42);
   --scrim: rgb(var(--shade-rgb) / 0.2);
 
+  /* The window is one pane of glass: no panel has a ground of its own, and what sits on the light
+     (the composer, your words, a floating control) is a thin film of it, never a card. */
+  --glass: rgb(255 255 255 / 0.5);
+  --glass-edge: inset 0 0 0 1px rgb(var(--ink-rgb) / 0.07);
+  --glass-blur: blur(24px) saturate(1.4);
+
   --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "PingFang TC", "Hiragino Sans", "Apple SD Gothic Neo", sans-serif;
   --serif: "New York", ui-serif, "Songti SC", "Songti TC", "Hiragino Mincho ProN", "AppleMyungjo", Georgia, serif;
   --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
@@ -92,6 +98,8 @@
     --float: var(--edge), 0 2px 4px rgb(0 0 0 / 0.3), 0 16px 32px -10px rgb(0 0 0 / 0.55), 0 40px 80px -30px rgb(0 0 0 / 0.7);
     --sleeve: 0 0 0 0.5px rgb(255 255 255 / 0.06), 0 2px 4px rgb(0 0 0 / 0.3), 0 22px 44px -16px rgb(0 0 0 / 0.85);
     --scrim: rgb(0 0 0 / 0.42);
+    --glass: rgb(var(--ink-rgb) / 0.065);
+    --glass-edge: inset 0 0 0 1px rgb(var(--ink-rgb) / 0.06);
     color-scheme: dark;
   }
 }
