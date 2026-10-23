@@ -4,7 +4,6 @@ import { languageTag, windowLocale, windowStrings } from "../strings.mjs";
 import { renderMarkdown } from "./markdown.mjs";
 import { createPalette } from "./palette.mjs";
 import { createPreviews } from "./previews.mjs";
-import { createMark } from "./mark.mjs";
 import { coverPalette, moodColours } from "./mood.mjs";
 import { mountRecord } from "./record.mjs";
 import { createSettings } from "./settings.mjs";
@@ -67,6 +66,7 @@ function applyLanguage(next) {
   name($("settings-button"), t("settings"), "⌘,");
   name($("previous"), t("previous"), "⌃⌘←");
   name($("next"), t("next"), "⌃⌘→");
+  name($("mini-next"), t("next"), "⌃⌘→");
   $("device-row").dataset.tip = t("devices");
   $("track").setAttribute("aria-label", t("position"));
   name($("jump"), t("latest"));
@@ -79,7 +79,6 @@ function applyLanguage(next) {
   $("drop-hint").textContent = t("dropToImport");
   $("connect").textContent = t("connectSpotify");
   $("connect-player").textContent = t("connectSpotify");
-  $("sources").setAttribute("aria-label", t("musicService"));
   window.moondogApp?.setLanguage?.(locale);
   palette?.refresh();
   renderSessions();
@@ -621,24 +620,6 @@ function renderMood(now) {
 }
 dark.addEventListener("change", paintMood);
 
-// The mark in the corner, and where the music comes from beside it.
-const mark = createMark();
-$("foot").prepend(mark.node);
-function renderSources() {
-  for (const button of document.querySelectorAll("[data-source]")) button.setAttribute("aria-checked", String(button.dataset.source === state.playbackService));
-}
-for (const button of document.querySelectorAll("[data-source]")) {
-  button.addEventListener("click", () => {
-    const service = button.dataset.source;
-    if (service === state.playbackService) return;
-    if (previews.active() && service === "spotify") previews.stop();
-    // The switch shows the choice at once; the core's status confirms it.
-    state.playbackService = service;
-    send({ type: "music-service", service });
-    renderInspector();
-  });
-}
-
 let seeking = null;
 let drawnSong = "";
 function renderProgress(now, { jump = false } = {}) {
@@ -691,6 +672,13 @@ function queueItem(track) {
   item.append(words);
   return item;
 }
+// The player's buttons and the bar's follow one rule: what the service won't do now is dimmed.
+function drawControls(now, toggle, next) {
+  name(toggle, now.playing ? t("pause") : t("play"), "⌃⌘P");
+  setIcon(toggle, now.playing ? "pause" : "play");
+  set(toggle, "disabled", !can(now, now.playing ? "pausing" : "resuming"));
+  set(next, "disabled", !can(now, "skipping_next"));
+}
 function renderInspector() {
   const now = nowPlaying();
   const art = $("art");
@@ -706,19 +694,21 @@ function renderInspector() {
 
   set($("transport"), "hidden", !now);
   if (now) {
-    const toggle = $("toggle");
-    name(toggle, now.playing ? t("pause") : t("play"), "⌃⌘P");
-    setIcon(toggle, now.playing ? "pause" : "play");
-    set(toggle, "disabled", !can(now, now.playing ? "pausing" : "resuming"));
-    set($("next"), "disabled", !can(now, "skipping_next"));
+    drawControls(now, $("toggle"), $("next"));
     set($("previous"), "disabled", !can(now, "skipping_prev"));
   }
   const spotifyNow = now && !now.local;
+  // Where the music plays opens the choice of device and service: Spotify's device, or Apple
+  // Music playing in the window.
+  const appleNow = now?.local && state.playbackService === "apple_music";
   set($("where"), "hidden", !(spotifyNow ? now.device || now.link : now?.local));
-  set($("device-row"), "hidden", !spotifyNow || !now.device);
+  set($("device-row"), "hidden", spotifyNow ? !now.device : !appleNow);
   if (spotifyNow) {
     set($("device-name"), "textContent", now.device ?? "");
     setIcon($("device-row"), DEVICE_ICONS[String(now.deviceType ?? "").toLowerCase()] ?? "speaker");
+  } else if (appleNow) {
+    set($("device-name"), "textContent", "Apple Music");
+    setIcon($("device-row"), "laptop");
   }
   set($("repeat"), "hidden", !spotifyNow || now.repeat !== "track");
   set($("stop-previews"), "hidden", !now?.local);
@@ -742,7 +732,7 @@ function renderInspector() {
     drawnQueue = shownQueue;
     $("queue").replaceChildren(...next.map(queueItem));
   }
-  // With the player folded away, the song stays in reach at the end of the bar.
+  // With the player folded away, the song and its two most used controls stay in the bar.
   const mini = $("mini");
   set(mini, "hidden", !now || shown("inspector"));
   if (now && !shown("inspector")) {
@@ -751,17 +741,16 @@ function renderInspector() {
     if (!now.image) cover.removeAttribute("src");
     cover.onerror = () => cover.removeAttribute("src");
     set($("mini-song"), "textContent", [now.title, now.artists[0]].filter(Boolean).join(" · "));
-    // The mini player reads as the song it shows; a tooltip gives the whole line only when it is cut off.
+    // The song reads as itself and opens the player; a tooltip gives the whole line only when it is cut off.
     const song = $("mini-song");
-    if (song.scrollWidth > song.clientWidth) mini.dataset.tip = song.textContent; else delete mini.dataset.tip;
+    if (song.scrollWidth > song.clientWidth) $("mini-open").dataset.tip = song.textContent; else delete $("mini-open").dataset.tip;
+    drawControls(now, $("mini-toggle"), $("mini-next"));
   }
-  // The bar title keeps clear of the song shown beside it.
-  const reserve = mini.hidden ? "" : `${mini.offsetWidth + 70}px`;
+  // The bar title keeps clear of everything at the end of the bar.
+  const reserve = mini.hidden ? "" : `${mini.parentElement.offsetWidth + 16}px`;
   if (layout.style.getPropertyValue("--bar-reserve") !== reserve) layout.style.setProperty("--bar-reserve", reserve);
   record?.turn(now?.playing);
-  mark.playing(now?.playing);
   renderMood(now);
-  renderSources();
   tick();
   syncMenu();
 }
@@ -799,7 +788,9 @@ function control(action, via = "button") {
 $("toggle").addEventListener("click", () => control("toggle"));
 $("next").addEventListener("click", () => control("next"));
 $("previous").addEventListener("click", () => control("previous"));
-$("mini").addEventListener("click", () => togglePanel("inspector"));
+$("mini-open").addEventListener("click", () => togglePanel("inspector"));
+$("mini-toggle").addEventListener("click", () => control("toggle"));
+$("mini-next").addEventListener("click", () => control("next"));
 $("stop-previews").addEventListener("click", () => previews.stop());
 
 // Taking hold of the progress line moves the song there when you let go; the arrow keys move it by

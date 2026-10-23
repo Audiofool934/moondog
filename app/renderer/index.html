@@ -50,7 +50,12 @@
         <button type="button" class="tool" data-new data-tip-at="below"><svg class="icon"><use href="#i-compose"/></svg></button>
       </div>
       <div class="bar-end">
-        <button type="button" class="mini" data-mini hidden><img alt="" data-mini-cover><span class="mini-song" data-mini-song></span></button>
+        <div class="mini" data-mini hidden>
+          <button type="button" class="mini-song" data-mini-open><img alt="" data-mini-cover><span data-mini-song></span></button>
+          <button type="button" class="tool" data-mini-toggle data-tip-at="below"><svg class="icon fill"><use href="#i-pause"/></svg></button>
+          <button type="button" class="tool" data-mini-next data-tip-at="below"><svg class="icon fill"><use href="#i-next"/></svg></button>
+        </div>
+        <button type="button" class="tool" data-settings-button data-tip-at="below"><svg class="icon"><use href="#i-settings"/></svg></button>
         <button type="button" class="tool" data-toggle-inspector data-tip-at="below"><svg class="icon"><use href="#i-panel"/></svg></button>
       </div>
     </header>
@@ -58,13 +63,6 @@
     <aside class="sidebar" data-sidebar>
       <div class="frame"><nav class="sessions" data-sessions></nav></div>
       <button type="button" class="link-button connect-line" data-connect hidden></button>
-      <div class="foot" data-foot>
-        <div class="sources" role="radiogroup" data-sources>
-          <button type="button" role="radio" data-source="spotify">Spotify</button>
-          <button type="button" role="radio" data-source="apple_music">Apple Music</button>
-        </div>
-        <button type="button" class="tool" data-settings-button><svg class="icon"><use href="#i-settings"/></svg></button>
-      </div>
     </aside>
 
     <main class="room" data-room>

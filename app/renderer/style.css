@@ -103,7 +103,7 @@ img { -webkit-user-drag: none; }
 .window.animating .bar { transition: grid-template-columns var(--panel) var(--out); }
 .bar-start { display: flex; align-items: center; gap: 2px; padding-inline-start: 80px; }
 .bar-start { grid-column: 1; }
-.bar-end { grid-column: 3; display: flex; align-items: center; justify-content: flex-end; gap: 6px; padding-inline-end: 10px; min-width: 0; }
+.bar-end { grid-column: 3; display: flex; align-items: center; justify-content: flex-end; gap: 2px; padding-inline-end: 10px; min-width: 0; }
 /* The title inherits the bar's drag region and runs under the controls when a panel folds. The
    controls come after it, in the page and in paint, so their buttons stay clickable over it. */
 .bar-start, .bar-end { position: relative; z-index: 1; }
@@ -112,13 +112,17 @@ img { -webkit-user-drag: none; }
   line-height: var(--bar); text-align: center; font-size: var(--t-small); font-weight: 500; color: var(--text-3);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
 .window.animating .bar-title { transition: left var(--panel) var(--out), right var(--panel) var(--out); }
-/* With the player folded away, the song stays in reach at the end of the bar. */
-.mini { display: flex; align-items: center; gap: 8px; min-width: 0; max-width: 260px; height: 28px; padding: 0 10px 0 4px; border-radius: var(--r-2);
-  color: var(--text-2); font-size: var(--t-small); animation: rise var(--enter) var(--out) both; }
-.mini:hover { background: var(--hover); color: var(--text); }
-.mini img { width: 20px; height: 20px; border-radius: 3px; object-fit: cover; flex: none; box-shadow: var(--edge); }
-.mini img:not([src]) { visibility: hidden; }
-.mini-song { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* With the player folded away, the song and its two most used controls stay in reach at the end
+   of the bar; the song itself opens the player. */
+.mini { display: flex; align-items: center; gap: 2px; min-width: 0; margin-inline-end: 10px; animation: rise var(--enter) var(--out) both; }
+.mini-song { display: flex; align-items: center; gap: 8px; min-width: 0; max-width: min(260px, 26vw); height: 28px; padding: 0 10px 0 4px; border-radius: var(--r-2);
+  color: var(--text-2); font-size: var(--t-small); transition: background-color var(--quick) var(--soft), color var(--quick) var(--soft); }
+.mini-song:hover { background: var(--hover); color: var(--text); transition: none; }
+.mini-song img { width: 20px; height: 20px; border-radius: 3px; object-fit: cover; flex: none; box-shadow: var(--edge); }
+.mini-song img:not([src]) { visibility: hidden; }
+.mini-song span { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mini .tool { color: var(--text-2); }
+.mini .tool .icon { width: 14px; height: 14px; }
 
 .grip { position: absolute; top: var(--bar); bottom: 0; width: 7px; z-index: 4; cursor: col-resize; }
 .grip[data-grip="sidebar"] { left: calc(var(--sidebar) - 3px); }
@@ -173,29 +177,7 @@ img { -webkit-user-drag: none; }
 .folder .row .open { padding-inline-start: 51px; }
 .loose { min-height: 32px; }
 .drop-target { background: var(--press) !important; }
-/* The corner: Moondog's mark, where the music comes from, and settings. */
-.foot { flex: none; display: flex; align-items: center; gap: 8px; padding: 8px 8px 12px 14px; container-type: inline-size; }
-.foot .tool { margin-inline-start: auto; }
-.mark { width: 24px; height: 24px; flex: none; color: var(--text-2); overflow: visible; }
-.mark .rim, .mark .groove { fill: none; stroke: currentColor; }
-.mark .rim { stroke-width: 0.075; opacity: 0.55; }
-.mark .groove { stroke-width: 0.05; opacity: 0.22; }
-.mark .ink { fill: currentColor; }
-.mark .band, .mark .arm { fill: none; stroke: currentColor; stroke-linecap: round; }
-.mark .band { stroke-width: 0.1; }
-.mark .arm { stroke-width: 0.065; }
-.mark .cup { fill: none; stroke: currentColor; stroke-width: 0.075; }
-/* The tonearm rests on the record while music plays and swings off it when the music stops. */
-.mark-arm { transform-box: fill-box; transform-origin: 100% 0%; transform: rotate(-28deg); transition: transform 900ms var(--spring); }
-.mark.playing .mark-arm { transform: none; }
-.sources { display: inline-flex; gap: 2px; min-width: 0; padding: 2px; border-radius: 7px; background: var(--hover); }
-.sources button { height: 22px; min-width: 0; padding: 0 8px; border-radius: 5px; font-size: var(--t-small); font-weight: 500; color: var(--text-3); white-space: nowrap;
-  overflow: hidden; text-overflow: ellipsis; transition: color var(--quick) var(--soft), background-color var(--quick) var(--soft); }
-.sources button:hover { color: var(--text); transition: none; }
-.sources button[aria-checked="true"] { background: var(--glass); color: var(--text); box-shadow: var(--glass-edge); }
-/* A narrow list keeps the switch and lets the mark go. */
-@container (max-width: 212px) { .foot .mark { display: none; } }
-.sidebar > .connect-line { width: auto; align-self: flex-start; margin: 0 10px 0 12px; }
+.sidebar > .connect-line { width: auto; align-self: flex-start; margin: 0 10px 12px 12px; }
 
 /* ── The conversation ─────────────────────────────────────────────────────────────────────── */
 .room { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; }

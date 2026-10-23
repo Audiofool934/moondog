@@ -42,13 +42,13 @@ A model or music service chosen there lasts until the app quits, and sign-in and
 - In a long conversation, a mark for each request sits at the right edge: hover one to read it, click to go back to it.
   The view stays with the newest words until you scroll up; a round button brings you back. Page Up and Page Down scroll from the composer.
 - What is playing on the right: a large cover that tints the panel with its own colours, the song, a progress line you can drag to move in the song (or focus it and use the arrow keys, five seconds a press, fifteen with Shift), previous, play or pause, and next.
-  The device under it opens Spotify's devices and the choice between Spotify and Apple Music.
+  Where the music plays, under it, opens Spotify's devices and the choice between Spotify and Apple Music; while Apple Music plays, it reads Apple Music.
   A control Spotify won't take right now, such as skipping on a free account, is dimmed.
-  With the player folded away, the song shows at the end of the title bar; a click opens the player.
+  With the player folded away, the song shows at the end of the title bar with play or pause and next; a click on the song opens the player.
 - Drag the inner edge of either side panel to change its width; a double-click puts it back.
 - In the composer, the model opens a menu of the models you are signed in to, with the thinking effort.
 - Typing `/` lists commands by what they open (a mistyped one stays in the composer instead of going to Moondog): `/new`, `/model`, `/language`, `/service`, `/device`, `/import`, `/memory`, `/remember`, `/folder`, `/settings` and `/help`.
-- Settings (`⌘,`) has Language, Model (accounts, sign-in in the browser or with an API key, models, thinking), Playback (music service, Spotify sign-in, devices), Import, Memory and About.
+- Settings (`⌘,`, or the button at the top right beside the player's) has Language, Model (accounts, sign-in in the browser or with an API key, models, thinking), Playback (music service, Spotify sign-in, devices), Import, Memory and About.
   Changes are saved where the terminal reads them; the window never sees a key or token.
 - Import: choose a Spotify, Apple Music, ListenBrainz or Last.fm export, read recent Spotify listening, read a Last.fm account (the window asks for a Last.fm API key the first time), or drop a file anywhere on the window.
   The preview uses the terminal's words, nothing is saved until you add it, and the updated profile then shows in the conversation.
@@ -58,7 +58,8 @@ A model or music service chosen there lasts until the app quits, and sign-in and
 - No accent color. Cover art brings the color: the song playing tints the window with its strongest colours, faintly, and they drift into the next song's over a few seconds; its cover glows from the player's corner across to the far edge.
   The window is one pane: no panel has a ground of its own, and the composer and your words sit on the light as a thin film, not as cards.
   Icon buttons name themselves, with their keys, in a tooltip.
-- The bottom-left corner holds Moondog's mark, whose tonearm rests on the record while music plays, the switch between Spotify and Apple Music, and Settings.
+- Controls for the whole window sit in the title bar, which never folds: the conversations and new conversation at the top left, Settings and the player at the top right.
+  The side panels hold only their own content.
 - Keys: Enter sends and Shift+Enter starts a new line. `⌘.` or Esc stops a reply.
   Typing anywhere goes to the composer. No plain key plays, pauses or skips, because a chat window is typed in all the time.
   `⌃⌘P` plays or pauses, and `⌃⌘→` and `⌃⌘←` skip, from the Playback menu; the media keys work too.
