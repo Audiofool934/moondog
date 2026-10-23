@@ -4574,7 +4574,7 @@ function createToolFactories(
     onSpotifyQuickEditFailure,
     onSpotifyPlaylistEditWrite,
     onExternalCandidateSet,
-    onMusicPreview,
+    onMusicPlayback,
     onMusicCatalogArtistReleases,
     onWebResearch,
     onSpotifyQueuePlan,
@@ -4836,7 +4836,7 @@ function createToolFactories(
         name: descriptor.tool_name,
         label: descriptor.label,
         description:
-          "Search up to three bounded keyword queries in the listener's Apple Music storefront, remove exact title-and-artist matches found in the imported library, and register the remaining external candidates for prompt-local playlist planning. Results are catalog matches, not proof of personal fit or unheard status. After a resolved result, call moondog_playlist_plan before returning any track list.",
+          "Search up to three bounded keyword queries in the listener's Apple Music storefront, remove exact title-and-artist matches found in the imported library, and register the remaining external candidates for prompt-local playlist planning. Results are catalog matches, not proof of personal fit or unheard status. For a playlist plan, validate the selected references with moondog_playlist_plan before presenting it. For playback or queueing, use the selected service's playback workflow instead; no playlist plan is required.",
         parameters: Type.Object(
           {
             queries: Type.Array(
@@ -4877,7 +4877,7 @@ function createToolFactories(
           name: descriptor.tool_name,
           label: descriptor.label,
           description:
-            "Play Apple Music songs in the listener's player, one after another: whole songs where their Apple Music allows it, otherwise 30-second previews, as the result's plays field says. Give either tracks (up to six named recordings, in the order to play) or album (its title and artist) to play that album's songs in order. exclude_artists leaves out songs by those artists. The listener hears the first one right away and can skip through the rest. Describe only the songs in playing_in_order; do not mention songs that were left out or not found unless the listener asked for them by name.",
+            "Play Apple Music songs in the listener's player, one after another: whole songs where their Apple Music allows it, otherwise 30-second previews, as the result's plays field says. Give either tracks (up to six named recordings, in the order to play) or album (its title and artist) to play that album's songs in order. Lookup and recording checks happen inside this tool; no separate catalog search or playlist plan is needed. exclude_artists leaves out songs by those artists. The listener hears the first one right away and can skip through the rest. Describe only the songs in playing_in_order; do not mention songs that were left out or not found unless the listener asked for them by name.",
           parameters: Type.Object(
             {
               tracks: Type.Optional(Type.Array(song, { minItems: 1, maxItems: 6 })),
@@ -4891,7 +4891,8 @@ function createToolFactories(
             async (_toolCallId, parameters) =>
               application.playMusicPreview({ tracks: parameters.tracks, album: parameters.album, excludeArtists: parameters.exclude_artists }),
             projectMusicPreview,
-            (value) => { if (value.playing_in_order.length) onMusicPreview?.(); },
+            onMusicPlayback,
+            () => onMusicPlayback?.({ state: "failed" }),
           ),
         };
       },
@@ -4941,6 +4942,8 @@ function createToolFactories(
           execute: executeDomain(
             async (_toolCallId, parameters) => application.playNetease({ items: parameters.songs, mode: parameters.mode ?? "play", intent: parameters.user_intent }),
             projectNeteasePlay,
+            onMusicPlayback,
+            () => onMusicPlayback?.({ state: "failed" }),
           ),
         };
       },
@@ -4982,7 +4985,7 @@ function createToolFactories(
         name: descriptor.tool_name,
         label: descriptor.label,
         description:
-          "Start from a trusted library track or the user-selected profile track in product context and discover bounded external recording candidates through ListenBrainz listening-derived artist adjacency. Wikidata resolves the artist to a MusicBrainz identity. Results are not audio similarity, proof of personal fit, or proof that the user has never heard them. After a resolved result, call moondog_playlist_plan before returning any track list.",
+          "Start from a trusted library track or the user-selected profile track in product context and discover bounded external recording candidates through ListenBrainz listening-derived artist adjacency. Wikidata resolves the artist to a MusicBrainz identity. Results are not audio similarity, proof of personal fit, or proof that the user has never heard them. For a playlist plan, validate the selected references with moondog_playlist_plan before presenting it. For playback or queueing, use the selected service's playback workflow instead; no playlist plan is required.",
         parameters: Type.Object(
           {
             seed_track_ref_id: Type.String({ minLength: 1, maxLength: 128 }),
@@ -6182,6 +6185,13 @@ function sessionAvailability({ spotifyReady, spotifyPlaybackReady = spotifyReady
   } else {
     lines.push("- You cannot play or queue music in this session. Say so once, briefly, then help with what you can: the song, its story, and what to try next.");
   }
+  if (previewReady || neteaseReady) {
+    lines.push(
+      "- Playback verification belongs to the selected music service. Its play tool resolves and checks recordings. Use the returned songs and outcome to answer directly; do not run another catalog search or playlist planner just to recheck a successful playback result. A Spotify player or queue read cannot verify playback on another service.",
+      "- If only some requested songs match, keep the successful result and briefly report missing songs the listener named. Search again only to resolve those missing songs, not to verify the ones already accepted. A partial match or playback error is not a playlist-plan validation failure.",
+      "- A service change continues the current listening request with the new service's tools, not the old service's IDs. Switching alone does not request a playlist or require new approval.",
+    );
+  }
   return `\n\n${lines.join("\n")}`;
 }
 
@@ -7007,8 +7017,11 @@ export class PiAgentRuntime {
             this.activePromptState.spotifyPlaylistEditWrite = receipt;
           }
         },
-        onMusicPreview: () => {
-          if (this.activePromptState) this.activePromptState.previewsPlaying = true;
+        onMusicPlayback: (value) => {
+          if (this.activePromptState) {
+            this.activePromptState.musicPlaybackResult = value;
+            if (value.playing_in_order?.length) this.activePromptState.previewsPlaying = true;
+          }
         },
         onExternalCandidateSet: (value, { playbackLookup = false } = {}) => {
           if (this.activePromptState) {
@@ -7252,6 +7265,7 @@ export class PiAgentRuntime {
       spotifyLookupFailures: [],
       playbackLookups: [],
       spotifyWriteReceipts: [],
+      musicPlaybackResult: null,
       externalCandidateSetCreated: false,
       externalCandidateSets: [],
       discoveryConnections: new Map(),
@@ -7711,6 +7725,7 @@ To confirm, reply: ${preview.confirmation}`].join("\n\n");
         promptState.externalCandidateSetCreated &&
         !promptState.playlistPlanAttempted &&
         // A song the model played, queued or failed to play is reported in its own words.
+        !promptState.musicPlaybackResult &&
         !promptState.spotifyPlayback.length && !promptState.spotifyWriteReceipts.length && !promptState.spotifyPlaybackFailures.length
       ) {
         const safeFailureText = [renderUnvalidatedPlaylistPlan(t), ...spotifyEffectTexts()].join("\n\n");
