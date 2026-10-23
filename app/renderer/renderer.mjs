@@ -322,26 +322,27 @@ function refold() {
   placeSoon();
 }
 const placeSoon = () => { if (!placing) placing = requestAnimationFrame(placeRecord); };
-// The middle of the bar: the folded record and the title center on the conversation where there is
-// room between the controls at either end, and otherwise use what room there is. The title gives
-// way first, then the record, which then folds away instead of into the bar.
+// The middle of the bar holds the folded record alone, centered on the conversation. The open
+// conversation's name follows the new-conversation button and shortens before it reaches the record
+// or the controls at the end. Where the middle has no room, the record folds away instead of into the bar.
 let titled = "";
 function placeTitle() {
-  const host = $("title").parentElement;
-  const span = host.getBoundingClientRect();
-  const start = Math.max(span.left, $("new").getBoundingClientRect().right + 12);
+  const host = barRecord.parentElement.getBoundingClientRect();
+  const name = $("title");
+  const start = $("new").getBoundingClientRect().right;
   const first = [...$("mini").parentElement.children].find((node) => !node.hidden);
-  const end = Math.min(span.right, first ? first.getBoundingClientRect().left : span.right) - 12;
-  const middle = span.left + span.width / 2;
-  const half = Math.min(middle - start, end - middle);
-  const need = $("title").textContent ? 140 : 32;
-  const [from, to] = half * 2 >= need ? [middle - half, middle + half] : [start, end];
-  const key = `${Math.round(from - span.left)}|${Math.round(span.right - to)}|${to - from >= 120}|${to - from >= 32}`;
+  const end = (first ? first.getBoundingClientRect().left : host.right) - 12;
+  const middle = host.left + host.width / 2;
+  const half = barRecord.offsetWidth / 2 || 14;
+  const cramped = middle - half < start + 12 || middle + half > end;
+  const stop = $("window").classList.contains("talking") && !cramped ? middle - half - 16 : end;
+  const room = Math.round(stop - start - 8);
+  const key = `${room}|${cramped}`;
   if (key === titled) return;
   titled = key;
-  host.style.paddingInline = `${Math.max(0, Math.round(from - span.left))}px ${Math.max(0, Math.round(span.right - to))}px`;
-  host.classList.toggle("tight", to - from < 120);
-  barRecord.classList.toggle("cramped", to - from < 32);
+  name.style.maxWidth = `${Math.max(0, room)}px`;
+  name.classList.toggle("tight", room < 60);
+  barRecord.classList.toggle("cramped", cramped);
 }
 // Where the record is drawn at a fold, in the room's coordinates: from above the words to the mark in the bar.
 function recordBox(at, size = recordSize()) {
@@ -966,6 +967,12 @@ function renderInspector() {
   set($("blank"), "hidden", Boolean(now));
   art.classList.toggle("unplayed", !now);
   const limitedUntil = state.playbackService === "spotify" && state.spotifyLimitedUntil > Date.now() ? state.spotifyLimitedUntil : null;
+  // With nothing playing and nothing to say, the player waits folded and opens when a song starts.
+  if (idle !== (!now && !limitedUntil)) {
+    idle = !idle;
+    if (!idle) idleOpened = false;
+    slidePanels();
+  }
   set($("blank"), "textContent", limitedUntil ? spotifyLimited(limitedUntil) : t("nothingPlaying"));
   set($("song"), "textContent", now?.title ?? "");
   set($("artist"), "textContent", now ? now.artists.join(", ") : "");
@@ -1141,7 +1148,13 @@ const layout = $("window");
 const panels = { sidebar: store.get("moondog.sidebar") !== "hidden", inspector: store.get("moondog.inspector") !== "hidden" };
 const roomFor = { sidebar: 820, inspector: 1060 };
 const forced = { sidebar: false, inspector: false };
-function shown(panel) { return panels[panel] && (forced[panel] || innerWidth >= roomFor[panel]); }
+// Nothing playing: the player has nothing to hold, so it stays folded unless opened by hand.
+let idle = true;
+let idleOpened = false;
+function shown(panel) {
+  if (panel === "inspector" && idle && !idleOpened) return false;
+  return panels[panel] && (forced[panel] || innerWidth >= roomFor[panel]);
+}
 function renderPanels() {
   layout.classList.toggle("no-sidebar", !shown("sidebar"));
   layout.classList.toggle("no-inspector", !shown("inspector"));
@@ -1159,15 +1172,23 @@ function makeRoom(opened) {
 }
 function togglePanel(panel) {
   const visible = shown(panel);
-  panels[panel] = !visible;
-  // A click overrides the width rule only where the width rule would hide the panel.
-  forced[panel] = !visible && innerWidth < roomFor[panel];
-  if (!visible) makeRoom(panel);
-  store.set(`moondog.${panel}`, panels[panel] ? "shown" : "hidden");
-  // The columns slide only for this deliberate move; dragging a grip stays exact.
+  // Folding the waiting player only puts it away for now; it still opens when a song starts.
+  const waiting = panel === "inspector" && idle;
+  if (waiting) idleOpened = !visible;
+  if (!waiting || !visible) {
+    panels[panel] = !visible;
+    // A click overrides the width rule only where the width rule would hide the panel.
+    forced[panel] = !visible && innerWidth < roomFor[panel];
+    if (!visible) makeRoom(panel);
+    store.set(`moondog.${panel}`, panels[panel] ? "shown" : "hidden");
+  }
+  slidePanels();
+  renderInspector();
+}
+// The columns slide only for a deliberate move or a song starting or ending; dragging a grip stays exact.
+function slidePanels() {
   layout.classList.add("animating");
   renderPanels();
-  renderInspector();
   clearTimeout(settleTimer);
   settleTimer = setTimeout(() => layout.classList.remove("animating"), 300);
   // The record stays centered on the conversation while the columns slide.

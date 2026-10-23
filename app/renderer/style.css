@@ -104,15 +104,15 @@ img { -webkit-user-drag: none; }
 .bar-start { display: flex; align-items: center; gap: 2px; padding-inline-start: 80px; }
 .bar-start { grid-column: 1; }
 .bar-end { grid-column: 3; display: flex; align-items: center; justify-content: flex-end; gap: 2px; padding-inline-end: 10px; min-width: 0; }
-/* The title inherits the bar's drag region and runs under the controls when a panel folds. The
-   controls come after it, in the page and in paint, so their buttons stay clickable over it. */
+/* The record folds into the middle of the bar, centered on the conversation, and the open conversation's
+   name follows the new-conversation button, where the folded list of conversations would show it.
+   The controls come after the middle, in the page and in paint, so their buttons stay clickable over it. */
 .bar-start, .bar-end { position: relative; z-index: 1; }
-/* The title centers on the conversation, not on whatever space the bar has left. The record folds
-   into the bar just before it, where a document window keeps its icon. */
-.bar-title { position: absolute; top: 0; bottom: 0; left: var(--sidebar); right: var(--inspector); padding-inline: 150px;
-  display: flex; align-items: center; justify-content: center; gap: 4px; font-size: var(--t-small); font-weight: 500; color: var(--text-3); pointer-events: none; }
-.bar-title > span { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.bar-title > span:empty, .bar-title.tight > span { display: none; }
+.bar-title { position: absolute; top: 0; bottom: 0; left: var(--sidebar); right: var(--inspector);
+  display: flex; align-items: center; justify-content: center; pointer-events: none; }
+.bar-name { flex: none; min-width: 0; margin-inline-start: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  font-size: var(--t-small); font-weight: 500; color: var(--text-3); pointer-events: none; animation: rise var(--enter) var(--out) both; }
+.bar-name:empty, .bar-name.tight { display: none; }
 .bar-record { display: none; width: var(--control); height: var(--control); flex: none; place-items: center; border-radius: var(--r-2); color: var(--text-2);
   opacity: 0; transition: background-color var(--quick) var(--soft), color var(--quick) var(--soft); }
 .window.talking .bar-record { display: grid; }
