@@ -9,6 +9,7 @@ import { projectWebResearchResult } from "../../integrations/web/web-result.mjs"
 import { spotifyErrorReason } from "../../integrations/spotify/web-api-client.mjs";
 import { appleMusicStorefront } from "../../integrations/apple-music/storefront.mjs";
 import { formatWebSources } from "../../surfaces/cli/web-command.mjs";
+import { chooseConversationName } from "./conversation-name.mjs";
 import {
   createModelConnectionError,
   createModelFetch,
@@ -6896,12 +6897,15 @@ async function trustedContextSnapshot(application, runtimeStatus, query) {
 }
 
 export class PiAgentRuntime {
-  constructor({ application, models, model, provider, modelId, effort, effortLevels, thinkingLevel, modelFetch, modelRetryDelay, toolTrace = null }) {
+  constructor({ application, models, model, provider, modelId, effort, effortLevels, thinkingLevel, modelFetch, modelRetryDelay, toolTrace = null,
+    nameConversations = false }) {
     this.application = application;
     // The command passes a local trace of tool calls; tests and other hosts leave it out.
     this.toolTrace = toolTrace;
     this.models = models;
     this.model = model;
+    // The terminal and the window name a conversation with this model after its first reply.
+    this.nameConversations = nameConversations === true;
     const persistentMemoryReady = application.memoryStatus?.().state === "ready";
     this.runtimeStatus = {
       state: "configured",
@@ -7453,8 +7457,12 @@ export class PiAgentRuntime {
     };
 
     let ownEntryId = null;
+    let ownSessionId = null;
     try {
       ownEntryId = this.application.beginConversationEntry?.(text) ?? null;
+      if (ownEntryId && this.nameConversations) {
+        try { ownSessionId = this.application.ensureMemorySession?.()?.session_id ?? null; } catch { /* The conversation keeps its first message as its name. */ }
+      }
       this.application.beginPrompt({ text });
       promptScopeStarted = true;
       if (callbacks.profileSeed) this.application.setProfileDiscoverySeed(callbacks.profileSeed);
@@ -7763,6 +7771,7 @@ To confirm, reply: ${preview.confirmation}`].join("\n\n");
         try { this.application.finishConversationEntry?.({ ...conversationOutcome, transient: this.transientSpotifyContext }); }
         catch { this.runtimeStatus.conversation_history = 'degraded'; }
         if (ownEntryId) this.syncedEntryId = ownEntryId;
+        if (ownSessionId && conversationOutcome.status === 'completed') this.#nameConversation(ownSessionId, callbacks);
         if (promptScopeStarted && !promptCompleted) {
           this.application.rollbackPendingPlaylistPrompt?.();
         }
@@ -7803,6 +7812,17 @@ To confirm, reply: ${preview.confirmation}`].join("\n\n");
       this.activePromptState.abortRequested = true;
     }
     this.agent.abort();
+  }
+
+  // Names the conversation in the background after its first reply; the turn has already returned.
+  // The application decides whether it needs a name and saves it; onConversationNamed tells the surface.
+  #nameConversation(sessionId, callbacks) {
+    if (!this.nameConversations || typeof this.application.nameConversation !== "function") return;
+    const { models, model } = this;
+    Promise.resolve()
+      .then(() => this.application.nameConversation(sessionId, (exchange) => chooseConversationName({ models, model, ...exchange })))
+      .then((named) => { if (named) callbacks.onConversationNamed?.(named); })
+      .catch(() => {});
   }
 
   reset() {

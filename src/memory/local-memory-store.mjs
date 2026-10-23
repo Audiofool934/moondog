@@ -298,6 +298,18 @@ export function normalizeConversationLabel(patch) {
   return label;
 }
 
+// The first message stands in for a conversation's name until it has one. A long one is cut, at a space when
+// that keeps most of it, so the list never shows a whole paragraph. Text without spaces is cut where it stands.
+export function shortConversationTitle(text, limit = 60) {
+  const flat = String(text ?? "").replace(/\s+/gu, " ").trim();
+  const characters = Array.from(flat);
+  if (characters.length <= limit) return flat;
+  const cut = characters.slice(0, limit - 1).join("");
+  const space = cut.lastIndexOf(" ");
+  const head = space >= cut.length * 0.6 ? cut.slice(0, space) : cut;
+  return `${head.replace(/[\s.,;:!?\-…、。，；：！？]+$/u, "")}…`;
+}
+
 export function normalizeConversationFolder({ folderId, name, position } = {}) {
   if (position !== undefined && (!Number.isSafeInteger(position) || position < 0)) {
     throw new TypeError("Folder position is invalid");
@@ -954,15 +966,17 @@ export class LocalMemoryStore {
         CASE WHEN EXISTS (SELECT 1 FROM conversation_entries WHERE session_id = s.session_id)
           THEN (SELECT SUM(1 + (assistant_text != '')) FROM conversation_entries WHERE session_id = s.session_id)
           ELSE (SELECT COUNT(*) FROM turns WHERE session_id = s.session_id) END AS turn_count,
-        COALESCE(l.title, (SELECT user_text FROM conversation_entries WHERE session_id = s.session_id ORDER BY position LIMIT 1),
+        l.title AS label_title,
+        COALESCE((SELECT user_text FROM conversation_entries WHERE session_id = s.session_id ORDER BY position LIMIT 1),
           (SELECT content FROM turns WHERE session_id = s.session_id AND role = 'user' ORDER BY position LIMIT 1),
-          b.draft, '') AS title,
+          b.draft, '') AS first_text,
         l.title IS NOT NULL AS custom_title, l.pinned_at, l.folder_id,
         b.parent_session_id,
+        CASE WHEN b.parent_session_id IS NOT NULL AND l.title IS NULL THEN
+          (SELECT title FROM conversation_labels WHERE session_id = b.root_session_id) END AS lineage_label,
         CASE WHEN b.parent_session_id IS NOT NULL AND l.title IS NULL THEN COALESCE(
-          (SELECT title FROM conversation_labels WHERE session_id = b.root_session_id),
           (SELECT user_text FROM conversation_entries WHERE session_id = b.root_session_id ORDER BY position LIMIT 1),
-          (SELECT content FROM turns WHERE session_id = b.root_session_id AND role = 'user' ORDER BY position LIMIT 1)) END AS lineage_title,
+          (SELECT content FROM turns WHERE session_id = b.root_session_id AND role = 'user' ORDER BY position LIMIT 1)) END AS lineage_first,
         CASE WHEN b.parent_session_id IS NOT NULL AND l.title IS NULL THEN (SELECT COUNT(*) FROM conversation_branches r
           JOIN sessions rs ON rs.session_id = r.session_id WHERE r.root_session_id = b.root_session_id
             AND (rs.started_at < s.started_at OR (rs.started_at = s.started_at AND rs.rowid <= s.rowid))) END AS lineage_number,
@@ -973,15 +987,37 @@ export class LocalMemoryStore {
         EXISTS (SELECT 1 FROM conversation_entries WHERE session_id = s.session_id) OR
         EXISTS (SELECT 1 FROM turns WHERE session_id = s.session_id) OR b.draft != '')
       ORDER BY l.pinned_at IS NULL, updated_at DESC, s.started_at DESC, s.rowid DESC LIMIT ?
-    `).all(route, bounded).map(row => ({
-      session_id: row.session_id, started_at: row.started_at, updated_at: row.updated_at,
+    `).all(route, bounded).map(row => {
+      // An unnamed conversation shows its first message, cut short.
+      const title = row.label_title ?? shortConversationTitle(row.first_text);
       // A branch starts with its parent's first message, so an unnamed one would share its parent's title.
       // It shows its lineage's title and its place in that lineage instead, "Late night #2"; a name the
       // listener gives it replaces both.
-      turn_count: row.turn_count, title: row.lineage_number ? `${row.lineage_title || row.title} #${row.lineage_number}` : row.title,
-      custom_title: row.custom_title === 1, pinned_at: row.pinned_at ?? null, folder_id: row.folder_id ?? null,
-      ...(row.parent_session_id ? { parent_session_id: row.parent_session_id, last_message: row.last_message } : {}),
-    }));
+      const lineage = row.lineage_label || shortConversationTitle(row.lineage_first) || title;
+      return {
+        session_id: row.session_id, started_at: row.started_at, updated_at: row.updated_at,
+        turn_count: row.turn_count, title: row.lineage_number ? `${lineage} #${row.lineage_number}` : title,
+        custom_title: row.custom_title === 1, pinned_at: row.pinned_at ?? null, folder_id: row.folder_id ?? null,
+        ...(row.parent_session_id ? { parent_session_id: row.parent_session_id, last_message: row.last_message } : {}),
+      };
+    });
+  }
+
+  // The first message and reply of a conversation the model may name: one with no name, no parent and
+  // exactly one finished reply. Null for any other, so each conversation is named at most once.
+  untitledConversationStart(sessionId, { routeKey = "local:main" } = {}) {
+    this.#assertOpen();
+    const id = cleanSessionId(sessionId);
+    const route = cleanText(routeKey, 128, "Session route");
+    const row = this.#database.prepare(`SELECT
+        (SELECT title FROM conversation_labels WHERE session_id = s.session_id) AS title,
+        (SELECT parent_session_id FROM conversation_branches WHERE session_id = s.session_id) AS parent_session_id,
+        (SELECT COUNT(*) FROM conversation_entries WHERE session_id = s.session_id AND outcome = 'completed' AND assistant_text != '') AS replies
+      FROM sessions s WHERE s.session_id = ? AND s.route_key = ?`).get(id, route);
+    if (!row || row.title !== null || row.parent_session_id || row.replies !== 1) return null;
+    const entry = this.#database.prepare(`SELECT user_text, assistant_text FROM conversation_entries
+      WHERE session_id = ? AND outcome = 'completed' AND assistant_text != '' LIMIT 1`).get(id);
+    return { user: entry.user_text, assistant: entry.assistant_text };
   }
 
   sessionExists(sessionId) {
@@ -989,7 +1025,9 @@ export class LocalMemoryStore {
     return Boolean(this.#database.prepare("SELECT 1 FROM sessions WHERE session_id = ?").get(sessionId));
   }
 
-  labelConversation(sessionId, patch, { routeKey = "local:main" } = {}) {
+  // With ifUntitled, a conversation that already has a name keeps it and this returns null: the model's
+  // name never replaces one the listener gave, even one given while the model was choosing.
+  labelConversation(sessionId, patch, { routeKey = "local:main", ifUntitled = false } = {}) {
     this.#assertOpen();
     const id = cleanSessionId(sessionId);
     const route = cleanText(routeKey, 128, "Session route");
@@ -1003,6 +1041,10 @@ export class LocalMemoryStore {
         throw new Error("Conversation folder not found.");
       }
       const current = this.#database.prepare("SELECT title, pinned_at, folder_id FROM conversation_labels WHERE session_id = ?").get(id);
+      if (ifUntitled && (current?.title ?? null) !== null) {
+        this.#database.exec("COMMIT");
+        return null;
+      }
       const next = {
         title: label.title !== undefined ? label.title : current?.title ?? null,
         // Pinning again keeps the first pin time.

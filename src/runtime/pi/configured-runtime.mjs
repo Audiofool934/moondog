@@ -43,7 +43,8 @@ export async function createConfiguredRuntime(
   {
     credentials,
     modelsFactory,
-    runtimeFactory = (configuration) => new PiAgentRuntime(configuration),
+    // The terminal and the window build their agents here, so both name new conversations with the model.
+    runtimeFactory = (configuration) => new PiAgentRuntime({ ...configuration, nameConversations: true }),
     selection,
     settingsReader = readPiRuntimeSelection,
     toolTrace = null,

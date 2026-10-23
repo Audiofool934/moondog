@@ -12,7 +12,7 @@ import {
 } from "./capability-catalog.mjs";
 import { recoverArtistReleasesWithCrossCatalogIdentity } from "../integrations/cross-catalog-artist-identity.mjs";
 import { webProviderName } from "../integrations/web/web-result.mjs";
-import { normalizeConversationFolder, normalizeConversationLabel, normalizeMemoryContent } from "../memory/local-memory-store.mjs";
+import { normalizeConversationFolder, normalizeConversationLabel, normalizeMemoryContent, shortConversationTitle } from "../memory/local-memory-store.mjs";
 import { queueListeningIntent, queueCancellationRequested, unheardRequested } from "./spotify-listening-intent.mjs";
 import { DEFAULT_LOCALE, normalizeLocale } from "../i18n/index.mjs";
 import { DEFAULT_PLAYBACK_SERVICE, normalizePlaybackService } from "./playback-preferences.mjs";
@@ -176,7 +176,13 @@ function exactArtistReleaseHint(searchResult, artistName) {
   return match?.release.trim();
 }
 
+// How long the model may take to name a conversation before its first message stays the name.
+export const CONVERSATION_NAME_TIMEOUT_MS = 20_000;
+
 export class MoondogApplication {
+  // Model calls naming conversations, stopped when the application closes.
+  #naming = new Set();
+
   constructor({
     importsRoot = resolveAppleMusicImportsRoot(),
     domainServices = null,
@@ -862,7 +868,7 @@ export class MoondogApplication {
       .reverse().sort((left, right) => Number(!left.label.pinned_at) - Number(!right.label.pinned_at))
       .slice(0, limit).map(row => ({ session_id: row.session_id, started_at: row.started_at,
         updated_at: row.entries.at(-1)?.created_at ?? row.started_at, turn_count: row.entries.length * 2,
-        title: row.label.title ?? row.entries[0]?.user_text ?? row.pending.draft, custom_title: row.label.title !== null,
+        title: row.label.title ?? shortConversationTitle(row.entries[0]?.user_text ?? row.pending.draft), custom_title: row.label.title !== null,
         pinned_at: row.label.pinned_at, folder_id: row.label.folder_id,
         ...(row.parent_session_id ? { parent_session_id: row.parent_session_id, last_message: row.pending.draft || row.entries.at(-1)?.user_text || '' } : {}) }));
     return this.memoryStore.listSessions({
@@ -882,6 +888,48 @@ export class MoondogApplication {
     if (label.pinned !== undefined) row.label.pinned_at = label.pinned ? row.label.pinned_at ?? new Date().toISOString() : null;
     if (label.folderId !== undefined) row.label.folder_id = label.folderId;
     return { session_id: sessionId, ...structuredClone(row.label) };
+  }
+
+  // After its first reply, a conversation the listener has not named gets a short name from the model, saved
+  // as its title so the terminal and the window both list it. choose({ user, assistant, signal }) asks the model
+  // and resolves to the name, or to nothing. This runs beside the turn and never fails: without a model, or on
+  // an error or a timeout, the first message stays the name. A name the listener gives meanwhile is kept.
+  // Resolves to { session_id, title } when it saved a name, otherwise null.
+  async nameConversation(sessionId, choose, { timeoutMs = CONVERSATION_NAME_TIMEOUT_MS } = {}) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    timer.unref?.();
+    this.#naming.add(controller);
+    try {
+      const start = this.#untitledConversationStart(sessionId);
+      if (!start || this.closed || typeof choose !== "function") return null;
+      // A model call that ignores the signal still cannot hold the name past the timeout.
+      const stopped = new Promise((_, reject) => controller.signal.addEventListener("abort", () => reject(new Error("Naming stopped")), { once: true }));
+      const name = await Promise.race([choose({ ...start, signal: controller.signal }), stopped]);
+      if (typeof name !== "string" || !name.trim() || controller.signal.aborted || this.closed) return null;
+      const title = normalizeConversationLabel({ title: name }).title;
+      if (this.memoryStore) {
+        const saved = this.memoryStore.labelConversation(sessionId, { title }, { routeKey: this.memoryRouteKey, ifUntitled: true });
+        return saved ? { session_id: saved.session_id, title: saved.title } : null;
+      }
+      const row = this.localConversations.get(sessionId);
+      if (!row || row.label.title !== null) return null;
+      row.label.title = title;
+      return { session_id: sessionId, title };
+    } catch {
+      return null;
+    } finally {
+      clearTimeout(timer);
+      this.#naming.delete(controller);
+    }
+  }
+
+  #untitledConversationStart(sessionId) {
+    if (this.memoryStore) return this.memoryStore.untitledConversationStart?.(sessionId, { routeKey: this.memoryRouteKey }) ?? null;
+    const row = this.localConversations.get(sessionId);
+    if (!row || row.label.title !== null || row.parent_session_id) return null;
+    const replies = row.entries.filter(entry => entry.outcome === 'completed' && entry.assistant_text);
+    return replies.length === 1 ? { user: replies[0].user_text, assistant: replies[0].assistant_text } : null;
   }
 
   // Deleting the open conversation starts a new one first. The caller then resets its agent,
@@ -3316,6 +3364,7 @@ export class MoondogApplication {
 
   close() {
     this.closed = true;
+    for (const naming of this.#naming) naming.abort();
     try {
       this.resetSpotifyReadContext();
       this.memorySession = null;

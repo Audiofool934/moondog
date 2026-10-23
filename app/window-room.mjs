@@ -8,6 +8,7 @@ import { LOCALES, normalizeLocale, screenTranslator } from "../src/i18n/index.mj
 import { formatLocalResult } from "../src/surfaces/cli/format-output.mjs";
 import { HistoryImportView } from "../src/surfaces/cli/history-import-view.mjs";
 import { setAppleMusicStorefront } from "../src/integrations/apple-music/storefront.mjs";
+import { shortConversationTitle } from "../src/memory/local-memory-store.mjs";
 
 // Every Spotify read counts against the listener's app quota, and a used-up quota blocks player reads
 // for hours. The window's clock runs on its own between reads, so a showing window reads just after
@@ -76,7 +77,7 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
   const listed = (saved = sessions()) => {
     const ids = new Set(saved.map((session) => session.id));
     const fresh = slots.filter((slot) => slot.live && !ids.has(sessionOf(slot))).map((slot) => ({ id: sessionOf(slot),
-      title: slot.live.user.replace(/\s+/gu, " ").trim().slice(0, 80), updatedAt: new Date().toISOString(), branch: false, pinned: false, folderId: null, customTitle: false }));
+      title: shortConversationTitle(slot.live.user), updatedAt: new Date().toISOString(), branch: false, pinned: false, folderId: null, customTitle: false }));
     return [...saved.filter((session) => session.pinned), ...fresh, ...saved.filter((session) => !session.pinned)];
   };
   const folders = () => (base.listConversationFolders?.() ?? []).map((folder) => ({ id: folder.folder_id ?? folder.id, name: folder.name, position: folder.position ?? 0 }));
@@ -429,6 +430,9 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
         onTextDelta: (delta) => { if (slot.live) slot.live.text += delta; send({ type: "text", session, id, delta }); },
         onTextReplace: (replacement) => { if (slot.live) slot.live.text = replacement; send({ type: "text", session, id, replace: replacement }); },
         onModelRetry: ({ attempt, maxRetries }) => send({ type: "retry", session, id, attempt, maxRetries }),
+        // The model names a new conversation after its first reply. This process saved the name, so the
+        // look for another process's changes would not notice it.
+        onConversationNamed: () => { if (!closed) sendSessions(); },
       });
       send({ type: "turn", session, id, state: "end", status: result.status, text: result.text ?? "",
         receipts: (result.spotify_write_receipts ?? []).map((receipt) => ({ action: receipt.action, state: receipt.state,
