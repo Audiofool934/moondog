@@ -22,7 +22,11 @@ const port = await new Promise((resolve) => {
 });
 const send = (message) => port.postMessage(message);
 const quit = new AbortController();
-process.parentPort.on("message", ({ data }) => { if (data?.type === "quit") quit.abort(); });
+const focus = new EventTarget();
+process.parentPort.on("message", ({ data }) => {
+  if (data?.type === "quit") quit.abort();
+  if (data?.type === "focus") focus.dispatchEvent(new Event("focus"));
+});
 const state = await mkdtemp(path.join(tmpdir(), "moondog-window-simulated-"));
 const environment = { ...process.env, MOONDOG_STATE_HOME: state, MOONDOG_UPDATE_CHECK: "off", MOONDOG_LYRICS: "off" };
 // Quitting the app stops this process; its simulated state goes with it.
@@ -94,7 +98,7 @@ const savePlaybackService = async (service) => {
   return service;
 };
 
-await runWindowRoom({ application, runtime, openConversation, modelSettings, rebuildRuntime, savePlaybackService }, { port, send, quit: quit.signal });
+await runWindowRoom({ application, runtime, openConversation, modelSettings, rebuildRuntime, savePlaybackService }, { port, send, quit: quit.signal, focus });
 for (const conversation of conversations) conversation.close();
 application.close();
 port.close();

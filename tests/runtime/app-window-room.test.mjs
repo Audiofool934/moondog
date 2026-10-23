@@ -59,6 +59,7 @@ async function openRoom(extras = {}) {
   const base = extras.application ?? application("A");
   const firstRuntime = extras.runtime ?? runtime();
   const quit = new AbortController();
+  const focus = new EventTarget();
   if (extras.quitNow) quit.abort();
   const opened = [];
   const saved = [];
@@ -89,12 +90,15 @@ async function openRoom(extras = {}) {
     port,
     send: (message) => { messages.push(message); },
     quit: quit.signal,
+    focus,
   });
   const post = (data) => listener({ data });
   if (!extras.quitNow) await tick();
   return {
     messages,
     post,
+    // The app's window gaining focus, as main.mjs reports it to the core.
+    focus: () => focus.dispatchEvent(new Event("focus")),
     opened,
     saved,
     built,
@@ -276,6 +280,38 @@ test("a used-up Spotify quota rests the player and the devices until Spotify's t
     await tick();
     assert.ok(calls.player >= asked.player + 2);
     assert.equal(calls.queue, asked.queue + 1);
+  } finally {
+    mock.timers.reset();
+    await harness.stop();
+  }
+});
+
+test("coming back to the window reads Spotify once, at most every 10 s", async () => {
+  mock.timers.enable({ apis: ["setTimeout", "Date"], now: 1_000_000 });
+  let reads = 0;
+  const service = {
+    async currentPlayer() { reads += 1; return { state: "unavailable" }; },
+    async queue() { return { queue: [] }; },
+  };
+  const desk = application("A");
+  desk.ready = true;
+  desk.spotifyConnection = { service };
+  const harness = await openRoom({ application: desk });
+  try {
+    await tick();
+    const before = reads;
+    harness.focus();
+    await tick();
+    assert.equal(reads, before + 1);
+    // Switching away and back again within 10 s reads nothing more.
+    mock.timers.tick(9_000);
+    harness.focus();
+    await tick();
+    assert.equal(reads, before + 1);
+    mock.timers.tick(1_000);
+    harness.focus();
+    await tick();
+    assert.equal(reads, before + 2);
   } finally {
     mock.timers.reset();
     await harness.stop();

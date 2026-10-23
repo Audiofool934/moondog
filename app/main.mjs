@@ -199,6 +199,8 @@ function createWindow() {
   window.webContents.on("context-menu", (_event, params) => contextMenu(params));
   window.on("resize", saveBounds);
   window.on("move", saveBounds);
+  // Coming back to the window after playing with Spotify elsewhere shows where Spotify is now.
+  window.on("focus", () => core?.postMessage({ type: "focus" }));
   // Automated checks open the window without taking focus from the listener.
   window.once("ready-to-show", () => (process.env.MOONDOG_APP_DEBUG_PORT ? window.showInactive() : window.show()));
   window.webContents.once("did-finish-load", openCore);

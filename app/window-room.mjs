@@ -20,6 +20,8 @@ const QUEUE_READ_MS = 120_000;
 const NETEASE_POLL_MS = 5_000;
 // A song that stops this close to its end ended, rather than being paused.
 const ENDED_WITHIN_MS = 5_000;
+// Coming back to the window reads Spotify once, at most this often, to show a change made elsewhere.
+const FOCUS_READ_MS = 10_000;
 // How often a showing window looks for what the terminal or another window changed, and how often
 // while one of them answers in the conversation shown here.
 const LOOK_MS = { idle: 2_000, answering: 300 };
@@ -51,7 +53,7 @@ const trackOf = (item) => item && {
 };
 const errorText = (error) => String(error?.message ?? error ?? "").slice(0, 400);
 
-export function runWindowRoom(services, { port, send, quit = null }) {
+export function runWindowRoom(services, { port, send, quit = null, focus = null }) {
   const { application: base, rebuildRuntime, saveRuntimeSelection, toolTrace = null, openConversation, modelSettings, saveLanguage, savePlaybackService,
     prepareImport, prepareRecentImport, refreshImportedData, lastfm, runSpotify } = services;
   // Slot 0 is the core's own application and agent. The core closes every conversation after the room ends.
@@ -757,6 +759,12 @@ export function runWindowRoom(services, { port, send, quit = null }) {
     // A quit that came while the core was still starting has already happened.
     if (quit?.aborted) void stop();
     else quit?.addEventListener("abort", () => void stop(), { once: true });
+    let focusReadAt = -Infinity;
+    focus?.addEventListener("focus", () => {
+      if (Date.now() - focusReadAt < FOCUS_READ_MS) return;
+      focusReadAt = Date.now();
+      void refreshPlayer();
+    });
     port.on("message", async ({ data }) => {
       if (!data?.type) return;
       try {

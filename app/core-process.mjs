@@ -10,10 +10,15 @@ const port = await new Promise((resolve) => {
 const send = (message) => port.postMessage(message);
 // The app asks to quit here, so running replies can stop and be saved before the process ends.
 const quit = new AbortController();
-process.parentPort.on("message", ({ data }) => { if (data?.type === "quit") quit.abort(); });
+// The app also says when its window gains focus, so the room can read Spotify again.
+const focus = new EventTarget();
+process.parentPort.on("message", ({ data }) => {
+  if (data?.type === "quit") quit.abort();
+  if (data?.type === "focus") focus.dispatchEvent(new Event("focus"));
+});
 
 globalThis[Symbol.for("moondog.host")] = {
-  runRoom: (services) => runWindowRoom(services, { port, send, quit: quit.signal }),
+  runRoom: (services) => runWindowRoom(services, { port, send, quit: quit.signal, focus }),
   // The port would keep this process alive after the room closes.
   closed: () => {
     port.close();
