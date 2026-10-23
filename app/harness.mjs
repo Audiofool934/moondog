@@ -6,7 +6,8 @@
 //   MOONDOG_HARNESS_STATES=empty,reply npm run harness
 //   MOONDOG_HARNESS_THEMES=dark MOONDOG_HARNESS_SIZE=900x700 npm run harness
 //   MOONDOG_HARNESS_LOCALE=zh npm run harness       the window's words in another language
-//   MOONDOG_HARNESS_SHOW=1 npm run harness           a visible window to try by hand
+//   MOONDOG_HARNESS_SHOW=1 npm run harness           a visible window to try by hand, in the first of
+//                                                    MOONDOG_HARNESS_STATES when it names one
 //   MOONDOG_HARNESS_EVAL=check.js npm run harness    runs a script in the page after each state, before the
 //                                                    capture, and prints what it returns (for checks)
 import { app, BrowserWindow, nativeTheme } from "electron";
@@ -53,7 +54,12 @@ app.whenReady().then(async () => {
     if (event.level === "error" || event.level === "warning") process.stderr.write(`[page] ${event.message}\n`);
   });
   const load = () => window.loadFile(path.join(here, "dist", "index.html"), { query: { locale } });
-  if (show) { await load(); return; }
+  if (show) {
+    await load();
+    const first = process.env.MOONDOG_HARNESS_STATES?.split(",")[0];
+    if (first) { await wait(350); await window.webContents.executeJavaScript(`window.__harness.setState(${JSON.stringify(first)})`); }
+    return;
+  }
 
   await mkdir(out, { recursive: true });
   await load();

@@ -107,10 +107,37 @@ img { -webkit-user-drag: none; }
 /* The title inherits the bar's drag region and runs under the controls when a panel folds. The
    controls come after it, in the page and in paint, so their buttons stay clickable over it. */
 .bar-start, .bar-end { position: relative; z-index: 1; }
-/* The title centers on the conversation, not on whatever space the bar has left. */
-.bar-title { position: absolute; top: 0; bottom: 0; left: var(--sidebar); right: var(--inspector); padding-inline: var(--bar-reserve, 150px);
-  line-height: var(--bar); text-align: center; font-size: var(--t-small); font-weight: 500; color: var(--text-3);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
+/* The title centers on the conversation, not on whatever space the bar has left. The record folds
+   into the bar just before it, where a document window keeps its icon. */
+.bar-title { position: absolute; top: 0; bottom: 0; left: var(--sidebar); right: var(--inspector); padding-inline: 150px;
+  display: flex; align-items: center; justify-content: center; gap: 4px; font-size: var(--t-small); font-weight: 500; color: var(--text-3); pointer-events: none; }
+.bar-title > span { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bar-title > span:empty, .bar-title.tight > span { display: none; }
+.bar-record { display: none; width: var(--control); height: var(--control); flex: none; place-items: center; border-radius: var(--r-2); color: var(--text-2);
+  opacity: 0; transition: background-color var(--quick) var(--soft), color var(--quick) var(--soft); }
+.window.talking .bar-record { display: grid; }
+.bar-record.docked { pointer-events: auto; }
+.bar-record.cramped { visibility: hidden; }
+.bar-record:hover { background: var(--hover); color: var(--text); transition: none; }
+.bar-record .mark { width: 20px; height: 20px; }
+
+/* Moondog's mark at icon size (mark.mjs). */
+.mark { flex: none; overflow: visible; }
+.mark .rim, .mark .groove, .mark .shine { fill: none; stroke: currentColor; }
+.mark .rim { stroke-width: 0.075; opacity: 0.55; }
+.mark .groove { stroke-width: 0.05; opacity: 0.22; }
+.mark .shine { stroke-width: 0.085; stroke-linecap: round; opacity: 0.75; }
+.mark .ink { fill: currentColor; }
+.mark .band, .mark .arm { fill: none; stroke: currentColor; stroke-linecap: round; }
+.mark .band { stroke-width: 0.1; }
+.mark .arm { stroke-width: 0.065; }
+.mark .cup { fill: none; stroke: currentColor; stroke-width: 0.075; }
+/* While music plays the highlights turn with the record and the arm rests on it; the arm lifts when it stops. */
+.mark-turn { transform-box: fill-box; transform-origin: 50% 50%; animation: spin var(--turn) linear infinite paused; }
+.mark.playing .mark-turn { animation-play-state: running; }
+@keyframes spin { to { transform: rotate(1turn); } }
+.mark-arm { transform-box: fill-box; transform-origin: 100% 0%; transform: rotate(-28deg); transition: transform 900ms var(--spring); }
+.mark.playing .mark-arm { transform: none; }
 .window.animating .bar-title { transition: left var(--panel) var(--out), right var(--panel) var(--out); }
 /* With the player folded away, the song and its two most used controls stay in reach at the end
    of the bar; the song itself opens the player. */
@@ -189,18 +216,27 @@ img { -webkit-user-drag: none; }
 /* ── The conversation ─────────────────────────────────────────────────────────────────────── */
 .room { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .room > .frame { flex: 1; }
-.scroll { position: relative; height: 100%; overflow-y: auto; scrollbar-width: none; padding: 0 44px; overflow-anchor: none; overscroll-behavior: contain;
-  /* Words fade under the bar and above the composer into whatever light is behind them. */
-  mask-image: linear-gradient(to bottom, transparent 0, transparent calc(var(--bar) - 14px), #000 calc(var(--bar) + 14px), #000 calc(100% - 22px), transparent); }
+.scroll { --veil: var(--bar); position: relative; height: 100%; overflow-y: auto; scrollbar-width: none; padding: 0 44px; overflow-anchor: none; overscroll-behavior: contain;
+  /* Words fade under the bar, or under the record above them, and above the composer, into whatever light is behind them. */
+  mask-image: linear-gradient(to bottom, transparent 0, transparent calc(var(--veil) - 14px), #000 calc(var(--veil) + 14px), #000 calc(100% - 22px), transparent); }
 .scroll[data-following="false"] { overflow-anchor: auto; }
+/* Room for the record above the first words, as tall as the record still reaches below the bar. */
+.lead { overflow-anchor: none; }
 .column { max-width: var(--column); margin: 0 auto; padding: calc(var(--bar) + 18px) 0 30px; }
 
-/* Before anything is said, the record stands alone over the composer. */
+/* Before anything is said, the record stands alone over the composer. In a conversation it stays
+   above the words and folds into the title bar as you scroll up into history; renderer.mjs places it. */
 .stage { flex: 1; display: grid; place-items: center; min-height: 0; padding: var(--bar) 44px 8px; }
 /* The drawing includes the tonearm, so it moves right by the arm's reach to center the disc itself. */
-.record { width: min(46vh, 380px, 70vw); aspect-ratio: 1; translate: 3.5% 0; color: var(--text); animation: record-in 700ms var(--out) both; }
+.record-button { display: block; width: min(46vh, 380px, 70vw); aspect-ratio: 1; translate: 3.5% 0; color: var(--text); border-radius: 50%; }
+.record-button:focus-visible { outline-offset: 6px; border-radius: 50%; }
+.record { display: block; width: 100%; height: 100%; animation: record-in 700ms var(--out) both; }
 @keyframes record-in { from { opacity: 0; transform: scale(0.97) rotate(-4deg); } to { opacity: 1; transform: none; } }
 .room.empty .stage { flex: 0 1 auto; padding-bottom: 36px; }
+.room.empty .record-button { pointer-events: none; }
+.room:not(.empty) .stage { position: absolute; inset: 0; z-index: 2; display: block; padding: 0; pointer-events: none; }
+.room:not(.empty) .record-button { position: absolute; left: 0; top: 0; width: var(--record, 240px); translate: none; transform-origin: 0 0; will-change: transform, opacity; }
+.room:not(.empty) .record-button:not(.away) { pointer-events: auto; }
 .room.empty { justify-content: center; padding-bottom: 6vh; }
 .room.empty > .frame { display: none; }
 

@@ -103,6 +103,29 @@ const REPLY = [
   "I read that as an appetite for space more than for a genre. That is my reading, not something your history says outright.",
 ].join("\n");
 const SHORT = "Starting *Moondance* now, then Blue in Green and Harvest Moon in the queue.";
+// What an imported profile reads like: the longest reply the room has to hold under the record.
+const PROFILE = [
+  "Here is how your listening reads after the import: **41,208 plays from 2014 to 2026**.",
+  "",
+  "**What lasts.** Late-night records made in one room: Van Morrison, Nick Drake, Miles Davis. They come back every autumn, and you rarely skip them.",
+  "",
+  "**What you are into now.** Since August, more piano and fewer voices: Bill Evans, Keith Jarrett, and two Ryuichi Sakamoto albums you played start to finish.",
+  "",
+  "**What your collection holds.** 3,114 artists. A long tail of Cantonese classics, mostly on Sunday mornings, and folk from the early seventies.",
+  "",
+  "- **Most returned to**: *Kind of Blue*, *Pink Moon*, *Astral Weeks*",
+  "- **Played once and kept**: *Hejira*, *Spirit of Eden*",
+  "- **Time of day**: two thirds after nine in the evening",
+  "",
+  "What I can't tell from history: why these records matter to you, or where you listen. That stays unknown until you tell me.",
+].join("\n");
+// Scrolls the conversation up from the latest words by `by` points (or to the top), once it is drawn.
+function scrollUp(by) {
+  setTimeout(() => {
+    const scroll = document.querySelector("[data-scroll]");
+    scroll.scrollTop = by === "top" ? 0 : scroll.scrollHeight - scroll.clientHeight - by;
+  }, 150);
+}
 const LONG_TURNS = [
   ["Play something for a late train home", SHORT],
   ["Why that one?", "It sits where your night listening lives: warm, unhurried, a voice close to the microphone. You played Van Morrison eleven times this autumn, mostly after ten."],
@@ -154,6 +177,11 @@ const STATES = {
   offline() { send({ type: "ready", ...OFFLINE, sessions: SESSIONS, folders: FOLDERS, current: "s1", running: [], transcript: [] }); send({ type: "player", spotify: "unavailable", now: null, next: [] }); },
   reply() { ready({ transcript: conversation([["What have I been playing at night?", REPLY]]) }); player({ index: 1 }); },
   long() { ready({ transcript: conversation(LONG_TURNS) }); player({ index: 0, fraction: 0.71 }); },
+  // The record above the words: halfway folded, folded into the bar, folded by hand, and over a long reply.
+  history() { STATES.long(); scrollUp(120); },
+  "history-top"() { STATES.long(); scrollUp("top"); },
+  folded() { STATES.long(); setTimeout(() => document.querySelector("[data-record-button]").click(), 150); },
+  profile() { ready({ transcript: conversation([["Import my Spotify history", PROFILE]]) }); player({ index: 1 }); },
   streaming() {
     ready({ running: ["s1", "s2"], transcript: conversation([["Play something for a late train home", SHORT]]),
       live: { id: "t9", user: "Find me something that sounds like a streetlamp at 2am", text: "Two candidates so far. The first is a record you have never played, from a session",

@@ -87,6 +87,7 @@ function buildMenu() {
     { label: t("menuView"), submenu: [
       { label: t("menuSidebar"), accelerator: "CmdOrCtrl+Alt+S", click: command("toggle-sidebar") },
       { label: t("menuPlayer"), accelerator: "CmdOrCtrl+Alt+P", click: command("toggle-inspector") },
+      { label: t("menuRecord"), accelerator: "CmdOrCtrl+Alt+R", click: command("toggle-record") },
       { type: "separator" },
       ...(dev ? [{ role: "reload" }, { role: "toggleDevTools" }, { type: "separator" }] : []),
       { label: t("menuFullScreen"), role: "togglefullscreen" },

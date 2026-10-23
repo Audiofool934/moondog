@@ -166,6 +166,8 @@ const shapes = {
   nose: [0.53, 0.045],
   arm: [[1.17, -1.095], [0.91, -0.8]],
   cartridge: [[0.92, -0.845], [0.998, -0.777], [0.808, -0.567], [0.73, -0.635]],
+  // Two short highlights ride fixed grooves as the record turns: the groove's place from the rim, its angle, its length.
+  highlights: [[1, -0.91, 0.12], [3, 2.44, 0.09]],
 };
 
 /** The shapes the record is drawn from, for surfaces that draw it as vectors, such as the window's small mark. */
@@ -205,7 +207,8 @@ function paint(columns, rows, phase, cellAspect) {
 
   // These short highlights follow fixed grooves; the record geometry never deforms.
   // Painting the portrait afterward keeps the moving surface behind the dog and headphones.
-  for (const [groove, offset, length] of [[grooves[1], -0.91, 0.12], [grooves[3], 2.44, 0.09]]) {
+  for (const [index, offset, length] of shapes.highlights) {
+    const groove = grooves[index];
     const angle = rotation + offset;
     const points = Array.from({ length: 13 }, (_, index) => {
       const position = angle - length + index / 12 * length;

@@ -58,10 +58,10 @@ export function mountRecord(canvas) {
   }
 
   // Measuring reads layout, so it runs when the canvas settles at a new size, not on every frame.
-  // While a window is being resized, the last drawing simply scales with its box.
+  // While a window is being resized, the last drawing simply scales with its box. The box is the
+  // canvas's own size before any transform, so a record that folds by scaling keeps its drawing.
   function resize() {
-    const box = canvas.getBoundingClientRect();
-    const next = Math.floor(Math.min(box.width, box.height));
+    const next = Math.floor(Math.min(canvas.clientWidth, canvas.clientHeight));
     if (!next) return;
     const scale = devicePixelRatio || 1;
     if (next !== size || canvas.width !== Math.round(next * scale)) {

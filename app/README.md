@@ -30,6 +30,10 @@ A model or music service chosen there lasts until the app quits, and sign-in and
 
 - Before anything is said, the lunar record stands alone over the composer, drawn as dots from the terminal's own record.
   It turns while music plays and rests when it stops.
+- In a conversation the record stays above the words, and the conversation runs between it and the composer.
+  Scrolling up into history folds it, as you scroll, into a small mark before the title in the title bar; back at the latest words it opens again.
+  A click on the record, or `⌥⌘R`, keeps it folded; a click on the mark opens it and returns to the latest words.
+  Where the bar has no room between its controls, the title gives way first, then the mark.
 - Conversations on the left are the terminal's conversations, in both directions: one started here shows up in `/resume`, and the other way round.
   While the window shows, a conversation or folder saved in the terminal appears within about two seconds; the core asks SQLite whether another process wrote to the memory store, so nothing is sent when nothing changed.
   The window and the terminal show the same conversation: the one either opened last, with `/new`, `/resume`, `/rewind`, the sidebar or a launch.
@@ -73,7 +77,7 @@ A model or music service chosen there lasts until the app quits, and sign-in and
 - Keys: Enter sends and Shift+Enter starts a new line. `⌘.` or Esc stops a reply.
   Typing anywhere goes to the composer. No plain key plays, pauses or skips, because a chat window is typed in all the time.
   `⌃⌘P` plays or pauses, and `⌃⌘→` and `⌃⌘←` skip, from the Playback menu; the media keys work too.
-  `⌥⌘S` and `⌥⌘P` show or hide the conversations and the player; a narrow window folds them on its own.
+  `⌥⌘S` and `⌥⌘P` show or hide the conversations and the player; a narrow window folds them on its own. `⌥⌘R` folds or opens the record.
 - Language: the window speaks the language the core speaks, which follows the choice in Settings or `/language`, then the system's language.
   The window's words, its menus included, exist in English, Simplified and Traditional Chinese, Japanese, Korean, Spanish, French, German, Brazilian Portuguese and Italian (`strings.mjs`).
 - Closing the window hides it, and the music keeps going until you quit. A reply in progress shows in the Dock, and the Dock icon's menu plays, pauses and skips.

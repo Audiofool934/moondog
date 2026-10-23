@@ -44,7 +44,7 @@
     <div class="mood" aria-hidden="true" data-mood></div>
     <div class="ambient" aria-hidden="true" data-ambient></div>
     <header class="bar">
-      <div class="bar-title" data-title></div>
+      <div class="bar-title"><button type="button" class="bar-record" data-bar-record data-tip-at="below" tabindex="-1"></button><span data-title></span></div>
       <div class="bar-start">
         <button type="button" class="tool" data-toggle-sidebar data-tip-at="below"><svg class="icon"><use href="#i-sidebar"/></svg></button>
         <button type="button" class="tool" data-new data-tip-at="below"><svg class="icon"><use href="#i-compose"/></svg></button>
@@ -66,8 +66,8 @@
     </aside>
 
     <main class="room" data-room>
-      <div class="stage" data-stage hidden><canvas class="record" aria-hidden="true" data-record></canvas></div>
-      <div class="frame"><div class="scroll" data-scroll><div class="column" data-column></div></div></div>
+      <div class="stage" data-stage><button type="button" class="record-button" data-record-button tabindex="-1"><canvas class="record" aria-hidden="true" data-record></canvas></button></div>
+      <div class="frame"><div class="scroll" data-scroll><div class="lead" aria-hidden="true" data-lead></div><div class="column" data-column></div></div></div>
       <div class="composer" data-composer>
         <button type="button" class="jump" data-jump hidden><svg class="icon"><use href="#i-down"/></svg></button>
         <p class="notice" data-notice role="status" hidden></p>

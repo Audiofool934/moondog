@@ -5,6 +5,7 @@ import { renderMarkdown } from "./markdown.mjs";
 import { createPalette } from "./palette.mjs";
 import { createPreviews } from "./previews.mjs";
 import { coverPalette, moodColours } from "./mood.mjs";
+import { createMark } from "./mark.mjs";
 import { mountRecord } from "./record.mjs";
 import { createSettings } from "./settings.mjs";
 import { createSidebar } from "./sidebar.mjs";
@@ -63,6 +64,8 @@ function applyLanguage(next) {
   name($("toggle-sidebar"), t("conversations"), "⌥⌘S");
   name($("toggle-inspector"), t("player"), "⌥⌘P");
   name($("new"), t("newConversation"), "⌘N");
+  name(recordButton, t("foldRecord"), "⌥⌘R");
+  name(barRecord, t("showRecord"), "⌥⌘R");
   name($("settings-button"), t("settings"), "⌘,");
   name($("previous"), t("previous"), "⌃⌘←");
   name($("next"), t("next"), "⌃⌘→");
@@ -98,6 +101,8 @@ function renderTitle() {
   const title = (session?.title || first || "").replace(/\s+/gu, " ").trim();
   $("title").textContent = shown("sidebar") ? "" : title;
   document.title = title ? `${title.slice(0, 60)} - Moondog` : "Moondog";
+  // The folded record sits before the title, so it moves when the title does.
+  placeSoon();
 }
 // Another conversation can open while this one is still answering; it keeps going in the core.
 function openSession(id) {
@@ -268,6 +273,8 @@ let lastTop = 0;
 const gap = () => scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
 const selecting = () => { const selection = getSelection(); return selection && !selection.isCollapsed && column.contains(selection.anchorNode); };
 function follow(on) {
+  // Coming back to the latest words opens the record again, from wherever it had folded to.
+  if (on && !following) refold();
   following = on;
   scroller.dataset.following = String(on);
   renderJump();
@@ -278,19 +285,215 @@ function pin() {
   own = lastTop = scroller.scrollTop;
 }
 
-// The room before anything is said: the record alone over the composer. Leaving it, the composer
-// glides down to its place instead of jumping there.
+// ── The record ───────────────────────────────────────────────────────────────────────────────
+// Before anything is said the record stands alone over the composer. In a conversation it stays
+// above the words, and folds into the title bar as the listener scrolls up into history; back at
+// the latest words it opens again. Folded by hand, it stays in the bar until it is opened by hand.
+const stage = $("stage");
+const recordButton = $("record-button");
+const barRecord = $("bar-record");
+const lead = $("lead");
+const mark = createMark();
+barRecord.append(mark.node);
+const reduced = matchMedia("(prefers-reduced-motion: reduce)");
+const BAR = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--bar")) || 44;
+const RECORD_GAP = 4;
+// As large as an 800-point window can give it and still leave the words most of the room.
+const recordSize = () => Math.round(Math.min(240, Math.max(120, innerHeight * 0.3)));
+let foldedByHand = store.get("moondog.record") === "folded";
+// How far the record is folded as drawn: 0 open above the words, 1 in the title bar.
+let fold = 0;
+let tween = null;
+let gliding = false;
+let placing = 0;
+let leadHeight = 0;
+const talking = () => Boolean(record) && !room.classList.contains("empty");
+const lerp = (from, to, at) => from + (to - from) * at;
+// Folded by hand, at the latest words, or as far as the listener has scrolled up: one record's height folds it.
+function foldWanted() {
+  if (foldedByHand) return 1;
+  if (following) return 0;
+  return Math.min(1, Math.max(0, gap() / (recordSize() + RECORD_GAP)));
+}
+// A jump in what the room wants (a click, a return to the latest words) eases there instead of snapping.
+function refold() {
+  if (!talking()) return;
+  tween = { from: fold, start: performance.now() };
+  placeSoon();
+}
+const placeSoon = () => { if (!placing) placing = requestAnimationFrame(placeRecord); };
+// The middle of the bar: the folded record and the title center on the conversation where there is
+// room between the controls at either end, and otherwise use what room there is. The title gives
+// way first, then the record, which then folds away instead of into the bar.
+let titled = "";
+function placeTitle() {
+  const host = $("title").parentElement;
+  const span = host.getBoundingClientRect();
+  const start = Math.max(span.left, $("new").getBoundingClientRect().right + 12);
+  const first = [...$("mini").parentElement.children].find((node) => !node.hidden);
+  const end = Math.min(span.right, first ? first.getBoundingClientRect().left : span.right) - 12;
+  const middle = span.left + span.width / 2;
+  const half = Math.min(middle - start, end - middle);
+  const need = $("title").textContent ? 140 : 32;
+  const [from, to] = half * 2 >= need ? [middle - half, middle + half] : [start, end];
+  const key = `${Math.round(from - span.left)}|${Math.round(span.right - to)}|${to - from >= 120}|${to - from >= 32}`;
+  if (key === titled) return;
+  titled = key;
+  host.style.paddingInline = `${Math.max(0, Math.round(from - span.left))}px ${Math.max(0, Math.round(span.right - to))}px`;
+  host.classList.toggle("tight", to - from < 120);
+  barRecord.classList.toggle("cramped", to - from < 32);
+}
+// Where the record is drawn at a fold, in the room's coordinates: from above the words to the mark in the bar.
+function recordBox(at, size = recordSize()) {
+  const box = room.getBoundingClientRect();
+  const dock = mark.node.getBoundingClientRect();
+  return { x: lerp(box.width / 2 - size / 2 + size * 0.035, dock.left - box.left, at), y: lerp(BAR + RECORD_GAP, dock.top - box.top, at),
+    size: lerp(size, dock.width, at) };
+}
+// Scrolls so `node` sits just under the record as the record will be there. The record's room above
+// the words changes on the way, and a smooth scroll still ends where it was sent, so the place is
+// worked out for the room it will have then.
+function scrollToNode(node) {
+  const size = recordSize();
+  const [open, shut] = [recordBox(0, size), recordBox(1, size)];
+  const bottom = (at) => lerp(open.y + open.size, shut.y + shut.size, at);
+  const veil = (at) => Math.max(BAR, bottom(at) + 10);
+  // With the node 20 points under the veil, the distance left below the view grows with the veil and
+  // the fold grows with that distance; the fold that agrees with itself is found by halving.
+  const rest = scroller.scrollHeight - node.offsetTop + 20 - scroller.clientHeight;
+  let at = 1;
+  if (!foldedByHand) {
+    let [low, high] = [0, 1];
+    for (let step = 0; step < 20; step += 1) {
+      const middle = (low + high) / 2;
+      if (Math.min(1, (rest + veil(middle)) / (size + RECORD_GAP)) > middle) low = middle; else high = middle;
+    }
+    at = (low + high) / 2;
+  }
+  const reach = Math.max(0, bottom(at) - BAR);
+  glideTo(Math.max(0, node.offsetTop - leadHeight + reach - veil(at) - 20), reach);
+}
+// Glides the view to `top` with the record's room already at `reach`. The room changes at once,
+// without moving the words in view, and holds still on the way, so the glide ends where it was sent.
+let endGlide = () => {};
+function glideTo(top, reach) {
+  endGlide();
+  scroller.style.overflowAnchor = "none";
+  const before = leadHeight;
+  leadHeight = reach;
+  lead.style.height = `${reach}px`;
+  scroller.scrollTop += reach - before;
+  own = lastTop = scroller.scrollTop;
+  const target = Math.min(top, scroller.scrollHeight - scroller.clientHeight);
+  gliding = true;
+  let timer = 0;
+  const arrived = () => { if (Math.abs(scroller.scrollTop - target) <= 2) endGlide(); };
+  endGlide = () => {
+    endGlide = () => {};
+    gliding = false;
+    clearTimeout(timer);
+    scroller.removeEventListener("scrollend", arrived);
+    scroller.style.removeProperty("overflow-anchor");
+    placeSoon();
+  };
+  scroller.addEventListener("scrollend", arrived);
+  timer = setTimeout(endGlide, 1500);
+  scroller.scrollTo({ top: target, behavior: reduced.matches ? "auto" : "smooth" });
+  if (reduced.matches) endGlide();
+}
+let placed = "";
+function placeRecord() {
+  placing = 0;
+  placeTitle();
+  if (!talking()) return;
+  const size = recordSize();
+  let at = foldWanted();
+  if (tween) {
+    const progress = reduced.matches ? 1 : Math.min(1, (performance.now() - tween.start) / 420);
+    at = lerp(tween.from, at, 1 - (1 - progress) ** 3);
+    if (progress >= 1) tween = null; else placeSoon();
+  }
+  fold = at;
+  // Reads first, then writes, so a frame lays out once. The record travels from its place above the
+  // words to the mark in the bar, and the last stretch hands the drawing over to the mark.
+  const { x, y, size: drawnSize } = recordBox(at, size);
+  const handoff = Math.min(1, Math.max(0, (at - 0.82) / 0.18));
+  const bottom = y + drawnSize;
+  const key = [size, x.toFixed(1), y.toFixed(1), drawnSize.toFixed(2), handoff.toFixed(3)].join("|");
+  if (key !== placed) {
+    placed = key;
+    room.style.setProperty("--record", `${size}px`);
+    recordButton.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) scale(${(drawnSize / size).toFixed(4)})`;
+    recordButton.style.opacity = (1 - handoff).toFixed(3);
+    barRecord.style.opacity = handoff.toFixed(3);
+    recordButton.classList.toggle("away", at > 0.6);
+    recordButton.tabIndex = at > 0.6 ? -1 : 0;
+    const docked = at > 0.9 && !barRecord.classList.contains("cramped");
+    barRecord.classList.toggle("docked", docked);
+    barRecord.tabIndex = docked ? 0 : -1;
+    // The words fade out just under the record.
+    scroller.style.setProperty("--veil", `${Math.max(BAR, bottom + 10).toFixed(1)}px`);
+  }
+  record.turn(nowPlaying()?.playing && at < 1);
+  // The conversation keeps the record room above its first words, as far as it reaches below the bar.
+  // Scrolled up, the browser keeps the words in view where they are as that room changes.
+  if (!gliding) {
+    const reach = Math.round(Math.max(0, bottom - BAR) * 2) / 2;
+    if (leadHeight !== reach) { leadHeight = reach; lead.style.height = `${reach}px`; if (following) pin(); }
+  }
+}
+// Back to the latest words: the record's room is made at once, without moving the words in view,
+// and the view glides down while the record opens.
+function toLatest() {
+  chosen = null;
+  follow(true);
+  glideTo(Infinity, foldedByHand ? 0 : recordSize() + RECORD_GAP);
+}
+function foldRecord(on) {
+  if (!talking()) return;
+  foldedByHand = on;
+  store.set("moondog.record", on ? "folded" : "open");
+  if (!on && !following) toLatest(); else refold();
+}
+// The record's own button folds it; the mark in the bar opens it, or brings back the latest words it sits above.
+function toggleRecord() {
+  if (fold < 0.5) foldRecord(true);
+  else if (foldedByHand) foldRecord(false);
+  else toLatest();
+}
+recordButton.addEventListener("click", () => foldRecord(true));
+barRecord.addEventListener("click", toggleRecord);
+
+// The room before anything is said: the record alone over the composer. Leaving it, the record
+// moves to its place above the words and the composer glides down to its own, instead of jumping.
 function renderEmpty(empty) {
-  if (room.classList.contains("empty") === empty && (empty ? record : true)) return;
+  if (record && room.classList.contains("empty") === empty) return;
   const composer = $("composer");
   const before = composer.getBoundingClientRect().top;
+  const from = record ? recordButton.getBoundingClientRect() : null;
   room.classList.toggle("empty", empty);
-  $("stage").hidden = !empty;
-  if (empty && !record) record = mountRecord($("record"));
-  if (!empty && record) { record.stop(); record = null; }
-  record?.turn(nowPlaying()?.playing);
+  layout.classList.toggle("talking", !empty);
+  record ??= mountRecord($("record"));
+  tween = null;
+  placed = "";
+  if (empty) {
+    for (const property of ["transform", "opacity", "--record"]) { recordButton.style.removeProperty(property); room.style.removeProperty(property); }
+    recordButton.classList.remove("away");
+    recordButton.tabIndex = -1;
+    leadHeight = 0;
+    lead.style.height = "";
+    scroller.style.removeProperty("--veil");
+    record.turn(nowPlaying()?.playing);
+  } else placeRecord();
+  const to = recordButton.getBoundingClientRect();
+  if (from?.width && to.width && !reduced.matches) {
+    const host = stage.getBoundingClientRect();
+    const origin = `${to.left - host.left}px ${to.top - host.top}px`;
+    stage.animate([{ transformOrigin: origin, transform: `translate(${from.left - to.left}px, ${from.top - to.top}px) scale(${from.width / to.width})` },
+      { transformOrigin: origin, transform: "none" }], { duration: 520, easing: "cubic-bezier(0.16, 1, 0.3, 1)" });
+  }
   const after = composer.getBoundingClientRect().top;
-  if (!empty && before !== after && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
+  if (!empty && before !== after && !reduced.matches) {
     composer.animate([{ transform: `translateY(${before - after}px)` }, { transform: "none" }], { duration: 420, easing: "cubic-bezier(0.16, 1, 0.3, 1)" });
     column.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 260, delay: 80, easing: "ease-out", fill: "backwards" });
   }
@@ -330,6 +533,8 @@ pinning.observe(column);
 pinning.observe(scroller);
 scroller.addEventListener("wheel", (event) => {
   chosen = null;
+  // A hand on the wheel takes the view back from a glide.
+  endGlide();
   if (event.deltaY < 0 && scroller.scrollHeight > scroller.clientHeight) follow(false);
 }, { passive: true });
 let scrollFrame = 0;
@@ -340,14 +545,10 @@ scroller.addEventListener("scroll", () => {
     if (top < lastTop - 1 && gap() > 2) { if (following) follow(false); } else if (gap() < 2 && !following) follow(true);
   }
   lastTop = top;
-  if (!scrollFrame) scrollFrame = requestAnimationFrame(() => { scrollFrame = 0; renderJump(); markTurn(); });
+  if (!scrollFrame) scrollFrame = requestAnimationFrame(() => { scrollFrame = 0; renderJump(); markTurn(); placeRecord(); });
 }, { passive: true });
 function renderJump() { const jump = $("jump"); const hide = following || gap() < 120; if (jump.hidden !== hide) jump.hidden = hide; }
-$("jump").addEventListener("click", () => {
-  chosen = null;
-  follow(true);
-  scroller.scrollTo({ top: scroller.scrollHeight, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
-});
+$("jump").addEventListener("click", toLatest);
 scrollbar(scroller, { inset: 50, onGrab: () => { chosen = null; follow(false); }, onRelease: () => { if (gap() < 2) follow(true); } });
 
 // Requests along the right edge of the conversation: hover one to read it, click to go back to it.
@@ -372,7 +573,7 @@ function renderTurns() {
       follow(false);
       chosen = mark;
       markTurn();
-      scroller.scrollTo({ top: Math.max(0, entry.node.offsetTop - 64), behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+      scrollToNode(entry.node);
     });
     mark.target = entry.node;
     // One mark is in the Tab order; the arrow keys walk the rest.
@@ -755,10 +956,9 @@ function renderInspector() {
     if (song.scrollWidth > song.clientWidth) $("mini-open").dataset.tip = song.textContent; else delete $("mini-open").dataset.tip;
     drawControls(now, $("mini-toggle"), $("mini-next"));
   }
-  // The bar title keeps clear of everything at the end of the bar.
-  const reserve = mini.hidden ? "" : `${mini.parentElement.offsetWidth + 16}px`;
-  if (layout.style.getPropertyValue("--bar-reserve") !== reserve) layout.style.setProperty("--bar-reserve", reserve);
-  record?.turn(now?.playing);
+  placeTitle();
+  record?.turn(now?.playing && (!talking() || fold < 1));
+  mark.playing(now?.playing);
   renderMood(now);
   tick();
   syncMenu();
@@ -899,11 +1099,16 @@ function togglePanel(panel) {
   renderInspector();
   clearTimeout(settleTimer);
   settleTimer = setTimeout(() => layout.classList.remove("animating"), 300);
+  // The record stays centered on the conversation while the columns slide.
+  const until = performance.now() + 320;
+  const track = () => { placeRecord(); if (performance.now() < until) requestAnimationFrame(track); };
+  requestAnimationFrame(track);
 }
 addEventListener("resize", () => {
   for (const panel of ["inspector", "sidebar"]) if (forced[panel]) makeRoom(panel);
   renderPanels();
   renderInspector();
+  placeSoon();
 });
 
 // Dragging a panel's inner edge sets its width; a double-click restores the default.
@@ -980,6 +1185,7 @@ window.moondogApp?.onCommand?.((command) => {
   if (command === "previous") control("previous", "menu");
   if (command === "toggle-sidebar") togglePanel("sidebar");
   if (command === "toggle-inspector") togglePanel("inspector");
+  if (command === "toggle-record") toggleRecord();
 });
 document.addEventListener("visibilitychange", () => send({ type: "visible", visible: !document.hidden }));
 window.addEventListener("focus", () => { if (!settings.open && !getSelection()?.toString() && !document.activeElement?.closest?.(".rename")) input.focus(); });
