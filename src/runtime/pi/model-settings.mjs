@@ -9,6 +9,7 @@ import {
 import { createPersistentCredentialStore } from "./persistent-credential-store.mjs";
 import { getPublicPiModelCatalog } from "./public-model-catalog.mjs";
 import { readPiRuntimeSelection } from "./runtime-settings.mjs";
+import { publicCustomEndpoint, readCustomEndpoint, writeCustomEndpoint, removeCustomEndpoint, testCustomEndpoint } from "./custom-endpoint.mjs";
 
 // The desktop window picks models and signs in through this service, as the
 // terminal does with /model and /auth. It returns status shapes only: never a
@@ -126,6 +127,14 @@ export function createModelSettings({
 
   return {
     current,
+    customEndpoint: async () => publicCustomEndpoint(await readCustomEndpoint(environment)),
+    saveCustomEndpoint: (input) => writeCustomEndpoint(input, environment),
+    removeCustomEndpoint: () => removeCustomEndpoint(environment),
+    testCustomEndpoint: async (controls) => {
+      const config = await readCustomEndpoint(environment);
+      if (!config) throw failure("custom_endpoint_missing", "Save a custom endpoint first.");
+      return testCustomEndpoint(config, controls);
+    },
 
     async providers({ current: currentProvider } = {}) {
       currentProvider ??= (await current().catch(() => null))?.provider;

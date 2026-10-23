@@ -42,7 +42,13 @@ Terminal commands from this checkout:
 
 The same commands are available as `node scripts/moondog.mjs netease ...`, with `--json` for structured output. Login requires the desktop dependencies. An explicit terminal `import` commits that selected playlist; the desktop uses preview followed by **Add to profile**.
 
-The account session is stored only in `netease-session.json` under Moondog's private state directory (`MOONDOG_STATE_HOME` overrides it). Only the core reads it, only requests to `https://music.163.com` carry it, and neither renderer messages nor CLI results include the cookie. Sign out deletes the local session. This sign-in enables library browsing and import; full NetEase playback still uses the existing, separately authenticated `ncm-cli` player. Local folder synchronization and downloads are not part of this addition.
+The account session is stored only in `netease-session.json` under Moondog's private state directory (`MOONDOG_STATE_HOME` overrides it). Only the core reads it, only requests to `https://music.163.com` carry it, and neither renderer messages nor CLI results include the cookie. Sign out deletes the local session and stops playback. The desktop plays directly with this account: open a playlist and choose **Play playlist**, or click a song. Pause, resume, previous/next and seek use the existing player panel. No `ncm-cli` setup is needed in the desktop app. Full songs depend on your account and regional rights; trials are labeled. The optional legacy terminal player is unchanged. Local folder synchronization and downloads are not part of this addition.
+
+### Custom model API / gateways
+
+Open **Settings → Model → Custom API / Gateway** and enter the API base URL, API key, exact model ID and protocol. Chat Completions (default), Responses and Anthropic Messages are supported. Both an API base URL and a copied operation URL are accepted. HTTPS endpoints and local HTTP endpoints such as `http://localhost:1234/v1` are supported. Set context/output token limits to the model's actual limits.
+
+**Save and use** selects that model for conversations and profile building. **Test connection** makes a short request to the saved gateway; saving alone does not contact it. Keys are stored locally in `custom-endpoint.json` beside Moondog's model settings (`MOONDOG_CONFIG_HOME` overrides the directory), never returned to the renderer, and never included in logs or displayed errors. A blank key keeps a previously saved key for the same normalized endpoint. Changing endpoints requires entering the new key. Remove the entry with **Remove**. See [playback and API setup](docs/PLAYBACK_AND_CUSTOM_API.md).
 
 The desktop runs from source on Windows; the existing distribution packaging remains macOS-only. Some upstream automated tests assume Unix commands or Unix file cleanup behavior. See [the local verification report](docs/NETEASE_LOCAL_VERIFICATION.md).
 

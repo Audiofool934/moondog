@@ -6,12 +6,12 @@ const words = {
     login: "请在网易云官方窗口完成登录。", cancel: "取消登录", loading: "正在读取网易云…", created: "我创建的", saved: "我收藏的", all: "全部歌单",
     search: "搜索歌单", empty: "账号中还没有歌单。", noMatches: "没有匹配的歌单，试试其他名称。", tracks: "首", private: "私密", back: "返回歌单",
     import: "导入音乐画像", importNote: "预览后再导入这个歌单。歌单收藏不会被当作播放历史。", titleColumn: "歌曲", artist: "歌手", album: "专辑", duration: "时长",
-    emptyTracks: "这个歌单还没有歌曲。", previous: "上一页", next: "下一页", retry: "重试", playback: "账号连接可用于浏览和导入歌单。完整歌曲播放仍需配置 ncm-cli。" },
+    emptyTracks: "这个歌单还没有歌曲。", previous: "上一页", next: "下一页", retry: "重试", play: "播放整个歌单", playTrack: "播放", playback: "登录后即可直接播放歌单，音源按账号会员及版权权限提供。" },
   en: { title: "NetEase Cloud Music", intro: "Connect your account to browse your created and saved playlists.", connect: "Sign in to NetEase", disconnect: "Sign out", refresh: "Refresh playlists",
     login: "Finish signing in in the official NetEase window.", cancel: "Cancel sign-in", loading: "Reading NetEase…", created: "Created", saved: "Saved", all: "All playlists",
     search: "Search playlists", empty: "No playlists in this account yet.", noMatches: "No matching playlists. Try another name.", tracks: "tracks", private: "Private", back: "Back to playlists",
     import: "Import into profile", importNote: "Preview this playlist before adding it. Collection membership is never treated as listening history.", titleColumn: "Song", artist: "Artist", album: "Album", duration: "Time",
-    emptyTracks: "This playlist has no songs yet.", previous: "Previous", next: "Next", retry: "Retry", playback: "Account connection enables playlist browsing and import. Full song playback still requires ncm-cli." },
+    emptyTracks: "This playlist has no songs yet.", previous: "Previous", next: "Next", retry: "Retry", play: "Play playlist", playTrack: "Play", playback: "Sign in to play playlists directly. Audio availability follows your account and regional rights." },
 };
 
 export function createNeteaseSettings({ send, locale, changed }) {
@@ -44,7 +44,7 @@ export function createNeteaseSettings({ send, locale, changed }) {
       busy = null;
       if (stage === "error") {
         failedAction = action;
-        error = message.code === "netease_signed_out"
+        error = action === "play" ? message.message : message.code === "netease_signed_out"
           ? (String(locale()).startsWith("zh") ? "登录已过期或访问被拒绝，请重新登录网易云。" : "Your session expired or access was refused. Sign in again.")
           : (String(locale()).startsWith("zh") ? "读取失败，请检查网络后重试。" : "Could not read NetEase. Check your connection and retry.");
         if (message.code === "netease_signed_out") { account = null; clear(); }
@@ -79,7 +79,7 @@ export function createNeteaseSettings({ send, locale, changed }) {
     root.append(actions);
     if (error) {
       const box = make("div", "netease-error"); box.setAttribute("role", "alert");
-      box.append(note(error), control(t.retry, () => ask(failedAction, failedAction === "playlist" ? { id: requestedId } : {}), "retry")); root.append(box);
+      box.append(note(error), control(t.retry, () => ask(failedAction, ["playlist", "play"].includes(failedAction) ? { id: requestedId } : {}), "retry")); root.append(box);
     }
     if (busy && busy !== "login") {
       const status = make("div", "netease-actions"); status.setAttribute("role", "status"); status.append(turning(), note(t.loading)); root.append(status);
@@ -93,7 +93,10 @@ export function createNeteaseSettings({ send, locale, changed }) {
       if (detail.description) root.append(note(detail.description));
       const add = control(t.import, () => send({ type: "import-netease", id: detail.id }), "import", true);
       add.disabled = !detail.tracks.some((track) => track.available);
-      root.append(add, note(t.importNote));
+      const actions = make("div", "netease-actions");
+      const play = control(t.play, () => ask("play", { id: detail.id }), "play-all", true);
+      play.disabled = !detail.tracks.length;
+      actions.append(play, add); root.append(actions, note(t.importNote));
       if (!detail.tracks.length) { root.append(note(t.emptyTracks)); return root; }
       const table = make("table", "netease-tracks");
       const head = make("thead"); const headings = make("tr");
@@ -103,8 +106,13 @@ export function createNeteaseSettings({ send, locale, changed }) {
       for (const [index, track] of detail.tracks.slice(page * 100, (page + 1) * 100).entries()) {
         const row = make("tr");
         const seconds = Math.floor(track.durationMs / 1000);
-        for (const value of [page * 100 + index + 1, track.title, track.artists.join(", "), track.album, `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`]) {
-          const cell = make("td", "", String(value)); cell.title = String(value); row.append(cell);
+        for (const [column, value] of [page * 100 + index + 1, track.title, track.artists.join(", "), track.album, `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`].entries()) {
+          const cell = make("td", "", column === 1 ? "" : String(value)); cell.title = String(value);
+          if (column === 1) {
+            const play = control(track.title, () => ask("play", { id: detail.id, trackId: track.id }), `play:${track.id}`);
+            play.setAttribute("aria-label", `${t.playTrack} ${track.title}`); play.disabled = !track.available; cell.append(play);
+          }
+          row.append(cell);
         }
         body.append(row);
       }

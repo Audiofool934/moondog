@@ -4,6 +4,7 @@ import { languageTag, timeOfDay, windowLocale, windowStrings } from "../strings.
 import { renderMarkdown } from "./markdown.mjs";
 import { createPalette } from "./palette.mjs";
 import { createPreviews } from "./previews.mjs";
+import { createNeteaseAudio } from "./netease-audio.mjs";
 import { coverPalette, grooveColours, moodColours } from "./mood.mjs";
 import { createMark } from "./mark.mjs";
 import { mountRecord } from "./record.mjs";
@@ -39,6 +40,7 @@ let port = null;
 const outbox = [];
 const send = (message) => (port ? port.postMessage(message) : outbox.push(message));
 const previews = createPreviews({ send, onChange: () => renderInspector() });
+const neteaseAudio = createNeteaseAudio({ send, beforePlay: () => previews.stop() });
 const settings = createSettings({ state, send, t: tr, prettyModel: (model) => prettyModel(model),
   appleMusic: { status: () => previews.fullStatus(), check: (command) => previews.check(command) } });
 const sidebar = createSidebar({ root: $("sessions"), state, send, t: tr, open: (id) => openSession(id), store, menuPoint: (event) => menuPoint(event) });
@@ -903,7 +905,7 @@ function renderInspector() {
   art.classList.toggle("unplayed", !now);
   const limitedUntil = state.playbackService === "spotify" && state.spotifyLimitedUntil > Date.now() ? state.spotifyLimitedUntil : null;
   set($("blank"), "textContent", limitedUntil ? spotifyLimited(limitedUntil) : t("nothingPlaying"));
-  set($("song"), "textContent", now?.title ?? "");
+  set($("song"), "textContent", now ? `${now.title}${now.trial ? (state.locale.startsWith("zh") ? " · 试听" : " · Preview") : ""}` : "");
   set($("artist"), "textContent", now ? now.artists.join(", ") : "");
   set($("album"), "textContent", now?.album ?? "");
   renderProgress(now);
@@ -928,7 +930,7 @@ function renderInspector() {
     setIcon($("device-row"), "laptop");
   }
   set($("repeat"), "hidden", !spotifyNow || now.repeat !== "track");
-  set($("stop-previews"), "hidden", !now?.local);
+  set($("stop-previews"), "hidden", !now?.local && !neteaseNow);
   name($("stop-previews"), now?.preview ? t("stopPreviews") : t("stop"));
   // The song's own page: Apple Music for a preview, Spotify for a song Spotify plays.
   const external = $("external");
@@ -972,6 +974,9 @@ function renderInspector() {
 }
 
 function control(action, via = "button") {
+  if (["next", "previous"].includes(action) && keySeek) {
+    clearTimeout(keySeek.timer); keySeek = null; seeking = null;
+  }
   const now = nowPlaying();
   if (now?.local) {
     if (action === "toggle") previews.toggle();
@@ -1007,7 +1012,7 @@ $("previous").addEventListener("click", () => control("previous"));
 $("mini-open").addEventListener("click", () => togglePanel("inspector"));
 $("mini-toggle").addEventListener("click", () => control("toggle"));
 $("mini-next").addEventListener("click", () => control("next"));
-$("stop-previews").addEventListener("click", () => previews.stop());
+$("stop-previews").addEventListener("click", () => nowPlaying()?.service === "netease" ? send({ type: "control", action: "stop" }) : previews.stop());
 
 // Taking hold of the progress line moves the song there when you let go; the arrow keys move it by
 // five seconds (fifteen with Shift), Home and End to either end.
@@ -1203,11 +1208,13 @@ function streamingTurn(id) {
 }
 const onScreen = (data) => !data.session || data.session === state.current;
 const SIGN_IN_ERRORS = { connect_while_answering: "waitForReply", sign_in_busy: "signInBusy" };
-const SETTINGS_MESSAGES = new Set(["netease-library", "models", "provider-models", "devices", "memories", "auth-prompt", "auth-prompt-closed", "auth-event", "sign-in", "import", "notice"]);
+const SETTINGS_MESSAGES = new Set(["custom-endpoint", "netease-library", "models", "provider-models", "devices", "memories", "auth-prompt", "auth-prompt-closed", "auth-event", "sign-in", "import", "notice"]);
 function receive({ data }) {
   if (!data?.type) return;
+  if (data.type === "netease-audio") { neteaseAudio.receive(data); return; }
   if (data.type === "preview" || data.type === "preview-control") { previews.receive(data); renderInspector(); return; }
   if (SETTINGS_MESSAGES.has(data.type)) settings.receive(data);
+  if (data.type === "custom-endpoint" && data.stage === "done" && ["save", "remove"].includes(data.action)) providerModels.delete("custom-endpoint");
   if (data.type === "models") {
     providers = data.providers ?? [];
     for (const provider of providers) if (provider.signedIn && !providerModels.has(provider.id)) send({ type: "provider-models", provider: provider.id });
@@ -1218,6 +1225,7 @@ function receive({ data }) {
     else void showDevices(data.devices ?? []);
   }
   if (data.type === "player-error") notice(t("noticePlaybackFailed"));
+  if (data.type === "netease-library" && data.action === "play" && data.stage === "error" && !settings.open) notice(data.message);
   // The sheet shows its own sign-in errors. sign_in_busy is the exception: the sheet keeps the running panel.
   if (data.type === "sign-in" && data.state === "error" && !(settings.open && data.code !== "sign_in_busy")) notice(SIGN_IN_ERRORS[data.code] ? t(SIGN_IN_ERRORS[data.code]) : t("signInFailed"));
   if (data.type === "import" && data.stage === "refresh-failed") notice(t("importRefreshFailed"));

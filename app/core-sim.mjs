@@ -18,6 +18,7 @@ import { createWindowPreviewPlayer } from "./preview-player.mjs";
 import { runWindowRoom } from "./window-room.mjs";
 import { createSimulatedNetease } from "../src/evaluation/simulated-netease.mjs";
 import { openListeningHistoryStore } from "../src/profile/listening-history-store.mjs";
+import { createWindowNeteasePlayer } from "./netease-player.mjs";
 
 const port = await new Promise((resolve) => {
   process.parentPort.once("message", ({ ports: [roomPort] }) => resolve(roomPort));
@@ -30,7 +31,7 @@ process.parentPort.on("message", ({ data }) => {
   if (data?.type === "focus") focus.dispatchEvent(new Event("focus"));
 });
 const state = await mkdtemp(path.join(tmpdir(), "moondog-window-simulated-"));
-const environment = { ...process.env, MOONDOG_STATE_HOME: state, MOONDOG_UPDATE_CHECK: "off", MOONDOG_LYRICS: "off" };
+const environment = { ...process.env, MOONDOG_STATE_HOME: state, MOONDOG_CONFIG_HOME: path.join(state, "config"), MOONDOG_UPDATE_CHECK: "off", MOONDOG_LYRICS: "off" };
 // Quitting the app stops this process; its simulated state goes with it.
 const forget = () => rmSync(state, { recursive: true, force: true });
 process.once("SIGTERM", () => { forget(); process.exit(0); });
@@ -91,7 +92,7 @@ async function openConversation({ sessionId = null, reason = "user_new" } = {}) 
 // closes, and signing in or out happens in the real app or the terminal.
 const settings = createModelSettings({ environment });
 const readOnly = () => { throw Object.assign(new Error("The simulated window doesn't change sign-ins."), { code: "auth_login_failed" }); };
-const modelSettings = Object.freeze({ providers: settings.providers, models: settings.models, current: settings.current, signIn: readOnly, signOut: readOnly });
+const modelSettings = Object.freeze({ ...settings, signIn: readOnly, signOut: readOnly });
 const rebuildRuntime = (selection, target = application) => createConfiguredRuntime(target, environment, selection ? { selection } : {});
 
 // The music service choice also lasts only until the window closes.
@@ -101,6 +102,8 @@ const savePlaybackService = async (service) => {
 };
 
 const neteaseLibrary = createSimulatedNetease({ environment });
+const neteasePlayer = createWindowNeteasePlayer({ library: neteaseLibrary, port });
+application.neteasePlayer = neteasePlayer;
 const history = await openListeningHistoryStore({ environment });
 await runWindowRoom({ application, runtime, openConversation, modelSettings, rebuildRuntime, savePlaybackService,
   neteaseLibrary, loginNetease: (controls) => neteaseLibrary.login(async () => "MUSIC_U=fictional-desktop-test", controls),

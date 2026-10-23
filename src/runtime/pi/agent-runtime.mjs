@@ -4374,6 +4374,7 @@ function projectNeteaseSong(song) {
     ...(song.album ? { album: cleanOutputText(song.album, 256, "netease_album") } : {}),
     ...(Number.isFinite(song.duration_ms) ? { duration_seconds: Math.round(song.duration_ms / 1000) } : {}),
     playable: song.playable === true,
+    ...(song.trial === true ? { preview: true } : {}),
     ...(song.other_artist === true ? { other_artist: true } : {}),
   };
 }
@@ -6149,7 +6150,7 @@ function toolForModel(tool) {
 // Spotify can be connected for reading while the listener chose another service to play music.
 const SERVICE_NAMES = { apple_music: "Apple Music", netease: "NetEase Cloud Music (网易云音乐)" };
 
-function sessionAvailability({ spotifyReady, spotifyPlaybackReady = spotifyReady, previewReady, playbackService = "apple_music", neteaseReady = false }) {
+function sessionAvailability({ spotifyReady, spotifyPlaybackReady = spotifyReady, previewReady, playbackService = "apple_music", neteaseReady = false, neteaseBuiltin = false }) {
   if (spotifyPlaybackReady) return "";
   const lines = [
     "Session availability:",
@@ -6161,14 +6162,17 @@ function sessionAvailability({ spotifyReady, spotifyPlaybackReady = spotifyReady
     lines.push(
       "- To let the listener hear music, including any request to play or queue it, call moondog_netease_play with songs by title and artist, or ids from moondog_netease_search: mode play starts now, mode queue adds after what is playing. moondog_netease_control pauses, resumes, skips, goes back, moves in the song or stops; moondog_netease_now_playing reads what is playing.",
       "- When you recommend songs here, pass them to moondog_netease_play so the listener can hear them. Build a playlist plan only when they ask for a playlist; this overrides the plan step in other tool instructions.",
-      "- Only songs NetEase marks playable can be played or queued. A song that is not playable, or that fails to play, is most often a copyright limit, sometimes the channel or the region; membership or payment usually does not change it. Do not call it a network or account problem and do not retry it. Say so plainly and offer another song or another recording.",
+      neteaseBuiltin ? "- NetEase playback uses the account signed in through the app. Search matches are candidates; actual account, membership and regional rights are checked when playback starts. Respect unavailable tracks. A song with preview: true is a trial, not a full recording; say so clearly."
+        : "- Only songs NetEase marks playable can be played or queued. A song that is not playable, or that fails to play, is most often a copyright limit, sometimes the channel or the region; membership or payment usually does not change it. Do not call it a network or account problem and do not retry it. Say so plainly and offer another song or another recording.",
       "- NetEase often has several recordings under one title: the original, covers, remixes, uploads. Say whose recording is playing, above all when other_artist is true.",
       "- user_intent goes to NetEase with each search: one short line in the listener's language about what they want, with no names, personal details or quotes from the conversation. Do not send NetEase requests about political topics, sexual content, insults, advertising or anything illegal; decline briefly instead.",
-      "- If NetEase says today's request limit is used up, tell the listener and stop. If it says it is not signed in, tell them to run ncm-cli login in a terminal.",
+      neteaseBuiltin ? "- If NetEase says it is signed out, ask the listener to sign in through Settings → NetEase Cloud Music. Playback is built into this app and needs no ncm-cli."
+        : "- If NetEase says today's request limit is used up, tell the listener and stop. If it says it is not signed in, tell them to run ncm-cli login in a terminal.",
       "- Do not suggest switching to Spotify or Apple Music to play music here.",
     );
   } else if (playbackService === "netease") {
-    lines.push("- NetEase Cloud Music is not ready here, so nothing can play. Tell the listener once that ncm-cli must be installed (npm install -g @music163/ncm-cli) and signed in (ncm-cli login), then help with what you can.");
+    lines.push(neteaseBuiltin ? "- NetEase Cloud Music is signed out. Ask the listener to sign in through Settings → NetEase Cloud Music; no external player is needed."
+      : "- NetEase Cloud Music is not ready here, so nothing can play. Tell the listener once that ncm-cli must be installed (npm install -g @music163/ncm-cli) and signed in (ncm-cli login), then help with what you can.");
   } else if (previewReady) {
     lines.push(
       "- To let the listener hear music, including any request to play or queue it, call moondog_music_preview: tracks for named songs (up to six, in the order to play) or album for a whole album. It finds each recording in the Apple Music catalog itself and reports any it cannot find, so pass songs straight to it. The songs play one after another in their player.",
@@ -6193,7 +6197,7 @@ function hostNotes(notes) {
   return lines.length ? `\n\nAbout this session:\n${lines.join("\n")}` : "";
 }
 
-function systemPrompt({ spotifyReady = true, spotifyPlaybackReady = spotifyReady, previewReady = false, playbackService = "apple_music", neteaseReady = false, notes = [] } = {}) {
+function systemPrompt({ spotifyReady = true, spotifyPlaybackReady = spotifyReady, previewReady = false, playbackService = "apple_music", neteaseReady = false, neteaseBuiltin = false, notes = [] } = {}) {
   return `You are Moondog, a personal music agent and curator.
 
 ${listenerProfileSkill}
@@ -6331,7 +6335,7 @@ Voice:
 - Moondog lives on a lunar record and grew up on Pink Floyd. An occasional light nod to their songs or ideas is welcome when it truly fits the moment, at most once in a conversation, and never at the expense of a clear answer. Never quote more than a short line of any lyric.
 - No hype, no exclamation marks, no filler openings or closing offers. Use plain hyphens, never em dashes.
 
-Respond in the language used by the user unless asked otherwise; product.reply_language is that language, or the listener's chosen language when a message does not show one. Write Chinese in the script product.reply_language names, even when song titles use the other script.${sessionAvailability({ spotifyReady, spotifyPlaybackReady, previewReady, playbackService, neteaseReady })}${hostNotes(notes)}`;
+Respond in the language used by the user unless asked otherwise; product.reply_language is that language, or the listener's chosen language when a message does not show one. Write Chinese in the script product.reply_language names, even when song titles use the other script.${sessionAvailability({ spotifyReady, spotifyPlaybackReady, previewReady, playbackService, neteaseReady, neteaseBuiltin })}${hostNotes(notes)}`;
 }
 
 function contextMessage(snapshot) {
@@ -7106,6 +7110,7 @@ export class PiAgentRuntime {
           previewReady: application.musicPreviewReady?.() ?? false,
           playbackService: application.playbackService ?? "apple_music",
           neteaseReady: application.neteaseReady?.() ?? false,
+          neteaseBuiltin: application.neteasePlayer?.status?.().backend === "builtin",
           notes: application.agentHostNotes?.() ?? [],
         }),
         model,

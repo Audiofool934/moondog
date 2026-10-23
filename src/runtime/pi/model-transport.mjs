@@ -22,6 +22,7 @@ const credentialMessagePattern = /(?:access|refresh|id)[_ -]?token|api[_ -]?key|
 const credentialBearingErrorPattern = /(?:access|refresh|id)[_ -]?token|api[_ -]?key|authorization\s*[:=]\s*bearer|oauth\s+(?:auth|refresh|token)|credential\s+store/iu;
 
 export function safeProviderErrorMessage(value, provider) {
+  if (provider === "custom-endpoint") return "自定义 API 请求失败，请检查接口配置或稍后重试。 / The custom API request failed. Check its settings or retry later.";
   const message = typeof value === "string" && value.trim()
     ? value.trim() : "The model provider request failed.";
   if (credentialBearingErrorPattern.test(message)) {
@@ -108,7 +109,7 @@ export function createModelFetch({
       signal?.throwIfAborted();
       try {
         // Status codes and response-body errors remain Pi's responsibility.
-        return await fetchImpl(input, init);
+        return await fetchImpl(input, provider === "custom-endpoint" ? { ...init, redirect: "error" } : init);
       } catch (cause) {
         if (signal?.aborted || cause?.name === "AbortError") throw cause;
         const failure = connectionFailure(cause);

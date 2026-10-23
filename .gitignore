@@ -12,6 +12,7 @@
 .spotify_pkce.json
 auth-profiles.json
 netease-session.json
+custom-endpoint.json
 
 # Python
 __pycache__/

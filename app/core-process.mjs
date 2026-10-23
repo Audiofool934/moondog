@@ -3,6 +3,7 @@
 // process talk over one message port, which also carries the previews the agent plays.
 import { createWindowPreviewPlayer } from "./preview-player.mjs";
 import { runWindowRoom } from "./window-room.mjs";
+import { createWindowNeteasePlayer } from "./netease-player.mjs";
 
 const port = await new Promise((resolve) => {
   process.parentPort.once("message", ({ ports: [roomPort] }) => resolve(roomPort));
@@ -25,6 +26,7 @@ process.parentPort.on("message", ({ data }) => {
 });
 
 globalThis[Symbol.for("moondog.host")] = {
+  createNeteasePlayer: (library) => createWindowNeteasePlayer({ library, port }),
   openNeteaseLogin: ({ signal } = {}) => new Promise((resolve, reject) => {
     if (signal?.aborted) return resolve(null);
     if (loginRequest) return reject(new Error("NetEase sign-in is already open."));

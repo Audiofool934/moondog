@@ -23,6 +23,12 @@
 .netease-tracks tbody tr:hover { background: var(--hover); }
 .netease-pagination { justify-content: space-between; margin-top: 10px; }
 .netease-error { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.netease-tracks td .button { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: start; padding: 2px 0; color: var(--text); }
+.custom-endpoint { display: flex; flex-direction: column; gap: 14px; margin-top: 24px; }
+.custom-endpoint h3 { margin: 0; font-size: var(--t-title); font-weight: 550; }
+.custom-endpoint-form { display: flex; flex-direction: column; gap: 14px; }
+.custom-endpoint-form label { display: flex; flex-direction: column; gap: 6px; color: var(--text-2); font-size: var(--t-small); }
+.custom-endpoint-form .text-field { flex: none; width: 100%; min-height: 32px; box-sizing: border-box; }
 @media (max-width: 650px) {
   .netease-tracks th:nth-child(4), .netease-tracks td:nth-child(4) { display: none; }
   .netease-tracks th:nth-child(2) { width: 44%; }

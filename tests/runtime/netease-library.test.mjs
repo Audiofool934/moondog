@@ -122,3 +122,23 @@ test("NetEase CLI output lists collections without a cookie or untrusted termina
   assert.match(result.markdown, /1001/u);
   assert.equal(result.markdown.includes("\u001b"), false);
 });
+
+test("authenticated playback prefers a permitted full lower-quality source and never exposes its cookie", async (t) => {
+  const { library, signIn } = await fixture(t, (url, options) => {
+    if (url.pathname.includes("account")) return response(account);
+    assert.equal(options.headers.Cookie, cookie);
+    return response({ code: 200, data: [{ id: 1, code: 200, url: "http://m8.music.126.net/song.mp3", freeTrialInfo: url.searchParams.get("level") === "standard" ? null : { start: 0, end: 30 } }] });
+  });
+  await signIn();
+  const source = await library.playback("1");
+  assert.equal(source.url, "https://m8.music.126.net/song.mp3");
+  assert.equal(source.trial, false);
+  assert.equal(JSON.stringify(source).includes(cookie), false);
+});
+
+test("playback refuses unrelated media hosts and reports unplayable account rights", async (t) => {
+  const { library, signIn } = await fixture(t, (url) => url.pathname.includes("account") ? response(account) : response({ code: 200,
+    data: [{ id: 1, code: 200, url: "https://attacker.example/song.mp3" }] }));
+  await signIn();
+  await assert.rejects(library.playback("1"), { code: "netease_unplayable" });
+});

@@ -476,7 +476,9 @@ export class MoondogApplication {
   }
 
   requireNetease() {
-    if (!this.neteaseReady()) throw Object.assign(new Error("NetEase Cloud Music is not ready. The listener can sign in with: ncm-cli login"), { code: "netease_not_ready" });
+    if (!this.neteaseReady()) throw Object.assign(new Error(this.neteasePlayer?.status?.().backend === "builtin"
+      ? "NetEase Cloud Music is not ready. Sign in through Settings → NetEase Cloud Music."
+      : "NetEase Cloud Music is not ready. The listener can sign in with: ncm-cli login"), { code: "netease_not_ready" });
     return this.neteasePlayer;
   }
 
@@ -3328,7 +3330,7 @@ export class MoondogApplication {
       this.pendingPlaylistPromptTransaction = null;
     } finally {
       const owned = this.ownsServices
-        ? [this.memoryStore, this.domainServices, this.musicCatalog, this.musicSimilarity, this.musicPreviewPlayer, this.webResearch]
+        ? [this.memoryStore, this.domainServices, this.musicCatalog, this.musicSimilarity, this.musicPreviewPlayer, this.webResearch, this.neteasePlayer]
         : [this.domainServices];
       for (const service of owned) service?.close?.();
     }

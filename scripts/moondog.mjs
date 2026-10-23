@@ -849,9 +849,9 @@ async function main() {
   const previewPlayer = options.command ? null : host ? host.musicPreviewPlayer : await createTerminalPreviewPlayer();
   // NetEase Cloud Music plays through ncm-cli in the terminal and the window alike. Its tools
   // appear once ncm-cli says it is signed in; only listeners who chose it wait for that check.
-  const neteasePlayer = createNeteasePlayer();
+  const neteasePlayer = host?.createNeteasePlayer?.(neteaseLibrary) ?? createNeteasePlayer();
   const playbackService = await resolvePlaybackService();
-  if (playbackService === "netease") await neteasePlayer.check();
+  if (host || playbackService === "netease") await neteasePlayer.check();
   // The main application and every conversation the window opens beside it are built from
   // this one list, so they cannot drift apart. Each passes in what may change after launch:
   // its domain services, the Spotify connection, the language and the music service.
@@ -1081,6 +1081,7 @@ async function main() {
         if (service === "netease") {
           const status = await neteasePlayer.check();
           if (status.state !== "ready") {
+            if (host) throw new Error("请先在设置 → 网易云音乐中登录账号。 / Sign in through Settings → NetEase Cloud Music first.");
             throw new Error(status.state === "missing"
               ? "NetEase Cloud Music needs ncm-cli: npm install -g @music163/ncm-cli, then ncm-cli login."
               : "NetEase Cloud Music is not signed in. Run ncm-cli login in a terminal, then choose it again.");

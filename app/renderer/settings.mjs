@@ -4,6 +4,7 @@
 import { languageTag, timeOfDay } from "../strings.mjs";
 import { icon, make, name, scrollbar, setIcon, turning } from "./ui.mjs";
 import { createNeteaseSettings } from "./netease.mjs";
+import { createCustomEndpointSettings } from "./custom-endpoint.mjs";
 
 const SECTIONS = ["general", "model", "playback", "netease", "library", "memory", "about"];
 const ICONS = { general: "globe", model: "model", playback: "speaker", netease: "speaker", library: "import", memory: "memory", about: "info" };
@@ -101,6 +102,7 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
   let content = null;
   let copiedTimer = 0;
   const netease = createNeteaseSettings({ send, locale: () => state.locale, changed: () => render() });
+  const customEndpoint = createCustomEndpointSettings({ send, locale: () => state.locale, changed: () => render() });
   // What the core told this sheet; the sheet asks again each time a section opens.
   const data = { providers: null, providersError: false, models: new Map(), modelsFailed: new Set(), expanded: undefined, signingOut: new Set(),
     devices: null, devicesError: false, devicesLoading: false, memories: null, auth: null, error: null, importing: null, version: null, copied: null, focus: null, phaseOffset: null,
@@ -163,7 +165,7 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
   function refresh() {
     // The status and the memories come back for every section.
     send({ type: "settings" });
-    if (section === "model") send({ type: "models" });
+    if (section === "model") { send({ type: "models" }); customEndpoint.refresh(); }
     if (section === "netease") netease.refresh();
     if (section === "playback") {
       data.devicesLoading = true;
@@ -401,6 +403,7 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
     if (data.auth && data.auth.provider !== "spotify") parts.push(group(null, signInPanel()));
     else parts.push(group(say("providers"), sectionError(), providerList(active)));
     if (current.effortLevels?.length && !switching) parts.push(group(say("effort"), efforts(current)));
+    parts.push(customEndpoint.render());
     return parts;
   }
   function efforts(current) {
@@ -435,7 +438,7 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
     for (const provider of usable) {
       const signedIn = provider.signedIn === true;
       // Only a key Moondog saved can be signed out here; one from the environment stays in effect.
-      const canSignOut = signedIn && provider.source === "saved";
+      const canSignOut = signedIn && provider.source === "saved" && provider.id !== "custom-endpoint";
       let trailing = null;
       if (canSignOut) {
         trailing = button(say("signOut"), "button quiet small", () => {
@@ -516,7 +519,7 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
       choice({ label: "Apple Music", detail: say(whole?.canPlay ? "fullSongs" : "appleMusicNote"), chosen: service === "apple_music", key: "service:apple_music",
         trailing: allowWhole, onChoose: chooseService("apple_music") }),
       // NetEase is offered once ncm-cli is installed and signed in; its searches send NetEase a short summary.
-      ...(state.netease === "ready" || service === "netease" ? [choice({ label: say("netease"), detail: say("neteaseNote"), chosen: service === "netease",
+      ...(state.netease === "ready" || service === "netease" ? [choice({ label: say("netease"), detail: String(state.locale).startsWith("zh") ? "使用已登录的网易云账号，在应用内播放。" : "Play in the app with your connected NetEase account.", chosen: service === "netease",
         key: "service:netease", onChoose: chooseService("netease") })] : []),
     ]))];
     if (service !== "spotify") return parts;
@@ -728,6 +731,10 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
 
   // Messages from the core that this sheet draws.
   function receive(message) {
+    if (message.type === "custom-endpoint") {
+      if (message.stage === "done" && ["save", "remove"].includes(message.action)) { data.models.delete("custom-endpoint"); requested.delete("custom-endpoint"); }
+      customEndpoint.receive(message); return;
+    }
     if (message.type === "netease-library") { netease.receive(message); return; }
     if (message.type === "models") {
       data.providers = message.providers ?? [];

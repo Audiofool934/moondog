@@ -5,6 +5,10 @@ export function createSimulatedNetease({ environment }) {
   return createNeteaseLibrary({ environment, fetchImpl: async (value, options) => {
     const url = new URL(value);
     if (url.pathname.includes("account")) return Response.json({ code: 200, account: { id: 12345 }, profile: { nickname: "模拟听众 · Fictional listener", userId: 12345 } });
+    if (url.pathname.includes("player/url")) {
+      const id = JSON.parse(url.searchParams.get("ids"))[0];
+      return Response.json({ code: 200, data: [{ id, code: 200, url: `https://m8.music.126.net/fictional-${id}.wav`, freeTrialInfo: null }] });
+    }
     if (url.pathname === "/api/user/playlist") return Response.json({ code: 200, more: false, playlist: [
       { id: 1001, name: "深夜电台 · 模拟歌单", creator: { userId: 12345 }, trackCount: 205, privacy: 10 },
       { id: 1002, name: "周末漫游 · 模拟收藏", creator: { userId: 9999 }, trackCount: 2 },

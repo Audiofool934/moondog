@@ -33,6 +33,16 @@ const trackOf = (song) => ({ id: idOf(song.id), title: musicText(song.name),
   album: musicText((song.al ?? song.album)?.name), durationMs: song.dt ?? song.duration ?? 0,
   image: artwork((song.al ?? song.album)?.picUrl), available: true });
 
+export function neteaseAudioUrl(value) {
+  try {
+    const url = new URL(value);
+    if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.port ||
+      !/(?:^|\.)music\.126\.net$/u.test(url.hostname)) return null;
+    url.protocol = "https:";
+    return url.href;
+  } catch { return null; }
+}
+
 /** Account metadata only crosses this boundary. Cookies stay in the core and local state. */
 export function createNeteaseLibrary({ environment = process.env, fetchImpl = globalThis.fetch,
   credentialPath = path.join(resolveMoondogStateDirectory(environment), "netease-session.json") } = {}) {
@@ -87,6 +97,33 @@ export function createNeteaseLibrary({ environment = process.env, fetchImpl = gl
     return data;
   }
   const service = {
+    async playback(trackId, { signal } = {}) {
+      await load();
+      const version = epoch;
+      const id = idOf(trackId);
+      let preview = null;
+      for (const level of ["exhigh", "higher", "standard"]) {
+        const data = await request(`/api/song/enhance/player/url/v1?ids=${encodeURIComponent(JSON.stringify([id]))}&level=${level}&encodeType=mp3`, { signal });
+        current(version);
+        const audio = data.data?.find((item) => String(item.id) === id);
+        const url = neteaseAudioUrl(audio?.url);
+        if (!url || audio?.code !== 200) continue;
+        const source = { url, trial: Boolean(audio.freeTrialInfo), expiresIn: Number(audio.expi) || 1200 };
+        if (!source.trial) return source;
+        preview ??= source;
+      }
+      if (preview) return preview;
+      throw fail("netease_unplayable", "这首歌暂不可播放，可能需要会员、购买或版权授权。 / This song is unavailable for this account or region.");
+    },
+    async search({ query, limit = 10, signal } = {}) {
+      await load();
+      const version = epoch;
+      const keyword = musicText(query);
+      if (!keyword) throw fail("netease_invalid_query", "Enter a song or artist to search.");
+      const data = await request(`/api/cloudsearch/pc?s=${encodeURIComponent(keyword)}&type=1&limit=${Math.min(20, Math.max(1, Number(limit) || 10))}&offset=0`, { signal });
+      current(version);
+      return (data.result?.songs ?? []).map(trackOf);
+    },
     async status({ refresh = false, signal } = {}) {
       await load();
       const version = epoch;

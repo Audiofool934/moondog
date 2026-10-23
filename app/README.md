@@ -15,7 +15,7 @@ npm start
 
 The app reads and writes the same profile, settings, and sign-ins as the `moondog` command.
 
-For this checkout on Windows, run `start-moondog.cmd` in the parent directory. **Settings → NetEase** opens the official NetEase login window and then your created/saved playlists. Search, inspect paginated tracks, and preview a playlist before importing it into the profile. NetEase login credentials stay in the core; they are never sent to the window renderer. The library connection is independent of the existing `ncm-cli` playback sign-in. See the root README for terminal commands and the local verification report.
+For this checkout on Windows, run `start-moondog.cmd` in the parent directory. **Settings → NetEase** opens the official NetEase login window and then your created/saved playlists. Play a whole playlist or click an individual song directly, and use the existing player panel to pause, seek and skip. No separate player setup is needed. You can also preview a playlist before importing it into the profile. Credentials stay in the core. **Settings → Model → Custom API / Gateway** connects a user-entered API URL, key and model ID, with an explicit connection test. See the root README and local verification report.
 
 To try the whole window without touching a Spotify account, run it on a simulated Spotify:
 
@@ -67,11 +67,10 @@ A model or music service chosen there lasts until the app quits, and real sign-i
 - Apple Music plays whole songs where it can and 30-second previews where it can't.
   Whole songs come from a small helper beside the app's executable (`native/music.swift`) that plays the Apple Music catalog through MusicKit, so they need an Apple Music subscription and the listener's permission, which Settings › Playback asks for once.
   Until the helper can play, the window plays previews in itself, with media keys and the system's Now Playing.
-- NetEase Cloud Music (网易云音乐) plays through NetEase's own command line tool, for listeners in mainland China.
-  It shows among the music services once `npm install -g @music163/ncm-cli`, `brew install mpv` and `ncm-cli login` are done; ncm-cli keeps its own key and sign-in, and Moondog never reads them.
-  The core (`src/integrations/netease/ncm-cli-player.mjs`) keeps the queue and plays one song at a time with ncm-cli, so the terminal and the window play the same way.
-  Many songs, above all originals outside mainland China, are marked not playable, most often for copyright; Moondog never sends those and says so instead.
-  Each search sends NetEase a short summary of the request, which Settings › Playback says.
+- NetEase Cloud Music (网易云音乐) plays in this window with the account connected in Settings.
+  The core (`app/netease-player.mjs`) keeps the queue and obtains a fresh account-authorized URL as each song begins; the window's Audio element plays it.
+  Account cookies stay in the core. Song availability follows account and regional rights; trial clips are labeled.
+  Sign-out stops playback. The terminal's optional legacy player remains separate.
 - No accent color. Cover art brings the color: the song playing tints the window and the record's grooves with its strongest colours, faintly, and they drift into the next song's over a few seconds; its cover glows from the player's corner across to the far edge.
   The window is one pane: no panel has a ground of its own, and the composer and your words sit on the light as a thin film, not as cards.
   Icon buttons name themselves, with their keys, in a tooltip.
