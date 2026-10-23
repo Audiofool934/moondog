@@ -90,7 +90,7 @@ Until then the helper reports `developerTokenRequestFailed` and the window keeps
 Apple's own answer is in the system log: `/usr/bin/log show --last 5m --predicate 'process == "moondog-music"'` (zsh's built-in `log` is another command).
 `Client not found` there means the switch has not reached Apple's token service yet; for this App ID that took about a minute.
 
-The helper's check also reports the account's storefront, and the core then searches that storefront's catalog, so its songs are ones MusicKit has; without it the core searches the region of the system's locale, or the US.
+The helper's check also reports the account's storefront, and the core then searches that storefront's catalog, so its songs are ones MusicKit has; without it the core searches the Mac's region, or the US.
 
 At the end of a queue MusicKit does not stop: it pauses, at the end of the last song or back at the start of the first.
 The helper reports either as the end of the queue, so the window and the agent hear it as they do for previews.

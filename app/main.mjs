@@ -34,6 +34,8 @@ function coreEnvironment(shellPath) {
   return {
     ...environment,
     ...(shellPath ? { PATH: shellPath } : {}),
+    // The Mac's own region, which LANG above may not carry, for the Apple Music storefront.
+    ...(app.getLocaleCountryCode() ? { MOONDOG_SYSTEM_REGION: app.getLocaleCountryCode() } : {}),
     // The packaged app updates as a whole, so the npm update notice doesn't apply.
     ...(app.isPackaged ? { MOONDOG_UPDATE_CHECK: "off" } : {}),
   };
