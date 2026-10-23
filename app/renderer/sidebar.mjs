@@ -131,7 +131,13 @@ export function createSidebar({ root, state, send, t, open, store, menuPoint }) 
     }
     entry.session = session;
     const title = session.title || t()("untitled");
-    if (entry.label.textContent !== title) entry.label.textContent = title;
+    if (entry.title !== title) {
+      entry.title = title;
+      // The core ends an unnamed branch's title with its place in the lineage, "Late night #2". The number gets
+      // its own span, so the title shortens before it and two branches never read alike.
+      const branch = session.branch && !session.customTitle ? title.match(/^(.*) (#\d+)$/su) : null;
+      entry.label.replaceChildren(...(branch ? [make("span", "base", branch[1]), make("span", "number", branch[2])] : [title]));
+    }
     entry.more.setAttribute("aria-label", t()("conversationActions"));
     if (session.id === state.current) entry.item.setAttribute("aria-current", "true"); else entry.item.removeAttribute("aria-current");
     const answering = state.running.includes(session.id);

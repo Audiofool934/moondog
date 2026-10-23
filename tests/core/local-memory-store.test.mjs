@@ -922,3 +922,22 @@ test("the terminal and the App share one conversation and answer in it one at a 
     }
   });
 });
+
+test("an unnamed branch shows its lineage's title and number, and a name replaces them", async () => {
+  await withMemoryStore(async ({ store }) => {
+    const root = store.startSession();
+    store.appendCompletedTurn(root.session_id, { user: "Late night records.", assistant: "Here are three." });
+    store.appendCompletedTurn(root.session_id, { user: "Slower.", assistant: "Try these." });
+    const child = store.forkConversation(root.session_id, store.readConversationEntries(root.session_id)[1].entry_id);
+    const entry = store.beginConversationEntry(child.session_id, "Even slower.");
+    store.finishConversationEntry(child.session_id, entry, { text: "This one.", status: "completed" });
+    const grandchild = store.forkConversation(child.session_id, store.readConversationEntries(child.session_id)[1].entry_id);
+    const titles = () => Object.fromEntries(store.listSessions().map((session) => [session.session_id, session.title]));
+
+    assert.deepEqual(titles(), { [root.session_id]: "Late night records.",
+      [child.session_id]: "Late night records. #2", [grandchild.session_id]: "Late night records. #3" });
+    store.labelConversation(root.session_id, { title: "Night" });
+    store.labelConversation(child.session_id, { title: "Mine" });
+    assert.deepEqual(titles(), { [root.session_id]: "Night", [child.session_id]: "Mine", [grandchild.session_id]: "Night #3" });
+  });
+});

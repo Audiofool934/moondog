@@ -151,6 +151,13 @@ img { -webkit-user-drag: none; }
 .row:hover .name, .row:focus-within .name, .row.answering .name { -webkit-mask-image: linear-gradient(to left, transparent 30px, #000 46px); }
 .row:hover .open, .row[aria-current="true"] .open { color: var(--text); }
 .row .name { min-width: 0; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* A branch's number stays in sight: the title shortens before it, and the number steps clear of the ⋯ button
+   or the answering dot instead of fading under them. */
+.row .name:has(.number) { display: flex; }
+.row .name .base { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.row .name .number { flex: none; margin-inline-start: 0.35em; color: var(--text-3); transition: margin var(--quick) var(--soft); }
+.row:hover .name:has(.number), .row:focus-within .name:has(.number), .row.answering .name:has(.number) { -webkit-mask-image: none; }
+.row:hover .number, .row:focus-within .number, .row.answering .number { margin-inline-end: 30px; }
 /* A conversation still answering breathes a small dot, so a glance down the list finds it. */
 .row .running { position: absolute; right: 13px; top: 12px; width: 6px; height: 6px; border-radius: 50%; background: var(--text); animation: breathe 1.6s ease-in-out infinite; }
 .row:hover .running { visibility: hidden; }

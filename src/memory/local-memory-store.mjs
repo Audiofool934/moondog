@@ -959,6 +959,13 @@ export class LocalMemoryStore {
           b.draft, '') AS title,
         l.title IS NOT NULL AS custom_title, l.pinned_at, l.folder_id,
         b.parent_session_id,
+        CASE WHEN b.parent_session_id IS NOT NULL AND l.title IS NULL THEN COALESCE(
+          (SELECT title FROM conversation_labels WHERE session_id = b.root_session_id),
+          (SELECT user_text FROM conversation_entries WHERE session_id = b.root_session_id ORDER BY position LIMIT 1),
+          (SELECT content FROM turns WHERE session_id = b.root_session_id AND role = 'user' ORDER BY position LIMIT 1)) END AS lineage_title,
+        CASE WHEN b.parent_session_id IS NOT NULL AND l.title IS NULL THEN (SELECT COUNT(*) FROM conversation_branches r
+          JOIN sessions rs ON rs.session_id = r.session_id WHERE r.root_session_id = b.root_session_id
+            AND (rs.started_at < s.started_at OR (rs.started_at = s.started_at AND rs.rowid <= s.rowid))) END AS lineage_number,
         COALESCE(NULLIF(b.draft, ''), (SELECT user_text FROM conversation_entries WHERE session_id = s.session_id ORDER BY position DESC LIMIT 1), '') AS last_message
       FROM sessions s LEFT JOIN conversation_branches b ON b.session_id = s.session_id
         LEFT JOIN conversation_labels l ON l.session_id = s.session_id
@@ -968,7 +975,10 @@ export class LocalMemoryStore {
       ORDER BY l.pinned_at IS NULL, updated_at DESC, s.started_at DESC, s.rowid DESC LIMIT ?
     `).all(route, bounded).map(row => ({
       session_id: row.session_id, started_at: row.started_at, updated_at: row.updated_at,
-      turn_count: row.turn_count, title: row.title,
+      // A branch starts with its parent's first message, so an unnamed one would share its parent's title.
+      // It shows its lineage's title and its place in that lineage instead, "Late night #2"; a name the
+      // listener gives it replaces both.
+      turn_count: row.turn_count, title: row.lineage_number ? `${row.lineage_title || row.title} #${row.lineage_number}` : row.title,
       custom_title: row.custom_title === 1, pinned_at: row.pinned_at ?? null, folder_id: row.folder_id ?? null,
       ...(row.parent_session_id ? { parent_session_id: row.parent_session_id, last_message: row.last_message } : {}),
     }));
