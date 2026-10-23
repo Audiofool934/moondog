@@ -255,3 +255,52 @@ test("a showing window picks up a conversation saved elsewhere, and sends nothin
     await harness.stop();
   }
 });
+
+test("the window follows the conversation the terminal opened and draws the terminal's reply as it grows", async () => {
+  const base = application("A");
+  let active = "A";
+  let reply = null;
+  let saved = [];
+  base.memoryStore = { version: 1, dataVersion() { return this.version; } };
+  base.activeConversationId = () => active;
+  base.followActiveConversation = function () {
+    if (active === this.sessionId) return null;
+    this.sessionId = active;
+    return { session_id: active };
+  };
+  base.replyElsewhere = () => reply;
+  base.currentConversationTurns = () => saved;
+  const harness = await openRoom({ application: base });
+  const look = async (change) => {
+    change();
+    base.memoryStore.version += 1;
+    await harness.post({ type: "visible", visible: true });
+  };
+  try {
+    const lastSession = () => harness.messages.filter((message) => message.type === "session").at(-1);
+    await look(() => {
+      active = "T";
+      reply = { entry_id: "e1", user_text: "play something calm", assistant_text: "" };
+      saved = [{ role: "user", text: "play something calm" }];
+    });
+    assert.equal(lastSession().current, "T");
+    assert.deepEqual(lastSession().transcript, []);
+    assert.equal(lastSession().live.user, "play something calm");
+
+    await look(() => { reply = { ...reply, assistant_text: "Here is" }; });
+    assert.deepEqual(harness.messages.filter((message) => message.type === "text").at(-1), { type: "text", session: "T", id: "e1", replace: "Here is" });
+
+    // One reply at a time: the window gives the message back while the terminal answers.
+    await harness.post({ type: "prompt", text: "and louder" });
+    assert.deepEqual(harness.messages.filter((message) => message.type === "notice").at(-1), { type: "notice", code: "message_busy", text: "and louder" });
+
+    await look(() => {
+      reply = null;
+      saved = [{ role: "user", text: "play something calm" }, { role: "assistant", text: "Here is a calm set." }];
+    });
+    assert.equal(lastSession().live, null);
+    assert.deepEqual(lastSession().transcript.map((turn) => turn.text), ["play something calm", "Here is a calm set."]);
+  } finally {
+    await harness.stop();
+  }
+});

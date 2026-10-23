@@ -6780,6 +6780,7 @@ export class PiAgentRuntime {
       restoredTurns,
       { model, provider, modelId },
     );
+    this.syncedEntryId = application.latestConversationEntryId?.() ?? null;
     const descriptors = application.agentCapabilityDescriptors();
     const tools = createAgentTools(
       application,
@@ -7054,6 +7055,28 @@ export class PiAgentRuntime {
     if (this.promptInFlight || this.rewindInFlight) {
       throw new Error("A Moondog prompt is already in progress.");
     }
+    // The terminal and the App share the conversation: one answers at a time, and this agent reads
+    // what the other added before it answers.
+    if (this.application?.replyElsewhere?.()) {
+      throw Object.assign(new Error("Moondog is answering in this conversation in another window or terminal."), { code: "conversation_busy" });
+    }
+    if ((this.application?.latestConversationEntryId?.() ?? null) !== this.syncedEntryId) this.restoreSession();
+    // What the listener sees of the reply is saved as it grows, so the other one shows it too.
+    const host = callbacks;
+    let shownText = "";
+    callbacks = {
+      ...host,
+      onTextDelta: (delta) => {
+        shownText += delta;
+        this.application?.showConversationProgress?.(shownText);
+        host.onTextDelta?.(delta);
+      },
+      ...(typeof host.onTextReplace === "function" ? { onTextReplace: (replacement) => {
+        shownText = replacement;
+        this.application?.showConversationProgress?.(shownText);
+        host.onTextReplace(replacement);
+      } } : {}),
+    };
     this.promptInFlight = true;
     const settlement = Promise.withResolvers();
     this.promptSettlement = settlement.promise;
@@ -7280,8 +7303,9 @@ export class PiAgentRuntime {
       };
     };
 
+    let ownEntryId = null;
     try {
-      this.application.beginConversationEntry?.(text);
+      ownEntryId = this.application.beginConversationEntry?.(text) ?? null;
       this.application.beginPrompt({ text });
       promptScopeStarted = true;
       if (callbacks.profileSeed) this.application.setProfileDiscoverySeed(callbacks.profileSeed);
@@ -7589,6 +7613,7 @@ To confirm, reply: ${preview.confirmation}`].join("\n\n");
       try {
         try { this.application.finishConversationEntry?.({ ...conversationOutcome, transient: this.transientSpotifyContext }); }
         catch { this.runtimeStatus.conversation_history = 'degraded'; }
+        if (ownEntryId) this.syncedEntryId = ownEntryId;
         if (promptScopeStarted && !promptCompleted) {
           this.application.rollbackPendingPlaylistPrompt?.();
         }
@@ -7638,6 +7663,8 @@ To confirm, reply: ${preview.confirmation}`].join("\n\n");
     this.agent.reset();
     this.activePromptState = null;
     this.transientSpotifyContext = false;
+    // The newest saved message this agent knows; a different one means the other surface added to it.
+    this.syncedEntryId = null;
     this.application.resetSpotifyReadContext?.();
     this.application.resetPromptState();
   }
@@ -7659,5 +7686,6 @@ To confirm, reply: ${preview.confirmation}`].join("\n\n");
     this.agent.state.messages = [...this.agent.state.messages, ...messages];
     this.transientSpotifyContext = turns.some(turn => turn.transient === true);
     this.application.transientSpotifyContext ||= this.transientSpotifyContext;
+    this.syncedEntryId = this.application.latestConversationEntryId?.() ?? null;
   }
 }

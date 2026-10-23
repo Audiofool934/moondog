@@ -851,6 +851,8 @@ export class MoondogApplication {
   deleteSavedSession(sessionId) {
     if (this.conversationEntry) throw new Error("Wait for the current conversation turn to finish");
     const current = typeof sessionId === "string" && this.memorySession?.session_id === sessionId;
+    // Checked before moving on, so a refused delete leaves both surfaces where they are.
+    if (current && this.memoryStore?.replyElsewhere(sessionId)) throw new Error("This conversation is open in another Moondog window or terminal.");
     if (current) this.startNewSession("delete");
     if (this.memoryStore) {
       return { ...this.memoryStore.deleteConversation(sessionId, { routeKey: this.memoryRouteKey }), started_new_session: current };
@@ -910,6 +912,52 @@ export class MoondogApplication {
     return structuredClone(this.memorySession);
   }
 
+  // The terminal and the App show the same conversation: the one opened last on the route. This
+  // moves here to the one another window or terminal opened, without changing which one that is.
+  followActiveConversation() {
+    if (!this.memoryStore || this.conversationEntry) return null;
+    const active = this.memoryStore.activeSession(this.memoryRouteKey);
+    if (!active || active.session_id === this.memorySession?.session_id) return null;
+    this.memorySession = active;
+    this.#clearConversationState();
+    return structuredClone(active);
+  }
+
+  activeConversationId() {
+    return this.memoryStore?.activeSession(this.memoryRouteKey)?.session_id ?? null;
+  }
+
+  // Makes this conversation the one both show, as resuming it would, while its turn may still run.
+  claimActiveConversation() {
+    if (this.memoryStore && this.memorySession) this.memoryStore.resumeSession(this.memorySession.session_id, { routeKey: this.memoryRouteKey });
+  }
+
+  // The reply another window or terminal is writing in this conversation: { entry_id, user_text, assistant_text }.
+  replyElsewhere() {
+    if (!this.memoryStore || !this.memorySession) return null;
+    return this.memoryStore.replyElsewhere(this.memorySession.session_id);
+  }
+
+  latestConversationEntryId() {
+    const sessionId = this.ensureMemorySession().session_id;
+    return this.memoryStore ? this.memoryStore.latestConversationEntryId(sessionId)
+      : this.localConversations.get(sessionId)?.entries.at(-1)?.entry_id ?? null;
+  }
+
+  // Saves the reply so far at most every quarter second, so another window or terminal can show it
+  // while it grows. The whole reply is saved when the turn ends.
+  showConversationProgress(text) {
+    const active = this.conversationEntry;
+    if (!active || !this.memoryStore || typeof text !== "string") return;
+    active.text = text;
+    active.progress ??= setTimeout(() => {
+      active.progress = null;
+      if (this.conversationEntry !== active) return;
+      try { this.memoryStore.showConversationProgress(active.sessionId, active.entryId, active.text); } catch { /* The end of the turn saves it. */ }
+    }, 250);
+    active.progress.unref?.();
+  }
+
   ensureMemorySession() {
     // A conversation closed beside others shares their store; binding again would write into
     // whichever conversation is active on the route, so it refuses instead.
@@ -959,6 +1007,7 @@ export class MoondogApplication {
   finishConversationEntry(outcome) {
     const active = this.conversationEntry;
     if (!active) return;
+    clearTimeout(active.progress);
     try {
       const result = { ...outcome, transient: this.transientSpotifyContext || outcome.transient === true };
       if (this.memoryStore) this.memoryStore.finishConversationEntry(active.sessionId, active.entryId, result);
@@ -975,12 +1024,19 @@ export class MoondogApplication {
   }
 
   currentConversationTurns({ limit = 40 } = {}) {
-    return this.conversationEntries({ limit: Math.ceil(limit / 2) }).flatMap(entry => [
+    return this.conversationEntries({ limit: Math.ceil(limit / 2) }).flatMap(entry => this.conversationEntryTurns(entry)).slice(-limit);
+  }
+
+  // One saved message and its reply as the screen shows them.
+  conversationEntryTurns(entry) {
+    const unfinished = 'This turn did not finish. External actions may have occurred; inspect their state before repeating them.';
+    return [
       { role: 'user', text: entry.user_text, created_at: entry.created_at, transient: entry.transient },
-      { role: 'assistant', text: entry.assistant_text || (entry.outcome === 'completed' ? ''
-        : 'This turn did not finish. External actions may have occurred; inspect their state before repeating them.'),
+      // A reply still running holds only what it had shown so far.
+      { role: 'assistant', text: entry.outcome === 'running' ? [entry.assistant_text, unfinished].filter(Boolean).join('\n\n')
+        : entry.assistant_text || (entry.outcome === 'completed' ? '' : unfinished),
       created_at: entry.created_at, transient: entry.transient },
-    ]).filter(turn => turn.text).slice(-limit);
+    ].filter(turn => turn.text);
   }
 
   conversationPending(pending) {

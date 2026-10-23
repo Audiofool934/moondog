@@ -130,6 +130,15 @@ const schema = `
     folder_id TEXT REFERENCES conversation_folders(folder_id)
   ) STRICT;
 
+  -- The process writing each running reply, so the terminal and the App answer one message at a
+  -- time in the conversation they share, and a reply left by a process that died blocks nothing.
+  -- No foreign key: an older core deletes conversations without knowing this table.
+  CREATE TABLE IF NOT EXISTS conversation_writers (
+    entry_id TEXT PRIMARY KEY NOT NULL,
+    session_id TEXT NOT NULL,
+    pid INTEGER NOT NULL
+  ) STRICT;
+
   CREATE TABLE IF NOT EXISTS memory_claims (
     memory_id TEXT PRIMARY KEY NOT NULL,
     kind TEXT NOT NULL CHECK (kind IN ('fact', 'preference', 'constraint', 'goal')),
@@ -583,14 +592,28 @@ export class LocalMemoryStore {
   #database;
   #clock;
   #closed = false;
+  #processId;
 
-  constructor(database, { clock = () => new Date() } = {}) {
+  constructor(database, { clock = () => new Date(), processId = process.pid } = {}) {
     this.#database = database;
     this.#clock = clock;
+    this.#processId = processId;
   }
 
   #assertOpen() {
     if (this.#closed) throw new Error("Memory store is closed");
+  }
+
+  // The reply another running Moondog process is writing in this conversation, if any.
+  #replyElsewhere(sessionId) {
+    const running = (pid) => {
+      try { process.kill(pid, 0); return true; } catch (error) { return error.code === "EPERM"; }
+    };
+    const row = this.#database.prepare(`SELECT e.entry_id, e.user_text, e.assistant_text, w.pid
+      FROM conversation_entries e JOIN conversation_writers w ON w.entry_id = e.entry_id
+      WHERE e.session_id = ? AND e.outcome = 'running' AND w.pid != ?`).all(sessionId, this.#processId)
+      .find((candidate) => running(candidate.pid));
+    return row ? { entry_id: row.entry_id, user_text: row.user_text, assistant_text: row.assistant_text } : null;
   }
 
   #insertEpisode({
@@ -896,6 +919,27 @@ export class LocalMemoryStore {
     return existing ?? this.startSession({ routeKey: route });
   }
 
+  // The conversation opened last on the route, by this process or another. The terminal and
+  // the App both show this one.
+  activeSession(routeKey = "local:main") {
+    this.#assertOpen();
+    const route = cleanText(routeKey, 128, "Session route");
+    const row = this.#database.prepare("SELECT session_id, route_key, started_at FROM sessions WHERE route_key = ? AND status = 'active'")
+      .get(route);
+    return row ? { ...row } : null;
+  }
+
+  replyElsewhere(sessionId) {
+    this.#assertOpen();
+    return this.#replyElsewhere(sessionId);
+  }
+
+  latestConversationEntryId(sessionId) {
+    this.#assertOpen();
+    return this.#database.prepare("SELECT entry_id FROM conversation_entries WHERE session_id = ? ORDER BY position DESC LIMIT 1")
+      .get(sessionId)?.entry_id ?? null;
+  }
+
   listSessions({ routeKey = "local:main", limit = 200 } = {}) {
     this.#assertOpen();
     const route = cleanText(routeKey, 128, "Session route");
@@ -1022,8 +1066,8 @@ export class LocalMemoryStore {
     try {
       const session = this.#database.prepare("SELECT status FROM sessions WHERE session_id = ? AND route_key = ?").get(id, route);
       if (!session) throw new Error("Saved conversation not found for this route.");
-      // Each surface closes the conversation it leaves, so an active one is probably open in another process.
-      if (session.status === "active") throw new Error("This conversation is open in another Moondog window or terminal.");
+      // The terminal and the App both show the active one, and a reply may still run in another one.
+      if (session.status === "active" || this.#replyElsewhere(id)) throw new Error("This conversation is open in another Moondog window or terminal.");
       // Foreign keys are checked at once, so every reference to the session goes before its row.
       const parent = this.#database.prepare("SELECT parent_session_id FROM conversation_branches WHERE session_id = ?").get(id)?.parent_session_id ?? null;
       const reparented = run("UPDATE conversation_branches SET parent_session_id = ? WHERE parent_session_id = ?", parent, id);
@@ -1037,7 +1081,7 @@ export class LocalMemoryStore {
       run("DELETE FROM episodes WHERE session_id = ? AND kind = 'dialogue'", id);
       run("UPDATE episodes SET session_id = NULL WHERE session_id = ?", id);
       run("UPDATE memory_claims SET source_session_id = NULL WHERE source_session_id = ?", id);
-      for (const table of ["conversation_labels", "conversation_entries", "turns", "conversation_branches", "sessions"]) {
+      for (const table of ["conversation_labels", "conversation_writers", "conversation_entries", "turns", "conversation_branches", "sessions"]) {
         run(`DELETE FROM ${table} WHERE session_id = ?`, id);
       }
       this.#database.exec("COMMIT");
@@ -1283,10 +1327,14 @@ export class LocalMemoryStore {
     this.#database.exec("BEGIN IMMEDIATE");
     try {
       this.#ensureConversation(sessionId);
+      if (this.#replyElsewhere(sessionId)) {
+        throw Object.assign(new Error("Moondog is answering in this conversation in another window or terminal."), { code: "conversation_busy" });
+      }
       const position = this.#database.prepare("SELECT COALESCE(MAX(position), 0) + 1 AS n FROM conversation_entries WHERE session_id = ?").get(sessionId).n;
       const entryId = randomUUID();
       this.#database.prepare(`INSERT INTO conversation_entries(entry_id, session_id, position, user_text, outcome, created_at)
         VALUES (?, ?, ?, ?, 'running', ?)`).run(entryId, sessionId, position, text, isoTimestamp(this.#clock));
+      this.#database.prepare("INSERT INTO conversation_writers(entry_id, session_id, pid) VALUES (?, ?, ?)").run(entryId, sessionId, this.#processId);
       this.#database.prepare("UPDATE conversation_branches SET draft = '' WHERE session_id = ?").run(sessionId);
       this.#database.exec("COMMIT");
       return entryId;
@@ -1298,9 +1346,18 @@ export class LocalMemoryStore {
     if (!['completed', 'aborted', 'interrupted', 'failed'].includes(status) || typeof text !== 'string' || text.length > 40_000) {
       throw new TypeError("Conversation outcome is invalid");
     }
+    this.#database.prepare("DELETE FROM conversation_writers WHERE entry_id = ?").run(entryId);
     const changed = this.#database.prepare(`UPDATE conversation_entries SET assistant_text = ?, outcome = ?, transient = ?
       WHERE session_id = ? AND entry_id = ? AND outcome = 'running'`).run(text, status, transient ? 1 : 0, sessionId, entryId);
     if (changed.changes !== 1) throw new Error("Conversation turn is no longer active");
+  }
+
+  // The reply so far, so another Moondog window or terminal can show it while it grows.
+  showConversationProgress(sessionId, entryId, text) {
+    this.#assertOpen();
+    if (typeof text !== 'string') throw new TypeError("Conversation progress is invalid");
+    this.#database.prepare(`UPDATE conversation_entries SET assistant_text = ?
+      WHERE session_id = ? AND entry_id = ? AND outcome = 'running'`).run(text.slice(0, 40_000), sessionId, entryId);
   }
 
   readConversationEntries(sessionId, { limit = 200 } = {}) {
@@ -1335,15 +1392,17 @@ export class LocalMemoryStore {
     const route = cleanText(routeKey, 128, "Session route");
     this.#database.exec("BEGIN IMMEDIATE");
     try {
-      const original = this.#database.prepare("SELECT * FROM sessions WHERE session_id = ? AND route_key = ? AND status = 'active'").get(sessionId, route);
-      if (!original) throw new Error("The selected conversation is no longer active");
+      // Another window or terminal may have opened a conversation since this one; the branch still
+      // becomes the one both show.
+      const original = this.#database.prepare("SELECT * FROM sessions WHERE session_id = ? AND route_key = ?").get(sessionId, route);
+      if (!original) throw new Error("The selected conversation is no longer available");
       this.#ensureConversation(sessionId);
       const selected = this.#database.prepare("SELECT * FROM conversation_entries WHERE session_id = ? AND entry_id = ?").get(sessionId, entryId);
       if (!selected) throw new Error("The selected turn is no longer available");
       const root = this.#database.prepare("SELECT root_session_id FROM conversation_branches WHERE session_id = ?").get(sessionId).root_session_id;
       const createdAt = isoTimestamp(this.#clock);
       const nextId = randomUUID();
-      this.#database.prepare("UPDATE sessions SET status = 'closed', ended_at = ?, close_reason = 'rewind' WHERE session_id = ?").run(createdAt, sessionId);
+      this.#database.prepare("UPDATE sessions SET status = 'closed', ended_at = ?, close_reason = 'rewind' WHERE route_key = ? AND status = 'active'").run(createdAt, route);
       this.#database.prepare("INSERT INTO sessions(session_id, route_key, started_at, status) VALUES (?, ?, ?, 'active')").run(nextId, route, createdAt);
       this.#database.prepare(`INSERT INTO conversation_branches(session_id, root_session_id, parent_session_id, source_entry_id, draft)
         VALUES (?, ?, ?, ?, ?)`).run(nextId, root, sessionId, entryId, selected.user_text);
@@ -1989,6 +2048,7 @@ export class LocalMemoryStore {
 export async function openLocalMemoryStore({
   databasePath = defaultMoondogMemoryPath,
   clock,
+  processId,
 } = {}) {
   const parent = path.dirname(path.resolve(databasePath));
   await mkdir(parent, { recursive: true, mode: 0o700 });
@@ -2013,7 +2073,7 @@ export async function openLocalMemoryStore({
     if (process.platform !== "win32") {
       await chmod(path.resolve(databasePath), 0o600);
     }
-    return new LocalMemoryStore(database, { clock });
+    return new LocalMemoryStore(database, { clock, processId });
   } catch (error) {
     database.close();
     throw error;

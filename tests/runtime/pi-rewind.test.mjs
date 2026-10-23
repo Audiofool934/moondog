@@ -184,7 +184,7 @@ test('legacy generic transcripts can be rewound without rewriting their stored h
   const before = f.store.readSessionTurns(legacy.session_id);
   const entries = f.store.readConversationEntries(legacy.session_id);
   assert.equal(entries.length, 2);
-  assert.throws(() => f.store.forkConversation(legacy.session_id, entries[0].entry_id), /no longer active/u);
+  assert.throws(() => f.store.forkConversation(legacy.session_id, entries[0].entry_id), /no longer available/u);
   const branch = f.store.forkConversation(legacy.session_id, entries[1].entry_id, { routeKey: 'legacy:route' });
   assert.equal(f.store.readConversationEntries(branch.session_id).length, 1);
   assert.deepEqual(f.store.readSessionTurns(legacy.session_id), before);

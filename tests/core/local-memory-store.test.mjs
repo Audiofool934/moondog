@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -883,5 +884,41 @@ test("reflection does not relabel an exact-text memory with an incompatible kind
     assert.ok(!memories[0].evidence_episode_ids.includes(pending.episode_id));
     assert.equal(completed.counts.promoted_memories, 0);
     assert.equal(completed.counts.candidate_episodes, 1);
+  });
+});
+
+test("the terminal and the App share one conversation and answer in it one at a time", async () => {
+  await withMemoryStore(async ({ store: app, databasePath }) => {
+    // The terminal is another process: its pid is a live one that is not this test's.
+    const terminal = await openLocalMemoryStore({ databasePath, processId: process.ppid });
+    try {
+      const shown = app.rotateSession("local:main", "app_start");
+      assert.equal(terminal.activeSession().session_id, shown.session_id);
+
+      const running = terminal.beginConversationEntry(shown.session_id, "play something calm");
+      assert.equal(app.replyElsewhere(shown.session_id).user_text, "play something calm");
+      assert.equal(terminal.replyElsewhere(shown.session_id), null);
+      assert.throws(() => app.beginConversationEntry(shown.session_id, "and louder"), { code: "conversation_busy" });
+      terminal.showConversationProgress(shown.session_id, running, "Here is a calm");
+      assert.equal(app.replyElsewhere(shown.session_id).assistant_text, "Here is a calm");
+      terminal.finishConversationEntry(shown.session_id, running, { text: "Here is a calm set.", status: "completed" });
+      assert.equal(app.replyElsewhere(shown.session_id), null);
+      const mine = app.beginConversationEntry(shown.session_id, "and louder");
+      app.finishConversationEntry(shown.session_id, mine, { text: "Louder now.", status: "completed" });
+
+      // A reply left running by a process that died blocks nothing.
+      const gone = await openLocalMemoryStore({ databasePath, processId: spawnSync(process.execPath, ["-e", ""]).pid });
+      try { gone.beginConversationEntry(shown.session_id, "never answered"); } finally { gone.close(); }
+      assert.equal(app.replyElsewhere(shown.session_id), null);
+
+      // The terminal rewinds after the App opened another conversation; the branch is the one both show.
+      const other = app.rotateSession("local:main", "user_new");
+      const branch = terminal.forkConversation(shown.session_id, mine);
+      assert.equal(app.activeSession().session_id, branch.session_id);
+      assert.notEqual(branch.session_id, other.session_id);
+      assert.equal(app.listSessions().find((session) => session.session_id === branch.session_id).parent_session_id, shown.session_id);
+    } finally {
+      terminal.close();
+    }
   });
 });

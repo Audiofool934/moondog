@@ -272,6 +272,9 @@ export async function runMoondogTui({
   let homeFocused = false;
   let homeSelected = 0;
   let busy = false;
+  // A reply another Moondog window or terminal is writing in this conversation: { id, response, text }.
+  let elsewhere = null;
+  let watchTimer = null;
   let activeSubmission = null;
   let rewindPending = false;
   let queuePaused = false;
@@ -524,8 +527,10 @@ export async function runMoondogTui({
             ? messageQueue.length ? tr("stopping · the queue waits") : tr("stopping")
             : messageQueue.length
               ? cancelWork ? tr.n(messageQueue.length, "{count} queued · up edits the last · ctrl+c cancel", "{count} queued · up edits the last · ctrl+c cancel")
+                : elsewhere ? tr.n(messageQueue.length, "{count} queued · up edits the last · answering in another window", "{count} queued · up edits the last · answering in another window")
                 : tr.n(messageQueue.length, "{count} queued · up edits the last · waiting for command", "{count} queued · up edits the last · waiting for command")
               : cancelWork ? tr("enter queues the next one · ctrl+c cancel")
+                : elsewhere ? tr("enter queues the next one · answering in another window")
                 : tr("enter queues the next one · waiting for command")
           : editor.isShowingAutocomplete() ? tr("↑↓ choose · tab/enter complete · esc dismiss") : homeFocused
           ? tr("↑ ↓ choose · enter open · esc type")
@@ -686,6 +691,7 @@ export async function runMoondogTui({
     if (cleanedUp) return;
     try { application.conversationPending?.({ draft: editor.getText(), queued: [...messageQueue] }); } catch { /* Terminal cleanup must still run when storage is unavailable. */ }
     cleanedUp = true;
+    clearTimeout(watchTimer);
     stopWatchingPreviews?.();
     clearInterval(indicator);
     indicator = null;
@@ -1687,17 +1693,8 @@ export async function runMoondogTui({
     }
     editor.replaceRecall(recallBySession.get(selected.value));
     activeRuntime.restoreSession();
-    const turns = application.currentConversationTurns?.({ limit: 40 }) ?? application.currentSessionTurns({ limit: 40 });
     restorePendingConversation();
-    profileDiscoveryDraft = null;
-    transcript.clear();
-    homeVisible = turns.length === 0;
-    homeFocused = false;
-    editor.focused = true;
-    for (const turn of turns) {
-      if (turn.role === "user") addUserMessage(sanitizeTerminalText(turn.text));
-      if (turn.role === "assistant") addMoondogMessage(turn.text);
-    }
+    const turns = drawSavedConversation();
     const savedTitle = selected.label ? undefined
       : application.listSavedSessions({ limit: 200 }).find((session) => session.session_id === selected.value)?.title;
     const title = selected.label ?? savedTitle ?? turns.find((turn) => turn.role === "user")?.text ?? tr("Saved conversation");
@@ -2199,8 +2196,119 @@ export async function runMoondogTui({
     try { await submission; }
     finally {
       if (activeSubmission === submission) activeSubmission = null;
+      // This turn's messages are on screen already; the watcher draws only what others add.
+      if (!cleanedUp) { try { markDrawn(); } catch { /* The next look tries again. */ } }
       if (!busy && !cleanedUp && releaseQueue) settleQueue();
     }
+  };
+
+  // The terminal and the App show the same conversation: the one either opened last. The terminal
+  // follows a switch made in the App, draws what the App adds, and shows a reply the App is writing
+  // as it grows, holding new messages in the queue until it ends.
+  const LOOK_MS = { idle: 1_000, answering: 300 };
+  let seenVersion = null;
+  // The conversation on screen and the saved messages it shows.
+  let drawn = { session: null, ids: new Set() };
+  const savedEntries = () => application.conversationEntries?.({ limit: 500 }) ?? [];
+  const markDrawn = () => {
+    const reply = application.replyElsewhere?.() ?? null;
+    drawn = { session: sessionId(), ids: new Set(savedEntries().map((entry) => entry.entry_id).filter((id) => id !== reply?.entry_id)) };
+  };
+  const addSavedTurns = (turns) => {
+    for (const turn of turns) {
+      if (turn.role === "user") addUserMessage(sanitizeTerminalText(turn.text));
+      if (turn.role === "assistant") addMoondogMessage(turn.text);
+    }
+  };
+  // Draws the saved conversation. A reply still running elsewhere is left to the watcher, which draws it live.
+  const drawSavedConversation = () => {
+    const reply = application.replyElsewhere?.() ?? null;
+    const turns = application.currentConversationTurns?.({ limit: 40 }) ?? application.currentSessionTurns({ limit: 40 });
+    const last = reply ? turns.findLastIndex((turn) => turn.role === "user") : -1;
+    if (last >= 0 && turns[last].text === reply.user_text) turns.splice(last);
+    profileDiscoveryDraft = null;
+    transcript.clear();
+    homeVisible = turns.length === 0 && !reply;
+    homeFocused = false;
+    editor.focused = true;
+    addSavedTurns(turns);
+    return turns;
+  };
+  const endElsewhere = () => {
+    if (!elsewhere) return;
+    elsewhere = null;
+    setBusy(false);
+    setFooter(tr("Ready."));
+  };
+  const followElsewhere = () => {
+    const id = application.activeConversationId?.();
+    if (!id || id === sessionId()) return;
+    storeRecall();
+    if (!application.followActiveConversation?.()) return;
+    endElsewhere();
+    activeRuntime.restoreSession();
+    const now = sessionId();
+    installRecall(now, recallBySession.get(now) ?? recallFromTurns());
+    conversationTitle = "";
+    drawSavedConversation();
+    markDrawn();
+    tui.requestRender(true);
+  };
+  const showElsewhere = () => {
+    const reply = application.replyElsewhere?.() ?? null;
+    for (const entry of savedEntries()) {
+      if (drawn.ids.has(entry.entry_id) || entry.entry_id === elsewhere?.id) continue;
+      if (entry.entry_id !== reply?.entry_id) {
+        drawn.ids.add(entry.entry_id);
+        addSavedTurns(application.conversationEntryTurns?.(entry) ?? []);
+        continue;
+      }
+      enterConversation();
+      addUserMessage(sanitizeTerminalText(reply.user_text));
+      addLabel("Moondog");
+      const response = new Markdown(sanitizeTerminalText(reply.assistant_text), 1, 1, markdownTheme, textStyle);
+      transcript.addChild(response);
+      transcriptScroll.scrollToEnd();
+      elsewhere = { id: reply.entry_id, response, text: reply.assistant_text };
+      setBusy(true);
+      setFooter(tr("Answering in another Moondog window..."));
+    }
+    if (!elsewhere) return;
+    if (reply?.entry_id === elsewhere.id) {
+      if (reply.assistant_text !== elsewhere.text) {
+        elsewhere.text = reply.assistant_text;
+        elsewhere.response.setText(sanitizeTerminalText(reply.assistant_text));
+        tui.requestRender();
+      }
+      return;
+    }
+    // The reply ended: draw it as saved, then send what waited in the queue.
+    const saved = savedEntries().find((entry) => entry.entry_id === elsewhere.id);
+    const answer = saved ? (application.conversationEntryTurns?.(saved) ?? []).find((turn) => turn.role === "assistant") : null;
+    elsewhere.response.setText(sanitizeTerminalText(answer?.text ?? elsewhere.text));
+    drawn.ids.add(elsewhere.id);
+    endElsewhere();
+    settleQueue();
+  };
+  const lookElsewhere = () => {
+    if (typeof application.memoryStore?.dataVersion !== "function") return null;
+    if ((busy && !elsewhere) || rewindPending || tui.hasOverlay() || profileView || importView) return LOOK_MS.idle;
+    followElsewhere();
+    if (drawn.session !== sessionId()) markDrawn();
+    const version = application.memoryStore.dataVersion();
+    if (version !== seenVersion || elsewhere) {
+      seenVersion = version;
+      showElsewhere();
+    }
+    return elsewhere ? LOOK_MS.answering : LOOK_MS.idle;
+  };
+  const watchElsewhere = () => {
+    if (cleanedUp) return;
+    let wait = LOOK_MS.idle;
+    try { wait = lookElsewhere(); } catch { /* A busy or closing store; the next look tries again. */ }
+    if (wait === null || cleanedUp) return;
+    watchTimer = setTimeout(watchElsewhere, wait);
+    watchTimer.unref?.();
   };
 
   tui.addInputListener((data) => {
@@ -2292,6 +2400,8 @@ export async function runMoondogTui({
   try {
     startAttempted = true;
     tui.start();
+    watchTimer = setTimeout(watchElsewhere, LOOK_MS.idle);
+    watchTimer.unref?.();
     if (checkUpdates) void Promise.resolve().then(() => checkUpdates({ signal: updateCheckController.signal })).then(result => {
       if (cleanedUp || result?.state !== "available") return;
       updateNotice = tr("Moondog {version} available · /update", { version: result.latest });

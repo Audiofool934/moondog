@@ -10,8 +10,9 @@ import { HistoryImportView } from "../src/surfaces/cli/history-import-view.mjs";
 import { setAppleMusicStorefront } from "../src/integrations/apple-music/storefront.mjs";
 
 const PLAYER_POLL_MS = { visible: 4_000, hidden: 30_000 };
-// How often a showing window looks for conversations the terminal or another window saved.
-const SESSIONS_LOOK_MS = 2_000;
+// How often a showing window looks for what the terminal or another window changed, and how often
+// while one of them answers in the conversation shown here.
+const LOOK_MS = { idle: 2_000, answering: 300 };
 // Tools whose results can change what Spotify is playing or what comes next.
 const PLAYER_TOOLS = /^moondog_spotify_(?:player_control|queue_add|queue_batch|queue_similar|device_transfer|playlist_write)$/u;
 // At most this many conversations hold an agent at once; idle ones are reused first.
@@ -76,37 +77,85 @@ export function runWindowRoom(services, { port, send, quit = null }) {
     send({ type: "sessions", sessions: listed(saved), folders: folderList, current: sessionOf(current),
       running: slots.filter((slot) => slot.turn).map(sessionOf) });
   };
-  // The terminal and other windows save conversations and folders in the same memory store. While the window
-  // shows, SQLite's data version says whether another connection committed since the last look.
+  // The terminal and the window show the same conversation: the one either opened last. Both save to the
+  // same memory store. While the window shows, SQLite's data version says whether another connection
+  // committed since the last look.
   let seen = null;
   let sessionsTimer = null;
-  function lookForSessions() {
+  // A reply the terminal or another window is writing in the conversation shown here: { session, live }.
+  let remote = null;
+  // The saved transcript the window last got, so a look that finds nothing new sends nothing.
+  let drawn = null;
+  function lookForChanges() {
     try {
+      follow();
       const version = base.memoryStore?.dataVersion?.();
       if (version === undefined || version === seen) return;
       seen = version;
       if (JSON.stringify([sessions(), folders()]) !== shown) sendSessions();
+      showReplyElsewhere();
     } catch { /* A busy or closing store; the next look tries again. */ }
   }
   const scheduleSessions = () => {
     clearTimeout(sessionsTimer);
     if (closed || !visible) return;
-    sessionsTimer = setTimeout(() => { lookForSessions(); scheduleSessions(); }, SESSIONS_LOOK_MS);
+    sessionsTimer = setTimeout(() => { lookForChanges(); scheduleSessions(); }, remote ? LOOK_MS.answering : LOOK_MS.idle);
   };
+  // Moves the window to the conversation the terminal or another window opened. A slot that holds it shows
+  // it; otherwise an idle slot takes it over. With every slot answering, the next look tries again.
+  function follow() {
+    const id = base.activeConversationId?.();
+    if (!id || id === sessionOf(current)) return;
+    let slot = slotFor(id);
+    if (!slot) {
+      slot = (!current.turn && !current.waiting && current) || slots.find((candidate) => !candidate.turn && !candidate.waiting);
+      if (!slot?.application.followActiveConversation?.()) return;
+      slot.runtime.restoreSession?.();
+    }
+    current = slot;
+    remote = null;
+    sendSession(slot);
+    sendSessions();
+    sendStatus();
+  }
+  // Draws a reply that runs elsewhere as it grows, and the saved conversation once it ends.
+  function showReplyElsewhere() {
+    const slot = current;
+    if (slot.turn) return;
+    const session = sessionOf(slot);
+    const reply = slot.application.replyElsewhere?.() ?? null;
+    if (reply && remote?.session === session && remote.live.id === reply.entry_id) {
+      if (reply.assistant_text !== remote.live.text) {
+        remote.live.text = reply.assistant_text;
+        send({ type: "text", session, id: reply.entry_id, replace: reply.assistant_text });
+      }
+      return;
+    }
+    const ended = remote !== null;
+    remote = reply ? { session, live: { id: reply.entry_id, user: reply.user_text, text: reply.assistant_text, activity: [] } } : null;
+    if (reply || ended || JSON.stringify([session, transcript(slot)]) !== drawn) sendSession(slot);
+  }
 
   // A running turn is kept live in its slot; the saved entry for it is still "running", so the
-  // transcript leaves it out and the window draws the live version instead.
+  // transcript leaves it out and the window draws the live version instead. A reply running in the
+  // terminal is drawn the same way.
+  const liveOf = (slot) => slot.live ?? (slot === current && remote?.session === sessionOf(slot) ? remote.live : null);
   function transcript(slot) {
     const turns = (slot.application.currentConversationTurns?.({ limit: 80 }) ?? [])
       .filter((entry) => entry.role === "user" || entry.role === "assistant").map((entry) => ({ role: entry.role, text: entry.text }));
-    if (slot.live) {
+    const live = liveOf(slot);
+    if (live) {
       const last = turns.findLastIndex((entry) => entry.role === "user");
-      if (last >= 0 && turns[last].text === slot.live.user) turns.splice(last);
+      if (last >= 0 && turns[last].text === live.user) turns.splice(last);
     }
     return turns;
   }
-  const sendSession = (slot) => send({ type: "session", current: sessionOf(slot), transcript: transcript(slot),
-    live: slot.live ? structuredClone(slot.live) : null });
+  const sendSession = (slot) => {
+    const turns = transcript(slot);
+    if (slot === current) drawn = JSON.stringify([sessionOf(slot), turns]);
+    const live = liveOf(slot);
+    send({ type: "session", current: sessionOf(slot), transcript: turns, live: live ? structuredClone(live) : null });
+  };
 
   // A model chosen while the shown conversation answers applies when its reply ends; the window shows it already.
   function modelOf(slot) {
@@ -255,6 +304,8 @@ export function runWindowRoom(services, { port, send, quit = null }) {
   async function openSession(id) {
     if (id && sessionOf(current) === id) return sendSession(current);
     const existing = id ? slotFor(id) : null;
+    // The terminal follows the conversation the window shows, even one still answering in its slot.
+    existing?.application.claimActiveConversation?.();
     const slot = existing ?? await slotForOpening(id);
     if (!slot) return send({ type: "notice", code: "too_many_running" });
     current = slot;
@@ -269,6 +320,8 @@ export function runWindowRoom(services, { port, send, quit = null }) {
     // A second message cannot start while the first is in a turn or waiting to start. The window
     // put the text back in the composer; dropping it here would lose it.
     if (slot.turn || slot.waiting) return send({ type: "notice", code: "message_busy", text });
+    // The terminal is answering in this conversation; one reply at a time.
+    if (slot.application.replyElsewhere?.()) return send({ type: "notice", code: "message_busy", text });
     const session = sessionOf(slot);
     // A new agent being built, or an import replacing the profile under every agent, finishes first.
     // The slot stays reserved for this conversation until the message starts.
@@ -318,6 +371,8 @@ export function runWindowRoom(services, { port, send, quit = null }) {
       unsubscribe();
       slot.turn = null;
       slot.live = null;
+      // The window already drew this reply from the turn's own messages.
+      if (slot === current) { try { drawn = JSON.stringify([session, transcript(slot)]); } catch { /* The next look redraws. */ } }
       settled.resolve();
       // A model or service change made while this turn ran applies now.
       if (slot.stale) await rebuild(slot, slot.stale.selection).catch(() => {});
@@ -381,6 +436,8 @@ export function runWindowRoom(services, { port, send, quit = null }) {
       if (doer) {
         const result = doer.application.deleteSavedSession(id);
         if (result?.started_new_session) doer.runtime.reset?.();
+        // A slot in the background moved to a new conversation; the shown one stays the one both show.
+        if (result?.started_new_session && doer !== current) current.application.claimActiveConversation?.();
       } else if (base.memoryStore) {
         // Every agent is answering and none holds this conversation, so the store deletes it directly.
         base.memoryStore.deleteConversation(id, { routeKey: base.memoryRouteKey });
@@ -564,7 +621,7 @@ export function runWindowRoom(services, { port, send, quit = null }) {
     storefront: (data) => { setAppleMusicStorefront(data.code); },
     visible: (data) => {
       visible = data.visible !== false;
-      if (visible) { void refreshPlayer(); lookForSessions(); }
+      if (visible) { void refreshPlayer(); lookForChanges(); }
       schedulePlayer();
       scheduleSessions();
     },
@@ -649,6 +706,7 @@ export function runWindowRoom(services, { port, send, quit = null }) {
     const saved = sessions();
     const folderList = folders();
     shown = JSON.stringify([saved, folderList]);
+    drawn = JSON.stringify([sessionOf(current), transcript(current)]);
     send({ type: "ready", ...status(), sessions: saved, folders: folderList, current: sessionOf(current), running: [], transcript: [] });
     void refreshPlayer();
     schedulePlayer();

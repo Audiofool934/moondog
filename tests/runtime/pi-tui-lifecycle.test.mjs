@@ -2714,3 +2714,39 @@ test("a late terminal cell-size reply redraws the room instead of crashing", asy
   terminal.send("\x1b[6;20;10t");
   await fixture.submit("After the cell-size reply", "Fixture response: After the cell-size reply");
 });
+
+test("the terminal follows the conversation the App opened and shows the App's reply as it grows", async (context) => {
+  const fixture = await createSavedConversationFixture(context);
+  const { application, terminal, runtime } = fixture;
+  // The App is another process on the same memory store.
+  const app = await openLocalMemoryStore({ databasePath: fixture.databasePath, processId: process.ppid });
+  context.after(() => app.close());
+  const shows = async (expected) => {
+    const deadline = performance.now() + 3_000;
+    while (!stripVTControlCharacters(terminal.output).includes(expected)) {
+      if (performance.now() >= deadline) assert.fail(`Expected TUI output: ${expected}`);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+  };
+  await fixture.launch();
+  const restores = runtime.restoreCount;
+
+  const shown = app.rotateSession("local:main", "user_new");
+  const entry = app.beginConversationEntry(shown.session_id, "Play something calm");
+  app.showConversationProgress(shown.session_id, entry, "Here is a calm");
+  await shows("Here is a calm");
+  await shows("Answering in another Moondog window");
+  assert.equal(application.ensureMemorySession().session_id, shown.session_id);
+  assert.equal(runtime.restoreCount, restores + 1);
+
+  // A message typed meanwhile waits for the App's reply, then goes to the same conversation.
+  terminal.send("And louder");
+  terminal.send("\r");
+  await shows("answering in another window");
+  assert.deepEqual(runtime.prompts, []);
+  terminal.output = "";
+  app.finishConversationEntry(shown.session_id, entry, { text: "Here is a calm set.", status: "completed" });
+  await shows("Here is a calm set.");
+  await shows("Fixture response: And louder");
+  assert.equal(runtime.prompts[0].sessionId, shown.session_id);
+});

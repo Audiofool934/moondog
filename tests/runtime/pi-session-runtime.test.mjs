@@ -186,3 +186,40 @@ test("reset keeps a fresh context empty and offline restore remains a no-op", as
   assert.equal(offline.restoreSession(), undefined);
   assert.deepEqual(offline.publicStatus(), status);
 });
+
+test("an agent reads what the other surface added before it answers, and saves its reply as it grows", async () => {
+  const { application, state, sessions, faux, runtime } = fixture();
+  let latest = null;
+  let elsewhere = null;
+  const progress = [];
+  application.latestConversationEntryId = () => latest;
+  application.replyElsewhere = () => elsewhere;
+  application.beginConversationEntry = () => "own-1";
+  application.showConversationProgress = (text) => { progress.push(text); };
+
+  // The App answered in this conversation while the terminal's agent waited.
+  sessions.A.push(turn("user", "FROM_THE_APP"), turn("assistant", "APP_ANSWER"));
+  latest = "app-1";
+  faux.setResponses([
+    (context) => {
+      const messages = context.messages.filter(message => message.role !== "system").map(messageText);
+      assert.deepEqual(messages.slice(-3), ["FROM_THE_APP", "APP_ANSWER", "Next one."]);
+      return fauxAssistantMessage("TERMINAL_ANSWER");
+    },
+    () => fauxAssistantMessage("SECOND_ANSWER"),
+  ]);
+  const reads = state.reads.length;
+  await runtime.prompt("Next one.");
+  assert.equal(state.reads.length, reads + 1);
+  assert.equal(progress.at(-1), "TERMINAL_ANSWER");
+
+  // Its own reply needs no reading back.
+  latest = "own-1";
+  await runtime.prompt("Another.");
+  assert.equal(state.reads.length, reads + 1);
+
+  // One reply at a time in a shared conversation.
+  elsewhere = { entry_id: "app-2", user_text: "louder", assistant_text: "" };
+  await assert.rejects(runtime.prompt("Too soon."), { code: "conversation_busy" });
+  assert.equal(faux.state.callCount, 2);
+});

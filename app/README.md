@@ -32,6 +32,9 @@ A model or music service chosen there lasts until the app quits, and sign-in and
   It turns while music plays and rests when it stops.
 - Conversations on the left are the terminal's conversations, in both directions: one started here shows up in `/resume`, and the other way round.
   While the window shows, a conversation or folder saved in the terminal appears within about two seconds; the core asks SQLite whether another process wrote to the memory store, so nothing is sent when nothing changed.
+  The window and the terminal show the same conversation: the one either opened last, with `/new`, `/resume`, `/rewind`, the sidebar or a launch.
+  A message sent in the terminal appears here, and its reply grows here as it is written; the other way round too.
+  One of them answers at a time: a message sent while the other answers comes back to the composer here and waits in the queue there.
   Pinned ones come first, then folders, then the rest by day.
   A row's `⋯` button or a right-click renames, pins, moves it to a folder, or deletes it after asking.
   Dragging a row onto a folder files it there. `⌘N` or the pencil in the title bar starts a new conversation.
