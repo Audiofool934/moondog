@@ -4,7 +4,7 @@ import { languageTag, timeOfDay, windowLocale, windowStrings } from "../strings.
 import { renderMarkdown } from "./markdown.mjs";
 import { createPalette } from "./palette.mjs";
 import { createPreviews } from "./previews.mjs";
-import { coverPalette, moodColours } from "./mood.mjs";
+import { coverPalette, grooveColours, moodColours } from "./mood.mjs";
 import { createMark } from "./mark.mjs";
 import { mountRecord } from "./record.mjs";
 import { createSettings } from "./settings.mjs";
@@ -473,7 +473,7 @@ function renderEmpty(empty) {
   const from = record ? recordButton.getBoundingClientRect() : null;
   room.classList.toggle("empty", empty);
   layout.classList.toggle("talking", !empty);
-  record ??= mountRecord($("record"));
+  if (!record) { record = mountRecord($("record")); record.tint(grooveColours(moodPalette, dark.matches), true); }
   tween = null;
   placed = "";
   if (empty) {
@@ -812,8 +812,14 @@ const moodNode = $("mood");
 const dark = matchMedia("(prefers-color-scheme: dark)");
 let moodSource = undefined;
 let moodPalette = null;
-function paintMood() {
+// The record's grooves and the folded mark's rings take the same colours, deeper; a theme change repaints them at once.
+function paintMood(event) {
   moodColours(moodPalette, dark.matches).forEach((colour, index) => moodNode.style.setProperty(`--mood-${index + 1}`, colour));
+  const rings = grooveColours(moodPalette, dark.matches);
+  record?.tint(rings, Boolean(event));
+  for (let index = 0; index < 3; index += 1) {
+    if (rings) layout.style.setProperty(`--groove-${index + 1}`, `rgb(${rings[index].join(" ")})`); else layout.style.removeProperty(`--groove-${index + 1}`);
+  }
 }
 function renderMood(now) {
   moodNode.classList.toggle("playing", Boolean(now?.playing));

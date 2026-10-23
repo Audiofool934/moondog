@@ -9,7 +9,9 @@ export const RECORD_LAYERS = Object.freeze({ groove: 1, surface: 2, figure: 3 })
 // The dog's eye, in the record's unit coordinates; layouts line the title up with it.
 const eye = [0.22, -0.13];
 
-const dog = [
+// The dog's outline runs through these points as one smooth curve (smoothOutline, below), so it
+// keeps its shape without the facets of straight segments between them.
+const dogPoints = [
   [-0.62, 0.48], [-0.55, 0.29], [-0.47, 0.08], [-0.42, -0.16],
   [-0.4, -0.34], [-0.32, -0.47], [-0.18, -0.61], [-0.17, -0.44],
   [-0.12, -0.43], [-0.1, -0.32], [0.02, -0.27], [0.16, -0.24],
@@ -18,6 +20,26 @@ const dog = [
   [0.16, 0.26], [0.13, 0.33], [0.13, 0.56], [0.045, 0.58],
   [0.07, 0.77], [-0.13, 0.75], [-0.3, 0.7], [-0.48, 0.62],
 ];
+
+// A closed centripetal Catmull-Rom curve through `points`: it passes through every point, and unlike
+// the uniform kind it never loops or overshoots at the sharp turns of the ear and the nose.
+function smoothOutline(points, steps = 10) {
+  const outline = [];
+  const count = points.length;
+  for (let index = 0; index < count; index += 1) {
+    const p = [-1, 0, 1, 2].map((offset) => points[(index + offset + count) % count]);
+    const t = [0];
+    for (let at = 1; at < 4; at += 1) t.push(t[at - 1] + Math.hypot(p[at][0] - p[at - 1][0], p[at][1] - p[at - 1][1]) ** 0.5);
+    for (let step = 0; step < steps; step += 1) {
+      const u = t[1] + (t[2] - t[1]) * step / steps;
+      const mix = (a, b, from, to) => a.map((value, axis) => ((to - u) * value + (u - from) * b[axis]) / (to - from));
+      const [a1, a2, a3] = [mix(p[0], p[1], t[0], t[1]), mix(p[1], p[2], t[1], t[2]), mix(p[2], p[3], t[2], t[3])];
+      outline.push(mix(mix(a1, a2, t[0], t[2]), mix(a2, a3, t[1], t[3]), t[1], t[2]));
+    }
+  }
+  return outline;
+}
+const dog = smoothOutline(dogPoints);
 
 const smallAscii = [
   "                  /",
@@ -152,7 +174,8 @@ function drawing(columns, rows, cellAspect) {
     const ys = points.map(([, y]) => y);
     scan(Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys),
       (x, y, dx, dy) => insidePolygon(x, y, points)
-        && (!hatch || (dy % 4 < 2 && dx % 9 !== 0)), ink);
+        // The hatch runs diagonally, two dots on and two off, like an engraving's.
+        && (!hatch || (dx + dy) % 4 < 2), ink);
   }
 
   const paintLayer = (value) => { layer = value; };

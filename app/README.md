@@ -30,6 +30,7 @@ A model or music service chosen there lasts until the app quits, and sign-in and
 
 - Before anything is said, the lunar record stands alone over the composer, drawn as dots from the terminal's own record.
   It turns while music plays and rests when it stops.
+  Its grooves take the three colours of the cover that is playing, from the rim inward, and drift into the next song's; the dog and the arm stay in ink.
 - In a conversation the record stays above the words, and the conversation runs between it and the composer.
   Scrolling up into history folds it, as you scroll, into a small mark before the title in the title bar; back at the latest words it opens again.
   A click on the record, or `⌥⌘R`, keeps it folded; a click on the mark opens it and returns to the latest words.
@@ -69,7 +70,7 @@ A model or music service chosen there lasts until the app quits, and sign-in and
   The core (`src/integrations/netease/ncm-cli-player.mjs`) keeps the queue and plays one song at a time with ncm-cli, so the terminal and the window play the same way.
   Many songs, above all originals outside mainland China, are marked not playable, most often for copyright; Moondog never sends those and says so instead.
   Each search sends NetEase a short summary of the request, which Settings › Playback says.
-- No accent color. Cover art brings the color: the song playing tints the window with its strongest colours, faintly, and they drift into the next song's over a few seconds; its cover glows from the player's corner across to the far edge.
+- No accent color. Cover art brings the color: the song playing tints the window and the record's grooves with its strongest colours, faintly, and they drift into the next song's over a few seconds; its cover glows from the player's corner across to the far edge.
   The window is one pane: no panel has a ground of its own, and the composer and your words sit on the light as a thin film, not as cards.
   Icon buttons name themselves, with their keys, in a tooltip.
 - Controls for the whole window sit in the title bar, which never folds: the conversations and new conversation at the top left, Settings and the player at the top right.

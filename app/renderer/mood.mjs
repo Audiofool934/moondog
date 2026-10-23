@@ -71,6 +71,23 @@ function paletteOf(image) {
 }
 
 /**
+ * The same colours for the record's grooves, as [r, g, b] from 0 to 255: each hue at one steady
+ * lightness for the window's theme, so the rings read as the cover's colour and never outweigh the
+ * dog, which stays in ink. A grey cover gives grey rings.
+ */
+export function grooveColours(palette, dark) {
+  if (!palette) return null;
+  return palette.map(({ h, s, l }) => rgb(h, Math.min(s, 0.72) * (dark ? 0.8 : 0.9), (dark ? 0.64 : 0.46) + (l - 0.5) * 0.12));
+}
+
+function rgb(h, s, l) {
+  const k = (n) => (n + h / 30) % 12;
+  const a = s * Math.min(l, 1 - l);
+  const channel = (n) => Math.round((l - a * Math.max(-1, Math.min(k(n) - 3, 9 - k(n), 1))) * 255);
+  return [channel(0), channel(8), channel(4)];
+}
+
+/**
  * The three fields as CSS colours for a light or dark window: pale and soft on paper, deeper at
  * night, always far too faint to compete with the words.
  */

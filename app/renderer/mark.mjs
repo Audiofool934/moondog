@@ -37,7 +37,9 @@ export function createMark() {
     cut("dog", shape("circle", { cx: ear[0], cy: ear[1], r: earRadius, fill: "#000" }), shape("circle", { cx: eye[0], cy: eye[1], r: 0.035, fill: "#000" })),
   );
   const record = shape("g", { class: "mark-record", mask: `url(#${id}-record)` });
-  grooves.forEach((radius, index) => record.append(shape("circle", { r: radius, class: index ? "groove" : "rim" })));
+  // The rim and the outer groove take the cover's first colour, the inner grooves its second and third.
+  grooves.forEach((radius, index) => record.append(shape("circle", { r: radius, class: index ? "groove" : "rim",
+    style: `stroke: var(--groove-${Math.max(1, index)}, currentColor)` })));
   // An unpainted rim gives the turning group the record's own box, so it turns about the record's center.
   const turning = shape("g", { class: "mark-turn" });
   turning.append(shape("circle", { r: 1, fill: "none" }));
