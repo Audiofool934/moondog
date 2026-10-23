@@ -1061,8 +1061,8 @@ async function main() {
           const status = await neteasePlayer.check();
           if (status.state !== "ready") {
             throw new Error(status.state === "missing"
-              ? "NetEase Cloud Music needs ncm-cli: npm install -g @music163/ncm-cli, then ncm-cli login."
-              : "NetEase Cloud Music is not signed in. Run ncm-cli login in a terminal, then choose it again.");
+              ? "NetEase Music needs ncm-cli: npm install -g @music163/ncm-cli, then ncm-cli login."
+              : "NetEase Music is not signed in. Run ncm-cli login in a terminal, then choose it again.");
           }
         }
         const saved = await writePlaybackPreference(service);

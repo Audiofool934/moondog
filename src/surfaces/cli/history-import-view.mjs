@@ -514,7 +514,7 @@ export class HistoryImportView {
       lastfmKey: [theme.bold(tr("Paste your Last.fm API key")), theme.muted(tr("32 letters and numbers. Not the shared secret.")), theme.text("API key")] }[this.state.page];
     const header = lastfm ?? (client
       ? [theme.bold(tr("Enter your Spotify Client ID")), theme.muted(tr("From your app settings. No client secret.")), theme.text("Client ID")]
-      : playlist ? [theme.bold(tr("Paste your playlist share link")), theme.muted(this.state.provider === "qq_music" ? tr("QQ Music public playlist") : tr("NetEase Cloud Music public playlist")), theme.text(tr("Link (or the copied share text)"))]
+      : playlist ? [theme.bold(tr("Paste your playlist share link")), theme.muted(this.state.provider === "qq_music" ? tr("QQ Music public playlist") : tr("NetEase Music public playlist")), theme.text(tr("Link (or the copied share text)"))]
       : [theme.bold(tr("Choose your music file")), theme.muted(fileKind), theme.text(tr("File path"))]);
     const hint = this.state.page === "lastfmUser" ? theme.muted(tr("Enter read · Esc back"))
       : client || this.state.page === "lastfmKey" ? theme.muted(tr("Enter save · Esc back")) : playlist ? theme.muted(tr("Paste link · Enter preview · Esc back")) : theme.muted(width >= 64 ? tr("Paste or drag one path · Tab completes · Enter inspect · Esc back")

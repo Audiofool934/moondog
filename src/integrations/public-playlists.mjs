@@ -6,7 +6,7 @@ const numericId = /^[1-9][0-9]{0,19}$/u;
 
 function allowedUrl(value) {
   let url;
-  try { url = new URL(value); } catch { throw new Error("Paste a QQ Music or NetEase Cloud Music playlist share link."); }
+  try { url = new URL(value); } catch { throw new Error("Paste a QQ Music or NetEase Music playlist share link."); }
   if (!hosts.has(url.hostname) || !["http:", "https:"].includes(url.protocol) || url.username || url.password || url.port) {
     throw new Error("Use a playlist link from y.qq.com, music.163.com or their official share links.");
   }

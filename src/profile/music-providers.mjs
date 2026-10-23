@@ -4,7 +4,7 @@ export const MUSIC_PROVIDER_LABELS = Object.freeze({
   youtube_music: "YouTube Music",
   lastfm: "Last.fm",
   qq_music: "QQ Music",
-  netease: "NetEase Cloud Music",
+  netease: "NetEase Music",
 });
 
 export function musicProviderLabel(system) {

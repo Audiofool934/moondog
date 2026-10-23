@@ -476,7 +476,7 @@ export class MoondogApplication {
   }
 
   requireNetease() {
-    if (!this.neteaseReady()) throw Object.assign(new Error("NetEase Cloud Music is not ready. The listener can sign in with: ncm-cli login"), { code: "netease_not_ready" });
+    if (!this.neteaseReady()) throw Object.assign(new Error("NetEase Music is not ready. The listener can sign in with: ncm-cli login"), { code: "netease_not_ready" });
     return this.neteasePlayer;
   }
 

@@ -6,7 +6,7 @@ It starts before the listener has a file and ends with an inspectable listening 
 ## Product direction: bring music from the services people use
 
 Import is a user-facing product journey, and broad music-service coverage is an active product priority.
-The target service set includes Spotify, Apple Music, YouTube Music, QQ Music and NetEase Cloud Music, with room for additional services.
+The target service set includes Spotify, Apple Music, YouTube Music, QQ Music and NetEase Music, with room for additional services.
 This target list describes the direction; the implemented paths below describe what listeners can use today.
 
 Start with the service name the listener recognizes, then explain what they can bring and how to bring it.
@@ -35,7 +35,7 @@ Missing timestamps or played duration remain unknown; a collection of songs does
 
 ## Expansion sequence
 
-YouTube Music, QQ Music, NetEase Cloud Music and Last.fm are shipped; the coverage below describes them.
+YouTube Music, QQ Music, NetEase Music and Last.fm are shipped; the coverage below describes them.
 The next step is to extend historical coverage as actual provider exports become available, including the Apple privacy archive path currently limited to guidance.
 A personal-information copy request alone does not establish that complete listening history will be supplied.
 
@@ -43,7 +43,7 @@ For each new service, ship a usable end-to-end import slice and update its visib
 
 ## Implemented service coverage
 
-`/import` starts with **Spotify**, **Apple Music**, **YouTube Music**, **Last.fm**, **QQ Music** and **NetEase Cloud Music**, plus Other sources for ListenBrainz.
+`/import` starts with **Spotify**, **Apple Music**, **YouTube Music**, **Last.fm**, **QQ Music** and **NetEase Music**, plus Other sources for ListenBrainz.
 Spotify and Apple retain the paths described below.
 YouTube Music offers saved-library and past-listening entrypoints with a Google Takeout request/download guide.
 Its importer accepts the original ZIP or extracted music-library-songs CSV and watch-history JSON.
@@ -52,7 +52,7 @@ Current action-title recognition covers English and Chinese; other actions, ordi
 General YouTube playlist exports, uploaded audio and HTML history are outside this slice.
 ZIP parsing reads a bounded private snapshot, selects only supported music members and removes the temporary snapshot after inspection.
 
-QQ Music and NetEase Cloud Music offer a working public-playlist share-link import, including a bounded official-host redirect path for share links.
+QQ Music and NetEase Music offer a working public-playlist share-link import, including a bounded official-host redirect path for share links.
 Their guides state that complete account listening-history import is unavailable.
 The preview names the playlist, shows sample songs and available/total coverage, and identifies it as a selected collection rather than listening or proof of ownership.
 No credentials, cookies, creator profiles, comments or audio are persisted.
