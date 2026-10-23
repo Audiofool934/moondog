@@ -31,6 +31,7 @@ A model or music service chosen there lasts until the app quits, and sign-in and
 - Before anything is said, the lunar record stands alone over the composer, drawn as dots from the terminal's own record.
   It turns while music plays and rests when it stops.
 - Conversations on the left are the terminal's conversations, in both directions: one started here shows up in `/resume`, and the other way round.
+  While the window shows, a conversation or folder saved in the terminal appears within about two seconds; the core asks SQLite whether another process wrote to the memory store, so nothing is sent when nothing changed.
   Pinned ones come first, then folders, then the rest by day.
   A row's `⋯` button or a right-click renames, pins, moves it to a folder, or deletes it after asking.
   Dragging a row onto a folder files it there. `⌘N` or the pencil in the title bar starts a new conversation.

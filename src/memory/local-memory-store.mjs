@@ -1972,6 +1972,13 @@ export class LocalMemoryStore {
     };
   }
 
+  // SQLite's count of commits made by other connections, such as another Moondog window or terminal.
+  // It changes when they write; this connection's own writes leave it alone.
+  dataVersion() {
+    this.#assertOpen();
+    return this.#database.prepare("PRAGMA data_version").get().data_version;
+  }
+
   close() {
     if (this.#closed) return;
     this.#closed = true;

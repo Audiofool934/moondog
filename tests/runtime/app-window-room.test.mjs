@@ -235,3 +235,23 @@ test("a successful device transfer reads the device list after Spotify has caugh
     await harness.stop();
   }
 });
+
+test("a showing window picks up a conversation saved elsewhere, and sends nothing when the list is the same", async () => {
+  const base = application("A");
+  let saved = [];
+  base.memoryStore = { version: 1, dataVersion() { return this.version; } };
+  base.listSavedSessions = () => saved;
+  const harness = await openRoom({ application: base });
+  try {
+    const lists = () => harness.messages.filter((message) => message.type === "sessions");
+    base.memoryStore.version = 2;
+    await harness.post({ type: "visible", visible: true });
+    assert.equal(lists().length, 0);
+    saved = [{ session_id: "T", title: "from the terminal", updated_at: "2026-10-23T08:00:00.000Z" }];
+    base.memoryStore.version = 3;
+    await harness.post({ type: "visible", visible: true });
+    assert.deepEqual(lists().at(-1)?.sessions.map((session) => session.id), ["T"]);
+  } finally {
+    await harness.stop();
+  }
+});

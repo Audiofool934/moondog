@@ -10,6 +10,8 @@ import { HistoryImportView } from "../src/surfaces/cli/history-import-view.mjs";
 import { setAppleMusicStorefront } from "../src/integrations/apple-music/storefront.mjs";
 
 const PLAYER_POLL_MS = { visible: 4_000, hidden: 30_000 };
+// How often a showing window looks for conversations the terminal or another window saved.
+const SESSIONS_LOOK_MS = 2_000;
 // Tools whose results can change what Spotify is playing or what comes next.
 const PLAYER_TOOLS = /^moondog_spotify_(?:player_control|queue_add|queue_batch|queue_similar|device_transfer|playlist_write)$/u;
 // At most this many conversations hold an agent at once; idle ones are reused first.
@@ -58,16 +60,39 @@ export function runWindowRoom(services, { port, send, quit = null }) {
     pinned: Boolean(session.pinned_at), folderId: session.folder_id ?? null, customTitle: session.custom_title === true,
   }));
   // A conversation on its first reply has nothing saved yet, so the list shows it from the live turn.
-  const listed = () => {
-    const saved = sessions();
+  const listed = (saved = sessions()) => {
     const ids = new Set(saved.map((session) => session.id));
     const fresh = slots.filter((slot) => slot.live && !ids.has(sessionOf(slot))).map((slot) => ({ id: sessionOf(slot),
       title: slot.live.user.replace(/\s+/gu, " ").trim().slice(0, 80), updatedAt: new Date().toISOString(), branch: false, pinned: false, folderId: null, customTitle: false }));
     return [...saved.filter((session) => session.pinned), ...fresh, ...saved.filter((session) => !session.pinned)];
   };
   const folders = () => (base.listConversationFolders?.() ?? []).map((folder) => ({ id: folder.folder_id ?? folder.id, name: folder.name, position: folder.position ?? 0 }));
-  const sendSessions = () => send({ type: "sessions", sessions: listed(), folders: folders(), current: sessionOf(current),
-    running: slots.filter((slot) => slot.turn).map(sessionOf) });
+  // The saved list and folders the window last got, so a look that finds nothing new sends nothing.
+  let shown = null;
+  const sendSessions = () => {
+    const saved = sessions();
+    const folderList = folders();
+    shown = JSON.stringify([saved, folderList]);
+    send({ type: "sessions", sessions: listed(saved), folders: folderList, current: sessionOf(current),
+      running: slots.filter((slot) => slot.turn).map(sessionOf) });
+  };
+  // The terminal and other windows save conversations and folders in the same memory store. While the window
+  // shows, SQLite's data version says whether another connection committed since the last look.
+  let seen = null;
+  let sessionsTimer = null;
+  function lookForSessions() {
+    try {
+      const version = base.memoryStore?.dataVersion?.();
+      if (version === undefined || version === seen) return;
+      seen = version;
+      if (JSON.stringify([sessions(), folders()]) !== shown) sendSessions();
+    } catch { /* A busy or closing store; the next look tries again. */ }
+  }
+  const scheduleSessions = () => {
+    clearTimeout(sessionsTimer);
+    if (closed || !visible) return;
+    sessionsTimer = setTimeout(() => { lookForSessions(); scheduleSessions(); }, SESSIONS_LOOK_MS);
+  };
 
   // A running turn is kept live in its slot; the saved entry for it is still "running", so the
   // transcript leaves it out and the window draws the live version instead.
@@ -537,7 +562,12 @@ export function runWindowRoom(services, { port, send, quit = null }) {
     open: (data) => openSession(String(data.id ?? "")),
     control: (data) => control(String(data.action ?? ""), data.via, data.positionMs),
     storefront: (data) => { setAppleMusicStorefront(data.code); },
-    visible: (data) => { visible = data.visible !== false; if (visible) void refreshPlayer(); schedulePlayer(); },
+    visible: (data) => {
+      visible = data.visible !== false;
+      if (visible) { void refreshPlayer(); lookForSessions(); }
+      schedulePlayer();
+      scheduleSessions();
+    },
     // Conversations: rename, pin, file, delete, and folders.
     label: (data) => { base.labelSavedSession?.(String(data.id), data.patch ?? {}); sendSessions(); },
     delete: (data) => deleteSession(String(data.id ?? "")),
@@ -593,6 +623,7 @@ export function runWindowRoom(services, { port, send, quit = null }) {
     const stop = () => stopping ??= (async () => {
       closed = true;
       clearTimeout(pollTimer);
+      clearTimeout(sessionsTimer);
       const settling = slots.filter((slot) => slot.turn).map((slot) => { slot.runtime.abort?.(); return slot.turn.settled; });
       signIn?.controller.abort();
       closeImport();
@@ -615,8 +646,12 @@ export function runWindowRoom(services, { port, send, quit = null }) {
     // Each launch opens a new conversation, as the terminal does; earlier ones wait in the sidebar.
     base.startNewSession?.("app_start");
     slots[0].runtime.reset?.();
-    send({ type: "ready", ...status(), sessions: sessions(), folders: folders(), current: sessionOf(current), running: [], transcript: [] });
+    const saved = sessions();
+    const folderList = folders();
+    shown = JSON.stringify([saved, folderList]);
+    send({ type: "ready", ...status(), sessions: saved, folders: folderList, current: sessionOf(current), running: [], transcript: [] });
     void refreshPlayer();
     schedulePlayer();
+    scheduleSessions();
   });
 }
