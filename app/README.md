@@ -35,6 +35,9 @@ A model or music service chosen there lasts until the app quits, and sign-in and
   Scrolling up into history folds it, as you scroll, into a small mark before the title in the title bar; back at the latest words it opens again.
   A click on the record, or `⌥⌘R`, keeps it folded; a click on the mark opens it and returns to the latest words.
   Where the bar has no room between its controls, the title gives way first, then the mark.
+  Hovering the record offers a full-window view at the lower-right corner of its square, clear of the disc.
+  The full-window view can shrink to a small square; the pin turns upright and solid when it keeps the window on top.
+  Esc or the lower-right button returns to the conversation.
 - Conversations on the left are the terminal's conversations, in both directions: one started here shows up in `/resume`, and the other way round.
   While the window shows, a conversation or folder saved in the terminal appears within about two seconds; the core asks SQLite whether another process wrote to the memory store, so nothing is sent when nothing changed.
   The window and the terminal show the same conversation: the one either opened last, with `/new`, `/resume`, `/rewind`, the sidebar or a launch.
@@ -77,7 +80,8 @@ A model or music service chosen there lasts until the app quits, and sign-in and
   Each search sends NetEase a short summary of the request, which Settings › Playback says.
 - No accent color. Cover art brings the color: the song playing tints the window and the record's grooves with its strongest colours, faintly, and they drift into the next song's over a few seconds; its cover glows from the player's corner across to the far edge.
   The window is one pane: no panel has a ground of its own, and the composer and your words sit on the light as a thin film, not as cards.
-  Icon buttons name themselves, with their keys, in a tooltip.
+  Icon buttons name themselves, with their keys, after 650 ms of hovering, in a quiet tooltip matched to the light or dark theme.
+  Moving to another button waits again; the record, expand, restore and pin controls keep accessible names without explanatory tooltips.
 - Controls for the whole window sit in the title bar, which never folds: the conversations and new conversation at the top left, Settings and the player at the top right.
   The side panels hold only their own content.
 - Keys: Enter sends and Shift+Enter starts a new line. `⌘.` or Esc stops a reply.
@@ -126,6 +130,8 @@ To ask it directly, run `"native/build/Moondog Music.app/Contents/MacOS/moondog-
 `npm run harness` draws the window against a stand-in core (`harness-preload.cjs`) with fictional songs and conversations, and saves a picture of each state, in light and dark, to `release/harness/`.
 It needs no model, no music service and none of your data.
 `MOONDOG_HARNESS_STATES=empty,reply` picks states, `MOONDOG_HARNESS_SIZE=900x700` changes the size, `MOONDOG_HARNESS_LOCALE=zh` the language, and `MOONDOG_HARNESS_SHOW=1` opens a window to try by hand.
+`MOONDOG_HARNESS_STATES=long MOONDOG_HARNESS_EVAL=check-ui.mjs npm run harness` checks tooltip timing and themes, the record handoff and corner placement, and pin feedback in both themes.
+An evaluation failure exits with a nonzero status.
 
 ## Build the app
 

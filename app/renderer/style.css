@@ -38,10 +38,10 @@ img { -webkit-user-drag: none; }
 .link-button { height: 26px; padding: 0 8px; border-radius: var(--r-2); font-size: var(--t-small); font-weight: 500; color: var(--text-2); }
 .link-button:hover { background: var(--hover); color: var(--text); }
 
-/* One tooltip for the window: an inverted label with its keys, a moment after the pointer settles. */
+/* One quiet, theme-matched tooltip for the window, after the pointer settles. */
 .tip { position: fixed; z-index: 60; display: flex; align-items: baseline; gap: 8px; max-width: 320px; padding: 4px 8px 5px;
-  border-radius: var(--r-1); background: var(--solid); color: var(--on-solid); font-size: var(--t-caption); font-weight: 500; line-height: 1.35;
-  pointer-events: none; box-shadow: 0 4px 14px rgb(0 0 0 / 0.16); }
+  border-radius: var(--r-1); background: color-mix(in srgb, var(--raised) 94%, transparent); color: var(--text-2); font-size: var(--t-caption); font-weight: 400; line-height: 1.35;
+  pointer-events: none; box-shadow: var(--lift); }
 .tip span { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
 .tip kbd { font: inherit; opacity: 0.55; letter-spacing: 0.04em; white-space: nowrap; }
 
@@ -236,20 +236,21 @@ img { -webkit-user-drag: none; }
    above the words and folds into the title bar as you scroll up into history; renderer.mjs places it. */
 .stage { flex: 1; display: grid; place-items: center; min-height: 0; padding: var(--bar) 44px 8px; }
 /* The drawing includes the tonearm, so it moves right by the arm's reach to center the disc itself. */
-.record-button { display: block; width: min(46vh, 380px, 70vw); aspect-ratio: 1; translate: 3.5% 0; color: var(--text); border-radius: 50%; }
+.record-frame { position: relative; width: min(46vh, 380px, 70vw); aspect-ratio: 1; translate: 3.5% 0; }
+.record-button { display: block; width: 100%; height: 100%; color: var(--text); border-radius: 50%; }
 .record-button:focus-visible { outline-offset: 6px; border-radius: 50%; }
 .record { display: block; width: 100%; height: 100%; animation: record-in 700ms var(--out) both; }
 @keyframes record-in { from { opacity: 0; transform: scale(0.97) rotate(-4deg); } to { opacity: 1; transform: none; } }
 .room.empty .stage { flex: 0 1 auto; padding-bottom: 36px; }
 .room.empty .record-button { pointer-events: none; }
 .room:not(.empty) .stage { position: absolute; inset: 0; z-index: 2; display: block; padding: 0; pointer-events: none; }
-.room:not(.empty) .record-button { position: absolute; left: 0; top: 0; width: var(--record, 240px); translate: none; transform-origin: 0 0; will-change: transform, opacity; }
-.room:not(.empty) .record-button:not(.away) { pointer-events: auto; }
-/* Pointing at the record above the words offers the record alone, by a button at its lower right. */
-.expand { position: absolute; left: 0; top: 0; z-index: 1; color: var(--text-2); opacity: 0; pointer-events: none;
+.room:not(.empty) .record-frame { position: absolute; left: 0; top: 0; width: var(--record, 240px); translate: none; transform-origin: 0 0; will-change: transform; }
+.room:not(.empty) .record-frame:has(.record-button:not(.away)) { pointer-events: auto; }
+/* The square hover target keeps the corner reachable without putting the button on the disc. */
+.expand { position: absolute; right: 0; bottom: 0; z-index: 1; color: var(--text-2); opacity: 0; pointer-events: none;
   background: var(--glass); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); box-shadow: var(--glass-edge);
   transition: opacity 240ms var(--soft), background-color var(--quick) var(--soft), color var(--quick) var(--soft); }
-.room:not(.empty) .record-button:not(.away):hover ~ .expand, .room:not(.empty) .expand:hover, .expand:focus-visible { opacity: 1; pointer-events: auto; transition-duration: 120ms; }
+.room:not(.empty) .record-frame:hover .record-button:not(.away) ~ .expand, .expand:focus-visible { opacity: 1; pointer-events: auto; transition: none; }
 .room.empty .expand, .record-button.away ~ .expand { display: none; }
 .room.empty { justify-content: center; padding-bottom: 6vh; }
 .room.empty > .frame { display: none; }
@@ -359,18 +360,21 @@ img { -webkit-user-drag: none; }
 @keyframes notice-in { from { opacity: 0; transform: translate(-50%, 4px); } }
 /* The record alone: the window holds the record and the cover's light, nothing else. The whole of it
    drags the window, and the two corner buttons show while the pointer is over the window. */
-.immersive { position: absolute; inset: 0; z-index: 30; display: grid; place-items: center; -webkit-app-region: drag;
-  animation: immerse 520ms var(--out) both; }
-.immersive .record { width: min(82vmin, 1100px); height: auto; aspect-ratio: 1; translate: 3.5% 0; color: var(--text); animation: none; }
-@keyframes immerse { from { opacity: 0; transform: scale(0.96); } }
+.immersive { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; -webkit-app-region: drag; }
+/* Only the record enters. The viewport-sized drag layer never keeps a transformed backing layer
+   whose old edges can lag behind a native live resize. The canvas box is independent of its bitmap. */
+.immersive .record { width: min(82vmin, 1100px); height: min(82vmin, 1100px); translate: 3.5% 0; color: var(--text);
+  animation: immerse 520ms var(--out) backwards; }
+@keyframes immerse { from { transform: scale(0.96); } }
 .window.immersed > :not(.immersive, .mood, .ambient) { visibility: hidden; }
 .window.immersed .ambient { mask-image: none; }
 .corner { position: absolute; right: 12px; color: var(--text-2); opacity: 0; -webkit-app-region: no-drag;
   transition: opacity 420ms var(--soft), background-color var(--quick) var(--soft), color var(--quick) var(--soft); }
 .corner[data-pin] { top: 10px; }
+.corner[data-pin] .icon { transform: rotate(-35deg); transition: transform var(--quick) var(--out); }
+.corner[data-pin][aria-pressed="true"] .icon { transform: none; transition: none; }
 .corner[data-restore] { bottom: 12px; }
 .corner[aria-pressed="true"] { color: var(--text); }
-.corner[aria-pressed="true"] .icon path:first-child { fill: currentColor; }
 .immersive.hovered .corner, .corner:focus-visible { opacity: 1; transition-duration: 160ms; }
 .drop { position: absolute; inset: 0; z-index: 20; display: grid; place-items: center; align-content: center; gap: 16px;
   background: color-mix(in srgb, var(--canvas) 92%, transparent); pointer-events: none; animation: rise 160ms var(--out) both; }

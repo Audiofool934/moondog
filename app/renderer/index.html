@@ -41,9 +41,10 @@
     <symbol id="i-zai" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M12.105 2L9.927 4.953H.653L2.83 2h9.276zM23.254 19.048L21.078 22h-9.242l2.174-2.952h9.244zM24 2L9.264 22H0L14.736 2H24z"/></symbol>
     <symbol id="i-close" viewBox="0 0 16 16"><path d="M4.25 4.25l7.5 7.5M11.75 4.25l-7.5 7.5"/></symbol>
     <symbol id="i-settings" viewBox="0 0 16 16"><path d="M6.55 3.27L7.03 1.52A6.55 6.55 0 0 1 8.97 1.52L9.45 3.27A4.95 4.95 0 0 1 10.32 3.63L11.90 2.73A6.55 6.55 0 0 1 13.27 4.10L12.37 5.68A4.95 4.95 0 0 1 12.73 6.55L14.48 7.03A6.55 6.55 0 0 1 14.48 8.97L12.73 9.45A4.95 4.95 0 0 1 12.37 10.32L13.27 11.90A6.55 6.55 0 0 1 11.90 13.27L10.32 12.37A4.95 4.95 0 0 1 9.45 12.73L8.97 14.48A6.55 6.55 0 0 1 7.03 14.48L6.55 12.73A4.95 4.95 0 0 1 5.68 12.37L4.10 13.27A6.55 6.55 0 0 1 2.73 11.90L3.63 10.32A4.95 4.95 0 0 1 3.27 9.45L1.52 8.97A6.55 6.55 0 0 1 1.52 7.03L3.27 6.55A4.95 4.95 0 0 1 3.63 5.68L2.73 4.10A6.55 6.55 0 0 1 4.10 2.73L5.68 3.63A4.95 4.95 0 0 1 6.55 3.27Z"/><circle cx="8" cy="8" r="2.1"/></symbol>
-    <symbol id="i-expand" viewBox="0 0 16 16"><path d="M2.75 6.25v-2.5a1 1 0 0 1 1-1h2.5M9.75 2.75h2.5a1 1 0 0 1 1 1v2.5M13.25 9.75v2.5a1 1 0 0 1-1 1h-2.5M6.25 13.25h-2.5a1 1 0 0 1-1-1v-2.5"/></symbol>
-    <symbol id="i-restore" viewBox="0 0 16 16"><path d="M6.25 2.75v2.5a1 1 0 0 1-1 1h-2.5M9.75 2.75v2.5a1 1 0 0 0 1 1h2.5M13.25 9.75h-2.5a1 1 0 0 0-1 1v2.5M2.75 9.75h2.5a1 1 0 0 1 1 1v2.5"/></symbol>
+    <symbol id="i-expand" viewBox="0 0 16 16"><path d="M6 2.5H2.5V6M2.5 2.5l4 4M10 13.5h3.5V10M13.5 13.5l-4-4"/></symbol>
+    <symbol id="i-restore" viewBox="0 0 16 16"><path d="M2.5 6.5h4v-4M6.5 6.5l-4-4M13.5 9.5h-4v4M9.5 9.5l4 4"/></symbol>
     <symbol id="i-pin" viewBox="0 0 16 16"><path d="M5.75 2.25h4.5M6.6 2.25v3.6L4.6 8.9h6.8L9.4 5.85v-3.6"/><path d="M8 8.9v4.85"/></symbol>
+    <symbol id="i-pin-filled" viewBox="0 0 16 16"><path d="M5.75 2.25h4.5M6.6 2.25v3.6L4.6 8.9h6.8L9.4 5.85v-3.6Z" fill="currentColor"/><path d="M8 8.9v4.85"/></symbol>
     <symbol id="i-check" viewBox="0 0 16 16"><path d="M3.5 8.4l2.9 2.9 6.1-6.6"/></symbol>
     <symbol id="i-external" viewBox="0 0 16 16"><path d="M9.5 2.75h3.75V6.5M13 3 7.5 8.5"/><path d="M11.75 9.5v2.5a1.25 1.25 0 0 1-1.25 1.25H4A1.25 1.25 0 0 1 2.75 12V5.5A1.25 1.25 0 0 1 4 4.25h2.5"/></symbol>
     <symbol id="i-repeat-one" viewBox="0 0 16 16"><path d="M3 7.25V6.5a2 2 0 0 1 2-2h7.5M10.75 2.75l1.75 1.75-1.75 1.75M13 8.75v.75a2 2 0 0 1-2 2H3.5M5.25 13.25 3.5 11.5l1.75-1.75"/><path d="M7.4 7.2 8.3 6.6v3" stroke-width="1.2"/></symbol>
@@ -83,7 +84,7 @@
     </aside>
 
     <main class="room" data-room>
-      <div class="stage" data-stage><button type="button" class="record-button" data-record-button tabindex="-1"><canvas class="record" aria-hidden="true" data-record></canvas></button><button type="button" class="tool expand" data-expand tabindex="-1"><svg class="icon"><use href="#i-expand"/></svg></button></div>
+      <div class="stage" data-stage><div class="record-frame" data-record-frame><button type="button" class="record-button" data-record-button tabindex="-1"><canvas class="record" aria-hidden="true" data-record></canvas></button><button type="button" class="tool expand" data-expand tabindex="-1"><svg class="icon" aria-hidden="true"><use href="#i-expand"/></svg></button></div></div>
       <div class="frame"><div class="scroll" data-scroll><div class="lead" aria-hidden="true" data-lead></div><div class="column" data-column></div></div></div>
       <div class="composer" data-composer>
         <button type="button" class="jump" data-jump hidden><svg class="icon"><use href="#i-down"/></svg></button>

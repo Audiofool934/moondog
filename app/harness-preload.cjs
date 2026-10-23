@@ -181,6 +181,9 @@ const STATES = {
   history() { STATES.long(); scrollUp(120); },
   "history-top"() { STATES.long(); scrollUp("top"); },
   folded() { STATES.long(); setTimeout(() => document.querySelector("[data-record-button]").click(), 150); },
+  "record-hover"() { STATES.long(); return { hover: "[data-record-frame]" }; },
+  record() { STATES.long(); setTimeout(() => document.querySelector("[data-expand]").click(), 150); },
+  "record-pinned"() { STATES.record(); setTimeout(() => document.querySelector("[data-pin]").click(), 300); },
   profile() { ready({ transcript: conversation([["Import my Spotify history", PROFILE]]) }); player({ index: 1 }); },
   // Where the music plays and which model answers, beside the send button: asked on a first launch,
   // with and without a model, named in their tooltips, each service by its mark, and NetEase's setup.

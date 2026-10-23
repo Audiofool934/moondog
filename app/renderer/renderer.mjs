@@ -64,11 +64,10 @@ function applyLanguage(next) {
   name($("toggle-sidebar"), t("conversations"), "⌥⌘S");
   name($("toggle-inspector"), t("player"), "⌥⌘P");
   name($("new"), t("newConversation"), "⌘N");
-  name(recordButton, t("foldRecord"), "⌥⌘R");
-  name(barRecord, t("showRecord"), "⌥⌘R");
-  name($("expand"), t("immerse"));
-  name($("pin"), t("keepOnTop"));
-  name($("restore"), t("restore"), "Esc");
+  // These self-explanatory controls keep accessible names without floating labels over the record.
+  for (const [node, key] of [[recordButton, "foldRecord"], [barRecord, "showRecord"], [$("expand"), "immerse"], [$("pin"), "keepOnTop"], [$("restore"), "restore"]]) {
+    node.setAttribute("aria-label", t(key));
+  }
   name($("settings-button"), t("settings"), "⌘,");
   name($("previous"), t("previous"), "⌃⌘←");
   name($("next"), t("next"), "⌃⌘→");
@@ -293,6 +292,7 @@ function pin() {
 // above the words, and folds into the title bar as the listener scrolls up into history; back at
 // the latest words it opens again. Folded by hand, it stays in the bar until it is opened by hand.
 const stage = $("stage");
+const recordFrame = $("record-frame");
 const recordButton = $("record-button");
 const barRecord = $("bar-record");
 const expand = $("expand");
@@ -355,8 +355,11 @@ function placeTitle() {
   name.classList.toggle("tight", room < 60);
   barRecord.classList.toggle("cramped", cramped);
 }
+// Finish the travel before the crossfade, so the two drawings occupy the same box during handoff.
+const HANDOFF = 0.94;
 // Where the record is drawn at a fold, in the room's coordinates: from above the words to the mark in the bar.
 function recordBox(at, size = recordSize()) {
+  at = Math.min(1, at / HANDOFF);
   const box = room.getBoundingClientRect();
   const dock = mark.node.getBoundingClientRect();
   return { x: lerp(box.width / 2 - size / 2 + size * 0.035, dock.left - box.left, at), y: lerp(BAR + RECORD_GAP, dock.top - box.top, at),
@@ -417,7 +420,7 @@ let placed = "";
 function placeRecord() {
   placing = 0;
   placeTitle();
-  if (!talking()) return;
+  if (!talking() || immersed()) return;
   const size = recordSize();
   let at = foldWanted();
   if (tween) {
@@ -429,17 +432,17 @@ function placeRecord() {
   // Reads first, then writes, so a frame lays out once. The record travels from its place above the
   // words to the mark in the bar, and the last stretch hands the drawing over to the mark.
   const { x, y, size: drawnSize } = recordBox(at, size);
-  const handoff = Math.min(1, Math.max(0, (at - 0.82) / 0.18));
+  const handoff = Math.min(1, Math.max(0, (at - HANDOFF) / (1 - HANDOFF)));
   const bottom = y + drawnSize;
   const key = [size, x.toFixed(1), y.toFixed(1), drawnSize.toFixed(2), handoff.toFixed(3)].join("|");
   if (key !== placed) {
     placed = key;
     room.style.setProperty("--record", `${size}px`);
-    recordButton.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) scale(${(drawnSize / size).toFixed(4)})`;
+    recordFrame.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) scale(${(drawnSize / size).toFixed(4)})`;
     recordButton.style.opacity = (1 - handoff).toFixed(3);
     barRecord.style.opacity = handoff.toFixed(3);
     recordButton.classList.toggle("away", at > 0.6);
-    expand.style.transform = `translate(${(x + drawnSize * 0.76 - 14).toFixed(1)}px, ${(y + drawnSize * 0.76 - 14).toFixed(1)}px)`;
+    expand.tabIndex = at > 0.6 ? -1 : 0;
     recordButton.tabIndex = at > 0.6 ? -1 : 0;
     const docked = at > 0.9 && !barRecord.classList.contains("cramped");
     barRecord.classList.toggle("docked", docked);
@@ -483,24 +486,32 @@ barRecord.addEventListener("click", toggleRecord);
 const immersive = $("immersive");
 let deep = null;
 let pinned = false;
+let pinChange = 0;
 const immersed = () => !immersive.hidden;
 function renderPin() {
   $("pin").setAttribute("aria-pressed", String(pinned));
+  setIcon($("pin"), pinned ? "pin-filled" : "pin");
 }
 function immerse(on) {
   if (on === immersed()) return;
   immersive.hidden = !on;
   layout.classList.toggle("immersed", on);
   window.moondogApp?.setImmersive?.(on);
+  pinChange += 1;
   pinned = false;
   renderPin();
   if (on) {
+    record?.turn(false);
     deep ??= mountRecord($("immersive-record"), { across: 160 });
     deep.tint(grooveColours(moodPalette, dark.matches), true);
     immersive.classList.add("hovered");
     $("restore").focus({ preventScroll: true });
   } else {
     immersive.classList.remove("hovered");
+    // Reconcile the conversation once, at the final width, rather than lay it out behind each live resize.
+    renderPanels();
+    renderInspector();
+    placeSoon();
     input.focus({ preventScroll: true });
   }
   deep?.turn(on && Boolean(nowPlaying()?.playing));
@@ -508,9 +519,17 @@ function immerse(on) {
 expand.addEventListener("click", () => immerse(true));
 $("restore").addEventListener("click", () => immerse(false));
 $("pin").addEventListener("click", async () => {
+  const change = ++pinChange;
+  const before = pinned;
   const want = !pinned;
-  pinned = (await window.moondogApp?.setPinned?.(want)) ?? want;
+  pinned = want;
   renderPin();
+  try {
+    const actual = (await window.moondogApp?.setPinned?.(want)) ?? want;
+    if (change === pinChange) { pinned = actual; renderPin(); }
+  } catch {
+    if (change === pinChange) { pinned = before; renderPin(); }
+  }
 });
 window.moondogApp?.onHover?.((inside) => immersive.classList.toggle("hovered", inside));
 
@@ -527,7 +546,9 @@ function renderEmpty(empty) {
   tween = null;
   placed = "";
   if (empty) {
-    for (const property of ["transform", "opacity", "--record"]) { recordButton.style.removeProperty(property); room.style.removeProperty(property); }
+    recordFrame.style.removeProperty("transform");
+    recordButton.style.removeProperty("opacity");
+    room.style.removeProperty("--record");
     recordButton.classList.remove("away");
     recordButton.tabIndex = -1;
     leadHeight = 0;
@@ -1248,6 +1269,7 @@ function slidePanels() {
   requestAnimationFrame(track);
 }
 addEventListener("resize", () => {
+  if (immersed()) return;
   for (const panel of ["inspector", "sidebar"]) if (forced[panel]) makeRoom(panel);
   renderPanels();
   renderInspector();

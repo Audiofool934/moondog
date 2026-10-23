@@ -38,8 +38,9 @@ export function name(node, label, keys = "") {
   if (keys) node.dataset.keys = keys; else delete node.dataset.keys;
 }
 
-// One tooltip for the whole window. It waits a moment on the first hover, then follows the pointer
-// from button to button at once, and never covers what it names. It has no entrance: it is there or not.
+// One tooltip for the whole window. Every button waits for a settled pointer, including the next
+// button after an open tooltip, so moving across the controls never flashes a trail of labels.
+const HOVER_DELAY_MS = 650;
 export function tooltips() {
   const tip = make("div", "tip");
   tip.setAttribute("role", "tooltip");
@@ -47,7 +48,6 @@ export function tooltips() {
   document.body.append(tip);
   let target = null;
   let timer = 0;
-  let warm = 0;
   const place = () => {
     if (!target?.isConnected) return hide();
     tip.replaceChildren(make("span", "", target.dataset.tip));
@@ -70,7 +70,6 @@ export function tooltips() {
   };
   const hide = () => {
     clearTimeout(timer);
-    if (!tip.hidden) warm = performance.now();
     tip.hidden = true;
     target = null;
   };
@@ -80,7 +79,10 @@ export function tooltips() {
     hide();
     if (!next || next.disabled) return;
     target = next;
-    timer = setTimeout(place, performance.now() - warm < 300 ? 0 : 280);
+    timer = setTimeout(place, HOVER_DELAY_MS);
+  });
+  document.addEventListener("pointerout", (event) => {
+    if (target && !target.contains(event.relatedTarget)) hide();
   });
   // A control reached with the keyboard names itself too, at once.
   document.addEventListener("focusin", (event) => {

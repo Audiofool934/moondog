@@ -26,6 +26,7 @@ const settle = Number(process.env.MOONDOG_HARNESS_SETTLE || 900);
 const show = process.env.MOONDOG_HARNESS_SHOW === "1";
 const check = process.env.MOONDOG_HARNESS_EVAL ? readFileSync(process.env.MOONDOG_HARNESS_EVAL, "utf8") : null;
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+let failed = false;
 
 // Each run keeps its own throwaway profile, so its panel widths and choices never reach the real
 // app's, and two runs at once don't share one.
@@ -88,7 +89,7 @@ app.whenReady().then(async () => {
         if (point) window.webContents.sendInputEvent({ type: "mouseMove", ...point });
       }
       if (check) {
-        const result = await window.webContents.executeJavaScript(`(async () => { ${check}\n })()`).catch((error) => ({ error: String(error) }));
+        const result = await window.webContents.executeJavaScript(`(async () => { ${check}\n })()`).catch((error) => { failed = true; return { error: String(error) }; });
         process.stdout.write(`[check] ${entry} ${theme} ${JSON.stringify(result)}\n`);
       }
       await wait(settle);
@@ -99,5 +100,5 @@ app.whenReady().then(async () => {
     }
   }
   window.destroy();
-  app.quit();
+  app.exit(failed ? 1 : 0);
 }, (error) => { process.stderr.write(`${error?.stack ?? error}\n`); app.exit(1); });
