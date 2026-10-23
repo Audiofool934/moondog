@@ -685,6 +685,7 @@ const COMMANDS = [
   { name: "service", label: "musicService", run: () => settings.show("playback") },
   { name: "device", label: "devices", run: () => pickDevice(null) },
   { name: "import", label: "importHistory", run: () => settings.show("library") },
+  { name: "netease", label: "netease", run: () => settings.show("netease") },
   { name: "memory", label: "memory", run: () => settings.show("memory") },
   { name: "remember", label: "remember", argument: "cmdRememberArgument", run: (text) => { if (text) { send({ type: "remember", text }); notice(t("remembered")); } } },
   { name: "folder", label: "newFolder", run: () => {
@@ -1202,7 +1203,7 @@ function streamingTurn(id) {
 }
 const onScreen = (data) => !data.session || data.session === state.current;
 const SIGN_IN_ERRORS = { connect_while_answering: "waitForReply", sign_in_busy: "signInBusy" };
-const SETTINGS_MESSAGES = new Set(["models", "provider-models", "devices", "memories", "auth-prompt", "auth-prompt-closed", "auth-event", "sign-in", "import", "notice"]);
+const SETTINGS_MESSAGES = new Set(["netease-library", "models", "provider-models", "devices", "memories", "auth-prompt", "auth-prompt-closed", "auth-event", "sign-in", "import", "notice"]);
 function receive({ data }) {
   if (!data?.type) return;
   if (data.type === "preview" || data.type === "preview-control") { previews.receive(data); renderInspector(); return; }

@@ -55,7 +55,7 @@ const errorText = (error) => String(error?.message ?? error ?? "").slice(0, 400)
 
 export function runWindowRoom(services, { port, send, quit = null, focus = null }) {
   const { application: base, rebuildRuntime, saveRuntimeSelection, toolTrace = null, openConversation, modelSettings, saveLanguage, savePlaybackService,
-    prepareImport, prepareRecentImport, refreshImportedData, lastfm, runSpotify } = services;
+    prepareImport, prepareRecentImport, refreshImportedData, lastfm, runSpotify, neteaseLibrary, loginNetease, prepareNeteaseImport } = services;
   // Slot 0 is the core's own application and agent. The core closes every conversation after the room ends.
   const slots = [{ application: base, runtime: services.runtime, turn: null, live: null, stale: null, rebuilding: null, waiting: false, close: null }];
   let current = slots[0];
@@ -618,7 +618,8 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     send({ type: "import", stage: "reading", kind });
     const onProgress = (event) => send({ type: "import", stage: "progress", count: event?.count ?? null, total: event?.total ?? null, step: event?.stage ?? null });
     try {
-      const prepared = kind === "spotify" ? await prepareRecentImport({ onProgress, signal: controller.signal })
+      const prepared = kind === "netease" ? await prepareNeteaseImport(value, { signal: controller.signal })
+        : kind === "spotify" ? await prepareRecentImport({ onProgress, signal: controller.signal })
         : kind === "lastfm" ? await prepareImport(value, { provider: "lastfm", onProgress, signal: controller.signal })
           : await prepareImport(value, {});
       if (controller.signal.aborted) { prepared?.close?.(); importing = null; return send({ type: "import", stage: "cancelled" }); }
@@ -681,7 +682,44 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
       id: memory.memory_id, text: memory.text, kind: memory.kind, updatedAt: memory.updated_at })) });
   }
 
+  let neteaseSigningIn = null;
+  let neteaseRead = null;
+  async function neteaseAction(action, value) {
+    if (!neteaseLibrary) return;
+    if (action === "login") {
+      if (neteaseSigningIn) return;
+      neteaseRead?.abort();
+      neteaseSigningIn = new AbortController();
+    } else if (action === "logout") {
+      neteaseSigningIn?.abort();
+      neteaseRead?.abort();
+    } else {
+      neteaseRead?.abort();
+      neteaseRead = new AbortController();
+    }
+    const controller = action === "login" ? neteaseSigningIn : action === "logout" ? new AbortController() : neteaseRead;
+    send({ type: "netease-library", action, stage: "loading" });
+    try {
+      const result = action === "login" ? await loginNetease({ signal: controller.signal })
+        : action === "logout" ? await neteaseLibrary.logout()
+        : action === "playlists" ? { playlists: await neteaseLibrary.playlists({ signal: controller.signal }) }
+        : action === "playlist" ? { playlist: await neteaseLibrary.playlist(value, { signal: controller.signal }) }
+        : await neteaseLibrary.status({ refresh: true, signal: controller.signal });
+      if (controller.signal.aborted) return;
+      send({ type: "netease-library", action, stage: "done", ...result });
+    } catch (error) {
+      if (!controller.signal.aborted) send({ type: "netease-library", action, stage: "error", code: error?.code, message: errorText(error) });
+    } finally { if (neteaseSigningIn === controller) neteaseSigningIn = null; }
+  }
+
   const handlers = {
+    "netease-status": () => neteaseAction("status"),
+    "netease-login": () => neteaseAction("login"),
+    "netease-login-cancel": () => neteaseSigningIn?.abort(),
+    "netease-logout": () => neteaseAction("logout"),
+    "netease-playlists": () => neteaseAction("playlists"),
+    "netease-playlist": (data) => neteaseAction("playlist", String(data.id ?? "")),
+    "import-netease": (data) => prepare("netease", String(data.id ?? "")),
     prompt: (data) => prompt(String(data.text ?? "")),
     cancel: () => { if (current.turn) current.runtime.abort?.(); },
     new: () => openSession(null),
@@ -752,6 +790,8 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
       clearTimeout(sessionsTimer);
       const settling = slots.filter((slot) => slot.turn).map((slot) => { slot.runtime.abort?.(); return slot.turn.settled; });
       signIn?.controller.abort();
+      neteaseSigningIn?.abort();
+      neteaseRead?.abort();
       closeImport();
       await Promise.race([Promise.allSettled(settling), new Promise((done) => setTimeout(done, 2000))]);
       resolve({});

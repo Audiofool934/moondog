@@ -1,0 +1,29 @@
+.netease-library { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.netease-library h2, .netease-library h3 { margin: 0 0 6px; color: var(--text); font-size: var(--t-title); font-weight: 550; overflow-wrap: anywhere; }
+.netease-library .note { margin: 0; color: var(--text-2); line-height: 1.55; overflow-wrap: anywhere; }
+.netease-heading { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.netease-actions, .netease-pagination { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.netease-actions [aria-pressed="true"] { background: var(--current); color: var(--text); }
+.netease-avatar { width: 42px; height: 42px; border-radius: 50%; object-fit: cover; }
+.netease-cover { flex: none; width: 64px; height: 64px; object-fit: cover; border-radius: var(--r-2); }
+.netease-cover.small { width: 40px; height: 40px; }
+.netease-search { width: 100%; box-sizing: border-box; }
+.netease-playlists { display: flex; flex-direction: column; gap: 2px; }
+.netease-playlist { display: flex; align-items: center; gap: 12px; padding: 9px 8px; width: 100%; min-width: 0; text-align: start; border-radius: var(--r-2); color: var(--text); }
+.netease-playlist:hover { background: var(--hover); }
+.netease-playlist-words { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.netease-name { font-size: var(--t-ui); overflow-wrap: anywhere; }
+.netease-tracks { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: var(--t-small); color: var(--text); }
+.netease-tracks th { color: var(--text-2); font-weight: 500; text-align: start; padding: 10px 4px; }
+.netease-tracks td { padding: 9px 4px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.netease-tracks th:first-child { width: 30px; }
+.netease-tracks th:nth-child(2) { width: 34%; }
+.netease-tracks th:last-child { width: 42px; }
+.netease-tracks td:first-child, .netease-tracks td:last-child { color: var(--text-2); font-variant-numeric: tabular-nums; }
+.netease-tracks tbody tr:hover { background: var(--hover); }
+.netease-pagination { justify-content: space-between; margin-top: 10px; }
+.netease-error { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+@media (max-width: 650px) {
+  .netease-tracks th:nth-child(4), .netease-tracks td:nth-child(4) { display: none; }
+  .netease-tracks th:nth-child(2) { width: 44%; }
+}

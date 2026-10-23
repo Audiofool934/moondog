@@ -3,9 +3,10 @@
 // the core's next status confirms it, so nothing waits on a rebuild to look chosen.
 import { languageTag, timeOfDay } from "../strings.mjs";
 import { icon, make, name, scrollbar, setIcon, turning } from "./ui.mjs";
+import { createNeteaseSettings } from "./netease.mjs";
 
-const SECTIONS = ["general", "model", "playback", "library", "memory", "about"];
-const ICONS = { general: "globe", model: "model", playback: "speaker", library: "import", memory: "memory", about: "info" };
+const SECTIONS = ["general", "model", "playback", "netease", "library", "memory", "about"];
+const ICONS = { general: "globe", model: "model", playback: "speaker", netease: "speaker", library: "import", memory: "memory", about: "info" };
 // Spotify names device types in English; the icon says the kind, so no word is needed.
 const DEVICE_ICONS = { computer: "laptop", smartphone: "phone", tablet: "phone", tv: "tv" };
 const REDIRECT_URI = "http://127.0.0.1:43821/callback";
@@ -99,6 +100,7 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
   let closing = 0;
   let content = null;
   let copiedTimer = 0;
+  const netease = createNeteaseSettings({ send, locale: () => state.locale, changed: () => render() });
   // What the core told this sheet; the sheet asks again each time a section opens.
   const data = { providers: null, providersError: false, models: new Map(), modelsFailed: new Set(), expanded: undefined, signingOut: new Set(),
     devices: null, devicesError: false, devicesLoading: false, memories: null, auth: null, error: null, importing: null, version: null, copied: null, focus: null, phaseOffset: null,
@@ -162,6 +164,7 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
     // The status and the memories come back for every section.
     send({ type: "settings" });
     if (section === "model") send({ type: "models" });
+    if (section === "netease") netease.refresh();
     if (section === "playback") {
       data.devicesLoading = true;
       send({ type: "devices" });
@@ -686,7 +689,7 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
     card.setAttribute("aria-label", say("settings"));
     close.setAttribute("aria-label", say("close"));
     for (const [id, { tab, label }] of tabs) {
-      label.textContent = say(`section.${id}`);
+      label.textContent = id === "netease" ? (String(state.locale).startsWith("zh") ? "网易云音乐" : "NetEase") : say(`section.${id}`);
       tab.classList.toggle("on", id === section);
       tab.setAttribute("aria-current", String(id === section));
     }
@@ -696,7 +699,7 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
     data.focus = null;
     const fresh = make("div", `sheet-section${entering ? " entering" : ""}`);
     fresh.dataset.section = section;
-    const views = { general, model, playback, library, memory, about };
+    const views = { general, model, playback, netease: () => [netease.render()], library, memory, about };
     fresh.append(...views[section]());
     // The core often repeats itself. An unchanged section keeps its nodes, so the row under the
     // pointer and the field being typed in are never replaced. Passing states, such as the refresh
@@ -725,6 +728,7 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
 
   // Messages from the core that this sheet draws.
   function receive(message) {
+    if (message.type === "netease-library") { netease.receive(message); return; }
     if (message.type === "models") {
       data.providers = message.providers ?? [];
       data.providersError = Boolean(message.error);

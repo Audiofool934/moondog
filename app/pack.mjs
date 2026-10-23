@@ -47,7 +47,7 @@ const artifacts = await build({
     // The app and the room it carries share one version.
     extraMetadata: { version },
     directories: { output: "release", buildResources: "build-resources" },
-    files: ["package.json", "main.mjs", "preload.cjs", "core-process.mjs", "window-room.mjs", "preview-player.mjs", "strings.mjs",
+    files: ["package.json", "main.mjs", "preload.cjs", "core-process.mjs", "window-room.mjs", "preview-player.mjs", "strings.mjs", "netease-login.mjs",
       "dist/**/*", "!dist/**/*.map"],
     asar: false,
     // The core sits beside the window's folder, where core-process.mjs imports ../scripts/moondog.mjs.

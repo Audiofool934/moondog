@@ -23,6 +23,29 @@ The room is built on [Pi](https://github.com/earendil-works/pi).
 
 ## Open the room
 
+### Local Windows checkout: NetEase account and playlists
+
+This checkout adds a NetEase account connection in **Settings → NetEase** and the desktop `/netease` shortcut. On Windows, run `start-moondog.cmd` from the repository root to open the desktop app in Chinese. It requires the root and `app/` dependencies (`npm ci` in each directory).
+
+The official NetEase website opens in an isolated login window. Scan its QR code with the NetEase app, or choose another login method offered by the website. After sign-in, browse created and saved playlists, search by name, open complete track lists with pagination, and preview a selected playlist before adding it to the existing music profile. Empty libraries, unavailable tracks and expired sessions have explicit states. Playlist membership remains collection evidence and never manufactures listening history.
+
+Terminal commands from this checkout:
+
+```text
+/netease login
+/netease status
+/netease playlists
+/netease playlist <playlist-id>
+/netease import <playlist-id>
+/netease logout
+```
+
+The same commands are available as `node scripts/moondog.mjs netease ...`, with `--json` for structured output. Login requires the desktop dependencies. An explicit terminal `import` commits that selected playlist; the desktop uses preview followed by **Add to profile**.
+
+The account session is stored only in `netease-session.json` under Moondog's private state directory (`MOONDOG_STATE_HOME` overrides it). Only the core reads it, only requests to `https://music.163.com` carry it, and neither renderer messages nor CLI results include the cookie. Sign out deletes the local session. This sign-in enables library browsing and import; full NetEase playback still uses the existing, separately authenticated `ncm-cli` player. Local folder synchronization and downloads are not part of this addition.
+
+The desktop runs from source on Windows; the existing distribution packaging remains macOS-only. Some upstream automated tests assume Unix commands or Unix file cleanup behavior. See [the local verification report](docs/NETEASE_LOCAL_VERIFICATION.md).
+
 You need Node.js 22.19.0 or newer, on macOS or Linux.
 Install from this checkout to run the room shown here.
 

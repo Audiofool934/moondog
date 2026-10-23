@@ -9,6 +9,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { windowLocale, windowStrings } from "./strings.mjs";
+import { openNeteaseLogin } from "./netease-login.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 // For automated checks: lets a DevTools client drive the window.
@@ -44,6 +45,7 @@ function coreEnvironment(shellPath) {
 let window = null;
 let core = null;
 let quitting = false;
+let neteaseLogin = null;
 // What the page last said it can do; the menu greys out what would do nothing.
 const playback = { controllable: false, streaming: false };
 let dockMenu = null;
@@ -124,6 +126,19 @@ async function openCore() {
     execArgv: debugPort ? [`--inspect=127.0.0.1:${debugPort + 1}`] : [],
   });
   core.stdout.on("data", (chunk) => process.stdout.write(chunk));
+  const runningCore = core;
+  core.on("message", async (message) => {
+    if (message?.type === "netease-login-cancel") return neteaseLogin?.abort();
+    if (message?.type !== "netease-login" || neteaseLogin) return;
+    const controller = new AbortController();
+    neteaseLogin = controller;
+    try {
+      const cookie = await openNeteaseLogin({ BrowserWindow, parent: window, signal: controller.signal });
+      runningCore.postMessage({ type: "netease-login-result", cookie });
+    } catch {
+      runningCore.postMessage({ type: "netease-login-result", error: "网易云登录失败，请检查网络后重试。" });
+    } finally { if (neteaseLogin === controller) neteaseLogin = null; }
+  });
   core.stderr.on("data", (chunk) => {
     process.stderr.write(chunk);
     errors = `${errors}${chunk}`.slice(-4000);
@@ -336,6 +351,7 @@ nativeTheme.on("updated", () => window?.setBackgroundColor(background()));
 let stopping = false;
 app.on("before-quit", (event) => {
   quitting = true;
+  neteaseLogin?.abort();
   // The helper stops its songs and exits when its pipe closes.
   musicHelper?.stdin.end();
   if (!core) return;

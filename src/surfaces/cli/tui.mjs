@@ -112,6 +112,7 @@ const slashCommands = [
   { name: "auth", description: N_("Sign in to a model or web search service") },
   { name: "web", description: N_("Look things up on public music sites") },
   { name: "spotify", description: N_("Connect and control Spotify") },
+  { name: "netease", description: "网易云登录、歌单和曲目 / NetEase account and playlists" },
   { name: "skip", description: N_("Skip to the next song preview") },
   { name: "stop", description: N_("Stop the song previews") },
   { name: "reload", description: N_("Reload model settings and sign-ins") },
@@ -187,6 +188,7 @@ export async function runMoondogTui({
   rebuildRuntime,
   runAuth,
   runSpotify,
+  runNetease,
   runProfile,
   runProfileAction,
   runWeb,
@@ -1856,6 +1858,15 @@ export async function runMoondogTui({
       await runSpotifyCommand(args);
       return;
     }
+    if (command === "netease") {
+      if (!runNetease) throw new Error("NetEase is unavailable in this room.");
+      setFooter("NetEase...");
+      addMoondogMessage(await runNetease(args, { signal: localCommandController?.signal }));
+      if (args[0] === "import") { await replaceRuntime(); await showImportedListeningProfile(); }
+      else renderHeader();
+      setFooter("NetEase: done.", success);
+      return;
+    }
     if (command === "profile" && args.length > 0) {
       if (typeof runProfile !== "function") {
         throw new Error(tr("Changing your profile isn't available when Moondog is started this way."));
@@ -1964,7 +1975,7 @@ export async function runMoondogTui({
     if (profileView) closeProfile();
     homeFocused = false;
     editor.focused = true;
-    if (["web", "remember", "forget", "spotify", "art", "motion"].includes(selected.value)) {
+    if (["web", "remember", "forget", "spotify", "netease", "art", "motion"].includes(selected.value)) {
       if (editor.getText()) {
         setFooter(tr("Your message is still here. Send or clear it, then use /{command}.", { command: selected.value }));
       } else {
@@ -2014,7 +2025,7 @@ export async function runMoondogTui({
       try {
         if (!["home", "theme", "art", "motion", "model", "resume", "rewind", "new", "taste", "profile", "import"].includes(command)) enterConversation();
         if (command !== "auth") editor.addToHistory(value);
-        localCommandController = ["web", "lyrics", "model", "update", "profile"].includes(command) ? new AbortController() : null;
+        localCommandController = ["web", "lyrics", "model", "update", "profile", "netease"].includes(command) ? new AbortController() : null;
         const controller = localCommandController;
         setBusy(true, controller ? () => controller.abort() : null);
         setFooter(`/${command}...`);

@@ -15,6 +15,8 @@ npm start
 
 The app reads and writes the same profile, settings, and sign-ins as the `moondog` command.
 
+For this checkout on Windows, run `start-moondog.cmd` in the parent directory. **Settings → NetEase** opens the official NetEase login window and then your created/saved playlists. Search, inspect paginated tracks, and preview a playlist before importing it into the profile. NetEase login credentials stay in the core; they are never sent to the window renderer. The library connection is independent of the existing `ncm-cli` playback sign-in. See the root README for terminal commands and the local verification report.
+
 To try the whole window without touching a Spotify account, run it on a simulated Spotify:
 
 ```bash
@@ -24,7 +26,7 @@ npm run simulated
 
 The simulated Spotify (`src/evaluation/simulated-spotify.mjs`) has real public titles, invented IDs and drawn covers.
 The model is the one your settings choose; conversations stay in memory and are gone when the app quits.
-A model or music service chosen there lasts until the app quits, and sign-in and sign-out are turned off.
+A model or music service chosen there lasts until the app quits, and real sign-in and sign-out are turned off. The NetEase settings use an explicitly fictional account and playlists, with local simulated login and logout; no requests go to NetEase.
 
 ## The window
 
