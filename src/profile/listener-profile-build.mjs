@@ -305,6 +305,12 @@ export function compileListenerProfile(input, submission) {
   };
 }
 
+function sameListenerChoices(revision, input) {
+  const saved = listenerAssertionClaims({ evidence: new Map(Object.entries(revision.evidence ?? {})) }).map(claim => claim.claim_id).sort();
+  const now = listenerAssertionClaims(input).map(claim => claim.claim_id).sort();
+  return saved.length === now.length && saved.every((id, index) => id === now[index]);
+}
+
 export function readListenerProfile({ input, getInput, store }, { offset = 0, limit = 12, claimId, revisionId } = {}) {
   if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isInteger(limit) || limit < 1 || limit > 20) {
     throw new TypeError("Saved profile page is invalid");
@@ -316,10 +322,15 @@ export function readListenerProfile({ input, getInput, store }, { offset = 0, li
   // Most new listeners have no saved reading. Do not scan their source archive
   // merely to tell an ordinary conversation that the reading is missing.
   input ??= getInput();
-  const state = revision.input_digest === input.input_digest && revision.synthesis_version === LISTENER_PROFILE_SYNTHESIS_VERSION &&
-    CHECKED_PROFILE_STATES.has(revision.verification?.state) ? "current" : "stale";
+  const analysisHolds = revision.synthesis_version === LISTENER_PROFILE_SYNTHESIS_VERSION &&
+    CHECKED_PROFILE_STATES.has(revision.verification?.state);
+  const state = analysisHolds && revision.input_digest === input.input_digest ? "current" : "stale";
   const result = {
-    state, revision_id: revision.revision_id, sequence: revision.sequence,
+    state,
+    // New plays alone change the input. A reading whose analysis and listener choices
+    // still hold stays usable as taste up to the listening it was built from.
+    ...(state === "stale" && analysisHolds && sameListenerChoices(revision, input) ? { newer_listening_only: true } : {}),
+    revision_id: revision.revision_id, sequence: revision.sequence,
     parent_revision_id: revision.parent_revision_id, built_at: revision.built_at, model: revision.model,
     synthesis_version: revision.synthesis_version,
     verification: revision.verification,
@@ -349,9 +360,11 @@ export function compactListenerProfile(value) {
   const coverage = value.coverage?.coverage ?? {};
   const flagged = value.verification?.state === "flagged"
     ? value.verification.checks.at(-1).issues.slice(0, 3).map(issue => issue.problem) : [];
+  const behind = value.state === "stale" && value.newer_listening_only === true;
   return {
-    state: value.state, revision_id: value.revision_id, sequence: value.sequence, built_at: value.built_at,
-    ...(value.state === "current" ? {
+    state: behind ? "current_through" : value.state, revision_id: value.revision_id, sequence: value.sequence, built_at: value.built_at,
+    ...(value.state === "current" || behind ? {
+      ...(behind ? { note: "Built from listening up to coverage.last_played_at. Plays stored since then are not in this reading; listening coverage shows them. Listener choices and analysis are unchanged." } : {}),
       summary: value.summary,
       claims: value.highlights,
       listener_assertions: value.listener_assertions,

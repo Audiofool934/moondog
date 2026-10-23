@@ -192,6 +192,8 @@ export function projectSpotifyRecentActivity({
     source_key: SPOTIFY_RECENT_ACTIVITY_SOURCE,
     captured_at: normalizedCapturedAt,
     cursor_after_ms: cursorAfterMs > 0 ? cursorAfterMs : null,
+    // Spotify keeps only the last 50 plays: a full read may have lost older ones.
+    window_full: page.items.length >= 50 || page.has_more === true,
     track_refs: [...trackRefs.values()],
     listening_events: [...listeningEvents.values()],
   };

@@ -841,10 +841,12 @@ export async function runSpotifyCommand({
     const service = await runtime.service();
     const page = await externalCall(
       () =>
+        // Read Spotify's whole window: the cursor moves past whatever a shorter read leaves out.
         service.recentActivity({
+          limit: 50,
           ...input,
           ...(cursor !== null ? { after: cursor } : {}),
-        }),
+        }, { signal }),
       "Spotify recent activity could not be read.",
     );
     const currentTime = now();

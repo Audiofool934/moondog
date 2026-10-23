@@ -48,6 +48,7 @@ import { IMPORT_GUIDE_URLS } from "../src/surfaces/cli/import-guides.mjs";
 import { readLastfmConfiguration, writeLastfmConfiguration } from "../src/integrations/lastfm/settings.mjs";
 import { runMoondogTui } from "../src/surfaces/cli/tui.mjs";
 import { createLyricService } from "../src/core/lyric-service.mjs";
+import { startRecentListeningSync } from "../src/core/recent-listening-sync.mjs";
 import { createAppleMusicCatalog } from "../src/integrations/apple-music/catalog.mjs";
 import { createTerminalPreviewPlayer } from "../src/integrations/apple-music/terminal-preview-player.mjs";
 import {
@@ -270,6 +271,22 @@ async function spotifyRecentSyncContext(args) {
   } catch (error) {
     recentActivityStore.close();
     throw error;
+  }
+}
+
+// Reads the latest Spotify plays into a listener's existing history. It never starts one:
+// a listener who has imported nothing yet still chooses when to begin.
+async function syncRecentSpotifyListening({ signal } = {}) {
+  const recentActivityStore = await openListeningHistoryStore();
+  try {
+    const appleSubjectId = await optionalAppleMusicSubjectId();
+    const subjectId = recentActivityStore.localSubjectId(appleSubjectId ? { preferredSubjectId: appleSubjectId } : {});
+    if (!subjectId) return null;
+    return await runSpotifyCommand({
+      args: ["sync-recent"], json: true, stdout: { write() {} }, signal, recentActivityStore, subjectId,
+    });
+  } finally {
+    recentActivityStore.close();
   }
 }
 
@@ -845,6 +862,7 @@ async function main() {
   };
 
   let lyrics = null;
+  let recentListening = null;
   let exitRequest;
   try {
     // The command keeps a local trace of the agent's tool calls in the state directory.
@@ -928,6 +946,15 @@ async function main() {
       );
     }
     lyrics = await createLyricService().catch(() => null);
+    recentListening = startRecentListeningSync({
+      sync: (options) => application.spotifyReady() &&
+        !application.spotifyConnection.missingScopes?.().includes("user-read-recently-played")
+        ? syncRecentSpotifyListening(options) : null,
+      // Open domain services read new plays as they land; only a first history needs opening.
+      onSynced: async (result) => {
+        if (result.inserted_events > 0 && !application.domainServices) replaceDomainServices(await loadDomainServices());
+      },
+    });
     // The window answers in several sessions at the same time: each busy session gets its own
     // application on the shared services, with its own fork of the domain services, and its own
     // agent. The terminal never opens one.
@@ -1084,6 +1111,7 @@ async function main() {
       },
     });
   } finally {
+    recentListening?.stop();
     lyrics?.close();
     // Conversations close first: their domain services are forks of the main application's.
     for (const conversation of conversations) conversation.close();

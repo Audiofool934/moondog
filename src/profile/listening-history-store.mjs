@@ -58,6 +58,18 @@ const schema = `
     updated_at TEXT NOT NULL
   ) STRICT;
 
+  -- Spotify keeps only a listener's last 50 plays. When a sync finds the window full,
+  -- plays between the last stored one and the oldest returned one may be gone for good.
+  CREATE TABLE IF NOT EXISTS listening_coverage_gaps (
+    subject_id TEXT NOT NULL,
+    source_key TEXT NOT NULL,
+    gap_start TEXT NOT NULL,
+    gap_end TEXT NOT NULL,
+    detected_at TEXT NOT NULL,
+    PRIMARY KEY (subject_id, gap_start, gap_end),
+    CHECK (gap_start < gap_end)
+  ) STRICT;
+
   CREATE TABLE IF NOT EXISTS import_batches (
     import_batch_id TEXT PRIMARY KEY NOT NULL,
     subject_id TEXT NOT NULL,
@@ -224,6 +236,7 @@ function normalizedBundle(value, maximumRecords = 50) {
     capturedAt: new Date(value.captured_at).toISOString(),
     trackRefs: value.track_refs,
     listeningEvents: value.listening_events,
+    windowFull: value.window_full === true,
   };
 }
 
@@ -553,7 +566,43 @@ function ingestionStatements(database) {
         cursor_after_ms = MAX(source_cursors.cursor_after_ms, excluded.cursor_after_ms),
         updated_at = excluded.updated_at`,
     ),
+    hasEvent: database.prepare(
+      "SELECT 1 FROM listening_events WHERE deduplication_key = ?",
+    ),
+    touchCursor: database.prepare(
+      "UPDATE source_cursors SET updated_at = MAX(updated_at, ?) WHERE source_key = ?",
+    ),
   };
+}
+
+// Records the span between the newest stored play and `before` as possibly missed.
+function recordCoverageGap(database, { subjectId, sourceKey, before, detectedAt }) {
+  const after = database.prepare(
+    "SELECT MAX(occurred_at) AS occurred_at FROM listening_events WHERE subject_id = ? AND occurred_at < ?",
+  ).get(subjectId, before)?.occurred_at;
+  // A history that starts with this read has nothing to have missed.
+  if (!after) return;
+  database.prepare(
+    `INSERT OR IGNORE INTO listening_coverage_gaps (subject_id, source_key, gap_start, gap_end, detected_at)
+    VALUES (?, ?, ?, ?, ?)`,
+  ).run(subjectId, sourceKey, after, before, detectedAt);
+}
+
+// Recent syncs from before gaps were recorded: a run that stored a full window of 50
+// new plays at once may have missed plays before its oldest one.
+function recordEarlierRecentSyncGaps(database) {
+  const runs = database.prepare(
+    `SELECT subject_id, json_extract(record_json, '$.ingested_at') AS ingested_at,
+      MIN(occurred_at) AS earliest, COUNT(*) AS plays
+    FROM listening_events
+    WHERE json_extract(record_json, '$.provenance.external_ref.entity_type') = 'spotify.play_history'
+    GROUP BY subject_id, ingested_at HAVING plays >= 50`,
+  ).all();
+  for (const run of runs) {
+    recordCoverageGap(database, {
+      subjectId: run.subject_id, sourceKey: "spotify.recently_played", before: run.earliest, detectedAt: run.ingested_at,
+    });
+  }
 }
 
 function insertBundleRecords(bundle, statements) {
@@ -586,6 +635,14 @@ function insertBundleRecords(bundle, statements) {
   }
   return { insertedTracks, insertedEvents };
 }
+
+// Where stored plays came from, in words the agent can repeat. Others keep their kind.
+const COVERAGE_SOURCE_LABELS = {
+  "spotify.play_history": "Spotify recent plays, read while Moondog runs",
+  "spotify.extended_history.play": "Spotify Extended Streaming History file",
+  "spotify.account_data.play_history": "Spotify Account Data file",
+  "listenbrainz.listen": "ListenBrainz export file",
+};
 
 const SCROBBLE_SOURCE_KEY = "lastfm.music_import";
 // Scrobbles record when a song started. Spotify records when a play ended, so its start is
@@ -1202,11 +1259,18 @@ export class ListeningHistoryStore {
       if (subjectId !== undefined) {
         this.localSubjectId({ preferredSubjectId: subjectId });
       }
+      const times = bundle.listeningEvents.map((record) => record.occurred_at).sort();
+      // A read that overlaps a stored play joins up with it.
+      const overlaps = bundle.listeningEvents.some((record) => statements.hasEvent.get(record.deduplication_key));
+      if (bundle.windowFull && subjectId !== undefined && !overlaps) {
+        recordCoverageGap(this.#database, { subjectId, sourceKey: bundle.sourceKey, before: times[0], detectedAt: bundle.capturedAt });
+      }
       ({ insertedTracks, insertedEvents } = insertBundleRecords(
         bundle,
         statements,
       ));
-      const times = bundle.listeningEvents.map((record) => record.occurred_at).sort();
+      // A read that finds nothing new still moves the source's checked time.
+      statements.touchCursor.run(bundle.capturedAt, bundle.sourceKey);
       mirroredEvents = reconcileScrobbleMirrors(this.#database, subjectId, times[0], times.at(-1), bundle.capturedAt);
       this.#database.exec("COMMIT");
     } catch (error) {
@@ -1808,6 +1872,32 @@ export class ListeningHistoryStore {
     });
   }
 
+  // Which spans of time the stored plays cover, and where plays may be missing.
+  listeningCoverage({ subjectId } = {}) {
+    if (this.#closed) throw new Error("Listening history store is closed");
+    if (!isUuid(subjectId)) throw new TypeError("A valid profile subject is required");
+    const subject = subjectId.toLowerCase();
+    const sources = this.#database.prepare(`SELECT json_extract(record_json, '$.provenance.external_ref.entity_type') AS kind,
+      COUNT(*) AS plays, MIN(occurred_at) AS first_played_at, MAX(occurred_at) AS last_played_at
+      FROM listening_events WHERE subject_id = ? GROUP BY kind ORDER BY first_played_at`).all(subject);
+    // A history file imported later can fill a span that a sync missed.
+    const filled = this.#database.prepare(`SELECT earliest_occurred_at AS earliest, latest_occurred_at AS latest
+      FROM import_batches WHERE subject_id = ? AND earliest_occurred_at IS NOT NULL AND latest_occurred_at IS NOT NULL`).all(subject);
+    const gaps = this.#database.prepare(`SELECT gap_start AS "from", gap_end AS "to"
+      FROM listening_coverage_gaps WHERE subject_id = ? ORDER BY gap_start`).all(subject)
+      .flatMap((gap) => filled.reduce((spans, { earliest, latest }) => spans.flatMap((span) =>
+        latest <= span.from || earliest >= span.to ? [span] : [
+          ...(earliest > span.from ? [{ from: span.from, to: earliest }] : []),
+          ...(latest < span.to ? [{ from: latest, to: span.to }] : []),
+        ]), [{ ...gap }]));
+    const checked = this.#database.prepare("SELECT updated_at FROM source_cursors WHERE source_key = 'spotify.recently_played'").get();
+    return structuredClone({
+      sources: sources.map(({ kind, ...source }) => ({ source: COVERAGE_SOURCE_LABELS[kind] ?? kind, ...source })),
+      gaps: gaps.slice(-10),
+      ...(checked ? { recent_plays_checked_at: checked.updated_at } : {}),
+    });
+  }
+
   listenerProfileStorage({ subjectId } = {}) {
     if (this.#closed) throw new Error("Listening history store is closed");
     if (!isUuid(subjectId)) throw new TypeError("A valid profile subject is required");
@@ -2303,7 +2393,11 @@ async function initializeListeningHistoryDatabase(
   ) {
     throw new Error("Listening history database schema is incompatible");
   }
+  const recordsGaps = database.prepare(
+    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'listening_coverage_gaps'",
+  ).get();
   database.exec(schema);
+  if (!recordsGaps) recordEarlierRecentSyncGaps(database);
   if (currentVersion < LISTENING_HISTORY_SCHEMA_VERSION) {
     database.exec(
       `PRAGMA user_version = ${LISTENING_HISTORY_SCHEMA_VERSION}`,

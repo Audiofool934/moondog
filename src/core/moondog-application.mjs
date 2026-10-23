@@ -543,6 +543,12 @@ export class MoondogApplication {
     return source;
   }
 
+  // The spans of time the stored plays cover, the spans where plays may be missing,
+  // and when Spotify's recent plays were last read.
+  listeningCoverage() {
+    return this.domainServices?.listeningCoverage?.() ?? null;
+  }
+
   async profileStatus() {
     if (
       this.profileServicesReady() &&

@@ -485,6 +485,10 @@ export class ListeningProfileDomainServices {
     };
   }
 
+  listeningCoverage() {
+    return this.#store.listeningCoverage?.({ subjectId: this.#subjectId }) ?? null;
+  }
+
   rediscoveryReady() {
     return typeof this.#store.rediscoveryCandidates === "function";
   }

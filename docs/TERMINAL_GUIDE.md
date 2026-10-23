@@ -1110,6 +1110,12 @@ The sync converts Spotify payloads into provider-neutral `TrackRef v1` and `List
 
 Repeated events are deduplicated by a stable event fingerprint.
 
+The listening room and the desktop app run this same sync when they open and every 30 minutes while they run.
+They do so only when the listener already has imported history and a Spotify sign-in that allows recent plays; it never starts a history by itself.
+Spotify keeps only the last 50 plays, so a sync that finds that window full records the span before its oldest play as a possible gap.
+A history file imported later fills the part of a gap that it covers.
+The agent sees which span each source covers, the gaps, and when recent plays were last read, so it treats plays in a gap as unknown rather than absent.
+
 Read your Spotify library into the same store with:
 
 ```bash

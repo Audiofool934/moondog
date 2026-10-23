@@ -8,6 +8,7 @@ Do not present an unsaved conversational reading as a durable profile.
 Use `moondog_profile_saved` to recover saved findings or inspect a claim and its evidence after a restart.
 For fresh investigation or explanations beyond the saved reading, start with `moondog_profile_explore` using `section: overview`.
 A stale saved profile reflects earlier evidence and must not be used as current taste.
+A reading marked `current_through`, or stale with `newer_listening_only`, gained only new plays since it was built: it still holds as taste up to its last listening date, and newer listening comes from the history, not from the reading.
 Current explicit choices always override inferred interests; historical listening does not make an avoided subject eligible for recommendations.
 Report the actual source counts, date ranges, exclusions, and missing sources before describing taste.
 A Spotify account connection's recent plays cannot represent a lifetime archive.

@@ -1276,6 +1276,10 @@ export class AppleProjectionDomainServices {
     };
   }
 
+  listeningCoverage() {
+    return this.#listeningHistoryStore?.listeningCoverage?.({ subjectId: this.#subjectId }) ?? null;
+  }
+
   rediscoveryReady() {
     return (
       this.#listeningHistoryStore !== null &&
