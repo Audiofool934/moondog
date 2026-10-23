@@ -174,3 +174,42 @@ export function scrollbar(scroller, { inset = 6, onGrab = null, onRelease = null
   soon();
   return { measure: soon };
 }
+
+// A line too long for its place rolls to its end and back while the pointer rests on its row, so the
+// whole of it can be read without a tooltip. `find` picks the line in the hovered row; `tail` keeps
+// room clear past the line's end, such as for a button that floats over it there.
+const ROLL_SPEED = 36;
+const ROLL_HOLD = 1100;
+export function marquee(root, rows, { find = (row) => row, tail = () => 0 } = {}) {
+  root.addEventListener("pointerover", (event) => {
+    const row = event.target.closest?.(rows);
+    if (!row || !root.contains(row) || row.rolling) return;
+    const line = find(row);
+    const over = line ? line.scrollWidth - line.clientWidth : 0;
+    if (over < 2 || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const reach = over + tail(line);
+    const out = (reach / ROLL_SPEED) * 1000;
+    const back = out * 0.45;
+    const total = ROLL_HOLD + out + ROLL_HOLD + back;
+    const at = (ms) => ms / total;
+    line.classList.add("rolling");
+    const animation = line.animate([
+      { offset: 0, textIndent: "0px" },
+      { offset: at(ROLL_HOLD), textIndent: "0px", easing: "cubic-bezier(0.45, 0, 0.55, 1)" },
+      { offset: at(ROLL_HOLD + out), textIndent: `${-reach}px` },
+      { offset: at(ROLL_HOLD * 2 + out), textIndent: `${-reach}px`, easing: "cubic-bezier(0.45, 0, 0.55, 1)" },
+      { offset: 1, textIndent: "0px" },
+    ], { duration: total, delay: 350, iterations: Infinity });
+    row.rolling = animation;
+    const leave = (out) => {
+      if (row.contains(out.relatedTarget)) return;
+      row.removeEventListener("pointerout", leave);
+      const indent = getComputedStyle(line).textIndent;
+      animation.cancel();
+      row.rolling = null;
+      const settle = line.animate([{ textIndent: indent }, { textIndent: "0px" }], { duration: 240, easing: "cubic-bezier(0.16, 1, 0.3, 1)" });
+      settle.onfinish = () => { if (!row.rolling) line.classList.remove("rolling"); };
+    };
+    row.addEventListener("pointerout", leave);
+  });
+}

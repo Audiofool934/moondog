@@ -23,8 +23,9 @@
   --current: rgb(var(--ink-rgb) / 0.09);
   --solid: rgb(var(--ink-rgb) / 0.93);
   --on-solid: var(--canvas);
-  --thumb: rgb(var(--ink-rgb) / 0.22);
-  --thumb-held: rgb(var(--ink-rgb) / 0.4);
+  /* The scrollbar only has to be there: a faint hairline that darkens a little when held. */
+  --thumb: rgb(var(--ink-rgb) / 0.12);
+  --thumb-held: rgb(var(--ink-rgb) / 0.26);
 
   /* Elevation: a hairline that is the ink itself, and shadows that pool under the object. */
   --edge: 0 0 0 1px rgb(var(--ink-rgb) / 0.07);
@@ -35,9 +36,12 @@
 
   /* The window is one pane of glass: no panel has a ground of its own, and what sits on the light
      (the composer, your words, a floating control) is a thin film of it, never a card. */
-  --glass: rgb(255 255 255 / 0.5);
-  --glass-edge: inset 0 0 0 1px rgb(var(--ink-rgb) / 0.07);
-  --glass-blur: blur(24px) saturate(1.4);
+  /* By day the film catches the light: a bright inner rim, a brighter top edge, and a soft shadow
+     under it, so it reads as glass over the cover's colour rather than a paler patch of paper. */
+  --glass: rgb(255 255 255 / 0.52);
+  --glass-edge: inset 0 0 0 1px rgb(255 255 255 / 0.55), inset 0 1px 0 rgb(255 255 255 / 0.85), 0 0 0 0.5px rgb(var(--ink-rgb) / 0.09),
+    0 1px 2px rgb(var(--shade-rgb) / 0.04), 0 10px 26px -14px rgb(var(--shade-rgb) / 0.16);
+  --glass-blur: blur(24px) saturate(1.6);
 
   --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "PingFang TC", "Hiragino Sans", "Apple SD Gothic Neo", sans-serif;
   --serif: "New York", ui-serif, "Songti SC", "Songti TC", "Hiragino Mincho ProN", "AppleMyungjo", Georgia, serif;

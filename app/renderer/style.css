@@ -50,9 +50,9 @@ img { -webkit-user-drag: none; }
 .rail { position: absolute; right: 1px; width: 11px; z-index: 3; opacity: 0; transition: opacity 360ms var(--soft); }
 .rail.on, .rail:hover, .rail.held { opacity: 1; transition-duration: 90ms; }
 .rail.none { display: none; }
-.thumb { width: 5px; margin-left: auto; margin-right: 2px; border-radius: 3px; background: var(--thumb);
+.thumb { width: 3px; margin-left: auto; margin-right: 2px; border-radius: 2px; background: var(--thumb);
   transition: width var(--quick) var(--soft), background-color var(--quick) var(--soft); }
-.rail:hover .thumb, .rail.held .thumb { width: 7px; background: var(--thumb-held); }
+.rail:hover .thumb, .rail.held .thumb { width: 5px; background: var(--thumb-held); }
 
 /* ── The room's light ─────────────────────────────────────────────────────────────────────── */
 /* The cover playing lights the whole window, edge to edge: its strongest colours as three soft
@@ -77,8 +77,14 @@ img { -webkit-user-drag: none; }
   mask-image: radial-gradient(150% 125% at 100% 0%, #000 10%, rgb(0 0 0 / 0.66) 34%, rgb(0 0 0 / 0.4) 62%, rgb(0 0 0 / 0.26) 100%); }
 .ambient img { position: absolute; inset: -12%; width: 124%; height: 124%; object-fit: cover; filter: blur(110px) saturate(1.5);
   opacity: 0; transition: opacity 1.6s var(--soft); will-change: opacity; }
-.ambient img.on { opacity: 0.2; }
-@media (prefers-color-scheme: dark) { .ambient img.on { opacity: 0.3; } }
+/* By day the blurred cover is lifted toward light before it shows, so a dark cover tints the paper
+   instead of greying it; at night it shows as it is. */
+.ambient img { filter: blur(110px) saturate(1.8) brightness(1.55) contrast(0.85); }
+.ambient img.on { opacity: 0.32; }
+@media (prefers-color-scheme: dark) {
+  .ambient img { filter: blur(110px) saturate(1.5); }
+  .ambient img.on { opacity: 0.3; }
+}
 @media (prefers-reduced-transparency: reduce) { .ambient, .mood { display: none; } }
 
 /* ── The window ───────────────────────────────────────────────────────────────────────────── */
@@ -98,10 +104,10 @@ img { -webkit-user-drag: none; }
 
 /* The bar carries the traffic lights and drags the window. It sits over the panels, so they run to the top. */
 .bar { position: absolute; inset: 0 0 auto 0; height: var(--bar); z-index: 5; display: grid; align-items: center;
-  grid-template-columns: max(var(--sidebar), 140px) minmax(0, 1fr) minmax(max(var(--inspector), 52px), auto);
+  grid-template-columns: max(var(--sidebar), 152px) minmax(0, 1fr) minmax(max(var(--inspector), 52px), auto);
   -webkit-app-region: drag; user-select: none; }
 .window.animating .bar { transition: grid-template-columns var(--panel) var(--out); }
-.bar-start { display: flex; align-items: center; gap: 2px; padding-inline-start: 80px; }
+.bar-start { display: flex; align-items: center; gap: 2px; padding-inline-start: 92px; }
 .bar-start { grid-column: 1; }
 .bar-end { grid-column: 3; display: flex; align-items: center; justify-content: flex-end; gap: 2px; padding-inline-end: 10px; min-width: 0; }
 /* The record folds into the middle of the bar, centered on the conversation, and the open conversation's
@@ -178,6 +184,7 @@ img { -webkit-user-drag: none; }
 .row:hover .name, .row:focus-within .name, .row.answering .name { -webkit-mask-image: linear-gradient(to left, transparent 30px, #000 46px); }
 .row:hover .open, .row[aria-current="true"] .open { color: var(--text); }
 .row .name { min-width: 0; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rolling { text-overflow: clip !important; }
 /* A branch's number stays in sight: the title shortens before it, and the number steps clear of the ⋯ button
    or the answering dot instead of fading under them. */
 .row .name:has(.number) { display: flex; }
@@ -204,6 +211,7 @@ img { -webkit-user-drag: none; }
 .folder-toggle { flex: 1; min-width: 0; height: var(--row); display: flex; align-items: center; gap: 8px; padding: 0 8px 0 10px; text-align: start;
   font-size: var(--t-ui); color: var(--text-2); }
 .folder-toggle:hover { color: var(--text); }
+.folder-toggle .name { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .folder-toggle .icon { width: 15px; height: 15px; color: var(--text-3); }
 .folder-toggle .chevron { width: 12px; height: 12px; color: var(--text-4); margin-inline-start: -2px; transition: transform var(--enter) var(--out); }
 .folder-toggle[aria-expanded="true"] .chevron { transform: rotate(90deg); }
@@ -237,6 +245,12 @@ img { -webkit-user-drag: none; }
 .room:not(.empty) .stage { position: absolute; inset: 0; z-index: 2; display: block; padding: 0; pointer-events: none; }
 .room:not(.empty) .record-button { position: absolute; left: 0; top: 0; width: var(--record, 240px); translate: none; transform-origin: 0 0; will-change: transform, opacity; }
 .room:not(.empty) .record-button:not(.away) { pointer-events: auto; }
+/* Pointing at the record above the words offers the record alone, by a button at its lower right. */
+.expand { position: absolute; left: 0; top: 0; z-index: 1; color: var(--text-2); opacity: 0; pointer-events: none;
+  background: var(--glass); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); box-shadow: var(--glass-edge);
+  transition: opacity 240ms var(--soft), background-color var(--quick) var(--soft), color var(--quick) var(--soft); }
+.room:not(.empty) .record-button:not(.away):hover ~ .expand, .room:not(.empty) .expand:hover, .expand:focus-visible { opacity: 1; pointer-events: auto; transition-duration: 120ms; }
+.room.empty .expand, .record-button.away ~ .expand { display: none; }
 .room.empty { justify-content: center; padding-bottom: 6vh; }
 .room.empty > .frame { display: none; }
 
@@ -300,8 +314,9 @@ img { -webkit-user-drag: none; }
 /* ── The composer ─────────────────────────────────────────────────────────────────────────── */
 .composer { position: relative; flex: none; padding: 4px 44px 18px; }
 .field { position: relative; max-width: var(--column); margin: 0 auto; display: flex; align-items: flex-end; gap: 4px; padding: 8px 8px 8px 16px;
-  border-radius: var(--r-4); background: var(--glass); box-shadow: var(--glass-edge); transition: box-shadow 160ms var(--soft); }
-.field:focus-within { box-shadow: inset 0 0 0 1px rgb(var(--ink-rgb) / 0.15); }
+  border-radius: var(--r-4); background: var(--glass); box-shadow: var(--glass-edge); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
+  transition: box-shadow 160ms var(--soft); }
+.field:focus-within { box-shadow: var(--glass-edge), inset 0 0 0 1px rgb(var(--ink-rgb) / 0.12); }
 .field textarea { flex: 1; min-width: 96px; resize: none; border: 0; outline: 0; background: transparent; color: var(--text); font-size: var(--t-body); line-height: 1.55;
   field-sizing: content; min-height: 28px; max-height: 40vh; padding: 3px 0 2px; overflow-y: auto; scrollbar-width: none; }
 .field textarea::placeholder { color: var(--text-4); }
@@ -342,6 +357,21 @@ img { -webkit-user-drag: none; }
   box-shadow: 0 6px 18px rgb(0 0 0 / 0.16); animation: notice-in var(--enter) var(--out) both; }
 .jump:not([hidden]) + .notice { bottom: calc(100% + 50px); }
 @keyframes notice-in { from { opacity: 0; transform: translate(-50%, 4px); } }
+/* The record alone: the window holds the record and the cover's light, nothing else. The whole of it
+   drags the window, and the two corner buttons show while the pointer is over the window. */
+.immersive { position: absolute; inset: 0; z-index: 30; display: grid; place-items: center; -webkit-app-region: drag;
+  animation: immerse 520ms var(--out) both; }
+.immersive .record { width: min(82vmin, 1100px); height: auto; aspect-ratio: 1; translate: 3.5% 0; color: var(--text); animation: none; }
+@keyframes immerse { from { opacity: 0; transform: scale(0.96); } }
+.window.immersed > :not(.immersive, .mood, .ambient) { visibility: hidden; }
+.window.immersed .ambient { mask-image: none; }
+.corner { position: absolute; right: 12px; color: var(--text-2); opacity: 0; -webkit-app-region: no-drag;
+  transition: opacity 420ms var(--soft), background-color var(--quick) var(--soft), color var(--quick) var(--soft); }
+.corner[data-pin] { top: 10px; }
+.corner[data-restore] { bottom: 12px; }
+.corner[aria-pressed="true"] { color: var(--text); }
+.corner[aria-pressed="true"] .icon path:first-child { fill: currentColor; }
+.immersive.hovered .corner, .corner:focus-visible { opacity: 1; transition-duration: 160ms; }
 .drop { position: absolute; inset: 0; z-index: 20; display: grid; place-items: center; align-content: center; gap: 16px;
   background: color-mix(in srgb, var(--canvas) 92%, transparent); pointer-events: none; animation: rise 160ms var(--out) both; }
 .drop::before { content: ""; position: absolute; inset: 16px; border: 1.5px dashed var(--line-2); border-radius: var(--r-4); }
@@ -364,9 +394,11 @@ img { -webkit-user-drag: none; }
   font-size: var(--t-small); color: var(--text-3); }
 .song:has(h2:empty) { display: none; }
 .song { margin-top: 18px; min-width: 0; }
+/* Each of the three lines stays one line; a long one rolls into view under the pointer (ui.mjs). */
 .song h2 { margin: 0; font-size: var(--t-song); font-weight: 600; line-height: 1.3; letter-spacing: -0.008em;
-  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .song p { margin: 2px 0 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.song .rolling { -webkit-mask-image: linear-gradient(to left, transparent, #000 16px); }
 .song .artist { font-size: var(--t-body); color: var(--text-2); }
 .song .album { font-size: var(--t-small); color: var(--text-3); }
 .song p:empty { display: none; }

@@ -9,7 +9,7 @@ import { createMark } from "./mark.mjs";
 import { mountRecord } from "./record.mjs";
 import { createSettings } from "./settings.mjs";
 import { createSidebar } from "./sidebar.mjs";
-import { make, name, scrollbar, setIcon, tooltips, turning } from "./ui.mjs";
+import { make, marquee, name, scrollbar, setIcon, tooltips, turning } from "./ui.mjs";
 import "./style.css";
 
 const $ = (selector) => document.querySelector(`[data-${selector}]`);
@@ -66,6 +66,9 @@ function applyLanguage(next) {
   name($("new"), t("newConversation"), "⌘N");
   name(recordButton, t("foldRecord"), "⌥⌘R");
   name(barRecord, t("showRecord"), "⌥⌘R");
+  name($("expand"), t("immerse"));
+  name($("pin"), t("keepOnTop"));
+  name($("restore"), t("restore"), "Esc");
   name($("settings-button"), t("settings"), "⌘,");
   name($("previous"), t("previous"), "⌃⌘←");
   name($("next"), t("next"), "⌃⌘→");
@@ -292,6 +295,7 @@ function pin() {
 const stage = $("stage");
 const recordButton = $("record-button");
 const barRecord = $("bar-record");
+const expand = $("expand");
 const lead = $("lead");
 const mark = createMark();
 barRecord.append(mark.node);
@@ -299,7 +303,14 @@ const reduced = matchMedia("(prefers-reduced-motion: reduce)");
 const BAR = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--bar")) || 44;
 const RECORD_GAP = 4;
 // As large as an 800-point window can give it and still leave the words most of the room.
-const recordSize = () => Math.round(Math.min(240, Math.max(120, innerHeight * 0.3)));
+const recordSize = () => Math.round(Math.min(280, Math.max(140, innerHeight * 0.35)));
+// Folding takes this many record heights of scrolling, eased at both ends, so it shrinks gradually
+// over a few scrolls instead of all at once.
+const FOLD_SPAN = 3;
+const foldAt = (distance, size = recordSize()) => {
+  const x = Math.min(1, Math.max(0, distance / ((size + RECORD_GAP) * FOLD_SPAN)));
+  return x * x * (3 - 2 * x);
+};
 let foldedByHand = store.get("moondog.record") === "folded";
 // How far the record is folded as drawn: 0 open above the words, 1 in the title bar.
 let fold = 0;
@@ -309,11 +320,11 @@ let placing = 0;
 let leadHeight = 0;
 const talking = () => Boolean(record) && !room.classList.contains("empty");
 const lerp = (from, to, at) => from + (to - from) * at;
-// Folded by hand, at the latest words, or as far as the listener has scrolled up: one record's height folds it.
+// Folded by hand, at the latest words, or as far as the listener has scrolled up.
 function foldWanted() {
   if (foldedByHand) return 1;
   if (following) return 0;
-  return Math.min(1, Math.max(0, gap() / (recordSize() + RECORD_GAP)));
+  return foldAt(gap());
 }
 // A jump in what the room wants (a click, a return to the latest words) eases there instead of snapping.
 function refold() {
@@ -367,7 +378,7 @@ function scrollToNode(node) {
     let [low, high] = [0, 1];
     for (let step = 0; step < 20; step += 1) {
       const middle = (low + high) / 2;
-      if (Math.min(1, (rest + veil(middle)) / (size + RECORD_GAP)) > middle) low = middle; else high = middle;
+      if (foldAt(rest + veil(middle), size) > middle) low = middle; else high = middle;
     }
     at = (low + high) / 2;
   }
@@ -428,6 +439,7 @@ function placeRecord() {
     recordButton.style.opacity = (1 - handoff).toFixed(3);
     barRecord.style.opacity = handoff.toFixed(3);
     recordButton.classList.toggle("away", at > 0.6);
+    expand.style.transform = `translate(${(x + drawnSize * 0.76 - 14).toFixed(1)}px, ${(y + drawnSize * 0.76 - 14).toFixed(1)}px)`;
     recordButton.tabIndex = at > 0.6 ? -1 : 0;
     const docked = at > 0.9 && !barRecord.classList.contains("cramped");
     barRecord.classList.toggle("docked", docked);
@@ -435,7 +447,7 @@ function placeRecord() {
     // The words fade out just under the record.
     scroller.style.setProperty("--veil", `${Math.max(BAR, bottom + 10).toFixed(1)}px`);
   }
-  record.turn(nowPlaying()?.playing && at < 1);
+  record.turn(nowPlaying()?.playing && at < 1 && !immersed());
   // The conversation keeps the record room above its first words, as far as it reaches below the bar.
   // Scrolled up, the browser keeps the words in view where they are as that room changes.
   if (!gliding) {
@@ -464,6 +476,43 @@ function toggleRecord() {
 }
 recordButton.addEventListener("click", () => foldRecord(true));
 barRecord.addEventListener("click", toggleRecord);
+
+// The record alone: the window holds only the record, drawn large in the same mosaic, over the
+// cover's light. A pin keeps the window above the others; Esc or the lower corner brings the
+// conversation back. Both corners show while the pointer is over the window.
+const immersive = $("immersive");
+let deep = null;
+let pinned = false;
+const immersed = () => !immersive.hidden;
+function renderPin() {
+  $("pin").setAttribute("aria-pressed", String(pinned));
+}
+function immerse(on) {
+  if (on === immersed()) return;
+  immersive.hidden = !on;
+  layout.classList.toggle("immersed", on);
+  window.moondogApp?.setImmersive?.(on);
+  pinned = false;
+  renderPin();
+  if (on) {
+    deep ??= mountRecord($("immersive-record"), { across: 160 });
+    deep.tint(grooveColours(moodPalette, dark.matches), true);
+    immersive.classList.add("hovered");
+    $("restore").focus({ preventScroll: true });
+  } else {
+    immersive.classList.remove("hovered");
+    input.focus({ preventScroll: true });
+  }
+  deep?.turn(on && Boolean(nowPlaying()?.playing));
+}
+expand.addEventListener("click", () => immerse(true));
+$("restore").addEventListener("click", () => immerse(false));
+$("pin").addEventListener("click", async () => {
+  const want = !pinned;
+  pinned = (await window.moondogApp?.setPinned?.(want)) ?? want;
+  renderPin();
+});
+window.moondogApp?.onHover?.((inside) => immersive.classList.toggle("hovered", inside));
 
 // The room before anything is said: the record alone over the composer. Leaving it, the record
 // moves to its place above the words and the composer glides down to its own, instead of jumping.
@@ -883,6 +932,7 @@ function paintMood(event) {
   moodColours(moodPalette, dark.matches).forEach((colour, index) => moodNode.style.setProperty(`--mood-${index + 1}`, colour));
   const rings = grooveColours(moodPalette, dark.matches);
   record?.tint(rings, Boolean(event));
+  deep?.tint(rings, Boolean(event));
   for (let index = 0; index < 3; index += 1) {
     if (rings) layout.style.setProperty(`--groove-${index + 1}`, `rgb(${rings[index].join(" ")})`); else layout.style.removeProperty(`--groove-${index + 1}`);
   }
@@ -980,6 +1030,7 @@ function renderInspector() {
   renderProgress(now);
 
   set($("transport"), "hidden", !now);
+  deep?.turn(immersed() && Boolean(now?.playing));
   if (now) {
     drawControls(now, $("toggle"), $("next"));
     set($("previous"), "disabled", !can(now, "skipping_prev"));
@@ -1239,6 +1290,13 @@ $("toggle-inspector").addEventListener("click", () => togglePanel("inspector"));
 $("new").addEventListener("click", () => openSession(null));
 scrollbar($("sessions"));
 scrollbar($("inspector-scroll"));
+// Long conversation names and long song lines roll into view under the pointer. A conversation's
+// name keeps clear of the ⋯ button that floats over its end; a branch's number already steps aside.
+marquee($("sessions"), ".row, .folder-head", {
+  find: (row) => row.querySelector(".name .base") ?? row.querySelector(".name"),
+  tail: (line) => (line.closest(".row") && !line.classList.contains("base") ? 34 : 0),
+});
+marquee($("now"), ".song h2, .song p", { tail: () => 16 });
 
 // A music history file dropped anywhere goes to import, which shows what it read before saving.
 let dragDepth = 0;
@@ -1261,6 +1319,7 @@ window.addEventListener("drop", (event) => {
 document.addEventListener("keydown", (event) => {
   // Escape that just closed Settings is spent; it must not also stop the reply behind it.
   if (settings.open || event.defaultPrevented) return;
+  if (immersed()) { if (event.key === "Escape") immerse(false); return; }
   if (event.target === input || event.target.closest?.("input, textarea")) return;
   if (event.key === " " && event.target.closest?.("button, a, select, [role=button]")) return;
   if (event.key === "Escape" && state.streaming) { send({ type: "cancel" }); return; }
@@ -1269,6 +1328,8 @@ document.addEventListener("keydown", (event) => {
 // Commands from the menu bar.
 window.moondogApp?.onCommand?.((command) => {
   if (settings.open && !["settings", "stop", "toggle-playback", "next", "previous"].includes(command)) return;
+  // A command that shows the conversation, a panel or Settings first brings the window back from the record alone.
+  if (immersed() && ["new", "settings", "toggle-sidebar", "toggle-inspector", "toggle-record"].includes(command)) immerse(false);
   if (command === "new") openSession(null);
   if (command === "stop" && state.streaming) send({ type: "cancel" });
   if (command === "settings") settings.show();

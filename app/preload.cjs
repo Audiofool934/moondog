@@ -8,6 +8,11 @@ contextBridge.exposeInMainWorld("moondogApp", {
   onCommand: (callback) => ipcRenderer.on("command", (_event, name) => callback(String(name))),
   setLanguage: (locale) => ipcRenderer.send("language", String(locale)),
   setBusy: (busy) => ipcRenderer.send("busy", busy === true),
+  // The record alone in the window: whether it shows, whether it floats above other windows, and
+  // whether the pointer is over the window, which the page cannot see over its drag region.
+  setImmersive: (on) => ipcRenderer.send("immersive", on === true),
+  setPinned: (on) => ipcRenderer.invoke("pin", on === true),
+  onHover: (callback) => ipcRenderer.on("hover", (_event, inside) => callback(inside === true)),
   setPlayback: (playback) => ipcRenderer.send("playback", { controllable: playback?.controllable === true, streaming: playback?.streaming === true }),
   showMenu: (items, at) => ipcRenderer.invoke("menu", { items, ...(at ?? {}) }),
   confirm: (options) => ipcRenderer.invoke("confirm", options),
