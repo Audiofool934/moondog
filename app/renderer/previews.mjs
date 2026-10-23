@@ -154,6 +154,8 @@ export function createPreviews({ send, onChange }) {
     async check(command = "check") {
       if (!bridge) return null;
       full.status = await bridge({ type: command }).catch(() => null);
+      // The core searches the listener's own storefront, so its songs are ones the helper can play.
+      if (typeof full.status?.storefront === "string") send({ type: "storefront", code: full.status.storefront });
       onChange();
       return full.status;
     },

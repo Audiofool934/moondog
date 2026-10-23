@@ -2,7 +2,7 @@
 // window to use in place of 30-second previews. It runs as a helper of the app, inside its bundle,
 // so MusicKit knows it as Moondog. One JSON object per line in, one per line out.
 //
-//   {"id":1,"type":"check"}                      can it play? {"authorization","canPlay","reason"}
+//   {"id":1,"type":"check"}                      can it play? {"authorization","canPlay","reason","storefront"}
 //   {"id":2,"type":"authorize"}                  asks the listener once, then checks
 //   {"id":3,"type":"play","ids":["…"],"start":0,"token":"q1"}
 //                                                plays catalog songs in the window's order, from one of them
@@ -67,6 +67,8 @@ final class Player {
       answer["reason"] = word(error)
       return answer
     }
+    // The account's storefront, which the core's catalog searches so its songs are ones MusicKit has.
+    if let country = try? await MusicDataRequest.currentCountryCode { answer["storefront"] = country }
     guard status == .authorized else { return answer }
     do {
       let subscription = try await MusicSubscription.current

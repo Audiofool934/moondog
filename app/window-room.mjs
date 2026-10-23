@@ -7,6 +7,7 @@ import { randomUUID } from "node:crypto";
 import { LOCALES, normalizeLocale, screenTranslator } from "../src/i18n/index.mjs";
 import { formatLocalResult } from "../src/surfaces/cli/format-output.mjs";
 import { HistoryImportView } from "../src/surfaces/cli/history-import-view.mjs";
+import { setAppleMusicStorefront } from "../src/integrations/apple-music/storefront.mjs";
 
 const PLAYER_POLL_MS = { visible: 4_000, hidden: 30_000 };
 // Tools whose results can change what Spotify is playing or what comes next.
@@ -535,6 +536,7 @@ export function runWindowRoom(services, { port, send, quit = null }) {
     new: () => openSession(null),
     open: (data) => openSession(String(data.id ?? "")),
     control: (data) => control(String(data.action ?? ""), data.via, data.positionMs),
+    storefront: (data) => { setAppleMusicStorefront(data.code); },
     visible: (data) => { visible = data.visible !== false; if (visible) void refreshPlayer(); schedulePlayer(); },
     // Conversations: rename, pin, file, delete, and folders.
     label: (data) => { base.labelSavedSession?.(String(data.id), data.patch ?? {}); sendSessions(); },

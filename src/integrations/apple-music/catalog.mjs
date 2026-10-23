@@ -1,4 +1,5 @@
 import { uuidV5 } from "../../core/uuid-v5.mjs";
+import { appleMusicStorefront } from "./storefront.mjs";
 
 export const APPLE_MUSIC_CATALOG_TRACK_NAMESPACE =
   "2837a09e-e5f0-5aa5-b271-bb99d8b0de20";
@@ -280,7 +281,7 @@ function deduplicateAndSortReleases(releases) {
   });
 }
 
-function sourceMetadata(now) {
+function sourceMetadata(now, storefront) {
   const current = now();
   if (!Number.isFinite(current)) {
     fail("apple_music_catalog_clock_invalid", "The catalog clock is invalid.");
@@ -288,10 +289,10 @@ function sourceMetadata(now) {
   return {
     provider: "apple_music",
     catalog: "itunes_search_api",
-    storefront: "US",
+    storefront: storefront(),
     retrieved_at: new Date(current).toISOString(),
     coverage:
-      "Apple Music US storefront catalog only. This is not a claim about every music platform.",
+      `Apple Music ${storefront()} storefront catalog only. This is not a claim about every music platform.`,
   };
 }
 
@@ -396,6 +397,7 @@ export function createAppleMusicCatalogClient({
   fetchImpl = globalThis.fetch,
   now = Date.now,
   cacheTtlMs = APPLE_MUSIC_CATALOG_LIMITS.cacheTtlMs,
+  storefront = appleMusicStorefront,
 } = {}) {
   if (typeof fetchImpl !== "function") {
     throw new TypeError("A fetch implementation is required.");
@@ -429,11 +431,11 @@ export function createAppleMusicCatalogClient({
 
   async function artistCatalog(artistId) {
     const catalogId = cleanArtistCatalogId(artistId);
-    const key = `artist-catalog|US|${catalogId}`;
+    const key = `artist-catalog|${storefront()}|${catalogId}`;
     return cachedRequest(cache, key, cacheTtlMs, now, async () => {
       const results = await request("/lookup", {
         id: catalogId,
-        country: "us",
+        country: storefront().toLowerCase(),
         entity: "album",
         limit: APPLE_MUSIC_CATALOG_LIMITS.releasesPerArtistMax,
         sort: "recent",
@@ -458,11 +460,11 @@ export function createAppleMusicCatalogClient({
         "apple_music_catalog_query_invalid",
         "catalog query",
       );
-      const key = `tracks|US|${normalizeForMatch(cleaned)}`;
+      const key = `tracks|${storefront()}|${normalizeForMatch(cleaned)}`;
       return cachedRequest(cache, key, cacheTtlMs, now, async () => {
         const results = await request("/search", {
           term: cleaned,
-          country: "us",
+          country: storefront().toLowerCase(),
           media: "music",
           entity: "song",
           limit: APPLE_MUSIC_CATALOG_LIMITS.trackSearchResultsMax,
@@ -474,9 +476,9 @@ export function createAppleMusicCatalogClient({
 
     async searchAlbums(query) {
       const cleaned = cleanInputText(query, APPLE_MUSIC_CATALOG_LIMITS.discoveryQueryLengthMax, "apple_music_catalog_query_invalid", "album query");
-      const key = `albums|US|${normalizeForMatch(cleaned)}`;
+      const key = `albums|${storefront()}|${normalizeForMatch(cleaned)}`;
       return cachedRequest(cache, key, cacheTtlMs, now, async () => {
-        const results = await request("/search", { term: cleaned, country: "us", media: "music", entity: "album", limit: 10 });
+        const results = await request("/search", { term: cleaned, country: storefront().toLowerCase(), media: "music", entity: "album", limit: 10 });
         return results.map(normalizeAlbum).filter(Boolean);
       });
     },
@@ -485,9 +487,9 @@ export function createAppleMusicCatalogClient({
     async albumTracks(albumId) {
       const catalogId = typeof albumId === "string" && /^\d{1,20}$/u.test(albumId) ? albumId : null;
       if (!catalogId) fail("apple_music_catalog_query_invalid", "The album identity is invalid.");
-      const key = `album-tracks|US|${catalogId}`;
+      const key = `album-tracks|${storefront()}|${catalogId}`;
       return cachedRequest(cache, key, cacheTtlMs, now, async () => {
-        const results = await request("/lookup", { id: catalogId, country: "us", entity: "song", limit: 200 });
+        const results = await request("/lookup", { id: catalogId, country: storefront().toLowerCase(), entity: "song", limit: 200 });
         const order = (raw) => (Number.isSafeInteger(raw?.discNumber) ? raw.discNumber : 1) * 1000 + (Number.isSafeInteger(raw?.trackNumber) ? raw.trackNumber : 999);
         return results
           .filter((raw) => isPlainObject(raw) && raw.kind === "song")
@@ -504,11 +506,11 @@ export function createAppleMusicCatalogClient({
         "apple_music_catalog_artist_invalid",
         "artist name",
       );
-      const key = `artists|US|${normalizeForMatch(cleaned)}`;
+      const key = `artists|${storefront()}|${normalizeForMatch(cleaned)}`;
       return cachedRequest(cache, key, cacheTtlMs, now, async () => {
         const results = await request("/search", {
           term: cleaned,
-          country: "us",
+          country: storefront().toLowerCase(),
           media: "music",
           entity: "musicArtist",
           attribute: "artistTerm",
@@ -540,7 +542,8 @@ function candidateSummary(artist, releases = []) {
 }
 
 export function createAppleMusicCatalog({
-  client = createAppleMusicCatalogClient(),
+  storefront = appleMusicStorefront,
+  client = createAppleMusicCatalogClient({ storefront }),
   now = Date.now,
 } = {}) {
   if (
@@ -594,9 +597,9 @@ export function createAppleMusicCatalog({
         resultSets.push(await client.searchTracks(query));
       }
       const source = {
-        ...sourceMetadata(now),
+        ...sourceMetadata(now, storefront),
         coverage:
-          "Keyword relevance from the Apple Music US storefront. Results are external catalog candidates, not proof of personal fit, novelty, or cross-platform availability.",
+          `Keyword relevance from the Apple Music ${storefront()} storefront. Results are external catalog candidates, not proof of personal fit, novelty, or cross-platform availability.`,
       };
       const tracks = interleaveTrackResults(
         resultSets,
@@ -624,7 +627,7 @@ export function createAppleMusicCatalog({
         results.find((candidate) => normalizeForMatch(candidate.title).startsWith(wantedTitle));
       return {
         state: track ? "resolved" : "not_found",
-        source: sourceMetadata(now),
+        source: sourceMetadata(now, storefront),
         ...(track ? { track } : {}),
       };
     },
@@ -645,7 +648,7 @@ export function createAppleMusicCatalog({
       const tracks = album ? (await client.albumTracks(album.catalog_id)).filter((track) => track.preview_url).slice(0, 30) : [];
       return {
         state: tracks.length ? "resolved" : "not_found",
-        source: sourceMetadata(now),
+        source: sourceMetadata(now, storefront),
         ...(tracks.length ? { album, tracks } : {}),
       };
     },
@@ -671,7 +674,7 @@ export function createAppleMusicCatalog({
           "Explicit Apple Music artist lookup is unavailable.",
         );
       }
-      const source = sourceMetadata(now);
+      const source = sourceMetadata(now, storefront);
       const artist = await client.artistIdentity(catalogId);
       if (!artist) {
         return {
@@ -741,7 +744,7 @@ export function createAppleMusicCatalog({
         );
       }
 
-      const source = sourceMetadata(now);
+      const source = sourceMetadata(now, storefront);
       const normalizedArtist = normalizeForMatch(artist);
       let selected = null;
       let selectedReleases = [];
