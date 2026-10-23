@@ -10,10 +10,16 @@ import { HistoryImportView } from "../src/surfaces/cli/history-import-view.mjs";
 import { setAppleMusicStorefront } from "../src/integrations/apple-music/storefront.mjs";
 
 // Every Spotify read counts against the listener's app quota, and a used-up quota blocks player reads
-// for hours. The window reads often only while a song plays in front of the listener. Up next changes
-// less often than the song: it is read when the song changes, after a tool or control, or this often.
-const PLAYER_POLL_MS = { playing: 5_000, idle: 15_000, hidden: 60_000 };
-const QUEUE_READ_MS = 30_000;
+// for hours. The window's clock runs on its own between reads, so a showing window reads just after
+// the song should end, and otherwise only often enough to notice a change made elsewhere, such as a
+// pause on the phone. Up next is read when the song changes, after a tool or control, or this often.
+const PLAYER_POLL_MS = { showing: 30_000, hidden: 60_000 };
+const SONG_END_SLACK_MS = 1_500;
+const QUEUE_READ_MS = 120_000;
+// NetEase is read through ncm-cli on this Mac and costs no quota.
+const NETEASE_POLL_MS = 5_000;
+// A song that stops this close to its end ended, rather than being paused.
+const ENDED_WITHIN_MS = 5_000;
 // How often a showing window looks for what the terminal or another window changed, and how often
 // while one of them answers in the conversation shown here.
 const LOOK_MS = { idle: 2_000, answering: 300 };
@@ -249,7 +255,7 @@ export function runWindowRoom(services, { port, send, quit = null }) {
         progressMs: player?.progress_ms ?? null, durationMs: item?.duration_ms ?? null, previousProgressMs: last.progressMs,
         msSinceLastRead: now - last.at, device: player?.device?.name ?? null, repeat: player?.repeat_state ?? null,
         context: player?.context?.type ?? null,
-        ended: !playing && expected !== null && Number.isInteger(last.durationMs) && expected >= last.durationMs - PLAYER_POLL_MS.playing });
+        ended: !playing && expected !== null && Number.isInteger(last.durationMs) && expected >= last.durationMs - ENDED_WITHIN_MS });
     }
     last = { playing, at: now, progressMs: player?.progress_ms ?? null, durationMs: item?.duration_ms ?? null };
   }
@@ -263,20 +269,23 @@ export function runWindowRoom(services, { port, send, quit = null }) {
     polling = readPlayer().then(send, (error) => send({ type: "player", spotify: "error", message: errorText(error), now: null, next: [] }))
       .finally(() => {
         polling = null;
-        if (again) { again = false; void refreshPlayer(); }
+        // Each read sets the next one, so a skip, a pause or a new song moves the time of that read.
+        if (again) { again = false; void refreshPlayer(); } else schedulePlayer();
       });
     return polling;
   }
   const schedulePlayer = () => {
     clearTimeout(pollTimer);
     if (closed) return;
-    // NetEase is read on this Mac and costs no quota. Spotify waits as long as it asked, then reads
-    // often only while its song plays and Spotify is the service the listener chose.
+    // Spotify waits as long as it asked. A showing window reads again when the playing song should
+    // have ended, if that comes before the next regular read.
     const netease = base.playbackService === "netease";
-    const wait = spotifyLimitedUntil > Date.now() && !netease ? spotifyLimitedUntil - Date.now() + 1000
-      : !visible ? PLAYER_POLL_MS.hidden
-        : netease || (playingNow && base.playbackService !== "apple_music") ? PLAYER_POLL_MS.playing : PLAYER_POLL_MS.idle;
-    pollTimer = setTimeout(async () => { await refreshPlayer(); schedulePlayer(); }, wait);
+    const songLeftMs = playingNow && last?.durationMs ? last.durationMs - (last.progressMs ?? 0) - (Date.now() - last.at) : Infinity;
+    const wait = netease ? (visible ? NETEASE_POLL_MS : PLAYER_POLL_MS.hidden)
+      : spotifyLimitedUntil > Date.now() ? spotifyLimitedUntil - Date.now() + 1000
+        : !visible ? PLAYER_POLL_MS.hidden
+          : Math.max(1_000, Math.min(PLAYER_POLL_MS.showing, songLeftMs + SONG_END_SLACK_MS));
+    pollTimer = setTimeout(() => void refreshPlayer(), wait);
   };
 
   async function control(action, via, positionMs) {

@@ -15,7 +15,10 @@ export function createWindowPreviewPlayer(port) {
   const emit = (event) => {
     for (const listener of listeners) listener(event);
   };
+  // Whether the window plays whole songs through MusicKit, as its last check found; until then, previews.
+  let wholeSongs = false;
   const receive = ({ data }) => {
+    if (data?.type === "whole-songs") { wholeSongs = data.canPlay === true; return; }
     if (closed || queueId === null || data?.type !== "preview-event" || data.id !== queueId) return;
     const event = data.event;
     if (!["queue", "loading", "playing", "paused", "failed", "stopped"].includes(event?.type)) return;
@@ -62,6 +65,7 @@ export function createWindowPreviewPlayer(port) {
       return true;
     },
     stop,
+    wholeSongs: () => wholeSongs,
     subscribe(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);

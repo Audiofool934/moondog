@@ -156,6 +156,8 @@ export function createPreviews({ send, onChange }) {
       full.status = await bridge({ type: command }).catch(() => null);
       // The core searches the listener's own storefront, so its songs are ones the helper can play.
       if (typeof full.status?.storefront === "string") send({ type: "storefront", code: full.status.storefront });
+      // The agent tells the listener what they hear, so the core learns whether whole songs play.
+      send({ type: "whole-songs", canPlay: full.status?.canPlay === true });
       onChange();
       return full.status;
     },

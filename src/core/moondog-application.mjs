@@ -543,7 +543,9 @@ export class MoondogApplication {
     if (found.played.length) {
       await this.musicPreviewPlayer.play(structuredClone(found.played), found.album ? { album: structuredClone(found.album) } : {});
     }
-    return { state: found.played.length ? "resolved" : "not_found", ...found };
+    // The desktop window plays whole songs where the listener's Apple Music allows it; a terminal plays previews.
+    const whole = this.musicPreviewPlayer.wholeSongs?.() === true;
+    return { state: found.played.length ? "resolved" : "not_found", ...found, whole_songs: whole };
   }
 
   musicDiscoveryReady() {

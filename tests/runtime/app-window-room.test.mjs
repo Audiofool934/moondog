@@ -272,10 +272,51 @@ test("a used-up Spotify quota rests the player and the devices until Spotify's t
     mock.timers.tick(110_000);
     await tick();
     assert.equal(harness.messages.findLast((message) => message.type === "player").spotify, "ready");
-    mock.timers.tick(5_000);
+    mock.timers.tick(30_000);
     await tick();
     assert.ok(calls.player >= asked.player + 2);
     assert.equal(calls.queue, asked.queue + 1);
+  } finally {
+    mock.timers.reset();
+    await harness.stop();
+  }
+});
+
+test("a showing window reads Spotify every 30 s, and once just after the playing song should end", async () => {
+  mock.timers.enable({ apis: ["setTimeout", "Date"], now: 1_000_000 });
+  let reads = 0;
+  // Spotify plays 200 s songs back to back, and the first has 12 s left when the window opens.
+  const started = 1_000_000 - 188_000;
+  const service = {
+    async currentPlayer() {
+      reads += 1;
+      const song = Math.floor((Date.now() - started) / 200_000);
+      return { state: "available", is_playing: true, progress_ms: (Date.now() - started) % 200_000,
+        item: { name: `Song ${song}`, uri: `spotify:track:${song}`, artists: ["A"], duration_ms: 200_000 } };
+    },
+    async queue() { return { queue: [] }; },
+  };
+  const desk = application("A");
+  desk.ready = true;
+  desk.spotifyConnection = { service };
+  const harness = await openRoom({ application: desk });
+  try {
+    await harness.post({ type: "visible", visible: true });
+    await tick();
+    const first = reads;
+    mock.timers.tick(13_000);
+    await tick();
+    assert.equal(reads, first);
+    mock.timers.tick(1_000);
+    await tick();
+    assert.equal(reads, first + 1);
+    // A new song from its start: the next read is the regular one, 30 s on.
+    mock.timers.tick(29_000);
+    await tick();
+    assert.equal(reads, first + 1);
+    mock.timers.tick(1_000);
+    await tick();
+    assert.equal(reads, first + 2);
   } finally {
     mock.timers.reset();
     await harness.stop();

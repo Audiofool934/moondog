@@ -57,11 +57,11 @@ function scorpionsCatalog() {
   return createAppleMusicCatalog({ client: createAppleMusicCatalogClient({ fetchImpl, now }), now });
 }
 
-function application({ played = [], spotify = false } = {}) {
+function application({ played = [], spotify = false, wholeSongs } = {}) {
   return new MoondogApplication({
     importsRoot: "/private/moondog-synthetic-missing-source",
     musicCatalog: scorpionsCatalog(),
-    musicPreviewPlayer: { play: async (tracks, options) => { played.push({ tracks, options }); } },
+    musicPreviewPlayer: { play: async (tracks, options) => { played.push({ tracks, options }); }, ...(wholeSongs === undefined ? {} : { wholeSongs: () => wholeSongs }) },
     ...(spotify ? { spotifyConnection: { ready: () => true, service: {}, publicStatus: () => ({ provider: "spotify", state: "configured" }) } } : {}),
   });
 }
@@ -74,6 +74,22 @@ function runtimeFor(app) {
 }
 
 const systemText = (context) => [context.systemPrompt, ...context.messages.filter((message) => message.role === "system").map((message) => JSON.stringify(message))].join("\n");
+
+test("when the window plays whole songs, the agent hears so and is told not to call them previews", async () => {
+  const { faux, runtime } = runtimeFor(application({ wholeSongs: true }));
+  faux.setResponses([
+    (context) => {
+      assert.match(systemText(context), /When it is whole_songs, do not call them previews/u);
+      return fauxAssistantMessage([fauxToolCall("moondog_music_preview", { tracks: [{ title: "Wind of Change", artist: "Scorpions" }] })], { stopReason: "toolUse" });
+    },
+    (context) => {
+      const result = context.messages.find((message) => message.role === "toolResult" && message.toolName === "moondog_music_preview");
+      assert.equal(JSON.parse(result.content[0].text).plays, "whole_songs");
+      return fauxAssistantMessage([fauxText("Wind of Change is playing.")]);
+    },
+  ]);
+  await runtime.prompt("Play Wind of Change by Scorpions");
+});
 
 test("the catalog finds the exact recording's preview, only from Apple's audio host", async () => {
   const result = await scorpionsCatalog().findPreview({ title: "Wind of Change", artist: "Scorpions" });
@@ -149,6 +165,7 @@ test("without Spotify, a request to play a song becomes a preview in the listene
       assert.equal(result.isError, false, result.content[0].text);
       const value = JSON.parse(result.content[0].text);
       assert.deepEqual(value.playing_in_order, [{ title: "Wind of Change", artist_credit: "Scorpions" }]);
+      assert.equal(value.plays, "30_second_previews");
       assert.deepEqual(value.not_found, [{ title: "Not A Real Song", artist: "Scorpions" }]);
       assert.doesNotMatch(result.content[0].text, /audio-ssl/u, "the audio address stays with the host");
       return fauxAssistantMessage([fauxText("Here's a 30-second preview. The full song is on Apple Music.")]);

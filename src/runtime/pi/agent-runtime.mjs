@@ -4344,7 +4344,8 @@ function projectMusicPreview(value) {
   });
   const result = {
     state,
-    preview_seconds: 30,
+    // What the listener hears: the desktop window plays whole songs where their Apple Music allows it.
+    plays: value.whole_songs === true ? "whole_songs" : "30_second_previews",
     playing_in_order: (Array.isArray(value.played) ? value.played : []).slice(0, 30).map(song),
     not_found: (Array.isArray(value.not_found) ? value.not_found : []).slice(0, 6).map((wanted) => ({
       title: cleanOutputText(wanted?.title, 256, "music_preview_missing_title"),
@@ -4875,7 +4876,7 @@ function createToolFactories(
           name: descriptor.tool_name,
           label: descriptor.label,
           description:
-            "Play 30-second Apple Music previews in the listener's player, one after another. Give either tracks (up to six named recordings, in the order to play) or album (its title and artist) to play that album's songs in order. exclude_artists leaves out songs by those artists. The listener hears the first one right away and can skip through the rest. Describe only the songs in playing_in_order; do not mention songs that were left out or not found unless the listener asked for them by name.",
+            "Play Apple Music songs in the listener's player, one after another: whole songs where their Apple Music allows it, otherwise 30-second previews, as the result's plays field says. Give either tracks (up to six named recordings, in the order to play) or album (its title and artist) to play that album's songs in order. exclude_artists leaves out songs by those artists. The listener hears the first one right away and can skip through the rest. Describe only the songs in playing_in_order; do not mention songs that were left out or not found unless the listener asked for them by name.",
           parameters: Type.Object(
             {
               tracks: Type.Optional(Type.Array(song, { minItems: 1, maxItems: 6 })),
@@ -6170,9 +6171,9 @@ function sessionAvailability({ spotifyReady, spotifyPlaybackReady = spotifyReady
     lines.push("- NetEase Cloud Music is not ready here, so nothing can play. Tell the listener once that ncm-cli must be installed (npm install -g @music163/ncm-cli) and signed in (ncm-cli login), then help with what you can.");
   } else if (previewReady) {
     lines.push(
-      "- To let the listener hear music, including any request to play or queue it, call moondog_music_preview: tracks for named songs (up to six, in the order to play) or album for a whole album. It finds each recording in the Apple Music catalog itself and reports any it cannot find, so pass songs straight to it. The previews play one after another in their player.",
+      "- To let the listener hear music, including any request to play or queue it, call moondog_music_preview: tracks for named songs (up to six, in the order to play) or album for a whole album. It finds each recording in the Apple Music catalog itself and reports any it cannot find, so pass songs straight to it. The songs play one after another in their player.",
       "- When you recommend songs here, pass them to moondog_music_preview so the listener can hear them, and pick songs not already played in this conversation. Build a playlist plan only when they ask for a playlist; this overrides the plan step in other tool instructions.",
-      "- After previews start, say in one short line that they are 30-second previews and that the full songs are on Apple Music. Full playback is not available here.",
+      "- Each result's plays field says what the listener hears. Only when it is 30_second_previews, say in one short line that they are 30-second previews and that the full songs are on Apple Music. When it is whole_songs, do not call them previews.",
       spotifyReady
         ? "- Do not suggest switching to Spotify or linking another account to play music here."
         : "- Do not suggest linking Spotify or another account to play music here.",
