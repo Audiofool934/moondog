@@ -24,6 +24,8 @@ const minimumNodeVersion = [22, 19, 0];
 const spotifyPlaybackCapabilities = new Set([
   "spotify.player.control", "spotify.queue.add", "spotify.queue.similar", "spotify.queue.batch", "spotify.device.transfer",
 ]);
+// NetEase Cloud Music's tools exist only while it is the chosen service and ncm-cli is signed in.
+const neteaseCapabilities = new Set(["netease.search", "netease.play", "netease.control", "netease.now_playing"]);
 
 // What the model sees of a retained Spotify item: no provider identifiers.
 function modelSpotifyItem({ uri: _uri, album_uri: _albumUri, ...item }) {
@@ -185,6 +187,7 @@ export class MoondogApplication {
     musicCatalog = null,
     musicSimilarity = null,
     musicPreviewPlayer = null,
+    neteasePlayer = null,
     agentHostNotes = [],
     artistIdentityResolver = null,
     webResearch = null,
@@ -200,7 +203,7 @@ export class MoondogApplication {
     this.ownsServices = ownsServices !== false;
     this.spotifyTopArtists = spotifyTopArtists;
     this.importsRoot = importsRoot;
-    // The music service the listener chose to play songs: "spotify" or "apple_music".
+    // The music service the listener chose to play songs: "spotify", "apple_music" or "netease".
     this.playbackService = normalizePlaybackService(playbackService) ?? DEFAULT_PLAYBACK_SERVICE;
     // The listener's language: replies follow each message, and fall back to this.
     this.locale = normalizeLocale(locale) ?? DEFAULT_LOCALE;
@@ -226,6 +229,8 @@ export class MoondogApplication {
     // Hosts that can play audio pass { play(tracks, { album }) }: the website, and the
     // terminal when the system has a player.
     this.musicPreviewPlayer = musicPreviewPlayer;
+    // NetEase Cloud Music through ncm-cli (src/integrations/netease), shared by every conversation.
+    this.neteasePlayer = neteasePlayer;
     // Hosts can tell the agent where it runs; the terminal passes none.
     this.hostNotes = Array.isArray(agentHostNotes) ? agentHostNotes.filter((note) => typeof note === "string") : [];
     this.artistIdentityResolver = artistIdentityResolver;
@@ -461,7 +466,38 @@ export class MoondogApplication {
     return this.musicCatalogReady() &&
       typeof this.musicCatalog.findPreview === "function" &&
       typeof this.musicPreviewPlayer?.play === "function" &&
-      !this.spotifyPlaybackReady();
+      !this.spotifyPlaybackReady() &&
+      this.playbackService !== "netease";
+  }
+
+  // NetEase plays only when it is the chosen service and ncm-cli is installed and signed in.
+  neteaseReady() {
+    return this.playbackService === "netease" && this.neteasePlayer?.ready?.() === true;
+  }
+
+  requireNetease() {
+    if (!this.neteaseReady()) throw Object.assign(new Error("NetEase Cloud Music is not ready. The listener can sign in with: ncm-cli login"), { code: "netease_not_ready" });
+    return this.neteasePlayer;
+  }
+
+  searchNetease({ query, limit, intent } = {}) {
+    return this.requireNetease().search({ query, limit, intent });
+  }
+
+  playNetease({ items, mode, intent } = {}) {
+    return this.requireNetease().play({ items, mode, intent });
+  }
+
+  async controlNetease({ action, positionSeconds } = {}) {
+    const player = this.requireNetease();
+    if (action === "seek") await player.seek({ positionMs: Math.max(0, Number(positionSeconds) || 0) * 1000 });
+    else if (["pause", "resume", "next", "previous", "stop"].includes(action)) await player[action]();
+    else throw Object.assign(new Error(`Unknown NetEase action: ${action}`), { code: "netease_failed" });
+    return await player.nowPlaying();
+  }
+
+  neteaseNowPlaying() {
+    return this.requireNetease().nowPlaying();
   }
 
   // Spotify plays music only when it is connected and it is the chosen service.
@@ -2877,12 +2913,14 @@ export class MoondogApplication {
         ...this.webLookupOptions(),
       musicPreviewReady: this.musicPreviewReady(),
       }).map(capability => capability.state === "enabled" && this.#playbackServiceExcludes(capability.id)
-        ? { ...capability, state: "blocked", blocked_by: "playback_service_not_spotify" } : capability),
+        ? { ...capability, state: "blocked", blocked_by: neteaseCapabilities.has(capability.id) ? "netease_not_ready" : "playback_service_not_spotify" } : capability),
     };
   }
 
-  // With another music service chosen, Spotify does not play or queue anything.
+  // With another music service chosen, Spotify does not play or queue anything; NetEase's
+  // tools exist only while it plays.
   #playbackServiceExcludes(capabilityId) {
+    if (neteaseCapabilities.has(capabilityId)) return !this.neteaseReady();
     return this.playbackService !== "spotify" && spotifyPlaybackCapabilities.has(capabilityId);
   }
 

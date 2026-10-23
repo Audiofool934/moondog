@@ -51,6 +51,7 @@ import { createLyricService } from "../src/core/lyric-service.mjs";
 import { startListeningUpkeep } from "../src/core/listening-upkeep.mjs";
 import { createAppleMusicCatalog } from "../src/integrations/apple-music/catalog.mjs";
 import { createTerminalPreviewPlayer } from "../src/integrations/apple-music/terminal-preview-player.mjs";
+import { createNeteasePlayer } from "../src/integrations/netease/ncm-cli-player.mjs";
 import {
   createOpenMusicSimilarity,
   createWikidataArtistResolver,
@@ -834,6 +835,11 @@ async function main() {
   // One-shot commands get none: they would exit in the middle of the first song.
   // In the desktop app, the window's own player plays them instead.
   const previewPlayer = options.command ? null : host ? host.musicPreviewPlayer : await createTerminalPreviewPlayer();
+  // NetEase Cloud Music plays through ncm-cli in the terminal and the window alike. Its tools
+  // appear once ncm-cli says it is signed in; only listeners who chose it wait for that check.
+  const neteasePlayer = createNeteasePlayer();
+  const playbackService = await resolvePlaybackService();
+  if (playbackService === "netease") await neteasePlayer.check();
   // The main application and every conversation the window opens beside it are built from
   // this one list, so they cannot drift apart. Each passes in what may change after launch:
   // its domain services, the Spotify connection, the language and the music service.
@@ -841,11 +847,11 @@ async function main() {
   const spotifyTopArtists = { read_at: null, artists: [] };
   const applicationOptions = ({ domainServices, domainServicesError, spotifyConnection, locale, playbackService }) => ({
     domainServices, domainServicesError, spotifyConnection, locale, playbackService,
-    webResearch, memoryStore, musicCatalog, musicPreviewPlayer: previewPlayer, musicSimilarity, artistIdentityResolver,
+    webResearch, memoryStore, musicCatalog, musicPreviewPlayer: previewPlayer, neteasePlayer, musicSimilarity, artistIdentityResolver,
     spotifyTopArtists,
   });
   const application = new MoondogApplication(applicationOptions({
-    ...domainState, spotifyConnection, locale: await resolveListenerLocale(), playbackService: await resolvePlaybackService(),
+    ...domainState, spotifyConnection, locale: await resolveListenerLocale(), playbackService,
   }));
   // The conversations the window runs beside the main one, each with its own application and agent.
   const conversations = new Set();
@@ -1050,6 +1056,15 @@ async function main() {
       // runtime afterwards, between turns.
       // The choice is saved once and set on the main application and every open conversation.
       savePlaybackService: async (service) => {
+        // NetEase is chosen only once ncm-cli is installed and signed in, so its tools can play.
+        if (service === "netease") {
+          const status = await neteasePlayer.check();
+          if (status.state !== "ready") {
+            throw new Error(status.state === "missing"
+              ? "NetEase Cloud Music needs ncm-cli: npm install -g @music163/ncm-cli, then ncm-cli login."
+              : "NetEase Cloud Music is not signed in. Run ncm-cli login in a terminal, then choose it again.");
+          }
+        }
         const saved = await writePlaybackPreference(service);
         for (const target of [application, ...[...conversations].map((conversation) => conversation.application)]) target.setPlaybackService(saved);
         return saved;

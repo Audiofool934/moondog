@@ -3,9 +3,9 @@ import path from "node:path";
 
 import { resolveMoondogAuthFile } from "../runtime/pi/persistent-credential-store.mjs";
 
-// The music service that plays songs. Apple Music plays 30-second previews for now;
-// a later Music.app player can take the same value.
-export const PLAYBACK_SERVICES = Object.freeze(["spotify", "apple_music"]);
+// The music service that plays songs. Apple Music plays whole songs or 30-second previews;
+// NetEase Cloud Music plays through its own ncm-cli, for listeners in mainland China.
+export const PLAYBACK_SERVICES = Object.freeze(["spotify", "apple_music", "netease"]);
 export const DEFAULT_PLAYBACK_SERVICE = "spotify";
 
 export function normalizePlaybackService(value) {

@@ -171,6 +171,8 @@ function agentCapabilityAllowed(descriptor) {
       descriptor.effect === "read_external") ||
     (descriptor.capability_id.startsWith("spotify.") &&
       spotifyCapabilityEffects.has(descriptor.effect)) ||
+    (descriptor.capability_id.startsWith("netease.") &&
+      spotifyCapabilityEffects.has(descriptor.effect)) ||
     (descriptor.capability_id === "music.preview.play" && descriptor.effect === "play_preview")
   );
 }
@@ -4359,6 +4361,56 @@ function projectMusicPreview(value) {
   return result;
 }
 
+// NetEase songs as the model sees them: the id to play one, and whether NetEase lets it play.
+// Covers and audio stay with the host.
+function projectNeteaseSong(song) {
+  if (!isPlainObject(song)) throw new Error("domain_result_invalid:netease_song");
+  const artists = (Array.isArray(song.artists) ? song.artists : []).slice(0, 6).map((name) => cleanOutputText(name, 128, "netease_artist"));
+  return {
+    ...(song.id ? { id: cleanOutputText(song.id, 64, "netease_song_id") } : {}),
+    title: cleanOutputText(song.title, 256, "netease_title"),
+    artists,
+    ...(song.album ? { album: cleanOutputText(song.album, 256, "netease_album") } : {}),
+    ...(Number.isFinite(song.duration_ms) ? { duration_seconds: Math.round(song.duration_ms / 1000) } : {}),
+    playable: song.playable === true,
+    ...(song.other_artist === true ? { other_artist: true } : {}),
+  };
+}
+
+function projectNeteaseSearch(value) {
+  if (!Array.isArray(value)) throw new Error("domain_result_invalid:netease_search");
+  return { provider: "netease", songs: value.slice(0, 20).map(projectNeteaseSong) };
+}
+
+function projectNeteasePlay(value) {
+  if (!isPlainObject(value) || !["playing", "queued", "none"].includes(value.mode)) throw new Error("domain_result_invalid:netease_play");
+  const named = (wanted) => ({
+    ...(wanted?.id ? { id: cleanOutputText(wanted.id, 64, "netease_song_id") } : {}),
+    ...(wanted?.title ? { title: cleanOutputText(wanted.title, 256, "netease_title") } : {}),
+    ...(Array.isArray(wanted?.artists) && wanted.artists.length ? { artists: wanted.artists.slice(0, 6).map((name) => cleanOutputText(name, 128, "netease_artist")) } : {}),
+    ...(wanted?.artist ? { artist: cleanOutputText(wanted.artist, 128, "netease_artist") } : {}),
+  });
+  return {
+    provider: "netease",
+    result: value.mode,
+    songs: (Array.isArray(value.songs) ? value.songs : []).slice(0, 20).map(projectNeteaseSong),
+    unplayable: (Array.isArray(value.unplayable) ? value.unplayable : []).slice(0, 20).map(named),
+    not_found: (Array.isArray(value.not_found) ? value.not_found : []).slice(0, 20).map(named),
+  };
+}
+
+function projectNeteaseNowPlaying(value) {
+  if (!isPlainObject(value) || !["playing", "paused", "stopped"].includes(value.state)) throw new Error("domain_result_invalid:netease_now_playing");
+  if (value.state === "stopped" || !value.song) return { provider: "netease", state: "stopped" };
+  return {
+    provider: "netease",
+    state: value.state,
+    song: projectNeteaseSong(value.song),
+    position_seconds: Math.round((Number(value.position_ms) || 0) / 1000),
+    next: (Array.isArray(value.next) ? value.next : []).slice(0, 10).map(projectNeteaseSong),
+  };
+}
+
 function projectAppleMusicTrackSearch(value) {
   if (!isPlainObject(value) || !isPlainObject(value.source)) {
     throw new Error("domain_result_invalid:music_catalog_search");
@@ -4841,6 +4893,86 @@ function createToolFactories(
           ),
         };
       },
+    ],
+    [
+      "netease.search",
+      (descriptor) => ({
+        name: descriptor.tool_name,
+        label: descriptor.label,
+        description:
+          "Search NetEase Cloud Music (网易云音乐) for songs. Each result says whether NetEase lets the listener play it (playable). Use it to find a particular version, or when a named song could not be played; moondog_netease_play can also look songs up by title and artist itself. user_intent is sent to NetEase: one short line in the listener's language about what they want, with no names or personal details.",
+        parameters: Type.Object(
+          {
+            query: Type.String({ minLength: 1, maxLength: 100 }),
+            limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 20 })),
+            user_intent: Type.String({ minLength: 1, maxLength: 60 }),
+          },
+          { additionalProperties: false },
+        ),
+        execute: executeDomain(
+          async (_toolCallId, parameters) => application.searchNetease({ query: parameters.query, limit: parameters.limit, intent: parameters.user_intent }),
+          projectNeteaseSearch,
+        ),
+      }),
+    ],
+    [
+      "netease.play",
+      (descriptor) => {
+        const song = Type.Union([
+          Type.Object({ id: Type.String({ minLength: 1, maxLength: 64 }) }, { additionalProperties: false }),
+          Type.Object({ title: Type.String({ minLength: 1, maxLength: 256 }), artist: Type.String({ minLength: 1, maxLength: 256 }) }, { additionalProperties: false }),
+        ]);
+        return {
+          name: descriptor.tool_name,
+          label: descriptor.label,
+          description:
+            "Play or queue songs on NetEase Cloud Music. Give songs in the order to play, each as an id from moondog_netease_search or as a title and artist to look up. mode play (the default) starts the first now and queues the rest; mode queue adds them after what is playing. Songs NetEase does not let the listener play are never sent; they come back in unplayable. Describe only the songs in songs, and say whose recording it is when other_artist is true.",
+          parameters: Type.Object(
+            {
+              songs: Type.Array(song, { minItems: 1, maxItems: 20 }),
+              mode: Type.Optional(Type.Union([Type.Literal("play"), Type.Literal("queue")])),
+              user_intent: Type.String({ minLength: 1, maxLength: 60 }),
+            },
+            { additionalProperties: false },
+          ),
+          executionMode: "sequential",
+          execute: executeDomain(
+            async (_toolCallId, parameters) => application.playNetease({ items: parameters.songs, mode: parameters.mode ?? "play", intent: parameters.user_intent }),
+            projectNeteasePlay,
+          ),
+        };
+      },
+    ],
+    [
+      "netease.control",
+      (descriptor) => ({
+        name: descriptor.tool_name,
+        label: descriptor.label,
+        description:
+          "Pause, resume, skip to the next song, go back, move to a position in the song (seek, with position_seconds) or stop NetEase Cloud Music. Returns what is playing afterwards.",
+        parameters: Type.Object(
+          {
+            action: Type.Union(["pause", "resume", "next", "previous", "seek", "stop"].map((action) => Type.Literal(action))),
+            position_seconds: Type.Optional(Type.Integer({ minimum: 0, maximum: 7200 })),
+          },
+          { additionalProperties: false },
+        ),
+        executionMode: "sequential",
+        execute: executeDomain(
+          async (_toolCallId, parameters) => application.controlNetease({ action: parameters.action, positionSeconds: parameters.position_seconds }),
+          projectNeteaseNowPlaying,
+        ),
+      }),
+    ],
+    [
+      "netease.now_playing",
+      (descriptor) => ({
+        name: descriptor.tool_name,
+        label: descriptor.label,
+        description: "Read what NetEase Cloud Music is playing, its position, and the songs Moondog queued after it.",
+        parameters: Type.Object({}, { additionalProperties: false }),
+        execute: executeDomain(async () => application.neteaseNowPlaying(), projectNeteaseNowPlaying),
+      }),
     ],
     [
       "music.discovery.artist_similarity",
@@ -6014,15 +6146,29 @@ function toolForModel(tool) {
 
 // What this session can actually do. It comes last, so it overrides the general playback rules above.
 // Spotify can be connected for reading while the listener chose another service to play music.
-function sessionAvailability({ spotifyReady, spotifyPlaybackReady = spotifyReady, previewReady }) {
+const SERVICE_NAMES = { apple_music: "Apple Music", netease: "NetEase Cloud Music (网易云音乐)" };
+
+function sessionAvailability({ spotifyReady, spotifyPlaybackReady = spotifyReady, previewReady, playbackService = "apple_music", neteaseReady = false }) {
   if (spotifyPlaybackReady) return "";
   const lines = [
     "Session availability:",
     spotifyReady
-      ? "- The listener chose Apple Music to play music, so no Spotify tool plays, pauses, skips, queues or moves music here. Ignore the Spotify playback and queue steps in the rules above. Spotify search, library, history and what is playing on Spotify can still be read."
+      ? `- The listener chose ${SERVICE_NAMES[playbackService] ?? "Apple Music"} to play music, so no Spotify tool plays, pauses, skips, queues or moves music here. Ignore the Spotify playback and queue steps in the rules above. Spotify search, library, history and what is playing on Spotify can still be read.`
       : "- Spotify is not connected in this session, so no Spotify tools exist here. Never call moondog_spotify_* tools, and ignore the Spotify steps in the rules above.",
   ];
-  if (previewReady) {
+  if (neteaseReady) {
+    lines.push(
+      "- To let the listener hear music, including any request to play or queue it, call moondog_netease_play with songs by title and artist, or ids from moondog_netease_search: mode play starts now, mode queue adds after what is playing. moondog_netease_control pauses, resumes, skips, goes back, moves in the song or stops; moondog_netease_now_playing reads what is playing.",
+      "- When you recommend songs here, pass them to moondog_netease_play so the listener can hear them. Build a playlist plan only when they ask for a playlist; this overrides the plan step in other tool instructions.",
+      "- Only songs NetEase marks playable can be played or queued. A song that is not playable, or that fails to play, is most often a copyright limit, sometimes the channel or the region; membership or payment usually does not change it. Do not call it a network or account problem and do not retry it. Say so plainly and offer another song or another recording.",
+      "- NetEase often has several recordings under one title: the original, covers, remixes, uploads. Say whose recording is playing, above all when other_artist is true.",
+      "- user_intent goes to NetEase with each search: one short line in the listener's language about what they want, with no names, personal details or quotes from the conversation. Do not send NetEase requests about political topics, sexual content, insults, advertising or anything illegal; decline briefly instead.",
+      "- If NetEase says today's request limit is used up, tell the listener and stop. If it says it is not signed in, tell them to run ncm-cli login in a terminal.",
+      "- Do not suggest switching to Spotify or Apple Music to play music here.",
+    );
+  } else if (playbackService === "netease") {
+    lines.push("- NetEase Cloud Music is not ready here, so nothing can play. Tell the listener once that ncm-cli must be installed (npm install -g @music163/ncm-cli) and signed in (ncm-cli login), then help with what you can.");
+  } else if (previewReady) {
     lines.push(
       "- To let the listener hear music, including any request to play or queue it, call moondog_music_preview: tracks for named songs (up to six, in the order to play) or album for a whole album. It finds each recording in the Apple Music catalog itself and reports any it cannot find, so pass songs straight to it. The previews play one after another in their player.",
       "- When you recommend songs here, pass them to moondog_music_preview so the listener can hear them, and pick songs not already played in this conversation. Build a playlist plan only when they ask for a playlist; this overrides the plan step in other tool instructions.",
@@ -6046,7 +6192,7 @@ function hostNotes(notes) {
   return lines.length ? `\n\nAbout this session:\n${lines.join("\n")}` : "";
 }
 
-function systemPrompt({ spotifyReady = true, spotifyPlaybackReady = spotifyReady, previewReady = false, notes = [] } = {}) {
+function systemPrompt({ spotifyReady = true, spotifyPlaybackReady = spotifyReady, previewReady = false, playbackService = "apple_music", neteaseReady = false, notes = [] } = {}) {
   return `You are Moondog, a personal music agent and curator.
 
 ${listenerProfileSkill}
@@ -6184,7 +6330,7 @@ Voice:
 - Moondog lives on a lunar record and grew up on Pink Floyd. An occasional light nod to their songs or ideas is welcome when it truly fits the moment, at most once in a conversation, and never at the expense of a clear answer. Never quote more than a short line of any lyric.
 - No hype, no exclamation marks, no filler openings or closing offers. Use plain hyphens, never em dashes.
 
-Respond in the language used by the user unless asked otherwise; product.reply_language is that language, or the listener's chosen language when a message does not show one. Write Chinese in the script product.reply_language names, even when song titles use the other script.${sessionAvailability({ spotifyReady, spotifyPlaybackReady, previewReady })}${hostNotes(notes)}`;
+Respond in the language used by the user unless asked otherwise; product.reply_language is that language, or the listener's chosen language when a message does not show one. Write Chinese in the script product.reply_language names, even when song titles use the other script.${sessionAvailability({ spotifyReady, spotifyPlaybackReady, previewReady, playbackService, neteaseReady })}${hostNotes(notes)}`;
 }
 
 function contextMessage(snapshot) {
@@ -6957,6 +7103,8 @@ export class PiAgentRuntime {
           // Hosts without a choice of music service play through Spotify whenever it is ready.
           spotifyPlaybackReady: application.spotifyPlaybackReady?.() ?? application.spotifyReady?.() ?? false,
           previewReady: application.musicPreviewReady?.() ?? false,
+          playbackService: application.playbackService ?? "apple_music",
+          neteaseReady: application.neteaseReady?.() ?? false,
           notes: application.agentHostNotes?.() ?? [],
         }),
         model,

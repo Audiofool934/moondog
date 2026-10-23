@@ -130,6 +130,10 @@ const KINDS = [
   [/^moondog_web_/u, "web"],
   [/^moondog_(?:playlist_plan|spotify_playlist_)/u, "playlist"],
   [/^moondog_music_preview$/u, "previews"],
+  [/^moondog_netease_control$/u, (args) => ({ pause: "pause", stop: "pause", next: "skip", previous: "skip" })[args?.action] ?? "play"],
+  [/^moondog_netease_play$/u, (args) => (args?.mode === "queue" ? "queue" : "play")],
+  [/^moondog_netease_search$/u, "search"],
+  [/^moondog_netease_now_playing$/u, "status"],
   [/^moondog_memory_/u, "memory"],
   [/^moondog_music_/u, "search"],
   [/^moondog_(?:profile_|library_|rediscovery|historical_return|time_capsule|back_to_back|spotify_top|spotify_history|spotify_library)/u, "profile"],
@@ -536,8 +540,10 @@ async function showDevices(devices) {
     items.push({ type: "separator" });
   }
   items.push({ id: "service:spotify", label: "Spotify", checked: state.playbackService === "spotify" },
-    { id: "service:apple_music", label: "Apple Music", checked: state.playbackService === "apple_music" },
-    { type: "separator" }, { id: "settings", label: t("playbackSettings") });
+    { id: "service:apple_music", label: "Apple Music", checked: state.playbackService === "apple_music" });
+  // NetEase is offered once ncm-cli is installed and signed in.
+  if (state.netease === "ready" || state.playbackService === "netease") items.push({ id: "service:netease", label: t("netease"), checked: state.playbackService === "netease" });
+  items.push({ type: "separator" }, { id: "settings", label: t("playbackSettings") });
   const chosen = await window.moondogApp?.showMenu?.(items, at);
   if (chosen === "settings") settings.show("playback");
   else if (chosen?.startsWith("device:")) send({ type: "transfer", ref: chosen.slice(7) });
@@ -697,17 +703,18 @@ function renderInspector() {
     drawControls(now, $("toggle"), $("next"));
     set($("previous"), "disabled", !can(now, "skipping_prev"));
   }
-  const spotifyNow = now && !now.local;
-  // Where the music plays opens the choice of device and service: Spotify's device, or Apple
-  // Music playing in the window.
+  // Where the music plays opens the choice of device and service: Spotify's device, Apple Music
+  // playing in the window, or NetEase playing through ncm-cli on this Mac.
+  const neteaseNow = now?.service === "netease";
+  const spotifyNow = now && !now.local && !neteaseNow;
   const appleNow = now?.local && state.playbackService === "apple_music";
-  set($("where"), "hidden", !(spotifyNow ? now.device || now.link : now?.local));
-  set($("device-row"), "hidden", spotifyNow ? !now.device : !appleNow);
+  set($("where"), "hidden", !(spotifyNow ? now.device || now.link : now?.local || neteaseNow));
+  set($("device-row"), "hidden", spotifyNow ? !now.device : !(appleNow || neteaseNow));
   if (spotifyNow) {
     set($("device-name"), "textContent", now.device ?? "");
     setIcon($("device-row"), DEVICE_ICONS[String(now.deviceType ?? "").toLowerCase()] ?? "speaker");
-  } else if (appleNow) {
-    set($("device-name"), "textContent", "Apple Music");
+  } else if (appleNow || neteaseNow) {
+    set($("device-name"), "textContent", appleNow ? "Apple Music" : t("netease"));
     setIcon($("device-row"), "laptop");
   }
   set($("repeat"), "hidden", !spotifyNow || now.repeat !== "track");
@@ -1013,7 +1020,7 @@ function receive({ data }) {
   }
   if (data.type === "ready" || data.type === "status") {
     if (data.locale && data.locale !== locale) applyLanguage(data.locale);
-    for (const key of ["model", "spotify", "spotifyAccount", "playbackService", "locales"]) if (data[key] !== undefined) state[key] = data[key];
+    for (const key of ["model", "spotify", "spotifyAccount", "playbackService", "netease", "locales"]) if (data[key] !== undefined) state[key] = data[key];
     // With Apple Music chosen, the window learns once whether it can play whole songs.
     if (state.playbackService === "apple_music" && !previews.fullStatus()) void previews.check();
     renderComposer();

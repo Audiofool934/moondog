@@ -175,13 +175,27 @@ export function runWindowRoom(services, { port, send, quit = null }) {
       spotify: base.spotifyReady?.() === true ? "ready" : "unavailable",
       spotifyAccount: { state: spotify.state ?? "unavailable", clientId: spotify.client_id_configured === true },
       playbackService: base.playbackService ?? "spotify",
+      // NetEase Cloud Music is offered once ncm-cli is installed and signed in.
+      netease: base.neteasePlayer?.status?.().state ?? "unavailable",
       memory: base.memoryStatus?.().state ?? "unavailable",
     };
   }
   const sendStatus = () => send({ type: "status", ...status() });
 
   // Player
+  // NetEase plays through ncm-cli on this Mac; the core keeps the songs it queued there.
+  async function readNetease() {
+    const spotify = base.spotifyReady?.() === true ? "ready" : "unavailable";
+    if (base.neteaseReady?.() !== true) return { type: "player", spotify, now: null, next: [] };
+    const now = await base.neteasePlayer.nowPlaying();
+    const track = (song) => ({ title: song.title, link: null, artists: song.artists, album: song.album, image: song.image, durationMs: song.duration_ms });
+    return { type: "player", spotify,
+      now: now.song ? { ...track(now.song), service: "netease", playing: now.state === "playing", progressMs: now.position_ms,
+        device: null, deviceType: "computer", repeat: "off", shuffle: false, disallows: [], observedAt: Date.now() } : null,
+      next: now.next.slice(0, 8).map(track) };
+  }
   async function readPlayer() {
+    if (base.playbackService === "netease") return readNetease();
     const service = base.spotifyConnection?.service;
     if (base.spotifyReady?.() !== true || !service) return { type: "player", spotify: "unavailable", now: null, next: [] };
     const [player, queue] = await Promise.all([service.currentPlayer(), service.queue?.().catch(() => null)]);
@@ -229,8 +243,10 @@ export function runWindowRoom(services, { port, send, quit = null }) {
   };
 
   async function control(action, via, positionMs) {
-    const service = base.spotifyConnection?.service;
-    if (!service || base.spotifyReady?.() !== true || !["pause", "resume", "next", "previous", "seek"].includes(action)) return;
+    const netease = base.playbackService === "netease";
+    const service = netease ? base.neteasePlayer : base.spotifyConnection?.service;
+    const ready = netease ? base.neteaseReady?.() === true : base.spotifyReady?.() === true;
+    if (!service || !ready || !["pause", "resume", "next", "previous", "seek"].includes(action)) return;
     toolTrace?.record({ source: "window", tool: "player_control", state: "start", args: { action, via: via ?? "button" } });
     try {
       // A seek is a click on the song's progress; the rest are the transport buttons and the menu.
@@ -600,7 +616,7 @@ export function runWindowRoom(services, { port, send, quit = null }) {
     sendStatus();
   }
   async function setMusicService(service) {
-    if (!["spotify", "apple_music"].includes(service) || typeof savePlaybackService !== "function") return;
+    if (!["spotify", "apple_music", "netease"].includes(service) || typeof savePlaybackService !== "function") return;
     // The core saves it and sets it on every conversation; each agent's tools change when it is rebuilt.
     await savePlaybackService(service);
     await rebuildAll(undefined);
@@ -700,6 +716,8 @@ export function runWindowRoom(services, { port, send, quit = null }) {
       }
     });
     port.start();
+    // Whether the pickers can offer NetEase: one check at launch, unless the core already made it.
+    if (base.neteasePlayer?.status?.().state === "unknown") void base.neteasePlayer.check().then(sendStatus, () => {});
     // Each launch opens a new conversation, as the terminal does; earlier ones wait in the sidebar.
     base.startNewSession?.("app_start");
     slots[0].runtime.reset?.();

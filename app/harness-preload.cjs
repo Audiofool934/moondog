@@ -183,6 +183,13 @@ const STATES = {
   "settings-memory"() { STATES.reply(); slash("memory"); },
   "settings-about"() { STATES.reply(); slash("help"); },
   "settings-offline"() { STATES.offline(); slash("service"); },
+  // NetEase Cloud Music chosen and signed in, playing another artist's recording of a song.
+  netease() {
+    ready({ transcript: conversation([["放一首周杰伦的稻香", "网易云上周杰伦的原版这里放不了，多半是版权原因。现在放的是 Jay 翻唱的《稻香》。"]]), playbackService: "netease", netease: "ready" });
+    send({ type: "player", spotify: "ready", next: TRACKS.slice(2, 4),
+      now: { ...TRACKS[1], service: "netease", link: null, playing: true, progressMs: 61_000, device: null, deviceType: "computer", repeat: "off", shuffle: false, disallows: [], observedAt: Date.now() } });
+  },
+  "settings-netease"() { STATES.netease(); slash("service"); },
   "import-preview"() {
     STATES.reply();
     send({ type: "import", stage: "preview", preview: { title: "Spotify extended streaming history", notice: "Nothing is saved until you add it.",

@@ -60,6 +60,11 @@ A model or music service chosen there lasts until the app quits, and sign-in and
 - Apple Music plays whole songs where it can and 30-second previews where it can't.
   Whole songs come from a small helper beside the app's executable (`native/music.swift`) that plays the Apple Music catalog through MusicKit, so they need an Apple Music subscription and the listener's permission, which Settings › Playback asks for once.
   Until the helper can play, the window plays previews in itself, with media keys and the system's Now Playing.
+- NetEase Cloud Music (网易云音乐) plays through NetEase's own command line tool, for listeners in mainland China.
+  It shows among the music services once `npm install -g @music163/ncm-cli`, `brew install mpv` and `ncm-cli login` are done; ncm-cli keeps its own key and sign-in, and Moondog never reads them.
+  The core (`src/integrations/netease/ncm-cli-player.mjs`) keeps the queue and plays one song at a time with ncm-cli, so the terminal and the window play the same way.
+  Many songs, above all originals outside mainland China, are marked not playable, most often for copyright; Moondog never sends those and says so instead.
+  Each search sends NetEase a short summary of the request, which Settings › Playback says.
 - No accent color. Cover art brings the color: the song playing tints the window with its strongest colours, faintly, and they drift into the next song's over a few seconds; its cover glows from the player's corner across to the far edge.
   The window is one pane: no panel has a ground of its own, and the composer and your words sit on the light as a thin film, not as cards.
   Icon buttons name themselves, with their keys, in a tooltip.

@@ -236,6 +236,40 @@ const catalog = [
       label: N_("Play previews"),
     },
   },
+  // NetEase Cloud Music through ncm-cli. The application offers these only while NetEase is the
+  // chosen service and ncm-cli is signed in.
+  {
+    id: "netease.search",
+    version: "1",
+    state: "enabled",
+    effect: "read_external",
+    description: "Search NetEase Cloud Music for songs, with whether each one can be played.",
+    agent_tool: { name: "moondog_netease_search", label: N_("Search NetEase Cloud Music") },
+  },
+  {
+    id: "netease.play",
+    version: "1",
+    state: "enabled",
+    effect: "write_external",
+    description: "Play or queue songs on NetEase Cloud Music through ncm-cli.",
+    agent_tool: { name: "moondog_netease_play", label: N_("Play on NetEase Cloud Music") },
+  },
+  {
+    id: "netease.control",
+    version: "1",
+    state: "enabled",
+    effect: "write_external",
+    description: "Pause, resume, skip, go back, move in the song or stop NetEase Cloud Music.",
+    agent_tool: { name: "moondog_netease_control", label: N_("Control NetEase Cloud Music") },
+  },
+  {
+    id: "netease.now_playing",
+    version: "1",
+    state: "enabled",
+    effect: "read_external",
+    description: "Read what NetEase Cloud Music is playing and what is queued after it.",
+    agent_tool: { name: "moondog_netease_now_playing", label: N_("See what is playing") },
+  },
   {
     id: "music.discovery.artist_similarity",
     version: "1",
