@@ -1872,6 +1872,28 @@ export class ListeningHistoryStore {
     });
   }
 
+  // What the listener played lately: stored plays in the last `days` up to `now`, by artist.
+  // It reads the clock, not the newest play, so a history that stopped shows as quiet.
+  recentAttention({ subjectId, days = 28, now = Date.now(), limit = 10 } = {}) {
+    if (this.#closed) throw new Error("Listening history store is closed");
+    if (!isUuid(subjectId)) throw new TypeError("A valid profile subject is required");
+    const from = new Date(now - days * DAY_MS).toISOString();
+    const effective = `e.subject_id = ? AND e.occurred_at >= ?
+      AND NOT EXISTS (SELECT 1 FROM listening_event_supersessions s WHERE s.superseded_event_id = e.listening_event_id)
+      AND NOT EXISTS (SELECT 1 FROM listening_event_mirrors m WHERE m.mirror_event_id = e.listening_event_id)`;
+    const subject = subjectId.toLowerCase();
+    const plays = this.#database.prepare(`SELECT COUNT(*) AS plays FROM listening_events e WHERE ${effective}`)
+      .get(subject, from).plays;
+    const artists = this.#database.prepare(`SELECT json_extract(a.value, '$.name') AS name, COUNT(*) AS plays,
+      MAX(e.occurred_at) AS last_played_at
+      FROM listening_events e
+      JOIN track_refs t ON t.track_ref_id = e.track_ref_id AND t.revision = e.track_ref_revision
+      JOIN json_each(t.record_json, '$.artist_credits') a
+      WHERE ${effective} AND name IS NOT NULL
+      GROUP BY name ORDER BY plays DESC, last_played_at DESC LIMIT ?`).all(subject, from, limit);
+    return structuredClone({ from, to: new Date(now).toISOString(), plays, top_artists: artists });
+  }
+
   // Which spans of time the stored plays cover, and where plays may be missing.
   listeningCoverage({ subjectId } = {}) {
     if (this.#closed) throw new Error("Listening history store is closed");

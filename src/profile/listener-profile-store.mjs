@@ -44,6 +44,13 @@ export class ListenerProfileStore {
     return row ? JSON.parse(row.record_json) : null;
   }
 
+  /** When a build last started or resumed, whether the listener asked for it or not. */
+  lastAttemptAt() {
+    return this.database.prepare(`SELECT MAX(COALESCE(json_extract(record_json, '$.attempted_at'),
+      json_extract(record_json, '$.started_at'))) AS attempted_at
+      FROM listener_profile_builds WHERE subject_id = ?`).get(this.subjectId)?.attempted_at ?? null;
+  }
+
   /** Resume an unfinished build for the same input and model, or start a new one. */
   begin(input, model, { force = false } = {}) {
     const modelKey = profileDigest(model);
@@ -61,6 +68,7 @@ export class ListenerProfileStore {
         parent_revision_id: parent, started_at: new Date().toISOString(),
       };
       build.lease_token = randomUUID();
+      build.attempted_at = new Date().toISOString();
       this.database.prepare(`INSERT INTO listener_profile_builds
         (build_id, subject_id, input_digest, model_key, lease_token, state, record_json)
         VALUES (?, ?, ?, ?, ?, 'building', ?) ON CONFLICT(build_id) DO UPDATE

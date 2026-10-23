@@ -1,5 +1,6 @@
 import {
   CHECKED_PROFILE_STATES, compileListenerProfile, listenerProfileDossier, LISTENER_PROFILE_SYNTHESIS_VERSION, modelEvidence,
+  sameListenerChoices,
 } from "./listener-profile-build.mjs";
 import {
   LISTENER_PROFILE_CHECK_VERSION, listenerProfileCandidate, searchListenerProfileEvidence, validateListenerProfileCheck,
@@ -10,6 +11,31 @@ import { createConfiguredProfileBuildRuntime } from "../runtime/pi/profile-build
 // a model that hits its turn limit continue the same stage.
 const MAX_REVISIONS = 1;
 const MAX_SESSIONS = 8;
+
+const HOUR_MS = 3_600_000;
+// A reading that only new plays have overtaken is rebuilt after a week or 300 plays.
+// Changed choices or analysis rebuild it at once. Any build attempt, the listener's
+// or this one, holds off the next background attempt for half a day.
+export const PROFILE_REFRESH = { listeningAgeMs: 7 * 24 * HOUR_MS, newPlays: 300, attemptGapMs: 12 * HOUR_MS };
+
+/** Rebuild a saved reading that newer evidence has overtaken, without being asked. */
+export async function refreshListenerProfileIfDue({ application, now = Date.now(), ...options } = {}) {
+  // The first reading is the listener's to ask for.
+  if (!application.profileBuildReady()) return { state: "unavailable" };
+  const reading = await application.getListenerProfile({ limit: 1 });
+  if (reading.state !== "stale") return { state: reading.state };
+  const { input, store } = application.getProfileBuildContext();
+  const lastAttempt = Date.parse(store.lastAttemptAt() ?? "");
+  if (now - lastAttempt < PROFILE_REFRESH.attemptGapMs) return { state: "waiting" };
+  if (reading.newer_listening_only) {
+    const newPlays = (input.manifest.coverage?.effective_listening_events ?? 0) -
+      (reading.coverage?.coverage?.effective_listening_events ?? 0);
+    if (now - Date.parse(reading.built_at) < PROFILE_REFRESH.listeningAgeMs && newPlays < PROFILE_REFRESH.newPlays) {
+      return { state: "waiting" };
+    }
+  }
+  return runListenerProfileBuild({ ...options, application });
+}
 
 export async function runListenerProfileBuild({
   application, environment = process.env, signal, onProgress = () => {}, force = false,
@@ -42,10 +68,12 @@ export async function runListenerProfileBuild({
     evidence_rows: input.evidence.size, resumed: build.resumed });
   const inspected = new Set();
   let stageFinished = false;
+  // Plays synced during a long build do not stop it: the reading is saved as current up to the
+  // plays it read. A changed Like or Avoid does, since the reading could contradict it.
   const assertCurrentInput = () => {
     signal?.throwIfAborted();
-    if (application.getProfileBuildContext().input.input_digest !== input.input_digest) {
-      throw new Error("Your music or choices changed during the build. Use /profile build to read the updated evidence.");
+    if (!sameListenerChoices(input.evidence, application.getProfileBuildContext().input.evidence)) {
+      throw new Error("Your choices changed during the build. Use /profile build to read the updated evidence.");
     }
   };
   // The checkpoint commits before memory changes, so a lost lease leaves both unchanged.

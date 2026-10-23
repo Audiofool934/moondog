@@ -305,10 +305,10 @@ export function compileListenerProfile(input, submission) {
   };
 }
 
-function sameListenerChoices(revision, input) {
-  const saved = listenerAssertionClaims({ evidence: new Map(Object.entries(revision.evidence ?? {})) }).map(claim => claim.claim_id).sort();
-  const now = listenerAssertionClaims(input).map(claim => claim.claim_id).sort();
-  return saved.length === now.length && saved.every((id, index) => id === now[index]);
+// Whether two evidence maps hold the same Likes and Avoids. New plays change neither.
+export function sameListenerChoices(evidence, otherEvidence) {
+  const choices = (entries) => listenerAssertionClaims({ evidence: entries }).map(claim => claim.claim_id).sort().join("\n");
+  return choices(evidence) === choices(otherEvidence);
 }
 
 export function readListenerProfile({ input, getInput, store }, { offset = 0, limit = 12, claimId, revisionId } = {}) {
@@ -329,7 +329,8 @@ export function readListenerProfile({ input, getInput, store }, { offset = 0, li
     state,
     // New plays alone change the input. A reading whose analysis and listener choices
     // still hold stays usable as taste up to the listening it was built from.
-    ...(state === "stale" && analysisHolds && sameListenerChoices(revision, input) ? { newer_listening_only: true } : {}),
+    ...(state === "stale" && analysisHolds && sameListenerChoices(new Map(Object.entries(revision.evidence ?? {})), input.evidence)
+      ? { newer_listening_only: true } : {}),
     revision_id: revision.revision_id, sequence: revision.sequence,
     parent_revision_id: revision.parent_revision_id, built_at: revision.built_at, model: revision.model,
     synthesis_version: revision.synthesis_version,

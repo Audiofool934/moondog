@@ -489,6 +489,10 @@ export class ListeningProfileDomainServices {
     return this.#store.listeningCoverage?.({ subjectId: this.#subjectId }) ?? null;
   }
 
+  recentAttention() {
+    return this.#store.recentAttention?.({ subjectId: this.#subjectId }) ?? null;
+  }
+
   rediscoveryReady() {
     return typeof this.#store.rediscoveryCandidates === "function";
   }

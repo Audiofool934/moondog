@@ -1116,6 +1116,16 @@ Spotify keeps only the last 50 plays, so a sync that finds that window full reco
 A history file imported later fills the part of a gap that it covers.
 The agent sees which span each source covers, the gaps, and when recent plays were last read, so it treats plays in a gap as unknown rather than absent.
 
+The same half-hourly upkeep reads Spotify's top artists for about the last four weeks, when the sign-in allows it.
+Beside the saved reading, the agent sees this recent attention: stored plays from the last four weeks by artist, and Spotify's own four-week ranking, which counts every device.
+It treats the saved reading as enduring taste and recent attention as the present.
+
+The upkeep also rebuilds a saved reading that newer evidence has overtaken, with the configured model and without being asked.
+New plays alone make a rebuild due after a week or 300 plays; a changed Like, Avoid or analysis version makes it due at once.
+Any build attempt holds off the next background one for 12 hours, and it never writes a listener's first reading.
+Until then, a reading that only new plays have overtaken still reaches the agent, marked as current through its last listening date.
+Plays synced during a build no longer stop it; a changed Like or Avoid still does.
+
 Read your Spotify library into the same store with:
 
 ```bash

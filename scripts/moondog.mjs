@@ -48,7 +48,7 @@ import { IMPORT_GUIDE_URLS } from "../src/surfaces/cli/import-guides.mjs";
 import { readLastfmConfiguration, writeLastfmConfiguration } from "../src/integrations/lastfm/settings.mjs";
 import { runMoondogTui } from "../src/surfaces/cli/tui.mjs";
 import { createLyricService } from "../src/core/lyric-service.mjs";
-import { startRecentListeningSync } from "../src/core/recent-listening-sync.mjs";
+import { startListeningUpkeep } from "../src/core/listening-upkeep.mjs";
 import { createAppleMusicCatalog } from "../src/integrations/apple-music/catalog.mjs";
 import { createTerminalPreviewPlayer } from "../src/integrations/apple-music/terminal-preview-player.mjs";
 import {
@@ -837,9 +837,12 @@ async function main() {
   // The main application and every conversation the window opens beside it are built from
   // this one list, so they cannot drift apart. Each passes in what may change after launch:
   // its domain services, the Spotify connection, the language and the music service.
+  // Spotify's four-week top artists, as the listening upkeep last read them.
+  const spotifyTopArtists = { read_at: null, artists: [] };
   const applicationOptions = ({ domainServices, domainServicesError, spotifyConnection, locale, playbackService }) => ({
     domainServices, domainServicesError, spotifyConnection, locale, playbackService,
     webResearch, memoryStore, musicCatalog, musicPreviewPlayer: previewPlayer, musicSimilarity, artistIdentityResolver,
+    spotifyTopArtists,
   });
   const application = new MoondogApplication(applicationOptions({
     ...domainState, spotifyConnection, locale: await resolveListenerLocale(), playbackService: await resolvePlaybackService(),
@@ -862,7 +865,7 @@ async function main() {
   };
 
   let lyrics = null;
-  let recentListening = null;
+  let listeningUpkeep = null;
   let exitRequest;
   try {
     // The command keeps a local trace of the agent's tool calls in the state directory.
@@ -946,13 +949,26 @@ async function main() {
       );
     }
     lyrics = await createLyricService().catch(() => null);
-    recentListening = startRecentListeningSync({
-      sync: (options) => application.spotifyReady() &&
-        !application.spotifyConnection.missingScopes?.().includes("user-read-recently-played")
-        ? syncRecentSpotifyListening(options) : null,
-      // Open domain services read new plays as they land; only a first history needs opening.
-      onSynced: async (result) => {
-        if (result.inserted_events > 0 && !application.domainServices) replaceDomainServices(await loadDomainServices());
+    // Each step stands alone, so a Spotify outage does not hold back a due rebuild.
+    listeningUpkeep = startListeningUpkeep({
+      run: async ({ signal }) => {
+        const spotify = application.spotifyReady() ? application.spotifyConnection : null;
+        const granted = (scope) => spotify !== null && !spotify.missingScopes?.().includes(scope);
+        if (granted("user-read-recently-played")) {
+          const synced = await syncRecentSpotifyListening({ signal }).catch(() => null);
+          // Open domain services read new plays as they land; only a first history needs opening.
+          if (synced?.inserted_events > 0 && !application.domainServices) replaceDomainServices(await loadDomainServices());
+        }
+        if (granted("user-top-read")) {
+          const top = await spotify.service.topItems({ type: "artists", timeRange: "short_term", limit: 10 }, { signal })
+            .catch(() => null);
+          if (top) {
+            spotifyTopArtists.read_at = new Date().toISOString();
+            spotifyTopArtists.artists = top.items.flatMap((artist) => typeof artist.name === "string" ? [artist.name.slice(0, 256)] : []);
+          }
+        }
+        signal.throwIfAborted();
+        await application.refreshListenerProfile({ signal });
       },
     });
     // The window answers in several sessions at the same time: each busy session gets its own
@@ -1111,7 +1127,7 @@ async function main() {
       },
     });
   } finally {
-    recentListening?.stop();
+    listeningUpkeep?.stop();
     lyrics?.close();
     // Conversations close first: their domain services are forks of the main application's.
     for (const conversation of conversations) conversation.close();

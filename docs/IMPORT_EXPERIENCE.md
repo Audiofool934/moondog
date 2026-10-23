@@ -154,7 +154,7 @@ Large-file optimization should follow measurements of representative archives.
 The return path should make the next useful step obvious: inspect an unexpected profile reading, correct one preference, or explore a grounded listening plan.
 Later history can then add evidence to the same profile and improve the next listening session.
 Broader service support follows the expansion sequence above.
-Once a listener has history and a Spotify connection, the room collects recent Spotify plays by itself when it opens and every 30 minutes while it runs; see the [terminal guide](TERMINAL_GUIDE.md).
+Once a listener has history and a Spotify connection, the room collects recent Spotify plays by itself when it opens and every 30 minutes while it runs, and rebuilds an overtaken saved reading on a slow cadence; see the [terminal guide](TERMINAL_GUIDE.md).
 Per-import undo remains a separate product decision rather than an implied promise of the first-import guide.
 
 ## Source guidance

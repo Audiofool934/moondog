@@ -11,6 +11,8 @@ import { MoondogApplication } from "../../src/core/moondog-application.mjs";
 import { createListeningProfileDomainServices } from "../../src/core/listening-profile-domain-services.mjs";
 import { openListeningHistoryStore } from "../../src/profile/listening-history-store.mjs";
 import { projectSpotifyExtendedStreamingHistory } from "../../src/integrations/spotify/extended-streaming-history.mjs";
+import { projectSpotifyRecentActivity } from "../../src/integrations/spotify/recent-activity.mjs";
+import { compactListenerProfile } from "../../src/profile/listener-profile-build.mjs";
 import { ProfileBuildRuntime } from "../../src/runtime/pi/profile-build-runtime.mjs";
 import { PiAgentRuntime } from "../../src/runtime/pi/agent-runtime.mjs";
 import { runListenerProfileCommand } from "../../src/surfaces/cli/listener-profile-command.mjs";
@@ -191,6 +193,47 @@ test("a stalled session, a changed input or an invalid finding cannot publish a 
       session.submit({ summary: "A fictional reading.", insights: [bad] })) }), message);
   }
   assert.equal((await state.application.getListenerProfile()).revision_id, first.revision.revision_id);
+});
+
+function syncOnePlay(state, playedAt) {
+  state.store.ingest(projectSpotifyRecentActivity({ subjectId, capturedAt: playedAt, page: { provider: "spotify", items: [{
+    played_at: playedAt, track: { id: `recent${Date.parse(playedAt)}`, name: "New song", artists: ["New artist"], album: "New album" },
+  }] } }));
+}
+
+test("plays synced during a build do not stop it, and the reading stays usable up to the plays it read", async t => {
+  const state = await fixture(t);
+  const built = await state.application.buildListenerProfile({ runtimeFactory: scriptedRuntime(async session => {
+    if (session.phase === "check") return verdict(session);
+    write(session);
+    syncOnePlay(state, "2026-09-02T12:00:00.000Z");
+  }) });
+  assert.equal(built.state, "ready");
+  const reading = await state.application.getListenerProfile();
+  assert.equal(reading.state, "stale");
+  assert.equal(reading.newer_listening_only, true);
+  const compact = compactListenerProfile(reading);
+  assert.equal(compact.state, "current_through");
+  assert.ok(compact.summary);
+});
+
+test("the background refresh waits for a week of new plays, and half a day after any build attempt", async t => {
+  const state = await fixture(t);
+  const built = await state.application.buildListenerProfile({ runtimeFactory: scriptedRuntime() });
+  const day = 86_400_000;
+  const builtAt = Date.parse(built.revision.built_at);
+  const refuse = () => { throw new Error("model must not run"); };
+  assert.equal((await state.application.refreshListenerProfile({ runtimeFactory: refuse })).state, "current");
+  syncOnePlay(state, "2026-09-02T12:00:00.000Z");
+  assert.equal((await state.application.refreshListenerProfile({ now: builtAt + day, runtimeFactory: refuse })).state, "waiting");
+  const weekly = await state.application.refreshListenerProfile({ now: builtAt + 8 * day, runtimeFactory: scriptedRuntime() });
+  assert.equal(weekly.state, "ready");
+  assert.equal(weekly.revision.sequence, 2);
+  // A changed choice is due at once, but not within half a day of the last attempt.
+  state.store.recordListenerCorrection({ subjectId, entityType: "artist", label: "Smaller artist", stance: "avoid" });
+  assert.equal((await state.application.refreshListenerProfile({ now: Date.now() + 3_600_000, runtimeFactory: refuse })).state, "waiting");
+  const corrected = await state.application.refreshListenerProfile({ now: Date.now() + 13 * 3_600_000, runtimeFactory: scriptedRuntime() });
+  assert.equal(corrected.revision.sequence, 3);
 });
 
 test("the Pi runtime writes with the dossier and checks in a fresh session through its own tools", async t => {

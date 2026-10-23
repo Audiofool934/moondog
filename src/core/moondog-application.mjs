@@ -194,8 +194,11 @@ export class MoondogApplication {
     // A conversation the desktop window runs beside the main one shares the main one's
     // services and owns only its domain-services fork, so closing it leaves the rest open.
     ownsServices = true,
+    // Spotify's own four-week top artists as the room last read them, shared by every conversation.
+    spotifyTopArtists = null,
   } = {}) {
     this.ownsServices = ownsServices !== false;
+    this.spotifyTopArtists = spotifyTopArtists;
     this.importsRoot = importsRoot;
     // The music service the listener chose to play songs: "spotify" or "apple_music".
     this.playbackService = normalizePlaybackService(playbackService) ?? DEFAULT_PLAYBACK_SERVICE;
@@ -301,8 +304,26 @@ export class MoondogApplication {
   }
 
   async buildListenerProfile(options = {}) {
+    // A build the listener asks for replaces a background one, resuming its saved draft.
+    this.backgroundProfileBuild?.abort();
     const { runListenerProfileBuild } = await import("../profile/listener-profile-worker.mjs");
     return runListenerProfileBuild({ ...options, application: this });
+  }
+
+  // The room's background rebuild, on a slow cadence. A build asked for in another
+  // conversation takes its lease instead, and this one stops at its next checkpoint.
+  async refreshListenerProfile({ signal, ...options } = {}) {
+    const { refreshListenerProfileIfDue } = await import("../profile/listener-profile-worker.mjs");
+    const controller = new AbortController();
+    const stop = () => controller.abort();
+    signal?.addEventListener("abort", stop, { once: true });
+    this.backgroundProfileBuild = controller;
+    try {
+      return await refreshListenerProfileIfDue({ ...options, signal: controller.signal, application: this });
+    } finally {
+      signal?.removeEventListener("abort", stop);
+      if (this.backgroundProfileBuild === controller) this.backgroundProfileBuild = null;
+    }
   }
 
   playlistServicesReady() {
@@ -547,6 +568,21 @@ export class MoondogApplication {
   // and when Spotify's recent plays were last read.
   listeningCoverage() {
     return this.domainServices?.listeningCoverage?.() ?? null;
+  }
+
+  // What the listener has played lately, apart from the saved reading: stored plays from
+  // the last four weeks, and Spotify's own four-week top artists when the room has read them.
+  recentAttention() {
+    const stored = this.domainServices?.recentAttention?.() ?? null;
+    const spotify = this.spotifyTopArtists?.artists?.length ? this.spotifyTopArtists : null;
+    if (!stored && !spotify) return null;
+    return {
+      ...(stored ? { stored_plays: stored } : {}),
+      ...(spotify ? { spotify_top_artists_4_weeks: {
+        read_at: spotify.read_at, artists: spotify.artists,
+        basis: "Spotify's affinity ranking over about four weeks, on every device; not play counts.",
+      } } : {}),
+    };
   }
 
   async profileStatus() {

@@ -1280,6 +1280,10 @@ export class AppleProjectionDomainServices {
     return this.#listeningHistoryStore?.listeningCoverage?.({ subjectId: this.#subjectId }) ?? null;
   }
 
+  recentAttention() {
+    return this.#listeningHistoryStore?.recentAttention?.({ subjectId: this.#subjectId }) ?? null;
+  }
+
   rediscoveryReady() {
     return (
       this.#listeningHistoryStore !== null &&
