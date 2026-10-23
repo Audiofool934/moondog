@@ -10,6 +10,8 @@ const ICONS = { general: "globe", model: "model", playback: "speaker", library: 
 const DEVICE_ICONS = { computer: "laptop", smartphone: "phone", tablet: "phone", tv: "tv" };
 const REDIRECT_URI = "http://127.0.0.1:43821/callback";
 const SPOTIFY_DASHBOARD = "https://developer.spotify.com/dashboard";
+// NetEase plays through its own command line tool, installed and signed in from Terminal (app/README.md).
+const NETEASE_SETUP = "npm install -g @music163/ncm-cli && brew install mpv && ncm-cli login";
 const LASTFM_KEY_PAGE = "https://www.last.fm/api/account/create";
 const SITE = "https://moondog.audiofool.ai";
 // The core's error codes the listener can act on. Anything else reads as a plain failure; the raw
@@ -128,8 +130,9 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
     sheet.hidden = false;
     if (!wasOpen) {
       content = null;
-      // Each opening starts with the provider in use unfolded.
+      // Each opening starts with the provider in use unfolded, and NetEase's setup only when it was asked for.
       data.expanded = undefined;
+      data.neteaseSetup = false;
     }
     isOpen = true;
     if (windowNode) windowNode.inert = true;
@@ -516,6 +519,13 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
       ...(state.netease === "ready" || service === "netease" ? [choice({ label: say("netease"), detail: say("neteaseNote"), chosen: service === "netease",
         key: "service:netease", onChoose: chooseService("netease") })] : []),
     ]))];
+    // Asked for from the music service's menu: NetEase is set up in Terminal with its own tool, then checked again here.
+    if (data.neteaseSetup && state.netease !== "ready") {
+      const stack = make("div", "stack");
+      stack.append(note(say("neteaseSetup")), copyChip(NETEASE_SETUP, "netease", "chip", say("netease")),
+        button(say("checkAgain"), "button small", () => send({ type: "netease-check" }), "netease:check"));
+      parts.push(group(say("netease"), stack));
+    }
     if (service !== "spotify") return parts;
     if (data.auth?.provider === "spotify") parts.push(group(null, signInPanel()));
     else if (!ready) parts.push(group(null, data.auth ? note(say("signInBusy")) : connectSpotify()));
@@ -810,5 +820,7 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
     render();
   }
 
-  return { show, hide, render, receive, get open() { return isOpen; } };
+  // Settings › Playback with NetEase's setup in view, for the music service's menu.
+  const showNetease = () => { show("playback"); data.neteaseSetup = true; render(); };
+  return { show, showNetease, hide, render, receive, get open() { return isOpen; } };
 }

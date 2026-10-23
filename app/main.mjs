@@ -215,7 +215,8 @@ function createWindow() {
 
 // Native menus for the page: a conversation's actions, and the model, device and service pickers.
 // The page sends plain items { id, label, checked, enabled, type, submenu }; the chosen id comes back.
-const menuTemplate = (items, choose) => items.map((item) => item.type === "separator" ? { type: "separator" } : {
+// A header names the group of items under it, such as a model maker over its models.
+const menuTemplate = (items, choose) => items.map((item) => item.type === "separator" ? { type: "separator" } : item.type === "header" ? { type: "header", label: String(item.label ?? "") } : {
   label: String(item.label ?? ""), enabled: item.enabled !== false,
   ...(item.checked !== undefined ? { type: "checkbox", checked: item.checked === true } : {}),
   ...(Array.isArray(item.submenu) ? { submenu: menuTemplate(item.submenu, choose) } : { click: () => choose(item.id) }),

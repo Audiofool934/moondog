@@ -729,6 +729,8 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     },
     language: (data) => setLanguage(String(data.locale ?? "")),
     "music-service": (data) => setMusicService(String(data.service ?? "")),
+    // After ncm-cli is set up in Terminal, the window asks again instead of waiting for the next launch.
+    "netease-check": async () => { await base.neteasePlayer?.check?.(); sendStatus(); },
     devices: () => devices(),
     transfer: (data) => transfer(data.ref),
     memories: () => memories(),

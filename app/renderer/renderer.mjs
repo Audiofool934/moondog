@@ -621,11 +621,37 @@ function renderComposer() {
   button.disabled = !streaming && (!input.value.trim() || Boolean(state.waiting && !state.ready));
   name(button, streaming ? t("stop") : t("send"), streaming ? "⌘." : "↩");
   setIcon(button, streaming ? "stop" : "up");
-  const model = $("model");
-  model.textContent = state.model?.model ? prettyModel(state.model.model) : state.model ? t("chooseModel") : "";
-  // Without a model Moondog can't answer, so the way to choose one reads as a button.
-  model.classList.toggle("needed", Boolean(state.model) && !state.model.model);
+  renderPicks();
   syncMenu();
+}
+// Beside the send button: where the music plays and which model answers, each by its mark, with its
+// name in the tooltip and the menu. One not chosen yet reads as the words that choose it: a model,
+// without which Moondog can't answer, and on a first launch the music service the listener uses.
+const SERVICE_MARKS = { spotify: "spotify", apple_music: "apple-music", netease: "netease" };
+// A model shows its maker's mark: by the account it comes through, or for OpenRouter by the maker its
+// model id begins with (anthropic/…, x-ai/…); a maker without a mark here shows OpenRouter's, or the model glyph.
+const MAKER_MARKS = { anthropic: "claude", openai: "openai", "openai-codex": "openai", google: "gemini", deepseek: "deepseek",
+  moonshotai: "kimi", "moonshotai-cn": "kimi", xai: "grok", zai: "zai", openrouter: "openrouter" };
+const ROUTED_MARKS = { anthropic: "claude", openai: "openai", google: "gemini", deepseek: "deepseek", moonshotai: "kimi", "x-ai": "grok", "z-ai": "zai" };
+const makerMark = (model) => (model.provider === "openrouter" ? ROUTED_MARKS[String(model.model ?? "").split("/")[0]] ?? "openrouter" : MAKER_MARKS[model.provider] ?? "model");
+const serviceName = (service) => (service === "netease" ? t("netease") : service === "apple_music" ? "Apple Music" : "Spotify");
+const effortName = (level) => (level === "default" ? t("effortDefault") : t(`effort.${level}`) === `effort.${level}` ? level : t(`effort.${level}`));
+const asking = () => state.ready && !state.sessions.length && !store.get("moondog.source");
+function drawPick(button, { mark, label, words }) {
+  button.classList.toggle("needed", Boolean(words));
+  set(button.lastChild, "textContent", words ?? "");
+  button.querySelector("svg").setAttribute("class", mark === "model" ? "icon" : "icon fill");
+  setIcon(button, mark);
+  if (words) { delete button.dataset.tip; button.setAttribute("aria-label", words); } else name(button, label);
+}
+function renderPicks() {
+  const service = sourceWanted ?? state.playbackService ?? "spotify";
+  drawPick($("service"), { mark: SERVICE_MARKS[service] ?? "spotify", label: serviceName(service), words: asking() ? t("chooseService") : null });
+  const model = state.model;
+  set($("model"), "hidden", !model);
+  if (!model) return;
+  const label = [prettyModel(model.model), model.effort ? effortName(model.effort) : ""].filter(Boolean).join(" · ");
+  drawPick($("model"), { mark: makerMark(model), label, words: model.model ? null : t("chooseModel") });
 }
 // The composer grows with its words up to 40% of the window (field-sizing in style.css), then scrolls.
 function clearComposer() {
@@ -696,24 +722,31 @@ const COMMANDS = [
 ];
 const palette = createPalette({ input, anchor: $("form"), t: tr, commands: () => COMMANDS });
 
-// Pickers open as native menus where they show.
+// Pickers open as native menus where they show. The model's button shows only its maker's mark, so
+// its menu names what answers: the maker in use over its models, the chosen one checked, each other
+// signed-in maker's models in a submenu, then the thinking, with the level it is at.
 async function pickModel(event) {
   const model = state.model ?? {};
   const signedIn = providers.filter((provider) => provider.signedIn);
   // A long catalog shows its first models here and the rest in settings.
-  const items = signedIn.map((provider) => {
+  const entries = (provider, limit) => {
     const models = providerModels.get(provider.id) ?? [];
-    const shownModels = models.slice(0, 24);
+    const shown = models.slice(0, limit);
     const chosen = models.find((entry) => provider.id === model.provider && entry.id === model.model);
-    if (chosen && !shownModels.includes(chosen)) shownModels.unshift(chosen);
-    const submenu = shownModels.map((entry) => ({ id: `model:${provider.id}:${entry.id}`, label: entry.name ?? entry.id,
+    if (chosen && !shown.includes(chosen)) shown.unshift(chosen);
+    const list = shown.map((entry) => ({ id: `model:${provider.id}:${entry.id}`, label: entry.name ?? entry.id,
       checked: provider.id === model.provider && entry.id === model.model }));
-    if (models.length > 24) submenu.push({ type: "separator" }, { id: "settings", label: t("moreModels") });
-    return { id: `provider:${provider.id}`, label: provider.name, submenu };
-  }).filter((item) => item.submenu.length);
+    if (models.length > limit) list.push({ id: "settings", label: t("moreModels") });
+    return list;
+  };
+  const current = signedIn.find((provider) => provider.id === model.provider);
+  const items = current ? [{ type: "header", label: current.name }, ...entries(current, 12)] : [];
+  const others = signedIn.filter((provider) => provider !== current)
+    .map((provider) => ({ id: `provider:${provider.id}`, label: provider.name, submenu: entries(provider, 24) })).filter((item) => item.submenu.length);
+  if (others.length) items.push(...(items.length ? [{ type: "separator" }] : []), ...others);
   if (model.effortLevels?.length) {
-    items.push({ type: "separator" }, { id: "effort", label: t("effort"), submenu: ["default", ...model.effortLevels].map((level) => ({ id: `effort:${level}`,
-      label: level === "default" ? t("effortDefault") : t(`effort.${level}`) === `effort.${level}` ? level : t(`effort.${level}`), checked: (model.effort ?? "default") === level })) });
+    items.push({ type: "separator" }, { id: "effort", label: `${t("effort")} · ${effortName(model.effort ?? "default")}`,
+      submenu: ["default", ...model.effortLevels].map((level) => ({ id: `effort:${level}`, label: effortName(level), checked: (model.effort ?? "default") === level })) });
   }
   items.push(...(items.length ? [{ type: "separator" }] : []), { id: "settings", label: t("modelSettings") });
   const chosen = await menu(items, event);
@@ -722,6 +755,37 @@ async function pickModel(event) {
   if (chosen.startsWith("effort:")) return send({ type: "effort", effort: chosen.slice(7) });
   const [, provider, ...rest] = chosen.split(":");
   if (chosen.startsWith("model:")) send({ type: "model", provider, model: rest.join(":") });
+}
+// The music service's menu: the services, each checked when in use; signing in to one the core can
+// play but can't yet, Spotify in Settings and NetEase with its own tool in Terminal; then the settings.
+// A choice shows at once and the core's status confirms it; a switch rebuilds every conversation.
+let sourceWanted = null;
+let wantedTimer = 0;
+async function pickService(event) {
+  const now = sourceWanted ?? state.playbackService ?? "spotify";
+  const services = ["spotify", "apple_music", ...(state.netease === "ready" || now === "netease" ? ["netease"] : [])];
+  const items = services.map((service) => ({ id: `service:${service}`, label: serviceName(service), checked: service === now }));
+  const signIn = [
+    ...(state.spotify === "unavailable" ? [{ id: "sign-in:spotify", label: t("connectSpotify") }] : []),
+    ...(["signed_out", "missing"].includes(state.netease) ? [{ id: "sign-in:netease", label: t("setUpNetease") }] : []),
+  ];
+  items.push(...(signIn.length ? [{ type: "separator" }, ...signIn] : []), { type: "separator" }, { id: "settings", label: t("playbackSettings") });
+  const chosen = await menu(items, event);
+  if (!chosen) return;
+  store.set("moondog.source", "chosen");
+  if (chosen === "settings") settings.show("playback");
+  else if (chosen === "sign-in:spotify") { chooseService("spotify"); settings.show("playback"); }
+  else if (chosen === "sign-in:netease") settings.showNetease();
+  else chooseService(chosen.slice(8));
+  renderComposer();
+}
+function chooseService(service) {
+  if (service === (sourceWanted ?? state.playbackService)) return;
+  if (previews.active() && service === "spotify") previews.stop();
+  sourceWanted = service;
+  clearTimeout(wantedTimer);
+  wantedTimer = setTimeout(() => { sourceWanted = null; renderComposer(); }, 10_000);
+  send({ type: "music-service", service });
 }
 // Where music plays: Spotify's devices, then the service itself. The menu opens once the devices are read.
 let devicePicker = null;
@@ -754,6 +818,7 @@ async function showDevices(devices) {
   }
 }
 $("model").addEventListener("click", (event) => void pickModel(event));
+$("service").addEventListener("click", (event) => void pickService(event));
 $("device-row").addEventListener("click", (event) => pickDevice(event));
 $("settings-button").addEventListener("click", () => settings.show());
 $("connect").addEventListener("click", () => settings.show("playback"));
@@ -1235,7 +1300,11 @@ function receive({ data }) {
   }
   if (data.type === "ready" || data.type === "status") {
     if (data.locale && data.locale !== locale) applyLanguage(data.locale);
+    const before = state.playbackService;
     for (const key of ["model", "spotify", "spotifyAccount", "playbackService", "netease", "locales"]) if (data[key] !== undefined) state[key] = data[key];
+    // A service chosen anywhere, here, in Settings or in the player, answers a first launch's question.
+    if (data.type === "status" && data.playbackService && data.playbackService !== before) store.set("moondog.source", "chosen");
+    if (sourceWanted === state.playbackService) sourceWanted = null;
     // With Apple Music chosen, the window learns once whether it can play whole songs.
     if (state.playbackService === "apple_music" && !previews.fullStatus()) void previews.check();
     renderComposer();
@@ -1249,6 +1318,7 @@ function receive({ data }) {
     state.current = data.current ?? state.current;
     window.moondogApp?.setBusy?.(state.running.length > 0);
     renderSessions();
+    renderComposer();
   }
   if (data.type === "ready" || data.type === "session") {
     // A message waiting for the core stays on screen until the core takes it.
@@ -1268,6 +1338,8 @@ function receive({ data }) {
   }
   if (data.type === "ready") {
     state.ready = true;
+    // Only now is it known whether this is a first launch, the one that asks which service the listener uses.
+    renderComposer();
     send({ type: "models" });
     const waiting = state.waiting;
     state.waiting = null;

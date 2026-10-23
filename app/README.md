@@ -56,7 +56,12 @@ A model or music service chosen there lasts until the app quits, and sign-in and
   A control Spotify won't take right now, such as skipping on a free account, is dimmed.
   With the player folded away, the song shows at the end of the title bar with play or pause and next; a click on the song opens the player.
 - Drag the inner edge of either side panel to change its width; a double-click puts it back.
-- In the composer, the model opens a menu of the models you are signed in to, with the thinking effort.
+- Beside the send button, the music service and the model, each by its mark (from Simple Icons, and Lobe Icons for the model makers Simple Icons lacks), with its name in the tooltip.
+  A model shows its maker's mark, through OpenRouter too, by the maker its id names; a maker the window has no mark for shows a plain model glyph.
+  The service's menu switches between Spotify, Apple Music, and NetEase Music once ncm-cli is ready; it also signs in to Spotify in Settings, or shows the commands that set up NetEase in Terminal and checks again.
+  It offers only services the core can play.
+  The model's menu shows the maker in use over its models, the chosen one checked, every other signed-in maker's models in a submenu, and the thinking effort with its level.
+  On a first launch the service reads "Choose a music service" until one is chosen, as the model reads "Choose a model" until there is one.
 - Typing `/` lists commands by what they open (a mistyped one stays in the composer instead of going to Moondog): `/new`, `/model`, `/language`, `/service`, `/device`, `/import`, `/memory`, `/remember`, `/folder`, `/settings` and `/help`.
 - Settings (`⌘,`, or the button at the top right beside the player's) has Language, Model (accounts, sign-in in the browser or with an API key, models, thinking), Playback (music service, Spotify sign-in, devices), Import, Memory and About.
   Changes are saved where the terminal reads them; the window never sees a key or token.

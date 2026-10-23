@@ -305,12 +305,17 @@ img { -webkit-user-drag: none; }
 .field textarea { flex: 1; min-width: 96px; resize: none; border: 0; outline: 0; background: transparent; color: var(--text); font-size: var(--t-body); line-height: 1.55;
   field-sizing: content; min-height: 28px; max-height: 40vh; padding: 3px 0 2px; overflow-y: auto; scrollbar-width: none; }
 .field textarea::placeholder { color: var(--text-4); }
-.model { height: 28px; max-width: 160px; min-width: 0; padding: 0 8px; border-radius: var(--r-2); font-size: var(--t-small); color: var(--text-3); white-space: nowrap;
-  overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; transition: background-color var(--quick) var(--soft), color var(--quick) var(--soft); }
-.model:hover { background: var(--hover); color: var(--text); transition: none; }
-.model.needed { color: var(--text); background: var(--hover); font-weight: 500; }
-.model.needed:hover { background: var(--press); }
-.model:empty { display: none; }
+/* Where the music plays and which model answers, by their marks, beside the send button; the name
+   is in the tooltip and the menu. One not chosen yet reads as the words that choose it. */
+.pick { height: 28px; min-width: 28px; max-width: 180px; padding: 0 6px; border-radius: var(--r-2); display: inline-flex; align-items: center; justify-content: center; flex: 0 1 auto;
+  font-size: var(--t-small); color: var(--text-3); white-space: nowrap; transition: background-color var(--quick) var(--soft), color var(--quick) var(--soft); }
+.pick:hover { background: var(--hover); color: var(--text); transition: none; }
+.pick .icon { width: 15px; height: 15px; }
+.pick span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.pick span:empty, .pick.needed .icon { display: none; }
+.pick.needed { padding: 0 9px; color: var(--text); background: var(--hover); font-weight: 500; }
+.pick.needed:hover { background: var(--press); }
+.pick[hidden] { display: none; }
 .send { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; flex: none; background: var(--solid); color: var(--on-solid);
   transition: background-color 140ms var(--soft), transform 90ms var(--soft); }
 .send:active { transform: scale(0.92); }
