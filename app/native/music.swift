@@ -38,6 +38,8 @@ final class Player {
   var started = false
   var stopped = false
   var generation = 0
+  // The last song seen playing and how far into it, to tell the end of the queue from a pause.
+  var lastPlayed: (id: String, seconds: TimeInterval, duration: TimeInterval)?
   var stateWatch: AnyCancellable?
   var queueWatch: AnyCancellable?
   var timer: Timer?
@@ -84,6 +86,7 @@ final class Player {
     loaded = false
     started = false
     stopped = false
+    lastPlayed = nil
     let found = try await MusicCatalogResourceRequest<Song>(matching: \.id, memberOf: ids.map { MusicItemID($0) }).response().items
     guard mine == generation else { return }
     let byId = Dictionary(found.map { ($0.id.rawValue, $0) }, uniquingKeysWith: { first, _ in first })
@@ -106,6 +109,7 @@ final class Player {
     stopped = true
     loaded = false
     started = false
+    lastPlayed = nil
     requested = []
     queued = []
     player.stop()
@@ -142,16 +146,23 @@ final class Player {
     var song: [String: Any] = ["title": entry.title]
     if let subtitle = entry.subtitle { song["artist"] = subtitle }
     if case .song(let item)? = entry.item {
-      song["id"] = item.id.rawValue
+      let id = item.id.rawValue
+      let duration = item.duration.flatMap { $0.isFinite ? $0 : nil }
+      song["id"] = id
       song["artist"] = item.artistName
       if let album = item.albumTitle { song["album"] = album }
-      if let duration = item.duration, duration.isFinite { song["durationMs"] = Int(duration * 1000) }
+      if let duration { song["durationMs"] = Int(duration * 1000) }
       if let url = item.artwork?.url(width: 600, height: 600) { song["artwork"] = url.absoluteString }
       if let link = item.url { song["link"] = link.absoluteString }
-      if let index = requested.firstIndex(of: item.id.rawValue) { state["index"] = index }
-      // Come to rest at the end of the last song is the end of the queue too.
-      if started, status != .playing, item.id.rawValue == queued.last, let duration = item.duration, duration.isFinite, seconds >= duration - 1 {
-        end(&state)
+      if let index = requested.firstIndex(of: id) { state["index"] = index }
+      if status == .playing, let duration { lastPlayed = (id, seconds, duration) }
+      // At the end of the queue MusicKit pauses, at the end of the last song or back at the start of
+      // the first one. Reports come every 5 seconds, so the last one seen playing the last song is
+      // within its final seconds.
+      if started, status != .playing {
+        let atEnd = id == queued.last && duration.map { seconds >= $0 - 1 } == true
+        let wrapped = seconds < 1 && lastPlayed.map { $0.id == queued.last && $0.seconds >= $0.duration - 7 } == true
+        if atEnd || wrapped { end(&state) }
       }
     }
     state["song"] = song

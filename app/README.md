@@ -83,9 +83,15 @@ A model or music service chosen there lasts until the app quits, and sign-in and
 ## Whole Apple Music songs
 
 MusicKit gives an app its developer token only when MusicKit is turned on for the app's identifier.
-Once, in the Apple Developer account of team DAK5S3455A: Certificates, Identifiers & Profiles › Identifiers › register or open the App ID `ai.audiofool.moondog` › App Services › check MusicKit › Save.
+It is on for `ai.audiofool.moondog` in team DAK5S3455A.
+A build under another team or identifier needs the same switch, once, in its Apple Developer account: Certificates, Identifiers & Profiles › Identifiers › register or open the App ID › App Services › check MusicKit › Save.
 No build or setting in this repository changes after that; the helper's check starts answering yes, and Settings › Playback says "Full songs".
 Until then the helper reports `developerTokenRequestFailed` and the window keeps playing previews.
+Apple's own answer is in the system log: `/usr/bin/log show --last 5m --predicate 'process == "moondog-music"'` (zsh's built-in `log` is another command).
+`Client not found` there means the switch has not reached Apple's token service yet; for this App ID that took about a minute.
+
+At the end of a queue MusicKit does not stop: it pauses, at the end of the last song or back at the start of the first.
+The helper reports either as the end of the queue, so the window and the agent hear it as they do for previews.
 
 `node native/build.mjs` builds the helper on its own: `native/build/moondog-music` for packaging, and `native/build/Moondog Music.app`, signed with the Developer ID, for `npm start`.
 To ask it directly, run `"native/build/Moondog Music.app/Contents/MacOS/moondog-music"` and type `{"id":1,"type":"check"}`.
@@ -115,6 +121,6 @@ It needs no model, no music service and none of your data.
 ## Not yet
 
 - The first-time setup and the full taste report happen in the terminal (`moondog`).
-- Whole Apple Music songs wait for MusicKit to be turned on for the app's identifier (see above); the terminal plays previews.
+- The terminal plays Apple Music previews; only the window plays whole songs.
 - The app does not update itself yet; install a new build over the old one.
 - The build is for Apple silicon only.
