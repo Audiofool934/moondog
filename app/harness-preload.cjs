@@ -234,6 +234,8 @@ const STATES = {
       now: { ...TRACKS[1], service: "netease", link: null, playing: true, progressMs: 61_000, device: null, deviceType: "computer", repeat: "off", shuffle: false, disallows: [], observedAt: Date.now() } });
   },
   "settings-netease"() { STATES.netease(); slash("service"); },
+  // Apple Music chosen, before the listener allowed whole songs: only then does its row ask.
+  "settings-apple"() { STATES.preview(); slash("service"); },
   // Spotify used up the app's quota: still connected, with nothing to read until the time it gave.
   "spotify-limited"() { limitedUntil = Date.now() + 4 * 3600_000; ready(); send({ type: "player", spotify: "limited", resumeAt: limitedUntil, now: null, next: [] }); },
   "settings-limited"() { STATES["spotify-limited"](); slash("service"); },
