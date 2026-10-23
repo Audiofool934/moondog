@@ -9,7 +9,11 @@ import { formatLocalResult } from "../src/surfaces/cli/format-output.mjs";
 import { HistoryImportView } from "../src/surfaces/cli/history-import-view.mjs";
 import { setAppleMusicStorefront } from "../src/integrations/apple-music/storefront.mjs";
 
-const PLAYER_POLL_MS = { visible: 4_000, hidden: 30_000 };
+// Every Spotify read counts against the listener's app quota, and a used-up quota blocks player reads
+// for hours. The window reads often only while a song plays in front of the listener. Up next changes
+// less often than the song: it is read when the song changes, after a tool or control, or this often.
+const PLAYER_POLL_MS = { playing: 5_000, idle: 15_000, hidden: 60_000 };
+const QUEUE_READ_MS = 30_000;
 // How often a showing window looks for what the terminal or another window changed, and how often
 // while one of them answers in the conversation shown here.
 const LOOK_MS = { idle: 2_000, answering: 300 };
@@ -194,12 +198,37 @@ export function runWindowRoom(services, { port, send, quit = null }) {
         device: null, deviceType: "computer", repeat: "off", shuffle: false, disallows: [], observedAt: Date.now() } : null,
       next: now.next.slice(0, 8).map(track) };
   }
+  // While Spotify has asked Moondog to wait, the window reads nothing from it and says until when.
+  let spotifyLimitedUntil = 0;
+  const limited = () => ({ type: "player", spotify: "limited", resumeAt: spotifyLimitedUntil, now: null, next: [] });
+  const noteLimit = (error) => {
+    if (error?.code !== "spotify_quota_exceeded") return false;
+    spotifyLimitedUntil = Date.now() + (error.retryAfterSeconds ?? 60) * 1000;
+    return true;
+  };
+  let queueRead = { uri: null, at: 0, queue: null };
+  let queueStale = true;
+  let playingNow = false;
   async function readPlayer() {
     if (base.playbackService === "netease") return readNetease();
     const service = base.spotifyConnection?.service;
     if (base.spotifyReady?.() !== true || !service) return { type: "player", spotify: "unavailable", now: null, next: [] };
-    const [player, queue] = await Promise.all([service.currentPlayer(), service.queue?.().catch(() => null)]);
+    if (spotifyLimitedUntil > Date.now()) return limited();
+    let player;
+    try {
+      player = await service.currentPlayer();
+    } catch (error) {
+      if (noteLimit(error)) return limited();
+      throw error;
+    }
+    spotifyLimitedUntil = 0;
     const item = player?.state === "available" ? player.item : null;
+    playingNow = player?.is_playing === true && Boolean(item);
+    if (item && (queueStale || item.uri !== queueRead.uri || Date.now() - queueRead.at >= QUEUE_READ_MS)) {
+      queueStale = false;
+      queueRead = { uri: item.uri, at: Date.now(), queue: await service.queue?.().catch(() => null) };
+    }
+    const queue = item ? queueRead.queue : null;
     notePlayer(player, item);
     return { type: "player", spotify: "ready",
       now: item ? { ...trackOf(item), playing: player.is_playing === true, progressMs: player.progress_ms ?? 0,
@@ -220,14 +249,16 @@ export function runWindowRoom(services, { port, send, quit = null }) {
         progressMs: player?.progress_ms ?? null, durationMs: item?.duration_ms ?? null, previousProgressMs: last.progressMs,
         msSinceLastRead: now - last.at, device: player?.device?.name ?? null, repeat: player?.repeat_state ?? null,
         context: player?.context?.type ?? null,
-        ended: !playing && expected !== null && Number.isInteger(last.durationMs) && expected >= last.durationMs - PLAYER_POLL_MS.visible });
+        ended: !playing && expected !== null && Number.isInteger(last.durationMs) && expected >= last.durationMs - PLAYER_POLL_MS.playing });
     }
     last = { playing, at: now, progressMs: player?.progress_ms ?? null, durationMs: item?.duration_ms ?? null };
   }
   // One read at a time; a request while one runs reads again right after it.
   let again = false;
-  async function refreshPlayer() {
+  // A refresh after something that can change up next (a tool, a control) reads the queue too.
+  async function refreshPlayer({ queue = false } = {}) {
     if (closed) return;
+    if (queue) queueStale = true;
     if (polling) { again = true; return polling; }
     polling = readPlayer().then(send, (error) => send({ type: "player", spotify: "error", message: errorText(error), now: null, next: [] }))
       .finally(() => {
@@ -239,7 +270,13 @@ export function runWindowRoom(services, { port, send, quit = null }) {
   const schedulePlayer = () => {
     clearTimeout(pollTimer);
     if (closed) return;
-    pollTimer = setTimeout(async () => { await refreshPlayer(); schedulePlayer(); }, visible ? PLAYER_POLL_MS.visible : PLAYER_POLL_MS.hidden);
+    // NetEase is read on this Mac and costs no quota. Spotify waits as long as it asked, then reads
+    // often only while its song plays and Spotify is the service the listener chose.
+    const netease = base.playbackService === "netease";
+    const wait = spotifyLimitedUntil > Date.now() && !netease ? spotifyLimitedUntil - Date.now() + 1000
+      : !visible ? PLAYER_POLL_MS.hidden
+        : netease || (playingNow && base.playbackService !== "apple_music") ? PLAYER_POLL_MS.playing : PLAYER_POLL_MS.idle;
+    pollTimer = setTimeout(async () => { await refreshPlayer(); schedulePlayer(); }, wait);
   };
 
   async function control(action, via, positionMs) {
@@ -253,6 +290,7 @@ export function runWindowRoom(services, { port, send, quit = null }) {
       if (action === "seek") await service.seek({ positionMs: Math.max(0, Math.round(Number(positionMs) || 0)) });
       else await service[action]({});
     } catch (error) {
+      if (noteLimit(error)) { send(limited()); schedulePlayer(); return; }
       send({ type: "player-error", action, message: errorText(error) });
     }
     // Spotify takes a moment to report a skip.
@@ -265,10 +303,13 @@ export function runWindowRoom(services, { port, send, quit = null }) {
   async function devices() {
     const service = base.spotifyConnection?.service;
     if (!service || base.spotifyReady?.() !== true) return send({ type: "devices", devices: [] });
+    if (spotifyLimitedUntil > Date.now()) return send({ type: "devices", devices: [], error: "limited", resumeAt: spotifyLimitedUntil });
     let listed;
     try {
       listed = (await service.devices()).devices ?? [];
     } catch (error) {
+      // Devices and the player share Spotify's quota, so a limit on one rests the other too.
+      if (noteLimit(error)) { send(limited()); schedulePlayer(); return send({ type: "devices", devices: [], error: "limited", resumeAt: spotifyLimitedUntil }); }
       return send({ type: "devices", devices: [], error: errorText(error) });
     }
     deviceIds = new Map(listed.map((device, index) => [String(index), device.id]));
@@ -369,7 +410,7 @@ export function runWindowRoom(services, { port, send, quit = null }) {
         const call = slot.live?.activity.find((entry) => entry.call === event.toolCallId);
         if (call) call.state = state;
         send({ type: "activity", session, id, call: event.toolCallId, tool: event.toolName, state });
-        if (PLAYER_TOOLS.test(event.toolName)) void refreshPlayer();
+        if (PLAYER_TOOLS.test(event.toolName)) void refreshPlayer({ queue: true });
       }
     }) ?? (() => {});
     try {
@@ -620,7 +661,8 @@ export function runWindowRoom(services, { port, send, quit = null }) {
     // The core saves it and sets it on every conversation; each agent's tools change when it is rebuilt.
     await savePlaybackService(service);
     await rebuildAll(undefined);
-    await refreshPlayer();
+    await refreshPlayer({ queue: true });
+    schedulePlayer();
   }
   function memories() {
     const summary = base.memorySummary?.({ limit: 100 });

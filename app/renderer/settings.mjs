@@ -1,7 +1,7 @@
 // Settings: one sheet over the window, the places on the left and the open one on the right. Every
 // change goes to the core, which saves it where the terminal reads it. A choice shows at once and
 // the core's next status confirms it, so nothing waits on a rebuild to look chosen.
-import { languageTag } from "../strings.mjs";
+import { languageTag, timeOfDay } from "../strings.mjs";
 import { icon, make, name, scrollbar, setIcon, turning } from "./ui.mjs";
 
 const SECTIONS = ["general", "model", "playback", "library", "memory", "about"];
@@ -219,10 +219,10 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
     return line;
   };
   // An error inside the sheet is announced, since the notice behind it is covered while the sheet is open.
-  const failure = (key) => {
+  const failure = (key, params) => {
     const node = make("p", "alert");
     node.setAttribute("role", "alert");
-    node.append(icon("info"), make("span", "", say(key)));
+    node.append(icon("info"), make("span", "", say(key, params)));
     return node;
   };
   const sectionError = () => (data.error && (!data.error.section || data.error.section === section) ? failure(data.error.key) : null);
@@ -507,7 +507,8 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
       void appleMusic.check("authorize").then(() => render());
     }, "apple-music:allow") : null;
     const parts = [group(say("musicService"), sectionError(), choices([
-      choice({ label: "Spotify", detail: ready ? null : say("notConnected"), chosen: service === "spotify", trailing: disconnect,
+      // The state reads beside the account, so the button to disconnect is never taken for it.
+      choice({ label: "Spotify", detail: say(ready ? "connected" : "notConnected"), chosen: service === "spotify", trailing: disconnect,
         key: "service:spotify", onChoose: chooseService("spotify") }),
       choice({ label: "Apple Music", detail: say(whole?.canPlay ? "fullSongs" : "appleMusicNote"), chosen: service === "apple_music", key: "service:apple_music",
         trailing: allowWhole, onChoose: chooseService("apple_music") }),
@@ -560,7 +561,8 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
     again.addEventListener("click", () => { data.devicesLoading = true; send({ type: "devices" }); render(); });
     head.append(make("h3", "group-title", say("devices")), again);
     const list = !data.devices ? waiting()
-      : data.devicesError ? failure("noticeDevicesFailed")
+      : data.devicesLimitedUntil ? failure("spotifyLimited", { time: timeOfDay(data.devicesLimitedUntil, state.locale) })
+        : data.devicesError ? failure("noticeDevicesFailed")
         : !data.devices.length ? note(say("noDevices"))
           : choices(data.devices.map((device) => choice({ label: device.name, chosen: device.active, disabled: device.restricted,
             key: `device:${device.ref}`, lead: icon(DEVICE_ICONS[String(device.type).toLowerCase()] ?? "speaker", "icon kind"),
@@ -733,6 +735,7 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
     if (message.type === "devices") {
       data.devices = message.devices ?? [];
       data.devicesError = Boolean(message.error);
+      data.devicesLimitedUntil = message.error === "limited" ? message.resumeAt : null;
       data.devicesLoading = false;
       warn("devices", message.error);
     }

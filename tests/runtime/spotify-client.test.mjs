@@ -841,6 +841,34 @@ test("Spotify client never retries exhausted development quota, even on GETs", a
   assert.equal(callCount, 1);
 });
 
+test("Spotify client answers an exhausted endpoint itself until Spotify's Retry-After, and still asks the others", async () => {
+  const paths = [];
+  const client = createSpotifyWebApiClient({
+    tokenProvider: async () => "token",
+    fetchImpl: async (url) => {
+      const path = new URL(url).pathname;
+      paths.push(path);
+      return path === "/v1/me/player/devices"
+        ? jsonResponse({ error: { status: 429, message: "Too many requests", reason: "QUOTA_EXCEEDED" } }, 429, { "retry-after": "15030" })
+        : jsonResponse({ id: "listener", display_name: "Listener", country: "US", product: "premium" });
+    },
+  });
+  const quota = async (operation) => {
+    try { await operation(); } catch (error) { return error; }
+    assert.fail("expected the quota error");
+  };
+
+  const first = await quota(() => client.getDevices());
+  assert.equal(first.code, "spotify_quota_exceeded");
+  assert.equal(first.retryAfterSeconds, 15030);
+  assert.match(first.message, /about 4 h 11 min/u);
+  const again = await quota(() => client.getDevices());
+  assert.equal(again.code, "spotify_quota_exceeded");
+  assert.ok(again.retryAfterSeconds > 15000 && again.retryAfterSeconds <= 15030);
+  await client.getAccount();
+  assert.deepEqual(paths, ["/v1/me/player/devices", "/v1/me"]);
+});
+
 test("Spotify client refreshes the token reactively on 401 and retries once", async () => {
   const seenTokens = [];
   let refreshCount = 0;

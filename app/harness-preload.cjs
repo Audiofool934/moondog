@@ -146,6 +146,8 @@ function slash(command) {
 
 // Each state leaves the page settled; the main process captures after the entrances finish.
 // A state may return actions for the main process: { hover: selector } moves the real pointer there.
+// Set by the Spotify-limited states, so the devices answer the same way the core does.
+let limitedUntil = 0;
 const STATES = {
   empty() { ready(); player(); },
   "empty-silent"() { ready(); silent(); },
@@ -190,6 +192,9 @@ const STATES = {
       now: { ...TRACKS[1], service: "netease", link: null, playing: true, progressMs: 61_000, device: null, deviceType: "computer", repeat: "off", shuffle: false, disallows: [], observedAt: Date.now() } });
   },
   "settings-netease"() { STATES.netease(); slash("service"); },
+  // Spotify used up the app's quota: still connected, with nothing to read until the time it gave.
+  "spotify-limited"() { limitedUntil = Date.now() + 4 * 3600_000; ready(); send({ type: "player", spotify: "limited", resumeAt: limitedUntil, now: null, next: [] }); },
+  "settings-limited"() { STATES["spotify-limited"](); slash("service"); },
   "import-preview"() {
     STATES.reply();
     send({ type: "import", stage: "preview", preview: { title: "Spotify extended streaming history", notice: "Nothing is saved until you add it.",
@@ -228,7 +233,8 @@ core.onmessage = ({ data }) => {
   if (data.type === "provider-models") send({ type: "provider-models", provider: data.provider, models: data.provider === "deepseek"
     ? [{ id: "deepseek-chat", name: "DeepSeek V4" }, { id: "deepseek-reasoner", name: "DeepSeek V4 Reasoner" }]
     : [{ id: "claude-sonnet-5-5", name: "Claude Sonnet 5.5" }, { id: "claude-opus-5-5", name: "Claude Opus 5.5" }, { id: "claude-haiku-5-5", name: "Claude Haiku 5.5" }] });
-  if (data.type === "devices") send({ type: "devices", devices: [
+  if (data.type === "devices" && limitedUntil) send({ type: "devices", devices: [], error: "limited", resumeAt: limitedUntil });
+  else if (data.type === "devices") send({ type: "devices", devices: [
     { ref: "0", name: "Mac mini", type: "Computer", active: true, restricted: false },
     { ref: "1", name: "Kitchen", type: "Speaker", active: false, restricted: false },
     { ref: "2", name: "Pixel 9", type: "Smartphone", active: false, restricted: false } ] });

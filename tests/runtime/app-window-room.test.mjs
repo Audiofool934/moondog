@@ -236,6 +236,52 @@ test("a successful device transfer reads the device list after Spotify has caugh
   }
 });
 
+test("a used-up Spotify quota rests the player and the devices until Spotify's time, and says until when", async () => {
+  mock.timers.enable({ apis: ["setTimeout", "Date"], now: 1_000_000 });
+  const calls = { player: 0, devices: 0, queue: 0 };
+  let exhausted = true;
+  const quota = () => Object.assign(new Error("Spotify development quota is exhausted."), { code: "spotify_quota_exceeded", retryAfterSeconds: 3600 });
+  const service = {
+    async currentPlayer() {
+      calls.player += 1;
+      if (exhausted) throw quota();
+      return { state: "available", is_playing: true, progress_ms: 0, item: { name: "Song", uri: "spotify:track:a", artists: ["A"], duration_ms: 200_000 } };
+    },
+    async devices() { calls.devices += 1; throw quota(); },
+    async queue() { calls.queue += 1; return { queue: [] }; },
+  };
+  const desk = application("A");
+  desk.ready = true;
+  desk.spotifyConnection = { service };
+  const harness = await openRoom({ application: desk });
+  try {
+    await harness.post({ type: "visible", visible: true });
+    await tick();
+    const player = harness.messages.findLast((message) => message.type === "player");
+    assert.equal(player.spotify, "limited");
+    assert.equal(player.resumeAt, 1_000_000 + 3_600_000);
+    // Neither the devices nor the polls ask Spotify again before then.
+    const asked = { ...calls };
+    await harness.post({ type: "devices" });
+    assert.deepEqual(harness.messages.findLast((message) => message.type === "devices"), { type: "devices", devices: [], error: "limited", resumeAt: 1_000_000 + 3_600_000 });
+    mock.timers.tick(3_500_000);
+    await tick();
+    assert.deepEqual(calls, asked);
+    // Once the time passes, the window reads again, and the queue only once for the new song.
+    exhausted = false;
+    mock.timers.tick(110_000);
+    await tick();
+    assert.equal(harness.messages.findLast((message) => message.type === "player").spotify, "ready");
+    mock.timers.tick(5_000);
+    await tick();
+    assert.ok(calls.player >= asked.player + 2);
+    assert.equal(calls.queue, asked.queue + 1);
+  } finally {
+    mock.timers.reset();
+    await harness.stop();
+  }
+});
+
 test("a showing window picks up a conversation saved elsewhere, and sends nothing when the list is the same", async () => {
   const base = application("A");
   let saved = [];

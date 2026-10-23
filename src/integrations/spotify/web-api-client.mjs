@@ -120,6 +120,12 @@ function retryAfterSeconds(headers) {
   return Math.min(Math.max(0, Math.ceil((date - Date.now()) / 1_000)), 86_400);
 }
 
+// "4 h 11 min", "3 min": how long a wait is, for messages people and the agent read.
+function waitText(seconds) {
+  const minutes = Math.max(1, Math.ceil(seconds / 60));
+  return minutes < 60 ? `${minutes} min` : `${Math.floor(minutes / 60)} h ${minutes % 60} min`;
+}
+
 function defaultSleep(milliseconds, { signal } = {}) {
   return delay(milliseconds, undefined, { signal });
 }
@@ -605,10 +611,21 @@ export function createSpotifyWebApiClient({
     if (resumeAt > rateLimitResumeAtMs) rateLimitResumeAtMs = resumeAt;
   };
 
+  // A used-up development quota answers 429 QUOTA_EXCEEDED with a wait of hours, for some endpoints
+  // only. Asking again before then gets the same answer, so until the time Spotify gave, the client
+  // answers for that endpoint itself and sends nothing.
+  const quotaResumeAtMs = new Map();
+  const quotaExhausted = (retryAfter, options) => fail("spotify_quota_exceeded",
+    `Spotify development quota is exhausted.${retryAfter ? ` Spotify allows this request again in about ${waitText(retryAfter)}.` : ""}`,
+    { ...options, status: 429, reason: "QUOTA_EXCEEDED", retryAfterSeconds: retryAfter });
+
   const request = async (
     path,
     { method = "GET", body, responseMode = "json", signal, beforeDispatch } = {},
   ) => {
+    const endpoint = String(path).split("?")[0];
+    const quotaWaitMs = (quotaResumeAtMs.get(endpoint) ?? 0) - Date.now();
+    if (quotaWaitMs > 0) quotaExhausted(Math.ceil(quotaWaitMs / 1_000), { outcomeUnknown: false });
     const initForToken = (token) => {
       const headers = {
         accept: "application/json",
@@ -731,7 +748,8 @@ export function createSpotifyWebApiClient({
       }
       if (response.status === 429) {
         if (quotaReason(payload) === "QUOTA_EXCEEDED") {
-          fail("spotify_quota_exceeded", "Spotify development quota is exhausted.", options);
+          if (retryAfter) quotaResumeAtMs.set(endpoint, Date.now() + retryAfter * 1_000);
+          quotaExhausted(retryAfter, options);
         }
         const waitMs = retryAfter === null ? SPOTIFY_WEB_API_LIMITS.rateLimitDefaultWaitMs : retryAfter * 1_000;
         rearmRateLimit(waitMs);

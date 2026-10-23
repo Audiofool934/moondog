@@ -1,6 +1,6 @@
 // The window's page: conversations on the left, the conversation in the middle, and what is
 // playing on the right. The core process does the listening work; this page only draws it.
-import { languageTag, windowLocale, windowStrings } from "../strings.mjs";
+import { languageTag, timeOfDay, windowLocale, windowStrings } from "../strings.mjs";
 import { renderMarkdown } from "./markdown.mjs";
 import { createPalette } from "./palette.mjs";
 import { createPreviews } from "./previews.mjs";
@@ -575,6 +575,7 @@ function nowPlaying() {
   return { ...now, progressMs: now.durationMs ? Math.min(progressMs, now.durationMs) : progressMs, next: state.player.next ?? [] };
 }
 const can = (now, action) => Boolean(now) && (now.local || !(now.disallows ?? []).includes(action));
+const spotifyLimited = (at) => t("spotifyLimited", { time: timeOfDay(at, state.locale) });
 const DEVICE_ICONS = { computer: "laptop", smartphone: "phone", tablet: "phone", speaker: "speaker", tv: "tv", castvideo: "tv", castaudio: "speaker", avr: "speaker", stb: "tv" };
 // The inspector redraws several times a second while music plays, so a node changes only when its content does.
 const set = (node, key, value) => { if (node[key] !== value) node[key] = value; };
@@ -692,7 +693,8 @@ function renderInspector() {
   showCover($("ambient"), now?.image ?? null, "glow");
   set($("blank"), "hidden", Boolean(now));
   art.classList.toggle("unplayed", !now);
-  set($("blank"), "textContent", t("nothingPlaying"));
+  const limitedUntil = state.playbackService === "spotify" && state.spotifyLimitedUntil > Date.now() ? state.spotifyLimitedUntil : null;
+  set($("blank"), "textContent", limitedUntil ? spotifyLimited(limitedUntil) : t("nothingPlaying"));
   set($("song"), "textContent", now?.title ?? "");
   set($("artist"), "textContent", now ? now.artists.join(", ") : "");
   set($("album"), "textContent", now?.album ?? "");
@@ -999,7 +1001,8 @@ function receive({ data }) {
   }
   if (data.type === "provider-models") { providerModels.set(data.provider, data.models ?? []); renderComposer(); }
   if (data.type === "devices" && devicePicker) {
-    if (data.error) { devicePicker = null; notice(t("noticeDevicesFailed")); } else void showDevices(data.devices ?? []);
+    if (data.error) { devicePicker = null; notice(data.error === "limited" ? spotifyLimited(data.resumeAt) : t("noticeDevicesFailed")); }
+    else void showDevices(data.devices ?? []);
   }
   if (data.type === "player-error") notice(t("noticePlaybackFailed"));
   // The sheet shows its own sign-in errors. sign_in_busy is the exception: the sheet keeps the running panel.
@@ -1117,7 +1120,9 @@ function receive({ data }) {
   if (data.type === "player") {
     // A read that fails, such as a network blip, keeps the last known player on screen.
     if (data.spotify === "error") return;
-    state.spotify = data.spotify === "ready" ? "ready" : "unavailable";
+    // Spotify asked Moondog to wait: still connected, with nothing to read until then.
+    state.spotifyLimitedUntil = data.spotify === "limited" ? data.resumeAt : null;
+    state.spotify = data.spotify === "ready" || data.spotify === "limited" ? "ready" : "unavailable";
     // Spotify's position arrives a little late. On the same playing song, a small step backwards is
     // that delay, not the music, so the clock keeps going instead of ticking back.
     const before = state.player?.now;

@@ -95,10 +95,13 @@ final class Player {
     let byId = Dictionary(found.map { ($0.id.rawValue, $0) }, uniquingKeysWith: { first, _ in first })
     let songs = ids.compactMap { byId[$0] }
     guard !songs.isEmpty else { throw NSError(domain: "moondog", code: 1, userInfo: [NSLocalizedDescriptionKey: "notFound"]) }
-    // The first song the storefront has at or after the one asked for.
+    // The queue begins at the first song the storefront has at or after the one asked for. It holds
+    // no songs before it: on macOS, Queue(for:startingAt:) fails every catalog queue with "Prepare
+    // queue failed with unexpected start item".
     let first = ids[min(max(0, start), ids.count - 1)...].compactMap { byId[$0] }.first ?? songs[0]
-    queued = songs.map { $0.id.rawValue }
-    player.queue = ApplicationMusicPlayer.Queue(for: songs, startingAt: first)
+    let playing = Array(songs.drop { $0.id != first.id })
+    queued = playing.map { $0.id.rawValue }
+    player.queue = ApplicationMusicPlayer.Queue(for: playing)
     watchQueue()
     loaded = true
     try await player.play()

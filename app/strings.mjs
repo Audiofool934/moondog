@@ -30,7 +30,7 @@ const STRINGS = {
     language: "Language", noModel: "No model", effort: "Thinking", effortDefault: "Default",
     "effort.minimal": "Minimal", "effort.low": "Low", "effort.medium": "Medium", "effort.high": "High", "effort.xhigh": "Extra high", "effort.max": "Max", "effort.off": "Off",
     noticeModelUnknown: "That model isn't available. Choose another.", noticePlaybackFailed: "Spotify didn't respond. Open it on a device.",
-    noticeDevicesFailed: "Couldn't load devices. Try again.", noticeWaitingForImport: "Saving your import. Your message is next.",
+    noticeDevicesFailed: "Couldn't load devices. Try again.", spotifyLimited: "Spotify paused Moondog's playback access until {time}.", noticeWaitingForImport: "Saving your import. Your message is next.",
     noticeMessageBusy: "Still sending your last message.", waitForReply: "Wait for the reply to finish.",
     commands: "Commands",
     retrying: "Trying again",
@@ -106,7 +106,7 @@ const STRINGS = {
     importAlready: "已经导入过了。", importFailed: "没能读取这份历史。",
     memory: "记忆", rememberPlaceholder: "要记住的事", remember: "记住",
     noMemories: "还没有内容。", forget: "忘掉", shortcuts: "快捷键",
-    noticePlaybackFailed: "Spotify 没有响应。请在一台设备上打开它。", noticeDevicesFailed: "没能加载设备。请重试。", noticeWaitingForImport: "正在保存导入的内容。随后发送你的消息。", noticeMessageBusy: "上一条消息还在发送。", waitForReply: "请等回复结束。", commands: "命令",
+    noticePlaybackFailed: "Spotify 没有响应。请在一台设备上打开它。", noticeDevicesFailed: "没能加载设备。请重试。", spotifyLimited: "Spotify 暂停了 Moondog 的播放访问，{time} 恢复。", noticeWaitingForImport: "正在保存导入的内容。随后发送你的消息。", noticeMessageBusy: "上一条消息还在发送。", waitForReply: "请等回复结束。", commands: "命令",
     retrying: "正在重试", "device.computer": "电脑", "device.smartphone": "手机",
     "device.speaker": "音箱", "device.tv": "电视", "device.tablet": "平板", "device.car": "汽车",
     musicHistoryFiles: "聆听历史", folderActions: "文件夹操作", signInBusy: "另一个登录正在进行。",
@@ -161,7 +161,7 @@ const STRINGS = {
     importAlready: "已經匯入過了。", importFailed: "無法讀取這份紀錄。",
     memory: "記憶", rememberPlaceholder: "要記住的事", remember: "記住",
     noMemories: "還沒有內容。", forget: "忘掉", shortcuts: "快速鍵",
-    noticePlaybackFailed: "Spotify 沒有回應。請在一台裝置上開啟它。", noticeDevicesFailed: "無法載入裝置。請再試一次。", noticeWaitingForImport: "正在儲存匯入的內容。接著送出你的訊息。", noticeMessageBusy: "上一則訊息還在傳送。", waitForReply: "請等回覆結束。", commands: "指令",
+    noticePlaybackFailed: "Spotify 沒有回應。請在一台裝置上開啟它。", noticeDevicesFailed: "無法載入裝置。請再試一次。", spotifyLimited: "Spotify 暫停了 Moondog 的播放存取，{time} 恢復。", noticeWaitingForImport: "正在儲存匯入的內容。接著送出你的訊息。", noticeMessageBusy: "上一則訊息還在傳送。", waitForReply: "請等回覆結束。", commands: "指令",
     retrying: "正在重試", "device.computer": "電腦", "device.smartphone": "手機",
     "device.speaker": "喇叭", "device.tv": "電視", "device.tablet": "平板", "device.car": "汽車",
     musicHistoryFiles: "聆聽紀錄", folderActions: "資料夾動作", signInBusy: "另一個登入正在進行。",
@@ -216,7 +216,7 @@ const STRINGS = {
     importAlready: "取り込み済みです。", importFailed: "この履歴を読み込めませんでした。",
     memory: "記憶", rememberPlaceholder: "覚えておくこと", remember: "覚える",
     noMemories: "まだありません。", forget: "忘れる", shortcuts: "ショートカット",
-    noticePlaybackFailed: "Spotify が応答しません。デバイスで Spotify を開いてください。", noticeDevicesFailed: "デバイスを読み込めませんでした。もう一度お試しください。", noticeWaitingForImport: "取り込みを保存しています。メッセージはそのあとに送ります。", noticeMessageBusy: "前のメッセージを送信中です。", waitForReply: "応答が終わるまでお待ちください。", commands: "コマンド",
+    noticePlaybackFailed: "Spotify が応答しません。デバイスで Spotify を開いてください。", noticeDevicesFailed: "デバイスを読み込めませんでした。もう一度お試しください。", spotifyLimited: "Spotify が Moondog の再生アクセスを {time} まで止めています。", noticeWaitingForImport: "取り込みを保存しています。メッセージはそのあとに送ります。", noticeMessageBusy: "前のメッセージを送信中です。", waitForReply: "応答が終わるまでお待ちください。", commands: "コマンド",
     retrying: "再試行中", "device.computer": "コンピュータ", "device.smartphone": "スマートフォン",
     "device.speaker": "スピーカー", "device.tv": "テレビ", "device.tablet": "タブレット", "device.car": "車",
     musicHistoryFiles: "再生履歴", folderActions: "フォルダの操作", signInBusy: "別のサインインが進行中です。",
@@ -271,7 +271,7 @@ const STRINGS = {
     importAlready: "이미 가져온 기록입니다.", importFailed: "이 기록을 읽지 못했습니다.",
     memory: "기억", rememberPlaceholder: "기억할 내용", remember: "기억하기",
     noMemories: "아직 없습니다.", forget: "잊기", shortcuts: "단축키",
-    noticePlaybackFailed: "Spotify가 응답하지 않습니다. 기기에서 Spotify를 여세요.", noticeDevicesFailed: "기기를 불러오지 못했습니다. 다시 시도하세요.", noticeWaitingForImport: "가져온 기록을 저장하는 중입니다. 메시지는 그다음에 보냅니다.", noticeMessageBusy: "이전 메시지를 아직 보내는 중입니다.", waitForReply: "응답이 끝날 때까지 기다리세요.", commands: "명령",
+    noticePlaybackFailed: "Spotify가 응답하지 않습니다. 기기에서 Spotify를 여세요.", noticeDevicesFailed: "기기를 불러오지 못했습니다. 다시 시도하세요.", spotifyLimited: "Spotify가 {time}까지 Moondog의 재생 접근을 멈췄습니다.", noticeWaitingForImport: "가져온 기록을 저장하는 중입니다. 메시지는 그다음에 보냅니다.", noticeMessageBusy: "이전 메시지를 아직 보내는 중입니다.", waitForReply: "응답이 끝날 때까지 기다리세요.", commands: "명령",
     retrying: "다시 시도하는 중", "device.computer": "컴퓨터", "device.smartphone": "휴대폰",
     "device.speaker": "스피커", "device.tv": "TV", "device.tablet": "태블릿", "device.car": "자동차",
     musicHistoryFiles: "청취 기록", folderActions: "폴더 작업", signInBusy: "다른 로그인이 진행 중입니다.",
@@ -326,7 +326,7 @@ const STRINGS = {
     importAlready: "Ya está importado.", importFailed: "No se pudo leer este historial.",
     memory: "Memoria", rememberPlaceholder: "Algo que recordar", remember: "Recordar",
     noMemories: "Nada todavía.", forget: "Olvidar", shortcuts: "Atajos",
-    noticePlaybackFailed: "Spotify no respondió. Ábrelo en un dispositivo.", noticeDevicesFailed: "No se pudieron cargar los dispositivos. Inténtalo de nuevo.", noticeWaitingForImport: "Guardando tu importación. Tu mensaje va después.", noticeMessageBusy: "Aún se está enviando tu último mensaje.", waitForReply: "Espera a que termine la respuesta.", commands: "Comandos",
+    noticePlaybackFailed: "Spotify no respondió. Ábrelo en un dispositivo.", noticeDevicesFailed: "No se pudieron cargar los dispositivos. Inténtalo de nuevo.", spotifyLimited: "Spotify pausó el acceso de Moondog a la reproducción hasta las {time}.", noticeWaitingForImport: "Guardando tu importación. Tu mensaje va después.", noticeMessageBusy: "Aún se está enviando tu último mensaje.", waitForReply: "Espera a que termine la respuesta.", commands: "Comandos",
     retrying: "Reintentando", "device.computer": "Ordenador", "device.smartphone": "Teléfono",
     "device.speaker": "Altavoz", "device.tv": "TV", "device.tablet": "Tableta", "device.car": "Coche",
     musicHistoryFiles: "Historial de escucha", folderActions: "Acciones de la carpeta", signInBusy: "Hay otro inicio de sesión en curso.",
@@ -381,7 +381,7 @@ const STRINGS = {
     importAlready: "Déjà importé.", importFailed: "Impossible de lire cet historique.",
     memory: "Mémoire", rememberPlaceholder: "Quelque chose à retenir", remember: "Mémoriser",
     noMemories: "Rien pour l'instant.", forget: "Oublier", shortcuts: "Raccourcis",
-    noticePlaybackFailed: "Spotify n'a pas répondu. Ouvrez-le sur un appareil.", noticeDevicesFailed: "Impossible de charger les appareils. Réessayez.", noticeWaitingForImport: "Enregistrement de votre import. Votre message suit.", noticeMessageBusy: "Votre dernier message est encore en cours d'envoi.", waitForReply: "Attendez la fin de la réponse.", commands: "Commandes",
+    noticePlaybackFailed: "Spotify n'a pas répondu. Ouvrez-le sur un appareil.", noticeDevicesFailed: "Impossible de charger les appareils. Réessayez.", spotifyLimited: "Spotify a suspendu l'accès de Moondog à la lecture jusqu'à {time}.", noticeWaitingForImport: "Enregistrement de votre import. Votre message suit.", noticeMessageBusy: "Votre dernier message est encore en cours d'envoi.", waitForReply: "Attendez la fin de la réponse.", commands: "Commandes",
     retrying: "Nouvel essai", "device.computer": "Ordinateur", "device.smartphone": "Téléphone",
     "device.speaker": "Enceinte", "device.tv": "TV", "device.tablet": "Tablette", "device.car": "Voiture",
     musicHistoryFiles: "Historique d'écoute", folderActions: "Actions du dossier", signInBusy: "Une autre connexion est en cours.",
@@ -436,7 +436,7 @@ const STRINGS = {
     importAlready: "Bereits importiert.", importFailed: "Dieser Verlauf konnte nicht gelesen werden.",
     memory: "Gedächtnis", rememberPlaceholder: "Etwas zum Merken", remember: "Merken",
     noMemories: "Noch nichts.", forget: "Vergessen", shortcuts: "Tastaturkurzbefehle",
-    noticePlaybackFailed: "Spotify hat nicht reagiert. Öffne es auf einem Gerät.", noticeDevicesFailed: "Die Geräte konnten nicht geladen werden. Versuche es erneut.", noticeWaitingForImport: "Dein Import wird gespeichert. Deine Nachricht folgt.", noticeMessageBusy: "Deine letzte Nachricht wird noch gesendet.", waitForReply: "Warte, bis die Antwort fertig ist.", commands: "Befehle",
+    noticePlaybackFailed: "Spotify hat nicht reagiert. Öffne es auf einem Gerät.", noticeDevicesFailed: "Die Geräte konnten nicht geladen werden. Versuche es erneut.", spotifyLimited: "Spotify hat Moondogs Zugriff auf die Wiedergabe bis {time} pausiert.", noticeWaitingForImport: "Dein Import wird gespeichert. Deine Nachricht folgt.", noticeMessageBusy: "Deine letzte Nachricht wird noch gesendet.", waitForReply: "Warte, bis die Antwort fertig ist.", commands: "Befehle",
     retrying: "Neuer Versuch", "device.computer": "Computer", "device.smartphone": "Telefon",
     "device.speaker": "Lautsprecher", "device.tv": "Fernseher", "device.tablet": "Tablet", "device.car": "Auto",
     musicHistoryFiles: "Hörverlauf", folderActions: "Ordneraktionen", signInBusy: "Eine andere Anmeldung läuft bereits.",
@@ -491,7 +491,7 @@ const STRINGS = {
     importAlready: "Já importado.", importFailed: "Não foi possível ler este histórico.",
     memory: "Memória", rememberPlaceholder: "Algo para lembrar", remember: "Guardar",
     noMemories: "Nada ainda.", forget: "Esquecer", shortcuts: "Atalhos",
-    noticePlaybackFailed: "O Spotify não respondeu. Abra-o em um dispositivo.", noticeDevicesFailed: "Não foi possível carregar os dispositivos. Tente de novo.", noticeWaitingForImport: "Salvando sua importação. Sua mensagem vem em seguida.", noticeMessageBusy: "Sua última mensagem ainda está sendo enviada.", waitForReply: "Espere a resposta terminar.", commands: "Comandos",
+    noticePlaybackFailed: "O Spotify não respondeu. Abra-o em um dispositivo.", noticeDevicesFailed: "Não foi possível carregar os dispositivos. Tente de novo.", spotifyLimited: "O Spotify pausou o acesso do Moondog à reprodução até {time}.", noticeWaitingForImport: "Salvando sua importação. Sua mensagem vem em seguida.", noticeMessageBusy: "Sua última mensagem ainda está sendo enviada.", waitForReply: "Espere a resposta terminar.", commands: "Comandos",
     retrying: "Tentando de novo", "device.computer": "Computador", "device.smartphone": "Celular",
     "device.speaker": "Alto-falante", "device.tv": "TV", "device.tablet": "Tablet", "device.car": "Carro",
     musicHistoryFiles: "Histórico de audição", folderActions: "Ações da pasta", signInBusy: "Outro login está em andamento.",
@@ -546,7 +546,7 @@ const STRINGS = {
     importAlready: "Già importato.", importFailed: "Impossibile leggere questa cronologia.",
     memory: "Memoria", rememberPlaceholder: "Qualcosa da ricordare", remember: "Ricorda",
     noMemories: "Ancora niente.", forget: "Dimentica", shortcuts: "Scorciatoie da tastiera",
-    noticePlaybackFailed: "Spotify non ha risposto. Aprilo su un dispositivo.", noticeDevicesFailed: "Impossibile caricare i dispositivi. Riprova.", noticeWaitingForImport: "Salvo l'importazione. Il tuo messaggio è il prossimo.", noticeMessageBusy: "Sto ancora inviando il tuo ultimo messaggio.", waitForReply: "Aspetta che la risposta finisca.", commands: "Comandi",
+    noticePlaybackFailed: "Spotify non ha risposto. Aprilo su un dispositivo.", noticeDevicesFailed: "Impossibile caricare i dispositivi. Riprova.", spotifyLimited: "Spotify ha sospeso l'accesso di Moondog alla riproduzione fino alle {time}.", noticeWaitingForImport: "Salvo l'importazione. Il tuo messaggio è il prossimo.", noticeMessageBusy: "Sto ancora inviando il tuo ultimo messaggio.", waitForReply: "Aspetta che la risposta finisca.", commands: "Comandi",
     retrying: "Nuovo tentativo", "device.computer": "Computer", "device.smartphone": "Telefono",
     "device.speaker": "Altoparlante", "device.tv": "TV", "device.tablet": "Tablet", "device.car": "Auto",
     musicHistoryFiles: "Cronologia d'ascolto", folderActions: "Azioni della cartella", signInBusy: "C'è già un altro accesso in corso.",
@@ -565,6 +565,15 @@ export const WINDOW_LOCALES = Object.freeze(Object.keys(STRINGS));
 export const windowStringKeys = (locale) => Object.keys(STRINGS[locale] ?? {});
 // The tag for <html lang>, Intl and the spell checker.
 export const languageTag = (locale) => ({ zh: "zh-Hans", "zh-Hant": "zh-Hant", pt: "pt-BR" }[locale] ?? locale);
+
+// When a wait ends: "11:10", or "Sat 11:10" when that is not today.
+export function timeOfDay(at, locale) {
+  const when = new Date(at);
+  const today = when.toDateString() === new Date().toDateString();
+  try {
+    return new Intl.DateTimeFormat(languageTag(locale), { ...(today ? {} : { weekday: "short" }), hour: "numeric", minute: "2-digit" }).format(when);
+  } catch { return when.toTimeString().slice(0, 5); }
+}
 
 export function windowStrings(locale) {
   const own = STRINGS[locale] ?? {};
