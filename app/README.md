@@ -93,7 +93,7 @@ A model or music service chosen there lasts until the app quits, and sign-in and
 
 - `main.mjs` opens the window, builds the localized menu, and starts the core in its own Node process.
 - `core-process.mjs` runs `scripts/moondog.mjs` with a host that registers `runRoom`, so the command builds everything as it does for the terminal and hands it to the window instead of the terminal room.
-- `window-room.mjs` is the core's side of the window: turns stream back as text and activity, sessions open and close, and Spotify's player state is read after every playback action, every 5 seconds while a Spotify song plays in a showing window, and less often otherwise.
+- `window-room.mjs` is the core's side of the window: turns stream back as text and activity, sessions open and close, and Spotify's player state is read after every playback action, just after the playing song should end, when the window gains focus (at most every 10 seconds), and every 30 seconds in a showing window (every minute in a hidden one); the clock runs on its own between reads.
   Every read counts against the listener's Spotify app quota; when Spotify answers that the quota is used up, the window reads nothing until the time Spotify gave and says so.
   Each conversation that answers beside the first gets its own application and agent from `openConversation`, on the same memory and Spotify.
   Settings go through the services the terminal uses: `modelSettings` for providers and sign-in, `rebuildRuntime`, `saveLanguage`, `savePlaybackService` and the import services.
