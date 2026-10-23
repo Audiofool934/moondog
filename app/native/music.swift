@@ -10,6 +10,7 @@
 //
 // While a queue plays it reports {"type":"state","token":…} whenever the player changes and every few
 // seconds, with the index of the song in the window's list; {"status":"ended"} closes the queue.
+// A quit meant for Moondog that reaches the helper comes out as {"type":"quit"}.
 // MusicKit gives the app its developer token only once MusicKit is enabled for the app's identifier in
 // the Apple Developer account; until then check answers canPlay false.
 import AppKit
@@ -201,12 +202,27 @@ final class Player {
   }
 }
 
+// The helper carries the app's identifier, so a quit addressed to Moondog by a script, an installer
+// or the system can land here instead of on the app. The helper hands it to the app, which quits and
+// closes the pipe; termination waits for that, so the helper never cancels a logout, and goes on its
+// own if the app doesn't answer.
+@MainActor
+final class Delegate: NSObject, NSApplicationDelegate {
+  func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+    write(["type": "quit"])
+    DispatchQueue.main.asyncAfter(deadline: .now() + 10) { sender.reply(toApplicationShouldTerminate: true) }
+    return .terminateLater
+  }
+}
+
 @main
 enum Helper {
   static func main() {
     let application = NSApplication.shared
     // No Dock icon and no menu: the window speaks for it.
     application.setActivationPolicy(.prohibited)
+    let delegate = MainActor.assumeIsolated { Delegate() }
+    application.delegate = delegate
     let player = MainActor.assumeIsolated { Player() }
     Thread.detachNewThread {
       while let line = readLine() {
@@ -216,6 +232,7 @@ enum Helper {
       // The app closed the pipe: the helper goes with it.
       exit(0)
     }
-    application.run()
+    // The application holds its delegate weakly.
+    withExtendedLifetime(delegate) { application.run() }
   }
 }

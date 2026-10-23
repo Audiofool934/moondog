@@ -261,6 +261,8 @@ function startMusicHelper() {
       try { message = JSON.parse(line); } catch { continue; }
       if (message.type === "answer" && musicWaiting.has(message.id)) { musicWaiting.get(message.id)(message); musicWaiting.delete(message.id); }
       else if (message.type === "state") window?.webContents.send("apple-music", message);
+      // The helper shares the app's identifier, so a quit meant for Moondog can reach it; the app quits.
+      else if (message.type === "quit") app.quit();
     }
   });
   // A helper that fails to start or stops answers everything waiting, and the window hears it went.
