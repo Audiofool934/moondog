@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test, { mock } from "node:test";
 import { runWindowRoom } from "../../app/window-room.mjs";
+import { MoondogApplication } from "../../src/core/moondog-application.mjs";
 
 const tick = async () => {
   for (let step = 0; step < 6; step += 1) await new Promise((resolve) => { setImmediate(resolve); });
@@ -114,6 +115,31 @@ test("a quit that arrived while the core was starting still stops the room", asy
     harness.room,
     new Promise((_resolve, reject) => { setTimeout(() => reject(new Error("room did not stop")), 500); }),
   ]);
+});
+
+test("a service chosen by the agent reaches the picker before its reply ends without rebuilding it", async () => {
+  const base = new MoondogApplication({
+    importsRoot: "/private/moondog-synthetic-missing-source",
+    musicCatalog: { findArtistReleases() {}, findPreview() {} },
+    musicPreviewPlayer: { play() {} },
+  });
+  const held = runtime();
+  held.hold = true;
+  const harness = await openRoom({ application: base, runtime: held });
+  const promptJob = harness.post({ type: "prompt", text: "不要 Spotify，用 Apple Music 听" });
+  try {
+    await tick();
+    await base.selectPlaybackService("apple_music");
+    await tick();
+    assert.equal(harness.messages.findLast((message) => message.type === "status")?.playbackService, "apple_music");
+    assert.deepEqual(harness.built, [], "service selection must not replace a running agent");
+    assert.equal(harness.messages.some((message) => message.type === "turn" && message.state === "end"), false);
+  } finally {
+    held.abort();
+    await promptJob;
+    await harness.stop();
+    base.close();
+  }
 });
 
 test("a message waiting on a new model stays in that conversation", async () => {

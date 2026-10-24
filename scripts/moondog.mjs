@@ -68,7 +68,7 @@ import {
 } from "../src/profile/spotify-archive-taste.mjs";
 import { deriveArtistReleaseHintsFromSpotifyArchive } from "../src/profile/spotify-archive-catalog-hints.mjs";
 import { resolveListenerLocale, writeLanguagePreference } from "../src/i18n/preferences.mjs";
-import { resolvePlaybackService, writePlaybackPreference } from "../src/core/playback-preferences.mjs";
+import { createPlaybackSelection, resolvePlaybackService, watchPlaybackPreference, writePlaybackPreference } from "../src/core/playback-preferences.mjs";
 
 const localCommands = new Set([
   "status",
@@ -843,13 +843,19 @@ async function main() {
   const neteasePlayer = createNeteasePlayer();
   const playbackService = await resolvePlaybackService();
   if (playbackService === "netease") await neteasePlayer.check();
+  const playbackSelection = createPlaybackSelection({ service: playbackService, save: writePlaybackPreference });
+  // The terminal and the window each run this core on one playback.json. A service chosen on the
+  // other side reaches this side's picker and agents, and stops the previews this side plays.
+  const unwatchPlayback = watchPlaybackPreference(playbackSelection, {
+    onChange: (service) => { if (service !== "apple_music") previewPlayer?.stop?.(); },
+  });
   // The main application and every conversation the window opens beside it are built from
   // this one list, so they cannot drift apart. Each passes in what may change after launch:
   // its domain services, the Spotify connection, the language and the music service.
   // Spotify's four-week top artists, as the listening upkeep last read them.
   const spotifyTopArtists = { read_at: null, artists: [] };
   const applicationOptions = ({ domainServices, domainServicesError, spotifyConnection, locale, playbackService }) => ({
-    domainServices, domainServicesError, spotifyConnection, locale, playbackService,
+    domainServices, domainServicesError, spotifyConnection, locale, playbackService, playbackSelection,
     webResearch, memoryStore, musicCatalog, musicPreviewPlayer: previewPlayer, neteasePlayer, musicSimilarity, artistIdentityResolver,
     spotifyTopArtists, musicApp,
   });
@@ -1055,22 +1061,11 @@ async function main() {
         save: async (apiKey) => ({ configured: true, source: (await writeLastfmConfiguration(apiKey)).source }),
       },
       saveLanguage: locale => writeLanguagePreference(locale),
-      // The agent's tools and instructions follow the service, so the caller rebuilds the
-      // runtime afterwards, between turns.
-      // The choice is saved once and set on the main application and every open conversation.
+      // The service picker and the agent use the same persisted selection, shared by every conversation.
       savePlaybackService: async (service) => {
-        // NetEase is chosen only once ncm-cli is installed and signed in, so its tools can play.
-        if (service === "netease") {
-          const status = await neteasePlayer.check();
-          if (status.state !== "ready") {
-            throw new Error(status.state === "missing"
-              ? "NetEase Music needs ncm-cli: npm install -g @music163/ncm-cli, then ncm-cli login."
-              : "NetEase Music is not signed in. Run ncm-cli login in a terminal, then choose it again.");
-          }
-        }
-        const saved = await writePlaybackPreference(service);
-        for (const target of [application, ...[...conversations].map((conversation) => conversation.application)]) target.setPlaybackService(saved);
-        return saved;
+        const result = await application.selectPlaybackService(service, { strict: false });
+        if (result.refused) throw new Error(result.refused);
+        return result.selected_service;
       },
       refreshImportedData: async (receipt) => {
         if (receipt?.provider === "apple-music-library") await refreshAppleLibraryImport();
@@ -1145,6 +1140,7 @@ async function main() {
       },
     });
   } finally {
+    unwatchPlayback();
     listeningUpkeep?.stop();
     lyrics?.close();
     // Conversations close first: their domain services are forks of the main application's.

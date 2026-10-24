@@ -7,6 +7,7 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { MoondogApplication } from "../src/core/moondog-application.mjs";
+import { createPlaybackSelection } from "../src/core/playback-preferences.mjs";
 import { createSyntheticDomainServices } from "../src/core/synthetic-domain-services.mjs";
 import { createSimulatedSpotify } from "../src/evaluation/simulated-spotify.mjs";
 import { createSpotifyService } from "../src/integrations/spotify/service.mjs";
@@ -54,7 +55,7 @@ const shown = Object.freeze({ ...service,
   currentPlayer: async (options) => { const player = await service.currentPlayer(options); return { ...player, item: drawn(player.item) }; },
   queue: async (options) => { const queue = await service.queue(options); return { ...queue, queue: queue.queue.map(drawn) }; } });
 const domainServices = createSyntheticDomainServices({ subjectScope: { subjectId: "window-simulated" } });
-const shared = { importsRoot: path.join(state, "imports"), musicPreviewPlayer: createWindowPreviewPlayer(port),
+const shared = { importsRoot: path.join(state, "imports"), musicPreviewPlayer: createWindowPreviewPlayer(port), playbackSelection: createPlaybackSelection(),
   spotifyConnection: { service: shown, ready: () => true, missingScopes: () => [], publicStatus: () => ({ provider: "spotify", state: "ready" }) } };
 const application = new MoondogApplication({ ...shared, locale: await resolveListenerLocale(environment), domainServices });
 const runtime = await createConfiguredRuntime(application, environment);
@@ -94,8 +95,9 @@ const rebuildRuntime = (selection, target = application) => createConfiguredRunt
 
 // The music service choice also lasts only until the window closes.
 const savePlaybackService = async (service) => {
-  for (const target of [application, ...[...conversations].map((conversation) => conversation.application)]) target.setPlaybackService(service);
-  return service;
+  const result = await application.selectPlaybackService(service, { strict: false });
+  if (result.refused) throw new Error(result.refused);
+  return result.selected_service;
 };
 
 await runWindowRoom({ application, runtime, openConversation, modelSettings, rebuildRuntime, savePlaybackService }, { port, send, quit: quit.signal, focus });

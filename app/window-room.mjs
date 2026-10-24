@@ -743,11 +743,9 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
   }
   async function setMusicService(service) {
     if (!["spotify", "apple_music", "netease"].includes(service) || typeof savePlaybackService !== "function") return;
-    // The core saves it and sets it on every conversation; each agent's tools change when it is rebuilt.
+    // The picker and the agent publish the same saved change, without replacing a running agent.
     await savePlaybackService(service);
-    await rebuildAll(undefined);
-    await refreshPlayer({ queue: true });
-    schedulePlayer();
+    playbackChanged();
   }
   function memories() {
     const summary = base.memorySummary?.({ limit: 100 });
@@ -818,12 +816,25 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     "lastfm-key": async (data) => { await lastfm?.save?.(String(data.key ?? "").trim()); send({ type: "import", stage: "lastfm-key-saved" }); },
   };
 
+  // A service chosen in the picker, by an agent or in the terminal. Each agent picks up its new
+  // tools before its next model request, so none is rebuilt; the window shows the choice now.
+  let shownPlaybackService = base.playbackService;
+  function playbackChanged() {
+    if (closed || base.playbackService === shownPlaybackService) return;
+    shownPlaybackService = base.playbackService;
+    sendStatus();
+    void refreshPlayer({ queue: true });
+    schedulePlayer();
+  }
+  const unsubscribePlayback = base.onPlaybackServiceChange?.(playbackChanged);
+
   return new Promise((resolve) => {
     // Quitting stops running replies and lets them settle, so each is saved as interrupted with what it
     // did; the core then closes every conversation. The app asks through `quit`.
     let stopping = null;
     const stop = () => stopping ??= (async () => {
       closed = true;
+      unsubscribePlayback?.();
       clearTimeout(pollTimer);
       clearTimeout(sessionsTimer);
       const settling = slots.filter((slot) => slot.turn).map((slot) => { slot.runtime.abort?.(); return slot.turn.settled; });

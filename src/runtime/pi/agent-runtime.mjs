@@ -1,5 +1,5 @@
 import { Agent } from "@earendil-works/pi-agent-core";
-import { Type } from "@earendil-works/pi-ai";
+import { createInitialSystemMessage, getCurrentSystemMessage, toToolDeclaration, Type } from "@earendil-works/pi-ai";
 import { readFileSync } from "node:fs";
 import { LOCALES, messageLocale, translator } from "../../i18n/index.mjs";
 import { PROFILE_SECTIONS } from "../../profile/profile-exploration.mjs";
@@ -4660,6 +4660,15 @@ function createToolFactories(
     { maxItems: 4, uniqueItems: true },
   );
   return new Map([
+    ["playback.service", descriptor => ({
+      name: descriptor.tool_name, label: descriptor.label,
+      description: "Read the selected and effective music service and which services can play here. Omit service to inspect; supply spotify, apple_music or netease when the listener asks to use or switch to it, in any language. This is the same saved choice as the service picker. No extra confirmation is needed. Call this tool alone first; after it returns the playback tools update in this turn, so continue the listening request using the chosen service. The selection itself does not play, replay or transfer songs. Do not silently choose a different service when the requested one is unavailable.",
+      parameters: Type.Object({ service: Type.Optional(Type.Union([Type.Literal("spotify"), Type.Literal("apple_music"), Type.Literal("netease")])) }, { additionalProperties: false }),
+      executionMode: "sequential",
+      execute: executeDomain(async (_id, parameters) => parameters.service
+        ? application.selectPlaybackService(parameters.service)
+        : application.playbackStatus(), value => value),
+    })],
     ["spotify.discovery.search", descriptor => ({ name: descriptor.tool_name, label: descriptor.label,
       description: "Discover music beyond private history. Send 1–3 concise Spotify free-text queries based on the user's style, your musical knowledge as hypotheses, or public web research. Up to six queries per request accumulate up to 36 unique verified track references; later queries preserve earlier references. No playlist plan or library membership is required. Query different song/version/artist hypotheses when a broad style query is sparse. Metadata verifies catalog identity, not sound or personal novelty. Avoid is enforced; familiar music remains eligible unless explicitly excluded. Continue an explicit queue request with moondog_spotify_queue_batch, without asking for playlist confirmation.",
       parameters: Type.Object({ queries: Type.Array(Type.String({ minLength: 1, maxLength: 256 }), { minItems: 1, maxItems: 3 }) }, { additionalProperties: false }),
@@ -6264,6 +6273,31 @@ function sessionAvailability({ spotifyReady, spotifyPlaybackReady = spotifyReady
   return `\n\n${lines.join("\n")}`;
 }
 
+// The agent's instructions carry this as their "session" section, after the base prompt, so a
+// change of music service replaces it in place.
+function sessionSection(application) {
+  return sessionAvailability({
+    spotifyReady: application.spotifyReady?.() ?? false,
+    // Hosts without a choice of music service play through Spotify whenever it is ready.
+    spotifyPlaybackReady: application.spotifyPlaybackReady?.() ?? application.spotifyReady?.() ?? false,
+    previewReady: application.musicPreviewReady?.() ?? false,
+    playbackService: application.playbackService ?? "apple_music",
+    neteaseReady: application.neteaseReady?.() ?? false,
+  }).trim() || null;
+}
+
+// What decides the playback tools and the session section. When it changes, the agent rebuilds both.
+function playbackSurfaceKey(application) {
+  return JSON.stringify([
+    application.playbackService ?? null,
+    application.spotifyReady?.() ?? false,
+    application.spotifyPlaybackReady?.() ?? false,
+    application.musicPreviewReady?.() ?? false,
+    application.neteaseReady?.() ?? false,
+    application.listeningReadable?.() ?? false,
+  ]);
+}
+
 // Notes from the host about where this session runs, such as the public website demo.
 function hostNotes(notes) {
   const lines = (Array.isArray(notes) ? notes : [])
@@ -6273,7 +6307,7 @@ function hostNotes(notes) {
   return lines.length ? `\n\nAbout this session:\n${lines.join("\n")}` : "";
 }
 
-function systemPrompt({ spotifyReady = true, spotifyPlaybackReady = spotifyReady, previewReady = false, playbackService = "apple_music", neteaseReady = false, notes = [] } = {}) {
+function systemPrompt({ notes = [] } = {}) {
   return `You are Moondog, a personal music agent and curator.
 
 ${listenerProfileSkill}
@@ -6412,7 +6446,7 @@ Voice:
 - Moondog lives on a lunar record and grew up on Pink Floyd. An occasional light nod to their songs or ideas is welcome when it truly fits the moment, at most once in a conversation, and never at the expense of a clear answer. Never quote more than a short line of any lyric.
 - No hype, no exclamation marks, no filler openings or closing offers. Use plain hyphens, never em dashes.
 
-Respond in the language used by the user unless asked otherwise; product.reply_language is that language, or the listener's chosen language when a message does not show one. Write Chinese in the script product.reply_language names, even when song titles use the other script.${sessionAvailability({ spotifyReady, spotifyPlaybackReady, previewReady, playbackService, neteaseReady })}${hostNotes(notes)}`;
+Respond in the language used by the user unless asked otherwise; product.reply_language is that language, or the listener's chosen language when a message does not show one. Write Chinese in the script product.reply_language names, even when song titles use the other script.${hostNotes(notes)}`;
 }
 
 function contextMessage(snapshot) {
@@ -6866,6 +6900,7 @@ async function trustedContextSnapshot(application, runtimeStatus, query) {
       product: {
         product: "moondog",
         slice: "A3_s3_open_similarity+A4_s4_playlist_editor",
+        playback: application.playbackStatus?.() ?? null,
         runtime: {
           state: runtimeStatus.state,
           provider: runtimeStatus.provider,
@@ -6926,6 +6961,7 @@ async function trustedContextSnapshot(application, runtimeStatus, query) {
       product: {
         product: "moondog",
           slice: "A3_s3_open_similarity+A4_s4_playlist_editor",
+        playback: application.playbackStatus?.() ?? null,
         runtime: { state: runtimeStatus.state },
         source: { state: "unavailable" },
         music_catalog: application.musicCatalogReady?.()
@@ -7012,97 +7048,22 @@ export class PiAgentRuntime {
       { model, provider, modelId },
     );
     this.syncedEntryId = application.latestConversationEntryId?.() ?? null;
-    const descriptors = application.agentCapabilityDescriptors();
-    const tools = createAgentTools(
-      application,
-      this.runtimeStatus,
-      descriptors,
-      {
-        onWebResearch: (result) => {
-          if (!this.activePromptState) return;
-          for (const source of result.sources) {
-            const sources = this.activePromptState.webSources;
-            if (sources.length < 10 && !sources.some((entry) => entry.url === source.url)) {
-              sources.push({ title: source.title, url: source.url, published_at: source.published_at, retrieved_at: result.retrieved_at, provider: result.provider });
-            }
+    // The tools reach this agent's prompt state through these; a rebuilt tool set keeps them.
+    this.toolCallbacks = {
+      onWebResearch: (result) => {
+        if (!this.activePromptState) return;
+        for (const source of result.sources) {
+          const sources = this.activePromptState.webSources;
+          if (sources.length < 10 && !sources.some((entry) => entry.url === source.url)) {
+            sources.push({ title: source.title, url: source.url, published_at: source.published_at, retrieved_at: result.retrieved_at, provider: result.provider });
           }
-        },
-        onPlaylistPlan: (plan) => {
-          if (this.activePromptState) {
-            for (const source of
-              application.pendingPlaylistDiscoverySources?.() ?? []) {
-              if (
-                !this.activePromptState.discoverySources.some(
-                  (entry) =>
-                    entry.provider === source.provider &&
-                    entry.retrieved_at === source.retrieved_at,
-                )
-              ) {
-                this.activePromptState.discoverySources.push(
-                  structuredClone(source),
-                );
-              }
-            }
-            this.activePromptState.musicWorldCitations =
-              mergeMusicWorldCitations(
-                this.activePromptState.musicWorldCitations,
-                playlistMusicWorldCitations(
-                  plan,
-                  this.activePromptState.discoverySources,
-                ),
-              );
-            const publicPlan = groundedPlaylistPresentation(structuredClone(plan), this.activePromptState.t);
-            for (const track of publicPlan.tracks) {
-              delete track.public_catalog_reference;
-            }
-            this.activePromptState.validatedPlaylistPlan = publicPlan;
-          }
-        },
-        onSpotifyPlaylistWrite: (receipt) => {
-          if (this.activePromptState) {
-            this.activePromptState.spotifyPlaylistWrite = receipt;
-          }
-        },
-        onSpotifyPlaylistPartialEffect: (effect) => {
-          if (this.activePromptState) {
-            this.activePromptState.spotifyPlaylistPartialEffect = effect;
-          }
-        },
-        onSpotifyRemovalPreview: (preview) => {
-          if (this.activePromptState) this.activePromptState.spotifyRemovalPreview = preview;
-        },
-        onSpotifyRemovalFailure: (message) => {
-          if (this.activePromptState) this.activePromptState.spotifyRemovalFailure = message;
-        },
-        onSpotifyQuickEditFailure: (message) => {
-          if (this.activePromptState) this.activePromptState.spotifyQuickEditFailure = message;
-        },
-        onSpotifyPlaylistEditPreview: (preview) => {
-          if (this.activePromptState) {
-            this.activePromptState.spotifyPlaylistEditPreview = preview;
-          }
-        },
-        onSpotifyPlaylistEditWrite: (receipt) => {
-          if (this.activePromptState) {
-            this.activePromptState.spotifyPlaylistEditWrite = receipt;
-          }
-        },
-        onMusicPlayback: (value) => {
-          if (this.activePromptState) {
-            this.activePromptState.musicPlaybackResult = value;
-            if (value.playing_in_order?.length) this.activePromptState.previewsPlaying = true;
-          }
-        },
-        onExternalCandidateSet: (value, { playbackLookup = false } = {}) => {
-          if (this.activePromptState) {
-            this.activePromptState.externalCandidateSetCreated = true;
-            this.activePromptState.externalCandidateSets.push({
-              playbackLookup,
-              tracks: structuredClone(value.tracks ?? []),
-            });
-            const source = value?.source;
+        }
+      },
+      onPlaylistPlan: (plan) => {
+        if (this.activePromptState) {
+          for (const source of
+            application.pendingPlaylistDiscoverySources?.() ?? []) {
             if (
-              isPlainObject(source) &&
               !this.activePromptState.discoverySources.some(
                 (entry) =>
                   entry.provider === source.provider &&
@@ -7114,91 +7075,155 @@ export class PiAgentRuntime {
               );
             }
           }
-        },
-        onMusicCatalogArtistReleases: (value) => {
-          if (this.activePromptState) {
-            this.activePromptState.musicWorldCitations =
-              mergeMusicWorldCitations(
-                this.activePromptState.musicWorldCitations,
-                artistReleaseMusicWorldCitations(value),
-              );
+          this.activePromptState.musicWorldCitations =
+            mergeMusicWorldCitations(
+              this.activePromptState.musicWorldCitations,
+              playlistMusicWorldCitations(
+                plan,
+                this.activePromptState.discoverySources,
+              ),
+            );
+          const publicPlan = groundedPlaylistPresentation(structuredClone(plan), this.activePromptState.t);
+          for (const track of publicPlan.tracks) {
+            delete track.public_catalog_reference;
           }
-        },
-        onSpotifyQueuePlan: (receipt) => {
-          if (this.activePromptState) {
-            this.activePromptState.spotifyQueuePlan = receipt;
-          }
-        },
-        onSpotifyPlayback: (receipt) => {
-          if (this.activePromptState) {
-            this.activePromptState.spotifyPlayback.push(receipt);
-          }
-        },
-        onSpotifyPlaybackFailure: (failure) => {
-          this.activePromptState?.spotifyPlaybackFailures.push(failure);
-        },
-        onSpotifyLookupFailure: (failure) => {
-          this.activePromptState?.spotifyLookupFailures.push(failure);
-        },
-        onSpotifyWriteReceipt: (receipt) => {
-          this.activePromptState?.spotifyWriteReceipts.push(receipt);
-        },
-        onMemoryRemember: (parameters) => {
-          if (!this.activePromptState) {
-            throw new Error("Memory mutation requires an active prompt");
-          }
-          const sourceText = (parameters.source_text ?? parameters.text).trim();
-          const quotedByUser = sourceText.length > 0 && this.activePromptState.promptText.includes(sourceText);
-          if ((!quotedByUser && parameters.source_text !== undefined) ||
-              (!quotedByUser && (this.transientSpotifyContext || application.transientSpotifyContext))) {
-            throw new Error("Supply source_text as an exact quote of the current user's durable preference. Spotify results and inferred preferences cannot be saved to generic memory.");
-          }
-          const prepared = application.prepareRememberMemory({ ...parameters,
-            text: quotedByUser ? sourceText : parameters.text });
-          this.activePromptState.stagedMemoryMutations.push(
-            { ...prepared.mutation, sourceUserText: quotedByUser ? sourceText : null },
-          );
-          return prepared.result;
-        },
-        onMemoryForget: (memoryId) => {
-          if (!this.activePromptState) {
-            throw new Error("Memory mutation requires an active prompt");
-          }
-          const prepared = application.prepareForgetMemory(memoryId);
-          if (prepared.mutation) {
-            this.activePromptState.stagedMemoryMutations.push(
-              prepared.mutation,
+          this.activePromptState.validatedPlaylistPlan = publicPlan;
+        }
+      },
+      onSpotifyPlaylistWrite: (receipt) => {
+        if (this.activePromptState) {
+          this.activePromptState.spotifyPlaylistWrite = receipt;
+        }
+      },
+      onSpotifyPlaylistPartialEffect: (effect) => {
+        if (this.activePromptState) {
+          this.activePromptState.spotifyPlaylistPartialEffect = effect;
+        }
+      },
+      onSpotifyRemovalPreview: (preview) => {
+        if (this.activePromptState) this.activePromptState.spotifyRemovalPreview = preview;
+      },
+      onSpotifyRemovalFailure: (message) => {
+        if (this.activePromptState) this.activePromptState.spotifyRemovalFailure = message;
+      },
+      onSpotifyQuickEditFailure: (message) => {
+        if (this.activePromptState) this.activePromptState.spotifyQuickEditFailure = message;
+      },
+      onSpotifyPlaylistEditPreview: (preview) => {
+        if (this.activePromptState) {
+          this.activePromptState.spotifyPlaylistEditPreview = preview;
+        }
+      },
+      onSpotifyPlaylistEditWrite: (receipt) => {
+        if (this.activePromptState) {
+          this.activePromptState.spotifyPlaylistEditWrite = receipt;
+        }
+      },
+      onMusicPlayback: (value) => {
+        if (this.activePromptState) {
+          this.activePromptState.musicPlaybackResult = value;
+          if (value.playing_in_order?.length) this.activePromptState.previewsPlaying = true;
+        }
+      },
+      onExternalCandidateSet: (value, { playbackLookup = false } = {}) => {
+        if (this.activePromptState) {
+          this.activePromptState.externalCandidateSetCreated = true;
+          this.activePromptState.externalCandidateSets.push({
+            playbackLookup,
+            tracks: structuredClone(value.tracks ?? []),
+          });
+          const source = value?.source;
+          if (
+            isPlainObject(source) &&
+            !this.activePromptState.discoverySources.some(
+              (entry) =>
+                entry.provider === source.provider &&
+                entry.retrieved_at === source.retrieved_at,
+            )
+          ) {
+            this.activePromptState.discoverySources.push(
+              structuredClone(source),
             );
           }
-          return prepared.result;
-        },
+        }
       },
-    );
-    this.capabilityByToolName = new Map(
-      descriptors
-        .filter(
-          (descriptor) =>
-            agentCapabilityAllowed(descriptor) &&
-            tools.some((tool) => tool.name === descriptor.tool_name),
-        )
-        .map((descriptor) => [descriptor.tool_name, descriptor]),
-    );
+      onMusicCatalogArtistReleases: (value) => {
+        if (this.activePromptState) {
+          this.activePromptState.musicWorldCitations =
+            mergeMusicWorldCitations(
+              this.activePromptState.musicWorldCitations,
+              artistReleaseMusicWorldCitations(value),
+            );
+        }
+      },
+      onSpotifyQueuePlan: (receipt) => {
+        if (this.activePromptState) {
+          this.activePromptState.spotifyQueuePlan = receipt;
+        }
+      },
+      onSpotifyPlayback: (receipt) => {
+        if (this.activePromptState) {
+          this.activePromptState.spotifyPlayback.push(receipt);
+        }
+      },
+      onSpotifyPlaybackFailure: (failure) => {
+        this.activePromptState?.spotifyPlaybackFailures.push(failure);
+      },
+      onSpotifyLookupFailure: (failure) => {
+        this.activePromptState?.spotifyLookupFailures.push(failure);
+      },
+      onSpotifyWriteReceipt: (receipt) => {
+        this.activePromptState?.spotifyWriteReceipts.push(receipt);
+      },
+      onMemoryRemember: (parameters) => {
+        if (!this.activePromptState) {
+          throw new Error("Memory mutation requires an active prompt");
+        }
+        const sourceText = (parameters.source_text ?? parameters.text).trim();
+        const quotedByUser = sourceText.length > 0 && this.activePromptState.promptText.includes(sourceText);
+        if ((!quotedByUser && parameters.source_text !== undefined) ||
+            (!quotedByUser && (this.transientSpotifyContext || application.transientSpotifyContext))) {
+          throw new Error("Supply source_text as an exact quote of the current user's durable preference. Spotify results and inferred preferences cannot be saved to generic memory.");
+        }
+        const prepared = application.prepareRememberMemory({ ...parameters,
+          text: quotedByUser ? sourceText : parameters.text });
+        this.activePromptState.stagedMemoryMutations.push(
+          { ...prepared.mutation, sourceUserText: quotedByUser ? sourceText : null },
+        );
+        return prepared.result;
+      },
+      onMemoryForget: (memoryId) => {
+        if (!this.activePromptState) {
+          throw new Error("Memory mutation requires an active prompt");
+        }
+        const prepared = application.prepareForgetMemory(memoryId);
+        if (prepared.mutation) {
+          this.activePromptState.stagedMemoryMutations.push(
+            prepared.mutation,
+          );
+        }
+        return prepared.result;
+      },
+    };
+    // Every tool name this agent has offered. One that later goes away left with a change of music service.
+    this.offeredTools = new Set();
+    const surface = this.#buildSurface();
+    this.surfaceKey = surface.key;
+    this.capabilityByToolName = surface.capabilities;
+    // Counts tool set changes, so a running loop learns of one made after it started.
+    this.surfaceVersion = 0;
+    this.loopSurfaceVersion = 0;
 
+    const instructions = createInitialSystemMessage(
+      systemPrompt({ notes: application.agentHostNotes?.() ?? [] }),
+      surface.tools.map(toToolDeclaration),
+    );
     this.agent = new Agent({
       initialState: {
-        systemPrompt: systemPrompt({
-          spotifyReady: application.spotifyReady?.() ?? false,
-          // Hosts without a choice of music service play through Spotify whenever it is ready.
-          spotifyPlaybackReady: application.spotifyPlaybackReady?.() ?? application.spotifyReady?.() ?? false,
-          previewReady: application.musicPreviewReady?.() ?? false,
-          playbackService: application.playbackService ?? "apple_music",
-          neteaseReady: application.neteaseReady?.() ?? false,
-          notes: application.agentHostNotes?.() ?? [],
-        }),
         model,
         ...(thinkingLevel ? { thinkingLevel } : {}),
-        tools,
-        messages: restoredMessages,
+        tools: surface.tools,
+        messages: [surface.session ? { ...instructions, sections: { session: surface.session } } : instructions, ...restoredMessages],
       },
       streamFn: (selectedModel, context, options) => {
         const promptState = this.activePromptState;
@@ -7227,6 +7252,14 @@ export class PiAgentRuntime {
         });
       },
       toolExecution: "parallel",
+      // A music service chosen while this reply runs, by the agent or anywhere else, reaches the
+      // next model request: Pi declares the tool changes, and the session section is replaced.
+      prepareNextTurnWithContext: (turn) => {
+        this.#refreshSurface();
+        if (this.loopSurfaceVersion === this.surfaceVersion) return undefined;
+        this.loopSurfaceVersion = this.surfaceVersion;
+        return { context: { ...turn.context, tools: this.agent.state.tools }, messages: this.#sessionUpdate(turn.context.messages) };
+      },
       transformContext: async (messages) => {
         const query = this.activePromptState?.promptText ?? extractMessageText(
           messages.findLast((message) => message.role === "user"),
@@ -7243,7 +7276,12 @@ export class PiAgentRuntime {
           : [trustedContext, ...messages];
       },
       beforeToolCall: async ({ toolCall }) => {
+        this.#refreshSurface();
         const descriptor = this.capabilityByToolName.get(toolCall.name);
+        // A call made in the same batch as a service change can name the old service's tool.
+        if (!descriptor && this.offeredTools.has(toolCall.name)) {
+          return { block: true, reason: "This tool left with the change of music service. Continue with the chosen service's tools." };
+        }
         if (!descriptor || !agentCapabilityAllowed(descriptor)) {
           return {
             block: true,
@@ -7287,6 +7325,40 @@ export class PiAgentRuntime {
     return structuredClone(this.runtimeStatus);
   }
 
+  // The tools and the session section follow the chosen music service and what can play. The
+  // window's picker, moondog_playback_service and the other surface can change them at any time,
+  // so the agent compares before each model request and each tool call.
+  #buildSurface() {
+    const descriptors = this.application.agentCapabilityDescriptors();
+    const tools = createAgentTools(this.application, this.runtimeStatus, descriptors, this.toolCallbacks);
+    for (const tool of tools) this.offeredTools.add(tool.name);
+    return {
+      key: playbackSurfaceKey(this.application),
+      tools,
+      capabilities: new Map(descriptors
+        .filter((descriptor) => agentCapabilityAllowed(descriptor) && tools.some((tool) => tool.name === descriptor.tool_name))
+        .map((descriptor) => [descriptor.tool_name, descriptor])),
+      session: sessionSection(this.application),
+    };
+  }
+
+  #refreshSurface() {
+    if (playbackSurfaceKey(this.application) === this.surfaceKey) return;
+    const surface = this.#buildSurface();
+    this.surfaceKey = surface.key;
+    this.capabilityByToolName = surface.capabilities;
+    this.agent.state.tools = surface.tools;
+    this.surfaceVersion += 1;
+  }
+
+  // The system message that brings a transcript's session section up to date, if it is behind.
+  // A finished reply keeps only its text, so the transcript, not this agent, says what was declared.
+  #sessionUpdate(messages) {
+    const session = sessionSection(this.application);
+    if ((getCurrentSystemMessage(messages)?.sections?.session ?? null) === session) return [];
+    return [{ role: "system", content: "", sections: { session }, timestamp: Date.now() }];
+  }
+
   async prompt(text, callbacks = {}) {
     if (this.promptInFlight || this.rewindInFlight) {
       throw new Error("A Moondog prompt is already in progress.");
@@ -7316,6 +7388,12 @@ export class PiAgentRuntime {
     this.promptInFlight = true;
     const settlement = Promise.withResolvers();
     this.promptSettlement = settlement.promise;
+    // A service chosen since the last reply applies from the first request. Pi declares the tool
+    // changes itself; the session section is set here, before this reply's history begins.
+    this.#refreshSurface();
+    this.loopSurfaceVersion = this.surfaceVersion;
+    const sessionUpdate = this.#sessionUpdate(this.agent.state.messages);
+    if (sessionUpdate.length) this.agent.state.messages = [...this.agent.state.messages, ...sessionUpdate];
     const historyStartIndex = this.agent.state.messages.length;
     // One reply language per turn, from the message itself, the conversation or the listener's setting.
     const t = replyTranslator(text, this.application);

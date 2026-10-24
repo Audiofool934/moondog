@@ -830,7 +830,7 @@ async function pickModel(event) {
 }
 // The music service's menu: the services, each checked when in use; signing in to one the core can
 // play but can't yet, Spotify in Settings and NetEase with its own tool in Terminal; then the settings.
-// A choice shows at once and the core's status confirms it; a switch rebuilds every conversation.
+// A choice shows at once and the core's status confirms it; every conversation's agent follows it.
 let sourceWanted = null;
 let wantedTimer = 0;
 async function pickService(event) {

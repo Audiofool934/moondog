@@ -3,6 +3,11 @@ import { N_ } from "../i18n/index.mjs";
 // Tool labels are marked English; screens translate them when shown.
 const catalog = [
   {
+    id: "playback.service", version: "1", state: "enabled", effect: "write_local",
+    description: "Inspect or change the current music service through the same saved selection as the host's service picker.",
+    agent_tool: { name: "moondog_playback_service", label: N_("Choose a music service") },
+  },
+  {
     id: "spotify.discovery.search", version: "1", state: "enabled", effect: "read_external", requires_spotify: true,
     description: "Verify open-world music hypotheses with bounded Spotify queries, retaining a shared candidate pool.",
     agent_tool: { name: "moondog_spotify_discover", label: N_("Discover verified Spotify tracks") },

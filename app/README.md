@@ -66,6 +66,7 @@ A model or music service chosen there lasts until the app quits, and sign-in and
   A model shows its maker's mark, through OpenRouter too, by the maker its id names; a maker the window has no mark for shows a plain model glyph.
   The service's menu switches between Spotify, Apple Music, and NetEase Music once ncm-cli is ready; it also signs in to Spotify in Settings, or shows the commands that set up NetEase in Terminal and checks again.
   It offers only services the core can play.
+  Asking Moondog for another service switches too, within the same reply; the menu, the terminal and every conversation follow one saved choice, and the service left behind stops playing.
   The model's menu shows the maker in use over its models, the chosen one checked, every other signed-in maker's models in a submenu, and the thinking effort with its level.
   On a first launch the service reads "Choose a music service" until one is chosen, as the model reads "Choose a model" until there is one.
 - Typing `/` lists commands by what they open (a mistyped one stays in the composer instead of going to Moondog): `/new`, `/model`, `/language`, `/service`, `/device`, `/import`, `/memory`, `/remember`, `/folder`, `/settings` and `/help`.

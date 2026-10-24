@@ -16,7 +16,7 @@ import { readListeningNow } from "./listening-now.mjs";
 import { normalizeConversationFolder, normalizeConversationLabel, normalizeMemoryContent, shortConversationTitle } from "../memory/local-memory-store.mjs";
 import { queueListeningIntent, queueCancellationRequested, unheardRequested } from "./spotify-listening-intent.mjs";
 import { DEFAULT_LOCALE, normalizeLocale } from "../i18n/index.mjs";
-import { DEFAULT_PLAYBACK_SERVICE, normalizePlaybackService } from "./playback-preferences.mjs";
+import { createPlaybackSelection, DEFAULT_PLAYBACK_SERVICE, normalizePlaybackService } from "./playback-preferences.mjs";
 
 const minimumNodeVersion = [22, 19, 0];
 
@@ -201,6 +201,7 @@ export class MoondogApplication {
     webResearch = null,
     locale = DEFAULT_LOCALE,
     playbackService = DEFAULT_PLAYBACK_SERVICE,
+    playbackSelection = null,
     now = Date.now,
     // A conversation the desktop window runs beside the main one shares the main one's
     // services and owns only its domain-services fork, so closing it leaves the rest open.
@@ -212,7 +213,7 @@ export class MoondogApplication {
     this.spotifyTopArtists = spotifyTopArtists;
     this.importsRoot = importsRoot;
     // The music service the listener chose to play songs: "spotify", "apple_music" or "netease".
-    this.playbackService = normalizePlaybackService(playbackService) ?? DEFAULT_PLAYBACK_SERVICE;
+    this.playbackSelection = playbackSelection ?? createPlaybackSelection({ service: playbackService });
     // The listener's language: replies follow each message, and fall back to this.
     this.locale = normalizeLocale(locale) ?? DEFAULT_LOCALE;
     // The language of the conversation so far. A reply such as "2" or "ok" carries none of
@@ -526,12 +527,63 @@ export class MoondogApplication {
     return this.spotifyReady() && this.playbackService === "spotify";
   }
 
-  // The caller rebuilds the agent runtime afterwards: its tools and instructions follow this.
-  setPlaybackService(service) {
+  get playbackService() {
+    return this.playbackSelection.service;
+  }
+
+  playbackStatus() {
+    const apple = this.musicCatalogReady() && typeof this.musicCatalog.findPreview === "function" &&
+      typeof this.musicPreviewPlayer?.play === "function";
+    const netease = this.neteasePlayer?.ready?.() === true;
+    const neteaseReason = !this.neteasePlayer ? "NetEase Music is not available in this host."
+      : this.neteasePlayer.status?.().state === "missing" ? "NetEase Music needs ncm-cli: npm install -g @music163/ncm-cli, then ncm-cli login."
+        : "NetEase Music is not signed in. Run ncm-cli login in a terminal, then choose it again.";
+    const services = [
+      { service: "spotify", available: this.spotifyReady(), ...(this.spotifyReady() ? {} : { reason: "Spotify is not connected." }) },
+      { service: "apple_music", available: apple,
+        ...(apple ? { plays: this.musicPreviewPlayer.wholeSongs?.() === true ? "whole_songs" : "30_second_previews" }
+          : { reason: "Apple Music playback is not available in this host." }) },
+      { service: "netease", available: netease, ...(netease ? {} : { reason: neteaseReason }) },
+    ];
+    return {
+      selected_service: this.playbackService,
+      effective_service: this.spotifyPlaybackReady() ? "spotify" : this.neteaseReady() ? "netease" : this.musicPreviewReady() ? "apple_music" : null,
+      services,
+    };
+  }
+
+  // The picker and the agent choose the same saved service. The agent (strict) chooses only one
+  // that can play here and reads `refused` otherwise. The picker may choose Spotify before it is
+  // connected, as its Connect Spotify item does; NetEase always needs ncm-cli signed in.
+  async selectPlaybackService(service, { strict = true } = {}) {
     const value = normalizePlaybackService(service);
     if (!value) throw new Error(`Unsupported music service: ${service}`);
-    this.playbackService = value;
-    return value;
+    if (value === "netease") await this.neteasePlayer?.check?.();
+    const status = this.playbackStatus();
+    const target = status.services.find((entry) => entry.service === value);
+    if (!target.available && (strict || value === "netease")) return { ...status, changed: false, refused: target.reason };
+    const previous = this.playbackService;
+    await this.playbackSelection.change(value);
+    if (previous !== value) await this.#stopPlaybackService(previous);
+    return { ...this.playbackStatus(), changed: previous !== value };
+  }
+
+  // The service just left stops playing, so two services never play at once.
+  async #stopPlaybackService(service) {
+    try {
+      if (service === "apple_music") this.musicPreviewPlayer?.stop?.();
+      else if (service === "netease" && this.neteasePlayer?.ready?.() === true) await this.neteasePlayer.stop();
+      else if (service === "spotify" && this.spotifyReady()) await this.requireSpotifyService().pause({});
+    } catch { /* Nothing was playing there, or no device is active; the new choice stands. */ }
+  }
+
+  onPlaybackServiceChange(listener) {
+    return this.playbackSelection.subscribe(listener);
+  }
+
+  // A host-only in-memory change, kept for hosts with no saved settings.
+  setPlaybackService(service) {
+    return this.playbackSelection.set(service);
   }
 
   // Plays up to six named songs, or one album, as a queue in the host's player.
@@ -2978,7 +3030,7 @@ export class MoondogApplication {
         ...this.webLookupOptions(),
       musicPreviewReady: this.musicPreviewReady(),
       }).map(capability => capability.state === "enabled" && this.#playbackServiceExcludes(capability.id)
-        ? { ...capability, state: "blocked", blocked_by: capability.id === "listening.now" ? "no_readable_player"
+        ? { ...capability, state: "blocked", blocked_by: capability.id === "listening.now" ? "no_readable_player" : capability.id === "playback.service" ? "no_playback_service"
           : neteaseCapabilities.has(capability.id) ? "netease_not_ready" : "playback_service_not_spotify" } : capability),
     };
   }
@@ -2987,6 +3039,7 @@ export class MoondogApplication {
   // tools exist only while it plays. What the listener plays is read wherever it can be.
   #playbackServiceExcludes(capabilityId) {
     if (capabilityId === "listening.now") return !this.listeningReadable();
+    if (capabilityId === "playback.service") return !this.playbackStatus().services.some((entry) => entry.available);
     if (neteaseCapabilities.has(capabilityId)) return !this.neteaseReady();
     return this.playbackService !== "spotify" && spotifyPlaybackCapabilities.has(capabilityId);
   }
