@@ -12,6 +12,7 @@ import {
 } from "./capability-catalog.mjs";
 import { recoverArtistReleasesWithCrossCatalogIdentity } from "../integrations/cross-catalog-artist-identity.mjs";
 import { webProviderName } from "../integrations/web/web-result.mjs";
+import { readListeningNow } from "./listening-now.mjs";
 import { normalizeConversationFolder, normalizeConversationLabel, normalizeMemoryContent, shortConversationTitle } from "../memory/local-memory-store.mjs";
 import { queueListeningIntent, queueCancellationRequested, unheardRequested } from "./spotify-listening-intent.mjs";
 import { DEFAULT_LOCALE, normalizeLocale } from "../i18n/index.mjs";
@@ -194,6 +195,7 @@ export class MoondogApplication {
     musicSimilarity = null,
     musicPreviewPlayer = null,
     neteasePlayer = null,
+    musicApp = null,
     agentHostNotes = [],
     artistIdentityResolver = null,
     webResearch = null,
@@ -237,6 +239,9 @@ export class MoondogApplication {
     this.musicPreviewPlayer = musicPreviewPlayer;
     // NetEase Cloud Music through ncm-cli (src/integrations/netease), shared by every conversation.
     this.neteasePlayer = neteasePlayer;
+    // The Music app on this Mac (src/integrations/apple-music/music-app.mjs), read for what the
+    // listener plays there themselves.
+    this.musicApp = musicApp;
     // Hosts can tell the agent where it runs; the terminal passes none.
     this.hostNotes = Array.isArray(agentHostNotes) ? agentHostNotes.filter((note) => typeof note === "string") : [];
     this.artistIdentityResolver = artistIdentityResolver;
@@ -504,6 +509,16 @@ export class MoondogApplication {
 
   neteaseNowPlaying() {
     return this.requireNetease().nowPlaying();
+  }
+
+  // Whether any player the listener uses can be read: the Music app, Spotify or NetEase.
+  listeningReadable() {
+    return this.musicApp?.available === true || this.spotifyReady() || this.neteaseReady();
+  }
+
+  // What the listener plays right now on any of them, and what it plays from (src/core/listening-now.mjs).
+  listeningNow({ signal } = {}) {
+    return readListeningNow(this, { signal });
   }
 
   // Spotify plays music only when it is connected and it is the chosen service.
@@ -2963,13 +2978,15 @@ export class MoondogApplication {
         ...this.webLookupOptions(),
       musicPreviewReady: this.musicPreviewReady(),
       }).map(capability => capability.state === "enabled" && this.#playbackServiceExcludes(capability.id)
-        ? { ...capability, state: "blocked", blocked_by: neteaseCapabilities.has(capability.id) ? "netease_not_ready" : "playback_service_not_spotify" } : capability),
+        ? { ...capability, state: "blocked", blocked_by: capability.id === "listening.now" ? "no_readable_player"
+          : neteaseCapabilities.has(capability.id) ? "netease_not_ready" : "playback_service_not_spotify" } : capability),
     };
   }
 
   // With another music service chosen, Spotify does not play or queue anything; NetEase's
-  // tools exist only while it plays.
+  // tools exist only while it plays. What the listener plays is read wherever it can be.
   #playbackServiceExcludes(capabilityId) {
+    if (capabilityId === "listening.now") return !this.listeningReadable();
     if (neteaseCapabilities.has(capabilityId)) return !this.neteaseReady();
     return this.playbackService !== "spotify" && spotifyPlaybackCapabilities.has(capabilityId);
   }

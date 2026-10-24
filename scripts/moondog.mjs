@@ -52,6 +52,7 @@ import { startListeningUpkeep } from "../src/core/listening-upkeep.mjs";
 import { createAppleMusicCatalog } from "../src/integrations/apple-music/catalog.mjs";
 import { createTerminalPreviewPlayer } from "../src/integrations/apple-music/terminal-preview-player.mjs";
 import { createNeteasePlayer } from "../src/integrations/netease/ncm-cli-player.mjs";
+import { createMusicAppPlayer } from "../src/integrations/apple-music/music-app.mjs";
 import {
   createOpenMusicSimilarity,
   createWikidataArtistResolver,
@@ -835,6 +836,8 @@ async function main() {
   // One-shot commands get none: they would exit in the middle of the first song.
   // In the desktop app, the window's own player plays them instead.
   const previewPlayer = options.command ? null : host ? host.musicPreviewPlayer : await createTerminalPreviewPlayer();
+  // What the listener plays in the Music app on this Mac, read but never opened.
+  const musicApp = createMusicAppPlayer();
   // NetEase Cloud Music plays through ncm-cli in the terminal and the window alike. Its tools
   // appear once ncm-cli says it is signed in; only listeners who chose it wait for that check.
   const neteasePlayer = createNeteasePlayer();
@@ -848,7 +851,7 @@ async function main() {
   const applicationOptions = ({ domainServices, domainServicesError, spotifyConnection, locale, playbackService }) => ({
     domainServices, domainServicesError, spotifyConnection, locale, playbackService,
     webResearch, memoryStore, musicCatalog, musicPreviewPlayer: previewPlayer, neteasePlayer, musicSimilarity, artistIdentityResolver,
-    spotifyTopArtists,
+    spotifyTopArtists, musicApp,
   });
   const application = new MoondogApplication(applicationOptions({
     ...domainState, spotifyConnection, locale: await resolveListenerLocale(), playbackService,

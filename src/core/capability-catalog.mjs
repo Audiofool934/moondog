@@ -271,6 +271,14 @@ const catalog = [
     agent_tool: { name: "moondog_netease_now_playing", label: N_("See what is playing") },
   },
   {
+    id: "listening.now",
+    version: "1",
+    state: "enabled",
+    effect: "read_external",
+    description: "Read what the listener plays right now in the Music app, on Spotify's active device or on NetEase, and the playlist it plays from.",
+    agent_tool: { name: "moondog_listening_now", label: N_("See what you're listening to") },
+  },
+  {
     id: "music.discovery.artist_similarity",
     version: "1",
     state: "enabled",

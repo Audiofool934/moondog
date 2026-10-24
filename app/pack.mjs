@@ -62,7 +62,8 @@ const artifacts = await build({
       gatekeeperAssess: false,
       entitlements: "build-resources/entitlements.mac.plist",
       entitlementsInherit: "build-resources/entitlements.mac.plist",
-      extendInfo: { NSAppleMusicUsageDescription: MUSIC_USAGE },
+      // Moondog reads what the listener plays in the Music app through Apple Events, which macOS asks them to allow.
+      extendInfo: { NSAppleMusicUsageDescription: MUSIC_USAGE, NSAppleEventsUsageDescription: "Moondog reads what you play in Music, and the playlist it comes from." },
       identity: sign ? identity : null,
       notarize: sign,
     },

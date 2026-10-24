@@ -860,6 +860,7 @@ export default {
   "Play on NetEase Music": "Reproducir en NetEase Music",
   "Control NetEase Music": "Controlar NetEase Music",
   "See what is playing": "Ver qué suena",
+  "See what you're listening to": "Ver lo que escuchas",
   "Search outside your library": "Buscar fuera de tu biblioteca",
   "Find music nearby": "Buscar música cercana",
   "Remember what you've told me": "Recordar lo que me has dicho",

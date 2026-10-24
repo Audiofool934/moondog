@@ -151,6 +151,8 @@ While an answer is on the way, each step appears in the conversation as it start
 The steps stay above the reply, with a count of what finished, what failed, and what was not confirmed.
 The agent can use musical knowledge and web research to find candidates, then verify the recordings on Spotify before playing or queueing them.
 Without Spotify, it plays 30-second Apple Music previews from the terminal instead, each next to a link to the full song.
+It also sees what you already play: the song and playlist in the Music app on a Mac, or on Spotify's active device, so “more like this playlist” needs no names.
+macOS asks once before Moondog may read the Music app.
 For example, “Pon doce de salsa clásica a la cola” asks it to add up to twelve verified songs directly; your history guides the choice without limiting it to your library.
 What it reads about the wider music world stays separate from what it knows about you.
 

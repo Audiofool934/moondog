@@ -860,6 +860,7 @@ export default {
   "Play on NetEase Music": "NetEase Music で再生",
   "Control NetEase Music": "NetEase Music を操作",
   "See what is playing": "再生中の曲を確認",
+  "See what you're listening to": "聴いている曲を確認",
   "Search outside your library": "ライブラリの外を探す",
   "Find music nearby": "近い音楽を探す",
   "Remember what you've told me": "教えてもらったことを覚える",

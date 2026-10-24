@@ -17,8 +17,12 @@ import { shortConversationTitle } from "../src/memory/local-memory-store.mjs";
 const PLAYER_POLL_MS = { showing: 30_000, hidden: 60_000 };
 const SONG_END_SLACK_MS = 1_500;
 const QUEUE_READ_MS = 120_000;
-// NetEase is read through ncm-cli on this Mac and costs no quota.
+// NetEase is read through ncm-cli on this Mac and costs no quota, and so is the Music app.
 const NETEASE_POLL_MS = 5_000;
+const MUSIC_APP_POLL_MS = 5_000;
+// After a press on the player, the window keeps the player pressed this long, even if another one
+// plays meanwhile, so a second press acts on the same music.
+const CONTROL_HOLD_MS = 30_000;
 // A song that stops this close to its end ended, rather than being paused.
 const ENDED_WITHIN_MS = 5_000;
 // Coming back to the window reads Spotify once, at most this often, to show a change made elsewhere.
@@ -218,7 +222,8 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
   let queueRead = { uri: null, at: 0, queue: null };
   let queueStale = true;
   let playingNow = false;
-  async function readPlayer() {
+  // The chosen service's player: Spotify's active device, or NetEase.
+  async function readChosen() {
     if (base.playbackService === "netease") return readNetease();
     const service = base.spotifyConnection?.service;
     if (base.spotifyReady?.() !== true || !service) return { type: "player", spotify: "unavailable", now: null, next: [] };
@@ -246,6 +251,65 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
         disallows: player.disallowed_actions ?? [], observedAt: Date.now() } : null,
       next: upNext(queue?.queue ?? [], item).slice(0, 8).map(trackOf) };
   }
+  // The Music app on this Mac, which the listener plays themselves. A new song reads its cover and,
+  // without shuffle, the songs after it in its playlist.
+  let musicAppRunning = false;
+  let musicAppSong = { id: null, image: null, next: [] };
+  async function readMusicApp() {
+    const player = base.musicApp;
+    if (player?.available !== true) return null;
+    const now = await player.nowPlaying().catch(() => null);
+    musicAppRunning = Boolean(now) && now.state !== "not_running";
+    if (!now?.song) return null;
+    const id = `${now.song.id ?? now.song.title}\n${now.playlist?.id ?? ""}\n${now.shuffle}`;
+    if (id !== musicAppSong.id) {
+      const [full, image] = await Promise.all([player.nowPlaying({ tracks: true }).catch(() => null), player.cover(now.song)]);
+      const playlist = full?.playlist;
+      const next = !now.shuffle && playlist?.tracks && playlist.position ? playlist.tracks.slice(playlist.position - playlist.first_position + 1, playlist.position - playlist.first_position + 9) : [];
+      const shown = musicAppSong = { id, image, next };
+      // The songs after it get their covers one at a time in the background; the next read shows them.
+      void (async () => {
+        for (const song of next) {
+          if (closed || musicAppSong !== shown) return;
+          song.image = await player.cover(song).catch(() => null);
+        }
+      })();
+    }
+    const track = (song) => ({ title: song.title, link: null, artists: song.artists, album: song.album, image: song.image ?? null, durationMs: song.duration_ms });
+    return {
+      now: { ...track(now.song), image: musicAppSong.image, service: "apple_music", playing: now.state === "playing", progressMs: now.position_ms,
+        device: "Apple Music", deviceType: "computer", repeat: now.repeat, shuffle: now.shuffle, disallows: [], observedAt: Date.now() },
+      next: musicAppSong.next.slice(0, 8).map(track),
+    };
+  }
+  // What the window shows: a song that plays wins over a paused one; between the two players, the
+  // chosen service's first, and the Music app first when Apple Music is the chosen service.
+  // A press on the player keeps the player pressed shown for a while (CONTROL_HOLD_MS).
+  // Spotify is read only when its own time comes; the Music app on every pass.
+  let chosenLast = null;
+  let chosenReadAt = 0;
+  let shownSource = null;
+  let hold = { source: null, until: 0 };
+  async function readPlayer({ chosen = true } = {}) {
+    const music = await readMusicApp();
+    let own = chosenLast;
+    if (chosen || !own) {
+      try {
+        own = chosenLast = await readChosen();
+        chosenReadAt = Date.now();
+      } catch (error) {
+        if (!music) throw error;
+      }
+    }
+    const musicFirst = base.playbackService === "apple_music";
+    const rank = (now, first) => (now?.playing ? 0 : now ? 2 : 4) + (first ? 0 : 1);
+    const holding = Date.now() < hold.until;
+    const showMusic = Boolean(music) && (holding && hold.source === "apple_music" ? true
+      : holding && hold.source === "chosen" && own?.now ? false
+        : rank(music.now, musicFirst) < rank(own?.now, !musicFirst));
+    shownSource = showMusic ? "apple_music" : "chosen";
+    return showMusic ? { type: "player", spotify: own?.spotify ?? "unavailable", ...(own?.resumeAt ? { resumeAt: own.resumeAt } : {}), ...music } : own;
+  }
   // The local trace keeps each change between playing and stopped, with the song, position and device,
   // so a pause nobody asked for can be told apart from the end of a song or another device.
   let last = null;
@@ -265,11 +329,11 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
   // One read at a time; a request while one runs reads again right after it.
   let again = false;
   // A refresh after something that can change up next (a tool, a control) reads the queue too.
-  async function refreshPlayer({ queue = false } = {}) {
+  async function refreshPlayer({ queue = false, chosen = true } = {}) {
     if (closed) return;
     if (queue) queueStale = true;
     if (polling) { again = true; return polling; }
-    polling = readPlayer().then(send, (error) => send({ type: "player", spotify: "error", message: errorText(error), now: null, next: [] }))
+    polling = readPlayer({ chosen: chosen || queue }).then(send, (error) => send({ type: "player", spotify: "error", message: errorText(error), now: null, next: [] }))
       .finally(() => {
         polling = null;
         // Each read sets the next one, so a skip, a pause or a new song moves the time of that read.
@@ -282,21 +346,27 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     if (closed) return;
     // Spotify waits as long as it asked. A showing window reads again when the playing song should
     // have ended, if that comes before the next regular read.
+    const now = Date.now();
     const netease = base.playbackService === "netease";
-    const songLeftMs = playingNow && last?.durationMs ? last.durationMs - (last.progressMs ?? 0) - (Date.now() - last.at) : Infinity;
-    const wait = netease ? (visible ? NETEASE_POLL_MS : PLAYER_POLL_MS.hidden)
-      : spotifyLimitedUntil > Date.now() ? spotifyLimitedUntil - Date.now() + 1000
-        : !visible ? PLAYER_POLL_MS.hidden
-          : Math.max(1_000, Math.min(PLAYER_POLL_MS.showing, songLeftMs + SONG_END_SLACK_MS));
-    pollTimer = setTimeout(() => void refreshPlayer(), wait);
+    const songLeftMs = playingNow && last?.durationMs ? last.durationMs - (last.progressMs ?? 0) - (now - last.at) : Infinity;
+    const chosenDue = netease ? chosenReadAt + (visible ? NETEASE_POLL_MS : PLAYER_POLL_MS.hidden)
+      : spotifyLimitedUntil > now ? spotifyLimitedUntil + 1000
+        : !visible ? chosenReadAt + PLAYER_POLL_MS.hidden
+          : Math.max(now + 1_000, Math.min(chosenReadAt + PLAYER_POLL_MS.showing, now + songLeftMs + SONG_END_SLACK_MS));
+    // While the Music app runs, it is read more often than Spotify; it is local and costs no quota.
+    const musicDue = musicAppRunning ? now + (visible ? MUSIC_APP_POLL_MS : PLAYER_POLL_MS.hidden) : Infinity;
+    pollTimer = setTimeout(() => void refreshPlayer({ chosen: Date.now() >= chosenDue - 500 }), Math.max(0, Math.min(chosenDue, musicDue) - now));
   };
 
   async function control(action, via, positionMs) {
-    const netease = base.playbackService === "netease";
-    const service = netease ? base.neteasePlayer : base.spotifyConnection?.service;
-    const ready = netease ? base.neteaseReady?.() === true : base.spotifyReady?.() === true;
+    // The buttons act on the player the window shows.
+    const musicApp = shownSource === "apple_music";
+    const netease = !musicApp && base.playbackService === "netease";
+    const service = musicApp ? base.musicApp : netease ? base.neteasePlayer : base.spotifyConnection?.service;
+    const ready = musicApp || (netease ? base.neteaseReady?.() === true : base.spotifyReady?.() === true);
     if (!service || !ready || !["pause", "resume", "next", "previous", "seek"].includes(action)) return;
     toolTrace?.record({ source: "window", tool: "player_control", state: "start", args: { action, via: via ?? "button" } });
+    hold = { source: shownSource, until: Date.now() + CONTROL_HOLD_MS };
     try {
       // A seek is a click on the song's progress; the rest are the transport buttons and the menu.
       if (action === "seek") await service.seek({ positionMs: Math.max(0, Math.round(Number(positionMs) || 0)) });
@@ -306,8 +376,8 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
       send({ type: "player-error", action, message: errorText(error) });
     }
     // Spotify takes a moment to report a skip.
-    await refreshPlayer();
-    setTimeout(() => void refreshPlayer(), 900);
+    await refreshPlayer({ chosen: !musicApp });
+    setTimeout(() => void refreshPlayer({ chosen: !musicApp }), 900);
   }
 
   // Devices keep their Spotify ids here; the window sees only a reference.

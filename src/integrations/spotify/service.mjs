@@ -895,6 +895,19 @@ export function createSpotifyService(options = {}) {
       return client.getQueue(options);
     },
 
+    // The playlist the active device plays from: its name, size and first songs. Spotify's own
+    // editorial and generated playlists answer most apps with not found, and some playlists keep
+    // their songs from apps; the songs are then null.
+    async playingPlaylist({ uri } = {}, { signal } = {}) {
+      const playlistId = requiredPlaylistId(String(uri ?? "").replace(/^spotify:playlist:/u, ""));
+      const playlist = await client.getPlaylist({ playlistId }, { signal });
+      if (!playlist) fail("spotify_playlist_unavailable", "Spotify did not describe this playlist.");
+      const page = await client.getPlaylistItems({ playlistId, limit: SPOTIFY_SERVICE_LIMITS.playlistItemsPageMax, offset: 0 }, { signal })
+        .catch((error) => (signal?.aborted ? Promise.reject(error) : null));
+      return { name: playlist.name, uri: playlist.uri, tracks_total: playlist.tracks_total ?? null,
+        tracks: page ? page.items.map((entry) => entry.item).filter(Boolean) : null };
+    },
+
     // One device decision for a whole queue request. An idle device cannot take a
     // queue entry, so the caller starts the first song there and queues the rest.
     async queueTarget(value, { signal } = {}) {

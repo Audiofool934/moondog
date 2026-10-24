@@ -57,6 +57,9 @@ A model or music service chosen there lasts until the app quits, and sign-in and
 - What is playing on the right: a large cover that tints the panel with its own colours, the song, a progress line you can drag to move in the song (or focus it and use the arrow keys, five seconds a press, fifteen with Shift), previous, play or pause, and next.
   Where the music plays, under it, opens Spotify's devices and the choice between Spotify and Apple Music; while Apple Music plays, it reads Apple Music.
   A control Spotify won't take right now, such as skipping on a free account, is dimmed.
+  Music you play yourself in the Music app on this Mac shows here too, with the next songs of its playlist, and the buttons act on it there.
+  When it and Spotify both play, the one that plays wins over a paused one, then the chosen service; a player you just pressed stays in view for 30 seconds.
+  macOS asks once before Moondog may read the Music app.
   With the player folded away, the song shows at the end of the title bar with play or pause and next; a click on the song opens the player.
 - Drag the inner edge of either side panel to change its width; a double-click puts it back.
 - Beside the send button, the music service and the model, each by its mark (from Simple Icons, and Lobe Icons for the model makers Simple Icons lacks), with its name in the tooltip.

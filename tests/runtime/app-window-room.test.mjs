@@ -427,3 +427,105 @@ test("the window follows the conversation the terminal opened and draws the term
     await harness.stop();
   }
 });
+
+test("the window shows the Music app while it plays and Spotify is paused, and its buttons act there", async () => {
+  mock.timers.enable({ apis: ["setTimeout", "Date"], now: 1_000_000 });
+  let spotifyReads = 0;
+  const service = {
+    async currentPlayer() {
+      spotifyReads += 1;
+      return { state: "available", is_playing: false, progress_ms: 5_000, item: { name: "Paused", uri: "spotify:track:p", artists: ["S"], duration_ms: 200_000 } };
+    },
+    async queue() { return { queue: [] }; },
+    async pause() { throw new Error("Spotify should not be paused"); },
+  };
+  const actions = [];
+  const song = { id: "B2", title: "Second", artists: ["M"], album: "Mix", duration_ms: 180_000 };
+  const musicApp = {
+    available: true,
+    async nowPlaying({ tracks } = {}) {
+      return { state: actions.includes("pause") ? "paused" : "playing", song, position_ms: 30_000, shuffle: false, repeat: "off",
+        playlist: { id: "P", name: "Evening", library: false, ...(tracks ? { tracks_total: 3, position: 2, first_position: 1,
+          tracks: [{ title: "First", artists: ["M"] }, song, { title: "Third", artists: ["N"], album: null, duration_ms: 1 }] } : {}) } };
+    },
+    async cover() { return "data:image/jpeg;base64,AA=="; },
+    async pause() { actions.push("pause"); },
+  };
+  const desk = application("A");
+  desk.ready = true;
+  desk.spotifyConnection = { service };
+  desk.musicApp = musicApp;
+  const harness = await openRoom({ application: desk });
+  try {
+    await harness.post({ type: "visible", visible: true });
+    await tick();
+    const shown = harness.messages.filter((message) => message.type === "player").at(-1);
+    assert.equal(shown.now.title, "Second");
+    assert.equal(shown.now.service, "apple_music");
+    assert.equal(shown.now.image, "data:image/jpeg;base64,AA==");
+    assert.deepEqual(shown.next.map((track) => track.title), ["Third"]);
+    // The Music app is read every 5 s; Spotify keeps its own 30 s.
+    const reads = spotifyReads;
+    mock.timers.tick(5_000);
+    await tick();
+    assert.equal(spotifyReads, reads);
+    await harness.post({ type: "control", action: "pause" });
+    await tick();
+    assert.deepEqual(actions, ["pause"]);
+    assert.equal(spotifyReads, reads);
+    mock.timers.tick(25_000);
+    await tick();
+    assert.equal(spotifyReads, reads + 1);
+  } finally {
+    mock.timers.reset();
+    await harness.stop();
+  }
+});
+
+test("with both playing, a pause in the window keeps the Music app shown, so the next press resumes it", async () => {
+  mock.timers.enable({ apis: ["setTimeout", "Date"], now: 1_000_000 });
+  const spotifyActions = [];
+  const service = {
+    async currentPlayer() {
+      return { state: "available", is_playing: true, progress_ms: 5_000, item: { name: "Elsewhere", uri: "spotify:track:e", artists: ["S"], duration_ms: 200_000 } };
+    },
+    async queue() { return { queue: [] }; },
+    async pause() { spotifyActions.push("pause"); },
+    async resume() { spotifyActions.push("resume"); },
+  };
+  let playing = true;
+  const musicApp = {
+    available: true,
+    async nowPlaying() { return { state: playing ? "playing" : "paused", song: { id: "1", title: "Here", artists: ["M"] }, position_ms: 0, shuffle: true, repeat: "off", playlist: null }; },
+    async cover() { return null; },
+    async pause() { playing = false; },
+    async resume() { playing = true; },
+  };
+  const desk = application("A");
+  desk.ready = true;
+  desk.playbackService = "apple_music";
+  desk.spotifyConnection = { service };
+  desk.musicApp = musicApp;
+  const harness = await openRoom({ application: desk });
+  const shown = () => harness.messages.filter((message) => message.type === "player").at(-1).now;
+  try {
+    await tick();
+    assert.equal(shown().title, "Here");
+    await harness.post({ type: "control", action: "pause" });
+    await tick();
+    assert.equal(shown().title, "Here");
+    assert.equal(shown().playing, false);
+    await harness.post({ type: "control", action: "resume" });
+    await tick();
+    assert.equal(playing, true);
+    assert.deepEqual(spotifyActions, []);
+    // Paused and left alone, it gives way to the one still playing.
+    await harness.post({ type: "control", action: "pause" });
+    mock.timers.tick(31_000);
+    await tick();
+    assert.equal(shown().title, "Elsewhere");
+  } finally {
+    mock.timers.reset();
+    await harness.stop();
+  }
+});
