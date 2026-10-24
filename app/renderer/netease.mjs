@@ -6,12 +6,12 @@ const words = {
     login: "请在网易云官方窗口完成登录。", cancel: "取消登录", loading: "正在读取网易云…", created: "我创建的", saved: "我收藏的", all: "全部歌单",
     search: "搜索歌单", empty: "账号中还没有歌单。", noMatches: "没有匹配的歌单，试试其他名称。", tracks: "首", private: "私密", back: "返回歌单",
     import: "导入音乐画像", importNote: "预览后再导入这个歌单。歌单收藏不会被当作播放历史。", titleColumn: "歌曲", artist: "歌手", album: "专辑", duration: "时长",
-    emptyTracks: "这个歌单还没有歌曲。", previous: "上一页", next: "下一页", retry: "重试", play: "播放整个歌单", playTrack: "播放", playback: "登录后即可直接播放歌单，音源按账号会员及版权权限提供。" },
+    emptyTracks: "这个歌单还没有歌曲。", previous: "上一页", next: "下一页", retry: "重试", play: "播放整个歌单", playTrack: "播放", playback: "登录后直接在 Moondog 内播放，无需打开桌面网易云。音源按账号会员及版权权限提供。" },
   en: { title: "NetEase Cloud Music", intro: "Connect your account to browse your created and saved playlists.", connect: "Sign in to NetEase", disconnect: "Sign out", refresh: "Refresh playlists",
     login: "Finish signing in in the official NetEase window.", cancel: "Cancel sign-in", loading: "Reading NetEase…", created: "Created", saved: "Saved", all: "All playlists",
     search: "Search playlists", empty: "No playlists in this account yet.", noMatches: "No matching playlists. Try another name.", tracks: "tracks", private: "Private", back: "Back to playlists",
     import: "Import into profile", importNote: "Preview this playlist before adding it. Collection membership is never treated as listening history.", titleColumn: "Song", artist: "Artist", album: "Album", duration: "Time",
-    emptyTracks: "This playlist has no songs yet.", previous: "Previous", next: "Next", retry: "Retry", play: "Play playlist", playTrack: "Play", playback: "Sign in to play playlists directly. Audio availability follows your account and regional rights." },
+    emptyTracks: "This playlist has no songs yet.", previous: "Previous", next: "Next", retry: "Retry", play: "Play playlist", playTrack: "Play", playback: "Sign in to play inside Moondog, without opening the NetEase desktop app. Audio availability follows your account and regional rights." },
 };
 
 export function createNeteaseSettings({ send, locale, changed }) {

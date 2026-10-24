@@ -518,7 +518,7 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
         key: "service:spotify", onChoose: chooseService("spotify") }),
       choice({ label: "Apple Music", detail: say(whole?.canPlay ? "fullSongs" : "appleMusicNote"), chosen: service === "apple_music", key: "service:apple_music",
         trailing: allowWhole, onChoose: chooseService("apple_music") }),
-      // NetEase is offered once ncm-cli is installed and signed in; its searches send NetEase a short summary.
+      // NetEase is offered after the listener connects their account.
       ...(state.netease === "ready" || service === "netease" ? [choice({ label: say("netease"), detail: String(state.locale).startsWith("zh") ? "使用已登录的网易云账号，在应用内播放。" : "Play in the app with your connected NetEase account.", chosen: service === "netease",
         key: "service:netease", onChoose: chooseService("netease") })] : []),
     ]))];

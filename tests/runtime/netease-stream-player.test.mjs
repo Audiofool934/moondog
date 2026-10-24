@@ -91,3 +91,70 @@ test("renderer audio rejects non-NetEase URLs and discards replaced audio events
   assert.equal(sent.length, count);
   audio.stop();
 });
+
+function rendererFixture(t, start, options = {}) {
+  const sent = []; const instances = [];
+  class FakeAudio extends EventTarget {
+    constructor() { super(); this.currentTime = 0; this.duration = 100; instances.push(this); }
+    play() { return start(this, instances.length); }
+    pause() { this.dispatchEvent(new Event("pause")); }
+    load() {}
+    removeAttribute() {}
+  }
+  const audio = createNeteaseAudio({ send: (message) => sent.push(message), AudioClass: FakeAudio, ...options });
+  t.after(() => audio.stop());
+  const play = (token = "1") => audio.receive({ type: "netease-audio", action: "play", token,
+    url: "https://m804.music.126.net/authorized/song.mp3?signature=fictional" });
+  return { audio, sent, instances, play };
+}
+
+test("renderer retries a refused NetEase CDN without changing the authorized path or signature", async (t) => {
+  const { sent, instances, play } = rendererFixture(t, (audio, count) => {
+    if (count === 1) { audio.dispatchEvent(new Event("error")); return Promise.reject(new Error("HTTP 403")); }
+    audio.dispatchEvent(new Event("playing")); return Promise.resolve();
+  });
+  play(); await tick();
+  assert.deepEqual(instances.map((audio) => audio.src), [
+    "https://m804.music.126.net/authorized/song.mp3?signature=fictional",
+    "https://m701.music.126.net/authorized/song.mp3?signature=fictional",
+  ]);
+  assert.deepEqual(sent.map((event) => event.state), ["playing"]);
+  instances[0].dispatchEvent(new Event("error"));
+  assert.equal(instances.length, 2);
+});
+
+test("renderer switches a stalled CDN before the core's playback deadline", async (t) => {
+  const { sent, instances, play } = rendererFixture(t, (audio, count) => {
+    if (count > 1) audio.dispatchEvent(new Event("playing"));
+    return Promise.resolve();
+  }, { sourceTimeoutMs: 15 });
+  play();
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  assert.equal(instances.length, 2);
+  assert.deepEqual(sent.map((event) => event.state), ["playing"]);
+});
+
+test("renderer preserves progress after CDN failure and reports failure only after exhausting nodes", async (t) => {
+  const { sent, instances, play } = rendererFixture(t, (audio) => {
+    audio.dispatchEvent(new Event("playing")); return Promise.resolve();
+  });
+  play(); instances[0].currentTime = 24;
+  instances[0].dispatchEvent(new Event("error"));
+  instances[1].dispatchEvent(new Event("loadedmetadata"));
+  assert.equal(instances[1].currentTime, 24);
+  instances[1].dispatchEvent(new Event("error"));
+  instances[2].dispatchEvent(new Event("loadedmetadata"));
+  assert.equal(instances[2].currentTime, 24);
+  instances[2].dispatchEvent(new Event("error"));
+  instances[2].dispatchEvent(new Event("error"));
+  assert.equal(instances.length, 3);
+  assert.equal(sent.filter((event) => event.state === "failed").length, 1);
+});
+
+test("stopping stalled audio cancels its CDN retry timer", async (t) => {
+  const { audio, instances, sent, play } = rendererFixture(t, () => Promise.resolve(), { sourceTimeoutMs: 15 });
+  play(); audio.stop();
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  assert.equal(instances.length, 1);
+  assert.equal(sent.length, 0);
+});
