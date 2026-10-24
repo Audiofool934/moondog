@@ -10,7 +10,7 @@ import { createMark } from "./mark.mjs";
 import { mountRecord } from "./record.mjs";
 import { createSettings } from "./settings.mjs";
 import { createSidebar } from "./sidebar.mjs";
-import { make, name, scrollbar, setIcon, tooltips, turning } from "./ui.mjs";
+import { make, marquee, name, scrollbar, setIcon, tooltips, turning } from "./ui.mjs";
 import "./style.css";
 
 const $ = (selector) => document.querySelector(`[data-${selector}]`);
@@ -66,8 +66,10 @@ function applyLanguage(next) {
   name($("toggle-sidebar"), t("conversations"), "⌥⌘S");
   name($("toggle-inspector"), t("player"), "⌥⌘P");
   name($("new"), t("newConversation"), "⌘N");
-  name(recordButton, t("foldRecord"), "⌥⌘R");
-  name(barRecord, t("showRecord"), "⌥⌘R");
+  // These self-explanatory controls keep accessible names without floating labels over the record.
+  for (const [node, key] of [[recordButton, "foldRecord"], [barRecord, "showRecord"], [$("expand"), "immerse"], [$("pin"), "keepOnTop"], [$("restore"), "restore"]]) {
+    node.setAttribute("aria-label", t(key));
+  }
   name($("settings-button"), t("settings"), "⌘,");
   name($("previous"), t("previous"), "⌃⌘←");
   name($("next"), t("next"), "⌃⌘→");
@@ -292,8 +294,10 @@ function pin() {
 // above the words, and folds into the title bar as the listener scrolls up into history; back at
 // the latest words it opens again. Folded by hand, it stays in the bar until it is opened by hand.
 const stage = $("stage");
+const recordFrame = $("record-frame");
 const recordButton = $("record-button");
 const barRecord = $("bar-record");
+const expand = $("expand");
 const lead = $("lead");
 const mark = createMark();
 barRecord.append(mark.node);
@@ -301,7 +305,14 @@ const reduced = matchMedia("(prefers-reduced-motion: reduce)");
 const BAR = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--bar")) || 44;
 const RECORD_GAP = 4;
 // As large as an 800-point window can give it and still leave the words most of the room.
-const recordSize = () => Math.round(Math.min(240, Math.max(120, innerHeight * 0.3)));
+const recordSize = () => Math.round(Math.min(280, Math.max(140, innerHeight * 0.35)));
+// Folding takes this many record heights of scrolling, eased at both ends, so it shrinks gradually
+// over a few scrolls instead of all at once.
+const FOLD_SPAN = 3;
+const foldAt = (distance, size = recordSize()) => {
+  const x = Math.min(1, Math.max(0, distance / ((size + RECORD_GAP) * FOLD_SPAN)));
+  return x * x * (3 - 2 * x);
+};
 let foldedByHand = store.get("moondog.record") === "folded";
 // How far the record is folded as drawn: 0 open above the words, 1 in the title bar.
 let fold = 0;
@@ -311,11 +322,11 @@ let placing = 0;
 let leadHeight = 0;
 const talking = () => Boolean(record) && !room.classList.contains("empty");
 const lerp = (from, to, at) => from + (to - from) * at;
-// Folded by hand, at the latest words, or as far as the listener has scrolled up: one record's height folds it.
+// Folded by hand, at the latest words, or as far as the listener has scrolled up.
 function foldWanted() {
   if (foldedByHand) return 1;
   if (following) return 0;
-  return Math.min(1, Math.max(0, gap() / (recordSize() + RECORD_GAP)));
+  return foldAt(gap());
 }
 // A jump in what the room wants (a click, a return to the latest words) eases there instead of snapping.
 function refold() {
@@ -324,29 +335,33 @@ function refold() {
   placeSoon();
 }
 const placeSoon = () => { if (!placing) placing = requestAnimationFrame(placeRecord); };
-// The middle of the bar: the folded record and the title center on the conversation where there is
-// room between the controls at either end, and otherwise use what room there is. The title gives
-// way first, then the record, which then folds away instead of into the bar.
+// The middle of the bar holds the folded record alone, centered on the conversation. The open
+// conversation's name follows the new-conversation button and shortens before it reaches the record
+// or the controls at the end. Where the middle has no room, the record folds away instead of into the bar.
 let titled = "";
 function placeTitle() {
-  const host = $("title").parentElement;
-  const span = host.getBoundingClientRect();
-  const start = Math.max(span.left, $("new").getBoundingClientRect().right + 12);
+  const host = barRecord.parentElement.getBoundingClientRect();
+  const name = $("title");
+  const start = $("new").getBoundingClientRect().right;
   const first = [...$("mini").parentElement.children].find((node) => !node.hidden);
-  const end = Math.min(span.right, first ? first.getBoundingClientRect().left : span.right) - 12;
-  const middle = span.left + span.width / 2;
-  const half = Math.min(middle - start, end - middle);
-  const need = $("title").textContent ? 140 : 32;
-  const [from, to] = half * 2 >= need ? [middle - half, middle + half] : [start, end];
-  const key = `${Math.round(from - span.left)}|${Math.round(span.right - to)}|${to - from >= 120}|${to - from >= 32}`;
+  const end = (first ? first.getBoundingClientRect().left : host.right) - 12;
+  const middle = host.left + host.width / 2;
+  const half = barRecord.offsetWidth / 2 || 14;
+  const cramped = middle - half < start + 12 || middle + half > end;
+  const stop = $("window").classList.contains("talking") && !cramped ? middle - half - 16 : end;
+  const room = Math.round(stop - start - 8);
+  const key = `${room}|${cramped}`;
   if (key === titled) return;
   titled = key;
-  host.style.paddingInline = `${Math.max(0, Math.round(from - span.left))}px ${Math.max(0, Math.round(span.right - to))}px`;
-  host.classList.toggle("tight", to - from < 120);
-  barRecord.classList.toggle("cramped", to - from < 32);
+  name.style.maxWidth = `${Math.max(0, room)}px`;
+  name.classList.toggle("tight", room < 60);
+  barRecord.classList.toggle("cramped", cramped);
 }
+// Finish the travel before the crossfade, so the two drawings occupy the same box during handoff.
+const HANDOFF = 0.94;
 // Where the record is drawn at a fold, in the room's coordinates: from above the words to the mark in the bar.
 function recordBox(at, size = recordSize()) {
+  at = Math.min(1, at / HANDOFF);
   const box = room.getBoundingClientRect();
   const dock = mark.node.getBoundingClientRect();
   return { x: lerp(box.width / 2 - size / 2 + size * 0.035, dock.left - box.left, at), y: lerp(BAR + RECORD_GAP, dock.top - box.top, at),
@@ -368,7 +383,7 @@ function scrollToNode(node) {
     let [low, high] = [0, 1];
     for (let step = 0; step < 20; step += 1) {
       const middle = (low + high) / 2;
-      if (Math.min(1, (rest + veil(middle)) / (size + RECORD_GAP)) > middle) low = middle; else high = middle;
+      if (foldAt(rest + veil(middle), size) > middle) low = middle; else high = middle;
     }
     at = (low + high) / 2;
   }
@@ -407,7 +422,7 @@ let placed = "";
 function placeRecord() {
   placing = 0;
   placeTitle();
-  if (!talking()) return;
+  if (!talking() || immersed()) return;
   const size = recordSize();
   let at = foldWanted();
   if (tween) {
@@ -419,16 +434,17 @@ function placeRecord() {
   // Reads first, then writes, so a frame lays out once. The record travels from its place above the
   // words to the mark in the bar, and the last stretch hands the drawing over to the mark.
   const { x, y, size: drawnSize } = recordBox(at, size);
-  const handoff = Math.min(1, Math.max(0, (at - 0.82) / 0.18));
+  const handoff = Math.min(1, Math.max(0, (at - HANDOFF) / (1 - HANDOFF)));
   const bottom = y + drawnSize;
   const key = [size, x.toFixed(1), y.toFixed(1), drawnSize.toFixed(2), handoff.toFixed(3)].join("|");
   if (key !== placed) {
     placed = key;
     room.style.setProperty("--record", `${size}px`);
-    recordButton.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) scale(${(drawnSize / size).toFixed(4)})`;
+    recordFrame.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) scale(${(drawnSize / size).toFixed(4)})`;
     recordButton.style.opacity = (1 - handoff).toFixed(3);
     barRecord.style.opacity = handoff.toFixed(3);
     recordButton.classList.toggle("away", at > 0.6);
+    expand.tabIndex = at > 0.6 ? -1 : 0;
     recordButton.tabIndex = at > 0.6 ? -1 : 0;
     const docked = at > 0.9 && !barRecord.classList.contains("cramped");
     barRecord.classList.toggle("docked", docked);
@@ -436,7 +452,7 @@ function placeRecord() {
     // The words fade out just under the record.
     scroller.style.setProperty("--veil", `${Math.max(BAR, bottom + 10).toFixed(1)}px`);
   }
-  record.turn(nowPlaying()?.playing && at < 1);
+  record.turn(nowPlaying()?.playing && at < 1 && !immersed());
   // The conversation keeps the record room above its first words, as far as it reaches below the bar.
   // Scrolled up, the browser keeps the words in view where they are as that room changes.
   if (!gliding) {
@@ -466,6 +482,59 @@ function toggleRecord() {
 recordButton.addEventListener("click", () => foldRecord(true));
 barRecord.addEventListener("click", toggleRecord);
 
+// The record alone: the window holds only the record, drawn large in the same mosaic, over the
+// cover's light. A pin keeps the window above the others; Esc or the lower corner brings the
+// conversation back. Both corners show while the pointer is over the window.
+const immersive = $("immersive");
+let deep = null;
+let pinned = false;
+let pinChange = 0;
+const immersed = () => !immersive.hidden;
+function renderPin() {
+  $("pin").setAttribute("aria-pressed", String(pinned));
+  setIcon($("pin"), pinned ? "pin-filled" : "pin");
+}
+function immerse(on) {
+  if (on === immersed()) return;
+  immersive.hidden = !on;
+  layout.classList.toggle("immersed", on);
+  window.moondogApp?.setImmersive?.(on);
+  pinChange += 1;
+  pinned = false;
+  renderPin();
+  if (on) {
+    record?.turn(false);
+    deep ??= mountRecord($("immersive-record"), { across: 160 });
+    deep.tint(grooveColours(moodPalette, dark.matches), true);
+    immersive.classList.add("hovered");
+    $("restore").focus({ preventScroll: true });
+  } else {
+    immersive.classList.remove("hovered");
+    // Reconcile the conversation once, at the final width, rather than lay it out behind each live resize.
+    renderPanels();
+    renderInspector();
+    placeSoon();
+    input.focus({ preventScroll: true });
+  }
+  deep?.turn(on && Boolean(nowPlaying()?.playing));
+}
+expand.addEventListener("click", () => immerse(true));
+$("restore").addEventListener("click", () => immerse(false));
+$("pin").addEventListener("click", async () => {
+  const change = ++pinChange;
+  const before = pinned;
+  const want = !pinned;
+  pinned = want;
+  renderPin();
+  try {
+    const actual = (await window.moondogApp?.setPinned?.(want)) ?? want;
+    if (change === pinChange) { pinned = actual; renderPin(); }
+  } catch {
+    if (change === pinChange) { pinned = before; renderPin(); }
+  }
+});
+window.moondogApp?.onHover?.((inside) => immersive.classList.toggle("hovered", inside));
+
 // The room before anything is said: the record alone over the composer. Leaving it, the record
 // moves to its place above the words and the composer glides down to its own, instead of jumping.
 function renderEmpty(empty) {
@@ -479,7 +548,9 @@ function renderEmpty(empty) {
   tween = null;
   placed = "";
   if (empty) {
-    for (const property of ["transform", "opacity", "--record"]) { recordButton.style.removeProperty(property); room.style.removeProperty(property); }
+    recordFrame.style.removeProperty("transform");
+    recordButton.style.removeProperty("opacity");
+    room.style.removeProperty("--record");
     recordButton.classList.remove("away");
     recordButton.tabIndex = -1;
     leadHeight = 0;
@@ -623,11 +694,37 @@ function renderComposer() {
   button.disabled = !streaming && (!input.value.trim() || Boolean(state.waiting && !state.ready));
   name(button, streaming ? t("stop") : t("send"), streaming ? "⌘." : "↩");
   setIcon(button, streaming ? "stop" : "up");
-  const model = $("model");
-  model.textContent = state.model?.model ? prettyModel(state.model.model) : state.model ? t("chooseModel") : "";
-  // Without a model Moondog can't answer, so the way to choose one reads as a button.
-  model.classList.toggle("needed", Boolean(state.model) && !state.model.model);
+  renderPicks();
   syncMenu();
+}
+// Beside the send button: where the music plays and which model answers, each by its mark, with its
+// name in the tooltip and the menu. One not chosen yet reads as the words that choose it: a model,
+// without which Moondog can't answer, and on a first launch the music service the listener uses.
+const SERVICE_MARKS = { spotify: "spotify", apple_music: "apple-music", netease: "netease" };
+// A model shows its maker's mark: by the account it comes through, or for OpenRouter by the maker its
+// model id begins with (anthropic/…, x-ai/…); a maker without a mark here shows OpenRouter's, or the model glyph.
+const MAKER_MARKS = { anthropic: "claude", openai: "openai", "openai-codex": "openai", google: "gemini", deepseek: "deepseek",
+  moonshotai: "kimi", "moonshotai-cn": "kimi", xai: "grok", zai: "zai", openrouter: "openrouter" };
+const ROUTED_MARKS = { anthropic: "claude", openai: "openai", google: "gemini", deepseek: "deepseek", moonshotai: "kimi", "x-ai": "grok", "z-ai": "zai" };
+const makerMark = (model) => (model.provider === "openrouter" ? ROUTED_MARKS[String(model.model ?? "").split("/")[0]] ?? "openrouter" : MAKER_MARKS[model.provider] ?? "model");
+const serviceName = (service) => (service === "netease" ? t("netease") : service === "apple_music" ? "Apple Music" : "Spotify");
+const effortName = (level) => (level === "default" ? t("effortDefault") : t(`effort.${level}`) === `effort.${level}` ? level : t(`effort.${level}`));
+const asking = () => state.ready && !state.sessions.length && !store.get("moondog.source");
+function drawPick(button, { mark, label, words }) {
+  button.classList.toggle("needed", Boolean(words));
+  set(button.lastChild, "textContent", words ?? "");
+  button.querySelector("svg").setAttribute("class", mark === "model" ? "icon" : "icon fill");
+  setIcon(button, mark);
+  if (words) { delete button.dataset.tip; button.setAttribute("aria-label", words); } else name(button, label);
+}
+function renderPicks() {
+  const service = sourceWanted ?? state.playbackService ?? "spotify";
+  drawPick($("service"), { mark: SERVICE_MARKS[service] ?? "spotify", label: serviceName(service), words: asking() ? t("chooseService") : null });
+  const model = state.model;
+  set($("model"), "hidden", !model);
+  if (!model) return;
+  const label = [prettyModel(model.model), model.effort ? effortName(model.effort) : ""].filter(Boolean).join(" · ");
+  drawPick($("model"), { mark: makerMark(model), label, words: model.model ? null : t("chooseModel") });
 }
 // The composer grows with its words up to 40% of the window (field-sizing in style.css), then scrolls.
 function clearComposer() {
@@ -699,24 +796,31 @@ const COMMANDS = [
 ];
 const palette = createPalette({ input, anchor: $("form"), t: tr, commands: () => COMMANDS });
 
-// Pickers open as native menus where they show.
+// Pickers open as native menus where they show. The model's button shows only its maker's mark, so
+// its menu names what answers: the maker in use over its models, the chosen one checked, each other
+// signed-in maker's models in a submenu, then the thinking, with the level it is at.
 async function pickModel(event) {
   const model = state.model ?? {};
   const signedIn = providers.filter((provider) => provider.signedIn);
   // A long catalog shows its first models here and the rest in settings.
-  const items = signedIn.map((provider) => {
+  const entries = (provider, limit) => {
     const models = providerModels.get(provider.id) ?? [];
-    const shownModels = models.slice(0, 24);
+    const shown = models.slice(0, limit);
     const chosen = models.find((entry) => provider.id === model.provider && entry.id === model.model);
-    if (chosen && !shownModels.includes(chosen)) shownModels.unshift(chosen);
-    const submenu = shownModels.map((entry) => ({ id: `model:${provider.id}:${entry.id}`, label: entry.name ?? entry.id,
+    if (chosen && !shown.includes(chosen)) shown.unshift(chosen);
+    const list = shown.map((entry) => ({ id: `model:${provider.id}:${entry.id}`, label: entry.name ?? entry.id,
       checked: provider.id === model.provider && entry.id === model.model }));
-    if (models.length > 24) submenu.push({ type: "separator" }, { id: "settings", label: t("moreModels") });
-    return { id: `provider:${provider.id}`, label: provider.name, submenu };
-  }).filter((item) => item.submenu.length);
+    if (models.length > limit) list.push({ id: "settings", label: t("moreModels") });
+    return list;
+  };
+  const current = signedIn.find((provider) => provider.id === model.provider);
+  const items = current ? [{ type: "header", label: current.name }, ...entries(current, 12)] : [];
+  const others = signedIn.filter((provider) => provider !== current)
+    .map((provider) => ({ id: `provider:${provider.id}`, label: provider.name, submenu: entries(provider, 24) })).filter((item) => item.submenu.length);
+  if (others.length) items.push(...(items.length ? [{ type: "separator" }] : []), ...others);
   if (model.effortLevels?.length) {
-    items.push({ type: "separator" }, { id: "effort", label: t("effort"), submenu: ["default", ...model.effortLevels].map((level) => ({ id: `effort:${level}`,
-      label: level === "default" ? t("effortDefault") : t(`effort.${level}`) === `effort.${level}` ? level : t(`effort.${level}`), checked: (model.effort ?? "default") === level })) });
+    items.push({ type: "separator" }, { id: "effort", label: `${t("effort")} · ${effortName(model.effort ?? "default")}`,
+      submenu: ["default", ...model.effortLevels].map((level) => ({ id: `effort:${level}`, label: effortName(level), checked: (model.effort ?? "default") === level })) });
   }
   items.push(...(items.length ? [{ type: "separator" }] : []), { id: "settings", label: t("modelSettings") });
   const chosen = await menu(items, event);
@@ -725,6 +829,37 @@ async function pickModel(event) {
   if (chosen.startsWith("effort:")) return send({ type: "effort", effort: chosen.slice(7) });
   const [, provider, ...rest] = chosen.split(":");
   if (chosen.startsWith("model:")) send({ type: "model", provider, model: rest.join(":") });
+}
+// The music service's menu: the services, each checked when in use; signing in to one the core can
+// play but can't yet, with Spotify and NetEase account connections in Settings.
+// A choice shows at once and the core's status confirms it; a switch rebuilds every conversation.
+let sourceWanted = null;
+let wantedTimer = 0;
+async function pickService(event) {
+  const now = sourceWanted ?? state.playbackService ?? "spotify";
+  const services = ["spotify", "apple_music", ...(state.netease === "ready" || now === "netease" ? ["netease"] : [])];
+  const items = services.map((service) => ({ id: `service:${service}`, label: serviceName(service), checked: service === now }));
+  const signIn = [
+    ...(state.spotify === "unavailable" ? [{ id: "sign-in:spotify", label: t("connectSpotify") }] : []),
+    ...(["signed_out", "missing"].includes(state.netease) ? [{ id: "sign-in:netease", label: t("setUpNetease") }] : []),
+  ];
+  items.push(...(signIn.length ? [{ type: "separator" }, ...signIn] : []), { type: "separator" }, { id: "settings", label: t("playbackSettings") });
+  const chosen = await menu(items, event);
+  if (!chosen) return;
+  store.set("moondog.source", "chosen");
+  if (chosen === "settings") settings.show("playback");
+  else if (chosen === "sign-in:spotify") { chooseService("spotify"); settings.show("playback"); }
+  else if (chosen === "sign-in:netease") settings.showNetease();
+  else chooseService(chosen.slice(8));
+  renderComposer();
+}
+function chooseService(service) {
+  if (service === (sourceWanted ?? state.playbackService)) return;
+  if (previews.active() && service === "spotify") previews.stop();
+  sourceWanted = service;
+  clearTimeout(wantedTimer);
+  wantedTimer = setTimeout(() => { sourceWanted = null; renderComposer(); }, 10_000);
+  send({ type: "music-service", service });
 }
 // Where music plays: Spotify's devices, then the service itself. The menu opens once the devices are read.
 let devicePicker = null;
@@ -745,7 +880,7 @@ async function showDevices(devices) {
   }
   items.push({ id: "service:spotify", label: "Spotify", checked: state.playbackService === "spotify" },
     { id: "service:apple_music", label: "Apple Music", checked: state.playbackService === "apple_music" });
-  // NetEase is offered once ncm-cli is installed and signed in.
+  // NetEase is offered after the account is connected in Settings.
   if (state.netease === "ready" || state.playbackService === "netease") items.push({ id: "service:netease", label: t("netease"), checked: state.playbackService === "netease" });
   items.push({ type: "separator" }, { id: "settings", label: t("playbackSettings") });
   const chosen = await window.moondogApp?.showMenu?.(items, at);
@@ -757,6 +892,7 @@ async function showDevices(devices) {
   }
 }
 $("model").addEventListener("click", (event) => void pickModel(event));
+$("service").addEventListener("click", (event) => void pickService(event));
 $("device-row").addEventListener("click", (event) => pickDevice(event));
 $("settings-button").addEventListener("click", () => settings.show());
 $("connect").addEventListener("click", () => settings.show("playback"));
@@ -820,6 +956,7 @@ function paintMood(event) {
   moodColours(moodPalette, dark.matches).forEach((colour, index) => moodNode.style.setProperty(`--mood-${index + 1}`, colour));
   const rings = grooveColours(moodPalette, dark.matches);
   record?.tint(rings, Boolean(event));
+  deep?.tint(rings, Boolean(event));
   for (let index = 0; index < 3; index += 1) {
     if (rings) layout.style.setProperty(`--groove-${index + 1}`, `rgb(${rings[index].join(" ")})`); else layout.style.removeProperty(`--groove-${index + 1}`);
   }
@@ -904,6 +1041,12 @@ function renderInspector() {
   set($("blank"), "hidden", Boolean(now));
   art.classList.toggle("unplayed", !now);
   const limitedUntil = state.playbackService === "spotify" && state.spotifyLimitedUntil > Date.now() ? state.spotifyLimitedUntil : null;
+  // With nothing playing and nothing to say, the player waits folded and opens when a song starts.
+  if (idle !== (!now && !limitedUntil)) {
+    idle = !idle;
+    if (!idle) idleOpened = false;
+    slidePanels();
+  }
   set($("blank"), "textContent", limitedUntil ? spotifyLimited(limitedUntil) : t("nothingPlaying"));
   set($("song"), "textContent", now ? `${now.title}${now.trial ? (state.locale.startsWith("zh") ? " · 试听" : " · Preview") : ""}` : "");
   set($("artist"), "textContent", now ? now.artists.join(", ") : "");
@@ -911,12 +1054,13 @@ function renderInspector() {
   renderProgress(now);
 
   set($("transport"), "hidden", !now);
+  deep?.turn(immersed() && Boolean(now?.playing));
   if (now) {
     drawControls(now, $("toggle"), $("next"));
     set($("previous"), "disabled", !can(now, "skipping_prev"));
   }
   // Where the music plays opens the choice of device and service: Spotify's device, Apple Music
-  // playing in the window, or NetEase playing through ncm-cli on this Mac.
+  // or NetEase playing in the window.
   const neteaseNow = now?.service === "netease";
   const spotifyNow = now && !now.local && !neteaseNow;
   const appleNow = now?.local && state.playbackService === "apple_music";
@@ -1082,7 +1226,13 @@ const layout = $("window");
 const panels = { sidebar: store.get("moondog.sidebar") !== "hidden", inspector: store.get("moondog.inspector") !== "hidden" };
 const roomFor = { sidebar: 820, inspector: 1060 };
 const forced = { sidebar: false, inspector: false };
-function shown(panel) { return panels[panel] && (forced[panel] || innerWidth >= roomFor[panel]); }
+// Nothing playing: the player has nothing to hold, so it stays folded unless opened by hand.
+let idle = true;
+let idleOpened = false;
+function shown(panel) {
+  if (panel === "inspector" && idle && !idleOpened) return false;
+  return panels[panel] && (forced[panel] || innerWidth >= roomFor[panel]);
+}
 function renderPanels() {
   layout.classList.toggle("no-sidebar", !shown("sidebar"));
   layout.classList.toggle("no-inspector", !shown("inspector"));
@@ -1100,15 +1250,23 @@ function makeRoom(opened) {
 }
 function togglePanel(panel) {
   const visible = shown(panel);
-  panels[panel] = !visible;
-  // A click overrides the width rule only where the width rule would hide the panel.
-  forced[panel] = !visible && innerWidth < roomFor[panel];
-  if (!visible) makeRoom(panel);
-  store.set(`moondog.${panel}`, panels[panel] ? "shown" : "hidden");
-  // The columns slide only for this deliberate move; dragging a grip stays exact.
+  // Folding the waiting player only puts it away for now; it still opens when a song starts.
+  const waiting = panel === "inspector" && idle;
+  if (waiting) idleOpened = !visible;
+  if (!waiting || !visible) {
+    panels[panel] = !visible;
+    // A click overrides the width rule only where the width rule would hide the panel.
+    forced[panel] = !visible && innerWidth < roomFor[panel];
+    if (!visible) makeRoom(panel);
+    store.set(`moondog.${panel}`, panels[panel] ? "shown" : "hidden");
+  }
+  slidePanels();
+  renderInspector();
+}
+// The columns slide only for a deliberate move or a song starting or ending; dragging a grip stays exact.
+function slidePanels() {
   layout.classList.add("animating");
   renderPanels();
-  renderInspector();
   clearTimeout(settleTimer);
   settleTimer = setTimeout(() => layout.classList.remove("animating"), 300);
   // The record stays centered on the conversation while the columns slide.
@@ -1117,6 +1275,7 @@ function togglePanel(panel) {
   requestAnimationFrame(track);
 }
 addEventListener("resize", () => {
+  if (immersed()) return;
   for (const panel of ["inspector", "sidebar"]) if (forced[panel]) makeRoom(panel);
   renderPanels();
   renderInspector();
@@ -1159,6 +1318,13 @@ $("toggle-inspector").addEventListener("click", () => togglePanel("inspector"));
 $("new").addEventListener("click", () => openSession(null));
 scrollbar($("sessions"));
 scrollbar($("inspector-scroll"));
+// Long conversation names and long song lines roll into view under the pointer. A conversation's
+// name keeps clear of the ⋯ button that floats over its end; a branch's number already steps aside.
+marquee($("sessions"), ".row, .folder-head", {
+  find: (row) => row.querySelector(".name .base") ?? row.querySelector(".name"),
+  tail: (line) => (line.closest(".row") && !line.classList.contains("base") ? 34 : 0),
+});
+marquee($("now"), ".song h2, .song p", { tail: () => 16 });
 
 // A music history file dropped anywhere goes to import, which shows what it read before saving.
 let dragDepth = 0;
@@ -1181,6 +1347,7 @@ window.addEventListener("drop", (event) => {
 document.addEventListener("keydown", (event) => {
   // Escape that just closed Settings is spent; it must not also stop the reply behind it.
   if (settings.open || event.defaultPrevented) return;
+  if (immersed()) { if (event.key === "Escape") immerse(false); return; }
   if (event.target === input || event.target.closest?.("input, textarea")) return;
   if (event.key === " " && event.target.closest?.("button, a, select, [role=button]")) return;
   if (event.key === "Escape" && state.streaming) { send({ type: "cancel" }); return; }
@@ -1189,6 +1356,8 @@ document.addEventListener("keydown", (event) => {
 // Commands from the menu bar.
 window.moondogApp?.onCommand?.((command) => {
   if (settings.open && !["settings", "stop", "toggle-playback", "next", "previous"].includes(command)) return;
+  // A command that shows the conversation, a panel or Settings first brings the window back from the record alone.
+  if (immersed() && ["new", "settings", "toggle-sidebar", "toggle-inspector", "toggle-record"].includes(command)) immerse(false);
   if (command === "new") openSession(null);
   if (command === "stop" && state.streaming) send({ type: "cancel" });
   if (command === "settings") settings.show();
@@ -1244,7 +1413,11 @@ function receive({ data }) {
   }
   if (data.type === "ready" || data.type === "status") {
     if (data.locale && data.locale !== locale) applyLanguage(data.locale);
+    const before = state.playbackService;
     for (const key of ["model", "spotify", "spotifyAccount", "playbackService", "netease", "locales"]) if (data[key] !== undefined) state[key] = data[key];
+    // A service chosen anywhere, here, in Settings or in the player, answers a first launch's question.
+    if (data.type === "status" && data.playbackService && data.playbackService !== before) store.set("moondog.source", "chosen");
+    if (sourceWanted === state.playbackService) sourceWanted = null;
     // With Apple Music chosen, the window learns once whether it can play whole songs.
     if (state.playbackService === "apple_music" && !previews.fullStatus()) void previews.check();
     renderComposer();
@@ -1258,6 +1431,7 @@ function receive({ data }) {
     state.current = data.current ?? state.current;
     window.moondogApp?.setBusy?.(state.running.length > 0);
     renderSessions();
+    renderComposer();
   }
   if (data.type === "ready" || data.type === "session") {
     // A message waiting for the core stays on screen until the core takes it.
@@ -1277,6 +1451,8 @@ function receive({ data }) {
   }
   if (data.type === "ready") {
     state.ready = true;
+    // Only now is it known whether this is a first launch, the one that asks which service the listener uses.
+    renderComposer();
     send({ type: "models" });
     const waiting = state.waiting;
     state.waiting = null;

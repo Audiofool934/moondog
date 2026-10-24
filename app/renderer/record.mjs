@@ -20,8 +20,9 @@ const dark = matchMedia("(prefers-color-scheme: dark)");
 /**
  * Draws the record into `canvas`, sized by its CSS box. Returns { turn(on), tint(colours, instant), stop() };
  * tint takes three [r, g, b] colours, from the rim inward, or null for ink. Call stop() before dropping the canvas.
+ * `across` fixes the number of dots across, so a record drawn large keeps the mosaic of the one above the words.
  */
-export function mountRecord(canvas) {
+export function mountRecord(canvas, { across = null } = {}) {
   const context = canvas.getContext("2d");
   let size = 0;
   let grid = 0;
@@ -109,7 +110,7 @@ export function mountRecord(canvas) {
       context.setTransform(scale, 0, 0, scale, 0, 0);
       size = next;
       // A square grid of dots, four rows to a terminal row, so the record stays round.
-      grid = Math.max(48, Math.round(next / PITCH / 4) * 4);
+      grid = across ?? Math.max(48, Math.round(next / PITCH / 4) * 4);
       frames = [];
       disc = null;
     }

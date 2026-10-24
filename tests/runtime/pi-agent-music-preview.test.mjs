@@ -8,6 +8,7 @@ import { createModels, fauxAssistantMessage, fauxProvider, fauxText, fauxToolCal
 
 import { listAgentCapabilityDescriptors } from "../../src/core/capability-catalog.mjs";
 import { MoondogApplication } from "../../src/core/moondog-application.mjs";
+import { createSyntheticDomainServices } from "../../src/core/synthetic-domain-services.mjs";
 import { createAppleMusicCatalog, createAppleMusicCatalogClient } from "../../src/integrations/apple-music/catalog.mjs";
 import { createTerminalPreviewPlayer } from "../../src/integrations/apple-music/terminal-preview-player.mjs";
 import { PiAgentRuntime } from "../../src/runtime/pi/agent-runtime.mjs";
@@ -57,9 +58,11 @@ function scorpionsCatalog() {
   return createAppleMusicCatalog({ client: createAppleMusicCatalogClient({ fetchImpl, now }), now });
 }
 
-function application({ played = [], spotify = false, wholeSongs } = {}) {
+function application({ played = [], spotify = false, wholeSongs, discovery = false, neteasePlayer } = {}) {
   return new MoondogApplication({
     importsRoot: "/private/moondog-synthetic-missing-source",
+    ...(discovery ? { domainServices: createSyntheticDomainServices({ subjectScope: "preview-discovery-test" }) } : {}),
+    ...(neteasePlayer ? { neteasePlayer } : {}),
     musicCatalog: scorpionsCatalog(),
     musicPreviewPlayer: { play: async (tracks, options) => { played.push({ tracks, options }); }, ...(wholeSongs === undefined ? {} : { wholeSongs: () => wholeSongs }) },
     ...(spotify ? { spotifyConnection: { ready: () => true, service: {}, publicStatus: () => ({ provider: "spotify", state: "configured" }) } } : {}),
@@ -283,6 +286,134 @@ test("with Apple Music chosen, a queue request carries no Spotify queue budgets 
   assert.equal(app.spotifyPlaybackContextStatus().queue_request, null);
   assert.doesNotThrow(() => app.requireSpotifyPlaylistCreationFlow());
   app.endPrompt();
+});
+
+test("switching to Apple Music preserves the playback reply after a catalog lookup for missing songs", async (t) => {
+  const played = [];
+  const app = application({ played, spotify: true, wholeSongs: true, discovery: true });
+  t.after(() => app.close());
+  app.setPlaybackService("apple_music");
+  const { faux, runtime } = runtimeFor(app);
+  const reply = "Apple Music 正在放 Scorpions 的 Wind of Change。另一首没找到。";
+  faux.setResponses([
+    fauxAssistantMessage([fauxToolCall("moondog_music_preview", { tracks: [
+      { title: "Wind of Change", artist: "Scorpions" },
+      { title: "Not A Real Song", artist: "Scorpions" },
+    ] })], { stopReason: "toolUse" }),
+    (context) => {
+      const result = context.messages.find((message) => message.role === "toolResult" && message.toolName === "moondog_music_preview");
+      const value = JSON.parse(result.content[0].text);
+      assert.equal(result.isError, false);
+      assert.equal(value.plays, "whole_songs");
+      assert.deepEqual(value.playing_in_order.map((track) => track.title), ["Wind of Change"]);
+      assert.equal(value.not_found.length, 1);
+      return fauxAssistantMessage([fauxToolCall("moondog_music_catalog_search", { queries: ["Scorpions"], limit: 2 })], { stopReason: "toolUse" });
+    },
+    (context) => {
+      const result = context.messages.find((message) => message.role === "toolResult" && message.toolName === "moondog_music_catalog_search");
+      assert.equal(result.isError, false, result.content[0].text);
+      assert.ok(JSON.parse(result.content[0].text).candidate_set_id, "the lookup must exercise the external-candidate guard");
+      return fauxAssistantMessage([fauxText(reply)]);
+    },
+  ]);
+  let shown = "";
+  const tools = [];
+  const result = await runtime.prompt("嗯，我换成 Apple Music。", {
+    onTextDelta: (delta) => { shown += delta; },
+    onTextReplace: (text) => { shown = text; },
+    onToolStart: ({ capabilityId }) => tools.push(capabilityId),
+  });
+  assert.equal(result.text, reply);
+  assert.equal(shown, reply);
+  assert.equal(runtime.agent.state.messages.at(-1).content[0].text, reply, "the next turn must not inherit a false playlist failure");
+  assert.deepEqual(tools, ["music.preview.play", "music.catalog.track_search"]);
+  assert.equal(played.length, 1);
+  assert.equal("playlist_plan" in result, false);
+});
+
+test("catalog lookups do not turn other playback outcomes into playlist failures", async (t) => {
+  for (const [service, outcome] of [
+    ["apple_music", "preview"], ["apple_music", "not_found"], ["apple_music", "failed"],
+    ["netease", "playing"], ["netease", "queued"], ["netease", "none"], ["netease", "failed"],
+  ]) {
+    await t.test(`${service}: ${outcome}`, async (t) => {
+      const played = [];
+      const app = application({ played, discovery: true, neteasePlayer: {
+        ready: () => true,
+        play: async () => {
+          if (outcome === "failed") throw new Error("Playback unavailable");
+          return { mode: outcome, songs: outcome === "none" ? [] : [{ title: "Wind of Change", artists: ["Scorpions"], playable: true }] };
+        },
+      } });
+      t.after(() => app.close());
+      app.setPlaybackService(service);
+      if (outcome === "failed") app.musicPreviewPlayer.play = async () => { throw new Error("Playback unavailable"); };
+      const { faux, runtime } = runtimeFor(app);
+      const tool = service === "apple_music" ? "moondog_music_preview" : "moondog_netease_play";
+      const tracks = [{ title: outcome === "not_found" ? "Not A Real Song" : "Wind of Change", artist: "Scorpions" }];
+      const reply = outcome === "failed" || outcome === "none" || outcome === "not_found"
+        ? "这首没能播放。" : "已交给播放器。";
+      faux.setResponses([
+        fauxAssistantMessage([fauxToolCall("moondog_music_catalog_search", { queries: ["Scorpions"], limit: 2 })], { stopReason: "toolUse" }),
+        (context) => {
+          const result = context.messages.find((message) => message.role === "toolResult" && message.toolName === "moondog_music_catalog_search");
+          assert.equal(result.isError, false, result.content[0].text);
+          assert.ok(JSON.parse(result.content[0].text).candidate_set_id);
+          return fauxAssistantMessage([fauxToolCall(tool, service === "apple_music" ? { tracks }
+            : { songs: tracks, mode: outcome === "queued" ? "queue" : "play", user_intent: "听一首歌" })], { stopReason: "toolUse" });
+        },
+        (context) => {
+          const result = context.messages.find((message) => message.role === "toolResult" && message.toolName === tool);
+          assert.equal(result.isError, outcome === "failed", result.content[0].text);
+          return fauxAssistantMessage([fauxText(reply)]);
+        },
+      ]);
+      assert.equal((await runtime.prompt("放首歌")).text, reply);
+      assert.equal(played.length, service === "apple_music" && outcome === "preview" ? 1 : 0);
+    });
+  }
+});
+
+test("non-Spotify playback instructions use the selected service's verification, not a playlist gate", () => {
+  for (const service of ["apple_music", "netease"]) {
+    const app = application({ spotify: true, discovery: true, neteasePlayer: { ready: () => true } });
+    try {
+      app.setPlaybackService(service);
+      const { systemPrompt, tools } = runtimeFor(app).runtime.agent.state;
+      const availability = systemPrompt.slice(systemPrompt.indexOf("Session availability:"));
+      assert.match(availability, /Playback verification belongs to the selected music service/u);
+      assert.match(availability, /do not run another catalog search or playlist planner just to recheck a successful playback result/u);
+      assert.match(availability, /service change continues the current listening request/u);
+      const catalogSearch = tools.find((tool) => tool.name === "moondog_music_catalog_search");
+      assert.ok(catalogSearch);
+      assert.doesNotMatch(catalogSearch.description, /before returning any track list/u);
+      assert.match(catalogSearch.description, /For a playlist plan/u);
+    } finally { app.close(); }
+  }
+});
+
+test("playing a song does not validate a separately requested playlist plan", async (t) => {
+  const app = application({ discovery: true });
+  t.after(() => app.close());
+  const { faux, runtime } = runtimeFor(app);
+  faux.setResponses([
+    fauxAssistantMessage([fauxToolCall("moondog_music_preview", { tracks: [{ title: "Wind of Change", artist: "Scorpions" }] })], { stopReason: "toolUse" }),
+    fauxAssistantMessage([fauxToolCall("moondog_playlist_plan", {
+      intent: "Also draft a playlist",
+      requested_track_count: 1,
+      candidate_set_ids: ["unregistered-candidates"],
+      track_refs: [{ track_ref_id: "unregistered-track", selection_reason: "An invented selection" }],
+      ordering_notes: "An invented order",
+    })], { stopReason: "toolUse" }),
+    (context) => {
+      const result = context.messages.find((message) => message.role === "toolResult" && message.toolName === "moondog_playlist_plan");
+      assert.equal(result.isError, true);
+      return fauxAssistantMessage([fauxText("Here's the playlist.")]);
+    },
+  ]);
+  const result = await runtime.prompt("放首歌，再给我做个歌单方案");
+  assert.match(result.text, /无法验证这次 playlist plan/u);
+  assert.equal("playlist_plan" in result, false);
 });
 
 test("host notes reach the agent's instructions, and the terminal passes none", async () => {

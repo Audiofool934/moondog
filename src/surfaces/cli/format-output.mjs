@@ -32,7 +32,7 @@ const serviceNames = {
   apple_music: "Apple Music",
   youtube_music: "YouTube Music",
   qq_music: "QQ Music",
-  netease: "NetEase Cloud Music",
+  netease: "NetEase Music",
 };
 
 function formatProfile(profile, tr) {

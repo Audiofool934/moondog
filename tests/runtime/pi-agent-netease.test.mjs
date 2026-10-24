@@ -61,7 +61,7 @@ test("a request to play goes to NetEase, which plays only a playable recording a
   faux.setResponses([
     (context) => {
       const prompt = systemText(context);
-      assert.match(prompt, /NetEase Cloud Music \(网易云音乐\)/u);
+      assert.match(prompt, /NetEase Music \(网易云音乐\)/u);
       assert.match(prompt, /most often a copyright limit/u);
       assert.doesNotMatch(prompt, /moondog_music_preview/u);
       return fauxAssistantMessage([fauxToolCall("moondog_netease_play", {

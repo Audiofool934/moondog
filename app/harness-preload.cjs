@@ -181,7 +181,24 @@ const STATES = {
   history() { STATES.long(); scrollUp(120); },
   "history-top"() { STATES.long(); scrollUp("top"); },
   folded() { STATES.long(); setTimeout(() => document.querySelector("[data-record-button]").click(), 150); },
+  "record-hover"() { STATES.long(); return { hover: "[data-record-frame]" }; },
+  record() { STATES.long(); setTimeout(() => document.querySelector("[data-expand]").click(), 150); },
+  "record-pinned"() { STATES.record(); setTimeout(() => document.querySelector("[data-pin]").click(), 300); },
   profile() { ready({ transcript: conversation([["Import my Spotify history", PROFILE]]) }); player({ index: 1 }); },
+  // Where the music plays and which model answers, beside the send button: asked on a first launch,
+  // with and without a model, named in their tooltips, each service by its mark, and NetEase's setup.
+  "first-launch"() { ready({ sessions: [], folders: [] }); silent(); },
+  "first-launch-offline"() { send({ type: "ready", ...OFFLINE, sessions: [], folders: [], current: null, running: [], transcript: [] }); silent(); },
+  "service-tip"() { STATES.reply(); return { hover: "[data-service]" }; },
+  "model-tip"() { STATES.reply(); return { hover: "[data-model]" }; },
+  "picks-apple"() { ready({ playbackService: "apple_music", transcript: conversation([["Something for the morning", SHORT]]) }); silent(); return { hover: "[data-service]" }; },
+  "picks-netease"() { STATES.netease(); return { hover: "[data-service]" }; },
+  "settings-netease-setup"() {
+    ready({ netease: "missing" });
+    player();
+    window.moondogApp.showMenu = async () => "sign-in:netease";
+    setTimeout(() => document.querySelector("[data-service]").click(), 150);
+  },
   streaming() {
     ready({ running: ["s1", "s2"], transcript: conversation([["Play something for a late train home", SHORT]]),
       live: { id: "t9", user: "Find me something that sounds like a streetlamp at 2am", text: "Two candidates so far. The first is a record you have never played, from a session",
@@ -220,6 +237,8 @@ const STATES = {
       now: { ...TRACKS[1], service: "netease", link: null, playing: true, progressMs: 61_000, device: null, deviceType: "computer", repeat: "off", shuffle: false, disallows: [], observedAt: Date.now() } });
   },
   "settings-netease"() { STATES.netease(); slash("service"); },
+  // Apple Music chosen, before the listener allowed whole songs: only then does its row ask.
+  "settings-apple"() { STATES.preview(); slash("service"); },
   // Spotify used up the app's quota: still connected, with nothing to read until the time it gave.
   "spotify-limited"() { limitedUntil = Date.now() + 4 * 3600_000; ready(); send({ type: "player", spotify: "limited", resumeAt: limitedUntil, now: null, next: [] }); },
   "settings-limited"() { STATES["spotify-limited"](); slash("service"); },
@@ -280,6 +299,7 @@ core.onmessage = ({ data }) => {
   // Choices made in Settings stick, as the core would keep them.
   if (data.type === "language") send({ type: "status", ...status, locale: data.locale });
   if (data.type === "music-service") send({ type: "status", ...status, playbackService: data.service });
+  if (data.type === "netease-check") send({ type: "status", ...status, netease: "ready" });
   if (data.type === "model") send({ type: "status", ...status, model: { ...status.model, state: "configured", provider: data.provider, model: data.model } });
   if (data.type === "effort") send({ type: "status", ...status, model: { ...status.model, effort: data.effort === "default" ? null : data.effort } });
   if (data.type === "prompt") {

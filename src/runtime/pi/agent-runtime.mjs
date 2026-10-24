@@ -9,6 +9,7 @@ import { projectWebResearchResult } from "../../integrations/web/web-result.mjs"
 import { spotifyErrorReason } from "../../integrations/spotify/web-api-client.mjs";
 import { appleMusicStorefront } from "../../integrations/apple-music/storefront.mjs";
 import { formatWebSources } from "../../surfaces/cli/web-command.mjs";
+import { chooseConversationName } from "./conversation-name.mjs";
 import {
   createModelConnectionError,
   createModelFetch,
@@ -4574,7 +4575,7 @@ function createToolFactories(
     onSpotifyQuickEditFailure,
     onSpotifyPlaylistEditWrite,
     onExternalCandidateSet,
-    onMusicPreview,
+    onMusicPlayback,
     onMusicCatalogArtistReleases,
     onWebResearch,
     onSpotifyQueuePlan,
@@ -4836,7 +4837,7 @@ function createToolFactories(
         name: descriptor.tool_name,
         label: descriptor.label,
         description:
-          "Search up to three bounded keyword queries in the listener's Apple Music storefront, remove exact title-and-artist matches found in the imported library, and register the remaining external candidates for prompt-local playlist planning. Results are catalog matches, not proof of personal fit or unheard status. After a resolved result, call moondog_playlist_plan before returning any track list.",
+          "Search up to three bounded keyword queries in the listener's Apple Music storefront, remove exact title-and-artist matches found in the imported library, and register the remaining external candidates for prompt-local playlist planning. Results are catalog matches, not proof of personal fit or unheard status. For a playlist plan, validate the selected references with moondog_playlist_plan before presenting it. For playback or queueing, use the selected service's playback workflow instead; no playlist plan is required.",
         parameters: Type.Object(
           {
             queries: Type.Array(
@@ -4877,7 +4878,7 @@ function createToolFactories(
           name: descriptor.tool_name,
           label: descriptor.label,
           description:
-            "Play Apple Music songs in the listener's player, one after another: whole songs where their Apple Music allows it, otherwise 30-second previews, as the result's plays field says. Give either tracks (up to six named recordings, in the order to play) or album (its title and artist) to play that album's songs in order. exclude_artists leaves out songs by those artists. The listener hears the first one right away and can skip through the rest. Describe only the songs in playing_in_order; do not mention songs that were left out or not found unless the listener asked for them by name.",
+            "Play Apple Music songs in the listener's player, one after another: whole songs where their Apple Music allows it, otherwise 30-second previews, as the result's plays field says. Give either tracks (up to six named recordings, in the order to play) or album (its title and artist) to play that album's songs in order. Lookup and recording checks happen inside this tool; no separate catalog search or playlist plan is needed. exclude_artists leaves out songs by those artists. The listener hears the first one right away and can skip through the rest. Describe only the songs in playing_in_order; do not mention songs that were left out or not found unless the listener asked for them by name.",
           parameters: Type.Object(
             {
               tracks: Type.Optional(Type.Array(song, { minItems: 1, maxItems: 6 })),
@@ -4891,7 +4892,8 @@ function createToolFactories(
             async (_toolCallId, parameters) =>
               application.playMusicPreview({ tracks: parameters.tracks, album: parameters.album, excludeArtists: parameters.exclude_artists }),
             projectMusicPreview,
-            (value) => { if (value.playing_in_order.length) onMusicPreview?.(); },
+            onMusicPlayback,
+            () => onMusicPlayback?.({ state: "failed" }),
           ),
         };
       },
@@ -4902,7 +4904,7 @@ function createToolFactories(
         name: descriptor.tool_name,
         label: descriptor.label,
         description:
-          "Search NetEase Cloud Music (网易云音乐) for songs. Each result says whether NetEase lets the listener play it (playable). Use it to find a particular version, or when a named song could not be played; moondog_netease_play can also look songs up by title and artist itself. user_intent is sent to NetEase: one short line in the listener's language about what they want, with no names or personal details.",
+          "Search NetEase Music (网易云音乐) for songs. Each result says whether NetEase lets the listener play it (playable). Use it to find a particular version, or when a named song could not be played; moondog_netease_play can also look songs up by title and artist itself. user_intent is sent to NetEase: one short line in the listener's language about what they want, with no names or personal details.",
         parameters: Type.Object(
           {
             query: Type.String({ minLength: 1, maxLength: 100 }),
@@ -4928,7 +4930,7 @@ function createToolFactories(
           name: descriptor.tool_name,
           label: descriptor.label,
           description:
-            "Play or queue songs on NetEase Cloud Music. Give songs in the order to play, each as an id from moondog_netease_search or as a title and artist to look up. mode play (the default) starts the first now and queues the rest; mode queue adds them after what is playing. Songs NetEase does not let the listener play are never sent; they come back in unplayable. Describe only the songs in songs, and say whose recording it is when other_artist is true.",
+            "Play or queue songs on NetEase Music. Give songs in the order to play, each as an id from moondog_netease_search or as a title and artist to look up. mode play (the default) starts the first now and queues the rest; mode queue adds them after what is playing. Songs NetEase does not let the listener play are never sent; they come back in unplayable. Describe only the songs in songs, and say whose recording it is when other_artist is true.",
           parameters: Type.Object(
             {
               songs: Type.Array(song, { minItems: 1, maxItems: 20 }),
@@ -4941,6 +4943,8 @@ function createToolFactories(
           execute: executeDomain(
             async (_toolCallId, parameters) => application.playNetease({ items: parameters.songs, mode: parameters.mode ?? "play", intent: parameters.user_intent }),
             projectNeteasePlay,
+            onMusicPlayback,
+            () => onMusicPlayback?.({ state: "failed" }),
           ),
         };
       },
@@ -4951,7 +4955,7 @@ function createToolFactories(
         name: descriptor.tool_name,
         label: descriptor.label,
         description:
-          "Pause, resume, skip to the next song, go back, move to a position in the song (seek, with position_seconds) or stop NetEase Cloud Music. Returns what is playing afterwards.",
+          "Pause, resume, skip to the next song, go back, move to a position in the song (seek, with position_seconds) or stop NetEase Music. Returns what is playing afterwards.",
         parameters: Type.Object(
           {
             action: Type.Union(["pause", "resume", "next", "previous", "seek", "stop"].map((action) => Type.Literal(action))),
@@ -4971,7 +4975,7 @@ function createToolFactories(
       (descriptor) => ({
         name: descriptor.tool_name,
         label: descriptor.label,
-        description: "Read what NetEase Cloud Music is playing, its position, and the songs Moondog queued after it.",
+        description: "Read what NetEase Music is playing, its position, and the songs Moondog queued after it.",
         parameters: Type.Object({}, { additionalProperties: false }),
         execute: executeDomain(async () => application.neteaseNowPlaying(), projectNeteaseNowPlaying),
       }),
@@ -4982,7 +4986,7 @@ function createToolFactories(
         name: descriptor.tool_name,
         label: descriptor.label,
         description:
-          "Start from a trusted library track or the user-selected profile track in product context and discover bounded external recording candidates through ListenBrainz listening-derived artist adjacency. Wikidata resolves the artist to a MusicBrainz identity. Results are not audio similarity, proof of personal fit, or proof that the user has never heard them. After a resolved result, call moondog_playlist_plan before returning any track list.",
+          "Start from a trusted library track or the user-selected profile track in product context and discover bounded external recording candidates through ListenBrainz listening-derived artist adjacency. Wikidata resolves the artist to a MusicBrainz identity. Results are not audio similarity, proof of personal fit, or proof that the user has never heard them. For a playlist plan, validate the selected references with moondog_playlist_plan before presenting it. For playback or queueing, use the selected service's playback workflow instead; no playlist plan is required.",
         parameters: Type.Object(
           {
             seed_track_ref_id: Type.String({ minLength: 1, maxLength: 128 }),
@@ -6148,7 +6152,7 @@ function toolForModel(tool) {
 
 // What this session can actually do. It comes last, so it overrides the general playback rules above.
 // Spotify can be connected for reading while the listener chose another service to play music.
-const SERVICE_NAMES = { apple_music: "Apple Music", netease: "NetEase Cloud Music (网易云音乐)" };
+const SERVICE_NAMES = { apple_music: "Apple Music", netease: "NetEase Music (网易云音乐)" };
 
 function sessionAvailability({ spotifyReady, spotifyPlaybackReady = spotifyReady, previewReady, playbackService = "apple_music", neteaseReady = false, neteaseBuiltin = false }) {
   if (spotifyPlaybackReady) return "";
@@ -6171,8 +6175,8 @@ function sessionAvailability({ spotifyReady, spotifyPlaybackReady = spotifyReady
       "- Do not suggest switching to Spotify or Apple Music to play music here.",
     );
   } else if (playbackService === "netease") {
-    lines.push(neteaseBuiltin ? "- NetEase Cloud Music is signed out. Ask the listener to sign in through Settings → NetEase Cloud Music; no external player is needed."
-      : "- NetEase Cloud Music is not ready here, so nothing can play. Tell the listener once that ncm-cli must be installed (npm install -g @music163/ncm-cli) and signed in (ncm-cli login), then help with what you can.");
+    lines.push(neteaseBuiltin ? "- NetEase Music is signed out. Ask the listener to sign in through Settings → NetEase Music; no external player is needed."
+      : "- NetEase Music is not ready here, so nothing can play. Tell the listener once that ncm-cli must be installed (npm install -g @music163/ncm-cli) and signed in (ncm-cli login), then help with what you can.");
   } else if (previewReady) {
     lines.push(
       "- To let the listener hear music, including any request to play or queue it, call moondog_music_preview: tracks for named songs (up to six, in the order to play) or album for a whole album. It finds each recording in the Apple Music catalog itself and reports any it cannot find, so pass songs straight to it. The songs play one after another in their player.",
@@ -6184,6 +6188,13 @@ function sessionAvailability({ spotifyReady, spotifyPlaybackReady = spotifyReady
     );
   } else {
     lines.push("- You cannot play or queue music in this session. Say so once, briefly, then help with what you can: the song, its story, and what to try next.");
+  }
+  if (previewReady || neteaseReady) {
+    lines.push(
+      "- Playback verification belongs to the selected music service. Its play tool resolves and checks recordings. Use the returned songs and outcome to answer directly; do not run another catalog search or playlist planner just to recheck a successful playback result. A Spotify player or queue read cannot verify playback on another service.",
+      "- If only some requested songs match, keep the successful result and briefly report missing songs the listener named. Search again only to resolve those missing songs, not to verify the ones already accepted. A partial match or playback error is not a playlist-plan validation failure.",
+      "- A service change continues the current listening request with the new service's tools, not the old service's IDs. Switching alone does not request a playlist or require new approval.",
+    );
   }
   return `\n\n${lines.join("\n")}`;
 }
@@ -6900,12 +6911,15 @@ async function trustedContextSnapshot(application, runtimeStatus, query) {
 }
 
 export class PiAgentRuntime {
-  constructor({ application, models, model, provider, modelId, effort, effortLevels, thinkingLevel, modelFetch, modelRetryDelay, toolTrace = null }) {
+  constructor({ application, models, model, provider, modelId, effort, effortLevels, thinkingLevel, modelFetch, modelRetryDelay, toolTrace = null,
+    nameConversations = false }) {
     this.application = application;
     // The command passes a local trace of tool calls; tests and other hosts leave it out.
     this.toolTrace = toolTrace;
     this.models = models;
     this.model = model;
+    // The terminal and the window name a conversation with this model after its first reply.
+    this.nameConversations = nameConversations === true;
     const persistentMemoryReady = application.memoryStatus?.().state === "ready";
     this.runtimeStatus = {
       state: "configured",
@@ -7007,8 +7021,11 @@ export class PiAgentRuntime {
             this.activePromptState.spotifyPlaylistEditWrite = receipt;
           }
         },
-        onMusicPreview: () => {
-          if (this.activePromptState) this.activePromptState.previewsPlaying = true;
+        onMusicPlayback: (value) => {
+          if (this.activePromptState) {
+            this.activePromptState.musicPlaybackResult = value;
+            if (value.playing_in_order?.length) this.activePromptState.previewsPlaying = true;
+          }
         },
         onExternalCandidateSet: (value, { playbackLookup = false } = {}) => {
           if (this.activePromptState) {
@@ -7253,6 +7270,7 @@ export class PiAgentRuntime {
       spotifyLookupFailures: [],
       playbackLookups: [],
       spotifyWriteReceipts: [],
+      musicPlaybackResult: null,
       externalCandidateSetCreated: false,
       externalCandidateSets: [],
       discoveryConnections: new Map(),
@@ -7458,8 +7476,12 @@ export class PiAgentRuntime {
     };
 
     let ownEntryId = null;
+    let ownSessionId = null;
     try {
       ownEntryId = this.application.beginConversationEntry?.(text) ?? null;
+      if (ownEntryId && this.nameConversations) {
+        try { ownSessionId = this.application.ensureMemorySession?.()?.session_id ?? null; } catch { /* The conversation keeps its first message as its name. */ }
+      }
       this.application.beginPrompt({ text });
       promptScopeStarted = true;
       if (callbacks.profileSeed) this.application.setProfileDiscoverySeed(callbacks.profileSeed);
@@ -7708,6 +7730,7 @@ To confirm, reply: ${preview.confirmation}`].join("\n\n");
         promptState.externalCandidateSetCreated &&
         !promptState.playlistPlanAttempted &&
         // A song the model played, queued or failed to play is reported in its own words.
+        !promptState.musicPlaybackResult &&
         !promptState.spotifyPlayback.length && !promptState.spotifyWriteReceipts.length && !promptState.spotifyPlaybackFailures.length
       ) {
         const safeFailureText = [renderUnvalidatedPlaylistPlan(t), ...spotifyEffectTexts()].join("\n\n");
@@ -7768,6 +7791,7 @@ To confirm, reply: ${preview.confirmation}`].join("\n\n");
         try { this.application.finishConversationEntry?.({ ...conversationOutcome, transient: this.transientSpotifyContext }); }
         catch { this.runtimeStatus.conversation_history = 'degraded'; }
         if (ownEntryId) this.syncedEntryId = ownEntryId;
+        if (ownSessionId && conversationOutcome.status === 'completed') this.#nameConversation(ownSessionId, callbacks);
         if (promptScopeStarted && !promptCompleted) {
           this.application.rollbackPendingPlaylistPrompt?.();
         }
@@ -7808,6 +7832,17 @@ To confirm, reply: ${preview.confirmation}`].join("\n\n");
       this.activePromptState.abortRequested = true;
     }
     this.agent.abort();
+  }
+
+  // Names the conversation in the background after its first reply; the turn has already returned.
+  // The application decides whether it needs a name and saves it; onConversationNamed tells the surface.
+  #nameConversation(sessionId, callbacks) {
+    if (!this.nameConversations || typeof this.application.nameConversation !== "function") return;
+    const { models, model } = this;
+    Promise.resolve()
+      .then(() => this.application.nameConversation(sessionId, (exchange) => chooseConversationName({ models, model, ...exchange })))
+      .then((named) => { if (named) callbacks.onConversationNamed?.(named); })
+      .catch(() => {});
   }
 
   reset() {

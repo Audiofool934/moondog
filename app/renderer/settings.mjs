@@ -508,8 +508,9 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
       render();
     }, "spotify:disconnect") : null;
     // Whole Apple Music songs need the listener's permission once; until then, and without it, previews play.
+    // The row asks for it only while Apple Music is the service in use.
     const whole = appleMusic?.status();
-    const allowWhole = whole?.authorization === "notDetermined" && whole.reason !== "developerTokenRequestFailed" ? button(say("allowFullSongs"), "button small", () => {
+    const allowWhole = service === "apple_music" && whole?.authorization === "notDetermined" && whole.reason !== "developerTokenRequestFailed" ? button(say("allowFullSongs"), "button small", () => {
       void appleMusic.check("authorize").then(() => render());
     }, "apple-music:allow") : null;
     const parts = [group(say("musicService"), sectionError(), choices([
@@ -821,5 +822,7 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
     render();
   }
 
-  return { show, hide, render, receive, get open() { return isOpen; } };
+  // The music service menu opens the same built-in account and playlist screen.
+  const showNetease = () => show("netease");
+  return { show, showNetease, hide, render, receive, get open() { return isOpen; } };
 }

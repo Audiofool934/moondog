@@ -37,6 +37,9 @@ A model or music service chosen there lasts until the app quits, and real sign-i
   Scrolling up into history folds it, as you scroll, into a small mark before the title in the title bar; back at the latest words it opens again.
   A click on the record, or `⌥⌘R`, keeps it folded; a click on the mark opens it and returns to the latest words.
   Where the bar has no room between its controls, the title gives way first, then the mark.
+  Hovering the record offers a full-window view at the lower-right corner of its square, clear of the disc.
+  The full-window view can shrink to a small square; the pin turns upright and solid when it keeps the window on top.
+  Esc or the lower-right button returns to the conversation.
 - Conversations on the left are the terminal's conversations, in both directions: one started here shows up in `/resume`, and the other way round.
   While the window shows, a conversation or folder saved in the terminal appears within about two seconds; the core asks SQLite whether another process wrote to the memory store, so nothing is sent when nothing changed.
   The window and the terminal show the same conversation: the one either opened last, with `/new`, `/resume`, `/rewind`, the sidebar or a launch.
@@ -58,7 +61,12 @@ A model or music service chosen there lasts until the app quits, and real sign-i
   A control Spotify won't take right now, such as skipping on a free account, is dimmed.
   With the player folded away, the song shows at the end of the title bar with play or pause and next; a click on the song opens the player.
 - Drag the inner edge of either side panel to change its width; a double-click puts it back.
-- In the composer, the model opens a menu of the models you are signed in to, with the thinking effort.
+- Beside the send button, the music service and the model, each by its mark (from Simple Icons, and Lobe Icons for the model makers Simple Icons lacks), with its name in the tooltip.
+  A model shows its maker's mark, through OpenRouter too, by the maker its id names; a maker the window has no mark for shows a plain model glyph.
+  The service's menu switches between Spotify, Apple Music, and NetEase Music once the account is connected; its NetEase sign-in entry opens the built-in account and playlist settings.
+  It offers only services the core can play.
+  The model's menu shows the maker in use over its models, the chosen one checked, every other signed-in maker's models in a submenu, and the thinking effort with its level.
+  On a first launch the service reads "Choose a music service" until one is chosen, as the model reads "Choose a model" until there is one.
 - Typing `/` lists commands by what they open (a mistyped one stays in the composer instead of going to Moondog): `/new`, `/model`, `/language`, `/service`, `/device`, `/import`, `/memory`, `/remember`, `/folder`, `/settings` and `/help`.
 - Settings (`⌘,`, or the button at the top right beside the player's) has Language, Model (accounts, sign-in in the browser or with an API key, models, thinking), Playback (music service, Spotify sign-in, devices), Import, Memory and About.
   Changes are saved where the terminal reads them; the window never sees a key or token.
@@ -67,13 +75,14 @@ A model or music service chosen there lasts until the app quits, and real sign-i
 - Apple Music plays whole songs where it can and 30-second previews where it can't.
   Whole songs come from a small helper beside the app's executable (`native/music.swift`) that plays the Apple Music catalog through MusicKit, so they need an Apple Music subscription and the listener's permission, which Settings › Playback asks for once.
   Until the helper can play, the window plays previews in itself, with media keys and the system's Now Playing.
-- NetEase Cloud Music (网易云音乐) plays in this window with the account connected in Settings.
+- NetEase Music (网易云音乐) plays in this window with the account connected in Settings.
   The core (`app/netease-player.mjs`) keeps the queue and obtains a fresh account-authorized URL as each song begins; the window's Audio element plays it.
   Account cookies stay in the core. Song availability follows account and regional rights; trial clips are labeled.
   Sign-out stops playback. The terminal's optional legacy player remains separate.
 - No accent color. Cover art brings the color: the song playing tints the window and the record's grooves with its strongest colours, faintly, and they drift into the next song's over a few seconds; its cover glows from the player's corner across to the far edge.
   The window is one pane: no panel has a ground of its own, and the composer and your words sit on the light as a thin film, not as cards.
-  Icon buttons name themselves, with their keys, in a tooltip.
+  Icon buttons name themselves, with their keys, after 650 ms of hovering, in a quiet tooltip matched to the light or dark theme.
+  Moving to another button waits again; the record, expand, restore and pin controls keep accessible names without explanatory tooltips.
 - Controls for the whole window sit in the title bar, which never folds: the conversations and new conversation at the top left, Settings and the player at the top right.
   The side panels hold only their own content.
 - Keys: Enter sends and Shift+Enter starts a new line. `⌘.` or Esc stops a reply.
@@ -89,7 +98,7 @@ A model or music service chosen there lasts until the app quits, and real sign-i
 
 - `main.mjs` opens the window, builds the localized menu, and starts the core in its own Node process.
 - `core-process.mjs` runs `scripts/moondog.mjs` with a host that registers `runRoom`, so the command builds everything as it does for the terminal and hands it to the window instead of the terminal room.
-- `window-room.mjs` is the core's side of the window: turns stream back as text and activity, sessions open and close, and Spotify's player state is read after every playback action, every 5 seconds while a Spotify song plays in a showing window, and less often otherwise.
+- `window-room.mjs` is the core's side of the window: turns stream back as text and activity, sessions open and close, and Spotify's player state is read after every playback action, just after the playing song should end, when the window gains focus (at most every 10 seconds), and every 30 seconds in a showing window (every minute in a hidden one); the clock runs on its own between reads.
   Every read counts against the listener's Spotify app quota; when Spotify answers that the quota is used up, the window reads nothing until the time Spotify gave and says so.
   Each conversation that answers beside the first gets its own application and agent from `openConversation`, on the same memory and Spotify.
   Settings go through the services the terminal uses: `modelSettings` for providers and sign-in, `rebuildRuntime`, `saveLanguage`, `savePlaybackService` and the import services.
@@ -122,6 +131,8 @@ To ask it directly, run `"native/build/Moondog Music.app/Contents/MacOS/moondog-
 `npm run harness` draws the window against a stand-in core (`harness-preload.cjs`) with fictional songs and conversations, and saves a picture of each state, in light and dark, to `release/harness/`.
 It needs no model, no music service and none of your data.
 `MOONDOG_HARNESS_STATES=empty,reply` picks states, `MOONDOG_HARNESS_SIZE=900x700` changes the size, `MOONDOG_HARNESS_LOCALE=zh` the language, and `MOONDOG_HARNESS_SHOW=1` opens a window to try by hand.
+`MOONDOG_HARNESS_STATES=long MOONDOG_HARNESS_EVAL=check-ui.mjs npm run harness` checks tooltip timing and themes, the record handoff and corner placement, and pin feedback in both themes.
+An evaluation failure exits with a nonzero status.
 
 ## Build the app
 

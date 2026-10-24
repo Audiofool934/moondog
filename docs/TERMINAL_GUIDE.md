@@ -303,7 +303,7 @@ Keep the generated ZIP under the ignored `outputs/` directory rather than adding
 ## Import and inspect listening history
 
 Start with `/import`, or choose **Import your music** from the home screen.
-Choose **Spotify**, **Apple Music**, **YouTube Music**, **Last.fm**, **QQ Music** or **NetEase Cloud Music** first.
+Choose **Spotify**, **Apple Music**, **YouTube Music**, **Last.fm**, **QQ Music** or **NetEase Music** first.
 The guide explains the available quick-start and past-history routes for that service.
 All imports work without a model and open the cumulative Profile after confirmation.
 Other existing sources remain available under **Other sources**.
@@ -315,7 +315,7 @@ Other existing sources remain available under **Other sources**.
 | YouTube Music | Takeout music-library-songs.csv or a ZIP containing it | Takeout watch-history.json or a ZIP containing it |
 | Last.fm | Your username, with a free API key you make once | Every scrobble and your loved tracks, read from Last.fm |
 | QQ Music | Paste a public playlist share link | Account history import is not available |
-| NetEase Cloud Music | Paste a public playlist share link | Account history import is not available |
+| NetEase Music | Paste a public playlist share link | Account history import is not available |
 
 **YouTube Music:** open [Google Takeout](https://takeout.google.com/), deselect other products and select YouTube and YouTube Music.
 Include music library songs and history, and set the history format to JSON.
@@ -340,7 +340,7 @@ Limits are 256 MB per ZIP, 64 MB per selected file, 100 selected members and 100
 For large exports, extract just the supported files and import them separately.
 Google's [music export schema](https://developers.google.com/data-portability/schema-reference/youtube) and [activity schema](https://developers.google.com/data-portability/schema-reference/my_activity) describe the source fields.
 
-**QQ Music and NetEase Cloud Music:** in the service, open a playlist you want represented in your profile and choose Share > Copy link.
+**QQ Music and NetEase Music:** in the service, open a playlist you want represented in your profile and choose Share > Copy link.
 Paste the link or copied share text into the corresponding Moondog guide.
 The preview shows the playlist name, sample songs and the available count compared with the service's reported total, when supplied.
 Only public metadata is read, without account passwords or cookies; private playlists require another supported source.

@@ -1077,14 +1077,14 @@ async function main() {
       // runtime afterwards, between turns.
       // The choice is saved once and set on the main application and every open conversation.
       savePlaybackService: async (service) => {
-        // NetEase is chosen only once ncm-cli is installed and signed in, so its tools can play.
+        // NetEase is chosen only once its desktop or terminal player can play.
         if (service === "netease") {
           const status = await neteasePlayer.check();
           if (status.state !== "ready") {
             if (host) throw new Error("请先在设置 → 网易云音乐中登录账号。 / Sign in through Settings → NetEase Cloud Music first.");
             throw new Error(status.state === "missing"
-              ? "NetEase Cloud Music needs ncm-cli: npm install -g @music163/ncm-cli, then ncm-cli login."
-              : "NetEase Cloud Music is not signed in. Run ncm-cli login in a terminal, then choose it again.");
+              ? "NetEase Music needs ncm-cli: npm install -g @music163/ncm-cli, then ncm-cli login."
+              : "NetEase Music is not signed in. Run ncm-cli login in a terminal, then choose it again.");
           }
         }
         const saved = await writePlaybackPreference(service);

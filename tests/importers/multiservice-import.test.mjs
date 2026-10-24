@@ -131,7 +131,7 @@ test("QQ and NetEase share links preview partial coverage and add distinct colle
   assert.equal(profile.coverage.effective_listening_events, 0);
   assert.equal(profile.coverage.spotify_playlist_memberships, 0);
   assert.equal(profile.coverage.playlist_memberships, 2);
-  assert.deepEqual(profile.curated_preferences.playlist_anchors.map((item) => item.source_label).sort(), ["NetEase Cloud Music", "QQ Music"]);
+  assert.deepEqual(profile.curated_preferences.playlist_anchors.map((item) => item.source_label).sort(), ["NetEase Music", "QQ Music"]);
 });
 
 test("official short links resolve with a strict boundary, private and malformed responses do not import", async (t) => {

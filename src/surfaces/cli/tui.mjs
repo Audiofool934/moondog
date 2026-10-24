@@ -2124,6 +2124,12 @@ export async function runMoondogTui({
         },
         onToolStart: (tool) => updateTool(tool, "running"),
         onToolEnd: (tool) => updateTool(tool, tool?.isError ? "failed" : "completed"),
+        // The model names a new conversation after its first reply; the header shows that name from then on.
+        onConversationNamed: ({ session_id, title }) => {
+          if (cleanedUp || application.memorySession?.session_id !== session_id) return;
+          conversationTitle = Array.from(title).slice(0, 160).join("");
+          renderHeader();
+        },
       });
       if (cleanedUp) return;
       if (result.status === "aborted") {

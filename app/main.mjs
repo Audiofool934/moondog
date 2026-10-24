@@ -166,6 +166,8 @@ function savedBounds() {
 let boundsTimer = null;
 const saveBounds = () => {
   clearTimeout(boundsTimer);
+  // A window shrunk to a floating record opens at its usual size next time.
+  if (immersed) return;
   boundsTimer = setTimeout(() => {
     try { writeFileSync(boundsFile(), JSON.stringify(window.getNormalBounds())); } catch { /* The next launch uses the default size. */ }
   }, 400);
@@ -188,8 +190,8 @@ function createWindow() {
   const bounds = savedBounds();
   window = new BrowserWindow({
     ...(bounds ?? { width: 1240, height: 800 }),
-    minWidth: 760,
-    minHeight: 520,
+    minWidth: MIN_SIZE.width,
+    minHeight: MIN_SIZE.height,
     title: "Moondog",
     backgroundColor: background(),
     titleBarStyle: "hiddenInset",
@@ -230,7 +232,8 @@ function createWindow() {
 
 // Native menus for the page: a conversation's actions, and the model, device and service pickers.
 // The page sends plain items { id, label, checked, enabled, type, submenu }; the chosen id comes back.
-const menuTemplate = (items, choose) => items.map((item) => item.type === "separator" ? { type: "separator" } : {
+// A header names the group of items under it, such as a model maker over its models.
+const menuTemplate = (items, choose) => items.map((item) => item.type === "separator" ? { type: "separator" } : item.type === "header" ? { type: "header", label: String(item.label ?? "") } : {
   label: String(item.label ?? ""), enabled: item.enabled !== false,
   ...(item.checked !== undefined ? { type: "checkbox", checked: item.checked === true } : {}),
   ...(Array.isArray(item.submenu) ? { submenu: menuTemplate(item.submenu, choose) } : { click: () => choose(item.id) }),
@@ -332,6 +335,45 @@ ipcMain.on("language", (_event, value) => {
 ipcMain.on("busy", (_event, busy) => {
   window?.setProgressBar(busy === true ? 2 : -1, { mode: "indeterminate" });
   window?.webContents.setBackgroundThrottling(busy !== true);
+});
+// The record alone: the page fills the window with it, and the window may shrink to a small square
+// and float above the others. The traffic lights and the page's two corner buttons show only while
+// the pointer is over the window. The main process watches the pointer, because the page sees no
+// pointer over the drag region that fills it.
+const MIN_SIZE = { width: 760, height: 520 };
+let immersed = null;
+ipcMain.on("immersive", (_event, on) => {
+  if (!window) return;
+  if (on === true && !immersed) {
+    immersed = { bounds: window.getBounds(), timer: null, inside: null };
+    window.setMinimumSize(240, 240);
+    const watch = () => {
+      const point = screen.getCursorScreenPoint();
+      const box = window.getBounds();
+      const inside = window.isVisible() && point.x >= box.x && point.x < box.x + box.width && point.y >= box.y && point.y < box.y + box.height;
+      if (inside === immersed.inside) return;
+      immersed.inside = inside;
+      window.setWindowButtonVisibility?.(inside);
+      window.webContents.send("hover", inside);
+    };
+    immersed.timer = setInterval(watch, 120);
+    watch();
+  } else if (on !== true && immersed) {
+    clearInterval(immersed.timer);
+    const { bounds } = immersed;
+    immersed = null;
+    window.setAlwaysOnTop(false);
+    window.setWindowButtonVisibility?.(true);
+    window.setMinimumSize(MIN_SIZE.width, MIN_SIZE.height);
+    // A window shrunk while it held only the record goes back to the size it had.
+    const now = window.getBounds();
+    if (now.width < MIN_SIZE.width || now.height < MIN_SIZE.height) window.setBounds(bounds, true);
+  }
+});
+ipcMain.handle("pin", (_event, on) => {
+  if (!window || !immersed) return false;
+  window.setAlwaysOnTop(on === true, "floating");
+  return window.isAlwaysOnTop();
 });
 ipcMain.on("playback", (_event, next) => {
   const controllable = next?.controllable === true;

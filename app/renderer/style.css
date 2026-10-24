@@ -38,10 +38,10 @@ img { -webkit-user-drag: none; }
 .link-button { height: 26px; padding: 0 8px; border-radius: var(--r-2); font-size: var(--t-small); font-weight: 500; color: var(--text-2); }
 .link-button:hover { background: var(--hover); color: var(--text); }
 
-/* One tooltip for the window: an inverted label with its keys, a moment after the pointer settles. */
+/* One quiet, theme-matched tooltip for the window, after the pointer settles. */
 .tip { position: fixed; z-index: 60; display: flex; align-items: baseline; gap: 8px; max-width: 320px; padding: 4px 8px 5px;
-  border-radius: var(--r-1); background: var(--solid); color: var(--on-solid); font-size: var(--t-caption); font-weight: 500; line-height: 1.35;
-  pointer-events: none; box-shadow: 0 4px 14px rgb(0 0 0 / 0.16); }
+  border-radius: var(--r-1); background: color-mix(in srgb, var(--raised) 94%, transparent); color: var(--text-2); font-size: var(--t-caption); font-weight: 400; line-height: 1.35;
+  pointer-events: none; box-shadow: var(--lift); }
 .tip span { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
 .tip kbd { font: inherit; opacity: 0.55; letter-spacing: 0.04em; white-space: nowrap; }
 
@@ -50,9 +50,9 @@ img { -webkit-user-drag: none; }
 .rail { position: absolute; right: 1px; width: 11px; z-index: 3; opacity: 0; transition: opacity 360ms var(--soft); }
 .rail.on, .rail:hover, .rail.held { opacity: 1; transition-duration: 90ms; }
 .rail.none { display: none; }
-.thumb { width: 5px; margin-left: auto; margin-right: 2px; border-radius: 3px; background: var(--thumb);
+.thumb { width: 3px; margin-left: auto; margin-right: 2px; border-radius: 2px; background: var(--thumb);
   transition: width var(--quick) var(--soft), background-color var(--quick) var(--soft); }
-.rail:hover .thumb, .rail.held .thumb { width: 7px; background: var(--thumb-held); }
+.rail:hover .thumb, .rail.held .thumb { width: 5px; background: var(--thumb-held); }
 
 /* ── The room's light ─────────────────────────────────────────────────────────────────────── */
 /* The cover playing lights the whole window, edge to edge: its strongest colours as three soft
@@ -77,8 +77,14 @@ img { -webkit-user-drag: none; }
   mask-image: radial-gradient(150% 125% at 100% 0%, #000 10%, rgb(0 0 0 / 0.66) 34%, rgb(0 0 0 / 0.4) 62%, rgb(0 0 0 / 0.26) 100%); }
 .ambient img { position: absolute; inset: -12%; width: 124%; height: 124%; object-fit: cover; filter: blur(110px) saturate(1.5);
   opacity: 0; transition: opacity 1.6s var(--soft); will-change: opacity; }
-.ambient img.on { opacity: 0.2; }
-@media (prefers-color-scheme: dark) { .ambient img.on { opacity: 0.3; } }
+/* By day the blurred cover is lifted toward light before it shows, so a dark cover tints the paper
+   instead of greying it; at night it shows as it is. */
+.ambient img { filter: blur(110px) saturate(1.8) brightness(1.55) contrast(0.85); }
+.ambient img.on { opacity: 0.32; }
+@media (prefers-color-scheme: dark) {
+  .ambient img { filter: blur(110px) saturate(1.5); }
+  .ambient img.on { opacity: 0.3; }
+}
 @media (prefers-reduced-transparency: reduce) { .ambient, .mood { display: none; } }
 
 /* ── The window ───────────────────────────────────────────────────────────────────────────── */
@@ -98,21 +104,21 @@ img { -webkit-user-drag: none; }
 
 /* The bar carries the traffic lights and drags the window. It sits over the panels, so they run to the top. */
 .bar { position: absolute; inset: 0 0 auto 0; height: var(--bar); z-index: 5; display: grid; align-items: center;
-  grid-template-columns: max(var(--sidebar), 140px) minmax(0, 1fr) minmax(max(var(--inspector), 52px), auto);
+  grid-template-columns: max(var(--sidebar), 152px) minmax(0, 1fr) minmax(max(var(--inspector), 52px), auto);
   -webkit-app-region: drag; user-select: none; }
 .window.animating .bar { transition: grid-template-columns var(--panel) var(--out); }
-.bar-start { display: flex; align-items: center; gap: 2px; padding-inline-start: 80px; }
+.bar-start { display: flex; align-items: center; gap: 2px; padding-inline-start: 92px; }
 .bar-start { grid-column: 1; }
 .bar-end { grid-column: 3; display: flex; align-items: center; justify-content: flex-end; gap: 2px; padding-inline-end: 10px; min-width: 0; }
-/* The title inherits the bar's drag region and runs under the controls when a panel folds. The
-   controls come after it, in the page and in paint, so their buttons stay clickable over it. */
+/* The record folds into the middle of the bar, centered on the conversation, and the open conversation's
+   name follows the new-conversation button, where the folded list of conversations would show it.
+   The controls come after the middle, in the page and in paint, so their buttons stay clickable over it. */
 .bar-start, .bar-end { position: relative; z-index: 1; }
-/* The title centers on the conversation, not on whatever space the bar has left. The record folds
-   into the bar just before it, where a document window keeps its icon. */
-.bar-title { position: absolute; top: 0; bottom: 0; left: var(--sidebar); right: var(--inspector); padding-inline: 150px;
-  display: flex; align-items: center; justify-content: center; gap: 4px; font-size: var(--t-small); font-weight: 500; color: var(--text-3); pointer-events: none; }
-.bar-title > span { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.bar-title > span:empty, .bar-title.tight > span { display: none; }
+.bar-title { position: absolute; top: 0; bottom: 0; left: var(--sidebar); right: var(--inspector);
+  display: flex; align-items: center; justify-content: center; pointer-events: none; }
+.bar-name { flex: none; min-width: 0; margin-inline-start: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  font-size: var(--t-small); font-weight: 500; color: var(--text-3); pointer-events: none; animation: rise var(--enter) var(--out) both; }
+.bar-name:empty, .bar-name.tight { display: none; }
 .bar-record { display: none; width: var(--control); height: var(--control); flex: none; place-items: center; border-radius: var(--r-2); color: var(--text-2);
   opacity: 0; transition: background-color var(--quick) var(--soft), color var(--quick) var(--soft); }
 .window.talking .bar-record { display: grid; }
@@ -178,6 +184,7 @@ img { -webkit-user-drag: none; }
 .row:hover .name, .row:focus-within .name, .row.answering .name { -webkit-mask-image: linear-gradient(to left, transparent 30px, #000 46px); }
 .row:hover .open, .row[aria-current="true"] .open { color: var(--text); }
 .row .name { min-width: 0; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rolling { text-overflow: clip !important; }
 /* A branch's number stays in sight: the title shortens before it, and the number steps clear of the ⋯ button
    or the answering dot instead of fading under them. */
 .row .name:has(.number) { display: flex; }
@@ -204,6 +211,7 @@ img { -webkit-user-drag: none; }
 .folder-toggle { flex: 1; min-width: 0; height: var(--row); display: flex; align-items: center; gap: 8px; padding: 0 8px 0 10px; text-align: start;
   font-size: var(--t-ui); color: var(--text-2); }
 .folder-toggle:hover { color: var(--text); }
+.folder-toggle .name { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .folder-toggle .icon { width: 15px; height: 15px; color: var(--text-3); }
 .folder-toggle .chevron { width: 12px; height: 12px; color: var(--text-4); margin-inline-start: -2px; transition: transform var(--enter) var(--out); }
 .folder-toggle[aria-expanded="true"] .chevron { transform: rotate(90deg); }
@@ -228,15 +236,22 @@ img { -webkit-user-drag: none; }
    above the words and folds into the title bar as you scroll up into history; renderer.mjs places it. */
 .stage { flex: 1; display: grid; place-items: center; min-height: 0; padding: var(--bar) 44px 8px; }
 /* The drawing includes the tonearm, so it moves right by the arm's reach to center the disc itself. */
-.record-button { display: block; width: min(46vh, 380px, 70vw); aspect-ratio: 1; translate: 3.5% 0; color: var(--text); border-radius: 50%; }
+.record-frame { position: relative; width: min(46vh, 380px, 70vw); aspect-ratio: 1; translate: 3.5% 0; }
+.record-button { display: block; width: 100%; height: 100%; color: var(--text); border-radius: 50%; }
 .record-button:focus-visible { outline-offset: 6px; border-radius: 50%; }
 .record { display: block; width: 100%; height: 100%; animation: record-in 700ms var(--out) both; }
 @keyframes record-in { from { opacity: 0; transform: scale(0.97) rotate(-4deg); } to { opacity: 1; transform: none; } }
 .room.empty .stage { flex: 0 1 auto; padding-bottom: 36px; }
 .room.empty .record-button { pointer-events: none; }
 .room:not(.empty) .stage { position: absolute; inset: 0; z-index: 2; display: block; padding: 0; pointer-events: none; }
-.room:not(.empty) .record-button { position: absolute; left: 0; top: 0; width: var(--record, 240px); translate: none; transform-origin: 0 0; will-change: transform, opacity; }
-.room:not(.empty) .record-button:not(.away) { pointer-events: auto; }
+.room:not(.empty) .record-frame { position: absolute; left: 0; top: 0; width: var(--record, 240px); translate: none; transform-origin: 0 0; will-change: transform; }
+.room:not(.empty) .record-frame:has(.record-button:not(.away)) { pointer-events: auto; }
+/* The square hover target keeps the corner reachable without putting the button on the disc. */
+.expand { position: absolute; right: 0; bottom: 0; z-index: 1; color: var(--text-2); opacity: 0; pointer-events: none;
+  background: var(--glass); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); box-shadow: var(--glass-edge);
+  transition: opacity 240ms var(--soft), background-color var(--quick) var(--soft), color var(--quick) var(--soft); }
+.room:not(.empty) .record-frame:hover .record-button:not(.away) ~ .expand, .expand:focus-visible { opacity: 1; pointer-events: auto; transition: none; }
+.room.empty .expand, .record-button.away ~ .expand { display: none; }
 .room.empty { justify-content: center; padding-bottom: 6vh; }
 .room.empty > .frame { display: none; }
 
@@ -300,17 +315,23 @@ img { -webkit-user-drag: none; }
 /* ── The composer ─────────────────────────────────────────────────────────────────────────── */
 .composer { position: relative; flex: none; padding: 4px 44px 18px; }
 .field { position: relative; max-width: var(--column); margin: 0 auto; display: flex; align-items: flex-end; gap: 4px; padding: 8px 8px 8px 16px;
-  border-radius: var(--r-4); background: var(--glass); box-shadow: var(--glass-edge); transition: box-shadow 160ms var(--soft); }
-.field:focus-within { box-shadow: inset 0 0 0 1px rgb(var(--ink-rgb) / 0.15); }
+  border-radius: var(--r-4); background: var(--glass); box-shadow: var(--glass-edge); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
+  transition: box-shadow 160ms var(--soft); }
+.field:focus-within { box-shadow: var(--glass-edge), inset 0 0 0 1px rgb(var(--ink-rgb) / 0.12); }
 .field textarea { flex: 1; min-width: 96px; resize: none; border: 0; outline: 0; background: transparent; color: var(--text); font-size: var(--t-body); line-height: 1.55;
   field-sizing: content; min-height: 28px; max-height: 40vh; padding: 3px 0 2px; overflow-y: auto; scrollbar-width: none; }
 .field textarea::placeholder { color: var(--text-4); }
-.model { height: 28px; max-width: 160px; min-width: 0; padding: 0 8px; border-radius: var(--r-2); font-size: var(--t-small); color: var(--text-3); white-space: nowrap;
-  overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; transition: background-color var(--quick) var(--soft), color var(--quick) var(--soft); }
-.model:hover { background: var(--hover); color: var(--text); transition: none; }
-.model.needed { color: var(--text); background: var(--hover); font-weight: 500; }
-.model.needed:hover { background: var(--press); }
-.model:empty { display: none; }
+/* Where the music plays and which model answers, by their marks, beside the send button; the name
+   is in the tooltip and the menu. One not chosen yet reads as the words that choose it. */
+.pick { height: 28px; min-width: 28px; max-width: 180px; padding: 0 6px; border-radius: var(--r-2); display: inline-flex; align-items: center; justify-content: center; flex: 0 1 auto;
+  font-size: var(--t-small); color: var(--text-3); white-space: nowrap; transition: background-color var(--quick) var(--soft), color var(--quick) var(--soft); }
+.pick:hover { background: var(--hover); color: var(--text); transition: none; }
+.pick .icon { width: 15px; height: 15px; }
+.pick span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.pick span:empty, .pick.needed .icon { display: none; }
+.pick.needed { padding: 0 9px; color: var(--text); background: var(--hover); font-weight: 500; }
+.pick.needed:hover { background: var(--press); }
+.pick[hidden] { display: none; }
 .send { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; flex: none; background: var(--solid); color: var(--on-solid);
   transition: background-color 140ms var(--soft), transform 90ms var(--soft); }
 .send:active { transform: scale(0.92); }
@@ -337,6 +358,24 @@ img { -webkit-user-drag: none; }
   box-shadow: 0 6px 18px rgb(0 0 0 / 0.16); animation: notice-in var(--enter) var(--out) both; }
 .jump:not([hidden]) + .notice { bottom: calc(100% + 50px); }
 @keyframes notice-in { from { opacity: 0; transform: translate(-50%, 4px); } }
+/* The record alone: the window holds the record and the cover's light, nothing else. The whole of it
+   drags the window, and the two corner buttons show while the pointer is over the window. */
+.immersive { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; -webkit-app-region: drag; }
+/* Only the record enters. The viewport-sized drag layer never keeps a transformed backing layer
+   whose old edges can lag behind a native live resize. The canvas box is independent of its bitmap. */
+.immersive .record { width: min(82vmin, 1100px); height: min(82vmin, 1100px); translate: 3.5% 0; color: var(--text);
+  animation: immerse 520ms var(--out) backwards; }
+@keyframes immerse { from { transform: scale(0.96); } }
+.window.immersed > :not(.immersive, .mood, .ambient) { visibility: hidden; }
+.window.immersed .ambient { mask-image: none; }
+.corner { position: absolute; right: 12px; color: var(--text-2); opacity: 0; -webkit-app-region: no-drag;
+  transition: opacity 420ms var(--soft), background-color var(--quick) var(--soft), color var(--quick) var(--soft); }
+.corner[data-pin] { top: 10px; }
+.corner[data-pin] .icon { transform: rotate(-35deg); transition: transform var(--quick) var(--out); }
+.corner[data-pin][aria-pressed="true"] .icon { transform: none; transition: none; }
+.corner[data-restore] { bottom: 12px; }
+.corner[aria-pressed="true"] { color: var(--text); }
+.immersive.hovered .corner, .corner:focus-visible { opacity: 1; transition-duration: 160ms; }
 .drop { position: absolute; inset: 0; z-index: 20; display: grid; place-items: center; align-content: center; gap: 16px;
   background: color-mix(in srgb, var(--canvas) 92%, transparent); pointer-events: none; animation: rise 160ms var(--out) both; }
 .drop::before { content: ""; position: absolute; inset: 16px; border: 1.5px dashed var(--line-2); border-radius: var(--r-4); }
@@ -352,15 +391,18 @@ img { -webkit-user-drag: none; }
 .art img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
 .art img.entering { animation: cover-in 420ms var(--out) both; }
 @keyframes cover-in { from { opacity: 0; transform: scale(1.015); } }
-.art.unplayed { box-shadow: none; background: rgb(var(--ink-rgb) / 0.04); }
-/* An empty sleeve says so, quietly, in its middle. */
+/* With nothing playing the sleeve has no ground of its own, so no card stands there: its place stays,
+   and says so, quietly, in its middle. */
+.art.unplayed { box-shadow: none; background: none; }
 .art .blank { position: absolute; inset: 0; display: grid; place-items: center; padding: 0 24px; text-align: center; text-wrap: balance;
   font-size: var(--t-small); color: var(--text-3); }
 .song:has(h2:empty) { display: none; }
 .song { margin-top: 18px; min-width: 0; }
+/* Each of the three lines stays one line; a long one rolls into view under the pointer (ui.mjs). */
 .song h2 { margin: 0; font-size: var(--t-song); font-weight: 600; line-height: 1.3; letter-spacing: -0.008em;
-  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .song p { margin: 2px 0 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.song .rolling { -webkit-mask-image: linear-gradient(to left, transparent, #000 16px); }
 .song .artist { font-size: var(--t-body); color: var(--text-2); }
 .song .album { font-size: var(--t-small); color: var(--text-3); }
 .song p:empty { display: none; }

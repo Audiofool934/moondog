@@ -103,6 +103,7 @@ const savePlaybackService = async (service) => {
 
 const neteaseLibrary = createSimulatedNetease({ environment });
 const neteasePlayer = createWindowNeteasePlayer({ library: neteaseLibrary, port });
+await neteasePlayer.check();
 application.neteasePlayer = neteasePlayer;
 const history = await openListeningHistoryStore({ environment });
 await runWindowRoom({ application, runtime, openConversation, modelSettings, rebuildRuntime, savePlaybackService,

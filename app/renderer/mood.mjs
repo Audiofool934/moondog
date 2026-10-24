@@ -88,15 +88,16 @@ function rgb(h, s, l) {
 }
 
 /**
- * The three fields as CSS colours for a light or dark window: pale and soft on paper, deeper at
- * night, always far too faint to compete with the words.
+ * The three fields as CSS colours for a light or dark window, always far too faint to compete with
+ * the words. Light on a dark window glows by itself; on paper a pale tint only greys it, so by day
+ * the fields are clearer colours, a little stronger, kept light enough to stay luminous.
  */
 export function moodColours(palette, dark) {
   if (!palette) return ["transparent", "transparent", "transparent"];
-  const strength = dark ? [0.34, 0.24, 0.16] : [0.3, 0.22, 0.15];
+  const strength = dark ? [0.34, 0.24, 0.16] : [0.5, 0.38, 0.28];
   return palette.map(({ h, s, l }, index) => {
-    const saturation = Math.min(s, 0.62) * (dark ? 0.9 : 0.85) * 100;
-    const lightness = (dark ? 0.3 + l * 0.22 : 0.64 + l * 0.18) * 100;
+    const saturation = Math.min(s, dark ? 0.62 : 0.72) * (dark ? 0.9 : 0.95) * 100;
+    const lightness = (dark ? 0.3 + l * 0.22 : 0.68 + l * 0.12) * 100;
     return `hsl(${h.toFixed(0)} ${saturation.toFixed(0)}% ${lightness.toFixed(0)}% / ${strength[index]})`;
   });
 }
