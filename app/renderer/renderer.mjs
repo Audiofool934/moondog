@@ -142,6 +142,7 @@ const KINDS = [
   [/^moondog_netease_search$/u, "search"],
   [/^moondog_netease_now_playing$/u, "status"],
   [/^moondog_listening_now$/u, "status"],
+  [/^moondog_music_app_control$/u, (args) => ({ pause: "pause", next: "skip", previous: "skip" })[args?.action] ?? "play"],
   [/^moondog_memory_/u, "memory"],
   [/^moondog_music_/u, "search"],
   [/^moondog_(?:profile_|library_|rediscovery|historical_return|time_capsule|back_to_back|spotify_top|spotify_history|spotify_library)/u, "profile"],

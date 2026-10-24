@@ -861,6 +861,7 @@ export default {
   "Control NetEase Music": "Controlar NetEase Music",
   "See what is playing": "Ver qué suena",
   "See what you're listening to": "Ver lo que escuchas",
+  "Control the Music app": "Controlar la app Música",
   "Choose a music service": "Elegir un servicio de música",
   "Search outside your library": "Buscar fuera de tu biblioteca",
   "Find music nearby": "Buscar música cercana",

@@ -19,8 +19,8 @@ const songOf = (item) => ({
   ...(item.track_ref_id ? { track_ref_id: item.track_ref_id } : {}),
 });
 
-async function musicApp(application) {
-  const now = await application.musicApp.nowPlaying({ tracks: true });
+// What the Music app plays, as one source. Its playlist's songs come only from a read that asked for them.
+export function musicAppSource(now) {
   if (!now.song) return { state: now.state, ...(now.reason ? { reason: now.reason } : {}) };
   const playlist = now.playlist;
   return {
@@ -39,6 +39,8 @@ async function musicApp(application) {
     } : null,
   };
 }
+
+const musicApp = async (application) => musicAppSource(await application.musicApp.nowPlaying({ tracks: true }));
 
 // Spotify reports only the device that plays; reading it costs three or four requests of the quota.
 async function spotify(application, { signal }) {

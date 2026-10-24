@@ -284,6 +284,14 @@ const catalog = [
     agent_tool: { name: "moondog_listening_now", label: N_("See what you're listening to") },
   },
   {
+    id: "music_app.control",
+    version: "1",
+    state: "enabled",
+    effect: "write_local",
+    description: "Pause, resume, skip or go back in the Music app on this Mac, which the listener plays themselves.",
+    agent_tool: { name: "moondog_music_app_control", label: N_("Control the Music app") },
+  },
+  {
     id: "music.discovery.artist_similarity",
     version: "1",
     state: "enabled",

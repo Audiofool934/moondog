@@ -6,7 +6,7 @@ import { MoondogApplication } from "../../src/core/moondog-application.mjs";
 import { createPlaybackSelection } from "../../src/core/playback-preferences.mjs";
 import { PiAgentRuntime } from "../../src/runtime/pi/agent-runtime.mjs";
 
-function fixture(t, { service = "spotify", spotify = true, apple = true, netease = false, save } = {}) {
+function fixture(t, { service = "spotify", spotify = true, apple = true, netease = false, save, musicApp = null } = {}) {
   const saved = [];
   const played = [];
   const spotifyActions = [];
@@ -15,6 +15,7 @@ function fixture(t, { service = "spotify", spotify = true, apple = true, netease
   const application = new MoondogApplication({
     importsRoot: "/private/moondog-synthetic-missing-source",
     playbackSelection: selection,
+    musicApp,
     ...(spotify ? { spotifyConnection: { ready: () => true, publicStatus: () => ({ state: "ready" }),
       service: { pause: async () => { spotifyActions.push("pause"); return { provider: "spotify", action: "playback.pause", ok: true, state: "accepted" }; } } } } : {}),
     ...(apple ? {
@@ -158,4 +159,55 @@ test("the agent hears why a service cannot play, and nothing changes", async (t)
   assert.deepEqual(f.saved, []);
   assert.deepEqual(f.spotifyActions, []);
   assert.equal(f.application.playbackService, "spotify");
+});
+
+// The Music app on the Mac, playing one song of a playlist, as the listener left it.
+function musicApp(state = "playing") {
+  const actions = [];
+  const now = () => ({ state, song: { id: "1", title: "Atom Heart Mother", artists: ["Pink Floyd"], album: "Atom Heart Mother", duration_ms: 1_420_000 },
+    position_ms: 400_000, shuffle: false, repeat: "off", playlist: { id: "P", name: "A Pink Floyd Experience", library: false } });
+  const act = (action, next) => async () => { actions.push(action); state = next ?? state; return now(); };
+  return { actions, player: { available: true, nowPlaying: async () => now(),
+    pause: act("pause", "paused"), resume: act("resume", "playing"), next: act("next"), previous: act("previous") } };
+}
+
+test("switching to Spotify to keep listening there pauses the Music app, and Spotify's controls arrive in the same turn", async (t) => {
+  const music = musicApp();
+  const f = fixture(t, { service: "apple_music", musicApp: music.player });
+  f.faux.setResponses([
+    (context) => {
+      assert.ok(declared(context).includes("moondog_music_app_control"));
+      assert.match(instructions(context), /move the listening to another player/u);
+      return use("moondog_playback_service", { service: "spotify" });
+    },
+    (context) => {
+      assert.equal(toolResult(context, "moondog_playback_service").value.selected_service, "spotify");
+      assert.deepEqual(music.actions, ["pause"], "the Music app left behind pauses");
+      assert.ok(declared(context).includes("moondog_spotify_player_control"));
+      return fauxAssistantMessage([fauxText("换到 Spotify 了。")]);
+    },
+  ]);
+  assert.equal((await f.runtime.prompt("cool，能切换到Spotify继续播放那边的音乐吗？")).status, "completed");
+  assert.deepEqual(f.stopped, ["apple_music"]);
+});
+
+test("the agent pauses and resumes the Music app, and a paused one stays paused when the service changes", async (t) => {
+  const music = musicApp("paused");
+  const f = fixture(t, { service: "apple_music", musicApp: music.player });
+  f.faux.setResponses([
+    () => use("moondog_music_app_control", { action: "resume" }),
+    (context) => {
+      const result = toolResult(context, "moondog_music_app_control");
+      assert.equal(result.isError, false, result.content[0].text);
+      assert.equal(result.value.state, "playing");
+      assert.equal(result.value.song.title, "Atom Heart Mother");
+      assert.equal(result.value.from.name, "A Pink Floyd Experience");
+      return use("moondog_music_app_control", { action: "pause" });
+    },
+    () => fauxAssistantMessage([fauxText("Paused.")]),
+  ]);
+  assert.equal((await f.runtime.prompt("keep Pink Floyd going, then pause it")).status, "completed");
+  assert.deepEqual(music.actions, ["resume", "pause"]);
+  await f.application.selectPlaybackService("spotify");
+  assert.deepEqual(music.actions, ["resume", "pause"], "nothing to pause");
 });

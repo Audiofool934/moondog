@@ -12,7 +12,7 @@ import {
 } from "./capability-catalog.mjs";
 import { recoverArtistReleasesWithCrossCatalogIdentity } from "../integrations/cross-catalog-artist-identity.mjs";
 import { webProviderName } from "../integrations/web/web-result.mjs";
-import { readListeningNow } from "./listening-now.mjs";
+import { musicAppSource, readListeningNow } from "./listening-now.mjs";
 import { normalizeConversationFolder, normalizeConversationLabel, normalizeMemoryContent, shortConversationTitle } from "../memory/local-memory-store.mjs";
 import { queueListeningIntent, queueCancellationRequested, unheardRequested } from "./spotify-listening-intent.mjs";
 import { DEFAULT_LOCALE, normalizeLocale } from "../i18n/index.mjs";
@@ -522,6 +522,16 @@ export class MoondogApplication {
     return readListeningNow(this, { signal });
   }
 
+  // Pauses, resumes or skips the Music app on this Mac, and says what it plays afterwards. Closed,
+  // it stays closed.
+  async controlMusicApp({ action } = {}) {
+    if (this.musicApp?.available !== true) throw Object.assign(new Error("The Music app can be controlled only on a Mac."), { code: "music_app_unavailable" });
+    if (!["pause", "resume", "next", "previous"].includes(action)) throw Object.assign(new Error(`Unknown Music app action: ${action}`), { code: "music_app_failed" });
+    const now = await this.musicApp[action]();
+    if (now.state === "not_allowed") throw Object.assign(new Error(now.reason), { code: "music_app_not_allowed" });
+    return { service: "apple_music", ...musicAppSource(now) };
+  }
+
   // Spotify plays music only when it is connected and it is the chosen service.
   spotifyPlaybackReady() {
     return this.spotifyReady() && this.playbackService === "spotify";
@@ -571,8 +581,11 @@ export class MoondogApplication {
   // The service just left stops playing, so two services never play at once.
   async #stopPlaybackService(service) {
     try {
-      if (service === "apple_music") this.musicPreviewPlayer?.stop?.();
-      else if (service === "netease" && this.neteasePlayer?.ready?.() === true) await this.neteasePlayer.stop();
+      if (service === "apple_music") {
+        this.musicPreviewPlayer?.stop?.();
+        // The listener's own Music app too, when it plays.
+        if ((await this.musicApp?.nowPlaying?.())?.state === "playing") await this.musicApp.pause();
+      } else if (service === "netease" && this.neteasePlayer?.ready?.() === true) await this.neteasePlayer.stop();
       else if (service === "spotify" && this.spotifyReady()) await this.requireSpotifyService().pause({});
     } catch { /* Nothing was playing there, or no device is active; the new choice stands. */ }
   }
@@ -3030,7 +3043,7 @@ export class MoondogApplication {
         ...this.webLookupOptions(),
       musicPreviewReady: this.musicPreviewReady(),
       }).map(capability => capability.state === "enabled" && this.#playbackServiceExcludes(capability.id)
-        ? { ...capability, state: "blocked", blocked_by: capability.id === "listening.now" ? "no_readable_player" : capability.id === "playback.service" ? "no_playback_service"
+        ? { ...capability, state: "blocked", blocked_by: capability.id === "listening.now" ? "no_readable_player" : capability.id === "music_app.control" ? "no_music_app" : capability.id === "playback.service" ? "no_playback_service"
           : neteaseCapabilities.has(capability.id) ? "netease_not_ready" : "playback_service_not_spotify" } : capability),
     };
   }
@@ -3039,6 +3052,7 @@ export class MoondogApplication {
   // tools exist only while it plays. What the listener plays is read wherever it can be.
   #playbackServiceExcludes(capabilityId) {
     if (capabilityId === "listening.now") return !this.listeningReadable();
+    if (capabilityId === "music_app.control") return this.musicApp?.available !== true;
     if (capabilityId === "playback.service") return !this.playbackStatus().services.some((entry) => entry.available);
     if (neteaseCapabilities.has(capabilityId)) return !this.neteaseReady();
     return this.playbackService !== "spotify" && spotifyPlaybackCapabilities.has(capabilityId);

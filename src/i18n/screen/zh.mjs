@@ -861,6 +861,7 @@ export default {
   "Control NetEase Music": "控制网易云音乐",
   "See what is playing": "查看正在播放的歌",
   "See what you're listening to": "查看你在听什么",
+  "Control the Music app": "控制“音乐”App",
   "Choose a music service": "选择音乐服务",
   "Search outside your library": "在你的曲库之外搜索",
   "Find music nearby": "找附近的音乐",

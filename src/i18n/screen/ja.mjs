@@ -861,6 +861,7 @@ export default {
   "Control NetEase Music": "NetEase Music を操作",
   "See what is playing": "再生中の曲を確認",
   "See what you're listening to": "聴いている曲を確認",
+  "Control the Music app": "ミュージックAppを操作",
   "Choose a music service": "音楽サービスを選ぶ",
   "Search outside your library": "ライブラリの外を探す",
   "Find music nearby": "近い音楽を探す",

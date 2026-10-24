@@ -30,8 +30,8 @@ const FOCUS_READ_MS = 10_000;
 // How often a showing window looks for what the terminal or another window changed, and how often
 // while one of them answers in the conversation shown here.
 const LOOK_MS = { idle: 2_000, answering: 300 };
-// Tools whose results can change what Spotify is playing or what comes next.
-const PLAYER_TOOLS = /^moondog_spotify_(?:player_control|queue_add|queue_batch|queue_similar|device_transfer|playlist_write)$/u;
+// Tools whose results can change what Spotify or the Music app is playing, or what comes next.
+const PLAYER_TOOLS = /^moondog_(?:spotify_(?:player_control|queue_add|queue_batch|queue_similar|device_transfer|playlist_write)|music_app_control)$/u;
 // At most this many conversations hold an agent at once; idle ones are reused first.
 const MAX_SLOTS = 4;
 
