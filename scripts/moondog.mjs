@@ -52,6 +52,9 @@ import { startListeningUpkeep } from "../src/core/listening-upkeep.mjs";
 import { createAppleMusicCatalog } from "../src/integrations/apple-music/catalog.mjs";
 import { createTerminalPreviewPlayer } from "../src/integrations/apple-music/terminal-preview-player.mjs";
 import { createNeteasePlayer } from "../src/integrations/netease/ncm-cli-player.mjs";
+import { createNeteaseLibrary } from "../src/integrations/netease/library.mjs";
+import { desktopNeteaseLogin } from "../src/integrations/netease/desktop-login.mjs";
+import { runNeteaseCommand } from "../src/surfaces/cli/netease-command.mjs";
 import {
   createOpenMusicSimilarity,
   createWikidataArtistResolver,
@@ -69,6 +72,7 @@ import { deriveArtistReleaseHintsFromSpotifyArchive } from "../src/profile/spoti
 import { resolveListenerLocale, writeLanguagePreference } from "../src/i18n/preferences.mjs";
 import { resolvePlaybackService, writePlaybackPreference } from "../src/core/playback-preferences.mjs";
 
+const neteaseLibrary = createNeteaseLibrary();
 const localCommands = new Set([
   "status",
   "sources",
@@ -324,7 +328,7 @@ async function runListenBrainzSurface(options) {
   }
 }
 
-async function prepareTuiHistoryImport(filePath, { recentPage, librarySnapshot, libraryUnavailable, provider, onProgress, signal } = {}) {
+async function prepareTuiHistoryImport(filePath, { recentPage, librarySnapshot, libraryUnavailable, provider, onProgress, signal, neteasePlaylistId } = {}) {
   const historyStore = await openListeningHistoryStore();
   try {
     const appleSubjectId = await optionalAppleMusicSubjectId();
@@ -332,9 +336,10 @@ async function prepareTuiHistoryImport(filePath, { recentPage, librarySnapshot, 
       ...(appleSubjectId ? { preferredSubjectId: appleSubjectId } : {}),
       create: true,
     });
-    const prepared = recentPage ? prepareSpotifyQuickImport({ page: recentPage, librarySnapshot, libraryUnavailable, subjectId }) : await prepareHistoryImport({
-      filePath, subjectId, provider, capturedAt: new Date().toISOString(), onProgress, signal,
-    });
+    let prepared;
+    if (neteasePlaylistId) prepared = await neteaseLibrary.prepareImport(neteasePlaylistId, { subjectId, signal });
+    else if (recentPage) prepared = prepareSpotifyQuickImport({ page: recentPage, librarySnapshot, libraryUnavailable, subjectId });
+    else prepared = await prepareHistoryImport({ filePath, subjectId, provider, capturedAt: new Date().toISOString(), onProgress, signal });
     let closed = false;
     let committed = false;
     return {
@@ -663,6 +668,13 @@ async function main() {
     return;
   }
 
+  if (options.command === "netease") {
+    const result = await runNeteaseCommand({ args: options.rest, library: neteaseLibrary, openLogin: desktopNeteaseLogin,
+      prepareImport: (id, controls) => prepareTuiHistoryImport(undefined, { neteasePlaylistId: id, ...controls }) });
+    process.stdout.write(options.json ? `${JSON.stringify(result.data, null, 2)}\n` : `${result.markdown}\n`);
+    return;
+  }
+
   if (options.command === "spotify") {
     await runSpotifySurface({
       args: options.rest,
@@ -837,9 +849,9 @@ async function main() {
   const previewPlayer = options.command ? null : host ? host.musicPreviewPlayer : await createTerminalPreviewPlayer();
   // NetEase Cloud Music plays through ncm-cli in the terminal and the window alike. Its tools
   // appear once ncm-cli says it is signed in; only listeners who chose it wait for that check.
-  const neteasePlayer = createNeteasePlayer();
+  const neteasePlayer = host?.createNeteasePlayer?.(neteaseLibrary) ?? createNeteasePlayer();
   const playbackService = await resolvePlaybackService();
-  if (playbackService === "netease") await neteasePlayer.check();
+  if (host || playbackService === "netease") await neteasePlayer.check();
   // The main application and every conversation the window opens beside it are built from
   // this one list, so they cannot drift apart. Each passes in what may change after launch:
   // its domain services, the Spotify connection, the language and the music service.
@@ -1029,6 +1041,15 @@ async function main() {
       checkUpdates: options => updater.startupCheck(options),
       runUpdate: (args, options) => runUpdateCommand({ args, updater, deferInstall: true, ...options }),
       prepareImport: prepareTuiHistoryImport,
+      neteaseLibrary,
+      loginNetease: (controls) => neteaseLibrary.login(host?.openNeteaseLogin ?? desktopNeteaseLogin, controls),
+      prepareNeteaseImport: (id, controls) => prepareTuiHistoryImport(undefined, { neteasePlaylistId: id, ...controls }),
+      runNetease: async (args, controls) => {
+        const result = await runNeteaseCommand({ args, library: neteaseLibrary, openLogin: host?.openNeteaseLogin ?? desktopNeteaseLogin,
+          prepareImport: (id, controls) => prepareTuiHistoryImport(undefined, { neteasePlaylistId: id, ...controls }), ...controls });
+        if (args[0] === "import") replaceDomainServices(await loadDomainServices());
+        return result.markdown;
+      },
       prepareRecentImport: async ({ onProgress } = {}) => {
         const recentPage = await runSpotifySurface({ args: ["recent", "--limit", "50"], stdout: { write() {} } });
         let librarySnapshot = null;
@@ -1056,10 +1077,11 @@ async function main() {
       // runtime afterwards, between turns.
       // The choice is saved once and set on the main application and every open conversation.
       savePlaybackService: async (service) => {
-        // NetEase is chosen only once ncm-cli is installed and signed in, so its tools can play.
+        // NetEase is chosen only once its desktop or terminal player can play.
         if (service === "netease") {
           const status = await neteasePlayer.check();
           if (status.state !== "ready") {
+            if (host) throw new Error("请先在设置 → 网易云音乐中登录账号。 / Sign in through Settings → NetEase Cloud Music first.");
             throw new Error(status.state === "missing"
               ? "NetEase Music needs ncm-cli: npm install -g @music163/ncm-cli, then ncm-cli login."
               : "NetEase Music is not signed in. Run ncm-cli login in a terminal, then choose it again.");

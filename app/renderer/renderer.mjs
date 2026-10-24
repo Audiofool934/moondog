@@ -4,6 +4,7 @@ import { languageTag, timeOfDay, windowLocale, windowStrings } from "../strings.
 import { renderMarkdown } from "./markdown.mjs";
 import { createPalette } from "./palette.mjs";
 import { createPreviews } from "./previews.mjs";
+import { createNeteaseAudio } from "./netease-audio.mjs";
 import { coverPalette, grooveColours, moodColours } from "./mood.mjs";
 import { createMark } from "./mark.mjs";
 import { mountRecord } from "./record.mjs";
@@ -39,6 +40,7 @@ let port = null;
 const outbox = [];
 const send = (message) => (port ? port.postMessage(message) : outbox.push(message));
 const previews = createPreviews({ send, onChange: () => renderInspector() });
+const neteaseAudio = createNeteaseAudio({ send, beforePlay: () => previews.stop() });
 const settings = createSettings({ state, send, t: tr, prettyModel: (model) => prettyModel(model),
   appleMusic: { status: () => previews.fullStatus(), check: (command) => previews.check(command) } });
 const sidebar = createSidebar({ root: $("sessions"), state, send, t: tr, open: (id) => openSession(id), store, menuPoint: (event) => menuPoint(event) });
@@ -782,6 +784,7 @@ const COMMANDS = [
   { name: "service", label: "musicService", run: () => settings.show("playback") },
   { name: "device", label: "devices", run: () => pickDevice(null) },
   { name: "import", label: "importHistory", run: () => settings.show("library") },
+  { name: "netease", label: "netease", run: () => settings.show("netease") },
   { name: "memory", label: "memory", run: () => settings.show("memory") },
   { name: "remember", label: "remember", argument: "cmdRememberArgument", run: (text) => { if (text) { send({ type: "remember", text }); notice(t("remembered")); } } },
   { name: "folder", label: "newFolder", run: () => {
@@ -828,7 +831,7 @@ async function pickModel(event) {
   if (chosen.startsWith("model:")) send({ type: "model", provider, model: rest.join(":") });
 }
 // The music service's menu: the services, each checked when in use; signing in to one the core can
-// play but can't yet, Spotify in Settings and NetEase with its own tool in Terminal; then the settings.
+// play but can't yet, with Spotify and NetEase account connections in Settings.
 // A choice shows at once and the core's status confirms it; a switch rebuilds every conversation.
 let sourceWanted = null;
 let wantedTimer = 0;
@@ -877,7 +880,7 @@ async function showDevices(devices) {
   }
   items.push({ id: "service:spotify", label: "Spotify", checked: state.playbackService === "spotify" },
     { id: "service:apple_music", label: "Apple Music", checked: state.playbackService === "apple_music" });
-  // NetEase is offered once ncm-cli is installed and signed in.
+  // NetEase is offered after the account is connected in Settings.
   if (state.netease === "ready" || state.playbackService === "netease") items.push({ id: "service:netease", label: t("netease"), checked: state.playbackService === "netease" });
   items.push({ type: "separator" }, { id: "settings", label: t("playbackSettings") });
   const chosen = await window.moondogApp?.showMenu?.(items, at);
@@ -1045,7 +1048,7 @@ function renderInspector() {
     slidePanels();
   }
   set($("blank"), "textContent", limitedUntil ? spotifyLimited(limitedUntil) : t("nothingPlaying"));
-  set($("song"), "textContent", now?.title ?? "");
+  set($("song"), "textContent", now ? `${now.title}${now.trial ? (state.locale.startsWith("zh") ? " · 试听" : " · Preview") : ""}` : "");
   set($("artist"), "textContent", now ? now.artists.join(", ") : "");
   set($("album"), "textContent", now?.album ?? "");
   renderProgress(now);
@@ -1057,7 +1060,7 @@ function renderInspector() {
     set($("previous"), "disabled", !can(now, "skipping_prev"));
   }
   // Where the music plays opens the choice of device and service: Spotify's device, Apple Music
-  // playing in the window, or NetEase playing through ncm-cli on this Mac.
+  // or NetEase playing in the window.
   const neteaseNow = now?.service === "netease";
   const spotifyNow = now && !now.local && !neteaseNow;
   const appleNow = now?.local && state.playbackService === "apple_music";
@@ -1071,7 +1074,7 @@ function renderInspector() {
     setIcon($("device-row"), "laptop");
   }
   set($("repeat"), "hidden", !spotifyNow || now.repeat !== "track");
-  set($("stop-previews"), "hidden", !now?.local);
+  set($("stop-previews"), "hidden", !now?.local && !neteaseNow);
   name($("stop-previews"), now?.preview ? t("stopPreviews") : t("stop"));
   // The song's own page: Apple Music for a preview, Spotify for a song Spotify plays.
   const external = $("external");
@@ -1115,6 +1118,9 @@ function renderInspector() {
 }
 
 function control(action, via = "button") {
+  if (["next", "previous"].includes(action) && keySeek) {
+    clearTimeout(keySeek.timer); keySeek = null; seeking = null;
+  }
   const now = nowPlaying();
   if (now?.local) {
     if (action === "toggle") previews.toggle();
@@ -1150,7 +1156,7 @@ $("previous").addEventListener("click", () => control("previous"));
 $("mini-open").addEventListener("click", () => togglePanel("inspector"));
 $("mini-toggle").addEventListener("click", () => control("toggle"));
 $("mini-next").addEventListener("click", () => control("next"));
-$("stop-previews").addEventListener("click", () => previews.stop());
+$("stop-previews").addEventListener("click", () => nowPlaying()?.service === "netease" ? send({ type: "control", action: "stop" }) : previews.stop());
 
 // Taking hold of the progress line moves the song there when you let go; the arrow keys move it by
 // five seconds (fifteen with Shift), Home and End to either end.
@@ -1371,11 +1377,13 @@ function streamingTurn(id) {
 }
 const onScreen = (data) => !data.session || data.session === state.current;
 const SIGN_IN_ERRORS = { connect_while_answering: "waitForReply", sign_in_busy: "signInBusy" };
-const SETTINGS_MESSAGES = new Set(["models", "provider-models", "devices", "memories", "auth-prompt", "auth-prompt-closed", "auth-event", "sign-in", "import", "notice"]);
+const SETTINGS_MESSAGES = new Set(["custom-endpoint", "netease-library", "models", "provider-models", "devices", "memories", "auth-prompt", "auth-prompt-closed", "auth-event", "sign-in", "import", "notice"]);
 function receive({ data }) {
   if (!data?.type) return;
+  if (data.type === "netease-audio") { neteaseAudio.receive(data); return; }
   if (data.type === "preview" || data.type === "preview-control") { previews.receive(data); renderInspector(); return; }
   if (SETTINGS_MESSAGES.has(data.type)) settings.receive(data);
+  if (data.type === "custom-endpoint" && data.stage === "done" && ["save", "remove"].includes(data.action)) providerModels.delete("custom-endpoint");
   if (data.type === "models") {
     providers = data.providers ?? [];
     for (const provider of providers) if (provider.signedIn && !providerModels.has(provider.id)) send({ type: "provider-models", provider: provider.id });
@@ -1386,6 +1394,7 @@ function receive({ data }) {
     else void showDevices(data.devices ?? []);
   }
   if (data.type === "player-error") notice(t("noticePlaybackFailed"));
+  if (data.type === "netease-library" && data.action === "play" && data.stage === "error" && !settings.open) notice(data.message);
   // The sheet shows its own sign-in errors. sign_in_busy is the exception: the sheet keeps the running panel.
   if (data.type === "sign-in" && data.state === "error" && !(settings.open && data.code !== "sign_in_busy")) notice(SIGN_IN_ERRORS[data.code] ? t(SIGN_IN_ERRORS[data.code]) : t("signInFailed"));
   if (data.type === "import" && data.stage === "refresh-failed") notice(t("importRefreshFailed"));

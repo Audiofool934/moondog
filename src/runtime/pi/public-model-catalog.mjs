@@ -5,6 +5,7 @@ import path from "node:path";
 import { createPiModels, listPiModels, listPiProviders } from "./model-catalog.mjs";
 import { acquirePrivateFileLock, resolveMoondogAuthFile } from "./persistent-credential-store.mjs";
 import { supportedPiProviderIds } from "./provider-registry.mjs";
+import { addCustomEndpoint, readCustomEndpoint } from "./custom-endpoint.mjs";
 
 export const PI_CATALOG_VERSION = "1.0.1";
 const MAX_BYTES = 2 * 1024 * 1024;
@@ -167,7 +168,7 @@ export class PublicPiModelCatalog {
 
   file(id) { return path.join(this.root, `${id}.json`); }
   publish() { this.snapshot = this.createModels(); }
-  createModels(options) { return createPiModels({ ...options, catalogModels: new Map([...this.records].map(([id, record]) => [id, record.models])) }); }
+  createModels(options) { return addCustomEndpoint(createPiModels({ ...options, catalogModels: new Map([...this.records].map(([id, record]) => [id, record.models])) }), this.customEndpoint); }
   providers() { return listPiProviders(this.snapshot); }
   models(id) {
     const record = this.records.get(id);
@@ -277,12 +278,14 @@ export async function getPublicPiModelCatalog(environment = process.env) {
   const key = path.dirname(resolveMoondogAuthFile(environment));
   if (!catalogs.has(key)) {
     const catalog = new PublicPiModelCatalog({ environment });
-    catalogs.set(key, catalog); await catalog.ready; return catalog;
+    catalogs.set(key, catalog); await catalog.ready;
+    catalog.customEndpoint = await readCustomEndpoint(environment); catalog.publish(); return catalog;
   }
   const catalog = catalogs.get(key);
   await catalog.ready;
   // Another running app can persist a new selection and its catalog entry.
   // Reload public cache only; do not fetch or touch the active model object.
   await catalog.restore();
+  catalog.customEndpoint = await readCustomEndpoint(environment); catalog.publish();
   return catalog;
 }

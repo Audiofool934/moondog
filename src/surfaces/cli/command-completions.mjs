@@ -78,6 +78,9 @@ export function withCommandCompletions(commands, {
   if (tr) translate = tr;
   const firstArgument = (items) => (previous) => previous.length === 0 ? items : [];
   const specifications = {
+    netease: { argumentHint: "[login|logout|status|playlists|playlist <id>|import <id>]",
+      choices: firstArgument(choices([["login", "Sign in to NetEase"], ["logout", "Sign out"], ["status", "Account connection"],
+        ["playlists", "Your created and saved playlists"], ["playlist", "Inspect playlist tracks by ID"], ["import", "Import one selected playlist by ID"]])) },
     update: {
       argumentHint: "[--check] [--channel latest|beta]",
       choices: previous => previous.at(-1) === "--channel"

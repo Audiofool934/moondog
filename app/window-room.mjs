@@ -56,7 +56,7 @@ const errorText = (error) => String(error?.message ?? error ?? "").slice(0, 400)
 
 export function runWindowRoom(services, { port, send, quit = null, focus = null }) {
   const { application: base, rebuildRuntime, saveRuntimeSelection, toolTrace = null, openConversation, modelSettings, saveLanguage, savePlaybackService,
-    prepareImport, prepareRecentImport, refreshImportedData, lastfm, runSpotify } = services;
+    prepareImport, prepareRecentImport, refreshImportedData, lastfm, runSpotify, neteaseLibrary, loginNetease, prepareNeteaseImport } = services;
   // Slot 0 is the core's own application and agent. The core closes every conversation after the room ends.
   const slots = [{ application: base, runtime: services.runtime, turn: null, live: null, stale: null, rebuilding: null, waiting: false, close: null }];
   let current = slots[0];
@@ -188,7 +188,7 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
       spotify: base.spotifyReady?.() === true ? "ready" : "unavailable",
       spotifyAccount: { state: spotify.state ?? "unavailable", clientId: spotify.client_id_configured === true },
       playbackService: base.playbackService ?? "spotify",
-      // NetEase Cloud Music is offered once ncm-cli is installed and signed in.
+      // NetEase is offered after the account is connected to its player.
       netease: base.neteasePlayer?.status?.().state ?? "unavailable",
       memory: base.memoryStatus?.().state ?? "unavailable",
     };
@@ -203,7 +203,7 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     const now = await base.neteasePlayer.nowPlaying();
     const track = (song) => ({ title: song.title, link: null, artists: song.artists, album: song.album, image: song.image, durationMs: song.duration_ms });
     return { type: "player", spotify,
-      now: now.song ? { ...track(now.song), service: "netease", playing: now.state === "playing", progressMs: now.position_ms,
+      now: now.song ? { ...track(now.song), service: "netease", trial: now.song.trial === true, playing: now.state === "playing", progressMs: now.position_ms,
         device: null, deviceType: "computer", repeat: "off", shuffle: false, disallows: [], observedAt: Date.now() } : null,
       next: now.next.slice(0, 8).map(track) };
   }
@@ -295,13 +295,14 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     const netease = base.playbackService === "netease";
     const service = netease ? base.neteasePlayer : base.spotifyConnection?.service;
     const ready = netease ? base.neteaseReady?.() === true : base.spotifyReady?.() === true;
-    if (!service || !ready || !["pause", "resume", "next", "previous", "seek"].includes(action)) return;
+    if (!service || !ready || !["pause", "resume", "next", "previous", "seek", ...(netease ? ["stop"] : [])].includes(action)) return;
     toolTrace?.record({ source: "window", tool: "player_control", state: "start", args: { action, via: via ?? "button" } });
     try {
       // A seek is a click on the song's progress; the rest are the transport buttons and the menu.
       if (action === "seek") await service.seek({ positionMs: Math.max(0, Math.round(Number(positionMs) || 0)) });
       else await service[action]({});
     } catch (error) {
+      if (error.code === "netease_cancelled") return;
       if (noteLimit(error)) { send(limited()); schedulePlayer(); return; }
       send({ type: "player-error", action, message: errorText(error) });
     }
@@ -622,7 +623,8 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     send({ type: "import", stage: "reading", kind });
     const onProgress = (event) => send({ type: "import", stage: "progress", count: event?.count ?? null, total: event?.total ?? null, step: event?.stage ?? null });
     try {
-      const prepared = kind === "spotify" ? await prepareRecentImport({ onProgress, signal: controller.signal })
+      const prepared = kind === "netease" ? await prepareNeteaseImport(value, { signal: controller.signal })
+        : kind === "spotify" ? await prepareRecentImport({ onProgress, signal: controller.signal })
         : kind === "lastfm" ? await prepareImport(value, { provider: "lastfm", onProgress, signal: controller.signal })
           : await prepareImport(value, {});
       if (controller.signal.aborted) { prepared?.close?.(); importing = null; return send({ type: "import", stage: "cancelled" }); }
@@ -675,6 +677,7 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     if (!["spotify", "apple_music", "netease"].includes(service) || typeof savePlaybackService !== "function") return;
     // The core saves it and sets it on every conversation; each agent's tools change when it is rebuilt.
     await savePlaybackService(service);
+    if (service !== "netease") await base.neteasePlayer?.stop?.();
     await rebuildAll(undefined);
     await refreshPlayer({ queue: true });
     schedulePlayer();
@@ -685,12 +688,106 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
       id: memory.memory_id, text: memory.text, kind: memory.kind, updatedAt: memory.updated_at })) });
   }
 
+  let neteaseSigningIn = null;
+  let neteaseRead = null;
+  async function neteaseAction(action, value) {
+    if (!neteaseLibrary) return;
+    if (action === "login") {
+      if (neteaseSigningIn) return;
+      neteaseRead?.abort();
+      neteaseSigningIn = new AbortController();
+    } else if (action === "logout") {
+      neteaseSigningIn?.abort();
+      neteaseRead?.abort();
+      await base.neteasePlayer?.stop?.();
+    } else {
+      neteaseRead?.abort();
+      neteaseRead = new AbortController();
+    }
+    const controller = action === "login" ? neteaseSigningIn : action === "logout" ? new AbortController() : neteaseRead;
+    send({ type: "netease-library", action, stage: "loading" });
+    try {
+      const result = action === "login" ? await loginNetease({ signal: controller.signal })
+        : action === "logout" ? await neteaseLibrary.logout()
+        : action === "playlists" ? { playlists: await neteaseLibrary.playlists({ signal: controller.signal }) }
+        : action === "playlist" ? { playlist: await neteaseLibrary.playlist(value, { signal: controller.signal }) }
+        : await neteaseLibrary.status({ refresh: true, signal: controller.signal });
+      if (controller.signal.aborted) return;
+      if (["login", "logout", "status"].includes(action)) {
+        await base.neteasePlayer?.check?.();
+        if (["login", "logout"].includes(action)) await rebuildAll(undefined);
+        sendStatus(); await refreshPlayer();
+      }
+      send({ type: "netease-library", action, stage: "done", ...result });
+    } catch (error) {
+      if (!controller.signal.aborted) send({ type: "netease-library", action, stage: "error", code: error?.code, message: errorText(error) });
+    } finally { if (neteaseSigningIn === controller) neteaseSigningIn = null; }
+  }
+
+  let customTesting = null;
+  async function customEndpoint(action, input) {
+    let testingController;
+    send({ type: "custom-endpoint", action, stage: "loading" });
+    try {
+      if (action === "save") {
+        customTesting?.abort();
+        const endpoint = await modelSettings.saveCustomEndpoint(input);
+        await rebuildAll({ provider: "custom-endpoint", model: endpoint.modelId });
+      } else if (action === "remove") {
+        customTesting?.abort();
+        await modelSettings.removeCustomEndpoint();
+        await rebuildAll(undefined);
+      } else if (action === "test") {
+        customTesting?.abort();
+        const controller = new AbortController(); customTesting = controller; testingController = controller;
+        await modelSettings.testCustomEndpoint({ signal: controller.signal });
+        if (controller.signal.aborted) return;
+      }
+      send({ type: "custom-endpoint", action, stage: "done", endpoint: await modelSettings.customEndpoint() });
+      if (["save", "remove"].includes(action)) await sendModels();
+    } catch (error) {
+      if (testingController?.signal.aborted) return;
+      send({ type: "custom-endpoint", action, stage: "error", message: ["custom_endpoint_invalid", "custom_endpoint_test_failed"].includes(error.code)
+        ? error.message : "自定义接口操作失败，请检查配置后重试。 / Custom endpoint action failed. Check settings and retry." });
+    }
+  }
+  let controlLine = Promise.resolve();
   const handlers = {
+    "custom-endpoint-status": () => customEndpoint("status"),
+    "custom-endpoint-save": (data) => customEndpoint("save", data.endpoint),
+    "custom-endpoint-test": () => customEndpoint("test"),
+    "custom-endpoint-remove": () => customEndpoint("remove"),
+    "netease-play": async (data) => {
+      send({ type: "netease-library", action: "play", stage: "loading" });
+      try {
+        if (typeof base.neteasePlayer?.playPlaylist !== "function") throw new Error("Direct playback is unavailable.");
+        await base.neteasePlayer.check();
+        await setMusicService("netease");
+        const result = await base.neteasePlayer.playPlaylist(String(data.id ?? ""), { trackId: data.trackId ? String(data.trackId) : undefined });
+        send({ type: "netease-library", action: "play", stage: "done", trial: result.trial });
+        await refreshPlayer();
+      } catch (error) {
+        if (error.code === "netease_cancelled") return;
+        send({ type: "netease-library", action: "play", stage: "error", code: error.code, message: errorText(error) });
+      }
+    },
+    "netease-status": () => neteaseAction("status"),
+    "netease-login": () => neteaseAction("login"),
+    "netease-login-cancel": () => neteaseSigningIn?.abort(),
+    "netease-logout": () => neteaseAction("logout"),
+    "netease-playlists": () => neteaseAction("playlists"),
+    "netease-playlist": (data) => neteaseAction("playlist", String(data.id ?? "")),
+    "import-netease": (data) => prepare("netease", String(data.id ?? "")),
     prompt: (data) => prompt(String(data.text ?? "")),
     cancel: () => { if (current.turn) current.runtime.abort?.(); },
     new: () => openSession(null),
     open: (data) => openSession(String(data.id ?? "")),
-    control: (data) => control(String(data.action ?? ""), data.via, data.positionMs),
+    control: (data) => {
+      const action = String(data.action ?? "");
+      if (action === "stop") return control(action, data.via, data.positionMs);
+      controlLine = controlLine.catch(() => {}).then(() => control(action, data.via, data.positionMs));
+      return controlLine;
+    },
     storefront: (data) => { setAppleMusicStorefront(data.code); },
     visible: (data) => {
       visible = data.visible !== false;
@@ -733,7 +830,7 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     },
     language: (data) => setLanguage(String(data.locale ?? "")),
     "music-service": (data) => setMusicService(String(data.service ?? "")),
-    // After ncm-cli is set up in Terminal, the window asks again instead of waiting for the next launch.
+    // Recheck the player's account connection without restarting the window.
     "netease-check": async () => { await base.neteasePlayer?.check?.(); sendStatus(); },
     devices: () => devices(),
     transfer: (data) => transfer(data.ref),
@@ -758,6 +855,9 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
       clearTimeout(sessionsTimer);
       const settling = slots.filter((slot) => slot.turn).map((slot) => { slot.runtime.abort?.(); return slot.turn.settled; });
       signIn?.controller.abort();
+      neteaseSigningIn?.abort();
+      neteaseRead?.abort();
+      customTesting?.abort();
       closeImport();
       await Promise.race([Promise.allSettled(settling), new Promise((done) => setTimeout(done, 2000))]);
       resolve({});
@@ -781,6 +881,12 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
       }
     });
     port.start();
+    const unsubscribeNetease = base.neteasePlayer?.subscribe?.((error) => {
+      if (closed) return;
+      if (error) send({ type: "netease-library", action: "play", stage: "error", code: error.code, message: errorText(error) });
+      void refreshPlayer();
+    });
+    quit?.addEventListener("abort", () => unsubscribeNetease?.(), { once: true });
     // Whether the pickers can offer NetEase: one check at launch, unless the core already made it.
     if (base.neteasePlayer?.status?.().state === "unknown") void base.neteasePlayer.check().then(sendStatus, () => {});
     // Each launch opens a new conversation, as the terminal does; earlier ones wait in the sidebar.

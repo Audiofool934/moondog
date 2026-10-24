@@ -15,6 +15,8 @@ npm start
 
 The app reads and writes the same profile, settings, and sign-ins as the `moondog` command.
 
+For this checkout on Windows, run `start-moondog.cmd` in the parent directory. **Settings → NetEase** opens the official NetEase login window and then your created/saved playlists. Play a whole playlist or click an individual song directly, and use the existing player panel to pause, seek and skip. No separate player setup is needed. You can also preview a playlist before importing it into the profile. Credentials stay in the core. **Settings → Model → Custom API / Gateway** connects a user-entered API URL, key and model ID, with an explicit connection test. See the root README and local verification report.
+
 To try the whole window without touching a Spotify account, run it on a simulated Spotify:
 
 ```bash
@@ -24,7 +26,7 @@ npm run simulated
 
 The simulated Spotify (`src/evaluation/simulated-spotify.mjs`) has real public titles, invented IDs and drawn covers.
 The model is the one your settings choose; conversations stay in memory and are gone when the app quits.
-A model or music service chosen there lasts until the app quits, and sign-in and sign-out are turned off.
+A model or music service chosen there lasts until the app quits, and real sign-in and sign-out are turned off. The NetEase settings use an explicitly fictional account and playlists, with local simulated login and logout; no requests go to NetEase.
 
 ## The window
 
@@ -61,7 +63,7 @@ A model or music service chosen there lasts until the app quits, and sign-in and
 - Drag the inner edge of either side panel to change its width; a double-click puts it back.
 - Beside the send button, the music service and the model, each by its mark (from Simple Icons, and Lobe Icons for the model makers Simple Icons lacks), with its name in the tooltip.
   A model shows its maker's mark, through OpenRouter too, by the maker its id names; a maker the window has no mark for shows a plain model glyph.
-  The service's menu switches between Spotify, Apple Music, and NetEase Music once ncm-cli is ready; it also signs in to Spotify in Settings, or shows the commands that set up NetEase in Terminal and checks again.
+  The service's menu switches between Spotify, Apple Music, and NetEase Music once the account is connected; its NetEase sign-in entry opens the built-in account and playlist settings.
   It offers only services the core can play.
   The model's menu shows the maker in use over its models, the chosen one checked, every other signed-in maker's models in a submenu, and the thinking effort with its level.
   On a first launch the service reads "Choose a music service" until one is chosen, as the model reads "Choose a model" until there is one.
@@ -73,11 +75,10 @@ A model or music service chosen there lasts until the app quits, and sign-in and
 - Apple Music plays whole songs where it can and 30-second previews where it can't.
   Whole songs come from a small helper beside the app's executable (`native/music.swift`) that plays the Apple Music catalog through MusicKit, so they need an Apple Music subscription and the listener's permission, which Settings › Playback asks for once.
   Until the helper can play, the window plays previews in itself, with media keys and the system's Now Playing.
-- NetEase Music (网易云音乐) plays through NetEase's own command line tool, for listeners in mainland China.
-  It shows among the music services once `npm install -g @music163/ncm-cli`, `brew install mpv` and `ncm-cli login` are done; ncm-cli keeps its own key and sign-in, and Moondog never reads them.
-  The core (`src/integrations/netease/ncm-cli-player.mjs`) keeps the queue and plays one song at a time with ncm-cli, so the terminal and the window play the same way.
-  Many songs, above all originals outside mainland China, are marked not playable, most often for copyright; Moondog never sends those and says so instead.
-  Each search sends NetEase a short summary of the request, which Settings › Playback says.
+- NetEase Music (网易云音乐) plays in this window with the account connected in Settings.
+  The core (`app/netease-player.mjs`) keeps the queue and obtains a fresh account-authorized URL as each song begins; the window's Audio element plays it.
+  Account cookies stay in the core. Song availability follows account and regional rights; trial clips are labeled.
+  Sign-out stops playback. The terminal's optional legacy player remains separate.
 - No accent color. Cover art brings the color: the song playing tints the window and the record's grooves with its strongest colours, faintly, and they drift into the next song's over a few seconds; its cover glows from the player's corner across to the far edge.
   The window is one pane: no panel has a ground of its own, and the composer and your words sit on the light as a thin film, not as cards.
   Icon buttons name themselves, with their keys, after 650 ms of hovering, in a quiet tooltip matched to the light or dark theme.

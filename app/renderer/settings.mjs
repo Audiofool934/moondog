@@ -3,15 +3,15 @@
 // the core's next status confirms it, so nothing waits on a rebuild to look chosen.
 import { languageTag, timeOfDay } from "../strings.mjs";
 import { icon, make, name, scrollbar, setIcon, turning } from "./ui.mjs";
+import { createNeteaseSettings } from "./netease.mjs";
+import { createCustomEndpointSettings } from "./custom-endpoint.mjs";
 
-const SECTIONS = ["general", "model", "playback", "library", "memory", "about"];
-const ICONS = { general: "globe", model: "model", playback: "speaker", library: "import", memory: "memory", about: "info" };
+const SECTIONS = ["general", "model", "playback", "netease", "library", "memory", "about"];
+const ICONS = { general: "globe", model: "model", playback: "speaker", netease: "speaker", library: "import", memory: "memory", about: "info" };
 // Spotify names device types in English; the icon says the kind, so no word is needed.
 const DEVICE_ICONS = { computer: "laptop", smartphone: "phone", tablet: "phone", tv: "tv" };
 const REDIRECT_URI = "http://127.0.0.1:43821/callback";
 const SPOTIFY_DASHBOARD = "https://developer.spotify.com/dashboard";
-// NetEase plays through its own command line tool, installed and signed in from Terminal (app/README.md).
-const NETEASE_SETUP = "npm install -g @music163/ncm-cli && brew install mpv && ncm-cli login";
 const LASTFM_KEY_PAGE = "https://www.last.fm/api/account/create";
 const SITE = "https://moondog.audiofool.ai";
 // The core's error codes the listener can act on. Anything else reads as a plain failure; the raw
@@ -101,6 +101,8 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
   let closing = 0;
   let content = null;
   let copiedTimer = 0;
+  const netease = createNeteaseSettings({ send, locale: () => state.locale, changed: () => render() });
+  const customEndpoint = createCustomEndpointSettings({ send, locale: () => state.locale, changed: () => render() });
   // What the core told this sheet; the sheet asks again each time a section opens.
   const data = { providers: null, providersError: false, models: new Map(), modelsFailed: new Set(), expanded: undefined, signingOut: new Set(),
     devices: null, devicesError: false, devicesLoading: false, memories: null, auth: null, error: null, importing: null, version: null, copied: null, focus: null, phaseOffset: null,
@@ -130,9 +132,8 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
     sheet.hidden = false;
     if (!wasOpen) {
       content = null;
-      // Each opening starts with the provider in use unfolded, and NetEase's setup only when it was asked for.
+      // Each opening starts with the provider in use unfolded.
       data.expanded = undefined;
-      data.neteaseSetup = false;
     }
     isOpen = true;
     if (windowNode) windowNode.inert = true;
@@ -164,7 +165,8 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
   function refresh() {
     // The status and the memories come back for every section.
     send({ type: "settings" });
-    if (section === "model") send({ type: "models" });
+    if (section === "model") { send({ type: "models" }); customEndpoint.refresh(); }
+    if (section === "netease") netease.refresh();
     if (section === "playback") {
       data.devicesLoading = true;
       send({ type: "devices" });
@@ -401,6 +403,7 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
     if (data.auth && data.auth.provider !== "spotify") parts.push(group(null, signInPanel()));
     else parts.push(group(say("providers"), sectionError(), providerList(active)));
     if (current.effortLevels?.length && !switching) parts.push(group(say("effort"), efforts(current)));
+    parts.push(customEndpoint.render());
     return parts;
   }
   function efforts(current) {
@@ -435,7 +438,7 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
     for (const provider of usable) {
       const signedIn = provider.signedIn === true;
       // Only a key Moondog saved can be signed out here; one from the environment stays in effect.
-      const canSignOut = signedIn && provider.source === "saved";
+      const canSignOut = signedIn && provider.source === "saved" && provider.id !== "custom-endpoint";
       let trailing = null;
       if (canSignOut) {
         trailing = button(say("signOut"), "button quiet small", () => {
@@ -516,17 +519,10 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
         key: "service:spotify", onChoose: chooseService("spotify") }),
       choice({ label: "Apple Music", detail: say(whole?.canPlay ? "fullSongs" : "appleMusicNote"), chosen: service === "apple_music", key: "service:apple_music",
         trailing: allowWhole, onChoose: chooseService("apple_music") }),
-      // NetEase is offered once ncm-cli is installed and signed in; its searches send NetEase a short summary.
-      ...(state.netease === "ready" || service === "netease" ? [choice({ label: say("netease"), detail: say("neteaseNote"), chosen: service === "netease",
+      // NetEase is offered after the listener connects their account.
+      ...(state.netease === "ready" || service === "netease" ? [choice({ label: say("netease"), detail: String(state.locale).startsWith("zh") ? "使用已登录的网易云账号，在应用内播放。" : "Play in the app with your connected NetEase account.", chosen: service === "netease",
         key: "service:netease", onChoose: chooseService("netease") })] : []),
     ]))];
-    // Asked for from the music service's menu: NetEase is set up in Terminal with its own tool, then checked again here.
-    if (data.neteaseSetup && state.netease !== "ready") {
-      const stack = make("div", "stack");
-      stack.append(note(say("neteaseSetup")), copyChip(NETEASE_SETUP, "netease", "chip", say("netease")),
-        button(say("checkAgain"), "button small", () => send({ type: "netease-check" }), "netease:check"));
-      parts.push(group(say("netease"), stack));
-    }
     if (service !== "spotify") return parts;
     if (data.auth?.provider === "spotify") parts.push(group(null, signInPanel()));
     else if (!ready) parts.push(group(null, data.auth ? note(say("signInBusy")) : connectSpotify()));
@@ -697,7 +693,7 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
     card.setAttribute("aria-label", say("settings"));
     close.setAttribute("aria-label", say("close"));
     for (const [id, { tab, label }] of tabs) {
-      label.textContent = say(`section.${id}`);
+      label.textContent = id === "netease" ? (String(state.locale).startsWith("zh") ? "网易云音乐" : "NetEase") : say(`section.${id}`);
       tab.classList.toggle("on", id === section);
       tab.setAttribute("aria-current", String(id === section));
     }
@@ -707,7 +703,7 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
     data.focus = null;
     const fresh = make("div", `sheet-section${entering ? " entering" : ""}`);
     fresh.dataset.section = section;
-    const views = { general, model, playback, library, memory, about };
+    const views = { general, model, playback, netease: () => [netease.render()], library, memory, about };
     fresh.append(...views[section]());
     // The core often repeats itself. An unchanged section keeps its nodes, so the row under the
     // pointer and the field being typed in are never replaced. Passing states, such as the refresh
@@ -736,6 +732,11 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
 
   // Messages from the core that this sheet draws.
   function receive(message) {
+    if (message.type === "custom-endpoint") {
+      if (message.stage === "done" && ["save", "remove"].includes(message.action)) { data.models.delete("custom-endpoint"); requested.delete("custom-endpoint"); }
+      customEndpoint.receive(message); return;
+    }
+    if (message.type === "netease-library") { netease.receive(message); return; }
     if (message.type === "models") {
       data.providers = message.providers ?? [];
       data.providersError = Boolean(message.error);
@@ -821,7 +822,7 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
     render();
   }
 
-  // Settings › Playback with NetEase's setup in view, for the music service's menu.
-  const showNetease = () => { show("playback"); data.neteaseSetup = true; render(); };
+  // The music service menu opens the same built-in account and playlist screen.
+  const showNetease = () => show("netease");
   return { show, showNetease, hide, render, receive, get open() { return isOpen; } };
 }

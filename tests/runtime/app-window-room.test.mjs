@@ -108,12 +108,92 @@ async function openRoom(extras = {}) {
   };
 }
 
+test("NetEase desktop messages expose account and playlist metadata and use the shared import preview", async () => {
+  let committed = false;
+  let closed = false;
+  const harness = await openRoom({ services: {
+    neteaseLibrary: {
+      status: async () => ({ state: "connected", account: { userId: "12345", nickname: "Fictional listener" } }),
+      playlists: async () => [{ id: "1001", name: "Fictional playlist", kind: "created" }],
+      playlist: async (id) => ({ id, name: "Fictional playlist", tracks: [] }),
+    },
+    prepareNeteaseImport: async (id) => {
+      assert.equal(id, "1001");
+      return { provider: "netease", preview: { kind: "collection", sourceLabel: "NetEase", tracks: 1, profileEvidence: 1 },
+        commit: async () => { committed = true; return { provider: "netease", inserted_profile_evidence: 1 }; },
+        close() { closed = true; } };
+    },
+  } });
+  try {
+    await harness.post({ type: "netease-status" });
+    assert.equal(harness.messages.at(-1).account.nickname, "Fictional listener");
+    await harness.post({ type: "netease-playlists" });
+    assert.equal(harness.messages.at(-1).playlists[0].id, "1001");
+    await harness.post({ type: "netease-playlist", id: "1001" });
+    assert.equal(harness.messages.at(-1).playlist.id, "1001");
+    await harness.post({ type: "import-netease", id: "1001" });
+    assert.equal(harness.messages.at(-1).stage, "preview");
+    assert.equal(committed, false);
+    await harness.post({ type: "import-commit" });
+    assert.ok(committed && closed);
+    assert.equal(harness.messages.some((message) => message.type === "import" && message.stage === "done"), true);
+  } finally { await harness.stop(); }
+});
+
+test("NetEase desktop cancellation aborts the login and a late read cannot redraw an old account", async () => {
+  let readSignal;
+  let loginSignal;
+  const harness = await openRoom({ services: {
+    neteaseLibrary: { status: ({ signal }) => { readSignal = signal; return new Promise((resolve) => signal.addEventListener("abort", () => resolve({ state: "signed_out", account: null }))); } },
+    loginNetease: ({ signal }) => { loginSignal = signal; return new Promise((resolve) => signal.addEventListener("abort", () => resolve({ cancelled: true }))); },
+  } });
+  try {
+    const read = harness.post({ type: "netease-status" });
+    await tick();
+    const login = harness.post({ type: "netease-login" });
+    await tick();
+    assert.equal(readSignal.aborted, true);
+    await harness.post({ type: "netease-login-cancel" });
+    await Promise.all([read, login]);
+    assert.equal(loginSignal.aborted, true);
+    assert.equal(harness.messages.some((message) => message.type === "netease-library" && message.stage === "done"), false);
+  } finally { await harness.stop(); }
+});
+
 test("a quit that arrived while the core was starting still stops the room", async () => {
   const harness = await openRoom({ quitNow: true });
   await Promise.race([
     harness.room,
     new Promise((_resolve, reject) => { setTimeout(() => reject(new Error("room did not stop")), 500); }),
   ]);
+});
+
+test("NetEase sign-out stops the built-in player before removing the account", async () => {
+  const order = [];
+  const base = application("A");
+  base.neteasePlayer = { stop: async () => order.push("stop"), check: async () => {}, status: () => ({ state: "signed_out" }) };
+  const harness = await openRoom({ application: base, services: { neteaseLibrary: { logout: async () => { order.push("logout"); return { state: "signed_out", account: null }; } } } });
+  try {
+    await harness.post({ type: "netease-logout" });
+    assert.deepEqual(order, ["stop", "logout"]);
+    assert.equal(harness.messages.findLast((message) => message.type === "netease-library").state, "signed_out");
+  } finally { await harness.stop(); }
+});
+
+test("fast NetEase transport commands wait for the preceding song to actually start", async () => {
+  const order = []; const gate = deferred();
+  const base = application("A"); base.playbackService = "netease"; base.neteaseReady = () => true;
+  base.neteasePlayer = { status: () => ({ state: "ready", backend: "builtin" }),
+    next: async () => { order.push("next-start"); await gate.promise; order.push("next-end"); },
+    previous: async () => order.push("previous"), nowPlaying: async () => ({ state: "stopped", song: null, next: [] }) };
+  const harness = await openRoom({ application: base });
+  try {
+    const next = harness.post({ type: "control", action: "next" }); await tick();
+    const previous = harness.post({ type: "control", action: "previous" }); await tick();
+    assert.deepEqual(order, ["next-start"]);
+    gate.resolve(); await Promise.all([next, previous]);
+    assert.deepEqual(order, ["next-start", "next-end", "previous"]);
+  } finally { gate.resolve(); await harness.stop(); }
 });
 
 test("a message waiting on a new model stays in that conversation", async () => {

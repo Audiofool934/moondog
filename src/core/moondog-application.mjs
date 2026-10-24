@@ -476,13 +476,15 @@ export class MoondogApplication {
       this.playbackService !== "netease";
   }
 
-  // NetEase plays only when it is the chosen service and ncm-cli is installed and signed in.
+  // NetEase plays only when it is chosen and its desktop or terminal player is signed in.
   neteaseReady() {
     return this.playbackService === "netease" && this.neteasePlayer?.ready?.() === true;
   }
 
   requireNetease() {
-    if (!this.neteaseReady()) throw Object.assign(new Error("NetEase Music is not ready. The listener can sign in with: ncm-cli login"), { code: "netease_not_ready" });
+    if (!this.neteaseReady()) throw Object.assign(new Error(this.neteasePlayer?.status?.().backend === "builtin"
+      ? "NetEase Music is not ready. Sign in through Settings → NetEase Music."
+      : "NetEase Music is not ready. The listener can sign in with: ncm-cli login"), { code: "netease_not_ready" });
     return this.neteasePlayer;
   }
 
@@ -3377,7 +3379,7 @@ export class MoondogApplication {
       this.pendingPlaylistPromptTransaction = null;
     } finally {
       const owned = this.ownsServices
-        ? [this.memoryStore, this.domainServices, this.musicCatalog, this.musicSimilarity, this.musicPreviewPlayer, this.webResearch]
+        ? [this.memoryStore, this.domainServices, this.musicCatalog, this.musicSimilarity, this.musicPreviewPlayer, this.webResearch, this.neteasePlayer]
         : [this.domainServices];
       for (const service of owned) service?.close?.();
     }

@@ -3,6 +3,7 @@
 // process talk over one message port, which also carries the previews the agent plays.
 import { createWindowPreviewPlayer } from "./preview-player.mjs";
 import { runWindowRoom } from "./window-room.mjs";
+import { createWindowNeteasePlayer } from "./netease-player.mjs";
 
 const port = await new Promise((resolve) => {
   process.parentPort.once("message", ({ ports: [roomPort] }) => resolve(roomPort));
@@ -12,12 +13,28 @@ const send = (message) => port.postMessage(message);
 const quit = new AbortController();
 // The app also says when its window gains focus, so the room can read Spotify again.
 const focus = new EventTarget();
+let loginRequest = null;
 process.parentPort.on("message", ({ data }) => {
   if (data?.type === "quit") quit.abort();
   if (data?.type === "focus") focus.dispatchEvent(new Event("focus"));
+  if (data?.type === "netease-login-result" && loginRequest) {
+    const pending = loginRequest;
+    loginRequest = null;
+    pending.cleanup();
+    data.error ? pending.reject(new Error(data.error)) : pending.resolve(data.cookie ?? null);
+  }
 });
 
 globalThis[Symbol.for("moondog.host")] = {
+  createNeteasePlayer: (library) => createWindowNeteasePlayer({ library, port }),
+  openNeteaseLogin: ({ signal } = {}) => new Promise((resolve, reject) => {
+    if (signal?.aborted) return resolve(null);
+    if (loginRequest) return reject(new Error("NetEase sign-in is already open."));
+    const cancel = () => process.parentPort.postMessage({ type: "netease-login-cancel" });
+    loginRequest = { resolve, reject, cleanup: () => signal?.removeEventListener("abort", cancel) };
+    signal?.addEventListener("abort", cancel, { once: true });
+    process.parentPort.postMessage({ type: "netease-login" });
+  }),
   runRoom: (services) => runWindowRoom(services, { port, send, quit: quit.signal, focus }),
   // The port would keep this process alive after the room closes.
   closed: () => {
