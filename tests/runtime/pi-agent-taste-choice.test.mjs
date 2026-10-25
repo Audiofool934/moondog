@@ -34,7 +34,7 @@ test("a choice the listener states in chat is saved at once, kept out of play, a
   const { store, domainServices, faux, runtime } = await fixture(t);
   faux.setResponses([
     (context) => {
-      assert.match(JSON.stringify(context.messages), /call moondog_taste_choice with their exact words/u);
+      assert.match(JSON.stringify(context), /the host confirms it in its own line/u);
       return choose({ subject: "artist", artist: "Drake", stance: "avoid", source_text: "never play Drake again" });
     },
     (context) => {

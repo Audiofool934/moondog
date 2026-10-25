@@ -64,7 +64,7 @@ export default {
   "queue.skippedAvoided": ({ count }) => `${count} morceaux à éviter ignorés.`,
   "queue.skippedKnown": ({ count }) => `${count} morceaux déjà présents dans votre historique ignorés, comme demandé.`,
   "queue.mix": ({ familiar = 0, returning = 0, heard = 0, known_artist: knownArtist = 0, new: fresh = 0 }) =>
-    `D'après votre historique : ${[familiar && `${familiar} que vous écoutez souvent`, returning && `${returning} qui reviennent après un moment`, heard && `${heard} entendus une ou deux fois`, knownArtist && `${knownArtist} nouveaux d'artistes que vous connaissez`, fresh && `${fresh} nouveaux pour vous`].filter(Boolean).join(", ")}.`,
+    `D'après votre historique : ${[familiar && `${familiar} que vous connaissez bien`, returning && `${returning} ${returning === 1 ? "qui revient" : "qui reviennent"} après un moment`, heard && `${heard} ${heard === 1 ? "entendu" : "entendus"} une ou deux fois`, knownArtist && `${knownArtist} ${knownArtist === 1 ? "nouveau d'un artiste" : "nouveaux d'artistes"} que vous connaissez`, fresh && `${fresh} ${fresh === 1 ? "nouveau" : "nouveaux"} pour vous`].filter(Boolean).join(", ")}.`,
   "queue.observationTruncated": "Le dédoublonnage ne couvre que l'extrait limité de la file que Spotify renvoie ; des entrées non visibles peuvent encore faire doublon.",
   "queue.notAddedHeading": "Non ajoutés :",
   "queue.earlierReceipt": "Voici le reçu de l'ajout précédent ; cette précision n'a pas ajouté les morceaux une seconde fois.",

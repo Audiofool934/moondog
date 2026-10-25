@@ -64,7 +64,7 @@ export default {
   "queue.skippedAvoided": ({ count }) => `피해 달라고 한 곡 ${count}곡을 건너뛰었습니다.`,
   "queue.skippedKnown": ({ count }) => `요청대로 청취 기록에 있는 곡 ${count}곡을 건너뛰었습니다.`,
   "queue.mix": ({ familiar = 0, returning = 0, heard = 0, known_artist: knownArtist = 0, new: fresh = 0 }) =>
-    `청취 기록 기준: ${[familiar && `자주 듣는 곡 ${familiar}곡`, returning && `오랜만인 곡 ${returning}곡`, heard && `한두 번 들은 곡 ${heard}곡`, knownArtist && `아는 아티스트의 새 곡 ${knownArtist}곡`, fresh && `처음 듣는 곡 ${fresh}곡`].filter(Boolean).join(", ")}.`,
+    `청취 기록 기준: ${[familiar && `잘 아는 곡 ${familiar}곡`, returning && `오랜만인 곡 ${returning}곡`, heard && `한두 번 들은 곡 ${heard}곡`, knownArtist && `아는 아티스트의 새 곡 ${knownArtist}곡`, fresh && `처음 듣는 곡 ${fresh}곡`].filter(Boolean).join(", ")}.`,
   "queue.observationTruncated": "Spotify가 돌려준 대기열의 일부만 확인했습니다. 보이지 않는 부분에 같은 곡이 있을 수 있습니다.",
   "queue.notAddedHeading": "추가하지 않은 곡:",
   "queue.earlierReceipt": "이것은 앞선 대기열 작업의 결과입니다. 이번 설명으로 곡을 다시 넣지는 않았습니다.",

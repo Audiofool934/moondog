@@ -64,7 +64,7 @@ export default {
   "queue.skippedAvoided": ({ count }) => `跳过 ${count} 首 Avoid 曲目。`,
   "queue.skippedKnown": ({ count }) => `按你的要求跳过 ${count} 首有保留听歌记录的曲目。`,
   "queue.mix": ({ familiar = 0, returning = 0, heard = 0, known_artist: knownArtist = 0, new: fresh = 0 }) =>
-    `根据你的听歌记录：${[familiar && `常听的 ${familiar} 首`, returning && `久违的 ${returning} 首`, heard && `听过一两次的 ${heard} 首`, knownArtist && `熟悉歌手的新歌 ${knownArtist} 首`, fresh && `没听过的 ${fresh} 首`].filter(Boolean).join("，")}。`,
+    `根据你的听歌记录：${[familiar && `熟悉的 ${familiar} 首`, returning && `久违的 ${returning} 首`, heard && `听过一两次的 ${heard} 首`, knownArtist && `熟悉歌手的新歌 ${knownArtist} 首`, fresh && `没听过的 ${fresh} 首`].filter(Boolean).join("，")}。`,
   "queue.observationTruncated": "仅检查了 Spotify 返回的有限队列片段，无法保证未显示部分没有重复。",
   "queue.notAddedHeading": "还没加入：",
   "queue.earlierReceipt": "这是上次队列操作的结果；这次澄清没有再次添加歌曲。",

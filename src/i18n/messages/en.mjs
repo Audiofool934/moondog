@@ -65,7 +65,7 @@ export default {
   "queue.skippedAvoided": ({ count }) => `Skipped ${count} avoided tracks.`,
   "queue.skippedKnown": ({ count }) => `Skipped ${count} tracks matched in retained history, as requested.`,
   "queue.mix": ({ familiar = 0, returning = 0, heard = 0, known_artist: knownArtist = 0, new: fresh = 0 }) =>
-    `From your history: ${[familiar && `${familiar} you play often`, returning && `${returning} back after a while`, heard && `${heard} you've heard once or twice`, knownArtist && `${knownArtist} new from artists you know`, fresh && `${fresh} new to you`].filter(Boolean).join(", ")}.`,
+    `The mix: ${[familiar && `${familiar} you know well`, returning && `${returning} back after a while`, heard && `${heard} you've heard once or twice`, knownArtist && `${knownArtist} new from ${knownArtist === 1 ? "an artist" : "artists"} you know`, fresh && `${fresh} new to you`].filter(Boolean).join(", ")}.`,
   "queue.observationTruncated": "Deduplication covers Spotify's bounded queue snapshot; unseen entries may still duplicate a selection.",
   "queue.notAddedHeading": "Not added:",
   "queue.earlierReceipt": "This is the earlier queue receipt; this clarification did not add the songs again.",

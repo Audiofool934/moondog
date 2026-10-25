@@ -64,7 +64,7 @@ export default {
   "queue.skippedAvoided": ({ count }) => `Pulei ${count} músicas que você marcou para evitar.`,
   "queue.skippedKnown": ({ count }) => `Pulei ${count} músicas que já aparecem no seu histórico, como você pediu.`,
   "queue.mix": ({ familiar = 0, returning = 0, heard = 0, known_artist: knownArtist = 0, new: fresh = 0 }) =>
-    `Do seu histórico: ${[familiar && `${familiar} que você ouve sempre`, returning && `${returning} que voltam depois de um tempo`, heard && `${heard} que você ouviu uma ou duas vezes`, knownArtist && `${knownArtist} novas de artistas que você conhece`, fresh && `${fresh} novas para você`].filter(Boolean).join(", ")}.`,
+    `Pelo seu histórico: ${[familiar && `${familiar} que você conhece bem`, returning && `${returning} ${returning === 1 ? "que volta" : "que voltam"} depois de um tempo`, heard && `${heard} que você ouviu uma ou duas vezes`, knownArtist && `${knownArtist} ${knownArtist === 1 ? "nova de um artista" : "novas de artistas"} que você conhece`, fresh && `${fresh} ${fresh === 1 ? "nova" : "novas"} para você`].filter(Boolean).join(", ")}.`,
   "queue.observationTruncated": "A checagem de repetidas só cobre a parte da fila que o Spotify mostra; o que não aparece ainda pode repetir alguma.",
   "queue.notAddedHeading": "Não adicionadas:",
   "queue.earlierReceipt": "Este é o resultado da fila anterior; este esclarecimento não adicionou as músicas de novo.",

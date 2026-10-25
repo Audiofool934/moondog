@@ -290,7 +290,7 @@ test("a queue batch skips a remaster of a song it already queued, writes the led
   assert.equal(result.spotify_queue_plan.queued_count, 2);
   assert.equal(result.spotify_queue_plan.skipped_duplicate_count, 1);
   assert.deepEqual(f.writes.map(write => write.uri), ["spotify:track:lan1", "spotify:track:lan3"]);
-  assert.match(result.text, /From your history: 1 you play often, 1 new to you\./u);
+  assert.match(result.text, /The mix: 1 you know well, 1 new to you\./u);
   assert.deepEqual(recorded.map(({ service, action, providerTrackId, title, mixSlot }) => ({ service, action, providerTrackId, title, mixSlot })), [
     { service: "spotify", action: "queue.batch", providerTrackId: "spotify:track:lan1", title: "Glass Harbor", mixSlot: "familiar" },
     { service: "spotify", action: "queue.batch", providerTrackId: "spotify:track:lan3", title: "Paper Comet", mixSlot: "new" },

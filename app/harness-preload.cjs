@@ -136,7 +136,7 @@ const LONG_TURNS = [
   ["What did I play most in March?", REPLY],
   ["Make it quieter", "Moving to *Pink Moon*. Nick Drake keeps the warmth with almost no drums.\n\n> Saturday sun came early one morning\n\nThat line is the whole record in one breath."],
   ["Remember that I don't like live recordings", "Got it. I'll leave live recordings out from now on, unless you ask for one."],
-  ["Queue three more like this", "Queued:\n\n1. **Clair de lune**: Alexis Weissenberg\n2. **Moonlight Mile**: The Rolling Stones\n3. **Harvest Moon**: Neil Young"],
+  ["Queue three more like this", "Queued:\n\n1. **Clair de lune**: Alexis Weissenberg\n2. **Moonlight Mile**: The Rolling Stones\n3. **Harvest Moon**: Neil Young\n\nThe mix: 2 you know well, 1 new to you."],
 ];
 
 // The status the stand-in core last announced, so a settings refresh answers with the same one.
@@ -219,6 +219,13 @@ const STATES = {
     send({ type: "turn", state: "start", id: "f1", text: "Play it on the kitchen speaker", session: "s1" });
     send({ type: "turn", state: "error", id: "f1", connection: true, session: "s1" });
     player({ playing: false });
+  },
+  // A Like or Avoid said in chat: the host's own line under the reply, and the save step while it runs.
+  "taste-choice"() {
+    ready({ transcript: conversation([["Never play The Paper Comets again", "Understood. Staying with the quiet side tonight: *Pink Moon*, then Bill Evans.\n\nSaved: I'll keep The Paper Comets out of what I play and suggest. Tell me any time to change it."]]),
+      live: { id: "t9", user: "I love this one, keep it coming", text: "",
+        activity: [{ call: 1, tool: "moondog_listening_now", args: {}, state: "done" }, { call: 2, tool: "moondog_taste_choice", args: {}, state: "running" }] } });
+    player({ index: 0, fraction: 0.4 });
   },
   paused() { ready({ transcript: conversation([["Play something for a late train home", SHORT]]) }); player({ playing: false, fraction: 0.62 }); },
   palette() {

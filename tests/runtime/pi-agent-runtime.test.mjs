@@ -1270,7 +1270,7 @@ test("a validated plan carries one host-written mix line from the listener's own
   assert.equal(result.playlist_plan.track_count, 4);
   assert.deepEqual(result.playlist_plan.mix, { familiar: 2, returning: 1, heard: 0, known_artist: 0, new: 1 });
   // A blank line sets the mix line apart from the last song, so Markdown does not fold it in.
-  assert.match(result.text, /\n\nFrom your history: 2 you play often, 1 back after a while, 1 new to you\.\n\n/u);
+  assert.match(result.text, /\n\nThe mix: 2 you know well, 1 back after a while, 1 new to you\.\n\n/u);
 
   // Without a listening history every slot is unknown, and the line is left out.
   application.domainServices.listeningMix = (tracks) => tracks.map(() => "unknown");
@@ -1289,7 +1289,7 @@ test("a validated plan carries one host-written mix line from the listener's own
   ]);
   const unknown = await runtime.prompt("Plan four songs for the evening.");
   assert.equal(unknown.playlist_plan.mix, undefined);
-  assert.doesNotMatch(unknown.text, /From your history/u);
+  assert.doesNotMatch(unknown.text, /The mix:/u);
 });
 
 test("rediscovery tool creates a safe private-history candidate set and authoritative plan", async () => {

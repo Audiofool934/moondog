@@ -64,7 +64,7 @@ export default {
   "queue.skippedAvoided": ({ count }) => `略過 ${count} 首你要求避開的曲目。`,
   "queue.skippedKnown": ({ count }) => `依你的要求，略過 ${count} 首聆聽紀錄裡已有的曲目。`,
   "queue.mix": ({ familiar = 0, returning = 0, heard = 0, known_artist: knownArtist = 0, new: fresh = 0 }) =>
-    `根據你的聆聽紀錄：${[familiar && `常聽的 ${familiar} 首`, returning && `久違的 ${returning} 首`, heard && `聽過一兩次的 ${heard} 首`, knownArtist && `熟悉歌手的新歌 ${knownArtist} 首`, fresh && `沒聽過的 ${fresh} 首`].filter(Boolean).join("，")}。`,
+    `根據你的聆聽紀錄：${[familiar && `熟悉的 ${familiar} 首`, returning && `久違的 ${returning} 首`, heard && `聽過一兩次的 ${heard} 首`, knownArtist && `熟悉歌手的新歌 ${knownArtist} 首`, fresh && `沒聽過的 ${fresh} 首`].filter(Boolean).join("，")}。`,
   "queue.observationTruncated": "只檢查了 Spotify 回傳的有限佇列片段，沒顯示的部分仍可能重複。",
   "queue.notAddedHeading": "沒有加入：",
   "queue.earlierReceipt": "這是上一次佇列操作的結果；這次說明沒有再次加入歌曲。",

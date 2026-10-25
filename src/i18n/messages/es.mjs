@@ -64,7 +64,7 @@ export default {
   "queue.skippedAvoided": ({ count }) => `Omití ${count} canciones que marcaste para evitar.`,
   "queue.skippedKnown": ({ count }) => `Omití ${count} canciones que ya aparecen en tu historial, como pediste.`,
   "queue.mix": ({ familiar = 0, returning = 0, heard = 0, known_artist: knownArtist = 0, new: fresh = 0 }) =>
-    `De tu historial: ${[familiar && `${familiar} que escuchas a menudo`, returning && `${returning} que vuelven después de un tiempo`, heard && `${heard} que has oído una o dos veces`, knownArtist && `${knownArtist} nuevas de artistas que conoces`, fresh && `${fresh} nuevas para ti`].filter(Boolean).join(", ")}.`,
+    `Según tu historial: ${[familiar && `${familiar} que conoces bien`, returning && `${returning} ${returning === 1 ? "que vuelve" : "que vuelven"} después de un tiempo`, heard && `${heard} que has oído una o dos veces`, knownArtist && `${knownArtist} ${knownArtist === 1 ? "nueva de un artista" : "nuevas de artistas"} que conoces`, fresh && `${fresh} ${fresh === 1 ? "nueva" : "nuevas"} para ti`].filter(Boolean).join(", ")}.`,
   "queue.observationTruncated": "La comprobación de repetidas solo cubre la parte de la cola que muestra Spotify; lo que no se ve podría repetir alguna.",
   "queue.notAddedHeading": "Sin añadir:",
   "queue.earlierReceipt": "Este es el resultado de la cola anterior; esta aclaración no volvió a añadir las canciones.",
