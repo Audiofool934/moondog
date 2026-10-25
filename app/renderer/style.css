@@ -156,6 +156,13 @@ img { -webkit-user-drag: none; }
 .mini-song span { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mini .tool { color: var(--text-2); }
 .mini .tool .icon { width: 14px; height: 14px; }
+/* A newer Moondog: one word at the top right, before Settings. While it downloads, a hairline holds its
+   place and fills from the start as the download arrives; once it is ready the word turns solid ink
+   (.button.primary), the one thing in the bar that asks for a click. */
+.update { flex: none; margin-inline-end: 6px; animation: rise var(--enter) var(--out) both; }
+.update:not(.primary) { color: var(--text-2); box-shadow: inset 0 0 0 1px var(--line-2);
+  background: linear-gradient(to right, var(--current) var(--progress, 0%), transparent var(--progress, 0%)); }
+.update:not(.primary):hover { color: var(--text); background-color: var(--hover); }
 
 .grip { position: absolute; top: var(--bar); bottom: 0; width: 7px; z-index: 4; cursor: col-resize; }
 .grip[data-grip="sidebar"] { left: calc(var(--sidebar) - 3px); }

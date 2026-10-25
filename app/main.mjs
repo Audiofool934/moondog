@@ -9,6 +9,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { windowLocale, windowStrings } from "./strings.mjs";
+import { createUpdates } from "./updates.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 // For automated checks: lets a DevTools client drive the window.
@@ -49,12 +50,40 @@ const playback = { controllable: false, streaming: false };
 let dockMenu = null;
 const command = (name) => () => window?.webContents.send("command", name);
 
+// A newer Moondog from GitHub releases (updates.mjs): the window shows it at the top right while it
+// downloads and once it's ready, and the Moondog menu checks for one or restarts into it.
+let updatePhase = "idle";
+const updates = createUpdates({
+  app,
+  onChange: (state) => {
+    window?.webContents.send("update", state);
+    const phase = `${state.phase}${state.installing ? "+installing" : ""}`;
+    if (phase !== updatePhase) { updatePhase = phase; buildMenu(); }
+  },
+  // macOS closes the windows to install the update, so a closing window closes instead of hiding.
+  onRestart: () => { quitting = true; },
+});
+function updateItem(t) {
+  const { phase, installing } = updates.state();
+  if (phase !== "idle") return { label: t("menuRestartUpdate"), enabled: !installing, click: () => updates.install() };
+  return { label: t("menuCheckUpdates"), click: () => void checkForUpdates() };
+}
+// Asked from the menu, a check answers: an update on its way shows in the window, anything else in a dialog.
+async function checkForUpdates() {
+  const t = windowStrings(locale);
+  const result = await updates.check();
+  if (result === "available") { window?.show(); return; }
+  const message = result === "current" ? t("updateCurrent", { version: app.getVersion() }) : t("updateFailed");
+  if (window?.isVisible()) await dialog.showMessageBox(window, { message }); else await dialog.showMessageBox({ message });
+}
+
 function buildMenu() {
   const t = windowStrings(locale);
   const dev = !app.isPackaged;
   Menu.setApplicationMenu(Menu.buildFromTemplate([
     { label: "Moondog", submenu: [
       { label: t("menuAbout"), role: "about" },
+      ...(updates.enabled ? [updateItem(t)] : []),
       { type: "separator" },
       { label: t("menuSettings"), accelerator: "CmdOrCtrl+,", click: command("settings") },
       { type: "separator" },
@@ -242,6 +271,8 @@ ipcMain.handle("choose-file", async (_event, { title, filterName } = {}) => {
   return canceled ? null : filePaths[0] ?? null;
 });
 ipcMain.handle("version", () => app.getVersion());
+ipcMain.handle("update", () => updates.state());
+ipcMain.on("install-update", () => updates.install());
 
 // Apple Music's whole songs come from a helper MusicKit knows as Moondog (native/music.swift): it sits
 // beside the app's own executable when packaged, and in its own bundle for development. It starts the
@@ -397,4 +428,5 @@ app.whenReady().then(() => {
   locale = windowLocale(app.getPreferredSystemLanguages());
   buildMenu();
   createWindow();
+  updates.start();
 });

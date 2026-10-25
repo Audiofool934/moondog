@@ -23,6 +23,10 @@ window.Audio = FakeAudio;
 // The real preload's bridge, minus what needs the main process: menus and dialogs answer "nothing".
 window.moondogApp = { pathForFile: () => null, onCommand() {}, setLanguage() {}, setBusy() {}, setPlayback() {}, showMenu: async () => null,
   confirm: async () => false, chooseFile: async () => null, version: async () => "0.2.0-beta.1" };
+// A newer Moondog, as the main process reports one; the states below push it.
+const updateListeners = [];
+const setUpdate = (update) => updateListeners.forEach((listener) => listener(update));
+Object.assign(window.moondogApp, { updateState: async () => null, onUpdate: (listener) => updateListeners.push(listener), installUpdate() {} });
 // A stand-in for the Apple Music helper. It says it can play whole songs only in the state that asks
 // it to, as the real one does once MusicKit is enabled for the app, and plays them silently.
 const music = { whole: false, listeners: [], playing: null };
@@ -252,6 +256,10 @@ const STATES = {
   tooltip() { STATES.reply(); return { hover: "[data-new]" }; },
   "turn-tip"() { STATES.long(); return { hover: ".turns button:nth-child(2)" }; },
   narrow() { STATES.reply(); },
+  // A newer Moondog at the top right: on its way, ready, and named in its tooltip.
+  "update-downloading"() { STATES.reply(); setUpdate({ phase: "downloading", version: "0.2.0-beta.2", progress: 0.4 }); },
+  "update-ready"() { STATES.reply(); setUpdate({ phase: "ready", version: "0.2.0-beta.2" }); },
+  "update-tip"() { STATES["update-ready"](); return { hover: "[data-update]" }; },
   // Whole Apple Music songs through the helper, once Apple allows them.
   whole() {
     music.whole = true;

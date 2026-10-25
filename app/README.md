@@ -157,9 +157,40 @@ An evaluation failure exits with a nonzero status.
   Programs such as `codex`, which web research can use, keep working.
 - The packaged core has no npm update notice, because the app updates as a whole.
 
+## Updates
+
+The packaged app updates itself from this repository's GitHub releases (`updates.mjs`, with electron-updater).
+
+- It checks at launch and every six hours, and downloads a newer build in the background.
+  A beta version also takes releases marked as prereleases; a stable version takes only the others. It never goes back to an older version.
+- While the download runs, Update shows at the top right, before Settings, as an outline that fills as it arrives.
+  When it is ready, the word turns solid ink. A click restarts into the new version, at once or as soon as the download ends.
+  Quitting also installs it, so the next launch is the new version.
+- Moondog › Check for Updates… checks at once; while an update is on its way the item reads Restart to Update.
+- The check reads the release list and sends nothing about the listener.
+  A failed check or download leaves the installed app as it is, and the next check tries again.
+- macOS installs only a build signed by the same Developer ID team, and the download must match the SHA-512 checksum in the release's `latest-mac.yml`.
+- Updating replaces the app only. Profile, history, conversations and sign-ins stay where they are.
+
+To publish an update:
+
+1. Bump the version at the repository root (`package.json` and `package-lock.json`).
+   The app compares versions, so a build with an unchanged version never reaches anyone.
+2. Build it with `npm run release` in a clean worktree at the release commit.
+   `release/` then holds the DMG, the zip, their `.blockmap` files, and `latest-mac.yml`.
+3. Put them on the tag's GitHub release, `v` and the version, marked as a prerelease for a beta.
+   The release workflow creates that release after it publishes to npm; without it, `gh release create v0.2.0-beta.2 --prerelease --generate-notes` makes one.
+   Upload `latest-mac.yml` last, because the app acts on it:
+   `gh release upload v0.2.0-beta.2 release/Moondog-0.2.0-beta.2-arm64-mac.zip release/Moondog-0.2.0-beta.2-arm64-mac.zip.blockmap release/Moondog-0.2.0-beta.2-arm64.dmg`, then `gh release upload v0.2.0-beta.2 release/latest-mac.yml`.
+
+To try an update before publishing it, build two versions with `node pack.mjs --sign --no-notarize` (signed, not notarized), serve the newer one's zip, `.blockmap` and `latest-mac.yml` over HTTP, and start the older app from a terminal with `MOONDOG_UPDATE_FEED=http://127.0.0.1:8765`.
+Set `MOONDOG_CONFIG_HOME` and `MOONDOG_STATE_HOME` to empty folders too, so the older app never opens your own profile.
+The app that restarts after a click on Update has none of these settings and opens your own profile; to keep it out, quit the older app instead, which installs the update without restarting.
+Extract test copies into a folder whose name ends in `.noindex`, so Spotlight doesn't offer them.
+
 ## Not yet
 
 - The first-time setup and the full taste report happen in the terminal (`moondog`).
 - The terminal plays Apple Music previews; only the window plays whole songs.
-- The app does not update itself yet; install a new build over the old one.
+- Builds from before the updater have none: install the first build with it by hand, as before.
 - The build is for Apple silicon only.

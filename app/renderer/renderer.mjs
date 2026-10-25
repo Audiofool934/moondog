@@ -20,7 +20,7 @@ const tr = () => t;
 // Spotify's state is unknown (null) until the core first reads it. turns and streaming belong to the
 // conversation on screen; other conversations keep answering in the core and come back when opened.
 const state = { sessions: [], folders: [], running: [], current: null, turns: [], model: null, spotify: null, spotifyAccount: null,
-  playbackService: "spotify", locale, locales: [], player: null, streaming: null, ready: false, waiting: null };
+  playbackService: "spotify", locale, locales: [], player: null, streaming: null, ready: false, waiting: null, update: { phase: "idle" } };
 const store = {
   get: (key) => { try { return localStorage.getItem(key); } catch { return null; } },
   set: (key, value) => { try { localStorage.setItem(key, value); } catch { /* A private window keeps the default. */ } },
@@ -69,6 +69,7 @@ function applyLanguage(next) {
     node.setAttribute("aria-label", t(key));
   }
   name($("settings-button"), t("settings"), "⌘,");
+  renderUpdate();
   name($("previous"), t("previous"), "⌃⌘←");
   name($("next"), t("next"), "⌃⌘→");
   name($("mini-next"), t("next"), "⌃⌘→");
@@ -894,6 +895,31 @@ $("model").addEventListener("click", (event) => void pickModel(event));
 $("service").addEventListener("click", (event) => void pickService(event));
 $("device-row").addEventListener("click", (event) => pickDevice(event));
 $("settings-button").addEventListener("click", () => settings.show());
+
+// A newer Moondog, from the main process. On its way, the button at the top right fills as it downloads;
+// ready, it turns solid. A click restarts into it, at once or as soon as the download ends.
+function renderUpdate() {
+  const button = $("update");
+  const { phase, version, progress, installing } = state.update;
+  button.hidden = phase === "idle";
+  if (button.hidden) return;
+  button.textContent = t(installing ? "updating" : "update");
+  button.classList.toggle("primary", phase === "ready");
+  button.style.setProperty("--progress", `${Math.round((progress ?? 0) * 100)}%`);
+  button.dataset.tip = t(phase === "ready" ? "updateReady" : "updateDownloading", { version });
+  button.setAttribute("aria-disabled", String(installing === true));
+}
+const takeUpdate = (next) => {
+  state.update = next?.phase ? next : { phase: "idle" };
+  renderUpdate();
+};
+window.moondogApp?.onUpdate?.(takeUpdate);
+void window.moondogApp?.updateState?.().then(takeUpdate, () => {});
+$("update").addEventListener("click", () => {
+  if (state.update.installing) return;
+  takeUpdate({ ...state.update, installing: true });
+  window.moondogApp?.installUpdate?.();
+});
 $("connect").addEventListener("click", () => settings.show("playback"));
 $("connect-player").addEventListener("click", () => settings.show("playback"));
 
