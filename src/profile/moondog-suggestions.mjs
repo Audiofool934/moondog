@@ -61,6 +61,9 @@ export function suggestionIdentities(suggestion) {
     suggestion.track_key ? `key:${suggestion.track_key}` : null,
     ...(suggestion.track_key ? songKeys({ title: suggestion.title, artist_credit: suggestion.artist_credit }).map((key) => `key:${key}`) : []),
     suggestion.release_key ? `release:${suggestion.release_key}` : null,
+    // An album row keeps its release title, so its key is rebuilt too, as a song's is.
+    suggestion.release_key && releaseKey({ release: suggestion.title, artist_credit: suggestion.artist_credit })
+      ? `release:${releaseKey({ release: suggestion.title, artist_credit: suggestion.artist_credit })}` : null,
   ].filter(Boolean))];
 }
 

@@ -20,11 +20,14 @@ export function normalizedArtistName(value) {
   return String(value ?? "").normalize("NFKC").toLocaleLowerCase("und").replace(/\s+/gu, " ").trim();
 }
 
-/** One song by one primary artist, whatever the recording's version suffix. */
+/**
+ * One song by one primary artist, whatever the recording's version suffix. A unit separator
+ * joins the two, not a NUL: node:sqlite on Node 22 cuts a stored string at a NUL.
+ */
 export function trackMatchKey(title, artist) {
   const name = normalizedTrackTitle(title);
   const credit = normalizedArtistName(artist);
-  return name && credit ? `${name}\u0000${credit}` : null;
+  return name && credit ? `${name}\u001f${credit}` : null;
 }
 
 // Chinese, Japanese and Korean text, which has no spaces between words (or words

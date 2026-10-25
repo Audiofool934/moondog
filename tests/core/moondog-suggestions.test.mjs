@@ -7,7 +7,7 @@ import test from "node:test";
 import { AppleProjectionDomainServices, exactTitleArtistMatch } from "../../src/core/apple-projection-domain-services.mjs";
 import { createListeningProfileDomainServices } from "../../src/core/listening-profile-domain-services.mjs";
 import { MoondogApplication } from "../../src/core/moondog-application.mjs";
-import { normalizedTrackTitle, textNamesTitle } from "../../src/core/track-title.mjs";
+import { normalizedTrackTitle, textNamesTitle, trackMatchKey } from "../../src/core/track-title.mjs";
 import { projectSpotifyRecentActivity } from "../../src/integrations/spotify/recent-activity.mjs";
 import { listenerProfileDossier, createListenerProfileInput } from "../../src/profile/listener-profile-build.mjs";
 import {
@@ -173,6 +173,12 @@ test("an artist whose name holds a separator is one artist for the mix and the l
   } finally {
     store.close();
   }
+});
+
+test("a match key survives SQLite on every supported Node", () => {
+  // node:sqlite on Node 22 cuts a bound string at a NUL, which once lost an album row's artist.
+  assert.doesNotMatch(trackMatchKey("Night Tide (Deluxe)", "The Lanterns"), /\u0000/u);
+  assert.equal(trackMatchKey("Night Tide (Deluxe)", "The Lanterns"), trackMatchKey("Night Tide", "the lanterns"));
 });
 
 test("an album Moondog started keeps every song of it out of the listener's own plays", async () => {
