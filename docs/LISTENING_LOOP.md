@@ -67,7 +67,8 @@ OpenClaw's memory design states the general rule: a fact recalled one hundred ti
 Moondog keeps a ledger of what it started, written only from accepted receipts.
 A song is Moondog's only when Moondog chose it.
 A song the listener named in their current message or the two before it is their own choice, and it never enters the ledger.
-When the profile counts attention, plays that match a suggestion soon after it was made count as Moondog's, apart from the listener's own.
+When the profile counts attention, plays that match a suggestion by track, ISRC, title and artist, or release, from one minute before it to six hours after it, count as Moondog's, apart from the listener's own.
+Spotify records a play when it ends, so the minute before only absorbs clock skew.
 The match runs when the profile is computed, so the stored history is never rewritten and a later export is handled the same way.
 A later play of the same song, outside that window, is the listener's own choice; the ledger shows that suggestion as adopted.
 Adoption is outcome evidence, not proof of liking, and it does not enter the reading as taste.
@@ -112,7 +113,7 @@ The dark side of the moon applies to every layer.
 - Movement labels describe yearly plays as of the latest stored listening, which can be long before today; the movement note carries that date, and recent attention says what is happening now.
 - Moondog's suggestions are matched by track identity and time; a song that the listener chose themselves outside Moondog, inside the window, can be counted as Moondog's, and the code records how each match was made.
 - The mix line counts plays, not love; "you know well" means at least three of the listener's own plays, one of them within a year of the latest, and that is the most it claims.
-- A Like or Avoid from chat is saved when the agent records it, so it stays in force when the listener cancels the turn, and a cancelled turn may not show the host's line.
+- A Like or Avoid from chat is saved when the agent records it, so it stays in force when the listener cancels the turn; a cancelled or interrupted turn still shows the host's line.
 - The clock is the host's local time; it does not know where the listener is.
 
 ## What shipped on 2026-10-25

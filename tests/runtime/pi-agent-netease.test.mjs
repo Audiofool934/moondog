@@ -108,7 +108,7 @@ test("a NetEase set gets the host's mix line under the reply, and one song gets 
     },
   ]);
   const set = await runtime.prompt("play me something for tonight");
-  assert.equal(set.text, "Two songs for tonight.\n\nFrom your history: 1 you play often, 1 new to you.");
+  assert.equal(set.text, "Two songs for tonight.\n\nThe mix: 1 you know well, 1 new to you.");
   assert.deepEqual(recorded.map((entry) => [entry.title, entry.mixSlot]), [["Glass Harbor", "familiar"], ["Night Ferry", "new"]]);
 
   faux.setResponses([play([{ title: "Night Ferry", artist: "Mira Vale" }]), fauxAssistantMessage([fauxText("Playing it.")])]);

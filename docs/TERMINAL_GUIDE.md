@@ -591,7 +591,7 @@ The host saves it only when the agent quotes your words from the current message
 One message saves at most three choices.
 A remark about one moment, such as “skip this” or “not tonight”, saves nothing, and a skip or a replay is never read as a choice.
 The reply ends with one line from Moondog that says what was saved, for example “Saved: I'll keep Drake out of what I play and suggest.”
-A choice from chat applies when the agent saves it, not when the turn ends: it stays in force if you cancel the turn, and a cancelled turn may not show that line.
+A choice from chat applies when the agent saves it, not when the turn ends: it stays in force if you cancel the turn, and a cancelled or interrupted turn still shows that line.
 Open `/taste` or run `moondog profile corrections` to see it, and undo it there or in chat.
 
 For terminal automation, use:

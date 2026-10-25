@@ -778,7 +778,7 @@ export class MoondogApplication {
       ...(stored ? { stored_plays: stored } : {}),
       ...(spotify ? { spotify_top_artists_4_weeks: {
         read_at: spotify.read_at, artists: spotify.artists,
-        basis: "Spotify's affinity ranking over about four weeks, on every device; not play counts.",
+        basis: "Spotify's affinity ranking over about four weeks, on every device; not play counts. It also counts songs Moondog played or queued, which stored_plays.moondog_started_plays counts apart.",
       } } : {}),
     };
   }
