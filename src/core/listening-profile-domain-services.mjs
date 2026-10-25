@@ -425,6 +425,7 @@ export class ListeningProfileDomainServices {
   #candidateSets = new Map();
   #profileBuildInput;
   #avoids = {};
+  #status = {};
   #ownsStore = true;
 
   constructor({ listeningHistoryStore, subjectId } = {}) {
@@ -464,7 +465,16 @@ export class ListeningProfileDomainServices {
     };
   }
 
+  // Every model request reads the status, so it is kept until the listening data changes.
   profileStatus() {
+    const version = listeningVersion(this.#store);
+    if (version === undefined || this.#status.version !== version) {
+      this.#status = { version, value: this.#readProfileStatus() };
+    }
+    return structuredClone(this.#status.value);
+  }
+
+  #readProfileStatus() {
     const source = this.#store.subjectDataStatus({
       subjectId: this.#subjectId,
     });

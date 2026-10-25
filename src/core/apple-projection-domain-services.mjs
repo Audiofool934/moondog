@@ -1211,6 +1211,7 @@ export class AppleProjectionDomainServices {
   #candidateSets = new Map();
   #profileBuildInput;
   #avoids = {};
+  #status = {};
   #ownsStores = true;
 
   constructor({ projection, listeningHistoryStore = null, subjectId = null }) {
@@ -1246,7 +1247,17 @@ export class AppleProjectionDomainServices {
     };
   }
 
+  // Every model request reads the status, so it is kept until the library or the listening data changes.
   profileStatus() {
+    const version = typeof this.#projection.logicalDigest === "function"
+      ? `${this.#projection.logicalDigest()}:${listeningVersion(this.#listeningHistoryStore)}` : undefined;
+    if (version === undefined || this.#status.version !== version) {
+      this.#status = { version, value: this.#readProfileStatus() };
+    }
+    return structuredClone(this.#status.value);
+  }
+
+  #readProfileStatus() {
     const summary = this.#projection.getProfileSummary({ maxItems: 1 });
     const listening = this.#listeningHistoryStore?.profileSummary({
       subjectId: this.#subjectId,

@@ -16,6 +16,17 @@ import { ListenerProfileStore, listenerProfileSchema } from "./listener-profile-
 
 export const LISTENING_HISTORY_SCHEMA_VERSION = 7;
 
+// The tables a cached projection, build input, Avoid gate or status reads, apart from the
+// suggestions ledger (listeningDataVersion). Rows are only added to the first ones: the one
+// update to a stored play, which records the play that supersedes it, is made with its row in
+// listening_event_supersessions. Imports update their batch rows, so those are read in full.
+// A new table those caches read, or a new update or delete, belongs here.
+const APPENDED_EVIDENCE_TABLES = Object.freeze([
+  "track_refs", "listening_events", "listening_event_supersessions", "listening_event_mirrors",
+  "spotify_profile_evidence", "taste_events",
+]);
+const UPDATED_EVIDENCE_TABLES = Object.freeze(["import_batches", "profile_import_batches"]);
+
 export function resolveListeningHistoryPath(environment = process.env) {
   return path.join(resolveMoondogStateDirectory(environment), "listening-history.sqlite");
 }
@@ -829,6 +840,9 @@ export class ListeningHistoryStore {
   #database;
   #closed = false;
   #snapshot = null;
+  #projection = null;
+  #coverageSources = null;
+  #evidence = null;
   #ledgerChanges = 0;
 
   constructor(database) {
@@ -1897,11 +1911,20 @@ export class ListeningHistoryStore {
     return tracks.map((track) => mixSlot(track, familiarity));
   }
 
-  // One projection serves the mix and the suggestion history until the store changes.
+  // One projection with a single item per list serves the status, the Avoids, the catalog, the
+  // mix and the suggestion history until the listening data changes. Callers copy what they return.
+  #sharedProjection(subjectId) {
+    const version = `${subjectId}:${this.listeningDataVersion()}`;
+    if (this.#projection?.version !== version) {
+      this.#projection = { version, value: this.#profileProjection({ subjectId, maxItems: 1 }) };
+    }
+    return this.#projection.value;
+  }
+
   #listeningSnapshot(subjectId) {
     const version = `${subjectId}:${this.listeningDataVersion()}`;
     if (this.#snapshot?.version !== version) {
-      const projected = this.#profileProjection({ subjectId, maxItems: 1 });
+      const projected = this.#sharedProjection(subjectId);
       this.#snapshot = { version, adopted: projected.adoptedSuggestionIds,
         familiarity: listeningFamiliarity(projected.catalog, projected.summary.listening_behavior.context.reference_date) };
     }
@@ -1963,19 +1986,16 @@ export class ListeningHistoryStore {
 
   activeAvoidances({ subjectId } = {}) {
     // Host-side filtering must include corrections outside the bounded display.
-    return structuredClone(
-      this.#profileProjection({ subjectId, maxItems: 1 }).lyricExclusions,
-    );
+    return structuredClone(this.#sharedProjection(subjectId).lyricExclusions);
   }
 
   profileSummary({ subjectId, maxItems = 10 } = {}) {
-    return structuredClone(
-      this.#profileProjection({ subjectId, maxItems }).summary,
-    );
+    return structuredClone((maxItems === 1 ? this.#sharedProjection(subjectId)
+      : this.#profileProjection({ subjectId, maxItems })).summary);
   }
 
   profileCatalog({ subjectId } = {}) {
-    const projected = this.#profileProjection({ subjectId, maxItems: 1 });
+    const projected = this.#sharedProjection(subjectId);
     const normalizedSubjectId = subjectId.toLowerCase();
     const imports = this.#database.prepare(`SELECT source_format AS format, data_scope AS scope,
       SUM(input_records) AS input_records, MIN(earliest_occurred_at) AS earliest,
@@ -2043,9 +2063,15 @@ export class ListeningHistoryStore {
     if (this.#closed) throw new Error("Listening history store is closed");
     if (!isUuid(subjectId)) throw new TypeError("A valid profile subject is required");
     const subject = subjectId.toLowerCase();
-    const sources = this.#database.prepare(`SELECT json_extract(record_json, '$.provenance.external_ref.entity_type') AS kind,
-      COUNT(*) AS plays, MIN(occurred_at) AS first_played_at, MAX(occurred_at) AS last_played_at
-      FROM listening_events WHERE subject_id = ? GROUP BY kind ORDER BY first_played_at`).all(subject);
+    // Reading every play is the slow part, so it is kept until the listening data changes.
+    const version = `${subject}:${this.listeningDataVersion()}`;
+    if (this.#coverageSources?.version !== version) {
+      this.#coverageSources = { version, sources: this.#database.prepare(`SELECT
+        json_extract(record_json, '$.provenance.external_ref.entity_type') AS kind,
+        COUNT(*) AS plays, MIN(occurred_at) AS first_played_at, MAX(occurred_at) AS last_played_at
+        FROM listening_events WHERE subject_id = ? GROUP BY kind ORDER BY first_played_at`).all(subject) };
+    }
+    const { sources } = this.#coverageSources;
     // A history file imported later can fill a span that a sync missed.
     const filled = this.#database.prepare(`SELECT earliest_occurred_at AS earliest, latest_occurred_at AS latest
       FROM import_batches WHERE subject_id = ? AND earliest_occurred_at IS NOT NULL AND latest_occurred_at IS NOT NULL`).all(subject);
@@ -2078,13 +2104,31 @@ export class ListeningHistoryStore {
       this.#database.prepare("SELECT total_changes() AS changes").get().changes}`;
   }
 
-  // profileDataVersion without this connection's own ledger writes. A new suggestion changes no
-  // projection until its plays arrive, so caches of the projection, the Avoids and the build
-  // input key on this and are not rebuilt after every play or queue.
+  // A version of the listening evidence that no suggestions ledger write changes, from this
+  // connection or another, such as the other surface's. A new suggestion changes no projection
+  // until its plays arrive, so caches of the projection, the Avoids, the status and the build
+  // input key on this and are not rebuilt after every queue. This connection's own writes count
+  // by total_changes. Another connection's commit moves data_version whatever it wrote, so then
+  // the evidence tables themselves say whether the evidence changed.
   listeningDataVersion() {
     if (this.#closed) throw new Error("Listening history store is closed");
-    return `${this.#database.prepare("PRAGMA data_version").get().data_version}:${
-      this.#database.prepare("SELECT total_changes() AS changes").get().changes - this.#ledgerChanges}`;
+    const dataVersion = this.#database.prepare("PRAGMA data_version").get().data_version;
+    const ownChanges = this.#database.prepare("SELECT total_changes() AS changes").get().changes - this.#ledgerChanges;
+    if (this.#evidence?.dataVersion !== dataVersion || this.#evidence.ownChanges !== ownChanges) {
+      this.#evidence = { dataVersion, ownChanges, fingerprint: this.#evidenceFingerprint() };
+    }
+    return `${this.#evidence.fingerprint}:${ownChanges}`;
+  }
+
+  #evidenceFingerprint() {
+    const digest = createHash("sha256");
+    for (const table of APPENDED_EVIDENCE_TABLES) {
+      digest.update(JSON.stringify(this.#database.prepare(`SELECT COUNT(*) AS rows, MAX(rowid) AS last FROM ${table}`).get()));
+    }
+    for (const table of UPDATED_EVIDENCE_TABLES) {
+      for (const row of this.#database.prepare(`SELECT * FROM ${table} ORDER BY rowid`).iterate()) digest.update(JSON.stringify(row));
+    }
+    return digest.digest("hex");
   }
 
   profileEvidenceRevision({ subjectId } = {}) {

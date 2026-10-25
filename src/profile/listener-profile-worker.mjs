@@ -18,12 +18,19 @@ const HOUR_MS = 3_600_000;
 // or this one, holds off the next background attempt for half a day.
 export const PROFILE_REFRESH = { listeningAgeMs: 7 * 24 * HOUR_MS, newPlays: 300, attemptGapMs: 12 * HOUR_MS };
 
+const synthesisNumber = (version) => Number(/^listener-synthesis\/(\d+)$/u.exec(version ?? "")?.[1] ?? Number.NaN);
+
 /** Rebuild a saved reading that newer evidence has overtaken, without being asked. */
 export async function refreshListenerProfileIfDue({ application, now = Date.now(), ...options } = {}) {
   // The first reading is the listener's to ask for.
   if (!application.profileBuildReady()) return { state: "unavailable" };
   const reading = await application.getListenerProfile({ limit: 1 });
   if (reading.state !== "stale") return { state: reading.state };
+  // A reading a newer Moondog wrote is left to that version or to the listener's own build, so an
+  // older terminal and a newer app never take turns rebuilding over each other's reading.
+  if (synthesisNumber(reading.synthesis_version) > synthesisNumber(LISTENER_PROFILE_SYNTHESIS_VERSION)) {
+    return { state: "newer_version" };
+  }
   const { input, store } = application.getProfileBuildContext();
   const lastAttempt = Date.parse(store.lastAttemptAt() ?? "");
   if (now - lastAttempt < PROFILE_REFRESH.attemptGapMs) return { state: "waiting" };

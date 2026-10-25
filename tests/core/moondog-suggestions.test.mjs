@@ -14,6 +14,7 @@ import {
   openEphemeralListeningHistoryStore,
   openListeningHistoryStore,
 } from "../../src/profile/listening-history-store.mjs";
+import { markMoondogStartedPlays, songKeys } from "../../src/profile/moondog-suggestions.mjs";
 
 const subjectId = "22222222-2222-4222-8222-222222222222";
 
@@ -380,6 +381,94 @@ test("a ledger write rebuilds neither the Avoid check nor the build input, and a
   domainServices.recordListenerChoice({ entityType: "artist", label: "Mira Vale", stance: "like" });
   read();
   assert.deepEqual(counts, { avoids: 3, catalogs: 3 });
+});
+
+// The listening profile projection reads every stored play with this query.
+async function countProjections(t) {
+  const { StatementSync } = await import("node:sqlite");
+  const all = t.mock.method(StatementSync.prototype, "all");
+  return () => all.mock.calls.filter((call) => /AS event_json[\s\S]*ORDER BY e\.occurred_at/u.test(call.this.sourceSQL)).length;
+}
+
+test("one projection serves the status, the Avoids, the catalog and the mix until the listening data changes", async (t) => {
+  const store = await openEphemeralListeningHistoryStore();
+  t.after(() => store.close());
+  syncPlays(store, [["own1", "Glass Harbor", "The Lanterns", "2026-10-01T10:00:00.000Z"]]);
+  const domainServices = createListeningProfileDomainServices({ listeningHistoryStore: store, subjectId });
+  domainServices.recordListenerChoice({ entityType: "artist", label: "Mira Vale", stance: "avoid" });
+  const projections = await countProjections(t);
+  const tracks = [{ title: "Glass Harbor", artists: ["The Lanterns"] }];
+  const request = () => {
+    const status = domainServices.profileStatus();
+    domainServices.filterDiscoveryTracks(tracks);
+    store.listeningMix({ subjectId, tracks });
+    store.profileSummary({ subjectId, maxItems: 1 });
+    store.profileCatalog({ subjectId });
+    store.listeningCoverage({ subjectId });
+    return status;
+  };
+  const first = request();
+  request();
+  assert.equal(projections(), 1);
+  // Callers get copies.
+  first.listening_sources.push("changed");
+  store.activeAvoidances({ subjectId }).push("changed");
+  assert.deepEqual(domainServices.profileStatus().listening_sources, ["spotify"]);
+  assert.equal(store.activeAvoidances({ subjectId }).length, 1);
+  store.recordMoondogSuggestions({ entries: [queued("Paper Comet", "The Lanterns", "mdq1", "2026-10-02T10:00:00.000Z")] });
+  request();
+  assert.equal(projections(), 1);
+  syncPlays(store, [["own2", "Salt Road", "The Lanterns", "2026-10-03T10:00:00.000Z"]]);
+  assert.equal(request().effective_listening_events, 2);
+  assert.equal(store.listeningCoverage({ subjectId }).sources[0].plays, 2);
+  assert.equal(projections(), 2);
+});
+
+test("a queue from the other surface keeps this surface's projection, and its plays, choices and checks reach it", async (t) => {
+  const directory = await mkdtemp(path.join(tmpdir(), "moondog-surfaces-"));
+  const databasePath = path.join(directory, "listening-history.sqlite");
+  const terminal = await openListeningHistoryStore({ databasePath });
+  const desktop = await openListeningHistoryStore({ databasePath });
+  t.after(async () => { terminal.close(); desktop.close(); await rm(directory, { recursive: true, force: true }); });
+  syncPlays(desktop, [["own1", "Glass Harbor", "The Lanterns", "2026-10-01T10:00:00.000Z"]]);
+  const domainServices = createListeningProfileDomainServices({ listeningHistoryStore: terminal, subjectId });
+  const projections = await countProjections(t);
+  const tracks = [{ title: "Glass Harbor", artists: ["The Lanterns"] }];
+  const request = () => {
+    domainServices.profileStatus();
+    terminal.listeningMix({ subjectId, tracks });
+    return { kept: domainServices.filterDiscoveryTracks(tracks).length, input: domainServices.getProfileBuildContext().input.input_digest };
+  };
+  const before = request();
+  assert.equal(projections(), 1);
+  desktop.recordMoondogSuggestions({ entries: [queued("Paper Comet", "The Lanterns", "mdq1", "2026-10-02T10:00:00.000Z")] });
+  assert.deepEqual(request(), before);
+  assert.equal(projections(), 1);
+  // A sync that finds nothing new moves only the checked time.
+  syncPlays(desktop, [["own1", "Glass Harbor", "The Lanterns", "2026-10-01T10:00:00.000Z"]]);
+  request();
+  assert.equal(projections(), 1);
+  assert.equal(terminal.listeningCoverage({ subjectId }).recent_plays_checked_at, "2026-10-01T10:01:00.000Z");
+  syncPlays(desktop, [["own2", "Salt Road", "The Lanterns", "2026-10-03T10:00:00.000Z"]]);
+  assert.notEqual(request().input, before.input);
+  assert.equal(projections(), 2);
+  assert.equal(domainServices.profileStatus().effective_listening_events, 2);
+  desktop.recordListenerCorrection({ subjectId, entityType: "artist", label: "The Lanterns", stance: "avoid" });
+  assert.equal(request().kept, 0);
+  assert.equal(projections(), 3);
+});
+
+test("plays of one stored track share its match, and each play keeps its own time window", () => {
+  const track = { track_ref_id: "fictional-track", revision: 1, title: "Glass Harbor", artist_credits: [{ name: "The Lanterns" }],
+    release: { title: "Fictional Record" } };
+  const play = (occurredAt) => ({ event: { occurred_at: occurredAt }, track: structuredClone(track) });
+  const unstored = { event: { occurred_at: "2026-10-01T10:05:00.000Z" }, track: { title: "Glass Harbor", artists: ["The Lanterns"] } };
+  const suggestion = { suggestion_id: "s1", provider_track_id: null, isrc: null, track_key: songKeys(track)[0], release_key: null,
+    title: "Glass Harbor", artist_credit: "The Lanterns", requested_at: "2026-10-01T10:00:00.000Z" };
+  const { rows, adopted } = markMoondogStartedPlays(
+    [play("2026-10-01T09:00:00.000Z"), play("2026-10-01T10:04:00.000Z"), play("2026-10-02T10:00:00.000Z"), unstored], [suggestion]);
+  assert.deepEqual(rows.map((row) => row.moondog_suggestion_id ?? null), [null, "s1", null, "s1"]);
+  assert.deepEqual([...adopted], ["s1"]);
 });
 
 test("a play that ended before Moondog's request is the listener's own", async (t) => {

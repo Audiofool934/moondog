@@ -102,12 +102,26 @@ export function markMoondogStartedPlays(eventRows, suggestions) {
       byIdentity.set(identity, [...(byIdentity.get(identity) ?? []), entry]);
     }
   }
+  // Plays repeat a much smaller set of tracks, so a stored track (one revision of a track_refs
+  // row) is matched once, and only plays of a matched track read their time.
+  const byTrack = new Map();
+  const trackMatches = (track) => {
+    const key = typeof track?.track_ref_id === "string" && Number.isInteger(track.revision)
+      ? `${track.track_ref_id}\0${track.revision}` : null;
+    let matches = key === null ? undefined : byTrack.get(key);
+    if (!matches) {
+      matches = [...new Set(playedTrackIdentities(track).flatMap((identity) => byIdentity.get(identity) ?? []))];
+      if (key !== null) byTrack.set(key, matches);
+    }
+    return matches;
+  };
   const rows = eventRows.map((row) => {
     if (row.event?.extensions?.["spotify.incognito_mode"] === true) return row;
+    const matches = trackMatches(row.track);
+    if (!matches.length) return row;
     const playedMs = Date.parse(row.event?.occurred_at);
-    const matches = new Set(playedTrackIdentities(row.track).flatMap((identity) => byIdentity.get(identity) ?? []));
-    if (!matches.size || !Number.isFinite(playedMs)) return row;
-    const started = [...matches].find((entry) =>
+    if (!Number.isFinite(playedMs)) return row;
+    const started = matches.find((entry) =>
       playedMs >= entry.requestedMs - SUGGESTION_WINDOW.beforeMs && playedMs <= entry.requestedMs + SUGGESTION_WINDOW.afterMs);
     if (started) return { ...row, moondog_suggestion_id: started.suggestion_id };
     for (const entry of matches) if (playedMs > entry.requestedMs + SUGGESTION_WINDOW.afterMs) adopted.add(entry.suggestion_id);

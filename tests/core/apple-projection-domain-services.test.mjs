@@ -556,6 +556,26 @@ test("real projection wrapper shapes bounded profile facets and evidence", async
   );
 });
 
+test("the profile status is read once until the library or the listening data changes", (t) => {
+  const projection = { ...fakeProjection(), digest: "library-1", logicalDigest() { return this.digest; } };
+  const listeningHistoryStore = { ...fakeListeningHistoryStore(), version: "plays-1", listeningDataVersion() { return this.version; } };
+  const library = t.mock.method(projection, "getProfileSummary");
+  const listening = t.mock.method(listeningHistoryStore, "profileSummary");
+  const services = createAppleProjectionDomainServices({
+    projection, listeningHistoryStore, subjectId: "11111111-1111-4111-8111-111111111111",
+  });
+  const first = services.profileStatus();
+  const { claims } = first;
+  first.claims = 99;
+  assert.equal(services.profileStatus().claims, claims);
+  assert.deepEqual([library.mock.callCount(), listening.mock.callCount()], [1, 1]);
+  listeningHistoryStore.version = "plays-2";
+  services.profileStatus();
+  projection.digest = "library-2";
+  services.profileStatus();
+  assert.deepEqual([library.mock.callCount(), listening.mock.callCount()], [3, 3]);
+});
+
 test("real projection wrapper merges private Spotify evidence and explanations", async () => {
   const projection = fakeProjection();
   const listeningHistoryStore = fakeListeningHistoryStore();

@@ -262,6 +262,31 @@ test("the background refresh waits for a week of new plays, and half a day after
   assert.equal(corrected.revision.sequence, 3);
 });
 
+test("the background refresh leaves a reading a newer Moondog wrote, and the listener's own build replaces it", async t => {
+  const state = await fixture(t);
+  await state.application.buildListenerProfile({ runtimeFactory: scriptedRuntime() });
+  const { DatabaseSync } = await import("node:sqlite");
+  const saveAs = version => {
+    const raw = new DatabaseSync(path.join(state.root, "listening-history.sqlite"));
+    raw.prepare("UPDATE listener_profile_revisions SET record_json = json_set(record_json, '$.synthesis_version', ?)").run(version);
+    raw.close();
+  };
+  const later = Date.now() + 13 * 3_600_000;
+  const refuse = () => { throw new Error("model must not run"); };
+  saveAs("listener-synthesis/99");
+  assert.equal((await state.application.getListenerProfile()).state, "stale");
+  assert.equal((await state.application.refreshListenerProfile({ now: later, runtimeFactory: refuse })).state, "newer_version");
+  const own = await state.application.buildListenerProfile({ runtimeFactory: scriptedRuntime() });
+  assert.equal(own.state, "ready");
+  assert.equal(own.revision.sequence, 2);
+  assert.equal(own.revision.state, "current");
+  // An older version's reading is still rebuilt in the background.
+  saveAs("listener-synthesis/1");
+  const rebuilt = await state.application.refreshListenerProfile({ now: Date.now() + 26 * 3_600_000, runtimeFactory: scriptedRuntime() });
+  assert.equal(rebuilt.state, "ready");
+  assert.equal(rebuilt.revision.sequence, 3);
+});
+
 test("the Pi runtime writes with the dossier and checks in a fresh session through its own tools", async t => {
   const state = await fixture(t, bundle(2));
   const faux = fauxProvider();
