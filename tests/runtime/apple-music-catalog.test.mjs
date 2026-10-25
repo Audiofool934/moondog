@@ -508,3 +508,46 @@ test("Apple Music discovery candidates are diverse by release and artist", async
     ],
   );
 });
+
+test("a song and an album the keyword index misses are found in the named artist's own catalog", async () => {
+  // As Apple answers for 刘森's 华北浪革: the keyword search finds neither the album nor its songs, and
+  // the album's lookup lists no songs, but the artist's song lookup has them.
+  const song = (trackId, trackName, collectionId, collectionName, trackNumber) => ({
+    ...trackResult({ trackId, trackName, artistName: "刘森", collectionName }),
+    collectionId, discNumber: 1, trackNumber,
+    previewUrl: `https://audio-ssl.itunes.apple.com/itunes-assets/${trackId}.m4a`,
+  });
+  const fetchImpl = async (input) => {
+    const url = new URL(input);
+    const entity = url.searchParams.get("entity");
+    if (url.pathname === "/search" && entity === "musicArtist") {
+      return jsonResponse({ results: [artistResult(1581360981, "刘森", "Folk-Rock"), artistResult(1502984832, "刘森", "Mandopop"), artistResult(1441422851, "刘森迪", "Mandopop")] });
+    }
+    if (url.pathname === "/search") return jsonResponse({ resultCount: 0, results: [] });
+    const id = url.searchParams.get("id");
+    if (id === "1581360981") return jsonResponse({ results: [artistResult(1581360981, "刘森", "Folk-Rock")] });
+    if (id === "1502984832" && entity === "song") {
+      return jsonResponse({ results: [artistResult(1502984832, "刘森", "Mandopop"), song(1861766163, "疯土", 1861765849, "华北浪革", 10),
+        song(1866332048, "过去来的人", 1866332047, "过去来的人 - Single", 1), song(1861766001, "深海", 1861765849, "华北浪革", 2)] });
+    }
+    if (id === "1502984832" && entity === "album") {
+      return jsonResponse({ results: [artistResult(1502984832, "刘森", "Mandopop"),
+        releaseResult({ artistId: 1502984832, collectionId: 1861765849, collectionName: "华北浪革", releaseDate: "2021-07-11T07:00:00Z", trackCount: 10 })] });
+    }
+    if (id === "1861765849") return jsonResponse({ results: [releaseResult({ artistId: 1502984832, collectionId: 1861765849, collectionName: "华北浪革", releaseDate: "2021-07-11T07:00:00Z", trackCount: 10 })] });
+    return jsonResponse({}, 404);
+  };
+  const catalog = createAppleMusicCatalog({ client: createAppleMusicCatalogClient({ fetchImpl }) });
+
+  const found = await catalog.findPreview({ title: "疯土", artist: "刘森" });
+  assert.equal(found.state, "resolved");
+  assert.equal(found.track.title, "疯土");
+  assert.equal(found.track.catalog_url, "https://music.apple.com/us/album/1861766163");
+
+  const album = await catalog.findAlbumPreviews({ title: "华北浪革", artist: "刘森" });
+  assert.equal(album.state, "resolved");
+  assert.equal(album.album.catalog_id, "1861765849");
+  assert.deepEqual(album.tracks.map((track) => track.title), ["深海", "疯土"]);
+
+  assert.equal((await catalog.findPreview({ title: "不存在", artist: "刘森" })).state, "not_found");
+});

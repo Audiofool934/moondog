@@ -7890,7 +7890,8 @@ To confirm, reply: ${preview.confirmation}`].join("\n\n");
       }
 
       if (
-        promptState.externalCandidateSetCreated &&
+        // Discovered songs need a validated plan; a catalog lookup, such as whether a song is there, is reported in the model's words.
+        promptState.externalCandidateSets.some((set) => !set.playbackLookup) &&
         !promptState.playlistPlanAttempted &&
         // A song the model played, queued or failed to play is reported in its own words.
         !promptState.musicPlaybackResult &&

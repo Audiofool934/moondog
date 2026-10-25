@@ -374,6 +374,27 @@ test("catalog lookups do not turn other playback outcomes into playlist failures
   }
 });
 
+test("a catalog search alone, such as checking whether a song is there, keeps the model's reply", async () => {
+  const app = application({ discovery: true });
+  const { faux, runtime } = runtimeFor(app);
+  const reply = "我又在 Apple Music 搜了一遍，这次的结果里没有刘森的《疯土》。";
+  faux.setResponses([
+    fauxAssistantMessage([fauxToolCall("moondog_music_catalog_search", { queries: ["Scorpions"], limit: 2 })], { stopReason: "toolUse" }),
+    (context) => {
+      const result = context.messages.find((message) => message.role === "toolResult" && message.toolName === "moondog_music_catalog_search");
+      assert.ok(JSON.parse(result.content[0].text).candidate_set_id, "the lookup must exercise the external-candidate guard");
+      return fauxAssistantMessage([fauxText(reply)]);
+    },
+  ]);
+  try {
+    const result = await runtime.prompt("apple music我搜了，明明是有的");
+    assert.equal(result.text, reply);
+    assert.equal(runtime.agent.state.messages.at(-1).content[0].text, reply);
+  } finally {
+    app.close();
+  }
+});
+
 test("non-Spotify playback instructions use the selected service's verification, not a playlist gate", () => {
   for (const service of ["apple_music", "netease"]) {
     const app = application({ spotify: true, discovery: true, neteasePlayer: { ready: () => true } });

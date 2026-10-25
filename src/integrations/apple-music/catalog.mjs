@@ -452,6 +452,15 @@ export function createAppleMusicCatalogClient({
     });
   }
 
+  // One artist's songs as Apple lists them. The keyword search has no entry for some albums, such as
+  // 刘森's 华北浪革, and their album lookup lists no songs, but the artist's lookup has them.
+  async function artistSongResults(artistId) {
+    const catalogId = cleanArtistCatalogId(artistId);
+    const key = `artist-songs|${storefront()}|${catalogId}`;
+    return cachedRequest(cache, key, cacheTtlMs, now, () =>
+      request("/lookup", { id: catalogId, country: storefront().toLowerCase(), entity: "song", limit: 200 }));
+  }
+
   return Object.freeze({
     async searchTracks(query) {
       const cleaned = cleanInputText(
@@ -491,8 +500,13 @@ export function createAppleMusicCatalogClient({
       return cachedRequest(cache, key, cacheTtlMs, now, async () => {
         const results = await request("/lookup", { id: catalogId, country: storefront().toLowerCase(), entity: "song", limit: 200 });
         const order = (raw) => (Number.isSafeInteger(raw?.discNumber) ? raw.discNumber : 1) * 1000 + (Number.isSafeInteger(raw?.trackNumber) ? raw.trackNumber : 999);
-        return results
-          .filter((raw) => isPlainObject(raw) && raw.kind === "song")
+        const song = (raw) => isPlainObject(raw) && raw.kind === "song";
+        let songs = results.filter(song);
+        const artistId = safeCatalogId(results.find((raw) => isPlainObject(raw) && raw.wrapperType === "collection")?.artistId);
+        if (!songs.length && artistId) {
+          songs = (await artistSongResults(artistId)).filter((raw) => song(raw) && safeCatalogId(raw.collectionId) === catalogId);
+        }
+        return songs
           .sort((left, right) => order(left) - order(right))
           .map(normalizeTrack)
           .filter(Boolean);
@@ -528,6 +542,10 @@ export function createAppleMusicCatalogClient({
     async artistReleases(artistId) {
       return (await artistCatalog(artistId)).releases;
     },
+
+    async artistSongs(artistId) {
+      return (await artistSongResults(artistId)).map(normalizeTrack).filter(Boolean);
+    },
   });
 }
 
@@ -553,6 +571,14 @@ export function createAppleMusicCatalog({
     typeof client.artistReleases !== "function"
   ) {
     throw new TypeError("The Apple Music catalog client is invalid.");
+  }
+
+  // The artists with exactly this name, whose own catalog has what the keyword search misses.
+  async function namedArtists(name) {
+    const wanted = normalizeForMatch(name);
+    return (await client.searchArtists(name))
+      .filter((candidate) => normalizeForMatch(candidate.name) === wanted)
+      .slice(0, APPLE_MUSIC_CATALOG_LIMITS.exactArtistCandidatesMax);
   }
 
   return Object.freeze({
@@ -621,10 +647,18 @@ export function createAppleMusicCatalog({
       const cleanedArtist = cleanInputText(artist, APPLE_MUSIC_CATALOG_LIMITS.discoveryQueryLengthMax, "apple_music_catalog_query_invalid", "artist");
       const wantedTitle = normalizeForMatch(cleanedTitle);
       const wantedArtist = normalizeForMatch(cleanedArtist);
-      const results = (await client.searchTracks(`${cleanedArtist} ${cleanedTitle}`))
-        .filter((track) => track.preview_url && normalizeForMatch(track.artist_credit).includes(wantedArtist));
-      const track = results.find((candidate) => normalizeForMatch(candidate.title) === wantedTitle) ??
-        results.find((candidate) => normalizeForMatch(candidate.title).startsWith(wantedTitle));
+      const pick = (tracks) => {
+        const results = tracks.filter((track) => track.preview_url && normalizeForMatch(track.artist_credit).includes(wantedArtist));
+        return results.find((candidate) => normalizeForMatch(candidate.title) === wantedTitle) ??
+          results.find((candidate) => normalizeForMatch(candidate.title).startsWith(wantedTitle));
+      };
+      let track = pick(await client.searchTracks(`${cleanedArtist} ${cleanedTitle}`));
+      if (!track && typeof client.artistSongs === "function") {
+        for (const named of await namedArtists(cleanedArtist)) {
+          track = pick(await client.artistSongs(named.catalog_id));
+          if (track) break;
+        }
+      }
       return {
         state: track ? "resolved" : "not_found",
         source: sourceMetadata(now, storefront),
@@ -641,10 +675,19 @@ export function createAppleMusicCatalog({
       const cleanedArtist = cleanInputText(artist, APPLE_MUSIC_CATALOG_LIMITS.discoveryQueryLengthMax, "apple_music_catalog_query_invalid", "artist");
       const wantedTitle = normalizeForMatch(cleanedTitle);
       const wantedArtist = normalizeForMatch(cleanedArtist);
-      const albums = (await client.searchAlbums(`${cleanedArtist} ${cleanedTitle}`))
-        .filter((candidate) => normalizeForMatch(candidate.artist_credit).includes(wantedArtist));
-      const album = albums.find((candidate) => normalizeForMatch(candidate.title) === wantedTitle) ??
+      const pick = (albums) => albums.find((candidate) => normalizeForMatch(candidate.title) === wantedTitle) ??
         albums.find((candidate) => normalizeForMatch(candidate.title).startsWith(wantedTitle));
+      let album = pick((await client.searchAlbums(`${cleanedArtist} ${cleanedTitle}`))
+        .filter((candidate) => normalizeForMatch(candidate.artist_credit).includes(wantedArtist)));
+      if (!album) {
+        for (const named of await namedArtists(cleanedArtist)) {
+          const release = pick(await client.artistReleases(named.catalog_id));
+          if (!release) continue;
+          album = { catalog_id: release.catalog_id, title: release.title, artist_credit: release.artist_name,
+            ...(release.catalog_url ? { catalog_url: release.catalog_url } : {}) };
+          break;
+        }
+      }
       const tracks = album ? (await client.albumTracks(album.catalog_id)).filter((track) => track.preview_url).slice(0, 30) : [];
       return {
         state: tracks.length ? "resolved" : "not_found",
