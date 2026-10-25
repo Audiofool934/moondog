@@ -156,13 +156,18 @@ img { -webkit-user-drag: none; }
 .mini-song span { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mini .tool { color: var(--text-2); }
 .mini .tool .icon { width: 14px; height: 14px; }
-/* A newer Moondog: one word at the top right, before Settings. While it downloads, a hairline holds its
-   place and fills from the start as the download arrives; once it is ready the word turns solid ink
-   (.button.primary), the one thing in the bar that asks for a click. */
-.update { flex: none; margin-inline-end: 6px; animation: rise var(--enter) var(--out) both; }
-.update:not(.primary) { color: var(--text-2); box-shadow: inset 0 0 0 1px var(--line-2);
-  background: linear-gradient(to right, var(--current) var(--progress, 0%), transparent var(--progress, 0%)); }
-.update:not(.primary):hover { color: var(--text); background-color: var(--hover); }
+/* A newer Moondog: a button the size of Settings, just before it. While it downloads, a hairline ring
+   around the arrow fills as the download arrives; once it is ready the button turns to an inverted disc,
+   the one solid thing in the bar. */
+.update { position: relative; animation: rise var(--enter) var(--out) both; }
+.update .ring { position: absolute; inset: 2px; width: 24px; height: 24px; transform: rotate(-90deg); fill: none; stroke-width: 1.4; }
+.update .track { stroke: var(--line-2); }
+.update .done { stroke: currentColor; stroke-linecap: round; transition: stroke-dasharray 300ms var(--soft); }
+.update .icon { width: 14px; height: 14px; }
+.update.ready { width: 22px; height: 22px; margin-inline: 3px; border-radius: 50%; background: var(--solid); color: var(--on-solid); }
+.update.ready:hover { background: var(--text); color: var(--on-solid); }
+.update.ready .ring { display: none; }
+.update[aria-disabled="true"] { opacity: 0.55; }
 
 .grip { position: absolute; top: var(--bar); bottom: 0; width: 7px; z-index: 4; cursor: col-resize; }
 .grip[data-grip="sidebar"] { left: calc(var(--sidebar) - 3px); }

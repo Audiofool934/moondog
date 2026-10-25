@@ -40,6 +40,7 @@
     <symbol id="i-grok" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M9.27 15.29l7.978-5.897c.391-.29.95-.177 1.137.272.98 2.369.542 5.215-1.41 7.169-1.951 1.954-4.667 2.382-7.149 1.406l-2.711 1.257c3.889 2.661 8.611 2.003 11.562-.953 2.341-2.344 3.066-5.539 2.388-8.42l.006.007c-.983-4.232.242-5.924 2.75-9.383.06-.082.12-.164.179-.248l-3.301 3.305v-.01L9.267 15.292M7.623 16.723c-2.792-2.67-2.31-6.801.071-9.184 1.761-1.763 4.647-2.483 7.166-1.425l2.705-1.25a7.808 7.808 0 00-1.829-1A8.975 8.975 0 005.984 5.83c-2.533 2.536-3.33 6.436-1.962 9.764 1.022 2.487-.653 4.246-2.34 6.022-.599.63-1.199 1.259-1.682 1.925l7.62-6.815"/></symbol>
     <symbol id="i-zai" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M12.105 2L9.927 4.953H.653L2.83 2h9.276zM23.254 19.048L21.078 22h-9.242l2.174-2.952h9.244zM24 2L9.264 22H0L14.736 2H24z"/></symbol>
     <symbol id="i-close" viewBox="0 0 16 16"><path d="M4.25 4.25l7.5 7.5M11.75 4.25l-7.5 7.5"/></symbol>
+    <symbol id="i-update" viewBox="0 0 16 16"><path d="M8 3.25v7.5M4.75 7.5 8 10.75l3.25-3.25M4.25 13.25h7.5"/></symbol>
     <symbol id="i-settings" viewBox="0 0 16 16"><path d="M6.55 3.27L7.03 1.52A6.55 6.55 0 0 1 8.97 1.52L9.45 3.27A4.95 4.95 0 0 1 10.32 3.63L11.90 2.73A6.55 6.55 0 0 1 13.27 4.10L12.37 5.68A4.95 4.95 0 0 1 12.73 6.55L14.48 7.03A6.55 6.55 0 0 1 14.48 8.97L12.73 9.45A4.95 4.95 0 0 1 12.37 10.32L13.27 11.90A6.55 6.55 0 0 1 11.90 13.27L10.32 12.37A4.95 4.95 0 0 1 9.45 12.73L8.97 14.48A6.55 6.55 0 0 1 7.03 14.48L6.55 12.73A4.95 4.95 0 0 1 5.68 12.37L4.10 13.27A6.55 6.55 0 0 1 2.73 11.90L3.63 10.32A4.95 4.95 0 0 1 3.27 9.45L1.52 8.97A6.55 6.55 0 0 1 1.52 7.03L3.27 6.55A4.95 4.95 0 0 1 3.63 5.68L2.73 4.10A6.55 6.55 0 0 1 4.10 2.73L5.68 3.63A4.95 4.95 0 0 1 6.55 3.27Z"/><circle cx="8" cy="8" r="2.1"/></symbol>
     <symbol id="i-expand" viewBox="0 0 16 16"><path d="M6 2.5H2.5V6M2.5 2.5l4 4M10 13.5h3.5V10M13.5 13.5l-4-4"/></symbol>
     <symbol id="i-restore" viewBox="0 0 16 16"><path d="M2.5 6.5h4v-4M6.5 6.5l-4-4M13.5 9.5h-4v4M9.5 9.5l4 4"/></symbol>
@@ -73,7 +74,7 @@
           <button type="button" class="tool" data-mini-toggle data-tip-at="below"><svg class="icon fill"><use href="#i-pause"/></svg></button>
           <button type="button" class="tool" data-mini-next data-tip-at="below"><svg class="icon fill"><use href="#i-next"/></svg></button>
         </div>
-        <button type="button" class="button small update" data-update data-tip-at="below" hidden></button>
+        <button type="button" class="tool update" data-update data-tip-at="below" hidden><svg class="ring" viewBox="0 0 24 24" aria-hidden="true"><circle class="track" cx="12" cy="12" r="10.5"/><circle class="done" cx="12" cy="12" r="10.5" pathLength="100" data-update-done/></svg><svg class="icon"><use href="#i-update"/></svg></button>
         <button type="button" class="tool" data-settings-button data-tip-at="below"><svg class="icon"><use href="#i-settings"/></svg></button>
         <button type="button" class="tool" data-toggle-inspector data-tip-at="below"><svg class="icon"><use href="#i-panel"/></svg></button>
       </div>
