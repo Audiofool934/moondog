@@ -60,8 +60,10 @@ A model or music service chosen there lasts until the app quits, and sign-in and
   Music you play yourself in the Music app on this Mac shows here too, with the next songs of its playlist, and the buttons act on it there.
   When it and Spotify both play, the one that plays wins over a paused one, then the chosen service; a player you just pressed stays in view for 30 seconds.
   macOS asks once before Moondog may read the Music app.
+  The player opens only when you open it: it starts folded, a song starting never opens it, and it folds again when nothing is left to play.
   With the player folded away, the song shows at the end of the title bar with play or pause and next; a click on the song opens the player.
 - Drag the inner edge of either side panel to change its width; a double-click puts it back.
+  The conversations open as you last left them.
 - Beside the send button, the music service and the model, each by its mark (from Simple Icons, and Lobe Icons for the model makers Simple Icons lacks), with its name in the tooltip.
   A model shows its maker's mark, through OpenRouter too, by the maker its id names; a maker the window has no mark for shows a plain model glyph.
   The service's menu switches between Spotify, Apple Music, and NetEase Music once ncm-cli is ready; it also signs in to Spotify in Settings, or shows the commands that set up NetEase in Terminal and checks again.

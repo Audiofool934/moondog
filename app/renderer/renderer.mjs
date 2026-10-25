@@ -1040,11 +1040,14 @@ function renderInspector() {
   set($("blank"), "hidden", Boolean(now));
   art.classList.toggle("unplayed", !now);
   const limitedUntil = state.playbackService === "spotify" && state.spotifyLimitedUntil > Date.now() ? state.spotifyLimitedUntil : null;
-  // With nothing playing and nothing to say, the player waits folded and opens when a song starts.
+  // With nothing playing and nothing to say, the player folds; a song starting never opens it.
   if (idle !== (!now && !limitedUntil)) {
     idle = !idle;
-    if (!idle) idleOpened = false;
-    slidePanels();
+    if (idle && panels.inspector) {
+      panels.inspector = false;
+      forced.inspector = false;
+      slidePanels();
+    }
   }
   set($("blank"), "textContent", limitedUntil ? spotifyLimited(limitedUntil) : t("nothingPlaying"));
   set($("song"), "textContent", now?.title ?? "");
@@ -1217,16 +1220,16 @@ $("track").addEventListener("keydown", (event) => {
 });
 
 // ── Panels ───────────────────────────────────────────────────────────────────────────────────
-// A narrow window folds the player, then the conversations; a click always wins.
+// A narrow window folds the player, then the conversations; a click always wins. The conversations
+// open as the listener last left them. The player opens only by hand: it starts folded, and folds
+// again when nothing is left to play.
 const layout = $("window");
-const panels = { sidebar: store.get("moondog.sidebar") !== "hidden", inspector: store.get("moondog.inspector") !== "hidden" };
+const panels = { sidebar: store.get("moondog.sidebar") !== "hidden", inspector: false };
 const roomFor = { sidebar: 820, inspector: 1060 };
 const forced = { sidebar: false, inspector: false };
-// Nothing playing: the player has nothing to hold, so it stays folded unless opened by hand.
+// Nothing playing: the player has nothing to hold.
 let idle = true;
-let idleOpened = false;
 function shown(panel) {
-  if (panel === "inspector" && idle && !idleOpened) return false;
   return panels[panel] && (forced[panel] || innerWidth >= roomFor[panel]);
 }
 function renderPanels() {
@@ -1246,16 +1249,11 @@ function makeRoom(opened) {
 }
 function togglePanel(panel) {
   const visible = shown(panel);
-  // Folding the waiting player only puts it away for now; it still opens when a song starts.
-  const waiting = panel === "inspector" && idle;
-  if (waiting) idleOpened = !visible;
-  if (!waiting || !visible) {
-    panels[panel] = !visible;
-    // A click overrides the width rule only where the width rule would hide the panel.
-    forced[panel] = !visible && innerWidth < roomFor[panel];
-    if (!visible) makeRoom(panel);
-    store.set(`moondog.${panel}`, panels[panel] ? "shown" : "hidden");
-  }
+  panels[panel] = !visible;
+  // A click overrides the width rule only where the width rule would hide the panel.
+  forced[panel] = !visible && innerWidth < roomFor[panel];
+  if (!visible) makeRoom(panel);
+  if (panel === "sidebar") store.set("moondog.sidebar", panels.sidebar ? "shown" : "hidden");
   slidePanels();
   renderInspector();
 }
