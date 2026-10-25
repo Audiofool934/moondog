@@ -157,9 +157,15 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
   // transcript leaves it out and the window draws the live version instead. A reply running in the
   // terminal is drawn the same way.
   const liveOf = (slot) => slot.live ?? (slot === current && remote?.session === sessionOf(slot) ? remote.live : null);
+  // Each message carries the saved entry it belongs to, so the window can branch the conversation before it.
   function transcript(slot) {
-    const turns = (slot.application.currentConversationTurns?.({ limit: 80 }) ?? [])
-      .filter((entry) => entry.role === "user" || entry.role === "assistant").map((entry) => ({ role: entry.role, text: entry.text }));
+    const { application } = slot;
+    const saved = typeof application.conversationEntries === "function" && typeof application.conversationEntryTurns === "function"
+      ? application.conversationEntries({ limit: 40 }).flatMap((entry) => application.conversationEntryTurns(entry)
+        .map((turn) => (turn.role === "user" ? { ...turn, entry: entry.entry_id } : turn))).slice(-80)
+      : application.currentConversationTurns?.({ limit: 80 }) ?? [];
+    const turns = saved.filter((entry) => entry.role === "user" || entry.role === "assistant")
+      .map((entry) => ({ role: entry.role, text: entry.text, ...(entry.entry ? { entry: entry.entry } : {}) }));
     const live = liveOf(slot);
     if (live) {
       const last = turns.findLastIndex((entry) => entry.role === "user");
@@ -509,11 +515,11 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
         // look for another process's changes would not notice it.
         onConversationNamed: () => { if (!closed) sendSessions(); },
       });
-      send({ type: "turn", session, id, state: "end", status: result.status, text: result.text ?? "",
+      send({ type: "turn", session, id, state: "end", status: result.status, text: result.text ?? "", entry: latestEntry(slot),
         receipts: (result.spotify_write_receipts ?? []).map((receipt) => ({ action: receipt.action, state: receipt.state,
           targets: receipt.targets ?? [], device: receipt.device?.name ?? null })) });
     } catch (error) {
-      send({ type: "turn", session, id, state: "error", message: errorText(error), connection: error?.code === "model_connection_failed" });
+      send({ type: "turn", session, id, state: "error", message: errorText(error), connection: error?.code === "model_connection_failed", entry: latestEntry(slot) });
     } finally {
       unsubscribe();
       slot.turn = null;
@@ -752,6 +758,28 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     await savePlaybackService(service);
     playbackChanged();
   }
+  // The entry a turn just saved, so its message in the window can be edited without a redraw.
+  function latestEntry(slot) {
+    try { return slot.application.conversationEntries?.({ limit: 1 }).at(-1)?.entry_id ?? null; } catch { return null; }
+  }
+  // Edit, from the window: as /rewind in the terminal, the conversation branches just before that message,
+  // the original stays saved, and the message comes back to the composer to change and send again.
+  async function rewind(entryId) {
+    const slot = current;
+    if (!entryId) return;
+    if (slot.turn || slot.waiting || slot.application.replyElsewhere?.()) return send({ type: "notice", code: "rewind_busy" });
+    try {
+      const branch = typeof slot.runtime.rewindTo === "function" ? await slot.runtime.rewindTo(entryId)
+        : (() => { const next = slot.application.rewindConversation(entryId); slot.runtime.restoreSession?.(); return next; })();
+      slot.application.claimActiveConversation?.();
+      sendSession(slot);
+      sendSessions();
+      sendStatus();
+      send({ type: "draft", session: sessionOf(slot), text: String(branch?.draft ?? "") });
+    } catch (error) {
+      send({ type: "notice", code: "rewind_failed", message: errorText(error) });
+    }
+  }
   function memories() {
     const summary = base.memorySummary?.({ limit: 100 });
     send({ type: "memories", state: summary?.state ?? "unavailable", memories: (summary?.memories ?? []).map((memory) => ({
@@ -763,6 +791,7 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     cancel: () => { if (current.turn) current.runtime.abort?.(); },
     new: () => openSession(null),
     open: (data) => openSession(String(data.id ?? "")),
+    rewind: (data) => rewind(String(data.entry ?? "")),
     control: (data) => control(String(data.action ?? ""), data.via, data.positionMs),
     storefront: (data) => { setAppleMusicStorefront(data.code); },
     visible: (data) => {

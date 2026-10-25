@@ -9,7 +9,7 @@ import { createMark } from "./mark.mjs";
 import { mountRecord } from "./record.mjs";
 import { createSettings } from "./settings.mjs";
 import { createSidebar } from "./sidebar.mjs";
-import { make, marquee, name, scrollbar, setIcon, tooltips, turning } from "./ui.mjs";
+import { icon, make, marquee, name, scrollbar, setIcon, tooltips, turning } from "./ui.mjs";
 import "./style.css";
 
 const $ = (selector) => document.querySelector(`[data-${selector}]`);
@@ -65,7 +65,7 @@ function applyLanguage(next) {
   name($("toggle-inspector"), t("player"), "⌥⌘P");
   name($("new"), t("newConversation"), "⌘N");
   // These self-explanatory controls keep accessible names without floating labels over the record.
-  for (const [node, key] of [[recordButton, "foldRecord"], [barRecord, "showRecord"], [$("expand"), "immerse"], [$("pin"), "keepOnTop"], [$("restore"), "restore"]]) {
+  for (const [node, key] of [[recordButton, "foldRecord"], [barRecord, "showRecord"], [$("expand"), "immerse"], [$("pin"), "keepOnTop"], [$("immersive"), "restore"]]) {
     node.setAttribute("aria-label", t(key));
   }
   name($("settings-button"), t("settings"), "⌘,");
@@ -125,7 +125,8 @@ function notice(text) {
   if (text) noticeTimer = setTimeout(() => { node.hidden = true; }, 5000);
 }
 const NOTICES = { too_many_running: "noticeTooMany", model_unknown: "noticeModelUnknown", waiting_for_import: "noticeWaitingForImport", message_busy: "noticeMessageBusy",
-  delete_running: "noticeDeleteRunning", delete_open_elsewhere: "noticeDeleteElsewhere", delete_failed: "noticeDeleteFailed", transfer_failed: "noticeTransferFailed" };
+  delete_running: "noticeDeleteRunning", delete_open_elsewhere: "noticeDeleteElsewhere", delete_failed: "noticeDeleteFailed", transfer_failed: "noticeTransferFailed",
+  rewind_busy: "waitForReply", rewind_failed: "noticeFailed" };
 
 // ── The conversation ─────────────────────────────────────────────────────────────────────────
 const KINDS = [
@@ -238,6 +239,7 @@ function drawReply(node, turn, index) {
     patchText(parts.text, parts.memo, turn.text ?? "");
     parts.words = turn.text;
   }
+  messageTools(node, turn);
   // A reply that failed or stopped offers the one thing to do next.
   const action = turn.offline ? "model" : turn.failed && !turn.local && index === state.turns.length - 1 && previousUser(index) ? "retry" : null;
   if (parts.action !== action) {
@@ -254,13 +256,52 @@ function drawReply(node, turn, index) {
     parts.action = action;
   }
 }
+// Under each message, shown while the pointer is on it: Copy, and on your own saved messages Edit, which
+// branches the conversation just before the message and brings it back to the composer. The original stays.
+function messageTools(node, turn) {
+  let tools = node.tools;
+  if (!tools) {
+    tools = node.tools = make("div", "message-tools");
+    const copy = make("button", "tool");
+    copy.type = "button";
+    copy.dataset.tipAt = "below";
+    copy.append(icon("copy"));
+    copy.addEventListener("click", async () => {
+      try { await navigator.clipboard.writeText(node.turn?.text ?? ""); } catch { return notice(t("noticeFailed")); }
+      setIcon(copy, "check");
+      name(copy, t("copied"));
+      clearTimeout(copy.timer);
+      copy.timer = setTimeout(() => { setIcon(copy, "copy"); name(copy, t("copy")); }, 1400);
+    });
+    tools.copy = copy;
+    tools.append(copy);
+    if (turn.role === "user") {
+      const change = make("button", "tool");
+      change.type = "button";
+      change.dataset.tipAt = "below";
+      change.append(icon("edit"));
+      change.addEventListener("click", () => {
+        if (state.streaming) return notice(t("waitForReply"));
+        if (node.turn?.entry) send({ type: "rewind", entry: node.turn.entry });
+      });
+      tools.change = change;
+      tools.append(change);
+    }
+    node.append(tools);
+  }
+  node.turn = turn;
+  if (!tools.copy.timer) name(tools.copy, t("copy"));
+  if (tools.change) { name(tools.change, t("editMessage")); tools.change.hidden = !turn.entry; }
+  tools.hidden = !turn.text || Boolean(turn.streaming || turn.pending || turn.waiting);
+}
 const previousUser = (index) => state.turns.slice(0, index).findLast((entry) => entry.role === "user")?.text ?? null;
 function retry(index) {
   const text = previousUser(index);
   if (!text || state.streaming) return;
   state.turns.splice(index - 1, 2);
+  follow(true);
   renderConversation();
-  submitText(text);
+  if (submitText(text)) holdLatest();
 }
 
 const scroller = $("scroll");
@@ -277,7 +318,21 @@ let own = -1;
 let lastTop = 0;
 const gap = () => scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
 const selecting = () => { const selection = getSelection(); return selection && !selection.isCollapsed && column.contains(selection.anchorNode); };
+// A message sent here holds the view: the reply grows under it only until the message reaches the top
+// of the words, and the rest waits below for the listener to scroll down, instead of pushing the message
+// out of sight. A hand on the scroll, or a return to the latest words, lets go.
+let hold = null;
+const HOLD_GAP = 14;
+function heldTop() {
+  const words = parseFloat(scroller.style.getPropertyValue("--veil")) || BAR;
+  return hold.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop - words - HOLD_GAP;
+}
+function holdLatest() {
+  hold = nodes.findLast((entry, index) => state.turns[index]?.role === "user")?.node ?? null;
+  pin();
+}
 function follow(on) {
+  hold = null;
   // Coming back to the latest words opens the record again, from wherever it had folded to.
   if (on && !following) refold();
   following = on;
@@ -286,8 +341,9 @@ function follow(on) {
 }
 function pin() {
   if (!following || selecting()) { renderJump(); return; }
-  scroller.scrollTop = scroller.scrollHeight;
+  scroller.scrollTop = hold?.isConnected ? Math.max(0, heldTop()) : scroller.scrollHeight;
   own = lastTop = scroller.scrollTop;
+  renderJump();
 }
 
 // ── The record ───────────────────────────────────────────────────────────────────────────────
@@ -484,8 +540,8 @@ recordButton.addEventListener("click", () => foldRecord(true));
 barRecord.addEventListener("click", toggleRecord);
 
 // The record alone: the window holds only the record, drawn large in the same mosaic, over the
-// cover's light. A pin keeps the window above the others; Esc or the lower corner brings the
-// conversation back. Both corners show while the pointer is over the window.
+// cover's light. A pin keeps the window above the others; a click anywhere else, or Esc, brings the
+// conversation back, and a drag moves the window. The pin shows while the pointer is over the window.
 const immersive = $("immersive");
 let deep = null;
 let pinned = false;
@@ -508,7 +564,7 @@ function immerse(on) {
     deep ??= mountRecord($("immersive-record"), { across: 160 });
     deep.tint(grooveColours(moodPalette, dark.matches), true);
     immersive.classList.add("hovered");
-    $("restore").focus({ preventScroll: true });
+    immersive.focus({ preventScroll: true });
   } else {
     immersive.classList.remove("hovered");
     // Reconcile the conversation once, at the final width, rather than lay it out behind each live resize.
@@ -520,7 +576,17 @@ function immerse(on) {
   deep?.turn(on && Boolean(nowPlaying()?.playing));
 }
 expand.addEventListener("click", () => immerse(true));
-$("restore").addEventListener("click", () => immerse(false));
+// The main process moves the window while the button is held; a press that barely moved is a click.
+immersive.addEventListener("pointerdown", (event) => {
+  if (event.button !== 0 || event.target.closest("button")) return;
+  try { immersive.setPointerCapture(event.pointerId); } catch { /* A synthetic press has no pointer to capture. */ }
+  const started = window.moondogApp?.dragWindow?.("start");
+  immersive.addEventListener("pointerup", async () => {
+    await started;
+    const moved = (await window.moondogApp?.dragWindow?.("end")) ?? 0;
+    if (moved < 4) immerse(false);
+  }, { once: true });
+});
 $("pin").addEventListener("click", async () => {
   const change = ++pinChange;
   const before = pinned;
@@ -590,7 +656,7 @@ function renderConversation({ redraw = false } = {}) {
       if (entry) entry.node.replaceWith(node); else column.append(node);
       entry = nodes[index] = { key, node };
     }
-    if (turn.role !== "user") drawReply(entry.node, turn, index);
+    if (turn.role !== "user") drawReply(entry.node, turn, index); else messageTools(entry.node, turn);
   });
   for (const extra of nodes.splice(state.turns.length)) extra.node.remove();
   pin();
@@ -610,10 +676,12 @@ scroller.addEventListener("wheel", (event) => {
   // A hand on the wheel takes the view back from a glide.
   endGlide();
   if (event.deltaY < 0 && scroller.scrollHeight > scroller.clientHeight) follow(false);
+  else if (hold && event.deltaY > 0) { hold = null; if (gap() > 2) follow(false); }
 }, { passive: true });
 let scrollFrame = 0;
 scroller.addEventListener("scroll", () => {
   const top = scroller.scrollTop;
+  if (top !== own && hold && top > lastTop + 1) { hold = null; if (gap() > 2) follow(false); }
   if (top !== own) {
     // A column that shrank (a step line folding) clamps the view upward too; only a view that left the bottom stops following.
     if (top < lastTop - 1 && gap() > 2) { if (following) follow(false); } else if (gap() < 2 && !following) follow(true);
@@ -621,7 +689,7 @@ scroller.addEventListener("scroll", () => {
   lastTop = top;
   if (!scrollFrame) scrollFrame = requestAnimationFrame(() => { scrollFrame = 0; renderJump(); markTurn(); placeRecord(); });
 }, { passive: true });
-function renderJump() { const jump = $("jump"); const hide = following || gap() < 120; if (jump.hidden !== hide) jump.hidden = hide; }
+function renderJump() { const jump = $("jump"); const hide = (following && !hold) || gap() < 120; if (jump.hidden !== hide) jump.hidden = hide; }
 $("jump").addEventListener("click", toLatest);
 scrollbar(scroller, { inset: 50, onGrab: () => { chosen = null; follow(false); }, onRelease: () => { if (gap() < 2) follow(true); } });
 
@@ -759,7 +827,7 @@ function submit() {
   const command = text.match(/^\/([A-Za-z]+)$/u)?.[1];
   if (command && !COMMANDS.some((entry) => entry.name === command.toLowerCase())) { notice(t("unknownCommand", { name: command })); return; }
   follow(true);
-  if (submitText(text)) clearComposer();
+  if (submitText(text)) { clearComposer(); holdLatest(); }
   renderComposer();
 }
 $("form").addEventListener("submit", (event) => { event.preventDefault(); submit(); });
@@ -1478,6 +1546,14 @@ function receive({ data }) {
       submitText(waiting);
     }
   }
+  // Edit branched the conversation: the message comes back to the composer to change and send again.
+  if (data.type === "draft" && onScreen(data)) {
+    input.value = data.text ?? "";
+    renderComposer();
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+    notice(t("rewound"));
+  }
   if (data.type === "local" && onScreen(data)) {
     state.turns.push({ role: "assistant", text: data.markdown, local: true });
     renderConversation();
@@ -1492,6 +1568,9 @@ function receive({ data }) {
       const turn = streamingTurn(data.id);
       if (turn) {
         turn.streaming = false;
+        // The message this reply answers is saved now, so it can be edited.
+        const asked = state.turns[state.turns.indexOf(turn) - 1];
+        if (data.entry && asked?.role === "user") asked.entry = data.entry;
         if (data.state === "end") {
           turn.receipts = data.receipts ?? [];
           turn.text = data.text || turn.text || (data.status === "aborted" ? t("stopped") : "");

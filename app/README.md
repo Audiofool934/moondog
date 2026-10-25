@@ -35,9 +35,9 @@ A model or music service chosen there lasts until the app quits, and sign-in and
   Scrolling up into history folds it, as you scroll, into a small mark before the title in the title bar; back at the latest words it opens again.
   A click on the record, or `⌥⌘R`, keeps it folded; a click on the mark opens it and returns to the latest words.
   Where the bar has no room between its controls, the title gives way first, then the mark.
-  Hovering the record offers a full-window view at the lower-right corner of its square, clear of the disc.
+  Hovering the record offers a full-window view at the lower-right corner of its square, clear of the disc: two arrows with no frame, which darken and open a little under the pointer.
   The full-window view can shrink to a small square; the pin turns upright and solid when it keeps the window on top.
-  Esc or the lower-right button returns to the conversation.
+  A click anywhere in it, or Esc, returns to the conversation; a drag moves the window. The page moves the window itself, because a native drag region never passes it the click.
 - Conversations on the left are the terminal's conversations, in both directions: one started here shows up in `/resume`, and the other way round.
   While the window shows, a conversation or folder saved in the terminal appears within about two seconds; the core asks SQLite whether another process wrote to the memory store, so nothing is sent when nothing changed.
   The window and the terminal show the same conversation: the one either opened last, with `/new`, `/resume`, `/rewind`, the sidebar or a launch.
@@ -54,6 +54,8 @@ A model or music service chosen there lasts until the app quits, and sign-in and
   A reply that failed offers Try again.
 - In a long conversation, a mark for each request sits at the right edge: hover one to read it, click to go back to it.
   The view stays with the newest words until you scroll up; a round button brings you back. Page Up and Page Down scroll from the composer.
+  A message you send holds its place: the reply grows under it until the message reaches the top of the words, under the record, and the rest waits below for you to scroll, with the round button showing. A hand on the scroll lets go.
+  Under each message, while the pointer is on it, Copy copies its words. Your own saved messages also have Edit: as `/rewind` in the terminal, the conversation branches just before the message, the original stays among the conversations, and the message comes back to the composer to change and send.
 - What is playing on the right: a large cover that tints the panel with its own colours, the song, a progress line you can drag to move in the song (or focus it and use the arrow keys, five seconds a press, fifteen with Shift), previous, play or pause, and next.
   Where the music plays, under it, opens Spotify's devices and the choice between Spotify and Apple Music; while Apple Music plays, it reads Apple Music.
   A control Spotify won't take right now, such as skipping on a free account, is dimmed.

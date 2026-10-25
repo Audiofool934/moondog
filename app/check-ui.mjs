@@ -49,7 +49,7 @@ const entry = rect($("expand"));
 const disc = rect(record);
 assert(Math.abs(entry.right - disc.right) < 0.5 && Math.abs(entry.bottom - disc.bottom) < 0.5, "The expand button belongs at the record square's bottom-right, not on the disc");
 assert($("expand").tabIndex === 0, "The expand button should be reachable by keyboard while the record is open");
-for (const name of ["record-button", "bar-record", "expand", "pin", "restore"]) {
+for (const name of ["record-button", "bar-record", "expand", "pin", "immersive"]) {
   assert($(name).getAttribute("aria-label"), `${name} should keep its accessible name`);
   over($(name));
   await wait(700);
@@ -78,10 +78,16 @@ pin.click();
 answer(false);
 await wait(150);
 assert(pin.getAttribute("aria-pressed") === "false", "A native refusal should restore the actual pin state");
+// A press on the pin stays with the pin; a click anywhere else in the record returns to the conversation.
 pin.click();
-$("restore").click();
+const press = (target, type) => target.dispatchEvent(new PointerEvent(type, { bubbles: true, button: 0, pointerId: 1 }));
+press(pin, "pointerdown");
+assert(!$("immersive").hidden, "A press on the pin must not leave the record");
+press($("immersive-record"), "pointerdown");
+press($("immersive-record"), "pointerup");
+await wait(50);
 answer(true);
 await wait(150);
 assert(pin.getAttribute("aria-pressed") === "false", "A late pin reply must not select the pin after leaving the record");
-assert($("immersive").hidden, "The restore control should return to the conversation");
+assert($("immersive").hidden, "A click on the record should return to the conversation");
 assert(document.activeElement === $("input"), "Returning should restore composer focus");

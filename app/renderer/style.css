@@ -258,17 +258,31 @@ img { -webkit-user-drag: none; }
 .room:not(.empty) .stage { position: absolute; inset: 0; z-index: 2; display: block; padding: 0; pointer-events: none; }
 .room:not(.empty) .record-frame { position: absolute; left: 0; top: 0; width: var(--record, 240px); translate: none; transform-origin: 0 0; will-change: transform; }
 .room:not(.empty) .record-frame:has(.record-button:not(.away)) { pointer-events: auto; }
-/* The square hover target keeps the corner reachable without putting the button on the disc. */
-.expand { position: absolute; right: 0; bottom: 0; z-index: 1; color: var(--text-2); opacity: 0; pointer-events: none;
-  background: var(--glass); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); box-shadow: var(--glass-edge);
-  transition: opacity 240ms var(--soft), background-color var(--quick) var(--soft), color var(--quick) var(--soft); }
+/* The square hover target keeps the corner reachable without putting the button on the disc. Two arrows
+   say what it does, with no frame of their own; pointing at them darkens and opens them a little. */
+.expand { position: absolute; right: 0; bottom: 0; z-index: 1; color: var(--text-3); opacity: 0; pointer-events: none;
+  transition: opacity 240ms var(--soft), color var(--quick) var(--soft); }
+.expand .icon { transition: transform var(--quick) var(--soft); }
+.expand:hover { background: none; color: var(--text); }
+.expand:hover .icon { transform: scale(1.12); transition-timing-function: var(--out); }
+.expand:active .icon { transform: scale(0.96); }
 .room:not(.empty) .record-frame:hover .record-button:not(.away) ~ .expand, .expand:focus-visible { opacity: 1; pointer-events: auto; transition: none; }
 .room.empty .expand, .record-button.away ~ .expand { display: none; }
 .room.empty { justify-content: center; padding-bottom: 6vh; }
 .room.empty > .frame { display: none; }
 
 .turn { margin: 0 0 30px; }
-.you { display: flex; justify-content: flex-end; margin: 0 0 22px; }
+.you { position: relative; display: flex; justify-content: flex-end; margin: 0 0 30px; }
+/* Copy, and Edit on your own messages, sit just under a message while the pointer is on it. They take no
+   room of their own, so the conversation never shifts when they appear. */
+.message-tools { position: absolute; top: 100%; display: flex; gap: 2px; margin-top: 2px; opacity: 0;
+  transition: opacity 180ms var(--soft); }
+.you .message-tools { right: 0; }
+.reply .message-tools { left: -6px; }
+.message-tools .tool { width: 24px; height: 24px; }
+.message-tools .icon { width: 14px; height: 14px; }
+.you:hover .message-tools, .reply:hover .message-tools, .message-tools:focus-within { opacity: 1; transition: none; }
+.turn.reply { position: relative; }
 .you p { margin: 0; max-width: 78%; background: var(--glass); box-shadow: var(--glass-edge); border-radius: var(--r-4) var(--r-4) var(--r-1) var(--r-4); padding: 8px 14px 9px;
   font-size: var(--t-body); line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
 .reply .text { font-family: var(--serif); font-size: var(--t-reply); line-height: 1.7; overflow-wrap: anywhere; text-wrap: pretty; }
@@ -370,9 +384,10 @@ img { -webkit-user-drag: none; }
   box-shadow: 0 6px 18px rgb(0 0 0 / 0.16); animation: notice-in var(--enter) var(--out) both; }
 .jump:not([hidden]) + .notice { bottom: calc(100% + 50px); }
 @keyframes notice-in { from { opacity: 0; transform: translate(-50%, 4px); } }
-/* The record alone: the window holds the record and the cover's light, nothing else. The whole of it
-   drags the window, and the two corner buttons show while the pointer is over the window. */
-.immersive { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; -webkit-app-region: drag; }
+/* The record alone: the window holds the record and the cover's light, nothing else. A click anywhere
+   returns to the conversation and a drag moves the window (renderer.mjs moves it, because a native drag
+   region never passes the page its clicks); the pin shows while the pointer is over the window. */
+.immersive { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; -webkit-app-region: no-drag; }
 /* Only the record enters. The viewport-sized drag layer never keeps a transformed backing layer
    whose old edges can lag behind a native live resize. The canvas box is independent of its bitmap. */
 .immersive .record { width: min(82vmin, 1100px); height: min(82vmin, 1100px); translate: 3.5% 0; color: var(--text);
@@ -385,7 +400,6 @@ img { -webkit-user-drag: none; }
 .corner[data-pin] { top: 10px; }
 .corner[data-pin] .icon { transform: rotate(-35deg); transition: transform var(--quick) var(--out); }
 .corner[data-pin][aria-pressed="true"] .icon { transform: none; transition: none; }
-.corner[data-restore] { bottom: 12px; }
 .corner[aria-pressed="true"] { color: var(--text); }
 .immersive.hovered .corner, .corner:focus-visible { opacity: 1; transition-duration: 160ms; }
 .drop { position: absolute; inset: 0; z-index: 20; display: grid; place-items: center; align-content: center; gap: 16px;

@@ -593,3 +593,45 @@ test("music the listener starts in the Music app stops Moondog's own player, and
     await harness.stop();
   }
 });
+
+test("Edit in the window branches the conversation before a saved message and returns it as a draft", async () => {
+  const base = application("A");
+  let entries = [
+    { entry_id: "e1", user_text: "play something calm", assistant_text: "Here is Pink Moon.", outcome: "completed" },
+    { entry_id: "e2", user_text: "and louder", assistant_text: "Turned it up.", outcome: "completed" },
+  ];
+  base.conversationEntries = ({ limit }) => entries.slice(-limit);
+  base.conversationEntryTurns = (entry) => [{ role: "user", text: entry.user_text }, { role: "assistant", text: entry.assistant_text }];
+  const rewound = [];
+  const room = runtime();
+  room.rewindTo = async (entryId) => {
+    rewound.push(entryId);
+    const index = entries.findIndex((entry) => entry.entry_id === entryId);
+    const draft = entries[index].user_text;
+    entries = entries.slice(0, index);
+    base.sessionId = "B";
+    return { session_id: "B", draft };
+  };
+  const harness = await openRoom({ application: base, runtime: room });
+  try {
+    await harness.post({ type: "open", id: "A" });
+    const shown = harness.messages.filter((message) => message.type === "session").at(-1);
+    assert.deepEqual(shown.transcript.filter((turn) => turn.role === "user").map((turn) => turn.entry), ["e1", "e2"]);
+
+    await harness.post({ type: "rewind", entry: "e2" });
+    await tick();
+    assert.deepEqual(rewound, ["e2"]);
+    const branched = harness.messages.filter((message) => message.type === "session").at(-1);
+    assert.equal(branched.current, "B");
+    assert.deepEqual(branched.transcript.map((turn) => turn.text), ["play something calm", "Here is Pink Moon."]);
+    assert.deepEqual(harness.messages.filter((message) => message.type === "draft").at(-1), { type: "draft", session: "B", text: "and louder" });
+
+    // A turn that just ended names its saved entry, so its message can be edited without a redraw.
+    entries.push({ entry_id: "e3", user_text: "something else", assistant_text: "ok", outcome: "completed" });
+    await harness.post({ type: "prompt", text: "something else" });
+    await tick();
+    assert.equal(harness.messages.filter((message) => message.type === "turn" && message.state === "end").at(-1).entry, "e3");
+  } finally {
+    await harness.stop();
+  }
+});

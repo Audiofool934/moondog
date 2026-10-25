@@ -386,6 +386,28 @@ ipcMain.on("immersive", (_event, on) => {
     if (now.width < MIN_SIZE.width || now.height < MIN_SIZE.height) window.setBounds(bounds, true);
   }
 });
+// In the record alone the page moves the window itself, so a click can return to the conversation:
+// while the button is held the window follows the pointer, and the end says how far it went.
+let dragging = null;
+ipcMain.handle("drag-window", (_event, phase) => {
+  if (!window) return 0;
+  if (phase === "start") {
+    clearInterval(dragging?.timer);
+    const from = screen.getCursorScreenPoint();
+    const [x, y] = window.getPosition();
+    dragging = { from, x, y, moved: 0, timer: setInterval(() => {
+      const at = screen.getCursorScreenPoint();
+      const dx = at.x - from.x, dy = at.y - from.y;
+      dragging.moved = Math.max(dragging.moved, Math.hypot(dx, dy));
+      if (dragging.moved >= 4) window.setPosition(x + dx, y + dy);
+    }, 8) };
+    return 0;
+  }
+  const moved = dragging?.moved ?? 0;
+  clearInterval(dragging?.timer);
+  dragging = null;
+  return moved;
+});
 ipcMain.handle("pin", (_event, on) => {
   if (!window || !immersed) return false;
   window.setAlwaysOnTop(on === true, "floating");

@@ -12,6 +12,8 @@ contextBridge.exposeInMainWorld("moondogApp", {
   // whether the pointer is over the window, which the page cannot see over its drag region.
   setImmersive: (on) => ipcRenderer.send("immersive", on === true),
   setPinned: (on) => ipcRenderer.invoke("pin", on === true),
+  // Moves the window while the record alone is held: "start", then "end", which answers how far it went.
+  dragWindow: (phase) => ipcRenderer.invoke("drag-window", phase === "start" ? "start" : "end"),
   onHover: (callback) => ipcRenderer.on("hover", (_event, inside) => callback(inside === true)),
   setPlayback: (playback) => ipcRenderer.send("playback", { controllable: playback?.controllable === true, streaming: playback?.streaming === true }),
   showMenu: (items, at) => ipcRenderer.invoke("menu", { items, ...(at ?? {}) }),

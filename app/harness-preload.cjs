@@ -160,7 +160,7 @@ function player(options = {}) {
 }
 const silent = () => send({ type: "player", spotify: "ready", now: null, next: [] });
 const played = (index) => [{ action: "playback.resume", state: "accepted", targets: [{ title: TRACKS[index].title, artist_credit: TRACKS[index].artists.join(", ") }] }];
-const conversation = (pairs) => pairs.flatMap(([user, reply], index) => [{ role: "user", text: user },
+const conversation = (pairs) => pairs.flatMap(([user, reply], index) => [{ role: "user", text: user, entry: `e${index}` },
   { role: "assistant", id: `t${index}`, text: reply, receipts: index === 0 ? played(0) : [] }]);
 // Opens a settings section the way a listener can: a slash command typed into the composer.
 function slash(command) {
@@ -259,6 +259,18 @@ const STATES = {
   // A newer Moondog at the top right: on its way, ready, and named in its tooltip.
   "update-downloading"() { STATES.reply(); setUpdate({ phase: "downloading", version: "0.2.0-beta.2", progress: 0.4 }); },
   "update-ready"() { STATES.reply(); setUpdate({ phase: "ready", version: "0.2.0-beta.2" }); },
+  // Copy and Edit under a message, and Copy under a reply, while the pointer is on them.
+  "message-tools"() { STATES.reply(); return { hover: ".you p" }; },
+  "reply-tools"() { STATES.reply(); return { hover: ".reply .text" }; },
+  // A message sent with a reply that outgrows the window: the message stays in view under the record.
+  hold() {
+    STATES.long();
+    setTimeout(() => {
+      const input = document.querySelector("[data-input]");
+      input.value = "Something slower for the walk home";
+      document.querySelector("[data-form]").requestSubmit();
+    }, 300);
+  },
   "update-tip"() { STATES["update-ready"](); return { hover: "[data-update]" }; },
   // Whole Apple Music songs through the helper, once Apple allows them.
   whole() {
