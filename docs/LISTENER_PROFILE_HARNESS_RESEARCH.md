@@ -244,7 +244,12 @@ The evidence tool leaves out the host's prose explanation only for rows that los
 The writer and the check treat an unrecorded count, time or skip as unknown, not as low or unfamiliar.
 A fully timed Spotify history that records skips keeps an identical input, so its saved reading stays current.
 After the change, fresh builds with a fast model and a stronger model avoided every planted trap for all four listeners.
-A fading older interest is still easy to miss, because the dossier has no per-artist trend across years.
+A fading older interest was still easy to miss, because the dossier had no per-artist trend across years.
+Each lifetime artist row now carries its yearly plays, an ACT-R activation at the history's latest play, and a deterministic trajectory label: rising, steady, fading, returning, burst, or unknown.
+The label compares the artist's share of each year's plays, counts only years with at least 50 plays in the history, and needs at least 20 plays across three counted years.
+The partial latest year counts only when the artist has, or at its earlier share would have, at least ten plays in it, so a barely started year cannot swing a label.
+A burst must drop off at once after its peak year, so a tapering decline reads as fading, and an artist the last 90 days play at its earlier share is returning, not fading.
+The dossier lists up to twelve artists for each label other than steady, and the writer and the check treat a fading label as declining plays, never as dislike.
 
 ## First-build quality target (2026-10-05)
 

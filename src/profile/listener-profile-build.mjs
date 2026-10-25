@@ -4,7 +4,7 @@ import { avoidKey } from "../core/listener-avoids.mjs";
 import { recordedShare } from "./recorded-measures.mjs";
 
 export const LISTENER_PROFILE_ANALYSIS_VERSION = "listener-profile/2";
-export const LISTENER_PROFILE_SYNTHESIS_VERSION = "listener-synthesis/4";
+export const LISTENER_PROFILE_SYNTHESIS_VERSION = "listener-synthesis/5";
 // A saved reading is current only after its whole-profile check has run.
 export const CHECKED_PROFILE_STATES = new Set(["passed", "revised", "flagged"]);
 
@@ -152,13 +152,15 @@ export function modelEvidence(entry, offset = 0, limit = 12) {
     "playlist_count", "library_tracks", "preferred_tracks", "tracks_with_play_count", "preference_strength",
     "loved", "favorited", "rating_value", "rating_computed", "rank", "playlist_position", "value",
     "stream_count", "played_seconds", "playlist_names", "top_artist", "first_year", "last_year", "active_years",
+    "yearly_plays", "activation", "trajectory",
   ]);
   const data = Object.fromEntries(Object.entries(entry.data).filter(([key]) => fields.has(key)));
   if (data.top_artist) data.top_artist = Object.fromEntries(Object.entries(data.top_artist)
     .filter(([key]) => ["name", "play_count", "listening_minutes"].includes(key)));
   const continuations = {};
   for (const [key, value] of Object.entries(data)) {
-    if (Array.isArray(value)) {
+    // A yearly series is already capped, and a page of it would hide the latest years.
+    if (Array.isArray(value) && key !== "yearly_plays") {
       data[key] = value.slice(offset, offset + limit);
       if (value.length > offset + limit) continuations[key] = { total: value.length, next_offset: offset + limit };
     }
@@ -219,7 +221,16 @@ export function listenerProfileDossier(input) {
     sections,
     lifetime_artists: lifetime.slice(0, 40).map(row),
     next_lifetime_artists: lifetime.slice(40, 80).map(entry => ({ ref: entry.reference_id, name: entry.data.name,
-      listening_minutes: entry.data.listening_minutes, play_count: entry.data.play_count, distinct_tracks: entry.data.distinct_tracks })),
+      listening_minutes: entry.data.listening_minutes, play_count: entry.data.play_count, distinct_tracks: entry.data.distinct_tracks,
+      trajectory: entry.data.trajectory })),
+    movement: {
+      note: "Trajectory labels are computed from each artist's share of yearly plays: fading and rising compare the latest counted year with the years before it, returning means whole years without plays, or a decline, and then plays again, burst means one earlier year holds most of the plays and the next year drops off at once. They describe attention over time, not liking.",
+      ...Object.fromEntries(["fading", "returning", "rising", "burst"].map(label => [label, lifetime
+        .filter(entry => entry.data.trajectory === label).slice(0, 12)
+        .map(entry => ({ ref: entry.reference_id, name: entry.data.name, play_count: entry.data.play_count,
+          first_played_at: entry.data.first_played_at, last_played_at: entry.data.last_played_at,
+          yearly_plays: entry.data.yearly_plays }))])),
+    },
     recent_artists: rows("recent_artists").slice(0, 25).map(entry => ({ ...row(entry),
       lifetime_rank: lifetimeRank.get(artistKey(entry.data.name)) ?? null })),
     years: take("history_years", 64),

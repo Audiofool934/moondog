@@ -26,6 +26,27 @@ const extendedSequenceMinimumPlays = 5;
 const backToBackMinimumConsecutivePlays = 2;
 const backToBackMinimumPlayedMs = 30_000;
 const backToBackMaximumGapMinutes = 30;
+// Movement compares an artist's share of each year's plays, so a year with
+// less listening overall, or fewer records, does not read as fading. Play
+// counts are the measure because every dated play records one.
+const movementMinimumPlays = 20;
+const movementMinimumYears = 3;
+// A year counts only when the history holds this many plays in it.
+const movementMinimumYearPlays = 50;
+// The latest year is read only when the artist has, or at its earlier share
+// would have, this many plays in it, so a few plays more or less, such as in a
+// barely started partial year, cannot swing a label.
+const movementMinimumLatestPlays = 10;
+const movementSeriesYears = 12;
+const movementViewLimit = 5;
+const returningMinimumGapYears = 2;
+const returningMinimumPlays = 3;
+const burstMinimumPeakShare = 0.7;
+// A burst drops off at once: the next counted year holds under a tenth of the
+// peak year's share. A decline that tapers is fading.
+const burstMaximumAfterRatio = 0.1;
+const fadingMaximumRatio = 0.5;
+const risingMinimumRatio = 2;
 const monthlyActivityMaximumMonths = 240;
 const listeningSeasonMaximumSeasons = 80;
 const spotifyExtendedHistorySystem = "spotify-extended-history";
@@ -273,6 +294,109 @@ function aggregateHistoryArc(rows) {
           : {}),
       };
     });
+}
+
+// Years with plays, oldest first. Years before the most recent twelve roll
+// into one entry so a long history stays small.
+function yearlyPlays(years) {
+  const series = [...years.entries()]
+    .sort(([left], [right]) => left - right)
+    .map(([year, value]) => ({ year, plays: value.playCount }));
+  if (series.length <= movementSeriesYears) return series;
+  const earlier = series.slice(0, -movementSeriesYears);
+  return [
+    {
+      from_year: earlier[0].year,
+      to_year: earlier.at(-1).year,
+      plays: earlier.reduce((sum, item) => sum + item.plays, 0),
+    },
+    ...series.slice(-movementSeriesYears),
+  ];
+}
+
+function meanShare(items) {
+  return items.reduce((sum, item) => sum + item.share, 0) / items.length;
+}
+
+// A deterministic label for how an artist's share of yearly plays moved, from
+// its first year to the latest counted year. Checked in order: returning (at
+// least two counted years with no plays, then back in the latest two), burst
+// (one year that is not the latest holds 70% of the share and the next year
+// drops off at once), then fading or rising (the latest share is at most half,
+// or at least twice, the mean share of the years before it), else steady.
+// Fading also needs the recent window to agree: an artist played again at its
+// earlier share there is returning. Too few plays or years is unknown.
+function artistTrajectory(artist, yearTotals, referenceYear, recentTotal) {
+  const firstYear = Math.min(...artist.years.keys());
+  let counted = [...yearTotals.entries()]
+    .filter(([year, total]) => year >= firstYear && total >= movementMinimumYearPlays)
+    .sort(([left], [right]) => left - right)
+    .map(([year, total]) => {
+      const plays = artist.years.get(year)?.playCount ?? 0;
+      return { year, plays, total, share: plays / total };
+    });
+  const readable = (item, before) =>
+    Math.max(item.plays, meanShare(before) * item.total) >= movementMinimumLatestPlays;
+  if (counted.length > 1 && counted.at(-1).year === referenceYear &&
+    !readable(counted.at(-1), counted.slice(0, -1))) {
+    counted = counted.slice(0, -1);
+  }
+  const plays = counted.reduce((sum, item) => sum + item.plays, 0);
+  if (counted.length < movementMinimumYears || plays < movementMinimumPlays) {
+    return "unknown";
+  }
+  const latest = counted.at(-1);
+  const lastAbsent = counted.slice(0, -1).findLastIndex((item) => item.plays === 0);
+  if (lastAbsent >= 0 && lastAbsent >= counted.length - 3) {
+    let gapStart = lastAbsent;
+    while (gapStart > 0 && counted[gapStart - 1].plays === 0) gapStart -= 1;
+    const returnedPlays = counted
+      .slice(lastAbsent + 1)
+      .reduce((sum, item) => sum + item.plays, 0);
+    if (
+      lastAbsent - gapStart + 1 >= returningMinimumGapYears &&
+      counted.slice(0, gapStart).some((item) => item.plays > 0) &&
+      latest.plays > 0 &&
+      returnedPlays >= returningMinimumPlays
+    ) {
+      return "returning";
+    }
+  }
+  const shareSum = counted.reduce((sum, item) => sum + item.share, 0);
+  const peakIndex = counted.reduce(
+    (best, item, index) => (item.share > counted[best].share ? index : best),
+    0,
+  );
+  const peak = counted[peakIndex];
+  if (
+    peak !== latest &&
+    peak.share >= shareSum * burstMinimumPeakShare &&
+    counted[peakIndex + 1].share < peak.share * burstMaximumAfterRatio
+  ) {
+    return "burst";
+  }
+  const before = counted.slice(0, -1);
+  if (!readable(latest, before)) return "unknown";
+  const beforeShare = meanShare(before);
+  if (latest.share <= beforeShare * fadingMaximumRatio) {
+    const recentShare = recentTotal > 0 ? artist.recentPlayCount / recentTotal : 0;
+    if (
+      artist.recentPlayCount < movementMinimumLatestPlays ||
+      recentShare <= beforeShare * fadingMaximumRatio
+    ) {
+      return "fading";
+    }
+    return recentShare >= beforeShare ? "returning" : "steady";
+  }
+  if (latest.share >= beforeShare * risingMinimumRatio) return "rising";
+  return "steady";
+}
+
+// ACT-R base-level activation at the history's latest play: the log of the
+// summed play ages in days (at least one) to the power -0.5. Recent plays
+// weigh more, and an old archive is read against its own end, not today.
+function activation(sum) {
+  return Math.round(Math.log(sum) * 100) / 100;
 }
 
 function monthIndex(monthKey) {
@@ -680,6 +804,15 @@ function aggregateEvents(subjectId, eventRows, explanations) {
   const recentCutoff = latest
     ? new Date(Date.parse(latest) - recentWindowDays * dayMs).toISOString()
     : null;
+  const latestMs = latest ? Date.parse(latest) : null;
+  const referenceYear = latest ? Number(latest.slice(0, 4)) : null;
+  const yearTotals = new Map();
+  let recentTotal = 0;
+  for (const row of eligible) {
+    const year = Number(row.event.occurred_at.slice(0, 4));
+    if (Number.isInteger(year)) yearTotals.set(year, (yearTotals.get(year) ?? 0) + 1);
+    if (row.event.occurred_at >= recentCutoff) recentTotal += 1;
+  }
 
   function aggregate(rows, windowKind) {
     const artists = new Map();
@@ -745,8 +878,13 @@ function aggregateEvents(subjectId, eventRows, explanations) {
         years: new Map(),
         firstPlayedAt: occurredAt,
         lastPlayedAt: occurredAt,
+        activationSum: 0,
+        recentPlayCount: 0,
       };
       artist.playCount += 1;
+      if (occurredAt >= recentCutoff) artist.recentPlayCount += 1;
+      artist.activationSum +=
+        Math.max((latestMs - Date.parse(occurredAt)) / dayMs, 1) ** -0.5;
       artist.playedMs += row.playedMs;
       if (row.timed) artist.timedPlayCount += 1;
       if (row.skipKnown) artist.skipKnownCount += 1;
@@ -801,6 +939,14 @@ function aggregateEvents(subjectId, eventRows, explanations) {
           ...recordedMinutes(item),
           distinct_tracks: item.trackRefs.size,
           ...recordedSkips(item),
+          ...(windowKind === "lifetime"
+            ? {
+                first_played_at: item.firstPlayedAt,
+                yearly_plays: yearlyPlays(item.years),
+                activation: activation(item.activationSum),
+                trajectory: artistTrajectory(item, yearTotals, referenceYear, recentTotal),
+              }
+            : {}),
           last_played_at: item.lastPlayedAt,
           evidence_id: evidenceId,
         };
@@ -2524,6 +2670,14 @@ export function projectListeningProfile({
         history_arc: events.historyArc,
         monthly_activity: monthlyActivity,
         listening_seasons: listeningSeasons,
+        movement: Object.fromEntries(
+          ["fading", "returning", "rising"].map((label) => [
+            label,
+            events.lifetime.rankedArtists
+              .filter((artist) => artist.trajectory === label)
+              .slice(0, Math.min(maxItems, movementViewLimit)),
+          ]),
+        ),
         artist_relationships: slice(relationships, maxItems),
         year_transitions: slice(transitions, 12),
         release_depth: slice(releases, maxItems),
@@ -2552,6 +2706,10 @@ export function projectListeningProfile({
             timeCapsuleMinimumPlayedMs,
           ),
           relationship_minimum_years: relationshipMinimumYears,
+          movement_minimum_plays: movementMinimumPlays,
+          movement_minimum_years: movementMinimumYears,
+          movement_minimum_year_plays: movementMinimumYearPlays,
+          movement_minimum_latest_plays: movementMinimumLatestPlays,
           continuity_artist_limit: continuityArtistLimit,
           release_minimum_distinct_tracks: releaseMinimumDistinctTracks,
           session_gap_minutes: sessionGapMinutes,

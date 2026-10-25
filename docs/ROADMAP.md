@@ -61,7 +61,7 @@ New listening views, corrections, and discovery interactions must work in the te
   Success means a plausible, multidimensional, and internally coherent understanding that supports listening and discovery, with reasonable tolerance for inference error.
   Completion requires fresh-build evidence against the [first-build acceptance target](LISTENER_PROFILE_HARNESS_RESEARCH.md#first-build-quality-target-2026-10-05), with later listener feedback withheld from the builder's input.
   Fictional builds on 2026-10-14 avoided every planted trap once unrecorded measures stayed unknown.
-  The remaining known gap is a fading older interest: the dossier has no per-artist trend across years.
+  The remaining known gap was a fading older interest; the dossier now gives each artist its yearly plays and a trajectory label such as fading or returning, and no fresh build has been judged with them yet.
 
 ### Daily use
 
@@ -79,7 +79,7 @@ New listening views, corrections, and discovery interactions must work in the te
 
 ## Next
 
-- [ ] Add a per-artist trend across years to the profile dossier, then judge one fresh fictional build and one build on the owner's real archive.
+- [ ] Judge one fresh fictional build and one build on the owner's real archive with the per-artist trajectory now in the profile dossier.
 - [ ] Add a type boundary at the profile edge, for listening measures, evidence rows, and tool results that reach the agent runtime, without a repository-wide TypeScript migration.
 - [ ] Split the terminal room along the screens it already has (sleeve, import, profile, conversation), with identical behavior.
 - [ ] Show what each import changed: the dates it covers, when it arrived, and which plays were new, duplicate, or richer replacements.

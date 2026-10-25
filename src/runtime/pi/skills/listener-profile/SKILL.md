@@ -30,6 +30,7 @@ Separate explicit listener choices, provider preference states, historical atten
 Direct listener corrections take precedence, including Avoids outside the first page.
 Form provisional conclusions, then use additional evidence to challenge the important ones.
 Compare older and recent attention, inspect less-played tracks with `sort: least_played`, and check whether saved or positively rated music supports a different interest from the most-played music.
+To see how taste moved across years, read the summary's movement or explore `history_artists` with `trajectory: fading` or `trajectory: returning`; a trajectory describes yearly plays, not liking.
 Use `moondog_profile_explain` for key evidence IDs and preserve conflicting evidence rather than forcing one persona.
 Attach each important conclusion to its evidence IDs, source family, observed period, and a plain-language reason for certainty or uncertainty.
 Do not manufacture a calibrated probability from a model's confidence.

@@ -6,17 +6,20 @@ export const PROFILE_SECTIONS = Object.freeze([
   "provider_evidence", "apple_tracks", "apple_artists", "apple_genres",
 ]);
 
+export const TRAJECTORIES = Object.freeze(["rising", "steady", "fading", "returning", "burst", "unknown"]);
+
 const normalize = (value) => String(value ?? "").normalize("NFKC").toLocaleLowerCase("und");
 
 export function profileExplorationInput(value = {}) {
   if (!value || typeof value !== "object" || Array.isArray(value) ||
-    Object.keys(value).some((key) => !["section", "query", "offset", "limit", "sort"].includes(key))) {
+    Object.keys(value).some((key) => !["section", "query", "offset", "limit", "sort", "trajectory"].includes(key))) {
     throw new TypeError("Profile exploration arguments are invalid");
   }
-  const { section = "overview", query = "", offset = 0, limit = 12, sort = "ranked" } = value;
+  const { section = "overview", query = "", offset = 0, limit = 12, sort = "ranked", trajectory } = value;
   if (!PROFILE_SECTIONS.includes(section) || typeof query !== "string" || query.length > 256 ||
     !Number.isSafeInteger(offset) || offset < 0 || !Number.isInteger(limit) || limit < 1 || limit > 20 ||
-    !["ranked", "least_played", "recent"].includes(sort)) {
+    !["ranked", "least_played", "recent"].includes(sort) ||
+    (trajectory !== undefined && !TRAJECTORIES.includes(trajectory))) {
     throw new TypeError("Profile exploration selection is invalid");
   }
   if (sort !== "ranked" && !["history_tracks", "history_artists", "recent_tracks", "recent_artists", "apple_tracks"].includes(section)) {
@@ -25,19 +28,22 @@ export function profileExplorationInput(value = {}) {
   if (sort === "recent" && section === "apple_tracks") {
     throw new TypeError("Apple library play counts have no event chronology");
   }
-  return { section, query: query.trim(), offset, limit, sort };
+  if (trajectory !== undefined && section !== "history_artists") {
+    throw new TypeError("Only history artists have a trajectory");
+  }
+  return { section, query: query.trim(), offset, limit, sort, ...(trajectory ? { trajectory } : {}) };
 }
 
 export function exploreProfileCatalog({ listening, apple, input }) {
-  const { section, query, offset, limit, sort } = profileExplorationInput(input);
+  const { section, query, offset, limit, sort, trajectory } = profileExplorationInput(input);
   const catalog = { ...listening?.sections, ...apple?.sections };
   const all = catalog[section] ?? [];
   const needle = normalize(query);
-  let matches = all.filter((row) => !needle || [
+  let matches = all.filter((row) => (!trajectory || row.trajectory === trajectory) && (!needle || [
     row.name, row.label, row.artist_credit, row.release, row.genre, row.year, row.evidence_kind,
     row.source_label, row.period, row.text, row.playlist_name, ...(row.playlist_names ?? []),
   ]
-    .some((text) => normalize(text).includes(needle)));
+    .some((text) => normalize(text).includes(needle))));
   if (sort !== "ranked") {
     matches = matches.map((row, index) => ({ row, index })).sort((left, right) => {
       const order = sort === "least_played"
@@ -59,7 +65,9 @@ export function exploreProfileCatalog({ listening, apple, input }) {
     coverage: { ...listening?.coverage, ...apple?.coverage },
     sources: listening?.sources ?? [],
     context: listening?.context ?? {},
-    section_note: section.startsWith("recent_")
+    section_note: trajectory
+      ? "Artists with this trajectory label, computed from their share of yearly plays across the retained history. It describes attention over time, not liking."
+      : section.startsWith("recent_")
       ? "Recent rankings use the retained-history reference date and recent_window_days, not today's date."
       : section === "history_releases"
         ? "Release depth includes releases meeting release_minimum_distinct_tracks. It does not prove album completion."
