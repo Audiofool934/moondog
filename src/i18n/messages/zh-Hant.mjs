@@ -62,6 +62,7 @@ export default {
   "queue.skippedDuplicates": ({ count }) => `略過 ${count} 首重複曲目。`,
   "queue.skippedUncertain": ({ count }) => `略過 ${count} 首先前加入結果不明的曲目，避免重複；請檢查 Spotify 佇列。`,
   "queue.skippedAvoided": ({ count }) => `略過 ${count} 首你要求避開的曲目。`,
+  "plan.avoidedLeftOut": ({ titles }) => `依你的要求略過了：${titles}。`,
   "queue.skippedKnown": ({ count }) => `依你的要求，略過 ${count} 首聆聽紀錄裡已有的曲目。`,
   "queue.mix": ({ familiar = 0, returning = 0, heard = 0, known_artist: knownArtist = 0, new: fresh = 0 }) =>
     `根據你的聆聽紀錄：${[familiar && `熟悉的 ${familiar} 首`, returning && `久違的 ${returning} 首`, heard && `聽過一兩次的 ${heard} 首`, knownArtist && `熟悉歌手的新歌 ${knownArtist} 首`, fresh && `沒聽過的 ${fresh} 首`].filter(Boolean).join("，")}。`,

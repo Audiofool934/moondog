@@ -63,6 +63,7 @@ export default {
   "queue.skippedDuplicates": ({ count }) => `Skipped ${count} duplicate tracks.`,
   "queue.skippedUncertain": ({ count }) => `Skipped ${count} tracks with earlier uncertain queue outcomes to avoid replay; check the Spotify queue.`,
   "queue.skippedAvoided": ({ count }) => `Skipped ${count} avoided tracks.`,
+  "plan.avoidedLeftOut": ({ titles }) => `Left out because you asked me to keep them out: ${titles}.`,
   "queue.skippedKnown": ({ count }) => `Skipped ${count} tracks matched in retained history, as requested.`,
   "queue.mix": ({ familiar = 0, returning = 0, heard = 0, known_artist: knownArtist = 0, new: fresh = 0 }) =>
     `The mix: ${[familiar && `${familiar} you know well`, returning && `${returning} back after a while`, heard && `${heard} you've heard once or twice`, knownArtist && `${knownArtist} new from ${knownArtist === 1 ? "an artist" : "artists"} you know`, fresh && `${fresh} new to you`].filter(Boolean).join(", ")}.`,

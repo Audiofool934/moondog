@@ -3,7 +3,8 @@ import { hostname } from "node:os";
 import { setTimeout as delay } from "node:timers/promises";
 import { compactListenerProfile, readListenerProfile } from "../profile/listener-profile-build.mjs";
 import { mixCounts, songKeys } from "../profile/moondog-suggestions.mjs";
-import { textNamesTitle } from "./track-title.mjs";
+import { ARTIST_CREDIT_SEPARATORS } from "./listener-avoids.mjs";
+import { textNamesSong } from "./track-title.mjs";
 
 import {
   readAppleMusicSourceStatus,
@@ -54,6 +55,19 @@ function spotifyResolutionError(code, message) {
   error.actionNotDispatched = true;
   return error;
 }
+
+// A ledger entry's artists: its own list, or its credit whole and split into its artists.
+const creditedArtists = (track) => Array.isArray(track.artists) && track.artists.length ? track.artists
+  : typeof track.artistCredit === "string" ? [track.artistCredit, ...track.artistCredit.split(ARTIST_CREDIT_SEPARATORS)] : [];
+
+// The trusted songs of a pending plan that are still in it.
+const keptTrusted = (draft, kept) => {
+  const refs = new Set(kept.map((track) => track.track_ref_id));
+  return draft.trustedTracks.filter((track) => refs.has(track.track_ref_id));
+};
+
+// The plan songs an Avoid left out of a play, queue or save, by name.
+const skippedAvoided = (avoided) => avoided.length ? { skipped_avoided: avoided, skipped_avoided_count: avoided.length } : {};
 
 // A play the listener's Avoid blocks: nothing is sent, and the model can say why.
 const listenerAvoidError = () => spotifyResolutionError("listener_avoid_blocked",
@@ -526,7 +540,7 @@ export class MoondogApplication {
       const songs = receipt.songs ?? [];
       const slots = this.#mixSlots(songs.map((song) => ({ title: song.title, artists: song.artists })));
       this.#noteSuggestions("netease", songs.map((song, index) => ({ action: receipt.mode === "queued" ? "netease.queue" : "netease.play",
-        providerTrackId: song.id ? `netease:${song.id}` : null, title: song.title, artists: song.artists, mixSlot: slots[index] })), { named: true });
+        providerTrackId: song.id ? `netease:${song.id}` : null, title: song.title, artists: song.artists, mixSlot: slots[index] })));
       // One song needs no mix line.
       const mix = songs.length > 1 ? mixCounts(slots) : null;
       if (mix) return { ...receipt, mix };
@@ -699,10 +713,11 @@ export class MoondogApplication {
     const whole = this.musicPreviewPlayer.wholeSongs?.() === true;
     const slots = this.#mixSlots(found.played.map((track) => ({ title: track.title, artist_credit: track.artist_credit })));
     // An album the listener named is theirs, every song of it.
-    if (!(found.album && (this.#listenerNamed(found.album.title) || this.#listenerNamed(album.title)))) {
+    const albumArtists = [found.album?.artist_credit, album?.artist].filter((name) => typeof name === "string");
+    if (!(found.album && (this.#listenerNamed(found.album.title, albumArtists) || this.#listenerNamed(album.title, albumArtists)))) {
       this.#noteSuggestions("apple_music", found.played.map((track, index) => ({ action: whole ? "apple_music.play" : "apple_music.preview",
         providerTrackId: track.catalog_id ? `apple_music:${track.catalog_id}` : null, isrc: track.isrc, title: track.title,
-        artistCredit: track.artist_credit, mixSlot: slots[index] })), { named: true });
+        artistCredit: track.artist_credit, mixSlot: slots[index] })));
     }
     const mix = found.played.length > 1 ? mixCounts(slots) : null;
     return { state: found.played.length ? "resolved" : "not_found", ...found, ...(mix ? { mix } : {}), whole_songs: whole };
@@ -1634,8 +1649,6 @@ export class MoondogApplication {
       observedAt: this.spotifyContextClock(), turn: this.spotifyContextTurn, epoch: this.spotifyContextEpoch, outcome: "unconfirmed" } : null;
     if (attempt) this.spotifyPlaybackAttempt = attempt;
     const targets = items.map(item => ({ title: item.name ?? "Spotify item", artist_credit: item.artists.join(", ") }));
-    // A selection the listener searched for may be one they named; a plan's songs are Moondog's.
-    const named = played === null;
     // The songs this selection starts. An album started whole or at one song goes on playing,
     // so it goes in the ledger by its release. A playlist or an artist names no song until it plays.
     const album = parameters.contextUri?.startsWith("spotify:album:")
@@ -1658,7 +1671,7 @@ export class MoondogApplication {
       },
     }).then(receipt => {
       const result = { ...receipt, ...(targets.length ? { targets } : {}) };
-      if (receipt.state === "accepted") this.#noteSuggestions("spotify", played.map(track => ({ action: "play", ...track })), { named });
+      if (receipt.state === "accepted") this.#noteSuggestions("spotify", played.map(track => ({ action: "play", ...track })));
       if (key && transaction && receipt.state === "accepted") {
         transaction.lastAcceptedPlaybackSelection = key;
         transaction.lastAcceptedPlaybackReceipt = { ...structuredClone(result), deviceId: attempt?.parameters.deviceId };
@@ -1778,11 +1791,20 @@ export class MoondogApplication {
     return true;
   }
 
-  // A pending plan's songs, checked again when it plays, queues or is saved: a choice made since
-  // the plan keeps the whole plan from being sent.
-  #requirePlanAllowed(tracks) {
-    if (!tracks.every(track => this.avoidAllows({ title: track.title, artist_credit: track.artist_credit,
-      ...(Array.isArray(track.artists) ? { artists: track.artists } : {}) }))) throw listenerAvoidError();
+  // A pending plan's songs, checked again when it plays, queues or is saved, and read as the
+  // candidate gate read them: a history candidate names its first credited artist whole, so
+  // "Earth, Wind & Fire" stays one artist. A song avoided since the plan is left out and named
+  // in the receipt; only a plan with nothing left is refused.
+  #withoutAvoidedPlanTracks(tracks) {
+    const avoided = tracks.filter((track) => {
+      if (!track) return false;
+      const artists = Array.isArray(track.artists) ? track.artists
+        : track.candidate_scope === "private_history" ? [track.artist_credit] : null;
+      return !this.avoidAllows({ title: track.title, artist_credit: track.artist_credit, ...(artists ? { artists } : {}) });
+    });
+    if (avoided.length && avoided.length === tracks.length) throw listenerAvoidError();
+    return { kept: tracks.filter((track) => !avoided.includes(track)),
+      avoided: avoided.map((track) => ({ title: track.title, artist_credit: track.artist_credit })) };
   }
 
   // Avoids that exist but could not be loaded stop every play path, rather than letting them through.
@@ -1929,11 +1951,11 @@ export class MoondogApplication {
 
   // What Moondog itself started goes in the listening history's ledger, written from accepted
   // host receipts only, so its picks never come back as the listener's own plays. A ledger
-  // that cannot be written never undoes the playback. On a path that plays what was asked
-  // for (named), a song or album the listener named in this turn or the two before it is
-  // their own choice and stays out of the ledger; a set Moondog assembled stays Moondog's.
-  #noteSuggestions(service, tracks, { named = false } = {}) {
-    if (named) tracks = this.#withoutListenerNamed(tracks);
+  // that cannot be written never undoes the playback. On every path, song by song, a song or
+  // album the listener named in this turn or the two before it is their own choice and stays
+  // out of the ledger, and the songs Moondog added around it stay Moondog's.
+  #noteSuggestions(service, tracks) {
+    tracks = this.#withoutListenerNamed(tracks);
     if (!tracks.length || typeof this.domainServices?.recordMoondogSuggestions !== "function") return;
     const requestedAt = new Date(this.spotifyContextClock()).toISOString();
     const entries = tracks.slice(0, 50);
@@ -1947,15 +1969,16 @@ export class MoondogApplication {
 
   // An album row goes with the song it started at: named song or named album, it is the listener's.
   #withoutListenerNamed(tracks) {
-    const named = (value) => this.#listenerNamed(value);
+    const named = (track) => this.#listenerNamed(track.title ?? track.release, creditedArtists(track));
     const songs = tracks.filter((track) => track.title);
-    if (songs.some((track) => named(track.title))) return songs.filter((track) => !named(track.title));
-    return tracks.filter((track) => track.title || !named(track.release));
+    if (songs.some(named)) return songs.filter((track) => !named(track));
+    return tracks.filter((track) => track.title || !named(track));
   }
 
-  #listenerNamed(title) {
+  // Named means one message names the title with one of its artists, or quotes the title.
+  #listenerNamed(title, artists) {
     return typeof title === "string" &&
-      (this.pendingPlaylistPromptTransaction?.listenerTexts ?? []).some((text) => textNamesTitle(text, title));
+      (this.pendingPlaylistPromptTransaction?.listenerTexts ?? []).some((text) => textNamesSong(text, title, artists));
   }
 
   // Which candidates Moondog suggested in earlier sessions, so the model can vary its picks.
@@ -2932,8 +2955,9 @@ export class MoondogApplication {
     this.requireSpotifyScopes(["user-read-private"]);
     this.requireSpotifyWriteScopes(["playlist-modify-private"]);
     const draft = this.pendingSpotifyPlaylist;
+    const { kept, avoided } = this.#withoutAvoidedPlanTracks(draft.plan.tracks);
     const result = await this.requireSpotifyResolver().resolve(
-      draft.trustedTracks,
+      keptTrusted(draft, kept),
       { signal },
     );
     signal?.throwIfAborted();
@@ -2946,7 +2970,7 @@ export class MoondogApplication {
         );
       }
     }
-    const uris = draft.plan.tracks.map((track) =>
+    const uris = kept.map((track) =>
       resolvedByRef.get(track.track_ref_id),
     );
     if (uris.some((uri) => typeof uri !== "string")) {
@@ -2955,7 +2979,7 @@ export class MoondogApplication {
         "The pending playlist could not be fully resolved on Spotify, so no playlist was created.",
       );
     }
-    return this.writeSpotifyPlaylist(details, uris, { signal, tracks: draft.plan.tracks });
+    return this.writeSpotifyPlaylist(details, uris, { signal, tracks: kept, avoided });
   }
 
   async spotifyPlayPendingPlan({ deviceId } = {}, { signal } = {}) {
@@ -2970,15 +2994,15 @@ export class MoondogApplication {
     }
     this.requireSpotifyScopes(["user-read-private"]);
     const draft = this.pendingSpotifyPlaylist;
-    this.#requirePlanAllowed(draft.plan.tracks);
-    const result = await this.requireSpotifyResolver().resolve(draft.trustedTracks, { signal });
+    const { kept, avoided } = this.#withoutAvoidedPlanTracks(draft.plan.tracks);
+    const result = await this.requireSpotifyResolver().resolve(keptTrusted(draft, kept), { signal });
     signal?.throwIfAborted();
     const resolvedByRef = new Map(
       (result.resolutions ?? [])
         .filter((resolution) => resolution.status === "resolved" && resolution.spotify?.uri)
         .map((resolution) => [resolution.track_ref_id, resolution.spotify.uri]),
     );
-    const uris = draft.plan.tracks.map((track) => resolvedByRef.get(track.track_ref_id));
+    const uris = kept.map((track) => resolvedByRef.get(track.track_ref_id));
     if (uris.some((uri) => typeof uri !== "string")) {
       throw spotifyResolutionError(
         "spotify_pending_playback_unresolved",
@@ -2988,10 +3012,10 @@ export class MoondogApplication {
     const receipt = await this.#resumeSpotifySelection({
       uris,
       ...(deviceId ? { deviceId } : {}),
-    }, { signal, played: draft.plan.tracks.map((track, index) => ({
+    }, { signal, played: kept.map((track, index) => ({
       providerTrackId: uris[index], title: track.title, artistCredit: track.artist_credit,
     })) });
-    return { ...receipt, track_count: uris.length };
+    return { ...receipt, track_count: uris.length, ...skippedAvoided(avoided) };
   }
 
   async spotifyQueuePendingPlan({ deviceId } = {}, { signal } = {}) {
@@ -3005,9 +3029,9 @@ export class MoondogApplication {
     }
     this.requireSpotifyScopes(["user-read-private"]);
     const draft = this.pendingSpotifyPlaylist;
-    this.#requirePlanAllowed(draft.plan.tracks);
+    const { kept, avoided } = this.#withoutAvoidedPlanTracks(draft.plan.tracks);
     const result = await this.requireSpotifyResolver().resolve(
-      draft.trustedTracks,
+      keptTrusted(draft, kept),
       { signal },
     );
     signal?.throwIfAborted();
@@ -3017,11 +3041,11 @@ export class MoondogApplication {
         resolvedByRef.set(resolution.track_ref_id, resolution.spotify.uri);
       }
     }
-    const receipt = await this.#queueSpotifyTracks(draft.plan.tracks, resolvedByRef, { signal, deviceId, ledgerAction: "queue.plan" });
+    const receipt = await this.#queueSpotifyTracks(kept, resolvedByRef, { signal, deviceId, ledgerAction: "queue.plan" });
     if (receipt.state === "no_candidates") {
       throw spotifyResolutionError("spotify_pending_queue_unmatched", "None of the pending tracks matched a Spotify track, so nothing was queued.");
     }
-    return receipt;
+    return avoided.length ? { ...receipt, skipped_avoided: avoided, skipped_avoided_count: receipt.skipped_avoided_count + avoided.length } : receipt;
   }
 
   async #queueSpotifyTracks(tracks, resolvedByRef, { signal, deviceId, seenUris = null, limit = tracks.length, domainServices = null, knownTrack = null, rethrow = false, ledgerAction = "queue.add" } = {}) {
@@ -3121,7 +3145,7 @@ export class MoondogApplication {
     this.#noteSuggestions("spotify", accepted.map(({ track, uri }, index) => ({
       action: uri === startedUri ? "play" : ledgerAction, providerTrackId: uri, isrc: track.isrc,
       title: track.title, artists: track.artists, artistCredit: track.artist_credit, mixSlot: slots[index],
-    })), { named: ledgerAction === "queue.add" });
+    })));
     const mix = mixCounts(slots);
     const verification = acceptedUris.length && !signal?.aborted ? await this.#verifyQueued(acceptedUris, { signal }) : null;
     return { provider: "spotify", ok: !["unknown", "failed"].includes(state), effect: "write_external", action: "playback.queue.add",
@@ -3137,10 +3161,14 @@ export class MoondogApplication {
       ...(signal?.aborted ? { cancelled: true } : {}) };
   }
 
-  async writeSpotifyPlaylist(details, uris, { signal, tracks = [] } = {}) {
+  async writeSpotifyPlaylist(details, uris, { signal, tracks = [], avoided: leftOut = [] } = {}) {
     signal?.throwIfAborted();
     this.requireSpotifyPlaylistCreationFlow();
-    this.#requirePlanAllowed(tracks.filter(Boolean));
+    const { kept, avoided } = this.#withoutAvoidedPlanTracks(tracks);
+    if (avoided.length) {
+      uris = uris.filter((_uri, index) => kept.includes(tracks[index]));
+      tracks = kept;
+    }
     if (this.pendingPlaylistPromptTransaction) this.pendingPlaylistPromptTransaction.playlistWriteAttempted = true;
     this.invalidateSpotifyQuickEditContext();
     try {
@@ -3155,7 +3183,7 @@ export class MoondogApplication {
       }
       this.pendingSpotifyPlaylist = null;
       this.pendingPlaylistRevisionCandidateSet = null;
-      return receipt;
+      return { ...receipt, ...skippedAvoided([...leftOut, ...avoided]) };
     } catch (error) {
       if (error?.outcomeUnknown === true || ["playlist_created_without_tracks", "playlist_created_tracks_unknown"].includes(error?.code)) {
         if (this.pendingPlaylistPromptTransaction) {

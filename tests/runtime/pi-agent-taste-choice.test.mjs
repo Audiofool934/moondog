@@ -184,3 +184,57 @@ test("the application hears the listener's two messages before this one", async 
   assert.deepEqual(seen.at(-1), ["Is it sad?", "How long is it?"]);
   assert.deepEqual(seen[0], []);
 });
+
+// One pointing quote per supported language, near and far, plus pronouns.
+const POINTING = {
+  en: ["never play him again", "I can't stand those guys", "skip that one forever", "I love her voice"],
+  zh: ["那首歌别再放了", "我不想再听那个歌手了", "那些歌都别放了"],
+  "zh-Hant": ["這首歌別再放了", "我很喜歡這個歌手", "那個歌手別再放了"],
+  ja: ["あの曲はもう流さないで", "それはもう流さないで", "あれは好きじゃない"],
+  ko: ["그 노래 다시는 틀지 마", "그거 다시는 틀지 마", "저거 정말 좋아"],
+  de: ["Spiel das nie wieder", "Den will ich nie wieder hören", "ich mag ihn nicht"],
+  es: ["No pongas eso nunca más", "No me gusta ese artista", "no la pongas más"],
+  fr: ["je n'aime pas cela du tout", "ne mets plus celle-ci", "ne le mets plus jamais"],
+  it: ["Non mettere mai più quella canzone", "quello non lo voglio più"],
+  pt: ["não toque aquilo de novo", "aquele artista não, por favor"],
+};
+
+test("a choice can point at what is playing in every supported language", async (t) => {
+  const { faux, runtime } = await fixture(t);
+  for (const [locale, quotes] of Object.entries(POINTING)) {
+    for (const quote of quotes) {
+      faux.setResponses([
+        choose({ subject: "track", artist: "Mira Vale", title: "Night Ferry", stance: "avoid", source_text: quote }),
+        (context) => {
+          assert.equal(toolResult(context).isError, false, `${locale}: ${quote}: ${refusal(context)}`);
+          return fauxAssistantMessage([fauxText("Okay.")]);
+        },
+      ]);
+      await runtime.prompt(quote);
+    }
+  }
+});
+
+test("a Latin name inside CJK text, or a band named without its article, binds the quote; an unrelated one does not", async (t) => {
+  const { store, faux, runtime } = await fixture(t);
+  for (const [artist, quote] of [["Mira Vale", "我不想再听Mira Vale了"], ["Mira Vale", "Mira Valeはもう聴きたくない"],
+    ["Mira Vale", "Mira Vale는 이제 그만 틀어줘"], ["The Lanterns", "no more Lanterns please"]]) {
+    faux.setResponses([
+      choose({ subject: "artist", artist, stance: "avoid", source_text: quote }),
+      (context) => {
+        assert.equal(toolResult(context).isError, false, `${quote}: ${refusal(context)}`);
+        return fauxAssistantMessage([fauxText("Okay.")]);
+      },
+    ]);
+    await runtime.prompt(quote);
+  }
+  faux.setResponses([
+    choose({ subject: "artist", artist: "Bert Fictional", stance: "avoid", source_text: "play something mellow tonight" }),
+    (context) => {
+      assert.match(refusal(context), /taste_choice_quote_unbound/u);
+      return fauxAssistantMessage([fauxText("Here is something mellow.")]);
+    },
+  ]);
+  await runtime.prompt("play something mellow tonight");
+  assert.deepEqual(store.listListenerCorrections({ subjectId }).map((record) => record.label).sort(), ["Mira Vale", "The Lanterns"]);
+});

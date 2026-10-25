@@ -62,6 +62,7 @@ export default {
   "queue.skippedDuplicates": ({ count }) => `${count} doublons ignorés.`,
   "queue.skippedUncertain": ({ count }) => `${count} morceaux ignorés pour éviter un doublon, car leur ajout précédent est incertain ; vérifiez la file d'attente Spotify.`,
   "queue.skippedAvoided": ({ count }) => `${count} morceaux à éviter ignorés.`,
+  "plan.avoidedLeftOut": ({ titles }) => `Laissés de côté, comme vous me l'avez demandé : ${titles}.`,
   "queue.skippedKnown": ({ count }) => `${count} morceaux déjà présents dans votre historique ignorés, comme demandé.`,
   "queue.mix": ({ familiar = 0, returning = 0, heard = 0, known_artist: knownArtist = 0, new: fresh = 0 }) =>
     `D'après votre historique : ${[familiar && `${familiar} que vous connaissez bien`, returning && `${returning} ${returning === 1 ? "qui revient" : "qui reviennent"} après un moment`, heard && `${heard} ${heard === 1 ? "entendu" : "entendus"} une ou deux fois`, knownArtist && `${knownArtist} ${knownArtist === 1 ? "nouveau d'un artiste" : "nouveaux d'artistes"} que vous connaissez`, fresh && `${fresh} ${fresh === 1 ? "nouveau" : "nouveaux"} pour vous`].filter(Boolean).join(", ")}.`,

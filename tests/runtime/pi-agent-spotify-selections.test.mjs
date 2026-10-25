@@ -273,3 +273,22 @@ test("a failed named-device control keeps visible device names out of generic me
   assert.equal(writes.length, 0); assert.equal(application.currentSessionTurns().length, 0);
   assert.doesNotMatch(JSON.stringify(application.memoryContext("Sentinel")), /Transient Device Sentinel/u);
 });
+
+test("a plan that plays or queues without an avoided song names it under the receipt", async (context) => {
+  const { application, runtime, faux } = await fixture(context);
+  const leftOut = [{ title: "Night Ferry", artist_credit: "Mira Vale" }];
+  application.spotifyPlayPendingPlan = async () => ({ provider: "spotify", ok: true, effect: "write_external", action: "playback.resume",
+    state: "accepted", track_count: 2, skipped_avoided: leftOut, skipped_avoided_count: 1 });
+  application.spotifyQueuePendingPlan = async () => ({ provider: "spotify", effect: "write_external", action: "playback.queue.add",
+    state: "accepted", ok: true, queued: [{ title: song.name, artist_credit: song.artists[0] }], unmatched: [], not_added: [],
+    skipped_avoided: leftOut, skipped_avoided_count: 1 });
+  for (const [tool, parameters] of [["moondog_spotify_player_control", { action: "resume", pending_plan: true }],
+    ["moondog_spotify_queue_add", { pending_plan: true }]]) {
+    faux.setResponses([toolUse(tool, parameters), (input) => {
+      assert.deepEqual(results(input, tool)[0].skipped_avoided, leftOut);
+      return fauxAssistantMessage([fauxText("Done, without Night Ferry.")]);
+    }]);
+    const result = await runtime.prompt("Play the plan");
+    assert.match(result.text, /Left out because you asked me to keep them out: "Night Ferry" - Mira Vale\./u);
+  }
+});

@@ -38,10 +38,13 @@ Ramos and colleagues found that editing a natural-language profile to add a pref
 
 So Moondog restates every active choice in every turn's context, including in the moment just after a correction, when the saved reading is out of date.
 Avoid is not left to the prompt.
-One host function matches it against every credited artist on every play path, including collaborations such as "A feat. B".
+One host function matches it against every credited artist of every song Moondog sends, including collaborations such as "A feat. B".
 A listener who says "never play this again" in chat can make that choice in their own words; the host checks that the words are the listener's before it records anything.
-The quote must name the artist or the title, or point to what is playing or was just named ("this", "that", "it", "这首", "この"), and one message saves at most three choices.
+The quote must name the artist or the title, or point to what is playing or was just named, near or far, in each supported language ("this", "that", "him", "这首", "那首", "この", "あの", "그거", "das", "eso", "quella"), and one message saves at most three choices.
+A Latin name written straight into Chinese, Japanese or Korean text counts, as in "我不想再听Coldplay了", because a change of script ends a word, and a band can be named without its leading article.
 When the gate blocks a play, the tool refuses it, and the agent tells the listener that they asked to keep it out and offers to lift the Avoid.
+A saved plan is checked again when it plays, queues or is saved, and it reads each credit as the candidate check did, so "Earth, Wind & Fire" stays one artist.
+A plan song avoided since the plan is left out and named under the reply, and the rest goes through; only a plan with nothing left is refused.
 
 ### Movement is the part of taste that a ranking hides
 
@@ -67,6 +70,9 @@ OpenClaw's memory design states the general rule: a fact recalled one hundred ti
 Moondog keeps a ledger of what it started, written only from accepted receipts.
 A song is Moondog's only when Moondog chose it.
 A song the listener named in their current message or the two before it is their own choice, and it never enters the ledger.
+Named means that one message names the title together with one of the song's credited artists ("play Pink Moon by Nick Drake", "放周杰伦的晴天"), or puts the title in quotes, including 「」, 『』 and 《》.
+The rule applies song by song on every service and every path, queue batches included, so the songs a listener dictated stay theirs and Moondog's fill-ins stay Moondog's.
+A mood word that happens to be a title ("a rainy day", "home", "安静") names nothing.
 When the profile counts attention, plays that match a suggestion by track, ISRC, title and artist, or release, from one minute before it to six hours after it, count as Moondog's, apart from the listener's own.
 Spotify records a play when it ends, so the minute before only absorbs clock skew.
 The match runs when the profile is computed, so the stored history is never rewritten and a later export is handled the same way.
@@ -112,19 +118,22 @@ The dark side of the moon applies to every layer.
 - Spotify's own four-week ranking of top artists includes plays Moondog started; the ledger cannot take them out, so only the stored plays count Moondog's plays apart.
 - Movement labels describe yearly plays as of the latest stored listening, which can be long before today; the movement note carries that date, and recent attention says what is happening now.
 - Moondog's suggestions are matched by track identity and time; a song that the listener chose themselves outside Moondog, inside the window, can be counted as Moondog's, and the code records how each match was made.
-- The mix line counts plays, not love; "you know well" means at least three of the listener's own plays, one of them within a year of the latest, and that is the most it claims.
+- A title alone with no artist and no quotes ("play Pink Moon") is not a name, so that song counts as Moondog's pick; requiring the artist or quotes is what keeps mood words from claiming Moondog's picks for the listener.
+- The mix line counts plays, not love; from stored plays, "you know well" means at least three of the listener's own plays, one of them within a year of the latest, and that is the most it claims.
+- In Apple Music sessions, "you know well" can also come from a library play count of three or more; that count has no dates and can include plays Moondog started, so it makes no claim about recency.
+- On Spotify, an album or a playlist context, and a single song that Moondog starts inside its album, go on to play songs that the Avoid gate never sees; the gate checks only the songs Moondog sends and the album's own artists.
 - A Like or Avoid from chat is saved when the agent records it, so it stays in force when the listener cancels the turn; a cancelled or interrupted turn still shows the host's line.
 - The clock is the host's local time; it does not know where the listener is.
 
 ## What shipped on 2026-10-25
 
 - The saved reading and every active choice stay in the agent's context after a correction, with the choices made since the reading listed apart and marked as winning.
-- One Avoid gate covers every play path: Spotify songs, queue adds, plan plays and playlist writes, Apple Music previews and songs, NetEase, similar-artist queues, and external candidate sets. It matches each credited artist, and a blocked play returns a refusal the agent explains.
-- The agent can record a Like or an Avoid from the listener's own words in chat, with an exact-quote check that the quote names the artist or title or points to what is playing or was just named, at most three a message. The profile, the gate, and the context see it at once, and the host confirms it in its own line.
+- One Avoid gate checks every song Moondog sends: Spotify songs, queue adds, plan plays and playlist writes, Apple Music previews and songs, NetEase, similar-artist queues, and external candidate sets. It matches each credited artist, and a blocked play returns a refusal the agent explains. A plan leaves out a song avoided since it was made, names it, and sends the rest. Songs that a Spotify album or playlist context goes on to play are not checked.
+- The agent can record a Like or an Avoid from the listener's own words in chat, with an exact-quote check that the quote names the artist or title, also inside Chinese, Japanese or Korean text and without a band's article, or points to what is playing or was just named in any supported language, at most three a message. The profile, the gate, and the context see it at once, and the host confirms it in its own line.
 - Apple Music candidate sets from storefronts other than the United States are accepted.
 - Artist rows carry first play, a yearly series, activation, and a trajectory label; the builder gets a movement section, the checker treats a faded interest called current as a material problem, and saved readings rebuild once.
 - The agent can explore artists by trajectory and sees a compact movement view in the profile summary, with its reference date.
-- A suggestions ledger records accepted queues, plays, and playlist writes of songs Moondog chose, on every service; a song the listener named in the current or two previous messages stays theirs. Moondog-started plays are counted apart from the listener's own attention, and adopted suggestions are marked.
+- A suggestions ledger records accepted queues, plays, and playlist writes of songs Moondog chose, on every service; a song the listener named by title and artist, or by a quoted title, in the current or two previous messages stays theirs, song by song, queue batches included. Moondog-started plays are counted apart from the listener's own attention, and adopted suggestions are marked.
 - Discovery results say when a song was suggested before, queue batches skip a remaster of a song already queued, and Spotify queue and plan receipts and Apple Music and NetEase plays of more than one song carry a one-line mix.
 - The trusted context is stable within a turn, has a listener clock, clips recalled turns, keeps saved facts in view, and recalls memories by whole words.
 - The system prompt has a short curation craft section: start from an anchor the listener knows, shape an open set as a mix, let movement guide the choice, give a reason for each pick in a plan and name one or two highlights in a queue, and offer fewer songs in a queue or an open pick when the candidates do not fit. A playlist with a stated size keeps its size, or the agent asks before planning fewer.

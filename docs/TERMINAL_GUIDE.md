@@ -586,7 +586,8 @@ Explicit `/profile correct` and `/profile retract` commands also return to the r
 Use `/profile help` for options and quote names that contain spaces.
 
 You can also tell the agent a choice in your own words, for example “never play this again”, “I love Nick Drake”, or “Drake is fine again”.
-The host saves it only when the agent quotes your words from the current message, and the quote names the artist or the song or points to what is playing or was just named, such as “this one” or “这首”.
+The host saves it only when the agent quotes your words from the current message, and the quote names the artist or the song or points to what is playing or was just named, such as “this one”, “that”, “him”, “这首”, “那首” or “あの曲”.
+A name written straight into Chinese, Japanese or Korean text counts, as in “我不想再听Coldplay了”, and a band can be named without its article, as in “no more Beatles”.
 “This”, “this one” and “this song” mean the song; the artist is saved only when you name or mean the artist.
 One message saves at most three choices.
 A remark about one moment, such as “skip this” or “not tonight”, saves nothing, and a skip or a replay is never read as a choice.
@@ -604,8 +605,10 @@ moondog profile correct --track "Echoes" --by "Pink Floyd" --like
 ```
 
 The next `moondog taste`, HTML Tasteprint, and agent profile projection apply the correction immediately.
-An Avoid applies on every play path: Spotify songs, queues, plans and playlist writes, Apple Music, and NetEase, and it matches every credited artist, including “A feat. B”.
+An Avoid applies to every song Moondog sends: Spotify songs, queues, plans and playlist writes, Apple Music, and NetEase, and it matches every credited artist, including “A feat. B”.
+On Spotify, an album or a playlist, and a single song that Moondog starts inside its album, go on to play songs that Moondog never sends one by one, so the Avoid does not see them.
 When it blocks a song you asked for, the agent says that you asked to keep it out and offers to lift the Avoid.
+When a saved plan plays, queues or is saved after you avoided one of its songs, that song is left out and named under the reply, and the rest goes through.
 The correction is a typed, provenance-backed local `TasteEvent`, while the original play records and familiarity evidence remain unchanged.
 
 Inspect or retract it with:
@@ -1133,6 +1136,8 @@ The agent sees which span each source covers, the gaps, and when recent plays we
 The same half-hourly upkeep reads Spotify's top artists for about the last four weeks, when the sign-in allows it.
 Beside the saved reading, the agent sees this recent attention: stored plays from the last four weeks by artist, and Spotify's own four-week ranking, which counts every device.
 The stored plays leave out songs Moondog chose and started for you, and show their count apart; a song you named yourself still counts as yours.
+A song counts as named when one of your last three messages names its title together with one of its artists, as in “play Pink Moon by Nick Drake” or “放周杰伦的晴天”, or puts the title in quotes, as in ‘play "Pink Moon"’ or “放《晴天》”.
+A title alone, as in “play Pink Moon”, does not count, because an open request shares words with titles, such as “a rainy day”; such a song counts as Moondog's pick.
 Spotify's ranking cannot leave them out, so it also counts the songs Moondog played or queued.
 It treats the saved reading as enduring taste and recent attention as the present.
 
@@ -1266,7 +1271,7 @@ Moondog picks the device once per request: the active device, otherwise the only
 After writing, it reads Spotify's real queue and reports whether every accepted song is visible there, so the receipt reflects what Spotify received rather than what the model intended.
 A style request can use musical knowledge as candidate hypotheses, available public web research, and Spotify search. The personal profile informs taste rather than restricting discovery to imported tracks or neighboring artists. No playlist plan, playlist creation, or second confirmation is required. Previously heard songs remain eligible unless you request unheard music. Catalog matches verify identities; they do not prove audio characteristics or personal fit.
 
-Each queue request allows six Spotify queries, three web operations, a pool of up to 36 verified candidates, and up to twelve accepted additions. Empty artist-adjacency results can fall back to Spotify queries. Active Avoid choices, the current song, observed queue entries, and recent accepted additions are checked before writes. Receipts report the actual accepted/requested count and shortfall. A remaster or a second copy of a song already in the batch is skipped. Discovery candidates say when Moondog suggested the song before (`suggested_before`), and whether you later played it again on your own. Under a queue, a plan, or a play of more than one song on any service, one line names the mix, for example “The mix: 4 you know well, 2 back after a while, 6 new to you.” Failed or uncertain writes stop the batch; clarifying “queue, not playlist” does not repeat it. Rewind clears selection authority while preserving recent accepted/uncertain queue evidence, so stale queue reads do not replay those additions. Web tools must actually be configured and return sourced evidence; otherwise the agent continues with music hypotheses and Spotify without claiming to have browsed.
+Each queue request allows six Spotify queries, three web operations, a pool of up to 36 verified candidates, and up to twelve accepted additions. Empty artist-adjacency results can fall back to Spotify queries. Active Avoid choices, the current song, observed queue entries, and recent accepted additions are checked before writes. Receipts report the actual accepted/requested count and shortfall. A remaster or a second copy of a song already in the batch is skipped. Discovery candidates say when Moondog suggested the song before (`suggested_before`), and whether you later played it again on your own. Under a queue, a plan, or a play of more than one song on any service, one line names the mix, for example “The mix: 4 you know well, 2 back after a while, 6 new to you.” With Apple Music, “you know well” can also come from the play count in your Music library, which has no dates and can include plays Moondog started, so it says nothing about how recently you played the song. Failed or uncertain writes stop the batch; clarifying “queue, not playlist” does not repeat it. Rewind clears selection authority while preserving recent accepted/uncertain queue evidence, so stale queue reads do not replay those additions. Web tools must actually be configured and return sourced evidence; otherwise the agent continues with music hypotheses and Spotify without claiming to have browsed.
 
 An explicit request to queue more music like the current playback uses the current artist as a seed for open listening-derived artist similarity, with one to twelve requested additions. Automatic outside discovery honors all active track and artist Avoid choices, including choices outside the displayed profile summary; Undo restores eligibility. Similar queueing rechecks Avoid before each addition, skips the current track and observed queued identities, and remembers up to 100 accepted similar additions for fifteen minutes in the current process to cover stale queue snapshots. It cannot guarantee deduplication against entries Spotify did not return. Cancellation stops new requests; known accepted additions and uncertain write outcomes receive distinct receipts, and an uncertain write is not automatically replayed.
 

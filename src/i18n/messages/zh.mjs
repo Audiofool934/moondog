@@ -62,6 +62,7 @@ export default {
   "queue.skippedDuplicates": ({ count }) => `跳过 ${count} 首重复曲目。`,
   "queue.skippedUncertain": ({ count }) => `跳过 ${count} 首此前入队结果不明的曲目，避免重复；请先检查 Spotify 队列。`,
   "queue.skippedAvoided": ({ count }) => `跳过 ${count} 首 Avoid 曲目。`,
+  "plan.avoidedLeftOut": ({ titles }) => `按你的要求略过了：${titles}。`,
   "queue.skippedKnown": ({ count }) => `按你的要求跳过 ${count} 首有保留听歌记录的曲目。`,
   "queue.mix": ({ familiar = 0, returning = 0, heard = 0, known_artist: knownArtist = 0, new: fresh = 0 }) =>
     `根据你的听歌记录：${[familiar && `熟悉的 ${familiar} 首`, returning && `久违的 ${returning} 首`, heard && `听过一两次的 ${heard} 首`, knownArtist && `熟悉歌手的新歌 ${knownArtist} 首`, fresh && `没听过的 ${fresh} 首`].filter(Boolean).join("，")}。`,

@@ -62,6 +62,7 @@ export default {
   "queue.skippedDuplicates": ({ count }) => `중복된 곡 ${count}곡을 건너뛰었습니다.`,
   "queue.skippedUncertain": ({ count }) => `이전 대기열 결과가 불확실한 곡 ${count}곡은 중복을 피하려고 건너뛰었습니다. Spotify 대기열을 확인해 주세요.`,
   "queue.skippedAvoided": ({ count }) => `피해 달라고 한 곡 ${count}곡을 건너뛰었습니다.`,
+  "plan.avoidedLeftOut": ({ titles }) => `틀지 말라고 하신 곡은 뺐습니다: ${titles}.`,
   "queue.skippedKnown": ({ count }) => `요청대로 청취 기록에 있는 곡 ${count}곡을 건너뛰었습니다.`,
   "queue.mix": ({ familiar = 0, returning = 0, heard = 0, known_artist: knownArtist = 0, new: fresh = 0 }) =>
     `청취 기록 기준: ${[familiar && `잘 아는 곡 ${familiar}곡`, returning && `오랜만인 곡 ${returning}곡`, heard && `한두 번 들은 곡 ${heard}곡`, knownArtist && `아는 아티스트의 새 곡 ${knownArtist}곡`, fresh && `처음 듣는 곡 ${fresh}곡`].filter(Boolean).join(", ")}.`,

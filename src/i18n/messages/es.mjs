@@ -62,6 +62,7 @@ export default {
   "queue.skippedDuplicates": ({ count }) => `Omití ${count} canciones repetidas.`,
   "queue.skippedUncertain": ({ count }) => `Omití ${count} canciones cuyo resultado anterior en la cola no estaba claro, para no repetirlas; revisa la cola de Spotify.`,
   "queue.skippedAvoided": ({ count }) => `Omití ${count} canciones que marcaste para evitar.`,
+  "plan.avoidedLeftOut": ({ titles }) => `Dejé fuera lo que me pediste evitar: ${titles}.`,
   "queue.skippedKnown": ({ count }) => `Omití ${count} canciones que ya aparecen en tu historial, como pediste.`,
   "queue.mix": ({ familiar = 0, returning = 0, heard = 0, known_artist: knownArtist = 0, new: fresh = 0 }) =>
     `Según tu historial: ${[familiar && `${familiar} que conoces bien`, returning && `${returning} ${returning === 1 ? "que vuelve" : "que vuelven"} después de un tiempo`, heard && `${heard} que has oído una o dos veces`, knownArtist && `${knownArtist} ${knownArtist === 1 ? "nueva de un artista" : "nuevas de artistas"} que conoces`, fresh && `${fresh} ${fresh === 1 ? "nueva" : "nuevas"} para ti`].filter(Boolean).join(", ")}.`,

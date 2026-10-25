@@ -62,6 +62,7 @@ export default {
   "queue.skippedDuplicates": ({ count }) => `${count} doppelte Titel übersprungen.`,
   "queue.skippedUncertain": ({ count }) => `${count} Titel mit unklarem früherem Ergebnis übersprungen, um Doppelungen zu vermeiden; prüfe die Spotify-Warteschlange.`,
   "queue.skippedAvoided": ({ count }) => `${count} Titel übersprungen, die du vermeiden wolltest.`,
+  "plan.avoidedLeftOut": ({ titles }) => `Weggelassen, weil du sie nicht mehr hören wolltest: ${titles}.`,
   "queue.skippedKnown": ({ count }) => `${count} Titel aus deinem Hörverlauf übersprungen, wie gewünscht.`,
   "queue.mix": ({ familiar = 0, returning = 0, heard = 0, known_artist: knownArtist = 0, new: fresh = 0 }) =>
     `Laut deinem Hörverlauf: ${[familiar && `${familiar} gut bekannt`, returning && `${returning} nach längerer Zeit wieder`, heard && `${heard} ein- oder zweimal gehört`, knownArtist && `${knownArtist} neu von ${knownArtist === 1 ? "einem bekannten Künstler" : "bekannten Künstlern"}`, fresh && `${fresh} neu für dich`].filter(Boolean).join(", ")}.`,
