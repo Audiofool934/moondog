@@ -74,6 +74,8 @@ Hermes' compressor similarly chooses a summarizable region and protects recent c
 Sources: [OpenClaw compaction](https://docs.openclaw.ai/concepts/compaction) and [Hermes compressor](https://github.com/NousResearch/hermes-agent/blob/db45b44ab72af81974adfb01c9ecd6967f5bec29/agent/context_compressor.py#L5656).
 
 **Moondog implication:** keep chat continuity and music-profile construction separate.
+The one exception is a Like or Avoid that the listener states in chat in their own words: after an exact-quote check, it becomes a `TasteEvent`, the same record as a correction made in the profile.
+Nothing else from the conversation enters the profile.
 Repeatedly summarizing whichever tracks happened to appear in chat cannot demonstrate coverage of a music archive.
 The profile must be recoverable from stored evidence and its build artifact after the conversation is compacted or closed.
 

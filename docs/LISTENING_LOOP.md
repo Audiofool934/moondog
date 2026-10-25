@@ -20,7 +20,7 @@ It complements the [listener profile harness research](LISTENER_PROFILE_HARNESS_
 | Recent attention | What the listener played in the last four weeks | Imports, the recent-play sync, Spotify's short-term top artists | Rolling | As the present, when it disagrees with the reading |
 | Choices | Like and Avoid for artists and tracks | Only the listener, in the profile or in their own words in chat | Until the listener changes it | Always visible to the model; Avoid is enforced by code on every play path |
 | The moment | The current request, and the listener's local day and hour | The listener's message and the host's clock | One conversation | To shape an open request, never as a preference |
-| Moondog's suggestions | What Moondog itself queued or played, and which of those the listener later chose again | The host, from accepted receipts only | Kept with the listening history | As outcome evidence; never counted as the listener's own attention |
+| Moondog's suggestions | What Moondog itself chose and queued or played, and which of those the listener later chose again | The host, from accepted receipts only, leaving out songs the listener named | Kept with the listening history | As outcome evidence; never counted as the listener's own attention |
 
 The line between layers is the point of the design.
 A play that Moondog started is not the listener's attention.
@@ -40,6 +40,8 @@ So Moondog restates every active choice in every turn's context, including in th
 Avoid is not left to the prompt.
 One host function matches it against every credited artist on every play path, including collaborations such as "A feat. B".
 A listener who says "never play this again" in chat can make that choice in their own words; the host checks that the words are the listener's before it records anything.
+The quote must name the artist or the title, or point to what is playing or was just named ("this", "that", "it", "这首", "この"), and one message saves at most three choices.
+When the gate blocks a play, the tool refuses it, and the agent tells the listener that they asked to keep it out and offers to lift the Avoid.
 
 ### Movement is the part of taste that a ranking hides
 
@@ -63,6 +65,8 @@ Without a mark, a heavy week of agent queues becomes "recent movement", and afte
 OpenClaw's memory design states the general rule: a fact recalled one hundred times stays one fact ([OpenClaw memory architecture](https://docs.openclaw.ai/concepts/memory-architecture)).
 
 Moondog keeps a ledger of what it started, written only from accepted receipts.
+A song is Moondog's only when Moondog chose it.
+A song the listener named in their current message or the two before it is their own choice, and it never enters the ledger.
 When the profile counts attention, plays that match a suggestion soon after it was made count as Moondog's, apart from the listener's own.
 The match runs when the profile is computed, so the stored history is never rewritten and a later export is handled the same way.
 A later play of the same song, outside that window, is the listener's own choice; the ledger shows that suggestion as adopted.
@@ -78,8 +82,9 @@ In a Spotify experiment with 15 million users, moving a session from no discover
 People also tend to pick familiar music more than their stated wish for novelty predicts, more so when busy.
 Studies of calibrated recommendation found that people seldom notice a balanced list unless the system says so.
 
-So the host classifies each queued or planned song from the listener's own plays: one they play often, one back after a while, a new song from an artist they know, or new to them.
-It writes the blend in one plain line under the receipt.
+So the host classifies each queued or planned song from the listener's own plays: one they know well, one back after a while, one they heard once or twice, a new song from an artist they know, or new to them.
+It writes the blend in one plain line under the receipt, for example "The mix: 4 you know well, 2 back after a while, 6 new to you."
+The line appears under Spotify queues and plans, and under Apple Music and NetEase plays of more than one song.
 Knownness ignores version suffixes, so a remaster is not new music.
 The model still chooses the songs; the host makes the blend visible and true.
 
@@ -103,24 +108,35 @@ The dark side of the moon applies to every layer.
 
 - The reading and the movement see stored plays, saves, and choices; they cannot see why a person listened or what the music meant.
 - Recent attention covers only the sources that were imported or connected; a gap in the records is unknown, not silence.
-- Moondog's suggestions are matched by track identity and time; a song that the listener chose themselves inside the window can be counted as Moondog's, and the code records how each match was made.
-- The mix line counts plays, not love; "you play often" is the most it claims.
+- Spotify's own four-week ranking of top artists includes plays Moondog started; the ledger cannot take them out, so only the stored plays count Moondog's plays apart.
+- Movement labels describe yearly plays as of the latest stored listening, which can be long before today; the movement note carries that date, and recent attention says what is happening now.
+- Moondog's suggestions are matched by track identity and time; a song that the listener chose themselves outside Moondog, inside the window, can be counted as Moondog's, and the code records how each match was made.
+- The mix line counts plays, not love; "you know well" means at least three of the listener's own plays, one of them within a year of the latest, and that is the most it claims.
+- A Like or Avoid from chat is saved when the agent records it, so it stays in force when the listener cancels the turn, and a cancelled turn may not show the host's line.
 - The clock is the host's local time; it does not know where the listener is.
 
 ## What shipped on 2026-10-25
 
 - The saved reading and every active choice stay in the agent's context after a correction, with the choices made since the reading listed apart and marked as winning.
-- One Avoid gate covers Spotify, Apple Music previews and songs, NetEase, similar-artist queues, and external candidate sets, and it matches each credited artist.
-- The agent can record a Like or an Avoid from the listener's own words in chat, with an exact-quote check, and the profile, the gate, and the context see it at once.
+- One Avoid gate covers every play path: Spotify songs, queue adds, plan plays and playlist writes, Apple Music previews and songs, NetEase, similar-artist queues, and external candidate sets. It matches each credited artist, and a blocked play returns a refusal the agent explains.
+- The agent can record a Like or an Avoid from the listener's own words in chat, with an exact-quote check that the quote names the artist or title or points to what is playing or was just named, at most three a message. The profile, the gate, and the context see it at once, and the host confirms it in its own line.
 - Apple Music candidate sets from storefronts other than the United States are accepted.
 - Artist rows carry first play, a yearly series, activation, and a trajectory label; the builder gets a movement section, the checker treats a faded interest called current as a material problem, and saved readings rebuild once.
-- The agent can explore artists by trajectory and sees a compact movement view in the profile summary.
-- A suggestions ledger records accepted queues, plays, and playlist writes on every service; Moondog-started plays are counted apart from the listener's own attention, and adopted suggestions are marked.
-- Discovery results say when a song was suggested before, queue batches skip a remaster of a song already queued, and queue and plan receipts carry a one-line mix.
+- The agent can explore artists by trajectory and sees a compact movement view in the profile summary, with its reference date.
+- A suggestions ledger records accepted queues, plays, and playlist writes of songs Moondog chose, on every service; a song the listener named in the current or two previous messages stays theirs. Moondog-started plays are counted apart from the listener's own attention, and adopted suggestions are marked.
+- Discovery results say when a song was suggested before, queue batches skip a remaster of a song already queued, and Spotify queue and plan receipts and Apple Music and NetEase plays of more than one song carry a one-line mix.
 - The trusted context is stable within a turn, has a listener clock, clips recalled turns, keeps saved facts in view, and recalls memories by whole words.
-- The system prompt has a short curation craft section: start from an anchor the listener knows, shape an open set as a mix, let movement guide the choice, give each pick one reason the listener can check, and offer fewer songs when the candidates do not fit.
+- The system prompt has a short curation craft section: start from an anchor the listener knows, shape an open set as a mix, let movement guide the choice, give a reason for each pick in a plan and name one or two highlights in a queue, and offer fewer songs in a queue or an open pick when the candidates do not fit. A playlist with a stated size keeps its size, or the agent asks before planning fewer.
 
 The exact behavior and its tests are in the commits that introduced it.
+
+### Evidence
+
+A live run on 2026-10-25 used DeepSeek Flash on a fictional listener with ten years of history and planted traits.
+The fresh build named the steady core, a faded former favourite, a returning artist, a one-year burst, and a rising artist.
+It kept the plays Moondog started apart from the listener's own and named the two adoptions among them.
+It invented no preferences.
+One fictional listener and one model is not proof of stable quality.
 
 ## Next slices
 

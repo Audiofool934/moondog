@@ -34,6 +34,7 @@ They must not be expanded or relabeled as a sequence of `ListeningEvent` records
 A single skip does not automatically mean dislike.
 
 A `TasteEvent` is an explicitly asserted signal.
+A Like or Avoid from chat is explicit in the listener's words, but the agent resolves a phrase such as "this song" to the title and artist, and the record keeps no quote.
 System inference belongs in `ProfileEvidence`, not in `TasteEvent.explicitness`.
 A final profile must be materialized from evidence rather than written as an unsupported persona.
 
@@ -49,6 +50,9 @@ The Apple Music library importer runs both layers before it writes records.
 Every record carries an explicit `schema_version`.
 `ProfileEvidence v2` superseded v1, which is no longer registered.
 No migration code exists, because no stored contract record needs an upgrade.
+
+Some tables in the listening history store are internal to that store and outside these contracts.
+One is `moondog_suggestions`, the ledger of what Moondog queued or played: it has no schema here and no `schema_version`.
 
 ## Validation
 

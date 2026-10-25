@@ -38,7 +38,11 @@ New listening views, corrections, and discovery interactions must work in the te
   Each view stays descriptive and names what the evidence cannot prove.
 - [x] Build a saved profile reading with a connected model through `/profile build`, with a whole-profile check, one repair pass, resumable progress, and `/profile saved` and `/profile explain` after a restart.
 - [x] Keep listening measures that a source never recorded unknown, in one shared place, so they never reach the model or the explanations as zeros.
-- [x] Like, avoid, and retract artists or tracks without rewriting the original listening history.
+- [x] Like, avoid, and retract artists or tracks without rewriting the original listening history, in the profile or by saying it to the agent in chat.
+  An Avoid holds on every play path and every credited artist.
+- [x] See how each artist's place in the listening moved across the years: a yearly series and a label such as rising, fading or returning, in the profile dossier, the summary, and the agent's exploration.
+- [x] Keep the songs Moondog chose apart from the listener's own attention, show the agent what it suggested before, and name the mix under each set it plays.
+  The [listening loop](LISTENING_LOOP.md) records the design and its limits.
 - [x] Save the full report or a short recap card as a private page that works offline, with `/taste report`, `moondog taste --html`, or `moondog taste --card`.
 - [x] Talk with an agent through Pi, with bounded profile, evidence, library, and playlist tools, memory kept apart from profile evidence, and `/web` research through DeepSeek, Brave Search, or the Codex CLI.
 - [x] Play, queue, and build private Spotify playlists after explicit authorization, and edit an existing playlist only after a preview and a later confirmation.
@@ -61,7 +65,9 @@ New listening views, corrections, and discovery interactions must work in the te
   Success means a plausible, multidimensional, and internally coherent understanding that supports listening and discovery, with reasonable tolerance for inference error.
   Completion requires fresh-build evidence against the [first-build acceptance target](LISTENER_PROFILE_HARNESS_RESEARCH.md#first-build-quality-target-2026-10-05), with later listener feedback withheld from the builder's input.
   Fictional builds on 2026-10-14 avoided every planted trap once unrecorded measures stayed unknown.
-  The remaining known gap was a fading older interest; the dossier now gives each artist its yearly plays and a trajectory label such as fading or returning, and no fresh build has been judged with them yet.
+  The remaining known gap was a fading older interest; the dossier now gives each artist its yearly plays and a trajectory label such as fading or returning.
+  On 2026-10-25, a fresh DeepSeek Flash build on one fictional ten-year listener named the faded former favourite, the returning and rising artists, and the one-year burst, with no invented preferences.
+  One fictional listener and one model is not proof of stable quality.
 
 ### Daily use
 
@@ -79,7 +85,8 @@ New listening views, corrections, and discovery interactions must work in the te
 
 ## Next
 
-- [ ] Judge one fresh fictional build and one build on the owner's real archive with the per-artist trajectory now in the profile dossier.
+- [ ] Judge a build on the owner's real archive, and fresh fictional builds with more than one model, with the per-artist trajectory now in the profile dossier.
+- [ ] Take the next [listening loop](LISTENING_LOOP.md#next-slices) slices in order: the moment as a card, service rule packs, outcome signals, an open descriptor layer, and a taste eval.
 - [ ] Add a type boundary at the profile edge, for listening measures, evidence rows, and tool results that reach the agent runtime, without a repository-wide TypeScript migration.
 - [ ] Split the terminal room along the screens it already has (sleeve, import, profile, conversation), with identical behavior.
 - [ ] Show what each import changed: the dates it covers, when it arrived, and which plays were new, duplicate, or richer replacements.

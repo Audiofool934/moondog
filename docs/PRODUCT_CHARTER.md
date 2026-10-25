@@ -197,6 +197,8 @@ This projection supports A1 without claiming that aggregate Play Count proves li
 
 A listener correction records a direct like or avoid stance for an artist or track as a typed `TasteEvent`.
 It changes the next profile projection without changing listening events, and the listener can supersede or retract it.
+The agent can also record a correction from the listener's own words in chat, such as "never play this again", after the host checks that the quoted words are in the listener's message.
+It never records a correction it inferred from listening behavior.
 Corrections cover artists and tracks only.
 
 With a connected model, a requested profile build saves a revisable reading of the evidence.

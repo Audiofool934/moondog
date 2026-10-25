@@ -585,6 +585,15 @@ Inside the TUI, open `/taste` and press Enter on a track or artist to see **Why 
 Explicit `/profile correct` and `/profile retract` commands also return to the refreshed profile.
 Use `/profile help` for options and quote names that contain spaces.
 
+You can also tell the agent a choice in your own words, for example “never play this again”, “I love Nick Drake”, or “Drake is fine again”.
+The host saves it only when the agent quotes your words from the current message, and the quote names the artist or the song or points to what is playing or was just named, such as “this one” or “这首”.
+“This”, “this one” and “this song” mean the song; the artist is saved only when you name or mean the artist.
+One message saves at most three choices.
+A remark about one moment, such as “skip this” or “not tonight”, saves nothing, and a skip or a replay is never read as a choice.
+The reply ends with one line from Moondog that says what was saved, for example “Saved: I'll keep Drake out of what I play and suggest.”
+A choice from chat applies when the agent saves it, not when the turn ends: it stays in force if you cancel the turn, and a cancelled turn may not show that line.
+Open `/taste` or run `moondog profile corrections` to see it, and undo it there or in chat.
+
 For terminal automation, use:
 
 ```bash
@@ -595,6 +604,8 @@ moondog profile correct --track "Echoes" --by "Pink Floyd" --like
 ```
 
 The next `moondog taste`, HTML Tasteprint, and agent profile projection apply the correction immediately.
+An Avoid applies on every play path: Spotify songs, queues, plans and playlist writes, Apple Music, and NetEase, and it matches every credited artist, including “A feat. B”.
+When it blocks a song you asked for, the agent says that you asked to keep it out and offers to lift the Avoid.
 The correction is a typed, provenance-backed local `TasteEvent`, while the original play records and familiarity evidence remain unchanged.
 
 Inspect or retract it with:
@@ -645,6 +656,9 @@ This sends a compact summary of your music evidence to that configured model; it
 
 Moondog first computes a dossier locally from every supported record.
 It lists the leading artists, tracks and albums across your history, recent movement against lifetime rank, yearly coverage, your curation and library, distinctive provider signals, and every explicit choice, each row with a reference.
+It also has a movement section: for each leading artist, a yearly series of plays and a label such as rising, steady, fading, returning or burst, measured as of your latest stored play.
+Plays that Moondog started are listed in their own section, apart from your own listening.
+The profile summary the agent reads carries the same movement note with its reference date.
 One model session writes the reading from that dossier and can search the complete evidence catalog for anything it leaves out.
 The reading names the musical threads in your listening, such as scenes, lineages and eras.
 It keeps enduring listening, recent attention, curation and explicit choices apart.
@@ -1118,12 +1132,15 @@ The agent sees which span each source covers, the gaps, and when recent plays we
 
 The same half-hourly upkeep reads Spotify's top artists for about the last four weeks, when the sign-in allows it.
 Beside the saved reading, the agent sees this recent attention: stored plays from the last four weeks by artist, and Spotify's own four-week ranking, which counts every device.
+The stored plays leave out songs Moondog chose and started for you, and show their count apart; a song you named yourself still counts as yours.
+Spotify's ranking cannot leave them out, so it also counts the songs Moondog played or queued.
 It treats the saved reading as enduring taste and recent attention as the present.
 
 The upkeep also rebuilds a saved reading that newer evidence has overtaken, with the configured model and without being asked.
 New plays alone make a rebuild due after a week or 300 plays; a changed Like, Avoid or analysis version makes it due at once.
 Any build attempt holds off the next background one for 12 hours, and it never writes a listener's first reading.
 Until then, a reading that only new plays have overtaken still reaches the agent, marked as current through its last listening date.
+A reading that a newer Like or Avoid has overtaken reaches it as a previous reading, with the choices made since then listed apart and marked as winning.
 Plays synced during a build no longer stop it; a changed Like or Avoid still does.
 
 Read your Spotify library into the same store with:
@@ -1249,7 +1266,7 @@ Moondog picks the device once per request: the active device, otherwise the only
 After writing, it reads Spotify's real queue and reports whether every accepted song is visible there, so the receipt reflects what Spotify received rather than what the model intended.
 A style request can use musical knowledge as candidate hypotheses, available public web research, and Spotify search. The personal profile informs taste rather than restricting discovery to imported tracks or neighboring artists. No playlist plan, playlist creation, or second confirmation is required. Previously heard songs remain eligible unless you request unheard music. Catalog matches verify identities; they do not prove audio characteristics or personal fit.
 
-Each queue request allows six Spotify queries, three web operations, a pool of up to 36 verified candidates, and up to twelve accepted additions. Empty artist-adjacency results can fall back to Spotify queries. Active Avoid choices, the current song, observed queue entries, and recent accepted additions are checked before writes. Receipts report the actual accepted/requested count and shortfall. Failed or uncertain writes stop the batch; clarifying “queue, not playlist” does not repeat it. Rewind clears selection authority while preserving recent accepted/uncertain queue evidence, so stale queue reads do not replay those additions. Web tools must actually be configured and return sourced evidence; otherwise the agent continues with music hypotheses and Spotify without claiming to have browsed.
+Each queue request allows six Spotify queries, three web operations, a pool of up to 36 verified candidates, and up to twelve accepted additions. Empty artist-adjacency results can fall back to Spotify queries. Active Avoid choices, the current song, observed queue entries, and recent accepted additions are checked before writes. Receipts report the actual accepted/requested count and shortfall. A remaster or a second copy of a song already in the batch is skipped. Discovery candidates say when Moondog suggested the song before (`suggested_before`), and whether you later played it again on your own. Under a queue, a plan, or a play of more than one song on any service, one line names the mix, for example “The mix: 4 you know well, 2 back after a while, 6 new to you.” Failed or uncertain writes stop the batch; clarifying “queue, not playlist” does not repeat it. Rewind clears selection authority while preserving recent accepted/uncertain queue evidence, so stale queue reads do not replay those additions. Web tools must actually be configured and return sourced evidence; otherwise the agent continues with music hypotheses and Spotify without claiming to have browsed.
 
 An explicit request to queue more music like the current playback uses the current artist as a seed for open listening-derived artist similarity, with one to twelve requested additions. Automatic outside discovery honors all active track and artist Avoid choices, including choices outside the displayed profile summary; Undo restores eligibility. Similar queueing rechecks Avoid before each addition, skips the current track and observed queued identities, and remembers up to 100 accepted similar additions for fifteen minutes in the current process to cover stale queue snapshots. It cannot guarantee deduplication against entries Spotify did not return. Cancellation stops new requests; known accepted additions and uncertain write outcomes receive distinct receipts, and an uncertain write is not automatically replayed.
 
@@ -1375,6 +1392,7 @@ Completed non-transient exchanges also become typed short-term dialogue episodes
 `/memory` shows recent episodes, dialogue context, and active durable claims.
 
 Memory tool mutations commit atomically with the completed authoritative exchange, so cancellation discards both.
+A Like or Avoid from chat is not a memory mutation: it is saved as a `TasteEvent` when the agent records it, and cancellation does not undo it.
 
 Use `/remember [fact|preference|constraint|goal] <text>` to save an explicit claim and `/forget <memory-id>` to revise the relationship by removing one.
 
@@ -1385,6 +1403,7 @@ The non-interactive equivalents are `moondog remember <text>` and `moondog forge
 These generic claims support conversational continuity, but they are not canonical evidence for musical taste.
 
 Canonical music preferences remain in the `TasteEvent` and Profile domain, where authorized listening observations, evidence, corrections, and revisions can be modeled explicitly.
+A Like or Avoid you state in chat goes there too, after the exact-quote check, never into generic memory.
 
 This A2-thin slice takes the resumable-session and durable-memory experience spine from OpenClaw while Pi continues to provide the agent runtime, model integration, and TUI.
 

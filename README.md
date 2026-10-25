@@ -131,7 +131,7 @@ Playing a song a lot does not, on its own, establish how much it matters to you.
 | --- | --- |
 | Find a song or artist | Type to filter, then open it. |
 | See why it is there | Read what you played, what that cannot prove, and what you told Moondog, each on its own. |
-| Make a choice | Choose **I like this** (Like) or **Keep it out** (Avoid), and the profile updates in place. |
+| Make a choice | Choose **I like this** (Like) or **Keep it out** (Avoid), and the profile updates in place. You can also say it to the agent, for example “never play this again”. |
 | Change your mind | Choose **Undo my choice**, and the original listening history never changes. |
 | Find more like this | Start an editable request for three songs, from the track you picked. |
 
@@ -155,6 +155,8 @@ It also sees what you already play: the song and playlist in the Music app on a 
 macOS asks once before Moondog may read the Music app.
 For example, “Pon doce de salsa clásica a la cola” asks it to add up to twelve verified songs directly; your history guides the choice without limiting it to your library.
 What it reads about the wider music world stays separate from what it knows about you.
+Under a queue or a set of songs, one line names the mix: how many you know well, how many come back after a while, and how many are new to you.
+Songs Moondog chose for you do not count as your own taste.
 
 | Optional connection | What it adds |
 | --- | --- |
@@ -199,6 +201,7 @@ Your profile, and anything Moondog remembers, carry over.
 - [Private Tasteprint](docs/PRIVATE_TASTEPRINT.md): what the evidence can support, and what a report reveals about you.
 - [Product charter](docs/PRODUCT_CHARTER.md) and [public roadmap](docs/ROADMAP.md): where Moondog is headed, and what it will not do.
 - [Voice](docs/VOICE.md): how Moondog talks, and where Pink Floyd shows up.
+- [The listening loop](docs/LISTENING_LOOP.md): how the agent keeps your choices, your recent listening, and its own picks apart.
 - [Runtime architecture](docs/ADR_0001_AGENT_RUNTIME_AND_CLI.md) and [data contracts](contracts/README.md): how the pieces fit together.
 - [Contribution guide](CONTRIBUTING.md): local setup, checks, and how private data is kept out.
 - [Release status](docs/PUBLIC_RELEASE_READINESS.md): what is published, and what the checks cover.
