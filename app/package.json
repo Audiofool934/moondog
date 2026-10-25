@@ -10,6 +10,7 @@
     "start": "node build.mjs && electron .",
     "pack": "node pack.mjs",
     "release": "node pack.mjs --sign",
+    "publish-app": "node publish.mjs",
     "simulated": "node build.mjs && MOONDOG_APP_SIMULATED=1 electron .",
     "harness": "node build.mjs && electron harness.mjs"
   },

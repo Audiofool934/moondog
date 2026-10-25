@@ -174,14 +174,12 @@ The packaged app updates itself from this repository's GitHub releases (`updates
 
 To publish an update:
 
-1. Bump the version at the repository root (`package.json` and `package-lock.json`).
+1. Bump the version at the repository root (`package.json` and `package-lock.json`), commit and push it.
    The app compares versions, so a build with an unchanged version never reaches anyone.
-2. Build it with `npm run release` in a clean worktree at the release commit.
-   `release/` then holds the DMG, the zip, their `.blockmap` files, and `latest-mac.yml`.
-3. Put them on the tag's GitHub release, `v` and the version, marked as a prerelease for a beta.
-   The release workflow creates that release after it publishes to npm; without it, `gh release create v0.2.0-beta.2 --prerelease --generate-notes` makes one.
-   Upload `latest-mac.yml` last, because the app acts on it:
-   `gh release upload v0.2.0-beta.2 release/Moondog-0.2.0-beta.2-arm64-mac.zip release/Moondog-0.2.0-beta.2-arm64-mac.zip.blockmap release/Moondog-0.2.0-beta.2-arm64.dmg`, then `gh release upload v0.2.0-beta.2 release/latest-mac.yml`.
+2. Push the tag, `v` and the version. `Publish release` checks it, waits for the owner's approval in the `npm` environment, publishes to npm, and creates the GitHub release (a prerelease for a beta).
+3. On the Mac mini, in a clean worktree at the tag, run `npm ci` at the root and here, then `npm run publish-app`.
+   It builds, signs and notarizes the app, signs, notarizes and staples the DMG, waits for the release, and uploads the zip, its `.blockmap`, the DMG, and `latest-mac.yml` last, because the app acts on it.
+   `--skip-build` reuses a build already in `release/`; `--create` makes the release when the workflow did not.
 
 To try an update before publishing it, build two versions with `node pack.mjs --sign --no-notarize` (signed, not notarized), serve the newer one's zip, `.blockmap` and `latest-mac.yml` over HTTP, and start the older app from a terminal with `MOONDOG_UPDATE_FEED=http://127.0.0.1:8765`.
 Set `MOONDOG_CONFIG_HOME` and `MOONDOG_STATE_HOME` to empty folders too, so the older app never opens your own profile.
