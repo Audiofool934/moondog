@@ -62,6 +62,8 @@ export default {
   "queue.skippedUncertain": ({ count }) => `${count} Titel mit unklarem früherem Ergebnis übersprungen, um Doppelungen zu vermeiden; prüfe die Spotify-Warteschlange.`,
   "queue.skippedAvoided": ({ count }) => `${count} Titel übersprungen, die du vermeiden wolltest.`,
   "queue.skippedKnown": ({ count }) => `${count} Titel aus deinem Hörverlauf übersprungen, wie gewünscht.`,
+  "queue.mix": ({ familiar = 0, returning = 0, heard = 0, known_artist: knownArtist = 0, new: fresh = 0 }) =>
+    `Aus deinem Hörverlauf: ${[familiar && `${familiar} oft gehört`, returning && `${returning} nach längerer Zeit wieder`, heard && `${heard} ein- oder zweimal gehört`, knownArtist && `${knownArtist} neu von bekannten Künstlern`, fresh && `${fresh} neu für dich`].filter(Boolean).join(", ")}.`,
   "queue.observationTruncated": "Doppelungen wurden nur im begrenzten Ausschnitt der Warteschlange geprüft, den Spotify liefert; nicht sichtbare Einträge können noch doppelt sein.",
   "queue.notAddedHeading": "Nicht hinzugefügt:",
   "queue.earlierReceipt": "Das ist das Ergebnis der früheren Warteschlangen-Aktion; diese Klarstellung hat die Songs nicht erneut hinzugefügt.",

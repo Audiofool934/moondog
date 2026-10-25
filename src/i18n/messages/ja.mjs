@@ -62,6 +62,8 @@ export default {
   "queue.skippedUncertain": ({ count }) => `前回キューへの追加結果がはっきりしなかった ${count} 曲を、重複を避けるため飛ばしました。Spotify のキューを確認してください。`,
   "queue.skippedAvoided": ({ count }) => `避けるよう指定された ${count} 曲を飛ばしました。`,
   "queue.skippedKnown": ({ count }) => `ご希望どおり、再生履歴にある ${count} 曲を飛ばしました。`,
+  "queue.mix": ({ familiar = 0, returning = 0, heard = 0, known_artist: knownArtist = 0, new: fresh = 0 }) =>
+    `再生履歴から: ${[familiar && `よく聴く曲 ${familiar} 曲`, returning && `久しぶりの曲 ${returning} 曲`, heard && `1、2 回聴いた曲 ${heard} 曲`, knownArtist && `知っているアーティストの新しい曲 ${knownArtist} 曲`, fresh && `初めての曲 ${fresh} 曲`].filter(Boolean).join("、")}。`,
   "queue.observationTruncated": "重複の確認は Spotify が表示するキューの範囲だけです。表示されていない部分と重なる可能性があります。",
   "queue.notAddedHeading": "まだ追加していない曲:",
   "queue.earlierReceipt": "これは前回のキュー操作の結果です。今回の補足では曲を再度追加していません。",

@@ -2626,7 +2626,7 @@ function projectProfileExploration(value) {
       "apple_library_tracks", "apple_preferred_tracks", "apple_tracks_with_play_count", "apple_aggregate_plays",
     ]),
     sources: (value.sources ?? []).slice(0, 20).map((source) => pick(source, ["format", "scope", "earliest", "latest"], ["input_records"])),
-    context: pick(value.context ?? {}, ["reference_date"], ["recent_window_days", "incognito_events_excluded", "release_minimum_distinct_tracks"]),
+    context: pick(value.context ?? {}, ["reference_date"], ["recent_window_days", "incognito_events_excluded", "moondog_started_events_excluded", "release_minimum_distinct_tracks"]),
     section_note: cleanOutputText(value.section_note, 512, "exploration_section_note"),
     sections: (value.sections ?? []).filter((section) => PROFILE_SECTIONS.includes(section.name)).slice(0, PROFILE_SECTIONS.length)
       .map((section) => ({ name: section.name, total: safeNonnegativeInteger(section.total, "section_total") })),
@@ -3019,6 +3019,7 @@ function projectPlaylistPlan(value) {
       value.candidate_sets_validated,
       "candidate_sets_validated",
     ),
+    ...projectMix(value),
     persistence: "none",
     external_effects: "none",
   };
@@ -3157,9 +3158,32 @@ function projectSpotifySearch(value) {
     truncated: value.truncated === true || items.length > 10 };
 }
 
+// How often Moondog suggested a candidate in earlier sessions, from the host's ledger.
+function projectSuggestedBefore(value) {
+  if (!isPlainObject(value?.suggested_before)) return {};
+  const { times, last_suggested_at: last, adopted } = value.suggested_before;
+  if (!Number.isSafeInteger(times) || times < 1 || typeof last !== "string" || !/^\d{4}-\d{2}-\d{2}$/u.test(last)) return {};
+  return { suggested_before: { times, last_suggested_at: last, adopted: adopted === true } };
+}
+
+// The host's declared mix of a set: how many songs sit where in the listener's own plays.
+const MIX_FIELDS = ["familiar", "returning", "heard", "known_artist", "new"];
+function projectMix(value) {
+  if (!isPlainObject(value?.mix)) return {};
+  const mix = Object.fromEntries(MIX_FIELDS.map(field => [field, safeNonnegativeInteger(value.mix[field] ?? 0, `mix_${field}`)]));
+  return Object.values(mix).some(Boolean) ? { mix } : {};
+}
+
+function renderMix(value, t) {
+  return value?.mix ? t("queue.mix", value.mix) : null;
+}
+
 function projectSpotifyDiscovery(value) {
   if (!isPlainObject(value) || value.provider !== "spotify" || !["verified_candidates", "unavailable", "no_matches"].includes(value.state)) throw new Error("domain_result_invalid:spotify_discovery");
-  const items = (value.items ?? []).slice(0, 36).map(projectSpotifyReadItem).filter(Boolean);
+  const items = (value.items ?? []).slice(0, 36).map(item => {
+    const result = projectSpotifyReadItem(item);
+    return result && { ...result, ...projectSuggestedBefore(item) };
+  }).filter(Boolean);
   const result = { provider: "spotify", state: value.state, items, truncated: value.truncated === true,
     queries_used: safeNonnegativeInteger(value.queries_used, "queries_used"),
     queries_remaining: safeNonnegativeInteger(value.queries_remaining, "queries_remaining"),
@@ -3354,6 +3378,7 @@ function projectSpotifyQueuePlan(value) {
     throw new Error("domain_result_invalid:spotify_queue_plan");
   }
   const result = { provider: "spotify", ok: value.ok, effect: "write_external", action: value.action, state: value.state, queued,
+    ...(queued.length ? projectMix(value) : {}),
     unmatched: projectQueueTrackList(value.unmatched, "spotify_queue_unmatched"),
     not_added: projectQueueTrackList(value.not_added, "spotify_queue_not_added"),
     ...(value.cancelled === true ? { cancelled: true } : {}),
@@ -4429,6 +4454,7 @@ function projectNeteaseSong(song) {
     ...(Number.isFinite(song.duration_ms) ? { duration_seconds: Math.round(song.duration_ms / 1000) } : {}),
     playable: song.playable === true,
     ...(song.other_artist === true ? { other_artist: true } : {}),
+    ...projectSuggestedBefore(song),
   };
 }
 
@@ -6507,6 +6533,7 @@ Current music catalog rules:
 - For open-world discovery, use the profile when personalization matters, then combine music knowledge, available web research and bounded Spotify verification. Apple catalog search and artist adjacency are optional additional evidence; an empty result from either is not the end of discovery while Spotify search remains available.
 - External search is lexical catalog retrieval, not audio analysis. Use known musical context as qualified curatorial judgment; never present a query phrase or bare title as measured sound evidence.
 - Known or previously heard tracks remain eligible unless the listener explicitly requests unfamiliar music. Honor active Avoid. A bounded knownness check never proves lifetime novelty; report that limit when relevant.
+- A candidate's suggested_before means Moondog already played or queued it in an earlier session. Prefer music not suggested in recent sessions unless the listener asks for it again or it was adopted (the listener played it again on their own).
 - For open-ended external discovery, diversify the final plan across releases and artists. The local planner allows one selected track per release and at most two per artist unless the user's intent explicitly names that release or artist.
 - If catalog candidates are sparse or low quality, say so and refine the bounded queries instead of presenting weak matches as confident recommendations.
 - For optional artist-adjacency planning, selected_profile_track can provide a retained seed. Use moondog_music_artist_similarity when that evidence is helpful. A named song/artist or style request can instead start from musical hypotheses, available public web research and Spotify verification; a private-library seed is never required. Queue requests continue with Spotify-verified references and queue_batch, without a playlist plan.
@@ -6836,7 +6863,8 @@ function renderSpotifyPlaybackFailure(failure, t) {
 function mergedQueueReceipt(plan, singles) {
   if (!singles.length) return plan ?? null;
   const targets = singles.flatMap(receipt => receipt.targets?.length ? receipt.targets : [{ title: "a selected track", artist_credit: "" }]);
-  const base = plan ?? { provider: "spotify", action: "playback.queue.add", state: "accepted", queued: [], unmatched: [], not_added: [] };
+  // A batch's mix line does not cover the single adds beside it.
+  const { mix: _mix, ...base } = plan ?? { provider: "spotify", action: "playback.queue.add", state: "accepted", queued: [], unmatched: [], not_added: [] };
   const checks = [base.verification, ...singles.map(receipt => receipt.verification)].filter(Boolean);
   return { ...base, state: ["no_candidates", "no_playback"].includes(base.state) ? "accepted" : base.state,
     queued: [...base.queued, ...targets],
@@ -6879,6 +6907,8 @@ function renderSpotifyQueuePlan(receipt, t) {
   for (const track of receipt.queued) {
     lines.push(`- ${track.title}${track.artist_credit ? ` - ${track.artist_credit}` : ""}`);
   }
+  const mix = renderMix(receipt, t);
+  if (mix) lines.push(mix);
   const verified = renderQueueVerification(receipt, t);
   if (verified) lines.push(verified);
   if (receipt.unmatched.length > 0) {
@@ -6962,6 +6992,8 @@ function renderValidatedPlaylistPlan(
     lines.push(line, t("plan.rationale", { text: renderPlaylistRationale(track.selection_reason, plan.tracks) }));
   }
   if (!hasExternalCandidates) lines.push(t("plan.ordering", { text: renderPlaylistRationale(plan.ordering_rationale, plan.tracks) }));
+  const mix = renderMix(plan, t);
+  if (mix) lines.push(mix);
   if (spotifyWrite?.playlist) lines.push(t("playlist.saved", { name: spotifyWrite.playlist.name, count: spotifyWrite.playlist.track_count }));
   else if (spotifyPartialEffect?.playlist) lines.push(renderSpotifyPartialPlaylist(spotifyPartialEffect, t));
   else if (previewsPlaying) lines.push(t("plan.previewing"));
@@ -7667,6 +7699,14 @@ export class PiAgentRuntime {
         const receiptText = spotifyEffectTexts().join("\n\n");
         if (receiptText !== resultText) replaceRenderedText(receiptText);
         resultText = receiptText;
+      }
+      // The model reports a queue in its own words; the host still names the blend under it.
+      const queueMix = promptState.spotifyQueuePlan?.queued?.length ? renderMix(promptState.spotifyQueuePlan, t) : null;
+      if (queueMix && !resultText.includes(queueMix)) {
+        const addition = resultText ? `\n\n${queueMix}` : queueMix;
+        resultText += addition;
+        if (typeof callbacks.onTextReplace === "function") callbacks.onTextReplace(resultText);
+        else callbacks.onTextDelta?.(addition);
       }
       let finalResultText = resultText;
       if (promptState.webSources.length > 0) {

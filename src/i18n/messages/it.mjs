@@ -62,6 +62,8 @@ export default {
   "queue.skippedUncertain": ({ count }) => `Saltati ${count} brani con un esito precedente incerto, per evitare doppioni; controlla la coda di Spotify.`,
   "queue.skippedAvoided": ({ count }) => `Saltati ${count} brani che volevi evitare.`,
   "queue.skippedKnown": ({ count }) => `Saltati ${count} brani già presenti nella tua cronologia, come richiesto.`,
+  "queue.mix": ({ familiar = 0, returning = 0, heard = 0, known_artist: knownArtist = 0, new: fresh = 0 }) =>
+    `Dalla tua cronologia: ${[familiar && `${familiar} che ascolti spesso`, returning && `${returning} che tornano dopo un po'`, heard && `${heard} sentiti una o due volte`, knownArtist && `${knownArtist} nuovi da artisti che conosci`, fresh && `${fresh} nuovi per te`].filter(Boolean).join(", ")}.`,
   "queue.observationTruncated": "Il controllo dei doppioni copre solo la parte limitata della coda restituita da Spotify; le voci non visibili potrebbero ancora essere doppioni.",
   "queue.notAddedHeading": "Non aggiunti:",
   "queue.earlierReceipt": "Questo è l'esito della richiesta di coda precedente; questo chiarimento non ha aggiunto di nuovo i brani.",

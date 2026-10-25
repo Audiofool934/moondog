@@ -75,6 +75,10 @@ function sectionSemantics(section, { time = "all" } = {}) {
       : "Not a preference ranking; listening time is not known for every play.",
     limitations: "Row order is not save or addition chronology. Missing listening minutes mean no matched duration in this import, not proof the listener never played a saved track.",
   };
+  if (section === "moondog_suggestions") return {
+    ordering: "Plays descending, then most recent.",
+    limitations: "Moondog queued or played these, so they are left out of every listening ranking and are not the listener's taste. adopted means the listener later played the song again on their own, which is a reaction to a suggestion, not a preference by itself.",
+  };
   if (section === "playlist_tracks") return { ...common,
     ordering: "Playlist membership count descending, then measured listening duration descending, then title." };
   if (section.startsWith("apple_")) return {
@@ -151,7 +155,7 @@ export function modelEvidence(entry, offset = 0, limit = 12) {
     "explicit_skips", "listening_minutes", "distinct_tracks", "year", "event_count", "first_observed_tracks",
     "playlist_count", "library_tracks", "preferred_tracks", "tracks_with_play_count", "preference_strength",
     "loved", "favorited", "rating_value", "rating_computed", "rank", "playlist_position", "value",
-    "stream_count", "played_seconds", "playlist_names", "top_artist", "first_year", "last_year", "active_years",
+    "stream_count", "played_seconds", "playlist_names", "top_artist", "first_year", "last_year", "active_years", "adopted",
     "yearly_plays", "activation", "trajectory",
   ]);
   const data = Object.fromEntries(Object.entries(entry.data).filter(([key]) => fields.has(key)));
@@ -255,6 +259,13 @@ export function listenerProfileDossier(input) {
     },
     provider_signals: provider.slice(0, 50).map(row),
     explicit_choices: [...rows("listener_preferences"), ...rows("listener_avoids")].slice(0, 100).map(row),
+    ...(rows("moondog_suggestions").length ? { played_from_moondog: {
+      note: "Plays Moondog itself queued or played. They are not in any ranking above and are not taste. adopted means the listener played the song again later on their own.",
+      plays: input.manifest.context.moondog_started_events_excluded ?? null,
+      tracks: rows("moondog_suggestions").length,
+      adopted_tracks: rows("moondog_suggestions").filter(entry => entry.data.adopted === true).length,
+      examples: take("moondog_suggestions", 8),
+    } } : {}),
   };
 }
 

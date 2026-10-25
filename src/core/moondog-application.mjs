@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { hostname } from "node:os";
 import { setTimeout as delay } from "node:timers/promises";
 import { compactListenerProfile, readListenerProfile } from "../profile/listener-profile-build.mjs";
+import { mixCounts, songKeys } from "../profile/moondog-suggestions.mjs";
 
 import {
   readAppleMusicSourceStatus,
@@ -35,7 +36,7 @@ const spotifyPlaybackCapabilities = new Set([
 const neteaseCapabilities = new Set(["netease.search", "netease.play", "netease.control", "netease.now_playing"]);
 
 // What the model sees of a retained Spotify item: no provider identifiers.
-function modelSpotifyItem({ uri: _uri, album_uri: _albumUri, ...item }) {
+function modelSpotifyItem({ uri: _uri, album_uri: _albumUri, isrc: _isrc, ...item }) {
   return structuredClone(item);
 }
 
@@ -503,8 +504,10 @@ export class MoondogApplication {
     return this.neteasePlayer;
   }
 
-  searchNetease({ query, limit, intent } = {}) {
-    return this.requireNetease().search({ query, limit, intent });
+  async searchNetease({ query, limit, intent } = {}) {
+    const songs = await this.requireNetease().search({ query, limit, intent });
+    return Array.isArray(songs) ? this.#withSuggestedBefore(songs, song => ({ service: "netease",
+      providerTrackId: song.id ? `netease:${song.id}` : null, title: song.title, artists: song.artists })) : songs;
   }
 
   async playNetease({ items, mode, intent } = {}) {
@@ -512,8 +515,13 @@ export class MoondogApplication {
     this.requireListenerAvoids();
     if (mode !== "queue") await this.quietOtherPlayers("netease");
     // A found song lists its artists; a song asked for by name has only the name it was asked by.
-    return player.play({ items, mode, intent, allow: (song) => this.avoidAllows(Array.isArray(song.artists)
+    const receipt = await player.play({ items, mode, intent, allow: (song) => this.avoidAllows(Array.isArray(song.artists)
       ? { title: song.title, artist_credit: song.artists.join(", "), artists: song.artists } : song) });
+    if (["playing", "queued"].includes(receipt?.mode)) {
+      this.#noteSuggestions("netease", (receipt.songs ?? []).map((song) => ({ action: receipt.mode === "queued" ? "netease.queue" : "netease.play",
+        providerTrackId: song.id ? `netease:${song.id}` : null, title: song.title, artists: song.artists })));
+    }
+    return receipt;
   }
 
   async controlNetease({ action, positionSeconds } = {}) {
@@ -679,6 +687,8 @@ export class MoondogApplication {
     }
     // The desktop window plays whole songs where the listener's Apple Music allows it; a terminal plays previews.
     const whole = this.musicPreviewPlayer.wholeSongs?.() === true;
+    this.#noteSuggestions("apple_music", found.played.map((track) => ({ action: whole ? "apple_music.play" : "apple_music.preview",
+      providerTrackId: track.catalog_id ? `apple_music:${track.catalog_id}` : null, isrc: track.isrc, title: track.title, artistCredit: track.artist_credit })));
     return { state: found.played.length ? "resolved" : "not_found", ...found, whole_songs: whole };
   }
 
@@ -1515,6 +1525,7 @@ export class MoondogApplication {
           typeof item.album_uri === "string" && /^spotify:album:[A-Za-z0-9]{1,128}$/u.test(item.album_uri) ? item.album_uri :
             this.spotifyKnownItems.get(result.item_ref_id)?.album_uri;
         if (albumUri) result.album_uri = albumUri;
+        if (typeof item.isrc === "string" && /^[A-Z]{2}[A-Z0-9]{3}[0-9]{7}$/iu.test(item.isrc)) result.isrc = item.isrc.toUpperCase();
         this.spotifyRefsByUri.set(item.uri, result.item_ref_id);
         // The newest read of an item wins; the oldest items leave first past the bound.
         this.spotifyKnownItems.delete(result.item_ref_id);
@@ -1584,7 +1595,7 @@ export class MoondogApplication {
     return albumUri ? { contextUri: albumUri, offsetUri: uri } : { uris: [uri] };
   }
 
-  #resumeSpotifySelection(parameters, { signal } = {}) {
+  #resumeSpotifySelection(parameters, { signal, played = null } = {}) {
     const transaction = this.pendingPlaylistPromptTransaction;
     // An album started at one song plays that song: it counts as the same selection as
     // the song alone, and its target names the song, not the album.
@@ -1606,6 +1617,15 @@ export class MoondogApplication {
       observedAt: this.spotifyContextClock(), turn: this.spotifyContextTurn, epoch: this.spotifyContextEpoch, outcome: "unconfirmed" } : null;
     if (attempt) this.spotifyPlaybackAttempt = attempt;
     const targets = items.map(item => ({ title: item.name ?? "Spotify item", artist_credit: item.artists.join(", ") }));
+    // The songs this selection starts. An album started whole or at one song goes on playing,
+    // so it goes in the ledger by its release. A playlist or an artist names no song until it plays.
+    const album = parameters.contextUri?.startsWith("spotify:album:")
+      ? parameters.offsetUri ? items.find(item => item.uri === parameters.offsetUri && item.type === "track" && item.album)
+        : items.find(item => item.uri === parameters.contextUri && item.type === "album")
+      : null;
+    played ??= [...(songs ?? []).flatMap(uri => items.filter(item => item.uri === uri && item.type === "track").slice(0, 1)
+      .map(item => ({ providerTrackId: uri, isrc: item.isrc, title: item.name, artists: item.artists }))),
+    ...(album ? [{ action: "play.album", release: album.type === "album" ? album.name : album.album, artists: album.artists }] : [])];
     const explicitDevice = parameters.deviceId !== undefined;
     return this.requireSpotifyService().resume(parameters, { signal,
       preferredDeviceId: this.spotifyPreferredPlaybackDevice,
@@ -1619,6 +1639,7 @@ export class MoondogApplication {
       },
     }).then(receipt => {
       const result = { ...receipt, ...(targets.length ? { targets } : {}) };
+      if (receipt.state === "accepted") this.#noteSuggestions("spotify", played.map(track => ({ action: "play", ...track })));
       if (key && transaction && receipt.state === "accepted") {
         transaction.lastAcceptedPlaybackSelection = key;
         transaction.lastAcceptedPlaybackReceipt = { ...structuredClone(result), deviceId: attempt?.parameters.deviceId };
@@ -1797,7 +1818,8 @@ export class MoondogApplication {
       truncated ||= result.truncated === true || result.has_more === true;
     }
     const items = this.spotifyReadSelections.get("discovery") ?? [];
-    return { provider: "spotify", items: items.map(modelSpotifyItem),
+    return { provider: "spotify", items: this.#withSuggestedBefore(items, item => ({ providerTrackId: item.uri, isrc: item.isrc, title: item.name, artists: item.artists }))
+      .map(modelSpotifyItem),
       queries_used: used + queries.length, queries_remaining: 6 - used - queries.length,
       state: items.length ? "verified_candidates" : failures.length ? "unavailable" : "no_matches",
       failures, skipped_avoided_count: skippedAvoids, skipped_known_count: skippedKnown, truncated,
@@ -1839,11 +1861,11 @@ export class MoondogApplication {
       throw error;
     }
     const seenUris = this.#observedQueueUris(observed, player);
-    const tracks = items.map(item => ({ track_ref_id: item.item_ref_id, title: item.name, artist_credit: item.artists.join(", "), artists: item.artists }));
+    const tracks = items.map(item => ({ track_ref_id: item.item_ref_id, title: item.name, artist_credit: item.artists.join(", "), artists: item.artists, ...(item.isrc ? { isrc: item.isrc } : {}) }));
     const resolved = new Map(items.map(item => [item.item_ref_id, item.uri]));
     this.transientSpotifyContext = true;
     const filters = { filterDiscoveryTracks: tracks => tracks.filter(track => this.spotifyDiscoveryAllowed({ name: track.title, artists: track.artists })) };
-    const receipt = await this.#queueSpotifyTracks(tracks, resolved, { signal, deviceId, seenUris, limit: requested, domainServices: filters,
+    const receipt = await this.#queueSpotifyTracks(tracks, resolved, { signal, deviceId, seenUris, limit: requested, domainServices: filters, ledgerAction: "queue.batch",
       knownTrack: intent?.excludeKnown ? track => this.domainServices?.isKnownDiscoveryTrack?.(track) === true : null });
     if (!receipt.queued.length && !receipt.stopped) transaction.queueBatchAttempted = false;
     const result = { ...receipt, action: "queue.batch", requested, queued_count: receipt.queued.length,
@@ -1867,6 +1889,40 @@ export class MoondogApplication {
       else seen.add(uri);
     }
     return seen;
+  }
+
+  // What Moondog itself started goes in the listening history's ledger, written from accepted
+  // host receipts only, so its picks never come back as the listener's own plays. A ledger
+  // that cannot be written never undoes the playback.
+  #noteSuggestions(service, tracks) {
+    if (!tracks.length || typeof this.domainServices?.recordMoondogSuggestions !== "function") return;
+    const requestedAt = new Date(this.spotifyContextClock()).toISOString();
+    const entries = tracks.slice(0, 50);
+    const slots = entries.some((track) => track.mixSlot === undefined)
+      ? this.#mixSlots(entries.map((track) => ({ title: track.title, artists: track.artists, artist_credit: track.artistCredit })))
+      : [];
+    try {
+      this.domainServices.recordMoondogSuggestions(entries.map((track, index) => ({ service, requestedAt, mixSlot: slots[index], ...track })));
+    } catch { /* The music still plays; only its origin goes unrecorded. */ }
+  }
+
+  // Which candidates Moondog suggested in earlier sessions, so the model can vary its picks.
+  #withSuggestedBefore(items, track) {
+    let history = null;
+    try {
+      history = items.length ? this.domainServices?.moondogSuggestionHistory?.(items.map(track)) : null;
+    } catch { /* Without the ledger, candidates carry no history. */ }
+    return items.map((item, index) => history?.[index] ? { ...item, suggested_before: history[index] } : item);
+  }
+
+  // Where each song sits in the listener's own plays; unknown without a history.
+  #mixSlots(tracks) {
+    try {
+      const slots = tracks.length ? this.domainServices?.listeningMix?.(tracks) : null;
+      return Array.isArray(slots) && slots.length === tracks.length ? slots : tracks.map(() => "unknown");
+    } catch {
+      return tracks.map(() => "unknown");
+    }
   }
 
   // Spotify's own queue is the truth. An accepted write can take a moment to
@@ -1929,7 +1985,7 @@ export class MoondogApplication {
     if (queueCancellationRequested(this.pendingPlaylistPromptTransaction?.userText)) throw spotifyResolutionError("spotify_queue_cancelled", "The listener asked to stop queueing. No write was sent.");
     if (this.pendingPlaylistPromptTransaction?.queueIntent && this.spotifyQueueRequest) this.spotifyQueueRequest.attempted = true;
     const item = this.spotifyHostReadItems().find(item => item.uri === uri);
-    const track = { track_ref_id: "single", title: item?.name ?? "the selected track", artist_credit: item?.artists?.join(", ") ?? "" };
+    const track = { track_ref_id: "single", title: item?.name ?? "the selected track", artist_credit: item?.artists?.join(", ") ?? "", artists: item?.artists ?? [], ...(item?.isrc ? { isrc: item.isrc } : {}) };
     // One entry takes the same path as a batch: one device decision, start
     // playback when nothing is playing, and a check of Spotify's real queue.
     const receipt = await this.#queueSpotifyTracks([track], new Map([["single", uri]]), { signal, deviceId: input.deviceId, rethrow: true });
@@ -1985,7 +2041,7 @@ export class MoondogApplication {
     const resolvedByRef = new Map((resolution.resolutions ?? [])
       .filter((entry) => entry.status === "resolved" && /^spotify:track:[A-Za-z0-9]{1,128}$/u.test(entry.spotify?.uri ?? ""))
       .map((entry) => [entry.track_ref_id, entry.spotify.uri]));
-    const receipt = await this.#queueSpotifyTracks(tracks, resolvedByRef, { signal, seenUris, limit: count, domainServices });
+    const receipt = await this.#queueSpotifyTracks(tracks, resolvedByRef, { signal, seenUris, limit: count, domainServices, ledgerAction: "queue.similar" });
     this.recordPromptDiscoverySource(registered.source);
     const result = { ...receipt, action: "queue.similar", requested: count, queued_count: receipt.queued.length,
       shortfall: count - receipt.queued.length, seed_artist: seedArtist, queue_observation_truncated: observed.truncated === true };
@@ -2767,7 +2823,8 @@ export class MoondogApplication {
     const details = spotifyPlaylistDetails({ name, description });
     this.requireSpotifyWriteScopes(["playlist-modify-private"]);
     const uris = this.requireSpotifyTrackUris(trackRefs);
-    return this.writeSpotifyPlaylist(details, uris, { signal });
+    const planned = new Map((this.pendingSpotifyPlaylist?.plan?.tracks ?? []).map((track) => [track.track_ref_id, track]));
+    return this.writeSpotifyPlaylist(details, uris, { signal, tracks: trackRefs.map((ref) => planned.get(ref) ?? null) });
   }
 
   pendingSpotifyPlaylistStatus() {
@@ -2845,7 +2902,7 @@ export class MoondogApplication {
         "The pending playlist could not be fully resolved on Spotify, so no playlist was created.",
       );
     }
-    return this.writeSpotifyPlaylist(details, uris, { signal });
+    return this.writeSpotifyPlaylist(details, uris, { signal, tracks: draft.plan.tracks });
   }
 
   async spotifyPlayPendingPlan({ deviceId } = {}, { signal } = {}) {
@@ -2877,7 +2934,9 @@ export class MoondogApplication {
     const receipt = await this.#resumeSpotifySelection({
       uris,
       ...(deviceId ? { deviceId } : {}),
-    }, { signal });
+    }, { signal, played: draft.plan.tracks.map((track, index) => ({
+      providerTrackId: uris[index], title: track.title, artistCredit: track.artist_credit,
+    })) });
     return { ...receipt, track_count: uris.length };
   }
 
@@ -2903,15 +2962,19 @@ export class MoondogApplication {
         resolvedByRef.set(resolution.track_ref_id, resolution.spotify.uri);
       }
     }
-    const receipt = await this.#queueSpotifyTracks(draft.plan.tracks, resolvedByRef, { signal, deviceId });
+    const receipt = await this.#queueSpotifyTracks(draft.plan.tracks, resolvedByRef, { signal, deviceId, ledgerAction: "queue.plan" });
     if (receipt.state === "no_candidates") {
       throw spotifyResolutionError("spotify_pending_queue_unmatched", "None of the pending tracks matched a Spotify track, so nothing was queued.");
     }
     return receipt;
   }
 
-  async #queueSpotifyTracks(tracks, resolvedByRef, { signal, deviceId, seenUris = null, limit = tracks.length, domainServices = null, knownTrack = null, rethrow = false } = {}) {
+  async #queueSpotifyTracks(tracks, resolvedByRef, { signal, deviceId, seenUris = null, limit = tracks.length, domainServices = null, knownTrack = null, rethrow = false, ledgerAction = "queue.add" } = {}) {
     const label = (track) => ({ title: track.title, artist_credit: track.artist_credit });
+    // A remaster or a second copy of the same song is a duplicate too, not only the same URI.
+    const seenSongs = new Set();
+    const sameSong = (track) => [...songKeys(track), track.isrc ? `isrc:${track.isrc}` : null].filter(Boolean);
+    const accepted = [];
     const queued = [];
     const unmatched = [];
     let skippedDuplicates = 0;
@@ -2927,13 +2990,14 @@ export class MoondogApplication {
     let outcomeUnknown = false;
     let target = null;
     let started = null;
+    let startedUri = null;
     const acceptedUris = [];
     for (const [index, track] of tracks.entries()) {
       if (queued.length >= limit) break;
       if (signal?.aborted) { stopped = label(track); stopIndex = index; break; }
       const uri = resolvedByRef.get(track.track_ref_id);
       if (typeof uri !== "string") { unmatched.push(label(track)); continue; }
-      if (seenUris?.has(uri)) { skippedDuplicates++; continue; }
+      if (seenUris?.has(uri) || sameSong(track).some(key => seenSongs.has(key))) { skippedDuplicates++; continue; }
       if (this.recentUncertainQueueUris.has(uri)) { skippedUncertain++; continue; }
       let dispatching = false;
       try {
@@ -2947,6 +3011,7 @@ export class MoondogApplication {
           dispatching = true;
           const receipt = await service.resume({ uris: [uri], ...device }, { signal });
           started = label(track);
+          startedUri = uri;
           target = { ...target, active: true, ...(receipt?.device ? { device: receipt.device } : {}) };
         };
         if (target.active === false) await start();
@@ -2966,6 +3031,8 @@ export class MoondogApplication {
         }
         acceptedUris.push(uri);
         queued.push(label(track));
+        accepted.push({ track, uri });
+        for (const key of sameSong(track)) seenSongs.add(key);
         if (this.pendingPlaylistPromptTransaction) this.pendingPlaylistPromptTransaction.queueWriteCount = (this.pendingPlaylistPromptTransaction.queueWriteCount ?? 0) + 1;
         seenUris?.add(uri);
         if (seenUris) {
@@ -2994,9 +3061,16 @@ export class MoondogApplication {
     if (queued.length === 0 && !outcomeUnknown) signal?.throwIfAborted();
     const state = stopped ? (queued.length ? "partial" : outcomeUnknown ? "unknown" : "failed")
       : queued.length ? "accepted" : "no_candidates";
+    // Each song is placed in the listener's own history before it lands in the ledger.
+    const slots = this.#mixSlots(accepted.map(({ track }) => track));
+    this.#noteSuggestions("spotify", accepted.map(({ track, uri }, index) => ({
+      action: uri === startedUri ? "play" : ledgerAction, providerTrackId: uri, isrc: track.isrc,
+      title: track.title, artists: track.artists, artistCredit: track.artist_credit, mixSlot: slots[index],
+    })));
+    const mix = mixCounts(slots);
     const verification = acceptedUris.length && !signal?.aborted ? await this.#verifyQueued(acceptedUris, { signal }) : null;
     return { provider: "spotify", ok: !["unknown", "failed"].includes(state), effect: "write_external", action: "playback.queue.add",
-      state, queued, unmatched, not_added: stopIndex >= 0 ? tracks.slice(stopIndex + 1, stopIndex + Math.max(1, limit - queued.length)).map(label) : [],
+      state, queued, ...(mix ? { mix } : {}), unmatched, not_added: stopIndex >= 0 ? tracks.slice(stopIndex + 1, stopIndex + Math.max(1, limit - queued.length)).map(label) : [],
       ...(target?.device ? { device: target.device } : {}), ...(started ? { started_playback: started } : {}),
       ...(verification ? { verification } : {}),
       ...(stopIndex >= 0 ? { not_added_count: Math.min(tracks.length - stopIndex - 1, Math.max(0, limit - queued.length - 1)) } : {}),
@@ -3008,7 +3082,7 @@ export class MoondogApplication {
       ...(signal?.aborted ? { cancelled: true } : {}) };
   }
 
-  async writeSpotifyPlaylist(details, uris, { signal } = {}) {
+  async writeSpotifyPlaylist(details, uris, { signal, tracks = [] } = {}) {
     signal?.throwIfAborted();
     this.requireSpotifyPlaylistCreationFlow();
     if (this.pendingPlaylistPromptTransaction) this.pendingPlaylistPromptTransaction.playlistWriteAttempted = true;
@@ -3018,6 +3092,8 @@ export class MoondogApplication {
         ...details,
         uris,
       }, { signal });
+      this.#noteSuggestions("spotify", tracks.flatMap((track, index) => track ? [{ action: "playlist.write",
+        providerTrackId: uris[index], title: track.title, artistCredit: track.artist_credit }] : []));
       if (this.pendingPlaylistPromptTransaction) {
         this.pendingPlaylistPromptTransaction.externalized = true;
       }
@@ -3362,6 +3438,9 @@ export class MoondogApplication {
     if (transaction) transaction.playlistPlanAttempted = true;
     this.invalidateSpotifyQuickEditContext();
     const plan = await this.requirePlaylistServices().buildPlaylistPlan(input);
+    // The host declares the blend from the listener's own plays; the model never writes it.
+    const mix = Array.isArray(plan?.tracks) ? mixCounts(this.#mixSlots(plan.tracks)) : null;
+    if (mix) plan.mix = mix;
     const validatedPlaylistTrackRefs = Array.isArray(plan?.tracks)
       ? plan.tracks.map((track) => track.track_ref_id)
       : null;

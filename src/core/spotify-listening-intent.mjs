@@ -69,10 +69,13 @@ export function queueCancellationRequested(text) {
     /^(?:キャンセル|やめて|止めて|中止)(?:して)?(?:ください)?[。！!]?$|(?:キュー|再生待ち)[^。！？]{0,20}(?:入れないで|追加しないで|やめて)|追加しないで/u.test(value);
 }
 
-/** The listener asked for music they have not heard, in any supported language. */
+/**
+ * The listener asked for music they have not heard, in any supported language. "Not heard" counts
+ * only when it ends there or says yet, before or ever: "haven't heard in a while" asks to come back.
+ */
 export function unheardRequested(text) {
   return typeof text === "string" &&
-    /没听过|从未听|不要听过|\bunheard\b|\bnever heard\b|outside.*library|曲库之外|nunca he (?:escuchado|o[ií]do)|que no (?:he|haya) (?:escuchado|o[ií]do)|sin escuchar|nuevas para m[ií]|nunca ouvi|que eu (?:ainda )?n[aã]o (?:ouvi|conhe[cç]o)|novas pra mim|novas para mim|聴いたことのない|聞いたことのない|知らない曲|未聴/iu.test(text);
+    /没听过|从未听|不要听过|\bunheard\b|\bnever (?:heard|listened to)\b|\b(?:haven't|have not|'ve not|not)\s+(?:yet\s+|ever\s+)?(?:heard|listened to)(?:\s+(?:yet|before|of|ever|please)\b|\s*(?:$|[,.;!?，。；！？]))|\bnew (?:to|for) me\b|\bunfamiliar\b|outside.*library|曲库之外|nunca he (?:escuchado|o[ií]do)|que no (?:he|haya) (?:escuchado|o[ií]do)|sin escuchar|nuevas para m[ií]|nunca ouvi|que eu (?:ainda )?n[aã]o (?:ouvi|conhe[cç]o)|novas pra mim|novas para mim|聴いたことのない|聞いたことのない|知らない曲|未聴/iu.test(text.replace(/[\u2018\u2019]/gu, "'"));
 }
 
 function queueRefinement(value, previous) {

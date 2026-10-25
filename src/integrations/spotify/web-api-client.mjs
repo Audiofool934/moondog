@@ -330,6 +330,9 @@ function normalizeTrackSearchItem(raw) {
   const popularity = safeInteger(raw.popularity, 0, 100);
   if (popularity !== undefined) item.popularity = popularity;
   if (typeof raw.explicit === "boolean") item.explicit = raw.explicit;
+  // Host-only, like the URI: it tells two copies of one recording apart from two songs.
+  const isrc = safeText(raw.external_ids?.isrc, 32);
+  if (isrc) item.isrc = isrc.toUpperCase();
   return item;
 }
 

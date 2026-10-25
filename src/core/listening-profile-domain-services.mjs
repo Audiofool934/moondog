@@ -495,6 +495,19 @@ export class ListeningProfileDomainServices {
     return this.#store.recentAttention?.({ subjectId: this.#subjectId }) ?? null;
   }
 
+  // Moondog's suggestions ledger and the declared mix (src/profile/moondog-suggestions.mjs).
+  recordMoondogSuggestions(entries) {
+    return this.#store.recordMoondogSuggestions?.({ entries }) ?? null;
+  }
+
+  moondogSuggestionHistory(tracks) {
+    return this.#store.moondogSuggestionHistory?.({ subjectId: this.#subjectId, tracks }) ?? null;
+  }
+
+  listeningMix(tracks) {
+    return this.#store.listeningMix?.({ subjectId: this.#subjectId, tracks }) ?? null;
+  }
+
   rediscoveryReady() {
     return typeof this.#store.rediscoveryCandidates === "function";
   }

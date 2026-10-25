@@ -1247,6 +1247,50 @@ test("A1 faux model completes profile, search, evidence, and playlist tools", as
   );
 });
 
+test("a validated plan carries one host-written mix line from the listener's own plays", async () => {
+  const application = syntheticApplication();
+  const slots = ["familiar", "familiar", "returning", "new"];
+  application.domainServices.listeningMix = (tracks) => tracks.map((_, index) => slots[index] ?? "unknown");
+  const { faux, runtime } = configuredRuntime(application);
+  faux.setResponses([
+    fauxAssistantMessage([fauxToolCall("moondog_library_search", { limit: 4 })], { stopReason: "toolUse" }),
+    (context) => {
+      const [search] = toolResults(context, "moondog_library_search");
+      return fauxAssistantMessage([fauxToolCall("moondog_playlist_plan", {
+        intent: "A short evening set.", requested_track_count: search.tracks.length,
+        candidate_set_ids: [search.candidate_set_id],
+        track_refs: search.tracks.map((track) => ({ track_ref_id: track.track_ref_id, selection_reason: "Fits the evening." })),
+        ordering_notes: "Familiar first.",
+      })], { stopReason: "toolUse" });
+    },
+    fauxAssistantMessage([fauxText("Here is the set.")]),
+  ]);
+  const result = await runtime.prompt("Plan four songs for the evening.");
+  assert.equal(result.status, "completed");
+  assert.equal(result.playlist_plan.track_count, 4);
+  assert.deepEqual(result.playlist_plan.mix, { familiar: 2, returning: 1, heard: 0, known_artist: 0, new: 1 });
+  assert.match(result.text, /\nFrom your history: 2 you play often, 1 back after a while, 1 new to you\.\n/u);
+
+  // Without a listening history every slot is unknown, and the line is left out.
+  application.domainServices.listeningMix = (tracks) => tracks.map(() => "unknown");
+  faux.setResponses([
+    fauxAssistantMessage([fauxToolCall("moondog_library_search", { limit: 4 })], { stopReason: "toolUse" }),
+    (context) => {
+      const [search] = toolResults(context, "moondog_library_search");
+      return fauxAssistantMessage([fauxToolCall("moondog_playlist_plan", {
+        intent: "A short evening set.", requested_track_count: search.tracks.length,
+        candidate_set_ids: [search.candidate_set_id],
+        track_refs: search.tracks.map((track) => ({ track_ref_id: track.track_ref_id, selection_reason: "Fits the evening." })),
+        ordering_notes: "Familiar first.",
+      })], { stopReason: "toolUse" });
+    },
+    fauxAssistantMessage([fauxText("Here is the set.")]),
+  ]);
+  const unknown = await runtime.prompt("Plan four songs for the evening.");
+  assert.equal(unknown.playlist_plan.mix, undefined);
+  assert.doesNotMatch(unknown.text, /From your history/u);
+});
+
 test("rediscovery tool creates a safe private-history candidate set and authoritative plan", async () => {
   const application = rediscoveryApplication();
   const { faux, runtime } = configuredRuntime(application);

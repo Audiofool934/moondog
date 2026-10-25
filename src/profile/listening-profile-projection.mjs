@@ -759,6 +759,7 @@ function aggregateMonthlyActivity(subjectId, eventAnalysis, explanations) {
 
 function aggregateEvents(subjectId, eventRows, explanations) {
   const eligible = [];
+  const moondogStarted = [];
   let incognitoEventsExcluded = 0;
   let rawPlayedMs = 0;
   let eventsWithPlayedDuration = 0;
@@ -770,6 +771,11 @@ function aggregateEvents(subjectId, eventRows, explanations) {
     rawPlayedMs += playedMs;
     if (event?.extensions?.["spotify.incognito_mode"] === true) {
       incognitoEventsExcluded += 1;
+      continue;
+    }
+    // Moondog chose these, so they are not the listener's own attention.
+    if (row.moondog_suggestion_id) {
+      moondogStarted.push(row);
       continue;
     }
     const skipped =
@@ -1059,9 +1065,11 @@ function aggregateEvents(subjectId, eventRows, explanations) {
       (row) => row.event.extensions?.["spotify.offline"] === true,
     ).length,
     incognito_events_excluded: incognitoEventsExcluded,
+    ...(moondogStarted.length ? { moondog_started_events_excluded: moondogStarted.length } : {}),
   };
   return {
     eligible,
+    moondogStarted,
     earliest,
     latest,
     recentCutoff,
@@ -2451,12 +2459,32 @@ function timeCapsuleTracks(
   });
 }
 
+// Plays Moondog started, one row per song, kept apart from the listener's own rankings.
+// Adopted means the listener later played the song again on their own.
+function moondogSuggestionTracks(rows, adoptedSuggestionIds) {
+  const tracks = new Map();
+  for (const row of rows) {
+    const metadata = trackFields(row.track);
+    const track = tracks.get(metadata.trackRefId) ?? {
+      label: metadata.title, artist_credit: metadata.artist, play_count: 0,
+      last_played_at: row.event.occurred_at, adopted: false,
+    };
+    track.play_count += 1;
+    if (row.event.occurred_at > track.last_played_at) track.last_played_at = row.event.occurred_at;
+    track.adopted ||= adoptedSuggestionIds.has(row.moondog_suggestion_id);
+    tracks.set(metadata.trackRefId, track);
+  }
+  return [...tracks.values()].sort((left, right) => right.play_count - left.play_count ||
+    descendingTimestamp(left.last_played_at, right.last_played_at) || lexicalCompare(left.label, right.label));
+}
+
 export function projectListeningProfile({
   subjectId,
   eventRows = [],
   profileEvidence = [],
   tasteEvents = [],
   maxItems = 10,
+  adoptedSuggestionIds = new Set(),
 } = {}) {
   if (typeof subjectId !== "string" || !subjectId.trim()) {
     throw new TypeError("Listening profile subject ID is required");
@@ -2807,6 +2835,11 @@ export function projectListeningProfile({
               "Taste Profile, Wrapped, and Sound Capsule are Spotify's reading of you, not something you said.",
             ]
           : []),
+        ...(events.moondogStarted.length > 0
+          ? [
+              "Songs Moondog queued or played for you are left out of the rankings. Playing one again later on your own counts as yours.",
+            ]
+          : []),
         "What you tell Moondog counts for more than what the data suggests, you can undo it any time, and it never rewrites your history.",
       ],
     },
@@ -2826,6 +2859,7 @@ export function projectListeningProfile({
       provider_genres: evidence.genres,
       listener_preferences: direct.preferences,
       listener_avoids: combinedAvoids(direct.avoids, evidence.avoids),
+      ...(events.moondogStarted.length ? { moondog_suggestions: moondogSuggestionTracks(events.moondogStarted, adoptedSuggestionIds) } : {}),
       provider_evidence: deduplicatedEvidence.map((record) => ({
         evidence_id: record.profile_evidence_id,
         evidence_kind: record.evidence_kind,

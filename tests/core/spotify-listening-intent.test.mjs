@@ -1,6 +1,20 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { queueListeningIntent } from "../../src/core/spotify-listening-intent.mjs";
+import { queueListeningIntent, unheardRequested } from "../../src/core/spotify-listening-intent.mjs";
+
+test("ordinary ways of asking for unheard music count, and ordinary requests do not", () => {
+  for (const text of ["queue songs I have not heard yet", "something new to me please", "play songs I haven’t heard",
+    "music I've never listened to", "queue a few unfamiliar tracks", "tracks I've not heard", "bands I haven't heard of",
+    "queue 5 songs I haven't heard before", "songs I have not heard, please"]) {
+    assert.equal(unheardRequested(text), true, text);
+  }
+  // Coming back to a song is not asking for unheard music.
+  for (const text of ["queue some jazz", "new music from The Lanterns", "play songs I know", "play the new album",
+    "queue 10 songs I haven't heard in a while", "stuff I have not listened to in years", "songs I haven't heard lately",
+    "Not listened to this album since college, play it", "I have not heard back from you, did it queue?"]) {
+    assert.equal(unheardRequested(text), false, text);
+  }
+});
 
 test("queue counts belong to the additive command, in English, Arabic or Chinese", () => {
   for (const [request, count] of [

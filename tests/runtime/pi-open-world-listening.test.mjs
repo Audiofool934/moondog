@@ -269,3 +269,30 @@ test("a successful single-song queue request cannot become another batch through
   await f.prompt("掺翻唱", queueResponses());
   assert.equal(f.writes.filter(write => write.uri === f.writes[0].uri).length, 1, "the accepted song is never queued twice");
 });
+
+test("a queue batch skips a remaster of a song it already queued, writes the ledger, and names the mix", async t => {
+  const f = fixture(t);
+  f.state.catalogue = [track("lan1", "Glass Harbor", "The Lanterns"), track("lan2", "Glass Harbor - 2011 Remaster", "The Lanterns"),
+    track("lan3", "Paper Comet", "The Lanterns")];
+  const recorded = [];
+  Object.assign(f.application.domainServices, {
+    recordMoondogSuggestions: entries => recorded.push(...entries),
+    listeningMix: tracks => tracks.map(item => item.title === "Glass Harbor" ? "familiar" : "new"),
+    moondogSuggestionHistory: tracks => tracks.map(item => item.title === "Paper Comet" ? { times: 2, last_suggested_at: "2026-10-01", adopted: false } : null),
+  });
+  const result = await f.prompt("queue some songs by The Lanterns", [call("moondog_spotify_discover", { queries: ["first"] }), context => {
+    const found = latest(context, "moondog_spotify_discover");
+    assert.deepEqual(found.items.find(item => item.name === "Paper Comet").suggested_before, { times: 2, last_suggested_at: "2026-10-01", adopted: false });
+    assert.equal(found.items.find(item => item.name === "Glass Harbor").suggested_before, undefined);
+    assert.doesNotMatch(JSON.stringify(found), /spotify:track/u);
+    return call("moondog_spotify_queue_batch", { item_refs: found.items.map(item => item.item_ref_id) });
+  }, say()]);
+  assert.equal(result.spotify_queue_plan.queued_count, 2);
+  assert.equal(result.spotify_queue_plan.skipped_duplicate_count, 1);
+  assert.deepEqual(f.writes.map(write => write.uri), ["spotify:track:lan1", "spotify:track:lan3"]);
+  assert.match(result.text, /From your history: 1 you play often, 1 new to you\./u);
+  assert.deepEqual(recorded.map(({ service, action, providerTrackId, title, mixSlot }) => ({ service, action, providerTrackId, title, mixSlot })), [
+    { service: "spotify", action: "queue.batch", providerTrackId: "spotify:track:lan1", title: "Glass Harbor", mixSlot: "familiar" },
+    { service: "spotify", action: "queue.batch", providerTrackId: "spotify:track:lan3", title: "Paper Comet", mixSlot: "new" },
+  ]);
+});

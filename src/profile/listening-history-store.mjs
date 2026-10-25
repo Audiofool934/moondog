@@ -9,6 +9,9 @@ import {
   createListenerCorrectionRetraction,
 } from "./listener-corrections.mjs";
 import { projectListeningProfile } from "./listening-profile-projection.mjs";
+import {
+  listeningFamiliarity, markMoondogStartedPlays, mixSlot, suggestionEntry, suggestionIdentities, SUGGESTION_WINDOW,
+} from "./moondog-suggestions.mjs";
 import { ListenerProfileStore, listenerProfileSchema } from "./listener-profile-store.mjs";
 
 export const LISTENING_HISTORY_SCHEMA_VERSION = 7;
@@ -185,6 +188,26 @@ const schema = `
   CREATE UNIQUE INDEX IF NOT EXISTS taste_events_one_retraction
     ON taste_events(retracts_taste_event_id)
     WHERE retracts_taste_event_id IS NOT NULL;
+
+  -- What Moondog itself queued or played, written from the host's accepted receipts. Plays
+  -- that match one are left out of the listener's own attention when the profile is read
+  -- (src/profile/moondog-suggestions.mjs). Provider track identities never leave the host.
+  CREATE TABLE IF NOT EXISTS moondog_suggestions (
+    suggestion_id TEXT PRIMARY KEY NOT NULL,
+    service TEXT NOT NULL,
+    action TEXT NOT NULL,
+    provider_track_id TEXT,
+    isrc TEXT,
+    track_key TEXT,
+    release_key TEXT,
+    title TEXT NOT NULL,
+    artist_credit TEXT NOT NULL,
+    requested_at TEXT NOT NULL,
+    mix_slot TEXT
+  ) STRICT;
+
+  CREATE INDEX IF NOT EXISTS moondog_suggestions_time
+    ON moondog_suggestions(requested_at);
 
   ${listenerProfileSchema}
 `;
@@ -805,6 +828,8 @@ function preserveExtendedHistoryMatches(bundle, retainedMatch) {
 export class ListeningHistoryStore {
   #database;
   #closed = false;
+  #snapshot = null;
+  #ledgerChanges = 0;
 
   constructor(database) {
     this.#database = database;
@@ -1795,13 +1820,95 @@ export class ListeningHistoryStore {
       )
       .all(normalizedSubjectId)
       .map((row) => JSON.parse(row.record_json));
-    return projectListeningProfile({
-      subjectId: normalizedSubjectId,
-      eventRows,
-      profileEvidence,
-      tasteEvents,
-      maxItems,
+    const { rows, adopted } = markMoondogStartedPlays(eventRows, this.#suggestionsForMatching());
+    return {
+      ...projectListeningProfile({
+        subjectId: normalizedSubjectId,
+        eventRows: rows,
+        profileEvidence,
+        tasteEvents,
+        maxItems,
+        adoptedSuggestionIds: adopted,
+      }),
+      adoptedSuggestionIds: adopted,
+    };
+  }
+
+  #suggestionsForMatching() {
+    return this.#database.prepare(`SELECT suggestion_id, provider_track_id, isrc, track_key, release_key, title, artist_credit,
+      requested_at FROM moondog_suggestions ORDER BY requested_at, suggestion_id`).all();
+  }
+
+  /** Records what Moondog itself queued or played. Only accepted host writes belong here. */
+  recordMoondogSuggestions({ entries } = {}) {
+    if (this.#closed) throw new Error("Listening history store is closed");
+    if (!Array.isArray(entries) || entries.length > 50) throw new TypeError("Moondog suggestions are invalid");
+    const insert = this.#database.prepare(`INSERT INTO moondog_suggestions
+      (suggestion_id, service, action, provider_track_id, isrc, track_key, release_key, title, artist_credit, requested_at, mix_slot)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+    let recorded = 0;
+    this.#database.exec("BEGIN IMMEDIATE");
+    try {
+      for (const value of entries) {
+        const entry = suggestionEntry(value);
+        if (!entry || !/^[a-z][a-z0-9_.]{1,63}$/u.test(entry.action ?? "") || !Number.isFinite(Date.parse(entry.requested_at))) continue;
+        insert.run(randomUUID(), entry.service, entry.action, entry.provider_track_id, entry.isrc, entry.track_key, entry.release_key,
+          entry.title, entry.artist_credit, new Date(entry.requested_at).toISOString(), entry.mix_slot);
+        recorded += 1;
+      }
+      this.#database.exec("COMMIT");
+    } catch (error) {
+      this.#database.exec("ROLLBACK");
+      throw error;
+    }
+    this.#ledgerChanges += recorded;
+    return { recorded };
+  }
+
+  /**
+   * Moondog's earlier suggestions of each track, matched as stored plays are: the same provider
+   * track, ISRC or song. Adopted means the listener later played it again on their own.
+   */
+  moondogSuggestionHistory({ subjectId, tracks } = {}) {
+    if (!Array.isArray(tracks)) throw new TypeError("Suggestion history tracks are invalid");
+    const suggestions = this.#suggestionsForMatching();
+    if (!suggestions.length) return tracks.map(() => null);
+    const { adopted } = this.#listeningSnapshot(subjectId);
+    const byIdentity = new Map();
+    for (const suggestion of suggestions) {
+      for (const identity of suggestionIdentities(suggestion)) {
+        byIdentity.set(identity, [...(byIdentity.get(identity) ?? []), suggestion]);
+      }
+    }
+    return tracks.map((track) => {
+      const entry = suggestionEntry({ service: "spotify", action: "lookup", ...track });
+      const matches = new Set(entry ? suggestionIdentities(entry).flatMap((identity) => byIdentity.get(identity) ?? []) : []);
+      if (!matches.size) return null;
+      const last = [...matches].reduce((latest, item) => item.requested_at > latest ? item.requested_at : latest, "");
+      return { times: matches.size, last_suggested_at: last.slice(0, 10),
+        adopted: [...matches].some((item) => adopted.has(item.suggestion_id)) };
     });
+  }
+
+  /** Where each track sits in the listener's own plays (MIX_SLOTS in moondog-suggestions.mjs). */
+  listeningMix({ subjectId, tracks } = {}) {
+    if (!Array.isArray(tracks)) throw new TypeError("Listening mix tracks are invalid");
+    const { familiarity } = this.#listeningSnapshot(subjectId);
+    return tracks.map((track) => mixSlot(track, familiarity));
+  }
+
+  // One projection serves the mix and the suggestion history until the store changes. A new
+  // suggestion changes neither until its plays arrive, so this connection's own ledger writes
+  // leave the projection in place.
+  #listeningSnapshot(subjectId) {
+    const version = `${subjectId}:${this.#database.prepare("PRAGMA data_version").get().data_version}:${
+      this.#database.prepare("SELECT total_changes() AS changes").get().changes - this.#ledgerChanges}`;
+    if (this.#snapshot?.version !== version) {
+      const projected = this.#profileProjection({ subjectId, maxItems: 1 });
+      this.#snapshot = { version, adopted: projected.adoptedSuggestionIds,
+        familiarity: listeningFamiliarity(projected.catalog, projected.summary.listening_behavior.context.reference_date) };
+    }
+    return this.#snapshot;
   }
 
   /** Every track the subject has played, with its play count, most played first. */
@@ -1889,6 +1996,8 @@ export class ListeningHistoryStore {
         reference_date: projected.summary.listening_behavior.context.reference_date,
         recent_window_days: projected.summary.listening_behavior.context.recent_window_days,
         incognito_events_excluded: projected.summary.listening_behavior.context.incognito_events_excluded,
+        ...(projected.summary.listening_behavior.context.moondog_started_events_excluded
+          ? { moondog_started_events_excluded: projected.summary.listening_behavior.context.moondog_started_events_excluded } : {}),
         release_minimum_distinct_tracks: projected.summary.listening_behavior.context.release_minimum_distinct_tracks,
       },
       sections: projected.catalog,
@@ -1910,16 +2019,26 @@ export class ListeningHistoryStore {
       AND NOT EXISTS (SELECT 1 FROM listening_event_supersessions s WHERE s.superseded_event_id = e.listening_event_id)
       AND NOT EXISTS (SELECT 1 FROM listening_event_mirrors m WHERE m.mirror_event_id = e.listening_event_id)`;
     const subject = subjectId.toLowerCase();
-    const plays = this.#database.prepare(`SELECT COUNT(*) AS plays FROM listening_events e WHERE ${effective}`)
-      .get(subject, from).plays;
+    // Plays Moondog started are not the listener's own attention.
+    const suggestions = this.#suggestionsForMatching()
+      .filter((suggestion) => Date.parse(suggestion.requested_at) + SUGGESTION_WINDOW.afterMs >= Date.parse(from));
+    const started = suggestions.length === 0 ? [] : markMoondogStartedPlays(this.#database.prepare(`SELECT
+      e.listening_event_id, e.record_json AS event_json, t.record_json AS track_json FROM listening_events e
+      JOIN track_refs t ON t.track_ref_id = e.track_ref_id AND t.revision = e.track_ref_revision WHERE ${effective}`)
+      .all(subject, from).map((row) => ({ id: row.listening_event_id, event: JSON.parse(row.event_json), track: JSON.parse(row.track_json) })),
+    suggestions).rows.filter((row) => row.moondog_suggestion_id).map((row) => row.id);
+    const own = `${effective} AND e.listening_event_id NOT IN (SELECT value FROM json_each(?))`;
+    const plays = this.#database.prepare(`SELECT COUNT(*) AS plays FROM listening_events e WHERE ${own}`)
+      .get(subject, from, JSON.stringify(started)).plays;
     const artists = this.#database.prepare(`SELECT json_extract(a.value, '$.name') AS name, COUNT(*) AS plays,
       MAX(e.occurred_at) AS last_played_at
       FROM listening_events e
       JOIN track_refs t ON t.track_ref_id = e.track_ref_id AND t.revision = e.track_ref_revision
       JOIN json_each(t.record_json, '$.artist_credits') a
-      WHERE ${effective} AND name IS NOT NULL
-      GROUP BY name ORDER BY plays DESC, last_played_at DESC LIMIT ?`).all(subject, from, limit);
-    return structuredClone({ from_date: localDate(start), through_date: localDate(today), plays, top_artists: artists });
+      WHERE ${own} AND name IS NOT NULL
+      GROUP BY name ORDER BY plays DESC, last_played_at DESC LIMIT ?`).all(subject, from, JSON.stringify(started), limit);
+    return structuredClone({ from_date: localDate(start), through_date: localDate(today), plays,
+      ...(started.length ? { moondog_started_plays: started.length } : {}), top_artists: artists });
   }
 
   // Which spans of time the stored plays cover, and where plays may be missing.
@@ -1984,6 +2103,12 @@ export class ListeningHistoryStore {
         digest.update(JSON.stringify(row)).update("\0");
       }
     }
+    // Moondog's suggestions decide which plays count as the listener's own. One made after the
+    // latest stored play matches nothing yet, so it leaves the reading current.
+    const suggestions = this.#database.prepare(`SELECT suggestion_id, provider_track_id, isrc, track_key, release_key, title,
+      artist_credit, requested_at FROM moondog_suggestions WHERE requested_at <= (SELECT MAX(occurred_at) FROM listening_events WHERE subject_id = ?)
+      ORDER BY suggestion_id`).all(subjectId.toLowerCase());
+    if (suggestions.length) digest.update("moondog_suggestions\0").update(JSON.stringify(suggestions));
     return digest.digest("hex");
   }
 

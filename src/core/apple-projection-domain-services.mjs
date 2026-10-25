@@ -4,6 +4,7 @@ import { createListenerProfileInput, savedListenerChoices } from "../profile/lis
 import { lyricSeedsFromProfile } from "./lyric-profile.mjs";
 import { cachedAvoidGate, createAvoidGate } from "./listener-avoids.mjs";
 import { recordListenerChoice } from "../profile/listener-corrections.mjs";
+import { normalizedTrackTitle } from "./track-title.mjs";
 import { collectionCoverage } from "../profile/music-providers.mjs";
 import { lstat } from "node:fs/promises";
 import path from "node:path";
@@ -814,9 +815,10 @@ function normalizedArtistNames(value) {
     .filter(Boolean);
 }
 
+// A remaster or live take of a song counts as the song (src/core/track-title.mjs).
 export function exactTitleArtistMatch(left, right) {
-  const leftTitle = normalizeText(left.title);
-  const rightTitle = normalizeText(right.title);
+  const leftTitle = normalizedTrackTitle(left.title);
+  const rightTitle = normalizedTrackTitle(right.title);
   const leftArtists = normalizedArtistNames(left.artist_credit);
   const rightArtists = new Set(normalizedArtistNames(right.artist_credit));
   return (
@@ -1280,6 +1282,19 @@ export class AppleProjectionDomainServices {
 
   recentAttention() {
     return this.#listeningHistoryStore?.recentAttention?.({ subjectId: this.#subjectId }) ?? null;
+  }
+
+  // Moondog's suggestions ledger and the declared mix (src/profile/moondog-suggestions.mjs).
+  recordMoondogSuggestions(entries) {
+    return this.#listeningHistoryStore?.recordMoondogSuggestions?.({ entries }) ?? null;
+  }
+
+  moondogSuggestionHistory(tracks) {
+    return this.#listeningHistoryStore?.moondogSuggestionHistory?.({ subjectId: this.#subjectId, tracks }) ?? null;
+  }
+
+  listeningMix(tracks) {
+    return this.#listeningHistoryStore?.listeningMix?.({ subjectId: this.#subjectId, tracks }) ?? null;
   }
 
   rediscoveryReady() {
