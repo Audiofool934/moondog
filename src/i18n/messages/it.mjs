@@ -34,6 +34,7 @@ export default {
   "failure.preparationStopped": ({ evidence }) => `I controlli del dispositivo di riproduzione non sono stati completati (${evidence}); non è stata inviata alcuna richiesta di riproduzione. Controlla lo stato del dispositivo Spotify prima di riprovare.`,
   "failure.queueRequestRequired": "Nessun brano è stato messo in coda: non sono riuscito a collegare questa risposta a una richiesta di coda. Per continuare serve una richiesta esplicita di aggiungere musica alla coda di riproduzione.",
   "failure.notSent": ({ code }) => `Non ho inviato nulla a Spotify: non sono riuscito a collegarlo ai brani trovati (${code}). Chiedimelo di nuovo con il titolo o l'artista e cercherò ancora.`,
+  "failure.avoided": "Non ho inviato nulla a Spotify: mi hai chiesto di lasciare fuori questo artista o questo brano. Dimmelo quando vuoi per cambiarlo.",
   "failure.outcome.lookup": "La ricerca su Spotify non è stata completata",
   "failure.outcome.unknown": "L'esito dell'azione su Spotify è incerto",
   "failure.outcome.unconfirmed": "L'azione di riproduzione su Spotify non è stata confermata",

@@ -34,6 +34,7 @@ export default {
   "failure.preparationStopped": ({ evidence }) => `재생 기기 확인을 마치지 못했습니다(${evidence}). 곡 재생 요청은 보내지 않았습니다. Spotify 기기 상태를 확인한 뒤 다시 시도해 주세요.`,
   "failure.queueRequestRequired": "곡을 대기열에 넣지 않았습니다. 이 답변을 대기열 추가 요청과 연결하지 못했습니다. 계속하려면 재생 대기열에 음악을 넣어 달라고 분명히 요청해 주세요.",
   "failure.notSent": ({ code }) => `Spotify에 아무것도 보내지 않았습니다. 방금 찾은 곡과 연결하지 못했습니다(${code}). 곡 제목이나 아티스트 이름을 넣어 다시 말해 주시면 다시 찾아볼게요.`,
+  "failure.avoided": "Spotify에 아무것도 보내지 않았습니다. 이 아티스트나 곡은 틀지 말라고 하셨어요. 바꾸고 싶으면 언제든 말해 주세요.",
   "failure.outcome.lookup": "Spotify 검색을 마치지 못했습니다",
   "failure.outcome.unknown": "Spotify 작업 결과가 확실하지 않습니다",
   "failure.outcome.unconfirmed": "Spotify 재생 작업이 확인되지 않았습니다",

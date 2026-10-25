@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { exploreProfileCatalog, profileExplorationInput } from "../profile/profile-exploration.mjs";
 import { createListenerProfileInput, savedListenerChoices } from "../profile/listener-profile-build.mjs";
 import { lyricSeedsFromProfile } from "./lyric-profile.mjs";
-import { cachedAvoidGate } from "./listener-avoids.mjs";
+import { cachedAvoidGate, listeningVersion } from "./listener-avoids.mjs";
 import { recordListenerChoice } from "../profile/listener-corrections.mjs";
 
 import { isUuid } from "./uuid-v5.mjs";
@@ -570,7 +570,7 @@ export class ListeningProfileDomainServices {
 
   // Every play path asks for each candidate, so the gate is kept until the data changes.
   filterDiscoveryTracks(tracks) {
-    const gate = cachedAvoidGate(this.#avoids, this.#store.profileDataVersion?.(), () =>
+    const gate = cachedAvoidGate(this.#avoids, listeningVersion(this.#store), () =>
       this.#store.activeAvoidances?.({ subjectId: this.#subjectId }) ??
         this.#store.profileSummary({ subjectId: this.#subjectId })?.listener_assertions?.avoids ?? []);
     return tracks.filter((track) => !gate.avoidsTrack(track));
@@ -678,7 +678,7 @@ export class ListeningProfileDomainServices {
   }
 
   getProfileBuildContext() {
-    const version = this.#store.profileDataVersion();
+    const version = listeningVersion(this.#store);
     if (this.#profileBuildInput?.version !== version) {
       this.#profileBuildInput = { version, input: createListenerProfileInput({
         subjectId: this.#subjectId,

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { exploreProfileCatalog, profileExplorationInput } from "../profile/profile-exploration.mjs";
 import { createListenerProfileInput, savedListenerChoices } from "../profile/listener-profile-build.mjs";
 import { lyricSeedsFromProfile } from "./lyric-profile.mjs";
-import { cachedAvoidGate, createAvoidGate } from "./listener-avoids.mjs";
+import { cachedAvoidGate, createAvoidGate, listeningVersion } from "./listener-avoids.mjs";
 import { recordListenerChoice } from "../profile/listener-corrections.mjs";
 import { normalizedTrackTitle } from "./track-title.mjs";
 import { collectionCoverage } from "../profile/music-providers.mjs";
@@ -1293,8 +1293,32 @@ export class AppleProjectionDomainServices {
     return this.#listeningHistoryStore?.moondogSuggestionHistory?.({ subjectId: this.#subjectId, tracks }) ?? null;
   }
 
+  // A song the dated plays do not place but the Apple library has played counts as known: three
+  // or more library plays as familiar, fewer as heard. Library counts carry no dates.
   listeningMix(tracks) {
-    return this.#listeningHistoryStore?.listeningMix?.({ subjectId: this.#subjectId, tracks }) ?? null;
+    const slots = this.#listeningHistoryStore?.listeningMix?.({ subjectId: this.#subjectId, tracks }) ??
+      tracks.map(() => "unknown");
+    return slots.map((slot, index) => {
+      if (!["new", "known_artist", "unknown"].includes(slot)) return slot;
+      const plays = this.#libraryPlayCount(tracks[index]);
+      return plays >= 3 ? "familiar" : plays > 0 ? "heard" : slot;
+    });
+  }
+
+  #libraryPlayCount(track) {
+    const wanted = { title: track?.title, artist_credit: track?.artist_credit ?? (Array.isArray(track?.artists) ? track.artists.join(", ") : "") };
+    if (typeof wanted.title !== "string" || !wanted.title.trim()) return 0;
+    try {
+      const results = this.#projection.searchLibrary({
+        // Without its version suffix, so a remaster finds the library's copy.
+        query: Array.from(normalizedTrackTitle(wanted.title)).slice(0, 256).join(""), limit: 25, offset: 0,
+        filters: { artists: [], genres: [], familiarity: [], preferenceSignals: [] },
+      });
+      return Math.max(0, ...results.tracks.map(safeTrack).filter((candidate) => exactTitleArtistMatch(wanted, candidate))
+        .map((candidate) => candidate.observation_summary.familiarity.play_count ?? 0));
+    } catch {
+      return 0; // Without the library, the dated plays alone place the song.
+    }
   }
 
   rediscoveryReady() {
@@ -1781,7 +1805,7 @@ export class AppleProjectionDomainServices {
   filterDiscoveryTracks(tracks) {
     const store = this.#listeningHistoryStore;
     const version = store?.profileDataVersion
-      ? `${this.#projection.logicalDigest?.() ?? ""}:${store.profileDataVersion()}` : undefined;
+      ? `${this.#projection.logicalDigest?.() ?? ""}:${listeningVersion(store)}` : undefined;
     const gate = cachedAvoidGate(this.#avoids, version, () => {
       const avoids = store?.activeAvoidances?.({ subjectId: this.#subjectId }) ??
         store?.profileSummary?.({ subjectId: this.#subjectId })?.listener_assertions?.avoids ?? [];
@@ -2018,7 +2042,7 @@ export class AppleProjectionDomainServices {
 
   getProfileBuildContext() {
     const appleDigest = this.#projection.logicalDigest();
-    const version = `${appleDigest}:${this.#listeningHistoryStore.profileDataVersion()}`;
+    const version = `${appleDigest}:${listeningVersion(this.#listeningHistoryStore)}`;
     if (this.#profileBuildInput?.version !== version) {
       const listening = this.#listeningHistoryStore.profileCatalog({ subjectId: this.#subjectId });
       const normalized = normalizeAppleCorrectionLabels({ listener_assertions: {

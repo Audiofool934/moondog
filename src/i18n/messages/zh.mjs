@@ -34,6 +34,7 @@ export default {
   "failure.preparationStopped": ({ evidence }) => `播放前的设备检查未完成（${evidence}），没有发送歌曲播放请求。请检查 Spotify 设备状态后再试。`,
   "failure.queueRequestRequired": "这次没有加入歌曲：我没能把这条回复关联到入队请求。需要明确要加入播放队列，才能继续。",
   "failure.notSent": ({ code }) => `没有向 Spotify 发送任何内容：我没能把它对应到刚才找到的歌曲（${code}）。请带上歌名或歌手再说一次，我会重新搜索。`,
+  "failure.avoided": "没有向 Spotify 发送任何内容：你让我别再放这位歌手或这首歌。想改的话随时告诉我。",
   "failure.outcome.lookup": "Spotify 查询未完成",
   "failure.outcome.unknown": "Spotify 操作结果尚不确定",
   "failure.outcome.unconfirmed": "Spotify 播放操作未获确认",

@@ -1843,6 +1843,8 @@ for (const timing of ["before_resolution", "during_resolution", "after_first_add
       assert.equal(result.spotify_queue_plan.stopped.title, "Glass Highway");
       assert.match(result.text, /Stopped queueing after cancellation/u);
       assert.match(result.text, /Queued 1 on Spotify/u);
+      // A paragraph after the list starts after a blank line, so Markdown keeps it out of the last item.
+      assert.doesNotMatch(result.text, /^- [^\n]*\n(?!- |\n)/mu);
       assert.equal(rendered, result.text);
       assert.doesNotMatch(JSON.stringify(result.spotify_queue_plan), /spotify:track:/u);
     } else {

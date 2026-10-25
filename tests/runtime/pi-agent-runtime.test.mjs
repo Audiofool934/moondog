@@ -1269,7 +1269,8 @@ test("a validated plan carries one host-written mix line from the listener's own
   assert.equal(result.status, "completed");
   assert.equal(result.playlist_plan.track_count, 4);
   assert.deepEqual(result.playlist_plan.mix, { familiar: 2, returning: 1, heard: 0, known_artist: 0, new: 1 });
-  assert.match(result.text, /\nFrom your history: 2 you play often, 1 back after a while, 1 new to you\.\n/u);
+  // A blank line sets the mix line apart from the last song, so Markdown does not fold it in.
+  assert.match(result.text, /\n\nFrom your history: 2 you play often, 1 back after a while, 1 new to you\.\n\n/u);
 
   // Without a listening history every slot is unknown, and the line is left out.
   application.domainServices.listeningMix = (tracks) => tracks.map(() => "unknown");

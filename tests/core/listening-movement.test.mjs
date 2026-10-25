@@ -233,6 +233,8 @@ test("the agent sees movement in the profile summary and can ask for fading arti
       const [page] = results(context, "moondog_profile_explore");
       const movement = profile.listening_behavior.movement;
       assert.match(movement.note, /not liking/u);
+      // The labels are as of the latest stored play, not today.
+      assert.match(movement.note, new RegExp(`as of the latest stored play on ${fixture.map((row) => row.event.occurred_at).sort().at(-1).slice(0, 10)}\\.`, "u"));
       assert.deepEqual(movement.fading.map((item) => item.name), ["Fading Artist"]);
       assert.deepEqual(movement.returning.map((item) => item.name), ["Returning Artist"]);
       assert.equal(movement.fading[0].yearly_plays.at(-1).year, 2025);

@@ -5,6 +5,7 @@ import { LOCALES, messageLocale, translator } from "../../i18n/index.mjs";
 import { PROFILE_SECTIONS, TRAJECTORIES } from "../../profile/profile-exploration.mjs";
 import { compactListenerProfile } from "../../profile/listener-profile-build.mjs";
 import { avoidKey } from "../../core/listener-avoids.mjs";
+import { foldedWords, isCjkText, textNames } from "../../core/track-title.mjs";
 
 import { projectWebResearchResult } from "../../integrations/web/web-result.mjs";
 import { spotifyErrorReason } from "../../integrations/spotify/web-api-client.mjs";
@@ -2457,7 +2458,9 @@ function projectListeningBehavior(value) {
     ...(isPlainObject(value.movement)
       ? {
           movement: {
-            note: "Labels from each artist's share of yearly plays across the retained history. They describe attention over time, not liking.",
+            // Rising or fading is measured up to the latest stored play, which can be long ago.
+            note: `Labels from each artist's share of yearly plays across the retained history, as of the latest stored play${
+              projectedContext.reference_date ? ` on ${projectedContext.reference_date.slice(0, 10)}` : ""}. They describe attention over time, not liking.`,
             ...Object.fromEntries(["fading", "returning", "rising"].map((label) => [
               label,
               (Array.isArray(value.movement[label]) ? value.movement[label] : [])
@@ -4431,7 +4434,7 @@ function projectMusicPreview(value) {
     })),
   };
   if (Array.isArray(value.left_out) && value.left_out.length) result.left_out_by_excluded_artist = value.left_out.length;
-  Object.assign(result, avoidedCount(value));
+  Object.assign(result, avoidedCount(value), projectMix(value));
   if (isPlainObject(value.album)) {
     result.album = {
       ...song(value.album),
@@ -4478,6 +4481,7 @@ function projectNeteasePlay(value) {
     unplayable: (Array.isArray(value.unplayable) ? value.unplayable : []).slice(0, 20).map(named),
     not_found: (Array.isArray(value.not_found) ? value.not_found : []).slice(0, 20).map(named),
     ...avoidedCount(value),
+    ...projectMix(value),
   };
 }
 
@@ -4649,6 +4653,35 @@ function compactCompletedPromptHistory(agent, startIndex, responseText) {
       timestamp: assistantMessage.timestamp,
     },
   ];
+}
+
+// How many Likes, Avoids or undos one message can make.
+const TASTE_CHOICES_PER_TURN = 3;
+
+// Words that point at what is playing or was just named. Latin and Korean words match whole;
+// Chinese and Japanese ones match inside the text.
+const DEICTIC_WORDS = ["this", "that", "it", "them", "these", "this one", "this song", "this artist",
+  "이", "이거", "이 노래", "esto", "esta", "este", "ça", "cette", "ce", "dies", "diese", "dieses",
+  "questo", "questa", "isso", "essa", "esse", "isto"];
+const DEICTIC_SUBSTRINGS = ["这", "这首", "这个", "这些", "他", "她", "它", "この", "これ", "その"];
+
+function quoteIsDeictic(quote) {
+  const words = ` ${foldedWords(quote)} `;
+  return DEICTIC_WORDS.some((word) => words.includes(` ${foldedWords(word)} `)) ||
+    DEICTIC_SUBSTRINGS.some((word) => words.includes(word));
+}
+
+// A statement, not a word: at least 2 words in Latin text, or 3 characters in CJK text.
+function quoteLongEnough(quote) {
+  const folded = foldedWords(quote);
+  return isCjkText(folded) ? Array.from(folded.replace(/ /gu, "")).length >= 3 : folded.split(" ").filter(Boolean).length >= 2;
+}
+
+// The listener's own messages of the two turns before this one, oldest first. Host
+// continuations and the trusted context are not the listener's words.
+function recentListenerTexts(messages) {
+  return messages.filter((message) => message.role === "user").map(extractMessageText)
+    .filter((text) => text && !text.startsWith("[Host ") && !text.startsWith("[Trusted Moondog")).slice(-2);
 }
 
 function discardPromptHistory(agent, startIndex) {
@@ -6858,6 +6891,7 @@ function renderSpotifyPlaybackFailure(failure, t) {
   if (failure.preparation_stopped && failure.not_sent) return t("failure.preparationStopped", {
     evidence: [failure.code, failure.status ? `HTTP ${failure.status}` : "", failure.reason].filter(Boolean).join("; ") });
   if (failure.code === "spotify_queue_request_required") return t("failure.queueRequestRequired");
+  if (failure.code === "listener_avoid_blocked") return t("failure.avoided");
   if (failure.not_sent) return t("failure.notSent", { code: failure.code });
   const evidence = [failure.code, failure.status ? `HTTP ${failure.status}` : "", failure.reason].filter(Boolean).join("; ");
   const outcome = t(failure.action === "lookup" ? "failure.outcome.lookup" : failure.outcome_unknown ? "failure.outcome.unknown" : "failure.outcome.unconfirmed");
@@ -6914,24 +6948,21 @@ function renderSpotifyQueuePlan(receipt, t) {
   for (const track of receipt.queued) {
     lines.push(`- ${track.title}${track.artist_credit ? ` - ${track.artist_credit}` : ""}`);
   }
-  const mix = renderMix(receipt, t);
-  if (mix) lines.push(mix);
-  const verified = renderQueueVerification(receipt, t);
-  if (verified) lines.push(verified);
+  // Each paragraph after the list starts after a blank line, so Markdown does not fold it into
+  // the last list item.
+  const trailing = [renderMix(receipt, t), renderQueueVerification(receipt, t)];
   if (receipt.unmatched.length > 0) {
-    lines.push(t("queue.unmatchedHeading"));
-    for (const track of receipt.unmatched) lines.push(`- ${track.title} - ${track.artist_credit}`);
+    trailing.push([t("queue.unmatchedHeading"), ...receipt.unmatched.map((track) => `- ${track.title} - ${track.artist_credit}`)].join("\n"));
   }
-  if (receipt.skipped_duplicate_count) lines.push(t("queue.skippedDuplicates", { count: receipt.skipped_duplicate_count }));
-  if (receipt.skipped_uncertain_count) lines.push(t("queue.skippedUncertain", { count: receipt.skipped_uncertain_count }));
-  if (receipt.skipped_avoided_count) lines.push(t("queue.skippedAvoided", { count: receipt.skipped_avoided_count }));
-  if (receipt.skipped_known_count) lines.push(t("queue.skippedKnown", { count: receipt.skipped_known_count }));
-  if (receipt.queue_observation_truncated) lines.push(t("queue.observationTruncated"));
+  if (receipt.skipped_duplicate_count) trailing.push(t("queue.skippedDuplicates", { count: receipt.skipped_duplicate_count }));
+  if (receipt.skipped_uncertain_count) trailing.push(t("queue.skippedUncertain", { count: receipt.skipped_uncertain_count }));
+  if (receipt.skipped_avoided_count) trailing.push(t("queue.skippedAvoided", { count: receipt.skipped_avoided_count }));
+  if (receipt.skipped_known_count) trailing.push(t("queue.skippedKnown", { count: receipt.skipped_known_count }));
+  if (receipt.queue_observation_truncated) trailing.push(t("queue.observationTruncated"));
   if (receipt.not_added.length > 0) {
-    lines.push(t("queue.notAddedHeading"));
-    for (const track of receipt.not_added) lines.push(`- ${track.title} - ${track.artist_credit}`);
+    trailing.push([t("queue.notAddedHeading"), ...receipt.not_added.map((track) => `- ${track.title} - ${track.artist_credit}`)].join("\n"));
   }
-  return lines.join("\n");
+  return [lines.join("\n"), ...trailing.filter(Boolean)].join("\n\n");
 }
 
 function renderSpotifyPartialPlaylist(receipt, t) {
@@ -6998,17 +7029,19 @@ function renderValidatedPlaylistPlan(
     }
     lines.push(line, t("plan.rationale", { text: renderPlaylistRationale(track.selection_reason, plan.tracks) }));
   }
-  if (!hasExternalCandidates) lines.push(t("plan.ordering", { text: renderPlaylistRationale(plan.ordering_rationale, plan.tracks) }));
-  const mix = renderMix(plan, t);
-  if (mix) lines.push(mix);
-  if (spotifyWrite?.playlist) lines.push(t("playlist.saved", { name: spotifyWrite.playlist.name, count: spotifyWrite.playlist.track_count }));
-  else if (spotifyPartialEffect?.playlist) lines.push(renderSpotifyPartialPlaylist(spotifyPartialEffect, t));
-  else if (previewsPlaying) lines.push(t("plan.previewing"));
-  else lines.push(t(hasExternalCandidates ? "plan.notSaved" : "plan.pending"));
-  if (hasExternalCandidates) lines.push(externalListeningNote(discoverySources, t));
-  if (backToBackPlan) lines.push(t("plan.backToBackBoundary"));
-  if (!hasExternalCandidates) lines.push(t("plan.validationScope"));
-  return lines.join("\n");
+  // Each paragraph after the list starts after a blank line, so Markdown does not fold it into
+  // the last list item.
+  const trailing = [];
+  if (!hasExternalCandidates) trailing.push(t("plan.ordering", { text: renderPlaylistRationale(plan.ordering_rationale, plan.tracks) }));
+  trailing.push(renderMix(plan, t));
+  if (spotifyWrite?.playlist) trailing.push(t("playlist.saved", { name: spotifyWrite.playlist.name, count: spotifyWrite.playlist.track_count }));
+  else if (spotifyPartialEffect?.playlist) trailing.push(renderSpotifyPartialPlaylist(spotifyPartialEffect, t));
+  else if (previewsPlaying) trailing.push(t("plan.previewing"));
+  else trailing.push(t(hasExternalCandidates ? "plan.notSaved" : "plan.pending"));
+  if (hasExternalCandidates) trailing.push(externalListeningNote(discoverySources, t));
+  if (backToBackPlan) trailing.push(t("plan.backToBackBoundary"));
+  if (!hasExternalCandidates) trailing.push(t("plan.validationScope"));
+  return [lines.join("\n"), ...trailing.filter(Boolean)].join("\n\n");
 }
 
 function renderSpotifyPlaylistEditPreview(preview, t) {
@@ -7343,13 +7376,23 @@ export class PiAgentRuntime {
         if (!quote || !this.activePromptState.promptText.includes(quote)) {
           refuse("taste_choice_quote_required", "Nothing was saved. Pass source_text as an exact quote of the listener's own words in this message; inferred choices are never saved.");
         }
+        if (this.activePromptState.tasteChoices.length >= TASTE_CHOICES_PER_TURN) {
+          refuse("taste_choice_turn_limit", `Nothing was saved. One message can make at most ${TASTE_CHOICES_PER_TURN} choices; ask the listener to name any others in their next message.`);
+        }
         const track = parameters.subject === "track";
         if (track && !parameters.title) refuse("taste_choice_title_required", "Nothing was saved. A song choice needs its title and artist.");
+        if (!quoteLongEnough(quote)) {
+          refuse("taste_choice_quote_too_short", "Nothing was saved. source_text must quote the listener's whole statement of the choice, not one word.");
+        }
         // A name alone states no choice, so a quote of only the name saves nothing.
         const bare = (value) => avoidKey(value).replace(/[^\p{L}\p{N}]+/gu, "");
         const names = [parameters.artist, parameters.title, `${parameters.title ?? ""}${parameters.artist}`, `${parameters.artist}${parameters.title ?? ""}`];
         if (names.some((name) => bare(name) === bare(quote))) {
           refuse("taste_choice_statement_required", "Nothing was saved. source_text must quote the listener's words stating the choice, not only the name.");
+        }
+        // The quote names what the choice is about, or points at what is playing or was just named.
+        if (!textNames(quote, parameters.artist) && !(track && textNames(quote, parameters.title)) && !quoteIsDeictic(quote)) {
+          refuse("taste_choice_quote_unbound", "Nothing was saved. source_text must name the artist or song the choice is about, or say this song or this artist for what is playing.");
         }
         const value = application.recordTasteChoice({
           entityType: parameters.subject,
@@ -7672,6 +7715,11 @@ export class PiAgentRuntime {
       receipts.push(...unresolvedPlaybackFailures().map((failure) => renderSpotifyPlaybackFailure(failure, t)));
       return receipts;
     };
+    // A choice is saved at once, so its line stays even when the turn is cancelled or interrupted.
+    const choiceTexts = () => promptState.tasteChoices.map((choice) => t(`choice.${choice.state === "retracted" ? "retract" : choice.stance}`, {
+      title: choice.entity_type === "track" ? choice.label : "",
+      artist: choice.entity_type === "track" ? choice.artist_credit : choice.label,
+    }).trim());
     const completedResult = (resultText, extra = {}) => {
       const priorReceipt = this.application.spotifyQueueClarificationReceipt?.();
       const priorQueue = priorReceipt ? projectSpotifyQueuePlan(priorReceipt) : null;
@@ -7707,10 +7755,13 @@ export class PiAgentRuntime {
         if (receiptText !== resultText) replaceRenderedText(receiptText);
         resultText = receiptText;
       }
-      // The model reports a queue in its own words; the host still names the blend under it.
+      // The model reports a queue or a set it played in its own words; the host still names the
+      // blend under it, on every service.
       const queueMix = promptState.spotifyQueuePlan?.queued?.length ? renderMix(promptState.spotifyQueuePlan, t) : null;
-      if (queueMix && !resultText.includes(queueMix)) {
-        const addition = resultText ? `\n\n${queueMix}` : queueMix;
+      const playbackMix = renderMix(promptState.musicPlaybackResult, t);
+      for (const mix of [queueMix, playbackMix]) {
+        if (!mix || resultText.includes(mix)) continue;
+        const addition = resultText ? `\n\n${mix}` : mix;
         resultText += addition;
         if (typeof callbacks.onTextReplace === "function") callbacks.onTextReplace(resultText);
         else callbacks.onTextDelta?.(addition);
@@ -7742,10 +7793,7 @@ export class PiAgentRuntime {
         else callbacks.onTextDelta?.(selectionNote);
       }
       // Each saved Like, Avoid or undo gets the host's own line, saying how to change it.
-      const choiceNote = promptState.tasteChoices.map((choice) => t(`choice.${choice.state === "retracted" ? "retract" : choice.stance}`, {
-        title: choice.entity_type === "track" ? choice.label : "",
-        artist: choice.entity_type === "track" ? choice.artist_credit : choice.label,
-      })).join("");
+      const choiceNote = choiceTexts().map((line) => `\n\n${line}`).join("");
       if (choiceNote) {
         finalResultText += choiceNote;
         if (typeof callbacks.onTextReplace === "function") callbacks.onTextReplace(finalResultText);
@@ -7813,7 +7861,7 @@ export class PiAgentRuntime {
       if (ownEntryId && this.nameConversations) {
         try { ownSessionId = this.application.ensureMemorySession?.()?.session_id ?? null; } catch { /* The conversation keeps its first message as its name. */ }
       }
-      this.application.beginPrompt({ text });
+      this.application.beginPrompt({ text, recentTexts: recentListenerTexts(this.agent.state.messages.slice(0, historyStartIndex)) });
       promptScopeStarted = true;
       if (callbacks.profileSeed) this.application.setProfileDiscoverySeed(callbacks.profileSeed);
       unsubscribe = this.agent.subscribe((event) => {
@@ -7946,7 +7994,7 @@ export class PiAgentRuntime {
         this.application.cancelSpotifyQueueRequest?.();
         discardPromptHistory(this.agent, historyStartIndex);
         historyFinalized = true;
-        const receipts = spotifyEffectTexts();
+        const receipts = [...spotifyEffectTexts(), ...choiceTexts()];
         const abortedText = receipts.length > 0
           ? [t("turn.cancelled"), ...receipts].join("\n\n")
           : promptState.toolExecutionStarted ? "" : streamedText || finalText;
@@ -8107,7 +8155,7 @@ To confirm, reply: ${preview.confirmation}`].join("\n\n");
       // its receipt. Keep only host evidence; discard model claims and staged
       // memory/plans. The caller can still display the returned receipt if its
       // streaming callback itself was the source of the exception.
-      const receipts = spotifyEffectTexts();
+      const receipts = [...spotifyEffectTexts(), ...choiceTexts()];
       if (!receipts.length) throw error;
       const interruptedText = [t("turn.interrupted"), ...receipts].join("\n\n");
       compactCompletedPromptHistory(this.agent, historyStartIndex, interruptedText);

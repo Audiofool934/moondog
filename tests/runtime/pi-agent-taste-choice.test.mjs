@@ -80,3 +80,107 @@ test("a choice the listener did not state, or a bare name, is refused and nothin
   assert.equal(reply.text, "Here is something close to Pink Moon.");
   assert.equal(store.listListenerCorrections({ subjectId }).length, 0);
 });
+
+const refusal = (context) => toolResult(context).content[0].text;
+
+test("a choice is bound to the listener's words: one word, an unrelated quote or a fourth choice saves nothing", async (t) => {
+  const { store, faux, runtime } = await fixture(t);
+  // Each of these quotes is in the message, but none states a choice about the artist.
+  faux.setResponses([
+    choose({ subject: "artist", artist: "Radiohead", stance: "avoid", source_text: "e" }),
+    (context) => {
+      assert.match(refusal(context), /taste_choice_quote_too_short/u);
+      return choose({ subject: "artist", artist: "Nick Drake", stance: "avoid", source_text: "like" });
+    },
+    (context) => {
+      assert.match(refusal(context), /taste_choice_quote_too_short/u);
+      return choose({ subject: "artist", artist: "Bjork", stance: "avoid", source_text: "Play" });
+    },
+    (context) => {
+      assert.match(refusal(context), /taste_choice_quote_too_short/u);
+      return choose({ subject: "artist", artist: "Bjork", stance: "avoid", source_text: "Play something like" });
+    },
+    (context) => {
+      assert.match(refusal(context), /taste_choice_quote_unbound/u);
+      return choose({ subject: "artist", artist: "Bjork", stance: "retract", source_text: "Play something like" });
+    },
+    (context) => {
+      assert.match(refusal(context), /taste_choice_quote_unbound/u);
+      return fauxAssistantMessage([fauxText("Here is something close to Pink Moon.")]);
+    },
+  ]);
+  assert.equal((await runtime.prompt("Play something like Pink Moon.")).text, "Here is something close to Pink Moon.");
+  assert.equal(store.listListenerCorrections({ subjectId }).length, 0);
+
+  const message = "I love Nick Drake, Vashti Bunyan, Linda Perhacs and Bert Jansch";
+  faux.setResponses([
+    choose({ subject: "artist", artist: "Nick Drake", stance: "like", source_text: "I love Nick Drake" }),
+    choose({ subject: "artist", artist: "Vashti Bunyan", stance: "like", source_text: message }),
+    choose({ subject: "artist", artist: "Linda Perhacs", stance: "like", source_text: message }),
+    choose({ subject: "artist", artist: "Bert Jansch", stance: "like", source_text: message }),
+    (context) => {
+      assert.match(refusal(context), /taste_choice_turn_limit/u);
+      return fauxAssistantMessage([fauxText("Saved three of them.")]);
+    },
+  ]);
+  await runtime.prompt(message);
+  assert.deepEqual(store.listListenerCorrections({ subjectId }).map((record) => record.label).sort(),
+    ["Linda Perhacs", "Nick Drake", "Vashti Bunyan"]);
+});
+
+test("a choice about what is playing can point at it in the listener's words", async (t) => {
+  const { domainServices, faux, runtime } = await fixture(t);
+  faux.setResponses([
+    choose({ subject: "track", artist: "Mira Vale", title: "Night Ferry", stance: "avoid", source_text: "never play this again" }),
+    (context) => {
+      assert.equal(toolResult(context).isError, false, refusal(context));
+      return fauxAssistantMessage([fauxText("Okay.")]);
+    },
+  ]);
+  const reply = await runtime.prompt("Ugh, never play this again.");
+  assert.match(reply.text, /Saved: I'll keep "Night Ferry" by Mira Vale out/u);
+  assert.equal(domainServices.filterDiscoveryTracks([{ title: "Night Ferry", artist_credit: "Mira Vale" }]).length, 0);
+
+  faux.setResponses([
+    choose({ subject: "artist", artist: "周杰伦", stance: "like", source_text: "我很喜欢这个歌手" }),
+    (context) => {
+      assert.equal(toolResult(context).isError, false, refusal(context));
+      return fauxAssistantMessage([fauxText("好的。")]);
+    },
+  ]);
+  assert.match((await runtime.prompt("我很喜欢这个歌手")).text, /周杰伦/u);
+});
+
+test("a choice saved in a cancelled or interrupted turn keeps its line", async (t) => {
+  const { faux, runtime } = await fixture(t);
+  faux.setResponses([
+    choose({ subject: "artist", artist: "Drake", stance: "avoid", source_text: "never play Drake again" }),
+    () => { runtime.abort(); return fauxAssistantMessage([fauxText("Also putting on")]); },
+  ]);
+  const cancelled = await runtime.prompt("never play Drake again, and put on something else");
+  assert.equal(cancelled.status, "aborted");
+  assert.match(cancelled.text, /Saved: I'll keep Drake out of what I play and suggest\./u);
+
+  faux.setResponses([
+    choose({ subject: "artist", artist: "Mira Vale", stance: "like", source_text: "I love Mira Vale" }),
+    fauxAssistantMessage([], { stopReason: "error", errorMessage: "PRIVATE_MODEL_FAILURE" }),
+  ]);
+  const interrupted = await runtime.prompt("I love Mira Vale");
+  assert.equal(interrupted.status, "interrupted");
+  assert.match(interrupted.text, /Saved: you like Mira Vale\./u);
+  assert.doesNotMatch(interrupted.text, /PRIVATE_/u);
+});
+
+test("the application hears the listener's two messages before this one", async (t) => {
+  const { faux, runtime } = await fixture(t);
+  const application = runtime.application;
+  const seen = [];
+  const beginPrompt = application.beginPrompt.bind(application);
+  application.beginPrompt = (input) => { seen.push(input.recentTexts); return beginPrompt(input); };
+  for (const text of ["Tell me about Pink Moon by Nick Drake", "Is it sad?", "How long is it?", "Play it"]) {
+    faux.setResponses([fauxAssistantMessage([fauxText("Sure.")])]);
+    await runtime.prompt(text);
+  }
+  assert.deepEqual(seen.at(-1), ["Is it sad?", "How long is it?"]);
+  assert.deepEqual(seen[0], []);
+});

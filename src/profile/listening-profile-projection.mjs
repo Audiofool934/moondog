@@ -1,3 +1,4 @@
+import { createAvoidGate } from "../core/listener-avoids.mjs";
 import { uuidV5 } from "../core/uuid-v5.mjs";
 import { musicProviderLabel } from "./music-providers.mjs";
 import { recordedMeasures } from "./recorded-measures.mjs";
@@ -218,6 +219,10 @@ function trackFields(track) {
       track?.identity_status === "resolved" ? "resolved" : "provisional",
     title,
     artist,
+    // Every credited artist, so an Avoid on a featured artist also keeps the track out.
+    artists: (Array.isArray(track?.artist_credits) ? track.artist_credits : [])
+      .map((credit) => (typeof credit?.name === "string" ? credit.name.trim() : ""))
+      .filter(Boolean),
     artistKnown: Boolean(track?.artist_credits?.[0]?.name?.trim()),
     release,
   };
@@ -1509,11 +1514,9 @@ function backToBackTracks(
     byTrack.set(metadata.trackRefId, aggregate);
   }
 
-  const avoids = combinedAvoids(direct.avoids, evidence.avoids);
+  const avoided = historyAvoidCheck(direct, evidence);
   return [...byTrack.values()]
-    .filter(
-      (item) => !avoids.some((avoid) => assertionMatchesTrack(avoid, item)),
-    )
+    .filter((item) => !avoided(item))
     .sort((left, right) => {
       if (
         right.maximumConsecutivePlays !== left.maximumConsecutivePlays
@@ -2055,6 +2058,13 @@ function combinedAvoids(listenerAvoids, providerAvoids) {
   return [...selected.values()];
 }
 
+// The shared Avoid check of every play path (src/core/listener-avoids.mjs), for history tracks.
+function historyAvoidCheck(direct, evidence) {
+  const gate = createAvoidGate(combinedAvoids(direct.avoids, evidence.avoids));
+  return (track) => gate.size > 0 &&
+    gate.avoidsTrack({ title: track.title, artist_credit: track.artist, artists: track.artists?.length ? track.artists : [track.artist] });
+}
+
 function assertionMatchesTrack(assertion, track) {
   if (assertion.entity_type === "artist") {
     return normalizedText(assertion.label) === normalizedText(track.artist);
@@ -2120,7 +2130,7 @@ function rediscoveryTracks(
 ) {
   const latestMs = Date.parse(eventAnalysis.latest ?? "");
   if (!Number.isFinite(latestMs)) return [];
-  const avoids = combinedAvoids(direct.avoids, evidence.avoids);
+  const avoided = historyAvoidCheck(direct, evidence);
   const candidates = [...eventAnalysis.lifetime.tracks.values()]
     .map((track) => {
       const lastPlayedMs = Date.parse(track.lastPlayedAt);
@@ -2140,7 +2150,7 @@ function rediscoveryTracks(
         track.engagedPlayCount >= rediscoveryMinimumEngagedPlays &&
         (!fullyTimed(track) || track.playedMs >= rediscoveryMinimumPlayedMs) &&
         track.engagedPlayCount >= track.skippedCount &&
-        !avoids.some((item) => assertionMatchesTrack(item, track)),
+        !avoided(track),
     );
   const byTime = candidates.every(({ track }) => fullyTimed(track));
   return candidates
@@ -2235,7 +2245,7 @@ function historicalReturnTracks(
   direct,
   explanations,
 ) {
-  const avoids = combinedAvoids(direct.avoids, evidence.avoids);
+  const avoided = historyAvoidCheck(direct, evidence);
   const candidates = [...eventAnalysis.lifetime.tracks.values()]
     .map((track) => ({
       track,
@@ -2249,7 +2259,7 @@ function historicalReturnTracks(
         track.engagedPlayCount >= historicalReturnMinimumEngagedPlays &&
         (!fullyTimed(track) || track.playedMs >= historicalReturnMinimumPlayedMs) &&
         track.engagedPlayCount >= track.skippedCount &&
-        !avoids.some((item) => assertionMatchesTrack(item, track)),
+        !avoided(track),
     );
   const byTime = candidates.every(({ track }) => fullyTimed(track));
   return candidates
@@ -2354,10 +2364,10 @@ function timeCapsuleTracks(
   explanations,
   maximum,
 ) {
-  const avoids = combinedAvoids(direct.avoids, evidence.avoids);
+  const avoided = historyAvoidCheck(direct, evidence);
   const byYear = new Map();
   for (const track of eventAnalysis.lifetime.tracks.values()) {
-    if (avoids.some((item) => assertionMatchesTrack(item, track))) continue;
+    if (avoided(track)) continue;
     const peak = rediscoveryPeakYear(track);
     if (
       !peak ||

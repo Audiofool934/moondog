@@ -34,6 +34,7 @@ export default {
   "failure.preparationStopped": ({ evidence }) => `Die Prüfung des Wiedergabegeräts wurde nicht abgeschlossen (${evidence}); es wurde keine Wiedergabe-Anfrage gesendet. Prüfe den Gerätestatus in Spotify, bevor du es erneut versuchst.`,
   "failure.queueRequestRequired": "Es wurden keine Songs zur Warteschlange hinzugefügt: Ich konnte diese Antwort keiner Anfrage für die Warteschlange zuordnen. Um fortzufahren, braucht es eine ausdrückliche Bitte, Musik zur Warteschlange hinzuzufügen.",
   "failure.notSent": ({ code }) => `An Spotify wurde nichts gesendet: Ich konnte das keinem der gefundenen Songs zuordnen (${code}). Frag noch einmal mit Songtitel oder Künstler, dann suche ich erneut.`,
+  "failure.avoided": "An Spotify wurde nichts gesendet: Du wolltest diesen Künstler oder diesen Song nicht mehr hören. Sag mir jederzeit, wenn du das ändern willst.",
   "failure.outcome.lookup": "Die Spotify-Suche wurde nicht abgeschlossen",
   "failure.outcome.unknown": "Das Ergebnis der Spotify-Aktion ist unklar",
   "failure.outcome.unconfirmed": "Die Spotify-Wiedergabeaktion wurde nicht bestätigt",

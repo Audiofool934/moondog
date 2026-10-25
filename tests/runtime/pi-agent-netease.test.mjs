@@ -84,3 +84,34 @@ test("a request to play goes to NetEase, which plays only a playable recording a
   assert.ok(!calls.some((args) => args.includes("81804C7DB01B6A0CB44E9AE685E829AA")), "the unplayable original is never sent");
   assert.ok(calls.some((args) => args[0] === "search" && args.at(-1) === "想听稻香"), "only the short intent goes to NetEase");
 });
+
+test("a NetEase set gets the host's mix line under the reply, and one song gets none", async () => {
+  const recorded = [];
+  const player = {
+    ready: () => true, check: async () => {}, search: async () => [], nowPlaying: async () => ({ state: "stopped" }),
+    play: async ({ items }) => ({ mode: "playing", songs: items.map((item, index) => ({ id: `fictional${index}`, title: item.title, artists: [item.artist] })) }),
+  };
+  const app = new MoondogApplication({ importsRoot: "/private/moondog-synthetic-missing-source", neteasePlayer: player, playbackService: "netease",
+    domainServices: {
+      filterDiscoveryTracks: (tracks) => tracks,
+      listeningMix: (tracks) => tracks.map((track) => track.title === "Glass Harbor" ? "familiar" : "new"),
+      recordMoondogSuggestions: (entries) => recorded.push(...entries),
+    } });
+  const { faux, runtime } = runtimeFor(app);
+  const play = (songs) => fauxAssistantMessage([fauxToolCall("moondog_netease_play", { songs, user_intent: "something for tonight" })], { stopReason: "toolUse" });
+  faux.setResponses([
+    play([{ title: "Glass Harbor", artist: "The Lanterns" }, { title: "Night Ferry", artist: "Mira Vale" }]),
+    (context) => {
+      const result = context.messages.find((message) => message.role === "toolResult" && message.toolName === "moondog_netease_play");
+      assert.deepEqual(JSON.parse(result.content[0].text).mix, { familiar: 1, returning: 0, heard: 0, known_artist: 0, new: 1 });
+      return fauxAssistantMessage([fauxText("Two songs for tonight.")]);
+    },
+  ]);
+  const set = await runtime.prompt("play me something for tonight");
+  assert.equal(set.text, "Two songs for tonight.\n\nFrom your history: 1 you play often, 1 new to you.");
+  assert.deepEqual(recorded.map((entry) => [entry.title, entry.mixSlot]), [["Glass Harbor", "familiar"], ["Night Ferry", "new"]]);
+
+  faux.setResponses([play([{ title: "Night Ferry", artist: "Mira Vale" }]), fauxAssistantMessage([fauxText("Playing it.")])]);
+  assert.equal((await runtime.prompt("play Night Ferry by Mira Vale")).text, "Playing it.");
+  assert.equal(recorded.length, 2, "a song the listener named stays out of Moondog's ledger");
+});

@@ -1897,12 +1897,9 @@ export class ListeningHistoryStore {
     return tracks.map((track) => mixSlot(track, familiarity));
   }
 
-  // One projection serves the mix and the suggestion history until the store changes. A new
-  // suggestion changes neither until its plays arrive, so this connection's own ledger writes
-  // leave the projection in place.
+  // One projection serves the mix and the suggestion history until the store changes.
   #listeningSnapshot(subjectId) {
-    const version = `${subjectId}:${this.#database.prepare("PRAGMA data_version").get().data_version}:${
-      this.#database.prepare("SELECT total_changes() AS changes").get().changes - this.#ledgerChanges}`;
+    const version = `${subjectId}:${this.listeningDataVersion()}`;
     if (this.#snapshot?.version !== version) {
       const projected = this.#profileProjection({ subjectId, maxItems: 1 });
       this.#snapshot = { version, adopted: projected.adoptedSuggestionIds,
@@ -2081,6 +2078,15 @@ export class ListeningHistoryStore {
       this.#database.prepare("SELECT total_changes() AS changes").get().changes}`;
   }
 
+  // profileDataVersion without this connection's own ledger writes. A new suggestion changes no
+  // projection until its plays arrive, so caches of the projection, the Avoids and the build
+  // input key on this and are not rebuilt after every play or queue.
+  listeningDataVersion() {
+    if (this.#closed) throw new Error("Listening history store is closed");
+    return `${this.#database.prepare("PRAGMA data_version").get().data_version}:${
+      this.#database.prepare("SELECT total_changes() AS changes").get().changes - this.#ledgerChanges}`;
+  }
+
   profileEvidenceRevision({ subjectId } = {}) {
     if (this.#closed) throw new Error("Listening history store is closed");
     if (!isUuid(subjectId)) throw new TypeError("A valid profile subject is required");
@@ -2103,11 +2109,15 @@ export class ListeningHistoryStore {
         digest.update(JSON.stringify(row)).update("\0");
       }
     }
-    // Moondog's suggestions decide which plays count as the listener's own. One made after the
-    // latest stored play matches nothing yet, so it leaves the reading current.
-    const suggestions = this.#database.prepare(`SELECT suggestion_id, provider_track_id, isrc, track_key, release_key, title,
-      artist_credit, requested_at FROM moondog_suggestions WHERE requested_at <= (SELECT MAX(occurred_at) FROM listening_events WHERE subject_id = ?)
-      ORDER BY suggestion_id`).all(subjectId.toLowerCase());
+    // Moondog's suggestions decide which plays count as the listener's own. A play can match a
+    // suggestion made up to SUGGESTION_WINDOW.beforeMs after it, for clock skew; one made later
+    // than that after the latest stored play matches nothing yet, so it leaves the reading current.
+    const latest = this.#database.prepare("SELECT MAX(occurred_at) AS latest FROM listening_events WHERE subject_id = ?")
+      .get(subjectId.toLowerCase()).latest;
+    const latestMs = Date.parse(latest ?? "");
+    const suggestions = Number.isFinite(latestMs) ? this.#database.prepare(`SELECT suggestion_id, provider_track_id, isrc, track_key,
+      release_key, title, artist_credit, requested_at FROM moondog_suggestions WHERE requested_at <= ? ORDER BY suggestion_id`)
+      .all(new Date(latestMs + SUGGESTION_WINDOW.beforeMs).toISOString()) : [];
     if (suggestions.length) digest.update("moondog_suggestions\0").update(JSON.stringify(suggestions));
     return digest.digest("hex");
   }

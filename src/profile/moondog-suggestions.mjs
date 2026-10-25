@@ -4,12 +4,13 @@ const HOUR_MS = 3_600_000;
 const DAY_MS = 86_400_000;
 
 // A stored play is one Moondog started when it is the same recording as a suggestion (the same
-// Spotify track or ISRC) or the same song by title and primary artist, and it lands from five
-// minutes before the request (clocks differ) to six hours after it: long enough for a queued
-// batch to play out, short enough that a later return is the listener's own. A matching play
-// after that window is the listener's choice and marks the suggestion adopted. The match runs
-// whenever the profile is read, so a later history import is matched the same way.
-export const SUGGESTION_WINDOW = Object.freeze({ beforeMs: 5 * 60_000, afterMs: 6 * HOUR_MS });
+// Spotify track or ISRC) or the same song by title and primary artist, and it lands from 60
+// seconds before the request to six hours after it: long enough for a queued batch to play out,
+// short enough that a later return is the listener's own. A play's time is when it ended, so one
+// that ended before the request was the listener's; the 60 seconds only absorb clock skew. A
+// matching play after the window is the listener's choice and marks the suggestion adopted. The
+// match runs whenever the profile is read, so a later history import is matched the same way.
+export const SUGGESTION_WINDOW = Object.freeze({ beforeMs: 60_000, afterMs: 6 * HOUR_MS });
 
 export const SUGGESTION_SERVICES = Object.freeze(["spotify", "netease", "apple_music"]);
 
@@ -117,8 +118,9 @@ export function markMoondogStartedPlays(eventRows, suggestions) {
 
 // The declared mix: where each song sits in the listener's own plays, Moondog's plays left out.
 // At least 3 plays is a song they know: familiar when one falls within 365 days of their latest
-// play, otherwise returning (then none falls in the last 180 days either). One or two plays is a
-// song they have heard. With none, it is new from an artist they play, or new to them.
+// play, otherwise returning (then none falls in the last 180 days either). One or two plays, or
+// only plays Moondog started, is a song they have heard. With none, it is new from an artist
+// they play, or new to them.
 export const MIX_SLOTS = Object.freeze(["familiar", "returning", "heard", "known_artist", "new"]);
 
 /** What the listener's own plays say about songs and artists, or null with no plays at all. */
@@ -135,7 +137,8 @@ export function listeningFamiliarity(catalog, referenceDate) {
     tracks.set(key, known);
   }
   const artists = new Set((catalog.history_artists ?? []).map((row) => normalizedArtistName(row.name)).filter(Boolean));
-  return { referenceMs, tracks, artists };
+  const moondogHeard = new Set((catalog.moondog_suggestions ?? []).map((row) => trackMatchKey(row.label, row.artist_credit)).filter(Boolean));
+  return { referenceMs, tracks, artists, moondogHeard };
 }
 
 export function mixSlot(track, familiarity) {
@@ -143,14 +146,17 @@ export function mixSlot(track, familiarity) {
   const names = Array.isArray(track?.artists) && track.artists.length ? track.artists : creditNames(track?.artist_credit);
   let plays = 0;
   let lastMs = 0;
+  let moondogHeard = false;
   for (const name of names) {
-    const known = familiarity.tracks.get(trackMatchKey(track?.title, name));
+    const key = trackMatchKey(track?.title, name);
+    moondogHeard ||= familiarity.moondogHeard?.has(key) === true;
+    const known = familiarity.tracks.get(key);
     if (!known) continue;
     plays += known.plays;
     lastMs = Math.max(lastMs, known.lastMs);
   }
   if (plays >= 3) return familiarity.referenceMs - lastMs <= 365 * DAY_MS ? "familiar" : "returning";
-  if (plays > 0) return "heard";
+  if (plays > 0 || moondogHeard) return "heard";
   return names.some((name) => familiarity.artists.has(normalizedArtistName(name))) ? "known_artist" : "new";
 }
 

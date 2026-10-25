@@ -93,3 +93,9 @@ export function cachedAvoidGate(cache, version, readAvoids) {
   }
   return cache.gate;
 }
+
+// The store's data version without its own ledger writes, which change no projection until
+// their plays arrive (listeningDataVersion in listening-history-store.mjs).
+export function listeningVersion(store) {
+  return store?.listeningDataVersion?.() ?? store?.profileDataVersion?.();
+}

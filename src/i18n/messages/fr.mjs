@@ -34,6 +34,7 @@ export default {
   "failure.preparationStopped": ({ evidence }) => `Les vérifications de l'appareil de lecture n'ont pas abouti (${evidence}) ; aucune demande de lecture n'a été envoyée. Vérifiez l'état de l'appareil Spotify avant de réessayer.`,
   "failure.queueRequestRequired": "Aucun morceau n'a été ajouté à la file d'attente : je n'ai pas pu relier cette réponse à une demande d'ajout. Il faut une demande explicite d'ajouter de la musique à la file d'attente pour continuer.",
   "failure.notSent": ({ code }) => `Rien n'a été envoyé à Spotify : je n'ai pas pu relier cela aux morceaux trouvés (${code}). Redemandez avec le titre ou l'artiste, et je chercherai à nouveau.`,
+  "failure.avoided": "Rien n'a été envoyé à Spotify : vous m'avez demandé d'écarter cet artiste ou ce morceau. Dites-le-moi quand vous voulez pour changer cela.",
   "failure.outcome.lookup": "La recherche Spotify n'a pas abouti",
   "failure.outcome.unknown": "Le résultat de l'action Spotify est incertain",
   "failure.outcome.unconfirmed": "L'action de lecture Spotify n'a pas été confirmée",

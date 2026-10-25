@@ -35,6 +35,7 @@ export default {
   "failure.preparationStopped": ({ evidence }) => `Playback device checks did not complete (${evidence}); no song play request was sent. Check Spotify device state before trying again.`,
   "failure.queueRequestRequired": "No songs were queued: I could not connect this reply to a queue request. An explicit request to add music to the playback queue is needed to continue.",
   "failure.notSent": ({ code }) => `Nothing was sent to Spotify: I couldn't match that to the songs I found (${code}). Ask again with the song or artist name, and I'll search again.`,
+  "failure.avoided": "Nothing was sent to Spotify: you asked me to keep that artist or song out of what I play. Tell me any time to change it.",
   "failure.outcome.lookup": "The Spotify lookup did not complete",
   "failure.outcome.unknown": "The Spotify action outcome is uncertain",
   "failure.outcome.unconfirmed": "The Spotify playback action was not confirmed",
