@@ -572,8 +572,31 @@ function normalized(value) {
   return value.normalize("NFKC").toLocaleLowerCase("en-US");
 }
 
+// Memories the listener saved themselves: with remember, /remember or the desktop app, or by
+// asking Moondog in conversation, where the host checks the words against their message.
+const listenerSavedOrigins = ["explicit_user", "agent_from_explicit_user_statement"];
+
+// Text cut to `maximum` characters, ending in an ellipsis when it was cut.
+function clipped(value, maximum) {
+  const characters = Array.from(value);
+  return characters.length > maximum ? `${characters.slice(0, maximum).join("").trimEnd()}…` : value;
+}
+
+// Common English words that would recall unrelated memories on their own.
+const stopwords = new Set(`about after again all also am an and any are as at be been but by can could
+  did do does don for from get had has have he her here him his how if in into is it its just let like
+  me more most my no not now of on one or our out please really she so some than that the their them
+  then there these they this those to too up us very was we were what when where which who why will
+  with would you your`.split(/\s+/u));
+const cjkScript = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
+const cjkScripts = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]+/gu;
+// A word without a plural "s", so "record" and "records" find each other.
+const singular = (word) => (word.length > 3 && word.endsWith("s") && !word.endsWith("ss") ? word.slice(0, -1) : word);
+
+// Search terms in a query: Han bigrams, and whole words elsewhere. No query gives null, which
+// matches everything; a query of only common words gives no terms, which matches nothing.
 function queryTerms(value) {
-  if (typeof value !== "string") return [];
+  if (typeof value !== "string" || !value.trim()) return null;
   const text = normalized(value);
   const segments = text.match(/\p{Script=Han}+|[\p{L}\p{N}]+/gu) ?? [];
   const terms = [];
@@ -584,18 +607,21 @@ function queryTerms(value) {
       for (let index = 0; index < characters.length - 1; index += 1) {
         terms.push(`${characters[index]}${characters[index + 1]}`);
       }
-    } else if (Array.from(segment).length >= 2) {
-      terms.push(segment);
+    } else if (Array.from(segment).length >= 2 && !stopwords.has(segment)) {
+      terms.push(cjkScript.test(segment) ? segment : singular(segment));
     }
   }
   return [...new Set(terms)].slice(0, 24);
 }
 
+// CJK terms match inside the text, since those scripts do not space words; other terms match
+// whole words only, plural or not, so "me" no longer recalls "named".
 function relevanceScore(memory, terms) {
-  if (terms.length === 0) return 0;
+  if (!terms?.length) return 0;
   const content = normalized(memory.content);
+  const words = new Set((content.replace(cjkScripts, " ").match(/[\p{L}\p{N}]+/gu) ?? []).map(singular));
   return terms.reduce(
-    (score, term) => score + (content.includes(term) ? term.length : 0),
+    (score, term) => score + ((cjkScript.test(term) ? content.includes(term) : words.has(term)) ? term.length : 0),
     0,
   );
 }
@@ -724,6 +750,16 @@ export class LocalMemoryStore {
         timestamp,
         timestamp,
       );
+    // Saving again what the memory agent drew from talk makes it the listener's own.
+    if (inserted.changes === 0 && listenerSavedOrigins.includes(mutation.origin)) {
+      this.#database
+        .prepare(`
+          UPDATE memory_claims SET origin = ?
+          WHERE status = 'active' AND normalized_content = ?
+            AND origin NOT IN (${listenerSavedOrigins.map(() => "?").join(", ")})
+        `)
+        .run(mutation.origin, mutation.normalizedContent, ...listenerSavedOrigins);
+    }
     const row = this.#database
       .prepare(`
         SELECT *
@@ -1928,7 +1964,7 @@ export class LocalMemoryStore {
     const terms = queryTerms(query);
     const ranked = rows
       .map((row) => ({ row, score: relevanceScore(row, terms) }))
-      .filter(({ score }) => terms.length === 0 || score > 0)
+      .filter(({ score }) => terms === null || score > 0)
       .sort(
         (left, right) =>
           right.score - left.score ||
@@ -1978,7 +2014,7 @@ export class LocalMemoryStore {
         score: relevanceScore({ content: row.summary }, terms),
       }))
       .filter(
-        ({ score }) => terms.length === 0 || score > 0,
+        ({ score }) => terms === null || score > 0,
       )
       .sort(
         (left, right) =>
@@ -2030,29 +2066,50 @@ export class LocalMemoryStore {
     }));
   }
 
+  // What the agent reads on every model request, so it is kept short: no ids it cannot use,
+  // and earlier turns clipped.
   context({ query, currentSessionId } = {}) {
     this.#assertOpen();
-    const durableMemories = this.listMemories({ limit: 12 })
-      .filter((memory) => memory.kind !== "fact")
-      .slice(0, 6);
+    // Facts the memory agent drew from conversations come back only when a request is about
+    // them. A fact the listener saved themselves is something they want kept in mind, so it
+    // stays in view, in slots of its own so saved notes never push out a preference or a rule.
+    const latest = (filter, ...values) => this.#database.prepare(`SELECT * FROM memory_claims
+      WHERE status = 'active' AND ${filter} ORDER BY updated_at DESC, memory_id ASC LIMIT ?`).all(...values);
+    const durableMemories = [
+      ...latest("kind != 'fact'", 6),
+      ...latest(`kind = 'fact' AND origin IN (${listenerSavedOrigins.map(() => "?").join(", ")})`, ...listenerSavedOrigins, 4),
+    ].map(publicMemory);
     const durableIds = new Set(
       durableMemories.map((memory) => memory.memory_id),
     );
+    const memory = ({ memory_id, kind, horizon, text, created_at }) => ({ memory_id, kind, horizon, text, created_at });
     return {
-      durable_memories: durableMemories,
-      relevant_memories: this.listMemories({ limit: 8, query }).filter(
-        (memory) => !durableIds.has(memory.memory_id),
-      ),
+      durable_memories: durableMemories.map(memory),
+      relevant_memories: this.listMemories({ limit: 8, query })
+        .filter((candidate) => !durableIds.has(candidate.memory_id))
+        .map(memory),
       recent_episodes: this.recentEpisodes({
         query,
         excludeSessionId: currentSessionId,
         limit: 10,
-      }),
+      }).map((episode) => ({
+        kind: episode.kind,
+        summary: clipped(episode.summary, 400),
+        occurred_at: episode.occurred_at,
+        ...(episode.expires_at ? { expires_at: episode.expires_at } : {}),
+      })),
       recent_sessions: this.recentSessions({
         excludeSessionId: currentSessionId,
         limit: 2,
         turnsPerSession: 6,
-      }),
+      }).map((session) => ({
+        started_at: session.started_at,
+        ended_at: session.ended_at,
+        turns: session.turns.map((turn) => ({
+          ...turn,
+          text: clipped(turn.text, turn.role === "assistant" ? 600 : 400),
+        })),
+      })),
     };
   }
 

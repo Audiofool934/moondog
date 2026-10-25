@@ -70,10 +70,9 @@ test("local memory persists completed sessions and explicit durable memories", a
 
     assert.equal(context.durable_memories[0].memory_id, saved.memory_id);
     assert.equal(context.durable_memories[0].kind, "preference");
-    assert.deepEqual(
-      context.durable_memories[0].evidence_episode_ids,
-      saved.evidence_episode_ids,
-    );
+    // The agent cannot use evidence or session ids, so its context leaves them out.
+    assert.equal(context.durable_memories[0].evidence_episode_ids, undefined);
+    assert.equal(context.recent_sessions[0].session_id, undefined);
     assert.equal(context.recent_sessions.length, 1);
     assert.deepEqual(
       context.recent_sessions[0].turns.map((turn) => turn.role),
@@ -86,6 +85,97 @@ test("local memory persists completed sessions and explicit durable memories", a
       episodes: 2,
       active_memories: 1,
     });
+  });
+});
+
+test("a fact the listener saved stays in view, while a fact drawn from talk waits for a matching request", async () => {
+  await withMemoryStore(async ({ store }) => {
+    const saved = store.remember({ text: "Has a turntable called Fictional Orbit", kind: "fact" });
+    store.remember({ text: "Lives near a fictional harbor", kind: "fact", origin: "memory_agent_explicit" });
+    const session = store.startSession();
+
+    const context = store.context({ query: "Something for tonight", currentSessionId: session.session_id });
+    assert.deepEqual(context.durable_memories.map((memory) => memory.memory_id), [saved.memory_id]);
+    assert.deepEqual(context.relevant_memories, []);
+
+    const asked = store.context({ query: "What is near the harbor?", currentSessionId: session.session_id });
+    assert.deepEqual(asked.relevant_memories.map((memory) => memory.text), ["Lives near a fictional harbor"]);
+  });
+});
+
+test("saved notes have their own slots, so they never push a preference or a rule out of view", async () => {
+  let tick = Date.parse("2026-10-01T09:00:00.000Z");
+  await withMemoryStore(async ({ store }) => {
+    store.remember({ text: "Never play vocal tracks while I work", kind: "constraint" });
+    store.remember({ text: "I prefer albums in full over shuffled playlists", kind: "preference" });
+    for (let index = 0; index < 6; index += 1) {
+      store.remember({ text: `Owns fictional record number ${index}`, kind: "fact" });
+    }
+    const context = store.context({ query: "something for tonight" });
+    assert.deepEqual(context.durable_memories.map((memory) => memory.text), [
+      "I prefer albums in full over shuffled playlists",
+      "Never play vocal tracks while I work",
+      "Owns fictional record number 5",
+      "Owns fictional record number 4",
+      "Owns fictional record number 3",
+      "Owns fictional record number 2",
+    ]);
+  }, { clock: () => new Date((tick += 1_000)) });
+});
+
+test("a fact saved by asking Moondog, or saved again by the listener, stays in view", async () => {
+  await withMemoryStore(async ({ store }) => {
+    store.remember({ text: "Plays guitar in a fictional band", kind: "fact", origin: "agent_from_explicit_user_statement" });
+    store.remember({ text: "Lives near a fictional harbor", kind: "fact", origin: "memory_agent_explicit" });
+    assert.deepEqual(store.context({ query: "something for tonight" }).durable_memories.map((memory) => memory.text),
+      ["Plays guitar in a fictional band"]);
+
+    // The listener saves what the memory agent had drawn from talk; now it is theirs.
+    const again = store.remember({ text: "Lives near a fictional harbor", kind: "fact" });
+    assert.equal(again.created, false);
+    assert.deepEqual(store.context({ query: "something for tonight" }).durable_memories.map((memory) => memory.text).sort(),
+      ["Lives near a fictional harbor", "Plays guitar in a fictional band"]);
+  });
+});
+
+test("recall matches whole words, skips common words, and still finds Chinese text", async () => {
+  await withMemoryStore(async ({ store }) => {
+    store.remember({ text: "Has a cat named Fictional Pebble", kind: "fact", origin: "memory_agent_explicit" });
+    store.remember({ text: "Some evenings are for ambient tapes", kind: "preference", origin: "memory_agent_explicit" });
+    store.remember({ text: "喜欢深夜听爵士", kind: "preference", origin: "memory_agent_explicit" });
+
+    const texts = (query) => store.listMemories({ query }).map((memory) => memory.text);
+    // "me" is inside "named" and "some" is a common word; neither recalls anything now.
+    assert.deepEqual(texts("Play me some of the music"), []);
+    assert.deepEqual(texts("ambient please"), ["Some evenings are for ambient tapes"]);
+    assert.deepEqual(texts("Pebble?"), ["Has a cat named Fictional Pebble"]);
+    assert.deepEqual(texts("来点爵士"), ["喜欢深夜听爵士"]);
+    // Singular and plural find each other.
+    assert.deepEqual(texts("a tape"), ["Some evenings are for ambient tapes"]);
+    assert.deepEqual(texts("cats"), ["Has a cat named Fictional Pebble"]);
+    // No query still lists everything.
+    assert.equal(texts(undefined).length, 3);
+  });
+});
+
+test("the agent's memory context clips earlier turns and marks the cut", async () => {
+  await withMemoryStore(async ({ store }) => {
+    const earlier = store.startSession();
+    store.appendCompletedTurn(earlier.session_id, {
+      user: `Tell me about fictional records ${"and more ".repeat(100)}`,
+      assistant: `A long fictional answer. ${"Another sentence here. ".repeat(500)}`,
+    });
+    store.appendCompletedTurn(earlier.session_id, { user: "Short question", assistant: "Short answer." });
+    const current = store.rotateSession("local:main", "new_session");
+
+    const [session] = store.context({ query: "records", currentSessionId: current.session_id }).recent_sessions;
+    const [user, assistant, shortUser, shortAssistant] = session.turns;
+    assert.ok(user.text.length <= 401 && user.text.endsWith("…"));
+    assert.ok(assistant.text.length <= 601 && assistant.text.endsWith("…"));
+    assert.equal(shortUser.text, "Short question");
+    assert.equal(shortAssistant.text, "Short answer.");
+    // The memory tool still reads the stored turn in full.
+    assert.ok(store.recentSessions({ excludeSessionId: current.session_id })[0].turns[1].text.length > 10_000);
   });
 });
 

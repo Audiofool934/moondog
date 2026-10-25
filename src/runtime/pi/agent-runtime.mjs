@@ -6345,6 +6345,7 @@ Grounding and evidence rules:
 - When personalization matters, call moondog_profile_summary instead of assuming a profile.
 - Before saying how often, when, or whether the listener played something, check the listening coverage. Plays inside a gap, outside every source's span, or after recent_plays_checked_at are unknown, not zero. When a gap could hold the plays in question, lead with that boundary, for example "I have no records from August 30 to October 21", and do not conclude that the listener rarely plays it or only just found it.
 - The saved reading is enduring taste up to its listening date. Recent attention is the present: stored plays from the last four weeks, and Spotify's four-week top artists, which count listening on every device, including plays Moondog never stored. When they disagree about what the listener plays lately, trust recent attention, and say which one you read.
+- product.listener_clock is the listener's local time, or null when it is unknown. When a request leaves the choice open, the hour and day can shape a suggestion, for example late at night or on a weekday morning. It is not a preference, and the listener's words always win.
 - For requests to revisit, rediscover, or build from older listening, call moondog_rediscovery_candidates. Its private_history tracks had meaningful historical attention, no appearance in the stated quiet window, and no active avoid signal. Treat them as listen-again prompts, not proof of liking or intentional abandonment.
 - Use the rediscovery tool's candidate_set_id directly with moondog_playlist_plan. If the rediscovery tool is unavailable, profile summary candidates may be discussed with their limits but cannot be planned unless another active trusted candidate set contains them.
 - For requests about music that repeatedly came back after long absences, call moondog_historical_return_candidates. Its private_history tracks have one or more observed gaps that meet the stated threshold and no active avoid signal. Treat recurrence as a retained-history pattern, not proof of liking, nostalgia, or intentional absence.
@@ -6901,7 +6902,68 @@ function renderUnvalidatedPlaylistPlan(t) {
   return t("plan.unvalidated");
 }
 
-async function trustedContextSnapshot(application, runtimeStatus, query) {
+const WEEKDAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+
+// The listener's local time by the hour, so the context changes at most once an hour.
+export function listenerClock(now = new Date()) {
+  const hour = now.getHours();
+  const pad = (value) => String(value).padStart(2, "0");
+  return {
+    local_date: `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`,
+    weekday: WEEKDAYS[now.getDay()],
+    local_hour: hour,
+    part_of_day: hour < 5 ? "late_night" : hour < 8 ? "early_morning" : hour < 12 ? "morning"
+      : hour < 17 ? "afternoon" : hour < 22 ? "evening" : "late_night",
+    time_zone: Intl.DateTimeFormat().resolvedOptions().timeZone ?? null,
+  };
+}
+
+// The product block both branches of the snapshot share; only runtime and source differ.
+function productContext(application, query, now, { runtime, source }) {
+  return {
+    playback: application.playbackStatus?.() ?? null,
+    runtime,
+    source,
+    music_catalog: application.musicCatalogReady?.()
+      ? {
+          state: "configured",
+          provider: "apple_music",
+          storefront: appleMusicStorefront(),
+          access: "read_only",
+          external_candidate_planning:
+            application.musicDiscoveryReady?.() === true,
+        }
+      : { state: "unavailable" },
+    music_similarity: application.musicSimilarityReady?.()
+      ? {
+          state: "configured",
+          provider: "listenbrainz",
+          identity_provider: "wikidata",
+          access: "read_only",
+          external_candidate_planning: true,
+        }
+      : { state: "unavailable" },
+    external_effects: application.spotifyReady?.()
+      ? "spotify_control"
+      : "disabled",
+    pending_spotify_playlist:
+      pendingPlaylistPresentation(application, query),
+    pending_spotify_playlist_removal: application.spotifyRemovalStatus?.() ?? { state: "none" },
+    pending_spotify_playlist_edit:
+      application.pendingSpotifyPlaylistEditStatus?.() ?? {
+        state: "none",
+      },
+    selected_profile_track: application.profileDiscoverySeedContext?.() ?? null,
+    spotify_read_selections: application.spotifyReadContext?.() ?? [],
+    spotify_quick_edit_context: application.spotifyQuickEditContextStatus?.() ?? null,
+    spotify_playback_context: application.spotifyPlaybackContextStatus?.() ?? null,
+    // A host that cannot know the listener's time zone passes no clock, and the time stays unknown.
+    listener_clock: now ? listenerClock(now) : null,
+    reply_language: replyLanguage(query, application),
+  };
+}
+
+async function trustedContextSnapshot(application, runtimeStatus, query, now) {
   try {
     const [source, profile, listenerModel] = await Promise.all([
       application.sourceStatus(),
@@ -6917,10 +6979,7 @@ async function trustedContextSnapshot(application, runtimeStatus, query) {
       recent_sessions: [],
     };
     return {
-      product: {
-        product: "moondog",
-        slice: "A3_s3_open_similarity+A4_s4_playlist_editor",
-        playback: application.playbackStatus?.() ?? null,
+      product: productContext(application, query, now, {
         runtime: {
           state: runtimeStatus.state,
           provider: runtimeStatus.provider,
@@ -6931,41 +6990,7 @@ async function trustedContextSnapshot(application, runtimeStatus, query) {
           imported_tracks: source.latest?.tracks ?? 0,
           complete_listening_history: false,
         },
-        music_catalog: application.musicCatalogReady?.()
-          ? {
-              state: "configured",
-              provider: "apple_music",
-              storefront: appleMusicStorefront(),
-              access: "read_only",
-              external_candidate_planning:
-                application.musicDiscoveryReady?.() === true,
-            }
-          : { state: "unavailable" },
-        music_similarity: application.musicSimilarityReady?.()
-          ? {
-              state: "configured",
-              provider: "listenbrainz",
-              identity_provider: "wikidata",
-              access: "read_only",
-              external_candidate_planning: true,
-            }
-          : { state: "unavailable" },
-        external_effects: application.spotifyReady?.()
-          ? "spotify_control"
-          : "disabled",
-        pending_spotify_playlist:
-          pendingPlaylistPresentation(application, query),
-        pending_spotify_playlist_removal: application.spotifyRemovalStatus?.() ?? { state: "none" },
-        pending_spotify_playlist_edit:
-          application.pendingSpotifyPlaylistEditStatus?.() ?? {
-            state: "none",
-          },
-        selected_profile_track: application.profileDiscoverySeedContext?.() ?? null,
-        spotify_read_selections: application.spotifyReadContext?.() ?? [],
-        spotify_quick_edit_context: application.spotifyQuickEditContextStatus?.() ?? null,
-        spotify_playback_context: application.spotifyPlaybackContextStatus?.() ?? null,
-        reply_language: replyLanguage(query, application),
-      },
+      }),
       profile: { state: profile.state },
       listening_coverage: application.listeningCoverage?.() ?? null,
       recent_attention: application.recentAttention?.() ?? null,
@@ -6978,47 +7003,10 @@ async function trustedContextSnapshot(application, runtimeStatus, query) {
     };
   } catch {
     return {
-      product: {
-        product: "moondog",
-          slice: "A3_s3_open_similarity+A4_s4_playlist_editor",
-        playback: application.playbackStatus?.() ?? null,
+      product: productContext(application, query, now, {
         runtime: { state: runtimeStatus.state },
         source: { state: "unavailable" },
-        music_catalog: application.musicCatalogReady?.()
-          ? {
-              state: "configured",
-              provider: "apple_music",
-              storefront: appleMusicStorefront(),
-              access: "read_only",
-              external_candidate_planning:
-                application.musicDiscoveryReady?.() === true,
-            }
-          : { state: "unavailable" },
-        music_similarity: application.musicSimilarityReady?.()
-          ? {
-              state: "configured",
-              provider: "listenbrainz",
-              identity_provider: "wikidata",
-              access: "read_only",
-              external_candidate_planning: true,
-            }
-          : { state: "unavailable" },
-        external_effects: application.spotifyReady?.()
-          ? "spotify_control"
-          : "disabled",
-        pending_spotify_playlist:
-          pendingPlaylistPresentation(application, query),
-        pending_spotify_playlist_removal: application.spotifyRemovalStatus?.() ?? { state: "none" },
-        pending_spotify_playlist_edit:
-          application.pendingSpotifyPlaylistEditStatus?.() ?? {
-            state: "none",
-          },
-        selected_profile_track: application.profileDiscoverySeedContext?.() ?? null,
-        spotify_read_selections: application.spotifyReadContext?.() ?? [],
-        spotify_quick_edit_context: application.spotifyQuickEditContextStatus?.() ?? null,
-        spotify_playback_context: application.spotifyPlaybackContextStatus?.() ?? null,
-        reply_language: replyLanguage(query, application),
-      },
+      }),
       profile: { state: "unavailable" },
       memory: { state: "unavailable" },
       memory_context: {
@@ -7034,10 +7022,11 @@ async function trustedContextSnapshot(application, runtimeStatus, query) {
 
 export class PiAgentRuntime {
   constructor({ application, models, model, provider, modelId, effort, effortLevels, thinkingLevel, modelFetch, modelRetryDelay, toolTrace = null,
-    nameConversations = false }) {
+    nameConversations = false, clock = () => new Date() }) {
     this.application = application;
     // The command passes a local trace of tool calls; tests and other hosts leave it out.
     this.toolTrace = toolTrace;
+    this.clock = clock;
     this.models = models;
     this.model = model;
     // The terminal and the window name a conversation with this model after its first reply.
@@ -7288,6 +7277,7 @@ export class PiAgentRuntime {
           application,
           this.runtimeStatus,
           query,
+          this.clock(),
         ));
         // Pi keeps the system prompt and tool declarations in the transcript.
         // Keep that leading message ahead of Moondog's per-request context.

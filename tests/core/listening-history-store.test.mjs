@@ -1031,6 +1031,26 @@ test("private profile projection combines listening, curation, and verified sear
   assert.match(explanation.interpretation_limit, /explicit current provider state/iu);
 });
 
+test("recent attention reads whole local days, so it reads the same all day", async (context) => {
+  const root = await mkdtemp(path.join(tmpdir(), "moondog-recent-attention-"));
+  context.after(() => rm(root, { recursive: true, force: true }));
+  const store = await openListeningHistoryStore({ databasePath: path.join(root, "listening-history.sqlite") });
+  context.after(() => store.close());
+  store.ingest(projectSpotifyRecentActivity({ subjectId, page: recentPage(), capturedAt }));
+
+  const morning = store.recentAttention({ subjectId, now: new Date(2026, 8, 10, 9, 5).getTime() });
+  const evening = store.recentAttention({ subjectId, now: new Date(2026, 8, 10, 21, 40).getTime() });
+  assert.deepEqual(evening, morning);
+  // Today and the 27 days before it, as local dates like the listener clock's.
+  assert.equal(morning.from_date, "2026-08-14");
+  assert.equal(morning.through_date, "2026-09-10");
+  assert.equal(morning.plays, 2);
+  assert.deepEqual(morning.top_artists.map((artist) => artist.name), ["Pink Floyd"]);
+
+  const later = store.recentAttention({ subjectId, now: new Date(2026, 8, 30, 12).getTime() });
+  assert.equal(later.plays, 0);
+});
+
 test("listening history path follows the private Moondog state root", () => {
   assert.equal(
     resolveListeningHistoryPath({ MOONDOG_STATE_HOME: "/tmp/moondog-state" }),

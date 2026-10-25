@@ -21,7 +21,7 @@ import {
 } from "../../src/core/synthetic-domain-services.mjs";
 import { openLocalMemoryStore } from "../../src/memory/local-memory-store.mjs";
 import { createSpotifyService } from "../../src/integrations/spotify/service.mjs";
-import { PiAgentRuntime } from "../../src/runtime/pi/agent-runtime.mjs";
+import { listenerClock, PiAgentRuntime } from "../../src/runtime/pi/agent-runtime.mjs";
 import { OfflineAgentRuntime } from "../../src/runtime/pi/configured-runtime.mjs";
 
 function fakeApplication() {
@@ -994,6 +994,61 @@ test("Pi adapter separates text blocks split by interleaved thinking", async () 
 
   assert.equal(result.text, expected);
   assert.equal(streamed, expected);
+});
+
+test("the trusted context stays byte-identical across tool steps and carries the listener clock", async () => {
+  await withPersistentApplication(async (application) => {
+    const earlier = application.memoryStore.startSession();
+    application.memoryStore.appendCompletedTurn(earlier.session_id, {
+      user: "Find a fictional record for the evening.",
+      assistant: "Try a fictional quiet album.",
+    });
+    application.memoryStore.remember({ text: "Has a fictional turntable", kind: "fact" });
+    application.memoryStore.rotateSession("local:main", "new_session");
+    const faux = fauxProvider();
+    const models = createModels();
+    models.setProvider(faux.provider);
+    let now = new Date(2026, 9, 24, 1, 5);
+    const runtime = new PiAgentRuntime({
+      application, models, model: faux.getModel(), provider: "faux", modelId: "faux-1", clock: () => now,
+    });
+    const seen = [];
+    const trusted = (context) => context.messages.find((message) =>
+      message.content?.[0]?.text?.startsWith("[Trusted Moondog product context]")).content[0].text;
+    faux.setResponses([
+      (context) => {
+        seen.push(trusted(context));
+        now = new Date(2026, 9, 24, 1, 40);
+        return fauxAssistantMessage([fauxToolCall("moondog_source_status", {})], { stopReason: "toolUse" });
+      },
+      (context) => {
+        seen.push(trusted(context));
+        return fauxAssistantMessage([fauxText("Here is something quiet.")]);
+      },
+    ]);
+
+    await runtime.prompt("Play something for now.");
+
+    assert.equal(seen.length, 2);
+    assert.equal(seen[1], seen[0]);
+    const product = JSON.parse(seen[0].split("\n")[1]);
+    assert.equal(product.slice, undefined);
+    assert.equal(product.product, undefined);
+    const { time_zone: timeZone, ...clock } = product.listener_clock;
+    assert.deepEqual(clock, { local_date: "2026-10-24", weekday: "saturday", local_hour: 1, part_of_day: "late_night" });
+    assert.equal(typeof timeZone, "string");
+    assert.match(seen[0], /Has a fictional turntable/u);
+    assert.match(runtime.agent.state.systemPrompt, /listener_clock is the listener's local time/u);
+  });
+});
+
+test("the listener clock names the part of the day by the local hour", () => {
+  const part = (hour) => listenerClock(new Date(2026, 9, 26, hour, 30)).part_of_day;
+  assert.deepEqual([0, 4, 5, 7, 8, 11, 12, 16, 17, 21, 22, 23].map(part), [
+    "late_night", "late_night", "early_morning", "early_morning", "morning", "morning",
+    "afternoon", "afternoon", "evening", "evening", "late_night", "late_night",
+  ]);
+  assert.equal(listenerClock(new Date(2026, 9, 26, 8)).weekday, "monday");
 });
 
 test("memory mutations commit only with a completed authoritative turn", async () => {

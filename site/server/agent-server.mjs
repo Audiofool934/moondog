@@ -150,7 +150,8 @@ export async function startAgentServer(config = configFromEnvironment(), { crede
     session.runtime = await createConfiguredRuntime(application, modelEnvironment, {
       credentials,
       modelsFactory,
-      runtimeFactory: (configuration) => new PiAgentRuntime({ ...configuration, models: guardModels(configuration.models, session) }),
+      // This server's clock is not the visitor's, so the agent is not told a local time.
+      runtimeFactory: (configuration) => new PiAgentRuntime({ ...configuration, models: guardModels(configuration.models, session), clock: () => null }),
     });
     sessions.set(id, session);
     return session;

@@ -649,6 +649,13 @@ const SCROBBLE_SOURCE_KEY = "lastfm.music_import";
 // the end minus the listening time; Account Data times are rounded to the minute.
 const MIRROR_TOLERANCE_MS = 150_000;
 const DAY_MS = 86_400_000;
+
+// A local calendar date, such as 2026-10-25.
+function localDate(date) {
+  const pad = (value) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
 const foldLabel = (value) => String(value ?? "").normalize("NFKC").toLocaleLowerCase("und")
   .replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 const lexicalCompare = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
@@ -1872,12 +1879,17 @@ export class ListeningHistoryStore {
     });
   }
 
-  // What the listener played lately: stored plays in the last `days` up to `now`, by artist.
-  // It reads the clock, not the newest play, so a history that stopped shows as quiet.
+  // What the listener played lately: stored plays on today and the `days` - 1 local days before
+  // it, by artist. It reads the clock, not the newest play, so a history that stopped shows as
+  // quiet. Whole local days keep the window, and so the model's context, the same all day.
   recentAttention({ subjectId, days = 28, now = Date.now(), limit = 10 } = {}) {
     if (this.#closed) throw new Error("Listening history store is closed");
     if (!isUuid(subjectId)) throw new TypeError("A valid profile subject is required");
-    const from = new Date(now - days * DAY_MS).toISOString();
+    const today = new Date(now);
+    const start = new Date(today);
+    start.setHours(0, 0, 0, 0);
+    start.setDate(start.getDate() - (days - 1));
+    const from = start.toISOString();
     const effective = `e.subject_id = ? AND e.occurred_at >= ?
       AND NOT EXISTS (SELECT 1 FROM listening_event_supersessions s WHERE s.superseded_event_id = e.listening_event_id)
       AND NOT EXISTS (SELECT 1 FROM listening_event_mirrors m WHERE m.mirror_event_id = e.listening_event_id)`;
@@ -1891,7 +1903,7 @@ export class ListeningHistoryStore {
       JOIN json_each(t.record_json, '$.artist_credits') a
       WHERE ${effective} AND name IS NOT NULL
       GROUP BY name ORDER BY plays DESC, last_played_at DESC LIMIT ?`).all(subject, from, limit);
-    return structuredClone({ from, to: new Date(now).toISOString(), plays, top_artists: artists });
+    return structuredClone({ from_date: localDate(start), through_date: localDate(today), plays, top_artists: artists });
   }
 
   // Which spans of time the stored plays cover, and where plays may be missing.

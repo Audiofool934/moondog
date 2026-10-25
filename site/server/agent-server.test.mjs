@@ -48,6 +48,17 @@ test("a turn streams the agent's tool steps and reply", async (t) => {
   assert.equal(events.at(-1).result.text, "You keep coming back to Mara Vale.");
 });
 
+test("the agent is not told a local time, since the server's clock is not the visitor's", async (t) => {
+  const { faux, turn, open } = await start(t);
+  faux.setResponses([(context) => {
+    const trusted = context.messages.find((message) =>
+      message.content?.[0]?.text?.startsWith("[Trusted Moondog product context]")).content[0].text;
+    assert.equal(JSON.parse(trusted.split("\n")[1]).listener_clock, null);
+    return fauxAssistantMessage([fauxText("Hello.")]);
+  }]);
+  assert.equal((await turn(await open(), "Hi")).at(-1).result.text, "Hello.");
+});
+
 test("limits arrive as Moondog's reply, and the profile build is not offered", async (t) => {
   const { faux, turn, open } = await start(t, { turnsPerSession: 1, maxPromptChars: 20 });
   const session = await open();
