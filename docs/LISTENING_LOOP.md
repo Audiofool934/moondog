@@ -1,0 +1,139 @@
+# The listening loop
+
+Design date: 2026-10-25.
+Status: the design behind Moondog's agent harness, with the first slice shipped and the next slices named.
+
+Most music assistants keep one picture of the listener: a profile, a chat memory, or a list of top artists.
+Moondog keeps six things, and it does not let one turn into another.
+Each has its own writer, its own lifetime, and its own level of trust.
+The agent reads all six on every turn, and the host enforces the ones that must hold.
+
+This document records the design, the research behind it, and the limits of each part.
+It complements the [listener profile harness research](LISTENER_PROFILE_HARNESS_RESEARCH.md), which covers how the reading is built, and the [runtime architecture](ADR_0001_AGENT_RUNTIME_AND_CLI.md), which covers how the pieces run.
+
+## Six layers
+
+| Layer | What it holds | Who writes it | How long it lasts | How the agent may use it |
+| --- | --- | --- | --- | --- |
+| The reading | Enduring taste: threads, scenes, smaller interests, curated music | The profile builder, from the evidence | Until the next revision | As taste up to its listening date, never as a current mood |
+| Movement | How each artist's place in the listening changed across the years | Code, from play timestamps | Recomputed with the evidence | As an observation of plays, never as liking or dislike |
+| Recent attention | What the listener played in the last four weeks | Imports, the recent-play sync, Spotify's short-term top artists | Rolling | As the present, when it disagrees with the reading |
+| Choices | Like and Avoid for artists and tracks | Only the listener, in the profile or in their own words in chat | Until the listener changes it | Always visible to the model; Avoid is enforced by code on every play path |
+| The moment | The current request, and the listener's local day and hour | The listener's message and the host's clock | One conversation | To shape an open request, never as a preference |
+| Moondog's suggestions | What Moondog itself queued or played, and which of those the listener later chose again | The host, from accepted receipts only | Kept with the listening history | As outcome evidence; never counted as the listener's own attention |
+
+The line between layers is the point of the design.
+A play that Moondog started is not the listener's attention.
+A faded interest is not a dislike.
+A late-night request is not a lasting preference.
+A choice the listener states is not an inference, and an inference never becomes a choice.
+
+## Why each layer exists
+
+### Choices must be restated and enforced, not described
+
+In PrefEval, models followed a stated preference less than 10% of the time after about 10 turns.
+A plain reminder of the preference raised one model from 13% to 99%, which beat self-critique and chain-of-thought ([PrefEval, ICLR 2025](https://arxiv.org/abs/2502.09597)).
+Ramos and colleagues found that editing a natural-language profile to add a preference changed recommendations, but editing it to negate one barely moved them ([Ramos et al., 2024](https://arxiv.org/abs/2402.05810)).
+
+So Moondog restates every active choice in every turn's context, including in the moment just after a correction, when the saved reading is out of date.
+Avoid is not left to the prompt.
+One host function matches it against every credited artist on every play path, including collaborations such as "A feat. B".
+A listener who says "never play this again" in chat can make that choice in their own words; the host checks that the words are the listener's before it records anything.
+
+### Movement is the part of taste that a ranking hides
+
+A lifetime ranking shows an artist who fell from 500 plays a year to 8 as an artist near the top.
+That was the remaining known gap in the first-build quality target.
+The per-artist yearly counts were already computed and then dropped.
+
+Moondog now keeps a short yearly series for each leading artist, the first and last play, a recency-weighted activation, and a deterministic label: rising, steady, fading, returning, burst, or unknown.
+The activation is ACT-R's base-level learning equation: the log of the sum over plays of age to the power -0.5.
+In studies of Last.fm histories, it was the strongest single predictor of what a person plays again ([Reiter-Haas et al., 2021](https://arxiv.org/abs/2108.02138)).
+It is measured from the date of the latest stored play, not from today, so an old archive does not read as one long fade.
+Sparse years and aggregate library play counts give unknown, not a guess.
+
+The labels describe plays.
+They do not say why the listening changed, and they never stand for liking or dislike.
+
+### The agent must not learn its own picks as the listener's taste
+
+Plays that Moondog queues come back through the recent-play sync, and later through a Spotify export, as ordinary plays.
+Without a mark, a heavy week of agent queues becomes "recent movement", and after enough plays it can reach the enduring reading.
+OpenClaw's memory design states the general rule: a fact recalled one hundred times stays one fact ([OpenClaw memory architecture](https://docs.openclaw.ai/concepts/memory-architecture)).
+
+Moondog keeps a ledger of what it started, written only from accepted receipts.
+When the profile counts attention, plays that match a suggestion soon after it was made count as Moondog's, apart from the listener's own.
+The match runs when the profile is computed, so the stored history is never rewritten and a later export is handled the same way.
+A later play of the same song, outside that window, is the listener's own choice; the ledger shows that suggestion as adopted.
+Adoption is outcome evidence, not proof of liking, and it does not enter the reading as taste.
+
+The ledger also lets the agent see what it already suggested.
+Language models repeat themselves across sessions: one study measured an effective diversity of about 0.2 to 0.3 across five samples for strong general models ([WeMusic-Agent, 2025](https://arxiv.org/abs/2512.16108)).
+
+### Curation is a mix, and the listener should see it
+
+Most listening is repetition.
+In a Spotify experiment with 15 million users, moving a session from no discovery to about 10% discovery kept satisfaction, while much more cost it ("Algorithmic balancing of familiarity, similarity and discovery in music recommendations", Spotify, CIKM 2021).
+People also tend to pick familiar music more than their stated wish for novelty predicts, more so when busy.
+Studies of calibrated recommendation found that people seldom notice a balanced list unless the system says so.
+
+So the host classifies each queued or planned song from the listener's own plays: one they play often, one back after a while, a new song from an artist they know, or new to them.
+It writes the blend in one plain line under the receipt.
+Knownness ignores version suffixes, so a remaster is not new music.
+The model still chooses the songs; the host makes the blend visible and true.
+
+### The moment shapes a request without becoming taste
+
+Requests carry a situation: late at night, a weekday morning, "for work".
+The host now gives the agent the listener's local day, hour, and part of the day.
+The clock can shape an open request.
+It is not a preference, and the listener's words always win.
+
+### The context is engineered for attention and cost
+
+The trusted context goes in front of the history on every model request, including each step of a tool loop.
+If it changes between steps, a provider's prompt cache cannot reuse the history after it ([Manus, context engineering](https://manus.im/blog/Context-Engineering-for-AI-Agents-Lessons-from-Building-Manus)).
+A millisecond timestamp in that context changed it on every step.
+The context is now byte-stable within a turn unless the state really changed, the clock changes at most once an hour, and recalled conversation turns are clipped instead of carrying replies of up to 20,000 characters.
+
+## What the layers cannot know
+
+The dark side of the moon applies to every layer.
+
+- The reading and the movement see stored plays, saves, and choices; they cannot see why a person listened or what the music meant.
+- Recent attention covers only the sources that were imported or connected; a gap in the records is unknown, not silence.
+- Moondog's suggestions are matched by track identity and time; a song that the listener chose themselves inside the window can be counted as Moondog's, and the code records how each match was made.
+- The mix line counts plays, not love; "you play often" is the most it claims.
+- The clock is the host's local time; it does not know where the listener is.
+
+## What shipped on 2026-10-25
+
+- The saved reading and every active choice stay in the agent's context after a correction, with the choices made since the reading listed apart and marked as winning.
+- One Avoid gate covers Spotify, Apple Music previews and songs, NetEase, similar-artist queues, and external candidate sets, and it matches each credited artist.
+- The agent can record a Like or an Avoid from the listener's own words in chat, with an exact-quote check, and the profile, the gate, and the context see it at once.
+- Apple Music candidate sets from storefronts other than the United States are accepted.
+- Artist rows carry first play, a yearly series, activation, and a trajectory label; the builder gets a movement section, the checker treats a faded interest called current as a material problem, and saved readings rebuild once.
+- The agent can explore artists by trajectory and sees a compact movement view in the profile summary.
+- A suggestions ledger records accepted queues, plays, and playlist writes on every service; Moondog-started plays are counted apart from the listener's own attention, and adopted suggestions are marked.
+- Discovery results say when a song was suggested before, queue batches skip a remaster of a song already queued, and queue and plan receipts carry a one-line mix.
+- The trusted context is stable within a turn, has a listener clock, clips recalled turns, keeps saved facts in view, and recalls memories by whole words.
+- The system prompt has a short curation craft section: start from an anchor the listener knows, shape an open set as a mix, let movement guide the choice, give each pick one reason the listener can check, and offer fewer songs when the candidates do not fit.
+
+The exact behavior and its tests are in the commits that introduced it.
+
+## Next slices
+
+These are the next steps in order of leverage.
+None of them is started.
+
+1. **The moment, as a card.** A host-owned card for the current conversation: the request, the situation, session-only likes and avoids, and what is queued. It expires after a few silent hours and never becomes taste. The memory store already has an expiring situational episode kind with no writer.
+2. **Service rule packs.** About half of the system prompt is Spotify-specific and loads in Apple Music and NetEase sessions too, followed by an instruction to ignore it. Split the prompt into a service-neutral core and a pack per service on the existing session section, and move each one-off incident rule into a playback eval scenario before deleting it.
+3. **Outcome signals.** A song that Moondog started and that changed within 30 seconds is a skip proxy; a song played to its end is a completion. The window player and the Music app poll already see these transitions. Keep them as outcomes of suggestions, never as dislikes.
+4. **An open descriptor layer.** MusicBrainz artist tags cover about 92% of popular artists, and Wikidata links almost all MusicBrainz genres to a CC0 parent-genre and origin graph. Release-group dates give the era of the music, apart from the year it was played. Each descriptor needs its coverage, level, and license, and lookups of a listener's history need opt-in.
+5. **A taste eval.** Fictional listeners with planted traits (an enduring core, a faded love, a saved but unplayed tail, a recent burst, Avoids on collaborations, agent-started plays) and deterministic checks on what the model receives, then one binary judge per material failure, calibrated by the owner.
+
+## Owner decisions
+
+- **Listening conversations and memory.** A Spotify read marks the whole conversation as transient, so a listening conversation leaves no episode and no turns in memory, including the listener's own words. Spotify's developer policy forbids ingesting Spotify content, which its terms define to include metadata, into an AI model ([Spotify Developer Policy](https://developer.spotify.com/policy)). A narrower line would keep the listener's text and host receipts with counts, and keep provider metadata out. That is a policy judgment for the owner, so this slice does not change it.
+- **Spotify-verified tracks as playlist candidates.** This would remove a lossy detour through Apple and ListenBrainz search for Spotify playlists, but it puts more Spotify metadata in the model's context. It waits for the same decision.
