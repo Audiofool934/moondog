@@ -84,7 +84,7 @@ export function textNamesArtist(text, artist) {
 // A quoted name: straight or curly double or single quotes, corner brackets, title marks or
 // guillemets. A straight or curly single quote inside a word is an apostrophe.
 const QUOTED = [/"([^"]+)"/gu, /“([^“”]+)”/gu, /„([^„“”]+)[“”]/gu, /«([^«»]+)»/gu, /「([^「」]+)」/gu, /『([^『』]+)』/gu,
-  /《([^《》]+)》/gu, /(?<![\p{L}\p{N}])'(.+?)'(?![\p{L}\p{N}])/gu, /‘(.+?)’(?![\p{L}\p{N}])/gu];
+  /《([^《》]+)》/gu, /(?<![\p{L}\p{N}])'(?=(.+?)'(?![\p{L}\p{N}]))/gu, /‘(.+?)’(?![\p{L}\p{N}])/gu];
 
 /** Whether text quotes this song's title, version suffixes aside. */
 export function textQuotesTitle(text, title) {

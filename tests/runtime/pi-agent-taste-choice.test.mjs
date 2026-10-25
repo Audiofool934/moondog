@@ -228,13 +228,17 @@ test("a Latin name inside CJK text, or a band named without its article, binds t
     ]);
     await runtime.prompt(quote);
   }
-  faux.setResponses([
-    choose({ subject: "artist", artist: "Bert Fictional", stance: "avoid", source_text: "play something mellow tonight" }),
-    (context) => {
-      assert.match(refusal(context), /taste_choice_quote_unbound/u);
-      return fauxAssistantMessage([fauxText("Here is something mellow.")]);
-    },
-  ]);
-  await runtime.prompt("play something mellow tonight");
+  // An article is not a pointing word: these quotes name neither the artist nor what is playing.
+  for (const quote of ["play something mellow tonight", "je n'aime pas le jazz", "Ich mag die Musik am Abend nicht",
+    "no me gusta la salsa", "non mi piace la musica lenta"]) {
+    faux.setResponses([
+      choose({ subject: "artist", artist: "Bert Fictional", stance: "avoid", source_text: quote }),
+      (context) => {
+        assert.match(refusal(context), /taste_choice_quote_unbound/u, quote);
+        return fauxAssistantMessage([fauxText("Here is something else.")]);
+      },
+    ]);
+    await runtime.prompt(quote);
+  }
   assert.deepEqual(store.listListenerCorrections({ subjectId }).map((record) => record.label).sort(), ["Mira Vale", "The Lanterns"]);
 });

@@ -609,6 +609,7 @@ An Avoid applies to every song Moondog sends: Spotify songs, queues, plans and p
 On Spotify, an album or a playlist, and a single song that Moondog starts inside its album, go on to play songs that Moondog never sends one by one, so the Avoid does not see them.
 When it blocks a song you asked for, the agent says that you asked to keep it out and offers to lift the Avoid.
 When a saved plan plays, queues or is saved after you avoided one of its songs, that song is left out and named under the reply, and the rest goes through.
+A song in a plan built from your history is checked again against its first credited artist only, so an Avoid on a featured artist made after the plan can miss it.
 The correction is a typed, provenance-backed local `TasteEvent`, while the original play records and familiarity evidence remain unchanged.
 
 Inspect or retract it with:

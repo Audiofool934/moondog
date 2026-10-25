@@ -34,6 +34,8 @@ test("a song is the listener's only when they name its title with an artist, or 
     "放《晴天》", "「Pink Moon」をかけて", "『Pink Moon』", "mets « Pink Moon »"]) {
     assert.equal(textNamesSong(text, text.includes("晴天") ? "晴天" : "Pink Moon", ["Fictional"]), true, text);
   }
+  // An apostrophe before the quote, as in '90s, does not hide the quoted title.
+  assert.equal(textNamesSong("songs from the '90s like 'Home'", "Home", ["Fictional"]), true);
   // A known limit: a bare title with no artist and no quotes is Moondog's pick.
   assert.equal(textNamesSong("play Pink Moon", "Pink Moon", ["Nick Drake"]), false);
 });

@@ -2117,7 +2117,7 @@ export class ListeningHistoryStore {
     if (this.#evidence?.dataVersion !== dataVersion || this.#evidence.ownChanges !== ownChanges) {
       this.#evidence = { dataVersion, ownChanges, fingerprint: this.#evidenceFingerprint() };
     }
-    return `${this.#evidence.fingerprint}:${ownChanges}`;
+    return this.#evidence.fingerprint;
   }
 
   #evidenceFingerprint() {

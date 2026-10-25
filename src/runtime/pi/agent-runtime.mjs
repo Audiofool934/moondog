@@ -4678,17 +4678,21 @@ const TASTE_CHOICES_PER_TURN = 3;
 const DEICTIC_WORDS = [
   "this", "that", "it", "them", "these", "those", "him", "her", "this one", "that one", "this song", "this artist",
   "이", "이거", "이 노래", "그", "그거", "저", "저거",
-  "dies", "diese", "dieses", "das", "den", "die", "ihn", "sie",
-  "esto", "esta", "este", "eso", "ese", "esa", "esos", "lo", "la",
-  "ça", "cette", "ce", "cela", "celle", "celui", "le",
+  "dies", "diese", "dieses", "ihn", "sie",
+  "esto", "esta", "este", "eso", "ese", "esa", "esos",
+  "ça", "cette", "ce", "cela", "celle", "celui",
   "questo", "questa", "quello", "quella",
   "isso", "essa", "esse", "isto", "aquilo", "aquele", "aquela"];
+// Articles that double as pronouns (das, la, le, lo) point only inside these phrases, so
+// "je n'aime pas le jazz" does not bind a choice to whatever artist the model names.
+const DEICTIC_PHRASES = ["spiel das", "das nie", "das nicht", "das hier", "das da", "den da", "die da", "den will", "den mag",
+  "die mag", "das mag", "no lo", "no la", "lo odio", "la odio", "ne le", "ne la", "je le", "je la", "non lo", "non la"];
 const DEICTIC_SUBSTRINGS = ["这", "这首", "这个", "这些", "這", "這首", "這個", "這些", "那", "那首", "那个", "那個", "那些",
   "他", "她", "它", "この", "これ", "その", "それ", "あの", "あれ"];
 
 function quoteIsDeictic(quote) {
   const words = ` ${foldedWords(quote)} `;
-  return DEICTIC_WORDS.some((word) => words.includes(` ${foldedWords(word)} `)) ||
+  return [...DEICTIC_WORDS, ...DEICTIC_PHRASES].some((word) => words.includes(` ${foldedWords(word)} `)) ||
     DEICTIC_SUBSTRINGS.some((word) => words.includes(word));
 }
 

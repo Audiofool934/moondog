@@ -40,7 +40,8 @@ So Moondog restates every active choice in every turn's context, including in th
 Avoid is not left to the prompt.
 One host function matches it against every credited artist of every song Moondog sends, including collaborations such as "A feat. B".
 A listener who says "never play this again" in chat can make that choice in their own words; the host checks that the words are the listener's before it records anything.
-The quote must name the artist or the title, or point to what is playing or was just named, near or far, in each supported language ("this", "that", "him", "这首", "那首", "この", "あの", "그거", "das", "eso", "quella"), and one message saves at most three choices.
+The quote must name the artist or the title, or point to what is playing or was just named, near or far, in each supported language ("this", "that", "him", "这首", "那首", "この", "あの", "그거", "spiel das", "eso", "quella"), and one message saves at most three choices.
+Articles that double as pronouns (das, la, le, lo) count only in pointing phrases such as "spiel das" or "no lo pongas", so "je n'aime pas le jazz" binds nothing.
 A Latin name written straight into Chinese, Japanese or Korean text counts, as in "我不想再听Coldplay了", because a change of script ends a word, and a band can be named without its leading article.
 When the gate blocks a play, the tool refuses it, and the agent tells the listener that they asked to keep it out and offers to lift the Avoid.
 A saved plan is checked again when it plays, queues or is saved, and it reads each credit as the candidate check did, so "Earth, Wind & Fire" stays one artist.
