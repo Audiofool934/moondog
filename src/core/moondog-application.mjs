@@ -1010,8 +1010,9 @@ export class MoondogApplication {
   // Resolves to { session_id, title } when it saved a name, otherwise null.
   async nameConversation(sessionId, choose, { timeoutMs = CONVERSATION_NAME_TIMEOUT_MS } = {}) {
     const controller = new AbortController();
+    // Not unref'd: when the model call holds nothing open, this timer alone settles the naming.
+    // It is cleared once naming settles, which close() forces, so it never holds an exit for long.
     const timer = setTimeout(() => controller.abort(), timeoutMs);
-    timer.unref?.();
     this.#naming.add(controller);
     try {
       const start = this.#untitledConversationStart(sessionId);
