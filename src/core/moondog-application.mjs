@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { hostname } from "node:os";
 import { setTimeout as delay } from "node:timers/promises";
 import { compactListenerProfile, readListenerProfile } from "../profile/listener-profile-build.mjs";
 
@@ -19,6 +20,11 @@ import { DEFAULT_LOCALE, normalizeLocale } from "../i18n/index.mjs";
 import { createPlaybackSelection, DEFAULT_PLAYBACK_SERVICE, normalizePlaybackService } from "./playback-preferences.mjs";
 
 const minimumNodeVersion = [22, 19, 0];
+
+// Spotify names a computer as macOS does; the host name is that name written for the network.
+const nameKey = (value) => String(value ?? "").normalize("NFKD").toLocaleLowerCase("en-US").replace(/[^\p{L}\p{N}]+/gu, "");
+const spotifyOnThisMac = (device) => String(device?.type ?? "").toLowerCase() === "computer" &&
+  nameKey(device?.name) !== "" && nameKey(device.name) === nameKey(hostname().replace(/\.local$/iu, ""));
 
 // The Spotify writes that play music. Another chosen music service leaves them out;
 // Spotify reads, saves and playlists stay.
@@ -496,8 +502,10 @@ export class MoondogApplication {
     return this.requireNetease().search({ query, limit, intent });
   }
 
-  playNetease({ items, mode, intent } = {}) {
-    return this.requireNetease().play({ items, mode, intent });
+  async playNetease({ items, mode, intent } = {}) {
+    const player = this.requireNetease();
+    if (mode !== "queue") await this.quietOtherPlayers("netease");
+    return player.play({ items, mode, intent });
   }
 
   async controlNetease({ action, positionSeconds } = {}) {
@@ -527,6 +535,7 @@ export class MoondogApplication {
   async controlMusicApp({ action } = {}) {
     if (this.musicApp?.available !== true) throw Object.assign(new Error("The Music app can be controlled only on a Mac."), { code: "music_app_unavailable" });
     if (!["pause", "resume", "next", "previous"].includes(action)) throw Object.assign(new Error(`Unknown Music app action: ${action}`), { code: "music_app_failed" });
+    if (action === "resume") await this.quietOtherPlayers("music_app");
     const now = await this.musicApp[action]();
     if (now.state === "not_allowed") throw Object.assign(new Error(now.reason), { code: "music_app_not_allowed" });
     return { service: "apple_music", ...musicAppSource(now) };
@@ -578,6 +587,29 @@ export class MoondogApplication {
     return { ...this.playbackStatus(), changed: previous !== value };
   }
 
+  // One thing plays at a time on this Mac. Before music starts on one player, the others pause:
+  // the Music app, Spotify when it plays on this Mac, NetEase, and Moondog's own player.
+  // starting is "apple_music" (Moondog's own player), "music_app", "spotify" or "netease".
+  async quietOtherPlayers(starting, { signal } = {}) {
+    await Promise.allSettled([
+      (async () => {
+        if (starting !== "music_app" && (await this.musicApp?.nowPlaying?.())?.state === "playing") await this.musicApp.pause();
+      })(),
+      (async () => {
+        if (starting === "spotify" || !this.spotifyReady()) return;
+        const service = this.requireSpotifyService();
+        const player = await service.currentPlayer({ signal });
+        if (player?.state === "available" && player.is_playing === true && spotifyOnThisMac(player.device)) await service.pause({}, { signal });
+      })(),
+      (async () => {
+        if (starting !== "netease" && this.neteaseReady() && (await this.neteasePlayer.nowPlaying()).state === "playing") await this.neteasePlayer.pause();
+      })(),
+      (async () => {
+        if (starting !== "apple_music") this.musicPreviewPlayer?.stop?.();
+      })(),
+    ]);
+  }
+
   // The service just left stops playing, so two services never play at once.
   async #stopPlaybackService(service) {
     try {
@@ -627,6 +659,7 @@ export class MoondogApplication {
       found = { kind: "tracks", played, not_found: notFound, left_out: leftOut };
     }
     if (found.played.length) {
+      await this.quietOtherPlayers("apple_music");
       await this.musicPreviewPlayer.play(structuredClone(found.played), found.album ? { album: structuredClone(found.album) } : {});
     }
     // The desktop window plays whole songs where the listener's Apple Music allows it; a terminal plays previews.
@@ -1610,7 +1643,7 @@ export class MoondogApplication {
     }
     if (action !== "resume") this.spotifyPlaybackAttempt = null;
     switch (action) {
-      case "resume": return this.#resumeSpotifySelection(parameters, { signal });
+      case "resume": return this.quietOtherPlayers("spotify", { signal }).then(() => this.#resumeSpotifySelection(parameters, { signal }));
       case "pause":
       case "next":
       case "previous":
@@ -1739,6 +1772,8 @@ export class MoondogApplication {
     this.requireSpotifyNonRemovalAction();
     const transaction = this.pendingPlaylistPromptTransaction;
     if (!transaction) throw spotifyResolutionError("spotify_queue_request_required", "Queueing runs inside a listener request.");
+    // An idle device starts the first song.
+    await this.quietOtherPlayers("spotify", { signal });
     // The model acts on the listener's words, as for a single queue entry. A parsed
     // count only sizes the batch; failing to parse a phrasing never blocks it.
     const intent = transaction.queueIntent ?? null;
@@ -1961,6 +1996,7 @@ export class MoondogApplication {
   async spotifyTransfer(input, { signal } = {}) {
     signal?.throwIfAborted();
     this.requireSpotifyNonRemovalAction();
+    await this.quietOtherPlayers("spotify", { signal });
     this.spotifyPlaybackAttempt = null;
     this.transientSpotifyContext = true;
     let selectedDevice;
@@ -2778,6 +2814,7 @@ export class MoondogApplication {
   async spotifyPlayPendingPlan({ deviceId } = {}, { signal } = {}) {
     signal?.throwIfAborted();
     this.requireSpotifyNonRemovalAction();
+    await this.quietOtherPlayers("spotify", { signal });
     if (!this.pendingSpotifyPlaylist?.plan) {
       throw spotifyResolutionError(
         "spotify_pending_playlist_unavailable",

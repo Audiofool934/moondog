@@ -6,7 +6,7 @@ import { MoondogApplication } from "../../src/core/moondog-application.mjs";
 import { createPlaybackSelection } from "../../src/core/playback-preferences.mjs";
 import { PiAgentRuntime } from "../../src/runtime/pi/agent-runtime.mjs";
 
-function fixture(t, { service = "spotify", spotify = true, apple = true, netease = false, save, musicApp = null } = {}) {
+function fixture(t, { service = "spotify", spotify = true, apple = true, netease = false, save, musicApp = null, spotifyPlayer = null } = {}) {
   const saved = [];
   const played = [];
   const spotifyActions = [];
@@ -17,7 +17,8 @@ function fixture(t, { service = "spotify", spotify = true, apple = true, netease
     playbackSelection: selection,
     musicApp,
     ...(spotify ? { spotifyConnection: { ready: () => true, publicStatus: () => ({ state: "ready" }),
-      service: { pause: async () => { spotifyActions.push("pause"); return { provider: "spotify", action: "playback.pause", ok: true, state: "accepted" }; } } } } : {}),
+      service: { pause: async () => { spotifyActions.push("pause"); return { provider: "spotify", action: "playback.pause", ok: true, state: "accepted" }; },
+        currentPlayer: async () => spotifyPlayer ?? { state: "unavailable" } } } } : {}),
     ...(apple ? {
       musicCatalog: { findArtistReleases() {}, findPreview: async ({ title, artist }) => ({ state: "resolved", track: {
         title, artist_credit: artist, preview_url: "https://audio-ssl.itunes.apple.com/itunes-assets/song.m4a",
@@ -210,4 +211,26 @@ test("the agent pauses and resumes the Music app, and a paused one stays paused 
   assert.deepEqual(music.actions, ["resume", "pause"]);
   await f.application.selectPlaybackService("spotify");
   assert.deepEqual(music.actions, ["resume", "pause"], "nothing to pause");
+});
+
+test("a song Moondog plays pauses the Music app first, so one thing plays at a time", async (t) => {
+  const music = musicApp();
+  const f = fixture(t, { service: "apple_music", musicApp: music.player });
+  f.faux.setResponses([
+    () => use("moondog_music_preview", { tracks: [{ title: "Wind of Change", artist: "Scorpions" }] }),
+    () => fauxAssistantMessage([fauxText("Playing Wind of Change.")]),
+  ]);
+  assert.equal((await f.runtime.prompt("play Wind of Change by Scorpions")).status, "completed");
+  assert.equal(f.played.length, 1);
+  assert.deepEqual(music.actions, ["pause"]);
+});
+
+test("Spotify pauses for a song Moondog plays only when it plays on this Mac", async (t) => {
+  const { hostname } = await import("node:os");
+  const here = hostname().replace(/\.local$/iu, "").replace(/-/gu, " ");
+  for (const [device, paused] of [[{ name: here, type: "Computer" }, ["pause"]], [{ name: "Kitchen", type: "Speaker" }, []]]) {
+    const f = fixture(t, { service: "apple_music", spotifyPlayer: { state: "available", is_playing: true, device } });
+    await f.application.playMusicPreview({ tracks: [{ title: "Wind of Change", artist: "Scorpions" }] });
+    assert.deepEqual(f.spotifyActions, paused, device.name);
+  }
 });

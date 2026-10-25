@@ -555,3 +555,41 @@ test("with both playing, a pause in the window keeps the Music app shown, so the
     await harness.stop();
   }
 });
+
+test("music the listener starts in the Music app stops Moondog's own player, and play in the window quiets the others", async () => {
+  mock.timers.enable({ apis: ["setTimeout", "Date"], now: 1_000_000 });
+  let state = "paused";
+  const stops = [];
+  const quiet = [];
+  const musicApp = {
+    available: true,
+    async nowPlaying() { return { state, song: { id: "1", title: "Here", artists: ["M"] }, position_ms: 0, shuffle: true, repeat: "off", playlist: null }; },
+    async cover() { return null; },
+    async resume() { state = "playing"; },
+  };
+  const desk = application("A");
+  desk.playbackService = "apple_music";
+  desk.musicApp = musicApp;
+  desk.musicPreviewPlayer = { stop: () => { stops.push("stop"); } };
+  desk.quietOtherPlayers = async (starting) => { quiet.push(starting); };
+  const harness = await openRoom({ application: desk });
+  try {
+    await harness.post({ type: "visible", visible: true });
+    await tick();
+    assert.deepEqual(stops, []);
+    state = "playing";
+    mock.timers.tick(5_000);
+    await tick();
+    assert.deepEqual(stops, ["stop"]);
+    state = "paused";
+    mock.timers.tick(5_000);
+    await tick();
+    await harness.post({ type: "control", action: "resume" });
+    await tick();
+    assert.deepEqual(quiet, ["music_app"]);
+    assert.equal(state, "playing");
+  } finally {
+    mock.timers.reset();
+    await harness.stop();
+  }
+});

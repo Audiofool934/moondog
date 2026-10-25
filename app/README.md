@@ -70,6 +70,7 @@ A model or music service chosen there lasts until the app quits, and sign-in and
   It offers only services the core can play.
   Asking Moondog for another service switches too, within the same reply; the menu, the terminal and every conversation follow one saved choice, and the service left behind stops playing.
   Leaving Apple Music pauses the Music app too. Moondog can also pause, resume and skip the Music app itself, so "switch to Spotify and keep playing there" pauses one and picks the other up where it stopped.
+  One thing plays at a time on this Mac: music Moondog starts pauses the Music app, Spotify when it plays on this Mac, and NetEase; music you start in the Music app stops Moondog's own player.
   The model's menu shows the maker in use over its models, the chosen one checked, every other signed-in maker's models in a submenu, and the thinking effort with its level.
   On a first launch the service reads "Choose a music service" until one is chosen, as the model reads "Choose a model" until there is one.
 - Typing `/` lists commands by what they open (a mistyped one stays in the composer instead of going to Moondog): `/new`, `/model`, `/language`, `/service`, `/device`, `/import`, `/memory`, `/remember`, `/folder`, `/settings` and `/help`.

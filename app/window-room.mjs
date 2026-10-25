@@ -254,12 +254,16 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
   // The Music app on this Mac, which the listener plays themselves. A new song reads its cover and,
   // without shuffle, the songs after it in its playlist.
   let musicAppRunning = false;
+  let musicAppPlaying = false;
   let musicAppSong = { id: null, image: null, next: [] };
   async function readMusicApp() {
     const player = base.musicApp;
     if (player?.available !== true) return null;
     const now = await player.nowPlaying().catch(() => null);
     musicAppRunning = Boolean(now) && now.state !== "not_running";
+    // Music the listener starts in the Music app stops Moondog's own player, so one thing plays at a time.
+    if (now?.state === "playing" && !musicAppPlaying) base.musicPreviewPlayer?.stop?.();
+    musicAppPlaying = now?.state === "playing";
     if (!now?.song) return null;
     const id = `${now.song.id ?? now.song.title}\n${now.playlist?.id ?? ""}\n${now.shuffle}`;
     if (id !== musicAppSong.id) {
@@ -368,6 +372,7 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     toolTrace?.record({ source: "window", tool: "player_control", state: "start", args: { action, via: via ?? "button" } });
     hold = { source: shownSource, until: Date.now() + CONTROL_HOLD_MS };
     try {
+      if (action === "resume") await base.quietOtherPlayers?.(musicApp ? "music_app" : netease ? "netease" : "spotify");
       // A seek is a click on the song's progress; the rest are the transport buttons and the menu.
       if (action === "seek") await service.seek({ positionMs: Math.max(0, Math.round(Number(positionMs) || 0)) });
       else await service[action]({});
