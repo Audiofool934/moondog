@@ -20,7 +20,7 @@ export function formatWebSources(sources, t = translator("en")) {
     ...sources.map((source) => [
       `- ${link(source)}`,
       ...(source.published_at ? [t("web.sources.published", { date: inline(source.published_at) })] : []),
-      ...(source.retrieved_at ? [t("web.sources.retrieved", { date: source.retrieved_at })] : []),
+      ...(source.retrieved_at ? [t("web.sources.retrieved", { date: source.retrieved_at.slice(0, 10) })] : []),
     ].join(" - ")),
   ].join("\n");
 }

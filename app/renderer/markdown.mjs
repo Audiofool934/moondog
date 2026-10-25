@@ -1,6 +1,7 @@
 // Moondog's replies in the window: paragraphs, lists, short headings, emphasis, code and links.
 // Everything becomes DOM nodes with text content, so a reply can never inject markup.
-const INLINE = /(\*\*[^*\n]+\*\*|__[^_\n]+__|`[^`\n]+`|\*[^*\n]+\*|_[^_\n]+_|\[[^\]\n]+\]\(<?https:\/\/[^\s)>]+>?\)|<https:\/\/[^\s>]+>|https:\/\/[^\s<>()]+[^\s<>().,;:!?，。！？；：）」』》])/u;
+// A backslash before a Markdown character shows the character, as the core escapes source titles.
+const INLINE = /(\\[\\`*_[\]<>]|\*\*[^*\n]+\*\*|__[^_\n]+__|`[^`\n]+`|\*[^*\n]+\*|_[^_\n]+_|\[(?:\\.|[^\]\\\n])+\]\(<?https:\/\/[^\s)>]+>?\)|<https:\/\/[^\s>]+>|https:\/\/[^\s<>()]+[^\s<>().,;:!?，。！？；：）」』》])/u;
 
 function link(href, label) {
   const anchor = document.createElement("a");
@@ -18,7 +19,9 @@ function inline(text, parent) {
     if (!match) { parent.append(rest); return; }
     if (match.index) parent.append(rest.slice(0, match.index));
     const token = match[0];
-    if (token.startsWith("**") || token.startsWith("__")) {
+    if (token.startsWith("\\")) {
+      parent.append(token.slice(1));
+    } else if (token.startsWith("**") || token.startsWith("__")) {
       const strong = document.createElement("strong");
       inline(token.slice(2, -2), strong);
       parent.append(strong);
@@ -31,8 +34,8 @@ function inline(text, parent) {
       inline(token.slice(1, -1), em);
       parent.append(em);
     } else if (token.startsWith("[")) {
-      const [, label, href] = token.match(/^\[([^\]]+)\]\(<?(https:\/\/[^\s)>]+)>?\)$/u);
-      parent.append(link(href, label));
+      const [, label, href] = token.match(/^\[((?:\\.|[^\]\\])+)\]\(<?(https:\/\/[^\s)>]+)>?\)$/u);
+      parent.append(link(href, label.replace(/\\(.)/gu, "$1")));
     } else {
       const href = token.replace(/^<|>$/gu, "");
       parent.append(link(href, href));
