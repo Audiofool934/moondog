@@ -868,6 +868,7 @@ export default {
   "Remember what you've told me": "记住你告诉我的",
   "Remember something you said": "记住你说过的一件事",
   "Forget something": "忘掉一件事",
+  "Save your choice": "保存你的选择",
   "Check what Spotify is playing": "查看 Spotify 正在放什么",
   "See what's playing in detail": "查看正在播放的详情",
   "Control Spotify playback": "控制 Spotify 播放",

@@ -194,6 +194,28 @@ export function createListenerCorrectionRetraction({
   };
 }
 
+/**
+ * Records a Like or Avoid the way the profile command does, or retracts the active choice for
+ * the same artist or track. A retraction with no such choice changes nothing.
+ */
+export function recordListenerChoice(store, {
+  subjectId, entityType, label, artistCredit, stance, occurredAt = new Date().toISOString(),
+} = {}) {
+  if (stance !== "retract") {
+    return store.recordListenerCorrection({ subjectId, entityType, label, artistCredit, stance, occurredAt, recordedAt: occurredAt });
+  }
+  const key = (value) => typeof value === "string" ? normalizedIdentity(value.replace(/\s+/gu, " ").trim()) : "";
+  const active = store.listListenerCorrections({ subjectId, limit: 100 }).find((choice) =>
+    choice.entity_type === entityType && key(choice.label) === key(label) &&
+    (entityType !== "track" || key(choice.artist_credit) === key(artistCredit)));
+  if (!active) return { state: "not_found", entity_type: entityType, label };
+  return {
+    ...store.retractListenerCorrection({ subjectId, correctionId: active.correction_id, occurredAt, recordedAt: occurredAt }),
+    stance: active.stance,
+    ...(active.artist_credit ? { artist_credit: active.artist_credit } : {}),
+  };
+}
+
 export function listenerCorrectionTargetKey(record) {
   if (
     !record ||

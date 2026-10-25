@@ -123,6 +123,9 @@ export default {
   "selection.note": ({ playlist, track }) => `\n\nSelezionati per le prossime modifiche: playlist ${playlist}; brano ${track}.`,
   "memory.spotifyExcluded": "\n\nI risultati di Spotify sono esclusi dalla memoria generale; si potevano ricordare solo le tue parole verificate, e il resto non è stato salvato.",
   "memory.notSaved": "\n\nLa risposta è completa, ma la memoria non è stata salvata.",
+  "choice.like": ({ title, artist }) => { const name = title ? `"${title}" di ${artist}` : artist; return `\n\nSalvato: ti piace ${name}. Dimmelo quando vuoi cambiarlo.`; },
+  "choice.avoid": ({ title, artist }) => { const name = title ? `"${title}" di ${artist}` : artist; return `\n\nSalvato: terrò ${name} fuori da ciò che suono e ti propongo. Dimmelo quando vuoi cambiarlo.`; },
+  "choice.retract": ({ title, artist }) => { const name = title ? `"${title}" di ${artist}` : artist; return `\n\nAnnullato: la tua scelta precedente su ${name}.`; },
   "turn.cancelled": "Ho annullato il resto.",
   "turn.interrupted": "La risposta si è interrotta. Gli esiti di Spotify registrati sono qui sotto; nessuna azione è stata ripetuta.",
 };

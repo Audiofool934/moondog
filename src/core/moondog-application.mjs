@@ -319,10 +319,15 @@ export class MoondogApplication {
   }
 
   async getListenerProfile(input) {
-    if (!this.profileBuildReady()) return { state: "missing", total_claims: 0, claims: [], next_offset: null };
+    const getChoices = () => this.domainServices?.listenerChoices?.() ?? null;
+    if (!this.profileBuildReady()) {
+      const choices = getChoices();
+      return { state: "missing", total_claims: 0, claims: [], next_offset: null, ...(choices ? { listener_choices: choices } : {}) };
+    }
     return readListenerProfile({
       store: this.domainServices.getListenerProfileStore(),
       getInput: () => this.getProfileBuildContext().input,
+      getChoices,
     }, input);
   }
 
@@ -504,8 +509,11 @@ export class MoondogApplication {
 
   async playNetease({ items, mode, intent } = {}) {
     const player = this.requireNetease();
+    this.requireListenerAvoids();
     if (mode !== "queue") await this.quietOtherPlayers("netease");
-    return player.play({ items, mode, intent });
+    // A found song lists its artists; a song asked for by name has only the name it was asked by.
+    return player.play({ items, mode, intent, allow: (song) => this.avoidAllows(Array.isArray(song.artists)
+      ? { title: song.title, artist_credit: song.artists.join(", "), artists: song.artists } : song) });
   }
 
   async controlNetease({ action, positionSeconds } = {}) {
@@ -642,22 +650,29 @@ export class MoondogApplication {
       throw new Error("Give either up to six songs or one album.");
     }
     let found;
+    let avoided = 0;
     if (album) {
       const result = await this.musicCatalog.findAlbumPreviews({ title: album.title, artist: album.artist });
-      found = { kind: "album", album: result.album, played: result.tracks ?? [], not_found: result.state === "resolved" ? [] : [album] };
+      const songs = result.tracks ?? [];
+      const played = songs.filter((track) => this.avoidAllows(track));
+      avoided = songs.length - played.length;
+      found = { kind: "album", album: result.album, played, not_found: result.state === "resolved" ? [] : [album] };
     } else {
       const played = [];
       const notFound = [];
       const leftOut = [];
       for (const wanted of tracks.slice(0, 6)) {
         if (byExcluded(wanted.artist)) { leftOut.push(wanted); continue; }
+        if (!this.avoidAllows({ title: wanted.title, artist_credit: wanted.artist })) { avoided += 1; continue; }
         const result = await this.musicCatalog.findPreview({ title: wanted.title, artist: wanted.artist });
         if (result.state !== "resolved") notFound.push(wanted);
         else if (byExcluded(result.track.artist_credit)) leftOut.push(wanted);
+        else if (!this.avoidAllows(result.track)) avoided += 1;
         else played.push(result.track);
       }
       found = { kind: "tracks", played, not_found: notFound, left_out: leftOut };
     }
+    if (avoided) found.skipped_avoided_count = avoided;
     if (found.played.length) {
       await this.quietOtherPlayers("apple_music");
       await this.musicPreviewPlayer.play(structuredClone(found.played), found.album ? { album: structuredClone(found.album) } : {});
@@ -1710,9 +1725,30 @@ export class MoondogApplication {
   }
 
   spotifyDiscoveryAllowed(item) {
-    if (!this.domainServices?.filterDiscoveryTracks && this.domainServicesError && !["projection_not_built", "projection_subject_unavailable"].includes(this.domainServicesError)) throw spotifyResolutionError("spotify_discovery_preferences_unavailable", "The listener's preferences could not be loaded. Restore the profile before personalized queueing.");
-    const credits = [...new Set([item.artists.join(", "), ...item.artists])];
-    return credits.every(artist_credit => this.domainServices?.filterDiscoveryTracks?.([{ title: item.name, artist_credit }]).length !== 0);
+    return this.avoidAllows({ title: item.name, artist_credit: item.artists.join(", "), artists: item.artists });
+  }
+
+  // Avoids that exist but could not be loaded stop every play path, rather than letting them through.
+  requireListenerAvoids() {
+    if (!this.domainServices?.filterDiscoveryTracks && this.domainServicesError && !["projection_not_built", "projection_subject_unavailable"].includes(this.domainServicesError)) throw spotifyResolutionError("listener_avoids_unavailable", "The listener's Avoids could not be loaded, so nothing was played. Restore the profile first.");
+  }
+
+  // The listener's Avoids, checked the same way on every play path: { title, artist_credit, artists }.
+  avoidAllows(track) {
+    this.requireListenerAvoids();
+    return this.domainServices?.filterDiscoveryTracks?.([track]).length !== 0;
+  }
+
+  // A Like, an Avoid or its retraction that the listener stated, saved as the profile command
+  // saves it, so the profile, the Avoid check and the saved reading all see it at once.
+  recordTasteChoice({ entityType, label, artistCredit, stance } = {}) {
+    if (!this.tasteChoicesReady()) throw new Error("Choices can be saved once listening history is imported.");
+    return this.domainServices.recordListenerChoice({ entityType, label, artistCredit, stance });
+  }
+
+  tasteChoicesReady() {
+    return typeof this.domainServices?.recordListenerChoice === "function" &&
+      this.domainServices.listenerChoicesReady?.() !== false;
   }
 
   consumeSpotifyDiscoveryQueries(count) {
@@ -3080,6 +3116,7 @@ export class MoondogApplication {
         musicSimilarityReady: this.musicSimilarityReady(),
         ...this.webLookupOptions(),
       musicPreviewReady: this.musicPreviewReady(),
+      tasteChoicesReady: this.tasteChoicesReady(),
       }).map(capability => capability.state === "enabled" && this.#playbackServiceExcludes(capability.id)
         ? { ...capability, state: "blocked", blocked_by: capability.id === "listening.now" ? "no_readable_player" : capability.id === "music_app.control" ? "no_music_app" : capability.id === "playback.service" ? "no_playback_service"
           : neteaseCapabilities.has(capability.id) ? "netease_not_ready" : "playback_service_not_spotify" } : capability),
@@ -3114,6 +3151,7 @@ export class MoondogApplication {
       musicSimilarityReady: this.musicSimilarityReady(),
       ...this.webLookupOptions(),
       musicPreviewReady: this.musicPreviewReady(),
+      tasteChoicesReady: this.tasteChoicesReady(),
     }).filter(descriptor => !this.#playbackServiceExcludes(descriptor.capability_id));
   }
 

@@ -1,3 +1,4 @@
+import { ARTIST_CREDIT_SEPARATORS as artistSeparators } from "../../core/listener-avoids.mjs";
 import { spotifyResolutionCacheKey } from "./resolution-cache.mjs";
 
 export const SPOTIFY_CATALOG_RESOLVER_LIMITS = Object.freeze({
@@ -10,8 +11,6 @@ export const SPOTIFY_CATALOG_RESOLVER_LIMITS = Object.freeze({
   durationToleranceMs: 3_000,
 });
 
-const artistSeparators =
-  /\s*(?:,|;|&|\/|(?:featuring|feat\.?|ft\.?|with)(?=\s|$)|、|和|与)\s*/iu;
 const bracketedDescriptorPattern = /[（(【\[]([^）)】\]]+)[）)】\]]/gu;
 const trailingDescriptorPattern = /^(.*)\s+(?:-|–)\s+(.+)$/u;
 const materialRecordingTags = new Set([

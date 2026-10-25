@@ -124,6 +124,9 @@ export default {
   "selection.note": ({ playlist, track }) => `\n\nSelected for follow-up edits: playlist ${playlist}; song ${track}.`,
   "memory.spotifyExcluded": "\n\nSpotify results are excluded from generic memory; only verified user quotes were eligible, and other claims were not saved.",
   "memory.notSaved": "\n\nThe response completed, but the memory was not saved.",
+  "choice.like": ({ title, artist }) => { const name = title ? `"${title}" by ${artist}` : artist; return `\n\nSaved: you like ${name}. Tell me any time to change it.`; },
+  "choice.avoid": ({ title, artist }) => { const name = title ? `"${title}" by ${artist}` : artist; return `\n\nSaved: I'll keep ${name} out of what I play and suggest. Tell me any time to change it.`; },
+  "choice.retract": ({ title, artist }) => { const name = title ? `"${title}" by ${artist}` : artist; return `\n\nUndone: your earlier choice about ${name}.`; },
   "turn.cancelled": "Cancelled further work.",
   "turn.interrupted": "The response was interrupted. The recorded Spotify outcomes are below; no action was replayed.",
 };

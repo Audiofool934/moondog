@@ -123,6 +123,9 @@ export default {
   "selection.note": ({ playlist, track }) => `\n\nSelecionado para as próximas edições: playlist ${playlist}; música ${track}.`,
   "memory.spotifyExcluded": "\n\nOs resultados do Spotify não vão para a memória geral; só citações suas verificáveis podiam ser guardadas, e o resto não foi salvo.",
   "memory.notSaved": "\n\nA resposta terminou, mas não foi possível salvar a memória.",
+  "choice.like": ({ title, artist }) => { const name = title ? `"${title}" de ${artist}` : artist; return `\n\nSalvo: você gosta de ${name}. É só me dizer quando quiser mudar.`; },
+  "choice.avoid": ({ title, artist }) => { const name = title ? `"${title}" de ${artist}` : artist; return `\n\nSalvo: vou deixar ${name} fora do que eu toco e sugiro. É só me dizer quando quiser mudar.`; },
+  "choice.retract": ({ title, artist }) => { const name = title ? `"${title}" de ${artist}` : artist; return `\n\nDesfeito: sua escolha anterior sobre ${name}.`; },
   "turn.cancelled": "Cancelei o resto.",
   "turn.interrupted": "A resposta foi interrompida. Abaixo estão os resultados registrados no Spotify; nenhuma ação foi repetida.",
 };

@@ -217,6 +217,32 @@ test("plays synced during a build do not stop it, and the reading stays usable u
   assert.ok(compact.summary);
 });
 
+test("after a choice changes, the reading stays in view as the previous one, with the current choices and what changed", async t => {
+  const state = await fixture(t);
+  state.store.recordListenerCorrection({ subjectId, entityType: "artist", label: "Smaller artist", stance: "avoid",
+    occurredAt: "2026-09-01T00:00:00.000Z" });
+  await state.application.buildListenerProfile({ runtimeFactory: scriptedRuntime() });
+  const built = compactListenerProfile(await state.application.getListenerProfile());
+  assert.equal(built.state, "current");
+  assert.equal(built.choices_since_reading, undefined);
+  assert.deepEqual(built.listener_choices, { total: 1, items: [{ stance: "avoid", subject: "artist", name: "Smaller artist",
+    chosen_at: "2026-09-01T00:00:00.000Z" }] });
+
+  const correction = state.store.listListenerCorrections({ subjectId })[0];
+  state.store.retractListenerCorrection({ subjectId, correctionId: correction.correction_id });
+  state.store.recordListenerCorrection({ subjectId, entityType: "track", label: "Quiet interest", artistCredit: "Smaller artist", stance: "like" });
+  const stale = compactListenerProfile(await state.application.getListenerProfile());
+  assert.equal(stale.state, "stale");
+  assert.equal(stale.previous_reading, true);
+  assert.match(stale.note, /the listener's choices win/u);
+  assert.ok(stale.summary && stale.claims.length);
+  assert.equal(stale.listener_assertions, undefined, "the previous reading's own choices are out of date");
+  assert.deepEqual(stale.listener_choices.items.map(choice => [choice.stance, choice.name, choice.artist]), [["like", "Quiet interest", "Smaller artist"]]);
+  assert.deepEqual(stale.choices_since_reading.added.map(choice => choice.name), ["Quiet interest"]);
+  assert.deepEqual(stale.choices_since_reading.retracted.map(choice => [choice.stance, choice.name]), [["avoid", "Smaller artist"]]);
+  assert.doesNotMatch(JSON.stringify(stale.listener_choices), /correction_id|evidence_id/u);
+});
+
 test("the background refresh waits for a week of new plays, and half a day after any build attempt", async t => {
   const state = await fixture(t);
   const built = await state.application.buildListenerProfile({ runtimeFactory: scriptedRuntime() });
@@ -366,8 +392,15 @@ test("a fresh Pi listening session receives the saved reading, evidence tools an
   const fresh = new PiAgentRuntime({ application: state.application, models, model: faux.getModel(), provider: "faux", modelId: "faux-1" });
   faux.setResponses([context => {
     const prompt = JSON.stringify(context.messages);
-    assert.match(prompt, /Source evidence, listener choices or analysis changed/u);
-    assert.doesNotMatch(prompt, /a smaller interest stays with you/u);
+    // The previous reading stays in view, marked as such, under the new Avoid.
+    const lines = context.messages.flatMap(message => Array.isArray(message.content) ? message.content : [])
+      .map(part => part.text ?? "").find(text => text.includes("[Saved listener reading")).split("\n");
+    const reading = JSON.parse(lines[lines.findIndex(line => line.startsWith("[Saved listener reading")) + 1]);
+    assert.equal(reading.state, "stale");
+    assert.equal(reading.previous_reading, true);
+    assert.match(reading.summary, /a smaller interest stays with you/u);
+    assert.deepEqual(reading.choices_since_reading.added.map(choice => [choice.stance, choice.name]), [["avoid", "Dominant artist"]]);
+    assert.deepEqual(reading.listener_choices.items.map(choice => choice.name), ["Dominant artist"]);
     return fauxAssistantMessage([fauxText("The saved reading needs an update.")]);
   }]);
   await fresh.prompt("What fits my current taste?");
@@ -396,6 +429,28 @@ test("ordinary Pi turns skip build analysis when no saved reading exists", async
   await runtime.prompt("Let's listen.");
   assert.equal(catalog.mock.callCount(), 0);
   assert.equal(digest.mock.callCount(), 0);
+});
+
+test("with no saved reading, the listener's choices still reach the model, without build analysis", async t => {
+  const state = await fixture(t, bundle(3));
+  state.store.recordListenerCorrection({ subjectId, entityType: "artist", label: "Smaller artist", stance: "avoid",
+    occurredAt: "2026-09-01T00:00:00.000Z" });
+  const catalog = t.mock.method(state.store, "profileCatalog");
+  const faux = fauxProvider();
+  const models = createModels();
+  models.setProvider(faux.provider);
+  const runtime = new PiAgentRuntime({ application: state.application, models, model: faux.getModel(), provider: "faux", modelId: "faux-1" });
+  faux.setResponses([context => {
+    const lines = context.messages.flatMap(message => [message.content].flat())
+      .flatMap(part => typeof part === "string" ? part : part?.text ?? "").join("\n").split("\n");
+    const reading = JSON.parse(lines[lines.findIndex(line => line.startsWith("[Saved listener reading")) + 1]);
+    assert.deepEqual(reading, { state: "missing", listener_choices: { total: 1, items: [{ stance: "avoid", subject: "artist",
+      name: "Smaller artist", chosen_at: "2026-09-01T00:00:00.000Z" }] } });
+    return fauxAssistantMessage([fauxText("Noted.")]);
+  }]);
+  await runtime.prompt("Let's listen.");
+  assert.equal(catalog.mock.callCount(), 0);
+  assert.deepEqual(compactListenerProfile({ state: "missing", listener_choices: { total: 0, items: [] } }), { state: "missing" });
 });
 
 test("saved input detects other connections and new imports without rescanning unchanged evidence", async t => {

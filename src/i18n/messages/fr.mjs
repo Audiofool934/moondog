@@ -123,6 +123,9 @@ export default {
   "selection.note": ({ playlist, track }) => `\n\nSélection pour les prochaines modifications : playlist ${playlist} ; morceau ${track}.`,
   "memory.spotifyExcluded": "\n\nLes résultats Spotify sont exclus de la mémoire générale ; seules vos propres paroles vérifiées pouvaient être retenues, et le reste n'a pas été enregistré.",
   "memory.notSaved": "\n\nLa réponse est terminée, mais la mémoire n'a pas été enregistrée.",
+  "choice.like": ({ title, artist }) => { const name = title ? `« ${title} » de ${artist}` : artist; return `\n\nEnregistré : vous aimez ${name}. Dites-le-moi quand vous voulez pour le changer.`; },
+  "choice.avoid": ({ title, artist }) => { const name = title ? `« ${title} » de ${artist}` : artist; return `\n\nEnregistré : je laisserai ${name} de côté dans ce que je joue et propose. Dites-le-moi quand vous voulez pour le changer.`; },
+  "choice.retract": ({ title, artist }) => { const name = title ? `« ${title} » de ${artist}` : artist; return `\n\nAnnulé : votre choix précédent sur ${name}.`; },
   "turn.cancelled": "Suite annulée.",
   "turn.interrupted": "La réponse a été interrompue. Les résultats Spotify enregistrés figurent ci-dessous ; aucune action n'a été relancée.",
 };

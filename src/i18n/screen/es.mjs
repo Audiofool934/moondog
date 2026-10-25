@@ -868,6 +868,7 @@ export default {
   "Remember what you've told me": "Recordar lo que me has dicho",
   "Remember something you said": "Recordar algo que dijiste",
   "Forget something": "Olvidar algo",
+  "Save your choice": "Guardar tu elección",
   "Check what Spotify is playing": "Ver qué suena en Spotify",
   "See what's playing in detail": "Ver en detalle qué suena",
   "Control Spotify playback": "Controlar la reproducción de Spotify",

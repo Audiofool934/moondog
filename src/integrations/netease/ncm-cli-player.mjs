@@ -227,23 +227,29 @@ export function createNeteasePlayer({
     /**
      * Finds and plays songs: each item is a search result's id, or a title and artist to look
      * up. mode "play" replaces the queue and starts the first; "queue" adds after what is
-     * playing. Songs NetEase marks as not playable are never sent to the player.
+     * playing. Songs NetEase marks as not playable are never sent to the player, nor songs
+     * allow(song) refuses, such as the listener's Avoids; those are only counted. Before a lookup,
+     * allow gets the title and artist asked for, as { title, artist_credit }.
      */
-    async play({ items = [], mode = "play", intent } = {}) {
+    async play({ items = [], mode = "play", intent, allow = () => true } = {}) {
       const found = [];
       const unplayable = [];
       const notFound = [];
+      let avoided = 0;
       for (const item of items.slice(0, 20)) {
         if (item?.id) {
           const song = known.get(String(item.id));
           if (!song) notFound.push({ id: String(item.id) });
           else if (!song.playable) unplayable.push(song);
+          else if (!allow(song)) avoided += 1;
           else found.push({ song, other_artist: false });
           continue;
         }
         const wanted = { title: String(item?.title ?? ""), artist: String(item?.artist ?? "") };
+        if (!allow({ title: wanted.title, artist_credit: wanted.artist })) { avoided += 1; continue; }
         const result = pick(await player.search({ query: `${wanted.title} ${wanted.artist}`.trim(), limit: 10, intent }), wanted);
-        if (result.song) found.push(result);
+        if (result.song && !allow(result.song)) avoided += 1;
+        else if (result.song) found.push(result);
         else if (result.unplayable) unplayable.push({ title: wanted.title, artists: [wanted.artist].filter(Boolean) });
         else notFound.push(wanted);
       }
@@ -266,6 +272,7 @@ export function createNeteasePlayer({
         songs: found.map(({ song, other_artist: otherArtist }) => ({ ...song, other_artist: otherArtist })),
         unplayable,
         not_found: notFound,
+        ...(avoided ? { skipped_avoided_count: avoided } : {}),
       };
     },
 

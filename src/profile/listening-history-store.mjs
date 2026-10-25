@@ -1246,6 +1246,22 @@ export class ListeningHistoryStore {
       });
   }
 
+  // How many choices are in force, beyond the ones a list shows.
+  countActiveListenerCorrections({ subjectId } = {}) {
+    if (this.#closed) throw new Error("Listening history store is closed");
+    if (!isUuid(subjectId)) {
+      throw new TypeError("A valid listener correction subject is required");
+    }
+    return this.#database
+      .prepare(
+        `SELECT COUNT(*) AS count FROM taste_events a
+        WHERE a.subject_id = ? AND a.operation = 'assert'
+          AND NOT EXISTS (SELECT 1 FROM taste_events r WHERE r.retracts_taste_event_id = a.taste_event_id)
+          AND NOT EXISTS (SELECT 1 FROM taste_events s WHERE s.supersedes_taste_event_id = a.taste_event_id)`,
+      )
+      .get(subjectId.toLowerCase()).count;
+  }
+
   ingest(value) {
     if (this.#closed) throw new Error("Listening history store is closed");
     const bundle = normalizedBundle(value);

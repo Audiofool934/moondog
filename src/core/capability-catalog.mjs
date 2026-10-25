@@ -342,6 +342,12 @@ const catalog = [
     },
   },
   {
+    id: "taste.choice", version: "1", state: "enabled", effect: "write_local",
+    description: "Save a lasting Like or Avoid for an artist or song, or undo one, when the listener states it in their own words.",
+    requires_taste_choices: true,
+    agent_tool: { name: "moondog_taste_choice", label: N_("Save your choice") },
+  },
+  {
     id: "spotify.history.import",
     version: "1",
     state: "enabled",
@@ -629,7 +635,11 @@ function withRuntimeAvailability(
   profileExplorationReady,
   profileBuildReady,
   musicPreviewReady,
+  tasteChoicesReady,
 ) {
+  if (capability.requires_taste_choices && !tasteChoicesReady) {
+    return { ...capability, state: "blocked", blocked_by: "taste_choices_not_ready" };
+  }
   if (capability.requires_profile_build && !profileBuildReady) {
     return { ...capability, state: "blocked", blocked_by: "profile_build_not_ready" };
   }
@@ -758,6 +768,7 @@ export function listCapabilities({
   profileExplorationReady = false,
   profileBuildReady = false,
   musicPreviewReady = false,
+  tasteChoicesReady = false,
 } = {}) {
   return structuredClone(
     catalog.map((capability) =>
@@ -779,6 +790,7 @@ export function listCapabilities({
         profileExplorationReady,
         profileBuildReady,
         musicPreviewReady,
+        tasteChoicesReady,
       ),
     ),
   );

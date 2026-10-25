@@ -868,6 +868,7 @@ export default {
   "Remember what you've told me": "教えてもらったことを覚える",
   "Remember something you said": "あなたの言ったことを覚える",
   "Forget something": "忘れる",
+  "Save your choice": "あなたの選択を保存する",
   "Check what Spotify is playing": "Spotify で再生中のものを確認",
   "See what's playing in detail": "再生中の曲の詳細を見る",
   "Control Spotify playback": "Spotify の再生を操作",

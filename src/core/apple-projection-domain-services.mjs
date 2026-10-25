@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { exploreProfileCatalog, profileExplorationInput } from "../profile/profile-exploration.mjs";
-import { createListenerProfileInput } from "../profile/listener-profile-build.mjs";
+import { createListenerProfileInput, savedListenerChoices } from "../profile/listener-profile-build.mjs";
 import { lyricSeedsFromProfile } from "./lyric-profile.mjs";
+import { cachedAvoidGate, createAvoidGate } from "./listener-avoids.mjs";
+import { recordListenerChoice } from "../profile/listener-corrections.mjs";
 import { collectionCoverage } from "../profile/music-providers.mjs";
 import { lstat } from "node:fs/promises";
 import path from "node:path";
@@ -883,13 +885,14 @@ export function safeExternalSource(raw) {
     fail("external_candidate_invalid", "External catalog source metadata is invalid.");
   }
   if (raw.provider === "apple_music") {
-    if (raw.catalog !== "itunes_search_api" || raw.storefront !== "US") {
+    // The storefront follows the listener's account or region, as a two-letter country code.
+    if (raw.catalog !== "itunes_search_api" || typeof raw.storefront !== "string" || !/^[A-Z]{2}$/u.test(raw.storefront)) {
       fail("external_candidate_invalid", "External catalog source metadata is invalid.");
     }
     return {
       provider: "apple_music",
       catalog: "itunes_search_api",
-      storefront: "US",
+      storefront: raw.storefront,
       retrieved_at: raw.retrieved_at,
       coverage: cleanText(raw.coverage, 500, "external_candidate_invalid"),
     };
@@ -985,6 +988,8 @@ function preferenceSignalLabel(observation = {}) {
   return labels.join(", ") || "explicit provider preference signal";
 }
 
+const avoidGates = new WeakMap();
+
 export function listenerAssertionAvoids(
   listening,
   entityType,
@@ -992,19 +997,11 @@ export function listenerAssertionAvoids(
   artistCredit = "",
 ) {
   const avoids = listening?.listener_assertions?.avoids ?? [];
-  const normalizedLabel = normalizeText(label ?? "");
-  const normalizedArtist = normalizeText(artistCredit ?? "");
-  return avoids.some((avoid) => {
-    if (avoid.entity_type === "artist") {
-      const avoidedArtist = normalizeText(avoid.label ?? "");
-      return entityType === "artist"
-        ? avoidedArtist === normalizedLabel
-        : avoidedArtist === normalizedArtist;
-    }
-    return entityType === "track" &&
-      normalizeText(avoid.label ?? "") === normalizedLabel &&
-      normalizeText(avoid.artist_credit ?? "") === normalizedArtist;
-  });
+  let gate = avoidGates.get(avoids);
+  if (!gate) avoidGates.set(avoids, gate = createAvoidGate(avoids));
+  return entityType === "artist"
+    ? gate.avoidsArtist(label)
+    : gate.avoidsTrack({ title: label, artist_credit: artistCredit });
 }
 
 function normalizeAppleCorrectionLabels(listening, projection) {
@@ -1211,6 +1208,7 @@ export class AppleProjectionDomainServices {
   #subjectId;
   #candidateSets = new Map();
   #profileBuildInput;
+  #avoids = {};
   #ownsStores = true;
 
   constructor({ projection, listeningHistoryStore = null, subjectId = null }) {
@@ -1764,16 +1762,36 @@ export class AppleProjectionDomainServices {
     };
   }
 
+  // Every play path asks for each candidate, so the gate is kept until the data changes.
   filterDiscoveryTracks(tracks) {
     const store = this.#listeningHistoryStore;
-    const avoids = store?.activeAvoidances?.({ subjectId: this.#subjectId }) ??
-      store?.profileSummary?.({ subjectId: this.#subjectId })?.listener_assertions?.avoids ?? [];
-    const listening = normalizeAppleCorrectionLabels(
-      { listener_assertions: { avoids } }, this.#projection,
-    );
-    return tracks.filter((track) => !listenerAssertionAvoids(
-      listening, "track", track.title, track.artist_credit,
-    ));
+    const version = store?.profileDataVersion
+      ? `${this.#projection.logicalDigest?.() ?? ""}:${store.profileDataVersion()}` : undefined;
+    const gate = cachedAvoidGate(this.#avoids, version, () => {
+      const avoids = store?.activeAvoidances?.({ subjectId: this.#subjectId }) ??
+        store?.profileSummary?.({ subjectId: this.#subjectId })?.listener_assertions?.avoids ?? [];
+      return normalizeAppleCorrectionLabels({ listener_assertions: { avoids } }, this.#projection)
+        .listener_assertions.avoids;
+    });
+    return tracks.filter((track) => !gate.avoidsTrack(track));
+  }
+
+  // Choices live with the listening history, so a library alone cannot save them.
+  listenerChoicesReady() {
+    return this.#listeningHistoryStore !== null;
+  }
+
+  recordListenerChoice(choice) {
+    if (!this.#listeningHistoryStore) throw new Error("Choices can be saved once listening history is imported.");
+    return recordListenerChoice(this.#listeningHistoryStore, { ...choice, subjectId: this.#subjectId });
+  }
+
+  // The choices in force, cheap enough to read when there is no saved reading.
+  listenerChoices() {
+    const store = this.#listeningHistoryStore;
+    if (typeof store?.countActiveListenerCorrections !== "function") return null;
+    return savedListenerChoices(store.listListenerCorrections({ subjectId: this.#subjectId, limit: 30 }),
+      store.countActiveListenerCorrections({ subjectId: this.#subjectId }));
   }
 
   isKnownDiscoveryTrack(track) {

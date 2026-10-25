@@ -123,6 +123,9 @@ export default {
   "selection.note": ({ playlist, track }) => `\n\n接下來的編輯會用：播放清單 ${playlist}；歌曲 ${track}。`,
   "memory.spotifyExcluded": "\n\nSpotify 的結果不會進入一般記憶；只有可驗證的你的原話會被記住，其他內容沒有儲存。",
   "memory.notSaved": "\n\n這則回覆已完成，但記憶沒有儲存成功。",
+  "choice.like": ({ title, artist }) => { const name = title ? `${artist}的《${title}》` : artist; return `\n\n已儲存：你喜歡${name}。想改的話隨時告訴我。`; },
+  "choice.avoid": ({ title, artist }) => { const name = title ? `${artist}的《${title}》` : artist; return `\n\n已儲存：我播放和推薦時都會避開${name}。想改的話隨時告訴我。`; },
+  "choice.retract": ({ title, artist }) => { const name = title ? `${artist}的《${title}》` : artist; return `\n\n已撤銷：你之前對${name}的選擇。`; },
   "turn.cancelled": "已取消後續操作。",
   "turn.interrupted": "回覆中斷了。已記錄的 Spotify 結果如下；沒有重新執行任何操作。",
 };

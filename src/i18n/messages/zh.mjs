@@ -123,6 +123,9 @@ export default {
   "selection.note": ({ playlist, track }) => `\n\n后续编辑选择：歌单 ${playlist}；歌曲 ${track}。`,
   "memory.spotifyExcluded": "\n\nSpotify 查询结果不进入通用记忆；仅保存可验证的用户原话，其他记忆未保存。",
   "memory.notSaved": "\n\n这条回复已经完成，但记忆没有成功保存。",
+  "choice.like": ({ title, artist }) => { const name = title ? `${artist}的《${title}》` : artist; return `\n\n已保存：你喜欢${name}。想改的话随时告诉我。`; },
+  "choice.avoid": ({ title, artist }) => { const name = title ? `${artist}的《${title}》` : artist; return `\n\n已保存：我播放和推荐时都会避开${name}。想改的话随时告诉我。`; },
+  "choice.retract": ({ title, artist }) => { const name = title ? `${artist}的《${title}》` : artist; return `\n\n已撤销：你之前对${name}的选择。`; },
   "turn.cancelled": "已取消后续操作。",
   "turn.interrupted": "回复中断；已确认的 Spotify 操作结果如下。未重新执行任何操作。",
 };

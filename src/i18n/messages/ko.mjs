@@ -123,6 +123,9 @@ export default {
   "selection.note": ({ playlist, track }) => `\n\n다음 편집에 쓸 항목: 플레이리스트 ${playlist}, 곡 ${track}.`,
   "memory.spotifyExcluded": "\n\nSpotify 결과는 일반 기억에 넣지 않습니다. 확인된 사용자 본인의 말만 기억할 수 있으며, 다른 내용은 저장하지 않았습니다.",
   "memory.notSaved": "\n\n답변은 끝났지만 기억을 저장하지 못했습니다.",
+  "choice.like": ({ title, artist }) => { const name = title ? `${artist}의 "${title}"` : artist; return `\n\n저장했습니다: ${name}을(를) 좋아하신다고요. 바꾸고 싶으면 언제든 말씀해 주세요.`; },
+  "choice.avoid": ({ title, artist }) => { const name = title ? `${artist}의 "${title}"` : artist; return `\n\n저장했습니다: ${name}은(는) 재생하거나 추천하지 않겠습니다. 바꾸고 싶으면 언제든 말씀해 주세요.`; },
+  "choice.retract": ({ title, artist }) => { const name = title ? `${artist}의 "${title}"` : artist; return `\n\n취소했습니다: ${name}에 대한 이전 선택.`; },
   "turn.cancelled": "남은 작업을 취소했습니다.",
   "turn.interrupted": "답변이 중단되었습니다. 기록된 Spotify 결과는 아래와 같으며, 어떤 작업도 다시 실행하지 않았습니다.",
 };

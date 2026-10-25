@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 
+import { avoidKey } from "../core/listener-avoids.mjs";
 import { recordedShare } from "./recorded-measures.mjs";
 
 export const LISTENER_PROFILE_ANALYSIS_VERSION = "listener-profile/2";
@@ -311,14 +312,62 @@ export function sameListenerChoices(evidence, otherEvidence) {
   return choices(evidence) === choices(otherEvidence);
 }
 
-export function readListenerProfile({ input, getInput, store }, { offset = 0, limit = 12, claimId, revisionId } = {}) {
+const CHOICES_SHOWN = 30;
+
+// A choice as the model reads it: no correction or evidence IDs.
+function choiceItems(evidence) {
+  return [...evidence.values()].filter(entry => LISTENER_SECTIONS.has(entry.section)).map(({ section, data }) => ({
+    key: [section, data.entity_type, avoidKey(data.label ?? data.name), avoidKey(data.artist_credit)].join("\0"),
+    choice: {
+      stance: section === "listener_avoids" ? "avoid" : "like",
+      subject: data.entity_type ?? "artist", name: data.label ?? data.name,
+      ...(data.artist_credit ? { artist: data.artist_credit } : {}),
+      ...(data.asserted_at ? { chosen_at: data.asserted_at } : {}),
+      ...(data.correction_id ? {} : { from_import: true }),
+    },
+  }));
+}
+
+// The listener's choices now, newest first, and how they differ from the ones a reading was built with.
+function listenerChoices(current, previous) {
+  const now = choiceItems(current);
+  const then = choiceItems(previous);
+  const direct = now.filter(item => !item.choice.from_import)
+    .sort((left, right) => (right.choice.chosen_at ?? "").localeCompare(left.choice.chosen_at ?? ""));
+  const missing = (items, others) => {
+    const keys = new Set(others.map(item => item.key));
+    return items.filter(item => !keys.has(item.key)).slice(0, CHOICES_SHOWN).map(item => item.choice);
+  };
+  return {
+    listener_choices: { total: direct.length, items: direct.slice(0, CHOICES_SHOWN).map(item => item.choice) },
+    choices_since_reading: { added: missing(now, then), retracted: missing(then, now) },
+  };
+}
+
+// The listener's current choices read straight from their saved corrections, newest first, for
+// when there is no saved reading to compare them with.
+export function savedListenerChoices(corrections, total) {
+  return {
+    total,
+    items: corrections.slice(0, CHOICES_SHOWN).map(choice => ({
+      stance: choice.stance, subject: choice.entity_type, name: choice.label,
+      ...(choice.artist_credit ? { artist: choice.artist_credit } : {}),
+      ...(choice.occurred_at ? { chosen_at: choice.occurred_at } : {}),
+    })),
+  };
+}
+
+export function readListenerProfile({ input, getInput, store, getChoices }, { offset = 0, limit = 12, claimId, revisionId } = {}) {
   if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isInteger(limit) || limit < 1 || limit > 20) {
     throw new TypeError("Saved profile page is invalid");
   }
   const current = store.current();
   const revision = revisionId ? store.revision(revisionId) : current;
   if (revisionId && !revision) throw new Error("That saved profile version is unavailable");
-  if (!revision) return { state: "missing", total_claims: 0, claims: [], next_offset: null };
+  if (!revision) {
+    const choices = getChoices?.();
+    return { state: "missing", total_claims: 0, claims: [], next_offset: null, ...(choices ? { listener_choices: choices } : {}) };
+  }
   // Most new listeners have no saved reading. Do not scan their source archive
   // merely to tell an ordinary conversation that the reading is missing.
   input ??= getInput();
@@ -345,6 +394,7 @@ export function readListenerProfile({ input, getInput, store }, { offset = 0, li
     }),
     listener_assertions: revision.claims.flatMap((claim, index) => claim.kind === "listener_assertion"
       ? [{ ...claim, finding_number: index + 1 }] : []),
+    ...listenerChoices(input.evidence ?? new Map(), new Map(Object.entries(revision.evidence ?? {}))),
   };
   if (claimId !== undefined) {
     const claim = revision.claims.find(item => item.claim_id === claimId);
@@ -357,22 +407,33 @@ export function readListenerProfile({ input, getInput, store }, { offset = 0, li
 }
 
 export function compactListenerProfile(value) {
-  if (!value || value.state === "missing") return { state: "missing" };
+  // With no reading, the listener's own choices still hold.
+  if (!value || value.state === "missing") {
+    return { state: "missing", ...(value?.listener_choices?.total ? { listener_choices: value.listener_choices } : {}) };
+  }
   const coverage = value.coverage?.coverage ?? {};
   const flagged = value.verification?.state === "flagged"
     ? value.verification.checks.at(-1).issues.slice(0, 3).map(issue => issue.problem) : [];
   const behind = value.state === "stale" && value.newer_listening_only === true;
+  // A stale reading still shows what it said, marked as the previous one, under the current choices.
+  const previous = value.state === "stale" && !behind && typeof value.summary === "string";
+  const since = value.choices_since_reading;
   return {
     state: behind ? "current_through" : value.state, revision_id: value.revision_id, sequence: value.sequence, built_at: value.built_at,
-    ...(value.state === "current" || behind ? {
+    ...(value.state === "current" || behind || previous ? {
       ...(behind ? { note: "Built from listening up to coverage.last_played_at. Plays stored since then are not in this reading; listening coverage shows them. Listener choices and analysis are unchanged." } : {}),
+      ...(previous ? { previous_reading: true,
+        note: "The previous reading. It predates listener_choices and choices_since_reading, or the analysis has changed since. Use it only as background: where they differ, the listener's choices win. Update the reading before treating it as current taste." } : {}),
       summary: value.summary,
       claims: value.highlights,
-      listener_assertions: value.listener_assertions,
+      // A previous reading's own choices may be out of date; listener_choices holds the current ones.
+      ...(previous ? {} : { listener_assertions: value.listener_assertions }),
       coverage: { listening_events: coverage.effective_listening_events ?? null,
         first_played_at: coverage.earliest_played_at ?? null, last_played_at: coverage.latest_played_at ?? null,
         library_tracks: coverage.apple_library_tracks ?? null },
       ...(flagged.length ? { unresolved_check_notes: flagged } : {}),
     } : { message: "Source evidence, listener choices or analysis changed. Update the reading before using the previous interpretation as current taste." }),
+    ...(value.listener_choices ? { listener_choices: value.listener_choices } : {}),
+    ...(since?.added?.length || since?.retracted?.length ? { choices_since_reading: since } : {}),
   };
 }

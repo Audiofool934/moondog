@@ -1,14 +1,15 @@
 import { randomUUID } from "node:crypto";
 import { exploreProfileCatalog, profileExplorationInput } from "../profile/profile-exploration.mjs";
-import { createListenerProfileInput } from "../profile/listener-profile-build.mjs";
+import { createListenerProfileInput, savedListenerChoices } from "../profile/listener-profile-build.mjs";
 import { lyricSeedsFromProfile } from "./lyric-profile.mjs";
+import { cachedAvoidGate } from "./listener-avoids.mjs";
+import { recordListenerChoice } from "../profile/listener-corrections.mjs";
 
 import { isUuid } from "./uuid-v5.mjs";
 import { createListeningHistoryProfileProjection } from "../profile/spotify-archive-taste.mjs";
 import {
   assertExternalPlanDiversity,
   exactTitleArtistMatch,
-  listenerAssertionAvoids,
   safeExternalSource,
   safeExternalTrack,
 } from "./apple-projection-domain-services.mjs";
@@ -423,6 +424,7 @@ export class ListeningProfileDomainServices {
   #subjectId;
   #candidateSets = new Map();
   #profileBuildInput;
+  #avoids = {};
   #ownsStore = true;
 
   constructor({ listeningHistoryStore, subjectId } = {}) {
@@ -553,12 +555,23 @@ export class ListeningProfileDomainServices {
     return { candidateSetId, tracks: prepared };
   }
 
+  // Every play path asks for each candidate, so the gate is kept until the data changes.
   filterDiscoveryTracks(tracks) {
-    const avoids = this.#store.activeAvoidances?.({ subjectId: this.#subjectId }) ??
-      this.#store.profileSummary({ subjectId: this.#subjectId })?.listener_assertions?.avoids ?? [];
-    return tracks.filter((track) => !listenerAssertionAvoids(
-      { listener_assertions: { avoids } }, "track", track.title, track.artist_credit,
-    ));
+    const gate = cachedAvoidGate(this.#avoids, this.#store.profileDataVersion?.(), () =>
+      this.#store.activeAvoidances?.({ subjectId: this.#subjectId }) ??
+        this.#store.profileSummary({ subjectId: this.#subjectId })?.listener_assertions?.avoids ?? []);
+    return tracks.filter((track) => !gate.avoidsTrack(track));
+  }
+
+  recordListenerChoice(choice) {
+    return recordListenerChoice(this.#store, { ...choice, subjectId: this.#subjectId });
+  }
+
+  // The choices in force, cheap enough to read when there is no saved reading.
+  listenerChoices() {
+    if (typeof this.#store.countActiveListenerCorrections !== "function") return null;
+    return savedListenerChoices(this.#store.listListenerCorrections({ subjectId: this.#subjectId, limit: 30 }),
+      this.#store.countActiveListenerCorrections({ subjectId: this.#subjectId }));
   }
 
   isKnownDiscoveryTrack(track) {
