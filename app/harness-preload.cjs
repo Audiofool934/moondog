@@ -181,7 +181,7 @@ const STATES = {
   offline() { send({ type: "ready", ...OFFLINE, sessions: SESSIONS, folders: FOLDERS, current: "s1", running: [], transcript: [] }); send({ type: "player", spotify: "unavailable", now: null, next: [] }); },
   reply() { ready({ transcript: conversation([["What have I been playing at night?", REPLY]]) }); player({ index: 1 }); },
   long() { ready({ transcript: conversation(LONG_TURNS) }); player({ index: 0, fraction: 0.71 }); },
-  // The record above the words: halfway folded, folded into the bar, folded by hand, and over a long reply.
+  // The record above the words: shrinking, shrunk to half its size, folded by hand, and over a long reply.
   history() { STATES.long(); scrollUp(120); },
   "history-top"() { STATES.long(); scrollUp("top"); },
   folded() { STATES.long(); setTimeout(() => document.querySelector("[data-record-button]").click(), 150); },

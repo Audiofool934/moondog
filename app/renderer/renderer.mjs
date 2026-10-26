@@ -348,8 +348,9 @@ function pin() {
 
 // ── The record ───────────────────────────────────────────────────────────────────────────────
 // Before anything is said the record stands alone over the composer. In a conversation it stays
-// above the words, and folds into the title bar as the listener scrolls up into history; back at
-// the latest words it opens again. Folded by hand, it stays in the bar until it is opened by hand.
+// above the words, and shrinks to half its size as the listener scrolls up into history; back at
+// the latest words it grows again. Folded by hand, it goes into the title bar and stays there until
+// it is opened by hand.
 const stage = $("stage");
 const recordFrame = $("record-frame");
 const recordButton = $("record-button");
@@ -363,32 +364,34 @@ const BAR = parseFloat(getComputedStyle(document.documentElement).getPropertyVal
 const RECORD_GAP = 4;
 // As large as an 800-point window can give it and still leave the words most of the room.
 const recordSize = () => Math.round(Math.min(280, Math.max(140, innerHeight * 0.35)));
-// Folding takes this many record heights of scrolling, eased at both ends, so it shrinks gradually
+// Scrolling shrinks the record to half its size and no smaller, so it stays a record, never a smudge.
+// The shrink takes this many record heights of scrolling, eased at both ends, so it happens gradually
 // over a few scrolls instead of all at once.
-const FOLD_SPAN = 3;
-const foldAt = (distance, size = recordSize()) => {
-  const x = Math.min(1, Math.max(0, distance / ((size + RECORD_GAP) * FOLD_SPAN)));
+const SMALLEST = 0.5;
+const SHRINK_SPAN = 1.5;
+const shrinkAt = (distance, size = recordSize()) => {
+  const x = Math.min(1, Math.max(0, distance / ((size + RECORD_GAP) * SHRINK_SPAN)));
   return x * x * (3 - 2 * x);
 };
+// A fold by hand, or opening again, takes this long, quick at first and settling at the end.
+const FOLD_MS = 300;
 let foldedByHand = store.get("moondog.record") === "folded";
-// How far the record is folded as drawn: 0 open above the words, 1 in the title bar.
-let fold = 0;
+// The record as drawn: shrink, 0 full size to 1 half size above the words; dock, 0 above the words to 1 in the title bar.
+let fold = { shrink: 0, dock: 0 };
 let tween = null;
 let gliding = false;
 let placing = 0;
 let leadHeight = 0;
 const talking = () => Boolean(record) && !room.classList.contains("empty");
 const lerp = (from, to, at) => from + (to - from) * at;
-// Folded by hand, at the latest words, or as far as the listener has scrolled up.
+// Folded by hand, or as far as the listener has scrolled up from the latest words.
 function foldWanted() {
-  if (foldedByHand) return 1;
-  if (following) return 0;
-  return foldAt(gap());
+  return { shrink: following ? 0 : shrinkAt(gap()), dock: foldedByHand ? 1 : 0 };
 }
 // A jump in what the room wants (a click, a return to the latest words) eases there instead of snapping.
 function refold() {
   if (!talking()) return;
-  tween = { from: fold, start: performance.now() };
+  tween = { from: { ...fold }, start: performance.now() };
   placeSoon();
 }
 const placeSoon = () => { if (!placing) placing = requestAnimationFrame(placeRecord); };
@@ -416,34 +419,33 @@ function placeTitle() {
 }
 // Finish the travel before the crossfade, so the two drawings occupy the same box during handoff.
 const HANDOFF = 0.94;
-// Where the record is drawn at a fold, in the room's coordinates: from above the words to the mark in the bar.
+// Where the record is drawn at a fold, in the room's coordinates: centered under the bar, as large as
+// the scroll leaves it, and from there to the mark in the bar as it docks. Its top stays put as it shrinks.
 function recordBox(at, size = recordSize()) {
-  at = Math.min(1, at / HANDOFF);
+  const open = size * lerp(1, SMALLEST, at.shrink);
+  const travel = Math.min(1, at.dock / HANDOFF);
   const box = room.getBoundingClientRect();
   const dock = mark.node.getBoundingClientRect();
-  return { x: lerp(box.width / 2 - size / 2 + size * 0.035, dock.left - box.left, at), y: lerp(BAR + RECORD_GAP, dock.top - box.top, at),
-    size: lerp(size, dock.width, at) };
+  return { x: lerp(box.width / 2 - open / 2 + open * 0.035, dock.left - box.left, travel), y: lerp(BAR + RECORD_GAP, dock.top - box.top, travel),
+    size: lerp(open, dock.width, travel) };
 }
 // Scrolls so `node` sits just under the record as the record will be there. The record's room above
 // the words changes on the way, and a smooth scroll still ends where it was sent, so the place is
 // worked out for the room it will have then.
 function scrollToNode(node) {
   const size = recordSize();
-  const [open, shut] = [recordBox(0, size), recordBox(1, size)];
-  const bottom = (at) => lerp(open.y + open.size, shut.y + shut.size, at);
-  const veil = (at) => Math.max(BAR, bottom(at) + 10);
+  const dock = foldedByHand ? 1 : 0;
+  const bottom = (shrink) => { const box = recordBox({ shrink, dock }, size); return box.y + box.size; };
+  const veil = (shrink) => Math.max(BAR, bottom(shrink) + 10);
   // With the node 20 points under the veil, the distance left below the view grows with the veil and
-  // the fold grows with that distance; the fold that agrees with itself is found by halving.
+  // the shrink grows with that distance; the shrink that agrees with itself is found by halving.
   const rest = scroller.scrollHeight - node.offsetTop + 20 - scroller.clientHeight;
-  let at = 1;
-  if (!foldedByHand) {
-    let [low, high] = [0, 1];
-    for (let step = 0; step < 20; step += 1) {
-      const middle = (low + high) / 2;
-      if (foldAt(rest + veil(middle), size) > middle) low = middle; else high = middle;
-    }
-    at = (low + high) / 2;
+  let [low, high] = [0, 1];
+  for (let step = 0; step < 20; step += 1) {
+    const middle = (low + high) / 2;
+    if (shrinkAt(rest + veil(middle), size) > middle) low = middle; else high = middle;
   }
+  const at = (low + high) / 2;
   const reach = Math.max(0, bottom(at) - BAR);
   glideTo(Math.max(0, node.offsetTop - leadHeight + reach - veil(at) - 20), reach);
 }
@@ -483,33 +485,40 @@ function placeRecord() {
   const size = recordSize();
   let at = foldWanted();
   if (tween) {
-    const progress = reduced.matches ? 1 : Math.min(1, (performance.now() - tween.start) / 420);
-    at = lerp(tween.from, at, 1 - (1 - progress) ** 3);
+    const progress = reduced.matches ? 1 : Math.min(1, (performance.now() - tween.start) / FOLD_MS);
+    const eased = 1 - (1 - progress) ** 4;
+    at = { shrink: lerp(tween.from.shrink, at.shrink, eased), dock: lerp(tween.from.dock, at.dock, eased) };
     if (progress >= 1) tween = null; else placeSoon();
   }
   fold = at;
   // Reads first, then writes, so a frame lays out once. The record travels from its place above the
-  // words to the mark in the bar, and the last stretch hands the drawing over to the mark.
+  // words to the mark in the bar, and the last stretch hands the drawing over to the mark. Its
+  // place snaps to the screen's pixels, so its dots land on them the same way wherever it stops.
   const { x, y, size: drawnSize } = recordBox(at, size);
-  const handoff = Math.min(1, Math.max(0, (at - HANDOFF) / (1 - HANDOFF)));
+  const pixel = 1 / (devicePixelRatio || 1);
+  const [left, top] = [Math.round(x / pixel) * pixel, Math.round(y / pixel) * pixel];
+  const handoff = Math.min(1, Math.max(0, (at.dock - HANDOFF) / (1 - HANDOFF)));
+  const away = at.dock > 0.6;
   const bottom = y + drawnSize;
-  const key = [size, x.toFixed(1), y.toFixed(1), drawnSize.toFixed(2), handoff.toFixed(3)].join("|");
+  const key = [size, left, top, drawnSize.toFixed(2), handoff.toFixed(3)].join("|");
   if (key !== placed) {
     placed = key;
     room.style.setProperty("--record", `${size}px`);
-    recordFrame.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) scale(${(drawnSize / size).toFixed(4)})`;
+    recordFrame.style.transform = `translate(${left}px, ${top}px) scale(${(drawnSize / size).toFixed(4)})`;
+    recordFrame.style.setProperty("--shown", (drawnSize / size).toFixed(4));
+    record.shown(drawnSize / size);
     recordButton.style.opacity = (1 - handoff).toFixed(3);
     barRecord.style.opacity = handoff.toFixed(3);
-    recordButton.classList.toggle("away", at > 0.6);
-    expand.tabIndex = at > 0.6 ? -1 : 0;
-    recordButton.tabIndex = at > 0.6 ? -1 : 0;
-    const docked = at > 0.9 && !barRecord.classList.contains("cramped");
+    recordButton.classList.toggle("away", away);
+    expand.tabIndex = away ? -1 : 0;
+    recordButton.tabIndex = away ? -1 : 0;
+    const docked = at.dock > 0.9 && !barRecord.classList.contains("cramped");
     barRecord.classList.toggle("docked", docked);
     barRecord.tabIndex = docked ? 0 : -1;
     // The words fade out just under the record.
     scroller.style.setProperty("--veil", `${Math.max(BAR, bottom + 10).toFixed(1)}px`);
   }
-  record.turn(nowPlaying()?.playing && at < 1 && !immersed());
+  record.turn(nowPlaying()?.playing && at.dock < 1 && !immersed());
   // The conversation keeps the record room above its first words, as far as it reaches below the bar.
   // Scrolled up, the browser keeps the words in view where they are as that room changes.
   if (!gliding) {
@@ -532,11 +541,25 @@ function foldRecord(on) {
 }
 // The record's own button folds it; the mark in the bar opens it, or brings back the latest words it sits above.
 function toggleRecord() {
-  if (fold < 0.5) foldRecord(true);
+  if (fold.dock < 0.5) foldRecord(true);
   else if (foldedByHand) foldRecord(false);
   else toLatest();
 }
-recordButton.addEventListener("click", () => foldRecord(true));
+// The tonearm plays and pauses, as on a turntable: a click lifts it off the record and the music
+// stops; another sets it down and the music plays. A pointer on it leans it toward where a click
+// sends it. A click anywhere else on the record folds it into the bar. Before anything is said, the
+// record folds nowhere, so only its arm answers a click.
+const armReady = () => { const now = nowPlaying(); return Boolean(now) && can(now, now.playing ? "pausing" : "resuming"); };
+const onArm = (target, event) => armReady() && target?.hit(event.clientX, event.clientY) === "arm";
+recordFrame.addEventListener("click", (event) => {
+  if (event.target.closest("[data-expand]")) return;
+  // A key on the focused record has no place to point at; it folds.
+  if (event.detail && onArm(record, event)) control("toggle", "record");
+  else if (event.target.closest("[data-record-button]")) foldRecord(true);
+});
+recordFrame.addEventListener("pointermove", (event) => record?.lean(onArm(record, event)));
+recordFrame.addEventListener("pointerleave", () => record?.lean(false));
+recordFrame.addEventListener("wheel", (event) => scratchWith(record, event), { passive: false });
 barRecord.addEventListener("click", toggleRecord);
 
 // The record alone: the window holds only the record, drawn large in the same mosaic, over the
@@ -561,7 +584,10 @@ function immerse(on) {
   renderPin();
   if (on) {
     record?.turn(false);
-    deep ??= mountRecord($("immersive-record"), { across: 160 });
+    if (!deep) {
+      deep = mountRecord($("immersive-record"), { across: 160 });
+      deep.needle(Boolean(nowPlaying()?.playing), true);
+    }
     deep.tint(grooveColours(moodPalette, dark.matches), true);
     immersive.classList.add("hovered");
     immersive.focus({ preventScroll: true });
@@ -577,8 +603,10 @@ function immerse(on) {
 }
 expand.addEventListener("click", () => immerse(true));
 // The main process moves the window while the button is held; a press that barely moved is a click.
+// A press on the arm stays with the arm, which plays and pauses here as it does above the words,
+// and the wheel anywhere scratches the record.
 immersive.addEventListener("pointerdown", (event) => {
-  if (event.button !== 0 || event.target.closest("button")) return;
+  if (event.button !== 0 || event.target.closest("button") || onArm(deep, event)) return;
   try { immersive.setPointerCapture(event.pointerId); } catch { /* A synthetic press has no pointer to capture. */ }
   const started = window.moondogApp?.dragWindow?.("start");
   immersive.addEventListener("pointerup", async () => {
@@ -587,6 +615,9 @@ immersive.addEventListener("pointerdown", (event) => {
     if (moved < 4) immerse(false);
   }, { once: true });
 });
+immersive.addEventListener("click", (event) => { if (event.detail && onArm(deep, event)) control("toggle", "record"); });
+immersive.addEventListener("pointermove", (event) => deep?.lean(onArm(deep, event)));
+immersive.addEventListener("wheel", (event) => scratchWith(deep, event), { passive: false });
 $("pin").addEventListener("click", async () => {
   const change = ++pinChange;
   const before = pinned;
@@ -611,11 +642,17 @@ function renderEmpty(empty) {
   const from = record ? recordButton.getBoundingClientRect() : null;
   room.classList.toggle("empty", empty);
   layout.classList.toggle("talking", !empty);
-  if (!record) { record = mountRecord($("record")); record.tint(grooveColours(moodPalette, dark.matches), true); }
+  if (!record) {
+    record = mountRecord($("record"));
+    record.tint(grooveColours(moodPalette, dark.matches), true);
+    record.needle(Boolean(nowPlaying()?.playing), true);
+  }
   tween = null;
   placed = "";
   if (empty) {
     recordFrame.style.removeProperty("transform");
+    recordFrame.style.removeProperty("--shown");
+    record.shown(1);
     recordButton.style.removeProperty("opacity");
     room.style.removeProperty("--record");
     recordButton.classList.remove("away");
@@ -1206,7 +1243,10 @@ function renderInspector() {
     drawControls(now, $("mini-toggle"), $("mini-next"));
   }
   placeTitle();
-  record?.turn(now?.playing && (!talking() || fold < 1));
+  record?.turn(now?.playing && (!talking() || fold.dock < 1));
+  // The arm rests on the record while the music plays, whatever started or stopped it.
+  record?.needle(now?.playing);
+  deep?.needle(now?.playing);
   mark.playing(now?.playing);
   renderMood(now);
   tick();
@@ -1254,14 +1294,14 @@ $("stop-previews").addEventListener("click", () => previews.stop());
 // Taking hold of the progress line moves the song there when you let go; the arrow keys move it by
 // five seconds (fifteen with Shift), Home and End to either end.
 let seekedAt = 0;
-function seekTo(positionMs) {
+function seekTo(positionMs, via) {
   seekedAt = Date.now();
   const now = nowPlaying();
   if (!now?.durationMs || !can(now, "seeking")) return;
   const position = Math.round(Math.min(now.durationMs - 1000, Math.max(0, positionMs)));
   if (now.local) previews.seek(position);
   else if (state.player?.now) {
-    send({ type: "control", action: "seek", positionMs: position });
+    send({ type: "control", action: "seek", positionMs: position, via });
     state.player.now = { ...state.player.now, progressMs: position, observedAt: Date.now() };
   }
   renderInspector();
@@ -1312,6 +1352,58 @@ $("track").addEventListener("keydown", (event) => {
   renderProgress(now, { jump: true });
   seeking = null;
 });
+
+// The wheel over the record turns it by hand, as a DJ moves a record: the record follows the travel
+// along its rim, and the song's place moves with it, in a quiet clock just above the record and on
+// the player's progress line. The music goes there once the wheel rests, in one seek, so Spotify
+// gets one request. A slow hand moves finely; a quick one covers more of the song, up to eight
+// times as much. At either end of the song the record stops with it.
+const SCRATCH_MS = 15;
+const SCRATCH_GAIN = 8;
+const SCRATCH_REST_MS = 240;
+const scratchClock = $("scratch");
+let scratch = null;
+let scratchFade = 0;
+function scratchWith(target, event) {
+  const now = nowPlaying();
+  if (!target || !now?.durationMs || !can(now, "seeking")) return;
+  event.preventDefault();
+  const lines = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? innerHeight : 1;
+  const travel = (Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY) * lines;
+  if (!travel) return;
+  const song = `${now.title}|${now.durationMs}`;
+  if (scratch?.song !== song) { clearTimeout(scratch?.timer); scratch = { song, ms: keySeek?.ms ?? now.progressMs, at: event.timeStamp, speed: 0 }; }
+  // The hand's speed in pixels a millisecond, smoothed over a few events.
+  const gap = Math.min(120, Math.max(8, event.timeStamp - scratch.at));
+  scratch.speed = scratch.speed * 0.6 + Math.abs(travel) / gap * 0.4;
+  scratch.at = event.timeStamp;
+  const wanted = travel * SCRATCH_MS * Math.min(SCRATCH_GAIN, 1 + scratch.speed ** 2);
+  const to = Math.min(now.durationMs - 1000, Math.max(0, scratch.ms + wanted));
+  target.spin(travel * (to - scratch.ms) / wanted);
+  scratch.ms = to;
+  seeking = { fraction: to / now.durationMs };
+  renderProgress(now, { jump: true });
+  showScratch(target, to, now.durationMs);
+  clearTimeout(scratch.timer);
+  scratch.timer = setTimeout(() => {
+    const { ms, song: scratched } = scratch;
+    scratch = null;
+    seeking = null;
+    const playing = nowPlaying();
+    if (playing && `${playing.title}|${playing.durationMs}` === scratched) seekTo(ms, "record"); else renderInspector();
+    clearTimeout(scratchFade);
+    scratchFade = setTimeout(() => scratchClock.classList.remove("on"), 700);
+  }, SCRATCH_REST_MS);
+}
+// The clock sits centered just above the disc being turned, inside the window.
+function showScratch(target, ms, durationMs) {
+  clearTimeout(scratchFade);
+  const place = target.place();
+  if (!place) return;
+  scratchClock.textContent = `${clock(ms)} / ${clock(durationMs)}`;
+  scratchClock.style.translate = `${Math.round(place.x)}px ${Math.round(Math.max(28, place.y - place.radius - 8))}px`;
+  scratchClock.classList.add("on");
+}
 
 // ── Panels ───────────────────────────────────────────────────────────────────────────────────
 // A narrow window folds the player, then the conversations; a click always wins. The conversations

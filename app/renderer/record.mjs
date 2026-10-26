@@ -1,8 +1,10 @@
 // The lunar record the terminal opens with, drawn as dots on a canvas at the window's resolution.
 // The geometry comes from the terminal's art module, so both rooms draw one record. It turns
-// while music plays and rests when it stops, a frame every eighth of a second, like the terminal.
-// Its grooves take the colours of the cover that is playing; the dog and the arm stay in ink.
-import { LOGO_MOTION_FRAMES, LOGO_MOTION_INTERVAL_MS, renderLunarRecordDots } from "../../src/surfaces/cli/terminal-art.mjs";
+// while music plays and rests when it stops, a frame every eighth of a second, like the terminal,
+// coming up to speed and running down like a platter. Its tonearm rests on it while music plays and
+// swings off it when the music stops. Its grooves take the colours of the cover that is playing;
+// the dog and the arm stay in ink.
+import { LOGO_MOTION_FRAMES, LOGO_MOTION_INTERVAL_MS, lunarRecordShapes, renderLunarRecordDots, renderTonearmDots } from "../../src/surfaces/cli/terminal-art.mjs";
 
 // Distance between dot centers, in CSS pixels, and each layer's ink: grooves, surface, the dog. At
 // this pitch the record above the words reaches the terminal art's finest detail, ten grooves.
@@ -13,13 +15,44 @@ const TINTED = 0.6;
 // A new cover's colours drift into the grooves as the window's light drifts into its own.
 const DRIFT_MS = 2400;
 const TURN = Math.PI * 2;
+// Off the record the arm stands swung out as far as the bar's mark swings its own. A pointer on the
+// arm leans it a little toward where a click will send it, so the arm says it moves before it does.
+const LIFTED = -28 / 180 * Math.PI;
+const LEAN = 4 / 180 * Math.PI;
+const SWING_MS = 560;
+const LEAN_MS = 160;
+// The platter starts at half speed and gains on each frame; stopping, it loses on each frame and
+// rests below a quarter of its speed, a second or so later.
+const SPIN_UP = 1.45;
+const SPIN_DOWN = 0.72;
+const SLOWEST = 0.25;
+// A hand on the record holds it still for this long after it last moved it.
+const HELD_MS = 220;
+// The arm as a line to point at, in the record's unit coordinates: pivot, elbow, cartridge, stylus.
+const { arm: ARM, cartridge: CARTRIDGE } = lunarRecordShapes();
+const ARM_LINE = [ARM[0], ARM[1], CARTRIDGE.reduce(([x, y], [a, b]) => [x + a / 4, y + b / 4], [0, 0]), [0.755, -0.587]];
+const swung = ([x, y], swing) => {
+  const [px, py] = ARM[0];
+  const [cosine, sine] = [Math.cos(swing), Math.sin(swing)];
+  return [px + (x - px) * cosine - (y - py) * sine, py + (x - px) * sine + (y - py) * cosine];
+};
+const toSegment = (x, y, [ax, ay], [bx, by]) => {
+  const length = (bx - ax) ** 2 + (by - ay) ** 2;
+  const t = length ? Math.min(1, Math.max(0, ((x - ax) * (bx - ax) + (y - ay) * (by - ay)) / length)) : 0;
+  return Math.hypot(x - ax - (bx - ax) * t, y - ay - (by - ay) * t);
+};
 const rgbOf = (colour) => (colour.match(/[\d.]+/gu) ?? [0, 0, 0]).slice(0, 3).map(Number);
 const reduced = matchMedia("(prefers-reduced-motion: reduce)");
 const dark = matchMedia("(prefers-color-scheme: dark)");
 
 /**
- * Draws the record into `canvas`, sized by its CSS box. Returns { turn(on), tint(colours, instant), stop() };
- * tint takes three [r, g, b] colours, from the rim inward, or null for ink. Call stop() before dropping the canvas.
+ * Draws the record into `canvas`, sized by its CSS box. Returns its controls: turn(on) runs the
+ * platter; needle(on, instant) rests the arm on the record or swings it off; lean(on) leans the arm
+ * toward its next place; spin(distance) turns the record by hand, `distance` pixels along its rim;
+ * shown(scale) says the box is drawn at `scale` by a transform; hit(x, y) names what is under a
+ * point in the window ("arm", "disc" or null); place() gives the disc's center and radius in the
+ * window; tint(colours, instant) takes three [r, g, b] colours, from the rim inward, or null for ink.
+ * Call stop() before dropping the canvas.
  * `across` fixes the number of dots across, so a record drawn large keeps the mosaic of the one above the words.
  */
 export function mountRecord(canvas, { across = null } = {}) {
@@ -27,38 +60,104 @@ export function mountRecord(canvas, { across = null } = {}) {
   let size = 0;
   let grid = 0;
   let frames = [];
-  let frame = 0;
+  let traced = { density: 0, layers: [] };
+  let arms = new Map();
+  // The record's turn in frames; the frame drawn is its whole part.
+  let phase = 0;
   let ink = "";
   let turning = false;
+  let speed = 0;
+  let heldUntil = 0;
   let raf = 0;
   let timer = 0;
+  let painting = 0;
+  let warming = 0;
   let stopped = false;
-  // The grooves' center and outer radius in CSS pixels, and the colours drifting from one cover's to the next.
+  // The scale a transform draws the box at; the canvas paints its dots at that size, so the screen
+  // never resamples a field of dots, which beats against the pixels as moiré.
+  let scale = 1;
+  // The grooves' center and outer radius in CSS pixels, the record's unit coordinates on the grid
+  // in dots, and the colours drifting from one cover's to the next.
   let disc = null;
+  let axes = null;
   let rings = { from: null, to: null, start: 0 };
   let drifting = 0;
+  // The arm: on the record or off it, leaning or not, and its swing as drawn, eased toward where it goes.
+  let down = true;
+  let leaning = false;
+  let swing = 0;
+  let swingTo = null;
+  let swinging = 0;
+  const frameAt = () => ((Math.floor(phase) % LOGO_MOTION_FRAMES) + LOGO_MOTION_FRAMES) % LOGO_MOTION_FRAMES;
 
-  // Each frame's dots, one path per layer, worked out once per size and reused on every turn.
-  function paths(index) {
+  // Dots as paths, one per layer, in CSS pixels of the box. Each dot's center sits on the middle of a
+  // bitmap pixel, `density` of them to a CSS pixel, so every dot is drawn alike: dots that fall between
+  // pixels come out fainter or bolder than their neighbours, and rows of them beat as moiré. Closer
+  // than two pixels apart, dots would share pixels, so there they keep their places and blend instead.
+  function trace({ dots, width }, layers, density) {
+    const pitch = size / grid;
+    const radius = pitch * 0.32;
+    const snap = pitch * density >= 1.9 ? (at) => (Math.round(at * density - 0.5) + 0.5) / density : (at) => at;
+    for (let at = 0; at < dots.length; at += 1) {
+      if (!dots[at]) continue;
+      const x = snap((at % width + 0.5) * pitch);
+      const y = snap((Math.floor(at / width) + 0.5) * pitch);
+      layers[dots[at]].moveTo(x + radius, y);
+      layers[dots[at]].arc(x, y, radius, 0, TURN);
+    }
+    return layers;
+  }
+  // Each frame's dots, worked out once per size and reused on every turn. The arm is drawn apart, so it can swing.
+  function dotsAt(index) {
     if (!frames[index]) {
-      const { dots, width } = renderLunarRecordDots({ columns: grid / 2, rows: grid / 4, phase: index });
-      const pitch = size / grid;
-      const radius = pitch * 0.32;
-      const layers = [null, new Path2D(), new Path2D(), new Path2D()];
-      const box = [Infinity, Infinity, -Infinity, -Infinity];
-      for (let at = 0; at < dots.length; at += 1) {
-        if (!dots[at]) continue;
-        const x = (at % width + 0.5) * pitch;
-        const y = (Math.floor(at / width) + 0.5) * pitch;
-        layers[dots[at]].moveTo(x + radius, y);
-        layers[dots[at]].arc(x, y, radius, 0, TURN);
-        if (dots[at] === 1) { box[0] = Math.min(box[0], x); box[1] = Math.min(box[1], y); box[2] = Math.max(box[2], x); box[3] = Math.max(box[3], y); }
+      const art = renderLunarRecordDots({ columns: grid / 2, rows: grid / 4, phase: index, tonearm: false });
+      frames[index] = art;
+      if (!disc) {
+        // The grooves never turn, so the outermost one gives the disc's place.
+        const pitch = size / grid;
+        const box = [Infinity, Infinity, -Infinity, -Infinity];
+        art.dots.forEach((layer, at) => {
+          if (layer !== 1) return;
+          const x = (at % art.width + 0.5) * pitch;
+          const y = (Math.floor(at / art.width) + 0.5) * pitch;
+          box[0] = Math.min(box[0], x); box[1] = Math.min(box[1], y); box[2] = Math.max(box[2], x); box[3] = Math.max(box[3], y);
+        });
+        disc = { x: (box[0] + box[2]) / 2, y: (box[1] + box[3]) / 2, radius: (box[2] - box[0]) / 2 };
+        axes = { x: art.centerX, y: art.centerY, radius: art.radius };
       }
-      frames[index] = layers;
-      // The grooves never turn, so the outermost one gives the disc's place.
-      disc ??= { x: (box[0] + box[2]) / 2, y: (box[1] + box[3]) / 2, radius: (box[2] - box[0]) / 2 };
     }
     return frames[index];
+  }
+  // A frame's paths at the bitmap's density, kept while the density holds, as it does while the record turns.
+  function paths(index, density) {
+    if (density !== traced.density) traced = { density, layers: [] };
+    traced.layers[index] ??= trace(dotsAt(index), [null, new Path2D(), new Path2D(), new Path2D()], density);
+    return traced.layers[index];
+  }
+  // The arm at its swing; resting on the record, its contact moves with the frame.
+  function armPath(index, density) {
+    const key = swing === 0 ? `on ${index}` : `${Math.round(swing * 2000)}`;
+    let art = arms.get(key);
+    if (!art) {
+      if (arms.size > 200) arms.clear();
+      art = renderTonearmDots({ columns: grid / 2, rows: grid / 4, phase: index, swing });
+      arms.set(key, art);
+    }
+    return trace(art, [null, null, null, new Path2D()], density)[3];
+  }
+  // The frames a hand might turn to are worked out while the window is idle, nearest first.
+  function warm() {
+    cancelIdleCallback(warming);
+    warming = requestIdleCallback(() => {
+      warming = 0;
+      if (stopped || !size) return;
+      const start = frameAt();
+      const missing = Array.from({ length: LOGO_MOTION_FRAMES }, (_, step) => (start + (step % 2 ? -1 : 1) * Math.ceil(step / 2) + LOGO_MOTION_FRAMES) % LOGO_MOTION_FRAMES)
+        .find((index) => !frames[index]);
+      if (missing === undefined) return;
+      dotsAt(missing);
+      warm();
+    });
   }
 
   // The grooves' paint: ink, a cover's three colours from the rim inward, or on the way between them.
@@ -81,7 +180,13 @@ export function mountRecord(canvas, { across = null } = {}) {
 
   function draw() {
     if (stopped || !size) return;
-    const layers = paths(frame);
+    const index = frameAt();
+    // The bitmap holds as many pixels as the screen shows of the box.
+    const pixels = Math.max(1, Math.round(size * scale * (devicePixelRatio || 1)));
+    if (canvas.width !== pixels) { canvas.width = pixels; canvas.height = pixels; }
+    const density = pixels / size;
+    const layers = paths(index, density);
+    context.setTransform(density, 0, 0, density, 0, 0);
     context.clearRect(0, 0, size, size);
     const paint = grooves(performance.now());
     context.fillStyle = paint.style;
@@ -92,10 +197,13 @@ export function mountRecord(canvas, { across = null } = {}) {
       context.globalAlpha = INK[level];
       context.fill(layers[level]);
     }
+    context.globalAlpha = INK[3];
+    context.fill(armPath(index, density));
     context.globalAlpha = 1;
     // While colours drift, the record redraws on every display frame until they arrive.
     if (!paint.done && !drifting) drifting = requestAnimationFrame(() => { drifting = 0; draw(); });
   }
+  const paintSoon = () => { if (!painting) painting = requestAnimationFrame(() => { painting = 0; draw(); }); };
 
   // Measuring reads layout, so it runs when the canvas settles at a new size, not on every frame.
   // While a window is being resized, the last drawing simply scales with its box. The box is the
@@ -103,16 +211,15 @@ export function mountRecord(canvas, { across = null } = {}) {
   function resize() {
     const next = Math.floor(Math.min(canvas.clientWidth, canvas.clientHeight));
     if (!next) return;
-    const scale = devicePixelRatio || 1;
-    if (next !== size || canvas.width !== Math.round(next * scale)) {
-      canvas.width = Math.round(next * scale);
-      canvas.height = Math.round(next * scale);
-      context.setTransform(scale, 0, 0, scale, 0, 0);
+    if (next !== size) {
       size = next;
       // A square grid of dots, four rows to a terminal row, so the record stays round.
       grid = across ?? Math.max(48, Math.round(next / PITCH / 4) * 4);
       frames = [];
+      traced = { density: 0, layers: [] };
+      arms = new Map();
       disc = null;
+      warm();
     }
     ink = getComputedStyle(canvas).color;
     draw();
@@ -120,21 +227,40 @@ export function mountRecord(canvas, { across = null } = {}) {
   let settle = 0;
   const resized = () => { clearTimeout(settle); settle = setTimeout(resize, size ? 140 : 0); };
 
-  // Eight frames a second, timed by the clock and painted on the next display frame.
+  // Eight frames a second at full speed, timed by the clock and painted on the next display frame.
+  // A hand on the record holds it: the platter keeps its speed, and the record turns only by hand.
   function tick() {
     timer = 0;
     raf = requestAnimationFrame(() => {
       raf = 0;
-      if (stopped || !turning) return;
-      frame = (frame + 1) % LOGO_MOTION_FRAMES;
-      draw();
+      if (stopped) return;
+      if (performance.now() >= heldUntil) { phase += 1; draw(); }
+      speed = turning ? Math.min(1, Math.max(0.5, speed * SPIN_UP)) : speed * SPIN_DOWN;
       run();
     });
   }
   function run() {
-    const should = turning && !reduced.matches && !document.hidden && !stopped;
-    if (should && !timer && !raf) timer = setTimeout(tick, LOGO_MOTION_INTERVAL_MS);
+    if (speed < SLOWEST) speed = 0;
+    const should = speed > 0 && !reduced.matches && !document.hidden && !stopped;
+    if (should && !timer && !raf) timer = setTimeout(tick, LOGO_MOTION_INTERVAL_MS / speed);
     if (!should) { clearTimeout(timer); cancelAnimationFrame(raf); timer = 0; raf = 0; }
+  }
+
+  // The arm eases to where it goes: a long, even swing on or off the record, a quick lean under the pointer.
+  function aim(duration) {
+    const to = (down ? 0 : LIFTED) + (leaning ? (down ? -LEAN : LEAN) : 0);
+    swingTo = { from: swing, to, start: performance.now(), duration };
+    if (!swinging) swinging = requestAnimationFrame(swingStep);
+  }
+  function swingStep() {
+    swinging = 0;
+    if (stopped || !swingTo) return;
+    const { from, to, start, duration } = swingTo;
+    const t = reduced.matches ? 1 : Math.min(1, Math.max(0, (performance.now() - start) / duration));
+    const eased = duration === SWING_MS ? (t < 0.5 ? 4 * t ** 3 : 1 - (2 - 2 * t) ** 3 / 2) : 1 - (1 - t) ** 3;
+    swing = t >= 1 ? to : from + (to - from) * eased;
+    if (t >= 1) swingTo = null; else swinging = requestAnimationFrame(swingStep);
+    draw();
   }
 
   const observer = new ResizeObserver(resized);
@@ -146,7 +272,55 @@ export function mountRecord(canvas, { across = null } = {}) {
   resize();
 
   return {
-    turn(on) { turning = Boolean(on); run(); },
+    turn(on) {
+      turning = Boolean(on);
+      if (turning && speed < 0.5) speed = 0.5;
+      run();
+    },
+    needle(on, instant = false) {
+      on = Boolean(on);
+      if (on === down && !instant) return;
+      down = on;
+      leaning = false;
+      if (instant || reduced.matches) { swingTo = null; swing = down ? 0 : LIFTED; draw(); return; }
+      aim(SWING_MS);
+    },
+    lean(on) {
+      on = Boolean(on);
+      if (on === leaning) return;
+      leaning = on;
+      aim(LEAN_MS);
+    },
+    spin(distance) {
+      if (!disc || !distance) return;
+      phase += distance / (disc.radius * scale) / TURN * LOGO_MOTION_FRAMES;
+      heldUntil = performance.now() + HELD_MS;
+      paintSoon();
+    },
+    shown(next) {
+      if (Math.abs(next - scale) < 0.0005) return;
+      scale = next;
+      draw();
+    },
+    hit(x, y) {
+      if (!axes || !size) return null;
+      const box = canvas.getBoundingClientRect();
+      if (!box.width) return null;
+      const unit = box.width / grid * axes.radius;
+      const nx = ((x - box.left) / box.width * grid - 0.5 - axes.x) / axes.radius;
+      const ny = ((y - box.top) / box.height * grid - 0.5 - axes.y) / axes.radius;
+      const line = ARM_LINE.map((point) => swung(point, swing));
+      const near = Math.min(...line.slice(1).map((to, index) => toSegment(nx, ny, line[index], to)));
+      // Never less than ten pixels either side of the arm, however small the record.
+      if (near <= Math.max(0.1, 10 / unit)) return "arm";
+      return Math.hypot(nx, ny) <= 1.04 ? "disc" : null;
+    },
+    place() {
+      if (!disc || !size) return null;
+      const box = canvas.getBoundingClientRect();
+      const k = box.width / size;
+      return { x: box.left + disc.x * k, y: box.top + disc.y * k, radius: disc.radius * k };
+    },
     tint(colours, instant = false) {
       const next = colours?.length ? colours.slice(0, 3) : null;
       if (JSON.stringify(next) === JSON.stringify(rings.to)) return;
@@ -162,6 +336,9 @@ export function mountRecord(canvas, { across = null } = {}) {
       clearTimeout(settle);
       cancelAnimationFrame(raf);
       cancelAnimationFrame(drifting);
+      cancelAnimationFrame(painting);
+      cancelAnimationFrame(swinging);
+      cancelIdleCallback(warming);
       observer.disconnect();
       dark.removeEventListener("change", theme);
       reduced.removeEventListener("change", run);

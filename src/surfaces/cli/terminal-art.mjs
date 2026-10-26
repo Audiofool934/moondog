@@ -198,8 +198,26 @@ export function lunarRecordShapes() {
   return structuredClone({ dog, eye, ...shapes, earRadius: 0.17, grooves: [1, 0.91, 0.8, 0.66] });
 }
 
+// The tonearm swings about its pivot, the arm's first point; a negative swing turns it off the record.
+// Only an arm at rest on the record touches a groove, where its contact pulses as the record turns.
+function paintTonearm({ pixel, disc, line, polygon }, rotation, swing = 0) {
+  const [pivotX, pivotY] = shapes.arm[0];
+  const [cosine, sine] = [Math.cos(swing), Math.sin(swing)];
+  const swung = ([x, y]) => [pivotX + (x - pivotX) * cosine - (y - pivotY) * sine, pivotY + (x - pivotX) * sine + (y - pivotY) * cosine];
+  const cartridge = shapes.cartridge.map(swung);
+  line(shapes.arm.map(swung), Math.max(pixel * 1.8, 0.03));
+  polygon(cartridge, true);
+  line([...cartridge, cartridge[0]], pixel);
+  disc(...swung([0.914, -0.764]), Math.max(pixel * 0.7, 0.021), false);
+  line([[0.775, -0.615], [0.735, -0.559]].map(swung), pixel * 1.3);
+  if (swing) return;
+  const pulse = Math.sin(rotation * 4);
+  const angle = -0.612 + pulse * pixel * 0.85;
+  disc(Math.cos(angle) * 0.928, Math.sin(angle) * 0.928, pixel * (0.95 + pulse * 0.15));
+}
+
 // The record as a field of dots, two across and four down per terminal cell, each marked with its layer.
-function paint(columns, rows, phase, cellAspect) {
+function paint(columns, rows, phase, cellAspect, tonearm = true) {
   const art = drawing(columns, rows, cellAspect);
   const { radius, pixel, circle, disc, line, polygon, paintLayer } = art;
   const detail = radius >= 39 ? 2 : radius >= 27 ? 1 : 0;
@@ -243,7 +261,7 @@ function paint(columns, rows, phase, cellAspect) {
 
   paintLayer(RECORD_LAYERS.figure);
   // Like the logo, a clear halo separates the dog from the grooves around it.
-  const { headband, ear, nose, arm, cartridge } = shapes;
+  const { headband, ear, nose } = shapes;
   line([...dog, dog[0]], pixel * 4.5, false);
   line(headband, Math.max(pixel * 7, 0.11), false);
   polygon(dog, false);
@@ -263,16 +281,7 @@ function paint(columns, rows, phase, cellAspect) {
   disc(eye[0], eye[1], pixel * 1.05, false);
   disc(nose[0], nose[1], pixel * 0.85);
 
-  line(arm, Math.max(pixel * 1.8, 0.03));
-  polygon(cartridge, true);
-  line([...cartridge, cartridge[0]], pixel);
-  disc(0.914, -0.764, Math.max(pixel * 0.7, 0.021), false);
-  line([[0.775, -0.615], [0.735, -0.559]], pixel * 1.3);
-  const pulse = Math.sin(rotation * 4);
-  const angle = -0.612 + pulse * pixel * 0.85;
-  const contact = [Math.cos(angle) * 0.928, Math.sin(angle) * 0.928];
-  disc(contact[0], contact[1], pixel * (0.95 + pulse * 0.15));
-
+  if (tonearm) paintTonearm(art, rotation);
   return art;
 }
 
@@ -372,12 +381,25 @@ export function renderLunarRecordLayers({ columns = 56, rows = 24, style = "brai
 /**
  * The same record as dots rather than Braille characters, for surfaces that draw their own dots,
  * such as the desktop window's canvas. Dots sit on a square grid of width x height, row by row;
- * each holds 0 or the RECORD_LAYERS value that inked it.
+ * each holds 0 or the RECORD_LAYERS value that inked it. With tonearm: false the arm is left out, for
+ * a surface that draws it apart with renderTonearmDots so it can lift. centerX, centerY and radius
+ * place the record's unit coordinates on the grid, in dots.
  */
-export function renderLunarRecordDots({ columns = 56, rows = 28, phase = 0 } = {}) {
+export function renderLunarRecordDots({ columns = 56, rows = 28, phase = 0, tonearm = true } = {}) {
   const frame = Number.isFinite(phase) ? ((Math.floor(phase) % LOGO_MOTION_FRAMES) + LOGO_MOTION_FRAMES) % LOGO_MOTION_FRAMES : 0;
-  const { dots, width, height } = paint(Math.max(10, Math.floor(columns)), Math.max(5, Math.floor(rows)), frame, 2);
-  return { dots, width, height };
+  const { dots, width, height, centerX, centerY, radius } = paint(Math.max(10, Math.floor(columns)), Math.max(5, Math.floor(rows)), frame, 2, tonearm);
+  return { dots, width, height, centerX, centerY, radius };
+}
+
+/**
+ * The tonearm alone, on the same grid as renderLunarRecordDots, swung `swing` radians about its pivot
+ * (negative lifts it off the record). At rest on the record its contact follows the record's phase.
+ */
+export function renderTonearmDots({ columns = 56, rows = 28, phase = 0, swing = 0 } = {}) {
+  const art = drawing(Math.max(10, Math.floor(columns)), Math.max(5, Math.floor(rows)), 2);
+  art.paintLayer(RECORD_LAYERS.figure);
+  paintTonearm(art, (Number.isFinite(phase) ? phase : 0) / LOGO_MOTION_FRAMES * turn, Number.isFinite(swing) ? swing : 0);
+  return { dots: art.dots, width: art.width, height: art.height };
 }
 
 /** Five-pixel letterforms, packed into three terminal rows without color or escapes. */

@@ -91,3 +91,38 @@ await wait(150);
 assert(pin.getAttribute("aria-pressed") === "false", "A late pin reply must not select the pin after leaving the record");
 assert($("immersive").hidden, "A click on the record should return to the conversation");
 assert(document.activeElement === $("input"), "Returning should restore composer focus");
+
+// The record answers its arm and the wheel. Points are placed by the art module's own geometry.
+const canvas = $("record");
+const unitPoint = ([ux, uy]) => {
+  const box = canvas.getBoundingClientRect();
+  const grid = Math.max(48, Math.round(Math.floor(canvas.clientWidth) / 8) * 4);
+  const radius = (grid - 4) / 2.35;
+  const [cx, cy] = [(grid - 1) / 2 - radius * 0.09, (grid - 1) / 2 + radius * 0.045];
+  return { x: box.left + (cx + ux * radius + 0.5) / grid * box.width, y: box.top + (cy + uy * radius + 0.5) / grid * box.height };
+};
+const fire = (type, point, extra = {}) => document.elementFromPoint(point.x, point.y).dispatchEvent(new (type === "wheel" ? WheelEvent : MouseEvent)(type,
+  { bubbles: true, cancelable: true, clientX: point.x, clientY: point.y, detail: 1, ...extra }));
+const playIcon = () => $("toggle").querySelector("use").getAttribute("href");
+const wasPlaying = playIcon();
+fire("click", unitPoint([0.864, -0.706]));
+await wait(100);
+assert(playIcon() !== wasPlaying, "A click on the tonearm should play or pause");
+assert(!$("record-button").classList.contains("away"), "A click on the tonearm must not fold the record");
+await wait(700);
+fire("click", unitPoint([1.07, -0.6]));
+await wait(100);
+assert(playIcon() === wasPlaying, "A click on the arm where it rests should undo the first");
+const line = () => parseFloat($("track").style.getPropertyValue("--f"));
+const startLine = line();
+const top = $("scroll").scrollTop;
+for (let step = 0; step < 12; step += 1) { fire("wheel", unitPoint([0, 0.3]), { deltaY: 8 }); await new Promise(requestAnimationFrame); }
+assert(line() > startLine, "The wheel over the record should move the song forward on the progress line");
+assert($("scratch").classList.contains("on"), "A scratch should show its place above the record");
+assert($("scroll").scrollTop === top, "A scratch must not scroll the words");
+await wait(450);
+assert(Math.abs(line() - startLine) > 0.001, "The song should stay where the scratch left it");
+// Scrolling to the first words shrinks the record to half its size and no smaller.
+$("scroll").scrollTop = 0;
+await wait(400);
+assert(Math.abs(parseFloat($("record-frame").style.getPropertyValue("--shown")) - 0.5) < 0.01, "Scrolled up, the record should rest at half its size");

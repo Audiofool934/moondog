@@ -269,6 +269,12 @@ img { -webkit-user-drag: none; }
 .expand:active .icon { transform: scale(0.96); }
 .room:not(.empty) .record-frame:hover .record-button:not(.away) ~ .expand, .expand:focus-visible { opacity: 1; pointer-events: auto; transition: none; }
 .room.empty .expand, .record-button.away ~ .expand { display: none; }
+/* Shrunk above the history, the record keeps its corner button at full size. */
+.expand { scale: calc(1 / var(--shown, 1)); transform-origin: 100% 100%; }
+/* While the record is scratched, its place in the song shows just above it, and fades once the music goes there. */
+.scratch { position: fixed; left: 0; top: 0; z-index: 31; transform: translate(-50%, -100%); pointer-events: none; white-space: nowrap;
+  font-size: var(--t-small); font-variant-numeric: tabular-nums; color: var(--text-2); opacity: 0; transition: opacity 600ms var(--soft); }
+.scratch.on { opacity: 1; transition-duration: 120ms; }
 .room.empty { justify-content: center; padding-bottom: 6vh; }
 .room.empty > .frame { display: none; }
 
@@ -394,7 +400,7 @@ img { -webkit-user-drag: none; }
 .immersive .record { width: min(82vmin, 1100px); height: min(82vmin, 1100px); translate: 3.5% 0; color: var(--text);
   animation: immerse 520ms var(--out) backwards; }
 @keyframes immerse { from { transform: scale(0.96); } }
-.window.immersed > :not(.immersive, .mood, .ambient) { visibility: hidden; }
+.window.immersed > :not(.immersive, .mood, .ambient, .scratch) { visibility: hidden; }
 .window.immersed .ambient { mask-image: none; }
 .corner { position: absolute; right: 12px; color: var(--text-2); opacity: 0; -webkit-app-region: no-drag;
   transition: opacity 420ms var(--soft), background-color var(--quick) var(--soft), color var(--quick) var(--soft); }

@@ -29,15 +29,19 @@ A model or music service chosen there lasts until the app quits, and sign-in and
 ## The window
 
 - Before anything is said, the lunar record stands alone over the composer, drawn as dots from the terminal's own record.
-  It turns while music plays and rests when it stops.
+  It turns while music plays and rests when it stops, coming up to speed and running down like a platter.
+  Its tonearm rests on it while music plays and swings off when the music stops; a click on the arm pauses, and another plays.
+  The wheel over the record scratches it: the record turns with the wheel, the song's place shows just above it and on the player's progress line, and the music goes there once the wheel rests, in one seek.
+  A slow wheel moves finely; a quick one covers more of the song.
   Its grooves take the three colours of the cover that is playing, from the rim inward, and drift into the next song's; the dog and the arm stay in ink.
 - In a conversation the record stays above the words, and the conversation runs between it and the composer.
-  Scrolling up into history folds it, as you scroll, into a small mark before the title in the title bar; back at the latest words it opens again.
-  A click on the record, or `⌥⌘R`, keeps it folded; a click on the mark opens it and returns to the latest words.
+  Scrolling up into history shrinks it, as you scroll, to half its size and no smaller; back at the latest words it grows again.
+  Its dots are drawn at the size the window shows, on the screen's pixels, so a smaller record never shimmers with moiré.
+  A click on the record, or `⌥⌘R`, folds it into a small mark in the middle of the title bar and keeps it there; a click on the mark opens it and returns to the latest words.
   Where the bar has no room between its controls, the title gives way first, then the mark.
   Hovering the record offers a full-window view at the lower-right corner of its square, clear of the disc: two arrows with no frame, which darken and open a little under the pointer.
   The full-window view can shrink to a small square; the pin turns upright and solid when it keeps the window on top.
-  A click anywhere in it, or Esc, returns to the conversation; a drag moves the window. The page moves the window itself, because a native drag region never passes it the click.
+  The arm and the wheel work there as above the words. A click anywhere else in it, or Esc, returns to the conversation; a drag moves the window. The page moves the window itself, because a native drag region never passes it the click.
 - Conversations on the left are the terminal's conversations, in both directions: one started here shows up in `/resume`, and the other way round.
   While the window shows, a conversation or folder saved in the terminal appears within about two seconds; the core asks SQLite whether another process wrote to the memory store, so nothing is sent when nothing changed.
   The window and the terminal show the same conversation: the one either opened last, with `/new`, `/resume`, `/rewind`, the sidebar or a launch.
