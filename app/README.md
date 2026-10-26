@@ -197,6 +197,7 @@ To publish an update:
 To try an update before publishing it, build two versions with `node pack.mjs --sign --no-notarize` (signed, not notarized), serve the newer one's zip, `.blockmap` and `latest-mac.yml` over HTTP, and start the older app from a terminal with `MOONDOG_UPDATE_FEED=http://127.0.0.1:8765`.
 Set `MOONDOG_CONFIG_HOME` and `MOONDOG_STATE_HOME` to empty folders too, so the older app never opens your own profile.
 With that feed, a click on Update downloads the newer build, installs it and quits without restarting, because a restarted app would have none of these settings and would open your own profile; start it again from the terminal with the same settings.
+That quit is not the restart a published update makes: there macOS closes the window first, and the core and the Apple Music helper stop after it, so a change to quitting needs that order tried too.
 Extract test copies into a folder whose name ends in `.noindex`, so Spotlight doesn't offer them.
 
 ## Not yet

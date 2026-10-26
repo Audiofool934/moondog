@@ -144,6 +144,8 @@ function buildMenu() {
 
 async function openCore() {
   const shellPath = await loginShellPath;
+  // A quit in the moments the login shell takes needs no core.
+  if (quitting || !window) return;
   const { port1, port2 } = new MessageChannelMain();
   let errors = "";
   const debugPort = Number(process.env.MOONDOG_APP_DEBUG_PORT);
@@ -244,6 +246,15 @@ function createWindow() {
     if (quitting) return;
     event.preventDefault();
     window.hide();
+  });
+  // Restarting into an update closes the window before the core and the music helper stop, so
+  // whatever reports to the window afterwards must find none rather than a destroyed one.
+  window.on("closed", () => {
+    window = null;
+    clearInterval(immersed?.timer);
+    immersed = null;
+    clearInterval(dragging?.timer);
+    dragging = null;
   });
   void window.loadFile(path.join(here, "dist", "index.html"));
 }
