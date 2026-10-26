@@ -405,6 +405,45 @@ test("a showing window picks up a conversation saved elsewhere, and sends nothin
   }
 });
 
+test("a selection's pin, new folder and delete reach every conversation in it, and one refusal leaves the rest done", async () => {
+  const base = application("A");
+  const labelled = [];
+  const deleted = [];
+  base.labelSavedSession = (id, patch) => {
+    if (id === "unsaved") throw new Error("Saved conversation not found for this route.");
+    labelled.push([id, patch]);
+  };
+  base.deleteSavedSession = (id) => { deleted.push(id); return null; };
+  base.saveConversationFolder = ({ name }) => ({ folder_id: `folder-${name}` });
+  const harness = await openRoom({ application: base });
+  try {
+    const lists = () => harness.messages.filter((message) => message.type === "sessions").length;
+    const notices = () => harness.messages.filter((message) => message.type === "notice");
+    let before = lists();
+    await harness.post({ type: "label", ids: ["B", "unsaved", "C"], patch: { pinned: true } });
+    assert.deepEqual(labelled, [["B", { pinned: true }], ["C", { pinned: true }]]);
+    assert.equal(lists(), before + 1);
+    assert.equal(notices().length, 1);
+
+    labelled.length = 0;
+    await harness.post({ type: "folder-save", name: "Rain", moveSessions: ["B", "C"] });
+    assert.deepEqual(labelled, [["B", { folderId: "folder-Rain" }], ["C", { folderId: "folder-Rain" }]]);
+
+    before = lists();
+    await harness.post({ type: "delete", ids: ["B", "C"] });
+    assert.deepEqual(deleted, ["B", "C"]);
+    assert.equal(lists(), before + 1);
+
+    // One row still sends one id.
+    labelled.length = 0;
+    await harness.post({ type: "label", id: "D", patch: { folderId: null } });
+    assert.deepEqual(labelled, [["D", { folderId: null }]]);
+    assert.equal(notices().length, 1);
+  } finally {
+    await harness.stop();
+  }
+});
+
 test("the window follows the conversation the terminal opened and draws the terminal's reply as it grows", async () => {
   const base = application("A");
   let active = "A";

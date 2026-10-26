@@ -579,27 +579,44 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     sendStatus();
   }
 
-  async function deleteSession(id) {
-    const holder = slotFor(id);
-    if (holder?.turn) return send({ type: "notice", code: "delete_running" });
-    // The core refuses a delete while its own turn runs, so an idle slot does it: the one holding the
-    // conversation, which then moves to a new one, or any other.
-    const doer = (holder && !holder.waiting ? holder : null) ?? slots.find((slot) => !slot.turn && !slot.waiting) ?? null;
-    try {
-      if (doer) {
-        const result = doer.application.deleteSavedSession(id);
-        if (result?.started_new_session) doer.runtime.reset?.();
-        // A slot in the background moved to a new conversation; the shown one stays the one both show.
-        if (result?.started_new_session && doer !== current) current.application.claimActiveConversation?.();
-      } else if (base.memoryStore) {
-        // Every agent is answering and none holds this conversation, so the store deletes it directly.
-        base.memoryStore.deleteConversation(id, { routeKey: base.memoryRouteKey });
-      } else slots[0].application.deleteSavedSession(id);
-    } catch (error) {
-      send({ type: "notice", code: /another Moondog/u.test(errorText(error)) ? "delete_open_elsewhere" : "delete_failed", message: errorText(error) });
+  // Several conversations can go at once, from a selection in the sidebar. Each one that can go does;
+  // the first refusal is the one the window shows.
+  async function deleteSessions(ids) {
+    let refusal = null;
+    let shown = false;
+    for (const id of ids) {
+      const holder = slotFor(id);
+      if (holder?.turn) { refusal ??= { code: "delete_running" }; continue; }
+      // The core refuses a delete while its own turn runs, so an idle slot does it: the one holding the
+      // conversation, which then moves to a new one, or any other.
+      const doer = (holder && !holder.waiting ? holder : null) ?? slots.find((slot) => !slot.turn && !slot.waiting) ?? null;
+      try {
+        if (doer) {
+          const result = doer.application.deleteSavedSession(id);
+          if (result?.started_new_session) doer.runtime.reset?.();
+          // A slot in the background moved to a new conversation; the shown one stays the one both show.
+          if (result?.started_new_session && doer !== current) current.application.claimActiveConversation?.();
+        } else if (base.memoryStore) {
+          // Every agent is answering and none holds this conversation, so the store deletes it directly.
+          base.memoryStore.deleteConversation(id, { routeKey: base.memoryRouteKey });
+        } else slots[0].application.deleteSavedSession(id);
+      } catch (error) {
+        refusal ??= { code: /another Moondog/u.test(errorText(error)) ? "delete_open_elsewhere" : "delete_failed", message: errorText(error) };
+      }
+      if (holder === current) shown = true;
     }
-    if (holder === current) sendSession(current);
+    if (refusal) send({ type: "notice", ...refusal });
+    if (shown) sendSession(current);
     sendSessions();
+  }
+  // One label for one conversation or a selection of them; a refusal for one leaves the others labelled.
+  function labelSessions(ids, patch) {
+    let failure = null;
+    for (const id of ids) {
+      try { base.labelSavedSession?.(id, patch); } catch (error) { failure ??= error; }
+    }
+    sendSessions();
+    if (failure) throw failure;
   }
 
   // Model and sign-in
@@ -786,6 +803,7 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
       id: memory.memory_id, text: memory.text, kind: memory.kind, updatedAt: memory.updated_at })) });
   }
 
+  const idsOf = (data) => (Array.isArray(data.ids) ? data.ids : [data.id ?? ""]).map(String);
   const handlers = {
     prompt: (data) => prompt(String(data.text ?? "")),
     cancel: () => { if (current.turn) current.runtime.abort?.(); },
@@ -800,12 +818,12 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
       schedulePlayer();
       scheduleSessions();
     },
-    // Conversations: rename, pin, file, delete, and folders.
-    label: (data) => { base.labelSavedSession?.(String(data.id), data.patch ?? {}); sendSessions(); },
-    delete: (data) => deleteSession(String(data.id ?? "")),
+    // Conversations: rename, pin, file, delete, and folders. A selection sends its ids together.
+    label: (data) => labelSessions(idsOf(data), data.patch ?? {}),
+    delete: (data) => deleteSessions(idsOf(data)),
     "folder-save": (data) => { const folder = base.saveConversationFolder?.({ folderId: data.id ?? undefined, name: String(data.name ?? "").trim() });
-      if (data.moveSession && folder) base.labelSavedSession?.(String(data.moveSession), { folderId: folder.folder_id ?? folder.id });
-      sendSessions(); },
+      if (folder && data.moveSessions?.length) labelSessions(data.moveSessions.map(String), { folderId: folder.folder_id ?? folder.id });
+      else sendSessions(); },
     "folder-delete": (data) => { base.deleteConversationFolder?.(String(data.id)); sendSessions(); },
     // Settings
     settings: () => { sendStatus(); memories(); },

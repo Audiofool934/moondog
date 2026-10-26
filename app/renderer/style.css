@@ -232,6 +232,14 @@ img { -webkit-user-drag: none; }
 .folder .row .open { padding-inline-start: 51px; }
 .loose { min-height: 32px; }
 .drop-target { background: var(--press) !important; }
+/* Rows chosen with ⌘ or Shift take the open conversation's tint. While any are chosen, the open one keeps
+   only its ink, so the tint shows just what the menu, a drag or ⌘⌫ acts on. */
+.row.selected { background: var(--current); }
+.row.selected .open { color: var(--text); }
+.selecting .row[aria-current="true"]:not(.selected):not(:hover) { background: none; }
+/* Dragging several rows shows the one under the pointer, on the window's surface, with how many go. */
+.row.drag-ghost { position: fixed; top: -200px; left: 0; background: var(--raised); }
+.drag-ghost .count { flex: none; margin-inline-end: 10px; font-size: var(--t-caption); color: var(--text-3); font-variant-numeric: tabular-nums; }
 .sidebar > .connect-line { width: auto; align-self: flex-start; margin: 0 10px 12px 12px; }
 
 /* ── The conversation ─────────────────────────────────────────────────────────────────────── */

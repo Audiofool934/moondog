@@ -308,8 +308,22 @@ const STATES = {
   },
 };
 
+// Conversations change as the core would change them, so the sidebar's menus, drags and selections can be tried.
+function relabel(data) {
+  const ids = data.ids ?? [data.id];
+  if (data.type === "label") for (const session of SESSIONS) if (ids.includes(session.id)) Object.assign(session, data.patch);
+  if (data.type === "delete") SESSIONS.splice(0, SESSIONS.length, ...SESSIONS.filter((session) => !ids.includes(session.id)));
+  if (data.type === "folder-save" && !data.id) {
+    const folder = { id: `f${FOLDERS.length + 1}`, name: data.name, position: FOLDERS.length };
+    FOLDERS.push(folder);
+    for (const session of SESSIONS) if (data.moveSessions?.includes(session.id)) session.folderId = folder.id;
+  }
+  send({ type: "sessions", sessions: SESSIONS, folders: FOLDERS, current: "s1", running: [] });
+}
+
 core.onmessage = ({ data }) => {
   if (!data?.type) return;
+  if (["label", "delete", "folder-save"].includes(data.type)) relabel(data);
   if (data.type === "models") send({ type: "models", providers: [
     { id: "anthropic", name: "Anthropic", signedIn: true, signIn: "api_key", source: "saved" },
     { id: "openai-codex", name: "ChatGPT", signedIn: false, signIn: "oauth" },

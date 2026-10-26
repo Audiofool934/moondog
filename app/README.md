@@ -53,6 +53,9 @@ A model or music service chosen there lasts until the app quits, and sign-in and
   A row's `⋯` button or a right-click renames, pins, moves it to a folder, or deletes it after asking.
   Dragging a row onto a folder files it there. `⌘N` or the pencil in the title bar starts a new conversation.
   From the keyboard, Up and Down move between conversations, and the context menu key or Shift+F10 opens a row's menu.
+  Several rows can be chosen as in Finder: `⌘`-click adds or removes one, starting from the open conversation, and Shift-click or Shift+Up and Shift+Down choose a run of them.
+  The menu of a chosen row, a drag of one, or `⌘⌫` then pins, files, or deletes all of them at once; a delete still asks first.
+  A plain click, Esc, or a click on the list's empty space lets the selection go.
 - Several conversations can answer at once, up to four; a breathing dot marks one that is still answering, and you can switch away and back.
 - The conversation in the middle: your words in a bubble, Moondog's in serif type.
   While Moondog works, one quiet line says the step it is on; after a turn, the song it started takes that line, with its cover.
