@@ -633,7 +633,7 @@ test("music the listener starts in the Music app stops Moondog's own player, and
   }
 });
 
-test("Edit in the window branches the conversation before a saved message and returns it as a draft", async () => {
+test("Edit in the window replaces a saved message in place, and Branch goes on from a reply in a new conversation", async () => {
   const base = application("A");
   let entries = [
     { entry_id: "e1", user_text: "play something calm", assistant_text: "Here is Pink Moon.", outcome: "completed" },
@@ -641,6 +641,13 @@ test("Edit in the window branches the conversation before a saved message and re
   ];
   base.conversationEntries = ({ limit }) => entries.slice(-limit);
   base.conversationEntryTurns = (entry) => [{ role: "user", text: entry.user_text }, { role: "assistant", text: entry.assistant_text }];
+  const branched = [];
+  base.branchConversation = (entryId) => {
+    branched.push(entryId);
+    entries = entries.slice(0, entries.findIndex((entry) => entry.entry_id === entryId) + 1);
+    base.sessionId = "B";
+    return { session_id: "B", parent_session_id: "A" };
+  };
   const rewound = [];
   const room = runtime();
   room.rewindTo = async (entryId) => {
@@ -648,28 +655,37 @@ test("Edit in the window branches the conversation before a saved message and re
     const index = entries.findIndex((entry) => entry.entry_id === entryId);
     const draft = entries[index].user_text;
     entries = entries.slice(0, index);
-    base.sessionId = "B";
-    return { session_id: "B", draft };
+    return { session_id: "A", draft };
   };
   const harness = await openRoom({ application: base, runtime: room });
   try {
     await harness.post({ type: "open", id: "A" });
     const shown = harness.messages.filter((message) => message.type === "session").at(-1);
-    assert.deepEqual(shown.transcript.filter((turn) => turn.role === "user").map((turn) => turn.entry), ["e1", "e2"]);
+    assert.deepEqual(shown.transcript.map((turn) => turn.entry), ["e1", "e1", "e2", "e2"]);
 
-    await harness.post({ type: "rewind", entry: "e2" });
+    // Edit rewinds the same conversation and sends the new words in the old message's place.
+    await harness.post({ type: "edit", entry: "e2", text: "and quieter" });
     await tick();
     assert.deepEqual(rewound, ["e2"]);
-    const branched = harness.messages.filter((message) => message.type === "session").at(-1);
-    assert.equal(branched.current, "B");
-    assert.deepEqual(branched.transcript.map((turn) => turn.text), ["play something calm", "Here is Pink Moon."]);
-    assert.deepEqual(harness.messages.filter((message) => message.type === "draft").at(-1), { type: "draft", session: "B", text: "and louder" });
+    assert.deepEqual(room.prompts, ["and quieter"]);
+    const started = harness.messages.find((message) => message.type === "turn" && message.state === "start");
+    assert.deepEqual({ session: started.session, text: started.text }, { session: "A", text: "and quieter" });
+    assert.equal(harness.messages.some((message) => message.type === "draft"), false);
 
-    // A turn that just ended names its saved entry, so its message can be edited without a redraw.
-    entries.push({ entry_id: "e3", user_text: "something else", assistant_text: "ok", outcome: "completed" });
+    // A turn that just ended names its saved entry, so its message can be edited and its reply branched from.
+    entries.push({ entry_id: "e3", user_text: "and quieter", assistant_text: "ok", outcome: "completed" });
     await harness.post({ type: "prompt", text: "something else" });
     await tick();
     assert.equal(harness.messages.filter((message) => message.type === "turn" && message.state === "end").at(-1).entry, "e3");
+
+    // Branch, from the first reply, moves the window to a new conversation that ends with that reply.
+    await harness.post({ type: "branch", entry: "e1" });
+    await tick();
+    assert.deepEqual(branched, ["e1"]);
+    const branch = harness.messages.filter((message) => message.type === "session").at(-1);
+    assert.equal(branch.current, "B");
+    assert.deepEqual(branch.transcript.map((turn) => turn.text), ["play something calm", "Here is Pink Moon."]);
+    assert.deepEqual(harness.messages.at(-1), { type: "branched", session: "B" });
   } finally {
     await harness.stop();
   }

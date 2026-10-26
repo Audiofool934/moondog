@@ -46,7 +46,7 @@ async function fixture(t, { persistent = true, spotify = false, delayedWrite = f
 }
 
 for (const persistent of [true, false]) {
-  test(`rewind preserves the original and supports repeated branching: persistent=${persistent}`, async t => {
+  test(`rewind edits in place, and a branch keeps the original: persistent=${persistent}`, async t => {
     const f = await fixture(t, { persistent });
     await f.say('First fictional request', 'First reply');
     const edited = 'Second request\n带有中文和 “引号”';
@@ -54,48 +54,52 @@ for (const persistent of [true, false]) {
     await f.say('DISCARDED_FUTURE_SENTINEL', 'DISCARDED_ANSWER_SENTINEL');
     const originalId = f.application.ensureMemorySession().session_id;
     const entries = f.application.conversationEntries();
-    const branch = await f.runtime.rewindTo(entries[1].entry_id);
-    assert.equal(branch.draft, edited);
-    assert.equal(branch.parent_session_id, originalId);
+    const rewound = await f.runtime.rewindTo(entries[1].entry_id);
+    assert.deepEqual(rewound, { session_id: originalId, draft: edited });
+    assert.equal(f.application.ensureMemorySession().session_id, originalId);
     assert.deepEqual(f.runtime.agent.state.messages.filter(message => message.role !== "system").map(messageText), ['First fictional request', 'First reply']);
     assert.equal(f.application.conversationPending().draft, edited);
     f.faux.setResponses([context => {
       assert.doesNotMatch(JSON.stringify(context), /DISCARDED_FUTURE|DISCARDED_ANSWER|Second reply/u);
-      return answer('Different branch reply');
+      return answer('Replacement reply');
     }]);
     await f.runtime.prompt('Replacement request');
-    const secondBranch = await f.runtime.rewindTo(f.application.conversationEntries()[1].entry_id);
-    assert.equal(secondBranch.draft, 'Replacement request');
-    assert.equal(f.application.listSavedSessions().length, 3);
-    assert.equal(f.application.listSavedSessions()[0].session_id, secondBranch.session_id);
-    assert.equal(f.application.listSavedSessions()[0].last_message, 'Replacement request');
+    assert.deepEqual(f.application.conversationEntries().map(entry => entry.user_text), ['First fictional request', 'Replacement request']);
+    assert.equal(f.application.listSavedSessions().length, 1);
+    // A branch from the first reply goes on without the replacement; the original keeps it.
+    const branch = f.application.branchConversation(f.application.conversationEntries()[0].entry_id);
+    f.runtime.restoreSession();
+    assert.equal(branch.parent_session_id, originalId);
+    assert.equal(f.application.ensureMemorySession().session_id, branch.session_id);
+    assert.deepEqual(f.application.conversationEntries().map(entry => entry.assistant_text), ['First reply']);
+    assert.deepEqual(f.runtime.agent.state.messages.filter(message => message.role !== "system").map(messageText), ['First fictional request', 'First reply']);
+    assert.equal(f.application.listSavedSessions().length, 2);
     f.application.resumeSession(originalId); f.runtime.restoreSession();
-    assert.equal(f.application.conversationEntries().length, 3);
-    assert.match(JSON.stringify(f.runtime.agent.state.messages), /DISCARDED_ANSWER_SENTINEL/u);
+    assert.deepEqual(f.application.conversationEntries().map(entry => entry.assistant_text), ['First reply', 'Replacement reply']);
+    assert.doesNotMatch(JSON.stringify(f.runtime.agent.state.messages), /DISCARDED_ANSWER_SENTINEL/u);
   });
 }
 
-test('rewind drafts, original history and explicit preferences survive restart without recalling discarded futures', async t => {
+test('a rewound draft, queued drafts and explicit preferences survive restart without recalling replaced messages', async t => {
   const f = await fixture(t);
-  await f.say('Before branch', 'Before response');
+  await f.say('Before rewind', 'Before response');
   await f.say('Discard this future', 'Future response');
   f.application.rememberMemory({ text: 'I prefer concise replies', kind: 'preference' });
   const originalId = f.application.ensureMemorySession().session_id;
   const entry = f.application.conversationEntries()[0];
-  f.application.conversationPending({ draft: 'Unsent original draft', queued: ['Queued original draft'] });
-  const branch = await f.runtime.rewindTo(entry.entry_id);
+  f.application.conversationPending({ draft: 'Unsent draft', queued: ['Queued draft'] });
+  await f.runtime.rewindTo(entry.entry_id);
   await f.reopen();
-  assert.equal(f.application.ensureMemorySession().session_id, branch.session_id);
-  assert.deepEqual(f.application.conversationPending(), { draft: 'Before branch', queued: [] });
+  assert.equal(f.application.ensureMemorySession().session_id, originalId);
+  assert.deepEqual(f.application.conversationPending(), { draft: 'Before rewind', queued: ['Queued draft'] });
   assert.deepEqual(f.runtime.agent.state.messages.filter(message => message.role !== "system"), []);
-  const context = f.application.memoryContext();
-  assert.doesNotMatch(JSON.stringify(context.recent_episodes), /Discard this future/u);
-  assert.doesNotMatch(JSON.stringify(context.recent_sessions), /Future response/u);
-  assert.match(JSON.stringify(context.durable_memories), /I prefer concise replies/u);
-  assert.ok(f.application.listSavedSessions().some(row => row.session_id === branch.session_id && row.turn_count === 0));
-  f.application.resumeSession(originalId); f.runtime.restoreSession();
-  assert.deepEqual(f.application.conversationPending(), { draft: 'Unsent original draft', queued: ['Queued original draft'] });
-  assert.equal(f.application.conversationEntries().length, 2);
+  assert.deepEqual(f.application.conversationEntries(), []);
+  assert.deepEqual(f.application.currentSessionTurns(), []);
+  const summary = f.application.memorySummary();
+  assert.doesNotMatch(JSON.stringify(summary), /Before response|Discard this future|Future response/u);
+  assert.match(JSON.stringify(summary.memories), /I prefer concise replies/u);
+  assert.match(JSON.stringify(f.application.memoryContext().durable_memories), /I prefer concise replies/u);
+  assert.ok(f.application.listSavedSessions().some(row => row.session_id === originalId && row.turn_count === 0));
   if (process.platform !== 'win32') assert.equal((await stat(f.databasePath)).mode & 0o777, 0o600);
 });
 
@@ -175,7 +179,7 @@ test('rewind rejects stale/cross-session entry identifiers and never restores Pi
   assert.deepEqual(f.runtime.agent.state.messages.filter(message => message.role !== "system"), []);
 });
 
-test('legacy generic transcripts can be rewound without rewriting their stored history', async t => {
+test('legacy generic transcripts can be branched unchanged and rewound in place', async t => {
   const f = await fixture(t);
   // A source-version-two transcript has no corresponding journal entries.
   const legacy = f.store.rotateSession('legacy:route');
@@ -184,13 +188,17 @@ test('legacy generic transcripts can be rewound without rewriting their stored h
   const before = f.store.readSessionTurns(legacy.session_id);
   const entries = f.store.readConversationEntries(legacy.session_id);
   assert.equal(entries.length, 2);
-  assert.throws(() => f.store.forkConversation(legacy.session_id, entries[0].entry_id), /no longer available/u);
-  const branch = f.store.forkConversation(legacy.session_id, entries[1].entry_id, { routeKey: 'legacy:route' });
+  assert.throws(() => f.store.branchConversation(legacy.session_id, entries[0].entry_id), /no longer available/u);
+  const branch = f.store.branchConversation(legacy.session_id, entries[0].entry_id, { routeKey: 'legacy:route' });
   assert.equal(f.store.readConversationEntries(branch.session_id).length, 1);
   assert.deepEqual(f.store.readSessionTurns(legacy.session_id), before);
+  // Rewinding the original removes the replaced exchange from its prompt log too.
+  assert.deepEqual(f.store.rewindConversation(legacy.session_id, entries[1].entry_id), { session_id: legacy.session_id, draft: 'Legacy next' });
+  assert.deepEqual(f.store.readConversationEntries(legacy.session_id).map(entry => entry.user_text), ['Legacy first']);
+  assert.deepEqual(f.store.readSessionTurns(legacy.session_id), before.slice(0, 2));
 });
 
-test('rewind of a running turn waits for settlement, retains its receipt in the original and makes no second request', async t => {
+test('rewind of a running turn waits for settlement, replaces it and makes no second request', async t => {
   const f = await fixture(t, { spotify: true, delayedWrite: true });
   f.faux.setResponses([tool('moondog_spotify_player_control', { action: 'next' })]);
   const pending = f.runtime.prompt('Skip one track once');
@@ -198,13 +206,10 @@ test('rewind of a running turn waits for settlement, retains its receipt in the 
   const originalId = f.application.ensureMemorySession().session_id;
   const rewind = f.runtime.rewindTo(f.application.conversationEntries()[0].entry_id);
   await assert.rejects(f.runtime.prompt('Do not permit overlapping prompts'), /already in progress/u);
-  assert.equal(f.application.ensureMemorySession().session_id, originalId);
   f.writeGate.resolve();
   await pending;
-  const branch = await rewind;
-  assert.notEqual(branch.session_id, originalId);
+  assert.deepEqual(await rewind, { session_id: originalId, draft: 'Skip one track once' });
   assert.equal(f.writes.length, 1);
-  assert.match(f.store.readConversationEntries(originalId)[0].assistant_text, /Spotify/u);
   assert.equal(f.application.conversationEntries().length, 0);
 });
 

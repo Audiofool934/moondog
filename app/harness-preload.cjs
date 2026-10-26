@@ -155,7 +155,10 @@ const send = (message) => {
   if (message.type === "ready" || message.type === "status") status = { ...status, ...Object.fromEntries(Object.keys(STATUS).map((key) => [key, message[key] ?? status[key]])) };
   core.postMessage(message);
 };
+// The conversation on screen, so Branch can go on from one of its replies.
+let shown = [];
 function ready(extra = {}) {
+  shown = extra.transcript ?? [];
   send({ type: "ready", ...STATUS, sessions: SESSIONS, folders: FOLDERS, current: "s1", running: [], transcript: [], ...extra });
 }
 // The last song the stand-in played, so pause, skip and seek answer about that song.
@@ -171,7 +174,7 @@ function player(options = {}) {
 const silent = () => send({ type: "player", spotify: "ready", now: null, next: [] });
 const played = (index) => [{ action: "playback.resume", state: "accepted", targets: [{ title: TRACKS[index].title, artist_credit: TRACKS[index].artists.join(", ") }] }];
 const conversation = (pairs) => pairs.flatMap(([user, reply], index) => [{ role: "user", text: user, entry: `e${index}` },
-  { role: "assistant", id: `t${index}`, text: reply, receipts: index === 0 ? played(0) : [] }]);
+  { role: "assistant", id: `t${index}`, text: reply, entry: `e${index}`, receipts: index === 0 ? played(0) : [] }]);
 // Opens a settings section the way a listener can: a slash command typed into the composer.
 function slash(command) {
   const input = document.querySelector("[data-input]");
@@ -278,9 +281,21 @@ const STATES = {
   "update-available"() { STATES.reply(); setUpdate({ phase: "available", version: "0.2.0-beta.4" }); },
   "update-downloading"() { STATES.reply(); setUpdate({ phase: "downloading", version: "0.2.0-beta.4", progress: 0.4, installing: true }); },
   "update-ready"() { STATES.reply(); setUpdate({ phase: "ready", version: "0.2.0-beta.4" }); },
-  // Copy and Edit under a message, and Copy under a reply, while the pointer is on them.
+  // Copy and Edit under a message, and Copy and Branch under a reply, while the pointer is on them.
   "message-tools"() { STATES.reply(); return { hover: ".you p" }; },
   "reply-tools"() { STATES.reply(); return { hover: ".reply .text" }; },
+  "branch-tip"() { STATES.reply(); return { hover: ".reply .message-tools .tool:nth-child(2)" }; },
+  // Edit opens the message in its own place; Branch moves to a new conversation that ends with that reply.
+  editing() {
+    ready({ transcript: conversation([["What have I been playing at night?", SHORT], ["Something slower for the walk home, nothing with drums", REPLY]]) });
+    player({ index: 1 });
+    setTimeout(() => document.querySelectorAll(".you .message-tools .tool:nth-child(2)")[1].click(), 150);
+  },
+  branched() {
+    ready({ transcript: conversation([["What have I been playing at night?", REPLY], ["Something slower for the walk home", SHORT]]) });
+    player({ index: 1 });
+    setTimeout(() => document.querySelector(".reply .message-tools .tool:nth-child(2)").click(), 150);
+  },
   // A message sent with a reply that outgrows the window: the message stays in view under the record.
   hold() {
     STATES.long();
@@ -355,7 +370,13 @@ core.onmessage = ({ data }) => {
   if (data.type === "netease-check") send({ type: "status", ...status, netease: "ready" });
   if (data.type === "model") send({ type: "status", ...status, model: { ...status.model, state: "configured", provider: data.provider, model: data.model } });
   if (data.type === "effort") send({ type: "status", ...status, model: { ...status.model, effort: data.effort === "default" ? null : data.effort } });
-  if (data.type === "prompt") {
+  if (data.type === "branch") {
+    const end = shown.findLastIndex((turn) => turn.role === "assistant" && turn.entry === data.entry);
+    shown = shown.slice(0, end + 1);
+    send({ type: "session", current: "s1-branch", transcript: shown });
+    send({ type: "branched", session: "s1-branch" });
+  }
+  if (data.type === "prompt" || data.type === "edit") {
     // A reply arriving word by word, so streaming can be watched rather than posed.
     const id = `live-${Math.random().toString(36).slice(2)}`;
     send({ type: "turn", state: "start", id, text: data.text, session: null });

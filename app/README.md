@@ -45,8 +45,9 @@ A model or music service chosen there lasts until the app quits, and sign-in and
   The arm and the wheel work there as above the words. A click anywhere else in it, or Esc, returns to the conversation; a drag moves the window. The page moves the window itself, because a native drag region never passes it the click.
 - Conversations on the left are the terminal's conversations, in both directions: one started here shows up in `/resume`, and the other way round.
   While the window shows, a conversation or folder saved in the terminal appears within about two seconds; the core asks SQLite whether another process wrote to the memory store, so nothing is sent when nothing changed.
-  The window and the terminal show the same conversation: the one either opened last, with `/new`, `/resume`, `/rewind`, the sidebar or a launch.
-  A branch made with `/rewind` carries its place in the conversation's lineage until it is renamed, "Late night #2"; the number stays in sight when the title is cut short.
+  The window and the terminal show the same conversation: the one either opened last, with `/new`, `/resume`, `/branch`, Branch, the sidebar or a launch.
+  An edit made in either, with Edit here or `/rewind` there, shows in the other.
+  A branch carries its place in the conversation's lineage until it is renamed, "Late night #2"; the number stays in sight when the title is cut short.
   A message sent in the terminal appears here, and its reply grows here as it is written; the other way round too.
   One of them answers at a time: a message sent while the other answers comes back to the composer here and waits in the queue there.
   Pinned ones come first, then folders, then the rest by day.
@@ -63,7 +64,9 @@ A model or music service chosen there lasts until the app quits, and sign-in and
 - In a long conversation, a mark for each request sits at the right edge: hover one to read it, click to go back to it.
   The view stays with the newest words until you scroll up; a round button brings you back. Page Up and Page Down scroll from the composer.
   A message you send holds its place: the reply grows under it until the message reaches the top of the words, under the record, and the rest waits below for you to scroll, with the round button showing. A hand on the scroll lets go.
-  Under each message, while the pointer is on it, Copy copies its words. Your own saved messages also have Edit: as `/rewind` in the terminal, the conversation branches just before the message, the original stays among the conversations, and the message comes back to the composer to change and send.
+  Under each message, while the pointer is on it, Copy copies its words.
+  Your own saved messages also have Edit, as `/rewind` in the terminal: the message opens in its own place, Enter sends the new words there and the replies after it go, and Esc leaves it as it was.
+  Moondog's saved replies also have Branch, as `/branch`: a new conversation goes on from that reply, and the original stays among the conversations.
 - What is playing on the right: a large cover that tints the panel with its own colours, the song, a progress line you can drag to move in the song (or focus it and use the arrow keys, five seconds a press, fifteen with Shift), previous, play or pause, and next.
   Where the music plays, under it, opens Spotify's devices and the choice between Spotify and Apple Music; while Apple Music plays, it reads Apple Music.
   A control Spotify won't take right now, such as skipping on a free account, is dimmed.

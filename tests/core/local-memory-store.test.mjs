@@ -350,10 +350,10 @@ test("deleting a root conversation keeps its durable memories and re-roots its b
     const reflected = store.listMemories().find((memory) => memory.text === "Wants vinyl-first suggestions");
 
     const rootEntries = store.readConversationEntries(root.session_id);
-    const child = store.forkConversation(root.session_id, rootEntries[1].entry_id);
+    const child = store.branchConversation(root.session_id, rootEntries[0].entry_id);
     const entry = store.beginConversationEntry(child.session_id, "Something for a slow Saturday.");
     store.finishConversationEntry(child.session_id, entry, { text: "Try this warm record.", status: "completed" });
-    const grandchild = store.forkConversation(child.session_id, store.readConversationEntries(child.session_id)[1].entry_id);
+    const grandchild = store.branchConversation(child.session_id, store.readConversationEntries(child.session_id)[0].entry_id);
     store.rotateSession();
 
     assert.deepEqual(store.deleteConversation(root.session_id), { deleted: true, session_id: root.session_id, reparented: 1 });
@@ -1001,9 +1001,9 @@ test("the terminal and the App share one conversation and answer in it one at a 
       try { gone.beginConversationEntry(shown.session_id, "never answered"); } finally { gone.close(); }
       assert.equal(app.replyElsewhere(shown.session_id), null);
 
-      // The terminal rewinds after the App opened another conversation; the branch is the one both show.
+      // The terminal branches after the App opened another conversation; the branch is the one both show.
       const other = app.rotateSession("local:main", "user_new");
-      const branch = terminal.forkConversation(shown.session_id, mine);
+      const branch = terminal.branchConversation(shown.session_id, mine);
       assert.equal(app.activeSession().session_id, branch.session_id);
       assert.notEqual(branch.session_id, other.session_id);
       assert.equal(app.listSessions().find((session) => session.session_id === branch.session_id).parent_session_id, shown.session_id);
@@ -1018,10 +1018,10 @@ test("an unnamed branch shows its lineage's title and number, and a name replace
     const root = store.startSession();
     store.appendCompletedTurn(root.session_id, { user: "Late night records.", assistant: "Here are three." });
     store.appendCompletedTurn(root.session_id, { user: "Slower.", assistant: "Try these." });
-    const child = store.forkConversation(root.session_id, store.readConversationEntries(root.session_id)[1].entry_id);
+    const child = store.branchConversation(root.session_id, store.readConversationEntries(root.session_id)[0].entry_id);
     const entry = store.beginConversationEntry(child.session_id, "Even slower.");
     store.finishConversationEntry(child.session_id, entry, { text: "This one.", status: "completed" });
-    const grandchild = store.forkConversation(child.session_id, store.readConversationEntries(child.session_id)[1].entry_id);
+    const grandchild = store.branchConversation(child.session_id, store.readConversationEntries(child.session_id)[0].entry_id);
     const titles = () => Object.fromEntries(store.listSessions().map((session) => [session.session_id, session.title]));
 
     assert.deepEqual(titles(), { [root.session_id]: "Late night records.",

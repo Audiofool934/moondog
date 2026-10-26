@@ -256,8 +256,8 @@ function drawReply(node, turn, index) {
     parts.action = action;
   }
 }
-// Under each message, shown while the pointer is on it: Copy, and on your own saved messages Edit, which
-// branches the conversation just before the message and brings it back to the composer. The original stays.
+// Under each message, shown while the pointer is on it: Copy; on your own saved messages Edit, which
+// changes the message in place; and on a saved reply Branch, which goes on from it in a new conversation.
 function messageTools(node, turn) {
   let tools = node.tools;
   if (!tools) {
@@ -280,19 +280,92 @@ function messageTools(node, turn) {
       change.type = "button";
       change.dataset.tipAt = "below";
       change.append(icon("edit"));
-      change.addEventListener("click", () => {
-        if (state.streaming) return notice(t("waitForReply"));
-        if (node.turn?.entry) send({ type: "rewind", entry: node.turn.entry });
-      });
+      change.addEventListener("click", () => editMessage(node));
       tools.change = change;
       tools.append(change);
+    } else {
+      const branch = make("button", "tool");
+      branch.type = "button";
+      branch.dataset.tipAt = "below";
+      branch.append(icon("branch"));
+      branch.addEventListener("click", () => {
+        if (state.streaming) return notice(t("waitForReply"));
+        if (node.turn?.entry) send({ type: "branch", entry: node.turn.entry });
+      });
+      tools.branch = branch;
+      tools.append(branch);
     }
     node.append(tools);
   }
   node.turn = turn;
   if (!tools.copy.timer) name(tools.copy, t("copy"));
   if (tools.change) { name(tools.change, t("editMessage")); tools.change.hidden = !turn.entry; }
-  tools.hidden = !turn.text || Boolean(turn.streaming || turn.pending || turn.waiting);
+  if (tools.branch) { name(tools.branch, t("branchReply")); tools.branch.hidden = !turn.entry || Boolean(turn.failed || turn.local); }
+  tools.hidden = !turn.text || Boolean(turn.streaming || turn.pending || turn.waiting || node.editing);
+}
+// Edit: the message opens as a field in its own place. Enter sends the new words there and the replies
+// after it go, as /rewind does in the terminal; Escape leaves everything as it was.
+function editMessage(node) {
+  const turn = node.turn;
+  if (!turn?.entry || node.editing) return;
+  if (state.streaming) return notice(t("waitForReply"));
+  const words = node.querySelector(":scope > p");
+  const field = make("textarea", "edit");
+  field.value = turn.text;
+  field.rows = 1;
+  field.setAttribute("aria-label", t("editMessage"));
+  const bar = make("div", "message-tools edit-tools");
+  const button = (glyph, label, keys) => {
+    const control = make("button", "tool");
+    control.type = "button";
+    control.dataset.tipAt = "below";
+    control.append(icon(glyph));
+    name(control, label, keys);
+    bar.append(control);
+    return control;
+  };
+  const cancel = button("close", t("cancel"), "esc");
+  const done = button("up", t("send"), "↩");
+  node.editing = true;
+  node.classList.add("editing");
+  words.hidden = true;
+  words.after(field, bar);
+  messageTools(node, turn);
+  // A message under the record comes down into the words to be edited.
+  field.focus({ preventScroll: true });
+  field.scrollIntoView({ block: "nearest", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+  field.setSelectionRange(field.value.length, field.value.length);
+  const close = () => {
+    field.remove();
+    bar.remove();
+    words.hidden = false;
+    node.editing = false;
+    node.classList.remove("editing");
+    messageTools(node, node.turn);
+  };
+  const commit = () => {
+    const text = field.value.trim();
+    if (!text) return;
+    if (state.streaming) return notice(t("waitForReply"));
+    if (state.model?.state !== "configured") return notice(t("offline"));
+    const index = state.turns.indexOf(turn);
+    close();
+    if (index < 0) return;
+    // The new words show at once in the old one's place; the core's start of the turn adopts them.
+    state.turns.splice(index, state.turns.length - index, { role: "user", text, pending: true });
+    follow(true);
+    renderConversation();
+    send({ type: "edit", entry: turn.entry, text });
+    holdLatest();
+    input.focus();
+  };
+  cancel.addEventListener("click", () => { close(); input.focus(); });
+  done.addEventListener("click", commit);
+  field.addEventListener("input", () => { done.disabled = !field.value.trim(); });
+  field.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") { event.preventDefault(); close(); input.focus(); }
+    if (event.key === "Enter" && !event.shiftKey && !event.isComposing && event.keyCode !== 229) { event.preventDefault(); commit(); }
+  });
 }
 const previousUser = (index) => state.turns.slice(0, index).findLast((entry) => entry.role === "user")?.text ?? null;
 function retry(index) {
@@ -1585,7 +1658,7 @@ window.moondogApp?.onCommand?.((command) => {
   if (command === "toggle-record") toggleRecord();
 });
 document.addEventListener("visibilitychange", () => send({ type: "visible", visible: !document.hidden }));
-window.addEventListener("focus", () => { if (!settings.open && !getSelection()?.toString() && !document.activeElement?.closest?.(".rename")) input.focus(); });
+window.addEventListener("focus", () => { if (!settings.open && !getSelection()?.toString() && !document.activeElement?.closest?.(".rename, .edit")) input.focus(); });
 
 // ── Messages from the core ───────────────────────────────────────────────────────────────────
 function streamingTurn(id) {
@@ -1675,13 +1748,10 @@ function receive({ data }) {
       submitText(waiting);
     }
   }
-  // Edit branched the conversation: the message comes back to the composer to change and send again.
-  if (data.type === "draft" && onScreen(data)) {
-    input.value = data.text ?? "";
-    renderComposer();
+  // Branch moved the window to a new conversation that looks like the old one up to that reply.
+  if (data.type === "branched" && onScreen(data)) {
     input.focus();
-    input.setSelectionRange(input.value.length, input.value.length);
-    notice(t("rewound"));
+    notice(t("branched"));
   }
   if (data.type === "local" && onScreen(data)) {
     state.turns.push({ role: "assistant", text: data.markdown, local: true });
@@ -1697,9 +1767,9 @@ function receive({ data }) {
       const turn = streamingTurn(data.id);
       if (turn) {
         turn.streaming = false;
-        // The message this reply answers is saved now, so it can be edited.
+        // The message and its reply are saved now, so the message can be edited and the reply branched from.
         const asked = state.turns[state.turns.indexOf(turn) - 1];
-        if (data.entry && asked?.role === "user") asked.entry = data.entry;
+        if (data.entry && asked?.role === "user") { asked.entry = data.entry; turn.entry = data.entry; }
         if (data.state === "end") {
           turn.receipts = data.receipts ?? [];
           turn.text = data.text || turn.text || (data.status === "aborted" ? t("stopped") : "");

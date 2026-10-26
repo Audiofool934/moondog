@@ -48,8 +48,7 @@ test("a long first message is listed cut short at a word, and so is a branch's l
     const root = application.ensureMemorySession().session_id;
     const entryId = reply(application, LONG);
     assert.equal(listed(application, root).title, short);
-    const branch = application.rewindConversation(entryId).session_id;
-    application.conversationPending({ draft: "A different start", queued: [] });
+    const branch = application.branchConversation(entryId).session_id;
     assert.equal(listed(application, branch).title, `${short} #2`);
   });
 });

@@ -43,6 +43,7 @@ export class BrowserApplication {
   listSavedSessions() { return []; }
   resumeSession() { throw needsApp("Saved conversations"); }
   rewindConversation() { throw needsApp("Rewind"); }
+  branchConversation() { throw needsApp("Branch"); }
   rememberMemory() { throw needsApp("Memory"); }
   forgetMemory() { throw needsApp("Memory"); }
 }

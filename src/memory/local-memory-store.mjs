@@ -1270,9 +1270,11 @@ export class LocalMemoryStore {
     return this.commitCompletedPrompt(sessionId, { user, assistant });
   }
 
+  // turnId names the user turn; the application passes the conversation entry's own id, so an
+  // edit can find this exchange in the prompt log.
   commitCompletedPrompt(
     sessionId,
-    { user, assistant, memoryMutations = [] },
+    { user, assistant, memoryMutations = [], turnId = randomUUID() },
   ) {
     this.#assertOpen();
     const userText = cleanText(user, 8_000, "User turn");
@@ -1292,7 +1294,7 @@ export class LocalMemoryStore {
           WHERE session_id = ?
         `)
         .get(sessionId);
-      const userTurnId = randomUUID();
+      const userTurnId = cleanText(turnId, 128, "User turn ID");
       insert.run(
         userTurnId,
         sessionId,
@@ -1475,7 +1477,44 @@ export class LocalMemoryStore {
     } catch (error) { this.#database.exec("ROLLBACK"); throw error; }
   }
 
-  forkConversation(sessionId, entryId, { routeKey = 'local:main' } = {}) {
+  // Edit, in place: the selected message and everything after it leave the conversation, and the
+  // message comes back as the draft to change and send again. A branch is how an original is kept.
+  // Saved preferences stay, as Spotify actions stay done.
+  rewindConversation(sessionId, entryId) {
+    this.#assertOpen();
+    this.#database.exec("BEGIN IMMEDIATE");
+    try {
+      this.#ensureConversation(sessionId);
+      if (this.#replyElsewhere(sessionId)) {
+        throw Object.assign(new Error("Moondog is answering in this conversation in another window or terminal."), { code: "conversation_busy" });
+      }
+      const selected = this.#database.prepare("SELECT * FROM conversation_entries WHERE session_id = ? AND entry_id = ?").get(sessionId, entryId);
+      if (!selected) throw new Error("The selected turn is no longer available");
+      // The prompt log holds the same exchanges for recall, so they leave it too, with their dialogue
+      // episodes. A logged message carries its entry's id; one logged before that is found by its time.
+      const first = this.#database.prepare(`SELECT MIN(position) AS position FROM turns WHERE session_id = ? AND role = 'user' AND (
+          turn_id IN (SELECT entry_id FROM conversation_entries WHERE session_id = ? AND position >= ?)
+          OR (created_at >= ? AND turn_id NOT IN (SELECT entry_id FROM conversation_entries WHERE session_id = ? AND position < ?)))`)
+        .get(sessionId, sessionId, selected.position, selected.created_at, sessionId, selected.position).position;
+      if (first !== null) {
+        const replaced = "SELECT turn_id FROM turns WHERE session_id = ? AND role = 'user' AND position >= ?";
+        const dialogue = `SELECT episode_id FROM episodes WHERE kind = 'dialogue' AND source_kind = 'turn' AND source_id IN (${replaced})`;
+        this.#database.prepare(`DELETE FROM claim_episode_refs WHERE episode_id IN (${dialogue})`).run(sessionId, first);
+        this.#database.prepare(`DELETE FROM episodes WHERE episode_id IN (${dialogue})`).run(sessionId, first);
+        this.#database.prepare("DELETE FROM turns WHERE session_id = ? AND position >= ?").run(sessionId, first);
+      }
+      this.#database.prepare(`DELETE FROM conversation_writers WHERE entry_id IN
+        (SELECT entry_id FROM conversation_entries WHERE session_id = ? AND position >= ?)`).run(sessionId, selected.position);
+      this.#database.prepare("DELETE FROM conversation_entries WHERE session_id = ? AND position >= ?").run(sessionId, selected.position);
+      this.#database.prepare("UPDATE conversation_branches SET draft = ? WHERE session_id = ?").run(selected.user_text, sessionId);
+      this.#database.exec("COMMIT");
+      return { session_id: sessionId, draft: selected.user_text };
+    } catch (error) { this.#database.exec("ROLLBACK"); throw error; }
+  }
+
+  // Branch: a new conversation that goes on from a reply, with a copy of everything up to it. The
+  // original stays as it is, and the branch becomes the one both the terminal and the App show.
+  branchConversation(sessionId, entryId, { routeKey = 'local:main' } = {}) {
     this.#assertOpen();
     const route = cleanText(routeKey, 128, "Session route");
     this.#database.exec("BEGIN IMMEDIATE");
@@ -1487,19 +1526,20 @@ export class LocalMemoryStore {
       this.#ensureConversation(sessionId);
       const selected = this.#database.prepare("SELECT * FROM conversation_entries WHERE session_id = ? AND entry_id = ?").get(sessionId, entryId);
       if (!selected) throw new Error("The selected turn is no longer available");
+      if (selected.outcome === 'running') throw new Error("Wait for the reply to finish before branching");
       const root = this.#database.prepare("SELECT root_session_id FROM conversation_branches WHERE session_id = ?").get(sessionId).root_session_id;
       const createdAt = isoTimestamp(this.#clock);
       const nextId = randomUUID();
-      this.#database.prepare("UPDATE sessions SET status = 'closed', ended_at = ?, close_reason = 'rewind' WHERE route_key = ? AND status = 'active'").run(createdAt, route);
+      this.#database.prepare("UPDATE sessions SET status = 'closed', ended_at = ?, close_reason = 'branch' WHERE route_key = ? AND status = 'active'").run(createdAt, route);
       this.#database.prepare("INSERT INTO sessions(session_id, route_key, started_at, status) VALUES (?, ?, ?, 'active')").run(nextId, route, createdAt);
-      this.#database.prepare(`INSERT INTO conversation_branches(session_id, root_session_id, parent_session_id, source_entry_id, draft)
-        VALUES (?, ?, ?, ?, ?)`).run(nextId, root, sessionId, entryId, selected.user_text);
-      const prefix = this.#database.prepare("SELECT * FROM conversation_entries WHERE session_id = ? AND position < ? ORDER BY position").all(sessionId, selected.position);
+      this.#database.prepare(`INSERT INTO conversation_branches(session_id, root_session_id, parent_session_id, source_entry_id)
+        VALUES (?, ?, ?, ?)`).run(nextId, root, sessionId, entryId);
+      const prefix = this.#database.prepare("SELECT * FROM conversation_entries WHERE session_id = ? AND position <= ? ORDER BY position").all(sessionId, selected.position);
       const insert = this.#database.prepare(`INSERT INTO conversation_entries
         (entry_id, session_id, position, user_text, assistant_text, outcome, transient, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
       for (const row of prefix) insert.run(randomUUID(), nextId, row.position, row.user_text, row.assistant_text, row.outcome, row.transient, row.created_at);
       this.#database.exec("COMMIT");
-      return { session_id: nextId, route_key: route, started_at: createdAt, parent_session_id: sessionId, draft: selected.user_text };
+      return { session_id: nextId, route_key: route, started_at: createdAt, parent_session_id: sessionId };
     } catch (error) { this.#database.exec("ROLLBACK"); throw error; }
   }
 

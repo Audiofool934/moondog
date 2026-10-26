@@ -2430,31 +2430,34 @@ test("home artwork and lyrics animate, pause during interaction, and stop with m
   assert.equal(terminal.stopCount, 1);
 });
 
-test('Alt+R branches before a selected message, preserves the unsent draft, and sends only after editing', async context => {
+test('Alt+R rewinds in place before a selected message and sends only after editing, and /branch keeps an original', async context => {
   const f = await createSavedConversationFixture(context);
   await f.launch();
   await f.submit('First rewind request', 'Fixture response: First rewind request');
   await f.submit('Second rewind request', 'Fixture response: Second rewind request');
   const originalId = f.application.ensureMemorySession().session_id;
-  f.terminal.send('Unsent original draft');
+  f.terminal.send('Unsent draft');
   f.terminal.send('\x1br');
   await f.outputIncludes('Rewind to a message');
   f.terminal.output = '';
   f.terminal.send('\r');
   await f.outputIncludes('Earlier message restored');
-  const branchId = f.application.ensureMemorySession().session_id;
-  assert.notEqual(branchId, originalId);
+  assert.equal(f.application.ensureMemorySession().session_id, originalId);
   assert.equal(f.application.conversationPending().draft, 'Second rewind request');
   assert.equal(f.application.conversationEntries().length, 1);
   assert.equal(f.runtime.prompts.length, 2);
-  assert.match(stripVTControlCharacters(f.terminal.output), /Spotify actions and saved preferences/u);
+  assert.match(stripVTControlCharacters(f.terminal.output), /Spotify actions and\s+saved preferences/u);
   f.terminal.send('\x15');
   await f.submit('Edited second request', 'Fixture response: Edited second request');
   assert.equal(f.runtime.prompts.at(-1).text, 'Edited second request');
+  assert.deepEqual(f.application.conversationEntries().map(entry => entry.user_text), ['First rewind request', 'Edited second request']);
+  await f.submit('/branch', 'Branched');
+  const branchId = f.application.ensureMemorySession().session_id;
+  assert.notEqual(branchId, originalId);
+  assert.deepEqual(f.application.conversationEntries().map(entry => entry.user_text), ['First rewind request', 'Edited second request']);
+  assert.equal(f.application.listSavedSessions().find(session => session.session_id === branchId).parent_session_id, originalId);
   await f.submit(`/resume ${originalId}`, 'Back in:');
   assert.equal(f.application.conversationEntries().length, 2);
-  assert.equal(f.application.conversationPending().draft, 'Unsent original draft');
-  assert.match(stripVTControlCharacters(f.terminal.output), /Unsent original draft/u);
   assert.equal(f.runtime.prompts.length, 3);
 });
 
@@ -2492,7 +2495,7 @@ test('/rewind latest restores an editable first message across narrow and wide r
   assert.equal(f.runtime.prompts.length, 1);
 });
 
-test('rewinding an active turn waits for cancellation and saves queued drafts with the original without replay', async context => {
+test('rewinding an active turn waits for cancellation and keeps queued drafts paused without replay', async context => {
   const f = await createSavedConversationFixture(context);
   await f.launch();
   const ordinaryPrompt = f.runtime.prompt.bind(f.runtime);
@@ -2515,10 +2518,11 @@ test('rewinding an active turn waits for cancellation and saves queued drafts wi
   await f.outputIncludes('Earlier message restored');
   assert.equal(f.runtime.abortCount, 1);
   assert.equal(f.runtime.prompts.length, 0);
-  assert.deepEqual(f.application.conversationPending().queued, []);
+  assert.equal(f.application.ensureMemorySession().session_id, originalId);
+  assert.deepEqual(f.application.conversationEntries(), []);
+  assert.deepEqual(f.application.conversationPending(), { draft: 'Slow fictional request', queued: ['Queued fictional request'] });
   f.terminal.send('\x15');
-  await f.submit(`/resume ${originalId}`, 'Back in:');
-  assert.deepEqual(f.application.conversationPending().queued, ['Queued fictional request']);
+  await new Promise(resolve => setTimeout(resolve, 20));
   assert.equal(f.runtime.prompts.length, 0);
   f.terminal.send('\x1b[A');
   f.terminal.send('\r');
@@ -2749,4 +2753,13 @@ test("the terminal follows the conversation the App opened and shows the App's r
   await shows("Here is a calm set.");
   await shows("Fixture response: And louder");
   assert.equal(runtime.prompts[0].sessionId, shown.session_id);
+
+  // An edit in the App replaces the first message in place; the terminal draws the conversation again.
+  terminal.output = "";
+  app.rewindConversation(shown.session_id, entry);
+  const edited = app.beginConversationEntry(shown.session_id, "Play something bright");
+  app.finishConversationEntry(shown.session_id, edited, { text: "Here is a bright set.", status: "completed" });
+  await shows("Here is a bright set.");
+  assert.doesNotMatch(stripVTControlCharacters(terminal.output), /And louder|calm set/u);
+  assert.equal(application.ensureMemorySession().session_id, shown.session_id);
 });

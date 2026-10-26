@@ -157,12 +157,13 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
   // transcript leaves it out and the window draws the live version instead. A reply running in the
   // terminal is drawn the same way.
   const liveOf = (slot) => slot.live ?? (slot === current && remote?.session === sessionOf(slot) ? remote.live : null);
-  // Each message carries the saved entry it belongs to, so the window can branch the conversation before it.
+  // Each message carries the saved entry it belongs to, so the window can edit a message in place or
+  // branch from a reply.
   function transcript(slot) {
     const { application } = slot;
     const saved = typeof application.conversationEntries === "function" && typeof application.conversationEntryTurns === "function"
       ? application.conversationEntries({ limit: 40 }).flatMap((entry) => application.conversationEntryTurns(entry)
-        .map((turn) => (turn.role === "user" ? { ...turn, entry: entry.entry_id } : turn))).slice(-80)
+        .map((turn) => ({ ...turn, entry: entry.entry_id }))).slice(-80)
       : application.currentConversationTurns?.({ limit: 80 }) ?? [];
     const turns = saved.filter((entry) => entry.role === "user" || entry.role === "assistant")
       .map((entry) => ({ role: entry.role, text: entry.text, ...(entry.entry ? { entry: entry.entry } : {}) }));
@@ -779,23 +780,40 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
   function latestEntry(slot) {
     try { return slot.application.conversationEntries?.({ limit: 1 }).at(-1)?.entry_id ?? null; } catch { return null; }
   }
-  // Edit, from the window: as /rewind in the terminal, the conversation branches just before that message,
-  // the original stays saved, and the message comes back to the composer to change and send again.
-  async function rewind(entryId) {
+  // Edit, from the window: as /rewind in the terminal, the message and everything after it leave this
+  // conversation, and the changed words go in its place as a new message. The window already shows them.
+  async function edit(entryId, text) {
+    const slot = current;
+    if (!entryId || !text.trim()) return;
+    if (slot.turn || slot.waiting || slot.application.replyElsewhere?.()) {
+      send({ type: "notice", code: "rewind_busy" });
+      return sendSession(slot);
+    }
+    try {
+      if (typeof slot.runtime.rewindTo === "function") await slot.runtime.rewindTo(entryId);
+      else { slot.application.rewindConversation(entryId); slot.runtime.restoreSession?.(); }
+    } catch (error) {
+      send({ type: "notice", code: "rewind_failed", message: errorText(error) });
+      return sendSession(slot);
+    }
+    await prompt(text);
+  }
+  // Branch, from a reply: a new conversation goes on from it with everything up to it, and the original
+  // stays among the conversations. The terminal follows, as it does a conversation opened here.
+  function branch(entryId) {
     const slot = current;
     if (!entryId) return;
     if (slot.turn || slot.waiting || slot.application.replyElsewhere?.()) return send({ type: "notice", code: "rewind_busy" });
     try {
-      const branch = typeof slot.runtime.rewindTo === "function" ? await slot.runtime.rewindTo(entryId)
-        : (() => { const next = slot.application.rewindConversation(entryId); slot.runtime.restoreSession?.(); return next; })();
-      slot.application.claimActiveConversation?.();
-      sendSession(slot);
-      sendSessions();
-      sendStatus();
-      send({ type: "draft", session: sessionOf(slot), text: String(branch?.draft ?? "") });
+      slot.application.branchConversation(entryId);
+      slot.runtime.restoreSession?.();
     } catch (error) {
-      send({ type: "notice", code: "rewind_failed", message: errorText(error) });
+      return send({ type: "notice", code: "rewind_failed", message: errorText(error) });
     }
+    sendSession(slot);
+    sendSessions();
+    sendStatus();
+    send({ type: "branched", session: sessionOf(slot) });
   }
   function memories() {
     const summary = base.memorySummary?.({ limit: 100 });
@@ -809,7 +827,8 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     cancel: () => { if (current.turn) current.runtime.abort?.(); },
     new: () => openSession(null),
     open: (data) => openSession(String(data.id ?? "")),
-    rewind: (data) => rewind(String(data.entry ?? "")),
+    edit: (data) => edit(String(data.entry ?? ""), String(data.text ?? "")),
+    branch: (data) => branch(String(data.entry ?? "")),
     control: (data) => control(String(data.action ?? ""), data.via, data.positionMs),
     storefront: (data) => { setAppleMusicStorefront(data.code); },
     visible: (data) => {

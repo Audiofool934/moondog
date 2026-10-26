@@ -118,7 +118,8 @@ const slashCommands = [
   { name: "remember", description: N_("Ask Moondog to remember something") },
   { name: "forget", description: N_("Forget one memory by ID") },
   { name: "resume", description: N_("Pick up a saved conversation") },
-  { name: "rewind", description: N_("Edit an earlier message on a new branch · Alt+R") },
+  { name: "rewind", description: N_("Edit an earlier message in place · Alt+R") },
+  { name: "branch", description: N_("Go on from here in a new conversation; this one stays saved") },
   { name: "new", description: N_("Start fresh; this conversation stays saved") },
   { name: "help", description: N_("Commands and shortcuts") },
   { name: "quit", description: N_("Leave Moondog") },
@@ -1622,12 +1623,12 @@ export async function runMoondogTui({
       value: entry.entry_id,
       label: `${index + 1}. ${sanitizeTerminalText(entry.user_text).replace(/\s+/gu, ' ').trim()}`,
       description: `${entry.outcome} · ${entry.created_at.slice(0, 16).replace('T', ' ')}`,
-    })).reverse(), entries.at(-1).entry_id, tr("Rewind to a message · original stays saved"));
+    })).reverse(), entries.at(-1).entry_id, tr("Rewind to a message · it and what follows are replaced"));
     if (cleanedUp) return;
     if (!selected) { setFooter(tr("Rewind cancelled. Queued drafts stay paused.")); return; }
     storeRecall();
     savePendingConversation();
-    const branch = typeof activeRuntime.rewindTo === 'function'
+    const rewound = typeof activeRuntime.rewindTo === 'function'
       ? await activeRuntime.rewindTo(selected.value)
       : application.rewindConversation(selected.value);
     if (typeof activeRuntime.rewindTo !== 'function') activeRuntime.restoreSession?.();
@@ -1641,10 +1642,30 @@ export async function runMoondogTui({
       if (turn.role === 'user') addUserMessage(sanitizeTerminalText(turn.text));
       else addMoondogMessage(turn.text);
     }
-    installRecall(branch.session_id, recallFromTurns());
+    installRecall(rewound.session_id, recallFromTurns());
     restorePendingConversation();
-    addMoondogMessage(tr("Branched before this message. Edit it below, then send. The original is in /resume. Spotify actions and saved preferences have not been undone; inspect the original receipts before repeating an action."));
-    setFooter(tr("Earlier message restored · edit before sending · /resume keeps both branches"), success);
+    // The watcher draws only what others add, so it must not take the removed messages for another's edit.
+    markDrawn();
+    addMoondogMessage(tr("Rewound to before this message. Edit it below, then send. Spotify actions and saved preferences from the replaced messages have not been undone."));
+    setFooter(tr("Earlier message restored · edit before sending"), success);
+    tui.requestRender(true);
+  };
+
+  // /branch: a new conversation goes on from this one as it stands, and this one stays in /resume.
+  const branchConversation = async (args) => {
+    if (args.length) throw new Error(tr("Use /branch on its own."));
+    if (typeof application.branchConversation !== 'function') throw new Error(tr("Branching isn't available in this runtime."));
+    if (!application.conversationEntries?.({ limit: 1 }).length) { setFooter(tr("Nothing to branch from yet.")); return; }
+    storeRecall();
+    savePendingConversation();
+    const branch = application.branchConversation();
+    activeRuntime.restoreSession();
+    installRecall(branch.session_id, recallFromTurns());
+    conversationTitle = '';
+    drawSavedConversation();
+    restorePendingConversation();
+    markDrawn();
+    setFooter(tr("Branched · the original is in /resume"), success);
     tui.requestRender(true);
   };
 
@@ -1745,6 +1766,10 @@ export async function runMoondogTui({
     }
     if (command === "rewind") {
       await rewindConversation(args);
+      return;
+    }
+    if (command === "branch") {
+      await branchConversation(args);
       return;
     }
     if (command === "resume") {
@@ -2012,7 +2037,7 @@ export async function runMoondogTui({
         return;
       }
       try {
-        if (!["home", "theme", "art", "motion", "model", "resume", "rewind", "new", "taste", "profile", "import"].includes(command)) enterConversation();
+        if (!["home", "theme", "art", "motion", "model", "resume", "rewind", "branch", "new", "taste", "profile", "import"].includes(command)) enterConversation();
         if (command !== "auth") editor.addToHistory(value);
         localCommandController = ["web", "lyrics", "model", "update", "profile"].includes(command) ? new AbortController() : null;
         const controller = localCommandController;
@@ -2262,7 +2287,16 @@ export async function runMoondogTui({
   };
   const showElsewhere = () => {
     const reply = application.replyElsewhere?.() ?? null;
-    for (const entry of savedEntries()) {
+    const entries = savedEntries();
+    // An edit in the App took the newest drawn message out of this conversation: draw it again as saved.
+    const newest = [...drawn.ids].at(-1);
+    if (newest && !entries.some((entry) => entry.entry_id === newest)) {
+      endElsewhere();
+      drawSavedConversation();
+      markDrawn();
+      tui.requestRender(true);
+    }
+    for (const entry of entries) {
       if (drawn.ids.has(entry.entry_id) || entry.entry_id === elsewhere?.id) continue;
       if (entry.entry_id !== reply?.entry_id) {
         drawn.ids.add(entry.entry_id);

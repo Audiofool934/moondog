@@ -986,7 +986,7 @@ export class MoondogApplication {
       // in generic memory, automatic recall or reflection.
       const result = this.transientSpotifyContext ? this.commitTransientPrompt(memoryMutations, user)
         : this.memoryStore ? this.memoryStore.commitCompletedPrompt(this.ensureMemorySession().session_id,
-          { user, assistant, memoryMutations }) : { recorded: false, memory_results: [] };
+          { user, assistant, memoryMutations, turnId: this.conversationEntry.entryId }) : { recorded: false, memory_results: [] };
       status = 'completed';
       return result;
     } finally {
@@ -1304,20 +1304,41 @@ export class MoondogApplication {
     return structuredClone(row.pending);
   }
 
+  // Edit, in place: the message and everything after it leave this conversation, and the message
+  // comes back as the draft. Returns { session_id, draft }.
   rewindConversation(entryId) {
     if (this.conversationEntry || this.pendingPlaylistPromptTransaction) throw new Error("Wait for the current turn to finish before rewinding");
     const sessionId = this.ensureMemorySession().session_id;
+    let rewound;
+    if (this.memoryStore) rewound = this.memoryStore.rewindConversation(sessionId, entryId);
+    else {
+      const row = this.localConversations.get(sessionId);
+      const index = row.entries.findIndex(entry => entry.entry_id === entryId);
+      if (index < 0) throw new Error("The selected turn is no longer available");
+      rewound = { session_id: sessionId, draft: row.entries[index].user_text };
+      row.entries.splice(index);
+      row.pending.draft = rewound.draft;
+    }
+    this.#clearConversationState();
+    return structuredClone(rewound);
+  }
+
+  // Branch: a new conversation that goes on from a reply (the latest by default), with a copy of
+  // everything up to it. The original stays as it is. Returns the new conversation's session.
+  branchConversation(entryId = this.latestConversationEntryId()) {
+    if (this.conversationEntry || this.pendingPlaylistPromptTransaction) throw new Error("Wait for the current turn to finish before branching");
+    if (!entryId) throw new Error("There is nothing to branch from yet");
+    const sessionId = this.ensureMemorySession().session_id;
     let next;
-    if (this.memoryStore) next = this.memoryStore.forkConversation(sessionId, entryId, { routeKey: this.memoryRouteKey });
+    if (this.memoryStore) next = this.memoryStore.branchConversation(sessionId, entryId, { routeKey: this.memoryRouteKey });
     else {
       const original = this.localConversations.get(sessionId);
       const index = original.entries.findIndex(entry => entry.entry_id === entryId);
       if (index < 0) throw new Error("The selected turn is no longer available");
-      next = { ...this.#newLocalConversation(), parent_session_id: sessionId, draft: original.entries[index].user_text };
+      next = { ...this.#newLocalConversation(), parent_session_id: sessionId };
       const branch = this.localConversations.get(next.session_id);
       branch.parent_session_id = sessionId;
-      branch.entries = structuredClone(original.entries.slice(0, index)).map(entry => ({ ...entry, entry_id: randomUUID() }));
-      branch.pending.draft = next.draft;
+      branch.entries = structuredClone(original.entries.slice(0, index + 1)).map(entry => ({ ...entry, entry_id: randomUUID() }));
     }
     this.memorySession = next;
     this.#clearConversationState();

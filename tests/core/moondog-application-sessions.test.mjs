@@ -215,7 +215,7 @@ test("conversation labels, folders and deletes work without persistent memory", 
     application.recordCompletedTurn("First process-local request", "First answer");
     application.recordCompletedTurn("Second process-local request", "Second answer");
     const [, second] = application.conversationEntries();
-    const branch = application.rewindConversation(second.entry_id);
+    const branch = application.branchConversation(second.entry_id);
     assert.equal(application.listSavedSessions().find((session) => session.session_id === branch.session_id).parent_session_id,
       rootSession.session_id);
 

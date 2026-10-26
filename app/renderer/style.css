@@ -288,8 +288,8 @@ img { -webkit-user-drag: none; }
 
 .turn { margin: 0 0 30px; }
 .you { position: relative; display: flex; justify-content: flex-end; margin: 0 0 30px; }
-/* Copy, and Edit on your own messages, sit just under a message while the pointer is on it. They take no
-   room of their own, so the conversation never shifts when they appear. */
+/* Copy, Edit on your own messages and Branch on replies sit just under a message while the pointer is
+   on it. They take no room of their own, so the conversation never shifts when they appear. */
 .message-tools { position: absolute; top: 100%; display: flex; gap: 2px; margin-top: 2px; opacity: 0;
   transition: opacity 180ms var(--soft); }
 .you .message-tools { right: 0; }
@@ -300,6 +300,12 @@ img { -webkit-user-drag: none; }
 .turn.reply { position: relative; }
 .you p { margin: 0; max-width: 78%; background: var(--glass); box-shadow: var(--glass-edge); border-radius: var(--r-4) var(--r-4) var(--r-1) var(--r-4); padding: 8px 14px 9px;
   font-size: var(--t-body); line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+/* Edit opens the message as a field in its own bubble, with Cancel and Send in sight under it. */
+.you .edit { width: 78%; margin: 0; resize: none; border: 0; outline: 0; color: var(--text); background: var(--glass);
+  box-shadow: var(--glass-edge), inset 0 0 0 1px rgb(var(--ink-rgb) / 0.12); border-radius: var(--r-4) var(--r-4) var(--r-1) var(--r-4); padding: 8px 14px 9px;
+  font-size: var(--t-body); line-height: 1.5; overflow-wrap: anywhere; field-sizing: content; max-height: 40vh; overflow-y: auto; scrollbar-width: none;
+  scroll-margin: calc(var(--veil, 0px) + 14px) 0 48px; }
+.you.editing .edit-tools { opacity: 1; }
 .reply .text { font-family: var(--serif); font-size: var(--t-reply); line-height: 1.7; overflow-wrap: anywhere; text-wrap: pretty; }
 .reply .text > :first-child { margin-top: 0; }
 .reply .text > :last-child { margin-bottom: 0; }
