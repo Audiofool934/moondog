@@ -116,12 +116,45 @@ assert(playIcon() === wasPlaying, "A click on the arm where it rests should undo
 const line = () => parseFloat($("track").style.getPropertyValue("--f"));
 const startLine = line();
 const top = $("scroll").scrollTop;
+// The record takes the wheel from a pointer put on it.
+fire("pointermove", unitPoint([0.02, 0.31]));
 for (let step = 0; step < 12; step += 1) { fire("wheel", unitPoint([0, 0.3]), { deltaY: 8 }); await new Promise(requestAnimationFrame); }
 assert(line() > startLine, "The wheel over the record should move the song forward on the progress line");
 assert($("scratch").classList.contains("on"), "A scratch should show its place above the record");
 assert($("scroll").scrollTop === top, "A scratch must not scroll the words");
 await wait(450);
 assert(Math.abs(line() - startLine) > 0.001, "The song should stay where the scratch left it");
+// A pointer that moved onto the words, under a record that then takes the wheel, moves the words, not the song.
+await wait(300);
+const scroll = $("scroll");
+const words = rect(scroll);
+fire("pointermove", { x: words.left + words.width / 2, y: words.bottom - 80 });
+const settledLine = line();
+const before = scroll.scrollTop;
+for (let step = 0; step < 6; step += 1) { fire("wheel", unitPoint([0, 0.3]), { deltaY: -12 }); await new Promise(requestAnimationFrame); }
+await wait(300);
+assert(scroll.scrollTop < before - 40, "A wheel on the record from a pointer not put there should scroll the words");
+assert(line() === settledLine, "A wheel the record hands on must not move the song");
+// At rest, the record's size follows where the view is and nothing else: the same at the same place,
+// never a jump between two nearby places, and the room above the words stays put while the view moves.
+const shown = () => parseFloat($("record-frame").style.getPropertyValue("--shown") || "1");
+const lead = $("lead").offsetHeight;
+const sizes = new Map();
+const end = scroll.scrollHeight - scroll.clientHeight;
+let last = null;
+for (const pass of [0, 1]) {
+  for (let step = 0; step <= 20; step += 1) {
+    const at = Math.round(end - (pass ? 20 - step : step) * 24);
+    scroll.scrollTop = at;
+    await new Promise(requestAnimationFrame);
+    await wait(120);
+    if (last !== null) assert(Math.abs(shown() - last) < 0.06, `The record should change gradually with the scroll, not jump (${last} to ${shown()} at ${at})`);
+    last = shown();
+    if (sizes.has(at)) assert(Math.abs(sizes.get(at) - shown()) < 0.002, `The record should be the same size each time the view rests at ${at}`);
+    sizes.set(at, shown());
+    assert($("lead").offsetHeight === lead, "The room above the words should not change while the view moves");
+  }
+}
 // Scrolling to the first words shrinks the record to half its size and no smaller.
 $("scroll").scrollTop = 0;
 await wait(400);

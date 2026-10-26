@@ -34,11 +34,16 @@ A model or music service chosen there lasts until the app quits, and sign-in and
   With nothing loaded on any player, setting the arm down asks Moondog for a song, as the words "Play something for right now" would in the open conversation; the arm stays on the record until the music starts, and lifts again if the reply starts none. A paused song is still loaded, so the arm resumes it.
   The wheel over the record scratches it: the record turns with the wheel, the song's place shows just above it and on the player's progress line, and the music goes there once the wheel rests, in one seek.
   A slow wheel moves finely; a quick one covers more of the song.
+  A turn of the wheel belongs to what it starts on until the wheel rests. Above the words, the record takes it only from a pointer put on the disc or its arm; a record that grew or moved under a still pointer, its square's empty corners, and a song that can't move leave the wheel to the words.
   Its grooves take the three colours of the cover that is playing, from the rim inward, and drift into the next song's; the dog and the arm stay in ink.
 - In a conversation the record stays above the words, and the conversation runs between it and the composer.
-  Scrolling up into history shrinks it, as you scroll, to half its size and no smaller; back at the latest words it grows again.
+  It is full size at home, where the latest exchange starts: the newest message just under the record, or the end of the words when everything after that message fits.
+  Moving away from home, up into history or down a long reply, shrinks it as you scroll, to half its size and no smaller.
+  Its size follows where the view is and nothing else, so it never jumps, and it is the same size each time the view rests at the same place. A reply growing below the view leaves it as it is.
+  Shrinking follows the hand at once; growing back takes at least 600 ms, so a quick pass by home doesn't flash it full. A glide (the round button, a request mark) takes it straight from its size where the glide starts to its size where the glide ends.
+  The room above the first words is what the record takes at the top of the conversation, so it changes when the conversation does, never while you scroll, and the words never move under your hand.
   Its dots are drawn at the size the window shows, on the screen's pixels, so a smaller record never shimmers with moiré.
-  A click on the record, or `⌥⌘R`, folds it into a small mark in the middle of the title bar and keeps it there; a click on the mark opens it and returns to the latest words.
+  A click on the record, or `⌥⌘R`, folds it into a small mark in the middle of the title bar and keeps it there; a click on the mark opens it and returns home under it.
   Where the bar has no room between its controls, the title gives way first, then the mark.
   Hovering the record offers a full-window view at the lower-right corner of its square, clear of the disc: two arrows with no frame, which darken and open a little under the pointer.
   The full-window view can shrink to a small square; the pin turns upright and solid when it keeps the window on top.
@@ -62,8 +67,8 @@ A model or music service chosen there lasts until the app quits, and sign-in and
   While Moondog works, one quiet line says the step it is on; after a turn, the song it started takes that line, with its cover.
   A reply that failed offers Try again.
 - In a long conversation, a mark for each request sits at the right edge: hover one to read it, click to go back to it.
-  The view stays with the newest words until you scroll up; a round button brings you back. Page Up and Page Down scroll from the composer.
-  A message you send holds its place: the reply grows under it until the message reaches the top of the words, under the record, and the rest waits below for you to scroll, with the round button showing. A hand on the scroll lets go.
+  The view rests at home while the conversation changes: a message you send, or a conversation you open, shows from its message, and a reply longer than the window grows below for you to scroll, with the round button showing.
+  Scrolling to the end, or the round button, rests the view at the end instead, where a reply still being written stays in view. Only a hand on the scroll (the wheel, keys, the scrollbar) lets go, so the window never pulls the view back from under it. Page Up and Page Down scroll from the composer.
   Under each message, while the pointer is on it, Copy copies its words.
   Your own saved messages also have Edit, as `/rewind` in the terminal: the message opens in its own place, Enter sends the new words there and the replies after it go, and Esc leaves it as it was.
   Moondog's saved replies also have Branch, as `/branch`: a new conversation goes on from that reply, and the original stays among the conversations.

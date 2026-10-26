@@ -353,10 +353,9 @@ function editMessage(node) {
     if (index < 0) return;
     // The new words show at once in the old one's place; the core's start of the turn adopts them.
     state.turns.splice(index, state.turns.length - index, { role: "user", text, pending: true });
-    follow(true);
+    rest();
     renderConversation();
     send({ type: "edit", entry: turn.entry, text });
-    holdLatest();
     input.focus();
   };
   cancel.addEventListener("click", () => { close(); input.focus(); });
@@ -372,9 +371,9 @@ function retry(index) {
   const text = previousUser(index);
   if (!text || state.streaming) return;
   state.turns.splice(index - 1, 2);
-  follow(true);
+  rest();
   renderConversation();
-  if (submitText(text)) holdLatest();
+  submitText(text);
 }
 
 const scroller = $("scroll");
@@ -384,46 +383,62 @@ let nodes = [];
 let drawn = undefined;
 let record = null;
 let frame = 0;
-// Following: the view stays with the latest words until the listener scrolls up, and comes back
-// when they return to the bottom. Only pin() writes the scroll position.
-let following = true;
+// The view rests at one of two places while the conversation changes under it: home, where the
+// latest exchange starts (its message just under the record, or the end when everything after it
+// fits), and the end, where a reply that outgrew the window is still being written. A message sent
+// or a conversation opened rests at home; scrolling or jumping to the end rests there. Only a hand on
+// the scroll lets go, so the window never pulls the view back from under it.
+let anchor = "home";
+// The scroll position the window itself set last, so its own moves are not taken for a hand's.
 let own = -1;
 let lastTop = 0;
 const gap = () => scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
+const end = () => Math.max(0, scroller.scrollHeight - scroller.clientHeight);
 const selecting = () => { const selection = getSelection(); return selection && !selection.isCollapsed && column.contains(selection.anchorNode); };
-// A message sent here holds the view: the reply grows under it only until the message reaches the top
-// of the words, and the rest waits below for the listener to scroll down, instead of pushing the message
-// out of sight. A hand on the scroll, or a return to the latest words, lets go.
-let hold = null;
 const HOLD_GAP = 14;
-function heldTop() {
-  const words = parseFloat(scroller.style.getPropertyValue("--veil")) || BAR;
-  return hold.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop - words - HOLD_GAP;
+// Home, measured from layout rather than the screen, so a message still easing in counts where it settles.
+function home() {
+  const asked = nodes.findLast((entry, index) => state.turns[index]?.role === "user")?.node;
+  if (!asked?.isConnected) return end();
+  return Math.min(end(), Math.max(0, asked.offsetTop - homeVeil() - HOLD_GAP));
 }
-function holdLatest() {
-  hold = nodes.findLast((entry, index) => state.turns[index]?.role === "user")?.node ?? null;
-  pin();
+const anchorTop = () => (anchor === "end" ? end() : home());
+function anchorTo(place) {
+  anchor = place;
+  scroller.dataset.following = "true";
+  keep();
 }
-function follow(on) {
-  hold = null;
-  // Coming back to the latest words opens the record again, from wherever it had folded to.
-  if (on && !following) refold();
-  following = on;
-  scroller.dataset.following = String(on);
+function letGo() {
+  if (!anchor) return;
+  anchor = null;
+  scroller.dataset.following = "false";
   renderJump();
 }
-function pin() {
-  if (!following || selecting()) { renderJump(); return; }
-  scroller.scrollTop = hold?.isConnected ? Math.max(0, heldTop()) : scroller.scrollHeight;
-  own = lastTop = scroller.scrollTop;
+// Rests the view at home from the next keep(), which the change that follows (a message sent, a
+// conversation drawn) brings.
+function rest() {
+  anchor = "home";
+  scroller.dataset.following = "true";
+}
+// Holds the view at its anchor as the words change. A view that had to travel eases the record to its
+// new size instead of snapping it there.
+function keep() {
+  if (anchor && !gliding && !selecting()) {
+    const before = scroller.scrollTop;
+    const top = anchorTop();
+    if (Math.abs(before - top) > 0.5) scroller.scrollTop = top;
+    own = scroller.scrollTop;
+    if (Math.abs(own - before) > 2) refold();
+  }
   renderJump();
 }
 
 // ── The record ───────────────────────────────────────────────────────────────────────────────
 // Before anything is said the record stands alone over the composer. In a conversation it stays
-// above the words, and shrinks to half its size as the listener scrolls up into history; back at
-// the latest words it grows again. Folded by hand, it goes into the title bar and stays there until
-// it is opened by hand.
+// above the words: full size at home, and smaller as the view moves away from home, up into history
+// or down a long reply, to half its size. Its size follows where the view is and nothing else, so it
+// never jumps, and it is the same size whenever the view rests at the same place. Folded by hand, it
+// goes into the title bar and stays there until it is opened by hand.
 const stage = $("stage");
 const recordFrame = $("record-frame");
 const recordButton = $("record-button");
@@ -437,9 +452,9 @@ const BAR = parseFloat(getComputedStyle(document.documentElement).getPropertyVal
 const RECORD_GAP = 4;
 // As large as an 800-point window can give it and still leave the words most of the room.
 const recordSize = () => Math.round(Math.min(280, Math.max(140, innerHeight * 0.35)));
-// Scrolling shrinks the record to half its size and no smaller, so it stays a record, never a smudge.
-// The shrink takes this many record heights of scrolling, eased at both ends, so it happens gradually
-// over a few scrolls instead of all at once.
+// Moving away from home shrinks the record to half its size and no smaller, so it stays a record,
+// never a smudge. The shrink takes this many record heights of distance, eased at both ends, so it
+// happens gradually over a few scrolls instead of all at once.
 const SMALLEST = 0.5;
 const SHRINK_SPAN = 1.5;
 const shrinkAt = (distance, size = recordSize()) => {
@@ -448,20 +463,23 @@ const shrinkAt = (distance, size = recordSize()) => {
 };
 // A fold by hand, or opening again, takes this long, quick at first and settling at the end.
 const FOLD_MS = 300;
+// Growing back from half to full size under the hand takes at least this long.
+const GROW_MS = 600;
 let foldedByHand = store.get("moondog.record") === "folded";
 // The record as drawn: shrink, 0 full size to 1 half size above the words; dock, 0 above the words to 1 in the title bar.
 let fold = { shrink: 0, dock: 0 };
 let tween = null;
-let gliding = false;
 let placing = 0;
 let leadHeight = 0;
+// Whether the pointer was put on the record, rather than the record moving under a still pointer.
+let aimed = false;
 const talking = () => Boolean(record) && !room.classList.contains("empty");
 const lerp = (from, to, at) => from + (to - from) * at;
-// Folded by hand, or as far as the listener has scrolled up from the latest words.
-function foldWanted() {
-  return { shrink: following ? 0 : shrinkAt(gap()), dock: foldedByHand ? 1 : 0 };
+// Folded by hand, or as far as the view is from home, either way.
+function foldWanted(size) {
+  return { shrink: shrinkAt(Math.abs(scroller.scrollTop - home()), size), dock: foldedByHand ? 1 : 0 };
 }
-// A jump in what the room wants (a click, a return to the latest words) eases there instead of snapping.
+// A jump in what the room wants (a click, a view that had to travel) eases there instead of snapping.
 function refold() {
   if (!talking()) return;
   tween = { from: { ...fold }, start: performance.now() };
@@ -492,71 +510,119 @@ function placeTitle() {
 }
 // Finish the travel before the crossfade, so the two drawings occupy the same box during handoff.
 const HANDOFF = 0.94;
-// Where the record is drawn at a fold, in the room's coordinates: centered under the bar, as large as
-// the scroll leaves it, and from there to the mark in the bar as it docks. Its top stays put as it shrinks.
-function recordBox(at, size = recordSize()) {
-  const open = size * lerp(1, SMALLEST, at.shrink);
-  const travel = Math.min(1, at.dock / HANDOFF);
+// The room and the mark in the bar, read once for each placing.
+function measure() {
   const box = room.getBoundingClientRect();
   const dock = mark.node.getBoundingClientRect();
-  return { x: lerp(box.width / 2 - open / 2 + open * 0.035, dock.left - box.left, travel), y: lerp(BAR + RECORD_GAP, dock.top - box.top, travel),
-    size: lerp(open, dock.width, travel) };
+  return { width: box.width, left: dock.left - box.left, top: dock.top - box.top, size: dock.width };
 }
-// Scrolls so `node` sits just under the record as the record will be there. The record's room above
-// the words changes on the way, and a smooth scroll still ends where it was sent, so the place is
-// worked out for the room it will have then.
+// Where the record is drawn at a fold, in the room's coordinates: centered under the bar, as large as
+// the scroll leaves it, and from there to the mark in the bar as it docks. Its top stays put as it shrinks.
+function recordBox(at, size = recordSize(), where = measure()) {
+  const open = size * lerp(1, SMALLEST, at.shrink);
+  const travel = Math.min(1, at.dock / HANDOFF);
+  return { x: lerp(where.width / 2 - open / 2 + open * 0.035, where.left, travel), y: lerp(BAR + RECORD_GAP, where.top, travel),
+    size: lerp(open, where.size, travel) };
+}
+// Where the words fade with the record at home: just under it at full size, or under the bar when it
+// is folded there.
+function homeVeil(where = measure()) {
+  if (!talking()) return BAR;
+  const box = recordBox({ shrink: 0, dock: fold.dock }, recordSize(), where);
+  return Math.max(BAR, box.y + box.size + 10);
+}
+// The room above the first words is what the record takes at the top of the conversation, so the
+// first words sit just under it there. The record's size at the top depends on how far the top is
+// from home, and home moves with that room, so the room that agrees with itself is found by halving.
+// It changes as the conversation does, never with the scroll, so the words never move under the hand.
+function leadFor(size, dock, where) {
+  const reach = (shrink) => { const box = recordBox({ shrink, dock }, size, where); return Math.max(0, box.y + box.size - BAR); };
+  const asked = nodes.findLast((entry, index) => state.turns[index]?.role === "user")?.node;
+  // Home and the end without any room above the words.
+  const below = scroller.scrollHeight - leadHeight - scroller.clientHeight;
+  const after = asked?.isConnected ? asked.offsetTop - leadHeight - homeVeil(where) - HOLD_GAP : Infinity;
+  const homeWith = (room) => Math.max(0, room + Math.min(after, below));
+  let [low, high] = [reach(1), reach(0)];
+  for (let step = 0; step < 16; step += 1) {
+    const middle = (low + high) / 2;
+    if (reach(shrinkAt(homeWith(middle), size)) > middle) low = middle; else high = middle;
+  }
+  return Math.round(low + high) / 2;
+}
+// Glides so `node` sits just under the record as the record will be there. The record's size there
+// depends on how far the place is from home, and the place on that size; a few rounds settle it,
+// since the record changes more slowly than the scroll.
 function scrollToNode(node) {
   const size = recordSize();
+  const where = measure();
   const dock = foldedByHand ? 1 : 0;
-  const bottom = (shrink) => { const box = recordBox({ shrink, dock }, size); return box.y + box.size; };
-  const veil = (shrink) => Math.max(BAR, bottom(shrink) + 10);
-  // With the node 20 points under the veil, the distance left below the view grows with the veil and
-  // the shrink grows with that distance; the shrink that agrees with itself is found by halving.
-  const rest = scroller.scrollHeight - node.offsetTop + 20 - scroller.clientHeight;
-  let [low, high] = [0, 1];
-  for (let step = 0; step < 20; step += 1) {
-    const middle = (low + high) / 2;
-    if (shrinkAt(rest + veil(middle), size) > middle) low = middle; else high = middle;
-  }
-  const at = (low + high) / 2;
-  const reach = Math.max(0, bottom(at) - BAR);
-  glideTo(Math.max(0, node.offsetTop - leadHeight + reach - veil(at) - 20), reach);
-}
-// Glides the view to `top` with the record's room already at `reach`. The room changes at once,
-// without moving the words in view, and holds still on the way, so the glide ends where it was sent.
-let endGlide = () => {};
-function glideTo(top, reach) {
-  endGlide();
-  scroller.style.overflowAnchor = "none";
-  const before = leadHeight;
-  leadHeight = reach;
-  lead.style.height = `${reach}px`;
-  scroller.scrollTop += reach - before;
-  own = lastTop = scroller.scrollTop;
-  const target = Math.min(top, scroller.scrollHeight - scroller.clientHeight);
-  gliding = true;
-  let timer = 0;
-  const arrived = () => { if (Math.abs(scroller.scrollTop - target) <= 2) endGlide(); };
-  endGlide = () => {
-    endGlide = () => {};
-    gliding = false;
-    clearTimeout(timer);
-    scroller.removeEventListener("scrollend", arrived);
-    scroller.style.removeProperty("overflow-anchor");
-    placeSoon();
+  const from = home();
+  const veil = (top) => {
+    const box = recordBox({ shrink: shrinkAt(Math.abs(top - from), size), dock }, size, where);
+    return Math.max(BAR, box.y + box.size + 10);
   };
-  scroller.addEventListener("scrollend", arrived);
-  timer = setTimeout(endGlide, 1500);
-  scroller.scrollTo({ top: target, behavior: reduced.matches ? "auto" : "smooth" });
-  if (reduced.matches) endGlide();
+  let top = scroller.scrollTop;
+  for (let round = 0; round < 8; round += 1) top = node.offsetTop - veil(top) - 20;
+  glideTo(() => Math.max(0, top));
+}
+// Glides the view to where `to` says, asked again each frame, so a place that moves on the way (the
+// end of a reply still being written) is still where the glide ends. A hand on the scroll stops it.
+let gliding = false;
+let glide = 0;
+// The glide under way: the record's shrink where it began, where it goes, and how far along it is.
+let glided = null;
+function glideTo(to) {
+  stopGlide();
+  stopHanding();
+  const from = scroller.scrollTop;
+  const start = performance.now();
+  const duration = reduced.matches ? 0 : Math.min(600, 260 + Math.abs(to() - from) * 0.1);
+  gliding = true;
+  glided = { shrink: fold.shrink, to, eased: 0 };
+  const step = (now) => {
+    const progress = duration ? Math.min(1, Math.max(0, (now - start) / duration)) : 1;
+    const eased = progress < 0.5 ? 4 * progress ** 3 : 1 - (2 - 2 * progress) ** 3 / 2;
+    glided.eased = eased;
+    scroller.scrollTop = from + (Math.min(to(), end()) - from) * eased;
+    own = scroller.scrollTop;
+    if (progress < 1) { glide = requestAnimationFrame(step); return; }
+    glide = 0;
+    gliding = false;
+    glided = null;
+    keep();
+  };
+  glide = requestAnimationFrame(step);
+}
+function stopGlide() {
+  if (!gliding) return;
+  cancelAnimationFrame(glide);
+  glide = 0;
+  gliding = false;
+  glided = null;
 }
 let placed = "";
+let placedAt = 0;
 function placeRecord() {
   placing = 0;
   placeTitle();
   if (!talking() || immersed()) return;
   const size = recordSize();
-  let at = foldWanted();
+  const where = measure();
+  let at = foldWanted(size);
+  const now = performance.now();
+  const lapse = Math.min(50, now - placedAt);
+  placedAt = now;
+  if (glided) {
+    // A glide takes the record from its size where it began to its size where it ends, never through
+    // the sizes on the way, so passing home on the way doesn't swell it.
+    const arrive = shrinkAt(Math.abs(Math.min(glided.to(), end()) - home()), size);
+    at = { ...at, shrink: lerp(glided.shrink, arrive, glided.eased) };
+  } else if (!tween && !reduced.matches && at.shrink < fold.shrink - lapse / GROW_MS) {
+    // Shrinking follows the hand; growing back takes its time, so a quick pass by home doesn't
+    // flash the record full, and it catches up once the hand slows.
+    at = { ...at, shrink: fold.shrink - lapse / GROW_MS };
+    placeSoon();
+  }
   if (tween) {
     const progress = reduced.matches ? 1 : Math.min(1, (performance.now() - tween.start) / FOLD_MS);
     const eased = 1 - (1 - progress) ** 4;
@@ -567,7 +633,8 @@ function placeRecord() {
   // Reads first, then writes, so a frame lays out once. The record travels from its place above the
   // words to the mark in the bar, and the last stretch hands the drawing over to the mark. Its
   // place snaps to the screen's pixels, so its dots land on them the same way wherever it stops.
-  const { x, y, size: drawnSize } = recordBox(at, size);
+  const { x, y, size: drawnSize } = recordBox(at, size, where);
+  const reach = leadFor(size, at.dock, where);
   const pixel = 1 / (devicePixelRatio || 1);
   const [left, top] = [Math.round(x / pixel) * pixel, Math.round(y / pixel) * pixel];
   const handoff = Math.min(1, Math.max(0, (at.dock - HANDOFF) / (1 - HANDOFF)));
@@ -576,6 +643,8 @@ function placeRecord() {
   const key = [size, left, top, drawnSize.toFixed(2), handoff.toFixed(3)].join("|");
   if (key !== placed) {
     placed = key;
+    // A record that moves under a still pointer was not put there by it.
+    aimed = false;
     room.style.setProperty("--record", `${size}px`);
     recordFrame.style.transform = `translate(${left}px, ${top}px) scale(${(drawnSize / size).toFixed(4)})`;
     recordFrame.style.setProperty("--shown", (drawnSize / size).toFixed(4));
@@ -592,31 +661,35 @@ function placeRecord() {
     scroller.style.setProperty("--veil", `${Math.max(BAR, bottom + 10).toFixed(1)}px`);
   }
   record.turn(nowPlaying()?.playing && at.dock < 1 && !immersed());
-  // The conversation keeps the record room above its first words, as far as it reaches below the bar.
-  // Scrolled up, the browser keeps the words in view where they are as that room changes.
-  if (!gliding) {
-    const reach = Math.round(Math.max(0, bottom - BAR) * 2) / 2;
-    if (leadHeight !== reach) { leadHeight = reach; lead.style.height = `${reach}px`; if (following) pin(); }
-  }
+  // A room that changed (the conversation did, or the record folded) keeps an anchored view at its
+  // place; a view in hand stays on the same words, held there by the browser.
+  if (leadHeight !== reach) { leadHeight = reach; lead.style.height = `${reach}px`; keep(); }
 }
-// Back to the latest words: the record's room is made at once, without moving the words in view,
-// and the view glides down while the record opens.
+// The round button: to the end of the words, which then stays in view as a reply grows there.
 function toLatest() {
   chosen = null;
-  follow(true);
-  glideTo(Infinity, foldedByHand ? 0 : recordSize() + RECORD_GAP);
+  anchor = "end";
+  scroller.dataset.following = "true";
+  glideTo(end);
+}
+// To home, where the record is at its fullest.
+function toHome() {
+  chosen = null;
+  rest();
+  if (Math.abs(scroller.scrollTop - home()) > 2) glideTo(home); else keep();
 }
 function foldRecord(on) {
   if (!talking()) return;
   foldedByHand = on;
   store.set("moondog.record", on ? "folded" : "open");
-  if (!on && !following) toLatest(); else refold();
+  refold();
+  if (!on) toHome();
 }
-// The record's own button folds it; the mark in the bar opens it, or brings back the latest words it sits above.
+// The record's own button folds it; the mark in the bar opens it, or brings the view home under it.
 function toggleRecord() {
   if (fold.dock < 0.5) foldRecord(true);
   else if (foldedByHand) foldRecord(false);
-  else toLatest();
+  else toHome();
 }
 // The tonearm plays and pauses, as on a turntable: a click lifts it off the record and the music
 // stops; another sets it down and the music plays. A pointer on it leans it toward where a click
@@ -636,9 +709,8 @@ const onArm = (target, event) => armReady() && target?.hit(event.clientX, event.
 function setArm() {
   if (nowPlaying()) { control("toggle", "record"); return; }
   if (cue || !state.ready || state.streaming) return;
-  follow(true);
+  rest();
   if (!submitText(t("armPrompt"))) return;
-  holdLatest();
   if (state.model?.state === "configured") cue = { at: Date.now(), seen: false, ended: 0 };
   renderInspector();
 }
@@ -662,9 +734,62 @@ recordFrame.addEventListener("click", (event) => {
   if (event.detail && onArm(record, event)) setArm();
   else if (event.target.closest("[data-record-button]")) foldRecord(true);
 });
+// The pointer is put on the record by a move that lands there; a move reported again at the same
+// place, as after a scroll, puts it nowhere.
+let pointerAt = "";
+document.addEventListener("pointermove", (event) => {
+  const at = `${event.clientX},${event.clientY}`;
+  if (at === pointerAt) return;
+  pointerAt = at;
+  aimed = recordFrame.contains(event.target);
+}, { capture: true, passive: true });
 recordFrame.addEventListener("pointermove", (event) => record?.lean(onArm(record, event)));
-recordFrame.addEventListener("pointerleave", () => record?.lean(false));
-recordFrame.addEventListener("wheel", (event) => scratchWith(record, event), { passive: false });
+recordFrame.addEventListener("pointerleave", () => { aimed = false; record?.lean(false); });
+// A turn of the wheel belongs to what it starts on until the wheel rests; the browser already keeps
+// one that starts on the words there, even as the record grows under the pointer. One that starts on
+// the record turns it when the song can move and the pointer was put on the disc or its arm. A record
+// that grew or moved under a still pointer, its square's empty corners, and a song that can't move
+// leave the wheel to the words under the record.
+const WHEEL_REST_MS = 240;
+let wheeling = { owner: null, at: -Infinity };
+recordFrame.addEventListener("wheel", (event) => {
+  if (event.timeStamp - wheeling.at > WHEEL_REST_MS) {
+    const now = nowPlaying();
+    const turns = aimed && Boolean(record?.hit(event.clientX, event.clientY)) && Boolean(now?.durationMs) && can(now, "seeking");
+    wheeling.owner = turns ? "record" : "words";
+  }
+  wheeling.at = event.timeStamp;
+  if (wheeling.owner === "record") { scratchWith(record, event); return; }
+  // Left uncancelled, the browser keeps the rest of the turn on the record, which scrolls nothing
+  // itself, so every step reaches the words through here and none twice.
+  const by = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? scroller.clientHeight : 1);
+  handScroll(by);
+  handOn(by);
+}, { passive: false });
+// The words take the wheel the record hands on as they take it anywhere else: a trackpad's small
+// steps at once, a mouse wheel's notches eased over a few frames.
+let handing = 0;
+let handedTo = 0;
+function handOn(by) {
+  if (!handing && Math.abs(by) < 40) { scroller.scrollTop += by; return; }
+  handedTo = Math.min(end(), Math.max(0, (handing ? handedTo : scroller.scrollTop) + by));
+  if (handing) return;
+  let last = 0;
+  const step = (now) => {
+    const before = scroller.scrollTop;
+    const left = handedTo - before;
+    // A frame's time can come before this call; the first step counts as one frame.
+    const lapse = last ? now - last : 16;
+    scroller.scrollTop = Math.abs(left) < 1 ? handedTo : before + left * (1 - Math.exp(-lapse / 60));
+    last = now;
+    handing = Math.abs(left) >= 1 && scroller.scrollTop !== before ? requestAnimationFrame(step) : 0;
+  };
+  handing = requestAnimationFrame(step);
+}
+function stopHanding() {
+  cancelAnimationFrame(handing);
+  handing = 0;
+}
 barRecord.addEventListener("click", toggleRecord);
 
 // The record alone: the window holds only the record, drawn large in the same mosaic, over the
@@ -785,7 +910,7 @@ function renderConversation({ redraw = false } = {}) {
   if (frame) { cancelAnimationFrame(frame); frame = 0; }
   const opened = drawn !== state.current || redraw;
   drawn = state.current;
-  if (opened) { column.replaceChildren(); nodes = []; drawnAsks = null; chosen = null; follow(true); }
+  if (opened) { column.replaceChildren(); nodes = []; drawnAsks = null; chosen = null; rest(); }
   renderEmpty(!state.turns.length);
   state.turns.forEach((turn, index) => {
     const key = turn.role === "user" ? `u|${turn.text}` : `a|${turn.id ?? index}|${turn.local ? "l" : ""}`;
@@ -801,39 +926,40 @@ function renderConversation({ redraw = false } = {}) {
     if (turn.role !== "user") drawReply(entry.node, turn, index); else messageTools(entry.node, turn);
   });
   for (const extra of nodes.splice(state.turns.length)) extra.node.remove();
-  pin();
+  keep();
   renderTurns();
   renderTitle();
   renderComposer();
 }
 const renderSoon = () => { if (!frame) frame = requestAnimationFrame(() => { frame = 0; renderConversation(); }); };
 
-// New words, a cover arriving, a reply settling or a taller composer change the room's height; the
-// view stays with the latest turn unless the listener scrolled away from it.
-const pinning = new ResizeObserver(pin);
-pinning.observe(column);
-pinning.observe(scroller);
-scroller.addEventListener("wheel", (event) => {
+// New words, a cover arriving, a reply settling or a taller composer change the room's height; an
+// anchored view stays at its place, and a view in hand stays on its words.
+const keeping = new ResizeObserver(() => keep());
+keeping.observe(column);
+keeping.observe(scroller);
+// A hand on the scroll stops a glide and lets go of the anchor; pushing on at the end stays there.
+function handScroll(by) {
   chosen = null;
-  // A hand on the wheel takes the view back from a glide.
-  endGlide();
-  if (event.deltaY < 0 && scroller.scrollHeight > scroller.clientHeight) follow(false);
-  else if (hold && event.deltaY > 0) { hold = null; if (gap() > 2) follow(false); }
-}, { passive: true });
+  stopGlide();
+  if (by > 0 && gap() < 2) { if (anchor !== "end") anchorTo("end"); } else if (by) letGo();
+}
+scroller.addEventListener("wheel", (event) => { stopHanding(); handScroll(event.deltaY); }, { passive: true });
 let scrollFrame = 0;
 scroller.addEventListener("scroll", () => {
-  const top = scroller.scrollTop;
-  if (top !== own && hold && top > lastTop + 1) { hold = null; if (gap() > 2) follow(false); }
-  if (top !== own) {
-    // A column that shrank (a step line folding) clamps the view upward too; only a view that left the bottom stops following.
-    if (top < lastTop - 1 && gap() > 2) { if (following) follow(false); } else if (gap() < 2 && !following) follow(true);
+  if (!gliding) {
+    // A view moved off its place by anything but the window (keys on a link, a drag past the edge)
+    // lets go as well; one that comes down to the end rests there, so a reply still being written
+    // stays in view. One just leaving the end upward is not pulled back.
+    if (anchor && scroller.scrollTop !== own && Math.abs(scroller.scrollTop - anchorTop()) > 2) letGo();
+    if (!anchor && gap() < 2 && scroller.scrollTop >= lastTop) anchorTo("end");
   }
-  lastTop = top;
+  lastTop = scroller.scrollTop;
   if (!scrollFrame) scrollFrame = requestAnimationFrame(() => { scrollFrame = 0; renderJump(); markTurn(); placeRecord(); });
 }, { passive: true });
-function renderJump() { const jump = $("jump"); const hide = (following && !hold) || gap() < 120; if (jump.hidden !== hide) jump.hidden = hide; }
+function renderJump() { const jump = $("jump"); const hide = anchor === "end" || gap() < 120; if (jump.hidden !== hide) jump.hidden = hide; }
 $("jump").addEventListener("click", toLatest);
-scrollbar(scroller, { inset: 50, onGrab: () => { chosen = null; follow(false); }, onRelease: () => { if (gap() < 2) follow(true); } });
+scrollbar(scroller, { inset: 50, onGrab: () => { chosen = null; stopGlide(); stopHanding(); letGo(); }, onRelease: () => { if (gap() < 2) anchorTo("end"); } });
 
 // Requests along the right edge of the conversation: hover one to read it, click to go back to it.
 const turnRail = make("nav", "turns");
@@ -854,7 +980,7 @@ function renderTurns() {
     name(mark, words.length > 90 ? `${words.slice(0, 88)}…` : words);
     mark.dataset.tipAt = "left";
     mark.addEventListener("click", () => {
-      follow(false);
+      letGo();
       chosen = mark;
       markTurn();
       scrollToNode(entry.node);
@@ -968,8 +1094,8 @@ function submit() {
   // A mistyped command stays in the composer instead of going to Moondog as a message.
   const command = text.match(/^\/([A-Za-z]+)$/u)?.[1];
   if (command && !COMMANDS.some((entry) => entry.name === command.toLowerCase())) { notice(t("unknownCommand", { name: command })); return; }
-  follow(true);
-  if (submitText(text)) { clearComposer(); holdLatest(); }
+  rest();
+  if (submitText(text)) clearComposer();
   renderComposer();
 }
 $("form").addEventListener("submit", (event) => { event.preventDefault(); submit(); });
@@ -981,9 +1107,10 @@ input.addEventListener("keydown", (event) => {
   // The conversation scrolls from the composer, so reading back never needs the mouse.
   if (event.key === "PageUp" || event.key === "PageDown") {
     event.preventDefault();
-    chosen = null;
-    if (event.key === "PageUp") follow(false);
-    scroller.scrollBy({ top: (event.key === "PageUp" ? -1 : 1) * scroller.clientHeight * 0.85, behavior: "smooth" });
+    const by = (event.key === "PageUp" ? -1 : 1) * scroller.clientHeight * 0.85;
+    stopHanding();
+    handScroll(by);
+    scroller.scrollBy({ top: by, behavior: "smooth" });
   }
 });
 
