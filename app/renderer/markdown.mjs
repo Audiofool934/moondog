@@ -1,7 +1,7 @@
 // Moondog's replies in the window: paragraphs, lists, short headings, emphasis, code and links.
 // Everything becomes DOM nodes with text content, so a reply can never inject markup.
 // A backslash before a Markdown character shows the character, as the core escapes source titles.
-const INLINE = /(\\[\\`*_[\]<>]|\*\*[^*\n]+\*\*|__[^_\n]+__|`[^`\n]+`|\*[^*\n]+\*|_[^_\n]+_|\[(?:\\.|[^\]\\\n])+\]\(<?https:\/\/[^\s)>]+>?\)|<https:\/\/[^\s>]+>|https:\/\/[^\s<>()]+[^\s<>().,;:!?，。！？；：）」』》])/u;
+const INLINE = /(\\[\\`*_[\]<>]|\*\*[^*\n]+\*\*|__[^_\n]+__|`[^`\n]+`|\*[^*\n]+\*|_[^_\n]+_|\[(?:\\.|[^\]\\\n])+\]\(<?https?:\/\/[^\s)>]+>?\)|<https?:\/\/[^\s>]+>|https?:\/\/[^\s<>()]+[^\s<>().,;:!?，。！？；：）」』》])/u;
 
 function link(href, label) {
   const anchor = document.createElement("a");
@@ -34,7 +34,7 @@ function inline(text, parent) {
       inline(token.slice(1, -1), em);
       parent.append(em);
     } else if (token.startsWith("[")) {
-      const [, label, href] = token.match(/^\[((?:\\.|[^\]\\])+)\]\(<?(https:\/\/[^\s)>]+)>?\)$/u);
+      const [, label, href] = token.match(/^\[((?:\\.|[^\]\\])+)\]\(<?(https?:\/\/[^\s)>]+)>?\)$/u);
       parent.append(link(href, label.replace(/\\(.)/gu, "$1")));
     } else {
       const href = token.replace(/^<|>$/gu, "");

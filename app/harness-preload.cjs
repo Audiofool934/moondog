@@ -123,6 +123,16 @@ const PROFILE = [
   "",
   "What I can't tell from history: why these records matter to you, or where you listen. That stays unknown until you tell me.",
 ].join("\n");
+// A reply that searched the web: the source list the core appends, with plain http:// pages among https:// ones.
+const SOURCES = [
+  "*Pink Moon* was recorded in two late-night sessions: Nick Drake, his guitar, and one piano overdub.",
+  "",
+  "### Public web sources (Brave Search)",
+  "",
+  "- [Pink Moon at fifty: the night sessions](<https://example.org/pink-moon-at-fifty>) - source date: 2022-02-25 - retrieved: 2026-10-26",
+  "- [\\[Interview\\] The engineer who recorded Pink Moon](<http://example.com/s?__biz=MzY4MTI0NjU5MA==&mid=2247483923&idx=1>) - source date: 2026-09-02 - retrieved: 2026-10-26",
+  "- [Nick Drake - millions of lossless tracks, new songs and hits every day!](<http://example.net/n/singer/0003yiXu3FA4pc>) - retrieved: 2026-10-26",
+].join("\n");
 // Scrolls the conversation up from the latest words by `by` points (or to the top), once it is drawn.
 function scrollUp(by) {
   setTimeout(() => {
@@ -189,6 +199,7 @@ const STATES = {
   record() { STATES.long(); setTimeout(() => document.querySelector("[data-expand]").click(), 150); },
   "record-pinned"() { STATES.record(); setTimeout(() => document.querySelector("[data-pin]").click(), 300); },
   profile() { ready({ transcript: conversation([["Import my Spotify history", PROFILE]]) }); player({ index: 1 }); },
+  sources() { ready({ transcript: conversation([["How was Pink Moon recorded?", SOURCES]]) }); player({ index: 1 }); },
   // Where the music plays and which model answers, beside the send button: asked on a first launch,
   // with and without a model, named in their tooltips, each service by its mark, and NetEase's setup.
   "first-launch"() { ready({ sessions: [], folders: [] }); silent(); },

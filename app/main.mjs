@@ -227,7 +227,7 @@ function createWindow() {
   });
   // Links open in the listener's browser; the window itself never navigates away.
   window.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https:\/\//u.test(url)) void shell.openExternal(url);
+    if (/^https?:\/\//u.test(url)) void shell.openExternal(url);
     return { action: "deny" };
   });
   window.webContents.on("will-navigate", (event) => event.preventDefault());
