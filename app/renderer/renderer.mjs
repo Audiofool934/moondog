@@ -1286,6 +1286,8 @@ function renderInspector() {
   syncMenu();
 }
 
+// The play or pause the listener just pressed, which outranks reads already on their way for two seconds.
+let toggled = null;
 function control(action, via = "button") {
   const now = nowPlaying();
   if (now?.local) {
@@ -1303,6 +1305,7 @@ function control(action, via = "button") {
   if (action === "toggle") {
     // The button answers at once; the next read from Spotify confirms it.
     send({ type: "control", action: playing.playing ? "pause" : "resume", via });
+    toggled = { playing: !playing.playing, until: Date.now() + 2000 };
     state.player.now = { ...playing, playing: !playing.playing, progressMs: now.progressMs, ...at };
   } else {
     send({ type: "control", action, via });
@@ -1745,8 +1748,11 @@ function receive({ data }) {
     // that delay, not the music, so the clock keeps going instead of ticking back.
     const before = state.player?.now;
     let now = data.now;
-    // Right after a seek, a read that was already on its way still has the old position.
-    if (now && before && before.title === now.title && Date.now() - seekedAt < 1500) now = { ...now, progressMs: before.progressMs, observedAt: before.observedAt };
+    // Right after a seek, a read that was already on its way still has the old position; right after
+    // a press of play or pause, it can still have the old state, and Spotify reports a pause late.
+    if (now && before && before.title === now.title && toggled && Date.now() < toggled.until && now.playing !== toggled.playing) {
+      now = { ...now, playing: toggled.playing, progressMs: before.progressMs, observedAt: before.observedAt };
+    } else if (now && before && before.title === now.title && Date.now() - seekedAt < 1500) now = { ...now, progressMs: before.progressMs, observedAt: before.observedAt };
     else if (now?.playing && before?.playing && before.title === now.title && before.durationMs === now.durationMs) {
       const expected = before.progressMs + (now.observedAt - before.observedAt);
       if (now.progressMs < expected && expected - now.progressMs < 1500) now = { ...now, progressMs: before.progressMs, observedAt: before.observedAt };

@@ -17,6 +17,9 @@ const artwork = (url) => {
 // A catalog song's id is the i parameter of its music.apple.com link.
 const catalogId = (url) => { try { return new URL(url).searchParams.get("i") || null; } catch { return null; } };
 
+// How long a press of play or pause outranks the helper's reports that were already on their way.
+const HOLD_MS = 1500;
+
 export function createPreviews({ send, onChange }) {
   const audio = new Audio();
   audio.preload = "auto";
@@ -86,6 +89,10 @@ export function createPreviews({ send, onChange }) {
     if (message?.type === "exited") { stop(); return; }
     if (message?.type !== "state" || message.token !== String(id)) return;
     if (message.status === "ended") { stop(); return; }
+    // A report the helper sent before a pause or resume took hold still has the old status, so for a
+    // moment after the listener's own press the window keeps what they chose.
+    const held = full.hold && Date.now() < full.hold.until && ["playing", "paused"].includes(message.status) && message.status !== full.hold.status;
+    if (held) message = { ...message, status: full.hold.status, positionMs: full.state?.positionMs ?? message.positionMs };
     full.state = message;
     full.observedAt = Date.now();
     if (Number.isInteger(message.index)) index = Math.max(0, Math.min(queue.length - 1, message.index));
@@ -169,6 +176,7 @@ export function createPreviews({ send, onChange }) {
       if (mode === "full") {
         const playing = fullPlaying();
         void bridge({ type: playing ? "pause" : "resume" });
+        full.hold = { status: playing ? "paused" : "playing", until: Date.now() + HOLD_MS };
         if (full.state) full.state = { ...full.state, status: playing ? "paused" : "playing", positionMs: api.state()?.progressMs ?? 0 };
         full.observedAt = Date.now();
         onChange();
