@@ -263,9 +263,10 @@ const STATES = {
   tooltip() { STATES.reply(); return { hover: "[data-new]" }; },
   "turn-tip"() { STATES.long(); return { hover: ".turns button:nth-child(2)" }; },
   narrow() { STATES.reply(); },
-  // A newer Moondog at the top right: on its way, ready, and named in its tooltip.
-  "update-downloading"() { STATES.reply(); setUpdate({ phase: "downloading", version: "0.2.0-beta.2", progress: 0.4 }); },
-  "update-ready"() { STATES.reply(); setUpdate({ phase: "ready", version: "0.2.0-beta.2" }); },
+  // A newer Moondog at the top right: offered, downloading after the click, ready, and named in its tooltip.
+  "update-available"() { STATES.reply(); setUpdate({ phase: "available", version: "0.2.0-beta.4" }); },
+  "update-downloading"() { STATES.reply(); setUpdate({ phase: "downloading", version: "0.2.0-beta.4", progress: 0.4, installing: true }); },
+  "update-ready"() { STATES.reply(); setUpdate({ phase: "ready", version: "0.2.0-beta.4" }); },
   // Copy and Edit under a message, and Copy under a reply, while the pointer is on them.
   "message-tools"() { STATES.reply(); return { hover: ".you p" }; },
   "reply-tools"() { STATES.reply(); return { hover: ".reply .text" }; },
@@ -278,7 +279,7 @@ const STATES = {
       document.querySelector("[data-form]").requestSubmit();
     }, 300);
   },
-  "update-tip"() { STATES["update-ready"](); return { hover: "[data-update]" }; },
+  "update-tip"() { STATES["update-available"](); return { hover: "[data-update]" }; },
   // Whole Apple Music songs through the helper, once Apple allows them.
   whole() {
     music.whole = true;

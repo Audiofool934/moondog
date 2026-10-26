@@ -964,16 +964,17 @@ $("service").addEventListener("click", (event) => void pickService(event));
 $("device-row").addEventListener("click", (event) => pickDevice(event));
 $("settings-button").addEventListener("click", () => settings.show());
 
-// A newer Moondog, from the main process. On its way, the ring around the button beside Settings fills as
-// it downloads; ready, the button turns to an inverted disc. A click restarts into it, at once or as soon as the download ends.
+// A newer Moondog, from the main process. Offered, the button beside Settings is an inverted disc; a click
+// downloads it, the ring around the button fills as it arrives, and Moondog restarts into it when it ends.
 function renderUpdate() {
   const button = $("update");
   const { phase, version, progress, installing } = state.update;
   button.hidden = phase === "idle";
   if (button.hidden) return;
-  button.classList.toggle("ready", phase === "ready");
+  button.classList.toggle("solid", phase === "available" || phase === "ready");
   $("update-done").setAttribute("stroke-dasharray", `${Math.round((progress ?? 0) * 100)} 100`);
-  name(button, t(installing ? "updating" : phase === "ready" ? "updateReady" : "updateDownloading", { version }));
+  const words = installing ? "updating" : { available: "updateAvailable", ready: "updateReady" }[phase] ?? "updateDownloading";
+  name(button, t(words, { version }));
   button.setAttribute("aria-disabled", String(installing === true));
 }
 const takeUpdate = (next) => {

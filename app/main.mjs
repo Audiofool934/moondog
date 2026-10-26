@@ -2,7 +2,8 @@
 // app is to its command line. The core runs in its own Node process (core-process.mjs); the
 // window draws conversations, the conversation, and what is playing, and keeps the music
 // going after it closes.
-import { app, BrowserWindow, dialog, ipcMain, Menu, MessageChannelMain, nativeTheme, screen, shell, utilityProcess } from "electron";
+import { app, autoUpdater as squirrel, BrowserWindow, dialog, ipcMain, Menu, MessageChannelMain, nativeTheme, screen, shell, utilityProcess } from "electron";
+import electronUpdater from "electron-updater";
 import { execFile, spawn } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import os from "node:os";
@@ -50,11 +51,13 @@ const playback = { controllable: false, streaming: false };
 let dockMenu = null;
 const command = (name) => () => window?.webContents.send("command", name);
 
-// A newer Moondog from GitHub releases (updates.mjs): the window shows it at the top right while it
-// downloads and once it's ready, and the Moondog menu checks for one or restarts into it.
+// A newer Moondog from GitHub releases (updates.mjs): the window offers it at the top right and shows
+// its download, and the Moondog menu checks for one, downloads it, or restarts into it.
 let updatePhase = "idle";
 const updates = createUpdates({
-  app,
+  // Only a packaged app updates; reading autoUpdater makes electron-updater's macOS updater.
+  autoUpdater: app.isPackaged ? electronUpdater.autoUpdater : null,
+  squirrel,
   onChange: (state) => {
     window?.webContents.send("update", state);
     const phase = `${state.phase}${state.installing ? "+installing" : ""}`;
@@ -65,6 +68,7 @@ const updates = createUpdates({
 });
 function updateItem(t) {
   const { phase, installing } = updates.state();
+  if (phase === "available") return { label: t("menuInstallUpdate"), click: () => updates.install() };
   if (phase !== "idle") return { label: t("menuRestartUpdate"), enabled: !installing, click: () => updates.install() };
   return { label: t("menuCheckUpdates"), click: () => void checkForUpdates() };
 }

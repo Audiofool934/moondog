@@ -163,12 +163,12 @@ An evaluation failure exits with a nonzero status.
 
 The packaged app updates itself from this repository's GitHub releases (`updates.mjs`, with electron-updater).
 
-- It checks at launch and every six hours, and downloads a newer build in the background.
+- It checks at launch and every six hours, and downloads nothing until you ask.
   A beta version also takes releases marked as prereleases; a stable version takes only the others. It never goes back to an older version.
-- While the download runs, Update shows at the top right, before Settings, as an outline that fills as it arrives.
-  When it is ready, the word turns solid ink. A click restarts into the new version, at once or as soon as the download ends.
-  Quitting also installs it, so the next launch is the new version.
-- Moondog › Check for Updates… checks at once; while an update is on its way the item reads Restart to Update.
+- A newer build shows at the top right, before Settings, as a small solid button whose tooltip names the version.
+  A click downloads it, the ring around the button fills as it arrives, and Moondog restarts into the new version when the download ends.
+  A failed download leaves the installed app as it is and the button in place, so another click tries again.
+- Moondog › Check for Updates… checks at once; with a newer build offered the item reads Download and Install Update, and once one is downloaded, Restart to Update.
 - The check reads the release list and sends nothing about the listener.
   A failed check or download leaves the installed app as it is, and the next check tries again.
 - macOS installs only a build signed by the same Developer ID team, and the download must match the SHA-512 checksum in the release's `latest-mac.yml`.
@@ -185,7 +185,7 @@ To publish an update:
 
 To try an update before publishing it, build two versions with `node pack.mjs --sign --no-notarize` (signed, not notarized), serve the newer one's zip, `.blockmap` and `latest-mac.yml` over HTTP, and start the older app from a terminal with `MOONDOG_UPDATE_FEED=http://127.0.0.1:8765`.
 Set `MOONDOG_CONFIG_HOME` and `MOONDOG_STATE_HOME` to empty folders too, so the older app never opens your own profile.
-The app that restarts after a click on Update has none of these settings and opens your own profile; to keep it out, quit the older app instead, which installs the update without restarting.
+With that feed, a click on Update downloads the newer build, installs it and quits without restarting, because a restarted app would have none of these settings and would open your own profile; start it again from the terminal with the same settings.
 Extract test copies into a folder whose name ends in `.noindex`, so Spotlight doesn't offer them.
 
 ## Not yet

@@ -164,10 +164,11 @@ img { -webkit-user-drag: none; }
 .update .track { stroke: var(--line-2); }
 .update .done { stroke: currentColor; stroke-linecap: round; transition: stroke-dasharray 300ms var(--soft); }
 .update .icon { width: 14px; height: 14px; }
-.update.ready { width: 22px; height: 22px; margin-inline: 3px; border-radius: 50%; background: var(--solid); color: var(--on-solid); }
-.update.ready:hover { background: var(--text); color: var(--on-solid); }
-.update.ready .ring { display: none; }
-.update[aria-disabled="true"] { opacity: 0.55; }
+.update.solid { width: 22px; height: 22px; margin-inline: 3px; border-radius: 50%; background: var(--solid); color: var(--on-solid); }
+.update.solid:hover { background: var(--text); color: var(--on-solid); }
+.update.solid .ring { display: none; }
+/* Restarting dims the disc; a download in progress keeps its ring at full contrast. */
+.update.solid[aria-disabled="true"] { opacity: 0.55; }
 
 .grip { position: absolute; top: var(--bar); bottom: 0; width: 7px; z-index: 4; cursor: col-resize; }
 .grip[data-grip="sidebar"] { left: calc(var(--sidebar) - 3px); }
