@@ -6,9 +6,9 @@
   <!-- policy -->
   <meta name="referrer" content="no-referrer">
   <meta name="color-scheme" content="light dark">
-  <meta name="description" content="Moondog is a radio host for an audience of one. It learns your taste from the history your music services keep, talks music with you, and plays what fits.">
+  <meta name="description" content="Moondog is on the air, just for you: a radio host that learns your taste from the history your music services keep, talks music with you, and plays what fits.">
   <meta property="og:title" content="Moondog">
-  <meta property="og:description" content="A radio host for an audience of one.">
+  <meta property="og:description" content="Moondog is on the air. Just for you.">
   <meta property="og:image" content="https://moondog.audiofool.ai/static/moondog-logo-144.png">
   <title>Moondog</title>
   <link rel="icon" href="static/favicon-64.png" type="image/png">
@@ -26,9 +26,9 @@
 
   <main id="top">
     <section class="intro" aria-labelledby="intro-title">
-      <h1 id="intro-title">A radio host for an audience of one.</h1>
+      <h1 id="intro-title">Moondog is on the air. <span>Just for you.</span></h1>
       <div class="intro-text">
-        <p>Moondog learns your taste from the listening history your music services already keep. Then it talks music with you and plays what fits, on Spotify, Apple Music or NetEase. Your history stays on your computer.</p>
+        <p>A radio host that learns your taste from the history your music services already keep, talks music with you, and plays what fits.</p>
         <p class="actions">
           <a class="button" href="{{mac.url}}">Download for Mac</a>
           <span class="fine">{{mac.version}}, for Apple silicon. Or <a href="#terminal">run it in a terminal</a>.</span>
@@ -45,18 +45,18 @@
         <iframe src="window.html" title="Moondog's window, with a made-up listener" allow="autoplay; clipboard-write" data-frame="window"></iframe>
       </div>
       <p class="note">
-        <span data-for="window">This is Moondog's own window, running in your browser with a made-up listener.</span>
+        <span data-for="window">This is the real Moondog, running in your browser for a made-up listener.</span>
         <span data-for="window" data-agent="online" hidden>Put the needle on the record and Moondog picks something for right now, or ask it for anything.</span>
-        <span data-for="terminal" hidden>This is Moondog's terminal room, with the same made-up listener. <span class="for-mouse">Click inside and type <code>/taste</code>, or press Tab to look around.</span><span class="for-touch">Tap <code>/taste</code> under it to open the profile.</span></span>
+        <span data-for="terminal" hidden>This is Moondog in a terminal, with the same made-up listener. <span class="for-mouse">Click inside and type <code>/taste</code>, or press Tab to look around.</span><span class="for-touch">Tap <code>/taste</code> under it to open the profile.</span></span>
         <span data-agent="offline">Nothing you type leaves this page.</span>
-        <span data-agent="online" hidden>What you type goes to Moondog's demo server and on to DeepSeek, which writes the replies. Nothing is kept, and the songs are 30-second previews from Apple Music.</span>
+        <span data-agent="online" hidden>What you type goes to Moondog's demo server and on to DeepSeek, which writes the replies. Nothing is kept. The songs are 30-second previews from Apple Music.</span>
       </p>
     </section>
 
     <section class="part" aria-labelledby="history-title">
-      <h2 id="history-title">It learns from what you played</h2>
+      <h2 id="history-title">It starts with what you've played</h2>
       <div class="part-body">
-        <p>Pick a service, and Moondog shows you what's inside before anything is saved. Your files are never touched, and importing the same file twice changes nothing.</p>
+        <p>Bring your history from the services you already use. Moondog shows you what's inside before anything is saved, never touches your files, and changes nothing if you import the same file twice.</p>
         <dl class="sources">
           <dt>Spotify</dt>
           <dd>Recent plays after you connect, or your whole history from the ZIP Spotify emails you.</dd>
@@ -71,23 +71,23 @@
           <dt>QQ Music and NetEase</dt>
           <dd>Any public playlist, from its share link.</dd>
         </dl>
-        <p>Your profile keeps what you played apart from what that can't prove. Playing a song a lot doesn't show, on its own, how much it matters to you. Open any song or artist to see why it's there, and tell Moondog when it got you wrong.</p>
+        <p>From that, Moondog learns your taste. It keeps what you played apart from what the plays can't prove: a song you play a lot isn't always a song that matters to you. Open any song or artist to see why it's there, and tell Moondog when it got you wrong.</p>
       </div>
     </section>
 
     <section class="part" aria-labelledby="play-title">
       <h2 id="play-title">It plays where you listen</h2>
       <div class="part-body">
-        <p>Spotify on any of your devices. Apple Music, as whole songs with a subscription and 30-second previews without one. NetEase Music for listeners in mainland China, through NetEase's own command line tool.</p>
-        <p>Moondog sees what you're already playing in the Music app or on Spotify, and keeps one thing playing at a time on your Mac. The record turns while the music plays. Put the needle down and Moondog picks something for right now.</p>
+        <p>On Spotify, on any of your devices. On Apple Music, as whole songs with a subscription and 30-second previews without one. On NetEase Music, for listeners in mainland China.</p>
+        <p>Moondog sees what's already playing in the Music app or on Spotify, and keeps one thing playing at a time on your Mac. The record turns while the music plays. Put the needle down, and Moondog picks something for right now.</p>
       </div>
     </section>
 
     <section class="part" aria-labelledby="model-title">
       <h2 id="model-title">Bring your own model</h2>
       <div class="part-body">
-        <p>Talking with Moondog needs a model: GLM, Kimi, DeepSeek, Grok, GPT, Claude, Gemini, or anything on OpenRouter. ChatGPT sign-in works too. Your profile and your history work without one.</p>
-        <p>Each step shows in the conversation as it happens, and Moondog checks every recording in the catalog before it plays or queues it.</p>
+        <p>Moondog talks through the model you pick: GLM, Kimi, DeepSeek, Grok, GPT, Claude, Gemini, or anything on OpenRouter. ChatGPT sign-in works too. Your taste and your history work without one.</p>
+        <p>Each step shows in the conversation as it happens, and every recording is checked in the catalog before it plays or goes in the queue.</p>
         <figure class="request">
           <blockquote lang="es">Pon doce de salsa clásica a la cola</blockquote>
           <figcaption>Twelve classic salsa tracks, straight into the queue. Moondog answers in the language you write in.</figcaption>
@@ -113,7 +113,7 @@
       <h2 id="get-title">Get Moondog</h2>
       <div class="part-body">
         <h3>For Mac</h3>
-        <p>Open the download and drag Moondog to Applications. It's a beta, notarized by Apple, and it updates itself: when a new version is out, an Update button appears, and nothing downloads until you click it.</p>
+        <p>Open the download and drag Moondog to Applications. It's a beta, notarized by Apple. When a new version is out, an Update button appears, and nothing downloads until you click it.</p>
         <p class="actions"><a class="button" href="{{mac.url}}">Download for Mac</a> <span class="fine">{{mac.version}}, for Apple silicon.</span></p>
         <h3 id="terminal">In a terminal</h3>
         <p>On macOS or Linux, with Node.js 22.19 or newer. The terminal and the Mac app share your profile, your sign-ins and your conversations.</p>
@@ -122,7 +122,7 @@
 moondog</code></pre>
           <button type="button" class="copy" data-copy="install-commands">Copy</button>
         </div>
-        <p><code>moondog update</code> keeps it current, and <code>moondog demo --offline</code> shows the agent at work on made-up data, with no sign-in. The <a href="https://github.com/Audiofool934/moondog/blob/main/docs/TERMINAL_GUIDE.md">terminal guide</a> covers every import format and model setting.</p>
+        <p><code>moondog update</code> keeps it current, and <code>moondog demo --offline</code> shows Moondog at work on made-up data, with no sign-in. The <a href="https://github.com/Audiofool934/moondog/blob/main/docs/TERMINAL_GUIDE.md">terminal guide</a> covers every import format and model setting.</p>
       </div>
     </section>
   </main>
@@ -130,7 +130,8 @@ moondog</code></pre>
   <footer class="liner">
     <img src="static/moondog-logo-144.png" width="72" height="72" alt="The Moondog logo: a dog in headphones inside a moon that is also a record">
     <div>
-      <p>Moondog is open source under the Apache 2.0 license, and built on <a href="https://github.com/earendil-works/pi">Pi</a>. Lyrics on the sleeve come from <a href="https://lrclib.net/">LRCLIB</a>. The listener in the window above is made up.</p>
+      <p>Moondog takes its name from Alan Freed, who went on the air in Cleveland in 1951 as the Moondog and helped give rock and roll its name.</p>
+      <p>It is open source under the Apache 2.0 license, and built on <a href="https://github.com/earendil-works/pi">Pi</a>. Lyrics on the sleeve come from <a href="https://lrclib.net/">LRCLIB</a>. The listener in the window above is made up.</p>
       <p class="liner-links">
         <a href="https://github.com/Audiofool934/moondog">Source</a>
         <a href="https://github.com/Audiofool934/moondog/releases">Releases</a>

@@ -21,6 +21,12 @@ It says what it found, then gets out of the way.
 - Avoid filler and hype: "seamless", "unlock", "powerful", "Oops!", exclamation marks.
 - Never use the em dash character.
 
+## The name
+
+Moondog takes its name from Alan Freed, who went on the air in Cleveland in 1951 as the Moondog and helped give rock and roll its name.
+Moondog is a radio host in that line: it plays for one listener, with that listener's taste and a voice of its own.
+The project page says this once, in its liner notes; elsewhere the name carries it without explanation.
+
 ## The Pink Floyd layer
 
 Moondog is a lunar record, so Pink Floyd is its natural lineage.
