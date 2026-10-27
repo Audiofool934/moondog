@@ -23,10 +23,19 @@ let inView = false;
 let song = null;
 const tracks = new Map();
 
-function trackFor(sound) {
-  if (!tracks.has(sound)) {
+// Sounds are loaded before they are needed, while the cover shows, so the needle's sound comes with the click.
+const loaded = new Map();
+function load(sound) {
+  if (!loaded.has(sound)) {
     const audio = new Audio(sound);
     audio.preload = "auto";
+    loaded.set(sound, audio);
+  }
+  return loaded.get(sound);
+}
+function trackFor(sound) {
+  if (!tracks.has(sound)) {
+    const audio = load(sound);
     const gain = context.createGain();
     gain.gain.value = 0;
     context.createMediaElementSource(audio).connect(gain).connect(context.destination);
@@ -119,7 +128,7 @@ cover.addEventListener("pointerleave", () => toScene({ lean: false }));
 
 addEventListener("message", (event) => {
   if (event.origin !== location.origin || event.data?.source !== "moondog-scene") return;
-  if (event.data.ready) ready();
+  if (event.data.ready) { for (const sound of event.data.sounds ?? []) load(sound); ready(); }
   if ("mood" in event.data) { palette = event.data.mood; paintMood(); }
   if ("song" in event.data) { song = event.data.song; follow(); }
 });

@@ -66,9 +66,11 @@ addEventListener("message", (event) => {
   if (event.data.start) begin.resolve({ touch: event.data.start.touch === true });
   if ("lean" in event.data) leanArm(event.data.lean === true);
   // The page may load after this frame; it asks, and hears that the scene is ready.
-  if (event.data.ask) tell({ ready: true });
+  if (event.data.ask) tell(ready);
 });
-tell({ ready: true });
+// Ready, with the sounds the first moments play, so the page can load them while its cover shows.
+const ready = { ready: true, sounds: [IDENT, ...EXCHANGES[0].songs.slice(0, 1).map((song) => song.sound)] };
+tell(ready);
 const ident = () => tell({ song: { sound: IDENT, startedAt: Date.now() } });
 
 void direct({ clock, agent, request: EXCHANGES[1].request, quick, begin: begin.promise, needle: ident, ending: () => tell({ song: null, mood: null }) });
