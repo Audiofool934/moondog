@@ -1178,26 +1178,22 @@ async function pickModel(event) {
   const [, provider, ...rest] = chosen.split(":");
   if (chosen.startsWith("model:")) send({ type: "model", provider, model: rest.join(":") });
 }
-// The music service's menu: the services, each checked when in use; signing in to one the core can
-// play but can't yet, Spotify in Settings and NetEase with its own tool in Terminal; then the settings.
+// The services that can play now, and the one in use: Apple Music always, Spotify once connected and
+// NetEase once ncm-cli is signed in. Connecting or setting one up happens in Settings › Playback.
+const playableServices = (now) => ["spotify", "apple_music", "netease"].filter((service) => service === now || service === "apple_music"
+  || (service === "spotify" ? state.spotify === "ready" : state.netease === "ready"));
+// The music service's menu: the services that can play, the one in use checked, then the settings.
 // A choice shows at once and the core's status confirms it; every conversation's agent follows it.
 let sourceWanted = null;
 let wantedTimer = 0;
 async function pickService(event) {
   const now = sourceWanted ?? state.playbackService ?? "spotify";
-  const services = ["spotify", "apple_music", ...(state.netease === "ready" || now === "netease" ? ["netease"] : [])];
-  const items = services.map((service) => ({ id: `service:${service}`, label: serviceName(service), checked: service === now }));
-  const signIn = [
-    ...(state.spotify === "unavailable" ? [{ id: "sign-in:spotify", label: t("connectSpotify") }] : []),
-    ...(["signed_out", "missing"].includes(state.netease) ? [{ id: "sign-in:netease", label: t("setUpNetease") }] : []),
-  ];
-  items.push(...(signIn.length ? [{ type: "separator" }, ...signIn] : []), { type: "separator" }, { id: "settings", label: t("playbackSettings") });
+  const items = playableServices(now).map((service) => ({ id: `service:${service}`, label: serviceName(service), checked: service === now }));
+  items.push({ type: "separator" }, { id: "settings", label: t("playbackSettings") });
   const chosen = await menu(items, event);
   if (!chosen) return;
   store.set("moondog.source", "chosen");
   if (chosen === "settings") settings.show("playback");
-  else if (chosen === "sign-in:spotify") { chooseService("spotify"); settings.show("playback"); }
-  else if (chosen === "sign-in:netease") settings.showNetease();
   else chooseService(chosen.slice(8));
   renderComposer();
 }
@@ -1226,10 +1222,8 @@ async function showDevices(devices) {
     if (!devices.length) items.push({ id: "none", label: t("noDevices"), enabled: false });
     items.push({ type: "separator" });
   }
-  items.push({ id: "service:spotify", label: "Spotify", checked: state.playbackService === "spotify" },
-    { id: "service:apple_music", label: "Apple Music", checked: state.playbackService === "apple_music" });
-  // NetEase is offered once ncm-cli is installed and signed in.
-  if (state.netease === "ready" || state.playbackService === "netease") items.push({ id: "service:netease", label: t("netease"), checked: state.playbackService === "netease" });
+  const now = state.playbackService ?? "spotify";
+  items.push(...playableServices(now).map((service) => ({ id: `service:${service}`, label: serviceName(service), checked: service === now })));
   items.push({ type: "separator" }, { id: "settings", label: t("playbackSettings") });
   const chosen = await window.moondogApp?.showMenu?.(items, at);
   if (chosen === "settings") settings.show("playback");
@@ -1803,7 +1797,7 @@ function streamingTurn(id) {
 }
 const onScreen = (data) => !data.session || data.session === state.current;
 const SIGN_IN_ERRORS = { connect_while_answering: "waitForReply", sign_in_busy: "signInBusy" };
-const SETTINGS_MESSAGES = new Set(["models", "provider-models", "devices", "memories", "auth-prompt", "auth-prompt-closed", "auth-event", "sign-in", "import", "notice"]);
+const SETTINGS_MESSAGES = new Set(["models", "provider-models", "devices", "memories", "auth-prompt", "auth-prompt-closed", "auth-event", "sign-in", "import", "notice", "netease-checked"]);
 function receive({ data }) {
   if (!data?.type) return;
   if (data.type === "preview" || data.type === "preview-control") { previews.receive(data); renderInspector(); return; }
@@ -1837,7 +1831,7 @@ function receive({ data }) {
   if (data.type === "ready" || data.type === "status") {
     if (data.locale && data.locale !== locale) applyLanguage(data.locale);
     const before = state.playbackService;
-    for (const key of ["model", "spotify", "spotifyAccount", "playbackService", "netease", "locales"]) if (data[key] !== undefined) state[key] = data[key];
+    for (const key of ["model", "spotify", "spotifyAccount", "playbackService", "netease", "neteaseMessage", "locales"]) if (data[key] !== undefined) state[key] = data[key];
     // A service chosen anywhere, here, in Settings or in the player, answers a first launch's question.
     if (data.type === "status" && data.playbackService && data.playbackService !== before) store.set("moondog.source", "chosen");
     if (sourceWanted === state.playbackService) sourceWanted = null;

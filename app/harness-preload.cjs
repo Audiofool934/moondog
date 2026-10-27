@@ -154,6 +154,8 @@ const LONG_TURNS = [
 
 // The status the stand-in core last announced, so a settings refresh answers with the same one.
 let status = STATUS;
+// What Check again finds: NetEase ready, unless a state says otherwise.
+let neteaseCheck = { netease: "ready" };
 const send = (message) => {
   if (message.type === "ready" || message.type === "status") status = { ...status, ...Object.fromEntries(Object.keys(STATUS).map((key) => [key, message[key] ?? status[key]])) };
   core.postMessage(message);
@@ -214,11 +216,24 @@ const STATES = {
   "model-tip"() { STATES.reply(); return { hover: "[data-model]" }; },
   "picks-apple"() { ready({ playbackService: "apple_music", transcript: conversation([["Something for the morning", SHORT]]) }); silent(); return { hover: "[data-service]" }; },
   "picks-netease"() { STATES.netease(); return { hover: "[data-service]" }; },
+  // Settings › Playback with NetEase not installed yet, its row opened to the setup; installed but
+  // signed out; and a Check again that still finds it missing.
   "settings-netease-setup"() {
     ready({ netease: "missing" });
     player();
-    window.moondogApp.showMenu = async () => "sign-in:netease";
-    setTimeout(() => document.querySelector("[data-service]").click(), 150);
+    slash("service");
+    setTimeout(() => document.querySelector('[data-key="service:netease"]').click(), 300);
+  },
+  "settings-netease-signed-out"() {
+    ready({ netease: "signed_out" });
+    player();
+    slash("service");
+    setTimeout(() => document.querySelector('[data-key="service:netease"]').click(), 300);
+  },
+  "settings-netease-still-missing"() {
+    neteaseCheck = { netease: "missing" };
+    STATES["settings-netease-setup"]();
+    setTimeout(() => document.querySelector('[data-key="netease:check"]').click(), 600);
   },
   streaming() {
     ready({ running: ["s1", "s2"], transcript: conversation([["Play something for a late train home", SHORT]]),
@@ -371,7 +386,7 @@ core.onmessage = ({ data }) => {
   // Choices made in Settings stick, as the core would keep them.
   if (data.type === "language") send({ type: "status", ...status, locale: data.locale });
   if (data.type === "music-service") send({ type: "status", ...status, playbackService: data.service });
-  if (data.type === "netease-check") send({ type: "status", ...status, netease: "ready" });
+  if (data.type === "netease-check") { send({ type: "status", ...status, ...neteaseCheck }); send({ type: "netease-checked" }); }
   if (data.type === "model") send({ type: "status", ...status, model: { ...status.model, state: "configured", provider: data.provider, model: data.model } });
   if (data.type === "effort") send({ type: "status", ...status, model: { ...status.model, effort: data.effort === "default" ? null : data.effort } });
   if (data.type === "branch") {

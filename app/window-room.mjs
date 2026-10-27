@@ -199,8 +199,9 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
       spotify: base.spotifyReady?.() === true ? "ready" : "unavailable",
       spotifyAccount: { state: spotify.state ?? "unavailable", clientId: spotify.client_id_configured === true },
       playbackService: base.playbackService ?? "spotify",
-      // NetEase Cloud Music is offered once ncm-cli is installed and signed in.
+      // NetEase Cloud Music is offered once ncm-cli is installed and signed in; a failed check says why.
       netease: base.neteasePlayer?.status?.().state ?? "unavailable",
+      neteaseMessage: base.neteasePlayer?.status?.().message ?? null,
       memory: base.memoryStatus?.().state ?? "unavailable",
     };
   }
@@ -873,7 +874,11 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     language: (data) => setLanguage(String(data.locale ?? "")),
     "music-service": (data) => setMusicService(String(data.service ?? "")),
     // After ncm-cli is set up in Terminal, the window asks again instead of waiting for the next launch.
-    "netease-check": async () => { await base.neteasePlayer?.check?.(); sendStatus(); },
+    "netease-check": async () => {
+      await base.neteasePlayer?.check?.();
+      sendStatus();
+      send({ type: "netease-checked" });
+    },
     devices: () => devices(),
     transfer: (data) => transfer(data.ref),
     memories: () => memories(),
