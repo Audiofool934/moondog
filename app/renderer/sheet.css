@@ -83,6 +83,17 @@
 .sheet .choice .disclose { width: 12px; height: 12px; margin-inline-end: -4px; color: var(--text-4); transition: transform var(--enter) var(--out); }
 .sheet .choice-main[aria-expanded="true"] .disclose { transform: rotate(90deg); color: var(--text-3); }
 .sheet .choices.inner { margin: 0 0 6px 18px; }
+/* A row's switch or Set up shows while the pointer is on the row or the keyboard's focus is in it.
+   The switch sits where the check of the service in use sits. */
+.sheet .choice .reveal { opacity: 0; transition: opacity var(--quick) var(--soft); }
+.sheet .choice:hover .reveal, .sheet .choice:has(:focus-visible) .reveal { opacity: 1; }
+.sheet .choice > .tool { width: 28px; height: 28px; margin-inline-end: 4px; }
+/* A music service unfolds its setup or its own controls, then its buttons, set in under its name. */
+.sheet .choices > .panel { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; margin: 4px 10px 16px 26px; }
+.sheet .panel > .part, .sheet .panel > .stack { align-self: stretch; }
+.sheet .panel .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; }
+/* A quiet button that starts the line lines its words up with the service's name. */
+.sheet .panel .actions > .quiet:first-child { margin-inline-start: -9px; }
 
 /* Text fields, and a field with its button on one row. */
 .sheet .text-field { flex: 1; min-width: 0; height: 30px; padding: 0 10px; border: 0; border-radius: var(--r-2); outline: 0;

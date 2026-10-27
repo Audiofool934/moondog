@@ -85,15 +85,18 @@ A model or music service chosen there lasts until the app quits, and sign-in and
   The conversations open as you last left them.
 - Beside the send button, the music service and the model, each by its mark (from Simple Icons, and Lobe Icons for the model makers Simple Icons lacks), with its name in the tooltip.
   A model shows its maker's mark, through OpenRouter too, by the maker its id names; a maker the window has no mark for shows a plain model glyph.
-  The service's menu switches between Spotify, Apple Music, and NetEase Music once ncm-cli is ready; it also signs in to Spotify in Settings, or shows the commands that set up NetEase in Terminal and checks again.
-  It offers only services the core can play.
+  The service's menu switches among the services that can play now: Apple Music, Spotify once connected, and NetEase Music once ncm-cli is signed in, with the one in use always listed.
+  Connecting Spotify and setting up NetEase happen in Settings › Playback, not in the menu.
   Asking Moondog for another service switches too, within the same reply; the menu, the terminal and every conversation follow one saved choice, and the service left behind stops playing.
   Leaving Apple Music pauses the Music app too. Moondog can also pause, resume and skip the Music app itself, so "switch to Spotify and keep playing there" pauses one and picks the other up where it stopped.
   One thing plays at a time on this Mac: music Moondog starts pauses the Music app, Spotify when it plays on this Mac, and NetEase; music you start in the Music app stops Moondog's own player.
   The model's menu shows the maker in use over its models, the chosen one checked, every other signed-in maker's models in a submenu, and the thinking effort with its level.
   On a first launch the service reads "Choose a music service" until one is chosen, as the model reads "Choose a model" until there is one.
 - Typing `/` lists commands by what they open (a mistyped one stays in the composer instead of going to Moondog): `/new`, `/model`, `/language`, `/service`, `/device`, `/import`, `/memory`, `/remember`, `/folder`, `/settings` and `/help`.
-- Settings (`⌘,`, or the button at the top right beside the player's) has Language, Model (accounts, sign-in in the browser or with an API key, models, thinking), Playback (music service, Spotify sign-in, devices), Import, Memory and About.
+- Settings (`⌘,`, or the button at the top right beside the player's) has Language, Model (accounts, sign-in in the browser or with an API key, models, thinking), Playback, Import, Memory and About.
+  Playback has one row per music service, its state under its name and the one in use checked.
+  A click on a row unfolds that service's setup or its own controls (Spotify's devices and Disconnect), one row at a time.
+  With the pointer on a row, a service that can play shows a switch at its right that uses it, and one that can't yet shows Set up.
   Changes are saved where the terminal reads them; the window never sees a key or token.
 - Import: choose a Spotify, Apple Music, ListenBrainz or Last.fm export, read recent Spotify listening, read a Last.fm account (the window asks for a Last.fm API key the first time), or drop a file anywhere on the window.
   The preview uses the terminal's words, nothing is saved until you add it, and the updated profile then shows in the conversation.
@@ -101,7 +104,9 @@ A model or music service chosen there lasts until the app quits, and sign-in and
   Whole songs come from a small helper beside the app's executable (`native/music.swift`) that plays the Apple Music catalog through MusicKit, so they need an Apple Music subscription and the listener's permission, which Settings › Playback asks for once.
   Until the helper can play, the window plays previews in itself, with media keys and the system's Now Playing.
 - NetEase Music (网易云音乐) plays through NetEase's own command line tool, for listeners in mainland China.
-  It shows among the music services once `npm install -g @music163/ncm-cli`, `brew install mpv` and `ncm-cli login` are done; ncm-cli keeps its own key and sign-in, and Moondog never reads them.
+  Settings › Playback always lists it; until `npm install -g @music163/ncm-cli`, `brew install mpv` and `ncm-cli login` are done, its row says what is missing and unfolds the setup, whose Check again says why a check still fails.
+  ncm-cli keeps its own key and sign-in, and Moondog never reads them.
+  The window looks for ncm-cli on its PATH, in Homebrew's folders, and then on the PATH of the listener's interactive shell, where Node managers such as nvm add their folders.
   The core (`src/integrations/netease/ncm-cli-player.mjs`) keeps the queue and plays one song at a time with ncm-cli, so the terminal and the window play the same way.
   Many songs, above all originals outside mainland China, are marked not playable, most often for copyright; Moondog never sends those and says so instead.
   Each search sends NetEase a short summary of the request, which Settings › Playback says.
