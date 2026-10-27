@@ -2,7 +2,7 @@
 
 This folder builds Moondog's project page at <https://moondog.audiofool.ai>.
 Its hero is Moondog's own window, the desktop app's renderer, playing a short scene with a made-up listener and made-up songs, with music made by Stable Audio 3.
-The page makes no network requests beyond its own files, and its content security policy enforces that.
+The page loads only its own files, and Cloudflare's Web Analytics, which Cloudflare adds to the pages it serves; its content security policy allows nothing else.
 
 ## Run it
 

@@ -23,18 +23,22 @@ const builtins = {
   perf_hooks: "misc.mjs", "timers/promises": "misc.mjs", sqlite: "sqlite.mjs",
 };
 
-// What each document may load: its own files, drawn covers, and for the page, the window's frame and
-// the scene's music.
+// What each document may load: its own files, drawn covers, and for the page, the window's frame, the
+// scene's music, and Cloudflare's Web Analytics, which Cloudflare adds to each page it serves and which
+// reports to the site's own /cdn-cgi/rum. The window's frame reloads with each play of the scene, so it
+// keeps the beacon out rather than count a visit each time.
+const analytics = "https://static.cloudflareinsights.com";
 function contentPolicy(document) {
+  const page = document === "page";
   const sources = {
     "default-src": ["'self'"],
-    "script-src": ["'self'"],
+    "script-src": ["'self'", ...(page ? [analytics] : [])],
     "style-src": ["'self'", "'unsafe-inline'"],
     "img-src": ["'self'", "data:"],
-    "media-src": document === "page" ? ["'self'"] : ["'none'"],
+    "media-src": page ? ["'self'"] : ["'none'"],
     "font-src": ["'self'"],
-    "connect-src": ["'none'"],
-    "frame-src": document === "page" ? ["'self'"] : ["'none'"],
+    "connect-src": page ? ["'self'", "https://cloudflareinsights.com"] : ["'none'"],
+    "frame-src": page ? ["'self'"] : ["'none'"],
     "object-src": ["'none'"],
     "base-uri": ["'none'"],
     "form-action": ["'none'"],
