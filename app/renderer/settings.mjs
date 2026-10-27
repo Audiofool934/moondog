@@ -138,9 +138,9 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
     sheet.hidden = false;
     if (!wasOpen) {
       content = null;
-      // Each opening starts with the provider in use unfolded, and NetEase's setup only when it was asked for.
+      // Each opening starts with the provider and the music service in use unfolded.
       data.expanded = undefined;
-      data.neteaseSetup = false;
+      data.servicePanel = undefined;
       data.neteaseCheck = null;
     }
     isOpen = true;
@@ -175,8 +175,11 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
     send({ type: "settings" });
     if (section === "model") send({ type: "models" });
     if (section === "playback") {
-      data.devicesLoading = true;
-      send({ type: "devices" });
+      // Spotify's devices are asked for only while Spotify is the service in use.
+      if (state.spotify === "ready" && (state.playbackService ?? "spotify") === "spotify") {
+        data.devicesLoading = true;
+        send({ type: "devices" });
+      }
       // Whether Apple Music can play whole songs here can change outside the window, so Playback asks again.
       void appleMusic?.check().then(() => render());
     }
@@ -543,47 +546,62 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
     return choices(inner, "choices inner");
   }
 
-  // Playback: the music service, then Spotify's account or its devices.
+  // Playback: one row per music service, its state under its name and the one in use checked. A row
+  // unfolds what that service needs: its setup until it can play, then its own controls, such as
+  // Spotify's devices, and the button that uses it. One row is open at a time, and each opening starts
+  // with the service in use open. Other sources of music get groups of their own beside this one.
   function playback() {
     const service = expected("service", state.playbackService ?? "spotify");
-    const ready = expected("spotify", state.spotify) === "ready";
+    const spotifyReady = expected("spotify", state.spotify) === "ready";
     const neteaseReady = state.netease === "ready";
-    // Asked for from its row, or NetEase in use but signed out.
-    const neteaseSetup = !neteaseReady && (data.neteaseSetup || service === "netease");
-    const chooseService = (next) => () => {
-      if (next === service) return;
-      expect("service", next);
-      send({ type: "music-service", service: next });
-      render();
-    };
-    const disconnect = ready ? button(say("disconnect"), "button quiet small", () => {
-      expect("spotify", "unavailable");
-      send({ type: "sign-out", provider: "spotify" });
-      render();
-    }, "spotify:disconnect") : null;
     // Whole Apple Music songs need the listener's permission once; until then, and without it, previews play.
-    // The row asks for it only while Apple Music is the service in use.
     const whole = appleMusic?.status();
-    const allowWhole = service === "apple_music" && whole?.authorization === "notDetermined" && whole.reason !== "developerTokenRequestFailed" ? button(say("allowFullSongs"), "button small", () => {
-      void appleMusic.check("authorize").then(() => render());
-    }, "apple-music:allow") : null;
-    const parts = [group(say("musicService"), sectionError(), choices([
-      // The state reads beside the account, so the button to disconnect is never taken for it.
-      choice({ label: "Spotify", detail: say(ready ? "connected" : "notConnected"), chosen: service === "spotify", trailing: disconnect,
-        key: "service:spotify", onChoose: chooseService("spotify") }),
-      choice({ label: "Apple Music", detail: say(whole?.canPlay ? "fullSongs" : "appleMusicNote"), chosen: service === "apple_music", key: "service:apple_music",
-        trailing: allowWhole, onChoose: chooseService("apple_music") }),
-      // NetEase plays once ncm-cli is installed and signed in, and its searches send NetEase a short
-      // summary. Until then its row says what is missing and opens the setup under the list.
-      neteaseReady ? choice({ label: say("netease"), detail: say("neteaseNote"), chosen: service === "netease", key: "service:netease", onChoose: chooseService("netease") })
-        : choice({ label: say("netease"), detail: say(NETEASE_STATES[state.netease] ?? "checking"), chosen: service === "netease", expanded: neteaseSetup,
-          key: "service:netease", onChoose: () => { data.neteaseSetup = !neteaseSetup; render(); } }),
-    ]), neteaseSetup ? setUpNetease() : null)];
-    if (service !== "spotify") return parts;
-    if (data.auth?.provider === "spotify") parts.push(group(null, signInPanel()));
-    else if (!ready) parts.push(group(null, data.auth ? note(say("signInBusy")) : connectSpotify()));
-    else parts.push(devices());
-    return parts;
+    const canAllowWhole = whole?.authorization === "notDetermined" && whole.reason !== "developerTokenRequestFailed";
+    const rows = [
+      { id: "spotify", label: "Spotify", detail: say(spotifyReady ? "connected" : "notConnected") },
+      { id: "apple_music", label: "Apple Music", detail: say(whole?.canPlay ? "fullSongs" : "appleMusicNote"), empty: service === "apple_music" && !canAllowWhole },
+      { id: "netease", label: say("netease"), detail: say(neteaseReady ? "signedIn" : NETEASE_STATES[state.netease] ?? "checking") },
+    ];
+    const use = (row) => (row.id === service ? null : button(say("useService", { service: row.label }), "button small", () => {
+      expect("service", row.id);
+      send({ type: "music-service", service: row.id });
+      // Spotify's devices are read afresh once it is in use.
+      if (row.id === "spotify") data.devices = null;
+      render();
+    }, `use:${row.id}`));
+    const actions = (...buttons) => {
+      const line = make("div", "actions");
+      line.append(...buttons.filter(Boolean));
+      return line.childElementCount ? line : null;
+    };
+    const inside = {
+      spotify: (row) => (data.auth?.provider === "spotify" ? [signInPanel()]
+        : !spotifyReady ? [data.auth ? note(say("signInBusy")) : connectSpotify()]
+          : [service === "spotify" ? devices() : null, actions(use(row), button(say("disconnect"), "button quiet small", () => {
+            expect("spotify", "unavailable");
+            send({ type: "sign-out", provider: "spotify" });
+            render();
+          }, "spotify:disconnect"))]),
+      apple_music: (row) => [actions(use(row), canAllowWhole ? button(say("allowFullSongs"), "button small", () => {
+        void appleMusic.check("authorize").then(() => render());
+      }, "apple-music:allow") : null)],
+      // NetEase's searches send NetEase a short summary of the request, which its row says before it is used.
+      netease: (row) => (neteaseReady ? [note(say("neteaseNote")), actions(use(row))] : [setUpNetease()]),
+    };
+    const open = data.servicePanel !== undefined ? data.servicePanel : data.auth?.provider === "spotify" ? "spotify" : service;
+    const list = [];
+    for (const row of rows) {
+      // A row with nothing to unfold keeps the chevron's room, so the names stay in one column.
+      const expanded = !row.empty && open === row.id;
+      list.push(choice({ label: row.label, detail: row.detail, chosen: service === row.id, key: `service:${row.id}`,
+        lead: icon("chevron", row.empty ? "icon disclose blank" : "icon disclose"),
+        ...(row.empty ? {} : { expanded, onChoose: () => { data.servicePanel = expanded ? null : row.id; render(); } }) }));
+      if (!expanded) continue;
+      const panel = make("div", "panel");
+      panel.append(...inside[row.id](row).filter(Boolean));
+      list.push(panel);
+    }
+    return [group(say("musicService"), sectionError(), choices(list))];
   }
   // NetEase is set up in Terminal with its own tool, then checked again here. A check that still
   // doesn't find it ready says why, so the listener sees that it ran.
@@ -633,7 +651,12 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
       inlineForm({ key: "spotifyClientId", placeholder: say("spotifyClientId"), action: say("connectSpotify"), primary: true, onSubmit: (clientId) => start(clientId) }));
     return stack;
   }
+  // Spotify's devices, in its row while it is the service in use. Unread ones are asked for once.
   function devices() {
+    if (!data.devices && !data.devicesLoading) {
+      data.devicesLoading = true;
+      send({ type: "devices" });
+    }
     const head = make("div", "group-head");
     const again = make("button", "tool");
     again.type = "button";
@@ -641,7 +664,7 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
     again.append(icon("refresh"));
     name(again, say("refresh"));
     again.addEventListener("click", () => { data.devicesLoading = true; send({ type: "devices" }); render(); });
-    head.append(make("h3", "group-title", say("devices")), again);
+    head.append(make("h4", "group-title", say("devices")), again);
     const list = !data.devices ? waiting()
       : data.devicesLimitedUntil ? failure("spotifyLimited", { time: timeOfDay(data.devicesLimitedUntil, state.locale) })
         : data.devicesError ? failure("noticeDevicesFailed")
@@ -655,7 +678,7 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
               data.devices = data.devices.map((entry) => ({ ...entry, active: entry.ref === device.ref }));
               render();
             } })));
-    const part = make("section", "group");
+    const part = make("div", "part");
     part.append(head, list);
     return part;
   }
@@ -844,7 +867,7 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
       data.error = message.state === "error" ? { section: where, key: SIGN_IN_ERRORS[message.code] ?? "signInFailed" } : null;
       if (message.state === "error") warn("sign-in", message.message);
       // Spotify reads as connected while the core rebuilds with it.
-      if (message.provider === "spotify" && message.state === "done") expect("spotify", "ready");
+      if (message.provider === "spotify" && message.state === "done") { expect("spotify", "ready"); data.devices = null; }
       send({ type: "models" });
     }
     if (message.type === "import") {

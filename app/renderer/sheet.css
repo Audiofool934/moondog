@@ -83,6 +83,13 @@
 .sheet .choice .disclose { width: 12px; height: 12px; margin-inline-end: -4px; color: var(--text-4); transition: transform var(--enter) var(--out); }
 .sheet .choice-main[aria-expanded="true"] .disclose { transform: rotate(90deg); color: var(--text-3); }
 .sheet .choices.inner { margin: 0 0 6px 18px; }
+.sheet .choice .disclose.blank { visibility: hidden; }
+/* A music service unfolds its setup or its own controls, then its buttons, under its name. */
+.sheet .choices > .panel { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; margin: 2px 10px 14px 28px; }
+.sheet .panel > .part, .sheet .panel > .stack { align-self: stretch; }
+.sheet .panel .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; }
+/* A quiet button that starts the line lines its words up with the service's name. */
+.sheet .panel .actions > .quiet:first-child { margin-inline-start: -9px; }
 
 /* Text fields, and a field with its button on one row. */
 .sheet .text-field { flex: 1; min-width: 0; height: 30px; padding: 0 10px; border: 0; border-radius: var(--r-2); outline: 0;
