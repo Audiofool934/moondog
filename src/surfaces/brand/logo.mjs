@@ -124,9 +124,12 @@ function tonearm(reach) {
     holes: [toArm(50, -12.5), toArm(50, 7)],
   };
 }
-// At small sizes the arm is one tube, one headshell and a cartridge, heavy enough to show at 32 px.
-const heavyTonearm = (reach) => [quad([[-reach, -15], [-reach, 15], [-30, 15], [-30, -15]]),
-  quad([[-26, -30], [-26, 26], [74, 24], [74, -32]]), quad([[78, -17], [78, 11], [104, 8], [104, -14]])];
+// The small version, for 64 px and below: the rim and two heavy grooves, the clear margin they keep
+// from the dog, gaps wide enough to last, and the earcup's one ring and its middle.
+const SMALL = Object.freeze({ gap: 30, halo: 22, grooves: [[RECORD.rim - 15, 30], [362, 22], [312, 22]], cupRing: [34, 14], cupDot: 14 });
+// Its arm is one tube, one headshell and a cartridge, heavy enough to show at 32 px.
+const heavyArm = (reach) => [[[-reach, -15], [-reach, 15], [-30, 15], [-30, -15]], [[-26, -30], [-26, 26], [74, 24], [74, -32]],
+  [[78, -17], [78, 11], [104, 8], [104, -14]]];
 
 function arc(cx, cy, r, from, to) {
   const point = (angle) => [cx + r * Math.cos((angle * Math.PI) / 180), cy + r * Math.sin((angle * Math.PI) / 180)];
@@ -153,18 +156,18 @@ const SCHEME = "<style>svg{color:#141414}@media (prefers-color-scheme:dark){svg{
  * `id` keeps the masks of several logos on one page apart.
  */
 export function logoSvg({ small = false, ink = "currentColor", standalone = false, id = "moondog-logo", reach = 200, line = 1.4 } = {}) {
-  const gap = small ? 30 : 11;
-  const halo = small ? 22 : 6;
+  const gap = small ? SMALL.gap : 11;
+  const halo = small ? SMALL.halo : 6;
   const { head, band, bandGap } = figure(gap);
   const arm = tonearm(reach);
-  const armParts = small ? heavyTonearm(reach + 60) : arm.parts;
+  const armParts = small ? heavyArm(reach + 60).map(quad) : arm.parts;
   const liftEnd = small ? "" : `<circle cx="${f(arm.liftEnd[0])}" cy="${f(arm.liftEnd[1])}" r="4.25"/>`;
   const dog = `<path d="${toPath(head)}"/><path d="${toPath(band)}"/><circle cx="${CUP.cx}" cy="${CUP.cy}" r="${CUP.r}"/>`;
   const grooves = [];
-  if (small) grooves.push([RECORD.rim - 15, 30], [362, 22], [312, 22]);
+  if (small) grooves.push(...SMALL.grooves);
   else for (let r = RECORD.rim, index = 0; r >= RECORD.inner - 0.01; r -= RECORD.pitch, index += 1) grooves.push([r, index ? line : line * 1.6]);
   const cupRings = small
-    ? `${ring(CUP.cx, CUP.cy, 34, 14, "#000")}<circle cx="${CUP.cx}" cy="${CUP.cy}" r="14" fill="#000"/>`
+    ? `${ring(CUP.cx, CUP.cy, ...SMALL.cupRing, "#000")}<circle cx="${CUP.cx}" cy="${CUP.cy}" r="${SMALL.cupDot}" fill="#000"/>`
     : CUP.rings.map((r) => ring(CUP.cx, CUP.cy, r, 3.2, "#000")).join("");
   const mask = (name, body) => `<mask id="${id}-${name}" maskUnits="userSpaceOnUse" x="0" y="0" width="1024" height="1024"><rect width="1024" height="1024" fill="#fff"/>${body}</mask>`;
   // Grooves stop short of the dog, the arm and the craters; the gaps cut the dog into head, band and cup.
@@ -201,14 +204,15 @@ export function appIconSvg({ dark = false, id = "moondog-icon" } = {}) {
 }
 
 /**
- * The dog for surfaces that draw it themselves, such as the window's title-bar mark and the
- * terminal's record: outlines as points in the record's unit coordinates (the disc has radius 1
- * around 0, 0), at the gap a size calls for (`small` for an icon or a terminal).
+ * The small logo for surfaces that draw it themselves, such as the window's title-bar mark and the
+ * terminal's record, in the record's unit coordinates (the disc has radius 1 around 0, 0): the dog's
+ * outlines as points, its gaps, the rim and grooves as [radius, width], the margin they keep from the
+ * dog, and the heavy arm's parts, its tube `reach` long.
  */
-export function logoFigure({ small = true } = {}) {
-  const gap = small ? 30 : 11;
-  const { head, band, bandGap } = figure(gap);
-  const unit = ([x, y]) => [(x - RECORD.cx) / RECORD.rim, (y - RECORD.cy) / RECORD.rim];
+export function logoFigure({ reach = 190 } = {}) {
+  const { head, band, bandGap } = figure(SMALL.gap);
+  const scale = (length) => length / RECORD.rim;
+  const unit = ([x, y]) => [scale(x - RECORD.cx), scale(y - RECORD.cy)];
   return {
     // The head to fill, and its outer edge alone, from the ear's tip round to the back of the neck.
     head: toPoints(head).map(unit),
@@ -217,7 +221,10 @@ export function logoFigure({ small = true } = {}) {
     band: toPoints(band).map(unit),
     bandCenter: toPoints(segments(offset(BAND_INNER, 12.5), { closed: false })).map(unit),
     bandGap: toPoints(bandGap, 4).map(unit),
-    gap: gap / RECORD.rim,
-    cup: { center: unit([CUP.cx, CUP.cy]), radius: CUP.r / RECORD.rim, ring: 34 / RECORD.rim, ringWidth: 14 / RECORD.rim, dot: 14 / RECORD.rim },
+    gap: scale(SMALL.gap),
+    cup: { center: unit([CUP.cx, CUP.cy]), radius: scale(CUP.r), ring: scale(SMALL.cupRing[0]), ringWidth: scale(SMALL.cupRing[1]), dot: scale(SMALL.cupDot) },
+    grooves: SMALL.grooves.map(([radius, width]) => [scale(radius), scale(width)]),
+    halo: scale(SMALL.halo),
+    tonearm: heavyArm(reach).map((corners) => corners.map((corner) => unit(toArm(...corner)))),
   };
 }

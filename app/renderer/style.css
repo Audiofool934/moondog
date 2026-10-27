@@ -129,15 +129,13 @@ img { -webkit-user-drag: none; }
 
 /* Moondog's mark at icon size (mark.mjs). */
 .mark { flex: none; overflow: visible; }
-.mark .rim, .mark .groove, .mark .shine { fill: none; stroke: currentColor; }
-.mark .rim { stroke-width: 0.075; opacity: 0.55; }
-.mark .groove { stroke-width: 0.05; opacity: 0.22; }
-.mark .shine { stroke-width: 0.085; stroke-linecap: round; opacity: 0.75; }
+.mark .rim, .mark .groove { fill: none; }
 .mark .ink { fill: currentColor; }
-.mark .arm { fill: none; stroke: currentColor; stroke-linecap: round; stroke-width: 0.065; }
-/* While music plays the highlights turn with the record and the arm rests on it; the arm lifts when it stops. */
-.mark-turn { transform-box: fill-box; transform-origin: 50% 50%; animation: spin var(--turn) linear infinite paused; }
-.mark.playing .mark-turn { animation-play-state: running; }
+/* While music plays the glints turn with the record and the arm rests on it; when it stops the arm
+   lifts and the glints go, so the mark at rest is the logo. */
+.mark-turn { transform-box: fill-box; transform-origin: 50% 50%; opacity: 0; transition: opacity 600ms var(--soft);
+  animation: spin var(--turn) linear infinite paused; }
+.mark.playing .mark-turn { opacity: 1; animation-play-state: running; }
 @keyframes spin { to { transform: rotate(1turn); } }
 .mark-arm { transform-box: fill-box; transform-origin: 100% 0%; transform: rotate(-28deg); transition: transform 900ms var(--spring); }
 .mark.playing .mark-arm { transform: none; }
