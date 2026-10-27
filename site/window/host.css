@@ -16,6 +16,9 @@
 /* While the scene waits on the record for the visitor, the page's cover speaks where the composer sits. */
 .waiting [data-composer] { opacity: 0; }
 [data-composer] { transition: opacity 600ms ease; }
+/* The record is there from the first frame, as the page's words are, rather than turning in as it does
+   when the app opens. */
+[data-record] { animation: none; }
 
 /* macOS's arrow: black with a white rim, in light and dark alike. It glides and eases to a stop. */
 .pointer { position: fixed; top: 0; left: 0; z-index: 50; width: 18px; height: 24px; margin: -1px 0 0 -1px; pointer-events: none;

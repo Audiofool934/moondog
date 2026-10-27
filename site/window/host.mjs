@@ -26,6 +26,9 @@ else announce();
 // The window is one frame among the page's words, and nobody types in it. It never takes focus, so
 // playing the scene never scrolls the page or takes its keys.
 HTMLElement.prototype.focus = function focusNowhere() {};
+// Safari has no idle callbacks, which the record uses to work out its frames ahead; a short wait stands in.
+window.requestIdleCallback ??= (run) => setTimeout(run, 50);
+window.cancelIdleCallback ??= clearTimeout;
 // Every play starts the same way: no conversations beside it, the player folded, the record open.
 try {
   for (const [key, value] of [["moondog.sidebar", "hidden"], ["moondog.source", "chosen"], ["moondog.record", "open"]]) localStorage.setItem(key, value);

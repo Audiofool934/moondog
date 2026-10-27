@@ -1648,8 +1648,8 @@ function showScratch(target, ms, durationMs) {
 
 // ── Panels ───────────────────────────────────────────────────────────────────────────────────
 // A narrow window folds the player, then the conversations; a click always wins. The conversations
-// open as the listener last left them. The player opens only by hand: it starts folded, and folds
-// again when nothing is left to play.
+// open as the listener last left them. The player opens only by hand: it starts folded, already in the
+// markup so it never shows before this runs, and folds again when nothing is left to play.
 const layout = $("window");
 const panels = { sidebar: store.get("moondog.sidebar") !== "hidden", inspector: false };
 const roomFor = { sidebar: 820, inspector: 1060 };
