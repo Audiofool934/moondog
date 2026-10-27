@@ -21,7 +21,7 @@ import {
 } from "../../runtime/pi/model-catalog.mjs";
 import { getPublicPiModelCatalog } from "../../runtime/pi/public-model-catalog.mjs";
 import { serviceKeyProviders, supportedAuthProviderIds } from "../../runtime/pi/authentication.mjs";
-import { runtimeBehindSelection } from "../../runtime/pi/runtime-settings.mjs";
+import { runtimeBehindSelection } from "../../runtime/pi/runtime-selection.mjs";
 import {
   formatLocalResult,
   helpText,
