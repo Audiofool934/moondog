@@ -18,13 +18,15 @@ const TURN = Math.PI * 2;
 // Off the record the arm stands swung out as far as the bar's mark swings its own.
 const LIFTED = -28 / 180 * Math.PI;
 const SWING_MS = 560;
-// A pointer on the arm lights it in its own dots, and never moves it: a swell runs along the arm toward
-// where a click will send it, onto the record or off it, and leaves its dots a little fuller while the
-// pointer stays. FULL and CREST add to a dot's radius; the light goes out in OUT_MS.
-const LIGHT_MS = 380;
-const OUT_MS = 180;
-const FULL = 0.3;
-const CREST = 0.45;
+// A pointer near the arm lights it in its own dots, and never moves it. Within NEAR_PX of where a click
+// takes the arm, the light grows as the pointer comes closer: the arm's dots fill out a little, by BASE,
+// and swell most around the pointer, by SPOT, across SPREAD of the record's radius, so the light follows
+// the pointer along the arm. It eases in and out over about EASE_MS.
+const NEAR_PX = 36;
+const BASE = 0.12;
+const SPOT = 0.55;
+const SPREAD = 0.1;
+const EASE_MS = 90;
 // The platter starts at half speed and gains on each frame; stopping, it loses on each frame and
 // rests below a quarter of its speed, a second or so later.
 const SPIN_UP = 1.45;
@@ -35,8 +37,6 @@ const HELD_MS = 220;
 // The arm as a line to point at, in the record's unit coordinates: pivot, elbow, cartridge, stylus.
 const { arm: ARM, cartridge: CARTRIDGE } = lunarRecordShapes();
 const ARM_LINE = [ARM[0], ARM[1], CARTRIDGE.reduce(([x, y], [a, b]) => [x + a / 4, y + b / 4], [0, 0]), [0.755, -0.587]];
-// How far a dot lies from the pivot, from 0 to 1 at the stylus, whatever the swing.
-const REACH = Math.hypot(ARM_LINE[3][0] - ARM[0][0], ARM_LINE[3][1] - ARM[0][1]);
 const swung = ([x, y], swing) => {
   const [px, py] = ARM[0];
   const [cosine, sine] = [Math.cos(swing), Math.sin(swing)];
@@ -53,8 +53,8 @@ const dark = matchMedia("(prefers-color-scheme: dark)");
 
 /**
  * Draws the record into `canvas`, sized by its CSS box. Returns its controls: turn(on) runs the
- * platter; needle(on, instant) rests the arm on the record or swings it off; light(on) lights the arm
- * under a pointer; spin(distance) turns the record by hand, `distance` pixels along its rim;
+ * platter; needle(on, instant) rests the arm on the record or swings it off; near(x, y) lights the arm
+ * for a pointer at that point in the window, and near(null) for none; spin(distance) turns the record by hand, `distance` pixels along its rim;
  * shown(scale) says the box is drawn at `scale` by a transform; hit(x, y) names what is under a
  * point in the window ("arm", "disc" or null); place() gives the disc's center and radius in the
  * window; tint(colours, instant) takes three [r, g, b] colours, from the rim inward, or null for ink.
@@ -88,10 +88,11 @@ export function mountRecord(canvas, { across = null } = {}) {
   let axes = null;
   let rings = { from: null, to: null, start: 0 };
   let drifting = 0;
-  // The arm: on the record or off it, its swing as drawn, eased toward where it goes, and its light.
+  // The arm: on the record or off it, and its swing as drawn, eased toward where it goes; and the pointer
+  // near it, in the window, with where it falls on the record and how strongly the arm answers it.
   let down = true;
-  let lit = { on: false, start: -Infinity, toward: true };
-  let lighting = 0;
+  let pointer = null;
+  let near = { p: 0, at: 0, x: 0, y: 0 };
   let swing = 0;
   let swingTo = null;
   let swinging = 0;
@@ -144,8 +145,8 @@ export function mountRecord(canvas, { across = null } = {}) {
     return traced.layers[index];
   }
   // The arm at its swing; resting on the record, its contact moves with the frame. Lit, each dot swells
-  // by where it lies along the arm.
-  function armPath(index, density, now) {
+  // by how near the pointer is to the arm, and most near the pointer itself.
+  function armPath(index, density) {
     const key = swing === 0 ? `on ${index}` : `${Math.round(swing * 2000)}`;
     let art = arms.get(key);
     if (!art) {
@@ -153,34 +154,36 @@ export function mountRecord(canvas, { across = null } = {}) {
       art = renderTonearmDots({ columns: grid / 2, rows: grid / 4, phase: index, swing });
       arms.set(key, art);
     }
-    const glow = glowAt(now);
-    const along = (column, row) => Math.min(1, Math.hypot((column - axes.x) / axes.radius - ARM[0][0], (row - axes.y) / axes.radius - ARM[0][1]) / REACH);
-    return trace(art, [null, null, null, new Path2D()], density, glow && axes ? (column, row) => glow(along(column, row)) : null)[3];
+    const grow = near.p && axes ? (column, row) => 1 + near.p * (BASE + SPOT * Math.exp(
+      -(((column - axes.x) / axes.radius - near.x) ** 2 + ((row - axes.y) / axes.radius - near.y) ** 2) / SPREAD ** 2)) : null;
+    return trace(art, [null, null, null, new Path2D()], density, grow)[3];
   }
-  // The light at a moment, as a dot's growth by its place along the arm, from 0 at the pivot to 1 at
-  // the stylus; or null once it is out. Lighting, a crest runs toward where a click sends the arm and
-  // leaves its dots full behind it; going out, the whole arm settles back at once.
-  function glowAt(now) {
-    const t = (now - lit.start) / (lit.on ? LIGHT_MS : OUT_MS);
-    if (!lit.on) return t >= 1 || reduced.matches ? null : () => 1 + FULL * (1 - t) ** 2;
-    const front = reduced.matches ? Infinity : t * 1.3;
-    return (at) => {
-      const x = lit.toward ? at : 1 - at;
-      return 1 + FULL * Math.min(1, Math.max(0, (front - x) / 0.2)) + CREST * Math.exp(-(((x - front) / 0.11) ** 2));
-    };
+  // Where a point in the window falls in the record's unit coordinates, how far it is from the arm there,
+  // how far from the arm a click still takes it, and how many pixels make one unit.
+  function measure(x, y) {
+    if (!axes || !size) return null;
+    const box = canvas.getBoundingClientRect();
+    if (!box.width) return null;
+    const unit = box.width / grid * axes.radius;
+    const nx = ((x - box.left) / box.width * grid - 0.5 - axes.x) / axes.radius;
+    const ny = ((y - box.top) / box.height * grid - 0.5 - axes.y) / axes.radius;
+    const line = ARM_LINE.map((point) => swung(point, swing));
+    const gap = Math.min(...line.slice(1).map((to, index) => toSegment(nx, ny, line[index], to)));
+    // Never less than ten pixels either side of the arm, however small the record.
+    return { nx, ny, gap, reach: Math.max(0.1, 10 / unit), unit };
   }
-  function light(on) {
-    on = Boolean(on);
-    if (on === lit.on) return;
-    lit = { on, start: performance.now(), toward: !down };
-    if (!lighting) lighting = requestAnimationFrame(glowStep);
-  }
-  function glowStep() {
-    lighting = 0;
-    if (stopped) return;
-    draw();
-    const t = (performance.now() - lit.start) / (lit.on ? LIGHT_MS : OUT_MS);
-    if (!reduced.matches && t < (lit.on ? 1 : 1.05)) lighting = requestAnimationFrame(glowStep);
+  // How strongly the arm answers the pointer, eased toward how near the pointer is now: 1 where a click
+  // takes the arm, falling to 0 at NEAR_PX beyond. A swing moves the arm toward or away from a still
+  // pointer too. Returns whether it is still on its way.
+  function nearness(now) {
+    const at = pointer && measure(pointer.x, pointer.y);
+    const target = at ? Math.min(1, Math.max(0, 1 - (at.gap - at.reach) * at.unit / NEAR_PX)) : 0;
+    if (at) { near.x = at.nx; near.y = at.ny; }
+    const dt = Math.min(32, now - near.at);
+    near.at = now;
+    near.p = reduced.matches ? target : target + (near.p - target) * Math.exp(-dt / EASE_MS);
+    if (Math.abs(near.p - target) < 0.01) near.p = target;
+    return near.p !== target;
   }
   // The frames a hand might turn to are worked out while the window is idle, nearest first.
   function warm() {
@@ -223,6 +226,7 @@ export function mountRecord(canvas, { across = null } = {}) {
     if (canvas.width !== pixels) { canvas.width = pixels; canvas.height = pixels; }
     const density = pixels / size;
     const layers = paths(index, density);
+    const easing = nearness(performance.now());
     context.setTransform(density, 0, 0, density, 0, 0);
     context.clearRect(0, 0, size, size);
     const paint = grooves(performance.now());
@@ -235,8 +239,9 @@ export function mountRecord(canvas, { across = null } = {}) {
       context.fill(layers[level]);
     }
     context.globalAlpha = INK[3];
-    context.fill(armPath(index, density, performance.now()));
+    context.fill(armPath(index, density));
     context.globalAlpha = 1;
+    if (easing) paintSoon();
     // While colours drift, the record redraws on every display frame until they arrive.
     if (!paint.done && !drifting) drifting = requestAnimationFrame(() => { drifting = 0; draw(); });
   }
@@ -317,11 +322,13 @@ export function mountRecord(canvas, { across = null } = {}) {
       on = Boolean(on);
       if (on === down && !instant) return;
       down = on;
-      light(false);
       if (instant || reduced.matches) { swingTo = null; swing = down ? 0 : LIFTED; draw(); return; }
       aim();
     },
-    light,
+    near(x, y) {
+      pointer = Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null;
+      paintSoon();
+    },
     spin(distance) {
       if (!disc || !distance) return;
       phase += distance / (disc.radius * scale) / TURN * LOGO_MOTION_FRAMES;
@@ -334,17 +341,10 @@ export function mountRecord(canvas, { across = null } = {}) {
       draw();
     },
     hit(x, y) {
-      if (!axes || !size) return null;
-      const box = canvas.getBoundingClientRect();
-      if (!box.width) return null;
-      const unit = box.width / grid * axes.radius;
-      const nx = ((x - box.left) / box.width * grid - 0.5 - axes.x) / axes.radius;
-      const ny = ((y - box.top) / box.height * grid - 0.5 - axes.y) / axes.radius;
-      const line = ARM_LINE.map((point) => swung(point, swing));
-      const near = Math.min(...line.slice(1).map((to, index) => toSegment(nx, ny, line[index], to)));
-      // Never less than ten pixels either side of the arm, however small the record.
-      if (near <= Math.max(0.1, 10 / unit)) return "arm";
-      return Math.hypot(nx, ny) <= 1.04 ? "disc" : null;
+      const at = measure(x, y);
+      if (!at) return null;
+      if (at.gap <= at.reach) return "arm";
+      return Math.hypot(at.nx, at.ny) <= 1.04 ? "disc" : null;
     },
     place() {
       if (!disc || !size) return null;
@@ -369,7 +369,6 @@ export function mountRecord(canvas, { across = null } = {}) {
       cancelAnimationFrame(drifting);
       cancelAnimationFrame(painting);
       cancelAnimationFrame(swinging);
-      cancelAnimationFrame(lighting);
       cancelIdleCallback(warming);
       observer.disconnect();
       dark.removeEventListener("change", theme);
