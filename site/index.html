@@ -36,21 +36,11 @@
       </div>
     </section>
 
-    <section class="demo" aria-label="Try Moondog">
-      <div class="views" role="tablist" aria-label="Choose a view">
-        <button type="button" role="tab" aria-selected="true" aria-controls="view" data-view="window">Window</button>
-        <button type="button" role="tab" aria-selected="false" aria-controls="view" data-view="terminal">Terminal</button>
+    <section class="demo" aria-label="Moondog at work">
+      <div class="stage">
+        <iframe src="window.html" title="A short scene in Moondog's window: the needle goes down and Moondog picks three songs, then it answers a request for a late train home." tabindex="-1"></iframe>
       </div>
-      <div class="stage" id="view" role="tabpanel" data-stage data-view="window">
-        <iframe src="window.html" title="Moondog's window, with a made-up listener" allow="autoplay; clipboard-write" data-frame="window"></iframe>
-      </div>
-      <p class="note">
-        <span data-for="window">This is the real Moondog, running in your browser for a made-up listener.</span>
-        <span data-for="window" data-agent="online" hidden>Put the needle on the record and Moondog picks something for right now, or ask it for anything.</span>
-        <span data-for="terminal" hidden>This is Moondog in a terminal, with the same made-up listener. <span class="for-mouse">Click inside and type <code>/taste</code>, or press Tab to look around.</span><span class="for-touch">Tap <code>/taste</code> under it to open the profile.</span></span>
-        <span data-agent="offline">Nothing you type leaves this page.</span>
-        <span data-agent="online" hidden>What you type goes to Moondog's demo server and on to DeepSeek, which writes the replies. Nothing is kept. The songs are 30-second previews from Apple Music.</span>
-      </p>
+      <p class="note">Moondog's own window, playing a short scene. The listener and the songs are made up.</p>
     </section>
 
     <section class="part" aria-labelledby="history-title">
@@ -131,7 +121,7 @@ moondog</code></pre>
     <img src="static/moondog-logo-144.png" width="72" height="72" alt="The Moondog logo: a dog in headphones inside a moon that is also a record">
     <div>
       <p>Moondog takes its name from Alan Freed, who went on the air in Cleveland in 1951 as the Moondog and helped give rock and roll its name.</p>
-      <p>It is open source under the Apache 2.0 license, and built on <a href="https://github.com/earendil-works/pi">Pi</a>. Lyrics on the sleeve come from <a href="https://lrclib.net/">LRCLIB</a>. The listener in the window above is made up.</p>
+      <p>It is open source under the Apache 2.0 license, and built on <a href="https://github.com/earendil-works/pi">Pi</a>. Lyrics on the sleeve come from <a href="https://lrclib.net/">LRCLIB</a>. The listener and the songs in the window above are made up.</p>
       <p class="liner-links">
         <a href="https://github.com/Audiofool934/moondog">Source</a>
         <a href="https://github.com/Audiofool934/moondog/releases">Releases</a>

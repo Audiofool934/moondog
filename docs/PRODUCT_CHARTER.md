@@ -13,7 +13,7 @@ Moondog has three surfaces:
   It is a local CLI and TUI built on Pi.
 - The desktop app in `app/` is a native client on the same core.
   It shares the profile, settings, and sign-ins with the terminal.
-- The project page in `site/` runs the real terminal room in the browser on fictional data.
+- The project page in `site/` plays a short scene in the desktop app's real window, in the browser, on made-up data.
 
 Pi supplies replaceable agent-loop, model, and terminal adapters, while Moondog owns profile, memory, policy, persistence, and connectors.
 

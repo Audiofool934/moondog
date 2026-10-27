@@ -50,14 +50,11 @@ jobs:
           npm ci --prefix site
       - name: Test the public agent with a fake model
         run: node --disable-warning=ExperimentalWarning --test site/server/agent-server.test.mjs
-      - name: Build from fresh fictional data
-        # Without an agent URL the window and the terminal have no model; with one, they talk to it.
+      - name: Build the page and its scene
         # The token reads the release list, for the newest release with a Mac download.
         env:
-          MOONDOG_AGENT_URL: ${{ vars.MOONDOG_AGENT_URL }}
-          MOONDOG_TURNSTILE_SITE_KEY: ${{ vars.MOONDOG_TURNSTILE_SITE_KEY }}
           GITHUB_TOKEN: ${{ github.token }}
-        run: node site/build.mjs --snapshot
+        run: node site/build.mjs
       - name: Upload the page
         if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@v5
