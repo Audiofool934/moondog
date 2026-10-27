@@ -806,6 +806,8 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     // The picker and the agent publish the same saved change, without replacing a running agent.
     await savePlaybackService(service);
     playbackChanged();
+    // The first run's answer may be the service already in use, which playbackChanged doesn't hear.
+    if (firstRunState?.needed) void refreshFirstRun();
   }
   // The entry a turn just saved, so its message in the window can be edited without a redraw.
   function latestEntry(slot) {

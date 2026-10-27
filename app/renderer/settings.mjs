@@ -62,7 +62,7 @@ function phase(offset) {
   return mark;
 }
 
-export function createSettings({ state, send, t, prettyModel = String, appleMusic = null }) {
+export function createSettings({ state, send, t, prettyModel = String, appleMusic = null, onHide = null }) {
   const say = (key, params) => t()(key, params);
   const sheet = make("div", "sheet");
   sheet.hidden = true;
@@ -78,12 +78,13 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
   close.type = "button";
   close.dataset.key = "close";
   close.append(icon("close"));
-  close.addEventListener("click", () => hide());
+  close.addEventListener("click", () => (asking ? asking.skip() : hide()));
   card.append(nav, body, close);
   sheet.append(card);
   document.body.append(sheet);
   scrollbar(scroller);
-  sheet.addEventListener("mousedown", (event) => { if (event.target === sheet) hide(); });
+  // A click beside the first run doesn't skip it; only the close button or Escape does.
+  sheet.addEventListener("mousedown", (event) => { if (event.target === sheet && !asking) hide(); });
   const windowNode = document.querySelector("[data-window]");
 
   // The places are built once and only their state changes, so a message from the core never
@@ -105,6 +106,9 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
   let section = "general";
   let isOpen = false;
   let closing = 0;
+  // The first run (first-run.mjs) asks in this sheet: one place at a time, with no others beside it,
+  // and the close button skips the rest. { step, at, of, answer, skip } while it asks.
+  let asking = null;
   let content = null;
   let copiedTimer = 0;
   // What the core told this sheet; the sheet asks again each time a section opens.
@@ -124,8 +128,21 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
     return actual;
   }
 
-  // While the sheet is open, the window behind it takes no focus or clicks.
+  // Settings opened while the first run asks takes the sheet; the first run comes back when it closes.
   function show(name = section) {
+    asking = null;
+    open(name);
+  }
+  // The first run's step, or nothing to let it go. A step already in view is only redrawn, since
+  // opening asks the core again and the core answers with a status that asks again.
+  function ask(flow) {
+    if (!flow) { if (asking) hide(); return; }
+    const same = asking && isOpen && asking.step === flow.step;
+    asking = flow;
+    if (same) render(); else open(flow.step);
+  }
+  // While the sheet is open, the window behind it takes no focus or clicks.
+  function open(name) {
     const next = sections.includes(name) ? name : "general";
     const wasOpen = isOpen;
     const moved = next !== section;
@@ -154,13 +171,16 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
   function hide() {
     if (!isOpen) return;
     isOpen = false;
+    asking = null;
     if (windowNode) windowNode.inert = false;
     sheet.dataset.state = "closing";
-    closing = setTimeout(() => { sheet.hidden = true; delete sheet.dataset.state; }, 120);
+    // The first run's shape stays until the sheet has faded, so it never turns into Settings on the way out.
+    closing = setTimeout(() => { sheet.hidden = true; delete sheet.dataset.state; card.classList.remove("asking"); }, 120);
     document.querySelector("[data-input]")?.focus();
+    onHide?.();
   }
   function go(name) {
-    if (name === section || !sections.includes(name)) return;
+    if (asking || name === section || !sections.includes(name)) return;
     section = name;
     data.error = null;
     scroller.scrollTop = 0;
@@ -183,16 +203,22 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
 
   document.addEventListener("keydown", (event) => {
     if (!isOpen) return;
-    // A sign-in waiting for an answer keeps the sheet, so a stray Escape cannot lose it.
+    // A sign-in waiting for an answer keeps the sheet, so a stray Escape cannot lose it. In the first
+    // run, Escape skips the rest of it.
     if (event.key === "Escape") {
-      if (!data.auth?.prompt) { event.preventDefault(); hide(); }
+      if (!data.auth?.prompt) { event.preventDefault(); if (asking) asking.skip(); else hide(); }
       return;
     }
     const target = event.target;
     const step = { ArrowDown: 1, ArrowUp: -1, ArrowRight: 1, ArrowLeft: -1 }[event.key];
     if (!step || event.metaKey || event.altKey || event.ctrlKey) return;
     const vertical = event.key === "ArrowDown" || event.key === "ArrowUp";
-    if (vertical && (target === card || target.closest?.(".sheet-nav"))) {
+    // The first run has one place, so the arrows go from the sheet straight to its rows.
+    if (vertical && target === card && asking) {
+      const rows = [...scroller.querySelectorAll(".choice-main:not(:disabled)")];
+      const next = step > 0 ? rows[0] : rows.at(-1);
+      if (next) { event.preventDefault(); next.focus(); }
+    } else if (vertical && (target === card || target.closest?.(".sheet-nav"))) {
       event.preventDefault();
       const next = sections[Math.max(0, Math.min(sections.length - 1, sections.indexOf(section) + step))];
       go(next);
@@ -222,6 +248,16 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
     return node;
   };
   const note = (text) => make("p", "note", text);
+  // The first run's question takes the place of the group's title; a mark for each of its steps
+  // follows, the one on screen darker.
+  const question = (key) => make("h2", "ask-title", say(key));
+  const steps = () => {
+    if (asking.of < 2) return null;
+    const marks = make("div", "steps");
+    marks.setAttribute("aria-hidden", "true");
+    for (let at = 0; at < asking.of; at += 1) marks.append(make("i", at === asking.at ? "on" : ""));
+    return marks;
+  };
   // Something still on its way shows the turning mark, never the word "Loading".
   const waiting = () => {
     const line = make("p", "note waiting");
@@ -444,14 +480,17 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
     const current = state.model ?? {};
     const active = expected("model", current.model ? { provider: current.provider, model: current.model } : null);
     const switching = active && (active.provider !== current.provider || active.model !== current.model);
-    // The model in use is the checked row under its account; only its absence needs saying.
+    // The model in use is the checked row under its account; only its absence needs saying. The first
+    // run asks for one instead, over the same accounts.
     const parts = [];
-    if (!active) parts.push(group(null, make("p", "now-name none", say("noModel"))));
+    if (asking) parts.push(question("firstRunModel"));
+    else if (!active) parts.push(group(null, make("p", "now-name none", say("noModel"))));
     // Which model answers comes first; how hard it thinks follows. A model sign-in replaces the list while it runs.
     if (data.auth && data.auth.provider !== "spotify") parts.push(group(null, signInPanel()));
-    else parts.push(group(say("providers"), sectionError(), providerList(active)));
+    else parts.push(group(asking ? null : say("providers"), sectionError(), providerList(active)));
     if (current.effortLevels?.length && !switching) parts.push(group(say("effort"), efforts(current)));
-    return parts;
+    if (asking) parts.push(steps());
+    return parts.filter(Boolean);
   }
   function efforts(current) {
     const chosen = expected("effort", current.effort ?? "default");
@@ -541,15 +580,18 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
 
   // Playback: the music service, then Spotify's account or its devices.
   function playback() {
-    const service = expected("service", state.playbackService ?? "spotify");
+    // The first run asks before any service is saved, so none is checked, and choosing the one in use
+    // saves it too. Spotify's account and NetEase's setup wait for Settings.
+    const service = asking ? null : expected("service", state.playbackService ?? "spotify");
     const ready = expected("spotify", state.spotify) === "ready";
     const chooseService = (next) => () => {
+      if (asking) { send({ type: "music-service", service: next }); asking.answer("playback"); return; }
       if (next === service) return;
       expect("service", next);
       send({ type: "music-service", service: next });
       render();
     };
-    const disconnect = ready ? button(say("disconnect"), "button quiet small", () => {
+    const disconnect = ready && !asking ? button(say("disconnect"), "button quiet small", () => {
       expect("spotify", "unavailable");
       send({ type: "sign-out", provider: "spotify" });
       render();
@@ -560,16 +602,20 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
     const allowWhole = service === "apple_music" && whole?.authorization === "notDetermined" && whole.reason !== "developerTokenRequestFailed" ? button(say("allowFullSongs"), "button small", () => {
       void appleMusic.check("authorize").then(() => render());
     }, "apple-music:allow") : null;
-    const parts = [group(say("musicService"), sectionError(), choices([
+    // In the first run each service leads with its own mark, the one the composer shows beside send once it is chosen.
+    const mark = (name) => (asking ? icon(name, "icon fill mark") : undefined);
+    const services = choices([
       // The state reads beside the account, so the button to disconnect is never taken for it.
       choice({ label: "Spotify", detail: say(ready ? "connected" : "notConnected"), chosen: service === "spotify", trailing: disconnect,
-        key: "service:spotify", onChoose: chooseService("spotify") }),
+        key: "service:spotify", lead: mark("spotify"), onChoose: chooseService("spotify") }),
       choice({ label: "Apple Music", detail: say(whole?.canPlay ? "fullSongs" : "appleMusicNote"), chosen: service === "apple_music", key: "service:apple_music",
-        trailing: allowWhole, onChoose: chooseService("apple_music") }),
+        trailing: allowWhole, lead: mark("apple-music"), onChoose: chooseService("apple_music") }),
       // NetEase is offered once ncm-cli is installed and signed in; its searches send NetEase a short summary.
       ...(state.netease === "ready" || service === "netease" ? [choice({ label: say("netease"), detail: say("neteaseNote"), chosen: service === "netease",
-        key: "service:netease", onChoose: chooseService("netease") })] : []),
-    ]))];
+        key: "service:netease", lead: mark("netease"), onChoose: chooseService("netease") })] : []),
+    ]);
+    if (asking) return [question("firstRunService"), sectionError(), services, steps()].filter(Boolean);
+    const parts = [group(say("musicService"), sectionError(), services)];
     // Asked for from the music service's menu: NetEase is set up in Terminal with its own tool, then checked again here.
     if (data.neteaseSetup && state.netease !== "ready") {
       const stack = make("div", "stack");
@@ -744,8 +790,11 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
 
   function render({ entering = false } = {}) {
     if (!isOpen) return;
-    card.setAttribute("aria-label", say("settings"));
-    close.setAttribute("aria-label", say("close"));
+    // The first run has no places to go to; its close button skips the rest and says so.
+    card.classList.toggle("asking", Boolean(asking));
+    card.setAttribute("aria-label", say(asking ? (asking.step === "model" ? "firstRunModel" : "firstRunService") : "settings"));
+    if (asking) name(close, say("skipSetup"), "esc");
+    else { close.setAttribute("aria-label", say("close")); delete close.dataset.tip; delete close.dataset.keys; }
     for (const [id, { tab, label }] of tabs) {
       label.textContent = say(`section.${id}`);
       tab.classList.toggle("on", id === section);
@@ -853,7 +902,7 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
       }
       // A file dropped on the window, or an import started elsewhere, brings the sheet to Import.
       if ((stage === "preview" || stage === "reading") && (!isOpen || section !== "library")) {
-        if (isOpen) go("library"); else show("library");
+        if (isOpen && !asking) go("library"); else show("library");
         return;
       }
     }
@@ -873,5 +922,5 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
 
   // Settings › Playback with NetEase's setup in view, for the music service's menu.
   const showNetease = () => { show("playback"); data.neteaseSetup = true; render(); };
-  return { show, showNetease, hide, render, receive, get open() { return isOpen; } };
+  return { show, showNetease, ask, hide, render, receive, get open() { return isOpen; }, get asking() { return Boolean(asking); } };
 }

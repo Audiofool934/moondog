@@ -28,6 +28,15 @@ A model or music service chosen there lasts until the app quits, and sign-in and
 
 ## The window
 
+- The first launch asks once, over the empty room, where you listen and which model Moondog uses.
+  Each step shows the same rows as Settings, under a question and without Settings' other places.
+  First come Spotify, Apple Music, and NetEase Music once it is ready, each by its mark; then the model's accounts, with sign-in in the browser or with an API key.
+  Choosing a service saves it and moves on; the model step ends once a model can answer, and the core then ends the first run by itself.
+  A step already done is not asked: a service saved in the terminal leaves only the model.
+  The close button, or Esc, skips the rest; a click beside the sheet does not.
+  Spotify's account and NetEase's setup stay in Settings › Playback.
+  The terminal shares the first run (`first-run.json` beside `playback.json`), so one finished or skipped there closes it here within a few seconds, and it never comes back on either side.
+  Settings opened while it asks takes the sheet, and the first run returns when Settings closes.
 - Before anything is said, the lunar record stands alone over the composer, drawn as dots from the terminal's own record.
   It turns while music plays and rests when it stops, coming up to speed and running down like a platter.
   Its tonearm rests on it while music plays and swings off when the music stops; a click on the arm pauses, and another plays.
@@ -91,7 +100,7 @@ A model or music service chosen there lasts until the app quits, and sign-in and
   Leaving Apple Music pauses the Music app too. Moondog can also pause, resume and skip the Music app itself, so "switch to Spotify and keep playing there" pauses one and picks the other up where it stopped.
   One thing plays at a time on this Mac: music Moondog starts pauses the Music app, Spotify when it plays on this Mac, and NetEase; music you start in the Music app stops Moondog's own player.
   The model's menu shows the maker in use over its models, the chosen one checked, every other signed-in maker's models in a submenu, and the thinking effort with its level.
-  On a first launch the service reads "Choose a music service" until one is chosen, as the model reads "Choose a model" until there is one.
+  While the first run still asks for a service, the service reads "Choose a music service", as the model reads "Choose a model" until there is one.
 - Typing `/` lists commands by what they open (a mistyped one stays in the composer instead of going to Moondog): `/new`, `/model`, `/language`, `/service`, `/device`, `/import`, `/memory`, `/remember`, `/folder`, `/settings` and `/help`.
 - Settings (`⌘,`, or the button at the top right beside the player's) has Language, Model (accounts, sign-in in the browser or with an API key, models, thinking), Playback (music service, Spotify sign-in, devices), Import, Memory and About.
   Changes are saved where the terminal reads them; the window never sees a key or token.
@@ -160,6 +169,8 @@ To ask it directly, run `"native/build/Moondog Music.app/Contents/MacOS/moondog-
 It needs no model, no music service and none of your data.
 `MOONDOG_HARNESS_STATES=empty,reply` picks states, `MOONDOG_HARNESS_SIZE=900x700` changes the size, `MOONDOG_HARNESS_LOCALE=zh` the language, and `MOONDOG_HARNESS_SHOW=1` opens a window to try by hand.
 `MOONDOG_HARNESS_STATES=long MOONDOG_HARNESS_EVAL=check-ui.mjs npm run harness` checks tooltip timing and themes, the record handoff and corner placement, and pin feedback in both themes.
+With `first-run`, `first-run-model-only` and `first-run-netease` among the states, it also checks the first run: both steps from the keyboard, one ended in the terminal, and one skipped with Esc.
+The `first-run-*` states draw its steps, sign-ins and skip tooltip on their own.
 An evaluation failure exits with a nonzero status.
 
 ## Build the app
@@ -210,7 +221,7 @@ Extract test copies into a folder whose name ends in `.noindex`, so Spotlight do
 
 ## Not yet
 
-- The first-time setup and the full taste report happen in the terminal (`moondog`).
+- The full taste report happens in the terminal (`moondog`).
 - The terminal plays Apple Music previews; only the window plays whole songs.
 - Builds from before the updater have none: install the first build with it by hand, as before.
 - The build is for Apple silicon only.

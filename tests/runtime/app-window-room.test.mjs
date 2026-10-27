@@ -735,3 +735,22 @@ test("the window carries the shared first run until it ends, and ends it when as
     await harness.stop();
   }
 });
+
+test("choosing the service already in use in the first run ends it at once, without waiting for the file watch", async () => {
+  let service = null;
+  const firstRun = {
+    async state({ modelReady }) { return { needed: !(service && modelReady), service, model: modelReady }; },
+    async finish() {},
+    watch() { return () => {}; },
+  };
+  // Spotify is the default, so saving it changes nothing the playback listener hears.
+  const harness = await openRoom({ services: { firstRun, savePlaybackService: async (next) => { service = next; return next; } } });
+  try {
+    assert.equal(harness.messages.findLast((message) => message.type === "status").firstRun.needed, true);
+    await harness.post({ type: "music-service", service: "spotify" });
+    await tick();
+    assert.deepEqual(harness.messages.findLast((message) => message.type === "status").firstRun, { needed: false, service: "spotify", model: true });
+  } finally {
+    await harness.stop();
+  }
+});

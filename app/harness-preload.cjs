@@ -93,10 +93,20 @@ const LOCALE = new URLSearchParams(location.search).get("locale") || "en";
 const STATUS = {
   locale: LOCALE, locales: LOCALES,
   model: { state: "configured", provider: "anthropic", model: "claude-sonnet-5-5", effort: null, effortLevels: ["low", "medium", "high", "xhigh"], reason: null },
-  spotify: "ready", spotifyAccount: { state: "ready", clientId: true }, playbackService: "spotify", memory: "ready",
+  spotify: "ready", spotifyAccount: { state: "ready", clientId: true }, playbackService: "spotify", memory: "ready", firstRun: null,
 };
 const OFFLINE = { ...STATUS, model: { state: "offline", provider: null, model: null, effort: null, effortLevels: [], reason: null },
   spotify: "unavailable", spotifyAccount: { state: "unavailable", clientId: true } };
+// The one-time first run, as the core reports it: over once a service is saved and a model answers.
+const over = (run) => (run?.needed && run.service && run.model ? { ...run, needed: false } : run);
+// The accounts a fresh install has: none signed in. A first-run state signs in to them for real.
+const PROVIDERS = [
+  { id: "anthropic", name: "Anthropic", signedIn: true, signIn: "api_key", source: "saved" },
+  { id: "openai-codex", name: "ChatGPT", signedIn: false, signIn: "oauth" },
+  { id: "deepseek", name: "DeepSeek", signedIn: true, signIn: "api_key", source: "saved" },
+  { id: "openrouter", name: "OpenRouter", signedIn: false, signIn: "environment_only" },
+];
+let providers = PROVIDERS;
 
 const REPLY = [
   "Three from the stretch you keep coming back to, and one that returned after a long quiet.",
@@ -206,9 +216,23 @@ const STATES = {
   "record-pinned"() { STATES.record(); setTimeout(() => document.querySelector("[data-pin]").click(), 300); },
   profile() { ready({ transcript: conversation([["Import my Spotify history", PROFILE]]) }); player({ index: 1 }); },
   sources() { ready({ transcript: conversation([["How was Pink Moon recorded?", SOURCES]]) }); player({ index: 1 }); },
-  // Where the music plays and which model answers, beside the send button: asked on a first launch,
-  // with and without a model, named in their tooltips, each service by its mark, and NetEase's setup.
-  "first-launch"() { ready({ sessions: [], folders: [] }); silent(); },
+  // The one-time first run: the music service, then the model, on a fresh install with nothing signed
+  // in; the model alone when the terminal already saved a service; NetEase among the services once it is
+  // ready; the model's sign-in by key and in the browser; and the close button that skips the rest.
+  "first-run"(run = { needed: true, service: null, model: false }, extra = {}) {
+    providers = PROVIDERS.map((provider) => ({ ...provider, signedIn: false, source: undefined }));
+    // As the core does: unknown in "ready", then read.
+    send({ type: "ready", ...OFFLINE, sessions: [], folders: [], current: null, running: [], transcript: [], ...extra });
+    silent();
+    setTimeout(() => send({ type: "status", ...status, firstRun: run }), 60);
+  },
+  "first-run-netease"() { STATES["first-run"](undefined, { netease: "ready" }); },
+  "first-run-model"() { STATES["first-run"](); setTimeout(() => document.querySelector('[data-key="service:apple_music"]').click(), 400); },
+  "first-run-model-only"() { STATES["first-run"]({ needed: true, service: "spotify", model: false }); },
+  "first-run-key"() { STATES["first-run-model-only"](); setTimeout(() => document.querySelector('[data-key="sign-in:anthropic"]').click(), 500); },
+  "first-run-browser"() { STATES["first-run-model-only"](); setTimeout(() => document.querySelector('[data-key="sign-in:openai-codex"]').click(), 500); },
+  "first-run-skip-tip"() { STATES["first-run"](); return { hover: ".sheet-close" }; },
+  // The composer's own words for what isn't chosen yet: the model, and the service while the first run still asks for it.
   "first-launch-offline"() { send({ type: "ready", ...OFFLINE, sessions: [], folders: [], current: null, running: [], transcript: [] }); silent(); },
   "service-tip"() { STATES.reply(); return { hover: "[data-service]" }; },
   "model-tip"() { STATES.reply(); return { hover: "[data-model]" }; },
@@ -342,13 +366,24 @@ function relabel(data) {
 
 core.onmessage = ({ data }) => {
   if (!data?.type) return;
+  window.__harness?.sent.push(data);
   if (["label", "delete", "folder-save"].includes(data.type)) relabel(data);
-  if (data.type === "models") send({ type: "models", providers: [
-    { id: "anthropic", name: "Anthropic", signedIn: true, signIn: "api_key", source: "saved" },
-    { id: "openai-codex", name: "ChatGPT", signedIn: false, signIn: "oauth" },
-    { id: "deepseek", name: "DeepSeek", signedIn: true, signIn: "api_key", source: "saved" },
-    { id: "openrouter", name: "OpenRouter", signedIn: false, signIn: "environment_only" },
-  ] });
+  if (data.type === "models") send({ type: "models", providers });
+  // A model sign-in: a key pasted into the sheet, or a page opened in the browser, then the first model it lists.
+  if (data.type === "sign-in" && data.provider !== "spotify") {
+    const provider = providers.find((entry) => entry.id === data.provider);
+    if (provider?.signIn === "oauth") send({ type: "auth-event", provider: data.provider, kind: "auth_url", url: "https://auth.example.com/sign-in", opened: true });
+    else send({ type: "auth-prompt", id: "key", provider: data.provider, kind: "secret", message: `Paste your ${provider?.name ?? "provider"} API key.`, placeholder: "sk-…" });
+  }
+  if (data.type === "sign-in-cancel") send({ type: "sign-in", provider: null, state: "cancelled" });
+  if (data.type === "auth-answer") {
+    const provider = providers.find((entry) => entry.signIn === "api_key" && !entry.signedIn);
+    providers = providers.map((entry) => (entry === provider ? { ...entry, signedIn: true, source: "saved" } : entry));
+    send({ type: "sign-in", provider: provider.id, state: "done" });
+    send({ type: "status", ...status, model: { ...STATUS.model, provider: provider.id, model: provider.id === "deepseek" ? "deepseek-chat" : "claude-sonnet-5-5" },
+      firstRun: over(status.firstRun && { ...status.firstRun, model: true }) });
+  }
+  if (data.type === "first-run-done") send({ type: "status", ...status, firstRun: { ...status.firstRun, needed: false } });
   if (data.type === "provider-models") send({ type: "provider-models", provider: data.provider, models: data.provider === "deepseek"
     ? [{ id: "deepseek-chat", name: "DeepSeek V4" }, { id: "deepseek-reasoner", name: "DeepSeek V4 Reasoner" }]
     : [{ id: "claude-sonnet-5-5", name: "Claude Sonnet 5.5" }, { id: "claude-opus-5-5", name: "Claude Opus 5.5" }, { id: "claude-haiku-5-5", name: "Claude Haiku 5.5" }] });
@@ -370,9 +405,11 @@ core.onmessage = ({ data }) => {
   }
   // Choices made in Settings stick, as the core would keep them.
   if (data.type === "language") send({ type: "status", ...status, locale: data.locale });
-  if (data.type === "music-service") send({ type: "status", ...status, playbackService: data.service });
+  if (data.type === "music-service") send({ type: "status", ...status, playbackService: data.service, firstRun: over(status.firstRun && { ...status.firstRun, service: data.service }) });
   if (data.type === "netease-check") send({ type: "status", ...status, netease: "ready" });
-  if (data.type === "model") send({ type: "status", ...status, model: { ...status.model, state: "configured", provider: data.provider, model: data.model } });
+  if (data.type === "model") {
+    send({ type: "status", ...status, model: { ...status.model, state: "configured", provider: data.provider, model: data.model }, firstRun: over(status.firstRun && { ...status.firstRun, model: true }) });
+  }
   if (data.type === "effort") send({ type: "status", ...status, model: { ...status.model, effort: data.effort === "default" ? null : data.effort } });
   if (data.type === "branch") {
     const end = shown.findLastIndex((turn) => turn.role === "assistant" && turn.entry === data.entry);
@@ -404,8 +441,13 @@ window.__harness = {
   setState(name) {
     const state = STATES[name];
     if (!state) throw new Error(`No harness state called ${name}`);
+    // A check script reads which state it runs in.
+    window.__harness.state = name;
     return state() ?? null;
   },
+  state: null,
   send,
   player,
+  // What the window sent the stand-in core, for checks.
+  sent: [],
 };

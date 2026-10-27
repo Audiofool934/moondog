@@ -2,6 +2,7 @@
 // playing on the right. The core process does the listening work; this page only draws it.
 import { languageTag, timeOfDay, windowLocale, windowStrings } from "../strings.mjs";
 import { renderMarkdown } from "./markdown.mjs";
+import { createFirstRun } from "./first-run.mjs";
 import { createPalette } from "./palette.mjs";
 import { createPreviews } from "./previews.mjs";
 import { coverPalette, grooveColours, moodColours } from "./mood.mjs";
@@ -17,10 +18,11 @@ const $ = (selector) => document.querySelector(`[data-${selector}]`);
 let locale = windowLocale(navigator.languages);
 let t = windowStrings(locale);
 const tr = () => t;
-// Spotify's state is unknown (null) until the core first reads it. turns and streaming belong to the
-// conversation on screen; other conversations keep answering in the core and come back when opened.
+// Spotify's state is unknown (null) until the core first reads it, and so is the first run. turns and
+// streaming belong to the conversation on screen; other conversations keep answering in the core and
+// come back when opened.
 const state = { sessions: [], folders: [], running: [], current: null, turns: [], model: null, spotify: null, spotifyAccount: null,
-  playbackService: "spotify", locale, locales: [], player: null, streaming: null, ready: false, waiting: null, update: { phase: "idle" } };
+  playbackService: "spotify", locale, locales: [], player: null, streaming: null, ready: false, waiting: null, update: { phase: "idle" }, firstRun: null };
 const store = {
   get: (key) => { try { return localStorage.getItem(key); } catch { return null; } },
   set: (key, value) => { try { localStorage.setItem(key, value); } catch { /* A private window keeps the default. */ } },
@@ -40,7 +42,9 @@ const outbox = [];
 const send = (message) => (port ? port.postMessage(message) : outbox.push(message));
 const previews = createPreviews({ send, onChange: () => renderInspector() });
 const settings = createSettings({ state, send, t: tr, prettyModel: (model) => prettyModel(model),
-  appleMusic: { status: () => previews.fullStatus(), check: (command) => previews.check(command) } });
+  appleMusic: { status: () => previews.fullStatus(), check: (command) => previews.check(command) }, onHide: () => firstRun.update() });
+// The one-time first run asks for a music service, then a model, in the Settings sheet (first-run.mjs).
+const firstRun = createFirstRun({ settings, send, read: () => ({ run: state.firstRun, modelReady: state.model?.state === "configured" }) });
 const sidebar = createSidebar({ root: $("sessions"), state, send, t: tr, open: (id) => openSession(id), store, menuPoint: (event) => menuPoint(event) });
 const tips = tooltips();
 // A native menu opens at the pointer, or under its control when the keyboard pressed it.
@@ -1045,7 +1049,7 @@ function renderComposer() {
 }
 // Beside the send button: where the music plays and which model answers, each by its mark, with its
 // name in the tooltip and the menu. One not chosen yet reads as the words that choose it: a model,
-// without which Moondog can't answer, and on a first launch the music service the listener uses.
+// without which Moondog can't answer, and while the first run still asks, the music service.
 const SERVICE_MARKS = { spotify: "spotify", apple_music: "apple-music", netease: "netease" };
 // A model shows its maker's mark: by the account it comes through, or for OpenRouter by the maker its
 // model id begins with (anthropic/…, x-ai/…); a maker without a mark here shows OpenRouter's, or the model glyph.
@@ -1055,7 +1059,7 @@ const ROUTED_MARKS = { anthropic: "claude", openai: "openai", google: "gemini", 
 const makerMark = (model) => (model.provider === "openrouter" ? ROUTED_MARKS[String(model.model ?? "").split("/")[0]] ?? "openrouter" : MAKER_MARKS[model.provider] ?? "model");
 const serviceName = (service) => (service === "netease" ? t("netease") : service === "apple_music" ? "Apple Music" : "Spotify");
 const effortName = (level) => (level === "default" ? t("effortDefault") : t(`effort.${level}`) === `effort.${level}` ? level : t(`effort.${level}`));
-const asking = () => state.ready && !state.sessions.length && !store.get("moondog.source");
+const serviceAsked = () => state.firstRun?.needed === true && !state.firstRun.service;
 function drawPick(button, { mark, label, words }) {
   button.classList.toggle("needed", Boolean(words));
   set(button.lastChild, "textContent", words ?? "");
@@ -1065,7 +1069,7 @@ function drawPick(button, { mark, label, words }) {
 }
 function renderPicks() {
   const service = sourceWanted ?? state.playbackService ?? "spotify";
-  drawPick($("service"), { mark: SERVICE_MARKS[service] ?? "spotify", label: serviceName(service), words: asking() ? t("chooseService") : null });
+  drawPick($("service"), { mark: SERVICE_MARKS[service] ?? "spotify", label: serviceName(service), words: serviceAsked() && !sourceWanted ? t("chooseService") : null });
   const model = state.model;
   set($("model"), "hidden", !model);
   if (!model) return;
@@ -1194,7 +1198,6 @@ async function pickService(event) {
   items.push(...(signIn.length ? [{ type: "separator" }, ...signIn] : []), { type: "separator" }, { id: "settings", label: t("playbackSettings") });
   const chosen = await menu(items, event);
   if (!chosen) return;
-  store.set("moondog.source", "chosen");
   if (chosen === "settings") settings.show("playback");
   else if (chosen === "sign-in:spotify") { chooseService("spotify"); settings.show("playback"); }
   else if (chosen === "sign-in:netease") settings.showNetease();
@@ -1836,16 +1839,15 @@ function receive({ data }) {
   }
   if (data.type === "ready" || data.type === "status") {
     if (data.locale && data.locale !== locale) applyLanguage(data.locale);
-    const before = state.playbackService;
-    for (const key of ["model", "spotify", "spotifyAccount", "playbackService", "netease", "locales"]) if (data[key] !== undefined) state[key] = data[key];
-    // A service chosen anywhere, here, in Settings or in the player, answers a first launch's question.
-    if (data.type === "status" && data.playbackService && data.playbackService !== before) store.set("moondog.source", "chosen");
+    for (const key of ["model", "spotify", "spotifyAccount", "playbackService", "netease", "locales", "firstRun"]) if (data[key] !== undefined) state[key] = data[key];
     if (sourceWanted === state.playbackService) sourceWanted = null;
     // With Apple Music chosen, the window learns once whether it can play whole songs.
     if (state.playbackService === "apple_music" && !previews.fullStatus()) void previews.check();
     renderComposer();
     renderInspector();
     settings.render();
+    // The first run asks while the core says it is needed, and steps aside once it is over here or in the terminal.
+    firstRun.update();
   }
   if (data.type === "ready" || data.type === "sessions") {
     state.sessions = data.sessions ?? [];
@@ -1874,7 +1876,7 @@ function receive({ data }) {
   }
   if (data.type === "ready") {
     state.ready = true;
-    // Only now is it known whether this is a first launch, the one that asks which service the listener uses.
+    // A message typed while the core started can be sent now.
     renderComposer();
     send({ type: "models" });
     const waiting = state.waiting;
