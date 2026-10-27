@@ -776,6 +776,8 @@ When a model is already selected, `/auth` connects that provider.
 You can also name the provider directly, for example `/auth deepseek` followed by `/model deepseek`.
 Switch providers at any time with `/model`; your conversation and listening profile remain available.
 Selections are saved for the next launch.
+A model chosen or a sign-in made in the desktop app reaches an open terminal within a few seconds, without `/reload`, and the other way round.
+A reply that is running keeps its model until it ends.
 A model without credentials stays offline and shows the matching authentication command.
 
 `/effort` chooses how hard the model thinks, for example `/effort high`.

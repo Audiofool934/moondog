@@ -9,6 +9,7 @@ import { formatLocalResult } from "../src/surfaces/cli/format-output.mjs";
 import { HistoryImportView } from "../src/surfaces/cli/history-import-view.mjs";
 import { setAppleMusicStorefront } from "../src/integrations/apple-music/storefront.mjs";
 import { shortConversationTitle } from "../src/memory/local-memory-store.mjs";
+import { runtimeBehindSelection } from "../src/runtime/pi/runtime-settings.mjs";
 
 // Every Spotify read counts against the listener's app quota, and a used-up quota blocks player reads
 // for hours. The window's clock runs on its own between reads, so a showing window reads just after
@@ -60,7 +61,7 @@ const errorText = (error) => String(error?.message ?? error ?? "").slice(0, 400)
 
 export function runWindowRoom(services, { port, send, quit = null, focus = null }) {
   const { application: base, rebuildRuntime, saveRuntimeSelection, toolTrace = null, openConversation, modelSettings, saveLanguage, savePlaybackService,
-    prepareImport, prepareRecentImport, refreshImportedData, lastfm, runSpotify } = services;
+    prepareImport, prepareRecentImport, refreshImportedData, lastfm, runSpotify, watchModelSettings, firstRun } = services;
   // Slot 0 is the core's own application and agent. The core closes every conversation after the room ends.
   const slots = [{ application: base, runtime: services.runtime, turn: null, live: null, stale: null, rebuilding: null, waiting: false, close: null }];
   let current = slots[0];
@@ -203,9 +204,39 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
       netease: base.neteasePlayer?.status?.().state ?? "unavailable",
       neteaseMessage: base.neteasePlayer?.status?.().message ?? null,
       memory: base.memoryStatus?.().state ?? "unavailable",
+      // { needed, service, model } once read, null before; see refreshFirstRun.
+      firstRun: firstRunState,
     };
   }
-  const sendStatus = () => send({ type: "status", ...status() });
+  const sendStatus = () => {
+    send({ type: "status", ...status() });
+    // Until the first run is over, any change of model or music service may end it.
+    if (firstRun && firstRunState?.needed !== false) void refreshFirstRun();
+  };
+
+  // The one-time music service and model setup. The window asks while `needed`; the terminal shares
+  // first-run.json, so finishing or skipping on either side ends it on both. Once over it stays over.
+  let firstRunState = null;
+  async function refreshFirstRun() {
+    if (!firstRun || closed) return;
+    const next = await firstRun.state({ modelReady: modelOf(current).state === "configured" }).catch(() => null);
+    if (!next || closed || JSON.stringify(next) === JSON.stringify(firstRunState)) return;
+    firstRunState = next;
+    sendStatus();
+  }
+
+  // A model chosen or a sign-in made in the terminal. An agent behind it is rebuilt from the saved
+  // settings; one answering is rebuilt when its turn ends, as it would be for a choice made here.
+  async function followModel(selection) {
+    const behind = slots.filter((slot) => !slot.stale && runtimeBehindSelection(slot.runtime.publicStatus?.(), selection));
+    if (closed || !behind.length) return;
+    for (const slot of behind) {
+      if (slot.turn) slot.stale = { selection: undefined };
+      else await rebuild(slot, undefined);
+    }
+    sendStatus();
+    await sendModels();
+  }
 
   // Player
   // NetEase plays through ncm-cli on this Mac; the core keeps the songs it queued there.
@@ -871,6 +902,8 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
       await sendModels();
       await refreshPlayer();
     },
+    // The listener skipped the rest of the first run, or finished its last step.
+    "first-run-done": async (data) => { await firstRun?.finish({ skipped: data.skipped === true }); await refreshFirstRun(); },
     language: (data) => setLanguage(String(data.locale ?? "")),
     "music-service": (data) => setMusicService(String(data.service ?? "")),
     // After ncm-cli is set up in Terminal, the window asks again instead of waiting for the next launch.
@@ -903,6 +936,8 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     schedulePlayer();
   }
   const unsubscribePlayback = base.onPlaybackServiceChange?.(playbackChanged);
+  const unwatchModel = watchModelSettings?.((selection) => { void followModel(selection).catch(() => {}); });
+  const unwatchFirstRun = firstRun?.watch(() => { void refreshFirstRun(); });
 
   return new Promise((resolve) => {
     // Quitting stops running replies and lets them settle, so each is saved as interrupted with what it
@@ -911,6 +946,8 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     const stop = () => stopping ??= (async () => {
       closed = true;
       unsubscribePlayback?.();
+      unwatchModel?.();
+      unwatchFirstRun?.();
       clearTimeout(pollTimer);
       clearTimeout(sessionsTimer);
       const settling = slots.filter((slot) => slot.turn).map((slot) => { slot.runtime.abort?.(); return slot.turn.settled; });
@@ -948,6 +985,7 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     shown = JSON.stringify([saved, folderList]);
     drawn = JSON.stringify([sessionOf(current), transcript(current)]);
     send({ type: "ready", ...status(), sessions: saved, folders: folderList, current: sessionOf(current), running: [], transcript: [] });
+    void refreshFirstRun();
     void refreshPlayer();
     schedulePlayer();
     scheduleSessions();

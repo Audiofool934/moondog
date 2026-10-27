@@ -98,6 +98,7 @@ A model or music service chosen there lasts until the app quits, and sign-in and
   A click on a row unfolds that service's setup or its own controls (Spotify's devices and Disconnect), one row at a time.
   With the pointer on a row, a service that can play shows a switch at its right that uses it, and one that can't yet shows Set up.
   Changes are saved where the terminal reads them; the window never sees a key or token.
+  A model or a sign-in saved in an open terminal reaches the window within a few seconds, and the other way round; a reply that is running keeps its model until it ends.
 - Import: choose a Spotify, Apple Music, ListenBrainz or Last.fm export, read recent Spotify listening, read a Last.fm account (the window asks for a Last.fm API key the first time), or drop a file anywhere on the window.
   The preview uses the terminal's words, nothing is saved until you add it, and the updated profile then shows in the conversation.
 - Apple Music plays whole songs where it can and 30-second previews where it can't.
