@@ -46,7 +46,7 @@ See [updating and release channels](docs/UPDATES.md), including the one-time upg
 It shares your profile, settings, sign-ins, and conversations with `moondog`, and draws its own conversation, now playing, and up next.
 Run it from this checkout with `cd app && npm ci && npm start`.
 
-The [project page](https://moondog.audiofool.ai) runs this window, and the terminal room, in a browser on fictional listening data ([how](site/README.md)).
+The [project page](https://moondog.audiofool.ai) plays a short scene in this window, in a browser, with a made-up listener ([how](site/README.md)).
 
 ## The sleeve
 

@@ -1,10 +1,8 @@
 # Moondog Project Page
 
 This folder builds Moondog's project page at <https://moondog.audiofool.ai>.
-Its hero is Moondog's own window, the desktop app's renderer, running in the browser with a fictional listener.
-One switch away is the terminal's room, with the same listener.
-By default the page makes no network requests, and its content security policy enforces that.
-A build with `MOONDOG_AGENT_URL` also lets both talk to the [public agent](#the-public-agent), and a Turnstile site key adds Cloudflare's visitor check.
+Its hero is Moondog's own window, the desktop app's renderer, playing a short scene with a made-up listener and made-up songs, with music made by Stable Audio 3.
+The page makes no network requests beyond its own files, and its content security policy enforces that.
 
 ## Run it
 
@@ -18,57 +16,46 @@ npm run dev
 ```
 
 Then open <http://localhost:8737>.
-`npm run build` makes a fresh fictional snapshot and writes the page to `dist/`.
+`npm run build` writes the page to `dist/`.
 The build asks GitHub for the newest release with a Mac download; `node build.mjs --offline` links the release list instead.
 
-## How it fits together
+## The scene
 
-The page is three documents, so each surface keeps its own globals and keystrokes.
+The needle goes down and Moondog picks three songs, then a request for a late train home is typed and answered, and the record takes the whole window.
+The window is the real one: `app/renderer` and `app/window-room.mjs` run unchanged, so a change to the app's window shows here too.
 
-- `index.html`, `style.css` and `page.mjs` are the page: the words, the Window and Terminal switch, and the copy button.
-  The terminal's frame loads the first time someone asks for it.
-- `window.html` is `app/renderer/index.html`, rebuilt with this page's policy.
-  `window/host.mjs` stands in for the app's preload and core process.
-  It runs `app/window-room.mjs` on the tab's conversations and the public agent, and the agent's Apple Music previews play in the window's own player.
-  `window/menus.mjs` draws the menus and confirmations the app shows natively.
-  The renderer and window-room run unchanged; a change to the app's window shows here too.
-- `terminal.html` is the terminal's room: `src/surfaces/cli/tui.mjs` runs unchanged, and `terminal/xterm-terminal.mjs` gives it pi-tui's `Terminal` interface on top of xterm.js.
-- `listener/` is what both share.
-  `snapshot.mjs` imports the fictional Spotify history into a throwaway state folder with the real CLI and saves what the room reads to `generated/snapshot.json`, with the public agent's model.
-  `browser-application.mjs` answers from that snapshot and keeps conversations in the tab, and `remote-runtime.mjs` talks to the public agent.
-  What needs files, a model of your own, or a music service says it needs the app.
-- `build.mjs` bundles with esbuild.
-  It swaps Node built-ins and the model and sign-in modules for the stand-ins in `shims/`, and makes pi-tui's Node-only timer calls optional.
+- `window/host.mjs` stands in for the app's preload and core process, and starts the scene.
+- `window/scene.mjs` holds what happens: each exchange's steps, reply and songs, and the drawn covers.
+  The listener is the demo history's (`src/demo/fictional-spotify-history.mjs`); the new artists are made up too.
+- `window/agent.mjs` is the scene's Moondog: it runs each exchange's steps through the agent's events, starts its songs, and writes its reply at a reading pace.
+- `window/application.mjs` keeps the scene's conversation and plays its songs as the Music app on a Mac would.
+- `window/director.mjs` moves a pointer and types, as a visitor would: the needle, the player, the composer, and the record's full-window arrows.
+  The scene runs only while the window is on screen, and plays again behind a fade.
+  With reduced motion it shows the finished scene at once, with no pointer.
+  Where the window is narrower than the app gives its player room, the player stays folded.
+
+The cover playing in the window lights the whole page, as it lights the app's window: the frame reads its colours with the app's `coverPalette`, and the page paints them as three faint fields behind everything with the app's `moodColours` (`app/renderer/mood.mjs`).
+The colours drift in over a few seconds, and hold while the window is off screen.
+
+The two songs the scene plays have music, made with Stability AI's Stable Audio 3 Medium on a Mac through its MLX version (`~/Developer/stable-audio-3/optimized/mlx` on the Mac mini).
+The page plays it from `static/scene/` when the visitor turns the sound on; `page.mjs` follows the scene's songs and fades between them.
+Each is 32 seconds, made with `./sa3 --dit medium --decoder same-l --seconds 32 --seed N` and these prompts, then normalized to -18 LUFS with a true peak of -1.5 dB, faded out over its last 2 seconds, and encoded as AAC at 160 kb/s:
+
+- `glass-highway.m4a`, seed 7: "TrackType: Music, VocalType: Instrumental, Genre: Electronic, Genre: Dream Pop. A warm, unhurried dream pop instrumental for driving at dusk on an empty highway. Soft analog synth pads glow like the last light of the day, a round pulsing bass keeps a gentle motion, and a drum machine plays a soft, steady beat with brushed hi-hats. A chiming clean electric guitar repeats a simple, wistful motif, with tape warmth and a little reverb. Nostalgic, calm, slightly melancholic. 92 BPM."
+- `last-tram-home.m4a`, seed 21: "TrackType: Music, VocalType: Instrumental, Genre: Downtempo, Genre: Jazz. A late-night downtempo instrumental for the last tram home through a quiet city. A close-miked Rhodes electric piano plays soft, tired chords, a warm upright bass walks slowly, and brushed drums keep a relaxed swing. A distant city hum and the gentle rhythm of rails sit under the music, with warm tape saturation and soft reverb. Intimate, sleepy, tender, a little lonely. 76 BPM."
+
+`build.mjs` bundles with esbuild, and swaps the Node built-ins the window's core imports for the stand-ins in `shims/`.
+Each published document asks for its script and styles by a hash of their content, because Cloudflare keeps them for hours.
 
 ## The public agent
 
-`server/agent-server.mjs` lets visitors talk to the agent from the page.
-Each message goes to the server, where the real `PiAgentRuntime` answers from its own copy of the fictional listener and streams its steps back to the page.
-
-- Every visitor conversation gets a private copy of the fictional history.
-  Nothing is written back, conversations are not kept, and message text is never logged.
-- The agent only reads and plans, and plays 30-second Apple Music previews.
-  Profile builds, memory, Spotify, and web lookups are off.
-- Limits stop a turn with a plain reply from Moondog:
-  turns per conversation, conversations and turns per address each day, a message length, tool calls per turn, output tokens per model call, and a daily budget in US dollars for the whole site.
-  Every limit has an environment variable in `configFromEnvironment`.
-- `node --test server/agent-server.test.mjs` runs the server against Pi's fake model, with no key and no cost.
-
-To run it, build `server/Dockerfile` from the repository root, or use `server/compose.yaml` next to a reverse proxy.
-It needs `DEEPSEEK_API_KEY` and, behind a proxy, `MOONDOG_AGENT_ADDRESS_HEADER` (for example `cf-connecting-ip`), so the limits count real visitors.
-The page talks to the agent only when the build has `MOONDOG_AGENT_URL`; the Pages workflow reads it from the repository variable of the same name.
-To try the page against a local agent, start one with `MOONDOG_AGENT_ORIGINS=http://localhost:8737` and build with `MOONDOG_AGENT_URL=http://127.0.0.1:8787`.
-
-Cloudflare Turnstile can check visitors before each conversation.
-Set `TURNSTILE_SECRET_KEY` on the server and the `MOONDOG_TURNSTILE_SITE_KEY` repository variable for the page, both from the same Turnstile widget.
-The page loads Cloudflare's script only when a conversation starts, and `/v1/status` shows `"humanCheck":true` when the server requires it.
+`server/` holds the agent that visitors could talk to from an earlier version of the page.
+The page no longer calls it.
+`server/agent-server.mjs` runs the real `PiAgentRuntime` on the fictional listener (`server/fictional-history.mjs`), with limits on turns, conversations, tool calls, output tokens and a daily budget.
+`node --test server/agent-server.test.mjs` runs it against Pi's fake model, with no key and no cost.
+Build `server/Dockerfile` from the repository root to run it.
 
 ## Publishing
 
 `.github/workflows/pages.yml` builds the page on pull requests and publishes `dist/` to GitHub Pages from `main`.
 `npm run publish-app` in `app/` runs it again once a release has its DMG, so the download button links the new version.
-
-## Known gaps
-
-- Editing and branching a message, changing the model, importing, and Spotify need the app; the window says so.
-- Without the agent, a message gets a short reply that the page has no model.

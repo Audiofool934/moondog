@@ -1,4 +1,4 @@
-// The fictional listener behind the website room and the online agent.
+// The fictional listener behind the public agent.
 // The real CLI imports the fictional Spotify history into a folder of its own,
 // so nothing here can touch a real listener's state.
 import { execFile } from "node:child_process";

@@ -53,6 +53,25 @@ a:hover { text-decoration-color: currentColor; }
 code, pre { font-family: var(--mono); font-size: 0.8em; }
 [hidden] { display: none !important; }
 
+/* The cover that is playing in the window lights the whole page, as it lights the app's window: three
+   faint fields of its colours (app/renderer/style.css), drifting in over a few seconds and moving as
+   slowly as weather while music plays. */
+@property --mood-1 { syntax: "<color>"; inherits: true; initial-value: transparent; }
+@property --mood-2 { syntax: "<color>"; inherits: true; initial-value: transparent; }
+@property --mood-3 { syntax: "<color>"; inherits: true; initial-value: transparent; }
+.mood { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none;
+  transition: --mood-1 2.4s cubic-bezier(0.4, 0, 0.2, 1), --mood-2 3.2s cubic-bezier(0.4, 0, 0.2, 1), --mood-3 4s cubic-bezier(0.4, 0, 0.2, 1); }
+.mood::before { content: ""; position: absolute; inset: -14%;
+  background:
+    radial-gradient(46% 52% at 86% 16%, var(--mood-1), color-mix(in srgb, var(--mood-1) 45%, transparent) 42%, transparent 100%),
+    radial-gradient(50% 58% at 10% 82%, var(--mood-2), color-mix(in srgb, var(--mood-2) 45%, transparent) 42%, transparent 100%),
+    radial-gradient(52% 58% at 44% 36%, var(--mood-3), color-mix(in srgb, var(--mood-3) 45%, transparent) 42%, transparent 100%);
+  animation: drift 56s ease-in-out infinite alternate paused; will-change: transform; }
+.mood.playing::before { animation-play-state: running; }
+@keyframes drift { to { transform: translate(-3%, 2.5%) scale(1.07) rotate(2deg); } }
+@media (prefers-reduced-transparency: reduce) { .mood { display: none; } }
+@media (prefers-reduced-motion: reduce) { .mood { transition: none; } .mood::before { animation: none; } }
+
 /* Masthead */
 .masthead { display: flex; align-items: center; justify-content: space-between; gap: 16px; width: var(--page); margin: 0 auto; padding: 18px 0; }
 .brand { display: inline-flex; align-items: center; gap: 10px; font-size: 19px; text-decoration: none; }
@@ -80,17 +99,19 @@ main, .liner { width: var(--page); margin-inline: auto; }
 .fine { color: var(--text-3); font: 14px/1.45 var(--sans); }
 .fine a { color: var(--text-2); }
 
-/* The window, or the terminal, as one object on the page */
-.views { display: flex; gap: 2px; margin: 0 0 12px; font: 13px var(--sans); }
-.views button { height: 28px; padding: 0 12px; border: 0; border-radius: 999px; background: none; color: var(--text-2); font: inherit; cursor: pointer; }
-.views button:hover { background: var(--hover); color: var(--text); }
-.views button[aria-selected="true"] { background: var(--current); color: var(--text); }
+/* The window, as one object on the page. It plays its scene; nothing in it is for clicking. */
 .stage { position: relative; height: clamp(560px, 84vh, 820px); border-radius: 12px; overflow: hidden; box-shadow: var(--window); background: var(--canvas); }
-.stage iframe { display: block; width: 100%; height: 100%; border: 0; }
-.note { max-width: 70ch; margin: 14px 0 0; color: var(--text-3); font: 14px/1.55 var(--sans); }
-.note code { color: var(--text-2); }
-.for-touch { display: none; }
-@media (pointer: coarse) { .for-mouse { display: none; } .for-touch { display: inline; } }
+.stage iframe { display: block; width: 100%; height: 100%; border: 0; pointer-events: none; }
+.under { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px 24px; margin-top: 14px; }
+.note { max-width: 70ch; margin: 0; color: var(--text-3); font: 14px/1.55 var(--sans); }
+/* The scene's music, off until the visitor turns it on. */
+.sound { display: inline-flex; flex: none; align-items: center; gap: 6px; height: 28px; margin-top: -4px; padding: 0 12px 0 9px; border: 0;
+  border-radius: 999px; background: var(--well); color: var(--text-2); font: 13px var(--sans); cursor: pointer; }
+.sound:hover { background: var(--current); color: var(--text); }
+.sound svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.sound .body { fill: currentColor; stroke: none; }
+.sound[aria-pressed="true"] { color: var(--text); }
+.sound[aria-pressed="true"] .off, .sound[aria-pressed="false"] .on { display: none; }
 @media (max-width: 640px) {
   .stage { height: 82svh; border-radius: 10px; }
 }
@@ -128,7 +149,7 @@ main, .liner { width: var(--page); margin-inline: auto; }
 .get .actions { margin: 20px 0 8px; }
 .commands { position: relative; margin: 16px 0 18px; }
 .commands pre { margin: 0; padding: 16px 18px; border-radius: 10px; background: var(--well); font-size: 14px; line-height: 1.7; overflow-x: auto; }
-.copy { position: absolute; top: 10px; right: 10px; height: 26px; padding: 0 10px; border: 0; border-radius: 999px; background: var(--canvas);
+.copy { position: absolute; top: 10px; right: 10px; height: 26px; padding: 0 10px; border: 0; border-radius: 999px; background: var(--well);
   color: var(--text-2); font: 13px var(--sans); cursor: pointer; }
 .copy:hover { color: var(--text); }
 .copy[data-state="done"] { color: var(--text); }

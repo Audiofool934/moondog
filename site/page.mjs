@@ -1,48 +1,82 @@
-// The project page: Moondog's window and its terminal room, each in a frame of its own, and copy buttons.
-// The terminal's frame loads the first time someone asks for it.
-const online = Boolean(MOONDOG_AGENT_URL);
-const stage = document.querySelector("[data-stage]");
-const tabs = [...document.querySelectorAll("[data-view]")].filter((element) => element.getAttribute("role") === "tab");
-const frames = { window: stage.querySelector('[data-frame="window"]') };
+// The project page's script: the scene's light and music, and the copy button beside the install commands.
+// The window's scene runs in its own frame (window/host.mjs).
+import { moodColours } from "../app/renderer/mood.mjs";
 
-// Each line of the note shows for its view, and for whether the demo agent is there.
-function showNotes(view) {
-  for (const note of document.querySelectorAll(".note [data-for], .note [data-agent]")) {
-    const forView = !note.dataset.for || note.dataset.for === view;
-    const forAgent = !note.dataset.agent || (note.dataset.agent === "online") === online;
-    note.hidden = !(forView && forAgent);
+// The cover that is playing lights the whole page, as it lights the window in the app: its colours, read
+// in the frame, become the page's three faint fields, drifting in as the last ones fade.
+const mood = document.querySelector("[data-mood]");
+const dark = matchMedia("(prefers-color-scheme: dark)");
+let palette = null;
+function paintMood() {
+  moodColours(palette, dark.matches).forEach((colour, index) => mood.style.setProperty(`--mood-${index + 1}`, colour));
+  mood.classList.toggle("playing", Boolean(palette));
+}
+dark.addEventListener("change", paintMood);
+
+// The scene's music. The frame says which song plays from when; the page plays it, because a page plays
+// sound only after a click on it. It starts off, follows the scene while the window is on screen, and
+// fades between songs.
+const button = document.querySelector("[data-sound]");
+let context = null;
+let on = false;
+let inView = false;
+let song = null;
+const tracks = new Map();
+
+function trackFor(sound) {
+  if (!tracks.has(sound)) {
+    const audio = new Audio(sound);
+    audio.preload = "auto";
+    const gain = context.createGain();
+    gain.gain.value = 0;
+    context.createMediaElementSource(audio).connect(gain).connect(context.destination);
+    tracks.set(sound, { audio, gain, stop: 0 });
   }
+  return tracks.get(sound);
+}
+function ramp(track, to, seconds) {
+  const now = context.currentTime;
+  track.gain.gain.cancelScheduledValues(now);
+  track.gain.gain.setValueAtTime(track.gain.gain.value, now);
+  track.gain.gain.linearRampToValueAtTime(to, now + seconds);
+}
+function follow() {
+  if (!context) return;
+  const heard = on && inView && document.visibilityState === "visible";
+  const wanted = heard && song ? song.sound : null;
+  for (const [sound, track] of tracks) {
+    if (sound === wanted || track.audio.paused) continue;
+    ramp(track, 0, 0.9);
+    const stop = ++track.stop;
+    setTimeout(() => { if (track.stop === stop) track.audio.pause(); }, 950);
+  }
+  if (!wanted) return;
+  const track = trackFor(wanted);
+  track.stop += 1;
+  if (track.audio.paused) {
+    // A song joined late starts where the scene is in it.
+    const at = Math.max(0, (Date.now() - song.startedAt) / 1000);
+    if (track.audio.ended || at >= (track.audio.duration || Infinity)) return;
+    track.audio.currentTime = at;
+    void track.audio.play().catch(() => {});
+  }
+  ramp(track, 1, 1.2);
 }
 
-function show(view, { focus = true } = {}) {
-  if (!frames[view]) {
-    frames[view] = Object.assign(document.createElement("iframe"), { src: "terminal.html", title: "Moondog's terminal room, with the same made-up listener" });
-    frames[view].dataset.frame = view;
-    frames[view].allow = "autoplay; clipboard-write";
-    stage.append(frames[view]);
-  }
-  for (const [name, frame] of Object.entries(frames)) frame.hidden = name !== view;
-  for (const tab of tabs) {
-    const selected = tab.dataset.view === view;
-    tab.setAttribute("aria-selected", String(selected));
-    tab.tabIndex = selected ? 0 : -1;
-  }
-  stage.dataset.view = view;
-  showNotes(view);
-  if (focus) frames[view].focus();
-}
-
-for (const tab of tabs) {
-  tab.addEventListener("click", () => show(tab.dataset.view));
-  tab.addEventListener("keydown", (event) => {
-    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-    event.preventDefault();
-    const next = tabs[(tabs.indexOf(tab) + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length];
-    next.focus();
-    show(next.dataset.view, { focus: false });
-  });
-}
-show("window", { focus: false });
+addEventListener("message", (event) => {
+  if (event.origin !== location.origin || event.data?.source !== "moondog-scene") return;
+  if ("mood" in event.data) { palette = event.data.mood; paintMood(); }
+  if ("song" in event.data) { song = event.data.song; follow(); }
+});
+new IntersectionObserver(([entry]) => { inView = entry.isIntersecting; follow(); }, { threshold: 0.35 }).observe(document.querySelector(".stage"));
+document.addEventListener("visibilitychange", follow);
+button.addEventListener("click", () => {
+  on = !on;
+  button.setAttribute("aria-pressed", String(on));
+  context ??= new AudioContext();
+  void context.resume();
+  follow();
+});
 
 for (const button of document.querySelectorAll("[data-copy]")) {
   button.addEventListener("click", async () => {

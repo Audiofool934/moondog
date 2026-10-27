@@ -2,15 +2,13 @@
   "name": "moondog-site",
   "private": true,
   "type": "module",
-  "description": "Moondog's project page, with the real listening room running in the browser on fictional data.",
+  "description": "Moondog's project page, with the desktop app's own window playing a short scene on made-up data.",
   "license": "Apache-2.0",
   "scripts": {
-    "build": "node build.mjs --snapshot",
+    "build": "node build.mjs",
     "dev": "node build.mjs --serve"
   },
   "devDependencies": {
-    "@xterm/addon-fit": "^0.11.0",
-    "@xterm/xterm": "^6.0.0",
     "esbuild": "^0.28.2"
   }
 }

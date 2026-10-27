@@ -1,18 +1,14 @@
-// Builds the project page into dist/: the page, and the two frames it shows. window.html is the
-// desktop app's own window (app/renderer) and terminal.html the terminal's room (src/surfaces/cli),
-// both on the fictional listener. Node built-ins and the model and sign-in modules are swapped for
-// the small stand-ins in shims/.
+// Builds the project page into dist/: the page, and window.html, the desktop app's own window
+// (app/renderer) playing the page's scene. Node built-ins the window's core imports are swapped for
+// the small stand-ins in shims/. Neither document makes a request beyond the page's own files.
 //
-//   node build.mjs              build once (makes the fictional data snapshot if missing)
-//   node build.mjs --snapshot   remake the snapshot first
+//   node build.mjs              build once
 //   node build.mjs --serve      rebuild on change and serve at http://localhost:8737
 //   node build.mjs --offline    link the release list rather than ask GitHub for the newest Mac download
-import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { access, cp, mkdir, readFile, rm, watch, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, rm, watch, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
 import * as esbuild from "esbuild";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -26,33 +22,19 @@ const builtins = {
   util: "util.mjs", events: "events.mjs", child_process: "misc.mjs", module: "misc.mjs", url: "misc.mjs",
   perf_hooks: "misc.mjs", "timers/promises": "misc.mjs", sqlite: "sqlite.mjs",
 };
-const replaced = new Set(["model-catalog.mjs", "public-model-catalog.mjs", "authentication.mjs"]);
-const { version } = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
 
-// The public agent's address. Without it, both frames run with no model and make no requests.
-const agentUrl = process.env.MOONDOG_AGENT_URL?.trim().replace(/\/+$/u, "") ?? "";
-// Cloudflare Turnstile's public site key, when the agent checks visitors first.
-const turnstileSiteKey = agentUrl ? process.env.MOONDOG_TURNSTILE_SITE_KEY?.trim() ?? "" : "";
-if (turnstileSiteKey && !/^[0-9A-Za-z_-]{10,64}$/u.test(turnstileSiteKey)) throw new Error("MOONDOG_TURNSTILE_SITE_KEY does not look like a Turnstile site key.");
-if (agentUrl && !/^https:\/\/[a-z0-9.-]+(:\d+)?$|^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/u.test(agentUrl)) {
-  throw new Error(`MOONDOG_AGENT_URL must be an https origin (or http on localhost): ${agentUrl}`);
-}
-
-// What each document may load. The page only frames its own two documents; the frames may reach the
-// agent, Apple's preview audio and cover art, and Cloudflare's check, and only when the agent runs.
-const turnstile = "https://challenges.cloudflare.com";
+// What each document may load: its own files, drawn covers, and for the page, the window's frame and
+// the scene's music.
 function contentPolicy(document) {
-  const live = document !== "page" && Boolean(agentUrl);
-  const check = live && Boolean(turnstileSiteKey);
   const sources = {
     "default-src": ["'self'"],
-    "script-src": ["'self'", ...(check ? [turnstile] : [])],
+    "script-src": ["'self'"],
     "style-src": ["'self'", "'unsafe-inline'"],
-    "img-src": ["'self'", "data:", ...(live ? ["https://*.mzstatic.com"] : [])],
-    "media-src": live ? ["https://audio-ssl.itunes.apple.com"] : ["'none'"],
+    "img-src": ["'self'", "data:"],
+    "media-src": document === "page" ? ["'self'"] : ["'none'"],
     "font-src": ["'self'"],
-    "connect-src": live ? [agentUrl] : ["'none'"],
-    "frame-src": document === "page" ? ["'self'"] : check ? [turnstile] : ["'none'"],
+    "connect-src": ["'none'"],
+    "frame-src": document === "page" ? ["'self'"] : ["'none'"],
     "object-src": ["'none'"],
     "base-uri": ["'none'"],
     "form-action": ["'none'"],
@@ -91,8 +73,6 @@ const browserPlugin = {
       const name = builtins[spec.replace(/^node:/, "")];
       return name ? { path: shim(name) } : undefined;
     });
-    build.onResolve({ filter: /runtime\/pi\/[a-z-]+\.mjs$/ }, ({ path: spec }) =>
-      replaced.has(path.basename(spec)) ? { path: shim("catalog.mjs") } : undefined);
     // pi-tui unrefs its timers so Node can exit; browser timers are plain numbers.
     build.onLoad({ filter: /[\\/]@earendil-works[\\/]pi-tui[\\/]dist[\\/].+\.js$/ }, async ({ path: file }) => ({
       contents: (await readFile(file, "utf8")).replaceAll(".unref()", ".unref?.()"),
@@ -101,17 +81,8 @@ const browserPlugin = {
   },
 };
 
-const snapshotPath = path.join(here, "generated", "snapshot.json");
-if (flags.has("--snapshot") || !(await access(snapshotPath).then(() => true, () => false))) {
-  const { stdout } = await promisify(execFile)(process.execPath, [
-    "--disable-warning=ExperimentalWarning", path.join(here, "listener", "snapshot.mjs"),
-  ]);
-  process.stdout.write(stdout);
-}
-
 // The documents. The window's markup is the app's own index.html, with this page's policy and bundle,
-// three resting traffic lights where the app's sit, and a place for Cloudflare's check. Its composer
-// doesn't take focus on load, as it does in the app, since here the page comes first.
+// and three resting traffic lights where the app's sit.
 const documents = {
   "index.html": async () => (await readFile(path.join(here, "index.html"), "utf8"))
     .replace("<!-- policy -->", policyTag("page"))
@@ -122,9 +93,7 @@ const documents = {
     .replace('href="renderer.css"', 'href="window.css"')
     .replace(/(<textarea[^>]*?) autofocus/u, "$1")
     .replace('<script type="module" src="renderer.js"></script>',
-      '<div class="lights" aria-hidden="true"><i></i><i></i><i></i></div>\n  <div class="human-check" data-check hidden></div>\n  <script type="module" src="window.js"></script>'),
-  "terminal.html": async () => (await readFile(path.join(here, "terminal", "terminal.html"), "utf8"))
-    .replace("<!-- policy -->", policyTag("terminal")),
+      '<div class="lights" aria-hidden="true"><i></i><i></i><i></i></div>\n  <script type="module" src="window.js"></script>'),
 };
 // Cloudflare keeps scripts and styles for hours, so a published document asks for each one by its
 // content: a new deploy never pairs new markup with an old stylesheet.
@@ -151,7 +120,6 @@ const options = {
   entryPoints: {
     page: path.join(here, "page.mjs"),
     window: path.join(here, "window", "window.mjs"),
-    terminal: path.join(here, "terminal", "terminal.mjs"),
   },
   bundle: true,
   format: "esm",
@@ -159,11 +127,6 @@ const options = {
   target: "es2022",
   outdir,
   inject: [shim("process.mjs")],
-  define: {
-    MOONDOG_AGENT_URL: JSON.stringify(agentUrl),
-    MOONDOG_TURNSTILE_SITE_KEY: JSON.stringify(turnstileSiteKey),
-    MOONDOG_VERSION: JSON.stringify(version),
-  },
   plugins: [browserPlugin],
   loader: { ".json": "json" },
   minify: !flags.has("--dev"),
@@ -178,8 +141,7 @@ if (flags.has("--serve")) {
   const { port } = await context.serve({ servedir: outdir, port: Number(process.env.PORT ?? 8737) });
   console.log(`Serving the page at http://localhost:${port}`);
   // esbuild watches the bundles; the documents and static files are written again when they change.
-  const sources = [path.join(here, "index.html"), path.join(here, "style.css"), path.join(here, "terminal", "terminal.html"),
-    path.join(root, "app", "renderer", "index.html"), path.join(here, "static")];
+  const sources = [path.join(here, "index.html"), path.join(here, "style.css"), path.join(root, "app", "renderer", "index.html"), path.join(here, "static")];
   for await (const { filename } of watch(root, { recursive: true })) {
     const file = path.join(root, filename ?? "");
     if (sources.some((source) => file === source || file.startsWith(`${source}${path.sep}`))) await writeDocuments().catch(() => {});

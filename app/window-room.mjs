@@ -929,8 +929,7 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
         if (data.type === "quit") return void await stop();
         await handlers[data.type]?.(data);
       } catch (error) {
-        // The project page's stand-ins refuse what only the app can do, and the window says so.
-        send({ type: "notice", code: error?.code === "needs_app" ? "needs_app" : data.type, message: errorText(error) });
+        send({ type: "notice", code: data.type, message: errorText(error) });
       }
     });
     port.start();

@@ -12,7 +12,7 @@ COPY assets/brand/moondog-lunar-record/moondog-logo-1x1.png ./assets/brand/moond
 COPY contracts ./contracts
 COPY scripts ./scripts
 COPY src ./src
-COPY site/listener/fictional-history.mjs ./site/listener/fictional-history.mjs
+COPY site/server/fictional-history.mjs ./site/server/fictional-history.mjs
 COPY site/server/agent-server.mjs site/server/limits.mjs ./site/server/
 
 # The day's spending is saved here; mount a volume so it survives restarts.
