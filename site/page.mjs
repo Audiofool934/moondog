@@ -53,14 +53,17 @@ function follow() {
   if (!wanted) return;
   const track = trackFor(wanted);
   track.stop += 1;
+  // A song joined late starts where the scene is in it, faded in; one heard from its start, such as the
+  // ident as the needle lands, comes in at once, with its first sound whole.
+  let fadeIn = 1.2;
   if (track.audio.paused) {
-    // A song joined late starts where the scene is in it.
     const at = Math.max(0, (Date.now() - song.startedAt) / 1000);
     if (track.audio.ended || at >= (track.audio.duration || Infinity)) return;
     track.audio.currentTime = at;
+    if (at < 0.25) fadeIn = 0.02;
     void track.audio.play().catch(() => {});
   }
-  ramp(track, 1, 1.2);
+  ramp(track, 1, fadeIn);
 }
 
 // Sound needs a click on the page, so it starts inside one. iPhone mutes web audio with its ringer
