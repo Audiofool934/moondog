@@ -15,12 +15,16 @@ const TINTED = 0.6;
 // A new cover's colours drift into the grooves as the window's light drifts into its own.
 const DRIFT_MS = 2400;
 const TURN = Math.PI * 2;
-// Off the record the arm stands swung out as far as the bar's mark swings its own. A pointer on the
-// arm leans it a little toward where a click will send it, so the arm says it moves before it does.
+// Off the record the arm stands swung out as far as the bar's mark swings its own.
 const LIFTED = -28 / 180 * Math.PI;
-const LEAN = 4 / 180 * Math.PI;
 const SWING_MS = 560;
-const LEAN_MS = 160;
+// A pointer on the arm lights it in its own dots, and never moves it: a swell runs along the arm toward
+// where a click will send it, onto the record or off it, and leaves its dots a little fuller while the
+// pointer stays. FULL and CREST add to a dot's radius; the light goes out in OUT_MS.
+const LIGHT_MS = 380;
+const OUT_MS = 180;
+const FULL = 0.3;
+const CREST = 0.45;
 // The platter starts at half speed and gains on each frame; stopping, it loses on each frame and
 // rests below a quarter of its speed, a second or so later.
 const SPIN_UP = 1.45;
@@ -31,6 +35,8 @@ const HELD_MS = 220;
 // The arm as a line to point at, in the record's unit coordinates: pivot, elbow, cartridge, stylus.
 const { arm: ARM, cartridge: CARTRIDGE } = lunarRecordShapes();
 const ARM_LINE = [ARM[0], ARM[1], CARTRIDGE.reduce(([x, y], [a, b]) => [x + a / 4, y + b / 4], [0, 0]), [0.755, -0.587]];
+// How far a dot lies from the pivot, from 0 to 1 at the stylus, whatever the swing.
+const REACH = Math.hypot(ARM_LINE[3][0] - ARM[0][0], ARM_LINE[3][1] - ARM[0][1]);
 const swung = ([x, y], swing) => {
   const [px, py] = ARM[0];
   const [cosine, sine] = [Math.cos(swing), Math.sin(swing)];
@@ -47,8 +53,8 @@ const dark = matchMedia("(prefers-color-scheme: dark)");
 
 /**
  * Draws the record into `canvas`, sized by its CSS box. Returns its controls: turn(on) runs the
- * platter; needle(on, instant) rests the arm on the record or swings it off; lean(on) leans the arm
- * toward its next place; spin(distance) turns the record by hand, `distance` pixels along its rim;
+ * platter; needle(on, instant) rests the arm on the record or swings it off; light(on) lights the arm
+ * under a pointer; spin(distance) turns the record by hand, `distance` pixels along its rim;
  * shown(scale) says the box is drawn at `scale` by a transform; hit(x, y) names what is under a
  * point in the window ("arm", "disc" or null); place() gives the disc's center and radius in the
  * window; tint(colours, instant) takes three [r, g, b] colours, from the rim inward, or null for ink.
@@ -82,9 +88,10 @@ export function mountRecord(canvas, { across = null } = {}) {
   let axes = null;
   let rings = { from: null, to: null, start: 0 };
   let drifting = 0;
-  // The arm: on the record or off it, leaning or not, and its swing as drawn, eased toward where it goes.
+  // The arm: on the record or off it, its swing as drawn, eased toward where it goes, and its light.
   let down = true;
-  let leaning = false;
+  let lit = { on: false, start: -Infinity, toward: true };
+  let lighting = 0;
   let swing = 0;
   let swingTo = null;
   let swinging = 0;
@@ -94,7 +101,8 @@ export function mountRecord(canvas, { across = null } = {}) {
   // bitmap pixel, `density` of them to a CSS pixel, so every dot is drawn alike: dots that fall between
   // pixels come out fainter or bolder than their neighbours, and rows of them beat as moiré. Closer
   // than two pixels apart, dots would share pixels, so there they keep their places and blend instead.
-  function trace({ dots, width }, layers, density) {
+  // grow, if given, scales each dot's radius by its column and row.
+  function trace({ dots, width }, layers, density, grow = null) {
     const pitch = size / grid;
     const radius = pitch * 0.32;
     const snap = pitch * density >= 1.9 ? (at) => (Math.round(at * density - 0.5) + 0.5) / density : (at) => at;
@@ -102,8 +110,9 @@ export function mountRecord(canvas, { across = null } = {}) {
       if (!dots[at]) continue;
       const x = snap((at % width + 0.5) * pitch);
       const y = snap((Math.floor(at / width) + 0.5) * pitch);
-      layers[dots[at]].moveTo(x + radius, y);
-      layers[dots[at]].arc(x, y, radius, 0, TURN);
+      const r = grow ? radius * grow(at % width, Math.floor(at / width)) : radius;
+      layers[dots[at]].moveTo(x + r, y);
+      layers[dots[at]].arc(x, y, r, 0, TURN);
     }
     return layers;
   }
@@ -134,8 +143,9 @@ export function mountRecord(canvas, { across = null } = {}) {
     traced.layers[index] ??= trace(dotsAt(index), [null, new Path2D(), new Path2D(), new Path2D()], density);
     return traced.layers[index];
   }
-  // The arm at its swing; resting on the record, its contact moves with the frame.
-  function armPath(index, density) {
+  // The arm at its swing; resting on the record, its contact moves with the frame. Lit, each dot swells
+  // by where it lies along the arm.
+  function armPath(index, density, now) {
     const key = swing === 0 ? `on ${index}` : `${Math.round(swing * 2000)}`;
     let art = arms.get(key);
     if (!art) {
@@ -143,7 +153,34 @@ export function mountRecord(canvas, { across = null } = {}) {
       art = renderTonearmDots({ columns: grid / 2, rows: grid / 4, phase: index, swing });
       arms.set(key, art);
     }
-    return trace(art, [null, null, null, new Path2D()], density)[3];
+    const glow = glowAt(now);
+    const along = (column, row) => Math.min(1, Math.hypot((column - axes.x) / axes.radius - ARM[0][0], (row - axes.y) / axes.radius - ARM[0][1]) / REACH);
+    return trace(art, [null, null, null, new Path2D()], density, glow && axes ? (column, row) => glow(along(column, row)) : null)[3];
+  }
+  // The light at a moment, as a dot's growth by its place along the arm, from 0 at the pivot to 1 at
+  // the stylus; or null once it is out. Lighting, a crest runs toward where a click sends the arm and
+  // leaves its dots full behind it; going out, the whole arm settles back at once.
+  function glowAt(now) {
+    const t = (now - lit.start) / (lit.on ? LIGHT_MS : OUT_MS);
+    if (!lit.on) return t >= 1 || reduced.matches ? null : () => 1 + FULL * (1 - t) ** 2;
+    const front = reduced.matches ? Infinity : t * 1.3;
+    return (at) => {
+      const x = lit.toward ? at : 1 - at;
+      return 1 + FULL * Math.min(1, Math.max(0, (front - x) / 0.2)) + CREST * Math.exp(-(((x - front) / 0.11) ** 2));
+    };
+  }
+  function light(on) {
+    on = Boolean(on);
+    if (on === lit.on) return;
+    lit = { on, start: performance.now(), toward: !down };
+    if (!lighting) lighting = requestAnimationFrame(glowStep);
+  }
+  function glowStep() {
+    lighting = 0;
+    if (stopped) return;
+    draw();
+    const t = (performance.now() - lit.start) / (lit.on ? LIGHT_MS : OUT_MS);
+    if (!reduced.matches && t < (lit.on ? 1 : 1.05)) lighting = requestAnimationFrame(glowStep);
   }
   // The frames a hand might turn to are worked out while the window is idle, nearest first.
   function warm() {
@@ -198,7 +235,7 @@ export function mountRecord(canvas, { across = null } = {}) {
       context.fill(layers[level]);
     }
     context.globalAlpha = INK[3];
-    context.fill(armPath(index, density));
+    context.fill(armPath(index, density, performance.now()));
     context.globalAlpha = 1;
     // While colours drift, the record redraws on every display frame until they arrive.
     if (!paint.done && !drifting) drifting = requestAnimationFrame(() => { drifting = 0; draw(); });
@@ -246,18 +283,17 @@ export function mountRecord(canvas, { across = null } = {}) {
     if (!should) { clearTimeout(timer); cancelAnimationFrame(raf); timer = 0; raf = 0; }
   }
 
-  // The arm eases to where it goes: a long, even swing on or off the record, a quick lean under the pointer.
-  function aim(duration) {
-    const to = (down ? 0 : LIFTED) + (leaning ? (down ? -LEAN : LEAN) : 0);
-    swingTo = { from: swing, to, start: performance.now(), duration };
+  // The arm eases to where it goes, in a long, even swing on or off the record.
+  function aim() {
+    swingTo = { from: swing, to: down ? 0 : LIFTED, start: performance.now() };
     if (!swinging) swinging = requestAnimationFrame(swingStep);
   }
   function swingStep() {
     swinging = 0;
     if (stopped || !swingTo) return;
-    const { from, to, start, duration } = swingTo;
-    const t = reduced.matches ? 1 : Math.min(1, Math.max(0, (performance.now() - start) / duration));
-    const eased = duration === SWING_MS ? (t < 0.5 ? 4 * t ** 3 : 1 - (2 - 2 * t) ** 3 / 2) : 1 - (1 - t) ** 3;
+    const { from, to, start } = swingTo;
+    const t = reduced.matches ? 1 : Math.min(1, Math.max(0, (performance.now() - start) / SWING_MS));
+    const eased = t < 0.5 ? 4 * t ** 3 : 1 - (2 - 2 * t) ** 3 / 2;
     swing = t >= 1 ? to : from + (to - from) * eased;
     if (t >= 1) swingTo = null; else swinging = requestAnimationFrame(swingStep);
     draw();
@@ -281,16 +317,11 @@ export function mountRecord(canvas, { across = null } = {}) {
       on = Boolean(on);
       if (on === down && !instant) return;
       down = on;
-      leaning = false;
+      light(false);
       if (instant || reduced.matches) { swingTo = null; swing = down ? 0 : LIFTED; draw(); return; }
-      aim(SWING_MS);
+      aim();
     },
-    lean(on) {
-      on = Boolean(on);
-      if (on === leaning) return;
-      leaning = on;
-      aim(LEAN_MS);
-    },
+    light,
     spin(distance) {
       if (!disc || !distance) return;
       phase += distance / (disc.radius * scale) / TURN * LOGO_MOTION_FRAMES;
@@ -338,6 +369,7 @@ export function mountRecord(canvas, { across = null } = {}) {
       cancelAnimationFrame(drifting);
       cancelAnimationFrame(painting);
       cancelAnimationFrame(swinging);
+      cancelAnimationFrame(lighting);
       cancelIdleCallback(warming);
       observer.disconnect();
       dark.removeEventListener("change", theme);

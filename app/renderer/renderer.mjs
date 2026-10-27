@@ -692,8 +692,8 @@ function toggleRecord() {
   else toHome();
 }
 // The tonearm plays and pauses, as on a turntable: a click lifts it off the record and the music
-// stops; another sets it down and the music plays. A pointer on it leans it toward where a click
-// sends it. A click anywhere else on the record folds it into the bar. Before anything is said, the
+// stops; another sets it down and the music plays. A pointer on it lights it, in its own dots, toward
+// where a click sends it. A click anywhere else on the record folds it into the bar. Before anything is said, the
 // record folds nowhere, so only its arm answers a click.
 // With nothing loaded on any player, a click on the arm asks Moondog for a song, as the words
 // "Play something for right now" would, in the conversation that is open. The arm stays up until the
@@ -713,9 +713,9 @@ function setArm() {
   rest();
   if (!submitText(t("armPrompt"))) return;
   if (state.model?.state === "configured") cue = { at: Date.now(), seen: false, ended: 0 };
-  // The arm has nothing more to offer a click until the music plays, so it stops leaning toward one.
-  record?.lean(false);
-  deep?.lean(false);
+  // The arm has nothing more to offer a click until the music plays, so its light goes out.
+  record?.light(false);
+  deep?.light(false);
 }
 // Whether the arm still waits for the song it asked for.
 function cueing(now) {
@@ -743,8 +743,8 @@ document.addEventListener("pointermove", (event) => {
   pointerAt = at;
   aimed = recordFrame.contains(event.target);
 }, { capture: true, passive: true });
-recordFrame.addEventListener("pointermove", (event) => record?.lean(onArm(record, event)));
-recordFrame.addEventListener("pointerleave", () => { aimed = false; record?.lean(false); });
+recordFrame.addEventListener("pointermove", (event) => record?.light(onArm(record, event)));
+recordFrame.addEventListener("pointerleave", () => { aimed = false; record?.light(false); });
 // A turn of the wheel belongs to what it starts on until the wheel rests; the browser already keeps
 // one that starts on the words there, even as the record grows under the pointer. One that starts on
 // the record turns it when the song can move and the pointer was put on the disc or its arm. A record
@@ -846,7 +846,7 @@ immersive.addEventListener("pointerdown", (event) => {
   }, { once: true });
 });
 immersive.addEventListener("click", (event) => { if (event.detail && onArm(deep, event)) setArm(); });
-immersive.addEventListener("pointermove", (event) => deep?.lean(onArm(deep, event)));
+immersive.addEventListener("pointermove", (event) => deep?.light(onArm(deep, event)));
 immersive.addEventListener("wheel", (event) => scratchWith(deep, event), { passive: false });
 $("pin").addEventListener("click", async () => {
   const change = ++pinChange;
