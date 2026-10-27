@@ -273,8 +273,19 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
     });
     return form;
   }
-  function choice({ label, detail, chosen, expanded, action, onChoose, trailing, disabled, key, lead }) {
+  function choice({ label, detail, chosen, expanded, action, onChoose, trailing, disabled, key, lead, fold }) {
     const item = make("div", `choice${disabled ? " off" : ""}`);
+    // A row that is picked with a click and also unfolds has its chevron as a button of its own.
+    if (fold) {
+      const turn = make("button", "choice-fold");
+      turn.type = "button";
+      turn.dataset.key = fold.key;
+      turn.setAttribute("aria-label", label);
+      turn.setAttribute("aria-expanded", String(fold.expanded));
+      turn.append(icon("chevron", "icon disclose"));
+      turn.addEventListener("click", fold.onFold);
+      item.append(turn);
+    }
     const main = make("button", "choice-main");
     main.type = "button";
     main.dataset.key = key ?? `choice:${label}`;
@@ -546,10 +557,11 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
     return choices(inner, "choices inner");
   }
 
-  // Playback: one row per music service, its state under its name and the one in use checked. A row
-  // unfolds what that service needs: its setup until it can play, then its own controls, such as
-  // Spotify's devices, and the button that uses it. One row is open at a time, and each opening starts
-  // with the service in use open. Other sources of music get groups of their own beside this one.
+  // Playback: one row per music service, its state under its name and the one in use checked. A click
+  // on a service that can play uses it; on one that can't yet, it unfolds its setup. Its chevron alone
+  // unfolds what the service has without using it: its setup, or its own controls, such as Spotify's
+  // devices. One row is open at a time, and the service in use starts open. Other sources of music get
+  // groups of their own beside this one.
   function playback() {
     const service = expected("service", state.playbackService ?? "spotify");
     const spotifyReady = expected("spotify", state.spotify) === "ready";
@@ -558,47 +570,49 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
     const whole = appleMusic?.status();
     const canAllowWhole = whole?.authorization === "notDetermined" && whole.reason !== "developerTokenRequestFailed";
     const rows = [
-      { id: "spotify", label: "Spotify", detail: say(spotifyReady ? "connected" : "notConnected") },
-      { id: "apple_music", label: "Apple Music", detail: say(whole?.canPlay ? "fullSongs" : "appleMusicNote"), empty: service === "apple_music" && !canAllowWhole },
-      { id: "netease", label: say("netease"), detail: say(neteaseReady ? "signedIn" : NETEASE_STATES[state.netease] ?? "checking") },
+      { id: "spotify", label: "Spotify", detail: say(spotifyReady ? "connected" : "notConnected"), playable: spotifyReady },
+      { id: "apple_music", label: "Apple Music", detail: say(whole?.canPlay ? "fullSongs" : "appleMusicNote"), playable: true, empty: !canAllowWhole },
+      { id: "netease", label: say("netease"), detail: say(neteaseReady ? "signedIn" : NETEASE_STATES[state.netease] ?? "checking"), playable: neteaseReady },
     ];
-    const use = (row) => (row.id === service ? null : button(say("useService", { service: row.label }), "button small", () => {
-      expect("service", row.id);
-      send({ type: "music-service", service: row.id });
-      // Spotify's devices are read afresh once it is in use.
-      if (row.id === "spotify") data.devices = null;
-      render();
-    }, `use:${row.id}`));
     const actions = (...buttons) => {
       const line = make("div", "actions");
       line.append(...buttons.filter(Boolean));
-      return line.childElementCount ? line : null;
+      return line;
     };
     const inside = {
-      spotify: (row) => (data.auth?.provider === "spotify" ? [signInPanel()]
+      spotify: () => (data.auth?.provider === "spotify" ? [signInPanel()]
         : !spotifyReady ? [data.auth ? note(say("signInBusy")) : connectSpotify()]
-          : [service === "spotify" ? devices() : null, actions(use(row), button(say("disconnect"), "button quiet small", () => {
+          : [service === "spotify" ? devices() : null, actions(button(say("disconnect"), "button quiet small", () => {
             expect("spotify", "unavailable");
             send({ type: "sign-out", provider: "spotify" });
             render();
           }, "spotify:disconnect"))]),
-      apple_music: (row) => [actions(use(row), canAllowWhole ? button(say("allowFullSongs"), "button small", () => {
+      apple_music: () => [actions(button(say("allowFullSongs"), "button small", () => {
         void appleMusic.check("authorize").then(() => render());
-      }, "apple-music:allow") : null)],
+      }, "apple-music:allow"))],
       // NetEase's searches send NetEase a short summary of the request, which its row says before it is used.
-      netease: (row) => (neteaseReady ? [note(say("neteaseNote")), actions(use(row))] : [setUpNetease()]),
+      netease: () => (neteaseReady ? [note(say("neteaseNote"))] : [setUpNetease()]),
     };
     const open = data.servicePanel !== undefined ? data.servicePanel : data.auth?.provider === "spotify" ? "spotify" : service;
     const list = [];
     for (const row of rows) {
-      // A row with nothing to unfold keeps the chevron's room, so the names stay in one column.
       const expanded = !row.empty && open === row.id;
+      const fold = () => { data.servicePanel = expanded ? null : row.id; render(); };
+      const use = () => {
+        expect("service", row.id);
+        send({ type: "music-service", service: row.id });
+        // The service now in use unfolds, and Spotify's devices are read afresh.
+        data.servicePanel = row.id;
+        if (row.id === "spotify") data.devices = null;
+        render();
+      };
       list.push(choice({ label: row.label, detail: row.detail, chosen: service === row.id, key: `service:${row.id}`,
-        lead: icon("chevron", row.empty ? "icon disclose blank" : "icon disclose"),
-        ...(row.empty ? {} : { expanded, onChoose: () => { data.servicePanel = expanded ? null : row.id; render(); } }) }));
+        onChoose: row.playable && row.id !== service ? use : row.empty ? undefined : fold,
+        // A row with nothing to unfold keeps the chevron's room, so the names stay in one column.
+        ...(row.empty ? { lead: icon("chevron", "icon disclose blank") } : { fold: { expanded, onFold: fold, key: `fold:${row.id}` } }) }));
       if (!expanded) continue;
       const panel = make("div", "panel");
-      panel.append(...inside[row.id](row).filter(Boolean));
+      panel.append(...inside[row.id]().filter(Boolean));
       list.push(panel);
     }
     return [group(say("musicService"), sectionError(), choices(list))];

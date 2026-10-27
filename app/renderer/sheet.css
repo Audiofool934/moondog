@@ -84,6 +84,13 @@
 .sheet .choice-main[aria-expanded="true"] .disclose { transform: rotate(90deg); color: var(--text-3); }
 .sheet .choices.inner { margin: 0 0 6px 18px; }
 .sheet .choice .disclose.blank { visibility: hidden; }
+/* A row picked with a click unfolds from its own chevron button, which keeps the names in the same column. */
+.sheet .choice-fold { flex: none; align-self: stretch; display: flex; align-items: center; width: 28px; padding-inline-start: 10px; border-radius: var(--r-2); }
+.sheet .choice-fold:focus-visible { outline-offset: -2px; }
+.sheet .choice-fold:hover .disclose { color: var(--text-2); }
+.sheet .choice-fold + .choice-main { padding-inline-start: 0; }
+.sheet .choice:has(> .choice-fold:active) { background: var(--press); }
+.sheet .choice-fold[aria-expanded="true"] .disclose { transform: rotate(90deg); color: var(--text-3); }
 /* A music service unfolds its setup or its own controls, then its buttons, under its name. */
 .sheet .choices > .panel { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; margin: 2px 10px 14px 28px; }
 .sheet .panel > .part, .sheet .panel > .stack { align-self: stretch; }
