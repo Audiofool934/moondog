@@ -1,33 +1,48 @@
-// The project page: the live room, on-screen keys for touch screens, and copy buttons.
-import { createHumanCheck } from "./room/human-check.mjs";
-import { createPreviewPlayer } from "./room/preview-player.mjs";
-import { openRoom } from "./room/room.mjs";
+// The project page: Moondog's window and its terminal room, each in a frame of its own, and copy buttons.
+// The terminal's frame loads the first time someone asks for it.
+const online = Boolean(MOONDOG_AGENT_URL);
+const stage = document.querySelector("[data-stage]");
+const tabs = [...document.querySelectorAll("[data-view]")].filter((element) => element.getAttribute("role") === "tab");
+const frames = { window: stage.querySelector('[data-frame="window"]') };
 
-// The build sets MOONDOG_AGENT_URL when the public agent is running,
-// and MOONDOG_TURNSTILE_SITE_KEY when Cloudflare checks visitors first.
-const agentUrl = MOONDOG_AGENT_URL;
-const siteKey = agentUrl ? MOONDOG_TURNSTILE_SITE_KEY : "";
-for (const note of document.querySelectorAll("[data-agent]")) note.hidden = (note.dataset.agent === "online") !== Boolean(agentUrl);
-for (const note of document.querySelectorAll("[data-check]")) note.hidden = !siteKey;
-
-const frame = document.querySelector("[data-room]");
-const humanCheck = siteKey ? createHumanCheck(siteKey, document.querySelector("[data-room-check]")) : undefined;
-const player = createPreviewPlayer(document.querySelector("[data-player]"));
-const room = openRoom(frame.querySelector("[data-room-screen]"), { agentUrl, humanCheck, onPreview: (tracks, album) => player.play(tracks, album) });
-// The spectrum fades once the room has drawn its first frame.
-requestAnimationFrame(() => { frame.dataset.state = "ready"; });
-
-for (const link of document.querySelectorAll('a[href="#room"]')) {
-  link.addEventListener("click", () => setTimeout(room.focus, 0));
+// Each line of the note shows for its view, and for whether the demo agent is there.
+function showNotes(view) {
+  for (const note of document.querySelectorAll(".note [data-for], .note [data-agent]")) {
+    const forView = !note.dataset.for || note.dataset.for === view;
+    const forAgent = !note.dataset.agent || (note.dataset.agent === "online") === online;
+    note.hidden = !(forView && forAgent);
+  }
 }
 
-const keys = { tab: "\t", up: "\x1b[A", down: "\x1b[B", enter: "\r", esc: "\x1b" };
-for (const button of document.querySelectorAll("[data-key]")) {
-  button.addEventListener("click", () => room.send(keys[button.dataset.key]));
+function show(view, { focus = true } = {}) {
+  if (!frames[view]) {
+    frames[view] = Object.assign(document.createElement("iframe"), { src: "terminal.html", title: "Moondog's terminal room, with the same made-up listener" });
+    frames[view].dataset.frame = view;
+    frames[view].allow = "autoplay; clipboard-write";
+    stage.append(frames[view]);
+  }
+  for (const [name, frame] of Object.entries(frames)) frame.hidden = name !== view;
+  for (const tab of tabs) {
+    const selected = tab.dataset.view === view;
+    tab.setAttribute("aria-selected", String(selected));
+    tab.tabIndex = selected ? 0 : -1;
+  }
+  stage.dataset.view = view;
+  showNotes(view);
+  if (focus) frames[view].focus();
 }
-for (const button of document.querySelectorAll("[data-command]")) {
-  button.addEventListener("click", () => room.send(`${button.dataset.command}\r`));
+
+for (const tab of tabs) {
+  tab.addEventListener("click", () => show(tab.dataset.view));
+  tab.addEventListener("keydown", (event) => {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.preventDefault();
+    const next = tabs[(tabs.indexOf(tab) + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length];
+    next.focus();
+    show(next.dataset.view, { focus: false });
+  });
 }
+show("window", { focus: false });
 
 for (const button of document.querySelectorAll("[data-copy]")) {
   button.addEventListener("click", async () => {

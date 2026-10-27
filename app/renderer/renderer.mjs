@@ -126,7 +126,7 @@ function notice(text) {
 }
 const NOTICES = { too_many_running: "noticeTooMany", model_unknown: "noticeModelUnknown", waiting_for_import: "noticeWaitingForImport", message_busy: "noticeMessageBusy",
   delete_running: "noticeDeleteRunning", delete_open_elsewhere: "noticeDeleteElsewhere", delete_failed: "noticeDeleteFailed", transfer_failed: "noticeTransferFailed",
-  rewind_busy: "waitForReply", rewind_failed: "noticeFailed" };
+  rewind_busy: "waitForReply", rewind_failed: "noticeFailed", needs_app: "noticeNeedsApp" };
 
 // ── The conversation ─────────────────────────────────────────────────────────────────────────
 const KINDS = [
@@ -1820,8 +1820,9 @@ function receive({ data }) {
       if (!input.value.trim()) { input.value = turn.text; renderComposer(); }
     }
     if (data.message) console.warn(`[moondog] ${data.code}: ${data.message}`);
-    // A refused switch leaves the open conversation marked as open.
+    // A refused switch leaves the open conversation marked as open, and the service as it was.
     if (data.code === "too_many_running") renderSessions();
+    if (data.code === "needs_app" && sourceWanted) { sourceWanted = null; renderComposer(); }
     notice(t(NOTICES[data.code] ?? "noticeFailed"));
   }
   if (data.type === "ready" || data.type === "status") {

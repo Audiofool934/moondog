@@ -10,7 +10,7 @@ import http from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { prepareFictionalHistory } from "../room/fictional-history.mjs";
+import { prepareFictionalHistory } from "../listener/fictional-history.mjs";
 import { DailyLimits } from "./limits.mjs";
 
 const numberFrom = (value, fallback) => (Number.isFinite(Number(value)) && value !== "" && value != null ? Number(value) : fallback);

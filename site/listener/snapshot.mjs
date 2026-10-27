@@ -45,9 +45,15 @@ try {
   const { listPiModels, listPiProviders } = await import("../../src/runtime/pi/model-catalog.mjs");
   const { serviceKeyProviders, supportedAuthProviderIds } = await import("../../src/runtime/pi/authentication.mjs");
   const providers = listPiProviders();
+  // The model the public agent answers with by default, named as the model menus name it.
+  const { configFromEnvironment } = await import("../server/agent-server.mjs");
+  const { provider, model } = configFromEnvironment({});
+  const agent = { provider, model, providerName: providers.find(({ id }) => id === provider)?.name ?? provider,
+    modelName: listPiModels(provider).find(({ id }) => id === model)?.name ?? model };
   const snapshot = {
     schema: "moondog.web-room-snapshot.v0",
     fictional: true,
+    agent,
     providers,
     models: Object.fromEntries(providers.map(({ id }) => [id, listPiModels(id)])),
     authProviderIds: [...supportedAuthProviderIds],

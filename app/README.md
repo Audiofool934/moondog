@@ -132,6 +132,7 @@ A model or music service chosen there lasts until the app quits, and sign-in and
   Replies render from Markdown into DOM text nodes (`markdown.mjs`), so a reply can't inject markup.
 - Menus for a conversation and the model, device and service pickers are native menus, built in `main.mjs` from plain items the page sends.
 - One message port carries everything between the core and the window, including the previews the agent plays.
+- The project page runs this renderer and `window-room.mjs` unchanged in a browser, with `site/window/host.mjs` in place of the preload and the core process, so a change here shows there too (`site/README.md`).
 
 ## Whole Apple Music songs
 
