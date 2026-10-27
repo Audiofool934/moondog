@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createPreviewPlayer } from "../../site/room/preview-player.mjs";
+import { createPreviewPlayer } from "../../site/terminal/preview-player.mjs";
 
 class Element {
   listeners = new Map();

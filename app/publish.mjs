@@ -97,3 +97,7 @@ for (const file of Object.values(files)) {
 }
 console.log(`\nMoondog ${version} is on https://github.com/Audiofool934/moondog/releases/tag/${tag}`);
 console.log(beta ? "Apps on a beta version will find it at their next check." : "Apps on a stable version will find it at their next check.");
+// The project page links the newest release that has a DMG, so it is built again now that this one has.
+await sh("gh", ["workflow", "run", "pages.yml", "--ref", "main"]).then(
+  () => console.log("The project page is being built again, to link this download."),
+  () => console.log("Run the Project page workflow on GitHub so the page links this download."));

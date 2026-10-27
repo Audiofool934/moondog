@@ -6,7 +6,7 @@
 - The browser Studio and the static showcase were removed on 2026-10-22; Git history keeps them for reference.
   Do not rebuild a separate browser product unless the project owner reopens that scope.
 - The project page in `site/` is in scope.
-  It runs the real TUI in the browser on fictional data; keep that room code shared with the terminal app rather than forking its behavior for the page.
+  It runs the desktop app's real window, and one switch away the real TUI, in the browser on fictional data; keep that code shared with the app and the terminal rather than forking their behavior for the page.
 - The desktop app in `app/` is in scope, first for the project owner's daily use and then for developers.
   It is a native client on the same core as the terminal, as a desktop app is to its command line: share the application, agent, Spotify, profile and memory services, and let the window draw its own conversation, now playing and up next.
   Keep it minimal and keyboard-first: few controls, no accent color, no decorative cards or divider lines.
