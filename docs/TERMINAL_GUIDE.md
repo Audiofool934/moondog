@@ -779,10 +779,10 @@ Selections are saved for the next launch.
 A model without credentials stays offline and shows the matching authentication command.
 
 `/effort` chooses how hard the model thinks, for example `/effort high`.
-The picker lists only the levels that the current model supports.
+Every model that thinks is offered the same levels: `off`, `low`, `medium`, `high`, `xhigh` and `max`.
+A level the model lacks reaches it as the nearest lighter level it has, never a heavier one and never no thinking; with nothing lighter, Moondog uses the lightest level it has.
 `/effort default` removes the setting. Thinking is then off where the model allows it; Claude 5.5 models use `high`.
 The effort applies to conversation and profile builds, is saved with the model, and carries over when you switch models with `/model`.
-If a new model does not support the saved level, Moondog uses the nearest level that it supports.
 `MOONDOG_EFFORT` sets it together with `MOONDOG_PROVIDER` and `MOONDOG_MODEL`.
 
 | Model family | Provider ID | Environment variable instead of a saved API key |

@@ -92,7 +92,7 @@ const LOCALES = [["en", "English", "English"], ["zh", "Chinese (Simplified)", "ç
 const LOCALE = new URLSearchParams(location.search).get("locale") || "en";
 const STATUS = {
   locale: LOCALE, locales: LOCALES,
-  model: { state: "configured", provider: "anthropic", model: "claude-sonnet-5-5", effort: null, effortLevels: ["low", "medium", "high", "xhigh"], reason: null },
+  model: { state: "configured", provider: "anthropic", model: "claude-sonnet-5-5", effort: "medium", thinking: "medium", effortLevels: ["low", "medium", "high", "xhigh", "max"], reason: null },
   spotify: "ready", spotifyAccount: { state: "ready", clientId: true }, playbackService: "spotify", memory: "ready",
 };
 const OFFLINE = { ...STATUS, model: { state: "offline", provider: null, model: null, effort: null, effortLevels: [], reason: null },
@@ -154,6 +154,29 @@ const LONG_TURNS = [
 
 // The status the stand-in core last announced, so a settings refresh answers with the same one.
 let status = STATUS;
+// Models: where they come from, what each offers, and the menu's list with its default.
+const PROVIDERS = [
+  { id: "openai-codex", name: "ChatGPT", signedIn: false, signIn: "oauth" },
+  { id: "openai", name: "OpenAI API", signedIn: false, signIn: "api_key" },
+  { id: "anthropic", name: "Anthropic", signedIn: true, signIn: "api_key", source: "saved" },
+  { id: "google", name: "Google", signedIn: false, signIn: "api_key" },
+  { id: "xai", name: "xAI", signedIn: false, signIn: "api_key" },
+  { id: "deepseek", name: "DeepSeek", signedIn: true, signIn: "api_key", source: "saved" },
+  { id: "endpoint-home", name: "Home server", signedIn: true, signIn: "endpoint", source: "saved",
+    endpoint: { format: "openai", baseUrl: "http://localhost:11434/v1", keySaved: false, models: ["qwen3:32b", "gemma-4-31b-it"] } },
+];
+const PROVIDER_MODELS = {
+  anthropic: [["claude-opus-5-5", "Claude Opus 5.5"], ["claude-sonnet-5-5", "Claude Sonnet 5.5"], ["claude-haiku-5-5", "Claude Haiku 5.5"]],
+  deepseek: [["deepseek-flash", "DeepSeek V4.1 Flash"], ["deepseek-v4-pro", "DeepSeek V4 Pro"]],
+  "endpoint-home": [["qwen3:32b", "qwen3:32b"], ["gemma-4-31b-it", "Gemma 4 31B IT"]],
+};
+const providerName = (id) => PROVIDERS.find((provider) => provider.id === id)?.name ?? id;
+const modelName = (provider, model) => PROVIDER_MODELS[provider]?.find(([id]) => id === model)?.[1] ?? model;
+let listed = [["anthropic", "claude-sonnet-5-5"], ["anthropic", "claude-opus-5-5"], ["deepseek", "deepseek-flash"], ["endpoint-home", "qwen3:32b"]];
+let defaultModel = { provider: "anthropic", model: "claude-sonnet-5-5", effort: "medium" };
+const sendList = () => send({ type: "model-list",
+  models: listed.map(([provider, model]) => ({ provider, model, name: modelName(provider, model), providerName: providerName(provider), ready: true, reasoning: provider !== "endpoint-home" })),
+  default: { ...defaultModel, effort: defaultModel.effort ?? null, reasoning: true, thinking: defaultModel.provider === "deepseek" && defaultModel.effort === "medium" ? "low" : defaultModel.effort ?? null } });
 const send = (message) => {
   if (message.type === "ready" || message.type === "status") status = { ...status, ...Object.fromEntries(Object.keys(STATUS).map((key) => [key, message[key] ?? status[key]])) };
   core.postMessage(message);
@@ -254,6 +277,19 @@ const STATES = {
   "settings-general"() { STATES.reply(); slash("language"); },
   "settings-appearance"() { STATES.reply(); slash("appearance"); },
   "settings-model"() { STATES.reply(); slash("model"); },
+  // A provider open to its models, each ticked when the menu offers it.
+  "settings-model-provider"() {
+    STATES.reply(); slash("model");
+    setTimeout(() => document.querySelector('[data-key="provider:anthropic"]')?.click(), 200);
+  },
+  "settings-model-openai"() {
+    STATES.reply(); slash("model");
+    setTimeout(() => document.querySelector('[data-key="provider:openai"]')?.click(), 200);
+  },
+  "settings-endpoint"() {
+    STATES.reply(); slash("model");
+    setTimeout(() => document.querySelector('[data-key="endpoint:edit:endpoint-home"]')?.click(), 200);
+  },
   "settings-playback"() { STATES.reply(); slash("service"); },
   "settings-import"() { STATES.reply(); slash("import"); },
   "settings-memory"() { STATES.reply(); slash("memory"); },
@@ -343,15 +379,18 @@ function relabel(data) {
 core.onmessage = ({ data }) => {
   if (!data?.type) return;
   if (["label", "delete", "folder-save"].includes(data.type)) relabel(data);
-  if (data.type === "models") send({ type: "models", providers: [
-    { id: "anthropic", name: "Anthropic", signedIn: true, signIn: "api_key", source: "saved" },
-    { id: "openai-codex", name: "ChatGPT", signedIn: false, signIn: "oauth" },
-    { id: "deepseek", name: "DeepSeek", signedIn: true, signIn: "api_key", source: "saved" },
-    { id: "openrouter", name: "OpenRouter", signedIn: false, signIn: "environment_only" },
-  ] });
-  if (data.type === "provider-models") send({ type: "provider-models", provider: data.provider, models: data.provider === "deepseek"
-    ? [{ id: "deepseek-chat", name: "DeepSeek V4" }, { id: "deepseek-reasoner", name: "DeepSeek V4 Reasoner" }]
-    : [{ id: "claude-sonnet-5-5", name: "Claude Sonnet 5.5" }, { id: "claude-opus-5-5", name: "Claude Opus 5.5" }, { id: "claude-haiku-5-5", name: "Claude Haiku 5.5" }] });
+  if (data.type === "models") send({ type: "models", providers: PROVIDERS });
+  if (data.type === "provider-models") send({ type: "provider-models", provider: data.provider,
+    models: (PROVIDER_MODELS[data.provider] ?? []).map(([id, name]) => ({ id, name })) });
+  if (data.type === "model-list") sendList();
+  if (data.type === "list-model") {
+    listed = listed.filter(([provider, model]) => provider !== data.provider || model !== data.model);
+    if (data.listed) listed.push([data.provider, data.model]);
+    sendList();
+  }
+  if (data.type === "default-model") { defaultModel = { ...defaultModel, provider: data.provider, model: data.model }; sendList(); }
+  if (data.type === "default-effort") { defaultModel = { ...defaultModel, effort: data.effort === "default" ? undefined : data.effort }; sendList(); }
+  if (data.type === "endpoint-save") setTimeout(() => send({ type: "endpoint", state: "error", code: "endpoint_models_unavailable" }), 300);
   if (data.type === "devices" && limitedUntil) send({ type: "devices", devices: [], error: "limited", resumeAt: limitedUntil });
   else if (data.type === "devices") send({ type: "devices", devices: [
     { ref: "0", name: "Mac mini", type: "Computer", active: true, restricted: false },

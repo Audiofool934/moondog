@@ -39,13 +39,14 @@ test("model picker catalog exposes Pi's full built-in provider set", () => {
     "Z.AI (GLM API)",
   );
   for (const [id, family] of [
-    ["anthropic", "Claude"],
     ["moonshotai", "Kimi"],
     ["moonshotai-cn", "Kimi"],
-    ["openai", "GPT"],
-    ["xai", "Grok"],
   ]) {
     assert.ok(providers.find((provider) => provider.id === id).name.includes(family));
+  }
+  // OpenAI's two ways in read as what the listener has: a ChatGPT subscription or an API key.
+  for (const [id, name] of [["anthropic", "Anthropic"], ["openai", "OpenAI API"], ["openai-codex", "ChatGPT"], ["xai", "xAI"]]) {
+    assert.equal(providers.find((provider) => provider.id === id).name, name);
   }
 });
 

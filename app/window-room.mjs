@@ -62,7 +62,7 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
   const { application: base, rebuildRuntime, saveRuntimeSelection, toolTrace = null, openConversation, modelSettings, saveLanguage, savePlaybackService,
     prepareImport, prepareRecentImport, refreshImportedData, lastfm, runSpotify } = services;
   // Slot 0 is the core's own application and agent. The core closes every conversation after the room ends.
-  const slots = [{ application: base, runtime: services.runtime, turn: null, live: null, stale: null, rebuilding: null, waiting: false, close: null }];
+  const slots = [{ application: base, runtime: services.runtime, selection: null, turn: null, live: null, stale: null, rebuilding: null, waiting: false, close: null }];
   let current = slots[0];
   let visible = true;
   let pollTimer = null;
@@ -128,6 +128,7 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
       slot = (!current.turn && !current.waiting && current) || slots.find((candidate) => !candidate.turn && !candidate.waiting);
       if (!slot?.application.followActiveConversation?.()) return;
       slot.runtime.restoreSession?.();
+      void settle(slot).then(() => { if (slot === current) sendStatus(); }, () => {});
     }
     current = slot;
     remote = null;
@@ -184,9 +185,10 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
   // A model chosen while the shown conversation answers applies when its reply ends; the window shows it already.
   function modelOf(slot) {
     const running = slot.runtime.publicStatus?.() ?? {};
-    const chosen = slot.stale?.selection;
+    const chosen = slot.stale ? slot.stale.selection ?? defaults : null;
+    const same = chosen?.provider === running.provider && chosen?.model === running.model;
     return chosen ? { ...running, state: "configured", provider: chosen.provider, model: chosen.model, effort: chosen.effort ?? null,
-      effort_levels: chosen.provider === running.provider && chosen.model === running.model ? running.effort_levels : [] } : running;
+      thinking_level: null, effort_levels: same ? running.effort_levels : [] } : running;
   }
   function status() {
     const model = modelOf(current);
@@ -194,8 +196,10 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     return {
       locale: base.locale,
       locales: Object.entries(LOCALES).map(([code, value]) => ({ code, name: value.name, nativeName: value.nativeName })),
+      // own: this conversation answers with a model chosen for it rather than the default.
       model: { state: model.state ?? "offline", provider: model.provider ?? null, model: model.model ?? null,
-        effort: model.effort ?? null, effortLevels: model.effort_levels ?? [], reason: model.reason ?? null },
+        effort: model.effort ?? null, thinking: model.thinking_level ?? null, effortLevels: model.effort_levels ?? [], reason: model.reason ?? null,
+        own: picks.has(sessionOf(current)) },
       spotify: base.spotifyReady?.() === true ? "ready" : "unavailable",
       spotifyAccount: { state: spotify.state ?? "unavailable", clientId: spotify.client_id_configured === true },
       playbackService: base.playbackService ?? "spotify",
@@ -442,14 +446,14 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
         reusable.application.startNewSession?.("user_new");
         reusable.runtime.reset?.();
       }
+      await settle(reusable);
       return reusable;
     }
     if (typeof openConversation !== "function" || slots.length >= MAX_SLOTS) return null;
     const opened = await openConversation(id ? { sessionId: id } : { reason: "user_new" });
-    const slot = { application: opened.application, runtime: opened.runtime, turn: null, live: null, stale: null, rebuilding: null, waiting: false, close: opened.close };
+    const slot = { application: opened.application, runtime: opened.runtime, selection: null, turn: null, live: null, stale: null, rebuilding: null, waiting: false, close: opened.close };
     slots.push(slot);
-    // A model chosen while every agent was answering is not saved yet, so this one would start without it.
-    if (pending) await rebuild(slot, pending);
+    await settle(slot);
     return slot;
   }
   async function openSession(id) {
@@ -529,16 +533,28 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
       if (slot === current) { try { drawn = JSON.stringify([session, transcript(slot)]); } catch { /* The next look redraws. */ } }
       settled.resolve();
       // A model or service change made while this turn ran applies now.
-      if (slot.stale) await rebuild(slot, slot.stale.selection).catch(() => {});
+      if (slot.stale) await rebuild(slot, slot.stale.selection ?? null).catch(() => {});
       if (slot === current) sendStatus();
       sendSessions();
       void refreshPlayer();
     }
   }
 
-  // A rebuilt agent keeps the conversation so far; the core saves a selection when it builds with one.
-  // A choice made while every agent answers waits in `pending` until one of them is rebuilt.
-  let pending = null;
+  // Models. The default, saved in settings.json, is what the terminal uses and every new conversation
+  // starts with. A model chosen in the window's menu is that conversation's alone, kept here by its id
+  // while the window runs.
+  const picks = new Map();
+  let defaults = null;
+  const sameSelection = (left, right) => (left?.provider ?? null) === (right?.provider ?? null) && (left?.model ?? null) === (right?.model ?? null) &&
+    (left?.effort ?? null) === (right?.effort ?? null);
+  // A slot that holds another conversation than the one it was built for gets that one's model.
+  async function settle(slot) {
+    const wanted = picks.get(sessionOf(slot)) ?? null;
+    if (slot.turn || sameSelection(slot.selection, wanted)) return;
+    await rebuild(slot, wanted);
+  }
+
+  // A rebuilt agent keeps the conversation so far. A null selection builds the default.
   async function rebuild(slot, selection) {
     const earlier = slot.rebuilding;
     let finish = () => {};
@@ -551,34 +567,67 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
       if (slot.rebuilding !== work) return;
       slot.stale = null;
       const previous = slot.runtime;
-      const next = slot === slots[0] ? await rebuildRuntime(selection) : await rebuildRuntime(selection, slot.application);
+      const next = slot === slots[0] ? await rebuildRuntime(selection ?? undefined) : await rebuildRuntime(selection ?? undefined, slot.application);
       if (slot.rebuilding !== work) {
         try { next.reset?.(); } catch { /* The newer rebuild owns the slot. */ }
         return;
       }
       next.restoreSession?.();
       slot.runtime = next;
-      if (selection && selection === pending) pending = null;
+      slot.selection = selection ?? null;
       try { previous.reset?.(); } catch { /* A finished agent has nothing left to clear. */ }
     } finally {
       finish();
       if (slot.rebuilding === work) slot.rebuilding = null;
     }
   }
-  async function rebuildAll(selection) {
+  // Every agent again, after a sign-in, an import or a new default: each with its conversation's model.
+  // One that answers is rebuilt when its reply ends.
+  async function rebuildAll() {
     if (typeof rebuildRuntime !== "function") return;
-    if (selection) {
-      pending = selection;
-      // Save before the reply ends. The rebuild that applies it can still be waiting on that reply.
-      await saveRuntimeSelection?.(selection).catch(() => {});
-    }
     for (const slot of slots) {
-      const chosen = selection ?? pending ?? slot.stale?.selection;
-      if (slot.turn) slot.stale = { selection: chosen };
-      else await rebuild(slot, chosen ?? undefined);
+      const wanted = picks.get(sessionOf(slot)) ?? null;
+      if (slot.turn) slot.stale = { selection: wanted };
+      else await rebuild(slot, wanted);
     }
     sendStatus();
   }
+  // The shown conversation's own model. Choosing exactly the default gives it back to the default.
+  async function pick(selection) {
+    const slot = current;
+    const session = sessionOf(slot);
+    const own = defaults && sameSelection(selection, defaults) ? null : selection;
+    if (own) picks.set(session, own); else picks.delete(session);
+    if (slot.turn) slot.stale = { selection: own };
+    else await rebuild(slot, own);
+    sendStatus();
+  }
+  // A new default is saved first, so a reply that ends meanwhile, the terminal and a new conversation
+  // all find it. Conversations without a model of their own follow it.
+  async function setDefault(selection) {
+    await saveRuntimeSelection?.(selection);
+    defaults = selection;
+    await modelSettings?.setListed?.(selection.provider, selection.model, true).catch(() => {});
+    for (const [session, chosen] of picks) if (sameSelection(chosen, selection)) picks.delete(session);
+    await rebuildAll();
+    await sendList();
+  }
+  async function sendList() {
+    if (!modelSettings?.list) return;
+    try {
+      const list = await modelSettings.list();
+      defaults = list.default ? { provider: list.default.provider, model: list.default.model, ...(list.default.effort ? { effort: list.default.effort } : {}) } : null;
+      send({ type: "model-list", models: list.models, default: list.default });
+    } catch (error) {
+      send({ type: "model-list", models: [], default: null, error: errorText(error) });
+    }
+  }
+  // A model the catalog lists; anything else is refused before it is saved or built.
+  async function known(provider, model) {
+    const listed = (await modelSettings?.models(provider))?.models ?? [];
+    return listed.some((entry) => entry.id === model);
+  }
+  const effortOf = (data) => (data.effort && data.effort !== "default" ? { effort: String(data.effort) } : {});
 
   // Several conversations can go at once, from a selection in the sidebar. Each one that can go does;
   // the first refusal is the one the window shows.
@@ -594,7 +643,7 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
       try {
         if (doer) {
           const result = doer.application.deleteSavedSession(id);
-          if (result?.started_new_session) doer.runtime.reset?.();
+          if (result?.started_new_session) { doer.runtime.reset?.(); void settle(doer).catch(() => {}); }
           // A slot in the background moved to a new conversation; the shown one stays the one both show.
           if (result?.started_new_session && doer !== current) current.application.claimActiveConversation?.();
         } else if (base.memoryStore) {
@@ -663,7 +712,8 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
       await modelSettings.signIn(provider, interaction);
       send({ type: "sign-in", provider, state: "done" });
       // The saved selection now has a key to use; each agent is rebuilt from it, as /auth does.
-      await rebuildAll(undefined);
+      await rebuildAll();
+      await sendList();
     } catch (error) {
       send({ type: "sign-in", provider, state: controller.signal.aborted ? "cancelled" : "error", message: errorText(error) });
     } finally {
@@ -695,7 +745,7 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
       send({ type: "sign-in", provider: "spotify", state: controller.signal.aborted ? "cancelled" : "error", message: errorText(error) });
     } finally {
       if (signIn?.controller === controller) signIn = null;
-      await rebuildAll(undefined).catch(() => {});
+      await rebuildAll().catch(() => {});
       await refreshPlayer();
     }
   }
@@ -745,7 +795,7 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
       let report = null;
       try {
         await refreshImportedData?.(receipt);
-        await rebuildAll(undefined);
+        await rebuildAll();
         const tr = screenTranslator(base.locale);
         if (base.profileServicesReady?.()) report = formatLocalResult("taste", await base.runLocalCommand("taste", current.runtime.publicStatus?.()), tr);
       } catch (error) {
@@ -848,26 +898,69 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     settings: () => { sendStatus(); memories(); },
     models: () => sendModels(),
     "provider-models": (data) => sendProviderModels(String(data.provider ?? ""), data.force === true),
+    // The menu's choices are this conversation's: a model keeps the thinking level the conversation had.
     model: async (data) => {
-      const selection = { provider: String(data.provider ?? ""), model: String(data.model ?? ""), ...(data.effort ? { effort: String(data.effort) } : {}) };
-      // The rebuild saves the selection before it checks it, so the model is checked against the catalog first.
-      const listed = (await modelSettings?.models(selection.provider))?.models ?? [];
-      if (!listed.some((entry) => entry.id === selection.model)) return send({ type: "notice", code: "model_unknown" });
-      await rebuildAll(selection);
+      const provider = String(data.provider ?? "");
+      const model = String(data.model ?? "");
+      if (!(await known(provider, model))) return send({ type: "notice", code: "model_unknown" });
+      const effort = (picks.get(sessionOf(current)) ?? defaults)?.effort;
+      await pick({ provider, model, ...(effort ? { effort } : {}) });
     },
     effort: async (data) => {
-      const model = current.stale?.selection ?? pending ?? current.runtime.publicStatus?.() ?? {};
+      const model = picks.get(sessionOf(current)) ?? defaults ?? current.runtime.publicStatus?.() ?? {};
       if (!model.provider || !model.model) return;
-      await rebuildAll({ provider: model.provider, model: model.model, ...(data.effort && data.effort !== "default" ? { effort: String(data.effort) } : {}) });
+      await pick({ provider: model.provider, model: model.model, ...effortOf(data) });
+    },
+    // Settings' choices: the default, the thinking level it asks for, and which models the menu offers.
+    "model-list": () => sendList(),
+    "default-model": async (data) => {
+      const provider = String(data.provider ?? "");
+      const model = String(data.model ?? "");
+      if (!(await known(provider, model))) return send({ type: "notice", code: "model_unknown" });
+      await setDefault({ provider, model, ...(defaults?.effort ? { effort: defaults.effort } : {}) });
+    },
+    "default-effort": async (data) => {
+      const model = defaults ?? await modelSettings?.current?.();
+      if (!model?.provider || !model.model) return;
+      await setDefault({ provider: model.provider, model: model.model, ...effortOf(data) });
+    },
+    "list-model": async (data) => {
+      await modelSettings?.setListed?.(String(data.provider ?? ""), String(data.model ?? ""), data.listed === true);
+      await sendList();
+    },
+    "endpoint-save": async (data) => {
+      try {
+        const endpoint = await modelSettings?.saveEndpoint?.(data.endpoint ?? {});
+        send({ type: "endpoint", state: "saved", id: endpoint?.id ?? null });
+      } catch (error) {
+        return send({ type: "endpoint", state: "error", code: error?.code ?? null, message: errorText(error) });
+      }
+      // An edited endpoint may have a new address or key, so its conversations get new agents.
+      await rebuildAll();
+      await sendModels();
+      await sendList();
+    },
+    "endpoint-remove": async (data) => {
+      const id = String(data.id ?? "");
+      await modelSettings?.removeEndpoint?.(id);
+      for (const [session, chosen] of picks) if (chosen.provider === id) picks.delete(session);
+      await rebuildAll();
+      await sendModels();
+      await sendList();
     },
     "sign-in": (data) => (data.provider === "spotify" ? connectSpotify(data.clientId ? String(data.clientId) : null) : startSignIn(String(data.provider ?? ""))),
     "sign-in-cancel": () => signIn?.controller.abort(),
     "auth-answer": (data) => { const pending = prompts.get(String(data.id)); prompts.delete(String(data.id)); pending?.resolve(String(data.value ?? "")); },
     "sign-out": async (data) => {
       if (data.provider === "spotify") await runSpotify?.(["logout"], { stderr: { write() {} } });
-      else await modelSettings?.signOut?.(String(data.provider ?? ""));
-      await rebuildAll(undefined);
+      else {
+        await modelSettings?.signOut?.(String(data.provider ?? ""));
+        // A conversation on a model that can no longer answer goes back to the default.
+        for (const [session, chosen] of picks) if (chosen.provider === data.provider) picks.delete(session);
+      }
+      await rebuildAll();
       await sendModels();
+      await sendList();
       await refreshPlayer();
     },
     language: (data) => setLanguage(String(data.locale ?? "")),
@@ -935,6 +1028,8 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     port.start();
     // Whether the pickers can offer NetEase: one check at launch, unless the core already made it.
     if (base.neteasePlayer?.status?.().state === "unknown") void base.neteasePlayer.check().then(sendStatus, () => {});
+    // The default, for showing a choice that waits on a reply; the window asks for the whole list itself.
+    void modelSettings?.current?.().then((selection) => { defaults ??= selection ?? null; }, () => {});
     // Each launch opens a new conversation, as the terminal does; earlier ones wait in the sidebar.
     base.startNewSession?.("app_start");
     slots[0].runtime.reset?.();

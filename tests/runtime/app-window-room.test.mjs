@@ -217,21 +217,46 @@ test("two model changes rebuild in order and the later one stays", async () => {
   }
 });
 
-test("a model chosen during a reply is saved before that reply ends", async () => {
+test("a default chosen during a reply is saved before that reply ends", async () => {
   const held = runtime();
   held.hold = true;
   const harness = await openRoom({ runtime: held });
   try {
     const promptJob = harness.post({ type: "prompt", text: "play something" });
     await tick();
-    await harness.post({ type: "model", provider: "p", model: "opus" });
+    await harness.post({ type: "default-model", provider: "p", model: "opus" });
     assert.equal(harness.saved[0]?.model, "opus");
     assert.deepEqual(harness.built, []);
     held.abort();
     await promptJob;
-    assert.deepEqual(harness.built, ["opus"]);
+    // The conversation follows the default, so it is rebuilt from the saved settings.
+    assert.deepEqual(harness.built, [null]);
   } finally {
     held.abort();
+    await harness.stop();
+  }
+});
+
+test("a model chosen in the menu is that conversation's alone, and a new conversation starts on the default", async () => {
+  const first = application("A");
+  // The launch's own new conversation keeps A; the listener's next one is B.
+  first.startNewSession = function (reason) { if (reason === "user_new") this.sessionId = "B"; };
+  const harness = await openRoom({ application: first });
+  const status = () => harness.messages.findLast((message) => message.type === "status")?.model;
+  try {
+    await harness.post({ type: "model", provider: "p", model: "opus" });
+    assert.deepEqual(harness.saved, [], "the default stays as it was");
+    assert.deepEqual(harness.built, ["opus"]);
+    assert.equal(status().model, "opus");
+    assert.equal(status().own, true);
+    await harness.post({ type: "new" });
+    assert.deepEqual(harness.built, ["opus", null]);
+    assert.equal(status().own, false);
+    // Going back to the first conversation brings back the model chosen for it.
+    await harness.post({ type: "open", id: "A" });
+    assert.deepEqual(harness.built, ["opus", null, "opus"]);
+    assert.equal(status().model, "opus");
+  } finally {
     await harness.stop();
   }
 });

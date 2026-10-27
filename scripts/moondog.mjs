@@ -1071,11 +1071,10 @@ async function main() {
         if (receipt?.provider === "apple-music-library") await refreshAppleLibraryImport();
         replaceDomainServices(await loadDomainServices());
       },
-      // The window also rebuilds the agent of each conversation it opened.
-      // A choice made while a reply runs is saved here, before that reply ends, so quitting does not drop it.
+      // The window also rebuilds the agent of each conversation it opened. Only a new default is saved;
+      // a model chosen for one conversation is built without touching settings.json.
       saveRuntimeSelection: (selection) => writePiRuntimeSelection(selection),
       rebuildRuntime: async (selection, target = application) => {
-        if (selection) await writePiRuntimeSelection(selection);
         // A key saved with /auth, or a Codex sign-in since, takes effect with the new runtime's tools.
         await webResearch.refresh();
         return createConfiguredRuntime(target, process.env, { selection, toolTrace });

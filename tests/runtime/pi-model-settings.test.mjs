@@ -57,8 +57,10 @@ test("providers list the /model picker with sign-in kinds and states, never a ke
   const providers = await settings.providers();
   assert.equal(JSON.stringify(providers).includes("SENTINEL"), false);
   assert.equal(requests.length, 0, "listing providers never fetches");
-  // The saved provider comes first, then ChatGPT sign-in, as in the terminal.
-  assert.deepEqual(providers.slice(0, 2).map(provider => provider.id), ["zai", "openai-codex"]);
+  // OpenAI's two ways in, Anthropic, Google and xAI always come first; any other provider shows only
+  // with a key, saved or from the environment, or while it is the one in use.
+  assert.deepEqual(providers.slice(0, 5).map(provider => provider.id), ["openai-codex", "openai", "anthropic", "google", "xai"]);
+  assert.deepEqual(providers.slice(5).map(provider => provider.id).sort(), ["deepseek", "groq", "zai"]);
   assert.equal(providers.some(provider => provider.modelCount === 0), false);
   assert.equal(providers.some(provider => provider.id === "typesafe"), false);
   const byId = Object.fromEntries(providers.map(({ id, ...rest }) => [id, rest]));
@@ -69,8 +71,8 @@ test("providers list the /model picker with sign-in kinds and states, never a ke
   assert.deepEqual(byId["openai-codex"], { ...byId["openai-codex"], signIn: "oauth", signedIn: true, source: "saved" });
   assert.deepEqual(byId.groq, { ...byId.groq, signIn: "environment_only", signedIn: true, source: "GROQ_API_KEY" });
   assert.deepEqual(byId.zai, { name: "Z.AI (GLM API)", modelCount: byId.zai.modelCount, signIn: "api_key", signedIn: false, source: null });
-  // A window that knows the running provider can put it first instead.
-  assert.equal((await settings.providers({ current: "deepseek" }))[0].id, "deepseek");
+  // A provider in use stays listed without a key, so it can be given one.
+  assert.equal((await settings.providers({ current: "moonshotai" })).some(provider => provider.id === "moonshotai"), true);
 });
 
 test("signIn saves an API key from a scripted window, and signOut removes it", async t => {
@@ -226,7 +228,7 @@ test("the launcher hands a host without terminal streams modelSettings, and its 
         const providers = await settings.providers();
         process.stdout.write(JSON.stringify({
           methods: ["current", "providers", "models", "signIn", "signOut"].filter(name => typeof settings[name] === "function"),
-          deepseek: providers.find(provider => provider.id === "deepseek"),
+          anthropic: providers.find(provider => provider.id === "anthropic"),
           auth: await failure(() => services.runAuth("deepseek")),
           spotify: await failure(() => services.runSpotify(["login"])),
         }));
@@ -243,8 +245,8 @@ test("the launcher hands a host without terminal streams modelSettings, and its 
   assert.equal(result.status, 0, result.stderr);
   const report = JSON.parse(result.stdout);
   assert.deepEqual(report.methods, ["current", "providers", "models", "signIn", "signOut"]);
-  assert.equal(report.deepseek.signIn, "api_key");
-  assert.equal(report.deepseek.signedIn, false);
+  assert.equal(report.anthropic.signIn, "api_key");
+  assert.equal(report.anthropic.signedIn, false);
   assert.notEqual(report.auth?.type, "TypeError");
   assert.match(report.auth?.message ?? "", /interactive terminal/u);
   assert.notEqual(report.spotify?.type, "TypeError");

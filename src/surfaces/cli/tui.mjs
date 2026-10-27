@@ -21,6 +21,7 @@ import {
 } from "../../runtime/pi/model-catalog.mjs";
 import { getPublicPiModelCatalog } from "../../runtime/pi/public-model-catalog.mjs";
 import { serviceKeyProviders, supportedAuthProviderIds } from "../../runtime/pi/authentication.mjs";
+import { EFFORT_LEVELS, EFFORT_SCALE } from "../../runtime/pi/runtime-settings.mjs";
 import {
   formatLocalResult,
   helpText,
@@ -1086,10 +1087,11 @@ export async function runMoondogTui({
     if (args.length > 1) throw new Error(tr("Use /effort, or /effort <level>."));
     if (runtimeStatus.state !== "configured") throw new Error(tr("Choose a model with /model first."));
     const model = `${runtimeStatus.provider}/${runtimeStatus.model}`;
-    const levels = runtimeStatus.effort_levels ?? [];
-    if (levels.length < 2) throw new Error(tr("`{model}` has no effort levels to choose from.", { model }));
+    if ((runtimeStatus.effort_levels ?? []).length < 2) throw new Error(tr("`{model}` has no effort levels to choose from.", { model }));
+    // Every model that thinks is offered the same scale; a level it lacks reaches it as the nearest lighter one.
+    const levels = EFFORT_SCALE;
     let effort = args[0]?.toLowerCase();
-    if (effort && effort !== "default" && !levels.includes(effort)) {
+    if (effort && effort !== "default" && !EFFORT_LEVELS.includes(effort)) {
       throw new Error(tr("`{model}` supports: {levels}, or default.", { model, levels: levels.join(", ") }));
     }
     if (!effort) {

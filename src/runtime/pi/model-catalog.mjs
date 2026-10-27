@@ -3,12 +3,14 @@ import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { zaiProvider } from "@earendil-works/pi-ai/providers/zai";
 
 const zaiApiBaseUrl = "https://api.z.ai/api/paas/v4";
+// OpenAI comes two ways: a ChatGPT subscription through Codex, or an API key.
 const providerDisplayNames = {
-  anthropic: "Anthropic (Claude)",
+  anthropic: "Anthropic",
   moonshotai: "Moonshot AI (Kimi)",
   "moonshotai-cn": "Moonshot AI China (Kimi)",
-  openai: "OpenAI (GPT)",
-  xai: "xAI (Grok)",
+  openai: "OpenAI API",
+  "openai-codex": "ChatGPT",
+  xai: "xAI",
 };
 
 export function zaiApiProvider() {
@@ -27,6 +29,9 @@ export function zaiApiProvider() {
     api: nativeProvider,
   });
 }
+
+// Saved selections may still name these; lists offer the canonical model instead.
+export const LEGACY_MODEL_ALIASES = Object.freeze(["deepseek-v4-flash", "deepseek-v4-flash-vision-exp"]);
 
 // Pi supplies canonical Flash metadata. Keep legacy IDs as aliases so saved
 // Moondog selections continue to resolve without rewriting the listener's settings.

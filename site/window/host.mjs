@@ -53,10 +53,12 @@ const agent = new SceneAgent({ application, musicApp, clock, exchanges: EXCHANGE
 void runWindowRoom({
   application,
   runtime: agent,
-  // The composer shows the scene's model by its maker's mark.
+  // The composer shows the scene's model by its maker's mark, and its menu that one model.
   modelSettings: {
     providers: async () => [{ id: MODEL.provider, name: MODEL.providerName, modelCount: 1, signIn: "api_key", signedIn: true, source: "environment" }],
     models: async (provider) => ({ provider, refresh: null, models: [{ id: MODEL.model, name: MODEL.modelName, effortLevels: [] }] }),
+    list: async () => ({ models: [{ provider: MODEL.provider, model: MODEL.model, name: MODEL.modelName, providerName: MODEL.providerName, ready: true, reasoning: false }],
+      default: { provider: MODEL.provider, model: MODEL.model, effort: null, reasoning: false, thinking: null } }),
   },
 }, { port: core, send: (message) => core.postMessage(message) });
 

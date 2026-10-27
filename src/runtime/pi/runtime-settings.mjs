@@ -1,11 +1,26 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
+
 import { resolveMoondogAuthFile } from "./persistent-credential-store.mjs";
 
 const SETTINGS_VERSION = 1;
 // Pi's thinking levels. Each model supports a subset; the runtime clamps to it.
 export const EFFORT_LEVELS = Object.freeze(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
+// The scale the window and /effort offer for every model that thinks.
+export const EFFORT_SCALE = Object.freeze(["off", "low", "medium", "high", "xhigh", "max"]);
+
+// A level the model lacks steps down to the nearest one it has, so a choice never costs more than it
+// said, but never down to no thinking; with nothing below, it takes the lightest level the model has.
+export function clampEffort(model, level) {
+  const supported = getSupportedThinkingLevels(model);
+  if (supported.includes(level)) return level;
+  const at = EFFORT_LEVELS.indexOf(level);
+  for (let index = at - 1; index > 0; index -= 1) if (supported.includes(EFFORT_LEVELS[index])) return EFFORT_LEVELS[index];
+  for (let index = Math.max(at + 1, 1); index < EFFORT_LEVELS.length; index += 1) if (supported.includes(EFFORT_LEVELS[index])) return EFFORT_LEVELS[index];
+  return supported[0] ?? "off";
+}
 
 function settingsError(message, cause) {
   const error = new Error(message, cause ? { cause } : undefined);

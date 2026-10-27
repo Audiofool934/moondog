@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { lstat, mkdir, open, rename, unlink } from "node:fs/promises";
 import path from "node:path";
+import { addEndpoints, readEndpoints } from "./custom-endpoints.mjs";
 import { createPiModels, listPiModels, listPiProviders } from "./model-catalog.mjs";
 import { acquirePrivateFileLock, resolveMoondogAuthFile } from "./persistent-credential-store.mjs";
 import { supportedPiProviderIds } from "./provider-registry.mjs";
@@ -159,15 +160,21 @@ async function writeCache(root, file, document, signal) {
 export class PublicPiModelCatalog {
   constructor({ environment = process.env, fetchImpl = globalThis.fetch, now = Date.now, timeoutMs = 4000 } = {}) {
     this.root = path.join(path.dirname(resolveMoondogAuthFile(environment)), "model-catalog");
+    this.environment = environment;
     this.fetch = fetchImpl; this.now = now; this.timeoutMs = timeoutMs;
-    this.baseline = createPiModels(); this.records = new Map(); this.pending = new Set();
+    this.baseline = createPiModels(); this.records = new Map(); this.pending = new Set(); this.endpoints = [];
     this.snapshot = this.baseline;
     this.ready = this.restore();
   }
 
   file(id) { return path.join(this.root, `${id}.json`); }
   publish() { this.snapshot = this.createModels(); }
-  createModels(options) { return createPiModels({ ...options, catalogModels: new Map([...this.records].map(([id, record]) => [id, record.models])) }); }
+  // The listener's own endpoints join Pi's providers; their models are theirs, not from pi.dev.
+  createModels(options) { return addEndpoints(createPiModels({ ...options, catalogModels: new Map([...this.records].map(([id, record]) => [id, record.models])) }), this.endpoints); }
+  async readEndpoints() {
+    try { this.endpoints = await readEndpoints(this.environment); } catch { this.endpoints = []; }
+    this.publish();
+  }
   providers() { return listPiProviders(this.snapshot); }
   models(id) {
     const record = this.records.get(id);
@@ -277,12 +284,13 @@ export async function getPublicPiModelCatalog(environment = process.env) {
   const key = path.dirname(resolveMoondogAuthFile(environment));
   if (!catalogs.has(key)) {
     const catalog = new PublicPiModelCatalog({ environment });
-    catalogs.set(key, catalog); await catalog.ready; return catalog;
+    catalogs.set(key, catalog); await catalog.ready; await catalog.readEndpoints(); return catalog;
   }
   const catalog = catalogs.get(key);
   await catalog.ready;
-  // Another running app can persist a new selection and its catalog entry.
+  // Another running app can persist a new selection, its catalog entry or an endpoint.
   // Reload public cache only; do not fetch or touch the active model object.
   await catalog.restore();
+  await catalog.readEndpoints();
   return catalog;
 }
