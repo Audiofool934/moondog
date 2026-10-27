@@ -134,10 +134,7 @@ img { -webkit-user-drag: none; }
 .mark .groove { stroke-width: 0.05; opacity: 0.22; }
 .mark .shine { stroke-width: 0.085; stroke-linecap: round; opacity: 0.75; }
 .mark .ink { fill: currentColor; }
-.mark .band, .mark .arm { fill: none; stroke: currentColor; stroke-linecap: round; }
-.mark .band { stroke-width: 0.1; }
-.mark .arm { stroke-width: 0.065; }
-.mark .cup { fill: none; stroke: currentColor; stroke-width: 0.075; }
+.mark .arm { fill: none; stroke: currentColor; stroke-linecap: round; stroke-width: 0.065; }
 /* While music plays the highlights turn with the record and the arm rests on it; the arm lifts when it stops. */
 .mark-turn { transform-box: fill-box; transform-origin: 50% 50%; animation: spin var(--turn) linear infinite paused; }
 .mark.playing .mark-turn { animation-play-state: running; }

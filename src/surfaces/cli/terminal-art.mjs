@@ -1,3 +1,5 @@
+import { logoFigure } from "../brand/logo.mjs";
+
 export const LOGO_MOTION_FRAMES = 64;
 export const LOGO_MOTION_INTERVAL_MS = 125;
 
@@ -6,40 +8,12 @@ const turn = Math.PI * 2;
 /** Record layers from faintest to strongest, matching the logo's fine grooves and solid dog. */
 export const RECORD_LAYERS = Object.freeze({ groove: 1, surface: 2, figure: 3 });
 
-// The dog's eye, in the record's unit coordinates; layouts line the title up with it.
+// Where the dog's eye would be, in the record's unit coordinates; layouts line the title up with it.
+// The logo draws no eye, so neither does the record.
 const eye = [0.22, -0.13];
 
-// The dog's outline runs through these points as one smooth curve (smoothOutline, below), so it
-// keeps its shape without the facets of straight segments between them.
-const dogPoints = [
-  [-0.62, 0.48], [-0.55, 0.29], [-0.47, 0.08], [-0.42, -0.16],
-  [-0.4, -0.34], [-0.32, -0.47], [-0.18, -0.61], [-0.17, -0.44],
-  [-0.12, -0.43], [-0.1, -0.32], [0.02, -0.27], [0.16, -0.24],
-  [0.24, -0.18], [0.28, -0.08], [0.35, -0.03], [0.53, 0.015],
-  [0.55, 0.055], [0.53, 0.16], [0.46, 0.22], [0.31, 0.26],
-  [0.16, 0.26], [0.13, 0.33], [0.13, 0.56], [0.045, 0.58],
-  [0.07, 0.77], [-0.13, 0.75], [-0.3, 0.7], [-0.48, 0.62],
-];
-
-// A closed centripetal Catmull-Rom curve through `points`: it passes through every point, and unlike
-// the uniform kind it never loops or overshoots at the sharp turns of the ear and the nose.
-function smoothOutline(points, steps = 10) {
-  const outline = [];
-  const count = points.length;
-  for (let index = 0; index < count; index += 1) {
-    const p = [-1, 0, 1, 2].map((offset) => points[(index + offset + count) % count]);
-    const t = [0];
-    for (let at = 1; at < 4; at += 1) t.push(t[at - 1] + Math.hypot(p[at][0] - p[at - 1][0], p[at][1] - p[at - 1][1]) ** 0.5);
-    for (let step = 0; step < steps; step += 1) {
-      const u = t[1] + (t[2] - t[1]) * step / steps;
-      const mix = (a, b, from, to) => a.map((value, axis) => ((to - u) * value + (u - from) * b[axis]) / (to - from));
-      const [a1, a2, a3] = [mix(p[0], p[1], t[0], t[1]), mix(p[1], p[2], t[1], t[2]), mix(p[2], p[3], t[2], t[3])];
-      outline.push(mix(mix(a1, a2, t[0], t[2]), mix(a2, a3, t[1], t[3]), t[1], t[2]));
-    }
-  }
-  return outline;
-}
-const dog = smoothOutline(dogPoints);
+// The dog and its headphones, measured from the logo (src/surfaces/brand/logo.mjs).
+const figure = logoFigure();
 
 const smallAscii = [
   "                  /",
@@ -111,17 +85,6 @@ function insidePolygon(x, y, points) {
   return inside;
 }
 
-function bezier(start, first, second, end) {
-  return Array.from({ length: 65 }, (_, index) => {
-    const t = index / 64;
-    const s = 1 - t;
-    return [0, 1].map((axis) =>
-      s ** 3 * start[axis] + 3 * s ** 2 * t * first[axis]
-      + 3 * s * t ** 2 * second[axis] + t ** 3 * end[axis],
-    );
-  });
-}
-
 function drawing(columns, rows, cellAspect) {
   const width = columns * 2;
   const height = rows * 4;
@@ -182,11 +145,8 @@ function drawing(columns, rows, cellAspect) {
   return { dots, width, height, radius, centerX, centerY, pixel, circle, disc, line, polygon, paintLayer };
 }
 
-// The portrait and the tonearm in the record's unit coordinates: the disc has radius 1 around 0,0.
+// The tonearm in the record's unit coordinates: the disc has radius 1 around 0,0.
 const shapes = {
-  headband: bezier([-0.42, -0.03], [-0.47, -0.31], [-0.27, -0.58], [-0.18, -0.59]),
-  ear: [-0.365, -0.005],
-  nose: [0.53, 0.045],
   arm: [[1.17, -1.095], [0.91, -0.8]],
   cartridge: [[0.92, -0.845], [0.998, -0.777], [0.808, -0.567], [0.73, -0.635]],
   // Two short highlights ride fixed grooves as the record turns: the groove's place from the rim, its angle, its length.
@@ -195,7 +155,7 @@ const shapes = {
 
 /** The shapes the record is drawn from, for surfaces that draw it as vectors, such as the window's small mark. */
 export function lunarRecordShapes() {
-  return structuredClone({ dog, eye, ...shapes, earRadius: 0.17, grooves: [1, 0.91, 0.8, 0.66] });
+  return structuredClone({ eye, ...shapes, grooves: [1, 0.91, 0.8, 0.66] });
 }
 
 // The tonearm swings about its pivot, the arm's first point; a negative swing turns it off the record.
@@ -261,25 +221,23 @@ function paint(columns, rows, phase, cellAspect, tonearm = true) {
 
   paintLayer(RECORD_LAYERS.figure);
   // Like the logo, a clear halo separates the dog from the grooves around it.
-  const { headband, ear, nose } = shapes;
-  line([...dog, dog[0]], pixel * 4.5, false);
-  line(headband, Math.max(pixel * 7, 0.11), false);
-  polygon(dog, false);
-  polygon(dog, true, true);
-  line([...dog, dog[0]], pixel * 0.8);
+  const { head, headEdge, bandCenter, bandGap, gap, cup } = figure;
+  line(headEdge, pixel * 4.5, false);
+  line(bandCenter, Math.max(pixel * 7, 0.11), false);
+  polygon(head, false);
+  polygon(head, true, true);
+  line(headEdge, pixel * 0.8);
+  // As in the logo, a gap parts the band from the head.
+  line(bandGap, Math.max(gap, pixel * 2), false);
 
-  line(headband, Math.max(pixel * 3.5, 0.065));
-  line(headband, Math.max(pixel * 1.2, 0.025), false);
-  const [earX, earY] = ear;
-  const earRadius = detail > 0 ? 0.157 : 0.17;
-  disc(earX, earY, earRadius + pixel * 1.6, false);
-  circle(earX, earY, earRadius, pixel * 1.1);
-  circle(earX, earY, earRadius * 0.69, pixel);
-  if (detail > 0) circle(earX, earY, earRadius * 0.35, pixel);
+  line(bandCenter, Math.max(pixel * 3.5, 0.065));
+  line(bandCenter, Math.max(pixel * 1.2, 0.025), false);
+  const [earX, earY] = cup.center;
+  disc(earX, earY, cup.radius + pixel * 1.6, false);
+  circle(earX, earY, cup.radius, pixel * 1.1);
+  circle(earX, earY, cup.radius * 0.69, pixel);
+  if (detail > 0) circle(earX, earY, cup.radius * 0.35, pixel);
   else disc(earX, earY, pixel * 0.9);
-  // A small eye and nose keep the dog readable before the hatch pattern resolves.
-  disc(eye[0], eye[1], pixel * 1.05, false);
-  disc(nose[0], nose[1], pixel * 0.85);
 
   if (tonearm) paintTonearm(art, rotation);
   return art;
