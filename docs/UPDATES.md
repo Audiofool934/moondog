@@ -1,6 +1,6 @@
 # Updating Moondog
 
-The updater is present in the source tree. The original npm release, **0.1.0**, predates it: those users need one manual `npm install --global @audiofool/moondog@latest` after a newer stable release is published, or `@beta` after a beta is published. An unpublished channel cannot be installed. Merging code does not publish a package.
+The original npm release, **0.1.0**, predates the updater: those installs need one manual `npm install --global @audiofool/moondog@latest` to reach 0.2.0. From 0.2.0 on, `moondog update` does it. Merging code does not publish a package.
 
 ## Everyday use
 
