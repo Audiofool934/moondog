@@ -193,6 +193,22 @@ const saveBounds = () => {
   }, 400);
 };
 
+// The window's look and the Dock's icon, chosen in Settings and kept beside the window's place.
+// The theme is what the page's prefers-color-scheme sees. The Dock shows the chosen icon while
+// Moondog runs; macOS shows the app's own light icon everywhere else.
+const appearanceFile = () => path.join(app.getPath("userData"), "appearance.json");
+const THEMES = ["system", "light", "dark"];
+const DOCK_ICONS = ["light", "dark"];
+const appearanceOf = (value) => ({ theme: THEMES.includes(value?.theme) ? value.theme : "system", icon: DOCK_ICONS.includes(value?.icon) ? value.icon : "light" });
+let appearance = appearanceOf(null);
+const iconFile = (name) => path.join(app.isPackaged ? path.join(process.resourcesPath, "brand") : path.join(here, "..", "assets", "brand"),
+  `moondog-app-icon${name === "dark" ? "-dark" : ""}.png`);
+function applyAppearance({ starting = false } = {}) {
+  nativeTheme.themeSource = appearance.theme;
+  // A packaged app already carries the light icon; in development the Dock would show Electron's.
+  if (!starting || appearance.icon === "dark" || !app.isPackaged) app.dock?.setIcon(iconFile(appearance.icon));
+}
+
 // Right-click offers what the text under the pointer allows, in the window's language.
 function contextMenu(params) {
   const t = windowStrings(locale);
@@ -286,6 +302,13 @@ ipcMain.handle("choose-file", async (_event, { title, filterName } = {}) => {
   return canceled ? null : filePaths[0] ?? null;
 });
 ipcMain.handle("version", () => app.getVersion());
+ipcMain.handle("appearance", () => appearance);
+ipcMain.handle("set-appearance", (_event, choice) => {
+  appearance = appearanceOf({ ...appearance, ...choice });
+  applyAppearance();
+  try { writeFileSync(appearanceFile(), JSON.stringify(appearance)); } catch { /* The choice holds until Moondog quits. */ }
+  return appearance;
+});
 ipcMain.handle("update", () => updates.state());
 ipcMain.on("install-update", () => updates.install());
 
@@ -463,6 +486,8 @@ app.on("before-quit", (event) => {
 app.on("activate", () => window?.show());
 app.whenReady().then(() => {
   locale = windowLocale(app.getPreferredSystemLanguages());
+  try { appearance = appearanceOf(JSON.parse(readFileSync(appearanceFile(), "utf8"))); } catch { /* The system's look and the light icon. */ }
+  applyAppearance({ starting: true });
   buildMenu();
   createWindow();
   updates.start();

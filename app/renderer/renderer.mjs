@@ -1119,6 +1119,8 @@ const COMMANDS = [
   { name: "new", label: "newConversation", run: () => openSession(null) },
   { name: "model", label: "section.model", run: () => settings.show("model") },
   { name: "language", label: "language", run: () => settings.show("general") },
+  // The window's look belongs to the Mac app, so the project page's window has no command for it.
+  ...(window.moondogApp?.setAppearance ? [{ name: "appearance", label: "section.appearance", run: () => settings.show("appearance") }] : []),
   { name: "service", label: "musicService", run: () => settings.show("playback") },
   { name: "device", label: "devices", run: () => pickDevice(null) },
   { name: "import", label: "importHistory", run: () => settings.show("library") },

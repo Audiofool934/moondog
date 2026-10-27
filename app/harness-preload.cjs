@@ -27,6 +27,9 @@ window.moondogApp = { pathForFile: () => null, onCommand() {}, setLanguage() {},
 const updateListeners = [];
 const setUpdate = (update) => updateListeners.forEach((listener) => listener(update));
 Object.assign(window.moondogApp, { updateState: async () => null, onUpdate: (listener) => updateListeners.push(listener), installUpdate() {} });
+// The window's look as the main process keeps it. The harness sets the theme itself, so a choice here only shows.
+let appearance = { theme: "system", icon: "light" };
+Object.assign(window.moondogApp, { appearance: async () => appearance, setAppearance: async (choice) => (appearance = { ...appearance, ...choice }) });
 // A stand-in for the Apple Music helper. It says it can play whole songs only in the state that asks
 // it to, as the real one does once MusicKit is enabled for the app, and plays them silently.
 const music = { whole: false, listeners: [], playing: null };
@@ -249,6 +252,7 @@ const STATES = {
   },
   typing() { STATES.reply(); const input = document.querySelector("[data-input]"); input.focus(); input.value = "Something like this but with more piano, and nothing from before 1970"; input.dispatchEvent(new Event("input", { bubbles: true })); },
   "settings-general"() { STATES.reply(); slash("language"); },
+  "settings-appearance"() { STATES.reply(); slash("appearance"); },
   "settings-model"() { STATES.reply(); slash("model"); },
   "settings-playback"() { STATES.reply(); slash("service"); },
   "settings-import"() { STATES.reply(); slash("import"); },
