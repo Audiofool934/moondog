@@ -829,14 +829,16 @@ For scripts, set the provider's API key variable together with `MOONDOG_PROVIDER
 Those two model variables override the saved selection at launch and on `/reload`.
 An explicit `/model` selection takes effect immediately in the current session, including after authentication.
 
-ChatGPT sign-in remains available separately from OpenAI API keys:
+OpenAI takes a ChatGPT subscription as well as an API key:
 
 ```bash
-moondog auth login openai-codex
-# Use --device-code in a headless terminal.
+moondog auth login openai --chatgpt
 ```
 
-Inside the TUI, use `/auth openai-codex` and `/model openai-codex`.
+Inside the TUI, `/auth openai` asks which one, and `/model openai` picks the model.
+The browser sign-in comes back to this Mac by itself; if it can't, paste the final address from the browser.
+OpenAI keeps one of the two at a time, so a new sign-in replaces the key and a new key replaces the sign-in.
+Moondog's earlier ChatGPT route, the `openai-codex` provider, is gone; sign in again with `openai`.
 This is a separate Moondog OAuth authorization.
 It does not read, copy, modify, or log out the Codex CLI or ChatGPT desktop credential cache.
 

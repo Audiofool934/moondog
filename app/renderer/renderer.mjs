@@ -1041,7 +1041,7 @@ function renderComposer() {
 const SERVICE_MARKS = { spotify: "spotify", apple_music: "apple-music", netease: "netease" };
 // A model shows its maker's mark: by the account it comes through, or for OpenRouter by the maker its
 // model id begins with (anthropic/…, x-ai/…); a maker without a mark here shows OpenRouter's, or the model glyph.
-const MAKER_MARKS = { anthropic: "claude", openai: "openai", "openai-codex": "openai", google: "gemini", deepseek: "deepseek",
+const MAKER_MARKS = { anthropic: "claude", openai: "openai", google: "gemini", deepseek: "deepseek",
   moonshotai: "kimi", "moonshotai-cn": "kimi", xai: "grok", zai: "zai", openrouter: "openrouter" };
 const ROUTED_MARKS = { anthropic: "claude", openai: "openai", google: "gemini", deepseek: "deepseek", moonshotai: "kimi", "x-ai": "grok", "z-ai": "zai" };
 // An endpoint's model shows its maker's mark when its id names one, as most do.

@@ -91,7 +91,7 @@ A model or music service chosen there lasts until the app quits, and sign-in and
   Leaving Apple Music pauses the Music app too. Moondog can also pause, resume and skip the Music app itself, so "switch to Spotify and keep playing there" pauses one and picks the other up where it stopped.
   One thing plays at a time on this Mac: music Moondog starts pauses the Music app, Spotify when it plays on this Mac, and NetEase; music you start in the Music app stops Moondog's own player.
   The model's menu shows the models kept in Settings, flat, the one this conversation uses checked, and how hard it thinks.
-  A model chosen there is that conversation's alone while the app runs; a new conversation starts on the default, which Settings sets and the terminal uses.
+  A model chosen there is that conversation's alone, and the conversation keeps it after a restart; a new conversation starts on the default, which Settings sets and the terminal uses.
   On a first launch the service reads "Choose a music service" until one is chosen, as the model reads "Choose a model" until there is one.
 - Typing `/` lists commands by what they open (a mistyped one stays in the composer instead of going to Moondog): `/new`, `/model`, `/language`, `/service`, `/device`, `/import`, `/memory`, `/remember`, `/folder`, `/settings` and `/help`.
 - Settings (`⌘,`, or the button at the top right beside the player's) has Language, Model, Playback (music service, Spotify sign-in, devices), Import, Memory and About.
@@ -99,7 +99,8 @@ A model or music service chosen there lasts until the app quits, and sign-in and
   An endpoint is any service that speaks OpenAI's Chat Completions or Anthropic's Messages, added by its address, an optional key and its model IDs (asked of the endpoint when left empty).
   Opening a provider lists its models, each ticked when the menu offers it.
   Changes are saved where the terminal reads them; the window never sees a key or token.
-  The menu's list is `models.json` and endpoints are `endpoints.json` (mode 600, with their keys), beside `settings.json`, so older Moondogs that read `settings.json` and `auth.json` by a fixed shape keep working.
+  The menu's list is `models.json`, each conversation's own model is `conversation-models.json`, and endpoints are `endpoints.json` (mode 600, with their keys), beside `settings.json`, so older Moondogs that read `settings.json` by a fixed shape keep working.
+  OpenAI keeps a ChatGPT sign-in or an API key in `auth.json`; Moondog 0.2.0-beta.7 and older can't read a ChatGPT sign-in there.
 - Import: choose a Spotify, Apple Music, ListenBrainz or Last.fm export, read recent Spotify listening, read a Last.fm account (the window asks for a Last.fm API key the first time), or drop a file anywhere on the window.
   The preview uses the terminal's words, nothing is saved until you add it, and the updated profile then shows in the conversation.
 - Apple Music plays whole songs where it can and 30-second previews where it can't.

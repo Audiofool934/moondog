@@ -3,13 +3,10 @@ import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { zaiProvider } from "@earendil-works/pi-ai/providers/zai";
 
 const zaiApiBaseUrl = "https://api.z.ai/api/paas/v4";
-// OpenAI comes two ways: a ChatGPT subscription through Codex, or an API key.
 const providerDisplayNames = {
   anthropic: "Anthropic",
   moonshotai: "Moonshot AI (Kimi)",
   "moonshotai-cn": "Moonshot AI China (Kimi)",
-  openai: "OpenAI API",
-  "openai-codex": "ChatGPT",
   xai: "xAI",
 };
 
@@ -44,6 +41,8 @@ function currentDeepSeekModels(nativeModels) {
 
 export function createPiModels({ catalogModels, ...options } = {}) {
   const models = builtinModels(options);
+  // ChatGPT signs in through OpenAI's own provider now; Pi's older Codex route is not offered.
+  models.deleteProvider("openai-codex");
   models.setProvider(zaiApiProvider());
   for (const native of models.getProviders()) {
     if (native.id !== "deepseek" && !catalogModels?.has(native.id)) continue;

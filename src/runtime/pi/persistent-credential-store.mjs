@@ -21,6 +21,7 @@ const LOCK_TIMEOUT_MS = 30_000;
 // API keys for services other than models, such as Brave Search for web lookups.
 export const serviceApiKeyIds = Object.freeze(["brave"]);
 const apiKeyProviderIds = Object.freeze([...apiKeyPiProviderIds, ...serviceApiKeyIds]);
+// openai-codex is no longer offered, but a store that still holds its sign-in keeps loading.
 const SUPPORTED_CREDENTIAL_PROVIDERS = new Set([
   "openai-codex",
   "spotify",
@@ -105,6 +106,33 @@ function validateOpenAICodexCredential(value) {
   return structuredClone(value);
 }
 
+// Sign in with ChatGPT, through Pi's OpenAI provider: a token for api.openai.com and its refresh.
+function validateOpenAIChatGPTCredential(value) {
+  assertPlainRecord(value, "openai credential");
+  assertExactKeys(
+    value,
+    ["access", "clientId", "expires", "refresh", "type", ...(value.scopes === undefined ? [] : ["scopes"])],
+    "openai credential shape",
+  );
+  assertSecretString(value.access, "OAuth access token");
+  assertSecretString(value.refresh, "OAuth refresh token");
+  assertSecretString(value.clientId, "OAuth client identifier");
+  if (!Number.isFinite(value.expires) || value.expires <= 0) {
+    throw safeError(
+      "credential_store_corrupt",
+      "Moondog credential storage contains an invalid OAuth expiry.",
+    );
+  }
+  if (value.scopes !== undefined && (!Array.isArray(value.scopes) || value.scopes.length > 50 ||
+      value.scopes.some((scope) => typeof scope !== "string" || !/^[\x21-\x7e]{1,200}$/u.test(scope)))) {
+    throw safeError(
+      "credential_store_corrupt",
+      "Moondog credential storage contains invalid OAuth scopes.",
+    );
+  }
+  return structuredClone(value);
+}
+
 function validateSpotifyCredential(value) {
   assertPlainRecord(value, "spotify credential");
   assertExactKeys(
@@ -172,6 +200,9 @@ function validateCredential(providerId, value) {
   }
   if (providerId === "spotify") {
     return validateSpotifyCredential(value);
+  }
+  if (providerId === "openai" && value?.type === "oauth") {
+    return validateOpenAIChatGPTCredential(value);
   }
   if (apiKeyProviderIds.includes(providerId)) {
     assertPlainRecord(value, `${providerId} credential`);

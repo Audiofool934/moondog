@@ -9,7 +9,9 @@ import { inspect } from "node:util";
 
 import { runAuthCommand } from "../../src/surfaces/cli/auth-command.mjs";
 
-const providerId = "openai-codex";
+const providerId = "openai";
+// OpenAI signs in with ChatGPT when asked; without the flag it takes an API key.
+const chatgpt = ["login", providerId, "--chatgpt"];
 
 function captureStream({ isTTY = true } = {}) {
   let value = "";
@@ -42,17 +44,10 @@ function fakeAuthenticationFactory(state) {
           type: state.stored ? "oauth" : null,
         };
       },
-      async login(provider, interaction) {
+      async login(provider, interaction, options) {
         state.loginCalls.push(provider);
         if (state.loginError) throw state.loginError;
-        state.loginMethod = await interaction.prompt({
-          type: "select",
-          message: "Select login method",
-          options: [
-            { id: "browser", label: "Browser" },
-            { id: "device_code", label: "Device code" },
-          ],
-        });
+        state.loginMethod = options?.method;
         interaction.notify({
           type: "auth_url",
           url: "https://auth.openai.com/fake-safe-url",
@@ -107,45 +102,38 @@ test("auth help does not initialize provider or local data", async () => {
   await runAuthCommand({ args: ["help"], ...fixture });
   await runAuthCommand({ args: ["--help"], ...fixture });
 
-  assert.match(fixture.output.value(), /auth login openai-codex/iu);
+  assert.match(fixture.output.value(), /auth login openai --chatgpt/iu);
   assert.equal(fixture.state.factoryCalls, 0);
 });
 
-test("exact auth login command chooses browser OAuth and emits no credential", async () => {
+test("auth login openai --chatgpt signs in with ChatGPT and emits no credential", async () => {
   const fixture = commandFixture();
   await runAuthCommand({
-    args: ["login", providerId],
+    args: chatgpt,
     interactive: true,
     ...fixture,
   });
 
   assert.deepEqual(fixture.state.loginCalls, [providerId]);
-  assert.equal(fixture.state.loginMethod, "browser");
+  assert.equal(fixture.state.loginMethod, "oauth");
   assert.match(fixture.output.value(), /stored oauth credential/iu);
-  assert.match(fixture.output.value(), /MOONDOG_PROVIDER=openai-codex/u);
+  assert.match(fixture.output.value(), /MOONDOG_PROVIDER=openai\n/u);
   assert.match(fixture.progressOutput.value(), /auth\.openai\.com/iu);
   const combined = fixture.output.value() + fixture.progressOutput.value();
   assert.equal(combined.includes("ACCESS_TOKEN_SENTINEL"), false);
   assert.equal(combined.includes("REFRESH_TOKEN_SENTINEL"), false);
 });
 
-test("device-code login works without an interactive terminal", async () => {
+test("openai without --chatgpt asks for an API key", async () => {
   const fixture = commandFixture();
-  fixture.input.isTTY = false;
-  fixture.progressOutput.isTTY = false;
-  await runAuthCommand({
-    args: ["login", providerId, "--device-code"],
-    interactive: false,
-    ...fixture,
-  });
-
-  assert.equal(fixture.state.loginMethod, "device_code");
+  await runAuthCommand({ args: ["login", providerId], interactive: true, ...fixture });
+  assert.equal(fixture.state.loginMethod, "api_key");
 });
 
 test("browser login receives manual fallback input without echoing it", async () => {
   const fixture = commandFixture({ manualCodePrompt: true });
   const login = runAuthCommand({
-    args: ["login", providerId],
+    args: chatgpt,
     interactive: true,
     ...fixture,
   });
@@ -197,16 +185,16 @@ test("native API login accepts hidden input and saves only to the private store"
   assert.doesNotMatch(output.value() + progressOutput.value(), /CLI_API_KEY_SENTINEL/u);
 });
 
-test("API login rejects headless input and OAuth options before provider setup", async () => {
+test("API login rejects headless input and ChatGPT for other providers before provider setup", async () => {
   const fixture = commandFixture();
   for (const args of [
     ["login", "deepseek"],
-    ["login", "deepseek", "--device-code"],
-    ["login", "deepseek", "--browser"],
+    ["login", "deepseek", "--chatgpt"],
+    ["status", providerId, "--chatgpt"],
   ]) {
     await assert.rejects(
       runAuthCommand({ args, interactive: false, ...fixture }),
-      /interactive terminal|only to openai-codex/iu,
+      /interactive terminal|Only openai signs in with ChatGPT|valid only for auth login/iu,
     );
   }
   assert.equal(fixture.state.factoryCalls, 0);
@@ -242,10 +230,10 @@ test("API login failure is provider-specific without exposing error secrets", as
 
 test("Ctrl+C at a sign-in prompt is a cancel, not a failure", async () => {
   const fixture = commandFixture({ manualCodePrompt: true });
-  const login = runAuthCommand({ args: ["login", providerId], interactive: true, ...fixture });
+  const login = runAuthCommand({ args: chatgpt, interactive: true, ...fixture });
   await new Promise((resolve) => setImmediate(resolve));
   fixture.input.write("\x03");
-  await assert.rejects(login, { code: "auth_login_cancelled", message: "OpenAI Codex login was cancelled." });
+  await assert.rejects(login, { code: "auth_login_cancelled", message: "OpenAI login was cancelled." });
   assert.equal(fixture.state.stored, false);
 });
 
@@ -284,14 +272,14 @@ test("auth logout is explicit and does not claim to log out Codex", async () => 
   await runAuthCommand({ args: ["logout", providerId], ...fixture });
 
   assert.deepEqual(fixture.state.logoutCalls, [providerId]);
-  assert.match(fixture.output.value(), /Codex CLI.*not changed/iu);
+  assert.match(fixture.output.value(), /Codex CLI and ChatGPT desktop sign-ins were not changed/iu);
 });
 
-test("auth login rejects non-interactive browser mode before provider setup", async () => {
+test("auth login rejects a ChatGPT sign-in without an interactive terminal before provider setup", async () => {
   const fixture = commandFixture();
   await assert.rejects(
     runAuthCommand({
-      args: ["login", providerId],
+      args: chatgpt,
       interactive: false,
       ...fixture,
     }),
@@ -304,7 +292,7 @@ test("auth login rejects JSON mode before provider setup", async () => {
   const fixture = commandFixture();
   await assert.rejects(
     runAuthCommand({
-      args: ["login", providerId],
+      args: chatgpt,
       json: true,
       interactive: true,
       ...fixture,
@@ -320,7 +308,7 @@ test("auth login hides provider error details that may contain credentials", asy
   });
   await assert.rejects(
     runAuthCommand({
-      args: ["login", providerId],
+      args: chatgpt,
       interactive: true,
       ...fixture,
     }),
@@ -365,6 +353,7 @@ test("real CLI auth status is offline-safe and does not create a credential file
       encoding: "utf8",
       env: {
         ...process.env,
+        OPENAI_API_KEY: "",
         MOONDOG_CONFIG_HOME: root,
       },
     },
@@ -384,7 +373,7 @@ test("the installed-style launcher recognizes the exact auth login command", asy
   context.after(() => rm(root, { recursive: true, force: true }));
   const { spawnSync } = await import("node:child_process");
   const launcher = path.resolve("scripts/moondog");
-  const result = spawnSync(launcher, ["auth", "login", providerId], {
+  const result = spawnSync(launcher, ["auth", "login", providerId, "--chatgpt"], {
     encoding: "utf8",
     env: {
       ...process.env,
@@ -398,7 +387,7 @@ test("the installed-style launcher recognizes the exact auth login command", asy
   await assert.rejects(stat(path.join(root, "auth.json")), { code: "ENOENT" });
 });
 
-test("ask reports the missing openai-codex authorization precisely", async (context) => {
+test("ask reports the missing OpenAI sign-in precisely", async (context) => {
   const root = await mkdtemp(path.join(tmpdir(), "moondog-auth-ask-"));
   context.after(() => rm(root, { recursive: true, force: true }));
   const { spawnSync } = await import("node:child_process");
@@ -407,6 +396,7 @@ test("ask reports the missing openai-codex authorization precisely", async (cont
     encoding: "utf8",
     env: {
       ...process.env,
+      OPENAI_API_KEY: "",
       MOONDOG_CONFIG_HOME: root,
       MOONDOG_PROVIDER: providerId,
       MOONDOG_MODEL: "gpt-5.6-terra",
@@ -414,7 +404,7 @@ test("ask reports the missing openai-codex authorization precisely", async (cont
   });
 
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /auth login openai-codex/iu);
+  assert.match(result.stderr, /auth login openai/iu);
   assert.doesNotMatch(result.stderr, /set MOONDOG_PROVIDER/iu);
   await assert.rejects(stat(path.join(root, "auth.json")), { code: "ENOENT" });
 });

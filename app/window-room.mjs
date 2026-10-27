@@ -541,9 +541,14 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
   }
 
   // Models. The default, saved in settings.json, is what the terminal uses and every new conversation
-  // starts with. A model chosen in the window's menu is that conversation's alone, kept here by its id
-  // while the window runs.
+  // starts with. A model chosen in the window's menu is that conversation's alone, kept by its id here
+  // and in conversation-models.json, so the conversation keeps it across launches.
   const picks = new Map();
+  const keep = (session, selection) => {
+    if (selection) picks.set(session, selection); else if (!picks.delete(session)) return;
+    void modelSettings?.setConversationModel?.(session, selection).catch(() => {});
+  };
+  const forgetWhere = (test) => { for (const [session, chosen] of [...picks]) if (test(chosen)) keep(session, null); };
   let defaults = null;
   const sameSelection = (left, right) => (left?.provider ?? null) === (right?.provider ?? null) && (left?.model ?? null) === (right?.model ?? null) &&
     (left?.effort ?? null) === (right?.effort ?? null);
@@ -597,7 +602,7 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     const slot = current;
     const session = sessionOf(slot);
     const own = defaults && sameSelection(selection, defaults) ? null : selection;
-    if (own) picks.set(session, own); else picks.delete(session);
+    keep(session, own);
     if (slot.turn) slot.stale = { selection: own };
     else await rebuild(slot, own);
     sendStatus();
@@ -608,7 +613,7 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     await saveRuntimeSelection?.(selection);
     defaults = selection;
     await modelSettings?.setListed?.(selection.provider, selection.model, true).catch(() => {});
-    for (const [session, chosen] of picks) if (sameSelection(chosen, selection)) picks.delete(session);
+    forgetWhere((chosen) => sameSelection(chosen, selection));
     await rebuildAll();
     await sendList();
   }
@@ -655,6 +660,7 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
       }
       if (holder === current) shown = true;
     }
+    for (const id of ids) if (!slotFor(id)) keep(id, null);
     if (refusal) send({ type: "notice", ...refusal });
     if (shown) sendSession(current);
     sendSessions();
@@ -688,7 +694,7 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     send({ type: "provider-models", provider, models: result.models ?? result, refresh: result.refresh ?? null });
   }
   // One sign-in at a time; each clears only its own when it ends.
-  async function startSignIn(provider) {
+  async function startSignIn(provider, method) {
     if (!modelSettings) return;
     if (signIn) return send({ type: "sign-in", provider, state: "error", code: "sign_in_busy" });
     const controller = new AbortController();
@@ -709,7 +715,7 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
       },
     };
     try {
-      await modelSettings.signIn(provider, interaction);
+      await modelSettings.signIn(provider, interaction, { method });
       send({ type: "sign-in", provider, state: "done" });
       // The saved selection now has a key to use; each agent is rebuilt from it, as /auth does.
       await rebuildAll();
@@ -943,12 +949,12 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     "endpoint-remove": async (data) => {
       const id = String(data.id ?? "");
       await modelSettings?.removeEndpoint?.(id);
-      for (const [session, chosen] of picks) if (chosen.provider === id) picks.delete(session);
+      forgetWhere((chosen) => chosen.provider === id);
       await rebuildAll();
       await sendModels();
       await sendList();
     },
-    "sign-in": (data) => (data.provider === "spotify" ? connectSpotify(data.clientId ? String(data.clientId) : null) : startSignIn(String(data.provider ?? ""))),
+    "sign-in": (data) => (data.provider === "spotify" ? connectSpotify(data.clientId ? String(data.clientId) : null) : startSignIn(String(data.provider ?? ""), data.method === "oauth" ? "oauth" : "api_key")),
     "sign-in-cancel": () => signIn?.controller.abort(),
     "auth-answer": (data) => { const pending = prompts.get(String(data.id)); prompts.delete(String(data.id)); pending?.resolve(String(data.value ?? "")); },
     "sign-out": async (data) => {
@@ -956,7 +962,7 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
       else {
         await modelSettings?.signOut?.(String(data.provider ?? ""));
         // A conversation on a model that can no longer answer goes back to the default.
-        for (const [session, chosen] of picks) if (chosen.provider === data.provider) picks.delete(session);
+        forgetWhere((chosen) => chosen.provider === data.provider);
       }
       await rebuildAll();
       await sendModels();
@@ -1028,8 +1034,12 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     port.start();
     // Whether the pickers can offer NetEase: one check at launch, unless the core already made it.
     if (base.neteasePlayer?.status?.().state === "unknown") void base.neteasePlayer.check().then(sendStatus, () => {});
-    // The default, for showing a choice that waits on a reply; the window asks for the whole list itself.
+    // The default, for showing a choice that waits on a reply, and the models conversations were given
+    // before; the window asks for the whole list itself.
     void modelSettings?.current?.().then((selection) => { defaults ??= selection ?? null; }, () => {});
+    void modelSettings?.conversationModels?.().then((saved) => {
+      for (const [session, selection] of Object.entries(saved ?? {})) if (!picks.has(session)) picks.set(session, selection);
+    }, () => {});
     // Each launch opens a new conversation, as the terminal does; earlier ones wait in the sidebar.
     base.startNewSession?.("app_start");
     slots[0].runtime.reset?.();

@@ -10,6 +10,8 @@ test("model picker catalog exposes Pi's full built-in provider set", () => {
   const providers = listPiProviders();
 
   assert.ok(providers.length > 7);
+  // Pi's older Codex route is not offered; ChatGPT signs in through openai.
+  assert.equal(providers.some((provider) => provider.id === "openai-codex"), false);
   assert.ok(
     providers.some(
       (provider) =>
@@ -44,14 +46,13 @@ test("model picker catalog exposes Pi's full built-in provider set", () => {
   ]) {
     assert.ok(providers.find((provider) => provider.id === id).name.includes(family));
   }
-  // OpenAI's two ways in read as what the listener has: a ChatGPT subscription or an API key.
-  for (const [id, name] of [["anthropic", "Anthropic"], ["openai", "OpenAI API"], ["openai-codex", "ChatGPT"], ["xai", "xAI"]]) {
+  for (const [id, name] of [["anthropic", "Anthropic"], ["openai", "OpenAI"], ["xai", "xAI"]]) {
     assert.equal(providers.find((provider) => provider.id === id).name, name);
   }
 });
 
 test("model picker catalog returns normalized Pi model metadata", () => {
-  const model = listPiModels("openai-codex").find(
+  const model = listPiModels("openai").find(
     (entry) => entry.id === "gpt-5.6-terra",
   );
 

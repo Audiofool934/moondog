@@ -8,7 +8,8 @@ import {
 } from "./authentication.mjs";
 import { isEndpointProvider, removeEndpoint, saveEndpoint } from "./custom-endpoints.mjs";
 import { LEGACY_MODEL_ALIASES } from "./model-catalog.mjs";
-import { readModelList, sameModel, writeModelList } from "./model-list.mjs";
+import { readConversationModels, readModelList, sameModel, writeConversationModel, writeModelList } from "./model-list.mjs";
+import { chatgptProviderId } from "./provider-registry.mjs";
 import { createPersistentCredentialStore } from "./persistent-credential-store.mjs";
 import { getPublicPiModelCatalog } from "./public-model-catalog.mjs";
 import { clampEffort, readPiRuntimeSelection } from "./runtime-settings.mjs";
@@ -17,11 +18,10 @@ import { clampEffort, readPiRuntimeSelection } from "./runtime-settings.mjs";
 // terminal does with /model and /auth. It returns status shapes only: never a
 // credential, a prompt answer or raw provider text.
 
-const OAUTH_PROVIDER = "openai-codex";
 // The providers every listener is offered, in this order: OpenAI by a ChatGPT subscription or an API
 // key, then Anthropic, Google and xAI. Any other service is reached as an endpoint by address; Pi's
 // other providers show only once a key for one is saved or in the environment.
-const FEATURED = ["openai-codex", "openai", "anthropic", "google", "xai"];
+const FEATURED = ["openai", "anthropic", "google", "xai"];
 // Moondog's own errors carry fixed text. Pi wraps them, and its own text may not be safe.
 const moondogErrorNames = new Set(["MoondogCredentialStoreError", "MoondogRuntimeSettingsError"]);
 
@@ -40,7 +40,6 @@ function moondogError(error) {
 const aborted = () => new DOMException("The sign-in was cancelled.", "AbortError");
 
 function signInKind(providerId) {
-  if (providerId === OAUTH_PROVIDER) return "oauth";
   if (isEndpointProvider(providerId)) return "endpoint";
   return supportedAuthProviderIds.includes(providerId) ? "api_key" : "environment_only";
 }
@@ -109,7 +108,9 @@ export function createModelSettings({
         // checkAuth reads only local state. It never refreshes OAuth or calls a provider.
         const auth = await models.checkAuth(id);
         const endpoint = source.endpoints?.find(entry => entry.id === id);
+        // OpenAI takes a ChatGPT sign-in as well as a key; method says which one it has.
         return { id, name, modelCount, signIn: signInKind(id), signedIn: Boolean(auth), source: signInSource(auth),
+          ...(id === chatgptProviderId ? { chatgpt: true } : {}), ...(auth ? { method: auth.type === "oauth" ? "oauth" : "api_key" } : {}),
           ...(endpoint ? { endpoint: { format: endpoint.format, baseUrl: endpoint.baseUrl, keySaved: Boolean(endpoint.key), models: [...endpoint.models] } } : {}) };
       }));
     } catch (error) {
@@ -189,6 +190,11 @@ export function createModelSettings({
       };
     },
 
+    // The model each conversation was given in the window's menu, and a change to one: null gives a
+    // conversation back to the default.
+    conversationModels: () => readConversationModels(environment),
+    setConversationModel: (session, selection) => writeConversationModel(String(session), selection ?? null, environment),
+
     // Adds a model to the menu or takes it off. The default stays.
     async setListed(provider, model, listed) {
       const selection = await current();
@@ -263,7 +269,8 @@ export function createModelSettings({
       };
     },
 
-    async signIn(providerId, interaction) {
+    // method "oauth" signs in to OpenAI with ChatGPT; anything else asks for a key.
+    async signIn(providerId, interaction, { method } = {}) {
       assertSignInProvider(providerId);
       if (typeof interaction?.prompt !== "function" || typeof interaction.notify !== "function") {
         throw failure("auth_interaction_invalid", "Sign-in needs a way to ask and to show progress.");
@@ -284,7 +291,7 @@ export function createModelSettings({
             if (!shape) return;
             try { interaction.notify(shape); } catch { /* A closed window cannot stop the sign-in. */ }
           },
-        });
+        }, { method: method === "oauth" ? "oauth" : "api_key" });
       } catch (error) {
         const safe = wrapLoginError(signal?.aborted ? aborted() : moondogError(error) ?? error, providerId);
         throw failure(safe.code, safe.message);

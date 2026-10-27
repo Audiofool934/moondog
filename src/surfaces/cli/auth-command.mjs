@@ -8,22 +8,22 @@ import {
 } from "../../runtime/pi/authentication.mjs";
 import { sanitizeTerminalText } from "./format-output.mjs";
 
-const DEFAULT_AUTH_PROVIDER = "openai-codex";
+const DEFAULT_AUTH_PROVIDER = "openai";
 
 export function authHelpText() {
   return `# Moondog authentication
 
 Commands:
 
-- \`moondog auth login openai-codex\` - start a browser OAuth login
-- \`moondog auth login openai-codex --device-code\` - use headless device login
+- \`moondog auth login openai --chatgpt\` - sign in with your ChatGPT subscription in the browser
 - \`moondog auth login <provider>\` - save an API key using hidden terminal input
 - \`moondog auth status [provider] [--json]\` - inspect saved or environment credentials
 - \`moondog auth logout <provider> [--json]\` - remove that provider's saved credential
 
-API key providers: ${supportedAuthProviderIds.filter((id) => id !== DEFAULT_AUTH_PROVIDER && !serviceKeyProviders.some((service) => service.id === id)).join(", ")}.
+API key providers: ${supportedAuthProviderIds.filter((id) => !serviceKeyProviders.some((service) => service.id === id)).join(", ")}.
 Web search keys: ${serviceKeyProviders.map((service) => `${service.id} for ${service.name} (or ${service.variable})`).join(", ")}; a deepseek key also searches and reads pages.
-Use zai for GLM, moonshotai or moonshotai-cn for Kimi, xai for Grok, openai for GPT, and anthropic for Claude.
+Use openai for GPT, anthropic for Claude, google for Gemini, xai for Grok, zai for GLM, and moonshotai or moonshotai-cn for Kimi.
+OpenAI takes either a ChatGPT sign-in or an API key; the newer one replaces the other.
 Moondog keeps credentials in its own private local store.
 API keys are entered interactively, never as command arguments.
 It does not read, modify, or log out the Codex CLI or ChatGPT desktop session.`;
@@ -39,19 +39,11 @@ function parseAuthArguments(args) {
       action: "help",
       provider: undefined,
       extra: [],
-      loginMethod: "browser",
+      chatgpt: false,
     };
   }
-  const deviceCodeIndex = values.indexOf("--device-code");
-  const browserIndex = values.indexOf("--browser");
-  const deviceCode = deviceCodeIndex !== -1;
-  const browser = browserIndex !== -1;
-  if (deviceCode) values.splice(deviceCodeIndex, 1);
-  const adjustedBrowserIndex = values.indexOf("--browser");
-  if (adjustedBrowserIndex !== -1) values.splice(adjustedBrowserIndex, 1);
-  if (deviceCode && browser) {
-    throw new Error("Choose either --browser or --device-code, not both.");
-  }
+  const chatgptIndex = values.indexOf("--chatgpt");
+  if (chatgptIndex !== -1) values.splice(chatgptIndex, 1);
   const unknownOption = values.find((value) => value.startsWith("-"));
   if (unknownOption) {
     throw new Error(
@@ -62,7 +54,7 @@ function parseAuthArguments(args) {
     action: values[0],
     provider: values[1],
     extra: values.slice(2),
-    loginMethod: deviceCode ? "device_code" : "browser",
+    chatgpt: chatgptIndex !== -1,
   };
 }
 
@@ -80,7 +72,8 @@ function formatStatus(value) {
   return `${value.provider}: not configured`;
 }
 
-function createReadlineOutput(output) {
+// A readline output that can go quiet, so a key typed into it is never echoed.
+export function createReadlineOutput(output) {
   let muted = false;
   const stream = new Writable({
     write(chunk, encoding, callback) {
@@ -105,7 +98,6 @@ function createReadlineOutput(output) {
 function createAuthInteraction({
   input,
   output,
-  loginMethod,
   signal,
   interactive,
   apiKeyLogin,
@@ -126,15 +118,9 @@ function createAuthInteraction({
       signal,
       async prompt(prompt) {
         if (prompt.type === "select") {
-          const selected = prompt.options.find(
-            (option) => option.id === loginMethod,
+          throw new Error(
+            "The installed Pi provider asked for a login choice Moondog doesn't offer.",
           );
-          if (!selected) {
-            throw new Error(
-              "The installed Pi provider does not support the requested login method.",
-            );
-          }
-          return selected.id;
         }
         if (prompt.type === "secret" && !interactive) {
           throw new Error(
@@ -175,12 +161,6 @@ function createAuthInteraction({
             writeLine(output, event.url);
             if (event.instructions) writeLine(output, event.instructions);
             break;
-          case "device_code":
-            writeLine(output);
-            writeLine(output, "Open this URL to sign in with ChatGPT:");
-            writeLine(output, event.verificationUri);
-            writeLine(output, `Device code: ${event.userCode}`);
-            break;
           case "info":
             writeLine(output, event.message);
             for (const link of event.links ?? []) {
@@ -202,7 +182,7 @@ function createAuthInteraction({
 // Pi's login errors can carry provider response bodies. Every surface that signs
 // in shows only these fixed messages and codes.
 export function wrapLoginError(error, provider) {
-  const name = provider === DEFAULT_AUTH_PROVIDER ? "OpenAI Codex" : provider;
+  const name = provider === DEFAULT_AUTH_PROVIDER ? "OpenAI" : provider;
   if (error?.name === "AbortError" || error?.code === "ABORT_ERR") {
     const cancelled = new Error(`${name} login was cancelled.`);
     cancelled.code = "auth_login_cancelled";
@@ -248,11 +228,8 @@ export async function runAuthCommand({
   if (!["login", "status", "logout"].includes(options.action)) {
     throw new Error("Unknown auth command. Use login, status, logout, or help.");
   }
-  if (
-    options.action !== "login" &&
-    (options.loginMethod !== "browser" || args.includes("--browser"))
-  ) {
-    throw new Error("Login method options are valid only for auth login.");
+  if (options.action !== "login" && options.chatgpt) {
+    throw new Error("--chatgpt is valid only for auth login.");
   }
 
   const provider = options.provider ??
@@ -265,15 +242,10 @@ export async function runAuthCommand({
       `Unsupported auth provider. Choose ${supportedAuthProviderIds.join(", ")}.`,
     );
   }
-  const apiKeyLogin = provider !== DEFAULT_AUTH_PROVIDER;
-  if (
-    apiKeyLogin &&
-    (args.includes("--device-code") || args.includes("--browser"))
-  ) {
-    throw new Error(
-      "Browser and device-code options apply only to openai-codex OAuth login.",
-    );
+  if (options.chatgpt && provider !== DEFAULT_AUTH_PROVIDER) {
+    throw new Error("Only openai signs in with ChatGPT; other providers take an API key.");
   }
+  const apiKeyLogin = !options.chatgpt;
 
   if (options.action === "status") {
     const authentication = await createAuthentication({ environment });
@@ -299,9 +271,7 @@ export async function runAuthCommand({
       writeLine(output, formatStatus(status));
       writeLine(
         output,
-        apiKeyLogin
-          ? "Moondog's saved API key was removed. Environment credentials remain available until unset."
-          : "Moondog's local credential was removed. Codex CLI and ChatGPT desktop login were not changed.",
+        "Moondog's saved credential was removed. Environment credentials remain available until unset; the Codex CLI and ChatGPT desktop sign-ins were not changed.",
       );
     }
     return;
@@ -315,9 +285,9 @@ export async function runAuthCommand({
       "API key login requires an interactive terminal with hidden input. For headless use, set the provider's API key environment variable.",
     );
   }
-  if (!apiKeyLogin && options.loginMethod === "browser" && !interactive) {
+  if (!apiKeyLogin && !interactive) {
     throw new Error(
-      "Browser OAuth login requires an interactive terminal. Use --device-code for a headless session.",
+      "ChatGPT sign-in requires an interactive terminal. For headless use, set OPENAI_API_KEY instead.",
     );
   }
 
@@ -328,7 +298,6 @@ export async function runAuthCommand({
   const login = createAuthInteraction({
     input,
     output: progressOutput,
-    loginMethod: options.loginMethod,
     signal: controller.signal,
     interactive,
     apiKeyLogin,
@@ -336,7 +305,7 @@ export async function runAuthCommand({
   try {
     let status;
     try {
-      status = await authentication.login(provider, login.interaction);
+      status = await authentication.login(provider, login.interaction, { method: apiKeyLogin ? "api_key" : "oauth" });
     } catch (error) {
       throw wrapLoginError(error, provider);
     }
@@ -352,8 +321,8 @@ export async function runAuthCommand({
       : "Next, return to Moondog and run /model.");
     if (!apiKeyLogin) {
       writeLine(output, "For a non-interactive launch, use environment overrides:");
-      writeLine(output, "  export MOONDOG_PROVIDER=openai-codex");
-      writeLine(output, "  export MOONDOG_MODEL=gpt-5.6-terra");
+      writeLine(output, "  export MOONDOG_PROVIDER=openai");
+      writeLine(output, "  export MOONDOG_MODEL=gpt-6.1-sol");
       writeLine(output, "  moondog");
     }
   } finally {

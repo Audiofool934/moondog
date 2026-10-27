@@ -72,3 +72,51 @@ export async function writeModelList(models, environment = process.env) {
   }
   return normalized;
 }
+
+// The model each conversation was given in the window's menu, by conversation id, so a conversation
+// keeps its own model across launches; every other one answers with the default. The oldest go first
+// past a few hundred.
+const MAX_CONVERSATIONS = 500;
+const resolveConversationModelsFile = (environment) => path.join(path.dirname(resolveMoondogAuthFile(environment)), "conversation-models.json");
+
+export async function readConversationModels(environment = process.env) {
+  let document;
+  try {
+    document = JSON.parse(await readFile(resolveConversationModelsFile(environment), "utf8"));
+  } catch (error) {
+    if (error?.code === "ENOENT") return {};
+    throw listError("Moondog could not read the models chosen for conversations.", error);
+  }
+  if (!document || document.version !== LIST_VERSION || !document.conversations || typeof document.conversations !== "object") {
+    throw listError("Moondog's conversation models use an unsupported shape.");
+  }
+  const kept = {};
+  for (const [session, value] of Object.entries(document.conversations).slice(-MAX_CONVERSATIONS)) {
+    if (!printable(session, 100)) continue;
+    const [entry] = normalizeModelList([value]);
+    kept[session] = { ...entry, ...(typeof value.effort === "string" && printable(value.effort, 20) ? { effort: value.effort } : {}) };
+  }
+  return kept;
+}
+
+// One change at a time, so two quick choices never lose either.
+let writing = Promise.resolve();
+export function writeConversationModel(session, selection, environment = process.env) {
+  const next = writing.then(async () => {
+    const saved = await readConversationModels(environment).catch(() => ({}));
+    delete saved[session];
+    if (selection) saved[session] = { provider: selection.provider, model: selection.model, ...(selection.effort ? { effort: selection.effort } : {}) };
+    const conversations = Object.fromEntries(Object.entries(saved).slice(-MAX_CONVERSATIONS));
+    const file = resolveConversationModelsFile(environment);
+    await mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
+    const temporary = `${file}.${randomUUID()}.tmp`;
+    try {
+      await writeFile(temporary, `${JSON.stringify({ version: LIST_VERSION, conversations }, null, 2)}\n`, { encoding: "utf8", mode: 0o600, flag: "wx" });
+      await rename(temporary, file);
+    } finally {
+      await rm(temporary, { force: true });
+    }
+  });
+  writing = next.catch(() => {});
+  return next;
+}

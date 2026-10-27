@@ -1634,15 +1634,16 @@ test("TUI can select a Pi model and use the rebuilt runtime", async () => {
   await running;
 });
 
-test("TUI can start OAuth and resume with reloaded authentication", async () => {
+test("TUI can sign in to OpenAI with ChatGPT and resume with reloaded authentication", async () => {
   const terminal = new FakeTerminal();
   const signalTarget = new EventEmitter();
   let authCount = 0;
+  let asked = null;
   const configuredRuntime = {
     publicStatus() {
       return {
         state: "configured",
-        provider: "openai-codex",
+        provider: "openai",
         model: "gpt-5.6-terra",
       };
     },
@@ -1654,8 +1655,9 @@ test("TUI can start OAuth and resume with reloaded authentication", async () => 
     runtime: fakeRuntime(),
     terminal,
     signalTarget,
-    async runAuth() {
+    async runAuth(provider, options) {
       authCount += 1;
+      asked = { provider, ...options };
     },
     async rebuildRuntime() {
       return configuredRuntime;
@@ -1663,19 +1665,56 @@ test("TUI can start OAuth and resume with reloaded authentication", async () => 
   });
 
   await waitForStart(terminal);
-  terminal.send("/auth openai-codex");
+  terminal.send("/auth openai");
+  terminal.send("\r");
+  // OpenAI asks which way in; the ChatGPT subscription comes first.
+  await waitFor(() => terminal.output.includes("How do you want to use OpenAI?"));
   terminal.send("\r");
   await waitFor(() => terminal.output.includes("Signed in."));
 
   assert.equal(authCount, 1);
+  assert.deepEqual(asked, { provider: "openai", chatgpt: true });
   assert.equal(terminal.startCount, 2);
   assert.equal(terminal.stopCount, 1);
-  assert.match(terminal.output, /openai-codex\/gpt-5\.6-terra/u);
+  assert.match(terminal.output, /openai\/gpt-5\.6-terra/u);
 
   terminal.send("/quit");
   terminal.send("\r");
   await running;
   assert.equal(terminal.stopCount, 2);
+});
+
+test("/endpoint lists endpoints, and adds one on the paused terminal so /model offers it", async () => {
+  const terminal = new FakeTerminal();
+  const signalTarget = new EventEmitter();
+  const calls = [];
+  let refreshed = 0;
+  const running = runMoondogTui({
+    application: fakeApplication(),
+    runtime: fakeRuntime(),
+    terminal,
+    signalTarget,
+    async runEndpoint(args) {
+      calls.push(args);
+      return args[0] === "list" ? [] : { id: "endpoint-home", name: "Home server", models: ["house-model"] };
+    },
+    async refreshEndpoints() { refreshed += 1; },
+  });
+
+  await waitForStart(terminal);
+  terminal.send("/endpoint");
+  terminal.send("\r");
+  await waitFor(() => terminal.output.includes("No endpoints yet"));
+  terminal.send("/endpoint add");
+  terminal.send("\r");
+  await waitFor(() => terminal.output.includes("Saved Home server"));
+  assert.deepEqual(calls, [["list"], ["add"]]);
+  assert.equal(refreshed, 1);
+  assert.equal(terminal.stopCount, 1, "the terminal pauses for the hidden key");
+
+  terminal.send("/quit");
+  terminal.send("\r");
+  await running;
 });
 
 for (const [command, code] of [["/auth deepseek", "auth_login_cancelled"], ["/spotify login", "spotify_auth_aborted"]]) {

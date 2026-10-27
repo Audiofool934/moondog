@@ -111,6 +111,7 @@ const slashCommands = [
   { name: "model", description: N_("Choose the model Moondog talks through") },
   { name: "effort", description: N_("Choose how hard the model thinks") },
   { name: "auth", description: N_("Sign in to a model or web search service") },
+  { name: "endpoint", description: N_("Add a model service by its address") },
   { name: "web", description: N_("Look things up on public music sites") },
   { name: "spotify", description: N_("Connect and control Spotify") },
   { name: "skip", description: N_("Skip to the next song preview") },
@@ -165,7 +166,7 @@ export function parseTuiArguments(text) {
 }
 
 function offlineReply(runtimeStatus, tr) {
-  const provider = runtimeStatus.provider ?? "openai-codex";
+  const provider = runtimeStatus.provider ?? "openai";
   const [why, next] = runtimeStatus.reason === "provider_authentication_required"
     ? [tr("you're not signed in to {provider}", { provider }), tr("Sign in with `/auth {provider}`.", { provider })]
     : runtimeStatus.reason === "model_not_configured" || !runtimeStatus.reason
@@ -188,6 +189,7 @@ export async function runMoondogTui({
   signalTarget = process,
   rebuildRuntime,
   runAuth,
+  runEndpoint,
   runSpotify,
   runProfile,
   runProfileAction,
@@ -203,6 +205,7 @@ export async function runMoondogTui({
   providers = listPiProviders,
   models = listPiModels,
   refreshModels,
+  refreshEndpoints,
   saveLanguage,
   // The terminal's preview player. The room shows what it plays (subscribe) and
   // gives the listener /skip and /stop.
@@ -214,6 +217,7 @@ export async function runMoondogTui({
     providers = () => catalog.providers();
     models = id => catalog.models(id);
     refreshModels ??= options => catalog.refresh(options);
+    refreshEndpoints ??= () => catalog.readEndpoints();
   }
   // Screen text follows the listener's language and switches with /language.
   const tr = liveScreenTranslator(() => application.locale);
@@ -996,10 +1000,12 @@ export async function runMoondogTui({
     const availableProviders = providers()
       .filter((provider) => provider.modelCount > 0)
       .sort((left, right) => {
+        // The one in use, then OpenAI, Anthropic, Google and xAI, as the window lists them.
+        const featured = ["openai", "anthropic", "google", "xai"];
         const priority = (provider) => {
           if (provider.id === runtimeStatus.provider) return 0;
-          if (provider.id === "openai-codex") return 1;
-          return 2;
+          const at = featured.indexOf(provider.id);
+          return at === -1 ? featured.length + 1 : at + 1;
         };
         return (
           priority(left) - priority(right) ||
@@ -1142,9 +1148,9 @@ export async function runMoondogTui({
         availableProviders.map((provider) => ({
           value: provider.id,
           label: provider.name,
-          description: `${provider.id} - ${provider.id === "openai-codex" ? tr("ChatGPT sign-in") : serviceKey(provider.id) ? tr("Web search key") : tr("API key")}`,
+          description: `${provider.id} - ${provider.id === "openai" ? tr("ChatGPT sign-in or API key") : serviceKey(provider.id) ? tr("Web search key") : tr("API key")}`,
         })),
-        runtimeStatus.provider ?? "openai-codex",
+        runtimeStatus.provider ?? "openai",
         tr("Sign in to a model or web search service"),
       );
       if (!selectedProvider) {
@@ -1154,10 +1160,24 @@ export async function runMoondogTui({
       providerId = selectedProvider.value;
     }
 
+    // OpenAI takes a ChatGPT subscription or an API key.
+    let chatgpt = false;
+    if (providerId === "openai") {
+      const way = await choose([
+        { value: "chatgpt", label: tr("ChatGPT subscription"), description: tr("Sign in with ChatGPT in your browser") },
+        { value: "key", label: tr("API key"), description: tr("Paste an OpenAI API key") },
+      ], "chatgpt", tr("How do you want to use OpenAI?"));
+      if (!way) {
+        setFooter(tr("Sign-in cancelled."));
+        return;
+      }
+      chatgpt = way.value === "chatgpt";
+    }
+
     setFooter(tr("Opening {provider} sign-in...", { provider: providerId }));
     tui.stop({ preserveScreen: true });
     try {
-      await runAuth(providerId);
+      await runAuth(providerId, { chatgpt });
     } finally {
       if (!cleanedUp) {
         tui.start();
@@ -1186,6 +1206,47 @@ export async function runMoondogTui({
       addMoondogMessage(tr("Signed in. Restart Moondog to use it."));
     }
     setFooter(tr("Signed in."), success);
+  };
+
+  // Endpoints: the list, one added on the paused terminal with its key out of sight, or one removed.
+  // /model then offers their models.
+  const manageEndpoints = async (args) => {
+    if (typeof runEndpoint !== "function") throw new Error(tr("Endpoints aren't available when Moondog is started this way."));
+    const action = args[0]?.toLowerCase() ?? "list";
+    if (!["list", "add", "remove"].includes(action) || (action === "add" && args.length > 1) || (action === "list" && args.length > 1)) {
+      throw new Error(tr("Use /endpoint, /endpoint add, or /endpoint remove <id>."));
+    }
+    if (action === "list") {
+      const endpoints = await runEndpoint(["list"], { quiet: true });
+      addMoondogMessage(endpoints.length
+        ? endpoints.map((endpoint) => `- \`${endpoint.id}\` ${endpoint.name}`).join("\n") + `\n\n${tr("Type `/model <id>` to talk through one, or `/endpoint add` to add another.")}`
+        : tr("No endpoints yet. `/endpoint add` adds any service that speaks OpenAI's or Anthropic's API, by its address."));
+      setFooter(tr("Endpoints listed."));
+      return;
+    }
+    let result;
+    if (action === "add") {
+      tui.stop({ preserveScreen: true });
+      try {
+        result = await runEndpoint(["add"]);
+      } finally {
+        if (!cleanedUp) {
+          tui.start();
+          tui.requestRender(true);
+        }
+      }
+      if (cleanedUp) return;
+    } else {
+      result = await runEndpoint(["remove", ...args.slice(1)], { quiet: true });
+    }
+    await refreshEndpoints?.();
+    if (action === "add") {
+      addMoondogMessage(tr("Saved {name}. Type `/model {id}` to pick one of its models.", { name: result.name, id: result.id }));
+      setFooter(tr("Endpoint saved."), success);
+    } else {
+      addMoondogMessage(tr("Removed {name} and its key.", { name: result.name }));
+      setFooter(tr("Endpoint removed."), success);
+    }
   };
 
   const showImportedListeningProfile = async () => {
@@ -1877,6 +1938,10 @@ export async function runMoondogTui({
     }
     if (command === "auth") {
       await authenticate(args);
+      return;
+    }
+    if (command === "endpoint") {
+      await manageEndpoints(args);
       return;
     }
     if (command === "spotify") {

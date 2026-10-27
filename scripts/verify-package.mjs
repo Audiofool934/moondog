@@ -38,7 +38,9 @@ const maximumPackedBytes = 2_600_000;
 // four entries and about 33 KB. The desktop window's model settings and
 // playback preference add two entries and about 27 KB.
 const maximumUnpackedBytes = 5_210_000;
-const maximumEntries = 151;
+// Endpoints, the model menu's list and the terminal's endpoint command add three
+// entries and about 20 KB.
+const maximumEntries = 154;
 const packageOnlyPrivateSentinelPattern = new RegExp(
   ["PRIVATE", "(?:IP|PLATFORM)", "SENTINEL"].join("_"),
   "u",

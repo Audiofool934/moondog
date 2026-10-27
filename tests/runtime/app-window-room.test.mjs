@@ -261,6 +261,34 @@ test("a model chosen in the menu is that conversation's alone, and a new convers
   }
 });
 
+test("a conversation keeps the model chosen for it across launches", async () => {
+  const saved = new Map();
+  const settings = {
+    async models() { return { models: [{ id: "opus" }, { id: "sonnet" }] }; },
+    async conversationModels() { return Object.fromEntries(saved); },
+    async setConversationModel(session, selection) { if (selection) saved.set(session, selection); else saved.delete(session); },
+  };
+  const first = application("A");
+  const launch = await openRoom({ application: first, services: { modelSettings: settings } });
+  try {
+    await launch.post({ type: "model", provider: "p", model: "opus" });
+    assert.deepEqual(saved.get("A"), { provider: "p", model: "opus" });
+  } finally {
+    await launch.stop();
+  }
+  // The next launch opens a new conversation on the default; going back to A brings its model back.
+  const second = application("new");
+  second.startNewSession = function () { this.sessionId = "new"; };
+  const relaunch = await openRoom({ application: second, services: { modelSettings: settings } });
+  try {
+    await relaunch.post({ type: "open", id: "A" });
+    assert.deepEqual(relaunch.built, ["opus"]);
+    assert.equal(relaunch.messages.findLast((message) => message.type === "status")?.model.own, true);
+  } finally {
+    await relaunch.stop();
+  }
+});
+
 test("a successful device transfer reads the device list after Spotify has caught up", async () => {
   mock.timers.enable({ apis: ["setTimeout"] });
   let reads = 0;

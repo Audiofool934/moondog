@@ -143,7 +143,8 @@ You can save that report as a private page that works offline.
 
 Sign in with `/auth`, then pick a model with `/model`.
 GLM, Kimi, DeepSeek, Grok, GPT, Claude, Gemini, and OpenRouter are there.
-`openai-codex` uses your ChatGPT sign-in.
+OpenAI takes your ChatGPT subscription or an API key.
+In the Mac app, any service that speaks OpenAI's or Anthropic's API can be added as an endpoint by its address, and `/endpoint` does it in the terminal.
 You can switch models in the middle of a conversation.
 The [model setup guide](docs/TERMINAL_GUIDE.md#enable-agent-conversation) lists each provider and the environment variable it reads.
 

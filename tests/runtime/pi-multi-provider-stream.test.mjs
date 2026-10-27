@@ -3,7 +3,6 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { zstdDecompressSync } from "node:zlib";
 
 import { Agent } from "@earendil-works/pi-agent-core";
 import { Type, validateToolArguments } from "@earendil-works/pi-ai";
@@ -43,12 +42,11 @@ const conditionalToolFields = {
 };
 const schemaProviders = [
   ...providers,
-  ["openai-codex", "gpt-5.6-luna", "openai-codex-responses", "https://chatgpt.com/backend-api/codex/responses"],
   ["google-vertex", "gemini-3.5-flash-lite", "google-vertex", "https://aiplatform.googleapis.com/v1/publishers/google/models/gemini-3.5-flash-lite:streamGenerateContent?alt=sse"],
 ];
 
 function isResponsesApi(api) {
-  return api === "openai-responses" || api === "openai-codex-responses";
+  return api === "openai-responses";
 }
 
 function isGoogleApi(api) {
@@ -225,14 +223,9 @@ function assertRequestBody(body, api, model, followUp) {
 // This validates local request construction, not access to any live model service.
 for (const [provider, modelId, api, endpoint] of schemaProviders) {
   test(`${provider} sends object schemas for every production tool on ordinary chat`, async (context) => {
-    const codex = provider === "openai-codex";
-    const key = codex
-      ? `fixture.${Buffer.from(JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "synthetic-account" } })).toString("base64")}.fixture`
-      : `synthetic-schema-key-${provider}`;
+    const key = `synthetic-schema-key-${provider}`;
     const models = createPiModels({
-      credentials: { read: async () => codex
-        ? { type: "oauth", access: key, refresh: "unused-synthetic-refresh", expires: Date.now() + 86_400_000 }
-        : { type: "api_key", key } },
+      credentials: { read: async () => ({ type: "api_key", key }) },
       authContext: { env: async () => undefined, fileExists: async () => false },
     });
     const requests = [];
@@ -241,10 +234,7 @@ for (const [provider, modelId, api, endpoint] of schemaProviders) {
       const request = new Request(input, init);
       assert.equal(request.url, endpoint);
       assertAuthenticationHeader(request, api, key);
-      if (codex) assert.equal(request.headers.get("content-encoding"), "zstd");
-      const body = codex
-        ? JSON.parse(zstdDecompressSync(Buffer.from(await request.arrayBuffer())).toString())
-        : await request.json();
+      const body = await request.json();
       requests.push(body);
       const invalid = outboundToolSchemas(body, api).find((tool) => tool.parameters.type !== "object");
       if (invalid) {
@@ -259,12 +249,7 @@ for (const [provider, modelId, api, endpoint] of schemaProviders) {
     if (isGoogleApi(api)) context.mock.method(globalThis, "fetch", fetch);
     const runtime = new PiAgentRuntime({
       application: productionToolApplication(), provider, modelId,
-      models: codex ? {
-        streamSimple(model, streamContext, options) {
-          assert.equal(options.transport, "auto", "production retains Pi's normal transport selection");
-          return models.streamSimple(model, streamContext, { ...options, transport: "sse" });
-        },
-      } : models,
+      models,
       model: models.getModel(provider, modelId),
       modelFetch: fetch,
     });

@@ -50,25 +50,27 @@ const scriptedWindow = (answer, { signal } = {}) => {
 test("providers list the /model picker with sign-in kinds and states, never a key", async t => {
   const { settings, store, environment, requests } = await fixture(t, { environment: { GROQ_API_KEY: "GROQ_ENV_SENTINEL" } });
   await store.modify("deepseek", () => ({ type: "api_key", key: "DEEPSEEK_SAVED_SENTINEL" }));
-  await store.modify("openai-codex", () => ({ type: "oauth", access: "ACCESS_SENTINEL", refresh: "REFRESH_SENTINEL",
-    accountId: "ACCOUNT_SENTINEL", expires: Date.now() + 60_000 }));
+  await store.modify("openai", () => ({ type: "oauth", access: "ACCESS_SENTINEL", refresh: "REFRESH_SENTINEL",
+    clientId: "CLIENT_SENTINEL", expires: Date.now() + 60_000 }));
   await writePiRuntimeSelection({ provider: "zai", model: "glm-4.7" }, environment);
 
   const providers = await settings.providers();
   assert.equal(JSON.stringify(providers).includes("SENTINEL"), false);
   assert.equal(requests.length, 0, "listing providers never fetches");
-  // OpenAI's two ways in, Anthropic, Google and xAI always come first; any other provider shows only
-  // with a key, saved or from the environment, or while it is the one in use.
-  assert.deepEqual(providers.slice(0, 5).map(provider => provider.id), ["openai-codex", "openai", "anthropic", "google", "xai"]);
-  assert.deepEqual(providers.slice(5).map(provider => provider.id).sort(), ["deepseek", "groq", "zai"]);
+  // OpenAI, Anthropic, Google and xAI always come first; any other provider shows only with a key,
+  // saved or from the environment, or while it is the one in use.
+  assert.deepEqual(providers.slice(0, 4).map(provider => provider.id), ["openai", "anthropic", "google", "xai"]);
+  assert.deepEqual(providers.slice(4).map(provider => provider.id).sort(), ["deepseek", "groq", "zai"]);
   assert.equal(providers.some(provider => provider.modelCount === 0), false);
   assert.equal(providers.some(provider => provider.id === "typesafe"), false);
   const byId = Object.fromEntries(providers.map(({ id, ...rest }) => [id, rest]));
   for (const provider of providers) {
-    assert.deepEqual(Object.keys(provider), ["id", "name", "modelCount", "signIn", "signedIn", "source"]);
+    const optional = ["chatgpt", "method"].filter(key => key in provider);
+    assert.deepEqual(Object.keys(provider), ["id", "name", "modelCount", "signIn", "signedIn", "source", ...optional]);
   }
-  assert.deepEqual(byId.deepseek, { ...byId.deepseek, signIn: "api_key", signedIn: true, source: "saved" });
-  assert.deepEqual(byId["openai-codex"], { ...byId["openai-codex"], signIn: "oauth", signedIn: true, source: "saved" });
+  assert.deepEqual(byId.deepseek, { ...byId.deepseek, signIn: "api_key", signedIn: true, source: "saved", method: "api_key" });
+  // OpenAI takes a key or a ChatGPT sign-in, and says which one it has.
+  assert.deepEqual(byId.openai, { ...byId.openai, signIn: "api_key", chatgpt: true, signedIn: true, source: "saved", method: "oauth" });
   assert.deepEqual(byId.groq, { ...byId.groq, signIn: "environment_only", signedIn: true, source: "GROQ_API_KEY" });
   assert.deepEqual(byId.zai, { name: "Z.AI (GLM API)", modelCount: byId.zai.modelCount, signIn: "api_key", signedIn: false, source: null });
   // A provider in use stays listed without a key, so it can be given one.
@@ -82,50 +84,48 @@ test("signIn saves an API key from a scripted window, and signOut removes it", a
   const signedIn = await settings.signIn("deepseek", interaction);
   assert.deepEqual(prompts, [{ type: "secret", message: "Enter DeepSeek API key" }]);
   assert.deepEqual(signedIn, { id: "deepseek", name: "DeepSeek", modelCount: signedIn.modelCount,
-    signIn: "api_key", signedIn: true, source: "saved" });
+    signIn: "api_key", signedIn: true, source: "saved", method: "api_key" });
   assert.equal(JSON.stringify(signedIn).includes("SENTINEL"), false);
   // The pasted newline is gone, as in the terminal's hidden prompt.
   assert.deepEqual(await store.read("deepseek"), { type: "api_key", key: "sk-WINDOW-SENTINEL" });
 
-  assert.deepEqual(await settings.signOut("deepseek"), { ...signedIn, signedIn: false, source: null });
+  const { method: _, ...signedOut } = signedIn;
+  assert.deepEqual(await settings.signOut("deepseek"), { ...signedOut, signedIn: false, source: null });
   assert.equal(await store.read("deepseek"), undefined);
 });
 
-test("ChatGPT sign-in gives the window a method choice, the link and a paste field Pi can close", async t => {
+test("ChatGPT sign-in gives the window the link and a paste field Pi can close", async t => {
   const callbackWon = new AbortController();
-  // Shaped like Pi's openai-codex flow, where the browser callback can beat a pasted code.
-  const provider = createProvider({ id: "openai-codex", name: "Fictional ChatGPT", models: [],
+  // Shaped like Pi's Sign in with ChatGPT, where the browser callback can beat a pasted address.
+  const provider = createProvider({ id: "openai", name: "Fictional OpenAI", models: [],
     api: { stream() { throw new Error("not used"); }, streamSimple() { throw new Error("not used"); } },
-    auth: { oauth: { name: "Fictional OAuth",
-      async login(interaction) {
-        const method = await interaction.prompt({ type: "select", message: "Select login method:", extra: "DROPPED_SENTINEL",
-          options: [{ id: "browser", label: "Browser login (default)" }, { id: "device_code", label: "Device code login (headless)" }] });
-        assert.equal(method, "browser");
+    auth: { apiKey: { name: "Fictional key", async login() { throw new Error("not used"); }, async resolve() {} },
+      oauth: { name: "Fictional OAuth",
+      async login(interaction, options) {
+        assert.match(options.getDeviceId(), /^[0-9a-f-]{36}$/u);
         interaction.notify({ type: "auth_url", url: "https://auth.example.invalid/authorize?state=fictional", instructions: "Complete login." });
         interaction.notify({ type: "unknown", token: "DROPPED_SENTINEL" });
         const pasted = interaction.prompt({ type: "manual_code", message: "Paste the redirect URL:",
           placeholder: "http://localhost:1455/auth/callback", signal: callbackWon.signal });
         callbackWon.abort();
         await assert.rejects(pasted, { name: "AbortError" });
-        return { type: "oauth", access: "ACCESS_SENTINEL", refresh: "REFRESH_SENTINEL", accountId: "ACCOUNT_SENTINEL", expires: Date.now() + 60_000 };
+        return { type: "oauth", access: "ACCESS_SENTINEL", refresh: "REFRESH_SENTINEL", clientId: "CLIENT_SENTINEL", expires: Date.now() + 60_000 };
       },
       async refresh() { throw new Error("not used"); },
       async toAuth(credential) { return { apiKey: credential.access }; } } } });
   const { settings, store } = await fixture(t, {
     createAuthentication: options => createPiAuthentication({ ...options, providerLoader: async () => provider }) });
-  const { prompts, events, interaction } = scriptedWindow(prompt => prompt.type === "select" ? "browser"
-    : new Promise((_, reject) => prompt.signal.addEventListener("abort", () => reject(prompt.signal.reason), { once: true })));
+  const { prompts, events, interaction } = scriptedWindow(prompt =>
+    new Promise((_, reject) => prompt.signal.addEventListener("abort", () => reject(prompt.signal.reason), { once: true })));
 
-  const status = await settings.signIn("openai-codex", interaction);
-  assert.deepEqual(prompts.map(prompt => prompt.type), ["select", "manual_code"]);
-  assert.deepEqual(prompts[0], { type: "select", message: "Select login method:",
-    options: [{ id: "browser", label: "Browser login (default)" }, { id: "device_code", label: "Device code login (headless)" }] });
-  assert.equal(prompts[1].placeholder, "http://localhost:1455/auth/callback");
-  assert.equal(prompts[1].signal.aborted, true);
+  const status = await settings.signIn("openai", interaction, { method: "oauth" });
+  assert.deepEqual(prompts.map(prompt => prompt.type), ["manual_code"]);
+  assert.equal(prompts[0].placeholder, "http://localhost:1455/auth/callback");
+  assert.equal(prompts[0].signal.aborted, true);
   assert.deepEqual(events, [{ type: "auth_url", url: "https://auth.example.invalid/authorize?state=fictional", instructions: "Complete login." }]);
-  assert.deepEqual(status, { ...status, id: "openai-codex", signIn: "oauth", signedIn: true, source: "saved" });
-  assert.equal(JSON.stringify([status, events, prompts[0]]).includes("SENTINEL"), false);
-  assert.equal((await store.read("openai-codex")).refresh, "REFRESH_SENTINEL");
+  assert.deepEqual(status, { ...status, id: "openai", signIn: "api_key", chatgpt: true, signedIn: true, source: "saved", method: "oauth" });
+  assert.equal(JSON.stringify([status, events]).includes("SENTINEL"), false);
+  assert.equal((await store.read("openai")).refresh, "REFRESH_SENTINEL");
 });
 
 test("signOut leaves an environment key in effect", async t => {

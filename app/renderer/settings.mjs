@@ -531,24 +531,19 @@ export function createSettings({ state, send, t, appleMusic = null }) {
     if (data.providersError) return failure("noProviders");
     const usable = data.providers.filter((provider) => provider.signedIn === true || provider.signIn !== "environment_only");
     const rows = [];
-    const openai = ["openai-codex", "openai"].map((id) => usable.find((provider) => provider.id === id)).filter(Boolean);
-    if (openai.length) {
-      const expanded = data.expanded === "openai";
-      const ways = openai.filter((provider) => provider.signedIn).map((provider) => say(provider.signIn === "oauth" ? "chatgpt" : "apiKey"));
-      rows.push(choice({ label: "OpenAI", detail: ways.join(" · ") || null, expanded, key: "provider:openai", lead: icon("chevron", "icon disclose"),
-        onChoose: () => { data.expanded = expanded ? null : "openai"; render(); } }));
-      if (expanded) {
-        const inner = [];
-        for (const provider of openai) {
-          inner.push(way({ label: say(provider.signIn === "oauth" ? "chatgpt" : "apiKey"), detail: accessDetail(provider), trailing: access(provider) }));
-          if (provider.signedIn) inner.push(modelList(provider, chosen));
-        }
-        rows.push(choices(inner, "choices inner"));
-      }
-    }
     for (const provider of usable) {
-      if (provider.id === "openai-codex" || provider.id === "openai") continue;
       const expanded = data.expanded === provider.id;
+      // OpenAI opens to its two ways in, a ChatGPT subscription or an API key, over its models.
+      if (provider.chatgpt) {
+        rows.push(choice({ label: provider.name, detail: provider.signedIn ? say(provider.method === "oauth" ? "chatgpt" : "apiKey") : null, expanded,
+          key: `provider:${provider.id}`, lead: icon("chevron", "icon disclose"), onChoose: () => { data.expanded = expanded ? null : provider.id; render(); } }));
+        if (expanded) {
+          const ways = ["oauth", "api_key"].map((method) => way({ label: say(method === "oauth" ? "chatgpt" : "apiKey"),
+            detail: provider.method === method ? accessDetail(provider) : null, trailing: access(provider, method) }));
+          rows.push(choices([...ways, ...(provider.signedIn ? [modelList(provider, chosen)] : [])], "choices inner"));
+        }
+        continue;
+      }
       rows.push(choice({ label: provider.name, detail: provider.endpoint ? host(provider.endpoint.baseUrl) : accessDetail(provider), expanded,
         trailing: access(provider), key: `provider:${provider.id}`, lead: icon("chevron", "icon disclose"),
         onChoose: () => { data.expanded = expanded ? null : provider.id; render(); } }));
@@ -573,25 +568,26 @@ export function createSettings({ state, send, t, appleMusic = null }) {
   // A key from the environment can't be removed here; it says where it comes from instead.
   const accessDetail = (provider) => (provider.signedIn && provider.source !== "saved" && provider.signIn !== "endpoint" ? say("signedIn") : null);
   // What each row can do about its way in: sign in or out of ChatGPT, add or remove a key, edit an endpoint.
-  function access(provider) {
+  // OpenAI keeps one of its two at a time, so signing in one way replaces the other.
+  function access(provider, method = provider.signIn) {
     if (provider.signIn === "endpoint") return button(say("editMessage"), "button quiet small", () => editEndpoint(provider), `endpoint:edit:${provider.id}`);
-    const oauth = provider.signIn === "oauth";
-    if (provider.signedIn) {
+    const oauth = method === "oauth";
+    if (provider.signedIn && (!provider.chatgpt || provider.method === method)) {
       if (provider.source !== "saved") return null;
       const node = button(say(oauth ? "signOut" : "removeKey"), "button quiet small", () => {
         data.signingOut.add(provider.id);
         send({ type: "sign-out", provider: provider.id });
         render();
-      }, `sign-out:${provider.id}`);
+      }, `sign-out:${provider.id}:${method}`);
       node.disabled = data.signingOut.has(provider.id);
       return node;
     }
     const node = button(say(oauth ? "signIn" : "addKey"), "button small", () => {
       data.error = null;
       data.auth = { provider: provider.id, providerName: oauth ? "ChatGPT" : provider.name, status: null, info: null };
-      send({ type: "sign-in", provider: provider.id });
+      send({ type: "sign-in", provider: provider.id, method });
       render();
-    }, `sign-in:${provider.id}`);
+    }, `sign-in:${provider.id}:${method}`);
     // One sign-in at a time; the core would refuse a second.
     node.disabled = Boolean(data.auth);
     return node;
@@ -607,7 +603,7 @@ export function createSettings({ state, send, t, appleMusic = null }) {
     wantModels(provider);
     const models = data.models.get(provider.id);
     const retry = () => { data.modelsFailed.delete(provider.id); requested.delete(provider.id); wantModels(provider); render(); };
-    const inner = provider.signedIn !== true ? [note(say(provider.signIn === "oauth" ? "signInFirst" : "addKeyFirst"))]
+    const inner = provider.signedIn !== true ? [note(say("addKeyFirst"))]
       : data.modelsFailed.has(provider.id) ? [failure("noticeFailed"), button(say("tryAgain"), "button quiet small", retry, `retry:${provider.id}`)]
         : !models ? [waiting()]
           : models.map((model) => {

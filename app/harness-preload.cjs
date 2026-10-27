@@ -156,8 +156,7 @@ const LONG_TURNS = [
 let status = STATUS;
 // Models: where they come from, what each offers, and the menu's list with its default.
 const PROVIDERS = [
-  { id: "openai-codex", name: "ChatGPT", signedIn: false, signIn: "oauth" },
-  { id: "openai", name: "OpenAI API", signedIn: false, signIn: "api_key" },
+  { id: "openai", name: "OpenAI", signedIn: false, signIn: "api_key", chatgpt: true },
   { id: "anthropic", name: "Anthropic", signedIn: true, signIn: "api_key", source: "saved" },
   { id: "google", name: "Google", signedIn: false, signIn: "api_key" },
   { id: "xai", name: "xAI", signedIn: false, signIn: "api_key" },
