@@ -801,8 +801,9 @@ function stopHanding() {
 barRecord.addEventListener("click", toggleRecord);
 
 // The record alone: the window holds only the record, drawn large in the same mosaic, over the
-// cover's light. A pin keeps the window above the others; a click anywhere else, or Esc, brings the
-// conversation back, and a drag moves the window. The pin shows while the pointer is over the window.
+// cover's light. A click anywhere else, or Esc, brings the conversation back, and a drag moves the
+// window. A pin keeps the window above the others and locks it on the record: clicks and Esc leave it
+// there until the pin is clicked again. The pin shows while the pointer is over the window.
 const immersive = $("immersive");
 let deep = null;
 let pinned = false;
@@ -850,7 +851,7 @@ immersive.addEventListener("pointerdown", (event) => {
   immersive.addEventListener("pointerup", async () => {
     await started;
     const moved = (await window.moondogApp?.dragWindow?.("end")) ?? 0;
-    if (moved < 4) immerse(false);
+    if (moved < 4 && !pinned) immerse(false);
   }, { once: true });
 });
 immersive.addEventListener("click", (event) => { if (event.detail && onArm(deep, event)) setArm(); });
@@ -1772,7 +1773,7 @@ window.addEventListener("drop", (event) => {
 document.addEventListener("keydown", (event) => {
   // Escape that just closed Settings is spent; it must not also stop the reply behind it.
   if (settings.open || event.defaultPrevented) return;
-  if (immersed()) { if (event.key === "Escape") immerse(false); return; }
+  if (immersed()) { if (event.key === "Escape" && !pinned) immerse(false); return; }
   if (event.target === input || event.target.closest?.("input, textarea")) return;
   if (event.key === " " && event.target.closest?.("button, a, select, [role=button]")) return;
   if (event.key === "Escape" && state.streaming) { send({ type: "cancel" }); return; }

@@ -78,7 +78,8 @@ pin.click();
 answer(false);
 await wait(150);
 assert(pin.getAttribute("aria-pressed") === "false", "A native refusal should restore the actual pin state");
-// A press on the pin stays with the pin; a click anywhere else in the record returns to the conversation.
+// A press on the pin stays with the pin. The pin locks the record: a click anywhere else, or Esc,
+// returns to the conversation only once it is unpinned.
 pin.click();
 const press = (target, type) => target.dispatchEvent(new PointerEvent(type, { bubbles: true, button: 0, pointerId: 1 }));
 press(pin, "pointerdown");
@@ -86,10 +87,19 @@ assert(!$("immersive").hidden, "A press on the pin must not leave the record");
 press($("immersive-record"), "pointerdown");
 press($("immersive-record"), "pointerup");
 await wait(50);
+assert(!$("immersive").hidden, "A click on a pinned record must not leave it");
+answer(true);
+await wait(150);
+document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+assert(!$("immersive").hidden, "Esc must not leave a pinned record");
+pin.click();
+press($("immersive-record"), "pointerdown");
+press($("immersive-record"), "pointerup");
+await wait(50);
 answer(true);
 await wait(150);
 assert(pin.getAttribute("aria-pressed") === "false", "A late pin reply must not select the pin after leaving the record");
-assert($("immersive").hidden, "A click on the record should return to the conversation");
+assert($("immersive").hidden, "A click on the unpinned record should return to the conversation");
 assert(document.activeElement === $("input"), "Returning should restore composer focus");
 
 // The record answers its arm and the wheel. Points are placed by the art module's own geometry.
