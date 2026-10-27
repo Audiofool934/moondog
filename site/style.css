@@ -103,6 +103,25 @@ main, .liner { width: var(--page); margin-inline: auto; }
 .stage { position: relative; height: clamp(560px, 84vh, 820px); border-radius: 12px; overflow: hidden; box-shadow: var(--window); background: var(--canvas); }
 .stage iframe { display: block; width: 100%; height: 100%; border: 0; pointer-events: none; }
 .under { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px 24px; margin-top: 14px; }
+/* The cover: the window waits on its record, and the visitor's click puts the needle down, with sound. */
+.cover { position: absolute; inset: 0; z-index: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 12px;
+  padding: 0 16px clamp(56px, 17%, 150px); cursor: pointer; transition: opacity 500ms ease; }
+.cover.leaving { opacity: 0; pointer-events: none; }
+.needle { display: inline-flex; align-items: center; gap: 9px; height: 46px; padding: 0 22px 0 18px; border: 0; border-radius: 999px; background: var(--solid);
+  color: var(--on-solid); font: 500 15px var(--sans); cursor: pointer; box-shadow: 0 10px 30px -12px rgb(0 0 0 / 0.45); transition: transform 160ms ease; }
+.needle:hover, .cover:hover .needle { transform: translateY(-1px); }
+.needle:active { transform: scale(0.98); }
+.needle svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.needle .body { fill: currentColor; stroke: none; }
+.cover-line { margin: 0; color: var(--text-3); font: 13px/1.5 var(--sans); text-align: center; }
+.cover-line .quiet { padding: 0; border: 0; background: none; color: var(--text-2); font: inherit; text-decoration: underline;
+  text-decoration-color: var(--text-3); text-underline-offset: 0.2em; cursor: pointer; }
+.cover-line .quiet:hover { color: var(--text); }
+/* When the scene began without sound, the switch says once that it's there. */
+.sound.hint { animation: hint 1.6s ease-in-out 2; }
+@keyframes hint { 50% { background: var(--current); color: var(--text); box-shadow: 0 0 0 4px var(--well); } }
+@media (prefers-reduced-motion: reduce) { .sound.hint { animation: none; } }
+
 .note { max-width: 70ch; margin: 0; color: var(--text-3); font: 14px/1.55 var(--sans); }
 /* The scene's music, off until the visitor turns it on. */
 .sound { display: inline-flex; flex: none; align-items: center; gap: 6px; height: 28px; margin-top: -4px; padding: 0 12px 0 9px; border: 0;

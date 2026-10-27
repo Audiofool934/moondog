@@ -5,8 +5,8 @@ import { coverPalette } from "../../app/renderer/mood.mjs";
 import { runWindowRoom } from "../../app/window-room.mjs";
 import { SceneAgent } from "./agent.mjs";
 import { SceneApplication, createSceneMusicApp } from "./application.mjs";
-import { createClock, direct } from "./director.mjs";
-import { EXCHANGES, MODEL } from "./scene.mjs";
+import { createClock, direct, leanArm } from "./director.mjs";
+import { EXCHANGES, IDENT, MODEL } from "./scene.mjs";
 
 // The window and the core talk over one message port, as in the app. window-room listens the way
 // Electron's MessagePortMain does.
@@ -57,4 +57,18 @@ void runWindowRoom({
   },
 }, { port: core, send: (message) => core.postMessage(message) });
 
-void direct({ clock, agent, request: EXCHANGES[1].request, quick, ending: () => tell({ song: null, mood: null }) });
+// The page says when the scene may begin (page.mjs): on the visitor's own click on its cover, which puts
+// the needle down, or on its own after a while; and on every play after the first, at once. A pointer
+// over the cover leans the arm. Each needle drop starts the station's ident, before the first song.
+const begin = Promise.withResolvers();
+addEventListener("message", (event) => {
+  if (event.origin !== location.origin || event.data?.source !== "moondog-page") return;
+  if (event.data.start) begin.resolve({ touch: event.data.start.touch === true });
+  if ("lean" in event.data) leanArm(event.data.lean === true);
+  // The page may load after this frame; it asks, and hears that the scene is ready.
+  if (event.data.ask) tell({ ready: true });
+});
+tell({ ready: true });
+const ident = () => tell({ song: { sound: IDENT, startedAt: Date.now() } });
+
+void direct({ clock, agent, request: EXCHANGES[1].request, quick, begin: begin.promise, needle: ident, ending: () => tell({ song: null, mood: null }) });
