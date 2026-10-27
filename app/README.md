@@ -32,7 +32,7 @@ A model or music service chosen there lasts until the app quits, and sign-in and
   It turns while music plays and rests when it stops, coming up to speed and running down like a platter.
   Its tonearm rests on it while music plays and swings off when the music stops; a click on the arm pauses, and another plays.
   A pointer near the arm lights it in its own dots without moving it: the arm's dots fill out as the pointer comes closer, and swell most around the pointer, so the light follows it along the arm.
-  With nothing loaded on any player, a click on the arm asks Moondog for a song, as the words "Play something for right now" would in the open conversation; the arm stays up until the music starts, and goes down then, as it does whenever music plays. A paused song is still loaded, so the arm resumes it.
+  With nothing loaded on any player, a click on the arm asks Moondog for a song, as the words "Play something for right now" would in the open conversation; the arm goes down at once and waits on the still record, and the record turns when the music starts. A reply that starts no music lifts the arm a few seconds after it ends. A paused song is still loaded, so the arm resumes it.
   The wheel over the record scratches it: the record turns with the wheel, the song's place shows just above it and on the player's progress line, and the music goes there once the wheel rests, in one seek.
   A slow wheel moves finely; a quick one covers more of the song.
   A turn of the wheel belongs to what it starts on until the wheel rests. Above the words, the record takes it only from a pointer put on the disc or its arm; a record that grew or moved under a still pointer, its square's empty corners, and a song that can't move leave the wheel to the words.
@@ -48,7 +48,7 @@ A model or music service chosen there lasts until the app quits, and sign-in and
   Where the bar has no room between its controls, the title gives way first, then the mark.
   Hovering the record offers a full-window view at the lower-right corner of its square, clear of the disc: two arrows with no frame, which darken and open a little under the pointer.
   The full-window view can shrink to a small square; the pin turns upright and solid when it keeps the window on top.
-  The arm and the wheel work there as above the words. A click anywhere else in it, or Esc, returns to the conversation; a drag moves the window. The page moves the window itself, because a native drag region never passes it the click.
+  The arm and the wheel work there as above the words. A click anywhere else in it, or Esc, returns to the conversation; a drag moves the window. The pin also locks the view: while it is on, clicks and Esc stay on the record, and a second click on the pin releases it. The page moves the window itself, because a native drag region never passes it the click.
 - Conversations on the left are the terminal's conversations, in both directions: one started here shows up in `/resume`, and the other way round.
   While the window shows, a conversation or folder saved in the terminal appears within about two seconds; the core asks SQLite whether another process wrote to the memory store, so nothing is sent when nothing changed.
   The window and the terminal show the same conversation: the one either opened last, with `/new`, `/resume`, `/branch`, Branch, the sidebar or a launch.
