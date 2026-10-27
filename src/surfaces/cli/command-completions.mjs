@@ -19,6 +19,11 @@ const artChoices = choices([
   ["auto", N_("Choose artwork for this terminal")],
 ]);
 const motionChoices = choices([["on", N_("Animate the character artwork")], ["off", N_("Keep the artwork still")]]);
+const serviceChoices = choices([
+  ["spotify", N_("Whole songs on your Spotify devices")],
+  ["apple_music", N_("30-second previews, played here")],
+  ["netease", N_("Whole songs through ncm-cli")],
+]);
 const webChoices = choices([
   ["search", N_("Search public music sites")],
   ["read", N_("Read a public page")],
@@ -87,6 +92,7 @@ export function withCommandCompletions(commands, {
     theme: { argumentHint: "[paper|charcoal|terminal|auto]", choices: firstArgument(themeChoices) },
     art: { argumentHint: "[braille|ascii|off|auto]", choices: firstArgument(artChoices) },
     motion: { argumentHint: "[on|off]", choices: firstArgument(motionChoices) },
+    service: { argumentHint: "[spotify|apple_music|netease]", choices: firstArgument(serviceChoices) },
     lyrics: { argumentHint: "[sync]", choices: firstArgument(choices([["sync", N_("Check profile songs for lyrics")]])) },
     web: { argumentHint: "search <query> | read <url> | status", choices: firstArgument(webChoices) },
     spotify: {
