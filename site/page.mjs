@@ -88,10 +88,10 @@ function setSound(next) {
 }
 button.addEventListener("click", () => setSound(!on));
 
-// The cover. The scene waits on the record until the visitor puts the needle down, with sound, or
-// chooses to watch without it; after a while on screen it begins on its own, silently, and the sound
-// switch shows itself once. Every play after the first begins at once. A pointer over the cover leans
-// the record's arm, as a pointer on the arm leans it in the app.
+// The cover. The scene waits on the record until the visitor lets it begin, with sound, or chooses to
+// watch without it; after a while on screen it begins on its own, silently, and the sound switch shows
+// itself once. Then it plays on, again and again. A pointer over the cover leans the record's arm, as a
+// pointer on the arm leans it in the app; a click lets the arm rest up, until the needle goes down.
 const frame = document.querySelector(".stage iframe");
 const cover = document.querySelector("[data-cover]");
 const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -108,6 +108,7 @@ function begin({ sound = false, touch = false } = {}) {
   if (sound) setSound(true);
   cover.classList.add("leaving");
   setTimeout(() => { cover.hidden = true; }, 500);
+  toScene({ lean: false });
   toScene({ start: { touch } });
 }
 function ready() {

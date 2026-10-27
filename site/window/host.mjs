@@ -57,9 +57,9 @@ void runWindowRoom({
   },
 }, { port: core, send: (message) => core.postMessage(message) });
 
-// The page says when the scene may begin (page.mjs): on the visitor's own click on its cover, which puts
-// the needle down, or on its own after a while; and on every play after the first, at once. A pointer
-// over the cover leans the arm. Each needle drop starts the station's ident, before the first song.
+// The page says when the scene may begin (page.mjs): on the visitor's own click on its cover, after which
+// the needle goes down, or on its own after a while. A pointer over the cover leans the arm. Each needle
+// drop starts the station's ident, before the first song, and the needle's lift at the end stops the music.
 const begin = Promise.withResolvers();
 addEventListener("message", (event) => {
   if (event.origin !== location.origin || event.data?.source !== "moondog-page") return;

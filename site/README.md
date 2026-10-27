@@ -22,11 +22,12 @@ The build asks GitHub for the newest release with a Mac download; `node build.mj
 
 ## The scene
 
-The window waits on its record, and the page's cover asks the visitor to put the needle down, with sound; a quiet link watches without it.
-The click starts the music and drops the needle at once, and the station's ident plays while Moondog picks three songs.
+The window waits on a new conversation with the record's arm up, and the page's cover asks the visitor in with sound ("Experience Moondog"); a quiet link watches without it.
+The click turns the sound on; the cover's words fade, the arm stays up for a moment, and then the needle drops.
+As in the app, the needle asks for "Play something for right now", and the station's ident plays while Moondog picks three songs.
 Then a request for a late train home is typed and answered, and the record takes the whole window.
-Without a click, the scene begins silently after six seconds on screen, and the Sound switch shows itself once.
-Every play after the first begins at once, with the visitor's choice.
+The needle lifts, the music stops, and the record glides back to a new conversation, where the scene began, so the scene plays again in place, with no reload.
+Without a click, the scene begins silently after six seconds on screen, the scene's pointer puts the needle down, and the Sound switch shows itself once.
 The window is the real one: `app/renderer` and `app/window-room.mjs` run unchanged, so a change to the app's window shows here too.
 
 - `window/host.mjs` stands in for the app's preload and core process, and starts the scene.
@@ -35,7 +36,7 @@ The window is the real one: `app/renderer` and `app/window-room.mjs` run unchang
 - `window/agent.mjs` is the scene's Moondog: it runs each exchange's steps through the agent's events, starts its songs, and writes its reply at a reading pace.
 - `window/application.mjs` keeps the scene's conversation and plays its songs as the Music app on a Mac would.
 - `window/director.mjs` waits for the page to let the scene begin, then moves a pointer and types, as a visitor would: the needle, the player, the composer, and the record's full-window arrows.
-  The scene runs only while the window is on screen, and plays again behind a fade.
+  The scene runs only while the window is on screen.
   With reduced motion it shows the finished scene at once, with no pointer.
   Where the window is narrower than the app gives its player room, the player stays folded.
 

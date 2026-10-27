@@ -33,7 +33,8 @@ export function createSceneMusicApp({ onPlay = () => {} } = {}) {
         playlist: { id: "scene", name: "Moondog", library: false, position: index + 1, first_position: 1, tracks: queue } };
     },
     async cover(song) { return song?.image ?? null; },
-    async pause() {},
+    // When the needle lifts at the scene's end, the scene's music stops, and the record comes back empty, as it began.
+    async pause() { queue = []; index = 0; },
     async resume() {},
     async next() {},
     async previous() {},

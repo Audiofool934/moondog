@@ -1,7 +1,7 @@
-// Plays the scene in the window as a visitor would: a pointer moves, the needle goes down, a request
-// is typed, and the record takes the whole window. Everything after each gesture is the window and its
-// core answering, as in the app. The scene runs only while the window is on screen, and starts again,
-// faded, once it has played.
+// Plays the scene in the window as a visitor would: the needle goes down, a request is typed, the record
+// takes the whole window, and the needle lifts. Everything after each gesture is the window and its core
+// answering, as in the app. The scene begins and ends on a new conversation with the arm up, so it plays
+// again from where it ends. It runs only while the window is on screen.
 const $ = (name) => document.querySelector(`[data-${name}]`);
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -65,14 +65,16 @@ function createPointer(clock) {
   };
 }
 
-// Where the record's arm rests while nothing plays, by the art module's own geometry (as app/check-ui.mjs aims).
-function armPoint() {
-  const canvas = $("record");
+// A point on the record's arm, by the art module's own geometry (as app/check-ui.mjs aims): where it rests
+// while nothing plays, or on the record while music plays. The full-window record keeps a fixed number
+// of dots across (app/renderer/renderer.mjs, immerse).
+const RESTING = [1.07, -0.6];
+const PLAYING = [0.864, -0.706];
+function armPoint(canvas = $("record"), across = null, [ux, uy] = RESTING) {
   const box = canvas.getBoundingClientRect();
-  const grid = Math.max(48, Math.round(Math.floor(canvas.clientWidth) / 8) * 4);
+  const grid = across ?? Math.max(48, Math.round(Math.floor(canvas.clientWidth) / 8) * 4);
   const radius = (grid - 4) / 2.35;
   const [cx, cy] = [(grid - 1) / 2 - radius * 0.09, (grid - 1) / 2 + radius * 0.045];
-  const [ux, uy] = [1.07, -0.6];
   return { x: box.left + (cx + ux * radius + 0.5) / grid * box.width, y: box.top + (cy + uy * radius + 0.5) / grid * box.height };
 }
 const middle = (element, dx = 0) => {
@@ -93,7 +95,8 @@ export function leanArm(on) {
 }
 
 // begin resolves when the page lets the scene start: { touch: true } when the visitor's own click put the
-// needle down, so the arm drops at once; otherwise the scene's pointer does it. needle hears each drop.
+// needle down, so the arm drops by itself; otherwise the scene's pointer does it. needle hears each drop,
+// and ending hears the needle lift at the end.
 export async function direct({ clock, agent, request, quick = false, begin, needle = () => {}, ending = () => {} }) {
   const pointer = quick ? null : createPointer(clock);
   const curtain = document.createElement("div");
@@ -111,83 +114,109 @@ export async function direct({ clock, agent, request, quick = false, begin, need
   document.body.classList.add("waiting");
   curtain.classList.add("open");
   const { touch } = await begin;
-  document.body.classList.remove("waiting");
 
-  // The needle goes down, and Moondog picks something for right now.
   const drop = () => {
     const point = armPoint();
     document.elementFromPoint(point.x, point.y)?.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: point.x, clientY: point.y, detail: 1 }));
   };
-  let answered = agent.answered();
-  if (pointer && !touch) {
-    await clock.wait(1600);
-    pointer.show();
-    await pointer.move(armPoint(), 1300);
+  for (;;) {
+    // A new conversation, the arm up: the composer comes back where the page's words were, and the
+    // window rests a moment before the needle goes down and Moondog picks something for right now.
+    document.body.classList.remove("waiting");
+    let answered = agent.answered();
+    if (pointer && !touch) {
+      await clock.wait(900);
+      pointer.show();
+      await pointer.move(armPoint(), 1300);
+      await clock.wait(450);
+      await pointer.click();
+      needle();
+      await clock.wait(300);
+      await pointer.move({ x: innerWidth * 0.8, y: innerHeight * 0.72 }, 900);
+      pointer.hide();
+    } else {
+      await clock.wait(quick ? 0 : 1200);
+      drop();
+      needle();
+    }
+    await answered;
+    await clock.wait(2400);
+
+    // The player opens, with the song's cover, where the window has room for it beside the words
+    // (app/renderer/renderer.mjs, roomFor). In a narrower window the song stays in the title bar.
+    if (innerWidth < 1060) await clock.wait(1500);
+    else if (pointer) {
+      pointer.show();
+      await pointer.move(middle($("toggle-inspector")), 1000);
+      await clock.wait(350);
+      await pointer.click();
+      await clock.wait(250);
+      pointer.hide();
+    } else $("toggle-inspector").click();
+    await clock.wait(innerWidth < 1060 ? 1000 : 3000);
+
+    // A request, typed.
+    await settled(clock);
+    const input = $("input");
+    if (pointer) {
+      pointer.show();
+      await pointer.move(middle(input, -input.getBoundingClientRect().width / 2 + 90), 1000);
+      await clock.wait(250);
+      await pointer.click();
+      pointer.hide();
+    }
+    for (const letter of request) {
+      input.value += letter;
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      await clock.wait(quick ? 0 : 45 + Math.random() * 70 + (letter === " " ? 40 : 0));
+    }
     await clock.wait(500);
-    await pointer.click();
-    needle();
+    answered = agent.answered();
+    $("form").requestSubmit();
+    await answered;
+    if (quick) return;
+
+    // The record takes the whole window, as its arrows offer under the pointer, and turns in the cover's colours.
+    await clock.wait(2600);
+    const frame = $("record-frame");
+    pointer.show();
+    await pointer.move(middle(frame), 1100);
+    frame.classList.add("scene-hover");
+    await clock.wait(600);
+    await pointer.move(middle($("expand")), 600);
     await clock.wait(300);
-    await pointer.move({ x: innerWidth * 0.8, y: innerHeight * 0.72 }, 900);
-    pointer.hide();
-  } else {
-    drop();
-    needle();
-  }
-  await answered;
-  await clock.wait(2400);
-
-  // The player opens, with the song's cover, where the window has room for it beside the words
-  // (app/renderer/renderer.mjs, roomFor). In a narrower window the song stays in the title bar.
-  if (innerWidth < 1060) await clock.wait(1500);
-  else if (pointer) {
-    pointer.show();
-    await pointer.move(middle($("toggle-inspector")), 1000);
-    await clock.wait(350);
     await pointer.click();
-    await clock.wait(250);
+    frame.classList.remove("scene-hover");
+    await clock.wait(400);
     pointer.hide();
-  } else $("toggle-inspector").click();
-  await clock.wait(innerWidth < 1060 ? 1000 : 3000);
+    await clock.wait(5000);
 
-  // A request, typed.
-  await settled(clock);
-  const input = $("input");
-  if (pointer) {
+    // The needle lifts and the music stops.
+    const deep = $("immersive-record");
     pointer.show();
-    await pointer.move(middle(input, -input.getBoundingClientRect().width / 2 + 90), 1000);
-    await clock.wait(250);
+    await pointer.move(armPoint(deep, 160, PLAYING), 1000);
+    await clock.wait(400);
     await pointer.click();
+    ending();
+    await clock.wait(1500);
+    // Under the record, the player folds and a new conversation opens, as ⌘N opens one. A click beside
+    // the record brings the window back, and the record glides from the whole window to its place over
+    // the composer: where the scene began.
+    if ($("toggle-inspector").getAttribute("aria-pressed") === "true") $("toggle-inspector").click();
+    $("new").click();
+    document.body.classList.add("waiting");
+    await pointer.move({ x: innerWidth * 0.14, y: innerHeight * 0.56 }, 900);
+    await clock.wait(300);
+    const from = deep.getBoundingClientRect();
+    await pointer.click();
+    while (!$("immersive").hidden) await clock.wait(16);
     pointer.hide();
+    const record = $("record");
+    const to = record.getBoundingClientRect();
+    if (to.width) {
+      record.animate([{ transformOrigin: "0 0", transform: `translate(${from.left - to.left}px, ${from.top - to.top}px) scale(${from.width / to.width})` },
+        { transformOrigin: "0 0", transform: "none" }], { duration: 900, easing: "cubic-bezier(0.16, 1, 0.3, 1)" });
+    }
+    await clock.wait(700);
   }
-  for (const letter of request) {
-    input.value += letter;
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-    await clock.wait(quick ? 0 : 45 + Math.random() * 70 + (letter === " " ? 40 : 0));
-  }
-  await clock.wait(500);
-  answered = agent.answered();
-  $("form").requestSubmit();
-  await answered;
-  if (quick) return;
-
-  // The record takes the whole window, as its arrows offer under the pointer, and turns in the cover's colours.
-  await clock.wait(2600);
-  const frame = $("record-frame");
-  pointer.show();
-  await pointer.move(middle(frame), 1100);
-  frame.classList.add("scene-hover");
-  await clock.wait(600);
-  await pointer.move(middle($("expand")), 600);
-  await clock.wait(300);
-  await pointer.click();
-  frame.classList.remove("scene-hover");
-  await clock.wait(400);
-  pointer.hide();
-  await clock.wait(6500);
-
-  // The scene plays again from the start, behind a fade.
-  ending();
-  curtain.classList.remove("open");
-  await clock.wait(900);
-  location.reload();
 }
