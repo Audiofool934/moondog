@@ -696,18 +696,22 @@ function toggleRecord() {
 // where the pointer is, and more the closer it comes. A click anywhere else on the record folds it into the bar. Before anything is said, the
 // record folds nowhere, so only its arm answers a click.
 // With nothing loaded on any player, a click on the arm asks Moondog for a song, as the words
-// "Play something for right now" would, in the conversation that is open. The arm stays up until the
-// music plays, and goes down then, as it does for music started any other way. While it waits, until a
-// few seconds after a reply that starts no music, it asks nothing more. A paused song is still loaded,
-// so the arm resumes it instead.
+// "Play something for right now" would, in the conversation that is open. The arm goes down at once
+// and waits on the still record, cued; the record turns when the music plays. While it waits, until a
+// few seconds after a reply that starts no music, it asks nothing more, and then it lifts. A paused
+// song is still loaded, so the arm resumes it instead.
 const CUE_GRACE_MS = 4000;
 let cue = null;
 const armReady = () => {
   const now = nowPlaying();
   return now ? can(now, now.playing ? "pausing" : "resuming") : !cueing(now) && state.ready && !state.streaming;
 };
-const onArm = (target, event) => armReady() && target?.hit(event.clientX, event.clientY) === "arm";
+// While it waits, the arm still keeps its clicks, so another click neither asks again nor folds the record.
+const onArm = (target, event) => (armReady() || Boolean(cue)) && target?.hit(event.clientX, event.clientY) === "arm";
 const nearArm = (target, event) => (armReady() ? target?.near(event.clientX, event.clientY) : target?.near(null));
+// The arm rests on the record while the music plays, whatever started or stopped it, and while it
+// waits for the song it asked for; the record turns only with the music.
+const armDown = (now) => Boolean(now?.playing) || cueing(now);
 function setArm() {
   if (nowPlaying()) { control("toggle", "record"); return; }
   if (cueing(null) || !state.ready || state.streaming) return;
@@ -717,16 +721,19 @@ function setArm() {
   // The arm has nothing more to offer a click until the music plays, so it stops answering the pointer.
   record?.near(null);
   deep?.near(null);
+  renderInspector();
 }
-// Whether the arm still waits for the song it asked for.
+// Whether the arm still waits on the record for the song it asked for. A reply that ends without
+// music, or none started within 15 seconds, lifts the arm once the grace runs out.
 function cueing(now) {
   if (!cue) return false;
+  clearTimeout(cue.timer);
   if (now?.playing) { cue = null; return false; }
   if (state.streaming) cue.seen = true;
-  else if (cue.seen || Date.now() - cue.at > 15_000) {
-    cue.ended ||= Date.now();
-    if (Date.now() - cue.ended >= CUE_GRACE_MS) { cue = null; return false; }
-  }
+  else if (cue.seen || Date.now() - cue.at > 15_000) cue.ended ||= Date.now();
+  if (cue.ended && Date.now() - cue.ended >= CUE_GRACE_MS) { cue = null; return false; }
+  // The arm looks again when its wait could run out; a reply's end looks for itself.
+  if (!state.streaming) cue.timer = setTimeout(renderInspector, (cue.ended ? cue.ended + CUE_GRACE_MS : cue.at + 15_000) - Date.now() + 20);
   return true;
 }
 recordFrame.addEventListener("click", (event) => {
@@ -794,8 +801,9 @@ function stopHanding() {
 barRecord.addEventListener("click", toggleRecord);
 
 // The record alone: the window holds only the record, drawn large in the same mosaic, over the
-// cover's light. A pin keeps the window above the others; a click anywhere else, or Esc, brings the
-// conversation back, and a drag moves the window. The pin shows while the pointer is over the window.
+// cover's light. A click anywhere else, or Esc, brings the conversation back, and a drag moves the
+// window. A pin keeps the window above the others and locks it on the record: clicks and Esc leave it
+// there until the pin is clicked again. The pin shows while the pointer is over the window.
 const immersive = $("immersive");
 let deep = null;
 let pinned = false;
@@ -817,7 +825,7 @@ function immerse(on) {
     record?.turn(false);
     if (!deep) {
       deep = mountRecord($("immersive-record"), { across: 160 });
-      deep.needle(Boolean(nowPlaying()?.playing), true);
+      deep.needle(armDown(nowPlaying()), true);
     }
     deep.tint(grooveColours(moodPalette, dark.matches), true);
     immersive.classList.add("hovered");
@@ -843,7 +851,7 @@ immersive.addEventListener("pointerdown", (event) => {
   immersive.addEventListener("pointerup", async () => {
     await started;
     const moved = (await window.moondogApp?.dragWindow?.("end")) ?? 0;
-    if (moved < 4) immerse(false);
+    if (moved < 4 && !pinned) immerse(false);
   }, { once: true });
 });
 immersive.addEventListener("click", (event) => { if (event.detail && onArm(deep, event)) setArm(); });
@@ -1479,10 +1487,7 @@ function renderInspector() {
   }
   placeTitle();
   record?.turn(now?.playing && (!talking() || fold.dock < 1));
-  // The arm rests on the record only while the music plays, whatever started or stopped it. An arm that
-  // asked for a song keeps track of the reply here, and stops waiting once the music plays.
-  cueing(now);
-  const down = Boolean(now?.playing);
+  const down = armDown(now);
   record?.needle(down);
   deep?.needle(down);
   mark.playing(now?.playing);
@@ -1768,7 +1773,7 @@ window.addEventListener("drop", (event) => {
 document.addEventListener("keydown", (event) => {
   // Escape that just closed Settings is spent; it must not also stop the reply behind it.
   if (settings.open || event.defaultPrevented) return;
-  if (immersed()) { if (event.key === "Escape") immerse(false); return; }
+  if (immersed()) { if (event.key === "Escape" && !pinned) immerse(false); return; }
   if (event.target === input || event.target.closest?.("input, textarea")) return;
   if (event.key === " " && event.target.closest?.("button, a, select, [role=button]")) return;
   if (event.key === "Escape" && state.streaming) { send({ type: "cancel" }); return; }
@@ -1892,6 +1897,8 @@ function receive({ data }) {
   if (data.type === "turn" && onScreen(data)) {
     if (data.state === "start") {
       state.streaming = data.id;
+      // The reply to the arm's request has begun, so its end can lift the arm.
+      if (cue) cue.seen = true;
       const pending = state.turns.findLastIndex((turn) => turn.pending && turn.text === data.text);
       if (pending >= 0) state.turns.splice(pending, 1);
       state.turns.push({ role: "user", text: data.text }, { role: "assistant", id: data.id, text: "", activity: [], streaming: true });
