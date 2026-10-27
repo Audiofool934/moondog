@@ -13,6 +13,10 @@
 /* The record's arrows show under the scene's pointer as they do under a real one (app/renderer/style.css). */
 .room:not(.empty) .record-frame.scene-hover .record-button:not(.away) ~ .expand { opacity: 1; pointer-events: auto; transition: none; }
 
+/* While the scene waits on the record for the visitor, the page's cover speaks where the composer sits. */
+.waiting [data-composer] { opacity: 0; }
+[data-composer] { transition: opacity 600ms ease; }
+
 /* macOS's arrow: black with a white rim, in light and dark alike. It glides and eases to a stop. */
 .pointer { position: fixed; top: 0; left: 0; z-index: 50; width: 18px; height: 24px; margin: -1px 0 0 -1px; pointer-events: none;
   opacity: 0; transition-property: transform, opacity; transition-timing-function: cubic-bezier(0.45, 0.05, 0.2, 1), ease;

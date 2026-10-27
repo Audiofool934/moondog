@@ -37,6 +37,9 @@ const COVERS = {
 const song = (title, artist, album, cover, seconds, sound) => ({ title, artists: [artist], album, image: COVERS[cover], duration_ms: seconds * 1000,
   ...(sound ? { sound: `static/scene/${sound}.m4a` } : {}) });
 
+// The station's ident, a few seconds of music that plays as the needle lands, before the first song.
+export const IDENT = "static/scene/ident.m4a";
+
 // The model the window's composer shows.
 export const MODEL = { provider: "deepseek", model: "deepseek-flash", providerName: "DeepSeek", modelName: "DeepSeek V4.1 Flash" };
 

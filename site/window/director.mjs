@@ -84,7 +84,17 @@ async function settled(clock) {
   while ($("send")?.querySelector("use")?.getAttribute("href") === "#i-stop") await clock.wait(100);
 }
 
-export async function direct({ clock, agent, request, quick = false, ending = () => {} }) {
+// Leans the arm toward the record while the visitor's pointer is over the page's cover, as a pointer on
+// the arm leans it in the app, so the arm says what a click will do.
+export function leanArm(on) {
+  const point = armPoint();
+  const frame = $("record-frame");
+  frame?.dispatchEvent(new PointerEvent(on ? "pointermove" : "pointerleave", { bubbles: true, clientX: point.x, clientY: point.y, pointerType: "mouse" }));
+}
+
+// begin resolves when the page lets the scene start: { touch: true } when the visitor's own click put the
+// needle down, so the arm drops at once; otherwise the scene's pointer does it. needle hears each drop.
+export async function direct({ clock, agent, request, quick = false, begin, needle = () => {}, ending = () => {} }) {
   const pointer = quick ? null : createPointer(clock);
   const curtain = document.createElement("div");
   curtain.className = "curtain";
@@ -95,24 +105,33 @@ export async function direct({ clock, agent, request, quick = false, ending = ()
   new IntersectionObserver(([entry]) => { seen = entry.isIntersecting; watch(); }, { threshold: 0.35 }).observe(document.body);
   document.addEventListener("visibilitychange", watch);
 
-  // The window draws its first frame and hears from its core before the first gesture.
+  // The window draws its first frame and hears from its core before the first gesture, then waits on
+  // the record, its composer set aside, for the page to let it begin.
   await (quick ? sleep(500) : clock.wait(400));
+  document.body.classList.add("waiting");
   curtain.classList.add("open");
-  await clock.wait(1600);
+  const { touch } = await begin;
+  document.body.classList.remove("waiting");
 
   // The needle goes down, and Moondog picks something for right now.
+  const drop = () => {
+    const point = armPoint();
+    document.elementFromPoint(point.x, point.y)?.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: point.x, clientY: point.y, detail: 1 }));
+  };
   let answered = agent.answered();
-  if (pointer) {
+  if (pointer && !touch) {
+    await clock.wait(1600);
     pointer.show();
     await pointer.move(armPoint(), 1300);
     await clock.wait(500);
     await pointer.click();
+    needle();
     await clock.wait(300);
     await pointer.move({ x: innerWidth * 0.8, y: innerHeight * 0.72 }, 900);
     pointer.hide();
   } else {
-    const point = armPoint();
-    document.elementFromPoint(point.x, point.y)?.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: point.x, clientY: point.y, detail: 1 }));
+    drop();
+    needle();
   }
   await answered;
   await clock.wait(2400);

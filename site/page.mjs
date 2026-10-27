@@ -53,30 +53,80 @@ function follow() {
   if (!wanted) return;
   const track = trackFor(wanted);
   track.stop += 1;
+  // A song joined late starts where the scene is in it, faded in; one heard from its start, such as the
+  // ident as the needle lands, comes in at once, with its first sound whole.
+  let fadeIn = 1.2;
   if (track.audio.paused) {
-    // A song joined late starts where the scene is in it.
     const at = Math.max(0, (Date.now() - song.startedAt) / 1000);
     if (track.audio.ended || at >= (track.audio.duration || Infinity)) return;
     track.audio.currentTime = at;
+    if (at < 0.25) fadeIn = 0.02;
     void track.audio.play().catch(() => {});
   }
-  ramp(track, 1, 1.2);
+  ramp(track, 1, fadeIn);
 }
+
+// Sound needs a click on the page, so it starts inside one. iPhone mutes web audio with its ringer
+// unless the page says it plays music.
+function setSound(next) {
+  on = next;
+  button.setAttribute("aria-pressed", String(on));
+  button.classList.remove("hint");
+  if (on && navigator.audioSession) navigator.audioSession.type = "playback";
+  context ??= new AudioContext();
+  void context.resume();
+  follow();
+}
+button.addEventListener("click", () => setSound(!on));
+
+// The cover. The scene waits on the record until the visitor puts the needle down, with sound, or
+// chooses to watch without it; after a while on screen it begins on its own, silently, and the sound
+// switch shows itself once. Every play after the first begins at once. A pointer over the cover leans
+// the record's arm, as a pointer on the arm leans it in the app.
+const frame = document.querySelector(".stage iframe");
+const cover = document.querySelector("[data-cover]");
+const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const WAIT_MS = 6000;
+let begun = false;
+let waited = 0;
+let waiting = null;
+const toScene = (message) => frame.contentWindow?.postMessage({ source: "moondog-page", ...message }, location.origin);
+
+function begin({ sound = false, touch = false } = {}) {
+  if (begun) return;
+  begun = true;
+  clearInterval(waiting);
+  if (sound) setSound(true);
+  cover.classList.add("leaving");
+  setTimeout(() => { cover.hidden = true; }, 500);
+  toScene({ start: { touch } });
+}
+function ready() {
+  if (begun) return toScene({ start: { touch: false } });
+  if (reduced) return begin();
+  if (!cover.hidden) return;
+  cover.hidden = false;
+  waiting = setInterval(() => {
+    if (inView && document.visibilityState === "visible") waited += 250;
+    if (waited < WAIT_MS) return;
+    begin();
+    button.classList.add("hint");
+  }, 250);
+}
+cover.addEventListener("click", (event) => begin({ sound: !event.target.closest("[data-silent]"), touch: true }));
+cover.addEventListener("pointerenter", () => toScene({ lean: true }));
+cover.addEventListener("pointerleave", () => toScene({ lean: false }));
 
 addEventListener("message", (event) => {
   if (event.origin !== location.origin || event.data?.source !== "moondog-scene") return;
+  if (event.data.ready) ready();
   if ("mood" in event.data) { palette = event.data.mood; paintMood(); }
   if ("song" in event.data) { song = event.data.song; follow(); }
 });
 new IntersectionObserver(([entry]) => { inView = entry.isIntersecting; follow(); }, { threshold: 0.35 }).observe(document.querySelector(".stage"));
 document.addEventListener("visibilitychange", follow);
-button.addEventListener("click", () => {
-  on = !on;
-  button.setAttribute("aria-pressed", String(on));
-  context ??= new AudioContext();
-  void context.resume();
-  follow();
-});
+// The frame may have loaded first; it answers that it's ready.
+toScene({ ask: true });
 
 for (const button of document.querySelectorAll("[data-copy]")) {
   button.addEventListener("click", async () => {
