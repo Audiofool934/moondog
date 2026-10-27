@@ -273,19 +273,8 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
     });
     return form;
   }
-  function choice({ label, detail, chosen, expanded, action, onChoose, trailing, disabled, key, lead, fold }) {
+  function choice({ label, detail, chosen, expanded, action, onChoose, trailing, disabled, key, lead }) {
     const item = make("div", `choice${disabled ? " off" : ""}`);
-    // A row that is picked with a click and also unfolds has its chevron as a button of its own.
-    if (fold) {
-      const turn = make("button", "choice-fold");
-      turn.type = "button";
-      turn.dataset.key = fold.key;
-      turn.setAttribute("aria-label", label);
-      turn.setAttribute("aria-expanded", String(fold.expanded));
-      turn.append(icon("chevron", "icon disclose"));
-      turn.addEventListener("click", fold.onFold);
-      item.append(turn);
-    }
     const main = make("button", "choice-main");
     main.type = "button";
     main.dataset.key = key ?? `choice:${label}`;
@@ -558,10 +547,10 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
   }
 
   // Playback: one row per music service, its state under its name and the one in use checked. A click
-  // on a service that can play uses it; on one that can't yet, it unfolds its setup. Its chevron alone
-  // unfolds what the service has without using it: its setup, or its own controls, such as Spotify's
-  // devices. One row is open at a time, and the service in use starts open. Other sources of music get
-  // groups of their own beside this one.
+  // on a row unfolds what the service has: its setup, or its own controls, such as Spotify's devices.
+  // One row is open at a time, and the service in use starts open. At a row's right, while the pointer
+  // is on it, a service that can play has a switch that uses it, and one that can't yet has Set up.
+  // Other sources of music get groups of their own beside this one.
   function playback() {
     const service = expected("service", state.playbackService ?? "spotify");
     const spotifyReady = expected("spotify", state.spotify) === "ready";
@@ -597,19 +586,25 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
     const list = [];
     for (const row of rows) {
       const expanded = !row.empty && open === row.id;
-      const fold = () => { data.servicePanel = expanded ? null : row.id; render(); };
-      const use = () => {
-        expect("service", row.id);
-        send({ type: "music-service", service: row.id });
-        // The service now in use unfolds, and Spotify's devices are read afresh.
-        data.servicePanel = row.id;
-        if (row.id === "spotify") data.devices = null;
-        render();
-      };
-      list.push(choice({ label: row.label, detail: row.detail, chosen: service === row.id, key: `service:${row.id}`,
-        onChoose: row.playable && row.id !== service ? use : row.empty ? undefined : fold,
-        // A row with nothing to unfold keeps the chevron's room, so the names stay in one column.
-        ...(row.empty ? { lead: icon("chevron", "icon disclose blank") } : { fold: { expanded, onFold: fold, key: `fold:${row.id}` } }) }));
+      let trailing = null;
+      if (row.playable && row.id !== service) {
+        trailing = make("button", "tool reveal");
+        trailing.type = "button";
+        trailing.dataset.key = `use:${row.id}`;
+        trailing.append(icon("switch"));
+        name(trailing, say("useService", { service: row.label }));
+        trailing.addEventListener("click", () => {
+          expect("service", row.id);
+          send({ type: "music-service", service: row.id });
+          // Spotify's devices are read afresh once it is in use.
+          if (row.id === "spotify") data.devices = null;
+          render();
+        });
+      } else if (!row.playable) {
+        trailing = button(say("setUp"), "button small reveal", () => { data.servicePanel = row.id; render(); }, `set-up:${row.id}`);
+      }
+      list.push(choice({ label: row.label, detail: row.detail, chosen: service === row.id, key: `service:${row.id}`, trailing,
+        ...(row.empty ? {} : { expanded, onChoose: () => { data.servicePanel = expanded ? null : row.id; render(); } }) }));
       if (!expanded) continue;
       const panel = make("div", "panel");
       panel.append(...inside[row.id]().filter(Boolean));

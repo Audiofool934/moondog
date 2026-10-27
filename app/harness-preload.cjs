@@ -230,6 +230,14 @@ const STATES = {
     slash("service");
     setTimeout(() => document.querySelector('[data-key="service:netease"]').click(), 300);
   },
+  // The pointer on a service's row: the switch of one that can play, Set up on one that can't yet.
+  "settings-service-switch"() { STATES["settings-playback"](); return { hover: '.sheet [data-key="service:apple_music"]' }; },
+  "settings-service-set-up"() {
+    ready({ netease: "missing" });
+    player();
+    slash("service");
+    return { hover: '.sheet [data-key="service:netease"]' };
+  },
   "settings-netease-still-missing"() {
     neteaseCheck = { netease: "missing" };
     STATES["settings-netease-setup"]();
