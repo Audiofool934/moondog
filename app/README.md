@@ -31,7 +31,8 @@ A model or music service chosen there lasts until the app quits, and sign-in and
 - Before anything is said, the lunar record stands alone over the composer, drawn as dots from the terminal's own record.
   It turns while music plays and rests when it stops, coming up to speed and running down like a platter.
   Its tonearm rests on it while music plays and swings off when the music stops; a click on the arm pauses, and another plays.
-  With nothing loaded on any player, setting the arm down asks Moondog for a song, as the words "Play something for right now" would in the open conversation; the arm stays on the record until the music starts, and lifts again if the reply starts none. A paused song is still loaded, so the arm resumes it.
+  A pointer near the arm lights it in its own dots without moving it: the arm's dots fill out as the pointer comes closer, and swell most around the pointer, so the light follows it along the arm.
+  With nothing loaded on any player, a click on the arm asks Moondog for a song, as the words "Play something for right now" would in the open conversation; the arm stays up until the music starts, and goes down then, as it does whenever music plays. A paused song is still loaded, so the arm resumes it.
   The wheel over the record scratches it: the record turns with the wheel, the song's place shows just above it and on the player's progress line, and the music goes there once the wheel rests, in one seek.
   A slow wheel moves finely; a quick one covers more of the song.
   A turn of the wheel belongs to what it starts on until the wheel rests. Above the words, the record takes it only from a pointer put on the disc or its arm; a record that grew or moved under a still pointer, its square's empty corners, and a song that can't move leave the wheel to the words.

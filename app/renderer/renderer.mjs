@@ -692,39 +692,40 @@ function toggleRecord() {
   else toHome();
 }
 // The tonearm plays and pauses, as on a turntable: a click lifts it off the record and the music
-// stops; another sets it down and the music plays. A pointer on it leans it toward where a click
-// sends it. A click anywhere else on the record folds it into the bar. Before anything is said, the
+// stops; another sets it down and the music plays. A pointer near it lights it in its own dots, most
+// where the pointer is, and more the closer it comes. A click anywhere else on the record folds it into the bar. Before anything is said, the
 // record folds nowhere, so only its arm answers a click.
-// With nothing loaded on any player, setting the arm down asks Moondog for a song, as the words
-// "Play something for right now" would, in the conversation that is open. The arm stays on the record,
-// cueing, until music plays, or until a few seconds after the reply ends without any. A paused song
-// is still loaded, so the arm resumes it instead.
+// With nothing loaded on any player, a click on the arm asks Moondog for a song, as the words
+// "Play something for right now" would, in the conversation that is open. The arm stays up until the
+// music plays, and goes down then, as it does for music started any other way. While it waits, until a
+// few seconds after a reply that starts no music, it asks nothing more. A paused song is still loaded,
+// so the arm resumes it instead.
 const CUE_GRACE_MS = 4000;
 let cue = null;
 const armReady = () => {
   const now = nowPlaying();
-  return now ? can(now, now.playing ? "pausing" : "resuming") : Boolean(cue) || (state.ready && !state.streaming);
+  return now ? can(now, now.playing ? "pausing" : "resuming") : !cueing(now) && state.ready && !state.streaming;
 };
 const onArm = (target, event) => armReady() && target?.hit(event.clientX, event.clientY) === "arm";
+const nearArm = (target, event) => (armReady() ? target?.near(event.clientX, event.clientY) : target?.near(null));
 function setArm() {
   if (nowPlaying()) { control("toggle", "record"); return; }
-  if (cue || !state.ready || state.streaming) return;
+  if (cueing(null) || !state.ready || state.streaming) return;
   rest();
   if (!submitText(t("armPrompt"))) return;
   if (state.model?.state === "configured") cue = { at: Date.now(), seen: false, ended: 0 };
-  renderInspector();
+  // The arm has nothing more to offer a click until the music plays, so it stops answering the pointer.
+  record?.near(null);
+  deep?.near(null);
 }
-// Whether the arm still waits on the record for the song it asked for.
+// Whether the arm still waits for the song it asked for.
 function cueing(now) {
   if (!cue) return false;
   if (now?.playing) { cue = null; return false; }
   if (state.streaming) cue.seen = true;
   else if (cue.seen || Date.now() - cue.at > 15_000) {
     cue.ended ||= Date.now();
-    const left = cue.ended + CUE_GRACE_MS - Date.now();
-    if (left <= 0) { cue = null; return false; }
-    clearTimeout(cue.timer);
-    cue.timer = setTimeout(renderInspector, left + 20);
+    if (Date.now() - cue.ended >= CUE_GRACE_MS) { cue = null; return false; }
   }
   return true;
 }
@@ -743,8 +744,8 @@ document.addEventListener("pointermove", (event) => {
   pointerAt = at;
   aimed = recordFrame.contains(event.target);
 }, { capture: true, passive: true });
-recordFrame.addEventListener("pointermove", (event) => record?.lean(onArm(record, event)));
-recordFrame.addEventListener("pointerleave", () => { aimed = false; record?.lean(false); });
+recordFrame.addEventListener("pointermove", (event) => nearArm(record, event));
+recordFrame.addEventListener("pointerleave", () => { aimed = false; record?.near(null); });
 // A turn of the wheel belongs to what it starts on until the wheel rests; the browser already keeps
 // one that starts on the words there, even as the record grows under the pointer. One that starts on
 // the record turns it when the song can move and the pointer was put on the disc or its arm. A record
@@ -846,7 +847,7 @@ immersive.addEventListener("pointerdown", (event) => {
   }, { once: true });
 });
 immersive.addEventListener("click", (event) => { if (event.detail && onArm(deep, event)) setArm(); });
-immersive.addEventListener("pointermove", (event) => deep?.lean(onArm(deep, event)));
+immersive.addEventListener("pointermove", (event) => nearArm(deep, event));
 immersive.addEventListener("wheel", (event) => scratchWith(deep, event), { passive: false });
 $("pin").addEventListener("click", async () => {
   const change = ++pinChange;
@@ -1476,8 +1477,10 @@ function renderInspector() {
   }
   placeTitle();
   record?.turn(now?.playing && (!talking() || fold.dock < 1));
-  // The arm rests on the record while the music plays, whatever started or stopped it, and while it cues.
-  const down = Boolean(now?.playing) || cueing(now);
+  // The arm rests on the record only while the music plays, whatever started or stopped it. An arm that
+  // asked for a song keeps track of the reply here, and stops waiting once the music plays.
+  cueing(now);
+  const down = Boolean(now?.playing);
   record?.needle(down);
   deep?.needle(down);
   mark.playing(now?.playing);
