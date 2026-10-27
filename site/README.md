@@ -1,7 +1,8 @@
 # Moondog Project Page
 
 This folder builds Moondog's project page at <https://moondog.audiofool.ai>.
-Its hero is Moondog's own window, the desktop app's renderer, playing a short scene with a made-up listener and made-up songs, with music made by Stable Audio 3.
+It opens on Moondog's own window, the desktop app's renderer, playing a short scene with a made-up listener and made-up songs, with music made by Stable Audio 3.
+The window fills the first screen; what Moondog is, and the download, come right under it.
 The page loads only its own files, and Cloudflare's Web Analytics, which Cloudflare adds to the pages it serves; its content security policy allows nothing else.
 
 ## Run it
@@ -21,11 +22,13 @@ The build asks GitHub for the newest release with a Mac download; `node build.mj
 
 ## The scene
 
-The window waits on its record, and the page's cover asks the visitor to put the needle down, with sound; a quiet link watches without it.
-The click starts the music and drops the needle at once, and the station's ident plays while Moondog picks three songs.
+The window waits on a new conversation with the record's arm up, and the page's cover asks the visitor in with sound ("Experience Moondog"); a quiet link watches without it.
+The record doesn't answer the visitor's pointer before that.
+The click turns the sound on; the cover's words fade, and the scene's pointer takes over from where the click landed, glides to the record's arm, and clicks it.
+As in the app, the click asks for "Play something for right now", and the station's ident plays while Moondog picks three songs; the needle goes down as the first one starts.
 Then a request for a late train home is typed and answered, and the record takes the whole window.
-Without a click, the scene begins silently after six seconds on screen, and the Sound switch shows itself once.
-Every play after the first begins at once, with the visitor's choice.
+The needle lifts, the music stops, and the record glides back to a new conversation, where the scene began, so the scene plays again in place, with no reload.
+Without a click, the scene begins silently after ten seconds on screen, the scene's pointer clicks the arm, and the Sound switch shows itself once.
 The window is the real one: `app/renderer` and `app/window-room.mjs` run unchanged, so a change to the app's window shows here too.
 
 - `window/host.mjs` stands in for the app's preload and core process, and starts the scene.
@@ -33,8 +36,8 @@ The window is the real one: `app/renderer` and `app/window-room.mjs` run unchang
   The listener is the demo history's (`src/demo/fictional-spotify-history.mjs`); the new artists are made up too.
 - `window/agent.mjs` is the scene's Moondog: it runs each exchange's steps through the agent's events, starts its songs, and writes its reply at a reading pace.
 - `window/application.mjs` keeps the scene's conversation and plays its songs as the Music app on a Mac would.
-- `window/director.mjs` waits for the page to let the scene begin, then moves a pointer and types, as a visitor would: the needle, the player, the composer, and the record's full-window arrows.
-  The scene runs only while the window is on screen, and plays again behind a fade.
+- `window/director.mjs` waits for the page to let the scene begin, then moves a pointer and types, as a visitor would: the record's arm, the player, the composer, and the record's full-window arrows.
+  The scene runs only while the window is on screen.
   With reduced motion it shows the finished scene at once, with no pointer.
   Where the window is narrower than the app gives its player room, the player stays folded.
 
@@ -43,8 +46,8 @@ The colours drift in over a few seconds, and hold while the window is off screen
 
 The two songs the scene plays have music, made with Stability AI's Stable Audio 3 Medium on a Mac through its MLX version (`~/Developer/stable-audio-3/optimized/mlx` on the Mac mini).
 The page plays it from `static/scene/` when the visitor turns the sound on; `page.mjs` follows the scene's songs and fades between them.
-The station's ident, which plays as the needle lands, was made the same way.
-Each song is 32 seconds and the ident 6, made with `./sa3 --dit medium --decoder same-l --seconds N --seed N` and these prompts, then normalized to -16 LUFS with a true peak of -1.5 dB, faded out at the end, and encoded as AAC at 160 kb/s:
+The station's ident, which plays as the arm is clicked, was made the same way.
+Each song is 32 seconds and the ident 6, made with `./sa3 --dit medium --decoder same-l --seconds N --seed N` and these prompts, then normalized to -16 LUFS (the ident, under the songs, to -20) with a true peak of -1.5 dB, faded out at the end, and encoded as AAC at 160 kb/s:
 
 - `ident.m4a`, seed 11: "TrackType: Music, VocalType: Instrumental. A short late-night radio station ident. A stylus lands on a vinyl record with a soft crackle, then a warm Rhodes electric piano chord blooms over a deep, round bass note, with tape warmth and a gentle reverb tail. Calm, inviting, intimate. 76 BPM."
 

@@ -86,7 +86,8 @@ const browserPlugin = {
 };
 
 // The documents. The window's markup is the app's own index.html, with this page's policy and bundle,
-// and three resting traffic lights where the app's sit.
+// three resting traffic lights where the app's sit, and its composer set aside from the first frame,
+// where the page's cover speaks (window/host.css).
 const documents = {
   "index.html": async () => (await readFile(path.join(here, "index.html"), "utf8"))
     .replace("<!-- policy -->", policyTag("page"))
@@ -96,6 +97,7 @@ const documents = {
     .replace(/<meta http-equiv="Content-Security-Policy"[^>]*>/u, `${policyTag("window")}\n  <meta name="referrer" content="no-referrer">`)
     .replace('href="renderer.css"', 'href="window.css"')
     .replace(/(<textarea[^>]*?) autofocus/u, "$1")
+    .replace("<body>", '<body class="waiting">')
     .replace('<script type="module" src="renderer.js"></script>',
       '<div class="lights" aria-hidden="true"><i></i><i></i><i></i></div>\n  <script type="module" src="window.js"></script>'),
 };

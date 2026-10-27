@@ -23,7 +23,7 @@ let inView = false;
 let song = null;
 const tracks = new Map();
 
-// Sounds are loaded before they are needed, while the cover shows, so the needle's sound comes with the click.
+// Sounds are loaded before they are needed, while the cover shows, so the ident comes the instant the arm is clicked.
 const loaded = new Map();
 function load(sound) {
   if (!loaded.has(sound)) {
@@ -63,7 +63,7 @@ function follow() {
   const track = trackFor(wanted);
   track.stop += 1;
   // A song joined late starts where the scene is in it, faded in; one heard from its start, such as the
-  // ident as the needle lands, comes in at once, with its first sound whole.
+  // ident as the arm is clicked, comes in at once, with its first sound whole.
   let fadeIn = 1.2;
   if (track.audio.paused) {
     const at = Math.max(0, (Date.now() - song.startedAt) / 1000);
@@ -88,30 +88,30 @@ function setSound(next) {
 }
 button.addEventListener("click", () => setSound(!on));
 
-// The cover. The scene waits on the record until the visitor puts the needle down, with sound, or
-// chooses to watch without it; after a while on screen it begins on its own, silently, and the sound
-// switch shows itself once. Every play after the first begins at once. A pointer over the cover leans
-// the record's arm, as a pointer on the arm leans it in the app.
+// The cover. The scene waits on the record until the visitor lets it begin, with sound, or chooses to
+// watch without it; after a while on screen it begins on its own, silently, and the sound switch shows
+// itself once. Then it plays on, again and again. The record doesn't answer the visitor's pointer: the
+// scene's pointer takes over from where the click landed and clicks the record's arm.
 const frame = document.querySelector(".stage iframe");
 const cover = document.querySelector("[data-cover]");
 const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
-const WAIT_MS = 6000;
+const WAIT_MS = 10_000;
 let begun = false;
 let waited = 0;
 let waiting = null;
 const toScene = (message) => frame.contentWindow?.postMessage({ source: "moondog-page", ...message }, location.origin);
 
-function begin({ sound = false, touch = false } = {}) {
+function begin({ sound = false, at = null } = {}) {
   if (begun) return;
   begun = true;
   clearInterval(waiting);
   if (sound) setSound(true);
   cover.classList.add("leaving");
   setTimeout(() => { cover.hidden = true; }, 500);
-  toScene({ start: { touch } });
+  toScene({ start: { at } });
 }
 function ready() {
-  if (begun) return toScene({ start: { touch: false } });
+  if (begun) return toScene({ start: {} });
   if (reduced) return begin();
   if (!cover.hidden) return;
   cover.hidden = false;
@@ -122,9 +122,12 @@ function ready() {
     button.classList.add("hint");
   }, 250);
 }
-cover.addEventListener("click", (event) => begin({ sound: !event.target.closest("[data-silent]"), touch: true }));
-cover.addEventListener("pointerenter", () => toScene({ lean: true }));
-cover.addEventListener("pointerleave", () => toScene({ lean: false }));
+// A click from a key has no place on the page; the scene's pointer then comes in from its corner.
+cover.addEventListener("click", (event) => {
+  const box = frame.getBoundingClientRect();
+  const at = event.detail ? { x: event.clientX - box.left, y: event.clientY - box.top } : null;
+  begin({ sound: !event.target.closest("[data-silent]"), at });
+});
 
 addEventListener("message", (event) => {
   if (event.origin !== location.origin || event.data?.source !== "moondog-scene") return;

@@ -1,5 +1,5 @@
 /* What the page draws in the app's place, in the window's own tokens: the traffic lights at rest,
-   the pointer that plays the scene, and the curtain the scene fades behind between plays. */
+   and the pointer that plays the scene. */
 
 /* Grey, as a Mac draws them on a window that isn't in front. */
 .lights { position: fixed; top: 16px; left: 18px; z-index: 6; display: flex; gap: 8px; pointer-events: none; }
@@ -26,6 +26,3 @@
 .pointer path { fill: #000; stroke: #fff; stroke-width: 1.4; stroke-linejoin: round; }
 .pointer.pressed svg { transform: scale(0.86); }
 
-.curtain { position: fixed; inset: 0; z-index: 60; background: var(--canvas); pointer-events: none; transition: opacity 800ms ease; }
-.curtain.open { opacity: 0; }
-@media (prefers-reduced-motion: reduce) { .curtain { transition: none; } }
