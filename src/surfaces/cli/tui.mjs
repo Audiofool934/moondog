@@ -21,6 +21,7 @@ import {
 } from "../../runtime/pi/model-catalog.mjs";
 import { getPublicPiModelCatalog } from "../../runtime/pi/public-model-catalog.mjs";
 import { serviceKeyProviders, supportedAuthProviderIds } from "../../runtime/pi/authentication.mjs";
+import { runtimeBehindSelection } from "../../runtime/pi/runtime-settings.mjs";
 import {
   formatLocalResult,
   helpText,
@@ -203,6 +204,8 @@ export async function runMoondogTui({
   models = listPiModels,
   refreshModels,
   saveLanguage,
+  // Hears a model chosen or a sign-in made in the window; see watchRuntimeSettings.
+  watchModelSettings,
   // The terminal's preview player. The room shows what it plays (subscribe) and
   // gives the listener /skip and /stop.
   previewPlayer,
@@ -273,6 +276,8 @@ export async function runMoondogTui({
   let homeFocused = false;
   let homeSelected = 0;
   let busy = false;
+  // A model chosen or a sign-in made in the window while a turn ran here; it applies once the turn ends.
+  let modelChangedElsewhere = false;
   // A reply another Moondog window or terminal is writing in this conversation: { id, response, text }.
   let elsewhere = null;
   let watchTimer = null;
@@ -566,6 +571,7 @@ export async function runMoondogTui({
       indicator.unref?.();
     }
     if (!cleanedUp) tui.requestRender();
+    if (!value && modelChangedElsewhere) void followModel();
   };
   const setFooter = (text, color = dim) => {
     if (cleanedUp) return;
@@ -693,6 +699,7 @@ export async function runMoondogTui({
     try { application.conversationPending?.({ draft: editor.getText(), queued: [...messageQueue] }); } catch { /* Terminal cleanup must still run when storage is unavailable. */ }
     cleanedUp = true;
     clearTimeout(watchTimer);
+    stopWatchingModel?.();
     stopWatchingPreviews?.();
     clearInterval(indicator);
     indicator = null;
@@ -966,6 +973,18 @@ export async function runMoondogTui({
     tui.requestRender(true);
     return nextStatus;
   };
+  // The window saved another model, or a sign-in that lets this side answer. The terminal's own
+  // choices rebuild at once, so their saves find this agent already on them.
+  const followModel = async () => {
+    if (cleanedUp || busy || typeof rebuildRuntime !== "function") return;
+    modelChangedElsewhere = false;
+    await replaceRuntime().catch(() => {});
+  };
+  const stopWatchingModel = watchModelSettings?.((selection) => {
+    if (!runtimeBehindSelection(runtimeStatus, selection)) return;
+    modelChangedElsewhere = true;
+    void followModel();
+  });
 
   const refreshCatalog = async (options) => {
     try { return await refreshModels(options); }

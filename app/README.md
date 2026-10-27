@@ -95,6 +95,7 @@ A model or music service chosen there lasts until the app quits, and sign-in and
 - Typing `/` lists commands by what they open (a mistyped one stays in the composer instead of going to Moondog): `/new`, `/model`, `/language`, `/service`, `/device`, `/import`, `/memory`, `/remember`, `/folder`, `/settings` and `/help`.
 - Settings (`⌘,`, or the button at the top right beside the player's) has Language, Model (accounts, sign-in in the browser or with an API key, models, thinking), Playback (music service, Spotify sign-in, devices), Import, Memory and About.
   Changes are saved where the terminal reads them; the window never sees a key or token.
+  A model or a sign-in saved in an open terminal reaches the window within a few seconds, and the other way round; a reply that is running keeps its model until it ends.
 - Import: choose a Spotify, Apple Music, ListenBrainz or Last.fm export, read recent Spotify listening, read a Last.fm account (the window asks for a Last.fm API key the first time), or drop a file anywhere on the window.
   The preview uses the terminal's words, nothing is saved until you add it, and the updated profile then shows in the conversation.
 - Apple Music plays whole songs where it can and 30-second previews where it can't.
