@@ -51,9 +51,15 @@ function createPointer(clock) {
     jump: (point) => place(point, 0),
     show: () => pointer.classList.add("shown"),
     hide: () => pointer.classList.remove("shown"),
+    // On its way, as a real one does, it tells what it passes over where it is, so the record's arm
+    // lights as it comes near.
     async move(point, ms) {
       place(point, ms);
-      await clock.wait(ms);
+      for (let left = ms; left > 0; left -= 50) {
+        await clock.wait(Math.min(50, left));
+        const [x, y] = getComputedStyle(pointer).transform.match(/-?[\d.]+/gu)?.slice(4, 6).map(Number) ?? [point.x, point.y];
+        if (left > 50) fire("pointermove", { x, y }, PointerEvent);
+      }
       fire("pointermove", point, PointerEvent);
     },
     async click() {
