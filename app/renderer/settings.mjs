@@ -3,7 +3,8 @@
 // the core's next status confirms it, so nothing waits on a rebuild to look chosen.
 import { appIconSvg, iconShape } from "../../src/surfaces/brand/logo.mjs";
 import { languageTag, timeOfDay } from "../strings.mjs";
-import { icon, make, name, scrollbar, setIcon, turning } from "./ui.mjs";
+import { icon, make, name, scrollbar, setIcon } from "./ui.mjs";
+import { SCRATCH_MS, scratchMark } from "./mark.mjs";
 
 const SECTIONS = ["general", "appearance", "model", "playback", "library", "memory", "about"];
 const ICONS = { general: "globe", appearance: "appearance", model: "model", playback: "speaker", library: "import", memory: "memory", about: "info" };
@@ -50,16 +51,6 @@ function link(text, href) {
   node.dataset.key = `link:${href}`;
   node.append(icon("external"));
   return node;
-}
-// The same turning mark the conversation shows while Moondog works, in step with it. The offset is
-// fixed when the work starts, so a redraw draws the same mark and keeps the one already turning.
-function phase(offset) {
-  const mark = make("span", "phase");
-  const strip = make("i", "", "◐\n◓\n◑\n◒");
-  strip.style.animationDelay = `-${offset}ms`;
-  mark.append(strip);
-  mark.setAttribute("aria-hidden", "true");
-  return mark;
 }
 
 export function createSettings({ state, send, t, prettyModel = String, appleMusic = null }) {
@@ -222,11 +213,11 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
     return node;
   };
   const note = (text) => make("p", "note", text);
-  // Something still on its way shows the turning mark, never the word "Loading".
+  // Something still on its way shows the working mark, never the word "Loading".
   const waiting = () => {
     const line = make("p", "note waiting");
     line.setAttribute("aria-label", say("loading"));
-    line.append(turning());
+    line.append(scratchMark());
     return line;
   };
   // An error inside the sheet is announced, since the notice behind it is covered while the sheet is open.
@@ -645,11 +636,12 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
   function library() {
     const job = data.importing;
     if (job && ["reading", "progress", "saving"].includes(job.stage)) {
-      data.phaseOffset ??= Math.round(performance.now() % 2400);
+      // The import's mark keeps the offset it started with, so a redraw draws the same mark and keeps the one already moving.
+      data.phaseOffset ??= Math.round(performance.now() % SCRATCH_MS);
       const line = make("div", "working");
       const words = make("span", "", importLine(job));
       words.dataset.progressText = "";
-      line.append(phase(data.phaseOffset), words);
+      line.append(scratchMark(data.phaseOffset), words);
       if (job.stage !== "saving") line.append(button(say("stop"), "button quiet small", () => send({ type: "import-cancel" }), "import:stop"));
       return [line];
     }

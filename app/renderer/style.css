@@ -331,9 +331,25 @@ img { -webkit-user-drag: none; }
   animation: roll 260ms var(--out) both; }
 .activity.still { animation: rise 200ms var(--out) both; }
 @keyframes roll { from { transform: translateY(14px); opacity: 0; } }
-.phase { display: inline-block; width: 14px; height: 14px; overflow: hidden; color: var(--text-2); font: 13px/14px var(--mono); text-align: center; }
-.phase > i { display: block; font-style: normal; white-space: pre; animation: turn 2400ms steps(4) infinite; will-change: transform; }
-@keyframes turn { to { transform: translateY(-56px); } }
+/* The working mark (mark.mjs): a hand pulls the record back and forth twice, then lets it roll on to
+   where the next pull begins. Each glint sits where the record has turned to, in turns, and stretches
+   with the speed of the stroke; the dash is centred on it, half a turn along its groove, since WebKit
+   loses a dash near the end of a small circle. */
+.mark.scratching { width: 16px; height: 16px; color: var(--text-2); --stroke: cubic-bezier(0.45, 0, 0.55, 1); }
+.mark.scratching .groove { fill: none; stroke: currentColor; stroke-width: 0.13; opacity: 0.28; }
+.mark.scratching .glint { fill: none; stroke: currentColor; stroke-width: 0.22; stroke-linecap: round; stroke-dasharray: 0.05 1;
+  stroke-dashoffset: -0.545; animation: scratch var(--scratch) var(--offset) infinite; }
+@keyframes scratch {
+  0%, 100% { stroke-dasharray: 0.05 1; stroke-dashoffset: -0.545; animation-timing-function: var(--stroke); }
+  6% { stroke-dasharray: 0.16 1; stroke-dashoffset: -0.410; animation-timing-function: var(--stroke); }
+  12% { stroke-dasharray: 0.05 1; stroke-dashoffset: -0.375; animation-timing-function: var(--stroke); }
+  18% { stroke-dasharray: 0.15 1; stroke-dashoffset: -0.395; animation-timing-function: var(--stroke); }
+  25% { stroke-dasharray: 0.05 1; stroke-dashoffset: -0.505; animation-timing-function: var(--stroke); }
+  31% { stroke-dasharray: 0.12 1; stroke-dashoffset: -0.410; animation-timing-function: var(--stroke); }
+  37% { stroke-dasharray: 0.05 1; stroke-dashoffset: -0.395; animation-timing-function: var(--stroke); }
+  43% { stroke-dasharray: 0.10 1; stroke-dashoffset: -0.410; animation-timing-function: var(--stroke); }
+  50% { stroke-dasharray: 0.05 1; stroke-dashoffset: -0.475; animation-timing-function: linear; }
+}
 
 /* The song a turn started, with its sleeve. */
 .played { display: inline-flex; align-items: center; gap: 9px; max-width: 100%; height: 28px; font-size: var(--t-small); color: var(--text-2);

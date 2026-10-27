@@ -19,18 +19,6 @@ export function icon(name, className = "icon") {
 }
 export const setIcon = (node, name) => node.querySelector("use")?.setAttribute("href", `#i-${name}`);
 
-// The turning mark: four quarter-turns of a record in one strip the compositor moves, in step with
-// every other mark on screen. It stands for work in progress, in place of the word "Loading".
-const PHASE_MS = 2400;
-export function turning() {
-  const mark = make("span", "phase");
-  const strip = make("i", "", "◐\n◓\n◑\n◒");
-  strip.style.animationDelay = `-${Math.round(performance.now() % PHASE_MS)}ms`;
-  mark.append(strip);
-  mark.setAttribute("aria-hidden", "true");
-  return mark;
-}
-
 // An icon button says what it does in its tooltip and to a screen reader; the words never sit on screen.
 export function name(node, label, keys = "") {
   node.setAttribute("aria-label", label);
