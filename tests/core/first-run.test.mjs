@@ -6,7 +6,7 @@ import test from "node:test";
 
 import { createFirstRun, resolveFirstRunFile } from "../../src/core/first-run.mjs";
 import { resolvePlaybackPreferenceFile, writePlaybackPreference } from "../../src/core/playback-preferences.mjs";
-import { runtimeBehindSelection } from "../../src/runtime/pi/runtime-settings.mjs";
+import { runtimeBehindSelection } from "../../src/runtime/pi/runtime-selection.mjs";
 
 test("the first run asks until a service is saved and a model answers, then never again", async (t) => {
   const root = await mkdtemp(path.join(tmpdir(), "moondog-first-run-"));

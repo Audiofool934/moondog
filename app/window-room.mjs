@@ -9,7 +9,7 @@ import { formatLocalResult } from "../src/surfaces/cli/format-output.mjs";
 import { HistoryImportView } from "../src/surfaces/cli/history-import-view.mjs";
 import { setAppleMusicStorefront } from "../src/integrations/apple-music/storefront.mjs";
 import { shortConversationTitle } from "../src/memory/local-memory-store.mjs";
-import { runtimeBehindSelection } from "../src/runtime/pi/runtime-settings.mjs";
+import { runtimeBehindSelection } from "../src/runtime/pi/runtime-selection.mjs";
 
 // Every Spotify read counts against the listener's app quota, and a used-up quota blocks player reads
 // for hours. The window's clock runs on its own between reads, so a showing window reads just after

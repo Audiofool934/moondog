@@ -89,18 +89,10 @@ export async function writePiRuntimeSelection(
   return normalized;
 }
 
-// Whether an agent built earlier is behind the saved choice: another model or effort, or an agent
-// that could not answer then, which a sign-in since may let answer. Token refreshes rewrite
-// auth.json often, so a working agent on the saved model is kept.
-export function runtimeBehindSelection(status, selection) {
-  if (status?.state !== "configured") return true;
-  return status.provider !== selection?.provider || status.model !== selection?.model ||
-    (status.effort ?? undefined) !== selection?.effort;
-}
-
 // The terminal and the window each build their agent from settings.json and auth.json. A model
 // chosen, or a sign-in made, on one side reaches the other through this watch. onChange hears the
-// saved selection, or undefined when none is saved; the surface decides whether to rebuild.
+// saved selection, or undefined when none is saved; the surface decides whether to rebuild, with
+// runtimeBehindSelection.
 export function watchRuntimeSettings({ environment = process.env, interval = 2000, onChange } = {}) {
   const files = [resolveMoondogSettingsFile(environment), resolveMoondogAuthFile(environment)];
   const listener = (now, before) => {
