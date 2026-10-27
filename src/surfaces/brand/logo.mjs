@@ -185,17 +185,24 @@ export function logoSvg({ small = false, ink = "currentColor", standalone = fals
 }
 
 /**
+ * The app icon's tile on its 1024 canvas: a superellipse, the shape of a macOS icon, `half` from the
+ * center to each side. Larger halves draw the same shape round the tile, as a ring that follows it.
+ */
+export function iconShape(half = 412) {
+  const corner = Array.from({ length: 160 }, (_, index) => {
+    const angle = (index / 160) * 2 * Math.PI, cos = Math.cos(angle), sin = Math.sin(angle);
+    return [512 + half * Math.sign(cos) * Math.abs(cos) ** 0.4, 512 + half * Math.sign(sin) * Math.abs(sin) ** 0.4];
+  });
+  return `M${corner.map(pt).join("L")}Z`;
+}
+
+/**
  * The Mac app icon: the full logo on a rounded square of Apple's 824 px grid, its tonearm reaching in
  * from beyond the tile's corner. Light is the app's own icon; dark is the one the listener can choose.
  */
 export function appIconSvg({ dark = false, id = "moondog-icon" } = {}) {
   const [tile, ink] = dark ? ["#151515", "#f2f2f2"] : ["#ffffff", "#141414"];
-  // A superellipse, the shape of a macOS icon.
-  const corner = Array.from({ length: 160 }, (_, index) => {
-    const angle = (index / 160) * 2 * Math.PI, cos = Math.cos(angle), sin = Math.sin(angle);
-    return [512 + 412 * Math.sign(cos) * Math.abs(cos) ** 0.4, 512 + 412 * Math.sign(sin) * Math.abs(sin) ** 0.4];
-  });
-  const shape = `M${corner.map(pt).join("L")}Z`;
+  const shape = iconShape();
   const art = logoSvg({ ink, id, reach: 340, line: 1.8 }).replace(/^<svg[^>]*>/u, "").replace(/<\/svg>$/u, "");
   // The soft shadow under the tile that Mac icons draw in their own margin.
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024"><defs><clipPath id="${id}-tile"><path d="${shape}"/></clipPath>`

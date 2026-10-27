@@ -77,8 +77,6 @@
 .sheet .choice-detail { font-size: var(--t-small); line-height: 1.35; color: var(--text-3); overflow-wrap: anywhere; }
 .sheet .choice .check { width: 16px; height: 16px; color: var(--text); stroke-width: 1.7; }
 .sheet .choice .kind { color: var(--text-2); }
-.sheet .choice .app-icon { flex: none; width: 34px; height: 34px; margin: -3px 0 -3px -3px; }
-.sheet .choice .app-icon svg { display: block; width: 100%; height: 100%; }
 .sheet .choice > .button { flex: none; margin-inline-end: 6px; }
 .sheet .choice > .check { flex: none; margin: 0 10px 0 4px; }
 /* A provider unfolds its models; they sit under its name, not under its chevron. */
@@ -113,6 +111,18 @@
 .sheet .segment:hover { color: var(--text); transition: none; }
 .sheet .segment[aria-checked="true"] { background: var(--surface); color: var(--text); box-shadow: var(--edge), 0 1px 2px rgb(var(--shade-rgb) / 0.06); }
 .sheet .segment:focus-visible { border-radius: 5px; outline-offset: 0; }
+
+/* Appearance: each app icon as itself, the tile's edge in line with the title above, a ring round the chosen one. */
+.sheet .icon-choices { display: flex; gap: 10px; margin-inline-start: -6px; }
+.sheet .icon-choice { position: relative; width: 64px; height: 64px; border-radius: 16px; transition: transform var(--quick) var(--soft); }
+.sheet .icon-choice:active { transform: scale(0.97); }
+.sheet .icon-choice svg { position: absolute; inset: 0; display: block; width: 100%; height: 100%; }
+.sheet .icon-marks path { fill: none; vector-effect: non-scaling-stroke; }
+.sheet .icon-edge { stroke: var(--line-2); stroke-width: 2; }
+.sheet .icon-ring { stroke: transparent; stroke-width: 1.5; transition: stroke var(--quick) var(--soft); }
+.sheet .icon-choice:hover .icon-ring { stroke: var(--line-2); transition: none; }
+.sheet .icon-choice[aria-checked="true"] .icon-ring { stroke: var(--text); }
+.sheet .icon-choice:focus-visible { border-radius: 16px; outline-offset: 0; }
 
 /* ── Places ──────────────────────────────────────────────────────────────────────────────── */
 /* Model: what answers now, large enough to read at a glance. */

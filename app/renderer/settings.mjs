@@ -1,7 +1,7 @@
 // Settings: one sheet over the window, the places on the left and the open one on the right. Every
 // change goes to the core, which saves it where the terminal reads it. A choice shows at once and
 // the core's next status confirms it, so nothing waits on a rebuild to look chosen.
-import { appIconSvg } from "../../src/surfaces/brand/logo.mjs";
+import { appIconSvg, iconShape } from "../../src/surfaces/brand/logo.mjs";
 import { languageTag, timeOfDay } from "../strings.mjs";
 import { icon, make, name, scrollbar, setIcon, turning } from "./ui.mjs";
 
@@ -9,6 +9,9 @@ const SECTIONS = ["general", "appearance", "model", "playback", "library", "memo
 const ICONS = { general: "globe", appearance: "appearance", model: "model", playback: "speaker", library: "import", memory: "memory", about: "info" };
 // Spotify names device types in English; the icon says the kind, so no word is needed.
 const DEVICE_ICONS = { computer: "laptop", smartphone: "phone", tablet: "phone", tv: "tv" };
+// The chosen app icon's ring on the icon's 1024 canvas: at the 64 px the sheet draws it, a 1.5 px line
+// 3 px clear of the tile (412).
+const RING = 472;
 const REDIRECT_URI = "http://127.0.0.1:43821/callback";
 const SPOTIFY_DASHBOARD = "https://developer.spotify.com/dashboard";
 // NetEase plays through its own command line tool, installed and signed in from Terminal (app/README.md).
@@ -198,12 +201,13 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
       const rows = [...scroller.querySelectorAll(".choice-main:not(:disabled)")];
       const next = rows[rows.indexOf(target) + step];
       if (next) { event.preventDefault(); next.focus(); }
-    } else if (!vertical && target.classList?.contains("segment")) {
-      const segments = [...target.parentElement.children];
-      const next = segments[segments.indexOf(target) + step];
+    } else if (!vertical && target.parentElement?.getAttribute("role") === "radiogroup") {
+      // Choices side by side, the segments and the app icons, move left and right.
+      const options = [...target.parentElement.children];
+      const next = options[options.indexOf(target) + step];
       if (!next) return;
       event.preventDefault();
-      // The click redraws the section, so the focus goes to the redrawn segment.
+      // The click redraws the section, so the focus goes to the redrawn choice.
       const key = next.dataset.key;
       next.click();
       card.querySelector(`[data-key="${CSS.escape(key)}"]`)?.focus();
@@ -359,16 +363,25 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
       segment.tabIndex = chosen ? 0 : -1;
       themes.append(segment);
     }
-    // Each icon shows itself, drawn from the logo.
-    const tile = (dark) => {
-      const node = make("span", "app-icon");
-      node.innerHTML = appIconSvg({ dark, id: `settings-icon-${dark ? "dark" : "light"}` });
-      return node;
-    };
-    const icons = choices([["light", "themeLight"], ["dark", "themeDark"]].map(([kind, label]) => choice({ label: say(label),
-      chosen: data.appearance.icon === kind, lead: tile(kind === "dark"), key: `icon:${kind}`,
-      onChoose: () => { if (data.appearance.icon !== kind) choose({ icon: kind }); } })));
-    return [sectionError(), group(say("theme"), themes), group(say("appIcon"), icons, note(say("appIconNote")))].filter(Boolean);
+    // Each icon shows itself, drawn from the logo, and says its name in the tooltip. A hairline inside
+    // the tile keeps the dark one's shape on a dark sheet; a ring of the same shape marks the chosen one.
+    const icons = make("div", "icon-choices");
+    icons.setAttribute("role", "radiogroup");
+    icons.setAttribute("aria-label", say("appIcon"));
+    for (const [kind, label] of [["light", "themeLight"], ["dark", "themeDark"]]) {
+      const chosen = data.appearance.icon === kind;
+      const id = `settings-icon-${kind}`;
+      const option = button("", "icon-choice", () => { if (!chosen) choose({ icon: kind }); }, `icon:${kind}`);
+      option.setAttribute("role", "radio");
+      option.setAttribute("aria-checked", String(chosen));
+      option.tabIndex = chosen ? 0 : -1;
+      name(option, say(label));
+      option.innerHTML = appIconSvg({ dark: kind === "dark", id })
+        + `<svg class="icon-marks" viewBox="0 0 1024 1024"><clipPath id="${id}-inside"><path d="${iconShape()}"/></clipPath>`
+        + `<path class="icon-edge" d="${iconShape()}" clip-path="url(#${id}-inside)"/><path class="icon-ring" d="${iconShape(RING)}"/></svg>`;
+      icons.append(option);
+    }
+    return [sectionError(), group(say("theme"), themes), group(say("appIcon"), icons)].filter(Boolean);
   }
 
   function signInPanel() {
