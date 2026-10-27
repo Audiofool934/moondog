@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/brand/moondog-lunar-record/moondog-logo-1x1.png" width="156" alt="Moondog lunar record">
+  <img src="assets/brand/moondog-logo.svg" width="156" alt="Moondog: a dog in headphones inside a moon that is also a record">
 </p>
 
 <h1 align="center">Moondog</h1>

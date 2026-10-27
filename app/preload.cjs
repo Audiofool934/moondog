@@ -20,6 +20,9 @@ contextBridge.exposeInMainWorld("moondogApp", {
   confirm: (options) => ipcRenderer.invoke("confirm", options),
   chooseFile: (options) => ipcRenderer.invoke("choose-file", options),
   version: () => ipcRenderer.invoke("version"),
+  // The window's light, dark or the system's, and the Dock's icon: { theme, icon }.
+  appearance: () => ipcRenderer.invoke("appearance"),
+  setAppearance: (choice) => ipcRenderer.invoke("set-appearance", { theme: choice?.theme, icon: choice?.icon }),
   // A newer Moondog on its way or ready, and a way to restart into it.
   updateState: () => ipcRenderer.invoke("update"),
   onUpdate: (callback) => ipcRenderer.on("update", (_event, state) => callback(state)),

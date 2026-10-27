@@ -1,11 +1,12 @@
 // Settings: one sheet over the window, the places on the left and the open one on the right. Every
 // change goes to the core, which saves it where the terminal reads it. A choice shows at once and
 // the core's next status confirms it, so nothing waits on a rebuild to look chosen.
+import { appIconSvg } from "../../src/surfaces/brand/logo.mjs";
 import { languageTag, timeOfDay } from "../strings.mjs";
 import { icon, make, name, scrollbar, setIcon, turning } from "./ui.mjs";
 
-const SECTIONS = ["general", "model", "playback", "library", "memory", "about"];
-const ICONS = { general: "globe", model: "model", playback: "speaker", library: "import", memory: "memory", about: "info" };
+const SECTIONS = ["general", "appearance", "model", "playback", "library", "memory", "about"];
+const ICONS = { general: "globe", appearance: "appearance", model: "model", playback: "speaker", library: "import", memory: "memory", about: "info" };
 // Spotify names device types in English; the icon says the kind, so no word is needed.
 const DEVICE_ICONS = { computer: "laptop", smartphone: "phone", tablet: "phone", tv: "tv" };
 const REDIRECT_URI = "http://127.0.0.1:43821/callback";
@@ -85,7 +86,9 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
   // The places are built once and only their state changes, so a message from the core never
   // replaces the row under the pointer.
   const tabs = new Map();
-  for (const id of SECTIONS) {
+  // The window's look belongs to the Mac app, so a window without it, such as the project page's, leaves it out.
+  const sections = SECTIONS.filter((id) => id !== "appearance" || window.moondogApp?.setAppearance);
+  for (const id of sections) {
     const tab = make("button", "sheet-tab");
     tab.type = "button";
     tab.dataset.key = `nav:${id}`;
@@ -103,7 +106,7 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
   let copiedTimer = 0;
   // What the core told this sheet; the sheet asks again each time a section opens.
   const data = { providers: null, providersError: false, models: new Map(), modelsFailed: new Set(), expanded: undefined, signingOut: new Set(),
-    devices: null, devicesError: false, devicesLoading: false, memories: null, auth: null, error: null, importing: null, version: null, copied: null, focus: null, phaseOffset: null,
+    devices: null, devicesError: false, devicesLoading: false, memories: null, auth: null, error: null, importing: null, version: null, appearance: null, copied: null, focus: null, phaseOffset: null,
     lastfm: { username: "", needsKey: false, keyError: false, savingKey: false },
     drafts: { remember: "", lastfm: "", lastfmKey: "", spotifyClientId: "" } };
 
@@ -120,7 +123,7 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
 
   // While the sheet is open, the window behind it takes no focus or clicks.
   function show(name = section) {
-    const next = SECTIONS.includes(name) ? name : "general";
+    const next = sections.includes(name) ? name : "general";
     const wasOpen = isOpen;
     const moved = next !== section;
     if (moved) { data.error = null; scroller.scrollTop = 0; }
@@ -154,7 +157,7 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
     document.querySelector("[data-input]")?.focus();
   }
   function go(name) {
-    if (name === section || !SECTIONS.includes(name)) return;
+    if (name === section || !sections.includes(name)) return;
     section = name;
     data.error = null;
     scroller.scrollTop = 0;
@@ -172,6 +175,7 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
       void appleMusic?.check().then(() => render());
     }
     if (section === "about" && !data.version) void window.moondogApp?.version?.().then((version) => { data.version = version; render(); });
+    if (section === "appearance") void window.moondogApp?.appearance?.().then((value) => { data.appearance = value; render(); });
   }
 
   document.addEventListener("keydown", (event) => {
@@ -187,7 +191,7 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
     const vertical = event.key === "ArrowDown" || event.key === "ArrowUp";
     if (vertical && (target === card || target.closest?.(".sheet-nav"))) {
       event.preventDefault();
-      const next = SECTIONS[Math.max(0, Math.min(SECTIONS.length - 1, SECTIONS.indexOf(section) + step))];
+      const next = sections[Math.max(0, Math.min(sections.length - 1, sections.indexOf(section) + step))];
       go(next);
       tabs.get(next).tab.focus();
     } else if (vertical && target.classList?.contains("choice-main")) {
@@ -332,6 +336,39 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
     return [sectionError(), choices(locales.map((entry) => choice({ label: entry.nativeName, detail: local(entry),
       chosen: entry.code === current, key: `locale:${entry.code}`,
       onChoose: () => { expect("locale", entry.code); send({ type: "language", locale: entry.code }); render(); } })))].filter(Boolean);
+  }
+
+  // Appearance: the window's light, dark or the system's, and the icon the Dock shows. The app keeps
+  // them, not the core, since they belong to this Mac's window rather than to the terminal.
+  function appearance() {
+    if (!data.appearance) return [waiting()];
+    const choose = (next) => {
+      data.appearance = { ...data.appearance, ...next };
+      render();
+      window.moondogApp.setAppearance(next).then((saved) => { data.appearance = saved; render(); },
+        () => { data.error = { section: "appearance", key: "noticeFailed" }; render(); });
+    };
+    const themes = make("div", "segments");
+    themes.setAttribute("role", "radiogroup");
+    themes.setAttribute("aria-label", say("theme"));
+    for (const [theme, label] of [["system", "themeSystem"], ["light", "themeLight"], ["dark", "themeDark"]]) {
+      const chosen = data.appearance.theme === theme;
+      const segment = button(say(label), "segment", () => { if (!chosen) choose({ theme }); }, `theme:${theme}`);
+      segment.setAttribute("role", "radio");
+      segment.setAttribute("aria-checked", String(chosen));
+      segment.tabIndex = chosen ? 0 : -1;
+      themes.append(segment);
+    }
+    // Each icon shows itself, drawn from the logo.
+    const tile = (dark) => {
+      const node = make("span", "app-icon");
+      node.innerHTML = appIconSvg({ dark, id: `settings-icon-${dark ? "dark" : "light"}` });
+      return node;
+    };
+    const icons = choices([["light", "themeLight"], ["dark", "themeDark"]].map(([kind, label]) => choice({ label: say(label),
+      chosen: data.appearance.icon === kind, lead: tile(kind === "dark"), key: `icon:${kind}`,
+      onChoose: () => { if (data.appearance.icon !== kind) choose({ icon: kind }); } })));
+    return [sectionError(), group(say("theme"), themes), group(say("appIcon"), icons, note(say("appIconNote")))].filter(Boolean);
   }
 
   function signInPanel() {
@@ -707,7 +744,7 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
     data.focus = null;
     const fresh = make("div", `sheet-section${entering ? " entering" : ""}`);
     fresh.dataset.section = section;
-    const views = { general, model, playback, library, memory, about };
+    const views = { general, appearance, model, playback, library, memory, about };
     fresh.append(...views[section]());
     // The core often repeats itself. An unchanged section keeps its nodes, so the row under the
     // pointer and the field being typed in are never replaced. Passing states, such as the refresh

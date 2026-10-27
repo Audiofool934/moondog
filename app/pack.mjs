@@ -62,11 +62,13 @@ const artifacts = await build({
     // The core sits beside the window's folder, where core-process.mjs imports ../scripts/moondog.mjs.
     // electron-builder leaves node_modules out of extra resources unless it is named on its own.
     extraResources: [{ from: "build/room", to: ".", filter: ["**/*"] },
-      { from: "build/room/node_modules", to: "node_modules", filter: ["**/*"] }],
+      { from: "build/room/node_modules", to: "node_modules", filter: ["**/*"] },
+      // Both app icons, so the Dock can show the one chosen in Settings.
+      { from: path.join(root, "assets/brand"), to: "brand", filter: ["moondog-app-icon.png", "moondog-app-icon-dark.png"] }],
     extraFiles: music ? [{ from: "native/build/moondog-music", to: "MacOS/moondog-music" }] : [],
     mac: {
       category: "public.app-category.music",
-      icon: path.join(root, "assets/brand/moondog-lunar-record/moondog-logo-1x1.png"),
+      icon: path.join(root, "assets/brand/moondog-app-icon.png"),
       hardenedRuntime: true,
       gatekeeperAssess: false,
       entitlements: "build-resources/entitlements.mac.plist",

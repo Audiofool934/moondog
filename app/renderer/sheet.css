@@ -77,6 +77,8 @@
 .sheet .choice-detail { font-size: var(--t-small); line-height: 1.35; color: var(--text-3); overflow-wrap: anywhere; }
 .sheet .choice .check { width: 16px; height: 16px; color: var(--text); stroke-width: 1.7; }
 .sheet .choice .kind { color: var(--text-2); }
+.sheet .choice .app-icon { flex: none; width: 34px; height: 34px; margin: -3px 0 -3px -3px; }
+.sheet .choice .app-icon svg { display: block; width: 100%; height: 100%; }
 .sheet .choice > .button { flex: none; margin-inline-end: 6px; }
 .sheet .choice > .check { flex: none; margin: 0 10px 0 4px; }
 /* A provider unfolds its models; they sit under its name, not under its chevron. */

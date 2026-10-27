@@ -46,7 +46,7 @@ const packageOnlyPrivateSentinelPattern = new RegExp(
 const requiredPackagePaths = new Set([
   "LICENSE",
   "README.md",
-  "assets/brand/moondog-lunar-record/moondog-logo-1x1.png",
+  "assets/brand/moondog-logo.svg",
   "contracts/v1/definitions.schema.json",
   "contracts/v2/profile-evidence.schema.json",
   "package.json",
@@ -92,7 +92,7 @@ const exactAllowedPackagePaths = new Set([
   "LICENSE.txt",
   "NOTICE",
   "package.json",
-  "assets/brand/moondog-lunar-record/moondog-logo-1x1.png",
+  "assets/brand/moondog-logo.svg",
   "scripts/contract-lib.mjs",
   "scripts/contract-semantics.mjs",
   "scripts/moondog",

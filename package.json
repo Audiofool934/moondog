@@ -18,7 +18,7 @@
     "moondog": "scripts/moondog"
   },
   "files": [
-    "assets/brand/moondog-lunar-record/moondog-logo-1x1.png",
+    "assets/brand/moondog-logo.svg",
     "contracts/v1",
     "contracts/v2",
     "scripts/contract-lib.mjs",
