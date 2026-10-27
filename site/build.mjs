@@ -8,6 +8,7 @@
 //   node build.mjs --serve      rebuild on change and serve at http://localhost:8737
 //   node build.mjs --offline    link the release list rather than ask GitHub for the newest Mac download
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { access, cp, mkdir, readFile, rm, watch, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -125,10 +126,22 @@ const documents = {
   "terminal.html": async () => (await readFile(path.join(here, "terminal", "terminal.html"), "utf8"))
     .replace("<!-- policy -->", policyTag("terminal")),
 };
-const writeDocuments = async () => {
+// Cloudflare keeps scripts and styles for hours, so a published document asks for each one by its
+// content: a new deploy never pairs new markup with an old stylesheet.
+const fingerprint = async (html) => {
+  for (const name of new Set(html.match(/(?<=(?:href|src)=")[a-z]+\.(?:css|js)(?=")/gu) ?? [])) {
+    const hash = createHash("sha256").update(await readFile(path.join(outdir, name))).digest("hex").slice(0, 10);
+    html = html.replaceAll(`"${name}"`, `"${name}?v=${hash}"`);
+  }
+  return html;
+};
+const writeDocuments = async ({ fingerprinted = false } = {}) => {
   await cp(path.join(here, "static"), path.join(outdir, "static"), { recursive: true });
   await cp(path.join(here, "style.css"), path.join(outdir, "style.css"));
-  await Promise.all(Object.entries(documents).map(async ([name, render]) => writeFile(path.join(outdir, name), await render())));
+  await Promise.all(Object.entries(documents).map(async ([name, render]) => {
+    const html = await render();
+    await writeFile(path.join(outdir, name), fingerprinted ? await fingerprint(html) : html);
+  }));
 };
 await rm(outdir, { recursive: true, force: true });
 await mkdir(outdir, { recursive: true });
@@ -173,6 +186,7 @@ if (flags.has("--serve")) {
   }
 } else {
   const result = await esbuild.build(options);
+  await writeDocuments({ fingerprinted: true });
   const bytes = Object.entries(result.metafile.outputs)
     .filter(([file]) => !file.endsWith(".map"))
     .map(([file, { bytes }]) => `${path.basename(file)} ${(bytes / 1024).toFixed(0)} KB`);
