@@ -66,6 +66,7 @@ const STRINGS = {
     unknownCommand: "There's no /{name} command.",
     fullSongs: "Full songs",
     allowFullSongs: "Play full songs",
+    firstRunService: "Where do you listen?", firstRunModel: "Which model should Moondog use?", skipSetup: "Skip setup",
   },
   zh: {
     newConversation: "新对话", today: "今天", yesterday: "昨天", previous7: "过去 7 天", older: "更早",
@@ -124,6 +125,7 @@ const STRINGS = {
     unknownCommand: "没有 /{name} 这个命令。",
     fullSongs: "完整歌曲",
     allowFullSongs: "播放完整歌曲",
+    firstRunService: "你在哪里听歌？", firstRunModel: "Moondog 用哪个模型？", skipSetup: "跳过设置",
   },
   "zh-Hant": {
     newConversation: "新對話", today: "今天", yesterday: "昨天", previous7: "過去 7 天", older: "更早",
@@ -182,6 +184,7 @@ const STRINGS = {
     unknownCommand: "沒有 /{name} 這個指令。",
     fullSongs: "完整歌曲",
     allowFullSongs: "播放完整歌曲",
+    firstRunService: "你在哪裡聽歌？", firstRunModel: "Moondog 要用哪個模型？", skipSetup: "略過設定",
   },
   ja: {
     newConversation: "新しい会話", today: "今日", yesterday: "昨日", previous7: "過去 7 日間", older: "それ以前",
@@ -240,6 +243,7 @@ const STRINGS = {
     unknownCommand: "/{name} というコマンドはありません。",
     fullSongs: "フル再生",
     allowFullSongs: "フル再生を許可",
+    firstRunService: "どこで音楽を聴きますか？", firstRunModel: "Moondog が使うモデルは？", skipSetup: "設定をスキップ",
   },
   ko: {
     newConversation: "새 대화", today: "오늘", yesterday: "어제", previous7: "지난 7일", older: "이전",
@@ -298,6 +302,7 @@ const STRINGS = {
     unknownCommand: "/{name} 명령이 없습니다.",
     fullSongs: "전곡 재생",
     allowFullSongs: "전곡 재생 허용",
+    firstRunService: "어디에서 음악을 듣나요?", firstRunModel: "Moondog이 어떤 모델을 쓸까요?", skipSetup: "설정 건너뛰기",
   },
   es: {
     newConversation: "Nueva conversación", today: "Hoy", yesterday: "Ayer", previous7: "Últimos 7 días", older: "Anteriores",
@@ -356,6 +361,7 @@ const STRINGS = {
     unknownCommand: "No hay ningún comando /{name}.",
     fullSongs: "Canciones completas",
     allowFullSongs: "Reproducir canciones completas",
+    firstRunService: "¿Dónde escuchas música?", firstRunModel: "¿Qué modelo debe usar Moondog?", skipSetup: "Omitir la configuración",
   },
   fr: {
     newConversation: "Nouvelle conversation", today: "Aujourd'hui", yesterday: "Hier", previous7: "7 derniers jours", older: "Plus anciennes",
@@ -414,6 +420,7 @@ const STRINGS = {
     unknownCommand: "La commande /{name} n'existe pas.",
     fullSongs: "Morceaux complets",
     allowFullSongs: "Lire les morceaux complets",
+    firstRunService: "Où écoutez-vous de la musique ?", firstRunModel: "Quel modèle Moondog doit-il utiliser ?", skipSetup: "Passer la configuration",
   },
   de: {
     newConversation: "Neue Unterhaltung", today: "Heute", yesterday: "Gestern", previous7: "Letzte 7 Tage", older: "Älter",
@@ -472,6 +479,7 @@ const STRINGS = {
     unknownCommand: "Den Befehl /{name} gibt es nicht.",
     fullSongs: "Ganze Songs",
     allowFullSongs: "Ganze Songs abspielen",
+    firstRunService: "Wo hörst du Musik?", firstRunModel: "Welches Modell soll Moondog nutzen?", skipSetup: "Einrichtung überspringen",
   },
   pt: {
     newConversation: "Nova conversa", today: "Hoje", yesterday: "Ontem", previous7: "Últimos 7 dias", older: "Anteriores",
@@ -530,6 +538,7 @@ const STRINGS = {
     unknownCommand: "Não existe o comando /{name}.",
     fullSongs: "Músicas completas",
     allowFullSongs: "Tocar músicas completas",
+    firstRunService: "Onde você ouve música?", firstRunModel: "Qual modelo o Moondog deve usar?", skipSetup: "Pular a configuração",
   },
   it: {
     newConversation: "Nuova conversazione", today: "Oggi", yesterday: "Ieri", previous7: "Ultimi 7 giorni", older: "Meno recenti",
@@ -588,6 +597,7 @@ const STRINGS = {
     unknownCommand: "Il comando /{name} non esiste.",
     fullSongs: "Brani completi",
     allowFullSongs: "Riproduci brani completi",
+    firstRunService: "Dove ascolti musica?", firstRunModel: "Quale modello deve usare Moondog?", skipSetup: "Salta la configurazione",
   },
 };
 
