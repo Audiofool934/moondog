@@ -1,5 +1,5 @@
-// Plays the scene in the window as a visitor would: the needle goes down, a request is typed, the record
-// takes the whole window, and the needle lifts. Everything after each gesture is the window and its core
+// Plays the scene in the window as a visitor would: a click on the record's arm asks for music, a request
+// is typed, the record takes the whole window, and the needle lifts. Everything after each gesture is the window and its core
 // answering, as in the app. The scene begins and ends on a new conversation with the arm up, so it plays
 // again from where it ends. It runs only while the window is on screen.
 const $ = (name) => document.querySelector(`[data-${name}]`);
@@ -90,7 +90,7 @@ async function settled(clock) {
 
 // begin resolves when the page lets the scene start, with { at } where the visitor's click on its cover
 // landed in this window, if they clicked: the scene's pointer takes over from there. needle hears each
-// drop, and ending hears the needle lift at the end.
+// click on the arm, and ending hears the needle lift at the end.
 export async function direct({ clock, agent, request, quick = false, begin, needle = () => {}, ending = () => {} }) {
   const pointer = quick ? null : createPointer(clock);
   const curtain = document.createElement("div");
@@ -115,7 +115,8 @@ export async function direct({ clock, agent, request, quick = false, begin, need
   };
   for (;;) {
     // A new conversation, the arm up: the composer comes back where the page's words were, and the
-    // pointer puts the needle down, so Moondog picks something for right now.
+    // pointer clicks the record's arm, so Moondog picks something for right now; the needle goes down as
+    // the music starts.
     document.body.classList.remove("waiting");
     let answered = agent.answered();
     if (pointer) {

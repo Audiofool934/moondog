@@ -23,7 +23,7 @@ let inView = false;
 let song = null;
 const tracks = new Map();
 
-// Sounds are loaded before they are needed, while the cover shows, so the needle's sound comes with the click.
+// Sounds are loaded before they are needed, while the cover shows, so the ident comes the instant the arm is clicked.
 const loaded = new Map();
 function load(sound) {
   if (!loaded.has(sound)) {
@@ -63,7 +63,7 @@ function follow() {
   const track = trackFor(wanted);
   track.stop += 1;
   // A song joined late starts where the scene is in it, faded in; one heard from its start, such as the
-  // ident as the needle lands, comes in at once, with its first sound whole.
+  // ident as the arm is clicked, comes in at once, with its first sound whole.
   let fadeIn = 1.2;
   if (track.audio.paused) {
     const at = Math.max(0, (Date.now() - song.startedAt) / 1000);
@@ -91,7 +91,7 @@ button.addEventListener("click", () => setSound(!on));
 // The cover. The scene waits on the record until the visitor lets it begin, with sound, or chooses to
 // watch without it; after a while on screen it begins on its own, silently, and the sound switch shows
 // itself once. Then it plays on, again and again. The record doesn't answer the visitor's pointer: the
-// scene's pointer takes over from where the click landed and puts the needle down.
+// scene's pointer takes over from where the click landed and clicks the record's arm.
 const frame = document.querySelector(".stage iframe");
 const cover = document.querySelector("[data-cover]");
 const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
