@@ -695,36 +695,36 @@ function toggleRecord() {
 // stops; another sets it down and the music plays. A pointer on it leans it toward where a click
 // sends it. A click anywhere else on the record folds it into the bar. Before anything is said, the
 // record folds nowhere, so only its arm answers a click.
-// With nothing loaded on any player, setting the arm down asks Moondog for a song, as the words
-// "Play something for right now" would, in the conversation that is open. The arm stays on the record,
-// cueing, until music plays, or until a few seconds after the reply ends without any. A paused song
-// is still loaded, so the arm resumes it instead.
+// With nothing loaded on any player, a click on the arm asks Moondog for a song, as the words
+// "Play something for right now" would, in the conversation that is open. The arm stays up until the
+// music plays, and goes down then, as it does for music started any other way. While it waits, until a
+// few seconds after a reply that starts no music, it asks nothing more. A paused song is still loaded,
+// so the arm resumes it instead.
 const CUE_GRACE_MS = 4000;
 let cue = null;
 const armReady = () => {
   const now = nowPlaying();
-  return now ? can(now, now.playing ? "pausing" : "resuming") : Boolean(cue) || (state.ready && !state.streaming);
+  return now ? can(now, now.playing ? "pausing" : "resuming") : !cueing(now) && state.ready && !state.streaming;
 };
 const onArm = (target, event) => armReady() && target?.hit(event.clientX, event.clientY) === "arm";
 function setArm() {
   if (nowPlaying()) { control("toggle", "record"); return; }
-  if (cue || !state.ready || state.streaming) return;
+  if (cueing(null) || !state.ready || state.streaming) return;
   rest();
   if (!submitText(t("armPrompt"))) return;
   if (state.model?.state === "configured") cue = { at: Date.now(), seen: false, ended: 0 };
-  renderInspector();
+  // The arm has nothing more to offer a click until the music plays, so it stops leaning toward one.
+  record?.lean(false);
+  deep?.lean(false);
 }
-// Whether the arm still waits on the record for the song it asked for.
+// Whether the arm still waits for the song it asked for.
 function cueing(now) {
   if (!cue) return false;
   if (now?.playing) { cue = null; return false; }
   if (state.streaming) cue.seen = true;
   else if (cue.seen || Date.now() - cue.at > 15_000) {
     cue.ended ||= Date.now();
-    const left = cue.ended + CUE_GRACE_MS - Date.now();
-    if (left <= 0) { cue = null; return false; }
-    clearTimeout(cue.timer);
-    cue.timer = setTimeout(renderInspector, left + 20);
+    if (Date.now() - cue.ended >= CUE_GRACE_MS) { cue = null; return false; }
   }
   return true;
 }
@@ -1476,8 +1476,10 @@ function renderInspector() {
   }
   placeTitle();
   record?.turn(now?.playing && (!talking() || fold.dock < 1));
-  // The arm rests on the record while the music plays, whatever started or stopped it, and while it cues.
-  const down = Boolean(now?.playing) || cueing(now);
+  // The arm rests on the record only while the music plays, whatever started or stopped it. An arm that
+  // asked for a song keeps track of the reply here, and stops waiting once the music plays.
+  cueing(now);
+  const down = Boolean(now?.playing);
   record?.needle(down);
   deep?.needle(down);
   mark.playing(now?.playing);
