@@ -90,29 +90,28 @@ button.addEventListener("click", () => setSound(!on));
 
 // The cover. The scene waits on the record until the visitor lets it begin, with sound, or chooses to
 // watch without it; after a while on screen it begins on its own, silently, and the sound switch shows
-// itself once. Then it plays on, again and again. A pointer over the cover leans the record's arm, as a
-// pointer on the arm leans it in the app; a click lets the arm rest up, until the needle goes down.
+// itself once. Then it plays on, again and again. The record doesn't answer the visitor's pointer: the
+// scene's pointer takes over from where the click landed and puts the needle down.
 const frame = document.querySelector(".stage iframe");
 const cover = document.querySelector("[data-cover]");
 const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
-const WAIT_MS = 6000;
+const WAIT_MS = 10_000;
 let begun = false;
 let waited = 0;
 let waiting = null;
 const toScene = (message) => frame.contentWindow?.postMessage({ source: "moondog-page", ...message }, location.origin);
 
-function begin({ sound = false, touch = false } = {}) {
+function begin({ sound = false, at = null } = {}) {
   if (begun) return;
   begun = true;
   clearInterval(waiting);
   if (sound) setSound(true);
   cover.classList.add("leaving");
   setTimeout(() => { cover.hidden = true; }, 500);
-  toScene({ lean: false });
-  toScene({ start: { touch } });
+  toScene({ start: { at } });
 }
 function ready() {
-  if (begun) return toScene({ start: { touch: false } });
+  if (begun) return toScene({ start: {} });
   if (reduced) return begin();
   if (!cover.hidden) return;
   cover.hidden = false;
@@ -123,9 +122,12 @@ function ready() {
     button.classList.add("hint");
   }, 250);
 }
-cover.addEventListener("click", (event) => begin({ sound: !event.target.closest("[data-silent]"), touch: true }));
-cover.addEventListener("pointerenter", () => toScene({ lean: true }));
-cover.addEventListener("pointerleave", () => toScene({ lean: false }));
+// A click from a key has no place on the page; the scene's pointer then comes in from its corner.
+cover.addEventListener("click", (event) => {
+  const box = frame.getBoundingClientRect();
+  const at = event.detail ? { x: event.clientX - box.left, y: event.clientY - box.top } : null;
+  begin({ sound: !event.target.closest("[data-silent]"), at });
+});
 
 addEventListener("message", (event) => {
   if (event.origin !== location.origin || event.data?.source !== "moondog-scene") return;

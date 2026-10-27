@@ -23,11 +23,12 @@ The build asks GitHub for the newest release with a Mac download; `node build.mj
 ## The scene
 
 The window waits on a new conversation with the record's arm up, and the page's cover asks the visitor in with sound ("Experience Moondog"); a quiet link watches without it.
-The click turns the sound on; the cover's words fade, the arm stays up for a moment, and then the needle drops.
+The record doesn't answer the visitor's pointer before that.
+The click turns the sound on; the cover's words fade, and the scene's pointer takes over from where the click landed, glides to the arm, and puts the needle down.
 As in the app, the needle asks for "Play something for right now", and the station's ident plays while Moondog picks three songs.
 Then a request for a late train home is typed and answered, and the record takes the whole window.
 The needle lifts, the music stops, and the record glides back to a new conversation, where the scene began, so the scene plays again in place, with no reload.
-Without a click, the scene begins silently after six seconds on screen, the scene's pointer puts the needle down, and the Sound switch shows itself once.
+Without a click, the scene begins silently after ten seconds on screen, the scene's pointer puts the needle down, and the Sound switch shows itself once.
 The window is the real one: `app/renderer` and `app/window-room.mjs` run unchanged, so a change to the app's window shows here too.
 
 - `window/host.mjs` stands in for the app's preload and core process, and starts the scene.
@@ -46,7 +47,7 @@ The colours drift in over a few seconds, and hold while the window is off screen
 The two songs the scene plays have music, made with Stability AI's Stable Audio 3 Medium on a Mac through its MLX version (`~/Developer/stable-audio-3/optimized/mlx` on the Mac mini).
 The page plays it from `static/scene/` when the visitor turns the sound on; `page.mjs` follows the scene's songs and fades between them.
 The station's ident, which plays as the needle lands, was made the same way.
-Each song is 32 seconds and the ident 6, made with `./sa3 --dit medium --decoder same-l --seconds N --seed N` and these prompts, then normalized to -16 LUFS with a true peak of -1.5 dB, faded out at the end, and encoded as AAC at 160 kb/s:
+Each song is 32 seconds and the ident 6, made with `./sa3 --dit medium --decoder same-l --seconds N --seed N` and these prompts, then normalized to -16 LUFS (the ident, under the songs, to -20) with a true peak of -1.5 dB, faded out at the end, and encoded as AAC at 160 kb/s:
 
 - `ident.m4a`, seed 11: "TrackType: Music, VocalType: Instrumental. A short late-night radio station ident. A stylus lands on a vinyl record with a soft crackle, then a warm Rhodes electric piano chord blooms over a deep, round bass note, with tape warmth and a gentle reverb tail. Calm, inviting, intimate. 76 BPM."
 

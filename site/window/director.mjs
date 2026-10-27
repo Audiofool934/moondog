@@ -47,6 +47,8 @@ function createPointer(clock) {
   const fire = (type, point, Event = MouseEvent) => document.elementFromPoint(point.x, point.y)
     ?.dispatchEvent(new Event(type, { bubbles: true, cancelable: true, clientX: point.x, clientY: point.y, detail: 1, pointerType: "mouse" }));
   return {
+    // Puts the pointer somewhere at once, such as where the visitor's own click on the page landed.
+    jump: (point) => place(point, 0),
     show: () => pointer.classList.add("shown"),
     hide: () => pointer.classList.remove("shown"),
     async move(point, ms) {
@@ -86,17 +88,9 @@ async function settled(clock) {
   while ($("send")?.querySelector("use")?.getAttribute("href") === "#i-stop") await clock.wait(100);
 }
 
-// Leans the arm toward the record while the visitor's pointer is over the page's cover, as a pointer on
-// the arm leans it in the app, so the arm says what a click will do.
-export function leanArm(on) {
-  const point = armPoint();
-  const frame = $("record-frame");
-  frame?.dispatchEvent(new PointerEvent(on ? "pointermove" : "pointerleave", { bubbles: true, clientX: point.x, clientY: point.y, pointerType: "mouse" }));
-}
-
-// begin resolves when the page lets the scene start: { touch: true } when the visitor's own click put the
-// needle down, so the arm drops by itself; otherwise the scene's pointer does it. needle hears each drop,
-// and ending hears the needle lift at the end.
+// begin resolves when the page lets the scene start, with { at } where the visitor's click on its cover
+// landed in this window, if they clicked: the scene's pointer takes over from there. needle hears each
+// drop, and ending hears the needle lift at the end.
 export async function direct({ clock, agent, request, quick = false, begin, needle = () => {}, ending = () => {} }) {
   const pointer = quick ? null : createPointer(clock);
   const curtain = document.createElement("div");
@@ -113,7 +107,7 @@ export async function direct({ clock, agent, request, quick = false, begin, need
   await (quick ? sleep(500) : clock.wait(400));
   document.body.classList.add("waiting");
   curtain.classList.add("open");
-  const { touch } = await begin;
+  let { at } = await begin;
 
   const drop = () => {
     const point = armPoint();
@@ -121,12 +115,19 @@ export async function direct({ clock, agent, request, quick = false, begin, need
   };
   for (;;) {
     // A new conversation, the arm up: the composer comes back where the page's words were, and the
-    // window rests a moment before the needle goes down and Moondog picks something for right now.
+    // pointer puts the needle down, so Moondog picks something for right now.
     document.body.classList.remove("waiting");
     let answered = agent.answered();
-    if (pointer && !touch) {
-      await clock.wait(900);
-      pointer.show();
+    if (pointer) {
+      if (at) {
+        pointer.jump(at);
+        pointer.show();
+        at = null;
+        await clock.wait(500);
+      } else {
+        await clock.wait(900);
+        pointer.show();
+      }
       await pointer.move(armPoint(), 1300);
       await clock.wait(450);
       await pointer.click();
@@ -135,7 +136,6 @@ export async function direct({ clock, agent, request, quick = false, begin, need
       await pointer.move({ x: innerWidth * 0.8, y: innerHeight * 0.72 }, 900);
       pointer.hide();
     } else {
-      await clock.wait(quick ? 0 : 1200);
       drop();
       needle();
     }

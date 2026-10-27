@@ -5,7 +5,7 @@ import { coverPalette } from "../../app/renderer/mood.mjs";
 import { runWindowRoom } from "../../app/window-room.mjs";
 import { SceneAgent } from "./agent.mjs";
 import { SceneApplication, createSceneMusicApp } from "./application.mjs";
-import { createClock, direct, leanArm } from "./director.mjs";
+import { createClock, direct } from "./director.mjs";
 import { EXCHANGES, IDENT, MODEL } from "./scene.mjs";
 
 // The window and the core talk over one message port, as in the app. window-room listens the way
@@ -57,14 +57,16 @@ void runWindowRoom({
   },
 }, { port: core, send: (message) => core.postMessage(message) });
 
-// The page says when the scene may begin (page.mjs): on the visitor's own click on its cover, after which
-// the needle goes down, or on its own after a while. A pointer over the cover leans the arm. Each needle
-// drop starts the station's ident, before the first song, and the needle's lift at the end stops the music.
+// The page says when the scene may begin (page.mjs): on the visitor's own click on its cover, with where
+// it landed, or on its own after a while. Each needle drop starts the station's ident, before the first
+// song, and the needle's lift at the end stops the music.
 const begin = Promise.withResolvers();
 addEventListener("message", (event) => {
   if (event.origin !== location.origin || event.data?.source !== "moondog-page") return;
-  if (event.data.start) begin.resolve({ touch: event.data.start.touch === true });
-  if ("lean" in event.data) leanArm(event.data.lean === true);
+  if (event.data.start) {
+    const { x, y } = event.data.start.at ?? {};
+    begin.resolve({ at: Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null });
+  }
   // The page may load after this frame; it asks, and hears that the scene is ready.
   if (event.data.ask) tell(ready);
 });
