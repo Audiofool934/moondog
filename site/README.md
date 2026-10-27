@@ -1,7 +1,7 @@
 # Moondog Project Page
 
 This folder builds Moondog's project page at <https://moondog.audiofool.ai>.
-Its hero is Moondog's own window, the desktop app's renderer, playing a short scene with a made-up listener and made-up songs.
+Its hero is Moondog's own window, the desktop app's renderer, playing a short scene with a made-up listener and made-up songs, with music made by Stable Audio 3.
 The page makes no network requests beyond its own files, and its content security policy enforces that.
 
 ## Run it
@@ -21,7 +21,7 @@ The build asks GitHub for the newest release with a Mac download; `node build.mj
 
 ## The scene
 
-The needle goes down and Moondog picks three songs, then a request for a late train home is typed and answered.
+The needle goes down and Moondog picks three songs, then a request for a late train home is typed and answered, and the record takes the whole window.
 The window is the real one: `app/renderer` and `app/window-room.mjs` run unchanged, so a change to the app's window shows here too.
 
 - `window/host.mjs` stands in for the app's preload and core process, and starts the scene.
@@ -29,10 +29,17 @@ The window is the real one: `app/renderer` and `app/window-room.mjs` run unchang
   The listener is the demo history's (`src/demo/fictional-spotify-history.mjs`); the new artists are made up too.
 - `window/agent.mjs` is the scene's Moondog: it runs each exchange's steps through the agent's events, starts its songs, and writes its reply at a reading pace.
 - `window/application.mjs` keeps the scene's conversation and plays its songs as the Music app on a Mac would.
-- `window/director.mjs` moves a pointer and types, as a visitor would: the needle, the player, the composer.
+- `window/director.mjs` moves a pointer and types, as a visitor would: the needle, the player, the composer, and the record's full-window arrows.
   The scene runs only while the window is on screen, and plays again behind a fade.
   With reduced motion it shows the finished scene at once, with no pointer.
   Where the window is narrower than the app gives its player room, the player stays folded.
+
+The two songs the scene plays have music, made with Stability AI's Stable Audio 3 Medium on a Mac through its MLX version (`~/Developer/stable-audio-3/optimized/mlx` on the Mac mini).
+The page plays it from `static/scene/` when the visitor turns the sound on; `page.mjs` follows the scene's songs and fades between them.
+Each is 32 seconds, made with `./sa3 --dit medium --decoder same-l --seconds 32 --seed N` and these prompts, then normalized to -18 LUFS with a true peak of -1.5 dB, faded out over its last 2 seconds, and encoded as AAC at 160 kb/s:
+
+- `glass-highway.m4a`, seed 7: "TrackType: Music, VocalType: Instrumental, Genre: Electronic, Genre: Dream Pop. A warm, unhurried dream pop instrumental for driving at dusk on an empty highway. Soft analog synth pads glow like the last light of the day, a round pulsing bass keeps a gentle motion, and a drum machine plays a soft, steady beat with brushed hi-hats. A chiming clean electric guitar repeats a simple, wistful motif, with tape warmth and a little reverb. Nostalgic, calm, slightly melancholic. 92 BPM."
+- `last-tram-home.m4a`, seed 21: "TrackType: Music, VocalType: Instrumental, Genre: Downtempo, Genre: Jazz. A late-night downtempo instrumental for the last tram home through a quiet city. A close-miked Rhodes electric piano plays soft, tired chords, a warm upright bass walks slowly, and brushed drums keep a relaxed swing. A distant city hum and the gentle rhythm of rails sit under the music, with warm tape saturation and soft reverb. Intimate, sleepy, tender, a little lonely. 76 BPM."
 
 `build.mjs` bundles with esbuild, and swaps the Node built-ins the window's core imports for the stand-ins in `shims/`.
 Each published document asks for its script and styles by a hash of their content, because Cloudflare keeps them for hours.

@@ -6,8 +6,12 @@
 .lights i { width: 12px; height: 12px; border-radius: 50%; background: rgb(var(--ink-rgb) / 0.13);
   box-shadow: inset 0 0 0 0.5px rgb(var(--ink-rgb) / 0.12); }
 
-/* The scene never opens the record alone, and a page can't keep a window above the others. */
-[data-pin], [data-expand] { display: none; }
+/* A page can't keep a window above the others. The full-window record covers the traffic lights, as the
+   app hides them there. */
+[data-pin] { display: none; }
+.window.immersed ~ .lights { display: none; }
+/* The record's arrows show under the scene's pointer as they do under a real one (app/renderer/style.css). */
+.room:not(.empty) .record-frame.scene-hover .record-button:not(.away) ~ .expand { opacity: 1; pointer-events: auto; transition: none; }
 
 /* macOS's arrow: black with a white rim, in light and dark alike. It glides and eases to a stop. */
 .pointer { position: fixed; top: 0; left: 0; z-index: 50; width: 18px; height: 24px; margin: -1px 0 0 -1px; pointer-events: none;

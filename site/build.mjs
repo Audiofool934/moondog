@@ -23,14 +23,15 @@ const builtins = {
   perf_hooks: "misc.mjs", "timers/promises": "misc.mjs", sqlite: "sqlite.mjs",
 };
 
-// What each document may load: its own files, drawn covers, and for the page, the window's frame.
+// What each document may load: its own files, drawn covers, and for the page, the window's frame and
+// the scene's music.
 function contentPolicy(document) {
   const sources = {
     "default-src": ["'self'"],
     "script-src": ["'self'"],
     "style-src": ["'self'", "'unsafe-inline'"],
     "img-src": ["'self'", "data:"],
-    "media-src": ["'none'"],
+    "media-src": document === "page" ? ["'self'"] : ["'none'"],
     "font-src": ["'self'"],
     "connect-src": ["'none'"],
     "frame-src": document === "page" ? ["'self'"] : ["'none'"],

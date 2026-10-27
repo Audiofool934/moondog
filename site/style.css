@@ -83,7 +83,16 @@ main, .liner { width: var(--page); margin-inline: auto; }
 /* The window, as one object on the page. It plays its scene; nothing in it is for clicking. */
 .stage { position: relative; height: clamp(560px, 84vh, 820px); border-radius: 12px; overflow: hidden; box-shadow: var(--window); background: var(--canvas); }
 .stage iframe { display: block; width: 100%; height: 100%; border: 0; pointer-events: none; }
-.note { max-width: 70ch; margin: 14px 0 0; color: var(--text-3); font: 14px/1.55 var(--sans); }
+.under { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px 24px; margin-top: 14px; }
+.note { max-width: 70ch; margin: 0; color: var(--text-3); font: 14px/1.55 var(--sans); }
+/* The scene's music, off until the visitor turns it on. */
+.sound { display: inline-flex; flex: none; align-items: center; gap: 6px; height: 28px; margin-top: -4px; padding: 0 12px 0 9px; border: 0;
+  border-radius: 999px; background: var(--well); color: var(--text-2); font: 13px var(--sans); cursor: pointer; }
+.sound:hover { background: var(--current); color: var(--text); }
+.sound svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.sound .body { fill: currentColor; stroke: none; }
+.sound[aria-pressed="true"] { color: var(--text); }
+.sound[aria-pressed="true"] .off, .sound[aria-pressed="false"] .on { display: none; }
 @media (max-width: 640px) {
   .stage { height: 82svh; border-radius: 10px; }
 }

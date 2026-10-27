@@ -6,7 +6,8 @@ const now = () => new Date().toISOString();
 
 // The Music app as window-room reads it (src/integrations/apple-music/music-app.mjs): what plays, where
 // it is, the songs after it, and each song's cover. Songs carry their covers as data URLs.
-export function createSceneMusicApp() {
+// onPlay hears each song the scene starts, with the moment it started.
+export function createSceneMusicApp({ onPlay = () => {} } = {}) {
   let queue = [];
   let index = 0;
   let startedAt = 0;
@@ -16,6 +17,7 @@ export function createSceneMusicApp() {
       queue = songs.map((song, place) => ({ id: `scene-${song.title}`, ...song, place }));
       index = 0;
       startedAt = Date.now();
+      onPlay(queue[0], startedAt);
     },
     async nowPlaying() {
       if (!queue.length) return { state: "not_running" };

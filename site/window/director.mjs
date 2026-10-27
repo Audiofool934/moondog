@@ -1,6 +1,7 @@
 // Plays the scene in the window as a visitor would: a pointer moves, the needle goes down, a request
-// is typed. Everything after each gesture is the window and its core answering, as in the app. The
-// scene runs only while the window is on screen, and starts again, faded, once it has played.
+// is typed, and the record takes the whole window. Everything after each gesture is the window and its
+// core answering, as in the app. The scene runs only while the window is on screen, and starts again,
+// faded, once it has played.
 const $ = (name) => document.querySelector(`[data-${name}]`);
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -83,7 +84,7 @@ async function settled(clock) {
   while ($("send")?.querySelector("use")?.getAttribute("href") === "#i-stop") await clock.wait(100);
 }
 
-export async function direct({ clock, agent, request, quick = false }) {
+export async function direct({ clock, agent, request, quick = false, ending = () => {} }) {
   const pointer = quick ? null : createPointer(clock);
   const curtain = document.createElement("div");
   curtain.className = "curtain";
@@ -150,8 +151,23 @@ export async function direct({ clock, agent, request, quick = false }) {
   await answered;
   if (quick) return;
 
+  // The record takes the whole window, as its arrows offer under the pointer, and turns in the cover's colours.
+  await clock.wait(2600);
+  const frame = $("record-frame");
+  pointer.show();
+  await pointer.move(middle(frame), 1100);
+  frame.classList.add("scene-hover");
+  await clock.wait(600);
+  await pointer.move(middle($("expand")), 600);
+  await clock.wait(300);
+  await pointer.click();
+  frame.classList.remove("scene-hover");
+  await clock.wait(400);
+  pointer.hide();
+  await clock.wait(6500);
+
   // The scene plays again from the start, behind a fade.
-  await clock.wait(7000);
+  ending();
   curtain.classList.remove("open");
   await clock.wait(900);
   location.reload();

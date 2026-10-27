@@ -1,7 +1,7 @@
 // The scene the window plays on the project page: the needle goes down and Moondog picks something
 // for right now, then a request for a late train home. The listener is the made-up one from the
-// demo history (src/demo/fictional-spotify-history.mjs); the new artists are made up too, and every
-// cover is drawn here, so nothing is fetched.
+// demo history (src/demo/fictional-spotify-history.mjs); the new artists are made up too, every cover
+// is drawn here, and the music was made with Stable Audio 3, so nothing comes from anywhere else.
 const svg = (body) => `data:image/svg+xml;utf8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600" viewBox="0 0 600 600">${body}</svg>`)}`;
 
 const COVERS = {
@@ -33,7 +33,9 @@ const COVERS = {
     <rect y="350" width="600" height="2" fill="#f4f6f7" opacity=".7"/>`),
 };
 
-const song = (title, artist, album, cover, seconds) => ({ title, artists: [artist], album, image: COVERS[cover], duration_ms: seconds * 1000 });
+// A song the scene plays has a sound: music made with Stable Audio 3 (static/scene/), played by the page.
+const song = (title, artist, album, cover, seconds, sound) => ({ title, artists: [artist], album, image: COVERS[cover], duration_ms: seconds * 1000,
+  ...(sound ? { sound: `static/scene/${sound}.m4a` } : {}) });
 
 // The model the window's composer shows.
 export const MODEL = { provider: "deepseek", model: "deepseek-flash", providerName: "DeepSeek", modelName: "DeepSeek V4.1 Flash" };
@@ -53,7 +55,7 @@ export const EXCHANGES = [
       + "- **Tidewater** by Low Harbour. New to you: the same slow pulse, with more light in it.\n"
       + "- **Paper Lanterns** by The Slow Lamps. New too, to land on.",
     songs: [
-      song("Glass Highway", "North Window", "Pale Signals", "paleSignals", 252),
+      song("Glass Highway", "North Window", "Pale Signals", "paleSignals", 252, "glass-highway"),
       song("Tidewater", "Low Harbour", "Tidewater", "tidewater", 228),
       song("Paper Lanterns", "The Slow Lamps", "Paper Lanterns", "paperLanterns", 271),
     ],
@@ -71,7 +73,7 @@ export const EXCHANGES = [
       + "- **Window Seat** by Cinder Lake. You know the band, but not this song.\n\n"
       + "I'll keep the line going if you want more.",
     songs: [
-      song("Last Tram Home", "Mara Vale", "Night Transit", "nightTransit", 237),
+      song("Last Tram Home", "Mara Vale", "Night Transit", "nightTransit", 237, "last-tram-home"),
       song("Sodium Light", "Halden Rue", "Sodium", "sodium", 245),
       song("Window Seat", "Cinder Lake", "Shoreline Code", "shoreline", 216),
     ],
