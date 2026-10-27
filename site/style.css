@@ -75,7 +75,6 @@ code, pre { font-family: var(--mono); font-size: 0.8em; }
 /* Masthead */
 .masthead { display: flex; align-items: center; justify-content: space-between; gap: 16px; width: var(--page); margin: 0 auto; padding: 18px 0; }
 .brand { display: inline-flex; align-items: center; gap: 10px; font-size: 19px; text-decoration: none; }
-.brand img { border-radius: 50%; }
 .masthead nav { display: flex; align-items: center; gap: 20px; font: 14px var(--sans); }
 .masthead nav a { color: var(--text-2); text-decoration: none; }
 .masthead nav a:hover { color: var(--text); }

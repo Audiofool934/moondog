@@ -1,8 +1,8 @@
 # Moondog Lunar Record Export Manifest
 
-## Logo
+## Key visual
 
-File: `moondog-logo-1x1.png`
+File: `moondog-key-visual-1x1.png`, named `moondog-logo-1x1.png` until 2026-10-27.
 
 Dimensions: 1024 x 1024 pixels.
 
@@ -10,7 +10,7 @@ Color mode: 8-bit RGB PNG.
 
 SHA-256: `c77e1d05232a95014fee5e1a6a2a9490e52c5c7264a77c6cf960dbc65b9e5b52`
 
-The logo was exported from the selected 1024 x 1536 poster using the source rectangle at x 0, y 68, width 1024, and height 1024.
+The key visual was exported from the selected 1024 x 1536 poster using the source rectangle at x 0, y 68, width 1024, and height 1024.
 The offset centers the record and dog assembly within the square while keeping the wordmark outside the crop.
 No generative edit, repainting, recoloring, resizing, or content addition was applied during export.
 

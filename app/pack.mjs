@@ -66,7 +66,7 @@ const artifacts = await build({
     extraFiles: music ? [{ from: "native/build/moondog-music", to: "MacOS/moondog-music" }] : [],
     mac: {
       category: "public.app-category.music",
-      icon: path.join(root, "assets/brand/moondog-lunar-record/moondog-logo-1x1.png"),
+      icon: path.join(root, "assets/brand/moondog-app-icon.png"),
       hardenedRuntime: true,
       gatekeeperAssess: false,
       entitlements: "build-resources/entitlements.mac.plist",
