@@ -53,6 +53,25 @@ a:hover { text-decoration-color: currentColor; }
 code, pre { font-family: var(--mono); font-size: 0.8em; }
 [hidden] { display: none !important; }
 
+/* The cover that is playing in the window lights the whole page, as it lights the app's window: three
+   faint fields of its colours (app/renderer/style.css), drifting in over a few seconds and moving as
+   slowly as weather while music plays. */
+@property --mood-1 { syntax: "<color>"; inherits: true; initial-value: transparent; }
+@property --mood-2 { syntax: "<color>"; inherits: true; initial-value: transparent; }
+@property --mood-3 { syntax: "<color>"; inherits: true; initial-value: transparent; }
+.mood { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none;
+  transition: --mood-1 2.4s cubic-bezier(0.4, 0, 0.2, 1), --mood-2 3.2s cubic-bezier(0.4, 0, 0.2, 1), --mood-3 4s cubic-bezier(0.4, 0, 0.2, 1); }
+.mood::before { content: ""; position: absolute; inset: -14%;
+  background:
+    radial-gradient(46% 52% at 86% 16%, var(--mood-1), color-mix(in srgb, var(--mood-1) 45%, transparent) 42%, transparent 100%),
+    radial-gradient(50% 58% at 10% 82%, var(--mood-2), color-mix(in srgb, var(--mood-2) 45%, transparent) 42%, transparent 100%),
+    radial-gradient(52% 58% at 44% 36%, var(--mood-3), color-mix(in srgb, var(--mood-3) 45%, transparent) 42%, transparent 100%);
+  animation: drift 56s ease-in-out infinite alternate paused; will-change: transform; }
+.mood.playing::before { animation-play-state: running; }
+@keyframes drift { to { transform: translate(-3%, 2.5%) scale(1.07) rotate(2deg); } }
+@media (prefers-reduced-transparency: reduce) { .mood { display: none; } }
+@media (prefers-reduced-motion: reduce) { .mood { transition: none; } .mood::before { animation: none; } }
+
 /* Masthead */
 .masthead { display: flex; align-items: center; justify-content: space-between; gap: 16px; width: var(--page); margin: 0 auto; padding: 18px 0; }
 .brand { display: inline-flex; align-items: center; gap: 10px; font-size: 19px; text-decoration: none; }
@@ -130,7 +149,7 @@ main, .liner { width: var(--page); margin-inline: auto; }
 .get .actions { margin: 20px 0 8px; }
 .commands { position: relative; margin: 16px 0 18px; }
 .commands pre { margin: 0; padding: 16px 18px; border-radius: 10px; background: var(--well); font-size: 14px; line-height: 1.7; overflow-x: auto; }
-.copy { position: absolute; top: 10px; right: 10px; height: 26px; padding: 0 10px; border: 0; border-radius: 999px; background: var(--canvas);
+.copy { position: absolute; top: 10px; right: 10px; height: 26px; padding: 0 10px; border: 0; border-radius: 999px; background: var(--well);
   color: var(--text-2); font: 13px var(--sans); cursor: pointer; }
 .copy:hover { color: var(--text); }
 .copy[data-state="done"] { color: var(--text); }

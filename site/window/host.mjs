@@ -1,6 +1,7 @@
 // Stands in for the desktop app's preload and core process, so the app's own window plays the page's
 // scene. The core's side is the app's window-room, on the scene's agent and Music app (agent.mjs,
 // application.mjs); the director (director.mjs) moves the pointer and types, as a visitor would.
+import { coverPalette } from "../../app/renderer/mood.mjs";
 import { runWindowRoom } from "../../app/window-room.mjs";
 import { SceneAgent } from "./agent.mjs";
 import { SceneApplication, createSceneMusicApp } from "./application.mjs";
@@ -32,12 +33,17 @@ try {
 window.moondogApp = { setLanguage(locale) { document.documentElement.lang = locale; } };
 
 // The page plays the music when the visitor turns the sound on (page.mjs); a page plays sound only after a
-// click on it, and nobody clicks in here. The scene tells it which song plays from when, and when it ends.
-const tell = (song) => { if (window.parent !== window) window.parent.postMessage({ source: "moondog-scene", song }, location.origin); };
+// click on it, and nobody clicks in here. The scene tells it which song plays from when, and the cover's
+// colours, read as the window reads them, so the whole page takes the cover's light; and when it ends.
+const tell = (news) => { if (window.parent !== window) window.parent.postMessage({ source: "moondog-scene", ...news }, location.origin); };
+function playing(song, startedAt) {
+  tell({ song: song.sound ? { sound: song.sound, startedAt } : null });
+  void coverPalette(song.image).then((mood) => tell({ mood }));
+}
 
 const quick = matchMedia("(prefers-reduced-motion: reduce)").matches;
 const clock = createClock({ quick });
-const musicApp = createSceneMusicApp({ onPlay: (song, startedAt) => tell(song.sound ? { sound: song.sound, startedAt } : null) });
+const musicApp = createSceneMusicApp({ onPlay: playing });
 const application = new SceneApplication({ musicApp });
 const agent = new SceneAgent({ application, musicApp, clock, exchanges: EXCHANGES, model: MODEL });
 
@@ -51,4 +57,4 @@ void runWindowRoom({
   },
 }, { port: core, send: (message) => core.postMessage(message) });
 
-void direct({ clock, agent, request: EXCHANGES[1].request, quick, ending: () => tell(null) });
+void direct({ clock, agent, request: EXCHANGES[1].request, quick, ending: () => tell({ song: null, mood: null }) });

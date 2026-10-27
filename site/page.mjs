@@ -1,5 +1,17 @@
-// The project page's script: the scene's music, and the copy button beside the install commands. The
-// window's scene runs in its own frame (window/host.mjs).
+// The project page's script: the scene's light and music, and the copy button beside the install commands.
+// The window's scene runs in its own frame (window/host.mjs).
+import { moodColours } from "../app/renderer/mood.mjs";
+
+// The cover that is playing lights the whole page, as it lights the window in the app: its colours, read
+// in the frame, become the page's three faint fields, drifting in as the last ones fade.
+const mood = document.querySelector("[data-mood]");
+const dark = matchMedia("(prefers-color-scheme: dark)");
+let palette = null;
+function paintMood() {
+  moodColours(palette, dark.matches).forEach((colour, index) => mood.style.setProperty(`--mood-${index + 1}`, colour));
+  mood.classList.toggle("playing", Boolean(palette));
+}
+dark.addEventListener("change", paintMood);
 
 // The scene's music. The frame says which song plays from when; the page plays it, because a page plays
 // sound only after a click on it. It starts off, follows the scene while the window is on screen, and
@@ -53,8 +65,8 @@ function follow() {
 
 addEventListener("message", (event) => {
   if (event.origin !== location.origin || event.data?.source !== "moondog-scene") return;
-  song = event.data.song;
-  follow();
+  if ("mood" in event.data) { palette = event.data.mood; paintMood(); }
+  if ("song" in event.data) { song = event.data.song; follow(); }
 });
 new IntersectionObserver(([entry]) => { inView = entry.isIntersecting; follow(); }, { threshold: 0.35 }).observe(document.querySelector(".stage"));
 document.addEventListener("visibilitychange", follow);

@@ -34,6 +34,9 @@ The window is the real one: `app/renderer` and `app/window-room.mjs` run unchang
   With reduced motion it shows the finished scene at once, with no pointer.
   Where the window is narrower than the app gives its player room, the player stays folded.
 
+The cover playing in the window lights the whole page, as it lights the app's window: the frame reads its colours with the app's `coverPalette`, and the page paints them as three faint fields behind everything with the app's `moodColours` (`app/renderer/mood.mjs`).
+The colours drift in over a few seconds, and hold while the window is off screen.
+
 The two songs the scene plays have music, made with Stability AI's Stable Audio 3 Medium on a Mac through its MLX version (`~/Developer/stable-audio-3/optimized/mlx` on the Mac mini).
 The page plays it from `static/scene/` when the visitor turns the sound on; `page.mjs` follows the scene's songs and fades between them.
 Each is 32 seconds, made with `./sa3 --dit medium --decoder same-l --seconds 32 --seed N` and these prompts, then normalized to -18 LUFS with a true peak of -1.5 dB, faded out over its last 2 seconds, and encoded as AAC at 160 kb/s:
