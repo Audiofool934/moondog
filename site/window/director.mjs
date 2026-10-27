@@ -180,15 +180,17 @@ export async function direct({ clock, agent, request, quick = false, begin, need
     await answered;
     if (quick) return;
 
-    // The record takes the whole window, as its arrows offer under the pointer, and turns in the cover's colours.
+    // The record takes the whole window, as its arrows offer under the pointer, and turns in the cover's
+    // colours. The pointer goes straight to the arrows, and they show once it is over the record.
     await clock.wait(2600);
     const frame = $("record-frame");
+    const hover = () => frame.classList.add("scene-hover");
+    frame.addEventListener("pointermove", hover, { once: true });
     pointer.show();
-    await pointer.move(middle(frame), 1100);
-    frame.classList.add("scene-hover");
-    await clock.wait(600);
-    await pointer.move(middle($("expand")), 600);
-    await clock.wait(300);
+    await pointer.move(middle($("expand")), 1300);
+    frame.removeEventListener("pointermove", hover);
+    hover();
+    await clock.wait(350);
     await pointer.click();
     frame.classList.remove("scene-hover");
     await clock.wait(400);
