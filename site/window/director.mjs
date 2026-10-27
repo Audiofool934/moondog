@@ -127,9 +127,9 @@ export async function direct({ clock, agent, request, quick = false, begin, need
   for (;;) {
     // A new conversation, the arm up: the composer comes back where the page's words were, and the
     // pointer, beside the record below its arm, glides up and clicks the arm, so Moondog picks something
-    // for right now; the needle goes down as the music starts. The first time, the pointer fades in
-    // there; after that it is there already, from the click that ended the last play, and waits for the
-    // record to land.
+    // for right now; the needle goes down at once and waits on the still record, which turns as the
+    // music starts. The first time, the pointer fades in there; after that it is there already, from the
+    // click that ended the last play, and waits for the record to land.
     document.body.classList.remove("waiting");
     let answered = agent.answered();
     if (pointer) {

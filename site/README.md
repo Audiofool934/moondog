@@ -25,7 +25,7 @@ The build asks GitHub for the newest release with a Mac download; `node build.mj
 The window waits on a new conversation with the record's arm up, and the page's cover asks the visitor in with sound ("Experience Moondog"); a quiet link watches without it.
 The record doesn't answer the visitor's pointer before that.
 The click turns the sound on and starts the station's ident; the cover's words fade, and the scene's pointer fades in beside the record, below and to the right of its arm, glides to the arm, and clicks it.
-As in the app, the click asks for "Play something for right now", and the ident plays on while Moondog picks three songs; the needle goes down as the first one starts.
+As in the app, the click asks for "Play something for right now", and the needle goes down at once and waits on the still record while the ident plays on and Moondog picks three songs; the record turns as the first one starts.
 Then a request for a late train home is typed and answered, and the record takes the whole window.
 The needle lifts, the music stops, and the pointer goes back to where it came in and clicks there, beside the record; the record glides back to a new conversation, where the scene began, so the scene plays again in place, with no reload.
 The pointer fades in wherever it shows and fades out wherever it hides.
