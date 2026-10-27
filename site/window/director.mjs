@@ -92,21 +92,18 @@ async function settled(clock) {
 // landed in this window, if they clicked: the scene's pointer takes over from there. needle hears each
 // click on the arm, and ending hears the needle lift at the end.
 export async function direct({ clock, agent, request, quick = false, begin, needle = () => {}, ending = () => {} }) {
+  // The window shows its record from its first frame, as the page shows its words; its composer is set
+  // aside (body.waiting, from build.mjs) until the scene begins.
   const pointer = quick ? null : createPointer(clock);
-  const curtain = document.createElement("div");
-  curtain.className = "curtain";
-  document.body.append(curtain);
   // The scene waits for the window to be seen, and holds while it isn't.
   let seen = false;
   const watch = () => clock.run(seen && document.visibilityState === "visible");
   new IntersectionObserver(([entry]) => { seen = entry.isIntersecting; watch(); }, { threshold: 0.35 }).observe(document.body);
   document.addEventListener("visibilitychange", watch);
 
-  // The window draws its first frame and hears from its core before the first gesture, then waits on
-  // the record, its composer set aside, for the page to let it begin.
+  // The window hears from its core before the first gesture, then waits on the record for the page to
+  // let it begin.
   await (quick ? sleep(500) : clock.wait(400));
-  document.body.classList.add("waiting");
-  curtain.classList.add("open");
   let { at } = await begin;
 
   const drop = () => {
