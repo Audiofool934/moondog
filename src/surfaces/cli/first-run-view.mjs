@@ -69,7 +69,7 @@ export class FirstRunView {
     if (this.state.step === "service") return this.state.services.map((choice) => ({ type: "service", ...choice }));
     const { provider, signIn } = this.state.model ?? {};
     return signIn ? [
-      { type: "auth", label: tr("Sign in to {provider}", { provider }), description: provider === "openai-codex" ? tr("ChatGPT sign-in") : tr("API key") },
+      { type: "auth", label: tr("Sign in to {provider}", { provider }), description: provider === "openai" ? tr("ChatGPT sign-in or API key") : tr("API key") },
       { type: "model", label: tr("Choose another model") },
     ] : [{ type: "model", label: tr("Choose a model"), description: tr("Pick a provider and model, then sign in") }];
   }

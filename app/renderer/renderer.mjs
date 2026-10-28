@@ -8,7 +8,7 @@ import { createPreviews } from "./previews.mjs";
 import { coverPalette, grooveColours, moodColours } from "./mood.mjs";
 import { createMark, scratchMark } from "./mark.mjs";
 import { mountRecord } from "./record.mjs";
-import { createSettings } from "./settings.mjs";
+import { createSettings, EFFORTS } from "./settings.mjs";
 import { createSidebar } from "./sidebar.mjs";
 import { icon, make, marquee, name, scrollbar, setIcon, tooltips } from "./ui.mjs";
 import "./style.css";
@@ -41,7 +41,7 @@ let port = null;
 const outbox = [];
 const send = (message) => (port ? port.postMessage(message) : outbox.push(message));
 const previews = createPreviews({ send, onChange: () => renderInspector() });
-const settings = createSettings({ state, send, t: tr, prettyModel: (model) => prettyModel(model),
+const settings = createSettings({ state, send, t: tr,
   appleMusic: { status: () => previews.fullStatus(), check: (command) => previews.check(command) }, onHide: () => firstRun.update() });
 // The one-time first run asks for a music service, then a model, in the Settings sheet (first-run.mjs).
 const firstRun = createFirstRun({ settings, send, read: () => ({ run: state.firstRun, modelReady: state.model?.state === "configured" }) });
@@ -1029,12 +1029,12 @@ function markTurn() {
 
 // ── The composer ─────────────────────────────────────────────────────────────────────────────
 const input = $("input");
-const providerModels = new Map();
-let providers = [];
+// The models the menu offers, as Settings keeps them, and the default among them.
+let modelList = { models: [], default: null };
 // Claude models read as their family and version; others by the name their provider gives them.
-// A model goes by the name its account lists it under, the same here, in Settings and in the menu.
+// A model goes by the name its provider lists it under, the same here, in Settings and in the menu.
 function prettyModel(model, provider = state.model?.provider) {
-  const named = providerModels.get(provider)?.find((entry) => entry.id === model)?.name;
+  const named = modelList.models.find((entry) => entry.provider === provider && entry.model === model)?.name;
   if (named) return named;
   const claude = String(model ?? "").match(/^claude-(opus|sonnet|haiku|fable)-(\d+)-(\d+)/u);
   return claude ? `Claude ${claude[1][0].toUpperCase()}${claude[1].slice(1)} ${claude[2]}.${claude[3]}` : String(model ?? "");
@@ -1058,12 +1058,23 @@ function renderComposer() {
 const SERVICE_MARKS = { spotify: "spotify", apple_music: "apple-music", netease: "netease" };
 // A model shows its maker's mark: by the account it comes through, or for OpenRouter by the maker its
 // model id begins with (anthropic/…, x-ai/…); a maker without a mark here shows OpenRouter's, or the model glyph.
-const MAKER_MARKS = { anthropic: "claude", openai: "openai", "openai-codex": "openai", google: "gemini", deepseek: "deepseek",
+const MAKER_MARKS = { anthropic: "claude", openai: "openai", google: "gemini", deepseek: "deepseek",
   moonshotai: "kimi", "moonshotai-cn": "kimi", xai: "grok", zai: "zai", openrouter: "openrouter" };
 const ROUTED_MARKS = { anthropic: "claude", openai: "openai", google: "gemini", deepseek: "deepseek", moonshotai: "kimi", "x-ai": "grok", "z-ai": "zai" };
-const makerMark = (model) => (model.provider === "openrouter" ? ROUTED_MARKS[String(model.model ?? "").split("/")[0]] ?? "openrouter" : MAKER_MARKS[model.provider] ?? "model");
+// An endpoint's model shows its maker's mark when its id names one, as most do.
+const NAMED_MARKS = [[/^claude/u, "claude"], [/^(?:gpt|chatgpt|o\d)/u, "openai"], [/^(?:gemini|gemma)/u, "gemini"], [/^deepseek/u, "deepseek"],
+  [/^(?:kimi|moonshot)/u, "kimi"], [/^grok/u, "grok"], [/^glm/u, "zai"]];
+function makerMark(model) {
+  const id = String(model.model ?? "").toLowerCase();
+  if (model.provider === "openrouter") return ROUTED_MARKS[id.split("/")[0]] ?? "openrouter";
+  if (!String(model.provider ?? "").startsWith("endpoint-")) return MAKER_MARKS[model.provider] ?? "model";
+  const [maker, rest] = id.includes("/") ? id.split("/") : [null, id];
+  return ROUTED_MARKS[maker] ?? NAMED_MARKS.find(([pattern]) => pattern.test(rest))?.[1] ?? "model";
+}
 const serviceName = (service) => (service === "netease" ? t("netease") : service === "apple_music" ? "Apple Music" : "Spotify");
 const effortName = (level) => (level === "default" ? t("effortDefault") : t(`effort.${level}`) === `effort.${level}` ? level : t(`effort.${level}`));
+// The level asked for, and the one the model gets when it lacks that one.
+const effortSaid = (model) => (model.thinking && model.thinking !== model.effort ? `${effortName(model.effort)} → ${effortName(model.thinking)}` : effortName(model.effort));
 const serviceAsked = () => state.firstRun?.needed === true && !state.firstRun.service;
 function drawPick(button, { mark, label, words }) {
   button.classList.toggle("needed", Boolean(words));
@@ -1078,7 +1089,7 @@ function renderPicks() {
   const model = state.model;
   set($("model"), "hidden", !model);
   if (!model) return;
-  const label = [prettyModel(model.model), model.effort ? effortName(model.effort) : ""].filter(Boolean).join(" · ");
+  const label = [prettyModel(model.model), model.effort ? effortSaid(model) : ""].filter(Boolean).join(" · ");
   drawPick($("model"), { mark: makerMark(model), label, words: model.model ? null : t("chooseModel") });
 }
 // The composer grows with its words up to 40% of the window (field-sizing in style.css), then scrolls.
@@ -1154,30 +1165,20 @@ const COMMANDS = [
 const palette = createPalette({ input, anchor: $("form"), t: tr, commands: () => COMMANDS });
 
 // Pickers open as native menus where they show. The model's button shows only its maker's mark, so
-// its menu names what answers: the maker in use over its models, the chosen one checked, each other
-// signed-in maker's models in a submenu, then the thinking, with the level it is at.
+// its menu names what answers: the models kept in Settings, flat, the one this conversation uses
+// checked, then how hard it thinks. A choice here is this conversation's; Settings sets the default.
 async function pickModel(event) {
   const model = state.model ?? {};
-  const signedIn = providers.filter((provider) => provider.signedIn);
-  // A long catalog shows its first models here and the rest in settings.
-  const entries = (provider, limit) => {
-    const models = providerModels.get(provider.id) ?? [];
-    const shown = models.slice(0, limit);
-    const chosen = models.find((entry) => provider.id === model.provider && entry.id === model.model);
-    if (chosen && !shown.includes(chosen)) shown.unshift(chosen);
-    const list = shown.map((entry) => ({ id: `model:${provider.id}:${entry.id}`, label: entry.name ?? entry.id,
-      checked: provider.id === model.provider && entry.id === model.model }));
-    if (models.length > limit) list.push({ id: "settings", label: t("moreModels") });
-    return list;
-  };
-  const current = signedIn.find((provider) => provider.id === model.provider);
-  const items = current ? [{ type: "header", label: current.name }, ...entries(current, 12)] : [];
-  const others = signedIn.filter((provider) => provider !== current)
-    .map((provider) => ({ id: `provider:${provider.id}`, label: provider.name, submenu: entries(provider, 24) })).filter((item) => item.submenu.length);
-  if (others.length) items.push(...(items.length ? [{ type: "separator" }] : []), ...others);
-  if (model.effortLevels?.length) {
-    items.push({ type: "separator" }, { id: "effort", label: `${t("effort")} · ${effortName(model.effort ?? "default")}`,
-      submenu: ["default", ...model.effortLevels].map((level) => ({ id: `effort:${level}`, label: effortName(level), checked: (model.effort ?? "default") === level })) });
+  const same = (entry) => entry.provider === model.provider && entry.model === model.model;
+  const entries = modelList.models.filter((entry) => entry.ready || same(entry));
+  if (model.model && !entries.some(same)) entries.unshift({ provider: model.provider, model: model.model, name: prettyModel(model.model) });
+  // Two models of one name, such as GPT through ChatGPT and through the API, say where each comes from.
+  const named = (entry) => entries.filter((other) => other.name === entry.name).length > 1 && entry.providerName ? `${entry.name} · ${entry.providerName}` : entry.name;
+  const items = entries.map((entry) => ({ id: `model:${entry.provider}:${entry.model}`, label: named(entry), checked: same(entry) }));
+  if (model.effortLevels?.length > 1) {
+    const asked = model.effort ?? "default";
+    items.push(...(items.length ? [{ type: "separator" }] : []), { id: "effort", label: `${t("effort")} · ${model.effort ? effortSaid(model) : effortName("default")}`,
+      submenu: ["default", ...EFFORTS].map((level) => ({ id: `effort:${level}`, label: effortName(level), checked: asked === level })) });
   }
   items.push(...(items.length ? [{ type: "separator" }] : []), { id: "settings", label: t("modelSettings") });
   const chosen = await menu(items, event);
@@ -1805,16 +1806,12 @@ function streamingTurn(id) {
 }
 const onScreen = (data) => !data.session || data.session === state.current;
 const SIGN_IN_ERRORS = { connect_while_answering: "waitForReply", sign_in_busy: "signInBusy" };
-const SETTINGS_MESSAGES = new Set(["models", "provider-models", "devices", "memories", "auth-prompt", "auth-prompt-closed", "auth-event", "sign-in", "import", "notice", "netease-checked"]);
+const SETTINGS_MESSAGES = new Set(["models", "provider-models", "model-list", "endpoint", "devices", "memories", "auth-prompt", "auth-prompt-closed", "auth-event", "sign-in", "import", "notice", "netease-checked"]);
 function receive({ data }) {
   if (!data?.type) return;
   if (data.type === "preview" || data.type === "preview-control") { previews.receive(data); renderInspector(); return; }
   if (SETTINGS_MESSAGES.has(data.type)) settings.receive(data);
-  if (data.type === "models") {
-    providers = data.providers ?? [];
-    for (const provider of providers) if (provider.signedIn && !providerModels.has(provider.id)) send({ type: "provider-models", provider: provider.id });
-  }
-  if (data.type === "provider-models") { providerModels.set(data.provider, data.models ?? []); renderComposer(); }
+  if (data.type === "model-list" && !data.error) { modelList = { models: data.models ?? [], default: data.default ?? null }; renderComposer(); }
   if (data.type === "devices" && devicePicker) {
     if (data.error) { devicePicker = null; notice(data.error === "limited" ? spotifyLimited(data.resumeAt) : t("noticeDevicesFailed")); }
     else void showDevices(data.devices ?? []);
@@ -1877,7 +1874,7 @@ function receive({ data }) {
     state.ready = true;
     // A message typed while the core started can be sent now.
     renderComposer();
-    send({ type: "models" });
+    send({ type: "model-list" });
     const waiting = state.waiting;
     state.waiting = null;
     if (waiting) {

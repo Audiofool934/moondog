@@ -35,12 +35,6 @@ const providerLoaders = {
     );
     return openaiProvider();
   },
-  "openai-codex": async () => {
-    const { openaiCodexProvider } = await import(
-      "@earendil-works/pi-ai/providers/openai-codex"
-    );
-    return openaiCodexProvider();
-  },
   openrouter: async () => {
     const { openrouterProvider } = await import(
       "@earendil-works/pi-ai/providers/openrouter"
@@ -63,9 +57,9 @@ export const supportedPiProviderIds = Object.freeze(
   Object.keys(providerLoaders),
 );
 
-export const apiKeyPiProviderIds = Object.freeze(
-  supportedPiProviderIds.filter((providerId) => providerId !== "openai-codex"),
-);
+// Every provider takes a key; OpenAI also takes Sign in with ChatGPT.
+export const apiKeyPiProviderIds = supportedPiProviderIds;
+export const chatgptProviderId = "openai";
 
 export async function loadPiProvider(providerId) {
   if (!Object.hasOwn(providerLoaders, providerId)) return undefined;

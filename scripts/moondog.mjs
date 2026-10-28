@@ -26,6 +26,7 @@ import {
   sanitizeTerminalText,
 } from "../src/surfaces/cli/format-output.mjs";
 import { runAuthCommand } from "../src/surfaces/cli/auth-command.mjs";
+import { runEndpointCommand } from "../src/surfaces/cli/endpoint-command.mjs";
 import { runDataCommand } from "../src/surfaces/cli/data-command.mjs";
 import { runCatalogCommand } from "../src/surfaces/cli/catalog-command.mjs";
 import { runProfileCommand } from "../src/surfaces/cli/profile-command.mjs";
@@ -665,6 +666,11 @@ async function main() {
     return;
   }
 
+  if (options.command === "endpoint") {
+    await runEndpointCommand({ args: options.rest, json: options.json });
+    return;
+  }
+
   if (options.command === "spotify") {
     await runSpotifySurface({
       args: options.rest,
@@ -1072,11 +1078,10 @@ async function main() {
         if (receipt?.provider === "apple-music-library") await refreshAppleLibraryImport();
         replaceDomainServices(await loadDomainServices());
       },
-      // The window also rebuilds the agent of each conversation it opened.
-      // A choice made while a reply runs is saved here, before that reply ends, so quitting does not drop it.
+      // The window also rebuilds the agent of each conversation it opened. Only a new default is saved;
+      // a model chosen for one conversation is built without touching settings.json.
       saveRuntimeSelection: (selection) => writePiRuntimeSelection(selection),
       rebuildRuntime: async (selection, target = application) => {
-        if (selection) await writePiRuntimeSelection(selection);
         // A key saved with /auth, or a Codex sign-in since, takes effect with the new runtime's tools.
         await webResearch.refresh();
         return createConfiguredRuntime(target, process.env, { selection, toolTrace });
@@ -1092,12 +1097,23 @@ async function main() {
       firstRun: createFirstRun({ environment: process.env }),
       // A host with its own terminal streams takes the sign-in prompts. The
       // desktop window has none and uses modelSettings instead.
-      runAuth: (provider) =>
+      runAuth: (provider, { chatgpt = false } = {}) =>
         runAuthCommand({
-          args: ["login", provider],
+          args: ["login", provider, ...(chatgpt ? ["--chatgpt"] : [])],
           ...(host?.terminalStreams && {
             input: host.terminalStreams.input,
             output: host.terminalStreams.output,
+            progressOutput: host.terminalStreams.output,
+          }),
+        }),
+      // The terminal adds an endpoint on its own streams, as it signs in; a list or removal prints nothing.
+      runEndpoint: (args, { quiet = false } = {}) =>
+        runEndpointCommand({
+          args,
+          ...(quiet ? { output: { write() {} } } : {}),
+          ...(host?.terminalStreams && {
+            input: host.terminalStreams.input,
+            ...(quiet ? {} : { output: host.terminalStreams.output }),
             progressOutput: host.terminalStreams.output,
           }),
         }),

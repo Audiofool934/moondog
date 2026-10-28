@@ -907,9 +907,9 @@ test("Pi adapter discards a model failure and accepts a later prompt", async () 
   assert.equal(recovered.text, "The model recovered on the next prompt.");
 });
 
-test("Pi adapter redacts credential-bearing Codex provider failures", async () => {
+test("Pi adapter redacts credential-bearing ChatGPT sign-in failures", async () => {
   const { faux, runtime } = configuredRuntime(fakeApplication());
-  runtime.runtimeStatus.provider = "openai-codex";
+  runtime.runtimeStatus.provider = "openai";
   faux.setResponses([
     fauxAssistantMessage([], {
       stopReason: "error",
@@ -921,7 +921,7 @@ test("Pi adapter redacts credential-bearing Codex provider failures", async () =
   await assert.rejects(
     runtime.prompt("Refresh the model credential."),
     (error) =>
-      /auth login openai-codex/iu.test(error.message) &&
+      /auth login openai --chatgpt/iu.test(error.message) &&
       !error.message.includes("TOKEN_SENTINEL"),
   );
 });

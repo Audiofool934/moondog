@@ -4,11 +4,10 @@ import { zaiProvider } from "@earendil-works/pi-ai/providers/zai";
 
 const zaiApiBaseUrl = "https://api.z.ai/api/paas/v4";
 const providerDisplayNames = {
-  anthropic: "Anthropic (Claude)",
+  anthropic: "Anthropic",
   moonshotai: "Moonshot AI (Kimi)",
   "moonshotai-cn": "Moonshot AI China (Kimi)",
-  openai: "OpenAI (GPT)",
-  xai: "xAI (Grok)",
+  xai: "xAI",
 };
 
 export function zaiApiProvider() {
@@ -28,6 +27,9 @@ export function zaiApiProvider() {
   });
 }
 
+// Saved selections may still name these; lists offer the canonical model instead.
+export const LEGACY_MODEL_ALIASES = Object.freeze(["deepseek-v4-flash", "deepseek-v4-flash-vision-exp"]);
+
 // Pi supplies canonical Flash metadata. Keep legacy IDs as aliases so saved
 // Moondog selections continue to resolve without rewriting the listener's settings.
 function currentDeepSeekModels(nativeModels) {
@@ -39,6 +41,8 @@ function currentDeepSeekModels(nativeModels) {
 
 export function createPiModels({ catalogModels, ...options } = {}) {
   const models = builtinModels(options);
+  // ChatGPT signs in through OpenAI's own provider now; Pi's older Codex route is not offered.
+  models.deleteProvider("openai-codex");
   models.setProvider(zaiApiProvider());
   for (const native of models.getProviders()) {
     if (native.id !== "deepseek" && !catalogModels?.has(native.id)) continue;

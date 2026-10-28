@@ -7,6 +7,8 @@ import { icon, make, name, scrollbar, setIcon } from "./ui.mjs";
 import { SCRATCH_MS, scratchMark } from "./mark.mjs";
 
 const SECTIONS = ["general", "appearance", "model", "playback", "library", "memory", "about"];
+// The thinking levels offered for every model that thinks; the core gives each model the nearest it has.
+export const EFFORTS = Object.freeze(["off", "low", "medium", "high", "xhigh", "max"]);
 const ICONS = { general: "globe", appearance: "appearance", model: "model", playback: "speaker", library: "import", memory: "memory", about: "info" };
 // Spotify names device types in English; the icon says the kind, so no word is needed.
 const DEVICE_ICONS = { computer: "laptop", smartphone: "phone", tablet: "phone", tv: "tv" };
@@ -30,7 +32,11 @@ const LASTFM_ACCESS = new Set(["lastfm_key_missing", "lastfm_key_invalid"]);
 // show, what they say, and which shown-at-once choice they take back.
 const NOTICES = { model_unknown: ["model", "noticeModelUnknown", "model"], transfer_failed: ["playback", "noticeTransferFailed"],
   "sign-out": [null, "noticeFailed", "spotify"], "music-service": ["playback", "noticeFailed", "service"], language: ["general", "noticeFailed", "locale"],
-  model: ["model", "noticeFailed", "model"], effort: ["model", "noticeFailed", "effort"] };
+  model: ["model", "noticeFailed", "model"], effort: ["model", "noticeFailed", "effort"], "default-model": ["model", "noticeFailed"],
+  "default-effort": ["model", "noticeFailed"], "list-model": ["model", "noticeFailed"], "endpoint-remove": ["model", "noticeFailed"] };
+// The endpoint errors the listener can fix in the form; any other reads as a plain failure.
+const ENDPOINT_ERRORS = { endpoint_url_invalid: "endpointUrlInvalid", endpoint_models_unavailable: "endpointModelsUnavailable",
+  endpoint_models_missing: "endpointModelsUnavailable", endpoint_name_invalid: "endpointNameInvalid" };
 // Window keys on the left, player keys on the right.
 const SHORTCUTS = [["⌘N", "newConversation"], ["⌘,", "settings"], ["⌘.", "stopReply"], ["/", "commands"], ["⌥⌘S", "conversations"],
   ["⌥⌘P", "player"], ["⌃⌘P", "playPause"], ["⌃⌘→", "nextSong"], ["⌃⌘←", "previousSong"]];
@@ -55,7 +61,7 @@ function link(text, href) {
   return node;
 }
 
-export function createSettings({ state, send, t, prettyModel = String, appleMusic = null, onHide = null }) {
+export function createSettings({ state, send, t, appleMusic = null, onHide = null }) {
   const say = (key, params) => t()(key, params);
   const sheet = make("div", "sheet");
   sheet.hidden = true;
@@ -106,9 +112,10 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
   let copiedTimer = 0;
   // What the core told this sheet; the sheet asks again each time a section opens.
   const data = { providers: null, providersError: false, models: new Map(), modelsFailed: new Set(), expanded: undefined, signingOut: new Set(),
+    list: null, listError: false, toggles: new Map(), listPending: new Map(), endpoint: null,
     devices: null, devicesError: false, devicesLoading: false, memories: null, auth: null, error: null, importing: null, version: null, appearance: null, copied: null, focus: null, phaseOffset: null,
     lastfm: { username: "", needsKey: false, keyError: false, savingKey: false },
-    drafts: { remember: "", lastfm: "", lastfmKey: "", spotifyClientId: "" } };
+    drafts: { remember: "", lastfm: "", lastfmKey: "", spotifyClientId: "", endpointName: "", endpointUrl: "", endpointKey: "", endpointModels: "" } };
 
   // A choice stands until the core's next status, which always brings a new model object and says
   // what really happened.
@@ -146,10 +153,12 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
     sheet.hidden = false;
     if (!wasOpen) {
       content = null;
-      // Each opening starts with the provider and the music service in use unfolded.
+      // Each opening starts with the providers and the music service in use folded. An endpoint still
+      // being saved keeps its form.
       data.expanded = undefined;
       data.servicePanel = undefined;
       data.neteaseCheck = null;
+      if (!data.endpoint?.busy) data.endpoint = null;
     }
     isOpen = true;
     if (windowNode) windowNode.inert = true;
@@ -184,7 +193,7 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
   function refresh() {
     // The status and the memories come back for every section.
     send({ type: "settings" });
-    if (section === "model") send({ type: "models" });
+    if (section === "model") { send({ type: "models" }); send({ type: "model-list" }); }
     if (section === "playback") {
       // Spotify's devices are asked for only while Spotify is the service in use.
       if (state.spotify === "ready" && (state.playbackService ?? "spotify") === "spotify") {
@@ -300,7 +309,7 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
     });
     return form;
   }
-  function choice({ label, detail, chosen, expanded, action, onChoose, trailing, disabled, key, lead }) {
+  function choice({ label, detail, chosen, expanded, action, onChoose, trailing, disabled, key, lead, role = "radio", check = true }) {
     const item = make("div", `choice${disabled ? " off" : ""}`);
     const main = make("button", "choice-main");
     main.type = "button";
@@ -308,7 +317,7 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
     main.disabled = Boolean(disabled);
     // A row that opens a list says so; a row that picks one of several says whether it is the one.
     if (expanded !== undefined) main.setAttribute("aria-expanded", String(expanded));
-    else if (!action) { main.setAttribute("role", "radio"); main.setAttribute("aria-checked", String(Boolean(chosen))); }
+    else if (!action) { main.setAttribute("role", role); main.setAttribute("aria-checked", String(Boolean(chosen))); }
     if (onChoose && !disabled) main.addEventListener("click", onChoose);
     if (lead) main.append(lead);
     const words = make("span", "choice-words");
@@ -320,7 +329,7 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
     item.append(main);
     if (trailing) item.append(trailing);
     // The check keeps one column down the right edge, after any button the row carries.
-    if (chosen) (trailing ? item : main).append(icon("check", "icon check"));
+    if (chosen && check) (trailing ? item : main).append(icon("check", "icon check"));
     return item;
   }
   const choices = (rows, className = "choices") => {
@@ -468,39 +477,80 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
     return panel;
   }
 
-  // Model: what answers now, how hard it thinks, and where else it could come from.
-  const prettyOf = (provider, id) => {
-    const pretty = prettyModel(id);
-    if (pretty && pretty !== id) return pretty;
-    return data.models.get(provider)?.find((entry) => entry.id === id)?.name ?? id;
-  };
+  // Model: the models the menu offers, the default among them and how hard it thinks, then where
+  // models come from: OpenAI by a ChatGPT subscription or an API key, Anthropic, Google and xAI by key,
+  // and any other service as an endpoint by its address. A sign-in, or an endpoint being edited,
+  // takes the whole place while it runs.
+  const sameModel = (left, right) => Boolean(left && right) && left.provider === right.provider && left.model === right.model;
+  const modelKey = (entry) => `${entry.provider}:${entry.model}`;
+  // A default or a thinking level stands until the core sends the list again.
+  const expectList = (kind, value) => data.listPending.set(kind, value);
+  const listExpected = (kind, actual) => (data.listPending.has(kind) ? data.listPending.get(kind) : actual);
+  const effortLabel = (level) => (level === "default" ? say("effortDefault") : say(`effort.${level}`));
   function model() {
-    const current = state.model ?? {};
-    const active = expected("model", current.model ? { provider: current.provider, model: current.model } : null);
-    const switching = active && (active.provider !== current.provider || active.model !== current.model);
-    // The model in use is the checked row under its account; only its absence needs saying. The first
-    // run asks for one instead, over the same accounts.
-    const parts = [];
-    if (asking) parts.push(question("firstRunModel"));
-    else if (!active) parts.push(group(null, make("p", "now-name none", say("noModel"))));
-    // Which model answers comes first; how hard it thinks follows. A model sign-in replaces the list while it runs.
-    if (data.auth && data.auth.provider !== "spotify") parts.push(group(null, signInPanel()));
-    else parts.push(group(asking ? null : say("providers"), sectionError(), providerList(active)));
-    if (current.effortLevels?.length && !switching) parts.push(group(say("effort"), efforts(current)));
-    if (asking) parts.push(steps());
+    if (data.auth && data.auth.provider !== "spotify") return [group(null, signInPanel())];
+    if (data.endpoint) return [group(say(data.endpoint.id ? "editEndpoint" : "addEndpoint"), endpointForm())];
+    const saved = data.list?.default ?? null;
+    const chosen = listExpected("default", saved && { provider: saved.provider, model: saved.model });
+    // The first run asks for a model over the same providers; a model chosen there is the default.
+    if (asking) return [question("firstRunModel"), sectionError(), group(null, providerList(chosen)), steps()].filter(Boolean);
+    const parts = [sectionError(), group(say("models"), menuList(chosen))];
+    if (saved?.reasoning && sameModel(chosen, saved)) parts.push(group(say("effort"), efforts(saved)));
+    parts.push(group(say("providers"), providerList(chosen)));
     return parts.filter(Boolean);
   }
-  function efforts(current) {
-    const chosen = expected("effort", current.effort ?? "default");
+  // The menu's models as they will be once the core confirms what was just ticked.
+  function menuModels() {
+    const shown = (data.list?.models ?? []).filter((entry) => data.toggles.get(modelKey(entry))?.listed !== false);
+    for (const { entry, listed } of data.toggles.values()) if (listed && !shown.some((kept) => sameModel(kept, entry))) shown.push(entry);
+    return shown;
+  }
+  const isListed = (entry) => data.toggles.get(modelKey(entry))?.listed ?? (data.list?.models ?? []).some((kept) => sameModel(kept, entry));
+  function toggle(entry, listed) {
+    data.toggles.set(modelKey(entry), { entry, listed });
+    send({ type: "list-model", provider: entry.provider, model: entry.model, listed });
+    render();
+  }
+  // A row makes its model the default; the default says so, and the others can leave the menu.
+  function menuList(chosen) {
+    if (!data.list) return waiting();
+    if (data.listError) return failure("noticeFailed");
+    const models = menuModels();
+    if (!models.length) return note(say("noModels"));
+    return choices(models.map((entry) => {
+      const isDefault = sameModel(entry, chosen);
+      let trailing = make("span", "choice-tag", say("default"));
+      if (!isDefault) {
+        trailing = make("button", "tool choice-remove");
+        trailing.type = "button";
+        trailing.dataset.key = `unlist:${modelKey(entry)}`;
+        trailing.append(icon("close"));
+        name(trailing, say("removeFromMenu"));
+        trailing.addEventListener("click", () => toggle(entry, false));
+      }
+      return choice({ label: entry.name ?? entry.model, detail: entry.ready === false ? `${entry.providerName} · ${say("notConnected")}` : entry.providerName,
+        chosen: isDefault, check: false, disabled: entry.ready === false && !isDefault, trailing, key: `menu:${modelKey(entry)}`,
+        onChoose: isDefault ? null : () => chooseDefault(entry) });
+    }));
+  }
+  function chooseDefault(entry) {
+    expectList("default", { provider: entry.provider, model: entry.model });
+    send({ type: "default-model", provider: entry.provider, model: entry.model });
+    render();
+  }
+  // The same scale for every model that thinks. A level the default model lacks shows the one it gets.
+  function efforts(saved) {
+    const asked = saved.effort ?? "default";
+    const chosen = listExpected("effort", asked);
     const track = make("div", "segments");
     track.setAttribute("role", "radiogroup");
     track.setAttribute("aria-label", say("effort"));
-    for (const level of ["default", ...current.effortLevels]) {
-      const label = level === "default" ? say("effortDefault") : say(`effort.${level}`) === `effort.${level}` ? level : say(`effort.${level}`);
-      const segment = button(label, "segment", () => {
+    for (const level of ["default", ...EFFORTS]) {
+      const gets = level === chosen && chosen === asked && saved.thinking && saved.thinking !== level ? saved.thinking : null;
+      const segment = button(gets ? `${effortLabel(level)} → ${effortLabel(gets)}` : effortLabel(level), "segment", () => {
         if (chosen === level) return;
-        expect("effort", level);
-        send({ type: "effort", effort: level });
+        expectList("effort", level);
+        send({ type: "default-effort", effort: level });
         render();
       }, `effort:${level}`);
       segment.setAttribute("role", "radio");
@@ -511,46 +561,73 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
     }
     return track;
   }
-  function providerList(active) {
+  // Where models come from. OpenAI is one row with its two ways in; every provider opens to its
+  // models, each ticked when the menu offers it.
+  function providerList(chosen) {
     if (!data.providers) return waiting();
-    // Providers that only read a key from the environment can't be signed in here, so they show only once in use.
+    if (data.providersError) return failure("noProviders");
     const usable = data.providers.filter((provider) => provider.signedIn === true || provider.signIn !== "environment_only");
-    if (data.providersError || !usable.length) return failure("noProviders");
-    // The provider in use starts open, so its models are one look away.
-    const open = data.expanded === undefined ? usable.find((provider) => provider.id === active?.provider && provider.signedIn)?.id ?? null : data.expanded;
     const rows = [];
     for (const provider of usable) {
-      const signedIn = provider.signedIn === true;
-      // Only a key Moondog saved can be signed out here; one from the environment stays in effect.
-      const canSignOut = signedIn && provider.source === "saved";
-      let trailing = null;
-      if (canSignOut) {
-        trailing = button(say("signOut"), "button quiet small", () => {
-          data.signingOut.add(provider.id);
-          send({ type: "sign-out", provider: provider.id });
-          render();
-        }, `sign-out:${provider.id}`);
-        trailing.disabled = data.signingOut.has(provider.id);
-      } else if (!signedIn) {
-        trailing = button(say("signIn"), "button small", () => {
-          data.error = null;
-          data.auth = { provider: provider.id, providerName: provider.name, status: null, info: null };
-          send({ type: "sign-in", provider: provider.id });
-          render();
-        }, `sign-in:${provider.id}`);
-        // One sign-in at a time; the core would refuse a second.
-        trailing.disabled = Boolean(data.auth);
+      const expanded = data.expanded === provider.id;
+      // OpenAI opens to its two ways in, a ChatGPT subscription or an API key, over its models.
+      if (provider.chatgpt) {
+        rows.push(choice({ label: provider.name, detail: provider.signedIn ? say(provider.method === "oauth" ? "chatgpt" : "apiKey") : null, expanded,
+          key: `provider:${provider.id}`, lead: icon("chevron", "icon disclose"), onChoose: () => { data.expanded = expanded ? null : provider.id; render(); } }));
+        if (expanded) {
+          const ways = ["oauth", "api_key"].map((method) => way({ label: say(method === "oauth" ? "chatgpt" : "apiKey"),
+            detail: provider.method === method ? accessDetail(provider) : null, trailing: access(provider, method) }));
+          rows.push(choices([...ways, ...(provider.signedIn ? [modelList(provider, chosen)] : [])], "choices inner"));
+        }
+        continue;
       }
-      const expanded = open === provider.id;
-      rows.push(choice({ label: provider.name, detail: signedIn && !canSignOut ? say("signedIn") : null, expanded, trailing,
-        key: `provider:${provider.id}`, lead: icon("chevron", "icon disclose"),
+      rows.push(choice({ label: provider.name, detail: provider.endpoint ? host(provider.endpoint.baseUrl) : accessDetail(provider), expanded,
+        trailing: access(provider), key: `provider:${provider.id}`, lead: icon("chevron", "icon disclose"),
         onChoose: () => { data.expanded = expanded ? null : provider.id; render(); } }));
-      if (expanded) {
-        wantModels(provider);
-        rows.push(modelList(provider, active));
-      }
+      if (expanded) rows.push(modelList(provider, chosen));
     }
+    rows.push(choice({ label: say("addEndpoint"), action: true, key: "endpoint:add", lead: icon("plus", "icon lead"), onChoose: () => editEndpoint(null) }));
     return choices(rows);
+  }
+  // A way in under its provider: words and what can be done about it, with nothing to choose.
+  function way({ label, detail, trailing }) {
+    const item = make("div", "choice static");
+    const words = make("span", "choice-words");
+    words.append(make("span", "choice-label", label));
+    if (detail) words.append(make("span", "choice-detail", detail));
+    const main = make("div", "choice-main");
+    main.append(words);
+    item.append(main);
+    if (trailing) item.append(trailing);
+    return item;
+  }
+  const host = (address) => { try { return new URL(address).host; } catch { return address; } };
+  // A key from the environment can't be removed here; it says where it comes from instead.
+  const accessDetail = (provider) => (provider.signedIn && provider.source !== "saved" && provider.signIn !== "endpoint" ? say("signedIn") : null);
+  // What each row can do about its way in: sign in or out of ChatGPT, add or remove a key, edit an endpoint.
+  // OpenAI keeps one of its two at a time, so signing in one way replaces the other.
+  function access(provider, method = provider.signIn) {
+    if (provider.signIn === "endpoint") return button(say("editMessage"), "button quiet small", () => editEndpoint(provider), `endpoint:edit:${provider.id}`);
+    const oauth = method === "oauth";
+    if (provider.signedIn && (!provider.chatgpt || provider.method === method)) {
+      if (provider.source !== "saved") return null;
+      const node = button(say(oauth ? "signOut" : "removeKey"), "button quiet small", () => {
+        data.signingOut.add(provider.id);
+        send({ type: "sign-out", provider: provider.id });
+        render();
+      }, `sign-out:${provider.id}:${method}`);
+      node.disabled = data.signingOut.has(provider.id);
+      return node;
+    }
+    const node = button(say(oauth ? "signIn" : "addKey"), "button small", () => {
+      data.error = null;
+      data.auth = { provider: provider.id, providerName: oauth ? "ChatGPT" : provider.name, status: null, info: null };
+      send({ type: "sign-in", provider: provider.id, method });
+      render();
+    }, `sign-in:${provider.id}:${method}`);
+    // One sign-in at a time; the core would refuse a second.
+    node.disabled = Boolean(data.auth);
+    return node;
   }
   // Each provider's models are asked for once; the renderer asks for the signed-in ones on its own.
   const requested = new Set();
@@ -559,21 +636,87 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
     requested.add(provider.id);
     send({ type: "provider-models", provider: provider.id });
   }
-  function modelList(provider, active) {
+  function modelList(provider, chosen) {
+    wantModels(provider);
     const models = data.models.get(provider.id);
     const retry = () => { data.modelsFailed.delete(provider.id); requested.delete(provider.id); wantModels(provider); render(); };
-    const inner = provider.signedIn !== true ? [note(say("signInFirst"))]
+    const inner = provider.signedIn !== true ? [note(say("addKeyFirst"))]
       : data.modelsFailed.has(provider.id) ? [failure("noticeFailed"), button(say("tryAgain"), "button quiet small", retry, `retry:${provider.id}`)]
         : !models ? [waiting()]
-          : models.map((entry) => choice({ label: entry.name ?? entry.id, key: `model:${provider.id}:${entry.id}`,
-            chosen: active?.provider === provider.id && active?.model === entry.id,
-            onChoose: () => {
-              if (active?.provider === provider.id && active?.model === entry.id) return;
-              expect("model", { provider: provider.id, model: entry.id });
-              send({ type: "model", provider: provider.id, model: entry.id });
-              render();
-            } }));
+          : models.map((model) => {
+            const entry = { provider: provider.id, model: model.id, name: model.name ?? model.id, providerName: provider.name, ready: true };
+            const isDefault = sameModel(entry, chosen);
+            const listed = isDefault || isListed(entry);
+            // In the first run a model row picks the one Moondog answers with; otherwise it ticks the menu.
+            if (asking) return choice({ label: entry.name, chosen: isDefault, key: `model:${modelKey(entry)}`, onChoose: isDefault ? null : () => chooseDefault(entry) });
+            return choice({ label: entry.name, detail: isDefault ? say("default") : null, chosen: listed, role: "checkbox", key: `model:${modelKey(entry)}`,
+              onChoose: isDefault ? null : () => toggle(entry, !listed) });
+          });
     return choices(inner, "choices inner");
+  }
+  // An endpoint: a name, its address, the format it speaks, a key if it takes one, and its model IDs,
+  // which the endpoint is asked for when left empty.
+  function editEndpoint(provider) {
+    data.error = null;
+    data.endpoint = { id: provider?.id ?? null, format: provider?.endpoint?.format ?? "openai", keySaved: provider?.endpoint?.keySaved === true, busy: false, error: null };
+    Object.assign(data.drafts, { endpointName: provider?.name ?? "", endpointUrl: provider?.endpoint?.baseUrl ?? "", endpointKey: "",
+      endpointModels: provider?.endpoint?.models?.join(", ") ?? "" });
+    data.focus = "field:endpointName";
+    render();
+  }
+  function endpointForm() {
+    const shown = data.endpoint;
+    const form = make("form", "endpoint");
+    const field = (key, label, placeholder, secret = false) => {
+      const row = make("label", "entry");
+      row.append(make("span", "entry-label", label), keptField(key, placeholder, secret));
+      return row;
+    };
+    const formats = make("div", "segments");
+    formats.setAttribute("role", "radiogroup");
+    formats.setAttribute("aria-label", say("endpointFormat"));
+    for (const [format, label] of [["openai", "OpenAI"], ["anthropic", "Anthropic"]]) {
+      const segment = button(label, "segment", () => { shown.format = format; render(); }, `endpoint-format:${format}`);
+      segment.setAttribute("role", "radio");
+      segment.setAttribute("aria-checked", String(shown.format === format));
+      segment.tabIndex = shown.format === format ? 0 : -1;
+      formats.append(segment);
+    }
+    const formatRow = make("div", "entry");
+    formatRow.append(make("span", "entry-label", say("endpointFormat")), formats);
+    const save = button(say("save"), "button primary small", null, "endpoint:save");
+    const sync = () => { save.disabled = shown.busy || !data.drafts.endpointName.trim() || !data.drafts.endpointUrl.trim(); };
+    const actions = make("div", "actions");
+    actions.append(save, button(say("cancel"), "button quiet small", () => { data.endpoint = null; render(); }, "endpoint:cancel"));
+    if (shown.id) {
+      const remove = button(say("removeEndpoint"), "button quiet small end", () => {
+        send({ type: "endpoint-remove", id: shown.id });
+        data.models.delete(shown.id);
+        data.endpoint = null;
+        data.expanded = null;
+        render();
+      }, "endpoint:remove");
+      remove.disabled = shown.busy;
+      actions.append(remove);
+    }
+    if (shown.busy) actions.append(turning());
+    form.append(field("endpointName", say("endpointName"), "DeepSeek"), field("endpointUrl", say("endpointUrl"), "https://api.deepseek.com"), formatRow,
+      field("endpointKey", say("endpointKey"), say(shown.keySaved ? "keyKept" : "keyOptional"), true),
+      field("endpointModels", say("endpointModels"), say("modelsAsk")));
+    if (shown.error) form.append(failure(shown.error));
+    form.append(actions);
+    form.addEventListener("input", sync);
+    sync();
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      if (save.disabled) return;
+      shown.busy = true;
+      shown.error = null;
+      send({ type: "endpoint-save", endpoint: { ...(shown.id ? { id: shown.id } : {}), name: data.drafts.endpointName.trim(), baseUrl: data.drafts.endpointUrl.trim(),
+        format: shown.format, key: data.drafts.endpointKey.trim(), models: data.drafts.endpointModels } });
+      render();
+    });
+    return form;
   }
 
   // Playback: one row per music service, its state under its name and the one in use checked. A click
@@ -899,6 +1042,24 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
       warn("providers", message.error);
     }
     if (message.type === "provider-models") { data.models.set(message.provider, message.models ?? []); data.modelsFailed.delete(message.provider); }
+    if (message.type === "model-list") {
+      data.list = { models: message.models ?? [], default: message.default ?? null };
+      data.listError = Boolean(message.error);
+      data.toggles.clear();
+      data.listPending.clear();
+      warn("model list", message.error);
+    }
+    // A saved endpoint opens to its models; a refused one keeps the form with what to fix.
+    if (message.type === "endpoint") {
+      if (message.state === "saved") {
+        data.endpoint = null;
+        if (message.id) { data.models.delete(message.id); requested.delete(message.id); data.expanded = message.id; }
+      } else if (data.endpoint) {
+        data.endpoint.busy = false;
+        data.endpoint.error = ENDPOINT_ERRORS[message.code] ?? "endpointFailed";
+        warn("endpoint", message.message);
+      }
+    }
     if (message.type === "devices") {
       data.devices = message.devices ?? [];
       data.devicesError = Boolean(message.error);
@@ -930,6 +1091,8 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
       if (message.state === "error") warn("sign-in", message.message);
       // Spotify reads as connected while the core rebuilds with it.
       if (message.provider === "spotify" && message.state === "done") { expect("spotify", "ready"); data.devices = null; }
+      // A provider just signed in to opens to its models, so its first model is one click away.
+      if (message.provider !== "spotify" && message.state === "done") { data.expanded = message.provider; data.models.delete(message.provider); requested.delete(message.provider); }
       send({ type: "models" });
     }
     if (message.type === "import") {
@@ -973,6 +1136,9 @@ export function createSettings({ state, send, t, prettyModel = String, appleMusi
         // The choice that failed shows as it really is again.
         if (kind) pending.delete(kind);
         if (message.code === "sign-out") data.signingOut.clear();
+        if (message.code === "list-model") data.toggles.clear();
+        if (message.code === "default-model") data.listPending.delete("default");
+        if (message.code === "default-effort") data.listPending.delete("effort");
       } else return;
     }
     render();

@@ -217,22 +217,75 @@ test("two model changes rebuild in order and the later one stays", async () => {
   }
 });
 
-test("a model chosen during a reply is saved before that reply ends", async () => {
+test("a default chosen during a reply is saved before that reply ends", async () => {
   const held = runtime();
   held.hold = true;
   const harness = await openRoom({ runtime: held });
   try {
     const promptJob = harness.post({ type: "prompt", text: "play something" });
     await tick();
-    await harness.post({ type: "model", provider: "p", model: "opus" });
+    await harness.post({ type: "default-model", provider: "p", model: "opus" });
     assert.equal(harness.saved[0]?.model, "opus");
     assert.deepEqual(harness.built, []);
     held.abort();
     await promptJob;
-    assert.deepEqual(harness.built, ["opus"]);
+    // The conversation follows the default, so it is rebuilt from the saved settings.
+    assert.deepEqual(harness.built, [null]);
   } finally {
     held.abort();
     await harness.stop();
+  }
+});
+
+test("a model chosen in the menu is that conversation's alone, and a new conversation starts on the default", async () => {
+  const first = application("A");
+  // The launch's own new conversation keeps A; the listener's next one is B.
+  first.startNewSession = function (reason) { if (reason === "user_new") this.sessionId = "B"; };
+  const harness = await openRoom({ application: first });
+  const status = () => harness.messages.findLast((message) => message.type === "status")?.model;
+  try {
+    await harness.post({ type: "model", provider: "p", model: "opus" });
+    assert.deepEqual(harness.saved, [], "the default stays as it was");
+    assert.deepEqual(harness.built, ["opus"]);
+    assert.equal(status().model, "opus");
+    assert.equal(status().own, true);
+    await harness.post({ type: "new" });
+    assert.deepEqual(harness.built, ["opus", null]);
+    assert.equal(status().own, false);
+    // Going back to the first conversation brings back the model chosen for it.
+    await harness.post({ type: "open", id: "A" });
+    assert.deepEqual(harness.built, ["opus", null, "opus"]);
+    assert.equal(status().model, "opus");
+  } finally {
+    await harness.stop();
+  }
+});
+
+test("a conversation keeps the model chosen for it across launches", async () => {
+  const saved = new Map();
+  const settings = {
+    async models() { return { models: [{ id: "opus" }, { id: "sonnet" }] }; },
+    async conversationModels() { return Object.fromEntries(saved); },
+    async setConversationModel(session, selection) { if (selection) saved.set(session, selection); else saved.delete(session); },
+  };
+  const first = application("A");
+  const launch = await openRoom({ application: first, services: { modelSettings: settings } });
+  try {
+    await launch.post({ type: "model", provider: "p", model: "opus" });
+    assert.deepEqual(saved.get("A"), { provider: "p", model: "opus" });
+  } finally {
+    await launch.stop();
+  }
+  // The next launch opens a new conversation on the default; going back to A brings its model back.
+  const second = application("new");
+  second.startNewSession = function () { this.sessionId = "new"; };
+  const relaunch = await openRoom({ application: second, services: { modelSettings: settings } });
+  try {
+    await relaunch.post({ type: "open", id: "A" });
+    assert.deepEqual(relaunch.built, ["opus"]);
+    assert.equal(relaunch.messages.findLast((message) => message.type === "status")?.model.own, true);
+  } finally {
+    await relaunch.stop();
   }
 });
 
@@ -711,6 +764,25 @@ test("a model saved in the terminal rebuilds the window's agent, and one answeri
     await promptJob;
     await tick();
     assert.deepEqual(harness.built, [null], "the rebuild reads the saved settings");
+  } finally {
+    await harness.stop();
+  }
+});
+
+test("a default saved in the terminal leaves a conversation that has its own model alone", async () => {
+  let saved = null;
+  const first = application("A");
+  first.startNewSession = function (reason) { if (reason === "user_new") this.sessionId = "B"; };
+  const harness = await openRoom({ application: first, services: { watchModelSettings: (listener) => { saved = listener; return () => {}; } } });
+  try {
+    await harness.post({ type: "model", provider: "p", model: "opus" });
+    assert.deepEqual(harness.built, ["opus"]);
+    saved({ provider: "p", model: "sonnet" }, "settings");
+    await tick();
+    assert.deepEqual(harness.built, ["opus"], "the conversation keeps the model chosen for it");
+    // Another conversation follows the new default.
+    await harness.post({ type: "new" });
+    assert.equal(harness.built.at(-1), null);
   } finally {
     await harness.stop();
   }

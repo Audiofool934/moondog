@@ -25,7 +25,7 @@ export function safeProviderErrorMessage(value, provider) {
   const message = typeof value === "string" && value.trim()
     ? value.trim() : "The model provider request failed.";
   if (credentialBearingErrorPattern.test(message)) {
-    return `${provider === "openai-codex" ? "OpenAI Codex" : provider} authentication failed. Run moondog auth login ${provider} and try again.`;
+    return `${provider === "openai" ? "OpenAI" : provider} authentication failed. Run moondog auth login ${provider}${provider === "openai" ? " --chatgpt, or with an API key," : ""} and try again.`;
   }
   return message;
 }
@@ -66,7 +66,7 @@ export function isModelConnectionFailure(value) {
 
 export function createModelConnectionError({ provider, cause, toolsExecuted = false }) {
   const label = ({
-    "openai-codex": "OpenAI Codex", openai: "OpenAI", anthropic: "Anthropic",
+    openai: "OpenAI", anthropic: "Anthropic",
     deepseek: "DeepSeek", moonshotai: "Moonshot AI", "moonshotai-cn": "Moonshot AI China",
     xai: "xAI", zai: "Z.AI",
   })[provider] ?? (/^[a-z0-9][a-z0-9._-]{0,63}$/iu.test(provider ?? "") ? provider : "The model provider");

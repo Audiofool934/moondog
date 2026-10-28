@@ -100,6 +100,14 @@ export function withCommandCompletions(commands, {
       choices: (previous) => previous.length === 0 ? spotifyChoices
         : previous.length === 1 ? spotifyArguments.get(previous[0]) ?? [] : [],
     },
+    endpoint: {
+      argumentHint: "[add | remove <id>]",
+      choices: (previous) => previous.length === 0
+        ? choices([["add", N_("Add an endpoint by its address")], ["remove", N_("Remove an endpoint and its key")]])
+        : previous.length === 1 && previous[0] === "remove"
+          ? providers().filter((provider) => provider.id.startsWith("endpoint-")).map((provider) => ({ value: provider.id, label: provider.id, description: provider.name }))
+          : [],
+    },
     auth: {
       argumentHint: "[provider]",
       choices: (previous) => previous.length === 0 ? providers()

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -11,21 +11,23 @@ import { createPiAuthentication } from "../../src/runtime/pi/authentication.mjs"
 import { PersistentCredentialStore } from "../../src/runtime/pi/persistent-credential-store.mjs";
 import { apiKeyPiProviderIds } from "../../src/runtime/pi/provider-registry.mjs";
 
-const providerId = "openai-codex";
+const providerId = "openai";
+const oauth = { method: "oauth" };
 
+// Shaped like Pi's OpenAI provider: a key, or Sign in with ChatGPT for this installation.
 function fakeOAuthProvider(state) {
   return createProvider({
     id: providerId,
-    name: "Fake OpenAI Codex",
+    name: "Fake OpenAI",
     auth: {
       oauth: {
-        name: "Fake OAuth",
-        async login(interaction) {
+        name: "Fake ChatGPT",
+        async login(interaction, options) {
           state.loginCalls += 1;
+          state.deviceId = options?.getDeviceId?.();
           state.loginMethod = await interaction.prompt({
-            type: "select",
-            message: "Select method",
-            options: [{ id: "browser", label: "Browser" }],
+            type: "manual_code",
+            message: "Paste the final redirect URL",
           });
           interaction.notify({ type: "progress", message: "Fake login" });
           return {
@@ -33,7 +35,8 @@ function fakeOAuthProvider(state) {
             access: "AUTH_MANAGER_ACCESS_SENTINEL",
             refresh: "AUTH_MANAGER_REFRESH_SENTINEL",
             expires: Date.now() + 60_000,
-            accountId: "AUTH_MANAGER_ACCOUNT_SENTINEL",
+            clientId: "AUTH_MANAGER_CLIENT_SENTINEL",
+            scopes: ["openid", "chatgpt.tokens.use.direct"],
           };
         },
         async refresh() {
@@ -98,7 +101,7 @@ test("authentication login persists OAuth without returning credential data", as
   const status = await authentication.login(providerId, {
     prompt: async () => "browser",
     notify: (event) => notifications.push(event.type),
-  });
+  }, oauth);
 
   assert.deepEqual(status, {
     provider: providerId,
@@ -109,6 +112,9 @@ test("authentication login persists OAuth without returning credential data", as
   assert.equal(fixture.state.loginCalls, 1);
   assert.equal(fixture.state.loginMethod, "browser");
   assert.deepEqual(notifications, ["progress"]);
+  // The installation keeps one ID for OpenAI, beside its credentials.
+  assert.match(fixture.state.deviceId, /^[0-9a-f-]{36}$/u);
+  assert.equal((await readFile(path.join(fixture.root, "config", "installation-id"), "utf8")).trim(), fixture.state.deviceId);
   assert.equal(
     (await store.read(providerId)).refresh,
     "AUTH_MANAGER_REFRESH_SENTINEL",
@@ -122,7 +128,7 @@ test("authentication status reloads metadata without refreshing OAuth", async (c
   await first.login(providerId, {
     prompt: async () => "browser",
     notify() {},
-  });
+  }, oauth);
 
   const reloaded = await fixture.createAuthentication(
     new PersistentCredentialStore({ authFile: fixture.authFile }),
@@ -142,7 +148,7 @@ test("authentication logout is local and idempotent", async (context) => {
   await authentication.login(providerId, {
     prompt: async () => "browser",
     notify() {},
-  });
+  }, oauth);
 
   assert.deepEqual(await authentication.logout(providerId), {
     provider: providerId,
@@ -256,14 +262,14 @@ test("Pi refreshes one expired OAuth credential once across store instances", as
     access: "EXPIRED_ACCESS_SENTINEL",
     refresh: "EXPIRED_REFRESH_SENTINEL",
     expires: Date.now() - 1,
-    accountId: "AUTH_MANAGER_ACCOUNT_SENTINEL",
+    clientId: "AUTH_MANAGER_CLIENT_SENTINEL",
   }));
   fixture.state.refreshCredential = {
     type: "oauth",
     access: "ROTATED_ACCESS_SENTINEL",
     refresh: "ROTATED_REFRESH_SENTINEL",
     expires: Date.now() + 10 * 60_000,
-    accountId: "AUTH_MANAGER_ACCOUNT_SENTINEL",
+    clientId: "AUTH_MANAGER_CLIENT_SENTINEL",
   };
   fixture.state.refreshDelayMs = 30;
 

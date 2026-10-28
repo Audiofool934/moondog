@@ -10,6 +10,8 @@ test("model picker catalog exposes Pi's full built-in provider set", () => {
   const providers = listPiProviders();
 
   assert.ok(providers.length > 7);
+  // Pi's older Codex route is not offered; ChatGPT signs in through openai.
+  assert.equal(providers.some((provider) => provider.id === "openai-codex"), false);
   assert.ok(
     providers.some(
       (provider) =>
@@ -39,18 +41,18 @@ test("model picker catalog exposes Pi's full built-in provider set", () => {
     "Z.AI (GLM API)",
   );
   for (const [id, family] of [
-    ["anthropic", "Claude"],
     ["moonshotai", "Kimi"],
     ["moonshotai-cn", "Kimi"],
-    ["openai", "GPT"],
-    ["xai", "Grok"],
   ]) {
     assert.ok(providers.find((provider) => provider.id === id).name.includes(family));
+  }
+  for (const [id, name] of [["anthropic", "Anthropic"], ["openai", "OpenAI"], ["xai", "xAI"]]) {
+    assert.equal(providers.find((provider) => provider.id === id).name, name);
   }
 });
 
 test("model picker catalog returns normalized Pi model metadata", () => {
-  const model = listPiModels("openai-codex").find(
+  const model = listPiModels("openai").find(
     (entry) => entry.id === "gpt-5.6-terra",
   );
 

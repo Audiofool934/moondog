@@ -1,10 +1,10 @@
-import { clampThinkingLevel, getSupportedThinkingLevels } from "@earendil-works/pi-ai";
+import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 
 import { PiAgentRuntime } from "./agent-runtime.mjs";
 import { createPiAuthContext } from "./authentication.mjs";
 import { getPublicPiModelCatalog } from "./public-model-catalog.mjs";
 import { createPersistentCredentialStore } from "./persistent-credential-store.mjs";
-import { EFFORT_LEVELS, readPiRuntimeSelection } from "./runtime-settings.mjs";
+import { clampEffort, EFFORT_LEVELS, readPiRuntimeSelection } from "./runtime-settings.mjs";
 
 export class OfflineAgentRuntime {
   constructor(reason = "model_not_configured", selection) {
@@ -108,7 +108,7 @@ export async function createConfiguredRuntime(
     // Without a saved effort, keep Pi's default and send no effort setting.
     effort,
     effortLevels: getSupportedThinkingLevels(model),
-    thinkingLevel: effort ? clampThinkingLevel(model, effort) : undefined,
+    thinkingLevel: effort ? clampEffort(model, effort) : undefined,
     ...(toolTrace ? { toolTrace } : {}),
   });
 }

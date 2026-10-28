@@ -63,8 +63,9 @@ if (harness.state?.startsWith("first-run")) {
   assert(question() === "Which model should Moondog use?", "The model comes after the service");
   assert(card.querySelector(".steps i:last-child.on"), "The second mark is on");
   assert(pickWords() === "", "A saved service ends the composer's question");
-  // A key pasted into the model's sign-in; the core then has a model and ends the first run by itself.
-  card.querySelector('[data-key="sign-in:anthropic"]').click();
+  // A key pasted into the model's sign-in opens that provider to its models; choosing one makes it the
+  // default, and the core, with a model that answers, ends the first run by itself.
+  card.querySelector('[data-key="sign-in:anthropic:api_key"]').click();
   await wait(150);
   const field = card.querySelector('[data-key="auth-field:key"]');
   assert(field, "Signing in with a key asks for it in the first run");
@@ -72,6 +73,11 @@ if (harness.state?.startsWith("first-run")) {
   field.dispatchEvent(new Event("input", { bubbles: true }));
   field.form.requestSubmit();
   await wait(400);
+  const first = card.querySelector('[data-key="model:anthropic:claude-opus-5-5"]');
+  assert(first, "The provider signed in to opens to its models");
+  first.click();
+  await wait(400);
+  assert(sent("default-model").at(-1)?.model === "claude-opus-5-5", "A model chosen in the first run is the default");
   assert(!asking() && card.closest(".sheet").hidden, "With a service and a model, the first run is over");
   assert(!sent("first-run-done").length, "The core ends a finished first run by itself");
   assert(document.querySelector("[data-room]").classList.contains("empty"), "The empty room shows after the first run");

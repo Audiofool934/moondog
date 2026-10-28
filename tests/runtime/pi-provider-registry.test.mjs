@@ -16,7 +16,6 @@ test("Pi provider registry supports the requested model API families", async () 
     "moonshotai",
     "moonshotai-cn",
     "openai",
-    "openai-codex",
     "openrouter",
     "xai",
     "zai",
@@ -35,7 +34,8 @@ test("Pi provider registry supports the requested model API families", async () 
       (id) => providers.find((provider) => provider.id === id).auth.apiKey,
     ),
   );
-  assert.ok(!apiKeyPiProviderIds.includes("openai-codex"));
+  // ChatGPT signs in through OpenAI's own provider, which also takes a key.
+  assert.ok(providers.find((provider) => provider.id === "openai").auth.oauth);
 });
 
 test("GLM runtime and login providers use the general API endpoint", async () => {

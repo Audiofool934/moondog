@@ -198,3 +198,19 @@
 .sheet kbd { display: inline-grid; place-items: center; min-width: 22px; height: 20px; padding: 0 6px; border-radius: var(--r-1); background: var(--hover);
   box-shadow: inset 0 -1px 0 var(--line-2); font: 500 11px/1 var(--sans); letter-spacing: 0.04em; color: var(--text-2); }
 .sheet .choice .go { width: 12px; height: 12px; margin-inline-start: auto; color: var(--text-4); flex: none; }
+
+/* Model: the menu's models, the default named in words and the others able to leave it on hover; the
+   ways into a provider sit still; an endpoint is edited in a short form of labelled fields. */
+.sheet .choice-tag { flex: none; margin-inline-end: 10px; font-size: var(--t-small); color: var(--text-3); }
+.sheet .choice-remove { flex: none; width: 26px; height: 26px; margin-inline-end: 5px; opacity: 0; transition: opacity var(--quick) var(--soft); }
+.sheet .choice-remove .icon { width: 13px; height: 13px; }
+.sheet .choice:hover .choice-remove, .sheet .choice:focus-within .choice-remove { opacity: 1; transition: none; }
+.sheet .choice.static:hover { background: none; }
+.sheet .choice .lead { width: 12px; height: 12px; margin-inline-end: -4px; color: var(--text-3); flex: none; }
+.sheet .endpoint { display: flex; flex-direction: column; gap: 14px; }
+.sheet .entry { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.sheet .entry > .text-field { align-self: stretch; flex: none; }
+.sheet .entry-label { font-size: var(--t-small); line-height: 1.4; color: var(--text-3); }
+.sheet .endpoint .alert { margin: 0; }
+.sheet .endpoint .actions { align-items: center; margin-top: 4px; }
+.sheet .actions .end { margin-inline-start: auto; }

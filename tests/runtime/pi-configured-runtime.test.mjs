@@ -12,7 +12,7 @@ import { PersistentCredentialStore } from "../../src/runtime/pi/persistent-crede
 import { writePiRuntimeSelection } from "../../src/runtime/pi/runtime-settings.mjs";
 import { listPiModels } from "../../src/runtime/pi/model-catalog.mjs";
 
-const provider = "openai-codex";
+const provider = "openai";
 const model = "gpt-5.6-terra";
 
 function applicationStub() {
@@ -62,7 +62,7 @@ async function credentialFixture(context) {
   });
 }
 
-test("openai-codex remains offline until Moondog has an OAuth credential", async (context) => {
+test("OpenAI stays offline until Moondog has a ChatGPT sign-in or a key", async (context) => {
   const credentials = await credentialFixture(context);
   const runtime = await createConfiguredRuntime(
     applicationStub(),
@@ -80,14 +80,14 @@ test("openai-codex remains offline until Moondog has an OAuth credential", async
   );
 });
 
-test("openai-codex runtime uses the persisted Moondog OAuth credential", async (context) => {
+test("an OpenAI runtime uses the saved ChatGPT sign-in", async (context) => {
   const credentials = await credentialFixture(context);
   await credentials.modify(provider, async () => ({
     type: "oauth",
     access: "ACCESS_TOKEN_SENTINEL",
     refresh: "REFRESH_TOKEN_SENTINEL",
     expires: Date.now() + 60_000,
-    accountId: "ACCOUNT_ID_SENTINEL",
+    clientId: "CLIENT_ID_SENTINEL",
   }));
 
   const runtime = await createConfiguredRuntime(
@@ -111,23 +111,30 @@ test("openai-codex runtime uses the persisted Moondog OAuth credential", async (
   });
   assert.doesNotMatch(
     JSON.stringify(runtime.publicStatus()),
-    /ACCESS_TOKEN_SENTINEL|REFRESH_TOKEN_SENTINEL|ACCOUNT_ID_SENTINEL/u,
+    /ACCESS_TOKEN_SENTINEL|REFRESH_TOKEN_SENTINEL|CLIENT_ID_SENTINEL/u,
   );
 });
 
-test("openai-codex model validation does not require a login or network call", async (context) => {
+test("OpenAI model validation does not require a login or network call", async (context) => {
   const credentials = await credentialFixture(context);
   const runtime = await createConfiguredRuntime(
     applicationStub(),
     {
       MOONDOG_PROVIDER: provider,
-      MOONDOG_MODEL: "not-a-real-codex-model",
+      MOONDOG_MODEL: "not-a-real-openai-model",
     },
     { credentials },
   );
 
   assert.ok(runtime instanceof OfflineAgentRuntime);
   assert.equal(runtime.publicStatus().reason, "model_not_found_in_pi_catalog");
+});
+
+test("a selection on the retired openai-codex route asks for another model", async (context) => {
+  const credentials = await credentialFixture(context);
+  const runtime = await createConfiguredRuntime(applicationStub(), { MOONDOG_PROVIDER: "openai-codex", MOONDOG_MODEL: model }, { credentials });
+  assert.ok(runtime instanceof OfflineAgentRuntime);
+  assert.equal(runtime.publicStatus().reason, "provider_not_found_in_pi_catalog");
 });
 
 test("runtime uses a persisted Pi provider and model when env overrides are absent", async (context) => {

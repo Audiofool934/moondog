@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
-import { zstdDecompressSync } from "node:zlib";
 
 import { listAgentCapabilityDescriptors } from "../../src/core/capability-catalog.mjs";
 import { PiAgentRuntime } from "../../src/runtime/pi/agent-runtime.mjs";
@@ -260,69 +259,6 @@ test("Pi retries a rejected model HTTP request twice and streams the recovered a
   assert.deepEqual(fixture.waits, [250, 500]);
   assert.deepEqual(retryEvents, [{ attempt: 1, maxRetries: 2 }, { attempt: 2, maxRetries: 2 }]);
   assert.equal(fixture.runtime.agent.state.messages.filter(message => message.role !== "system").length, 2);
-});
-
-test("Codex SSE retries its compressed HTTP body without changing production transport selection", async () => {
-  const codexProvider = "openai-codex";
-  const codexModelId = "gpt-5.6-luna";
-  const token = `fixture.${Buffer.from(JSON.stringify({
-    "https://api.openai.com/auth": { chatgpt_account_id: "synthetic-account" },
-  })).toString("base64")}.fixture`;
-  const nativeModels = createPiModels({
-    credentials: {
-      read: async () => ({
-        type: "oauth", access: token, refresh: "unused-synthetic-refresh",
-        expires: Date.now() + 86_400_000,
-      }),
-    },
-    authContext: { env: async () => undefined, fileExists: async () => false },
-  });
-  const answer = "The synthetic Codex connection recovered.";
-  const item = {
-    id: "msg_fixture", type: "message", role: "assistant", status: "completed",
-    content: [{ type: "output_text", text: answer, annotations: [] }],
-  };
-  const events = [
-    { type: "response.output_item.added", output_index: 0, item: { ...item, content: [] } },
-    { type: "response.output_text.delta", output_index: 0, delta: answer },
-    { type: "response.output_item.done", output_index: 0, item },
-    { type: "response.completed", response: { id: "resp_fixture", status: "completed", output: [item] } },
-  ];
-  const requests = [];
-  const waits = [];
-  const retryEvents = [];
-  const runtime = new PiAgentRuntime({
-    application: applicationFixture(), provider: codexProvider, modelId: codexModelId,
-    model: nativeModels.getModel(codexProvider, codexModelId),
-    models: {
-      streamSimple(model, context, options) {
-        assert.equal(options.transport, "auto", "production keeps Pi's WebSocket fallback");
-        assert.equal(options.maxRetries, 0, "the native adapter must not add HTTP retries");
-        return nativeModels.streamSimple(model, context, { ...options, transport: "sse" });
-      },
-    },
-    modelFetch: async (input, init) => {
-      const request = new Request(input, init);
-      assert.equal(request.url, "https://chatgpt.com/backend-api/codex/responses");
-      assert.equal(request.headers.get("authorization"), `Bearer ${token}`);
-      assert.equal(request.headers.get("content-encoding"), "zstd");
-      assert.ok(ArrayBuffer.isView(init.body));
-      const bytes = Buffer.from(await request.arrayBuffer());
-      assert.equal(JSON.parse(zstdDecompressSync(bytes).toString()).model, codexModelId);
-      requests.push(bytes);
-      if (requests.length === 1) throw networkFailure();
-      return new Response(events.map(eventText).join(""), { headers: { "content-type": "text/event-stream" } });
-    },
-    modelRetryDelay: async (milliseconds) => { waits.push(milliseconds); },
-  });
-  const result = await runtime.prompt("Use this synthetic Codex fixture.", {
-    onModelRetry: (event) => retryEvents.push(event),
-  });
-  assert.equal(result.text, answer);
-  assert.equal(requests.length, 2);
-  assert.deepEqual(requests[1], requests[0]);
-  assert.deepEqual(waits, [250]);
-  assert.deepEqual(retryEvents, [{ attempt: 1, maxRetries: 2 }]);
 });
 
 test("Pi exposes a safe final connection error after exhaustion and accepts another prompt", async () => {

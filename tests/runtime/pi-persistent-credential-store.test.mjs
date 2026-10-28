@@ -134,6 +134,25 @@ test("API keys coexist with OAuth and reject unexpected credential fields", asyn
   assert.equal((await reloaded.read("openai-codex")).refresh, "REFRESH_TOKEN_SENTINEL");
 });
 
+test("OpenAI keeps a ChatGPT sign-in in place of its key, and an old Codex sign-in still loads", async (context) => {
+  const fixture = await credentialFixture(context);
+  // Moondog no longer signs in through openai-codex, but a store that holds one stays readable.
+  await fixture.store.modify("openai-codex", async () => oauthCredential());
+  const chatgpt = { type: "oauth", access: "CHATGPT_ACCESS_SENTINEL", refresh: "CHATGPT_REFRESH_SENTINEL",
+    expires: Date.now() + 60_000, clientId: "CLIENT_SENTINEL", scopes: ["openid", "chatgpt.tokens.use.direct"] };
+  await fixture.store.modify("openai", async () => chatgpt);
+  const reloaded = new PersistentCredentialStore({ authFile: fixture.authFile });
+  assert.deepEqual(await reloaded.read("openai"), chatgpt);
+  for (const credential of [
+    { ...chatgpt, accountId: "unexpected" },
+    { ...chatgpt, clientId: "" },
+    { ...chatgpt, scopes: ["has space"] },
+  ]) {
+    await assert.rejects(reloaded.modify("openai", async () => credential), { code: "credential_store_corrupt" });
+  }
+  assert.equal((await reloaded.read("openai-codex")).refresh, "REFRESH_TOKEN_SENTINEL");
+});
+
 test("credential store serializes refresh-like modifications across instances", async (context) => {
   const fixture = await credentialFixture(context);
   await fixture.store.modify(providerId, async () => oauthCredential());

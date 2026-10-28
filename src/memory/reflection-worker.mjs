@@ -16,7 +16,7 @@ function reflectionErrorCode(error) {
 function offlineRuntimeError(reason) {
   if (reason === "provider_authentication_required") {
     return new Error(
-      "The Memory Agent requires OpenAI Codex authentication. Run moondog auth login openai-codex first.",
+      "The Memory Agent's model needs a sign-in. Run /auth, or moondog auth login <provider>, first.",
     );
   }
   return new Error(
