@@ -63,11 +63,12 @@ function follow() {
   const track = trackFor(wanted);
   track.stop += 1;
   // A song joined late starts where the scene is in it, faded in; one heard from its start, such as the
-  // ident as the scene begins, comes in at once, with its first sound whole.
+  // ident as the scene begins, comes in at once, with its first sound whole. A sound that played to its
+  // end before, as the ident does on every play, starts again.
   let fadeIn = 1.2;
   if (track.audio.paused) {
     const at = Math.max(0, (Date.now() - song.startedAt) / 1000);
-    if (track.audio.ended || at >= (track.audio.duration || Infinity)) return;
+    if (at >= (track.audio.duration || Infinity)) return;
     track.audio.currentTime = at;
     if (at < 0.25) fadeIn = 0.02;
     void track.audio.play().catch(() => {});

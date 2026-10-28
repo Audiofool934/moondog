@@ -223,16 +223,26 @@ export async function direct({ clock, agent, request, quick = false, begin, need
     document.body.classList.add("waiting");
     await pointer.move(inside(home), 900);
     await clock.wait(300);
+    // The glide starts as the window comes back, before it is drawn, so the record never shows at its
+    // place first.
     const from = deep.getBoundingClientRect();
-    await pointer.click();
-    while (!$("immersive").hidden) await clock.wait(16);
     const record = $("record");
-    const to = record.getBoundingClientRect();
-    if (to.width) {
-      record.animate([{ transformOrigin: "0 0", transform: `translate(${from.left - to.left}px, ${from.top - to.top}px) scale(${from.width / to.width})` },
-        { transformOrigin: "0 0", transform: "none" }], { duration: 900, easing: "cubic-bezier(0.16, 1, 0.3, 1)" });
-      home = inside(armPoint(record, null, HOME, to));
-    }
+    const back = new Promise((resolve) => {
+      const watch = new MutationObserver(() => {
+        if (!$("immersive").hidden) return;
+        watch.disconnect();
+        const to = record.getBoundingClientRect();
+        if (to.width) {
+          record.animate([{ transformOrigin: "0 0", transform: `translate(${from.left - to.left}px, ${from.top - to.top}px) scale(${from.width / to.width})` },
+            { transformOrigin: "0 0", transform: "none" }], { duration: 900, easing: "cubic-bezier(0.16, 1, 0.3, 1)" });
+          home = inside(armPoint(record, null, HOME, to));
+        }
+        resolve();
+      });
+      watch.observe($("immersive"), { attributes: true, attributeFilter: ["hidden"] });
+    });
+    await pointer.click();
+    await back;
     await clock.wait(700);
   }
 }
