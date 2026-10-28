@@ -77,7 +77,8 @@ if (!receipt) {
     const music = await buildMusicHelper({ bundle: false, required: sign });
     config.extraFiles = music ? [{ from: "native/build/moondog-music", to: "MacOS/moondog-music" }] : [];
     await rm(output, { recursive: true, force: true });
-    await build({ projectDir: here, targets: Platform.MAC.createTarget(["dir"], Arch.arm64), publish: "never", config });
+    // electron-builder mutates nested file patterns while normalizing its options.
+    await build({ projectDir: here, targets: Platform.MAC.createTarget(["dir"], Arch.arm64), publish: "never", config: structuredClone(config) });
   });
   if (notarize) {
     receipt = { schema: 1, ...provenance, appCdHash: await inspectApp(app, provenance, { notarized: false }),
@@ -88,7 +89,7 @@ if (!receipt) {
 
 if (!notarize) {
   if (!flags.has("--dir")) await phase("Package the local QA app", () => build({ projectDir: here, prepackaged: app,
-    targets: Platform.MAC.createTarget(["dmg", "zip"], Arch.arm64), publish: "never", config }));
+    targets: Platform.MAC.createTarget(["dmg", "zip"], Arch.arm64), publish: "never", config: structuredClone(config) }));
   console.log(`Local QA output: ${flags.has("--dir") ? app : output}`);
   process.exit(0);
 }
@@ -115,7 +116,7 @@ if (["signed", "stapled"].includes(receipt.phase)) {
     await saveJson(receiptFile, receipt);
   }
   await phase("Package the notarized app", async () => {
-    await build({ projectDir: here, prepackaged: app, targets: Platform.MAC.createTarget(["dmg", "zip"], Arch.arm64), publish: "never", config });
+    await build({ projectDir: here, prepackaged: app, targets: Platform.MAC.createTarget(["dmg", "zip"], Arch.arm64), publish: "never", config: structuredClone(config) });
     for (const name of [names.zip, names.blockmap, names.dmg]) await copyFile(path.join(output, name), path.join(release, name));
   });
   receipt.phase = "packaged";
