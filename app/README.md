@@ -192,6 +192,8 @@ An evaluation failure exits with a nonzero status.
 `npm run release` builds a signed, notarized app, ZIP and DMG, verifies the exact files, and records a release manifest in `release/`.
 Formal builds require a clean checkout and a working Apple Music helper.
 The helper's compiler errors stop the release instead of silently reducing playback to previews.
+The release command helper shows progress and allowlisted failure codes without echoing command arguments or captured output.
+Keep raw tool diagnostics private if a failed step needs further investigation.
 
 - The app carries the core exactly as the npm package ships it: `npm pack` decides the files, and `npm ci --omit=dev` adds their dependencies.
 - Signing needs the Developer ID Application certificate in the login keychain.

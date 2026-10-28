@@ -3,12 +3,102 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { inspect } from "node:util";
 import { assertProvenance, releaseNames, updateFeed, verifyArtifacts } from "../../app/release-artifacts.mjs";
 import { notarizeFile, prepareDmgUpload } from "../../app/release-notary.mjs";
 import { assertReleaseIdentity, findReleaseByTag, markAsLatest, publicationSource, uploadImmutableAssets, validateNpmRelease } from "../../app/release-publication.mjs";
-import { builderSigningIdentity, digestFile, ELECTRON_DATA_SIGN_IGNORE, readJson, retryTimestampSigning, saveJson, SIGNING_TEAM } from "../../app/release-tools.mjs";
+import { builderSigningIdentity, command, commandFailure, digestFile, ELECTRON_DATA_SIGN_IGNORE, parseReleaseJson, readJson, retryTimestampSigning, saveJson, SIGNING_TEAM } from "../../app/release-tools.mjs";
 
 const provenance = { version: "0.2.1", source: "a".repeat(40), buildNumber: "123", teamId: SIGNING_TEAM };
+
+async function captureCommandOutput(operation) {
+  const originalOut = process.stdout.write, originalErr = process.stderr.write;
+  let output = "";
+  const capture = (chunk, encoding, callback) => {
+    output += String(chunk);
+    if (typeof encoding === "function") encoding();
+    else callback?.();
+    return true;
+  };
+  process.stdout.write = capture; process.stderr.write = capture;
+  try { return { result: await operation(), output }; }
+  finally { process.stdout.write = originalOut; process.stderr.write = originalErr; }
+}
+
+test("release child output stays private on success and cannot leak through live chunks or failure objects", async () => {
+  const key = ["sk", "proj", "synthetic", "x".repeat(40)].join("-");
+  const token = ["npm", "y".repeat(40)].join("_");
+  const url = `https://example.invalid/callback?code=${token}&key=${key}`;
+  const script = `const [key,token,url,code]=process.argv.slice(1);
+    const text=JSON.stringify({key,token,url});
+    process.stdout.write(text.slice(0,17)); process.stderr.write(token.slice(0,11));
+    setTimeout(()=>{process.stdout.write(text.slice(17));process.stderr.write(token.slice(11));process.exitCode=Number(code);},10);`;
+  const success = await captureCommandOutput(() => command(process.execPath, ["-e", script, key, token, url, "0"], { live: true }));
+  assert.deepEqual(parseReleaseJson(success.result.stdout), { key, token, url });
+  assert.equal(success.result.stderr === token, true, "successful private output remains intact");
+  for (const value of [key, token, url]) assert.equal(success.output.includes(value), false);
+  const failed = await captureCommandOutput(async () => {
+    try { await command(process.execPath, ["-e", script, key, token, url, "7"], { live: true }); }
+    catch (error) { return error; }
+    assert.fail("the child must fail");
+  });
+  assert.equal(failed.result.code, 7);
+  for (const value of [key, token, url]) {
+    assert.equal(`${failed.output}${inspect(failed.result, { showHidden: true })}${JSON.stringify(failed.result)}`.includes(value), false);
+  }
+  assert.deepEqual(Object.keys(failed.result), ["code"]);
+  assert.equal(failed.result.cause, undefined);
+  assert.equal(failed.result.stdout, undefined);
+  assert.equal(failed.result.stderr, undefined);
+  assert.equal(failed.result.spawnargs, undefined);
+});
+
+test("release spawn failures and invalid JSON cannot expose executable paths, arguments or response fragments", async () => {
+  const secret = ["fixture", "private", "z".repeat(40)].join("_");
+  const result = await captureCommandOutput(async () => {
+    try { await command(`/missing/${secret}`, [`https://example.invalid/?token=${secret}`], { live: true }); }
+    catch (error) { return error; }
+    assert.fail("missing executable must fail");
+  });
+  assert.equal(result.result.code, "ENOENT");
+  assert.equal(`${result.output}${inspect(result.result, { showHidden: true })}`.includes(secret), false);
+  assert.deepEqual(Object.keys(result.result), ["code"]);
+  assert.throws(() => parseReleaseJson(`{invalid:${secret}`), error =>
+    error.message === "Release command returned invalid JSON." && !inspect(error, { showHidden: true }).includes(secret) && error.cause === undefined);
+});
+
+test("release failures preserve only recognized HTTP, npm and timestamp diagnostics", async () => {
+  const secret = ["fixture", "private", "q".repeat(40)].join("_");
+  const script = `process.stderr.write('gh: Not Found (HTTP 404)\\nnpm error code E401\\nnpm error code E' + process.argv[1] + '\\nThe timestamp service is not available. ' + process.argv[1]);process.exitCode=1;`;
+  let failure;
+  try { await command(process.execPath, ["-e", script, secret]); } catch (error) { failure = error; }
+  assert.equal(failure.httpStatus, 404);
+  assert.deepEqual(failure.npmCodes, ["E401"]);
+  assert.equal(failure.timestampUnavailable, true);
+  assert.equal(inspect(failure, { showHidden: true }).includes(secret), false);
+  let attempts = 0;
+  const delays = [];
+  assert.equal(await retryTimestampSigning(async () => {
+    if (++attempts < 3) throw failure;
+    return "signed";
+  }, { wait: async ms => delays.push(ms), warn: () => {} }), "signed");
+  assert.deepEqual(delays, [5000, 10000]);
+  assert.equal(commandFailure("gh", { stderr: "HTTP 404suffix HTTP 999", code: 1 }).httpStatus, undefined);
+  assert.equal(commandFailure("gh", { stderr: "HTTP 404\nHTTP 502", code: 1 }).httpStatus, undefined);
+});
+
+test("release command timeout reports only a fixed reason and reaps its child", async () => {
+  const secret = ["fixture", "timeout", "r".repeat(40)].join("_");
+  const captured = await captureCommandOutput(async () => {
+    try {
+      await command(process.execPath, ["-e", "process.stderr.write(process.argv[1]);setInterval(()=>{},1000);", secret], { live: true, timeout: 100 });
+    } catch (error) { return error; }
+    assert.fail("the child must time out");
+  });
+  assert.equal(captured.result.timedOut, true);
+  assert.equal(captured.result.signal, "SIGTERM");
+  assert.equal(`${captured.output}${inspect(captured.result, { showHidden: true })}`.includes(secret), false);
+});
 
 test("draft lookup scans release pages and binds subsequent reads to one ID, tag and channel", async () => {
   const identity = { id: 427169761, tag: "v0.2.1", prerelease: false };

@@ -11,6 +11,10 @@
 .spotify_token.json
 .spotify_pkce.json
 auth-profiles.json
+auth.json
+endpoints.json
+.npmrc
+*.p8
 
 # Python
 __pycache__/
