@@ -21,14 +21,11 @@ const KNOWN_SONGS = 300;
 
 const failure = (code, message) => Object.assign(new Error(message), { code });
 
-const searchPath = (environment) => [...new Set([
-  ...String(environment.PATH ?? "").split(path.delimiter).filter((folder) => path.isAbsolute(folder)),
-  ...EXTRA_FOLDERS,
-])];
+const folders = (value) => String(value ?? "").split(path.delimiter).filter((folder) => path.isAbsolute(folder));
+const searchPath = (environment) => [...new Set([...folders(environment.PATH), ...EXTRA_FOLDERS])];
 
-/** The ncm-cli executable on PATH or in Homebrew's folders, or null. */
-export async function findNcmCli({ environment = process.env } = {}) {
-  for (const folder of searchPath(environment)) {
+async function findIn(places) {
+  for (const folder of places) {
     const file = path.join(folder, "ncm-cli");
     try {
       if (!(await stat(file)).isFile()) continue;
@@ -39,18 +36,37 @@ export async function findNcmCli({ environment = process.env } = {}) {
   return null;
 }
 
+// Opened from Finder, the app has its login shell's PATH, which lacks the folders ~/.zshrc adds,
+// such as nvm's for npm's global commands. There, the listener's shell as Terminal opens it says.
+function terminalPath(environment) {
+  return new Promise((resolve) => {
+    execFile(environment.SHELL || "/bin/zsh", ["-ilc", 'printf "\\n__MOONDOG_PATH__%s\\n" "$PATH"'], { env: environment, timeout: 5_000 },
+      (_error, stdout) => resolve(folders(String(stdout ?? "").match(/__MOONDOG_PATH__(.+)/u)?.[1])));
+  });
+}
+
+/** ncm-cli and the PATH to run it with, which has the node it runs on, or null. */
+async function findNcmCli(environment) {
+  const places = searchPath(environment);
+  const file = await findIn(places);
+  if (file) return { file, places };
+  const terminal = await terminalPath(environment);
+  const found = await findIn(terminal);
+  return found ? { file: found, places: [...new Set([...terminal, ...places])] } : null;
+}
+
 // Runs one ncm-cli command and parses its JSON. ncm-cli reports most failures as
 // { success: false, message } with exit status 0. play prints no JSON when it starts a song,
 // so its answer is {}; the player's state says whether the song started.
 function cliRunner({ environment }) {
-  let found;
+  // Kept once found. The listener may install ncm-cli while Moondog runs, so a miss is looked for again.
+  let found = null;
   return async (args) => {
-    found ??= findNcmCli({ environment });
-    const command = await found;
-    if (!command) throw failure("netease_cli_missing", "ncm-cli is not installed. Install it with: npm install -g @music163/ncm-cli");
-    const env = { ...environment, PATH: searchPath(environment).join(path.delimiter) };
+    found ??= await findNcmCli(environment);
+    if (!found) throw failure("netease_cli_missing", "ncm-cli is not installed. Install it with: npm install -g @music163/ncm-cli");
+    const env = { ...environment, PATH: found.places.join(path.delimiter) };
     const stdout = await new Promise((resolve, reject) => {
-      execFile(command, args, { env, timeout: COMMAND_TIMEOUT_MS, maxBuffer: 8 * 1024 * 1024 }, (error, out) =>
+      execFile(found.file, args, { env, timeout: COMMAND_TIMEOUT_MS, maxBuffer: 8 * 1024 * 1024 }, (error, out) =>
         (error && !out ? reject(failure("netease_failed", `ncm-cli ${args[0]} failed: ${String(error.message).slice(0, 200)}`)) : resolve(String(out ?? ""))));
     });
     const start = stdout.indexOf("{");

@@ -743,3 +743,86 @@ test("Edit in the window replaces a saved message in place, and Branch goes on f
     await harness.stop();
   }
 });
+
+test("a model saved in the terminal rebuilds the window's agent, and one answering when its turn ends", async () => {
+  let saved = null;
+  const held = runtime("old");
+  held.hold = true;
+  const harness = await openRoom({ runtime: held, services: { watchModelSettings: (listener) => { saved = listener; return () => {}; } } });
+  try {
+    // A token refresh rewrites auth.json with the same model; the agent stays.
+    saved({ provider: "p", model: "old" });
+    await tick();
+    assert.deepEqual(harness.built, []);
+
+    const promptJob = harness.post({ type: "prompt", text: "something calm" });
+    await tick();
+    saved({ provider: "p", model: "sonnet" });
+    await tick();
+    assert.deepEqual(harness.built, [], "the answering agent keeps its model until the turn ends");
+    held.abort();
+    await promptJob;
+    await tick();
+    assert.deepEqual(harness.built, [null], "the rebuild reads the saved settings");
+  } finally {
+    await harness.stop();
+  }
+});
+
+test("a default saved in the terminal leaves a conversation that has its own model alone", async () => {
+  let saved = null;
+  const first = application("A");
+  first.startNewSession = function (reason) { if (reason === "user_new") this.sessionId = "B"; };
+  const harness = await openRoom({ application: first, services: { watchModelSettings: (listener) => { saved = listener; return () => {}; } } });
+  try {
+    await harness.post({ type: "model", provider: "p", model: "opus" });
+    assert.deepEqual(harness.built, ["opus"]);
+    saved({ provider: "p", model: "sonnet" }, "settings");
+    await tick();
+    assert.deepEqual(harness.built, ["opus"], "the conversation keeps the model chosen for it");
+    // Another conversation follows the new default.
+    await harness.post({ type: "new" });
+    assert.equal(harness.built.at(-1), null);
+  } finally {
+    await harness.stop();
+  }
+});
+
+test("the window carries the shared first run until it ends, and ends it when asked", async () => {
+  let finished = null;
+  const firstRun = {
+    async state({ modelReady }) { return { needed: finished === null, service: null, model: modelReady }; },
+    async finish({ skipped }) { finished = { skipped }; },
+    watch() { return () => {}; },
+  };
+  const harness = await openRoom({ services: { firstRun } });
+  try {
+    assert.equal(harness.messages.find((message) => message.type === "ready").firstRun, null, "unknown until read");
+    assert.deepEqual(harness.messages.findLast((message) => message.type === "status").firstRun, { needed: true, service: null, model: true });
+    await harness.post({ type: "first-run-done", skipped: true });
+    await tick();
+    assert.deepEqual(finished, { skipped: true });
+    assert.equal(harness.messages.findLast((message) => message.type === "status").firstRun.needed, false);
+  } finally {
+    await harness.stop();
+  }
+});
+
+test("choosing the service already in use in the first run ends it at once, without waiting for the file watch", async () => {
+  let service = null;
+  const firstRun = {
+    async state({ modelReady }) { return { needed: !(service && modelReady), service, model: modelReady }; },
+    async finish() {},
+    watch() { return () => {}; },
+  };
+  // Spotify is the default, so saving it changes nothing the playback listener hears.
+  const harness = await openRoom({ services: { firstRun, savePlaybackService: async (next) => { service = next; return next; } } });
+  try {
+    assert.equal(harness.messages.findLast((message) => message.type === "status").firstRun.needed, true);
+    await harness.post({ type: "music-service", service: "spotify" });
+    await tick();
+    assert.deepEqual(harness.messages.findLast((message) => message.type === "status").firstRun, { needed: false, service: "spotify", model: true });
+  } finally {
+    await harness.stop();
+  }
+});

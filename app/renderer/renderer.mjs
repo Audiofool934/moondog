@@ -2,14 +2,15 @@
 // playing on the right. The core process does the listening work; this page only draws it.
 import { languageTag, timeOfDay, windowLocale, windowStrings } from "../strings.mjs";
 import { renderMarkdown } from "./markdown.mjs";
+import { createFirstRun } from "./first-run.mjs";
 import { createPalette } from "./palette.mjs";
 import { createPreviews } from "./previews.mjs";
 import { coverPalette, grooveColours, moodColours } from "./mood.mjs";
-import { createMark } from "./mark.mjs";
+import { createMark, scratchMark } from "./mark.mjs";
 import { mountRecord } from "./record.mjs";
 import { createSettings, EFFORTS } from "./settings.mjs";
 import { createSidebar } from "./sidebar.mjs";
-import { icon, make, marquee, name, scrollbar, setIcon, tooltips, turning } from "./ui.mjs";
+import { icon, make, marquee, name, scrollbar, setIcon, tooltips } from "./ui.mjs";
 import "./style.css";
 
 const $ = (selector) => document.querySelector(`[data-${selector}]`);
@@ -17,10 +18,11 @@ const $ = (selector) => document.querySelector(`[data-${selector}]`);
 let locale = windowLocale(navigator.languages);
 let t = windowStrings(locale);
 const tr = () => t;
-// Spotify's state is unknown (null) until the core first reads it. turns and streaming belong to the
-// conversation on screen; other conversations keep answering in the core and come back when opened.
+// Spotify's state is unknown (null) until the core first reads it, and so is the first run. turns and
+// streaming belong to the conversation on screen; other conversations keep answering in the core and
+// come back when opened.
 const state = { sessions: [], folders: [], running: [], current: null, turns: [], model: null, spotify: null, spotifyAccount: null,
-  playbackService: "spotify", locale, locales: [], player: null, streaming: null, ready: false, waiting: null, update: { phase: "idle" } };
+  playbackService: "spotify", locale, locales: [], player: null, streaming: null, ready: false, waiting: null, update: { phase: "idle" }, firstRun: null };
 const store = {
   get: (key) => { try { return localStorage.getItem(key); } catch { return null; } },
   set: (key, value) => { try { localStorage.setItem(key, value); } catch { /* A private window keeps the default. */ } },
@@ -40,7 +42,9 @@ const outbox = [];
 const send = (message) => (port ? port.postMessage(message) : outbox.push(message));
 const previews = createPreviews({ send, onChange: () => renderInspector() });
 const settings = createSettings({ state, send, t: tr,
-  appleMusic: { status: () => previews.fullStatus(), check: (command) => previews.check(command) } });
+  appleMusic: { status: () => previews.fullStatus(), check: (command) => previews.check(command) }, onHide: () => firstRun.update() });
+// The one-time first run asks for a music service, then a model, in the Settings sheet (first-run.mjs).
+const firstRun = createFirstRun({ settings, send, read: () => ({ run: state.firstRun, modelReady: state.model?.state === "configured" }) });
 const sidebar = createSidebar({ root: $("sessions"), state, send, t: tr, open: (id) => openSession(id), store, menuPoint: (event) => menuPoint(event) });
 const tips = tooltips();
 // A native menu opens at the pointer, or under its control when the keyboard pressed it.
@@ -153,14 +157,20 @@ const kindOf = (tool, args) => {
   const found = KINDS.find(([pattern]) => pattern.test(tool));
   return found ? (typeof found[1] === "function" ? found[1](args) : found[1]) : "other";
 };
-// The step Moondog is on: the latest kind of work still running, or a retry.
+// While the model thinks, the host's own line from behind the decks: a different one each time it
+// stops to think in a turn, the same one on every redraw of that stretch.
+const THINKING_LINES = 8;
+function thinkingLine(turn) {
+  const seed = [...String(turn.id ?? "")].reduce((sum, char) => (sum * 31 + char.codePointAt(0)) >>> 0, 0);
+  return t(`thinking.${((seed + (turn.activity?.length ?? 0)) % THINKING_LINES) + 1}`);
+}
+// The step Moondog is on: the latest kind of work still running, a retry, or thinking before the first word.
 function stepOf(turn) {
   if (!turn.streaming) return null;
   if (turn.retrying) return t("retrying");
   const running = [...(turn.activity ?? [])].reverse().find((call) => call.state === "running");
   if (running) return t(`activity.${kindOf(running.tool, running.args)}`);
-  // Before the first word, the mark alone says Moondog is on it.
-  return turn.text ? null : "";
+  return turn.text ? null : thinkingLine(turn);
 }
 
 // After a turn, a song it started shows once with its cover. Covers are kept by title as the
@@ -177,7 +187,6 @@ function playedLine(turn) {
   return line;
 }
 
-const phase = turning;
 // Streaming words redraw block by block: finished paragraphs stay as they are, only the growing one is redrawn.
 function patchText(host, memo, text) {
   const blocks = text ? text.replace(/\r\n?/gu, "\n").split(/\n[ \t]*\n/u) : [];
@@ -219,7 +228,7 @@ function drawStatus(node, turn) {
   let content;
   if (step !== null) {
     content = make("span", "activity");
-    content.append(phase());
+    content.append(scratchMark());
     if (step) content.append(make("span", "", step));
     // The same kind of step keeps its line; a new step rolls in over the last.
     if (!wasStep) content.classList.add("still");
@@ -696,18 +705,22 @@ function toggleRecord() {
 // where the pointer is, and more the closer it comes. A click anywhere else on the record folds it into the bar. Before anything is said, the
 // record folds nowhere, so only its arm answers a click.
 // With nothing loaded on any player, a click on the arm asks Moondog for a song, as the words
-// "Play something for right now" would, in the conversation that is open. The arm stays up until the
-// music plays, and goes down then, as it does for music started any other way. While it waits, until a
-// few seconds after a reply that starts no music, it asks nothing more. A paused song is still loaded,
-// so the arm resumes it instead.
+// "Play something for right now" would, in the conversation that is open. The arm goes down at once
+// and waits on the still record, cued; the record turns when the music plays. While it waits, until a
+// few seconds after a reply that starts no music, it asks nothing more, and then it lifts. A paused
+// song is still loaded, so the arm resumes it instead.
 const CUE_GRACE_MS = 4000;
 let cue = null;
 const armReady = () => {
   const now = nowPlaying();
   return now ? can(now, now.playing ? "pausing" : "resuming") : !cueing(now) && state.ready && !state.streaming;
 };
-const onArm = (target, event) => armReady() && target?.hit(event.clientX, event.clientY) === "arm";
+// While it waits, the arm still keeps its clicks, so another click neither asks again nor folds the record.
+const onArm = (target, event) => (armReady() || Boolean(cue)) && target?.hit(event.clientX, event.clientY) === "arm";
 const nearArm = (target, event) => (armReady() ? target?.near(event.clientX, event.clientY) : target?.near(null));
+// The arm rests on the record while the music plays, whatever started or stopped it, and while it
+// waits for the song it asked for; the record turns only with the music.
+const armDown = (now) => Boolean(now?.playing) || cueing(now);
 function setArm() {
   if (nowPlaying()) { control("toggle", "record"); return; }
   if (cueing(null) || !state.ready || state.streaming) return;
@@ -717,16 +730,19 @@ function setArm() {
   // The arm has nothing more to offer a click until the music plays, so it stops answering the pointer.
   record?.near(null);
   deep?.near(null);
+  renderInspector();
 }
-// Whether the arm still waits for the song it asked for.
+// Whether the arm still waits on the record for the song it asked for. A reply that ends without
+// music, or none started within 15 seconds, lifts the arm once the grace runs out.
 function cueing(now) {
   if (!cue) return false;
+  clearTimeout(cue.timer);
   if (now?.playing) { cue = null; return false; }
   if (state.streaming) cue.seen = true;
-  else if (cue.seen || Date.now() - cue.at > 15_000) {
-    cue.ended ||= Date.now();
-    if (Date.now() - cue.ended >= CUE_GRACE_MS) { cue = null; return false; }
-  }
+  else if (cue.seen || Date.now() - cue.at > 15_000) cue.ended ||= Date.now();
+  if (cue.ended && Date.now() - cue.ended >= CUE_GRACE_MS) { cue = null; return false; }
+  // The arm looks again when its wait could run out; a reply's end looks for itself.
+  if (!state.streaming) cue.timer = setTimeout(renderInspector, (cue.ended ? cue.ended + CUE_GRACE_MS : cue.at + 15_000) - Date.now() + 20);
   return true;
 }
 recordFrame.addEventListener("click", (event) => {
@@ -794,8 +810,9 @@ function stopHanding() {
 barRecord.addEventListener("click", toggleRecord);
 
 // The record alone: the window holds only the record, drawn large in the same mosaic, over the
-// cover's light. A pin keeps the window above the others; a click anywhere else, or Esc, brings the
-// conversation back, and a drag moves the window. The pin shows while the pointer is over the window.
+// cover's light. A click anywhere else, or Esc, brings the conversation back, and a drag moves the
+// window. A pin keeps the window above the others and locks it on the record: clicks and Esc leave it
+// there until the pin is clicked again. The pin shows while the pointer is over the window.
 const immersive = $("immersive");
 let deep = null;
 let pinned = false;
@@ -817,7 +834,7 @@ function immerse(on) {
     record?.turn(false);
     if (!deep) {
       deep = mountRecord($("immersive-record"), { across: 160 });
-      deep.needle(Boolean(nowPlaying()?.playing), true);
+      deep.needle(armDown(nowPlaying()), true);
     }
     deep.tint(grooveColours(moodPalette, dark.matches), true);
     immersive.classList.add("hovered");
@@ -843,7 +860,7 @@ immersive.addEventListener("pointerdown", (event) => {
   immersive.addEventListener("pointerup", async () => {
     await started;
     const moved = (await window.moondogApp?.dragWindow?.("end")) ?? 0;
-    if (moved < 4) immerse(false);
+    if (moved < 4 && !pinned) immerse(false);
   }, { once: true });
 });
 immersive.addEventListener("click", (event) => { if (event.detail && onArm(deep, event)) setArm(); });
@@ -1037,7 +1054,7 @@ function renderComposer() {
 }
 // Beside the send button: where the music plays and which model answers, each by its mark, with its
 // name in the tooltip and the menu. One not chosen yet reads as the words that choose it: a model,
-// without which Moondog can't answer, and on a first launch the music service the listener uses.
+// without which Moondog can't answer, and while the first run still asks, the music service.
 const SERVICE_MARKS = { spotify: "spotify", apple_music: "apple-music", netease: "netease" };
 // A model shows its maker's mark: by the account it comes through, or for OpenRouter by the maker its
 // model id begins with (anthropic/…, x-ai/…); a maker without a mark here shows OpenRouter's, or the model glyph.
@@ -1058,7 +1075,7 @@ const serviceName = (service) => (service === "netease" ? t("netease") : service
 const effortName = (level) => (level === "default" ? t("effortDefault") : t(`effort.${level}`) === `effort.${level}` ? level : t(`effort.${level}`));
 // The level asked for, and the one the model gets when it lacks that one.
 const effortSaid = (model) => (model.thinking && model.thinking !== model.effort ? `${effortName(model.effort)} → ${effortName(model.thinking)}` : effortName(model.effort));
-const asking = () => state.ready && !state.sessions.length && !store.get("moondog.source");
+const serviceAsked = () => state.firstRun?.needed === true && !state.firstRun.service;
 function drawPick(button, { mark, label, words }) {
   button.classList.toggle("needed", Boolean(words));
   set(button.lastChild, "textContent", words ?? "");
@@ -1068,7 +1085,7 @@ function drawPick(button, { mark, label, words }) {
 }
 function renderPicks() {
   const service = sourceWanted ?? state.playbackService ?? "spotify";
-  drawPick($("service"), { mark: SERVICE_MARKS[service] ?? "spotify", label: serviceName(service), words: asking() ? t("chooseService") : null });
+  drawPick($("service"), { mark: SERVICE_MARKS[service] ?? "spotify", label: serviceName(service), words: serviceAsked() && !sourceWanted ? t("chooseService") : null });
   const model = state.model;
   set($("model"), "hidden", !model);
   if (!model) return;
@@ -1171,26 +1188,21 @@ async function pickModel(event) {
   const [, provider, ...rest] = chosen.split(":");
   if (chosen.startsWith("model:")) send({ type: "model", provider, model: rest.join(":") });
 }
-// The music service's menu: the services, each checked when in use; signing in to one the core can
-// play but can't yet, Spotify in Settings and NetEase with its own tool in Terminal; then the settings.
+// The services that can play now, and the one in use: Apple Music always, Spotify once connected and
+// NetEase once ncm-cli is signed in. Connecting or setting one up happens in Settings › Playback.
+const playableServices = (now) => ["spotify", "apple_music", "netease"].filter((service) => service === now || service === "apple_music"
+  || (service === "spotify" ? state.spotify === "ready" : state.netease === "ready"));
+// The music service's menu: the services that can play, the one in use checked, then the settings.
 // A choice shows at once and the core's status confirms it; every conversation's agent follows it.
 let sourceWanted = null;
 let wantedTimer = 0;
 async function pickService(event) {
   const now = sourceWanted ?? state.playbackService ?? "spotify";
-  const services = ["spotify", "apple_music", ...(state.netease === "ready" || now === "netease" ? ["netease"] : [])];
-  const items = services.map((service) => ({ id: `service:${service}`, label: serviceName(service), checked: service === now }));
-  const signIn = [
-    ...(state.spotify === "unavailable" ? [{ id: "sign-in:spotify", label: t("connectSpotify") }] : []),
-    ...(["signed_out", "missing"].includes(state.netease) ? [{ id: "sign-in:netease", label: t("setUpNetease") }] : []),
-  ];
-  items.push(...(signIn.length ? [{ type: "separator" }, ...signIn] : []), { type: "separator" }, { id: "settings", label: t("playbackSettings") });
+  const items = playableServices(now).map((service) => ({ id: `service:${service}`, label: serviceName(service), checked: service === now }));
+  items.push({ type: "separator" }, { id: "settings", label: t("playbackSettings") });
   const chosen = await menu(items, event);
   if (!chosen) return;
-  store.set("moondog.source", "chosen");
   if (chosen === "settings") settings.show("playback");
-  else if (chosen === "sign-in:spotify") { chooseService("spotify"); settings.show("playback"); }
-  else if (chosen === "sign-in:netease") settings.showNetease();
   else chooseService(chosen.slice(8));
   renderComposer();
 }
@@ -1219,10 +1231,8 @@ async function showDevices(devices) {
     if (!devices.length) items.push({ id: "none", label: t("noDevices"), enabled: false });
     items.push({ type: "separator" });
   }
-  items.push({ id: "service:spotify", label: "Spotify", checked: state.playbackService === "spotify" },
-    { id: "service:apple_music", label: "Apple Music", checked: state.playbackService === "apple_music" });
-  // NetEase is offered once ncm-cli is installed and signed in.
-  if (state.netease === "ready" || state.playbackService === "netease") items.push({ id: "service:netease", label: t("netease"), checked: state.playbackService === "netease" });
+  const now = state.playbackService ?? "spotify";
+  items.push(...playableServices(now).map((service) => ({ id: `service:${service}`, label: serviceName(service), checked: service === now })));
   items.push({ type: "separator" }, { id: "settings", label: t("playbackSettings") });
   const chosen = await window.moondogApp?.showMenu?.(items, at);
   if (chosen === "settings") settings.show("playback");
@@ -1480,10 +1490,7 @@ function renderInspector() {
   }
   placeTitle();
   record?.turn(now?.playing && (!talking() || fold.dock < 1));
-  // The arm rests on the record only while the music plays, whatever started or stopped it. An arm that
-  // asked for a song keeps track of the reply here, and stops waiting once the music plays.
-  cueing(now);
-  const down = Boolean(now?.playing);
+  const down = armDown(now);
   record?.needle(down);
   deep?.needle(down);
   mark.playing(now?.playing);
@@ -1769,7 +1776,7 @@ window.addEventListener("drop", (event) => {
 document.addEventListener("keydown", (event) => {
   // Escape that just closed Settings is spent; it must not also stop the reply behind it.
   if (settings.open || event.defaultPrevented) return;
-  if (immersed()) { if (event.key === "Escape") immerse(false); return; }
+  if (immersed()) { if (event.key === "Escape" && !pinned) immerse(false); return; }
   if (event.target === input || event.target.closest?.("input, textarea")) return;
   if (event.key === " " && event.target.closest?.("button, a, select, [role=button]")) return;
   if (event.key === "Escape" && state.streaming) { send({ type: "cancel" }); return; }
@@ -1799,7 +1806,7 @@ function streamingTurn(id) {
 }
 const onScreen = (data) => !data.session || data.session === state.current;
 const SIGN_IN_ERRORS = { connect_while_answering: "waitForReply", sign_in_busy: "signInBusy" };
-const SETTINGS_MESSAGES = new Set(["models", "provider-models", "model-list", "endpoint", "devices", "memories", "auth-prompt", "auth-prompt-closed", "auth-event", "sign-in", "import", "notice"]);
+const SETTINGS_MESSAGES = new Set(["models", "provider-models", "model-list", "endpoint", "devices", "memories", "auth-prompt", "auth-prompt-closed", "auth-event", "sign-in", "import", "notice", "netease-checked"]);
 function receive({ data }) {
   if (!data?.type) return;
   if (data.type === "preview" || data.type === "preview-control") { previews.receive(data); renderInspector(); return; }
@@ -1828,16 +1835,15 @@ function receive({ data }) {
   }
   if (data.type === "ready" || data.type === "status") {
     if (data.locale && data.locale !== locale) applyLanguage(data.locale);
-    const before = state.playbackService;
-    for (const key of ["model", "spotify", "spotifyAccount", "playbackService", "netease", "locales"]) if (data[key] !== undefined) state[key] = data[key];
-    // A service chosen anywhere, here, in Settings or in the player, answers a first launch's question.
-    if (data.type === "status" && data.playbackService && data.playbackService !== before) store.set("moondog.source", "chosen");
+    for (const key of ["model", "spotify", "spotifyAccount", "playbackService", "netease", "neteaseMessage", "locales", "firstRun"]) if (data[key] !== undefined) state[key] = data[key];
     if (sourceWanted === state.playbackService) sourceWanted = null;
     // With Apple Music chosen, the window learns once whether it can play whole songs.
     if (state.playbackService === "apple_music" && !previews.fullStatus()) void previews.check();
     renderComposer();
     renderInspector();
     settings.render();
+    // The first run asks while the core says it is needed, and steps aside once it is over here or in the terminal.
+    firstRun.update();
   }
   if (data.type === "ready" || data.type === "sessions") {
     state.sessions = data.sessions ?? [];
@@ -1866,7 +1872,7 @@ function receive({ data }) {
   }
   if (data.type === "ready") {
     state.ready = true;
-    // Only now is it known whether this is a first launch, the one that asks which service the listener uses.
+    // A message typed while the core started can be sent now.
     renderComposer();
     send({ type: "model-list" });
     const waiting = state.waiting;
@@ -1889,6 +1895,8 @@ function receive({ data }) {
   if (data.type === "turn" && onScreen(data)) {
     if (data.state === "start") {
       state.streaming = data.id;
+      // The reply to the arm's request has begun, so its end can lift the arm.
+      if (cue) cue.seen = true;
       const pending = state.turns.findLastIndex((turn) => turn.pending && turn.text === data.text);
       if (pending >= 0) state.turns.splice(pending, 1);
       state.turns.push({ role: "user", text: data.text }, { role: "assistant", id: data.id, text: "", activity: [], streaming: true });

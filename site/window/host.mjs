@@ -31,7 +31,7 @@ window.requestIdleCallback ??= (run) => setTimeout(run, 50);
 window.cancelIdleCallback ??= clearTimeout;
 // Every play starts the same way: no conversations beside it, the player folded, the record open.
 try {
-  for (const [key, value] of [["moondog.sidebar", "hidden"], ["moondog.source", "chosen"], ["moondog.record", "open"]]) localStorage.setItem(key, value);
+  for (const [key, value] of [["moondog.sidebar", "hidden"], ["moondog.record", "open"]]) localStorage.setItem(key, value);
 } catch { /* Without storage the window keeps its defaults, which are the same. */ }
 window.moondogApp = { setLanguage(locale) { document.documentElement.lang = locale; } };
 
@@ -62,15 +62,19 @@ void runWindowRoom({
   },
 }, { port: core, send: (message) => core.postMessage(message) });
 
-// The page says when the scene may begin (page.mjs): on the visitor's own click on its cover, with where
-// it landed, or on its own after a while. Each click on the record's arm starts the station's ident while
-// Moondog picks, before the first song, and the needle's lift at the end stops the music.
+// The page says when the scene may begin (page.mjs): on the visitor's own click on its cover, or on its
+// own after a while. The station's ident starts then, so the music answers the visitor's click, and again
+// on each later click on the record's arm, while Moondog picks, before the first song; one already
+// playing plays on. The needle's lift at the end stops the music.
+const ident = () => tell({ song: { sound: IDENT, startedAt: Date.now() } });
 const begin = Promise.withResolvers();
+let begun = false;
 addEventListener("message", (event) => {
   if (event.origin !== location.origin || event.data?.source !== "moondog-page") return;
-  if (event.data.start) {
-    const { x, y } = event.data.start.at ?? {};
-    begin.resolve({ at: Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null });
+  if (event.data.start && !begun) {
+    begun = true;
+    ident();
+    begin.resolve();
   }
   // The page may load after this frame; it asks, and hears that the scene is ready.
   if (event.data.ask) tell(ready);
@@ -78,6 +82,5 @@ addEventListener("message", (event) => {
 // Ready, with the sounds the first moments play, so the page can load them while its cover shows.
 const ready = { ready: true, sounds: [IDENT, ...EXCHANGES[0].songs.slice(0, 1).map((song) => song.sound)] };
 tell(ready);
-const ident = () => tell({ song: { sound: IDENT, startedAt: Date.now() } });
 
 void direct({ clock, agent, request: EXCHANGES[1].request, quick, begin: begin.promise, needle: ident, ending: () => tell({ song: null, mood: null }) });

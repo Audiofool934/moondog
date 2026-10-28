@@ -28,11 +28,20 @@ A model or music service chosen there lasts until the app quits, and sign-in and
 
 ## The window
 
+- The first launch asks once, over the empty room, where you listen and which model Moondog uses.
+  Each step shows the same rows as Settings, under a question and without Settings' other places.
+  First come Spotify, Apple Music, and NetEase Music once it is ready, each by its mark; then the model's accounts, with sign-in in the browser or with an API key.
+  Choosing a service saves it and moves on; the model step ends once a model can answer, and the core then ends the first run by itself.
+  A step already done is not asked: a service saved in the terminal leaves only the model.
+  The close button, or Esc, skips the rest; a click beside the sheet does not.
+  Spotify's account and NetEase's setup stay in Settings › Playback.
+  The terminal shares the first run (`first-run.json` beside `playback.json`), so one finished or skipped there closes it here within a few seconds, and it never comes back on either side.
+  Settings opened while it asks takes the sheet, and the first run returns when Settings closes.
 - Before anything is said, the lunar record stands alone over the composer, drawn as dots from the terminal's own record.
   It turns while music plays and rests when it stops, coming up to speed and running down like a platter.
   Its tonearm rests on it while music plays and swings off when the music stops; a click on the arm pauses, and another plays.
   A pointer near the arm lights it in its own dots without moving it: the arm's dots fill out as the pointer comes closer, and swell most around the pointer, so the light follows it along the arm.
-  With nothing loaded on any player, a click on the arm asks Moondog for a song, as the words "Play something for right now" would in the open conversation; the arm stays up until the music starts, and goes down then, as it does whenever music plays. A paused song is still loaded, so the arm resumes it.
+  With nothing loaded on any player, a click on the arm asks Moondog for a song, as the words "Play something for right now" would in the open conversation; the arm goes down at once and waits on the still record, and the record turns when the music starts. A reply that starts no music lifts the arm a few seconds after it ends. A paused song is still loaded, so the arm resumes it.
   The wheel over the record scratches it: the record turns with the wheel, the song's place shows just above it and on the player's progress line, and the music goes there once the wheel rests, in one seek.
   A slow wheel moves finely; a quick one covers more of the song.
   A turn of the wheel belongs to what it starts on until the wheel rests. Above the words, the record takes it only from a pointer put on the disc or its arm; a record that grew or moved under a still pointer, its square's empty corners, and a song that can't move leave the wheel to the words.
@@ -48,7 +57,7 @@ A model or music service chosen there lasts until the app quits, and sign-in and
   Where the bar has no room between its controls, the title gives way first, then the mark.
   Hovering the record offers a full-window view at the lower-right corner of its square, clear of the disc: two arrows with no frame, which darken and open a little under the pointer.
   The full-window view can shrink to a small square; the pin turns upright and solid when it keeps the window on top.
-  The arm and the wheel work there as above the words. A click anywhere else in it, or Esc, returns to the conversation; a drag moves the window. The page moves the window itself, because a native drag region never passes it the click.
+  The arm and the wheel work there as above the words. A click anywhere else in it, or Esc, returns to the conversation; a drag moves the window. The pin also locks the view: while it is on, clicks and Esc stay on the record, and a second click on the pin releases it. The page moves the window itself, because a native drag region never passes it the click.
 - Conversations on the left are the terminal's conversations, in both directions: one started here shows up in `/resume`, and the other way round.
   While the window shows, a conversation or folder saved in the terminal appears within about two seconds; the core asks SQLite whether another process wrote to the memory store, so nothing is sent when nothing changed.
   The window and the terminal show the same conversation: the one either opened last, with `/new`, `/resume`, `/branch`, Branch, the sidebar or a launch.
@@ -85,29 +94,35 @@ A model or music service chosen there lasts until the app quits, and sign-in and
   The conversations open as you last left them.
 - Beside the send button, the music service and the model, each by its mark (from Simple Icons, and Lobe Icons for the model makers Simple Icons lacks), with its name in the tooltip.
   A model shows its maker's mark, through OpenRouter or an endpoint too, by the maker its id names; a maker the window has no mark for shows a plain model glyph.
-  The service's menu switches between Spotify, Apple Music, and NetEase Music once ncm-cli is ready; it also signs in to Spotify in Settings, or shows the commands that set up NetEase in Terminal and checks again.
-  It offers only services the core can play.
+  The service's menu switches among the services that can play now: Apple Music, Spotify once connected, and NetEase Music once ncm-cli is signed in, with the one in use always listed.
+  Connecting Spotify and setting up NetEase happen in Settings › Playback, not in the menu.
   Asking Moondog for another service switches too, within the same reply; the menu, the terminal and every conversation follow one saved choice, and the service left behind stops playing.
   Leaving Apple Music pauses the Music app too. Moondog can also pause, resume and skip the Music app itself, so "switch to Spotify and keep playing there" pauses one and picks the other up where it stopped.
   One thing plays at a time on this Mac: music Moondog starts pauses the Music app, Spotify when it plays on this Mac, and NetEase; music you start in the Music app stops Moondog's own player.
   The model's menu shows the models kept in Settings, flat, the one this conversation uses checked, and how hard it thinks.
   A model chosen there is that conversation's alone, and the conversation keeps it after a restart; a new conversation starts on the default, which Settings sets and the terminal uses.
-  On a first launch the service reads "Choose a music service" until one is chosen, as the model reads "Choose a model" until there is one.
+  While the first run still asks for a service, the service reads "Choose a music service", as the model reads "Choose a model" until there is one.
 - Typing `/` lists commands by what they open (a mistyped one stays in the composer instead of going to Moondog): `/new`, `/model`, `/language`, `/service`, `/device`, `/import`, `/memory`, `/remember`, `/folder`, `/settings` and `/help`.
-- Settings (`⌘,`, or the button at the top right beside the player's) has Language, Model, Playback (music service, Spotify sign-in, devices), Import, Memory and About.
+- Settings (`⌘,`, or the button at the top right beside the player's) has Language, Model, Playback, Import, Memory and About.
   Model lists the menu's models with the default named, one thinking scale for every model (a level a model lacks reaches it as the nearest lighter one), and the providers: OpenAI by a ChatGPT subscription or an API key, then Anthropic, Google and xAI by key, any other Pi provider once it has a key, and endpoints.
   An endpoint is any service that speaks OpenAI's Chat Completions or Anthropic's Messages, added by its address, an optional key and its model IDs (asked of the endpoint when left empty).
   Opening a provider lists its models, each ticked when the menu offers it.
+  Playback has one row per music service, its state under its name and the one in use checked.
+  A click on a row unfolds that service's setup or its own controls (Spotify's devices and Disconnect), one row at a time.
+  With the pointer on a row, a service that can play shows a switch at its right that uses it, and one that can't yet shows Set up.
   Changes are saved where the terminal reads them; the window never sees a key or token.
   The menu's list is `models.json`, each conversation's own model is `conversation-models.json`, and endpoints are `endpoints.json` (mode 600, with their keys), beside `settings.json`, so older Moondogs that read `settings.json` by a fixed shape keep working.
   OpenAI keeps a ChatGPT sign-in or an API key in `auth.json`; Moondog 0.2.0-beta.7 and older can't read a ChatGPT sign-in there.
+  A model or a sign-in saved in an open terminal reaches the window within a few seconds, and the other way round; a reply that is running keeps its model until it ends.
 - Import: choose a Spotify, Apple Music, ListenBrainz or Last.fm export, read recent Spotify listening, read a Last.fm account (the window asks for a Last.fm API key the first time), or drop a file anywhere on the window.
   The preview uses the terminal's words, nothing is saved until you add it, and the updated profile then shows in the conversation.
 - Apple Music plays whole songs where it can and 30-second previews where it can't.
   Whole songs come from a small helper beside the app's executable (`native/music.swift`) that plays the Apple Music catalog through MusicKit, so they need an Apple Music subscription and the listener's permission, which Settings › Playback asks for once.
   Until the helper can play, the window plays previews in itself, with media keys and the system's Now Playing.
 - NetEase Music (网易云音乐) plays through NetEase's own command line tool, for listeners in mainland China.
-  It shows among the music services once `npm install -g @music163/ncm-cli`, `brew install mpv` and `ncm-cli login` are done; ncm-cli keeps its own key and sign-in, and Moondog never reads them.
+  Settings › Playback always lists it; until `npm install -g @music163/ncm-cli`, `brew install mpv` and `ncm-cli login` are done, its row says what is missing and unfolds the setup, whose Check again says why a check still fails.
+  ncm-cli keeps its own key and sign-in, and Moondog never reads them.
+  The window looks for ncm-cli on its PATH, in Homebrew's folders, and then on the PATH of the listener's interactive shell, where Node managers such as nvm add their folders.
   The core (`src/integrations/netease/ncm-cli-player.mjs`) keeps the queue and plays one song at a time with ncm-cli, so the terminal and the window play the same way.
   Many songs, above all originals outside mainland China, are marked not playable, most often for copyright; Moondog never sends those and says so instead.
   Each search sends NetEase a short summary of the request, which Settings › Playback says.
@@ -165,6 +180,8 @@ To ask it directly, run `"native/build/Moondog Music.app/Contents/MacOS/moondog-
 It needs no model, no music service and none of your data.
 `MOONDOG_HARNESS_STATES=empty,reply` picks states, `MOONDOG_HARNESS_SIZE=900x700` changes the size, `MOONDOG_HARNESS_LOCALE=zh` the language, and `MOONDOG_HARNESS_SHOW=1` opens a window to try by hand.
 `MOONDOG_HARNESS_STATES=long MOONDOG_HARNESS_EVAL=check-ui.mjs npm run harness` checks tooltip timing and themes, the record handoff and corner placement, and pin feedback in both themes.
+With `first-run`, `first-run-model-only` and `first-run-netease` among the states, it also checks the first run: both steps from the keyboard, one ended in the terminal, and one skipped with Esc.
+The `first-run-*` states draw its steps, sign-ins and skip tooltip on their own.
 An evaluation failure exits with a nonzero status.
 
 ## Build the app
@@ -215,7 +232,7 @@ Extract test copies into a folder whose name ends in `.noindex`, so Spotlight do
 
 ## Not yet
 
-- The first-time setup and the full taste report happen in the terminal (`moondog`).
+- The full taste report happens in the terminal (`moondog`).
 - The terminal plays Apple Music previews; only the window plays whole songs.
 - Builds from before the updater have none: install the first build with it by hand, as before.
 - The build is for Apple silicon only.

@@ -1,9 +1,89 @@
 // Page-side interaction checks for the fictional-data harness, not shipped with the app.
-// MOONDOG_HARNESS_STATES=long MOONDOG_HARNESS_EVAL=check-ui.mjs npm run harness
+// MOONDOG_HARNESS_STATES=long,first-run,first-run-model-only,first-run-netease MOONDOG_HARNESS_EVAL=check-ui.mjs npm run harness
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const assert = (ok, message) => { if (!ok) throw new Error(message); };
 const $ = (name) => document.querySelector(`[data-${name}]`);
 const over = (node) => node.dispatchEvent(new PointerEvent("pointerover", { bubbles: true }));
+
+// The first run: asked once in the sheet, the service and then the model, from the keyboard; ended by the
+// core once both are answered, by the terminal from outside, or skipped with Escape.
+const harness = window.__harness;
+if (harness.state?.startsWith("first-run")) {
+  await wait(700);
+  const card = document.querySelector(".sheet-card");
+  const asking = () => !card.closest(".sheet").hidden && card.classList.contains("asking");
+  const question = () => card.querySelector(".ask-title")?.textContent;
+  const sent = (type) => harness.sent.filter((message) => message.type === type);
+  const key = (target, name) => target.dispatchEvent(new KeyboardEvent("keydown", { key: name, bubbles: true, cancelable: true }));
+  const pickWords = () => $("service").lastChild.textContent;
+  assert(asking(), "A first run should ask in the sheet");
+  assert(getComputedStyle(card.querySelector(".sheet-nav")).display === "none", "The first run shows no other places");
+  assert($("window").inert, "The window behind the first run takes no focus");
+
+  if (harness.state === "first-run-model-only") {
+    assert(question() === "Which model should Moondog use?", "A service saved in the terminal leaves only the model to ask");
+    assert(!card.querySelector(".steps"), "One step shows no marks");
+    // The terminal finishes the first run; the window lets it go on the next status.
+    harness.send({ type: "status", firstRun: { needed: false, service: "spotify", model: true } });
+    await wait(250);
+    assert(!asking() && card.closest(".sheet").hidden, "A first run ended in the terminal closes here");
+    assert(!sent("first-run-done").length, "Ending it from outside sends nothing back");
+    return { ended: "outside" };
+  }
+
+  assert(question() === "Where do you listen?", "The first run asks for the music service first");
+  assert(card.querySelectorAll(".steps i").length === 2 && card.querySelector(".steps i:first-child.on"), "Two steps, the first one marked");
+  assert(![...card.querySelectorAll('[role="radio"]')].some((row) => row.getAttribute("aria-checked") === "true"), "No service is chosen before the listener answers");
+  assert(pickWords() === "Choose a music service", "The composer's service reads as the question while the first run asks it");
+  const close = card.querySelector(".sheet-close");
+  assert(close.dataset.tip === "Skip setup" && close.dataset.keys === "esc", "The close button names the skip and its key");
+  // A click beside the first run doesn't skip it.
+  card.closest(".sheet").dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+  assert(asking(), "A click on the backdrop must not skip the first run");
+
+  if (harness.state === "first-run-netease") {
+    key(document, "Escape");
+    await wait(250);
+    assert(sent("first-run-done").at(-1)?.skipped === true, "Escape skips the rest of the first run");
+    assert(card.closest(".sheet").hidden, "A skipped first run closes");
+    assert(pickWords() === "", "Once skipped, the composer's service shows only its mark");
+    assert(!$("window").inert, "The window takes focus again");
+    return { ended: "skipped" };
+  }
+
+  // From the keyboard: the arrows reach the rows, and a row chooses its service.
+  card.focus();
+  key(card, "ArrowDown");
+  assert(document.activeElement?.dataset.key === "service:spotify", "ArrowDown from the sheet reaches the first service");
+  key(document.activeElement, "ArrowDown");
+  assert(document.activeElement?.dataset.key === "service:apple_music", "ArrowDown moves to the next service");
+  document.activeElement.click();
+  await wait(350);
+  assert(sent("music-service").at(-1)?.service === "apple_music", "Choosing a service saves it");
+  assert(question() === "Which model should Moondog use?", "The model comes after the service");
+  assert(card.querySelector(".steps i:last-child.on"), "The second mark is on");
+  assert(pickWords() === "", "A saved service ends the composer's question");
+  // A key pasted into the model's sign-in opens that provider to its models; choosing one makes it the
+  // default, and the core, with a model that answers, ends the first run by itself.
+  card.querySelector('[data-key="sign-in:anthropic:api_key"]').click();
+  await wait(150);
+  const field = card.querySelector('[data-key="auth-field:key"]');
+  assert(field, "Signing in with a key asks for it in the first run");
+  field.value = "sk-test";
+  field.dispatchEvent(new Event("input", { bubbles: true }));
+  field.form.requestSubmit();
+  await wait(400);
+  const first = card.querySelector('[data-key="model:anthropic:claude-opus-5-5"]');
+  assert(first, "The provider signed in to opens to its models");
+  first.click();
+  await wait(400);
+  assert(sent("default-model").at(-1)?.model === "claude-opus-5-5", "A model chosen in the first run is the default");
+  assert(!asking() && card.closest(".sheet").hidden, "With a service and a model, the first run is over");
+  assert(!sent("first-run-done").length, "The core ends a finished first run by itself");
+  assert(document.querySelector("[data-room]").classList.contains("empty"), "The empty room shows after the first run");
+  return { ended: "finished" };
+}
+
 await wait(700);
 const tip = document.querySelector(".tip");
 over($("new"));
@@ -78,7 +158,8 @@ pin.click();
 answer(false);
 await wait(150);
 assert(pin.getAttribute("aria-pressed") === "false", "A native refusal should restore the actual pin state");
-// A press on the pin stays with the pin; a click anywhere else in the record returns to the conversation.
+// A press on the pin stays with the pin. The pin locks the record: a click anywhere else, or Esc,
+// returns to the conversation only once it is unpinned.
 pin.click();
 const press = (target, type) => target.dispatchEvent(new PointerEvent(type, { bubbles: true, button: 0, pointerId: 1 }));
 press(pin, "pointerdown");
@@ -86,10 +167,19 @@ assert(!$("immersive").hidden, "A press on the pin must not leave the record");
 press($("immersive-record"), "pointerdown");
 press($("immersive-record"), "pointerup");
 await wait(50);
+assert(!$("immersive").hidden, "A click on a pinned record must not leave it");
+answer(true);
+await wait(150);
+document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+assert(!$("immersive").hidden, "Esc must not leave a pinned record");
+pin.click();
+press($("immersive-record"), "pointerdown");
+press($("immersive-record"), "pointerup");
+await wait(50);
 answer(true);
 await wait(150);
 assert(pin.getAttribute("aria-pressed") === "false", "A late pin reply must not select the pin after leaving the record");
-assert($("immersive").hidden, "A click on the record should return to the conversation");
+assert($("immersive").hidden, "A click on the unpinned record should return to the conversation");
 assert(document.activeElement === $("input"), "Returning should restore composer focus");
 
 // The record answers its arm and the wheel. Points are placed by the art module's own geometry.

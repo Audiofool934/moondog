@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { parseTuiArguments, runMoondogTui } from "../../src/surfaces/cli/tui.mjs";
+import { hostLines, parseTuiArguments, runMoondogTui } from "../../src/surfaces/cli/tui.mjs";
 import { SPOTIFY_DEFAULT_SCOPES } from "../../src/integrations/spotify/authentication.mjs";
 import { runProfileCommand } from "../../src/surfaces/cli/profile-command.mjs";
 import { openListeningHistoryStore } from "../../src/profile/listening-history-store.mjs";
@@ -18,6 +18,9 @@ import { MoondogApplication } from "../../src/core/moondog-application.mjs";
 import { createListeningProfileDomainServices } from "../../src/core/listening-profile-domain-services.mjs";
 import { fictionalSpotifyHistoryEntries } from "../../src/demo/fictional-spotify-history.mjs";
 import { projectSpotifyExtendedStreamingHistory } from "../../src/integrations/spotify/extended-streaming-history.mjs";
+
+// Any of the host lines the footer shows while the model thinks, with its trailing dots.
+const HOST = hostLines((line) => line).map((line) => `${line}\\.\\.\\.`).join("|");
 
 class FakeTerminal {
   constructor() {
@@ -1437,7 +1440,7 @@ test("TUI renders trusted capability labels for tool lifecycle events", async ()
 
   assert.equal(replacementCallbackSeen, true);
   assert.match(terminal.output, /Search your music library\.\.\./);
-  assert.match(terminal.output, /Thinking\.\.\./);
+  assert.match(terminal.output, new RegExp(HOST));
   assert.match(terminal.output, /Look at why it's in your profile\.\.\./);
   assert.match(terminal.output, /Look at why it's in your profile didn't work/);
   assert.match(stripVTControlCharacters(terminal.output), /1 done, 1 didn't work/);
@@ -2801,4 +2804,24 @@ test("the terminal follows the conversation the App opened and shows the App's r
   await shows("Here is a bright set.");
   assert.doesNotMatch(stripVTControlCharacters(terminal.output), /And louder|calm set/u);
   assert.equal(application.ensureMemorySession().session_id, shown.session_id);
+});
+
+test("a model saved in the App gives the terminal's agent that model, and the same one again changes nothing", async () => {
+  const terminal = new FakeTerminal(); const signalTarget = new EventEmitter(); const prompts = [];
+  let saved = null; let rebuilds = 0; let unwatched = false;
+  const running = runMoondogTui({ application: fakeApplication(), runtime: fakeRuntime(), terminal, signalTarget,
+    rebuildRuntime: async () => { rebuilds++; return configuredFakeRuntime(prompts); },
+    watchModelSettings: (listener) => { saved = listener; return () => { unwatched = true; }; },
+  });
+  try {
+    await waitForStart(terminal);
+    saved({ provider: "faux", model: "faux-1" });
+    await waitFor(() => rebuilds === 1);
+    terminal.send("Play something calm"); terminal.send("\r");
+    await waitFor(() => prompts.length === 1);
+    saved({ provider: "faux", model: "faux-1" });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.equal(rebuilds, 1, "a token refresh on the same model keeps the agent");
+  } finally { signalTarget.emit("SIGTERM"); await running; }
+  assert.equal(unwatched, true);
 });

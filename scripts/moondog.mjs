@@ -17,7 +17,7 @@ import { runMemoryReflection } from "../src/memory/reflection-worker.mjs";
 import { createConfiguredRuntime } from "../src/runtime/pi/configured-runtime.mjs";
 import { createModelSettings } from "../src/runtime/pi/model-settings.mjs";
 import { createToolTrace } from "../src/runtime/pi/tool-trace.mjs";
-import { writePiRuntimeSelection } from "../src/runtime/pi/runtime-settings.mjs";
+import { watchRuntimeSettings, writePiRuntimeSelection } from "../src/runtime/pi/runtime-settings.mjs";
 import {
   formatLocalResult,
   formatDemoResult,
@@ -70,6 +70,7 @@ import {
 import { deriveArtistReleaseHintsFromSpotifyArchive } from "../src/profile/spotify-archive-catalog-hints.mjs";
 import { resolveListenerLocale, writeLanguagePreference } from "../src/i18n/preferences.mjs";
 import { createPlaybackSelection, resolvePlaybackService, watchPlaybackPreference, writePlaybackPreference } from "../src/core/playback-preferences.mjs";
+import { createFirstRun } from "../src/core/first-run.mjs";
 
 const localCommands = new Set([
   "status",
@@ -1087,6 +1088,13 @@ async function main() {
       },
       // The desktop window lists models and signs in here, with no terminal.
       modelSettings: createModelSettings({ environment: process.env }),
+      // A model chosen or a sign-in made on the other surface. Model variables fix the model at
+      // launch, so a saved choice has nothing to change then.
+      watchModelSettings: (onChange) => (process.env.MOONDOG_PROVIDER !== undefined || process.env.MOONDOG_MODEL !== undefined
+        ? () => {}
+        : watchRuntimeSettings({ environment: process.env, onChange })),
+      // The one-time music service and model setup, shared by the terminal and the window.
+      firstRun: createFirstRun({ environment: process.env }),
       // A host with its own terminal streams takes the sign-in prompts. The
       // desktop window has none and uses modelSettings instead.
       runAuth: (provider, { chatgpt = false } = {}) =>

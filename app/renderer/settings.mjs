@@ -3,7 +3,8 @@
 // the core's next status confirms it, so nothing waits on a rebuild to look chosen.
 import { appIconSvg, iconShape } from "../../src/surfaces/brand/logo.mjs";
 import { languageTag, timeOfDay } from "../strings.mjs";
-import { icon, make, name, scrollbar, setIcon, turning } from "./ui.mjs";
+import { icon, make, name, scrollbar, setIcon } from "./ui.mjs";
+import { SCRATCH_MS, scratchMark } from "./mark.mjs";
 
 const SECTIONS = ["general", "appearance", "model", "playback", "library", "memory", "about"];
 // The thinking levels offered for every model that thinks; the core gives each model the nearest it has.
@@ -18,6 +19,8 @@ const REDIRECT_URI = "http://127.0.0.1:43821/callback";
 const SPOTIFY_DASHBOARD = "https://developer.spotify.com/dashboard";
 // NetEase plays through its own command line tool, installed and signed in from Terminal (app/README.md).
 const NETEASE_SETUP = "npm install -g @music163/ncm-cli && brew install mpv && ncm-cli login";
+// What NetEase's row says until ncm-cli is ready.
+const NETEASE_STATES = { missing: "neteaseMissing", signed_out: "neteaseSignedOut", unavailable: "neteaseUnavailable", unknown: "checking" };
 const LASTFM_KEY_PAGE = "https://www.last.fm/api/account/create";
 const SITE = "https://moondog.audiofool.ai";
 // The core's error codes the listener can act on. Anything else reads as a plain failure; the raw
@@ -57,18 +60,8 @@ function link(text, href) {
   node.append(icon("external"));
   return node;
 }
-// The same turning mark the conversation shows while Moondog works, in step with it. The offset is
-// fixed when the work starts, so a redraw draws the same mark and keeps the one already turning.
-function phase(offset) {
-  const mark = make("span", "phase");
-  const strip = make("i", "", "◐\n◓\n◑\n◒");
-  strip.style.animationDelay = `-${offset}ms`;
-  mark.append(strip);
-  mark.setAttribute("aria-hidden", "true");
-  return mark;
-}
 
-export function createSettings({ state, send, t, appleMusic = null }) {
+export function createSettings({ state, send, t, appleMusic = null, onHide = null }) {
   const say = (key, params) => t()(key, params);
   const sheet = make("div", "sheet");
   sheet.hidden = true;
@@ -84,12 +77,13 @@ export function createSettings({ state, send, t, appleMusic = null }) {
   close.type = "button";
   close.dataset.key = "close";
   close.append(icon("close"));
-  close.addEventListener("click", () => hide());
+  close.addEventListener("click", () => (asking ? asking.skip() : hide()));
   card.append(nav, body, close);
   sheet.append(card);
   document.body.append(sheet);
   scrollbar(scroller);
-  sheet.addEventListener("mousedown", (event) => { if (event.target === sheet) hide(); });
+  // A click beside the first run doesn't skip it; only the close button or Escape does.
+  sheet.addEventListener("mousedown", (event) => { if (event.target === sheet && !asking) hide(); });
   const windowNode = document.querySelector("[data-window]");
 
   // The places are built once and only their state changes, so a message from the core never
@@ -111,6 +105,9 @@ export function createSettings({ state, send, t, appleMusic = null }) {
   let section = "general";
   let isOpen = false;
   let closing = 0;
+  // The first run (first-run.mjs) asks in this sheet: one place at a time, with no others beside it,
+  // and the close button skips the rest. { step, at, of, answer, skip } while it asks.
+  let asking = null;
   let content = null;
   let copiedTimer = 0;
   // What the core told this sheet; the sheet asks again each time a section opens.
@@ -131,8 +128,21 @@ export function createSettings({ state, send, t, appleMusic = null }) {
     return actual;
   }
 
-  // While the sheet is open, the window behind it takes no focus or clicks.
+  // Settings opened while the first run asks takes the sheet; the first run comes back when it closes.
   function show(name = section) {
+    asking = null;
+    open(name);
+  }
+  // The first run's step, or nothing to let it go. A step already in view is only redrawn, since
+  // opening asks the core again and the core answers with a status that asks again.
+  function ask(flow) {
+    if (!flow) { if (asking) hide(); return; }
+    const same = asking && isOpen && asking.step === flow.step;
+    asking = flow;
+    if (same) render(); else open(flow.step);
+  }
+  // While the sheet is open, the window behind it takes no focus or clicks.
+  function open(name) {
     const next = sections.includes(name) ? name : "general";
     const wasOpen = isOpen;
     const moved = next !== section;
@@ -143,10 +153,11 @@ export function createSettings({ state, send, t, appleMusic = null }) {
     sheet.hidden = false;
     if (!wasOpen) {
       content = null;
-      // Each opening starts with the providers folded, and NetEase's setup only when it was asked for. An
-      // endpoint still being saved keeps its form.
+      // Each opening starts with the providers and the music service in use folded. An endpoint still
+      // being saved keeps its form.
       data.expanded = undefined;
-      data.neteaseSetup = false;
+      data.servicePanel = undefined;
+      data.neteaseCheck = null;
       if (!data.endpoint?.busy) data.endpoint = null;
     }
     isOpen = true;
@@ -163,13 +174,16 @@ export function createSettings({ state, send, t, appleMusic = null }) {
   function hide() {
     if (!isOpen) return;
     isOpen = false;
+    asking = null;
     if (windowNode) windowNode.inert = false;
     sheet.dataset.state = "closing";
-    closing = setTimeout(() => { sheet.hidden = true; delete sheet.dataset.state; }, 120);
+    // The first run's shape stays until the sheet has faded, so it never turns into Settings on the way out.
+    closing = setTimeout(() => { sheet.hidden = true; delete sheet.dataset.state; card.classList.remove("asking"); }, 120);
     document.querySelector("[data-input]")?.focus();
+    onHide?.();
   }
   function go(name) {
-    if (name === section || !sections.includes(name)) return;
+    if (asking || name === section || !sections.includes(name)) return;
     section = name;
     data.error = null;
     scroller.scrollTop = 0;
@@ -181,8 +195,11 @@ export function createSettings({ state, send, t, appleMusic = null }) {
     send({ type: "settings" });
     if (section === "model") { send({ type: "models" }); send({ type: "model-list" }); }
     if (section === "playback") {
-      data.devicesLoading = true;
-      send({ type: "devices" });
+      // Spotify's devices are asked for only while Spotify is the service in use.
+      if (state.spotify === "ready" && (state.playbackService ?? "spotify") === "spotify") {
+        data.devicesLoading = true;
+        send({ type: "devices" });
+      }
       // Whether Apple Music can play whole songs here can change outside the window, so Playback asks again.
       void appleMusic?.check().then(() => render());
     }
@@ -192,16 +209,22 @@ export function createSettings({ state, send, t, appleMusic = null }) {
 
   document.addEventListener("keydown", (event) => {
     if (!isOpen) return;
-    // A sign-in waiting for an answer keeps the sheet, so a stray Escape cannot lose it.
+    // A sign-in waiting for an answer keeps the sheet, so a stray Escape cannot lose it. In the first
+    // run, Escape skips the rest of it.
     if (event.key === "Escape") {
-      if (!data.auth?.prompt) { event.preventDefault(); hide(); }
+      if (!data.auth?.prompt) { event.preventDefault(); if (asking) asking.skip(); else hide(); }
       return;
     }
     const target = event.target;
     const step = { ArrowDown: 1, ArrowUp: -1, ArrowRight: 1, ArrowLeft: -1 }[event.key];
     if (!step || event.metaKey || event.altKey || event.ctrlKey) return;
     const vertical = event.key === "ArrowDown" || event.key === "ArrowUp";
-    if (vertical && (target === card || target.closest?.(".sheet-nav"))) {
+    // The first run has one place, so the arrows go from the sheet straight to its rows.
+    if (vertical && target === card && asking) {
+      const rows = [...scroller.querySelectorAll(".choice-main:not(:disabled)")];
+      const next = step > 0 ? rows[0] : rows.at(-1);
+      if (next) { event.preventDefault(); next.focus(); }
+    } else if (vertical && (target === card || target.closest?.(".sheet-nav"))) {
       event.preventDefault();
       const next = sections[Math.max(0, Math.min(sections.length - 1, sections.indexOf(section) + step))];
       go(next);
@@ -231,20 +254,31 @@ export function createSettings({ state, send, t, appleMusic = null }) {
     return node;
   };
   const note = (text) => make("p", "note", text);
-  // Something still on its way shows the turning mark, never the word "Loading".
+  // The first run's question takes the place of the group's title; a mark for each of its steps
+  // follows, the one on screen darker.
+  const question = (key) => make("h2", "ask-title", say(key));
+  const steps = () => {
+    if (asking.of < 2) return null;
+    const marks = make("div", "steps");
+    marks.setAttribute("aria-hidden", "true");
+    for (let at = 0; at < asking.of; at += 1) marks.append(make("i", at === asking.at ? "on" : ""));
+    return marks;
+  };
+  // Something still on its way shows the working mark, never the word "Loading".
   const waiting = () => {
     const line = make("p", "note waiting");
     line.setAttribute("aria-label", say("loading"));
-    line.append(turning());
+    line.append(scratchMark());
     return line;
   };
   // An error inside the sheet is announced, since the notice behind it is covered while the sheet is open.
-  const failure = (key, params) => {
+  const alertLine = (text) => {
     const node = make("p", "alert");
     node.setAttribute("role", "alert");
-    node.append(icon("info"), make("span", "", say(key, params)));
+    node.append(icon("info"), make("span", "", text));
     return node;
   };
+  const failure = (key, params) => alertLine(say(key, params));
   const sectionError = () => (data.error && (!data.error.section || data.error.section === section) ? failure(data.error.key) : null);
   // A redraw rebuilds the open section. These fields keep what the listener is typing.
   function keptField(key, placeholder, secret = false) {
@@ -458,6 +492,8 @@ export function createSettings({ state, send, t, appleMusic = null }) {
     if (data.endpoint) return [group(say(data.endpoint.id ? "editEndpoint" : "addEndpoint"), endpointForm())];
     const saved = data.list?.default ?? null;
     const chosen = listExpected("default", saved && { provider: saved.provider, model: saved.model });
+    // The first run asks for a model over the same providers; a model chosen there is the default.
+    if (asking) return [question("firstRunModel"), sectionError(), group(null, providerList(chosen)), steps()].filter(Boolean);
     const parts = [sectionError(), group(say("models"), menuList(chosen))];
     if (saved?.reasoning && sameModel(chosen, saved)) parts.push(group(say("effort"), efforts(saved)));
     parts.push(group(say("providers"), providerList(chosen)));
@@ -494,12 +530,13 @@ export function createSettings({ state, send, t, appleMusic = null }) {
       }
       return choice({ label: entry.name ?? entry.model, detail: entry.ready === false ? `${entry.providerName} · ${say("notConnected")}` : entry.providerName,
         chosen: isDefault, check: false, disabled: entry.ready === false && !isDefault, trailing, key: `menu:${modelKey(entry)}`,
-        onChoose: isDefault ? null : () => {
-          expectList("default", { provider: entry.provider, model: entry.model });
-          send({ type: "default-model", provider: entry.provider, model: entry.model });
-          render();
-        } });
+        onChoose: isDefault ? null : () => chooseDefault(entry) });
     }));
+  }
+  function chooseDefault(entry) {
+    expectList("default", { provider: entry.provider, model: entry.model });
+    send({ type: "default-model", provider: entry.provider, model: entry.model });
+    render();
   }
   // The same scale for every model that thinks. A level the default model lacks shows the one it gets.
   function efforts(saved) {
@@ -610,6 +647,8 @@ export function createSettings({ state, send, t, appleMusic = null }) {
             const entry = { provider: provider.id, model: model.id, name: model.name ?? model.id, providerName: provider.name, ready: true };
             const isDefault = sameModel(entry, chosen);
             const listed = isDefault || isListed(entry);
+            // In the first run a model row picks the one Moondog answers with; otherwise it ticks the menu.
+            if (asking) return choice({ label: entry.name, chosen: isDefault, key: `model:${modelKey(entry)}`, onChoose: isDefault ? null : () => chooseDefault(entry) });
             return choice({ label: entry.name, detail: isDefault ? say("default") : null, chosen: listed, role: "checkbox", key: `model:${modelKey(entry)}`,
               onChoose: isDefault ? null : () => toggle(entry, !listed) });
           });
@@ -680,49 +719,109 @@ export function createSettings({ state, send, t, appleMusic = null }) {
     return form;
   }
 
-  // Playback: the music service, then Spotify's account or its devices.
+  // Playback: one row per music service, its state under its name and the one in use checked. A click
+  // on a row unfolds what the service has: its setup, or its own controls, such as Spotify's devices.
+  // One row is open at a time, and the service in use starts open. At a row's right, while the pointer
+  // is on it, a service that can play has a switch that uses it, and one that can't yet has Set up.
+  // Other sources of music get groups of their own beside this one.
   function playback() {
+    if (asking) return firstRunServices();
     const service = expected("service", state.playbackService ?? "spotify");
-    const ready = expected("spotify", state.spotify) === "ready";
-    const chooseService = (next) => () => {
-      if (next === service) return;
-      expect("service", next);
-      send({ type: "music-service", service: next });
-      render();
-    };
-    const disconnect = ready ? button(say("disconnect"), "button quiet small", () => {
-      expect("spotify", "unavailable");
-      send({ type: "sign-out", provider: "spotify" });
-      render();
-    }, "spotify:disconnect") : null;
+    const spotifyReady = expected("spotify", state.spotify) === "ready";
+    const neteaseReady = state.netease === "ready";
     // Whole Apple Music songs need the listener's permission once; until then, and without it, previews play.
-    // The row asks for it only while Apple Music is the service in use.
     const whole = appleMusic?.status();
-    const allowWhole = service === "apple_music" && whole?.authorization === "notDetermined" && whole.reason !== "developerTokenRequestFailed" ? button(say("allowFullSongs"), "button small", () => {
-      void appleMusic.check("authorize").then(() => render());
-    }, "apple-music:allow") : null;
-    const parts = [group(say("musicService"), sectionError(), choices([
-      // The state reads beside the account, so the button to disconnect is never taken for it.
-      choice({ label: "Spotify", detail: say(ready ? "connected" : "notConnected"), chosen: service === "spotify", trailing: disconnect,
-        key: "service:spotify", onChoose: chooseService("spotify") }),
-      choice({ label: "Apple Music", detail: say(whole?.canPlay ? "fullSongs" : "appleMusicNote"), chosen: service === "apple_music", key: "service:apple_music",
-        trailing: allowWhole, onChoose: chooseService("apple_music") }),
-      // NetEase is offered once ncm-cli is installed and signed in; its searches send NetEase a short summary.
-      ...(state.netease === "ready" || service === "netease" ? [choice({ label: say("netease"), detail: say("neteaseNote"), chosen: service === "netease",
-        key: "service:netease", onChoose: chooseService("netease") })] : []),
-    ]))];
-    // Asked for from the music service's menu: NetEase is set up in Terminal with its own tool, then checked again here.
-    if (data.neteaseSetup && state.netease !== "ready") {
-      const stack = make("div", "stack");
-      stack.append(note(say("neteaseSetup")), copyChip(NETEASE_SETUP, "netease", "chip", say("netease")),
-        button(say("checkAgain"), "button small", () => send({ type: "netease-check" }), "netease:check"));
-      parts.push(group(say("netease"), stack));
+    const canAllowWhole = whole?.authorization === "notDetermined" && whole.reason !== "developerTokenRequestFailed";
+    const rows = [
+      { id: "spotify", label: "Spotify", detail: say(spotifyReady ? "connected" : "notConnected"), playable: spotifyReady },
+      { id: "apple_music", label: "Apple Music", detail: say(whole?.canPlay ? "fullSongs" : "appleMusicNote"), playable: true, empty: !canAllowWhole },
+      { id: "netease", label: say("netease"), detail: say(neteaseReady ? "signedIn" : NETEASE_STATES[state.netease] ?? "checking"), playable: neteaseReady },
+    ];
+    const actions = (...buttons) => {
+      const line = make("div", "actions");
+      line.append(...buttons.filter(Boolean));
+      return line;
+    };
+    const inside = {
+      spotify: () => (data.auth?.provider === "spotify" ? [signInPanel()]
+        : !spotifyReady ? [data.auth ? note(say("signInBusy")) : connectSpotify()]
+          : [service === "spotify" ? devices() : null, actions(button(say("disconnect"), "button quiet small", () => {
+            expect("spotify", "unavailable");
+            send({ type: "sign-out", provider: "spotify" });
+            render();
+          }, "spotify:disconnect"))]),
+      apple_music: () => [actions(button(say("allowFullSongs"), "button small", () => {
+        void appleMusic.check("authorize").then(() => render());
+      }, "apple-music:allow"))],
+      // NetEase's searches send NetEase a short summary of the request, which its row says before it is used.
+      netease: () => (neteaseReady ? [note(say("neteaseNote"))] : [setUpNetease()]),
+    };
+    const open = data.servicePanel !== undefined ? data.servicePanel : data.auth?.provider === "spotify" ? "spotify" : service;
+    const list = [];
+    for (const row of rows) {
+      const expanded = !row.empty && open === row.id;
+      let trailing = null;
+      if (row.playable && row.id !== service) {
+        trailing = make("button", "tool reveal");
+        trailing.type = "button";
+        trailing.dataset.key = `use:${row.id}`;
+        trailing.append(icon("switch"));
+        name(trailing, say("useService", { service: row.label }));
+        trailing.addEventListener("click", () => {
+          expect("service", row.id);
+          send({ type: "music-service", service: row.id });
+          // Spotify's devices are read afresh once it is in use.
+          if (row.id === "spotify") data.devices = null;
+          render();
+        });
+      } else if (!row.playable) {
+        trailing = button(say("setUp"), "button small reveal", () => { data.servicePanel = row.id; render(); }, `set-up:${row.id}`);
+      }
+      list.push(choice({ label: row.label, detail: row.detail, chosen: service === row.id, key: `service:${row.id}`, trailing,
+        ...(row.empty ? {} : { expanded, onChoose: () => { data.servicePanel = expanded ? null : row.id; render(); } }) }));
+      if (!expanded) continue;
+      const panel = make("div", "panel");
+      panel.append(...inside[row.id]().filter(Boolean));
+      list.push(panel);
     }
-    if (service !== "spotify") return parts;
-    if (data.auth?.provider === "spotify") parts.push(group(null, signInPanel()));
-    else if (!ready) parts.push(group(null, data.auth ? note(say("signInBusy")) : connectSpotify()));
-    else parts.push(devices());
-    return parts;
+    return [group(say("musicService"), sectionError(), choices(list))];
+  }
+  // The first run asks before any service is saved, so none is checked, and choosing the one in use
+  // saves it too. Each service leads with its own mark, the one the composer shows beside send once it
+  // is chosen, and a click chooses it and moves on instead of unfolding it. Spotify can be chosen
+  // before it is connected; NetEase is offered only once it is ready, since the core refuses it until
+  // then. Spotify's account and NetEase's setup wait for Settings.
+  function firstRunServices() {
+    const whole = appleMusic?.status();
+    const pick = (service) => () => { send({ type: "music-service", service }); asking.answer("playback"); };
+    const services = choices([
+      choice({ label: "Spotify", detail: say(expected("spotify", state.spotify) === "ready" ? "connected" : "notConnected"),
+        key: "service:spotify", lead: icon("spotify", "icon fill mark"), onChoose: pick("spotify") }),
+      choice({ label: "Apple Music", detail: say(whole?.canPlay ? "fullSongs" : "appleMusicNote"),
+        key: "service:apple_music", lead: icon("apple-music", "icon fill mark"), onChoose: pick("apple_music") }),
+      ...(state.netease === "ready" ? [choice({ label: say("netease"), detail: say("neteaseNote"),
+        key: "service:netease", lead: icon("netease", "icon fill mark"), onChoose: pick("netease") })] : []),
+    ]);
+    return [question("firstRunService"), sectionError(), services, steps()].filter(Boolean);
+  }
+  // NetEase is set up in Terminal with its own tool, then checked again here. A check that still
+  // doesn't find it ready says why, so the listener sees that it ran.
+  function setUpNetease() {
+    const signIn = state.netease === "signed_out";
+    const checking = data.neteaseCheck === "checking";
+    const again = button(say(checking ? "checking" : "checkAgain"), "button small", () => {
+      data.neteaseCheck = "checking";
+      send({ type: "netease-check" });
+      render();
+    }, "netease:check");
+    again.disabled = checking;
+    const why = data.neteaseCheck !== "done" ? null
+      : state.netease === "unavailable" && state.neteaseMessage ? alertLine(state.neteaseMessage)
+        : failure(signIn ? "neteaseSignedOut" : "neteaseNotFound");
+    const stack = make("div", "stack");
+    stack.append(note(say(signIn ? "neteaseSignIn" : "neteaseSetup")), copyChip(signIn ? "ncm-cli login" : NETEASE_SETUP, "netease", "chip", say("netease")),
+      again, ...(why ? [why] : []));
+    return stack;
   }
   function connectSpotify() {
     const start = (clientId) => {
@@ -753,7 +852,12 @@ export function createSettings({ state, send, t, appleMusic = null }) {
       inlineForm({ key: "spotifyClientId", placeholder: say("spotifyClientId"), action: say("connectSpotify"), primary: true, onSubmit: (clientId) => start(clientId) }));
     return stack;
   }
+  // Spotify's devices, in its row while it is the service in use. Unread ones are asked for once.
   function devices() {
+    if (!data.devices && !data.devicesLoading) {
+      data.devicesLoading = true;
+      send({ type: "devices" });
+    }
     const head = make("div", "group-head");
     const again = make("button", "tool");
     again.type = "button";
@@ -761,7 +865,7 @@ export function createSettings({ state, send, t, appleMusic = null }) {
     again.append(icon("refresh"));
     name(again, say("refresh"));
     again.addEventListener("click", () => { data.devicesLoading = true; send({ type: "devices" }); render(); });
-    head.append(make("h3", "group-title", say("devices")), again);
+    head.append(make("h4", "group-title", say("devices")), again);
     const list = !data.devices ? waiting()
       : data.devicesLimitedUntil ? failure("spotifyLimited", { time: timeOfDay(data.devicesLimitedUntil, state.locale) })
         : data.devicesError ? failure("noticeDevicesFailed")
@@ -775,7 +879,7 @@ export function createSettings({ state, send, t, appleMusic = null }) {
               data.devices = data.devices.map((entry) => ({ ...entry, active: entry.ref === device.ref }));
               render();
             } })));
-    const part = make("section", "group");
+    const part = make("div", "part");
     part.append(head, list);
     return part;
   }
@@ -786,11 +890,12 @@ export function createSettings({ state, send, t, appleMusic = null }) {
   function library() {
     const job = data.importing;
     if (job && ["reading", "progress", "saving"].includes(job.stage)) {
-      data.phaseOffset ??= Math.round(performance.now() % 2400);
+      // The import's mark keeps the offset it started with, so a redraw draws the same mark and keeps the one already moving.
+      data.phaseOffset ??= Math.round(performance.now() % SCRATCH_MS);
       const line = make("div", "working");
       const words = make("span", "", importLine(job));
       words.dataset.progressText = "";
-      line.append(phase(data.phaseOffset), words);
+      line.append(scratchMark(data.phaseOffset), words);
       if (job.stage !== "saving") line.append(button(say("stop"), "button quiet small", () => send({ type: "import-cancel" }), "import:stop"));
       return [line];
     }
@@ -885,8 +990,11 @@ export function createSettings({ state, send, t, appleMusic = null }) {
 
   function render({ entering = false } = {}) {
     if (!isOpen) return;
-    card.setAttribute("aria-label", say("settings"));
-    close.setAttribute("aria-label", say("close"));
+    // The first run has no places to go to; its close button skips the rest and says so.
+    card.classList.toggle("asking", Boolean(asking));
+    card.setAttribute("aria-label", say(asking ? (asking.step === "model" ? "firstRunModel" : "firstRunService") : "settings"));
+    if (asking) name(close, say("skipSetup"), "esc");
+    else { close.setAttribute("aria-label", say("close")); delete close.dataset.tip; delete close.dataset.keys; }
     for (const [id, { tab, label }] of tabs) {
       label.textContent = say(`section.${id}`);
       tab.classList.toggle("on", id === section);
@@ -960,6 +1068,7 @@ export function createSettings({ state, send, t, appleMusic = null }) {
       warn("devices", message.error);
     }
     if (message.type === "memories") data.memories = message.memories ?? [];
+    if (message.type === "netease-checked") data.neteaseCheck = "done";
     if (message.type === "auth-prompt" && data.auth) {
       data.auth.prompt = { id: message.id, kind: message.kind, message: message.message, placeholder: message.placeholder, options: message.options };
     }
@@ -981,7 +1090,9 @@ export function createSettings({ state, send, t, appleMusic = null }) {
       data.error = message.state === "error" ? { section: where, key: SIGN_IN_ERRORS[message.code] ?? "signInFailed" } : null;
       if (message.state === "error") warn("sign-in", message.message);
       // Spotify reads as connected while the core rebuilds with it.
-      if (message.provider === "spotify" && message.state === "done") expect("spotify", "ready");
+      if (message.provider === "spotify" && message.state === "done") { expect("spotify", "ready"); data.devices = null; }
+      // A provider just signed in to opens to its models, so its first model is one click away.
+      if (message.provider !== "spotify" && message.state === "done") { data.expanded = message.provider; data.models.delete(message.provider); requested.delete(message.provider); }
       send({ type: "models" });
     }
     if (message.type === "import") {
@@ -1012,7 +1123,7 @@ export function createSettings({ state, send, t, appleMusic = null }) {
       }
       // A file dropped on the window, or an import started elsewhere, brings the sheet to Import.
       if ((stage === "preview" || stage === "reading") && (!isOpen || section !== "library")) {
-        if (isOpen) go("library"); else show("library");
+        if (isOpen && !asking) go("library"); else show("library");
         return;
       }
     }
@@ -1033,7 +1144,5 @@ export function createSettings({ state, send, t, appleMusic = null }) {
     render();
   }
 
-  // Settings › Playback with NetEase's setup in view, for the music service's menu.
-  const showNetease = () => { show("playback"); data.neteaseSetup = true; render(); };
-  return { show, showNetease, hide, render, receive, get open() { return isOpen; } };
+  return { show, ask, hide, render, receive, get open() { return isOpen; }, get asking() { return Boolean(asking); } };
 }

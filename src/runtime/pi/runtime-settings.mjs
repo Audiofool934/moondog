@@ -1,3 +1,4 @@
+import { unwatchFile, watchFile } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -101,4 +102,25 @@ export async function writePiRuntimeSelection(
     { encoding: "utf8", mode: 0o600 },
   );
   return normalized;
+}
+
+// The terminal and the window each build their agent from settings.json and auth.json. A model
+// chosen, or a sign-in made, on one side reaches the other through this watch. onChange hears the
+// saved selection, or undefined when none is saved; the surface decides whether to rebuild, with
+// runtimeBehindSelection.
+// The second argument says which file changed: "settings" (the default), "auth" (a sign-in),
+// "endpoints" (an endpoint added, edited or removed) or "models" (the window's menu list).
+export function watchRuntimeSettings({ environment = process.env, interval = 2000, onChange } = {}) {
+  const directory = path.dirname(resolveMoondogAuthFile(environment));
+  const files = { settings: resolveMoondogSettingsFile(environment), auth: resolveMoondogAuthFile(environment),
+    endpoints: path.join(directory, "endpoints.json"), models: path.join(directory, "models.json") };
+  const listeners = Object.entries(files).map(([changed, file]) => {
+    const listener = (now, before) => {
+      if (now.mtimeMs === before.mtimeMs) return;
+      void readPiRuntimeSelection(environment).then((selection) => onChange?.(selection, changed), () => {});
+    };
+    watchFile(file, { interval, persistent: false }, listener);
+    return [file, listener];
+  });
+  return () => { for (const [file, listener] of listeners) unwatchFile(file, listener); };
 }

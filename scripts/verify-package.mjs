@@ -36,11 +36,12 @@ const maximumPackedBytes = 2_600_000;
 // German and Italian add five entries and about 60 KB. The local tool trace
 // adds one entry and about 2 KB. Web search through DeepSeek and Brave adds
 // four entries and about 33 KB. The desktop window's model settings and
-// playback preference add two entries and about 27 KB.
+// playback preference add two entries and about 27 KB. The terminal's first
+// run page adds one entry and about 7 KB.
 const maximumUnpackedBytes = 5_210_000;
 // Endpoints, the model menu's list and the terminal's endpoint command add three
 // entries and about 20 KB.
-const maximumEntries = 154;
+const maximumEntries = 155;
 const packageOnlyPrivateSentinelPattern = new RegExp(
   ["PRIVATE", "(?:IP|PLATFORM)", "SENTINEL"].join("_"),
   "u",

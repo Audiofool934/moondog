@@ -93,10 +93,12 @@ const LOCALE = new URLSearchParams(location.search).get("locale") || "en";
 const STATUS = {
   locale: LOCALE, locales: LOCALES,
   model: { state: "configured", provider: "anthropic", model: "claude-sonnet-5-5", effort: "medium", thinking: "medium", effortLevels: ["low", "medium", "high", "xhigh", "max"], reason: null },
-  spotify: "ready", spotifyAccount: { state: "ready", clientId: true }, playbackService: "spotify", memory: "ready",
+  spotify: "ready", spotifyAccount: { state: "ready", clientId: true }, playbackService: "spotify", memory: "ready", firstRun: null,
 };
 const OFFLINE = { ...STATUS, model: { state: "offline", provider: null, model: null, effort: null, effortLevels: [], reason: null },
   spotify: "unavailable", spotifyAccount: { state: "unavailable", clientId: true } };
+// The one-time first run, as the core reports it: over once a service is saved and a model answers.
+const over = (run) => (run?.needed && run.service && run.model ? { ...run, needed: false } : run);
 
 const REPLY = [
   "Three from the stretch you keep coming back to, and one that returned after a long quiet.",
@@ -169,6 +171,9 @@ const PROVIDER_MODELS = {
   deepseek: [["deepseek-flash", "DeepSeek V4.1 Flash"], ["deepseek-v4-pro", "DeepSeek V4 Pro"]],
   "endpoint-home": [["qwen3:32b", "qwen3:32b"], ["gemma-4-31b-it", "Gemma 4 31B IT"]],
 };
+// A first-run state signs out of them all, and then signs in to them for real.
+let providers = PROVIDERS;
+let signingIn = null;
 const providerName = (id) => PROVIDERS.find((provider) => provider.id === id)?.name ?? id;
 const modelName = (provider, model) => PROVIDER_MODELS[provider]?.find(([id]) => id === model)?.[1] ?? model;
 let listed = [["anthropic", "claude-sonnet-5-5"], ["anthropic", "claude-opus-5-5"], ["deepseek", "deepseek-flash"], ["endpoint-home", "qwen3:32b"]];
@@ -176,6 +181,8 @@ let defaultModel = { provider: "anthropic", model: "claude-sonnet-5-5", effort: 
 const sendList = () => send({ type: "model-list",
   models: listed.map(([provider, model]) => ({ provider, model, name: modelName(provider, model), providerName: providerName(provider), ready: true, reasoning: provider !== "endpoint-home" })),
   default: { ...defaultModel, effort: defaultModel.effort ?? null, reasoning: true, thinking: defaultModel.provider === "deepseek" && defaultModel.effort === "medium" ? "low" : defaultModel.effort ?? null } });
+// What Check again finds: NetEase ready, unless a state says otherwise.
+let neteaseCheck = { netease: "ready" };
 const send = (message) => {
   if (message.type === "ready" || message.type === "status") status = { ...status, ...Object.fromEntries(Object.keys(STATUS).map((key) => [key, message[key] ?? status[key]])) };
   core.postMessage(message);
@@ -228,19 +235,58 @@ const STATES = {
   "record-pinned"() { STATES.record(); setTimeout(() => document.querySelector("[data-pin]").click(), 300); },
   profile() { ready({ transcript: conversation([["Import my Spotify history", PROFILE]]) }); player({ index: 1 }); },
   sources() { ready({ transcript: conversation([["How was Pink Moon recorded?", SOURCES]]) }); player({ index: 1 }); },
-  // Where the music plays and which model answers, beside the send button: asked on a first launch,
-  // with and without a model, named in their tooltips, each service by its mark, and NetEase's setup.
-  "first-launch"() { ready({ sessions: [], folders: [] }); silent(); },
+  // The one-time first run: the music service, then the model, on a fresh install with nothing signed
+  // in; the model alone when the terminal already saved a service; NetEase among the services once it is
+  // ready; the model's sign-in by key and in the browser; and the close button that skips the rest.
+  "first-run"(run = { needed: true, service: null, model: false }, extra = {}) {
+    providers = PROVIDERS.map((provider) => ({ ...provider, signedIn: false, source: undefined }));
+    // As the core does: unknown in "ready", then read.
+    send({ type: "ready", ...OFFLINE, sessions: [], folders: [], current: null, running: [], transcript: [], ...extra });
+    silent();
+    setTimeout(() => send({ type: "status", ...status, firstRun: run }), 60);
+  },
+  "first-run-netease"() { STATES["first-run"](undefined, { netease: "ready" }); },
+  "first-run-model"() { STATES["first-run"](); setTimeout(() => document.querySelector('[data-key="service:apple_music"]').click(), 400); },
+  "first-run-model-only"() { STATES["first-run"]({ needed: true, service: "spotify", model: false }); },
+  "first-run-key"() { STATES["first-run-model-only"](); setTimeout(() => document.querySelector('[data-key="sign-in:anthropic:api_key"]').click(), 500); },
+  "first-run-browser"() {
+    STATES["first-run-model-only"]();
+    setTimeout(() => document.querySelector('[data-key="provider:openai"]').click(), 450);
+    setTimeout(() => document.querySelector('[data-key="sign-in:openai:oauth"]').click(), 550);
+  },
+  "first-run-skip-tip"() { STATES["first-run"](); return { hover: ".sheet-close" }; },
+  // The composer's own words for what isn't chosen yet: the model, and the service while the first run still asks for it.
   "first-launch-offline"() { send({ type: "ready", ...OFFLINE, sessions: [], folders: [], current: null, running: [], transcript: [] }); silent(); },
   "service-tip"() { STATES.reply(); return { hover: "[data-service]" }; },
   "model-tip"() { STATES.reply(); return { hover: "[data-model]" }; },
   "picks-apple"() { ready({ playbackService: "apple_music", transcript: conversation([["Something for the morning", SHORT]]) }); silent(); return { hover: "[data-service]" }; },
   "picks-netease"() { STATES.netease(); return { hover: "[data-service]" }; },
+  // Settings › Playback with NetEase not installed yet, its row opened to the setup; installed but
+  // signed out; and a Check again that still finds it missing.
   "settings-netease-setup"() {
     ready({ netease: "missing" });
     player();
-    window.moondogApp.showMenu = async () => "sign-in:netease";
-    setTimeout(() => document.querySelector("[data-service]").click(), 150);
+    slash("service");
+    setTimeout(() => document.querySelector('[data-key="service:netease"]').click(), 300);
+  },
+  "settings-netease-signed-out"() {
+    ready({ netease: "signed_out" });
+    player();
+    slash("service");
+    setTimeout(() => document.querySelector('[data-key="service:netease"]').click(), 300);
+  },
+  // The pointer on a service's row: the switch of one that can play, Set up on one that can't yet.
+  "settings-service-switch"() { STATES["settings-playback"](); return { hover: '.sheet [data-key="service:apple_music"]' }; },
+  "settings-service-set-up"() {
+    ready({ netease: "missing" });
+    player();
+    slash("service");
+    return { hover: '.sheet [data-key="service:netease"]' };
+  },
+  "settings-netease-still-missing"() {
+    neteaseCheck = { netease: "missing" };
+    STATES["settings-netease-setup"]();
+    setTimeout(() => document.querySelector('[data-key="netease:check"]').click(), 600);
   },
   streaming() {
     ready({ running: ["s1", "s2"], transcript: conversation([["Play something for a late train home", SHORT]]),
@@ -250,7 +296,7 @@ const STATES = {
     player({ index: 0, fraction: 0.2 });
   },
   thinking() {
-    ready({ transcript: [], live: { id: "t9", user: "Something for cooking dinner, not too slow", text: "", activity: [{ call: 1, tool: "moondog_profile_summary", args: {}, state: "running" }] } });
+    ready({ transcript: [], live: { id: "t9", user: "Something for cooking dinner, not too slow", text: "", activity: [] } });
     player({ index: 2, fraction: 0.55 });
   },
   failed() {
@@ -377,8 +423,9 @@ function relabel(data) {
 
 core.onmessage = ({ data }) => {
   if (!data?.type) return;
+  window.__harness?.sent.push(data);
   if (["label", "delete", "folder-save"].includes(data.type)) relabel(data);
-  if (data.type === "models") send({ type: "models", providers: PROVIDERS });
+  if (data.type === "models") send({ type: "models", providers });
   if (data.type === "provider-models") send({ type: "provider-models", provider: data.provider,
     models: (PROVIDER_MODELS[data.provider] ?? []).map(([id, name]) => ({ id, name })) });
   if (data.type === "model-list") sendList();
@@ -387,9 +434,30 @@ core.onmessage = ({ data }) => {
     if (data.listed) listed.push([data.provider, data.model]);
     sendList();
   }
-  if (data.type === "default-model") { defaultModel = { ...defaultModel, provider: data.provider, model: data.model }; sendList(); }
+  // A new default answers at once, which ends the first run's model step.
+  if (data.type === "default-model") {
+    defaultModel = { ...defaultModel, provider: data.provider, model: data.model };
+    if (!listed.some(([provider, model]) => provider === data.provider && model === data.model)) listed.push([data.provider, data.model]);
+    sendList();
+    send({ type: "status", ...status, model: { ...status.model, state: "configured", provider: data.provider, model: data.model }, firstRun: over(status.firstRun && { ...status.firstRun, model: true }) });
+  }
   if (data.type === "default-effort") { defaultModel = { ...defaultModel, effort: data.effort === "default" ? undefined : data.effort }; sendList(); }
   if (data.type === "endpoint-save") setTimeout(() => send({ type: "endpoint", state: "error", code: "endpoint_models_unavailable" }), 300);
+  // A model sign-in: a key pasted into the sheet, or ChatGPT's page opened in the browser. The provider
+  // then opens to its models.
+  if (data.type === "sign-in" && data.provider !== "spotify") {
+    signingIn = data.provider;
+    const provider = providers.find((entry) => entry.id === data.provider);
+    if (data.method === "oauth") send({ type: "auth-event", provider: data.provider, kind: "auth_url", url: "https://auth.example.com/sign-in", opened: true });
+    else send({ type: "auth-prompt", id: "key", provider: data.provider, kind: "secret", message: `Paste your ${provider?.name ?? "provider"} API key.`, placeholder: "sk-…" });
+  }
+  if (data.type === "sign-in-cancel") send({ type: "sign-in", provider: null, state: "cancelled" });
+  if (data.type === "auth-answer") {
+    const provider = providers.find((entry) => entry.id === signingIn);
+    providers = providers.map((entry) => (entry === provider ? { ...entry, signedIn: true, source: "saved", method: "api_key" } : entry));
+    send({ type: "sign-in", provider: provider.id, state: "done" });
+  }
+  if (data.type === "first-run-done") send({ type: "status", ...status, firstRun: { ...status.firstRun, needed: false } });
   if (data.type === "devices" && limitedUntil) send({ type: "devices", devices: [], error: "limited", resumeAt: limitedUntil });
   else if (data.type === "devices") send({ type: "devices", devices: [
     { ref: "0", name: "Mac mini", type: "Computer", active: true, restricted: false },
@@ -408,9 +476,11 @@ core.onmessage = ({ data }) => {
   }
   // Choices made in Settings stick, as the core would keep them.
   if (data.type === "language") send({ type: "status", ...status, locale: data.locale });
-  if (data.type === "music-service") send({ type: "status", ...status, playbackService: data.service });
-  if (data.type === "netease-check") send({ type: "status", ...status, netease: "ready" });
-  if (data.type === "model") send({ type: "status", ...status, model: { ...status.model, state: "configured", provider: data.provider, model: data.model } });
+  if (data.type === "music-service") send({ type: "status", ...status, playbackService: data.service, firstRun: over(status.firstRun && { ...status.firstRun, service: data.service }) });
+  if (data.type === "netease-check") { send({ type: "status", ...status, ...neteaseCheck }); send({ type: "netease-checked" }); }
+  if (data.type === "model") {
+    send({ type: "status", ...status, model: { ...status.model, state: "configured", provider: data.provider, model: data.model }, firstRun: over(status.firstRun && { ...status.firstRun, model: true }) });
+  }
   if (data.type === "effort") send({ type: "status", ...status, model: { ...status.model, effort: data.effort === "default" ? null : data.effort } });
   if (data.type === "branch") {
     const end = shown.findLastIndex((turn) => turn.role === "assistant" && turn.entry === data.entry);
@@ -442,8 +512,13 @@ window.__harness = {
   setState(name) {
     const state = STATES[name];
     if (!state) throw new Error(`No harness state called ${name}`);
+    // A check script reads which state it runs in.
+    window.__harness.state = name;
     return state() ?? null;
   },
+  state: null,
   send,
   player,
+  // What the window sent the stand-in core, for checks.
+  sent: [],
 };
