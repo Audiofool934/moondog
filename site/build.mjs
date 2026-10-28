@@ -4,7 +4,7 @@
 //
 //   node build.mjs              build once
 //   node build.mjs --serve      rebuild on change and serve at http://localhost:8737
-//   node build.mjs --offline    link the release list rather than ask GitHub for the newest Mac download
+//   node build.mjs --offline    link the release list rather than ask GitHub for desktop downloads
 import { createHash } from "node:crypto";
 import { cp, mkdir, readFile, rm, watch, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -47,10 +47,9 @@ function contentPolicy(document) {
 }
 const policyTag = (document) => `<meta http-equiv="Content-Security-Policy" content="${contentPolicy(document)}">`;
 
-// The newest release with a Mac download. A release is created before its files are uploaded,
-// so the page links the newest one that already has its DMG, and the release list otherwise.
-async function macDownload() {
-  const fallback = { url: `${repository}/releases`, version: null };
+// Each platform can arrive separately. Offer a download only after its file is on a release.
+async function desktopDownloads() {
+  const fallback = { mac: { url: `${repository}/releases`, version: null }, windows: null, linux: null };
   if (flags.has("--offline")) return fallback;
   try {
     const token = process.env.GITHUB_TOKEN;
@@ -59,16 +58,31 @@ async function macDownload() {
       signal: AbortSignal.timeout(10_000),
     });
     if (!response.ok) throw new Error(`GitHub answered ${response.status}`);
+    const found = { ...fallback };
     for (const release of await response.json()) {
-      const dmg = !release.draft && release.assets?.find((asset) => /-arm64\.dmg$/u.test(asset.name));
-      if (dmg) return { url: dmg.browser_download_url, version: release.tag_name.replace(/^v/u, "") };
+      if (release.draft) continue;
+      for (const [platform, pattern] of Object.entries({ mac: /-arm64\.dmg$/u, windows: /-win-x64\.exe$/u, linux: /-linux-x64\.AppImage$/u })) {
+        if (found[platform]?.version) continue;
+        const asset = release.assets?.find((item) => pattern.test(item.name));
+        if (asset) found[platform] = { url: asset.browser_download_url, version: release.tag_name.replace(/^v/u, "") };
+      }
     }
+    return found;
   } catch (error) {
-    console.warn(`The Mac download links to the release list: ${error.message}`);
+    console.warn(`Desktop downloads link to the release list: ${error.message}`);
   }
   return fallback;
 }
-const mac = await macDownload();
+const downloads = await desktopDownloads();
+const { mac } = downloads;
+const escapeHTML = (value) => String(value).replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+const additionalDownloads = [
+  ["windows", "Windows", "Open the installer to install Moondog for your account."],
+  ["linux", "Linux", "Make the AppImage executable, then open it to start Moondog."],
+].map(([platform, label, instructions]) => {
+  const download = downloads[platform];
+  return download ? `<h3>For ${label}</h3>\n<p>${instructions} Updates download only when you ask.</p>\n<p class="actions"><a class="button" href="${escapeHTML(download.url)}">Download for ${label}</a> <span class="fine">Version ${escapeHTML(download.version)}, for x64.</span></p>` : "";
+}).join("\n");
 
 const browserPlugin = {
   name: "moondog-browser",
@@ -92,7 +106,8 @@ const documents = {
   "index.html": async () => (await readFile(path.join(here, "index.html"), "utf8"))
     .replace("<!-- policy -->", policyTag("page"))
     .replaceAll("{{mac.url}}", mac.url)
-    .replaceAll("{{mac.version}}", mac.version ? `Version ${mac.version}` : "From the releases page"),
+    .replaceAll("{{mac.version}}", mac.version ? `Version ${mac.version}` : "From the releases page")
+    .replace("{{desktop.downloads}}", additionalDownloads),
   "window.html": async () => (await readFile(path.join(root, "app", "renderer", "index.html"), "utf8"))
     .replace(/<meta http-equiv="Content-Security-Policy"[^>]*>/u, `${policyTag("window")}\n  <meta name="referrer" content="no-referrer">`)
     .replace('href="renderer.css"', 'href="window.css"')

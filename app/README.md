@@ -1,7 +1,10 @@
-# Moondog for Mac
+# Moondog desktop
 
 A native window on the same core as the `moondog` command, as a desktop app is to its command line.
 The application, agent, Spotify, profile and memory services are shared; the window draws its own surface.
+Build targets are macOS on Apple silicon, Windows x64, and Linux x64.
+Windows and Linux use the same renderer and core, with native window controls and Control shortcuts.
+Full Apple Music playback through MusicKit and reading the Music app are macOS features; Apple Music previews and Spotify work through the shared desktop services.
 
 ## Run it
 
@@ -136,9 +139,13 @@ A model or music service chosen there lasts until the app quits, and sign-in and
   Typing anywhere goes to the composer. No plain key plays, pauses or skips, because a chat window is typed in all the time.
   `⌃⌘P` plays or pauses, and `⌃⌘→` and `⌃⌘←` skip, from the Playback menu; the media keys work too.
   `⌥⌘S` and `⌥⌘P` show or hide the conversations and the player; a narrow window folds them on its own. `⌥⌘R` folds or opens the record.
+  On Windows and Linux, Control replaces Command in editing and navigation shortcuts; playback uses Ctrl+Alt+Shift with P, Right, or Left.
+  Press Alt to open the application menu on Windows or Linux.
 - Language: the window speaks the language the core speaks, which follows the choice in Settings or `/language`, then the system's language.
   The window's words, its menus included, exist in English, Simplified and Traditional Chinese, Japanese, Korean, Spanish, French, German, Brazilian Portuguese and Italian (`strings.mjs`).
-- Closing the window hides it, and the music keeps going until you quit. A reply in progress shows in the Dock, and the Dock icon's menu plays, pauses and skips.
+- Closing the window on macOS hides it, and the music keeps going until you quit.
+  On Windows and Linux, closing the window quits and saves the conversations.
+  A reply in progress shows in the Dock or taskbar; the Mac Dock icon's menu plays, pauses and skips.
 - Links open in your browser.
 
 ## How it fits together
@@ -171,8 +178,8 @@ The helper's check also reports the account's storefront, and the core then sear
 At the end of a queue MusicKit does not stop: it pauses, at the end of the last song or back at the start of the first.
 The helper reports either as the end of the queue, so the window and the agent hear it as they do for previews.
 
-`node native/build.mjs` builds the helper on its own: `native/build/moondog-music` for packaging, and `native/build/Moondog Music.app`, signed with the Developer ID, for `npm start`.
-To ask it directly, run `"native/build/Moondog Music.app/Contents/MacOS/moondog-music"` and type `{"id":1,"type":"check"}`.
+`node native/build.mjs` builds the helper on its own: `native/build/moondog-music` for packaging, and `native/build/apps.noindex/Moondog Music.app`, signed with the Developer ID, for `npm start`.
+To ask it directly, run `"native/build/apps.noindex/Moondog Music.app/Contents/MacOS/moondog-music"` and type `{"id":1,"type":"check"}`.
 
 ## Look at every state
 
@@ -186,8 +193,27 @@ An evaluation failure exits with a nonzero status.
 
 ## Build the app
 
-`npm run pack` builds an unsigned Moondog.app for Apple silicon, as a DMG and a zip in `release/`.
-`npm run release` builds the same app, signed with the Developer ID and notarized by Apple, so it opens without a warning.
+Run `npm run pack` on the target operating system and architecture.
+It writes these files to `release/` and uploads nothing:
+
+| Build host | Desktop package | Update metadata |
+| --- | --- | --- |
+| macOS, Apple silicon | DMG and zip | `latest-mac.yml` |
+| Windows, x64 | NSIS installer `.exe` | `latest.yml` |
+| Linux, x64 | AppImage | `latest-linux.yml` |
+
+Builds use the host's production dependencies, so cross-compiling from another operating system is not supported.
+Windows builds need Node.js, npm, and the `tar.exe` included with Windows 10 and later.
+The installer installs for the current Windows account and preserves personal data on uninstall.
+On Linux, make the AppImage executable before opening it; distributions without FUSE can use AppImage's extract-and-run mode.
+`npm run pack:dir` leaves an unpacked app under `release/apps.noindex/` for `npm run smoke` to check.
+The smoke check opens the packaged renderer and core with empty temporary data, imports fictional history, and quits.
+It removes provider credentials from its environment and disables the system Music app and MusicKit helper with `MOONDOG_SYSTEM_MUSIC=off`.
+
+The [Desktop builds workflow](../.github/workflows/desktop.yml) builds on Windows and Linux, runs the smoke check on each, and saves the installers and update metadata as workflow artifacts.
+It does not publish a GitHub release.
+Windows CI builds are unsigned; a signed Windows release needs the maintainer's signing certificate configured through electron-builder's `CSC_LINK` and `CSC_KEY_PASSWORD`.
+`npm run release` remains the Mac release path, signed with the Developer ID and notarized by Apple.
 
 - The app carries the core exactly as the npm package ships it: `npm pack` decides the files, and `npm ci --omit=dev` adds their dependencies.
 - Signing needs the Developer ID Application certificate in the login keychain.
@@ -196,8 +222,9 @@ An evaluation failure exits with a nonzero status.
   To configure another machine, run `xcrun notarytool store-credentials mac-mini-notary --team-id <your team ID>` and enter the Apple ID and app-specific password at the secure prompts.
   `MOONDOG_SIGNING_IDENTITY` selects a different certificate.
   Keep passwords in Keychain; profile names and environment variables contain no password.
-- Opened from the Dock or Finder, the app has a minimal `PATH`, so the core gets the `PATH` of a login shell, as in a terminal.
+- Opened from the Dock or Finder on macOS, the app has a minimal `PATH`, so the core gets the `PATH` of a login shell, as in a terminal.
   Programs such as `codex`, which web research can use, keep working.
+  Windows and Linux inherit the desktop session's environment.
 - The packaged core has no npm update notice, because the app updates as a whole.
 
 ## Updates
@@ -212,7 +239,9 @@ The packaged app updates itself from this repository's GitHub releases (`updates
 - Moondog › Check for Updates… checks at once; with a newer build offered the item reads Download and Install Update, and once one is downloaded, Restart to Update.
 - The check reads the release list and sends nothing about the listener.
   A failed check or download leaves the installed app as it is, and the next check tries again.
-- macOS installs only a build signed by the same Developer ID team, and the download must match the SHA-512 checksum in the release's `latest-mac.yml`.
+- macOS installs only a build signed by the same Developer ID team.
+  Windows installs the NSIS update, and Linux replaces the AppImage.
+  Each download must match the SHA-512 checksum in that platform's update metadata.
 - Updating replaces the app only. Profile, history, conversations and sign-ins stay where they are.
 
 To publish an update:
@@ -223,6 +252,10 @@ To publish an update:
 3. On the Mac mini, in a clean worktree at the tag, run `npm ci` at the root and here, then `npm run publish-app`.
    It builds, signs and notarizes the app, signs, notarizes and staples the DMG, waits for the release, and uploads the zip, its `.blockmap`, the DMG, and `latest-mac.yml` last, because the app acts on it.
    `--skip-build` reuses a build already in `release/`; `--create` makes the release when the workflow did not.
+4. For Windows and Linux, build that same tag through the Desktop builds workflow or on a native host, and check the smoke results.
+   After release approval, upload the installer or AppImage and its blockmap, then that platform's update metadata last.
+   Rebuild the project page after uploading so it can offer the new platform downloads.
+   CI artifacts alone do not establish a signed, published, or manually tested desktop release.
 
 To try an update before publishing it, build two versions with `node pack.mjs --sign --no-notarize` (signed, not notarized), serve the newer one's zip, `.blockmap` and `latest-mac.yml` over HTTP, and start the older app from a terminal with `MOONDOG_UPDATE_FEED=http://127.0.0.1:8765`.
 Set `MOONDOG_CONFIG_HOME` and `MOONDOG_STATE_HOME` to empty folders too, so the older app never opens your own profile.
@@ -233,6 +266,10 @@ Extract test copies into a folder whose name ends in `.noindex`, so Spotlight do
 ## Not yet
 
 - The full taste report happens in the terminal (`moondog`).
-- The terminal plays Apple Music previews; only the window plays whole songs.
+- The terminal plays Apple Music previews; only the macOS window plays whole songs.
 - Builds from before the updater have none: install the first build with it by hand, as before.
-- The build is for Apple silicon only.
+- Mac builds target Apple silicon; Windows and Linux builds target x64.
+- The Windows desktop does not require Node.js or npm at runtime.
+  The terminal's shell launcher and `moondog update` remain supported on macOS and Linux.
+- Optional Codex web research on Windows needs `codex.exe` on PATH or a native executable selected by `MOONDOG_CODEX_BIN`.
+  The npm `codex.cmd` wrapper is not launched by that integration.

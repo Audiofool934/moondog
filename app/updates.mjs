@@ -1,4 +1,4 @@
-// Moondog for Mac keeps itself current from the GitHub releases of Audiofool934/moondog. It looks
+// Moondog keeps itself current from the GitHub releases of Audiofool934/moondog. It looks
 // at launch and every six hours and shows a newer build at the top right, but downloads nothing
 // until the listener asks: one click downloads it and restarts into it when the download ends.
 // macOS takes only a build signed by the same developer, and the download must match the checksum
@@ -10,9 +10,9 @@ const EVERY_MS = 6 * 60 * 60_000;
 /**
  * What the window and the menu show: { phase: "idle" }, { phase: "available", version },
  * { phase: "downloading", version, progress } with progress from 0 to 1, or { phase: "ready", version }.
- * installing is true once the listener asked. onRestart runs just before macOS closes the windows to
+ * installing is true once the listener asked. onRestart runs just before the updater closes the windows to
  * install, and only then. autoUpdater is electron-updater's, or null when the app is not packaged;
- * squirrel is Electron's own autoUpdater, which installs the download.
+ * squirrel is Electron's own autoUpdater, which receives the restart event on every platform.
  */
 export function createUpdates({ autoUpdater, squirrel, onChange, onRestart }) {
   let state = { phase: "idle" };
@@ -26,6 +26,7 @@ export function createUpdates({ autoUpdater, squirrel, onChange, onRestart }) {
   if (enabled) {
     // A newer build is the listener's to fetch: a 150 MB download and a restart should not start unasked.
     autoUpdater.autoDownload = false;
+    autoUpdater.autoInstallOnAppQuit = false;
     // Trying an update before it is published: MOONDOG_UPDATE_FEED names a folder served over HTTP
     // that holds a newer build's zip and its latest-mac.yml. That install quits without relaunching,
     // because the relaunched app has none of the test's settings and would open the listener's profile.
@@ -42,7 +43,7 @@ export function createUpdates({ autoUpdater, squirrel, onChange, onRestart }) {
     });
     autoUpdater.on("update-downloaded", ({ version }) => {
       set({ phase: "ready", version });
-      // The listener asked for it, so restart as soon as macOS has the build.
+      // The listener asked for it, so restart as soon as the updater has the build.
       if (installing) autoUpdater.quitAndInstall();
     });
     // A failed check changes nothing. A failed download, or macOS's own check of it, leaves the
@@ -53,6 +54,7 @@ export function createUpdates({ autoUpdater, squirrel, onChange, onRestart }) {
       installing = false;
       set({ phase: "available", version: state.version });
     });
+    // MacUpdater and the Windows/Linux BaseUpdater both emit this on Electron's autoUpdater.
     squirrel?.on("before-quit-for-update", () => onRestart());
   }
 

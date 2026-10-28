@@ -16,6 +16,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { windowChrome } from "./platform.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const out = process.env.MOONDOG_HARNESS_OUT || path.join(here, "release", "harness");
@@ -44,7 +45,7 @@ if (!show) setTimeout(() => { process.stderr.write("[harness] timed out\n"); app
 app.whenReady().then(async () => {
   const window = new BrowserWindow({
     width, height, useContentSize: true, show, title: "Moondog harness",
-    titleBarStyle: "hiddenInset", trafficLightPosition: { x: 18, y: 15 },
+    ...windowChrome(process.env.MOONDOG_HARNESS_PLATFORM || process.platform),
     webPreferences: {
       preload: path.join(here, "harness-preload.cjs"),
       // The stand-in core shares the page's context. The shipped window isolates it.

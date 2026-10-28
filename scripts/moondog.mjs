@@ -378,8 +378,12 @@ async function prepareTuiHistoryImport(filePath, { recentPage, librarySnapshot, 
 async function openImportHelp(destination) {
   const url = IMPORT_GUIDE_URLS[destination];
   if (!url) throw new Error("Unknown import guide.");
-  await promisify(execFile)(process.platform === "darwin" ? "open" : "xdg-open", [url], {
+  const [command, args] = process.platform === "darwin" ? ["open", [url]]
+    : process.platform === "win32" ? ["rundll32", ["url.dll,FileProtocolHandler", url]]
+      : ["xdg-open", [url]];
+  await promisify(execFile)(command, args, {
     timeout: 10_000,
+    windowsHide: true,
   });
 }
 

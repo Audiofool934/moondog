@@ -1,12 +1,9 @@
-import { execFile } from "node:child_process";
 import { constants } from "node:fs";
-import { open, mkdtemp, writeFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { open } from "node:fs/promises";
 import path from "node:path";
-import { promisify } from "node:util";
+import { listZipMembers, readZipMember } from "../../importers/zip-reader.mjs";
 import { musicHash, prepareMusicBundle } from "../../profile/music-import-bundle.mjs";
 
-const exec = promisify(execFile);
 const maximumBytes = 256 * 1024 * 1024;
 const memberBytes = 64 * 1024 * 1024;
 const maximumRecords = 100_000;
@@ -103,27 +100,23 @@ export async function readYouTubeMusicTakeout({ filePath, subjectId, capturedAt 
   const sources = [];
   if (/\.zip$/iu.test(filePath)) {
     // Read from one private snapshot: manifest digest and preview describe exactly the same bytes.
-    const root = await mkdtemp(path.join(tmpdir(), "moondog-takeout-"));
+    let names;
     try {
-      const zip = path.join(root, "takeout.zip");
-      await writeFile(zip, bytes, { mode: 0o600 });
-      const { stdout } = await exec("unzip", ["-Z1", zip], { maxBuffer: 1024 * 1024, timeout: 15_000 });
-      const names = stdout.trimEnd().split("\n");
-      const selected = names.filter((name) => /(?:^|\/)(?:watch-history\.json|music[- ]library[- ]songs\.csv|library[- ]songs\.csv)$/iu.test(name));
-      if (!selected.length) throw new Error("No supported YouTube Music files in this ZIP. Include music library songs and history in Google Takeout; set history format to JSON, not HTML.");
-      if (selected.length > 100 || new Set(selected).size !== selected.length) throw new Error("Takeout contains too many or duplicate music files.");
-      let total = 0;
-      for (const name of selected) {
-        if (name.startsWith("/") || name.split("/").includes("..") || /[\\*?\[\]\u0000-\u001f\u007f]/u.test(name)) throw new Error("Unsupported archive member path.");
-        const { stdout: content } = await exec("unzip", ["-p", zip, name], { encoding: "buffer", maxBuffer: memberBytes, timeout: 15_000 });
-        total += content.length;
-        if (total > maximumBytes) throw new Error("Unpacked music data exceeds 256 MB. Import the extracted files separately.");
-        sources.push({ name: `${musicHash(name).slice(0, 12)}-${path.basename(name)}`, content });
-      }
-    } catch (error) {
-      if (error.cmd || error.code === "ENOENT") throw new Error("Could not read this Takeout ZIP. Finish the download and use an unencrypted ZIP, or extract music-library-songs.csv and watch-history.json and import each file. ZIP reading requires unzip on this computer.");
-      throw error;
-    } finally { await rm(root, { recursive: true, force: true }); }
+      names = await listZipMembers(bytes);
+    } catch {
+      throw new Error("Could not read this Takeout ZIP. Finish the download and use an unencrypted ZIP, or extract music-library-songs.csv and watch-history.json and import each file.");
+    }
+    const selected = names.filter((name) => /(?:^|\/)(?:watch-history\.json|music[- ]library[- ]songs\.csv|library[- ]songs\.csv)$/iu.test(name));
+    if (!selected.length) throw new Error("No supported YouTube Music files in this ZIP. Include music library songs and history in Google Takeout; set history format to JSON, not HTML.");
+    if (selected.length > 100 || new Set(selected).size !== selected.length) throw new Error("Takeout contains too many or duplicate music files.");
+    let total = 0;
+    for (const name of selected) {
+      if (name.startsWith("/") || name.split("/").includes("..") || /[\\*?\[\]\u0000-\u001f\u007f]/u.test(name)) throw new Error("Unsupported archive member path.");
+      const content = await readZipMember(bytes, name, memberBytes);
+      total += content.length;
+      if (total > maximumBytes) throw new Error("Unpacked music data exceeds 256 MB. Import the extracted files separately.");
+      sources.push({ name: `${musicHash(name).slice(0, 12)}-${path.basename(name)}`, content });
+    }
   } else {
     if (bytes.length > memberBytes) throw new Error("Choose a music CSV or history JSON smaller than 64 MB.");
     sources.push({ name: path.basename(filePath), content: bytes });

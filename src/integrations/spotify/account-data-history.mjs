@@ -1,9 +1,8 @@
-import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { lstat } from "node:fs/promises";
 import path from "node:path";
-import { promisify } from "node:util";
+import { listZipMembers, readZipMember } from "../../importers/zip-reader.mjs";
 
 import { isUuid, uuidV5 } from "../../core/uuid-v5.mjs";
 import {
@@ -32,7 +31,6 @@ export const SPOTIFY_ACCOUNT_DATA_HISTORY_LIMITS = Object.freeze({
   maximumRecords: 500_000,
 });
 
-const execFileAsync = promisify(execFile);
 const musicMemberPattern =
   /^Spotify Account Data\/StreamingHistory_music_([0-9]+)\.json$/u;
 const endTimePattern =
@@ -376,14 +374,11 @@ async function sha256File(filePath) {
   return hash.digest("hex");
 }
 
-async function unzip(args, maximumBytes) {
+async function zipText(archivePath, maximumBytes, member) {
   try {
-    const { stdout } = await execFileAsync("/usr/bin/unzip", args, {
-      encoding: "utf8",
-      maxBuffer: maximumBytes,
-      windowsHide: true,
-    });
-    return stdout;
+    return member === undefined
+      ? (await listZipMembers(archivePath, maximumBytes)).join("\n")
+      : (await readZipMember(archivePath, member, maximumBytes)).toString("utf8");
   } catch {
     fail(
       "The Spotify account-data ZIP could not be read safely.",
@@ -468,17 +463,14 @@ export async function readSpotifyAccountDataHistoryArchive({
     fail("The Spotify account-data ZIP is not a supported regular file.");
   }
 
-  const listing = await unzip(["-Z1", resolvedPath], 1024 * 1024);
+  const listing = await zipText(resolvedPath, 1024 * 1024);
   const members = selectedMusicMembers(listing);
   const profileMembers = selectedProfileMembers(listing);
   const records = [];
   const documents = {};
   let totalJsonBytes = 0;
   for (const member of members) {
-    const jsonText = await unzip(
-      ["-p", resolvedPath, member.name],
-      SPOTIFY_ACCOUNT_DATA_HISTORY_LIMITS.maximumMemberBytes,
-    );
+    const jsonText = await zipText(resolvedPath, SPOTIFY_ACCOUNT_DATA_HISTORY_LIMITS.maximumMemberBytes, member.name);
     totalJsonBytes += Buffer.byteLength(jsonText, "utf8");
     if (
       totalJsonBytes >
@@ -502,10 +494,7 @@ export async function readSpotifyAccountDataHistoryArchive({
   }
 
   for (const member of profileMembers) {
-    const jsonText = await unzip(
-      ["-p", resolvedPath, member.name],
-      SPOTIFY_ACCOUNT_DATA_HISTORY_LIMITS.maximumMemberBytes,
-    );
+    const jsonText = await zipText(resolvedPath, SPOTIFY_ACCOUNT_DATA_HISTORY_LIMITS.maximumMemberBytes, member.name);
     totalJsonBytes += Buffer.byteLength(jsonText, "utf8");
     if (
       totalJsonBytes >

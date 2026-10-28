@@ -1,7 +1,7 @@
-// Moondog for Mac: a native window on the same core as the `moondog` command, as a desktop
+// Moondog: a native window on the same core as the `moondog` command, as a desktop
 // app is to its command line. The core runs in its own Node process (core-process.mjs); the
-// window draws conversations, the conversation, and what is playing, and keeps the music
-// going after it closes.
+// window draws conversations, the conversation, and what is playing. On macOS the music
+// keeps going when the window hides.
 import { app, autoUpdater as squirrel, BrowserWindow, dialog, ipcMain, Menu, MessageChannelMain, nativeTheme, screen, shell, utilityProcess } from "electron";
 import electronUpdater from "electron-updater";
 import { execFile, spawn } from "node:child_process";
@@ -11,8 +11,17 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { windowLocale, windowStrings } from "./strings.mjs";
 import { createUpdates } from "./updates.mjs";
+import { needsLoginShell, playbackAccelerators, windowChrome } from "./platform.mjs";
+import { createQuitHandler } from "./lifecycle.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
+const isMac = process.platform === "darwin";
+if (!app.isPackaged && process.argv.includes("--simulated")) process.env.MOONDOG_APP_SIMULATED = "1";
+// Packaged smoke checks keep window state away from the listener's installed app too.
+if (process.env.MOONDOG_APP_USER_DATA && path.isAbsolute(process.env.MOONDOG_APP_USER_DATA)) {
+  app.setPath("userData", process.env.MOONDOG_APP_USER_DATA);
+}
+if (process.platform === "win32") app.setAppUserModelId("ai.audiofool.moondog");
 // For automated checks: lets a DevTools client drive the window.
 if (process.env.MOONDOG_APP_DEBUG_PORT) app.commandLine.appendSwitch("remote-debugging-port", process.env.MOONDOG_APP_DEBUG_PORT);
 
@@ -22,7 +31,7 @@ let locale = "en";
 
 // Opened from Finder or the Dock, the app gets a minimal PATH, and the core couldn't find
 // programs such as codex for web research. The packaged app gives it the PATH a login shell sets.
-const loginShellPath = !app.isPackaged ? Promise.resolve(null) : new Promise((resolve) => {
+const loginShellPath = !needsLoginShell(process.platform, app.isPackaged) ? Promise.resolve(null) : new Promise((resolve) => {
   execFile(os.userInfo().shell || "/bin/zsh", ["-lc", 'printf "\\n__MOONDOG_PATH__%s\\n" "$PATH"'], { timeout: 3000 },
     (_error, stdout) => resolve(String(stdout ?? "").match(/__MOONDOG_PATH__(.+)/u)?.[1] ?? null));
 });
@@ -55,8 +64,9 @@ const command = (name) => () => window?.webContents.send("command", name);
 // its download, and the Moondog menu checks for one, downloads it, or restarts into it.
 let updatePhase = "idle";
 const updates = createUpdates({
-  // Only a packaged app updates; reading autoUpdater makes electron-updater's macOS updater.
-  autoUpdater: app.isPackaged ? electronUpdater.autoUpdater : null,
+  // Linux updates run inside an AppImage, not an unpacked development or smoke-test directory.
+  autoUpdater: app.isPackaged && process.env.MOONDOG_UPDATE_CHECK !== "off"
+    && (process.platform !== "linux" || process.env.APPIMAGE) ? electronUpdater.autoUpdater : null,
   squirrel,
   onChange: (state) => {
     window?.webContents.send("update", state);
@@ -84,6 +94,7 @@ async function checkForUpdates() {
 function buildMenu() {
   const t = windowStrings(locale);
   const dev = !app.isPackaged;
+  const keys = playbackAccelerators(process.platform);
   Menu.setApplicationMenu(Menu.buildFromTemplate([
     { label: "Moondog", submenu: [
       { label: t("menuAbout"), role: "about" },
@@ -91,10 +102,12 @@ function buildMenu() {
       { type: "separator" },
       { label: t("menuSettings"), accelerator: "CmdOrCtrl+,", click: command("settings") },
       { type: "separator" },
-      { label: t("menuHide"), role: "hide" },
-      { label: t("menuHideOthers"), role: "hideOthers" },
-      { label: t("menuShowAll"), role: "unhide" },
-      { type: "separator" },
+      ...(isMac ? [
+        { label: t("menuHide"), role: "hide" },
+        { label: t("menuHideOthers"), role: "hideOthers" },
+        { label: t("menuShowAll"), role: "unhide" },
+        { type: "separator" },
+      ] : []),
       { label: t("menuQuit"), role: "quit" },
     ] },
     { label: t("menuEdit"), submenu: [
@@ -113,9 +126,9 @@ function buildMenu() {
     { label: t("menuPlayback"), submenu: [
       // On macOS every menu accelerator is live, even while typing, so these use Control and Command
       // together: Space or Command with an arrow would play, pause and skip in the middle of a sentence.
-      { id: "toggle-playback", label: t("menuPlayPause"), accelerator: "Ctrl+Cmd+P", click: command("toggle-playback"), enabled: playback.controllable },
-      { id: "next", label: t("menuNext"), accelerator: "Ctrl+Cmd+Right", click: command("next"), enabled: playback.controllable },
-      { id: "previous", label: t("menuPrevious"), accelerator: "Ctrl+Cmd+Left", click: command("previous"), enabled: playback.controllable },
+      { id: "toggle-playback", label: t("menuPlayPause"), accelerator: keys.toggle, click: command("toggle-playback"), enabled: playback.controllable },
+      { id: "next", label: t("menuNext"), accelerator: keys.next, click: command("next"), enabled: playback.controllable },
+      { id: "previous", label: t("menuPrevious"), accelerator: keys.previous, click: command("previous"), enabled: playback.controllable },
     ] },
     { label: t("menuView"), submenu: [
       { label: t("menuSidebar"), accelerator: "CmdOrCtrl+Alt+S", click: command("toggle-sidebar") },
@@ -125,12 +138,11 @@ function buildMenu() {
       ...(dev ? [{ role: "reload" }, { role: "toggleDevTools" }, { type: "separator" }] : []),
       { label: t("menuFullScreen"), role: "togglefullscreen" },
     ] },
-    { label: t("menuWindow"), role: "windowMenu", submenu: [
+    { label: t("menuWindow"), ...(isMac ? { role: "windowMenu" } : {}), submenu: [
       { label: t("menuMinimize"), role: "minimize" },
-      { label: t("menuZoom"), role: "zoom" },
+      { label: t("menuZoom"), ...(isMac ? { role: "zoom" } : { click: () => window?.isMaximized() ? window.unmaximize() : window?.maximize() }) },
       { label: t("menuClose"), role: "close" },
-      { type: "separator" },
-      { label: t("menuFront"), role: "front" },
+      ...(isMac ? [{ type: "separator" }, { label: t("menuFront"), role: "front" }] : []),
     ] },
   ]));
   // The Dock icon's menu reaches the music while the window is closed.
@@ -230,9 +242,8 @@ function createWindow() {
     minHeight: MIN_SIZE.height,
     title: "Moondog",
     backgroundColor: background(),
-    titleBarStyle: "hiddenInset",
-    // Centered on the page's 44px bar (app/renderer/tokens.css --bar).
-    trafficLightPosition: { x: 18, y: 15 },
+    ...windowChrome(process.platform),
+    icon: iconFile("light"),
     show: false,
     webPreferences: {
       preload: path.join(here, "preload.cjs"),
@@ -257,11 +268,12 @@ function createWindow() {
   // Automated checks open the window without taking focus from the listener.
   window.once("ready-to-show", () => (process.env.MOONDOG_APP_DEBUG_PORT ? window.showInactive() : window.show()));
   window.webContents.once("did-finish-load", openCore);
-  // Closing the window hides it; the core and its music keep going until Quit.
+  // A Mac can return through the Dock. Other desktops quit, so no unreachable player stays alive.
   window.on("close", (event) => {
     if (quitting) return;
     event.preventDefault();
-    window.hide();
+    if (isMac) window.hide();
+    else app.quit();
   });
   // Restarting into an update closes the window before the core and the music helper stop, so
   // whatever reports to the window afterwards must find none rather than a destroyed one.
@@ -278,7 +290,7 @@ function createWindow() {
 // Native menus for the page: a conversation's actions, and the model, device and service pickers.
 // The page sends plain items { id, label, checked, enabled, type, submenu }; the chosen id comes back.
 // A header names the group of items under it, such as a model maker over its models.
-const menuTemplate = (items, choose) => items.map((item) => item.type === "separator" ? { type: "separator" } : item.type === "header" ? { type: "header", label: String(item.label ?? "") } : {
+const menuTemplate = (items, choose) => items.map((item) => item.type === "separator" ? { type: "separator" } : item.type === "header" ? { ...(isMac ? { type: "header" } : { enabled: false }), label: String(item.label ?? "") } : {
   label: String(item.label ?? ""), enabled: item.enabled !== false,
   ...(item.checked !== undefined ? { type: "checkbox", checked: item.checked === true } : {}),
   ...(Array.isArray(item.submenu) ? { submenu: menuTemplate(item.submenu, choose) } : { click: () => choose(item.id) }),
@@ -320,9 +332,9 @@ let musicHelper = null;
 let musicSequence = 0;
 const musicWaiting = new Map();
 const musicHelperFile = () => (app.isPackaged ? path.join(path.dirname(app.getPath("exe")), "moondog-music")
-  : path.join(here, "native", "build", "Moondog Music.app", "Contents", "MacOS", "moondog-music"));
+  : path.join(here, "native", "build", "apps.noindex", "Moondog Music.app", "Contents", "MacOS", "moondog-music"));
 function startMusicHelper() {
-  if (musicHelper || process.platform !== "darwin" || !existsSync(musicHelperFile())) return musicHelper;
+  if (musicHelper || process.env.MOONDOG_SYSTEM_MUSIC === "off" || !isMac || !existsSync(musicHelperFile())) return musicHelper;
   const helper = spawn(musicHelperFile(), [], { stdio: ["pipe", "pipe", "ignore"] });
   musicHelper = helper;
   let buffer = "";
@@ -407,7 +419,7 @@ ipcMain.on("immersive", (_event, on) => {
       const inside = window.isVisible() && point.x >= box.x && point.x < box.x + box.width && point.y >= box.y && point.y < box.y + box.height;
       if (inside === immersed.inside) return;
       immersed.inside = inside;
-      window.setWindowButtonVisibility?.(inside);
+      if (isMac) window.setWindowButtonVisibility(inside);
       window.webContents.send("hover", inside);
     };
     immersed.timer = setInterval(watch, 120);
@@ -417,7 +429,7 @@ ipcMain.on("immersive", (_event, on) => {
     const { bounds } = immersed;
     immersed = null;
     window.setAlwaysOnTop(false);
-    window.setWindowButtonVisibility?.(true);
+    if (isMac) window.setWindowButtonVisibility(true);
     window.setMinimumSize(MIN_SIZE.width, MIN_SIZE.height);
     // A window shrunk while it held only the record goes back to the size it had.
     const now = window.getBounds();
@@ -466,23 +478,12 @@ ipcMain.on("playback", (_event, next) => {
 nativeTheme.on("updated", () => window?.setBackgroundColor(background()));
 // Quitting first asks the core to stop its replies and close its conversations, so each one is
 // saved as it ended; a core that takes too long is stopped.
-let stopping = false;
-app.on("before-quit", (event) => {
-  quitting = true;
-  // The helper stops its songs and exits when its pipe closes.
-  musicHelper?.stdin.end();
-  if (!core) return;
-  event.preventDefault();
-  if (stopping) return;
-  stopping = true;
-  const running = core;
-  const timer = setTimeout(() => running.kill(), 5000);
-  running.once("exit", () => {
-    clearTimeout(timer);
-    app.quit();
-  });
-  running.postMessage({ type: "quit" });
-});
+app.on("before-quit", createQuitHandler({
+  getCore: () => core,
+  stopMusic: () => musicHelper?.stdin.end(),
+  willQuit: () => { quitting = true; },
+  quit: () => app.quit(),
+}));
 app.on("activate", () => window?.show());
 app.whenReady().then(() => {
   locale = windowLocale(app.getPreferredSystemLanguages());

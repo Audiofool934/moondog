@@ -4,7 +4,7 @@
 // original recordings, NetEase marks songs as not playable (`visible: false`), most often for
 // copyright, and no membership changes that.
 import { execFile } from "node:child_process";
-import { access, constants, stat } from "node:fs/promises";
+import { access, constants, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 
 const COMMAND_TIMEOUT_MS = 20_000;
@@ -22,37 +22,60 @@ const KNOWN_SONGS = 300;
 const failure = (code, message) => Object.assign(new Error(message), { code });
 
 const folders = (value) => String(value ?? "").split(path.delimiter).filter((folder) => path.isAbsolute(folder));
-const searchPath = (environment) => [...new Set([...folders(environment.PATH), ...EXTRA_FOLDERS])];
+const pathKey = (environment) => Object.keys(environment).find((key) => key.toUpperCase() === "PATH") ?? "PATH";
+const searchPath = (environment, platform) => [...new Set([...folders(environment[pathKey(environment)]),
+  ...(platform === "win32" ? (environment.APPDATA ? [path.join(environment.APPDATA, "npm")] : []) : EXTRA_FOLDERS)])];
 
-async function findIn(places) {
+async function executable(file) {
+  try {
+    if (!(await stat(file)).isFile()) return false;
+    await access(file, constants.X_OK);
+    return true;
+  } catch { return false; }
+}
+
+async function findIn(places, platform) {
   for (const folder of places) {
-    const file = path.join(folder, "ncm-cli");
-    try {
-      if (!(await stat(file)).isFile()) continue;
-      await access(file, constants.X_OK);
-      return file;
-    } catch {}
+    const file = path.join(folder, platform === "win32" ? "ncm-cli.exe" : "ncm-cli");
+    if (await executable(file)) return { file, args: [] };
+    if (platform !== "win32") continue;
+    // npm's Windows launcher is a .cmd file. Run its package entry with Node directly so
+    // artist names and queries never pass through cmd.exe's quoting and expansion rules.
+    for (const packageRoot of [path.join(folder, "node_modules", "@music163", "ncm-cli"), path.resolve(folder, "..", "@music163", "ncm-cli")]) {
+      try {
+        const metadata = JSON.parse(await readFile(path.join(packageRoot, "package.json"), "utf8"));
+        const bin = typeof metadata.bin === "string" ? metadata.bin : metadata.bin?.["ncm-cli"];
+        if (typeof bin !== "string") continue;
+        const entry = path.resolve(packageRoot, bin);
+        if (!(await stat(entry)).isFile()) continue;
+        for (const nodeFolder of [folder, ...places]) {
+          const node = path.join(nodeFolder, "node.exe");
+          if (await executable(node)) return { file: node, args: [entry] };
+        }
+      } catch {}
+    }
   }
   return null;
 }
 
 // Opened from Finder, the app has its login shell's PATH, which lacks the folders ~/.zshrc adds,
 // such as nvm's for npm's global commands. There, the listener's shell as Terminal opens it says.
-function terminalPath(environment) {
+function terminalPath(environment, platform) {
+  if (platform === "win32") return Promise.resolve([]);
   return new Promise((resolve) => {
-    execFile(environment.SHELL || "/bin/zsh", ["-ilc", 'printf "\\n__MOONDOG_PATH__%s\\n" "$PATH"'], { env: environment, timeout: 5_000 },
+    execFile(environment.SHELL || (platform === "darwin" ? "/bin/zsh" : "/bin/sh"), ["-ilc", 'printf "\\n__MOONDOG_PATH__%s\\n" "$PATH"'], { env: environment, timeout: 5_000 },
       (_error, stdout) => resolve(folders(String(stdout ?? "").match(/__MOONDOG_PATH__(.+)/u)?.[1])));
   });
 }
 
 /** ncm-cli and the PATH to run it with, which has the node it runs on, or null. */
-async function findNcmCli(environment) {
-  const places = searchPath(environment);
-  const file = await findIn(places);
-  if (file) return { file, places };
-  const terminal = await terminalPath(environment);
-  const found = await findIn(terminal);
-  return found ? { file: found, places: [...new Set([...terminal, ...places])] } : null;
+export async function findNcmCli(environment, platform = process.platform) {
+  const places = searchPath(environment, platform);
+  const command = await findIn(places, platform);
+  if (command) return { ...command, places };
+  const terminal = await terminalPath(environment, platform);
+  const found = await findIn(terminal, platform);
+  return found ? { ...found, places: [...new Set([...terminal, ...places])] } : null;
 }
 
 // Runs one ncm-cli command and parses its JSON. ncm-cli reports most failures as
@@ -64,9 +87,9 @@ function cliRunner({ environment }) {
   return async (args) => {
     found ??= await findNcmCli(environment);
     if (!found) throw failure("netease_cli_missing", "ncm-cli is not installed. Install it with: npm install -g @music163/ncm-cli");
-    const env = { ...environment, PATH: found.places.join(path.delimiter) };
+    const env = { ...environment, [pathKey(environment)]: found.places.join(path.delimiter) };
     const stdout = await new Promise((resolve, reject) => {
-      execFile(found.file, args, { env, timeout: COMMAND_TIMEOUT_MS, maxBuffer: 8 * 1024 * 1024 }, (error, out) =>
+      execFile(found.file, [...found.args, ...args], { env, windowsHide: true, timeout: COMMAND_TIMEOUT_MS, maxBuffer: 8 * 1024 * 1024 }, (error, out) =>
         (error && !out ? reject(failure("netease_failed", `ncm-cli ${args[0]} failed: ${String(error.message).slice(0, 200)}`)) : resolve(String(out ?? ""))));
     });
     const start = stdout.indexOf("{");

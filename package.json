@@ -41,7 +41,8 @@
   },
   "os": [
     "darwin",
-    "linux"
+    "linux",
+    "win32"
   ],
   "packageManager": "npm@11.16.0",
   "scripts": {
@@ -69,7 +70,8 @@
     "@earendil-works/pi-tui": "1.0.1",
     "ajv": "8.20.0",
     "ajv-formats": "3.0.1",
-    "plist": "5.0.0"
+    "plist": "5.0.0",
+    "yauzl": "3.4.0"
   },
   "devDependencies": {
     "yaml": "2.9.0"

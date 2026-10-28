@@ -41,7 +41,8 @@ const maximumPackedBytes = 2_600_000;
 const maximumUnpackedBytes = 5_210_000;
 // Endpoints, the model menu's list and the terminal's endpoint command add three
 // entries and about 20 KB.
-const maximumEntries = 155;
+// The portable ZIP reader adds one entry for Windows desktop imports.
+const maximumEntries = 156;
 const packageOnlyPrivateSentinelPattern = new RegExp(
   ["PRIVATE", "(?:IP|PLATFORM)", "SENTINEL"].join("_"),
   "u",
@@ -375,7 +376,7 @@ async function verifyInstalledPackage({ consumerRoot, tarballPath }) {
   );
   assert(installedPackage.private !== true, "The published package must not be marked private.");
   assert(
-    JSON.stringify(installedPackage.os) === JSON.stringify(["darwin", "linux"]),
+    JSON.stringify(installedPackage.os) === JSON.stringify(["darwin", "linux", "win32"]),
     "The package platform boundary changed unexpectedly.",
   );
   assert(installedPackage.dependencies?.ajv === "8.20.0", "Ajv is not a runtime dependency.");

@@ -1,87 +1,70 @@
-// Builds Moondog.app for Apple silicon: the window from this folder, and the core as the
-// npm package ships it, so the app runs the same core as `moondog` in a terminal.
-//   node pack.mjs          unsigned, for a quick local check
-//   node pack.mjs --sign   signed with the Developer ID and notarized; Apple's notary
-//                          service reads the keychain profile in MOONDOG_NOTARY_PROFILE
-//                          or APPLE_NOTARY_PROFILE (default mac-mini-notary).
-//   node pack.mjs --sign --no-notarize
-//                          signed only, for trying an update on this Mac: macOS installs an
-//                          update signed by the same developer, notarized or not.
-// Each build also writes latest-mac.yml beside the zip, beta or not; the app reads it from a GitHub
-// release to find, download and check an update. Nothing is uploaded here.
+// Build on the target OS: macOS arm64 (DMG/zip), Windows x64 (NSIS), Linux x64 (AppImage).
+// The window carries exactly the npm package's core with production dependencies for this host.
+// `--dir` leaves an unpacked app for smoke tests; `--sign` signs/notarizes the macOS release.
+// Nothing is published by this script.
 import { execFile } from "node:child_process";
-import { cp, mkdir, readFile, rm } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { copyFile, cp, mkdir, readFile, readdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { Arch, build, Platform } from "electron-builder";
 import { buildMusicHelper, MUSIC_USAGE } from "./native/build.mjs";
+import { desktopConfig, desktopTarget } from "./pack-config.mjs";
 
 const run = promisify(execFile);
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(here, "..");
 const work = path.join(here, "build");
 const room = path.join(work, "room");
-const sign = process.argv.includes("--sign");
-const notarize = sign && !process.argv.includes("--no-notarize");
-// Unset, electron-builder finds the Developer ID Application certificate in the keychain.
-const identity = process.env.MOONDOG_SIGNING_IDENTITY;
+const release = path.join(here, "release");
+const output = path.join(release, "apps.noindex");
+const flags = new Set(process.argv.slice(2));
+for (const flag of flags) if (!["--dir", "--sign", "--no-notarize"].includes(flag)) throw new Error(`Unknown build option: ${flag}`);
+const target = desktopTarget();
+const sign = flags.has("--sign");
+if (sign && target.platform !== "darwin") throw new Error("--sign is the macOS Developer ID release path. Windows signing uses electron-builder's CSC_LINK and CSC_KEY_PASSWORD.");
+const notarize = sign && !flags.has("--no-notarize");
 
-// The room: exactly the files `npm install -g @audiofool/moondog` gets, and its production dependencies.
+// npm.cmd cannot be execFile'd on Windows. Invoke npm's JavaScript entrypoint directly,
+// including when Node/npm live in a directory containing spaces, without a command shell.
+const npmCli = process.env.npm_execpath || (process.platform === "win32" ? [
+  path.join(path.dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js"),
+  ...(process.env.PATH || process.env.Path || "").split(path.delimiter).map((dir) => path.join(dir, "node_modules", "npm", "bin", "npm-cli.js")),
+].find((file) => existsSync(file)) : null);
+if (process.platform === "win32" && !npmCli) throw new Error("Could not find npm's entrypoint. Run this build with npm run pack.");
+const npm = (args, options) => run(npmCli ? process.execPath : "npm", npmCli ? [npmCli, ...args] : args, { maxBuffer: 32 * 1024 * 1024, ...options });
+
 await rm(work, { recursive: true, force: true });
 await mkdir(room, { recursive: true });
-const { stdout } = await run("npm", ["pack", "--json", "--ignore-scripts", "--pack-destination", work], { cwd: root });
+const { stdout } = await npm(["pack", "--json", "--ignore-scripts", "--pack-destination", work], { cwd: root });
 const [{ filename }] = JSON.parse(stdout);
+// Windows 10 and newer include tar.exe; the same command works on macOS and Linux.
 await run("tar", ["-xzf", path.join(work, filename), "-C", room, "--strip-components=1"]);
 await cp(path.join(root, "package-lock.json"), path.join(room, "package-lock.json"));
-await run("npm", ["ci", "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fund"], { cwd: room });
+await npm(["ci", "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fund"], { cwd: room });
 
-// The window's page.
 await run(process.execPath, [path.join(here, "build.mjs")]);
-// The Apple Music helper sits beside the app's own executable, so MusicKit knows it as Moondog;
-// electron-builder signs it with the app.
-const music = await buildMusicHelper({ bundle: false });
-
+const music = target.platform === "darwin" ? await buildMusicHelper({ bundle: false }) : null;
 const { version } = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
 if (notarize) process.env.APPLE_KEYCHAIN_PROFILE = process.env.MOONDOG_NOTARY_PROFILE ?? process.env.APPLE_NOTARY_PROFILE ?? "mac-mini-notary";
-const artifacts = await build({
+const platform = { darwin: Platform.MAC, win32: Platform.WINDOWS, linux: Platform.LINUX }[target.platform];
+await rm(output, { recursive: true, force: true });
+await build({
   projectDir: here,
-  targets: Platform.MAC.createTarget(["dmg", "zip"], Arch.arm64),
+  targets: platform.createTarget(flags.has("--dir") ? ["dir"] : target.targets, Arch[target.arch]),
   publish: "never",
-  config: {
-    appId: "ai.audiofool.moondog",
-    productName: "Moondog",
-    // The app and the room it carries share one version.
-    extraMetadata: { version },
-    directories: { output: "release", buildResources: "build-resources" },
-    files: ["package.json", "main.mjs", "preload.cjs", "core-process.mjs", "window-room.mjs", "preview-player.mjs", "strings.mjs", "updates.mjs",
-      "dist/**/*", "!dist/**/*.map"],
-    // Where the app looks for updates (updates.mjs). A beta version also takes releases marked as prereleases.
-    publish: [{ provider: "github", owner: "Audiofool934", repo: "moondog" }],
-    asar: false,
-    // The core sits beside the window's folder, where core-process.mjs imports ../scripts/moondog.mjs.
-    // electron-builder leaves node_modules out of extra resources unless it is named on its own.
-    extraResources: [{ from: "build/room", to: ".", filter: ["**/*"] },
-      { from: "build/room/node_modules", to: "node_modules", filter: ["**/*"] },
-      // Both app icons, so the Dock can show the one chosen in Settings.
-      { from: path.join(root, "assets/brand"), to: "brand", filter: ["moondog-app-icon.png", "moondog-app-icon-dark.png"] }],
-    extraFiles: music ? [{ from: "native/build/moondog-music", to: "MacOS/moondog-music" }] : [],
-    mac: {
-      category: "public.app-category.music",
-      icon: path.join(root, "assets/brand/moondog-app-icon.png"),
-      hardenedRuntime: true,
-      gatekeeperAssess: false,
-      entitlements: "build-resources/entitlements.mac.plist",
-      entitlementsInherit: "build-resources/entitlements.mac.plist",
-      // Moondog reads what the listener plays in the Music app through Apple Events, which macOS asks them to allow.
-      extendInfo: { NSAppleMusicUsageDescription: MUSIC_USAGE, NSAppleEventsUsageDescription: "Moondog reads what you play in Music, and the playlist it comes from." },
-      identity: sign ? identity : null,
-      notarize,
-    },
-    dmg: { title: "Moondog ${version}" },
-  },
+  config: desktopConfig({ root, version, target, sign, notarize, identity: process.env.MOONDOG_SIGNING_IDENTITY, musicUsage: MUSIC_USAGE, music: Boolean(music) }),
 });
-// The DMG and the zip are what ships. The unpacked app electron-builder leaves beside them
-// would show up in Spotlight and Launchpad as a second Moondog, so it goes.
-await rm(path.join(here, "release", "mac-arm64"), { recursive: true, force: true });
-for (const artifact of artifacts) console.log(path.relative(here, artifact));
+
+if (flags.has("--dir")) console.log(path.relative(here, path.join(output, target.unpacked)));
+else {
+  // Only final deliverables reach release/. Unpacked Mac bundles stay inside .noindex while
+  // building, and are removed once the archives are complete so Spotlight never offers them.
+  for (const file of await readdir(output, { withFileTypes: true })) {
+    if (!file.isFile() || !/\.(?:dmg|zip|exe|AppImage|blockmap|yml)$/u.test(file.name) || file.name.startsWith("builder-")) continue;
+    await copyFile(path.join(output, file.name), path.join(release, file.name));
+    console.log(path.join("release", file.name));
+  }
+  if (target.platform === "darwin") await rm(path.join(output, target.unpacked), { recursive: true, force: true });
+}

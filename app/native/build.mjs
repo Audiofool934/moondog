@@ -1,6 +1,6 @@
 // Builds the Apple Music helper (music.swift) for Apple silicon.
 //   native/build/moondog-music     the executable pack.mjs puts beside the app's own, in Contents/MacOS
-//   native/build/Moondog Music.app the same executable in a bundle that MusicKit knows as Moondog, for
+//   native/build/apps.noindex/Moondog Music.app the executable in a bundle MusicKit knows as Moondog, for
 //                                  `npm start`, signed with the Developer ID when the keychain has one
 // Without Xcode's Swift compiler there is no helper, and the window keeps playing previews.
 import { execFile } from "node:child_process";
@@ -13,7 +13,7 @@ const run = promisify(execFile);
 const here = path.dirname(fileURLToPath(import.meta.url));
 const out = path.join(here, "build");
 const executable = path.join(out, "moondog-music");
-const bundle = path.join(out, "Moondog Music.app");
+const bundle = path.join(out, "apps.noindex", "Moondog Music.app");
 
 export const MUSIC_USAGE = "Moondog plays the songs you ask for from Apple Music.";
 
