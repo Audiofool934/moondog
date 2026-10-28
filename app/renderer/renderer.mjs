@@ -1304,7 +1304,16 @@ function showCover(frameNode, src, className) {
   // A cover still loading is replaced, not faded over.
   for (const node of live) if (!node.classList.contains("on")) node.remove();
   const old = [...frameNode.querySelectorAll(`img.${className}`)];
-  if (!src) { old.forEach((node) => node.remove()); return; }
+  // With nothing loaded, the cover goes at once, and its light fades as slowly as it came.
+  if (!src) {
+    for (const node of old) {
+      if (className !== "glow") { node.remove(); continue; }
+      node.classList.add("leaving");
+      node.classList.remove("on");
+      setTimeout(() => node.remove(), 1700);
+    }
+    return;
+  }
   const image = make("img", className);
   image.alt = "";
   image.decoding = "async";
