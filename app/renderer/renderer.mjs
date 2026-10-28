@@ -719,8 +719,9 @@ const armReady = () => {
 const onArm = (target, event) => (armReady() || Boolean(cue)) && target?.hit(event.clientX, event.clientY) === "arm";
 const nearArm = (target, event) => (armReady() ? target?.near(event.clientX, event.clientY) : target?.near(null));
 // The arm rests on the record while the music plays, whatever started or stopped it, and while it
-// waits for the song it asked for; the record turns only with the music.
-const armDown = (now) => Boolean(now?.playing) || cueing(now);
+// waits for the song it asked for; the record turns only with the music. Its wait ends when the music
+// plays, so a later pause lifts it at once.
+const armDown = (now) => cueing(now) || Boolean(now?.playing);
 function setArm() {
   if (nowPlaying()) { control("toggle", "record"); return; }
   if (cueing(null) || !state.ready || state.streaming) return;
