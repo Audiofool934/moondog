@@ -85,6 +85,21 @@ test("release ordering, argument validation and publication channels agree", () 
   assert.throws(() => releaseChannel({ name, version: "0.2.0", lockVersion: "0.1.0", tag: "v0.2.0" }));
 });
 
+test("the release tag check loads no npm package, because the release workflow runs it before npm ci", async () => {
+  const pending = [new URL("../../scripts/release-version.mjs", import.meta.url)], seen = new Set(), packages = [];
+  while (pending.length) {
+    const file = pending.pop();
+    if (seen.has(file.href)) continue;
+    seen.add(file.href);
+    for (const [, specifier] of (await readFile(file, "utf8")).matchAll(/^\s*(?:import|export)\b[^;]*?\bfrom\s*["']([^"']+)["']/gmu)) {
+      if (specifier.startsWith(".")) pending.push(new URL(specifier, file));
+      else if (!specifier.startsWith("node:")) packages.push(`${path.basename(file.pathname)} imports ${specifier}`);
+    }
+  }
+  assert.ok(seen.size > 2);
+  assert.deepEqual(packages, []);
+});
+
 test("version checks cache metadata, keep data private and honor opt-out/offline", async t => {
   const f = await fixture(t);
   assert.equal((await f.updater.check()).state, "available"); await f.updater.check(); assert.equal(f.fetches, 1);

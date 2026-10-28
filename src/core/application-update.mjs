@@ -5,7 +5,9 @@ import { access, lstat, mkdir, mkdtemp, readFile, readlink, realpath, rename, rm
 import { constants, realpathSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { resolveMoondogSettingsFile } from "../runtime/pi/runtime-settings.mjs";
+// The release workflow checks a tag with scripts/release-version.mjs before npm ci, so this module and
+// what it imports load no npm package. settings.json lives beside auth.json.
+import { resolveMoondogAuthFile } from "../runtime/pi/persistent-credential-store.mjs";
 import { resolveMoondogStateDirectory } from "./state-directory.mjs";
 
 const exec = promisify(execFile);
@@ -88,7 +90,7 @@ export async function activeInstallationProcesses(root, { run = command, ownPid 
 export function createApplicationUpdater({ root = DEFAULT_ROOT, environment = process.env, fetchImpl = globalThis.fetch,
   run = command, now = Date.now, activeProcesses, node = process.execPath, npm = "npm" } = {}) {
   root = realpathSync(path.resolve(root));
-  const storage = path.join(path.dirname(resolveMoondogSettingsFile(environment)), "updates");
+  const storage = path.join(path.dirname(resolveMoondogAuthFile(environment)), "updates");
   // Installation-wide, even when two sessions use different config homes.
   const lock = path.join(path.dirname(root), ".moondog-update-" + createHash("sha256").update(root).digest("hex").slice(0, 24) + ".lock");
   const recovery = lock + ".recovery.json";
@@ -103,7 +105,7 @@ export function createApplicationUpdater({ root = DEFAULT_ROOT, environment = pr
   async function assertDataOutsideReplacement(mode) {
     const replaced = mode === "npm" ? root : path.join(root, "node_modules");
     const canonical = await resolvedPath(replaced);
-    const personal = [path.dirname(resolveMoondogSettingsFile(environment)), resolveMoondogStateDirectory(environment),
+    const personal = [path.dirname(resolveMoondogAuthFile(environment)), resolveMoondogStateDirectory(environment),
       environment.MOONDOG_APPLE_IMPORTS_ROOT, environment.MOONDOG_APPLE_PROJECTION_PATH].filter(Boolean);
     for (const file of personal) {
       if (inside(replaced, path.resolve(file)) || inside(canonical, await resolvedPath(path.resolve(file)))) {
