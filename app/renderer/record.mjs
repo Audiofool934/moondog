@@ -18,6 +18,9 @@ const TURN = Math.PI * 2;
 // Off the record the arm stands swung out as far as the bar's mark swings its own.
 const LIFTED = -28 / 180 * Math.PI;
 const SWING_MS = 560;
+// A click takes the arm anywhere in a round target about the whole arm: within REACH of its middle, in
+// the record's radius.
+const REACH = 0.46;
 // A pointer near the arm lights it in its own dots, and never moves it. Within NEAR_PX of where a click
 // takes the arm, the light grows as the pointer comes closer: the arm's dots fill out a little, by BASE,
 // and swell most around the pointer, by SPOT, across SPREAD of the record's radius, so the light follows
@@ -34,18 +37,15 @@ const SPIN_DOWN = 0.72;
 const SLOWEST = 0.25;
 // A hand on the record holds it still for this long after it last moved it.
 const HELD_MS = 220;
-// The arm as a line to point at, in the record's unit coordinates: pivot, elbow, cartridge, stylus.
-const { arm: ARM, cartridge: CARTRIDGE } = lunarRecordShapes();
-const ARM_LINE = [ARM[0], ARM[1], CARTRIDGE.reduce(([x, y], [a, b]) => [x + a / 4, y + b / 4], [0, 0]), [0.755, -0.587]];
+// The arm's middle, halfway from its pivot to its stylus, in the record's unit coordinates, and half its length.
+const { arm: [PIVOT] } = lunarRecordShapes();
+const STYLUS = [0.755, -0.587];
+const MIDDLE = [(PIVOT[0] + STYLUS[0]) / 2, (PIVOT[1] + STYLUS[1]) / 2];
+const HALF = Math.hypot(PIVOT[0] - STYLUS[0], PIVOT[1] - STYLUS[1]) / 2;
 const swung = ([x, y], swing) => {
-  const [px, py] = ARM[0];
+  const [px, py] = PIVOT;
   const [cosine, sine] = [Math.cos(swing), Math.sin(swing)];
   return [px + (x - px) * cosine - (y - py) * sine, py + (x - px) * sine + (y - py) * cosine];
-};
-const toSegment = (x, y, [ax, ay], [bx, by]) => {
-  const length = (bx - ax) ** 2 + (by - ay) ** 2;
-  const t = length ? Math.min(1, Math.max(0, ((x - ax) * (bx - ax) + (y - ay) * (by - ay)) / length)) : 0;
-  return Math.hypot(x - ax - (bx - ax) * t, y - ay - (by - ay) * t);
 };
 const rgbOf = (colour) => (colour.match(/[\d.]+/gu) ?? [0, 0, 0]).slice(0, 3).map(Number);
 const reduced = matchMedia("(prefers-reduced-motion: reduce)");
@@ -158,8 +158,8 @@ export function mountRecord(canvas, { across = null } = {}) {
       -(((column - axes.x) / axes.radius - near.x) ** 2 + ((row - axes.y) / axes.radius - near.y) ** 2) / SPREAD ** 2)) : null;
     return trace(art, [null, null, null, new Path2D()], density, grow)[3];
   }
-  // Where a point in the window falls in the record's unit coordinates, how far it is from the arm there,
-  // how far from the arm a click still takes it, and how many pixels make one unit.
+  // Where a point in the window falls in the record's unit coordinates, how far it is from the arm's
+  // middle there, how far from it a click still takes the arm, and how many pixels make one unit.
   function measure(x, y) {
     if (!axes || !size) return null;
     const box = canvas.getBoundingClientRect();
@@ -167,10 +167,9 @@ export function mountRecord(canvas, { across = null } = {}) {
     const unit = box.width / grid * axes.radius;
     const nx = ((x - box.left) / box.width * grid - 0.5 - axes.x) / axes.radius;
     const ny = ((y - box.top) / box.height * grid - 0.5 - axes.y) / axes.radius;
-    const line = ARM_LINE.map((point) => swung(point, swing));
-    const gap = Math.min(...line.slice(1).map((to, index) => toSegment(nx, ny, line[index], to)));
-    // Never less than ten pixels either side of the arm, however small the record.
-    return { nx, ny, gap, reach: Math.max(0.1, 10 / unit), unit };
+    const [mx, my] = swung(MIDDLE, swing);
+    // Never less than ten pixels beyond the arm's ends, however small the record.
+    return { nx, ny, gap: Math.hypot(nx - mx, ny - my), reach: Math.max(REACH, HALF + 10 / unit), unit };
   }
   // How strongly the arm answers the pointer, eased toward how near the pointer is now: 1 where a click
   // takes the arm, falling to 0 at NEAR_PX beyond. A swing moves the arm toward or away from a still

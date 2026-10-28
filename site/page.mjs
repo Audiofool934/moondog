@@ -63,7 +63,7 @@ function follow() {
   const track = trackFor(wanted);
   track.stop += 1;
   // A song joined late starts where the scene is in it, faded in; one heard from its start, such as the
-  // ident as the arm is clicked, comes in at once, with its first sound whole.
+  // ident as the scene begins, comes in at once, with its first sound whole.
   let fadeIn = 1.2;
   if (track.audio.paused) {
     const at = Math.max(0, (Date.now() - song.startedAt) / 1000);
@@ -91,7 +91,7 @@ button.addEventListener("click", () => setSound(!on));
 // The cover. The scene waits on the record until the visitor lets it begin, with sound, or chooses to
 // watch without it; after a while on screen it begins on its own, silently, and the sound switch shows
 // itself once. Then it plays on, again and again. The record doesn't answer the visitor's pointer: the
-// scene's pointer takes over from where the click landed and clicks the record's arm.
+// scene's own pointer clicks the record's arm.
 const frame = document.querySelector(".stage iframe");
 const cover = document.querySelector("[data-cover]");
 const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -101,17 +101,17 @@ let waited = 0;
 let waiting = null;
 const toScene = (message) => frame.contentWindow?.postMessage({ source: "moondog-page", ...message }, location.origin);
 
-function begin({ sound = false, at = null } = {}) {
+function begin({ sound = false } = {}) {
   if (begun) return;
   begun = true;
   clearInterval(waiting);
   if (sound) setSound(true);
   cover.classList.add("leaving");
   setTimeout(() => { cover.hidden = true; }, 500);
-  toScene({ start: { at } });
+  toScene({ start: true });
 }
 function ready() {
-  if (begun) return toScene({ start: {} });
+  if (begun) return toScene({ start: true });
   if (reduced) return begin();
   if (!cover.hidden) return;
   cover.hidden = false;
@@ -122,12 +122,7 @@ function ready() {
     button.classList.add("hint");
   }, 250);
 }
-// A click from a key has no place on the page; the scene's pointer then comes in from its corner.
-cover.addEventListener("click", (event) => {
-  const box = frame.getBoundingClientRect();
-  const at = event.detail ? { x: event.clientX - box.left, y: event.clientY - box.top } : null;
-  begin({ sound: !event.target.closest("[data-silent]"), at });
-});
+cover.addEventListener("click", (event) => begin({ sound: !event.target.closest("[data-silent]") }));
 
 addEventListener("message", (event) => {
   if (event.origin !== location.origin || event.data?.source !== "moondog-scene") return;
