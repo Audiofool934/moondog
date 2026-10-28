@@ -3,7 +3,10 @@ import { EventEmitter } from "node:events";
 import test from "node:test";
 import { stripVTControlCharacters } from "node:util";
 import { TuiAltScreen, visibleWidth } from "@earendil-works/pi-tui";
-import { runMoondogTui } from "../../src/surfaces/cli/tui.mjs";
+import { hostLines, runMoondogTui } from "../../src/surfaces/cli/tui.mjs";
+
+// Any of the host lines the footer shows while the model thinks, with its trailing dots.
+const HOST = hostLines((line) => line).map((line) => `${line}\\.\\.\\.`).join("|");
 
 function deferred() {
   let resolve;
@@ -104,7 +107,7 @@ test("one prompt grows one reply, settles one count, and keeps the room fixed", 
   await until(() => fixture.body().includes("New conversation"));
   fixture.submit("Find a few related records");
   await until(() => callbacks);
-  await until(() => /Thinking\.\.\. · \d+s/.test(statusRow()));
+  await until(() => new RegExp(`(?:${HOST}) · \\d+s`).test(statusRow()));
   assert.match(statusRow(), /◎/);
   assert.doesNotMatch(statusRow(), /[◴◷◶◵]/u);
   assert.match(hintRow(), /enter queues the next one/);
@@ -183,7 +186,7 @@ test("enter queues the next message, and up brings the last one back", async (co
   const youLines = () => fixture.lines.filter((line) => line.includes("› You")).length;
   await until(() => fixture.body().includes("New conversation"));
   fixture.submit("Find a few related records");
-  await until(() => prompts.length === 1 && fixture.footer().includes("Thinking"));
+  await until(() => prompts.length === 1 && new RegExp(HOST).test(fixture.footer()));
   fixture.submit("play the quiet ones next");
   fixture.submit("then something slower");
   await until(() => fixture.footer().includes("2 queued"));
@@ -236,7 +239,7 @@ test("elapsed work stays readable without animation and stops rendering after sh
   } });
   await until(() => fixture.body().includes("New conversation"));
   fixture.submit("Wait for a music lookup");
-  await until(() => /Thinking\.\.\. · [1-9]\d*s/.test(fixture.footer()));
+  await until(() => new RegExp(`(?:${HOST}) · [1-9]\\d*s`).test(fixture.footer()));
   fixture.send("\x03");
   await until(() => fixture.footer().includes("Cancelled."));
   fixture.submit("/quit");
