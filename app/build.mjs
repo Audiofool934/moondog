@@ -15,7 +15,7 @@ await copyFile(path.join(here, "renderer", "index.html"), path.join(outdir, "ind
 if (process.platform === "darwin") {
   const { buildMusicHelper } = await import("./native/build.mjs");
   const source = path.join(here, "native", "music.swift");
-  const built = path.join(here, "native", "build", "Moondog Music.app", "Contents", "MacOS", "moondog-music");
+  const built = path.join(here, "native", "build", "apps.noindex", "Moondog Music.app", "Contents", "MacOS", "moondog-music");
   const stale = await Promise.all([stat(source), stat(built).catch(() => null)]).then(([a, b]) => !b || a.mtimeMs > b.mtimeMs);
   if (stale) await buildMusicHelper();
 }

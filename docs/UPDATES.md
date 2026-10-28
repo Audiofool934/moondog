@@ -16,6 +16,10 @@ Startup checks use the public npm registry, at most once per day per installed v
 
 `latest` selects stable releases; `moondog update --channel beta` opts into previews. The selection is saved when an update succeeds or the installed version is already current. `--check --channel beta` previews without changing your preference. `moondog update --channel latest` switches back; it never silently downgrades a newer beta. It waits until a stable release catches up.
 
+From 0.2.1, the beta preference selects the newer valid release from `beta` and `latest`.
+It receives a stable successor without losing the preference for future previews.
+A newer beta still takes precedence over an older stable release.
+
 ## Supported installations
 
 - Global npm installs on macOS/Linux: Moondog recognizes the package and its launcher under the same npm prefix. It prepares an exact version with nested dependencies in a sibling directory, verifies the CLI, preserves the previous package, then replaces it. Node and the launcher remain in place. The prefix must be writable by your user; this command does not request sudo.
@@ -44,7 +48,17 @@ One-time owner setup: configure the npm package's **trusted publisher** for GitH
 
 1. Bump `package.json` and both root versions in `package-lock.json` together in a reviewed PR. Use `X.Y.Z-beta.N` for previews or `X.Y.Z` for stable releases. Record user-visible changes and validation in the PR.
 2. Merge only after CI passes for that exact head; wait for main CI. Tag that verified main commit as `vX.Y.Z` (or `vX.Y.Z-beta.N`) and push that specific tag. Never move a published tag or reuse a version.
-3. `Publish release` rechecks tag/version/lockfile identity and main ancestry, runs the clean-source suite on Node 22.19.0 and 24, then publishes with provenance to the matching `latest` or `beta` dist-tag. It creates GitHub release notes after npm confirms publication.
-4. Verify the registry version, `gitHead`, channel, provenance, GitHub release and a fresh install. A green merge CI alone is not publication evidence. If npm succeeded but release-note creation failed, create the missing GitHub release without republishing that immutable npm version.
+3. `Publish release` rechecks tag/version/lockfile identity and main ancestry, runs the clean-source suite on Node 22.19.0 and 24, then publishes with provenance to the matching `latest` or `beta` dist-tag.
+   It rejects a release older than the current channel or GitHub latest.
+   An existing npm version must match the source commit and both the local and remote package hashes before a retry can continue.
+   It prepares a GitHub draft after npm confirms publication.
+4. Complete the [Mac publication procedure](../app/README.md#updates) from that tag.
+   The draft becomes public only after the publisher has verified and uploaded the app and update metadata.
+   Retry the same command after an interruption; do not rebuild or replace an already published version.
+5. Verify the registry version, `gitHead`, channel, provenance, GitHub assets, a fresh install, and an update from the previous version.
+   A green npm workflow alone is not desktop publication evidence.
+   If npm succeeded but draft creation failed, rerun the workflow to verify the existing immutable package and finish the draft.
+   A mismatched existing package or channel stops recovery and needs investigation.
 
-This workflow is ready for owner setup; its presence does not establish that the trusted publisher has been configured or that a new package has been published. Existing 0.1.0 users cannot receive in-app prompts until they bootstrap a release containing this updater.
+The workflow requires the configured trusted publisher and environment approval; its presence alone is not publication evidence.
+Existing 0.1.0 users cannot receive in-app prompts until they bootstrap a release containing this updater.

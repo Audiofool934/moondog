@@ -1,6 +1,6 @@
 // Builds the Apple Music helper (music.swift) for Apple silicon.
 //   native/build/moondog-music     the executable pack.mjs puts beside the app's own, in Contents/MacOS
-//   native/build/Moondog Music.app the same executable in a bundle that MusicKit knows as Moondog, for
+//   native/build/apps.noindex/Moondog Music.app the same executable in a bundle MusicKit knows as Moondog, for
 //                                  `npm start`, signed with the Developer ID when the keychain has one
 // Without Xcode's Swift compiler there is no helper, and the window keeps playing previews.
 import { execFile } from "node:child_process";
@@ -13,7 +13,7 @@ const run = promisify(execFile);
 const here = path.dirname(fileURLToPath(import.meta.url));
 const out = path.join(here, "build");
 const executable = path.join(out, "moondog-music");
-const bundle = path.join(out, "Moondog Music.app");
+const bundle = path.join(out, "apps.noindex", "Moondog Music.app");
 
 export const MUSIC_USAGE = "Moondog plays the songs you ask for from Apple Music.";
 
@@ -38,7 +38,7 @@ const INFO = `<?xml version="1.0" encoding="UTF-8"?>
  * Compiles the helper. With bundle (the default), also puts it in the development bundle and signs
  * that; packaging asks for the executable alone and leaves the development bundle as it was.
  */
-export async function buildMusicHelper({ bundle: withBundle = true } = {}) {
+export async function buildMusicHelper({ bundle: withBundle = true, required = false } = {}) {
   if (process.platform !== "darwin") return null;
   await mkdir(out, { recursive: true });
   const info = path.join(out, "Info.plist");
@@ -48,6 +48,7 @@ export async function buildMusicHelper({ bundle: withBundle = true } = {}) {
       "-Xlinker", "-sectcreate", "-Xlinker", "__TEXT", "-Xlinker", "__info_plist", "-Xlinker", info,
       path.join(here, "music.swift"), "-o", executable], { maxBuffer: 8 * 1024 * 1024 });
   } catch (error) {
+    if (required) throw new Error(`The release requires its Apple Music helper.\n${error.stderr || error.message}`);
     console.warn(`The Apple Music helper was not built, so the app plays previews: ${String(error.stderr || error.message).trim().split("\n")[0]}`);
     return null;
   }
