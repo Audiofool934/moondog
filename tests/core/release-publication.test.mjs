@@ -205,6 +205,26 @@ test("registry reads bypass negative caches and consume missing responses before
   }
 });
 
+test("registry parse and stream failures never include private response content", async () => {
+  const privateMarker = "fictional-private-response";
+  for (const fetchImpl of [
+    async () => new Response(`${privateMarker}: not JSON`),
+    async () => ({ ok: true, body: { async *[Symbol.asyncIterator]() { throw new Error(privateMarker); } } }),
+  ]) {
+    await assert.rejects(registryRequest("https://registry.npmjs.org/fixture", { fetchImpl }), error => {
+      assert.ok(!error.message.includes(privateMarker));
+      assert.ok(!JSON.stringify(error).includes(privateMarker));
+      assert.equal(error.cause, undefined);
+      return true;
+    });
+  }
+});
+
+test("structured command diagnostics preserve only allowlisted npm codes", () => {
+  const failure = { code: 1, npmCodes: ["E403", "not a safe code", "E403"] };
+  assert.equal(publishFailureSummary(failure), "npm publish failed (exit 1; npm E403).");
+});
+
 test("only missing, throttled and server/network registry failures are retryable", async () => {
   for (const status of [401, 403, 404, 429, 503]) {
     await assert.rejects(registryRequest("https://registry.npmjs.org/fixture", {

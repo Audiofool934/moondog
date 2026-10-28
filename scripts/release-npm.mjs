@@ -1,15 +1,14 @@
 // Publishes the npm package once, then prepares a draft for the Mac publisher to finish.
 // All remote mutations are injected into prepareRelease so interruption paths can be tested offline.
-import { execFile } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { promisify } from "node:util";
 import { compareReleaseVersions, releaseVersion, UPDATE_PACKAGE } from "../src/core/application-update.mjs";
 import { releaseChannel } from "./release-version.mjs";
 import { assertReleaseIdentity, findReleaseByTag } from "../app/release-publication.mjs";
+import { command, parseReleaseJson } from "../app/release-tools.mjs";
 
 const repository = "Audiofool934/moondog";
 export const packageIntegrity = bytes => `sha512-${createHash("sha512").update(bytes).digest("base64")}`;
@@ -32,7 +31,7 @@ export function assertPublishedPackage(metadata, expected, bytes) {
 
 export function assertNotOlder(version, current, label) {
   if (current == null) return;
-  if (!releaseVersion(current)) throw new Error(`${label} has an unsupported version: ${current}`);
+  if (!releaseVersion(current)) throw new Error(`${label} has an unsupported version.`);
   if (compareReleaseVersions(version, current) < 0) throw new Error(`Refusing to promote ${version}: ${label} is already ${current}.`);
 }
 
@@ -44,7 +43,10 @@ export function publishFailureSummary(error) {
   else if (/^E[A-Z_]{1,32}$/u.test(error?.code ?? "")) details.push(error.code);
   if (/^SIG[A-Z]{1,16}$/u.test(error?.signal ?? "")) details.push(error.signal);
   if (error?.killed) details.push("command timed out or was terminated");
-  const codes = [...new Set([...String(error?.stderr ?? "").matchAll(/^npm (?:error|ERR!) code (E[A-Z0-9_]{1,32})\s*$/gmu)].map(match => match[1]))];
+  const codes = [...new Set([
+    ...(Array.isArray(error?.npmCodes) ? error.npmCodes.filter(code => /^E[A-Z0-9_]{1,32}$/u.test(code)) : []),
+    ...[...String(error?.stderr ?? "").matchAll(/^npm (?:error|ERR!) code (E[A-Z0-9_]{1,32})\s*$/gmu)].map(match => match[1]),
+  ])];
   if (codes.length) details.push(`npm ${codes.join(", ")}`);
   return `npm publish failed (${details.join("; ") || "no exit status available"}).`;
 }
@@ -72,17 +74,19 @@ export async function registryRequest(url, { missing = false, binary = false, ti
   try {
     for await (const chunk of response.body) {
       size += chunk.length;
-      if (size > 10 * 1024 * 1024) throw new Error("Registry response exceeded the release verification limit.");
+      if (size > 10 * 1024 * 1024) throw Object.assign(new Error("Registry response exceeded the release verification limit."), { code: "RELEASE_RESPONSE_TOO_LARGE" });
       chunks.push(chunk);
     }
   } catch (error) {
     if (error.name === "TimeoutError" || error.name === "AbortError" || error.name === "TypeError") {
       throw Object.assign(new Error("Registry response timed out or was interrupted."), { retryable: true });
     }
-    throw error;
+    throw new Error(error.code === "RELEASE_RESPONSE_TOO_LARGE"
+      ? "Registry response exceeded the release verification limit."
+      : "Registry response could not be read.");
   }
   const bytes = Buffer.concat(chunks);
-  return binary ? bytes : JSON.parse(bytes.toString("utf8"));
+  return binary ? bytes : parseReleaseJson(bytes.toString("utf8"));
 }
 
 export async function readGithubRelease({ tag, prerelease, request }) {
@@ -177,10 +181,9 @@ export async function prepareRelease({ version, head, integrity, readTags, readV
 
 async function main() {
   const root = fileURLToPath(new URL("../", import.meta.url));
-  const run = promisify(execFile);
-  const sh = async (command, args) => (await run(command, args, { cwd: root, encoding: "utf8", maxBuffer: 8 * 1024 * 1024, timeout: 180_000 })).stdout.trim();
-  const pkg = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
-  const lock = JSON.parse(await readFile(path.join(root, "package-lock.json"), "utf8"));
+  const sh = async (program, args) => (await command(program, args, { cwd: root, timeout: 180_000 })).stdout;
+  const pkg = parseReleaseJson(await readFile(path.join(root, "package.json"), "utf8"));
+  const lock = parseReleaseJson(await readFile(path.join(root, "package-lock.json"), "utf8"));
   const tag = process.argv[2];
   if (lock.version !== pkg.version) throw new Error("The lockfile and package versions differ.");
   releaseChannel({ ...pkg, lockVersion: lock.packages[""].version, tag });
@@ -189,15 +192,15 @@ async function main() {
     throw new Error("Publish from a clean checkout at the release tag.");
   }
   const github = async endpoint => {
-    try { return JSON.parse(await sh("gh", ["api", `repos/${repository}/${endpoint}`])); }
+    try { return parseReleaseJson(await sh("gh", ["api", `repos/${repository}/${endpoint}`])); }
     catch (error) {
-      if (/HTTP 404/u.test(error.stderr ?? "")) return null;
+      if (error.httpStatus === 404) return null;
       throw error;
     }
   };
   const temporary = await mkdtemp(path.join(tmpdir(), "moondog-npm-release-"));
   try {
-    const [packed] = JSON.parse(await sh("npm", ["pack", "--json", "--ignore-scripts", "--pack-destination", temporary]));
+    const [packed] = parseReleaseJson(await sh("npm", ["pack", "--json", "--ignore-scripts", "--pack-destination", temporary]));
     const integrity = packageIntegrity(await readFile(path.join(temporary, packed.filename)));
     await prepareRelease({ version: pkg.version, head, integrity,
       readTags: options => registryRequest("https://registry.npmjs.org/-/package/@audiofool%2fmoondog/dist-tags", options),

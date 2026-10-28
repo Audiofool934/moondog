@@ -6,7 +6,7 @@ import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import path from "node:path";
 import { pipeline } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
-import { command, digestFile, phase, readJson, RELEASE_REPO, SIGNING_TEAM } from "./release-tools.mjs";
+import { command, commandFailure, digestFile, parseReleaseJson, phase, readJson, RELEASE_REPO, SIGNING_TEAM } from "./release-tools.mjs";
 import { releaseNames, verifyArtifacts } from "./release-artifacts.mjs";
 import { assertReleaseIdentity, findReleaseByTag, markAsLatest, publicationSource, uploadImmutableAssets, validateNpmRelease } from "./release-publication.mjs";
 
@@ -29,10 +29,10 @@ if (await git(["status", "--porcelain"])) throw new Error("Publish from a clean 
 const head = await git(["rev-parse", "HEAD"]), tagSource = await git(["rev-parse", `${tag}^{commit}`]);
 const gh = async args => (await command("gh", [...args, "--repo", RELEASE_REPO], { cwd: root, timeout: 60 * 60_000 })).stdout;
 // gh api uses an explicit endpoint rather than gh's current-working-directory inference.
-const api = async endpoint => JSON.parse((await command("gh", ["api", `repos/${RELEASE_REPO}/${endpoint}`], { cwd: root })).stdout);
+const api = async endpoint => parseReleaseJson((await command("gh", ["api", `repos/${RELEASE_REPO}/${endpoint}`], { cwd: root })).stdout);
 const optionalApi = async endpoint => {
   try { return await api(endpoint); }
-  catch (error) { if (/HTTP 404|Not Found \(HTTP 404\)/u.test(error.stderr || error.message)) return null; throw error; }
+  catch (error) { if (error.httpStatus === 404) return null; throw error; }
 };
 let remoteTag = (await api(`git/ref/tags/${tag}`)).object;
 for (let depth = 0; remoteTag.type === "tag" && depth < 5; depth++) remoteTag = (await api(`git/tags/${remoteTag.sha}`)).object;
@@ -46,7 +46,7 @@ if (!flags.has("--skip-build") && !flags.has("--verify-only")) {
 const manifest = await phase("Validate release provenance, hashes, signatures and containers", () => verifyArtifacts(releaseDir, provenance));
 if (flags.has("--verify-only")) { console.log(`Verified ${tag}; nothing was uploaded.`); process.exit(0); }
 
-const npmMetadata = async selector => JSON.parse((await command("npm", ["view", `${name}@${selector}`, "--json", "--registry", "https://registry.npmjs.org"], { cwd: root })).stdout);
+const npmMetadata = async selector => parseReleaseJson((await command("npm", ["view", `${name}@${selector}`, "--json", "--registry", "https://registry.npmjs.org"], { cwd: root })).stdout);
 const assertNpm = async () => validateNpmRelease(await npmMetadata(version), { name, version, source });
 await phase("Verify the published npm version and commit", assertNpm);
 
@@ -82,11 +82,10 @@ const remoteDigest = async asset => {
     const file = path.join(scratch, "asset");
     const child = spawn("gh", ["api", `repos/${RELEASE_REPO}/releases/assets/${asset.id}`, "-H", "Accept: application/octet-stream"],
       { cwd: root, stdio: ["ignore", "pipe", "pipe"] });
-    let stderr = "";
-    child.stderr.on("data", chunk => { stderr = (stderr + chunk).slice(-8192); });
+    child.stderr.resume();
     const done = new Promise((resolve, reject) => {
-      child.once("error", reject);
-      child.once("close", code => code === 0 ? resolve() : reject(new Error(`GitHub asset download failed: ${stderr}`)));
+      child.once("error", error => reject(commandFailure("gh", { code: error.code })));
+      child.once("close", (code, signal) => code === 0 ? resolve() : reject(commandFailure("gh", { code, signal })));
     });
     const timer = setTimeout(() => child.kill("SIGTERM"), 60 * 60_000);
     try { await Promise.all([done, pipeline(child.stdout, createWriteStream(file))]); }

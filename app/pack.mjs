@@ -6,7 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Arch, build, Platform } from "electron-builder";
 import { buildMusicHelper, MUSIC_USAGE } from "./native/build.mjs";
-import { builderSigningIdentity, command, digestFile, ELECTRON_DATA_SIGN_IGNORE, phase, readJson, retryTimestampSigning, saveJson, signingIdentity, SIGNING_TEAM, RELEASE_REPO } from "./release-tools.mjs";
+import { builderSigningIdentity, command, digestFile, ELECTRON_DATA_SIGN_IGNORE, parseReleaseJson, phase, readJson, retryTimestampSigning, saveJson, signingIdentity, SIGNING_TEAM, RELEASE_REPO } from "./release-tools.mjs";
 import { assertProvenance, finalizeArtifacts, inspectApp, releaseNames, verifyArtifacts } from "./release-artifacts.mjs";
 import { notarizeFile, prepareDmgUpload } from "./release-notary.mjs";
 
@@ -17,7 +17,7 @@ for (const flag of flags) if (!["--sign", "--no-notarize", "--dir"].includes(fla
 if (process.platform !== "darwin" || process.arch !== "arm64") throw new Error("Build this release on an Apple silicon Mac.");
 const sign = flags.has("--sign"), notarize = sign && !flags.has("--no-notarize");
 if (notarize && flags.has("--dir")) throw new Error("Use --dir --sign --no-notarize for a local signed QA app.");
-const { version } = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
+const { version } = parseReleaseJson(await readFile(path.join(root, "package.json"), "utf8"));
 const git = async args => (await command("git", ["-C", root, ...args])).stdout;
 if (notarize && await git(["status", "--porcelain"])) throw new Error("Release builds require a clean checkout.");
 const source = await git(["rev-parse", "HEAD"]);
@@ -40,8 +40,8 @@ if (receipt?.phase === "ready") {
 }
 if (notarize) {
   let existing;
-  try { existing = JSON.parse((await command("gh", ["api", `repos/${RELEASE_REPO}/releases/tags/v${version}`])).stdout); }
-  catch (error) { if (!/HTTP 404/u.test(error.stderr || error.message)) throw error; }
+  try { existing = parseReleaseJson((await command("gh", ["api", `repos/${RELEASE_REPO}/releases/tags/v${version}`])).stdout); }
+  catch (error) { if (error.httpStatus !== 404) throw error; }
   if (existing && !existing.draft) throw new Error("This version is already public. Reuse its verified artifacts or publish a new version; do not rebuild it.");
 }
 const identity = sign ? await signingIdentity() : null;
@@ -69,7 +69,7 @@ if (!receipt) {
     await mkdir(room, { recursive: true });
     await saveJson(path.join(work, "release-provenance.json"), provenance);
     const packed = await command("npm", ["pack", "--json", "--ignore-scripts", "--pack-destination", work], { cwd: root });
-    const [{ filename }] = JSON.parse(packed.stdout);
+    const [{ filename }] = parseReleaseJson(packed.stdout);
     await command("tar", ["-xzf", path.join(work, filename), "-C", room, "--strip-components=1"]);
     await copyFile(path.join(root, "package-lock.json"), path.join(room, "package-lock.json"));
     await command("npm", ["ci", "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fund"], { cwd: room, live: true });

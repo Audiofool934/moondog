@@ -19,7 +19,7 @@ export async function retryTimestampSigning(operation, { wait = ms => new Promis
     try { return await operation(); }
     catch (error) {
       const detail = `${error.message || ""}\n${error.stderr || ""}`;
-      if (attempt >= 3 || !/timestamp[^\n]*(?:unavailable|not available|timed out)/iu.test(detail)) throw error;
+      if (attempt >= 3 || !(error.timestampUnavailable === true || /timestamp[^\n]*(?:unavailable|not available|timed out)/iu.test(detail))) throw error;
       warn(`Apple's timestamp service did not respond. Retry signing ${attempt + 1}/3.`);
       await wait(attempt * 5000);
     }
@@ -34,8 +34,13 @@ export function builderSigningIdentity(identity) {
   return identity.slice(prefix.length);
 }
 
+export function parseReleaseJson(text) {
+  try { return JSON.parse(text); }
+  catch { throw new Error("Release command returned invalid JSON."); }
+}
+
 export async function readJson(file, optional = false) {
-  try { return JSON.parse(await readFile(file, "utf8")); }
+  try { return parseReleaseJson(await readFile(file, "utf8")); }
   catch (error) { if (optional && error.code === "ENOENT") return null; throw error; }
 }
 
@@ -53,19 +58,53 @@ export async function digestFile(file) {
   return { name: path.basename(file), size, sha256: sha256.digest("hex"), sha512: sha512.digest("base64") };
 }
 
-// Arguments stay out of logs: callers may use a Keychain profile but never print credentials.
+const commandNames = new Set(["node", "npm", "git", "gh", "tar", "ditto", "security", "codesign", "xcrun", "spctl", "hdiutil", "PlistBuddy"]);
+const commandName = program => typeof program === "string" && commandNames.has(path.basename(program)) ? path.basename(program) : "Release command";
+const systemCodes = new Set(["ENOENT", "EACCES", "EPERM", "EAGAIN", "E2BIG", "EINVAL", "ENOMEM", "ENOTDIR", "EMFILE", "ENFILE", "ENOEXEC", "ETXTBSY"]);
+const npmCodes = new Set(["E401", "E403", "E404", "E429", "E500", "E502", "E503", "E504", "EOTP", "ENEEDAUTH", "EPUBLISHCONFLICT", "EPRIVATE", "EUSAGE",
+  "ENOENT", "EACCES", "EPERM", "ECONNRESET", "ECONNREFUSED", "ETIMEDOUT", "EAI_AGAIN", "ENETUNREACH", "EHOSTUNREACH"]);
+const signalNames = new Set(["SIGTERM", "SIGKILL", "SIGINT", "SIGHUP", "SIGABRT", "SIGSEGV", "SIGILL", "SIGBUS", "SIGPIPE"]);
+
+// Child output may contain credentials. Return only fixed, recognized diagnostics;
+// never retain the raw output, spawn arguments, original error, or its cause.
+export function commandFailure(program, { stdout = "", stderr = "", code, signal, timedOut = false } = {}) {
+  const output = `${stdout}\n${stderr}`, fields = {}, details = [];
+  if (Number.isInteger(code) || systemCodes.has(code)) { fields.code = code; details.push(Number.isInteger(code) ? `exit ${code}` : code); }
+  if (signalNames.has(signal)) { fields.signal = signal; details.push(signal); }
+  if (timedOut) { fields.timedOut = true; details.push("timed out"); }
+  const statuses = [...new Set([...output.matchAll(/\bHTTP(?:\/[12](?:\.\d)?)? ([1-5]\d{2})(?=[)\s]|$)/gu)].map(match => Number(match[1])))];
+  if (statuses.length === 1) { fields.httpStatus = statuses[0]; details.push(`HTTP ${statuses[0]}`); }
+  if (/timestamp[^\n]*(?:unavailable|not available|timed out)/iu.test(output)) {
+    fields.timestampUnavailable = true; details.push("timestamp service unavailable");
+  }
+  const codes = [...new Set([...output.matchAll(/^npm (?:error|ERR!) code (E[A-Z0-9_]+)\s*$/gmu)].map(match => match[1]).filter(code => npmCodes.has(code)))];
+  if (codes.length) { fields.npmCodes = codes; details.push(`npm ${codes.join(", ")}`); }
+  return Object.assign(new Error(`${commandName(program)} failed (${details.join("; ") || "no exit status available"}).`), fields);
+}
+
+// Successful output stays private for JSON parsing. Live mode reports only fixed
+// progress, never stdout/stderr from npm, signing tools, or their dependencies.
 export function command(program, args, { cwd, live = false, timeout = 10 * 60_000 } = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn(program, args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
-    let stdout = "", stderr = "", timedOut = false;
+    const start = Date.now(), label = commandName(program);
+    if (live) process.stdout.write(`${label}: started.\n`);
+    let child;
+    try { child = spawn(program, args, { cwd, stdio: ["ignore", "pipe", "pipe"] }); }
+    catch (error) { reject(commandFailure(program, { code: error.code })); return; }
+    let stdout = "", stderr = "", timedOut = false, settled = false;
     const timer = setTimeout(() => { timedOut = true; child.kill("SIGTERM"); }, timeout);
-    child.stdout.on("data", chunk => { stdout = (stdout + chunk).slice(-8 * 1024 * 1024); if (live) process.stdout.write(chunk); });
-    child.stderr.on("data", chunk => { stderr = (stderr + chunk).slice(-8 * 1024 * 1024); if (live) process.stderr.write(chunk); });
-    child.once("error", error => { clearTimeout(timer); reject(error); });
-    child.once("close", code => {
-      clearTimeout(timer);
+    const progress = live ? setInterval(() => process.stdout.write(`${label}: ${Math.round((Date.now() - start) / 1000)}s elapsed.\n`), 30_000) : null;
+    const clearTimers = () => { clearTimeout(timer); clearInterval(progress); };
+    child.stdout.on("data", chunk => { stdout = (stdout + chunk).slice(-8 * 1024 * 1024); });
+    child.stderr.on("data", chunk => { stderr = (stderr + chunk).slice(-8 * 1024 * 1024); });
+    child.once("error", error => { settled = true; clearTimers(); reject(commandFailure(program, { code: error.code })); });
+    child.once("close", (code, signal) => {
+      clearTimers();
+      if (settled) return;
+      settled = true;
+      if (live) process.stdout.write(`${label}: ${code === 0 && !timedOut ? "complete" : "failed"} after ${Math.round((Date.now() - start) / 1000)}s.\n`);
       if (code === 0 && !timedOut) resolve({ stdout: stdout.trim(), stderr: stderr.trim() });
-      else reject(Object.assign(new Error(`${program} ${timedOut ? "timed out" : `exited ${code}`}\n${stderr || stdout}`), { stdout, stderr, code }));
+      else reject(commandFailure(program, { stdout, stderr, code, signal, timedOut }));
     });
   });
 }

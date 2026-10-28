@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { copyFile, rename, rm } from "node:fs/promises";
 import path from "node:path";
-import { command, digestFile, phase, readJson, saveJson } from "./release-tools.mjs";
+import { command, digestFile, parseReleaseJson, phase, readJson, saveJson } from "./release-tools.mjs";
 
 // Keep the final DMG name stable, but give Apple's upload a unique recoverable name.
 // Save that name before copying. A crash can leave only the same retryable temp file.
@@ -42,7 +42,7 @@ export async function notarizeFile({ file, receiptFile, profile, run = command, 
   }
   receipt ??= { schema: 1, name: path.basename(file), sha256: artifact.sha256, startedAt: new Date().toISOString() };
   const auth = ["--keychain-profile", profile];
-  const json = async args => JSON.parse((await run("xcrun", ["notarytool", ...args, ...auth, "--output-format", "json"], { timeout: 60 * 60_000 })).stdout);
+  const json = async args => parseReleaseJson((await run("xcrun", ["notarytool", ...args, ...auth, "--output-format", "json"], { timeout: 60 * 60_000 })).stdout);
   if (!receipt.id && receipt.submitting) {
     const history = await json(["history"]);
     // The persisted filename is unique. Apple's timestamps need not share this host's
@@ -71,7 +71,7 @@ export async function notarizeFile({ file, receiptFile, profile, run = command, 
   receipt.status = result.status;
   await save(receiptFile, receipt);
   if (result.status !== "Accepted") {
-    const diagnostic = await run("xcrun", ["notarytool", "log", receipt.id, ...auth]).then(result => JSON.parse(result.stdout), () => null);
+    const diagnostic = await run("xcrun", ["notarytool", "log", receipt.id, ...auth]).then(result => parseReleaseJson(result.stdout), () => null);
     if (diagnostic) await save(`${receiptFile}.log.json`, diagnostic);
     throw new Error(`Apple submission ${receipt.id}: ${result.status}. See ${receiptFile}.log.json; the artifact was not resubmitted.`);
   }
