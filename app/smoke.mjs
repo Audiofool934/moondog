@@ -134,6 +134,16 @@ try {
   assert.equal(result.code, 0, `App quit failed: ${JSON.stringify(result)}\n${log}`);
   await writeFile(path.join(out, `${process.platform}.json`), `${JSON.stringify({ platform: process.platform, arch: process.arch, firstRun: true, saved: true, imported: true, settings: true, cleanExit: true }, null, 2)}\n`);
   console.log(`Packaged desktop smoke passed on ${process.platform}/${process.arch}. Screenshots: ${path.relative(here, out)}`);
+} catch (error) {
+  // A provider-independent import error is often visible in the sheet rather than stderr.
+  // Keep that evidence before the isolated app and its data are removed.
+  if (socket?.readyState === WebSocket.OPEN) {
+    const page = await evaluate('document.body.innerText.slice(0, 12000)').catch(() => null);
+    await writeFile(path.join(out, `${process.platform}-failure.json`), `${JSON.stringify({ error: error.message, page, exceptions }, null, 2)}\n`).catch(() => {});
+    const screenshot = await cdp("Page.captureScreenshot", { format: "png" }).catch(() => null);
+    if (screenshot) await writeFile(path.join(out, `${process.platform}-failure.png`), Buffer.from(screenshot.data, "base64")).catch(() => {});
+  }
+  throw error;
 } finally {
   socket?.close();
   for (const { timer, reject } of pending.values()) { clearTimeout(timer); reject(new Error("Smoke test closed")); }

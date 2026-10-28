@@ -3,10 +3,11 @@ import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { pathToFileURL } from "node:url";
 import { crc32, deflateRawSync } from "node:zlib";
 import { createFictionalSpotifyHistoryArchive } from "../../src/demo/fictional-spotify-history.mjs";
 import { listZipMembers, readZipMember } from "../../src/importers/zip-reader.mjs";
-import { readSpotifyHistoryArchive } from "../../src/integrations/spotify/history-archive.mjs";
+import { prepareHistoryImport } from "../../src/profile/history-import.mjs";
 import { readYouTubeMusicTakeout } from "../../src/integrations/youtube-music/takeout.mjs";
 import { findNcmCli } from "../../src/integrations/netease/ncm-cli-player.mjs";
 import { createMusicAppPlayer } from "../../src/integrations/apple-music/music-app.mjs";
@@ -48,14 +49,21 @@ function archive(name, text, checksum = crc32(Buffer.from(text))) {
   return Buffer.concat([local, filename, compressed, central, filename, end]);
 }
 
-test("desktop imports a fictional Spotify ZIP from a path with spaces and Unicode without system tools", async (t) => {
+test("desktop previews a fictional Spotify ZIP through the import entrypoint with native paths, spaces and Unicode", async (t) => {
   const root = await folder(t);
   const archivePath = path.join(root, "音乐 history.zip");
   await writeFile(archivePath, createFictionalSpotifyHistoryArchive());
-  const imported = await readSpotifyHistoryArchive({ archivePath, subjectId, capturedAt });
-  assert.ok(imported.listening_events.length > 0);
-  assert.ok(imported.track_refs.length > 0);
-  assert.equal(imported.import_batch.source_format, "spotify_extended_streaming_history_music_v1");
+  // Exercise the same path normalization as a desktop drop and file picker, including Windows separators.
+  for (const filePath of [archivePath, `"${archivePath}"`, `'${archivePath}'`, pathToFileURL(archivePath).href]) {
+    const { provider, preview, bundle } = await prepareHistoryImport({ filePath, subjectId, capturedAt });
+    assert.equal(provider, "spotify");
+    assert.equal(preview.fileName, "音乐 history.zip");
+    assert.equal(preview.source, "spotify-extended");
+    assert.ok(preview.listeningEvents > 0);
+    assert.ok(preview.tracks > 0);
+    assert.equal(preview.listeningEvents, bundle.listening_events.length);
+    assert.equal(bundle.import_batch.source_format, "spotify_extended_streaming_history_music_v1");
+  }
 });
 
 test("ZIP reads compressed Unicode data and rejects excessive data, missing members and damaged checksums", async (t) => {
