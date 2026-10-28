@@ -5,14 +5,23 @@
 import { app, autoUpdater as squirrel, BrowserWindow, dialog, ipcMain, Menu, MessageChannelMain, nativeTheme, screen, shell, utilityProcess } from "electron";
 import electronUpdater from "electron-updater";
 import { execFile, spawn } from "node:child_process";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { windowLocale, windowStrings } from "./strings.mjs";
 import { createUpdates } from "./updates.mjs";
+import { createCoreShutdown } from "./shutdown.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
+// Packaged release checks keep window preferences and Chromium storage disposable too.
+if (process.env.MOONDOG_APP_USER_DATA) {
+  const directory = process.env.MOONDOG_APP_USER_DATA;
+  if (!path.isAbsolute(directory)) throw new Error("MOONDOG_APP_USER_DATA must be an absolute path.");
+  mkdirSync(directory, { recursive: true });
+  app.setPath("userData", directory);
+  app.setPath("sessionData", directory);
+}
 // For automated checks: lets a DevTools client drive the window.
 if (process.env.MOONDOG_APP_DEBUG_PORT) app.commandLine.appendSwitch("remote-debugging-port", process.env.MOONDOG_APP_DEBUG_PORT);
 
@@ -46,6 +55,7 @@ function coreEnvironment(shellPath) {
 let window = null;
 let core = null;
 let quitting = false;
+const shutdownCore = createCoreShutdown({ getCore: () => core, stopMusic: () => musicHelper?.stdin.end() });
 // What the page last said it can do; the menu greys out what would do nothing.
 const playback = { controllable: false, streaming: false };
 let dockMenu = null;
@@ -65,6 +75,10 @@ const updates = createUpdates({
   },
   // macOS closes the windows to install the update, so a closing window closes instead of hiding.
   onRestart: () => { quitting = true; },
+  beforeInstall: async () => {
+    quitting = true;
+    try { await shutdownCore(); } catch (error) { quitting = false; throw error; }
+  },
 });
 function updateItem(t) {
   const { phase, installing } = updates.state();
@@ -320,7 +334,7 @@ let musicHelper = null;
 let musicSequence = 0;
 const musicWaiting = new Map();
 const musicHelperFile = () => (app.isPackaged ? path.join(path.dirname(app.getPath("exe")), "moondog-music")
-  : path.join(here, "native", "build", "Moondog Music.app", "Contents", "MacOS", "moondog-music"));
+  : path.join(here, "native", "build", "apps.noindex", "Moondog Music.app", "Contents", "MacOS", "moondog-music"));
 function startMusicHelper() {
   if (musicHelper || process.platform !== "darwin" || !existsSync(musicHelperFile())) return musicHelper;
   const helper = spawn(musicHelperFile(), [], { stdio: ["pipe", "pipe", "ignore"] });
@@ -469,19 +483,15 @@ nativeTheme.on("updated", () => window?.setBackgroundColor(background()));
 let stopping = false;
 app.on("before-quit", (event) => {
   quitting = true;
-  // The helper stops its songs and exits when its pipe closes.
-  musicHelper?.stdin.end();
-  if (!core) return;
+  if (!core) { void shutdownCore(); return; }
   event.preventDefault();
   if (stopping) return;
   stopping = true;
-  const running = core;
-  const timer = setTimeout(() => running.kill(), 5000);
-  running.once("exit", () => {
-    clearTimeout(timer);
-    app.quit();
+  void shutdownCore().then(() => app.quit(), (error) => {
+    stopping = false;
+    quitting = false;
+    dialog.showErrorBox("Moondog could not quit", error.message);
   });
-  running.postMessage({ type: "quit" });
 });
 app.on("activate", () => window?.show());
 app.whenReady().then(() => {

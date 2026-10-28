@@ -10,6 +10,7 @@ import { cp, mkdir, readFile, rm, watch, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import * as esbuild from "esbuild";
+import { stableMacDownload } from "./download.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "..");
@@ -47,22 +48,18 @@ function contentPolicy(document) {
 }
 const policyTag = (document) => `<meta http-equiv="Content-Security-Policy" content="${contentPolicy(document)}">`;
 
-// The newest release with a Mac download. A release is created before its files are uploaded,
-// so the page links the newest one that already has its DMG, and the release list otherwise.
+// The default download stays on a complete stable release, even when a newer preview exists.
 async function macDownload() {
   const fallback = { url: `${repository}/releases`, version: null };
   if (flags.has("--offline")) return fallback;
   try {
     const token = process.env.GITHUB_TOKEN;
-    const response = await fetch("https://api.github.com/repos/Audiofool934/moondog/releases?per_page=20", {
+    const response = await fetch("https://api.github.com/repos/Audiofool934/moondog/releases?per_page=100", {
       headers: { accept: "application/vnd.github+json", ...(token ? { authorization: `Bearer ${token}` } : {}) },
       signal: AbortSignal.timeout(10_000),
     });
     if (!response.ok) throw new Error(`GitHub answered ${response.status}`);
-    for (const release of await response.json()) {
-      const dmg = !release.draft && release.assets?.find((asset) => /-arm64\.dmg$/u.test(asset.name));
-      if (dmg) return { url: dmg.browser_download_url, version: release.tag_name.replace(/^v/u, "") };
-    }
+    return stableMacDownload(await response.json()) ?? fallback;
   } catch (error) {
     console.warn(`The Mac download links to the release list: ${error.message}`);
   }

@@ -424,6 +424,7 @@ function relabel(data) {
 core.onmessage = ({ data }) => {
   if (!data?.type) return;
   window.__harness?.sent.push(data);
+  if (data.type === "new") { shown = []; send({ type: "session", current: null, transcript: [] }); }
   if (["label", "delete", "folder-save"].includes(data.type)) relabel(data);
   if (data.type === "models") send({ type: "models", providers });
   if (data.type === "provider-models") send({ type: "provider-models", provider: data.provider,

@@ -50,7 +50,8 @@ A model or music service chosen there lasts until the app quits, and sign-in and
   It is full size at home, where the latest exchange starts: the newest message just under the record, or the end of the words when everything after that message fits.
   Moving away from home, up into history or down a long reply, shrinks it as you scroll, to half its size and no smaller.
   Its size follows where the view is and nothing else, so it never jumps, and it is the same size each time the view rests at the same place. A reply growing below the view leaves it as it is.
-  Shrinking follows the hand at once; growing back takes at least 600 ms, so a quick pass by home doesn't flash it full. A glide (the round button, a request mark) takes it straight from its size where the glide starts to its size where the glide ends.
+  Shrinking and growing follow the hand at once.
+  A glide (the round button, a request mark) takes it straight from its size where the glide starts to its size where the glide ends.
   The room above the first words is what the record takes at the top of the conversation, so it changes when the conversation does, never while you scroll, and the words never move under your hand.
   Its dots are drawn at the size the window shows, on the screen's pixels, so a smaller record never shimmers with moiré.
   A click on the record, or `⌥⌘R`, folds it into a small mark in the middle of the title bar and keeps it there; a click on the mark opens it and returns home under it.
@@ -171,8 +172,8 @@ The helper's check also reports the account's storefront, and the core then sear
 At the end of a queue MusicKit does not stop: it pauses, at the end of the last song or back at the start of the first.
 The helper reports either as the end of the queue, so the window and the agent hear it as they do for previews.
 
-`node native/build.mjs` builds the helper on its own: `native/build/moondog-music` for packaging, and `native/build/Moondog Music.app`, signed with the Developer ID, for `npm start`.
-To ask it directly, run `"native/build/Moondog Music.app/Contents/MacOS/moondog-music"` and type `{"id":1,"type":"check"}`.
+`node native/build.mjs` builds the helper on its own: `native/build/moondog-music` for packaging, and `native/build/apps.noindex/Moondog Music.app`, signed with the Developer ID, for `npm start`.
+To ask it directly, run `"native/build/apps.noindex/Moondog Music.app/Contents/MacOS/moondog-music"` and type `{"id":1,"type":"check"}`.
 
 ## Look at every state
 
@@ -186,8 +187,11 @@ An evaluation failure exits with a nonzero status.
 
 ## Build the app
 
-`npm run pack` builds an unsigned Moondog.app for Apple silicon, as a DMG and a zip in `release/`.
-`npm run release` builds the same app, signed with the Developer ID and notarized by Apple, so it opens without a warning.
+`npm run pack` builds local QA archives for Apple silicon under `release/qa.noindex/`.
+`node pack.mjs --dir --sign --no-notarize` leaves a signed QA app there without submitting it to Apple.
+`npm run release` builds a signed, notarized app, ZIP and DMG, verifies the exact files, and records a release manifest in `release/`.
+Formal builds require a clean checkout and a working Apple Music helper.
+The helper's compiler errors stop the release instead of silently reducing playback to previews.
 
 - The app carries the core exactly as the npm package ships it: `npm pack` decides the files, and `npm ci --omit=dev` adds their dependencies.
 - Signing needs the Developer ID Application certificate in the login keychain.
@@ -196,6 +200,11 @@ An evaluation failure exits with a nonzero status.
   To configure another machine, run `xcrun notarytool store-credentials mac-mini-notary --team-id <your team ID>` and enter the Apple ID and app-specific password at the secure prompts.
   `MOONDOG_SIGNING_IDENTITY` selects a different certificate.
   Keep passwords in Keychain; profile names and environment variables contain no password.
+- The app records its source commit, version, build number and signing team inside the signed bundle.
+  Publication verifies that record, both apps inside the ZIP and DMG, their signatures and notarization tickets, and every update checksum.
+- Interrupted notarization resumes the recorded submission in `release/.state/<version>/`.
+  Keep that directory and its original artifacts until the release finishes.
+  Rerun the same command from the same commit; changed artifacts are rejected instead of submitted again.
 - Opened from the Dock or Finder, the app has a minimal `PATH`, so the core gets the `PATH` of a login shell, as in a terminal.
   Programs such as `codex`, which web research can use, keep working.
 - The packaged core has no npm update notice, because the app updates as a whole.
@@ -214,20 +223,27 @@ The packaged app updates itself from this repository's GitHub releases (`updates
   A failed check or download leaves the installed app as it is, and the next check tries again.
 - macOS installs only a build signed by the same Developer ID team, and the download must match the SHA-512 checksum in the release's `latest-mac.yml`.
 - Updating replaces the app only. Profile, history, conversations and sign-ins stay where they are.
+- Before starting the installer, Moondog stops its old core and waits for it to exit.
+  A failure to stop it leaves the downloaded update available for another explicit attempt.
 
 To publish an update:
 
 1. Bump the version at the repository root (`package.json` and `package-lock.json`), commit and push it.
    The app compares versions, so a build with an unchanged version never reaches anyone.
-2. Push the tag, `v` and the version. `Publish release` checks it, waits for the owner's approval in the `npm` environment, publishes to npm, and creates the GitHub release (a prerelease for a beta).
+2. Push the tag, `v` and the version.
+   `Publish release` checks it, waits for the owner's approval in the `npm` environment, publishes or verifies the npm version, and prepares a GitHub draft.
+   The desktop updater continues to see the previous complete release while the draft is prepared.
 3. On the Mac mini, in a clean worktree at the tag, run `npm ci` at the root and here, then `npm run publish-app`.
-   It builds, signs and notarizes the app, signs, notarizes and staples the DMG, waits for the release, and uploads the zip, its `.blockmap`, the DMG, and `latest-mac.yml` last, because the app acts on it.
-   `--skip-build` reuses a build already in `release/`; `--create` makes the release when the workflow did not.
+   It builds and verifies the artifacts, uploads the ZIP, blockmap, DMG and update metadata to the draft, then publishes the complete release and rebuilds the project page.
+   `--skip-build` requires the recorded build manifest and verifies its artifacts again.
+   `--create` prepares a missing draft; it does not bypass npm or artifact verification.
+   Existing remote assets with identical hashes are reused.
+   Different bytes under the same filename are rejected; release a new version instead of overwriting a published build.
 
 To try an update before publishing it, build two versions with `node pack.mjs --sign --no-notarize` (signed, not notarized), serve the newer one's zip, `.blockmap` and `latest-mac.yml` over HTTP, and start the older app from a terminal with `MOONDOG_UPDATE_FEED=http://127.0.0.1:8765`.
-Set `MOONDOG_CONFIG_HOME` and `MOONDOG_STATE_HOME` to empty folders too, so the older app never opens your own profile.
+Set `MOONDOG_CONFIG_HOME`, `MOONDOG_STATE_HOME` and `MOONDOG_APP_USER_DATA` to empty absolute folders too, so the test app never opens your own profile or window preferences.
 With that feed, a click on Update downloads the newer build, installs it and quits without restarting, because a restarted app would have none of these settings and would open your own profile; start it again from the terminal with the same settings.
-That quit is not the restart a published update makes: there macOS closes the window first, and the core and the Apple Music helper stop after it, so a change to quitting needs that order tried too.
+Also verify the normal published restart path: the old core must exit before the installer can launch the new app.
 Extract test copies into a folder whose name ends in `.noindex`, so Spotlight doesn't offer them.
 
 ## Not yet

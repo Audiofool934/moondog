@@ -9,11 +9,13 @@ Contribution information is in [CONTRIBUTING.md](../CONTRIBUTING.md).
 ## Distribution
 
 The current distribution is a source checkout with Node.js 22.19.0 or newer and locked npm dependencies, on macOS or Linux.
-The source version is `0.2.0`.
+The source version is `0.2.1`.
 `@audiofool/moondog` is the public npm package name, and the registry serves 0.2.0 as `latest`.
 Version 0.1.0 predates the updater, so its installs need a one-time manual upgrade; see [updates and maintainer setup](UPDATES.md).
 A `v` tag publishes through npm trusted publishing with provenance, after the owner approves the `npm` environment.
 The tagged release workflow runs the clean-source check before OIDC publication.
+It prepares a draft GitHub release; verified Mac artifacts must be uploaded before that release becomes public.
+The project page selects stable downloads and leaves preview releases on GitHub.
 
 The desktop app builds as an unsigned or signed and notarized Mac app from [`app/`](../app/README.md).
 Each GitHub release carries the signed and notarized build for Apple silicon, and the [project page](https://moondog.audiofool.ai) links the newest one.
