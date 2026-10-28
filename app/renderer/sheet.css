@@ -165,7 +165,7 @@
 .sheet .auth-line { font-size: var(--t-small); line-height: 1.5; color: var(--text-2); }
 .sheet .auth .chip { background: var(--surface); box-shadow: var(--edge); }
 
-/* Import: a working line with the conversation's turning mark, then the preview. */
+/* Import: a working line with the conversation's working mark, then the preview. */
 .sheet .working { display: flex; align-items: center; gap: 10px; min-height: 36px; font-size: var(--t-ui); color: var(--text); font-variant-numeric: tabular-nums; }
 .sheet .working .button { margin-inline-start: auto; }
 .sheet .preview-title { margin: 0; font-size: var(--t-title); font-weight: 600; line-height: 1.35; color: var(--text); }

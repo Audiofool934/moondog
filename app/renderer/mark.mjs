@@ -65,3 +65,20 @@ export function createMark() {
     playing(on) { mark.classList.toggle("playing", Boolean(on)); },
   };
 }
+
+// The working mark, in place of the word "Loading": not the logo but one of its parts, the glints
+// that travel the mark's grooves while music plays, here scratched back and forth about the spindle
+// and stretched by the speed of each stroke. Every working mark is in step with the others: its
+// `offset` into the scratch is the moment it starts, unless the caller fixes one, and two marks with
+// one offset are the same markup, so a redraw that compares markup keeps the one already moving.
+export const SCRATCH_MS = 1600;
+// The two grooves, each with the angle its path starts from, in degrees: half a turn before its glint.
+const SCRATCH_GROOVES = [[0.84, 118], [0.5, -62]];
+export function scratchMark(offset = Math.round(performance.now() % SCRATCH_MS)) {
+  const mark = shape("svg", { viewBox: "-1 -1 2 2", class: "mark scratching", "aria-hidden": "true", style: `--scratch: ${SCRATCH_MS}ms; --offset: -${offset}ms` });
+  for (const [radius] of SCRATCH_GROOVES) mark.append(shape("circle", { r: radius, class: "groove" }));
+  mark.append(shape("circle", { r: 0.13, class: "ink" }));
+  // A path one unit long lets the scratch move and stretch both glints in turns of the record.
+  for (const [radius, angle] of SCRATCH_GROOVES) mark.append(shape("circle", { r: radius, pathLength: 1, transform: `rotate(${angle})`, class: "glint" }));
+  return mark;
+}

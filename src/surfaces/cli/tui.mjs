@@ -52,6 +52,10 @@ import {
   setBrandText,
 } from "./brand-components.mjs";
 
+// The lines Moondog shows, as a radio host, while the model thinks; the window has the same ones.
+export const hostLines = (tr) => [tr("Reading the room"), tr("Checking the request line"), tr("Finding the groove"), tr("Working the decks"),
+  tr("Planning the segue"), tr("Mic check"), tr("Riding the faders"), tr("Finding the cue")];
+
 const LAYOUT_NODE = Symbol.for("@earendil-works/pi-tui/layout-node");
 
 /** Full-screen listening room. The conversation scrolls; the header and draft stay put. */
@@ -2275,7 +2279,11 @@ export async function runMoondogTui({
     }
 
     setBusy(true, () => activeRuntime.abort());
-    setFooter(tr("Thinking..."));
+    // While the model thinks, the host's own line from behind the decks, a new one each time it goes back to thinking.
+    const lines = hostLines(tr);
+    let thoughts = Math.floor(Math.random() * lines.length);
+    const thinking = () => `${lines[thoughts++ % lines.length]}...`;
+    setFooter(thinking());
     transcriptScroll.scrollToEnd();
     addLabel("Moondog");
     const work = new AgentWork(getTheme, () => phase);
@@ -2303,7 +2311,7 @@ export async function runMoondogTui({
       if (pending.length) {
         setFooter(pending.length > 1 ? tr("{count} running · {label}", { count: pending.length, label: pending[0].label }) : `${pending[0].label}...`);
       } else {
-        setFooter(state === "failed" ? tr("{label} didn't work · carrying on...", { label }) : tr("Thinking..."), state === "failed" ? warning : dim);
+        setFooter(state === "failed" ? tr("{label} didn't work · carrying on...", { label }) : thinking(), state === "failed" ? warning : dim);
       }
     };
 

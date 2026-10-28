@@ -275,7 +275,7 @@ const STATES = {
     player({ index: 0, fraction: 0.2 });
   },
   thinking() {
-    ready({ transcript: [], live: { id: "t9", user: "Something for cooking dinner, not too slow", text: "", activity: [{ call: 1, tool: "moondog_profile_summary", args: {}, state: "running" }] } });
+    ready({ transcript: [], live: { id: "t9", user: "Something for cooking dinner, not too slow", text: "", activity: [] } });
     player({ index: 2, fraction: 0.55 });
   },
   failed() {

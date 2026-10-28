@@ -6,11 +6,11 @@ import { createFirstRun } from "./first-run.mjs";
 import { createPalette } from "./palette.mjs";
 import { createPreviews } from "./previews.mjs";
 import { coverPalette, grooveColours, moodColours } from "./mood.mjs";
-import { createMark } from "./mark.mjs";
+import { createMark, scratchMark } from "./mark.mjs";
 import { mountRecord } from "./record.mjs";
 import { createSettings } from "./settings.mjs";
 import { createSidebar } from "./sidebar.mjs";
-import { icon, make, marquee, name, scrollbar, setIcon, tooltips, turning } from "./ui.mjs";
+import { icon, make, marquee, name, scrollbar, setIcon, tooltips } from "./ui.mjs";
 import "./style.css";
 
 const $ = (selector) => document.querySelector(`[data-${selector}]`);
@@ -157,14 +157,20 @@ const kindOf = (tool, args) => {
   const found = KINDS.find(([pattern]) => pattern.test(tool));
   return found ? (typeof found[1] === "function" ? found[1](args) : found[1]) : "other";
 };
-// The step Moondog is on: the latest kind of work still running, or a retry.
+// While the model thinks, the host's own line from behind the decks: a different one each time it
+// stops to think in a turn, the same one on every redraw of that stretch.
+const THINKING_LINES = 8;
+function thinkingLine(turn) {
+  const seed = [...String(turn.id ?? "")].reduce((sum, char) => (sum * 31 + char.codePointAt(0)) >>> 0, 0);
+  return t(`thinking.${((seed + (turn.activity?.length ?? 0)) % THINKING_LINES) + 1}`);
+}
+// The step Moondog is on: the latest kind of work still running, a retry, or thinking before the first word.
 function stepOf(turn) {
   if (!turn.streaming) return null;
   if (turn.retrying) return t("retrying");
   const running = [...(turn.activity ?? [])].reverse().find((call) => call.state === "running");
   if (running) return t(`activity.${kindOf(running.tool, running.args)}`);
-  // Before the first word, the mark alone says Moondog is on it.
-  return turn.text ? null : "";
+  return turn.text ? null : thinkingLine(turn);
 }
 
 // After a turn, a song it started shows once with its cover. Covers are kept by title as the
@@ -181,7 +187,6 @@ function playedLine(turn) {
   return line;
 }
 
-const phase = turning;
 // Streaming words redraw block by block: finished paragraphs stay as they are, only the growing one is redrawn.
 function patchText(host, memo, text) {
   const blocks = text ? text.replace(/\r\n?/gu, "\n").split(/\n[ \t]*\n/u) : [];
@@ -223,7 +228,7 @@ function drawStatus(node, turn) {
   let content;
   if (step !== null) {
     content = make("span", "activity");
-    content.append(phase());
+    content.append(scratchMark());
     if (step) content.append(make("span", "", step));
     // The same kind of step keeps its line; a new step rolls in over the last.
     if (!wasStep) content.classList.add("still");
