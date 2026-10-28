@@ -1,3 +1,4 @@
+import { unwatchFile, watchFile } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -86,4 +87,18 @@ export async function writePiRuntimeSelection(
     { encoding: "utf8", mode: 0o600 },
   );
   return normalized;
+}
+
+// The terminal and the window each build their agent from settings.json and auth.json. A model
+// chosen, or a sign-in made, on one side reaches the other through this watch. onChange hears the
+// saved selection, or undefined when none is saved; the surface decides whether to rebuild, with
+// runtimeBehindSelection.
+export function watchRuntimeSettings({ environment = process.env, interval = 2000, onChange } = {}) {
+  const files = [resolveMoondogSettingsFile(environment), resolveMoondogAuthFile(environment)];
+  const listener = (now, before) => {
+    if (now.mtimeMs === before.mtimeMs) return;
+    void readPiRuntimeSelection(environment).then((selection) => onChange?.(selection), () => {});
+  };
+  for (const file of files) watchFile(file, { interval, persistent: false }, listener);
+  return () => { for (const file of files) unwatchFile(file, listener); };
 }

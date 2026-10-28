@@ -21,6 +21,7 @@ import {
 } from "../../runtime/pi/model-catalog.mjs";
 import { getPublicPiModelCatalog } from "../../runtime/pi/public-model-catalog.mjs";
 import { serviceKeyProviders, supportedAuthProviderIds } from "../../runtime/pi/authentication.mjs";
+import { runtimeBehindSelection } from "../../runtime/pi/runtime-selection.mjs";
 import {
   formatLocalResult,
   helpText,
@@ -35,6 +36,7 @@ import { buildTasteProfileModel } from "./taste-profile-model.mjs";
 import { TasteProfileView } from "./taste-profile-view.mjs";
 import { lyricTrackKey } from "../../core/lyric-profile.mjs";
 import { HistoryImportView } from "./history-import-view.mjs";
+import { FirstRunView, neteaseSetupCommand, playbackServiceChoices, playbackServiceName } from "./first-run-view.mjs";
 import { IMPORT_GUIDE_URLS } from "./import-guides.mjs";
 import { withCommandCompletions } from "./command-completions.mjs";
 import {
@@ -115,6 +117,7 @@ const slashCommands = [
   { name: "effort", description: N_("Choose how hard the model thinks") },
   { name: "auth", description: N_("Sign in to a model or web search service") },
   { name: "web", description: N_("Look things up on public music sites") },
+  { name: "service", description: N_("Choose where Moondog plays music") },
   { name: "spotify", description: N_("Connect and control Spotify") },
   { name: "skip", description: N_("Skip to the next song preview") },
   { name: "stop", description: N_("Stop the song previews") },
@@ -207,6 +210,12 @@ export async function runMoondogTui({
   models = listPiModels,
   refreshModels,
   saveLanguage,
+  // Hears a model chosen or a sign-in made in the window; see watchRuntimeSettings.
+  watchModelSettings,
+  // The one-time music service and model setup (src/core/first-run.mjs), shared with the window.
+  firstRun,
+  // Saves the music service that plays songs; the picker and the agent share it.
+  savePlaybackService,
   // The terminal's preview player. The room shows what it plays (subscribe) and
   // gives the listener /skip and /stop.
   previewPlayer,
@@ -230,6 +239,8 @@ export async function runMoondogTui({
   application.startNewSession?.("tui_start");
   activeRuntime.reset();
   let runtimeStatus = activeRuntime.publicStatus();
+  // Read before the room opens, so a first launch opens on the first run rather than the sleeve.
+  const firstRunAtLaunch = firstRun ? await firstRun.state({ modelReady: runtimeStatus.state === "configured" }).catch(() => null) : null;
   const sourceStatusTask = Promise.resolve().then(() => application.sourceStatus?.()).then(
     () => null,
     (error) => error,
@@ -259,6 +270,14 @@ export async function runMoondogTui({
   let conversationTitle = "";
   let profileView = null;
   let importView = null;
+  // The first run asks once for a music service, then a model; see openFirstRun. Its note says what
+  // the last choice did, and its setup shows how to install NetEase's player when it was chosen early.
+  let firstRunView = null;
+  let firstRunSteps = 0;
+  let firstRunNote = null;
+  let firstRunSetup = null;
+  let firstRunTicket = 0;
+  let stopWatchingFirstRun = null;
   let importPage = "start";
   let importReturnHome = false;
   let preparedImport = null;
@@ -277,6 +296,8 @@ export async function runMoondogTui({
   let homeFocused = false;
   let homeSelected = 0;
   let busy = false;
+  // A model chosen or a sign-in made in the window while a turn ran here; it applies once the turn ends.
+  let modelChangedElsewhere = false;
   // A reply another Moondog window or terminal is writing in this conversation: { id, response, text }.
   let elsewhere = null;
   let watchTimer = null;
@@ -289,7 +310,7 @@ export async function runMoondogTui({
     : Math.min(messageQueue.length, 4) + (messageQueue.length > 4 ? 1 : 0);
   // The preview now playing sits on its own line above the draft.
   let nowPlaying = null;
-  const nowPlayingRows = () => (nowPlaying && !profileView && !importView ? 1 : 0);
+  const nowPlayingRows = () => (nowPlaying && !profileView && !importView && !firstRunView ? 1 : 0);
   let cancelWork = null;
   let cancellationRequested = false;
   let workStartedAt = 0;
@@ -389,7 +410,7 @@ export async function runMoondogTui({
   const renderHeader = () => { header.invalidate(); tui.requestRender(); };
   const synchronizeHomeMotion = () => {
     const shouldRun = startAttempted && !cleanedUp && motionEnabled && !theme.plain &&
-      !busy && !profileView && !importView && homeVisible && !homeFocused && !tui.hasOverlay() && !editor.getText() && sleeve.canAnimate;
+      !busy && !profileView && !importView && !firstRunView && homeVisible && !homeFocused && !tui.hasOverlay() && !editor.getText() && sleeve.canAnimate;
     if (!shouldRun) {
       clearInterval(homeMotion);
       homeMotion = null;
@@ -421,11 +442,12 @@ export async function runMoondogTui({
       transcript.invalidate();
       profileView?.invalidate();
       importView?.invalidate();
+      firstRunView?.invalidate();
     },
     render(width) {
       // Measure the draft before the sleeve asks, so one frame uses the real height.
-      if (!profileView && !importView) editor.rowCount = editor.render(width).length;
-      const lines = importView ? importView.render(width)
+      if (!profileView && !importView && !firstRunView) editor.rowCount = editor.render(width).length;
+      const lines = firstRunView ? firstRunView.render(width) : importView ? importView.render(width)
         : profileView ? profileView.render(width)
           : homeVisible ? sleeve.render(width)
             : transcriptPane.render(width);
@@ -433,7 +455,7 @@ export async function runMoondogTui({
       return lines;
     },
     [LAYOUT_NODE]() {
-      if (!homeVisible && !profileView && !importView) return transcriptScroll[LAYOUT_NODE]();
+      if (!homeVisible && !profileView && !importView && !firstRunView) return transcriptScroll[LAYOUT_NODE]();
       return undefined;
     },
   };
@@ -441,7 +463,7 @@ export async function runMoondogTui({
   const composerSlot = {
     invalidate() { composer.invalidate(); },
     render(width) {
-      if (profileView || importView) return [];
+      if (profileView || importView || firstRunView) return [];
       const lines = [];
       if (nowPlaying) {
         const { track, position, count, type } = nowPlaying;
@@ -480,7 +502,7 @@ export async function runMoondogTui({
   shell.addChild(header, { shrink: 0 });
   shell.addChild(stage, { grow: 1, shrink: 1, minSize: 1 });
   shell.addChild(composerSlot, { shrink: 0 });
-  tui.passViewportKeys = () => Boolean(profileView || importView);
+  tui.passViewportKeys = () => Boolean(profileView || importView || firstRunView);
   tui.setLayoutRoot(shell);
   shell.addChild({
     invalidate() {},
@@ -490,7 +512,7 @@ export async function runMoondogTui({
       // The clock glyphs sat on different baselines, so the mark jumped up and down.
       const marker = theme.plain ? "." : "◎";
       const markerInk = spinning ? theme.prism[phase % theme.prism.length] : theme.faint;
-      const compactHint = terminal.rows < 20 && homeVisible && !busy && !profileView && !importView;
+      const compactHint = terminal.rows < 20 && homeVisible && !busy && !profileView && !importView && !firstRunView;
       let statusText = compactHint && homeFocused ? tr("↑ ↓ choose · enter open · esc type")
         : compactHint && editor.getText() ? tr("enter send · ctrl+p commands")
         : compactHint && footerText === tr("Ready.") ? tr("tab explore · type to talk") : footerText;
@@ -509,17 +531,21 @@ export async function runMoondogTui({
         else if (footerText === tr("Here's the evidence. PgUp/PgDn to scroll, Enter for actions.")) statusText = tr("Evidence · PgUp/PgDn scroll · Enter");
         else if (footerText === tr("Imported. Here's your profile with everything so far.")) statusText = tr("Imported · Enter to review");
       }
-      if (busy && !profileView && !importView && width >= 20) {
+      // Without room for the keys line, the first run's status says how to choose and skip.
+      if (firstRunView && !busy && terminal.rows < 20) statusText = tr("↑↓ ↵ choose · esc skip setup");
+      if (busy && !profileView && !importView && !(firstRunView && tui.hasOverlay()) && width >= 20) {
         const elapsed = ` · ${elapsedTime(workStartedAt)}`;
         statusText = truncateToWidth(statusText, width - 3 - visibleWidth(elapsed)) + elapsed;
       }
-      if (terminal.rows < 20 && !busy && !profileView && !importView && editor.isShowingAutocomplete()) {
+      if (terminal.rows < 20 && !busy && !profileView && !importView && !firstRunView && editor.isShowingAutocomplete()) {
         statusText = tr("↑↓ choose · Tab/Enter complete");
       }
-      if (updateNotice && homeVisible && [tr("Ready."), tr("New conversation · /resume history")].includes(footerText) && !editor.getText() && !busy && !profileView && !importView && !tui.hasOverlay() && !editor.isShowingAutocomplete()) statusText = updateNotice;
+      if (updateNotice && homeVisible && [tr("Ready."), tr("New conversation · /resume history")].includes(footerText) && !editor.getText() && !busy && !profileView && !importView && !firstRunView && !tui.hasOverlay() && !editor.isShowingAutocomplete()) statusText = updateNotice;
       const lines = [paintBrandLine(` ${markerInk(marker)} ${footerColor(statusText)}`, width, theme)];
       if (terminal.rows >= 20) {
-        const keys = importView
+        const keys = firstRunView
+          ? tui.hasOverlay() ? "" : busy ? tr("One moment...") : tr("↑↓ choose · enter select · esc skip setup")
+          : importView
           ? width < 64 ? busy ? tr("One moment...") : importPage === "file"
             ? tr("Tab path · ↵ inspect · Esc back") : tr("↑↓ ↵ · PgUp/Dn read · Esc back")
           : busy ? tr("One moment...") : importPage === "file"
@@ -570,6 +596,7 @@ export async function runMoondogTui({
       indicator.unref?.();
     }
     if (!cleanedUp) tui.requestRender();
+    if (!value && modelChangedElsewhere) void followModel();
   };
   const setFooter = (text, color = dim) => {
     if (cleanedUp) return;
@@ -598,7 +625,7 @@ export async function runMoondogTui({
   };
   // A finished local message is read from the top. Several messages added before
   // the next frame share the first anchor, once that frame has measured them.
-  tui.conversationVisible = () => !homeVisible && !profileView && !importView;
+  tui.conversationVisible = () => !homeVisible && !profileView && !importView && !firstRunView;
   tui.revealScroll = (added) => {
     transcriptScroll.scrollToEnd();
     const hiddenAbove = added - transcriptScroll.viewportHeight;
@@ -697,6 +724,8 @@ export async function runMoondogTui({
     try { application.conversationPending?.({ draft: editor.getText(), queued: [...messageQueue] }); } catch { /* Terminal cleanup must still run when storage is unavailable. */ }
     cleanedUp = true;
     clearTimeout(watchTimer);
+    stopWatchingModel?.();
+    stopWatchingFirstRun?.();
     stopWatchingPreviews?.();
     clearInterval(indicator);
     indicator = null;
@@ -770,8 +799,10 @@ export async function runMoondogTui({
       let overlay;
       const finish = (value) => {
         overlay.hide();
-        if (profileView) tui.setFocus(profileView);
-        else editor.focused = !homeFocused;
+        // The first run may have closed while the menu was open, so focus goes where the room is now.
+        if (firstRunView) tui.setFocus(firstRunView);
+        else if (profileView) tui.setFocus(profileView);
+        else { tui.setFocus(editor); editor.focused = !homeFocused; }
         tui.requestRender();
         resolve(value);
       };
@@ -968,8 +999,22 @@ export async function runMoondogTui({
     } catch {}
     renderHeader();
     tui.requestRender(true);
+    // A model that can answer now, such as one signed in from the window, may end the first run.
+    void refreshFirstRun();
     return nextStatus;
   };
+  // The window saved another model, or a sign-in that lets this side answer. The terminal's own
+  // choices rebuild at once, so their saves find this agent already on them.
+  const followModel = async () => {
+    if (cleanedUp || busy || typeof rebuildRuntime !== "function") return;
+    modelChangedElsewhere = false;
+    await replaceRuntime().catch(() => {});
+  };
+  const stopWatchingModel = watchModelSettings?.((selection) => {
+    if (!runtimeBehindSelection(runtimeStatus, selection)) return;
+    modelChangedElsewhere = true;
+    void followModel();
+  });
 
   const refreshCatalog = async (options) => {
     try { return await refreshModels(options); }
@@ -979,7 +1024,9 @@ export async function runMoondogTui({
     }
   };
 
-  const selectModel = async (args) => {
+  // The first run passes its own `say`, so its page tells what happened instead of the conversation.
+  // A switch returns the new agent's status.
+  const selectModel = async (args, { say = addMoondogMessage } = {}) => {
     if (args.length > 2) throw new Error(tr("Usage: /model [provider] [model], or /model refresh [provider]."));
     const describeRefresh = results => results.map(result => [`${result.provider}: ${result.state}`,
       result.count !== undefined ? ` (${tr.n(result.count, "{count} current model", "{count} current models")})` : "",
@@ -1073,7 +1120,7 @@ export async function runMoondogTui({
     setBusy(true);
     setFooter(tr("Loading {model}...", { model: `${providerId}/${modelId}` }));
     const status = await replaceRuntime(runtimeSelection(providerId, modelId, runtimeStatus.effort));
-    addMoondogMessage(
+    say(
       status.state === "configured"
         ? tr("Now talking through `{model}`. This conversation and what I remember carry over.", { model: `${providerId}/${modelId}` })
         : status.reason === "provider_authentication_required"
@@ -1084,6 +1131,7 @@ export async function runMoondogTui({
       status.state === "configured" ? tr("Model ready.") : tr("Model saved, not connected yet."),
       status.state === "configured" ? success : warning,
     );
+    return status;
   };
 
   const selectEffort = async (args) => {
@@ -1125,7 +1173,7 @@ export async function runMoondogTui({
     setFooter(tr("Effort saved."), success);
   };
 
-  const authenticate = async (args) => {
+  const authenticate = async (args, { say = addMoondogMessage } = {}) => {
     if (args.length > 1) {
       throw new Error(tr("Use /auth or /auth <provider>. Type API keys only into the hidden prompt that follows."));
     }
@@ -1175,7 +1223,7 @@ export async function runMoondogTui({
         : undefined;
       const status = await replaceRuntime(currentSelection);
       const search = application.webLookup?.("search");
-      addMoondogMessage(
+      say(
         serviceKey(providerId)
           ? search
             ? tr("Saved the {service} key. Web search goes through {provider}.", { service: serviceKey(providerId).name, provider: search.name })
@@ -1185,7 +1233,7 @@ export async function runMoondogTui({
           : tr("Signed in. Run `/model {provider}` to pick a model.", { provider: providerId }),
       );
     } else {
-      addMoondogMessage(tr("Signed in. Restart Moondog to use it."));
+      say(tr("Signed in. Restart Moondog to use it."));
     }
     setFooter(tr("Signed in."), success);
   };
@@ -1606,6 +1654,145 @@ export async function runMoondogTui({
     setFooter(`Spotify ${action}: done.`, success);
   };
 
+  // The music service that plays songs, chosen in the first run or with /service, as in the window.
+  const neteaseState = () => application.neteasePlayer?.status?.().state ?? "unavailable";
+  const serviceChoices = () => playbackServiceChoices(tr, { netease: neteaseState(), current: application.playbackService });
+  const serviceSaved = (service) => (service === "spotify" && application.spotifyReady?.() !== true
+    ? tr("Spotify it is. /spotify help shows how to connect your account.")
+    : tr("{service} it is.", { service: playbackServiceName(service, tr) }));
+  // NetEase can be saved only once ncm-cli is signed in; until then this says how to set it up.
+  const saveService = async (service) => {
+    if (typeof savePlaybackService !== "function") throw new Error(tr("Choosing a music service isn't available when Moondog is started this way."));
+    try {
+      return { saved: await savePlaybackService(service) };
+    } catch (error) {
+      if (service !== "netease" || !["missing", "signed_out"].includes(neteaseState())) throw error;
+      return { setup: neteaseSetupCommand(neteaseState()) };
+    }
+  };
+  const pickService = async (args) => {
+    const services = playbackServiceChoices(tr, { netease: "ready" }).map((choice) => choice.value);
+    let service = args[0]?.toLowerCase();
+    if (args.length > 1 || (service && !services.includes(service))) throw new Error(tr("Use /service, or /service spotify, apple_music, or netease."));
+    if (!service) {
+      // Whether NetEase can be offered: one check, unless the core already made it.
+      if (neteaseState() === "unknown") await application.neteasePlayer.check().catch(() => {});
+      if (cleanedUp) return;
+      service = (await choose(serviceChoices(), application.playbackService, tr("Where should I play music?")))?.value;
+      if (cleanedUp) return;
+    }
+    if (!service) { setFooter(tr("Music service unchanged.")); return; }
+    const result = await saveService(service);
+    if (cleanedUp) return;
+    if (result.setup) {
+      addMoondogMessage(tr("NetEase Music plays through its own command line tool. Run this in another terminal, then choose it again with `/service`:\n\n```\n{command}\n```", { command: result.setup }));
+      setFooter(tr("NetEase needs ncm-cli first."), warning);
+      return;
+    }
+    setFooter(serviceSaved(result.saved), success);
+  };
+
+  // The first run, at a first launch: the music service, then the model, each skipped when already
+  // done. Esc skips the rest for good; once both are done the core ends it. The window shares
+  // first-run.json and playback.json, so a choice made there shows here, and the first run closes
+  // when the window ends it.
+  const drawFirstRun = (state) => {
+    const step = state.service ? "model" : "service";
+    if (step !== "service") firstRunSetup = null;
+    firstRunView.setState({
+      step, steps: firstRunSteps, note: firstRunNote, setup: firstRunSetup, services: serviceChoices(),
+      model: { provider: runtimeStatus.provider, model: runtimeStatus.model,
+        signIn: runtimeStatus.reason === "provider_authentication_required" && Boolean(runtimeStatus.provider && runtimeStatus.model) },
+    });
+    setFooter(step === "service" ? tr("Setup · music service") : tr("Setup · model"));
+    tui.requestRender(true);
+  };
+  const closeFirstRun = (footer = tr("New conversation · /resume history"), color = dim) => {
+    if (!firstRunView) return;
+    stopWatchingFirstRun?.();
+    stopWatchingFirstRun = null;
+    firstRunTicket += 1;
+    firstRunView = null;
+    firstRunNote = null;
+    firstRunSetup = null;
+    homeFocused = false;
+    tui.setFocus(editor);
+    editor.focused = true;
+    sleeve.invalidate();
+    setFooter(footer, color);
+    tui.requestRender(true);
+  };
+  // Reads where the first run stands and draws it, or closes it once it is over. A step that is
+  // running reads it again when it ends.
+  const refreshFirstRun = async () => {
+    if (!firstRunView || cleanedUp || busy) return;
+    const ticket = ++firstRunTicket;
+    const state = await firstRun.state({ modelReady: runtimeStatus.state === "configured" }).catch(() => null);
+    if (ticket !== firstRunTicket || !firstRunView || cleanedUp || busy || !state) return;
+    if (state.needed) drawFirstRun(state);
+    // Ended in the window, done or skipped there.
+    else if (!state.service || !state.model) closeFirstRun();
+    else closeFirstRun(state.service === "spotify" && application.spotifyReady?.() !== true
+      ? tr("All set. /spotify help shows how to connect Spotify.")
+      : tr("All set. Say anything, or press Tab to look around."), success);
+  };
+  // The view closes at once; the saved skip then reaches the window too.
+  const skipFirstRun = () => {
+    closeFirstRun(tr("Skipped. /service and /model are here when you want them."));
+    void firstRun.finish({ skipped: true }).catch(() => {});
+  };
+  const handleFirstRunAction = async ({ type, value } = {}) => {
+    if (busy || cleanedUp || !firstRunView) return;
+    if (type === "skip") { skipFirstRun(); return; }
+    // The model step reuses /model and /auth; what they say goes on this page, not in the conversation.
+    const say = (text) => { firstRunNote = { text: String(text).replaceAll("`", "") }; };
+    localCommandController = type === "model" ? new AbortController() : null;
+    const controller = localCommandController;
+    setBusy(true, controller ? () => controller.abort() : null);
+    try {
+      firstRunNote = null;
+      if (type === "service") {
+        setFooter(tr("Saving your music service..."));
+        const result = await saveService(value);
+        firstRunSetup = result.setup ?? null;
+        if (result.saved) firstRunNote = { text: serviceSaved(result.saved) };
+      } else if (type === "auth") {
+        await authenticate([], { say });
+      } else if (type === "model") {
+        const status = await selectModel([], { say });
+        // A model that needs a sign-in goes straight to it.
+        if (status?.reason === "provider_authentication_required" && status.provider && !cleanedUp) await authenticate([status.provider], { say });
+      }
+    } catch (error) {
+      if (cleanedUp) return;
+      firstRunNote = error?.code === "auth_login_cancelled" ? { text: tr("Sign-in cancelled.") }
+        : controller?.signal.aborted ? { text: tr("Stopped the catalog check. Model unchanged.") }
+          : { text: tr("That didn't work: {error}", { error: sanitizeTerminalText(error.message) }), tone: "error" };
+    } finally {
+      if (localCommandController === controller) localCommandController = null;
+      setBusy(false);
+    }
+    await refreshFirstRun();
+  };
+  const openFirstRun = (state) => {
+    firstRunSteps = (state.service ? 0 : 1) + (state.model ? 0 : 1);
+    firstRunView = new FirstRunView({
+      getTheme, getText: () => tr,
+      getRows: () => Math.max(1, terminal.rows - 2 - (terminal.rows >= 20 ? 2 : 1)),
+      onAction: (action) => {
+        void handleFirstRunAction(action).catch((error) => {
+          if (!cleanedUp) setFooter(tr("That didn't work: {error}", { error: error.message }), failure);
+        });
+      },
+    });
+    homeFocused = false;
+    tui.setFocus(firstRunView);
+    stopWatchingFirstRun = firstRun.watch(() => { void refreshFirstRun(); });
+    drawFirstRun(state);
+    // Whether NetEase can be offered: one check, unless the core already made it.
+    if (!state.service && neteaseState() === "unknown") void application.neteasePlayer.check().then(() => refreshFirstRun(), () => {});
+  };
+
   const savePendingConversation = () => application.conversationPending?.({ draft: editor.getText(), queued: [...messageQueue] });
   const restorePendingConversation = () => {
     const pending = application.conversationPending?.();
@@ -1881,6 +2068,10 @@ export async function runMoondogTui({
       await authenticate(args);
       return;
     }
+    if (command === "service") {
+      await pickService(args);
+      return;
+    }
     if (command === "spotify") {
       await runSpotifyCommand(args);
       return;
@@ -2041,7 +2232,7 @@ export async function runMoondogTui({
         return;
       }
       try {
-        if (!["home", "theme", "art", "motion", "model", "resume", "rewind", "branch", "new", "taste", "profile", "import"].includes(command)) enterConversation();
+        if (!["home", "theme", "art", "motion", "model", "service", "resume", "rewind", "branch", "new", "taste", "profile", "import"].includes(command)) enterConversation();
         if (command !== "auth") editor.addToHistory(value);
         localCommandController = ["web", "lyrics", "model", "update", "profile"].includes(command) ? new AbortController() : null;
         const controller = localCommandController;
@@ -2340,7 +2531,7 @@ export async function runMoondogTui({
   };
   const lookElsewhere = () => {
     if (typeof application.memoryStore?.dataVersion !== "function") return null;
-    if ((busy && !elsewhere) || rewindPending || tui.hasOverlay() || profileView || importView) return LOOK_MS.idle;
+    if ((busy && !elsewhere) || rewindPending || tui.hasOverlay() || profileView || importView || firstRunView) return LOOK_MS.idle;
     followElsewhere();
     if (drawn.session !== sessionId()) markDrawn();
     const version = application.memoryStore.dataVersion();
@@ -2361,6 +2552,20 @@ export async function runMoondogTui({
 
   tui.addInputListener((data) => {
     if (tui.hasOverlay()) return undefined;
+    // The first run takes every key. Ctrl+C stops a step that can stop, or leaves Moondog as
+    // anywhere else; an unfinished first run asks again next time.
+    if (firstRunView) {
+      if (busy) {
+        if (matchesKey(data, "ctrl+c") && cancelWork && !cancellationRequested) {
+          cancellationRequested = true;
+          setFooter(tr("Stopping..."));
+          cancelWork();
+        }
+        return { consume: true };
+      }
+      if (matchesKey(data, "ctrl+c")) { shutdown(); return { consume: true }; }
+      return undefined;
+    }
     if (importView) {
       if (busy) {
         if (importPage === "signin" && (matchesKey(data, "escape") || matchesKey(data, "ctrl+c"))) importAuthController?.abort();
@@ -2448,6 +2653,8 @@ export async function runMoondogTui({
   try {
     startAttempted = true;
     tui.start();
+    // The first frame draws after this, so a first launch never shows the sleeve before the first run.
+    if (firstRunAtLaunch?.needed) openFirstRun(firstRunAtLaunch);
     watchTimer = setTimeout(watchElsewhere, LOOK_MS.idle);
     watchTimer.unref?.();
     if (checkUpdates) void Promise.resolve().then(() => checkUpdates({ signal: updateCheckController.signal })).then(result => {

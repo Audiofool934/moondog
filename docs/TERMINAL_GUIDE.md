@@ -6,6 +6,7 @@ Earlier browser prototypes were removed; Git history keeps them.
 For the predecessor's relationship to this project, see the public [DJ Claw lineage boundary](DJ_CLAW_LINEAGE.md).
 
 - [Install and launch](#install-and-launch)
+- [First launch](#first-launch)
 - [Other ways in](#other-ways-in)
 - [Use the listening room](#use-the-listening-room)
 - [Language](#language)
@@ -58,6 +59,24 @@ The launcher selects the first Node executable on `PATH` that satisfies Node `>=
 Set `MOONDOG_NODE` to an explicit compatible Node executable when an override is needed.
 Run `moondog doctor` or `moondog status` to inspect the local runtime.
 
+## First launch
+
+The first time Moondog opens, it asks two things before the record sleeve: where to play music, and which model to talk through.
+A step that is already set is skipped.
+
+1. Choose Spotify, Apple Music, or NetEase Music with the arrow keys and Enter.
+   Spotify plays whole songs on your Spotify devices; `/spotify help` shows how to connect your account later.
+   Apple Music plays 30-second previews in the terminal.
+   NetEase Music plays through its own `ncm-cli` tool and is offered once that tool is installed; until it is signed in, choosing it shows the command to run.
+2. Choose a model.
+   This opens the same picker as `/model`, then the sign-in that the model needs, as [Enable agent conversation](#enable-agent-conversation) describes.
+
+Esc skips the rest, and `/service` and `/model` do the same steps later.
+The first run ends when you skip it, or once a music service is saved and a model can answer.
+After that it does not come back.
+The desktop app asks the same two questions and keeps the answers in the same files, so a choice made in one reaches the other, and ending the first run in one ends it in both.
+Ctrl+C leaves Moondog as usual; a first run that is not finished asks again at the next launch.
+
 ## Other ways in
 
 The desktop app in `app/` is a native window on the same core, and it shares the same profile, settings, and sign-ins as the terminal room.
@@ -87,7 +106,7 @@ Press Ctrl+P anywhere while idle to search commands.
 Menus filter by name and description as you type, scroll to keep the selection visible, and preserve the conversation draft when cancelled.
 Escape from model selection returns to the provider list.
 
-Command arguments complete as you type, including `/theme`, `/art`, `/motion`, `/web`, `/spotify`, `/auth`, and provider/model choices in `/model`.
+Command arguments complete as you type, including `/theme`, `/art`, `/motion`, `/service`, `/web`, `/spotify`, `/auth`, and provider/model choices in `/model`.
 Use Tab or Enter to accept a partial suggestion; a fully typed legal command executes on the first Enter.
 File paths retain Pi's Tab completion and quoting behavior.
 The header identifies the current provider and model when configured, giving the model priority on narrow terminals.
@@ -121,6 +140,7 @@ Import and profile views show a finishing hint while their local step is running
 /art braille
 /art ascii
 /motion off
+/service
 /import
 ```
 
@@ -137,6 +157,8 @@ Minimal layouts can still scroll the lyric when there is room to display it.
 `MOONDOG_MOTION=off` or `/motion off` disables animation.
 `NO_COLOR` preserves monochrome character art, and `TERM=dumb` selects ASCII without styling or animation.
 The layout reduces artwork before sacrificing room for the input, and works without Kitty or iTerm image support.
+`/service` chooses where Moondog plays music: Spotify, Apple Music, or NetEase Music.
+`/service apple_music` switches straight to one; the choice is saved and the desktop app follows it.
 `/import` opens a native guide for music-service exports and public playlist links, with preview and confirmation before saving.
 `/import "/path/to/history.zip"` opens the file preview directly.
 `/help` shows the terminal guide; `/help all` includes the complete CLI reference.
@@ -776,6 +798,8 @@ When a model is already selected, `/auth` connects that provider.
 You can also name the provider directly, for example `/auth deepseek` followed by `/model deepseek`.
 Switch providers at any time with `/model`; your conversation and listening profile remain available.
 Selections are saved for the next launch.
+A model chosen or a sign-in made in the desktop app reaches an open terminal within a few seconds, without `/reload`, and the other way round.
+A reply that is running keeps its model until it ends.
 A model without credentials stays offline and shows the matching authentication command.
 
 `/effort` chooses how hard the model thinks, for example `/effort high`.

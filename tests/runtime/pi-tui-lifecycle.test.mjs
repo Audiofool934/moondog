@@ -2766,3 +2766,23 @@ test("the terminal follows the conversation the App opened and shows the App's r
   assert.doesNotMatch(stripVTControlCharacters(terminal.output), /And louder|calm set/u);
   assert.equal(application.ensureMemorySession().session_id, shown.session_id);
 });
+
+test("a model saved in the App gives the terminal's agent that model, and the same one again changes nothing", async () => {
+  const terminal = new FakeTerminal(); const signalTarget = new EventEmitter(); const prompts = [];
+  let saved = null; let rebuilds = 0; let unwatched = false;
+  const running = runMoondogTui({ application: fakeApplication(), runtime: fakeRuntime(), terminal, signalTarget,
+    rebuildRuntime: async () => { rebuilds++; return configuredFakeRuntime(prompts); },
+    watchModelSettings: (listener) => { saved = listener; return () => { unwatched = true; }; },
+  });
+  try {
+    await waitForStart(terminal);
+    saved({ provider: "faux", model: "faux-1" });
+    await waitFor(() => rebuilds === 1);
+    terminal.send("Play something calm"); terminal.send("\r");
+    await waitFor(() => prompts.length === 1);
+    saved({ provider: "faux", model: "faux-1" });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.equal(rebuilds, 1, "a token refresh on the same model keeps the agent");
+  } finally { signalTarget.emit("SIGTERM"); await running; }
+  assert.equal(unwatched, true);
+});

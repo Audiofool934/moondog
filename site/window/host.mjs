@@ -31,7 +31,7 @@ window.requestIdleCallback ??= (run) => setTimeout(run, 50);
 window.cancelIdleCallback ??= clearTimeout;
 // Every play starts the same way: no conversations beside it, the player folded, the record open.
 try {
-  for (const [key, value] of [["moondog.sidebar", "hidden"], ["moondog.source", "chosen"], ["moondog.record", "open"]]) localStorage.setItem(key, value);
+  for (const [key, value] of [["moondog.sidebar", "hidden"], ["moondog.record", "open"]]) localStorage.setItem(key, value);
 } catch { /* Without storage the window keeps its defaults, which are the same. */ }
 window.moondogApp = { setLanguage(locale) { document.documentElement.lang = locale; } };
 
