@@ -6,7 +6,7 @@ import test from "node:test";
 import { assertProvenance, releaseNames, updateFeed, verifyArtifacts } from "../../app/release-artifacts.mjs";
 import { notarizeFile, prepareDmgUpload } from "../../app/release-notary.mjs";
 import { markAsLatest, uploadImmutableAssets, validateNpmRelease } from "../../app/release-publication.mjs";
-import { builderSigningIdentity, digestFile, readJson, saveJson, SIGNING_TEAM } from "../../app/release-tools.mjs";
+import { builderSigningIdentity, digestFile, ELECTRON_DATA_SIGN_IGNORE, readJson, retryTimestampSigning, saveJson, SIGNING_TEAM } from "../../app/release-tools.mjs";
 
 const provenance = { version: "0.2.1", source: "a".repeat(40), buildNumber: "123", teamId: SIGNING_TEAM };
 
@@ -16,6 +16,41 @@ test("the builder qualifier omits the certificate prefix while retaining the sig
   assert.equal(full, `Developer ID Application: Fixture Developer (${SIGNING_TEAM})`, "the codesign identity remains unchanged");
   assert.equal(builderSigningIdentity(null), null);
   assert.throws(() => builderSigningIdentity("Apple Development: Fixture"), /Developer ID Application/u);
+});
+
+test("signing skips only the known Electron data resources through every framework alias", () => {
+  const ignore = new RegExp(ELECTRON_DATA_SIGN_IGNORE);
+  const framework = "/fixture/Moondog.app/Contents/Frameworks/Electron Framework.framework";
+  for (const version of ["", "Versions/A/", "Versions/Current/"]) {
+    for (const resource of ["en.lproj/locale.pak", "el_FEMININE.lproj/locale.pak", "zh_CN_NEUTER.lproj/locale.pak",
+      "chrome_100_percent.pak", "chrome_200_percent.pak", "resources.pak", "icudtl.dat", "v8_context_snapshot.arm64.bin"]) {
+      assert.equal(ignore.test(`${framework}/${version}Resources/${resource}`), true, resource);
+    }
+    for (const code of ["Electron Framework", "Libraries/libffmpeg.dylib", "Resources/native.node", "Resources/native.bin",
+      "Helpers/chrome_crashpad_handler"]) assert.equal(ignore.test(`${framework}/${version}${code}`), false, code);
+  }
+  for (const code of [framework, "/fixture/Moondog.app", "/fixture/Moondog.app/Contents/MacOS/Moondog",
+    "/fixture/Moondog.app/Contents/MacOS/moondog-music", "/fixture/Moondog.app/Contents/Resources/native.node",
+    "/fixture/Moondog.app/Contents/Resources/locale.pak", "/fixture/Other.framework/Resources/icudtl.dat"]) {
+    assert.equal(ignore.test(code), false, code);
+  }
+});
+
+test("direct signing retries temporary timestamp failures at most three times", async () => {
+  let attempts = 0;
+  const delays = [], options = { wait: async ms => delays.push(ms), warn: () => {} };
+  assert.equal(await retryTimestampSigning(async () => {
+    if (++attempts < 3) throw new Error("The timestamp service is not available.");
+    return "signed";
+  }, options), "signed");
+  assert.equal(attempts, 3);
+  assert.deepEqual(delays, [5000, 10000]);
+  attempts = 0;
+  await assert.rejects(retryTimestampSigning(async () => { attempts++; throw new Error("timestamp service unavailable"); }, options), /unavailable/u);
+  assert.equal(attempts, 3);
+  attempts = 0;
+  await assert.rejects(retryTimestampSigning(async () => { attempts++; throw new Error("code object is not signed at all"); }, options), /not signed/u);
+  assert.equal(attempts, 1, "deterministic signing failures do not retry");
 });
 
 async function artifacts(t) {

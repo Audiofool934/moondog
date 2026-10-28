@@ -7,6 +7,25 @@ import path from "node:path";
 export const RELEASE_REPO = "Audiofool934/moondog";
 export const SIGNING_TEAM = "DAK5S3455A";
 
+// osx-sign 1.3.3 mistakes binary data for executable code, including each framework
+// symlink alias. These known Electron data files remain sealed by the framework.
+// Never match a framework, executable, dylib, node module, or our Music helper.
+export const ELECTRON_DATA_SIGN_IGNORE = String.raw`/Electron Framework\.framework/(?:Versions/(?:A|Current)/)?Resources/(?:[^/]+\.lproj/locale\.pak|(?:chrome_100_percent|chrome_200_percent|resources)\.pak|icudtl\.dat|v8_context_snapshot\.arm64\.bin)$`;
+
+// electron-builder already retries its app signing. Only our direct DMG codesign
+// needs this bounded retry, and only for a transient timestamp-service failure.
+export async function retryTimestampSigning(operation, { wait = ms => new Promise(resolve => setTimeout(resolve, ms)), warn = console.warn } = {}) {
+  for (let attempt = 1; ; attempt++) {
+    try { return await operation(); }
+    catch (error) {
+      const detail = `${error.message || ""}\n${error.stderr || ""}`;
+      if (attempt >= 3 || !/timestamp[^\n]*(?:unavailable|not available|timed out)/iu.test(detail)) throw error;
+      warn(`Apple's timestamp service did not respond. Retry signing ${attempt + 1}/3.`);
+      await wait(attempt * 5000);
+    }
+  }
+}
+
 // electron-builder adds the certificate type itself; codesign needs the full identity.
 export function builderSigningIdentity(identity) {
   if (identity === null) return null;

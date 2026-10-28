@@ -6,7 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Arch, build, Platform } from "electron-builder";
 import { buildMusicHelper, MUSIC_USAGE } from "./native/build.mjs";
-import { builderSigningIdentity, command, digestFile, phase, readJson, saveJson, signingIdentity, SIGNING_TEAM, RELEASE_REPO } from "./release-tools.mjs";
+import { builderSigningIdentity, command, digestFile, ELECTRON_DATA_SIGN_IGNORE, phase, readJson, retryTimestampSigning, saveJson, signingIdentity, SIGNING_TEAM, RELEASE_REPO } from "./release-tools.mjs";
 import { assertProvenance, finalizeArtifacts, inspectApp, releaseNames, verifyArtifacts } from "./release-artifacts.mjs";
 import { notarizeFile, prepareDmgUpload } from "./release-notary.mjs";
 
@@ -59,7 +59,7 @@ const config = {
     hardenedRuntime: true, gatekeeperAssess: false, type: "distribution",
     entitlements: "build-resources/entitlements.mac.plist", entitlementsInherit: "build-resources/entitlements.mac.plist",
     extendInfo: { NSAppleMusicUsageDescription: MUSIC_USAGE, NSAppleEventsUsageDescription: "Moondog reads what you play in Music, and the playlist it comes from." },
-    identity: builderSigningIdentity(identity), notarize: false },
+    identity: builderSigningIdentity(identity), notarize: false, signIgnore: [ELECTRON_DATA_SIGN_IGNORE] },
   dmg: { title: "Moondog ${version}" },
 };
 
@@ -129,7 +129,7 @@ for (const recorded of [receipt.zip, receipt.blockmap]) {
 }
 const dmg = path.join(release, names.dmg);
 if (receipt.phase === "packaged") {
-  await phase("Sign the DMG", () => command("codesign", ["--force", "--sign", identity, "--timestamp", dmg], { live: true }));
+  await phase("Sign the DMG", () => retryTimestampSigning(() => command("codesign", ["--force", "--sign", identity, "--timestamp", dmg], { live: true })));
   receipt.dmg = await digestFile(dmg);
   receipt.phase = "dmg-signed";
   await saveJson(receiptFile, receipt);
