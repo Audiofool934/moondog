@@ -1,6 +1,8 @@
 # Updating Moondog
 
-The original npm release, **0.1.0**, predates the updater: those installs need one manual `npm install --global @audiofool/moondog@latest` to reach 0.2.0. From 0.2.0 on, `moondog update` does it. Merging code does not publish a package.
+The original npm release, **0.1.0**, predates the updater: those installs need one manual `npm install --global @audiofool/moondog@latest` to reach the current release.
+From 0.2.0 on, `moondog update` does it.
+Merging code does not publish a package.
 
 ## Everyday use
 
@@ -51,7 +53,9 @@ One-time owner setup: configure the npm package's **trusted publisher** for GitH
 3. `Publish release` rechecks tag/version/lockfile identity and main ancestry, runs the clean-source suite on Node 22.19.0 and 24, then publishes with provenance to the matching `latest` or `beta` dist-tag.
    It rejects a release older than the current channel or GitHub latest.
    An existing npm version must match the source commit and both the local and remote package hashes before a retry can continue.
+   Publication confirmation waits up to three minutes for registry metadata, the tarball and the channel to become visible, without publishing again.
    It prepares a GitHub draft after npm confirms publication.
+   Draft recovery finds the exact tag in the authenticated release list, then checks the release ID and channel again.
 4. Complete the [Mac publication procedure](../app/README.md#updates) from that tag.
    The draft becomes public only after the publisher has verified and uploaded the app and update metadata.
    Retry the same command after an interruption; do not rebuild or replace an already published version.

@@ -5,10 +5,51 @@ import path from "node:path";
 import test from "node:test";
 import { assertProvenance, releaseNames, updateFeed, verifyArtifacts } from "../../app/release-artifacts.mjs";
 import { notarizeFile, prepareDmgUpload } from "../../app/release-notary.mjs";
-import { markAsLatest, uploadImmutableAssets, validateNpmRelease } from "../../app/release-publication.mjs";
+import { assertReleaseIdentity, findReleaseByTag, markAsLatest, publicationSource, uploadImmutableAssets, validateNpmRelease } from "../../app/release-publication.mjs";
 import { builderSigningIdentity, digestFile, ELECTRON_DATA_SIGN_IGNORE, readJson, retryTimestampSigning, saveJson, SIGNING_TEAM } from "../../app/release-tools.mjs";
 
 const provenance = { version: "0.2.1", source: "a".repeat(40), buildNumber: "123", teamId: SIGNING_TEAM };
+
+test("draft lookup scans release pages and binds subsequent reads to one ID, tag and channel", async () => {
+  const identity = { id: 427169761, tag: "v0.2.1", prerelease: false };
+  const draft = { id: identity.id, tag_name: identity.tag, prerelease: false, draft: true, assets: [] };
+  const older = Array.from({ length: 100 }, (_, i) => ({ id: i + 1, tag_name: `v0.1.${i}`, prerelease: false, draft: false }));
+  const pages = [];
+  assert.equal(await findReleaseByTag({ ...identity, listPage: async page => {
+    pages.push(page);
+    return page === 1 ? older : [draft];
+  } }), draft);
+  assert.deepEqual(pages, [1, 2]);
+  assert.equal(assertReleaseIdentity(draft, identity), draft);
+  assert.equal(assertReleaseIdentity({ ...draft, draft: false }, identity).draft, false, "the same ID may become public");
+  for (const change of [{ id: 427169762 }, { tag_name: "v0.2.2" }, { prerelease: true }, { draft: undefined }]) {
+    assert.throws(() => assertReleaseIdentity({ ...draft, ...change }, identity), /identity or channel/u);
+  }
+});
+
+test("draft lookup rejects ambiguity, inaccessible lists and wrong release channels", async () => {
+  const expected = { tag: "v0.2.1", prerelease: false };
+  const draft = { id: 7, tag_name: expected.tag, prerelease: false, draft: true };
+  assert.equal(await findReleaseByTag({ ...expected, listPage: async () => [] }), null);
+  await assert.rejects(findReleaseByTag({ ...expected, listPage: async () => [draft, { ...draft, id: 8 }] }), /Multiple GitHub releases/u);
+  await assert.rejects(findReleaseByTag({ ...expected, listPage: async () => [{ ...draft, prerelease: true }] }), /identity or channel/u);
+  await assert.rejects(findReleaseByTag({ ...expected, listPage: async () => null }), /release list/u);
+  await assert.rejects(findReleaseByTag({ ...expected, listPage: async () => { throw new Error("HTTP 403"); } }), /HTTP 403/u);
+  await assert.rejects(findReleaseByTag({ ...expected, listPage: async () => Array(100).fill({ tag_name: "other" }) }), /exceeded 100 pages/u);
+});
+
+test("maintenance publication binds existing artifacts to the exact local and remote release tag", () => {
+  const original = { version: provenance.version, head: provenance.source, tagSource: provenance.source, remoteSource: provenance.source };
+  assert.equal(publicationSource(original), provenance.source);
+  const maintenance = { ...original, head: "b".repeat(40), fromTag: "v0.2.1", skipBuild: true };
+  assert.equal(publicationSource(maintenance), provenance.source);
+  assert.equal(publicationSource({ ...maintenance, skipBuild: false, verifyOnly: true }), provenance.source);
+  assert.throws(() => publicationSource({ ...maintenance, fromTag: undefined }), /HEAD is not/u);
+  assert.throws(() => publicationSource({ ...maintenance, skipBuild: false }), /must not rebuild/u);
+  assert.throws(() => publicationSource({ ...maintenance, fromTag: "v0.2.0" }), /match the package version/u);
+  assert.throws(() => publicationSource({ ...maintenance, remoteSource: "c".repeat(40) }), /remote release tag/u);
+  assert.throws(() => publicationSource({ ...maintenance, tagSource: null }), /Invalid release tag provenance/u);
+});
 
 test("the builder qualifier omits the certificate prefix while retaining the signing team", () => {
   const full = `Developer ID Application: Fixture Developer (${SIGNING_TEAM})`;

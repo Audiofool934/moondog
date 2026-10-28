@@ -240,8 +240,16 @@ To publish an update:
    Existing remote assets with identical hashes are reused.
    Different bytes under the same filename are rejected; release a new version instead of overwriting a published build.
 
+If publication tooling needs a fix after a version is tagged, keep its original artifacts and manifest.
+From a clean checkout of the repaired tooling at the same package version, place those files in `app/release/` and run `node publish.mjs --skip-build --from-tag vX.Y.Z` from `app/`.
+This mode never rebuilds the app and binds the artifacts, embedded source, build number and npm commit to the original local and remote tag.
+Use `--verify-only --from-tag vX.Y.Z` to perform those checks without uploading.
+Never move the tag or replace the version's artifacts.
+
 To try an update before publishing it, build two versions with `node pack.mjs --sign --no-notarize` (signed, not notarized), serve the newer one's zip, `.blockmap` and `latest-mac.yml` over HTTP, and start the older app from a terminal with `MOONDOG_UPDATE_FEED=http://127.0.0.1:8765`.
 Set `MOONDOG_CONFIG_HOME`, `MOONDOG_STATE_HOME` and `MOONDOG_APP_USER_DATA` to empty absolute folders too, so the test app never opens your own profile or window preferences.
+Give both disposable bundles a unique matching bundle ID and a unique `updaterCacheDirName`, then sign each bundle.
+Squirrel's caches and installer job belong to the bundle ID; `MOONDOG_APP_USER_DATA` alone does not isolate them.
 With that feed, a click on Update downloads the newer build, installs it and quits without restarting, because a restarted app would have none of these settings and would open your own profile; start it again from the terminal with the same settings.
 Also verify the normal published restart path: the old core must exit before the installer can launch the new app.
 Extract test copies into a folder whose name ends in `.noindex`, so Spotlight doesn't offer them.

@@ -1,5 +1,41 @@
 import { compareReleaseVersions, releaseVersion } from "../src/core/application-update.mjs";
 
+export function assertReleaseIdentity(release, { id, tag, prerelease }) {
+  if (!Number.isSafeInteger(release?.id) || release.id <= 0 || (id !== undefined && release.id !== id)
+    || release.tag_name !== tag || release.prerelease !== prerelease || typeof release.draft !== "boolean") {
+    throw new Error("The GitHub release identity or channel changed.");
+  }
+  return release;
+}
+
+// The by-tag REST endpoint only returns published releases. Authenticated release
+// listings include drafts; scan all pages so duplicate pending tags fail closed.
+export async function findReleaseByTag({ tag, prerelease, listPage }) {
+  let found = null;
+  for (let page = 1; page <= 100; page++) {
+    const releases = await listPage(page);
+    if (!Array.isArray(releases)) throw new Error("GitHub did not return a release list.");
+    for (const release of releases) {
+      if (release.tag_name !== tag) continue;
+      if (found) throw new Error(`Multiple GitHub releases match ${tag}.`);
+      found = assertReleaseIdentity(release, { tag, prerelease });
+    }
+    if (releases.length < 100) return found;
+  }
+  throw new Error("GitHub release lookup exceeded 100 pages; no release was selected.");
+}
+
+export function publicationSource({ version, fromTag, skipBuild, verifyOnly, head, tagSource, remoteSource }) {
+  const tag = `v${version}`;
+  if (!releaseVersion(version) || !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u.test(tagSource)) throw new Error("Invalid release tag provenance.");
+  if (fromTag !== undefined) {
+    if (fromTag !== tag) throw new Error(`--from-tag must match the package version: ${tag}.`);
+    if (!skipBuild && !verifyOnly) throw new Error("--from-tag requires --skip-build or --verify-only; maintenance tools must not rebuild a release.");
+  } else if (head !== tagSource) throw new Error(`HEAD is not ${tag}.`);
+  if (remoteSource !== tagSource) throw new Error("The remote release tag does not match the local release tag.");
+  return tagSource;
+}
+
 export function validateNpmRelease(metadata, { name, version, source }) {
   if (metadata?.name !== name || metadata.version !== version || metadata.gitHead !== source) {
     throw new Error("The published npm package does not match this release version and commit.");
