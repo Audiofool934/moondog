@@ -57,6 +57,19 @@ test("a term credited to the clock that names another time of day came from the 
   assert.deepEqual(compiled.descriptors.map((entry) => [entry.term, entry.source.kind]), [["midnight hush", "request"], ["unhurried", "moment"]]);
 });
 
+test("a song Avoid keeps out that song, not its artist's Like", () => {
+  const compiled = compileTaste({ descriptors: [
+    { term: "dream pop", facet: "genre", source: "choice", from: "North Window" },
+    { term: "glassy synths", facet: "instrument", source: "choice", from: "Unwanted Song" },
+    { term: "hushed", facet: "mood", source: "reading", from: "claim_song" },
+  ] }, context({
+    avoids: [{ stance: "avoid", subject: "track", name: "Unwanted Song", artist: "North Window" }],
+    claim: (id) => (id === "claim_song" ? { claim_id: "claim_song", statement: "Unwanted Song by North Window was on repeat in May." } : null),
+  }));
+  assert.deepEqual(compiled.descriptors.map((entry) => entry.term), ["dream pop"]);
+  assert.deepEqual(reasons(compiled), { "glassy synths": "avoid", hushed: "avoid" });
+});
+
 test("a term that lists several sounds becomes several descriptors with one source", () => {
   const compiled = compileTaste({ descriptors: [{ term: "hushed, unhurried", facet: "mood", source: "moment" },
     { term: "close; distant room", facet: "texture", source: "request" }] }, context());

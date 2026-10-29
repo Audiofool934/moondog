@@ -7531,11 +7531,13 @@ export class PiAgentRuntime {
         }
         const track = parameters.subject === "track";
         if (track && !parameters.title) refuse("taste_choice_title_required", "Nothing was saved. A song choice needs its title and artist.");
-        // Moondog's own tracks have no artist, and "Moondog" is also a real composer's name.
-        // A real song can share a plain title with one of Moondog's, so a title counts only with Moondog as its artist.
+        // Moondog's own tracks have no artist, and "Moondog" is also a real composer's name. A choice is
+        // about a track Moondog made when it names one of their titles with Moondog as artist, puts such a
+        // title in place of the artist, or points at "this" while it names no song. Anything else, the
+        // real composer included, is saved as usual.
         const madeHere = (value) => this.generatedTitles.has(avoidKey(value ?? ""));
-        const byMoondog = avoidKey(parameters.artist ?? "") === "moondog" || madeHere(parameters.artist);
-        if (this.generatedTitles.size && byMoondog) {
+        const moondog = avoidKey(parameters.artist ?? "") === "moondog";
+        if (madeHere(parameters.artist) || (moondog && (track ? madeHere(parameters.title) : quoteIsDeictic(quote) && this.generatedTitles.size > 0))) {
           refuse("taste_choice_generated_track", "Nothing was saved. This is a track Moondog made, and choices about Moondog's own tracks are not saved yet. Say so, and offer to make another one like it.");
         }
         if (!quoteLongEnough(quote)) {

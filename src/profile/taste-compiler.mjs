@@ -58,8 +58,15 @@ export function namedBy(text, { artists = [], titles = [], historyArtists = [], 
 export function compileTaste(requested, context) {
   const likes = context.likes ?? [];
   const avoids = context.avoids ?? [];
+  // Every Avoid's names stay out of the prompt. As a source, an artist Avoid keeps out the artist,
+  // and a song Avoid only that song, as the play paths' gate reads them: a Like of the song's artist still counts.
   const avoidLabels = avoids.flatMap((choice) => [choice.name, choice.artist].filter(Boolean));
-  const avoided = (name) => Boolean(name) && (avoidLabels.some((label) => avoidKey(label) === avoidKey(name)) || context.avoidsName?.(name) === true);
+  const artistAvoids = avoids.filter((choice) => choice.subject !== "track").map((choice) => choice.name).filter(Boolean);
+  const songAvoids = avoids.filter((choice) => choice.subject === "track" && choice.name);
+  const avoided = (name) => Boolean(name) && (artistAvoids.some((label) => avoidKey(label) === avoidKey(name)) ||
+    songAvoids.some((song) => avoidKey(song.name) === avoidKey(name)) || context.avoidsName?.(name) === true);
+  const namesAvoid = (text) => artistAvoids.some((label) => textNamesArtist(text, label)) ||
+    songAvoids.some((song) => textNames(text, song.name) && (!song.artist || textNamesArtist(text, song.artist)));
   const names = {
     artists: [...new Set([...avoidLabels, ...likes.flatMap((like) => [like.subject === "artist" ? like.name : like.artist]),
       ...(context.recentArtists ?? []).map((artist) => artist.name)].filter(Boolean))],
@@ -67,8 +74,8 @@ export function compileTaste(requested, context) {
     historyArtists: [...new Set(context.historyArtists ?? [])].filter((name) => typeof name === "string" && name.trim()),
     historyTitles: [...new Set(context.historyTitles ?? [])].filter((title) => typeof title === "string" && /\S\s+\S/u.test(title.trim())),
   };
-  // A request that names an artist the listener keeps out cannot shape the sound.
-  const requestAvoided = typeof context.request === "string" && avoidLabels.find((label) => textNamesArtist(context.request, label));
+  // A request that names an artist or a song the listener keeps out cannot shape the sound.
+  const requestAvoided = typeof context.request === "string" && namesAvoid(context.request);
   const kept = [];
   const dropped = [];
   const drop = (term, reason, extra = {}) => dropped.push({ term, reason, ...extra });
@@ -100,7 +107,7 @@ export function compileTaste(requested, context) {
       const claim = from ? context.claim?.(from) : null;
       if (!claim) { drop(term, "not_a_saved_finding"); continue; }
       // A finding about an artist the listener keeps out is no source for the sound they want.
-      if (claim.stance === "avoid" || avoidLabels.some((label) => textNamesArtist(claim.statement ?? "", label))) { drop(term, "avoid"); continue; }
+      if (claim.stance === "avoid" || namesAvoid(claim.statement ?? "")) { drop(term, "avoid"); continue; }
       source = { kind, claim_id: claim.claim_id, ...(context.revisionId ? { revision_id: context.revisionId } : {}) };
     } else if (kind === "choice") {
       if (avoided(from)) { drop(term, "avoid"); continue; }

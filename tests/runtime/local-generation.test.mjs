@@ -287,6 +287,16 @@ test("one message makes one track, and a Like said while it plays is not saved a
     },
   ]);
   assert.equal((await runtime.prompt("I love this one")).text, "Choices about my own tracks aren't saved yet.");
+
+  // The real composer Moondog is a choice like any other, even after Moondog made a track.
+  const saved = [];
+  app.domainServices.recordListenerChoice = (choice) => { saved.push(choice); return { state: "recorded", stance: choice.stance, entity_type: choice.entityType, label: choice.label, artist_credit: choice.artistCredit }; };
+  faux.setResponses([
+    fauxAssistantMessage([fauxToolCall("moondog_taste_choice", { subject: "track", artist: "Moondog", title: "Bird's Lament", stance: "like", source_text: "I love Bird's Lament by Moondog" })], { stopReason: "toolUse" }),
+    fauxAssistantMessage([fauxText("Noted.")]),
+  ]);
+  await runtime.prompt("I love Bird's Lament by Moondog");
+  assert.deepEqual(saved.map((choice) => [choice.label, choice.artistCredit]), [["Bird's Lament", "Moondog"]]);
 });
 
 test("the terminal plays a made track from its folder and keeps it; the window asks for it by id", async (t) => {
