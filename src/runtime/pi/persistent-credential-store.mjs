@@ -668,38 +668,16 @@ export class PersistentCredentialStore {
     const release = await this.acquireLock(options);
     try {
       const document = await this.readDocument(options);
-      let current = document.credentials[providerId];
-      const persist = async (value) => {
-        const validated = validateCredential(providerId, value);
-        document.credentials[providerId] = validated;
-        await this.writeDocument(document, options);
-        current = validated;
-      };
-      let active = true;
-      let pending = Promise.resolve();
-      // A checkpoint is durable even if the callback later throws. Its
-      // lifetime is fenced to this transaction; all started writes drain
-      // before the lock is released, including accidentally unawaited ones.
-      const checkpoint = (value) => {
-        if (!active) throw safeError("credential_store_transaction_closed", "The credential transaction has ended.");
-        const validated = validateCredential(providerId, value);
-        pending = pending.then(() => persist(validated));
-        pending.catch(() => {});
-        return pending;
-      };
-      let next;
-      try {
-        next = await fn(current ? structuredClone(current) : undefined, { checkpoint });
-      } finally {
-        active = false;
-        await pending;
-      }
+      const current = document.credentials[providerId];
+      const next = await fn(current ? structuredClone(current) : undefined);
       assertNotAborted(options.signal);
       if (next === undefined) {
         return current ? structuredClone(current) : undefined;
       }
-      await persist(next);
-      return structuredClone(current);
+      const validated = validateCredential(providerId, next);
+      document.credentials[providerId] = validated;
+      await this.writeDocument(document, options);
+      return structuredClone(validated);
     } finally {
       await release();
     }
