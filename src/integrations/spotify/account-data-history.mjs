@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { lstat } from "node:fs/promises";
 import path from "node:path";
-import { listZipMembers, readZipMember } from "../../importers/zip-reader.mjs";
+import { openZipArchive } from "../../importers/zip-reader.mjs";
 
 import { isUuid, uuidV5 } from "../../core/uuid-v5.mjs";
 import {
@@ -374,11 +374,20 @@ async function sha256File(filePath) {
   return hash.digest("hex");
 }
 
-async function zipText(archivePath, maximumBytes, member) {
+async function openArchive(archivePath) {
   try {
-    return member === undefined
-      ? (await listZipMembers(archivePath, maximumBytes)).join("\n")
-      : (await readZipMember(archivePath, member, maximumBytes)).toString("utf8");
+    return await openZipArchive(archivePath);
+  } catch {
+    fail(
+      "The Spotify account-data ZIP could not be read safely.",
+      "spotify_account_data_archive_unreadable",
+    );
+  }
+}
+
+async function zipText(archive, maximumBytes, member) {
+  try {
+    return (await archive.read(member, maximumBytes)).toString("utf8");
   } catch {
     fail(
       "The Spotify account-data ZIP could not be read safely.",
@@ -463,52 +472,60 @@ export async function readSpotifyAccountDataHistoryArchive({
     fail("The Spotify account-data ZIP is not a supported regular file.");
   }
 
-  const listing = await zipText(resolvedPath, 1024 * 1024);
-  const members = selectedMusicMembers(listing);
-  const profileMembers = selectedProfileMembers(listing);
+  // One open archive serves the listing and every member, and is closed even when a check fails.
+  const archive = await openArchive(resolvedPath);
+  let members;
+  let profileMembers;
   const records = [];
   const documents = {};
-  let totalJsonBytes = 0;
-  for (const member of members) {
-    const jsonText = await zipText(resolvedPath, SPOTIFY_ACCOUNT_DATA_HISTORY_LIMITS.maximumMemberBytes, member.name);
-    totalJsonBytes += Buffer.byteLength(jsonText, "utf8");
-    if (
-      totalJsonBytes >
-      SPOTIFY_ACCOUNT_DATA_HISTORY_LIMITS.maximumTotalJsonBytes
-    ) {
-      fail("Spotify music history JSON is too large to import safely.");
+  try {
+    const listing = archive.names.join("\n");
+    members = selectedMusicMembers(listing);
+    profileMembers = selectedProfileMembers(listing);
+    let totalJsonBytes = 0;
+    for (const member of members) {
+      const jsonText = await zipText(archive, SPOTIFY_ACCOUNT_DATA_HISTORY_LIMITS.maximumMemberBytes, member.name);
+      totalJsonBytes += Buffer.byteLength(jsonText, "utf8");
+      if (
+        totalJsonBytes >
+        SPOTIFY_ACCOUNT_DATA_HISTORY_LIMITS.maximumTotalJsonBytes
+      ) {
+        fail("Spotify music history JSON is too large to import safely.");
+      }
+      let parsed;
+      try {
+        parsed = JSON.parse(jsonText.replace(/^\uFEFF/u, ""));
+      } catch {
+        fail(`Spotify music history segment ${member.index} is invalid JSON.`);
+      }
+      if (!Array.isArray(parsed)) {
+        fail(`Spotify music history segment ${member.index} is not an array.`);
+      }
+      records.push(...parsed);
+      if (records.length > SPOTIFY_ACCOUNT_DATA_HISTORY_LIMITS.maximumRecords) {
+        fail("Spotify music history contains too many records.");
+      }
     }
-    let parsed;
-    try {
-      parsed = JSON.parse(jsonText.replace(/^\uFEFF/u, ""));
-    } catch {
-      fail(`Spotify music history segment ${member.index} is invalid JSON.`);
-    }
-    if (!Array.isArray(parsed)) {
-      fail(`Spotify music history segment ${member.index} is not an array.`);
-    }
-    records.push(...parsed);
-    if (records.length > SPOTIFY_ACCOUNT_DATA_HISTORY_LIMITS.maximumRecords) {
-      fail("Spotify music history contains too many records.");
-    }
-  }
 
-  for (const member of profileMembers) {
-    const jsonText = await zipText(resolvedPath, SPOTIFY_ACCOUNT_DATA_HISTORY_LIMITS.maximumMemberBytes, member.name);
-    totalJsonBytes += Buffer.byteLength(jsonText, "utf8");
-    if (
-      totalJsonBytes >
-      SPOTIFY_ACCOUNT_DATA_HISTORY_LIMITS.maximumTotalJsonBytes
-    ) {
-      fail("Spotify account-profile JSON is too large to import safely.");
+    for (const member of profileMembers) {
+      const jsonText = await zipText(archive, SPOTIFY_ACCOUNT_DATA_HISTORY_LIMITS.maximumMemberBytes, member.name);
+      totalJsonBytes += Buffer.byteLength(jsonText, "utf8");
+      if (
+        totalJsonBytes >
+        SPOTIFY_ACCOUNT_DATA_HISTORY_LIMITS.maximumTotalJsonBytes
+      ) {
+        fail("Spotify account-profile JSON is too large to import safely.");
+      }
+      try {
+        documents[member.basename] = JSON.parse(
+          jsonText.replace(/^\uFEFF/u, ""),
+        );
+      } catch {
+        fail(`Spotify account-profile file ${member.basename} is invalid JSON.`);
+      }
     }
-    try {
-      documents[member.basename] = JSON.parse(
-        jsonText.replace(/^\uFEFF/u, ""),
-      );
-    } catch {
-      fail(`Spotify account-profile file ${member.basename} is invalid JSON.`);
-    }
+  } finally {
+    archive.close();
   }
 
   const archiveSha256 = await sha256File(resolvedPath);

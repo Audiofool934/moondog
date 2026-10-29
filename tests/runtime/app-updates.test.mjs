@@ -3,7 +3,7 @@ import { EventEmitter } from "node:events";
 import test from "node:test";
 
 import { createUpdates } from "../../app/updates.mjs";
-import { createQuitHandler } from "../../app/lifecycle.mjs";
+import { createQuitHandler, installDownloadedUpdate } from "../../app/lifecycle.mjs";
 
 // A stand-in for electron-updater's autoUpdater that records what the app asks of it.
 function fakeUpdater({ available = true } = {}) {
@@ -37,35 +37,83 @@ test("a newer build is offered, and nothing downloads until the listener clicks"
   assert.equal(autoUpdater.checks, 2);
 });
 
-test("an update restart drains the core before the application quits on every desktop", async () => {
-  for (const platform of ["darwin", "win32", "linux"]) {
+// A core whose quit is recorded; it exits only when the test says so.
+function savingCore(events) {
+  const core = new EventEmitter();
+  core.postMessage = (message) => events.push(message.type);
+  core.kill = () => { throw new Error("A saved conversation must not be killed"); };
+  return core;
+}
+
+test("a Mac update restart drains the core before the application quits", async () => {
+  const events = [];
+  let core = savingCore(events);
+  const running = core;
+  running.once("exit", () => { core = null; });
+  const shutdown = createQuitHandler({
+    getCore: () => core, stopMusic: () => events.push("stop-music"),
+    willQuit: () => events.push("quitting"), quit: () => events.push("app-quit"),
+  });
+  const squirrel = new EventEmitter();
+  const autoUpdater = fakeUpdater();
+  autoUpdater.quitAndInstall = () => {
+    // electron-updater's MacUpdater signals Electron's autoUpdater here, then Squirrel quits the app.
+    squirrel.emit("before-quit-for-update");
+    shutdown({ preventDefault: () => events.push("wait-for-core") });
+  };
+  const updates = createUpdates({ autoUpdater, squirrel, onChange() {}, onRestart: () => events.push("update-restart") });
+  await updates.check();
+  assert.deepEqual(events, []);
+  updates.install();
+  autoUpdater.emit("update-downloaded", { version: "0.2.0-beta.4" });
+  assert.deepEqual(events, ["update-restart", "quitting", "stop-music", "wait-for-core", "quit"]);
+  assert(!events.includes("app-quit"));
+  running.emit("exit", 0);
+  assert.equal(events.at(-1), "app-quit");
+});
+
+test("Windows and Linux install a downloaded update only after the core has saved", async () => {
+  for (const platform of ["win32", "linux"]) {
     const events = [];
-    let core = new EventEmitter();
+    let core = savingCore(events);
     const running = core;
-    running.postMessage = (message) => events.push(message.type);
-    running.kill = () => { throw new Error("A saved conversation must not be killed"); };
     running.once("exit", () => { core = null; });
-    const shutdown = createQuitHandler({
-      getCore: () => core, stopMusic: () => events.push("stop-music"),
-      willQuit: () => events.push("quitting"), quit: () => events.push("app-quit"),
-    });
-    const squirrel = new EventEmitter();
+    const shutdown = createQuitHandler({ getCore: () => core, stopMusic() {}, willQuit() {}, quit: () => events.push("app-quit") });
     const autoUpdater = fakeUpdater();
-    autoUpdater.quitAndInstall = () => {
-      // electron-updater's MacUpdater and BaseUpdater signal Electron's autoUpdater here.
-      squirrel.emit("before-quit-for-update");
-      shutdown({ preventDefault: () => events.push("wait-for-core") });
+    autoUpdater.install = (silent, run) => {
+      events.push(`install silent=${silent} run=${run}`);
+      // A versioned AppImage name moves to the new version's name.
+      autoUpdater.emit("appimage-filename-updated", "/apps/Moondog-0.2.0-beta.4-linux-x86_64.AppImage");
+      return true;
     };
-    const updates = createUpdates({ autoUpdater, squirrel, onChange() {}, onRestart: () => events.push("update-restart") });
+    let installOnQuit = false;
+    const updates = createUpdates({ autoUpdater, squirrel: new EventEmitter(), onChange() {}, onRestart() {},
+      restart: () => { installOnQuit = true; shutdown({ preventDefault: () => events.push("wait-for-core") }); } });
     await updates.check();
-    assert.deepEqual(events, [], platform);
     updates.install();
     autoUpdater.emit("update-downloaded", { version: "0.2.0-beta.4" });
-    assert.deepEqual(events, ["update-restart", "quitting", "stop-music", "wait-for-core", "quit"], platform);
-    assert(!events.includes("app-quit"), platform);
+    assert.deepEqual(events, ["wait-for-core", "quit"], platform);
+    assert.equal(autoUpdater.installs, 0, "quitAndInstall would start the installer before the core saved");
     running.emit("exit", 0);
     assert.equal(events.at(-1), "app-quit", platform);
+    // The app's will-quit, once the windows have closed.
+    const relaunches = [];
+    assert(installOnQuit);
+    installDownloadedUpdate({ updater: autoUpdater, platform, relaunch: (options) => relaunches.push(options), appImage: "/apps/Moondog-0.2.0-linux-x86_64.AppImage" });
+    assert.equal(events.at(-1), `install silent=true run=${platform === "win32"}`, platform);
+    assert.deepEqual(relaunches, platform === "linux" ? [{ execPath: "/apps/Moondog-0.2.0-beta.4-linux-x86_64.AppImage", args: [] }] : [], platform);
+    assert.equal(autoUpdater.listenerCount("appimage-filename-updated"), 0);
   }
+});
+
+test("a failed Windows install opens the installed app again, and a test feed never relaunches", () => {
+  const relaunches = [];
+  const updater = Object.assign(new EventEmitter(), { autoRunAppAfterInstall: true, install: () => false });
+  installDownloadedUpdate({ updater, platform: "win32", relaunch: (options) => relaunches.push(options ?? "same app") });
+  assert.deepEqual(relaunches, ["same app"]);
+  updater.autoRunAppAfterInstall = false;
+  installDownloadedUpdate({ updater, platform: "linux", relaunch: (options) => relaunches.push(options), appImage: "/apps/Moondog.AppImage" });
+  assert.deepEqual(relaunches, ["same app"]);
 });
 
 test("a core that cannot finish saving is stopped once during quit", async () => {

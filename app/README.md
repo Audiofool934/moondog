@@ -139,12 +139,17 @@ A model or music service chosen there lasts until the app quits, and sign-in and
   Typing anywhere goes to the composer. No plain key plays, pauses or skips, because a chat window is typed in all the time.
   `⌃⌘P` plays or pauses, and `⌃⌘→` and `⌃⌘←` skip, from the Playback menu; the media keys work too.
   `⌥⌘S` and `⌥⌘P` show or hide the conversations and the player; a narrow window folds them on its own. `⌥⌘R` folds or opens the record.
-  On Windows and Linux, Control replaces Command in editing and navigation shortcuts; playback uses Ctrl+Alt+Shift with P, Right, or Left.
+  On Windows and Linux, Control replaces Command in editing shortcuts and in New, Settings and Stop.
+  There, Ctrl+Shift+S, Ctrl+Shift+P and Ctrl+Shift+R show or hide the conversations, the player and the record.
+  Alt+Shift+P plays or pauses, and Alt+Shift+Right and Alt+Shift+Left skip.
+  These keys avoid Control with Alt, which is AltGr on many Windows keyboards, and GNOME's keys for moving windows between workspaces (`platform.mjs`).
   Press Alt to open the application menu on Windows or Linux.
 - Language: the window speaks the language the core speaks, which follows the choice in Settings or `/language`, then the system's language.
   The window's words, its menus included, exist in English, Simplified and Traditional Chinese, Japanese, Korean, Spanish, French, German, Brazilian Portuguese and Italian (`strings.mjs`).
 - Closing the window on macOS hides it, and the music keeps going until you quit.
   On Windows and Linux, closing the window quits and saves the conversations.
+  Opening Moondog again while it runs shows the open window; one profile never runs two cores.
+  When Windows shuts down or signs out, it waits the few seconds Moondog needs to save a reply in progress.
   A reply in progress shows in the Dock or taskbar; the Mac Dock icon's menu plays, pauses and skips.
 - Links open in your browser.
 
@@ -203,14 +208,19 @@ It writes these files to `release/` and uploads nothing:
 | Linux, x64 | AppImage | `latest-linux.yml` |
 
 Builds use the host's production dependencies, so cross-compiling from another operating system is not supported.
-Windows builds need Node.js, npm, and the `tar.exe` included with Windows 10 and later.
+Windows builds need Node.js, npm, and the `tar.exe` in System32 that Windows 10 and later include.
+The npm package lists macOS and Linux only, because the terminal launcher is a shell script.
+On Windows, install the root dependencies with `npm ci --force`; `npm run pack` skips the same check for the app's copy of the core.
 The installer installs for the current Windows account and preserves personal data on uninstall.
 On Linux, make the AppImage executable before opening it; distributions without FUSE can use AppImage's extract-and-run mode.
 `npm run pack:dir` leaves an unpacked app under `release/apps.noindex/` for `npm run smoke` to check.
 The smoke check opens the packaged renderer and core with empty temporary data, imports fictional history, and quits.
 It removes provider credentials from its environment and disables the system Music app and MusicKit helper with `MOONDOG_SYSTEM_MUSIC=off`.
 
-The [Desktop builds workflow](../.github/workflows/desktop.yml) builds on Windows and Linux, runs the smoke check on each, and saves the installers and update metadata as workflow artifacts.
+`MOONDOG_SMOKE_EXECUTABLE` points the smoke check at an installed `Moondog.exe` or an AppImage instead.
+
+The [Desktop builds workflow](../.github/workflows/desktop.yml) builds on Windows and Linux, and saves the installers and update metadata as workflow artifacts.
+It runs the smoke check on what a listener gets: the app that the Windows installer installs, and the AppImage in extract-and-run mode.
 It does not publish a GitHub release.
 Windows CI builds are unsigned; a signed Windows release needs the maintainer's signing certificate configured through electron-builder's `CSC_LINK` and `CSC_KEY_PASSWORD`.
 `npm run release` remains the Mac release path, signed with the Developer ID and notarized by Apple.
@@ -241,6 +251,7 @@ The packaged app updates itself from this repository's GitHub releases (`updates
   A failed check or download leaves the installed app as it is, and the next check tries again.
 - macOS installs only a build signed by the same Developer ID team.
   Windows installs the NSIS update, and Linux replaces the AppImage.
+  Both install as the app exits, after the core has saved the conversations, and then open the new version.
   Each download must match the SHA-512 checksum in that platform's update metadata.
 - Updating replaces the app only. Profile, history, conversations and sign-ins stay where they are.
 

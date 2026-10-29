@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process";
 import {
   createHash,
   randomBytes,
@@ -6,6 +5,8 @@ import {
   timingSafeEqual,
 } from "node:crypto";
 import { createServer } from "node:http";
+
+import { openInDefaultBrowser } from "../../core/host.mjs";
 
 const SPOTIFY_AUTHORIZE_URL = "https://accounts.spotify.com/authorize";
 const SPOTIFY_TOKEN_URL = "https://accounts.spotify.com/api/token";
@@ -484,27 +485,6 @@ export async function refreshSpotifyAccessToken({
       now,
     },
   );
-}
-
-function openInDefaultBrowser(url) {
-  const [command, args] =
-    process.platform === "darwin"
-      ? ["open", [url]]
-      : process.platform === "win32"
-        ? ["rundll32", ["url.dll,FileProtocolHandler", url]]
-        : ["xdg-open", [url]];
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, args, {
-      detached: true,
-      stdio: "ignore",
-      windowsHide: true,
-    });
-    child.once("error", reject);
-    child.once("spawn", () => {
-      child.unref();
-      resolve();
-    });
-  });
 }
 
 async function createCallbackListener({ redirectUri, expectedState, signal }) {

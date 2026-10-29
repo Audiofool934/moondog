@@ -1784,7 +1784,7 @@ window.addEventListener("drop", (event) => {
 });
 
 // Keys: typing anywhere goes to the composer. No plain key plays, pauses or skips, because a chat
-// window is typed in all the time; ⌃⌘P, ⌃⌘→ and ⌃⌘← in the Playback menu do.
+// window is typed in all the time; the Playback menu's keys do (app/platform.mjs).
 document.addEventListener("keydown", (event) => {
   // Escape that just closed Settings is spent; it must not also stop the reply behind it.
   if (settings.open || event.defaultPrevented) return;

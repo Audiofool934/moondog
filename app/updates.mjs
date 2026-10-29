@@ -13,8 +13,10 @@ const EVERY_MS = 6 * 60 * 60_000;
  * installing is true once the listener asked. onRestart runs just before the updater closes the windows to
  * install, and only then. autoUpdater is electron-updater's, or null when the app is not packaged;
  * squirrel is Electron's own autoUpdater, which receives the restart event on every platform.
+ * restart installs the downloaded build: quitAndInstall by default, as macOS does; Windows and Linux
+ * quit first and install as the app exits (lifecycle.mjs).
  */
-export function createUpdates({ autoUpdater, squirrel, onChange, onRestart }) {
+export function createUpdates({ autoUpdater, squirrel, onChange, onRestart, restart = () => autoUpdater.quitAndInstall() }) {
   let state = { phase: "idle" };
   let installing = false;
   const set = (next) => {
@@ -44,7 +46,7 @@ export function createUpdates({ autoUpdater, squirrel, onChange, onRestart }) {
     autoUpdater.on("update-downloaded", ({ version }) => {
       set({ phase: "ready", version });
       // The listener asked for it, so restart as soon as the updater has the build.
-      if (installing) autoUpdater.quitAndInstall();
+      if (installing) restart();
     });
     // A failed check changes nothing. A failed download, or macOS's own check of it, leaves the
     // installed app as it is and the newer build offered again, so another click tries again.
@@ -54,7 +56,7 @@ export function createUpdates({ autoUpdater, squirrel, onChange, onRestart }) {
       installing = false;
       set({ phase: "available", version: state.version });
     });
-    // MacUpdater and the Windows/Linux BaseUpdater both emit this on Electron's autoUpdater.
+    // quitAndInstall emits this on Electron's autoUpdater as it closes the windows to install.
     squirrel?.on("before-quit-for-update", () => onRestart());
   }
 
@@ -77,7 +79,7 @@ export function createUpdates({ autoUpdater, squirrel, onChange, onRestart }) {
     installing = true;
     if (state.phase === "ready") {
       set(state);
-      autoUpdater.quitAndInstall();
+      restart();
       return;
     }
     if (state.phase === "available") set({ phase: "downloading", version: state.version, progress: 0 });

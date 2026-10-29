@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import { createApplicationUpdater } from "../src/core/application-update.mjs";
+import { openInDefaultBrowser } from "../src/core/host.mjs";
 import { runUpdateCommand } from "../src/surfaces/cli/update-command.mjs";
 
 import { MoondogApplication } from "../src/core/moondog-application.mjs";
@@ -378,13 +377,7 @@ async function prepareTuiHistoryImport(filePath, { recentPage, librarySnapshot, 
 async function openImportHelp(destination) {
   const url = IMPORT_GUIDE_URLS[destination];
   if (!url) throw new Error("Unknown import guide.");
-  const [command, args] = process.platform === "darwin" ? ["open", [url]]
-    : process.platform === "win32" ? ["rundll32", ["url.dll,FileProtocolHandler", url]]
-      : ["xdg-open", [url]];
-  await promisify(execFile)(command, args, {
-    timeout: 10_000,
-    windowsHide: true,
-  });
+  await openInDefaultBrowser(url);
 }
 
 function tasteCoverage(profile) {

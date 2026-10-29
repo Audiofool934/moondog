@@ -11,8 +11,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { windowLocale, windowStrings } from "./strings.mjs";
 import { createUpdates } from "./updates.mjs";
-import { needsLoginShell, playbackAccelerators, windowChrome } from "./platform.mjs";
-import { createQuitHandler } from "./lifecycle.mjs";
+import { accelerators, needsLoginShell, windowChrome } from "./platform.mjs";
+import { createQuitHandler, installDownloadedUpdate } from "./lifecycle.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const isMac = process.platform === "darwin";
@@ -22,6 +22,10 @@ if (process.env.MOONDOG_APP_USER_DATA && path.isAbsolute(process.env.MOONDOG_APP
   app.setPath("userData", process.env.MOONDOG_APP_USER_DATA);
 }
 if (process.platform === "win32") app.setAppUserModelId("ai.audiofool.moondog");
+// One Moondog per profile. A second launch shows the open window instead of starting a second core on
+// the same conversations; macOS's own launcher already does this for an app opened from Finder.
+const primary = app.requestSingleInstanceLock();
+if (!primary) app.quit();
 // For automated checks: lets a DevTools client drive the window.
 if (process.env.MOONDOG_APP_DEBUG_PORT) app.commandLine.appendSwitch("remote-debugging-port", process.env.MOONDOG_APP_DEBUG_PORT);
 
@@ -55,6 +59,8 @@ function coreEnvironment(shellPath) {
 let window = null;
 let core = null;
 let quitting = false;
+// Set once the listener restarts into a downloaded update on Windows or Linux; it installs as the app exits.
+let installOnQuit = false;
 // What the page last said it can do; the menu greys out what would do nothing.
 const playback = { controllable: false, streaming: false };
 let dockMenu = null;
@@ -75,6 +81,9 @@ const updates = createUpdates({
   },
   // macOS closes the windows to install the update, so a closing window closes instead of hiding.
   onRestart: () => { quitting = true; },
+  // macOS installs through Squirrel after the app quits. Windows and Linux quit as usual first, so the
+  // core saves its conversations before the installer runs.
+  ...(isMac ? {} : { restart: () => { installOnQuit = true; app.quit(); } }),
 });
 function updateItem(t) {
   const { phase, installing } = updates.state();
@@ -94,13 +103,13 @@ async function checkForUpdates() {
 function buildMenu() {
   const t = windowStrings(locale);
   const dev = !app.isPackaged;
-  const keys = playbackAccelerators(process.platform);
+  const keys = accelerators(process.platform);
   Menu.setApplicationMenu(Menu.buildFromTemplate([
     { label: "Moondog", submenu: [
       { label: t("menuAbout"), role: "about" },
       ...(updates.enabled ? [updateItem(t)] : []),
       { type: "separator" },
-      { label: t("menuSettings"), accelerator: "CmdOrCtrl+,", click: command("settings") },
+      { label: t("menuSettings"), accelerator: keys.settings, click: command("settings") },
       { type: "separator" },
       ...(isMac ? [
         { label: t("menuHide"), role: "hide" },
@@ -120,20 +129,20 @@ function buildMenu() {
       { label: t("menuSelectAll"), role: "selectAll" },
     ] },
     { label: t("menuConversation"), submenu: [
-      { label: t("menuNew"), accelerator: "CmdOrCtrl+N", click: command("new") },
-      { id: "stop", label: t("menuStop"), accelerator: "CmdOrCtrl+.", click: command("stop"), enabled: playback.streaming },
+      { label: t("menuNew"), accelerator: keys.new, click: command("new") },
+      { id: "stop", label: t("menuStop"), accelerator: keys.stop, click: command("stop"), enabled: playback.streaming },
     ] },
     { label: t("menuPlayback"), submenu: [
-      // On macOS every menu accelerator is live, even while typing, so these use Control and Command
-      // together: Space or Command with an arrow would play, pause and skip in the middle of a sentence.
-      { id: "toggle-playback", label: t("menuPlayPause"), accelerator: keys.toggle, click: command("toggle-playback"), enabled: playback.controllable },
+      // Every menu accelerator is live, even while typing, so these keys type nothing (app/platform.mjs):
+      // Space or Command with an arrow would play, pause and skip in the middle of a sentence.
+      { id: "toggle-playback", label: t("menuPlayPause"), accelerator: keys.play, click: command("toggle-playback"), enabled: playback.controllable },
       { id: "next", label: t("menuNext"), accelerator: keys.next, click: command("next"), enabled: playback.controllable },
       { id: "previous", label: t("menuPrevious"), accelerator: keys.previous, click: command("previous"), enabled: playback.controllable },
     ] },
     { label: t("menuView"), submenu: [
-      { label: t("menuSidebar"), accelerator: "CmdOrCtrl+Alt+S", click: command("toggle-sidebar") },
-      { label: t("menuPlayer"), accelerator: "CmdOrCtrl+Alt+P", click: command("toggle-inspector") },
-      { label: t("menuRecord"), accelerator: "CmdOrCtrl+Alt+R", click: command("toggle-record") },
+      { label: t("menuSidebar"), accelerator: keys.sidebar, click: command("toggle-sidebar") },
+      { label: t("menuPlayer"), accelerator: keys.player, click: command("toggle-inspector") },
+      { label: t("menuRecord"), accelerator: keys.record, click: command("toggle-record") },
       { type: "separator" },
       ...(dev ? [{ role: "reload" }, { role: "toggleDevTools" }, { type: "separator" }] : []),
       { label: t("menuFullScreen"), role: "togglefullscreen" },
@@ -274,6 +283,13 @@ function createWindow() {
     event.preventDefault();
     if (isMac) window.hide();
     else app.quit();
+  });
+  // Windows ends a session without before-quit, so it would stop the core with replies unsaved. Moondog
+  // asks Windows to wait while it quits as usual, which takes the core at most a few seconds.
+  window.on("query-session-end", (event) => {
+    if (!core) return;
+    event.preventDefault();
+    app.quit();
   });
   // Restarting into an update closes the window before the core and the music helper stop, so
   // whatever reports to the window afterwards must find none rather than a destroyed one.
@@ -484,8 +500,19 @@ app.on("before-quit", createQuitHandler({
   willQuit: () => { quitting = true; },
   quit: () => app.quit(),
 }));
+app.on("will-quit", () => {
+  if (!installOnQuit) return;
+  installDownloadedUpdate({ updater: electronUpdater.autoUpdater, platform: process.platform, relaunch: (options) => app.relaunch(options), appImage: process.env.APPIMAGE });
+});
+app.on("second-instance", () => {
+  if (!window || quitting) return;
+  if (window.isMinimized()) window.restore();
+  window.show();
+  window.focus();
+});
 app.on("activate", () => window?.show());
 app.whenReady().then(() => {
+  if (!primary) return;
   locale = windowLocale(app.getPreferredSystemLanguages());
   try { appearance = appearanceOf(JSON.parse(readFileSync(appearanceFile(), "utf8"))); } catch { /* The system's look and the light icon. */ }
   applyAppearance({ starting: true });

@@ -7,6 +7,8 @@ import { execFile } from "node:child_process";
 import { access, constants, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 
+import { environmentPathKey } from "../../core/host.mjs";
+
 const COMMAND_TIMEOUT_MS = 20_000;
 // Where Homebrew and npm put ncm-cli, the node it runs on, and mpv, for a PATH that lacks them.
 const EXTRA_FOLDERS = ["/opt/homebrew/bin", "/usr/local/bin"];
@@ -22,8 +24,7 @@ const KNOWN_SONGS = 300;
 const failure = (code, message) => Object.assign(new Error(message), { code });
 
 const folders = (value) => String(value ?? "").split(path.delimiter).filter((folder) => path.isAbsolute(folder));
-const pathKey = (environment) => Object.keys(environment).find((key) => key.toUpperCase() === "PATH") ?? "PATH";
-const searchPath = (environment, platform) => [...new Set([...folders(environment[pathKey(environment)]),
+const searchPath = (environment, platform) => [...new Set([...folders(environment[environmentPathKey(environment)]),
   ...(platform === "win32" ? (environment.APPDATA ? [path.join(environment.APPDATA, "npm")] : []) : EXTRA_FOLDERS)])];
 
 async function executable(file) {
@@ -87,7 +88,7 @@ function cliRunner({ environment }) {
   return async (args) => {
     found ??= await findNcmCli(environment);
     if (!found) throw failure("netease_cli_missing", "ncm-cli is not installed. Install it with: npm install -g @music163/ncm-cli");
-    const env = { ...environment, [pathKey(environment)]: found.places.join(path.delimiter) };
+    const env = { ...environment, [environmentPathKey(environment)]: found.places.join(path.delimiter) };
     const stdout = await new Promise((resolve, reject) => {
       execFile(found.file, [...found.args, ...args], { env, windowsHide: true, timeout: COMMAND_TIMEOUT_MS, maxBuffer: 8 * 1024 * 1024 }, (error, out) =>
         (error && !out ? reject(failure("netease_failed", `ncm-cli ${args[0]} failed: ${String(error.message).slice(0, 200)}`)) : resolve(String(out ?? ""))));

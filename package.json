@@ -41,8 +41,7 @@
   },
   "os": [
     "darwin",
-    "linux",
-    "win32"
+    "linux"
   ],
   "packageManager": "npm@11.16.0",
   "scripts": {

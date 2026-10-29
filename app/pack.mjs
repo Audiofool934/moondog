@@ -4,7 +4,7 @@
 // Nothing is published by this script.
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { copyFile, cp, mkdir, readFile, readdir, rm } from "node:fs/promises";
+import { cp, mkdir, readFile, readdir, rename, rm } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -39,10 +39,14 @@ await rm(work, { recursive: true, force: true });
 await mkdir(room, { recursive: true });
 const { stdout } = await npm(["pack", "--json", "--ignore-scripts", "--pack-destination", work], { cwd: root });
 const [{ filename }] = JSON.parse(stdout);
-// Windows 10 and newer include tar.exe; the same command works on macOS and Linux.
-await run("tar", ["-xzf", path.join(work, filename), "-C", room, "--strip-components=1"]);
+// Windows 10 and newer include bsdtar in System32. A GNU tar earlier on PATH, such as Git's,
+// would read the C: in an absolute path as a remote host.
+const tar = process.platform === "win32" ? path.join(process.env.SystemRoot || "C:\\Windows", "System32", "tar.exe") : "tar";
+await run(tar, ["-xzf", path.join(work, filename), "-C", room, "--strip-components=1"]);
 await cp(path.join(root, "package-lock.json"), path.join(room, "package-lock.json"));
-await npm(["ci", "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fund"], { cwd: room });
+// The npm package lists macOS and Linux only, because its terminal launcher is a shell script.
+// The Windows app carries the same core, so its install skips that platform check.
+await npm(["ci", "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fund", ...(process.platform === "win32" ? ["--force"] : [])], { cwd: room });
 
 await run(process.execPath, [path.join(here, "build.mjs")]);
 const music = target.platform === "darwin" ? await buildMusicHelper({ bundle: false }) : null;
@@ -59,11 +63,12 @@ await build({
 
 if (flags.has("--dir")) console.log(path.relative(here, path.join(output, target.unpacked)));
 else {
-  // Only final deliverables reach release/. Unpacked Mac bundles stay inside .noindex while
+  // Only final deliverables move to release/, replacing a build of the same version. Earlier versions
+  // stay, so an update can be tried between two builds. Unpacked Mac bundles stay inside .noindex while
   // building, and are removed once the archives are complete so Spotlight never offers them.
   for (const file of await readdir(output, { withFileTypes: true })) {
     if (!file.isFile() || !/\.(?:dmg|zip|exe|AppImage|blockmap|yml)$/u.test(file.name) || file.name.startsWith("builder-")) continue;
-    await copyFile(path.join(output, file.name), path.join(release, file.name));
+    await rename(path.join(output, file.name), path.join(release, file.name));
     console.log(path.join("release", file.name));
   }
   if (target.platform === "darwin") await rm(path.join(output, target.unpacked), { recursive: true, force: true });

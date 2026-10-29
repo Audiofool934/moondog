@@ -1,5 +1,6 @@
 // Launch the real packaged desktop with empty state, exercise its first run and Settings, then quit.
 // Uses Node's built-in CDP transport; no model, account, or browser driver is needed.
+// MOONDOG_SMOKE_EXECUTABLE runs an installed app or an AppImage instead of the unpacked build.
 import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
 import { once } from "node:events";
@@ -37,7 +38,7 @@ const deadline = Date.now() + 60_000;
 // Carry only the host settings needed to launch a window, never provider credentials or
 // personal Moondog overrides from the maintainer's shell.
 const hostEnvironment = Object.fromEntries(Object.entries(process.env).filter(([key]) =>
-  /^(PATH|SYSTEMROOT|WINDIR|COMSPEC|PATHEXT|TEMP|TMP|HOME|USERPROFILE|HOMEDRIVE|HOMEPATH|APPDATA|LOCALAPPDATA|SHELL|DISPLAY|XAUTHORITY|XDG_RUNTIME_DIR|DBUS_SESSION_BUS_ADDRESS|LANG|LC_.+|CI)$/iu.test(key)));
+  /^(PATH|SYSTEMROOT|WINDIR|COMSPEC|PATHEXT|TEMP|TMP|HOME|USERPROFILE|HOMEDRIVE|HOMEPATH|APPDATA|LOCALAPPDATA|SHELL|DISPLAY|XAUTHORITY|XDG_RUNTIME_DIR|DBUS_SESSION_BUS_ADDRESS|LANG|LC_.+|CI|APPIMAGE_EXTRACT_AND_RUN)$/iu.test(key)));
 async function until(fn, label) {
   while (Date.now() < deadline) {
     if (exited) throw new Error(`App exited before ${label}.\n${log}`);

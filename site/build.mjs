@@ -61,7 +61,8 @@ async function desktopDownloads() {
     const found = { ...fallback };
     for (const release of await response.json()) {
       if (release.draft) continue;
-      for (const [platform, pattern] of Object.entries({ mac: /-arm64\.dmg$/u, windows: /-win-x64\.exe$/u, linux: /-linux-x64\.AppImage$/u })) {
+      // electron-builder names an x64 AppImage x86_64, as AppImage tools expect.
+      for (const [platform, pattern] of Object.entries({ mac: /-arm64\.dmg$/u, windows: /-win-x64\.exe$/u, linux: /-linux-x86_64\.AppImage$/u })) {
         if (found[platform]?.version) continue;
         const asset = release.assets?.find((item) => pattern.test(item.name));
         if (asset) found[platform] = { url: asset.browser_download_url, version: release.tag_name.replace(/^v/u, "") };
