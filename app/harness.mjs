@@ -10,7 +10,7 @@
 //                                                    MOONDOG_HARNESS_STATES when it names one
 //   MOONDOG_HARNESS_EVAL=check.js npm run harness    runs a script in the page after each state, before the
 //                                                    capture, and prints what it returns (for checks)
-import { app, BrowserWindow, nativeTheme } from "electron";
+import { app, BrowserWindow, nativeTheme, protocol } from "electron";
 import { readdirSync, readFileSync, rmSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import os from "node:os";
@@ -41,7 +41,20 @@ for (const name of readdirSync(os.tmpdir())) {
 }
 if (!show) setTimeout(() => { process.stderr.write("[harness] timed out\n"); app.exit(1); }, 240_000);
 
+// A track Moondog made plays from moondog-media: as in the app; here every id answers with two minutes of silence.
+protocol.registerSchemesAsPrivileged([{ scheme: "moondog-media", privileges: { standard: true, secure: true, stream: true } }]);
+const silence = (() => {
+  const data = Buffer.alloc(120 * 44100 * 4);
+  const header = Buffer.alloc(44);
+  header.write("RIFF", 0, "ascii"); header.writeUInt32LE(36 + data.length, 4); header.write("WAVE", 8, "ascii");
+  header.write("fmt ", 12, "ascii"); header.writeUInt32LE(16, 16); header.writeUInt16LE(1, 20); header.writeUInt16LE(2, 22);
+  header.writeUInt32LE(44100, 24); header.writeUInt32LE(176400, 28); header.writeUInt16LE(4, 32); header.writeUInt16LE(16, 34);
+  header.write("data", 36, "ascii"); header.writeUInt32LE(data.length, 40);
+  return Buffer.concat([header, data]);
+})();
+
 app.whenReady().then(async () => {
+  protocol.handle("moondog-media", () => new Response(silence, { headers: { "Content-Type": "audio/wav" } }));
   const window = new BrowserWindow({
     width, height, useContentSize: true, show, title: "Moondog harness",
     titleBarStyle: "hiddenInset", trafficLightPosition: { x: 18, y: 15 },

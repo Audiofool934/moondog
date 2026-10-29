@@ -4,6 +4,7 @@ import { createListenerProfileInput, savedListenerChoices } from "../profile/lis
 import { lyricSeedsFromProfile } from "./lyric-profile.mjs";
 import { cachedAvoidGate, createAvoidGate, listeningVersion } from "./listener-avoids.mjs";
 import { recordListenerChoice } from "../profile/listener-corrections.mjs";
+import { listenedNames } from "../profile/taste-compiler.mjs";
 import { normalizedTrackTitle } from "./track-title.mjs";
 import { collectionCoverage } from "../profile/music-providers.mjs";
 import { lstat } from "node:fs/promises";
@@ -1846,6 +1847,19 @@ export class AppleProjectionDomainServices {
 
   isKnownDiscoveryTrack(track) {
     return (this.#listeningHistoryStore?.listenedTracks?.({ subjectId: this.#subjectId }) ?? []).some(heard => exactTitleArtistMatch(track, heard));
+  }
+
+  // Every Avoid in force, imported bans included, as the play paths read them.
+  activeAvoids() {
+    const store = this.#listeningHistoryStore;
+    const avoids = store?.activeAvoidances?.({ subjectId: this.#subjectId }) ?? [];
+    return normalizeAppleCorrectionLabels({ listener_assertions: { avoids } }, this.#projection).listener_assertions.avoids
+      .map((avoid) => ({ stance: "avoid", subject: avoid.entity_type ?? "artist", name: avoid.label, ...(avoid.artist_credit ? { artist: avoid.artist_credit } : {}) }));
+  }
+
+  // Every artist, song and album the listener has played, so a track Moondog makes names none of them.
+  listenedNames() {
+    return listenedNames(this.#listeningHistoryStore?.listenedTracks?.({ subjectId: this.#subjectId }) ?? []);
   }
 
   registerExternalCandidateSet({ tracks, source, excludeKnown = true } = {}) {

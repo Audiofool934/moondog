@@ -93,6 +93,7 @@ export function withCommandCompletions(commands, {
     art: { argumentHint: "[braille|ascii|off|auto]", choices: firstArgument(artChoices) },
     motion: { argumentHint: "[on|off]", choices: firstArgument(motionChoices) },
     service: { argumentHint: "[spotify|apple_music|netease]", choices: firstArgument(serviceChoices) },
+    generation: { argumentHint: "[on [folder]|off]", choices: firstArgument(choices([["on", N_("Make music on this Mac with Stable Audio 3")], ["off", N_("Stop making music here")]])) },
     lyrics: { argumentHint: "[sync]", choices: firstArgument(choices([["sync", N_("Check profile songs for lyrics")]])) },
     web: { argumentHint: "search <query> | read <url> | status", choices: firstArgument(webChoices) },
     spotify: {

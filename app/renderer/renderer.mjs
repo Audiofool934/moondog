@@ -143,6 +143,7 @@ const KINDS = [
   [/^moondog_web_/u, "web"],
   [/^moondog_(?:playlist_plan|spotify_playlist_)/u, "playlist"],
   [/^moondog_music_preview$/u, "previews"],
+  [/^moondog_make_track$/u, "make"],
   [/^moondog_netease_control$/u, (args) => ({ pause: "pause", stop: "pause", next: "skip", previous: "skip" })[args?.action] ?? "play"],
   [/^moondog_netease_play$/u, (args) => (args?.mode === "queue" ? "queue" : "play")],
   [/^moondog_netease_search$/u, "search"],
@@ -1278,7 +1279,8 @@ function nowPlaying() {
   const preview = previews.state();
   const now = state.player?.now;
   // local: it plays in the window (whole songs or previews); preview: it is a 30-second preview.
-  if (preview && (preview.playing || !now?.playing)) return { ...preview, local: true, preview: !preview.full };
+  // A track Moondog made is its own record, never a preview.
+  if (preview && (preview.playing || !now?.playing)) return { ...preview, local: true, preview: !preview.full && !preview.generated };
   if (!now) return null;
   const progressMs = now.playing ? now.progressMs + (Date.now() - now.observedAt) : now.progressMs;
   return { ...now, progressMs: now.durationMs ? Math.min(progressMs, now.durationMs) : progressMs, next: state.player.next ?? [] };
@@ -1430,7 +1432,7 @@ function renderInspector() {
   }
   set($("blank"), "textContent", limitedUntil ? spotifyLimited(limitedUntil) : t("nothingPlaying"));
   set($("song"), "textContent", now?.title ?? "");
-  set($("artist"), "textContent", now ? now.artists.join(", ") : "");
+  set($("artist"), "textContent", now ? (now.generated ? t("madeByMoondog") : now.artists.join(", ")) : "");
   set($("album"), "textContent", now?.album ?? "");
   renderProgress(now);
 
@@ -1444,7 +1446,7 @@ function renderInspector() {
   // playing in the window, or NetEase playing through ncm-cli on this Mac.
   const neteaseNow = now?.service === "netease";
   const spotifyNow = now && !now.local && !neteaseNow;
-  const appleNow = now?.local && state.playbackService === "apple_music";
+  const appleNow = now?.local && !now.generated && state.playbackService === "apple_music";
   set($("where"), "hidden", !(spotifyNow ? now.device || now.link : now?.local || neteaseNow));
   set($("device-row"), "hidden", spotifyNow ? !now.device : !(appleNow || neteaseNow));
   if (spotifyNow) {
@@ -1484,7 +1486,7 @@ function renderInspector() {
     if (now.image && cover.getAttribute("src") !== now.image) cover.src = now.image;
     if (!now.image) cover.removeAttribute("src");
     cover.onerror = () => cover.removeAttribute("src");
-    set($("mini-song"), "textContent", [now.title, now.artists[0]].filter(Boolean).join(" · "));
+    set($("mini-song"), "textContent", [now.title, now.generated ? t("madeByMoondog") : now.artists[0]].filter(Boolean).join(" · "));
     // The song reads as itself and opens the player; a tooltip gives the whole line only when it is cut off.
     const song = $("mini-song");
     if (song.scrollWidth > song.clientWidth) $("mini-open").dataset.tip = song.textContent; else delete $("mini-open").dataset.tip;
@@ -1808,7 +1810,7 @@ function streamingTurn(id) {
 }
 const onScreen = (data) => !data.session || data.session === state.current;
 const SIGN_IN_ERRORS = { connect_while_answering: "waitForReply", sign_in_busy: "signInBusy" };
-const SETTINGS_MESSAGES = new Set(["models", "provider-models", "model-list", "endpoint", "devices", "memories", "auth-prompt", "auth-prompt-closed", "auth-event", "sign-in", "import", "notice", "netease-checked"]);
+const SETTINGS_MESSAGES = new Set(["models", "provider-models", "model-list", "endpoint", "devices", "memories", "auth-prompt", "auth-prompt-closed", "auth-event", "sign-in", "import", "notice", "netease-checked", "generation-checked"]);
 function receive({ data }) {
   if (!data?.type) return;
   if (data.type === "preview" || data.type === "preview-control") { previews.receive(data); renderInspector(); return; }
@@ -1837,7 +1839,7 @@ function receive({ data }) {
   }
   if (data.type === "ready" || data.type === "status") {
     if (data.locale && data.locale !== locale) applyLanguage(data.locale);
-    for (const key of ["model", "spotify", "spotifyAccount", "playbackService", "netease", "neteaseMessage", "locales", "firstRun"]) if (data[key] !== undefined) state[key] = data[key];
+    for (const key of ["model", "spotify", "spotifyAccount", "playbackService", "netease", "neteaseMessage", "generation", "locales", "firstRun"]) if (data[key] !== undefined) state[key] = data[key];
     if (sourceWanted === state.playbackService) sourceWanted = null;
     // With Apple Music chosen, the window learns once whether it can play whole songs.
     if (state.playbackService === "apple_music" && !previews.fullStatus()) void previews.check();

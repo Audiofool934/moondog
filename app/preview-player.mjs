@@ -1,5 +1,7 @@
 // The room uses the same player interface in a terminal and in the desktop app.
 // Audio stays in the window; its events come back so the room can show and control it.
+const generatedTrackId = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
+
 export function createWindowPreviewPlayer(port) {
   const listeners = new Set();
   let sequence = 0;
@@ -57,6 +59,20 @@ export function createWindowPreviewPlayer(port) {
           title: String(album.title), artist_credit: String(album.artist_credit ?? ""),
           catalog_url: https(album.catalog_url, "music.apple.com"), artwork_url: album.artwork_url,
         } : null,
+      });
+    },
+    // A track Moondog made on this Mac. The window asks main for it by id through moondog-media:,
+    // so its path never reaches the page.
+    playGenerated({ id, title, seconds } = {}) {
+      const name = String(title ?? "").trim();
+      if (closed || !name || !generatedTrackId.test(String(id ?? ""))) return;
+      queueId = ++sequence;
+      active = true;
+      port.postMessage({
+        type: "preview", id: queueId,
+        tracks: [{ title: name, artist_credit: "", generated: true, media_url: `moondog-media://generated/${id}`,
+          ...(Number.isFinite(seconds) && seconds > 0 ? { duration_seconds: seconds } : {}) }],
+        album: null,
       });
     },
     skip() {

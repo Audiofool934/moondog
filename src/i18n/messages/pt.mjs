@@ -130,6 +130,7 @@ export default {
   "choice.like": ({ title, artist }) => { const name = title ? `"${title}" de ${artist}` : artist; return `\n\nSalvo: você gosta de ${name}. É só me dizer quando quiser mudar.`; },
   "choice.avoid": ({ title, artist }) => { const name = title ? `"${title}" de ${artist}` : artist; return `\n\nSalvo: vou deixar ${name} fora do que eu toco e sugiro. É só me dizer quando quiser mudar.`; },
   "choice.retract": ({ title, artist }) => { const name = title ? `"${title}" de ${artist}` : artist; return `\n\nDesfeito: sua escolha anterior sobre ${name}.`; },
+  "generate.made": ({ title, length, seed }) => `Feito neste Mac com o Stable Audio 3: "${title}" (${length}, semente ${seed}).`,
   "turn.cancelled": "Cancelei o resto.",
   "turn.interrupted": "A resposta foi interrompida. Abaixo estão os resultados registrados no Spotify; nenhuma ação foi repetida.",
 };

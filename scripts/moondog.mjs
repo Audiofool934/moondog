@@ -53,6 +53,7 @@ import { startListeningUpkeep } from "../src/core/listening-upkeep.mjs";
 import { createAppleMusicCatalog } from "../src/integrations/apple-music/catalog.mjs";
 import { createTerminalPreviewPlayer } from "../src/integrations/apple-music/terminal-preview-player.mjs";
 import { createNeteasePlayer } from "../src/integrations/netease/ncm-cli-player.mjs";
+import { createLocalGenerator } from "../src/integrations/stable-audio/local-generator.mjs";
 import { createMusicAppPlayer } from "../src/integrations/apple-music/music-app.mjs";
 import {
   createOpenMusicSimilarity,
@@ -850,6 +851,13 @@ async function main() {
   const neteasePlayer = createNeteasePlayer();
   const playbackService = await resolvePlaybackService();
   if (playbackService === "netease") await neteasePlayer.check();
+  // Moondog makes music on this Mac with the listener's own Stable Audio 3 once they turn it on, in a
+  // room that can play what it makes. The terminal and the window each keep one generator, so each
+  // makes one track at a time; a choice saved on one side is checked again on the other.
+  const localGenerator = previewPlayer ? createLocalGenerator() : null;
+  await localGenerator?.check();
+  void localGenerator?.sweep().catch(() => {});
+  const unwatchGeneration = localGenerator?.watch() ?? (() => {});
   const playbackSelection = createPlaybackSelection({ service: playbackService, save: writePlaybackPreference });
   // The terminal and the window each run this core on one playback.json. A service chosen on the
   // other side reaches this side's picker and agents, and stops the previews this side plays.
@@ -863,7 +871,7 @@ async function main() {
   const spotifyTopArtists = { read_at: null, artists: [] };
   const applicationOptions = ({ domainServices, domainServicesError, spotifyConnection, locale, playbackService }) => ({
     domainServices, domainServicesError, spotifyConnection, locale, playbackService, playbackSelection,
-    webResearch, memoryStore, musicCatalog, musicPreviewPlayer: previewPlayer, neteasePlayer, musicSimilarity, artistIdentityResolver,
+    webResearch, memoryStore, musicCatalog, musicPreviewPlayer: previewPlayer, neteasePlayer, localGenerator, musicSimilarity, artistIdentityResolver,
     spotifyTopArtists, musicApp,
   });
   const application = new MoondogApplication(applicationOptions({
@@ -1059,6 +1067,13 @@ async function main() {
         return prepareTuiHistoryImport(undefined, { recentPage, librarySnapshot, libraryUnavailable });
       },
       openImportHelp,
+      // Local generation: what the room shows and the switch the listener turns, in Settings or with /generation.
+      generation: localGenerator && {
+        status: () => localGenerator.status(),
+        check: () => localGenerator.check(),
+        save: (settings) => localGenerator.save(settings),
+        subscribe: (listener) => localGenerator.subscribe(listener),
+      },
       // The room asks whether a Last.fm key is set, and saves one the listener pastes.
       lastfm: {
         status: async () => {
@@ -1165,6 +1180,7 @@ async function main() {
     });
   } finally {
     unwatchPlayback();
+    unwatchGeneration();
     listeningUpkeep?.stop();
     lyrics?.close();
     // Conversations close first: their domain services are forks of the main application's.

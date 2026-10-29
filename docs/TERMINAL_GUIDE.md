@@ -159,6 +159,8 @@ Minimal layouts can still scroll the lyric when there is room to display it.
 The layout reduces artwork before sacrificing room for the input, and works without Kitty or iTerm image support.
 `/service` chooses where Moondog plays music: Spotify, Apple Music, or NetEase Music.
 `/service apple_music` switches straight to one; the choice is saved and the desktop app follows it.
+`/generation` says whether Moondog can make music on this Mac with Stable Audio 3, powered by Stability AI; `/generation on` turns it on, `/generation on ~/path/to/mlx` points at another install of Stability AI's MLX build, and `/generation off` turns it off.
+Once it is on, ask for a track in your own words. Stable Audio 3 runs offline, and the track and its receipt stay in Moondog's state folder; your request still goes to the model you talk through.
 `/import` opens a native guide for music-service exports and public playlist links, with preview and confirmation before saving.
 `/import "/path/to/history.zip"` opens the file preview directly.
 `/help` shows the terminal guide; `/help all` includes the complete CLI reference.
@@ -1487,7 +1489,8 @@ Every selected track must come from a current prompt candidate set or the one-pr
 
 Conversation persistence and explicit durable claims are enabled locally.
 
-Durable playlist-draft persistence across process restarts, public or collaborative playlist editing, playlists above 100 tracks, Telegram, music generation, and revision-aware listening-data promotion are not enabled.
+Durable playlist-draft persistence across process restarts, public or collaborative playlist editing, playlists above 100 tracks, Telegram, online or paid music generation, and revision-aware listening-data promotion are not enabled.
+Local instrumental generation with the listener's own Stable Audio 3 is enabled once they turn it on with `/generation on`.
 
 Direct Spotify Connect playback control, explicit private-playlist creation, exact quick edits, and previewed existing private-playlist editing are enabled only after explicit local OAuth setup.
 

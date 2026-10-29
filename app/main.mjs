@@ -2,13 +2,16 @@
 // app is to its command line. The core runs in its own Node process (core-process.mjs); the
 // window draws conversations, the conversation, and what is playing, and keeps the music
 // going after it closes.
-import { app, autoUpdater as squirrel, BrowserWindow, dialog, ipcMain, Menu, MessageChannelMain, nativeTheme, screen, shell, utilityProcess } from "electron";
+import { app, autoUpdater as squirrel, BrowserWindow, dialog, ipcMain, Menu, MessageChannelMain, nativeTheme, protocol, screen, shell, utilityProcess } from "electron";
 import electronUpdater from "electron-updater";
 import { execFile, spawn } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { createReadStream, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { Readable } from "node:stream";
 import { fileURLToPath } from "node:url";
+import { resolveMoondogStateDirectory } from "../src/core/state-directory.mjs";
 import { windowLocale, windowStrings } from "./strings.mjs";
 import { createUpdates } from "./updates.mjs";
 import { createCoreShutdown } from "./shutdown.mjs";
@@ -24,6 +27,39 @@ if (process.env.MOONDOG_APP_USER_DATA) {
 }
 // For automated checks: lets a DevTools client drive the window.
 if (process.env.MOONDOG_APP_DEBUG_PORT) app.commandLine.appendSwitch("remote-debugging-port", process.env.MOONDOG_APP_DEBUG_PORT);
+
+// The tracks Moondog makes on this Mac (src/integrations/stable-audio) play in the window from
+// moondog-media://generated/<id>. The scheme serves those files and nothing else, so the page never
+// holds a path or reads a folder; it answers byte ranges, so the listener can move in a track.
+protocol.registerSchemesAsPrivileged([{ scheme: "moondog-media", privileges: { standard: true, secure: true, stream: true } }]);
+const generatedTrackId = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
+async function generatedTrack(request) {
+  const url = new URL(request.url);
+  const id = url.pathname.slice(1);
+  if (url.hostname !== "generated" || !generatedTrackId.test(id)) return new Response(null, { status: 404 });
+  const file = path.join(resolveMoondogStateDirectory(), "generated", id, "track.wav");
+  let size;
+  try {
+    const info = await stat(file);
+    if (!info.isFile()) return new Response(null, { status: 404 });
+    size = info.size;
+  } catch {
+    return new Response(null, { status: 404 });
+  }
+  const range = /^bytes=(\d*)-(\d*)$/u.exec(request.headers.get("range") ?? "");
+  let start = 0;
+  let end = size - 1;
+  if (range && (range[1] || range[2])) {
+    start = range[1] ? Number(range[1]) : Math.max(0, size - Number(range[2]));
+    end = range[1] && range[2] ? Math.min(Number(range[2]), size - 1) : size - 1;
+    if (start > end || start >= size) return new Response(null, { status: 416, headers: { "Content-Range": `bytes */${size}` } });
+  }
+  return new Response(Readable.toWeb(createReadStream(file, { start, end })), {
+    status: range ? 206 : 200,
+    headers: { "Content-Type": "audio/wav", "Content-Length": String(end - start + 1), "Accept-Ranges": "bytes",
+      ...(range ? { "Content-Range": `bytes ${start}-${end}/${size}` } : {}) },
+  });
+}
 
 // The window's canvas, from app/renderer/style.css.
 const background = () => (nativeTheme.shouldUseDarkColors ? "#141413" : "#F7F6F2");
@@ -495,6 +531,7 @@ app.on("before-quit", (event) => {
 });
 app.on("activate", () => window?.show());
 app.whenReady().then(() => {
+  protocol.handle("moondog-media", generatedTrack);
   locale = windowLocale(app.getPreferredSystemLanguages());
   try { appearance = appearanceOf(JSON.parse(readFileSync(appearanceFile(), "utf8"))); } catch { /* The system's look and the light icon. */ }
   applyAppearance({ starting: true });
