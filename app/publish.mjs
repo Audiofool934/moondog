@@ -1,4 +1,5 @@
 // Publish only a complete, verified Mac release. A failed upload leaves the draft private.
+// Start it right after the tag push: after the build it waits up to an hour for the npm approval and the draft.
 // Repeat the same command to resume; --skip-build requires the recorded final artifacts.
 import { spawn } from "node:child_process";
 import { createWriteStream } from "node:fs";
@@ -8,7 +9,7 @@ import { pipeline } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
 import { command, commandFailure, digestFile, parseReleaseJson, phase, readJson, RELEASE_REPO, SIGNING_TEAM } from "./release-tools.mjs";
 import { releaseNames, verifyArtifacts } from "./release-artifacts.mjs";
-import { assertReleaseIdentity, findReleaseByTag, markAsLatest, publicationSource, uploadImmutableAssets, validateNpmRelease } from "./release-publication.mjs";
+import { assertReleaseIdentity, findReleaseByTag, markAsLatest, publicationSource, uploadImmutableAssets, validateNpmRelease, waitFor } from "./release-publication.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url)), root = path.join(here, "..");
 const args = process.argv.slice(2), flags = new Set();
@@ -46,9 +47,15 @@ if (!flags.has("--skip-build") && !flags.has("--verify-only")) {
 const manifest = await phase("Validate release provenance, hashes, signatures and containers", () => verifyArtifacts(releaseDir, provenance));
 if (flags.has("--verify-only")) { console.log(`Verified ${tag}; nothing was uploaded.`); process.exit(0); }
 
-const npmMetadata = async selector => parseReleaseJson((await command("npm", ["view", `${name}@${selector}`, "--json", "--registry", "https://registry.npmjs.org"], { cwd: root })).stdout);
+const npmMetadata = async selector => parseReleaseJson((await command("npm", ["view", `${name}@${selector}`, "--json", "--prefer-online", "--registry", "https://registry.npmjs.org"], { cwd: root })).stdout);
 const assertNpm = async () => validateNpmRelease(await npmMetadata(version), { name, version, source });
-await phase("Verify the published npm version and commit", assertNpm);
+// npm view reports a version that is not published yet as E404; any other failure stops here.
+const readNpm = () => npmMetadata(version).catch(error => { if (error.npmCodes?.includes("E404")) return null; throw error; });
+const deadline = Date.now() + 60 * 60_000;
+let npmRelease = await readNpm();
+if (!npmRelease) npmRelease = await phase(`Wait for npm ${version}: approve the npm environment on the Publish release run`, () => waitFor(readNpm, { deadline }));
+if (!npmRelease) throw new Error(`npm ${version} is not published. Approve the npm environment on the Publish release run, then run the same command again.`);
+await phase("Verify the published npm version and commit", () => validateNpmRelease(npmRelease, { name, version, source }));
 
 const findRelease = () => findReleaseByTag({ tag, prerelease: beta,
   listPage: page => api(`releases?per_page=100&page=${page}`) });
@@ -57,12 +64,7 @@ if (!release && flags.has("--create")) {
   await gh(["release", "create", tag, "--verify-tag", "--generate-notes", "--draft", "--latest=false", ...(beta ? ["--prerelease"] : [])]);
   release = await findRelease();
 }
-if (!release) await phase(`Wait for the GitHub draft ${tag}`, async () => {
-  for (let attempts = 0; !release && attempts < 60; attempts++) {
-    await new Promise(resolve => setTimeout(resolve, 60_000));
-    release = await findRelease();
-  }
-});
+if (!release) release = await phase(`Wait for the GitHub draft ${tag}`, () => waitFor(findRelease, { deadline }));
 if (!release) throw new Error(`No draft ${tag}. Approve the npm workflow or use --create after npm is published.`);
 const identity = { id: release.id, tag, prerelease: beta };
 const endpoint = `releases/${identity.id}`;
@@ -98,7 +100,8 @@ release = await phase("Upload and verify immutable release assets", () => upload
   upload: item => command("gh", ["api", "--method", "POST",
     `https://uploads.github.com/repos/${RELEASE_REPO}/${endpoint}/assets?name=${encodeURIComponent(item.name)}`,
     "-H", "Content-Type: application/octet-stream", "-H", `Content-Length: ${item.size}`,
-    "--input", path.join(releaseDir, item.name)], { cwd: root, timeout: 60 * 60_000 }),
+    // The ZIP and DMG upload at once and share the bandwidth, so each gets twice the time one had alone.
+    "--input", path.join(releaseDir, item.name)], { cwd: root, timeout: 2 * 60 * 60_000 }),
   deleteAsset: asset => command("gh", ["api", "--method", "DELETE", `repos/${RELEASE_REPO}/releases/assets/${asset.id}`], { cwd: root }),
 }));
 

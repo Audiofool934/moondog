@@ -52,8 +52,19 @@ export function markAsLatest(version, existingVersions) {
   });
 }
 
+// Read until a value appears or the deadline passes. Every wait of one run shares the deadline,
+// so a build that finishes before the owner approves npm waits for that approval, then the draft.
+export async function waitFor(read, { deadline, now = Date.now, sleep = ms => new Promise(resolve => setTimeout(resolve, ms)), interval = 60_000 }) {
+  for (;;) {
+    const value = await read();
+    if (value || now() >= deadline) return value;
+    await sleep(Math.min(interval, Math.max(0, deadline - now())));
+  }
+}
+
 // Check every existing asset before uploading anything. Public releases are immutable;
 // incomplete drafts can resume, but changed bytes require a new release version.
+// The other assets upload together; the last item, the update feed, goes up only after they are verified.
 export async function uploadImmutableAssets({ items, getRelease, upload, remoteDigest, deleteAsset }) {
   let release = await getRelease();
   const missing = [];
@@ -78,25 +89,32 @@ export async function uploadImmutableAssets({ items, getRelease, upload, remoteD
     else missing.push(item);
   }
   if (!release.draft && missing.length) throw new Error("The public release is incomplete. Do not repair it by replacing live assets; publish a new version.");
-  for (const item of missing) {
-    release = await getRelease();
-    if (!release.draft) throw new Error("The release is now public; no assets were changed.");
-    let existing = find(release, item);
+  const put = async item => {
+    let snapshot = await getRelease();
+    if (!snapshot.draft) throw new Error("The release is now public; no assets were changed.");
+    let existing = find(snapshot, item);
     const placeholder = placeholders.get(item.name);
     if (placeholder && existing) {
       if (existing.id !== placeholder.id || !emptyStarter(existing)) throw new Error(`The upload placeholder changed: ${item.name}. It was not deleted.`);
       if (!deleteAsset) throw new Error(`Cannot recover the empty upload placeholder: ${item.name}.`);
       await deleteAsset(existing);
-      release = await getRelease();
-      if (!release.draft) throw new Error("The release is now public; no further assets were changed.");
-      existing = find(release, item);
+      snapshot = await getRelease();
+      if (!snapshot.draft) throw new Error("The release is now public; no further assets were changed.");
+      existing = find(snapshot, item);
     }
-    if (existing) { await check(item, existing); continue; }
+    if (existing) { await check(item, existing); return; }
     await upload(item);
-    release = await getRelease();
-    const asset = find(release, item);
+    const asset = find(await getRelease(), item);
     if (!asset) throw new Error(`The upload is missing: ${item.name}.`);
     await check(item, asset);
-  }
-  return release;
+  };
+  // Let every started upload finish before reporting a failure, so none still runs when the command exits.
+  const putAll = async group => {
+    const failure = (await Promise.allSettled(group.map(put))).find(result => result.status === "rejected");
+    if (failure) throw failure.reason;
+  };
+  const feed = items.at(-1);
+  await putAll(missing.filter(item => item !== feed));
+  if (missing.includes(feed)) await putAll([feed]);
+  return missing.length ? getRelease() : release;
 }
