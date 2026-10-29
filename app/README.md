@@ -53,7 +53,8 @@ A model or music service chosen there lasts until the app quits, and sign-in and
   It is full size at home, where the latest exchange starts: the newest message just under the record, or the end of the words when everything after that message fits.
   Moving away from home, up into history or down a long reply, shrinks it as you scroll, to half its size and no smaller.
   Its size follows where the view is and nothing else, so it never jumps, and it is the same size each time the view rests at the same place. A reply growing below the view leaves it as it is.
-  Shrinking follows the hand at once; growing back takes at least 600 ms, so a quick pass by home doesn't flash it full. A glide (the round button, a request mark) takes it straight from its size where the glide starts to its size where the glide ends.
+  Shrinking and growing follow the hand at once.
+  A glide (the round button, a request mark) takes it straight from its size where the glide starts to its size where the glide ends.
   The room above the first words is what the record takes at the top of the conversation, so it changes when the conversation does, never while you scroll, and the words never move under your hand.
   Its dots are drawn at the size the window shows, on the screen's pixels, so a smaller record never shimmers with moiré.
   A click on the record, or `⌥⌘R`, folds it into a small mark in the middle of the title bar and keeps it there; a click on the mark opens it and returns home under it.
@@ -199,21 +200,21 @@ An evaluation failure exits with a nonzero status.
 ## Build the app
 
 Run `npm run pack` on the target operating system and architecture.
-It writes these files to `release/` and uploads nothing:
+It uploads nothing, and writes these files:
 
-| Build host | Desktop package | Update metadata |
-| --- | --- | --- |
-| macOS, Apple silicon | DMG and zip | `latest-mac.yml` |
-| Windows, x64 | NSIS installer `.exe` | `latest.yml` |
-| Linux, x64 | AppImage | `latest-linux.yml` |
+| Build host | Desktop package | Update metadata | Folder |
+| --- | --- | --- | --- |
+| macOS, Apple silicon | DMG and zip, for local QA | `latest-mac.yml` | `release/qa.noindex/<version>/` |
+| Windows, x64 | NSIS installer `.exe` | `latest.yml` | `release/` |
+| Linux, x64 | AppImage | `latest-linux.yml` | `release/` |
 
 Builds use the host's production dependencies, so cross-compiling from another operating system is not supported.
-Windows builds need Node.js, npm, and the `tar.exe` in System32 that Windows 10 and later include.
+Windows builds need Node.js, npm, Git, and the `tar.exe` in System32 that Windows 10 and later include.
 The npm package lists macOS and Linux only, because the terminal launcher is a shell script.
 On Windows, install the root dependencies with `npm ci --force`; `npm run pack` skips the same check for the app's copy of the core.
 The installer installs for the current Windows account and preserves personal data on uninstall.
 On Linux, make the AppImage executable before opening it; distributions without FUSE can use AppImage's extract-and-run mode.
-`npm run pack:dir` leaves an unpacked app under `release/apps.noindex/` for `npm run smoke` to check.
+`npm run pack:dir` leaves an unpacked app under `release/qa.noindex/<version>/` for `npm run smoke` to check.
 The smoke check opens the packaged renderer and core with empty temporary data, imports fictional history, and quits.
 It removes provider credentials from its environment and disables the system Music app and MusicKit helper with `MOONDOG_SYSTEM_MUSIC=off`.
 
@@ -223,7 +224,13 @@ The [Desktop builds workflow](../.github/workflows/desktop.yml) builds on Window
 It runs the smoke check on what a listener gets: the app that the Windows installer installs, and the AppImage in extract-and-run mode.
 It does not publish a GitHub release.
 Windows CI builds are unsigned; a signed Windows release needs the maintainer's signing certificate configured through electron-builder's `CSC_LINK` and `CSC_KEY_PASSWORD`.
-`npm run release` remains the Mac release path, signed with the Developer ID and notarized by Apple.
+
+On a Mac, `node pack.mjs --dir --sign --no-notarize` leaves a signed QA app in `release/qa.noindex/<version>/` without submitting it to Apple.
+`npm run release` builds a signed, notarized app, ZIP and DMG, verifies the exact files, and records a release manifest in `release/`.
+Formal builds require a clean checkout and a working Apple Music helper.
+The helper's compiler errors stop the release instead of silently reducing playback to previews.
+The build's command helper shows progress and allowlisted failure codes without echoing command arguments or captured output.
+Keep raw tool diagnostics private if a failed step needs further investigation.
 
 - The app carries the core exactly as the npm package ships it: `npm pack` decides the files, and `npm ci --omit=dev` adds their dependencies.
 - Signing needs the Developer ID Application certificate in the login keychain.
@@ -232,6 +239,11 @@ Windows CI builds are unsigned; a signed Windows release needs the maintainer's 
   To configure another machine, run `xcrun notarytool store-credentials mac-mini-notary --team-id <your team ID>` and enter the Apple ID and app-specific password at the secure prompts.
   `MOONDOG_SIGNING_IDENTITY` selects a different certificate.
   Keep passwords in Keychain; profile names and environment variables contain no password.
+- The app records its source commit, version, build number and signing team inside the signed bundle.
+  Publication verifies that record, both apps inside the ZIP and DMG, their signatures and notarization tickets, and every update checksum.
+- Interrupted notarization resumes the recorded submission in `release/.state/<version>/`.
+  Keep that directory and its original artifacts until the release finishes.
+  Rerun the same command from the same commit; changed artifacts are rejected instead of submitted again.
 - Opened from the Dock or Finder on macOS, the app has a minimal `PATH`, so the core gets the `PATH` of a login shell, as in a terminal.
   Programs such as `codex`, which web research can use, keep working.
   Windows and Linux inherit the desktop session's environment.
@@ -250,28 +262,43 @@ The packaged app updates itself from this repository's GitHub releases (`updates
 - The check reads the release list and sends nothing about the listener.
   A failed check or download leaves the installed app as it is, and the next check tries again.
 - macOS installs only a build signed by the same Developer ID team.
-  Windows installs the NSIS update, and Linux replaces the AppImage.
-  Both install as the app exits, after the core has saved the conversations, and then open the new version.
+  Windows installs the NSIS update, and Linux replaces the AppImage; both then open the new version.
   Each download must match the SHA-512 checksum in that platform's update metadata.
 - Updating replaces the app only. Profile, history, conversations and sign-ins stay where they are.
+- Before starting the installer, Moondog stops its old core and waits for it to exit.
+  A failure to stop it leaves the downloaded update available for another explicit attempt.
+  On Linux the new version starts only after the old app has exited, so it never finds the old one still running.
 
 To publish an update:
 
 1. Bump the version at the repository root (`package.json` and `package-lock.json`), commit and push it.
    The app compares versions, so a build with an unchanged version never reaches anyone.
-2. Push the tag, `v` and the version. `Publish release` checks it, waits for the owner's approval in the `npm` environment, publishes to npm, and creates the GitHub release (a prerelease for a beta).
+2. Push the tag, `v` and the version.
+   `Publish release` checks it, waits for the owner's approval in the `npm` environment, publishes or verifies the npm version, and prepares a GitHub draft.
+   The desktop updater continues to see the previous complete release while the draft is prepared.
 3. On the Mac mini, in a clean worktree at the tag, run `npm ci` at the root and here, then `npm run publish-app`.
-   It builds, signs and notarizes the app, signs, notarizes and staples the DMG, waits for the release, and uploads the zip, its `.blockmap`, the DMG, and `latest-mac.yml` last, because the app acts on it.
-   `--skip-build` reuses a build already in `release/`; `--create` makes the release when the workflow did not.
+   It builds and verifies the artifacts, uploads the ZIP, blockmap, DMG and update metadata to the draft, then publishes the complete release and rebuilds the project page.
+   `--skip-build` requires the recorded build manifest and verifies its artifacts again.
+   `--create` prepares a missing draft; it does not bypass npm or artifact verification.
+   Existing remote assets with identical hashes are reused.
+   Different bytes under the same filename are rejected; release a new version instead of overwriting a published build.
 4. For Windows and Linux, build that same tag through the Desktop builds workflow or on a native host, and check the smoke results.
-   After release approval, upload the installer or AppImage and its blockmap, then that platform's update metadata last.
+   Once `publish-app` has published the release, upload the installer or AppImage and its blockmap, then that platform's update metadata last.
    Rebuild the project page after uploading so it can offer the new platform downloads.
    CI artifacts alone do not establish a signed, published, or manually tested desktop release.
 
+If publication tooling needs a fix after a version is tagged, keep its original artifacts and manifest.
+From a clean checkout of the repaired tooling at the same package version, place those files in `app/release/` and run `node publish.mjs --skip-build --from-tag vX.Y.Z` from `app/`.
+This mode never rebuilds the app and binds the artifacts, embedded source, build number and npm commit to the original local and remote tag.
+Use `--verify-only --from-tag vX.Y.Z` to perform those checks without uploading.
+Never move the tag or replace the version's artifacts.
+
 To try an update before publishing it, build two versions with `node pack.mjs --sign --no-notarize` (signed, not notarized), serve the newer one's zip, `.blockmap` and `latest-mac.yml` over HTTP, and start the older app from a terminal with `MOONDOG_UPDATE_FEED=http://127.0.0.1:8765`.
-Set `MOONDOG_CONFIG_HOME` and `MOONDOG_STATE_HOME` to empty folders too, so the older app never opens your own profile.
+Set `MOONDOG_CONFIG_HOME`, `MOONDOG_STATE_HOME` and `MOONDOG_APP_USER_DATA` to empty absolute folders too, so the test app never opens your own profile or window preferences.
+Give both disposable bundles a unique matching bundle ID and a unique `updaterCacheDirName`, then sign each bundle.
+Squirrel's caches and installer job belong to the bundle ID; `MOONDOG_APP_USER_DATA` alone does not isolate them.
 With that feed, a click on Update downloads the newer build, installs it and quits without restarting, because a restarted app would have none of these settings and would open your own profile; start it again from the terminal with the same settings.
-That quit is not the restart a published update makes: there macOS closes the window first, and the core and the Apple Music helper stop after it, so a change to quitting needs that order tried too.
+Also verify the normal published restart path: the old core must exit before the installer can launch the new app.
 Extract test copies into a folder whose name ends in `.noindex`, so Spotlight doesn't offer them.
 
 ## Not yet

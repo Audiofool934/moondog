@@ -34,12 +34,24 @@ const exactContentPatterns = [
     pattern: new RegExp(["gh", "[pousr]", "_", "[A-Za-z0-9]{20,}"].join(""), "u"),
   },
   {
+    label: "GitHub fine-grained access token",
+    pattern: new RegExp(["github", "_pat_", "[A-Za-z0-9_]{20,}"].join(""), "u"),
+  },
+  {
     label: "OpenAI API key",
     pattern: new RegExp(["sk", "-", "[A-Za-z0-9_-]{20,}"].join(""), "u"),
   },
   {
     label: "AWS access key",
-    pattern: new RegExp(["AK", "IA", "[0-9A-Z]{16}"].join(""), "u"),
+    pattern: new RegExp(["(?:AK", "IA|AS", "IA)", "[0-9A-Z]{16}"].join(""), "u"),
+  },
+  {
+    label: "Google API key",
+    pattern: new RegExp(["AI", "za", "[A-Za-z0-9_-]{35}"].join(""), "u"),
+  },
+  {
+    label: "Google OAuth access token",
+    pattern: new RegExp(["ya", "29\\.", "[A-Za-z0-9._-]{20,}"].join(""), "u"),
   },
   {
     label: "npm access token",
@@ -61,6 +73,7 @@ const exactContentPatterns = [
 ];
 
 const exactAllowedPaths = new Set([
+  ".env.example",
   ".gitignore",
   "AGENTS.md",
   "CONTRIBUTING.md",
@@ -91,6 +104,7 @@ const forbiddenExtensions = new Set([
   ".key",
   ".log",
   ".musiclibrary",
+  ".p8",
   ".p12",
   ".pem",
   ".sqlite",
@@ -104,16 +118,20 @@ const forbiddenExtensions = new Set([
 
 const forbiddenBasenames = new Set([
   ".ds_store",
+  ".npmrc",
   ".spotify_pkce.json",
   ".spotify_token.json",
   "auth-profiles.json",
+  "auth.json",
   "credentials.json",
+  "endpoints.json",
   "secrets.json",
 ]);
 
 // Raised when the project page (site/) arrived: main was at 346 entries and 14.9 MiB.
+// Raised again when the Windows and Linux desktop met the resumable Mac release: 458 entries and 10.4 MiB.
 // The ceilings still catch bulk accidents such as a data dump or a build folder.
-export const maximumReleaseEntries = 450;
+export const maximumReleaseEntries = 600;
 export const maximumReleaseFileBytes = 5 * 1024 * 1024;
 export const maximumReleaseTreeBytes = 20 * 1024 * 1024;
 
@@ -159,22 +177,27 @@ export const requiredReleasePaths = new Set([
 
 export const requiredIgnoredPaths = [
   ".env",
+  ".env.local",
+  ".npmrc",
   ".spotify_pkce.json",
   ".spotify_token.json",
   "Library.xml",
   "auth-profiles.json",
+  "auth.json",
   "data/imports/account-data.zip",
   "data/private/listening-history.json",
   "docs/DJ_CLAW_LINEAGE_AND_MIGRATION.md",
   "docs/DJ_CLAW_MIGRATION_MANIFEST.md",
   "docs/NEXT_PHASE_AGENT_DEVELOPMENT.md",
   "docs/NEXT_PHASE_PROFILE_FOUNDATION.md",
+  "endpoints.json",
   "local.musiclibrary/Library.musicdb",
   "moondog.log",
   "outputs/tasteprint.html",
   "profile.db",
   "profile.sqlite",
   "profile.sqlite3",
+  "app/signing.p8",
 ];
 
 export function validateReleasePath(relativePath) {
@@ -183,6 +206,7 @@ export function validateReleasePath(relativePath) {
   const segments = normalized.split("/");
   const basename = segments.at(-1)?.toLocaleLowerCase("en-US") ?? "";
   const extension = path.posix.extname(normalized).toLocaleLowerCase("en-US");
+  const privateEnvironmentFile = basename !== ".env.example" && (basename === ".env" || basename.startsWith(".env."));
 
   if (
     !normalized ||
@@ -200,8 +224,7 @@ export function validateReleasePath(relativePath) {
   }
   if (
     !exactAllowedPaths.has(normalized) &&
-    normalized !== ".env.example" &&
-    (forbiddenBasenames.has(basename) || forbiddenExtensions.has(extension))
+    (privateEnvironmentFile || forbiddenBasenames.has(basename) || forbiddenExtensions.has(extension))
   ) {
     issues.push("private or generated file type");
   }

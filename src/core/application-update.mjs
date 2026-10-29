@@ -151,21 +151,31 @@ export function createApplicationUpdater({ root = DEFAULT_ROOT, environment = pr
     let result;
     try {
       const controller = AbortSignal.timeout(5_000);
-      const response = await fetchImpl(`https://registry.npmjs.org/@audiofool%2fmoondog/${channel}`, {
-        signal: signal ? AbortSignal.any([signal, controller]) : controller,
-        redirect: "error", headers: { Accept: "application/json" },
-      });
-      if (response.status === 404) throw failure("update_channel_empty", `No ${channel} release has been published yet.`);
-      if (!response.ok) throw new Error("Registry unavailable");
-      const body = (await boundedBody(response, 512_000)).toString("utf8");
-      const release = JSON.parse(body);
-      if (release.name !== UPDATE_PACKAGE || !releaseVersion(release.version) ||
-          channel === "latest" && release.version.includes("-") ||
-          ![`${REPOSITORY}.git`, `git+${REPOSITORY}.git`].includes(release.repository?.url)) throw new Error("Invalid release metadata");
-      const minimum = release.engines?.node?.match(/^>=(\d+\.\d+\.\d+)$/u)?.[1];
-      if (!minimum || !releaseVersion(minimum)) throw new Error("Unsupported runtime requirement");
-      const tarball = `https://registry.npmjs.org/@audiofool/moondog/-/moondog-${release.version}.tgz`;
-      if (release.dist?.tarball !== tarball || !/^sha512-[A-Za-z0-9+/]{86}==$/u.test(release.dist?.integrity ?? "")) throw new Error("Unsupported package integrity metadata");
+      const fetchChannel = async candidate => {
+        const response = await fetchImpl(`https://registry.npmjs.org/@audiofool%2fmoondog/${candidate}`, {
+          signal: signal ? AbortSignal.any([signal, controller]) : controller,
+          redirect: "error", headers: { Accept: "application/json" },
+        });
+        if (response.status === 404) throw failure("update_channel_empty", `No ${candidate} release has been published yet.`);
+        if (!response.ok) throw new Error("Registry unavailable");
+        const release = JSON.parse((await boundedBody(response, 512_000)).toString("utf8"));
+        if (release.name !== UPDATE_PACKAGE || !releaseVersion(release.version) ||
+            candidate === "latest" && release.version.includes("-") ||
+            ![`${REPOSITORY}.git`, `git+${REPOSITORY}.git`].includes(release.repository?.url)) throw new Error("Invalid release metadata");
+        const minimum = release.engines?.node?.match(/^>=(\d+\.\d+\.\d+)$/u)?.[1];
+        if (!minimum || !releaseVersion(minimum)) throw new Error("Unsupported runtime requirement");
+        const tarball = `https://registry.npmjs.org/@audiofool/moondog/-/moondog-${release.version}.tgz`;
+        if (release.dist?.tarball !== tarball || !/^sha512-[A-Za-z0-9+/]{86}==$/u.test(release.dist?.integrity ?? "")) throw new Error("Unsupported package integrity metadata");
+        return { release, minimum, tarball };
+      };
+      // Preview users receive the stable successor without changing their saved beta preference.
+      // One unavailable channel must not hide a valid release from the other channel.
+      const checks = await Promise.allSettled((channel === "beta" ? ["beta", "latest"] : ["latest"]).map(fetchChannel));
+      const candidates = checks.filter(check => check.status === "fulfilled").map(check => check.value)
+        .sort((a, b) => compareReleaseVersions(b.release.version, a.release.version));
+      if (!candidates.length) throw checks[0].reason;
+      signal?.throwIfAborted();
+      const { release, minimum, tarball } = candidates[0];
       result = { state: compareReleaseVersions(release.version, current.version) > 0 ? "available" : "current", current: current.version,
         latest: release.version, channel, minimumNode: minimum,
         compatible: compareReleaseVersions(process.versions.node, minimum) >= 0,

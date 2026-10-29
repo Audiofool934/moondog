@@ -1,29 +1,7 @@
-// Both a normal quit and an updater quit must give the core time to save conversations.
-// The window remains alive until that finishes on Windows and Linux too.
-export function createQuitHandler({ getCore, stopMusic, willQuit, quit, timeoutMs = 5000 }) {
-  let stopping = false;
-  return (event) => {
-    willQuit();
-    stopMusic();
-    const running = getCore();
-    if (!running) return;
-    event.preventDefault();
-    if (stopping) return;
-    stopping = true;
-    const timer = setTimeout(() => running.kill(), timeoutMs);
-    running.once("exit", () => {
-      clearTimeout(timer);
-      quit();
-    });
-    running.postMessage({ type: "quit" });
-  };
-}
-
-// Windows and Linux install a downloaded update once the app has quit as usual, so the core has
-// saved first: the NSIS installer stops a running Moondog within seconds, and the AppImage updater
-// would start the new build at once. Called as the app quits (will-quit). Linux leaves the relaunch
-// to Electron, which starts the new build only after this process exits, so the new one finds no
-// Moondog still running.
+// Windows and Linux install a downloaded update after beforeInstall has stopped the core, and the
+// app then quits. Linux leaves the relaunch to Electron, which starts the new build only after this
+// process exits: the AppImage updater would start it at once, and the new one would find this
+// Moondog still holding the single-instance lock and close.
 export function installDownloadedUpdate({ updater, platform, relaunch, appImage }) {
   let file = appImage;
   const renamed = (next) => { file = next; };
@@ -34,6 +12,6 @@ export function installDownloadedUpdate({ updater, platform, relaunch, appImage 
   updater.removeListener("appimage-filename-updated", renamed);
   if (!restart) return;
   if (platform === "linux") relaunch({ execPath: file, args: [] });
-  // A failed install leaves the installed app as it is, and opens it again.
+  // A failed install leaves the installed app as it is. Its core has stopped, so open it again.
   else if (!installed) relaunch();
 }

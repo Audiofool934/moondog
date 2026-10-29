@@ -10,6 +10,7 @@ import { cp, mkdir, readFile, rm, watch, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import * as esbuild from "esbuild";
+import { stableDesktopDownloads } from "./download.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "..");
@@ -47,28 +48,20 @@ function contentPolicy(document) {
 }
 const policyTag = (document) => `<meta http-equiv="Content-Security-Policy" content="${contentPolicy(document)}">`;
 
-// Each platform can arrive separately. Offer a download only after its file is on a release.
+// Each platform's file can arrive separately. Offer each download only on a complete stable release,
+// even when a newer preview exists.
 async function desktopDownloads() {
   const fallback = { mac: { url: `${repository}/releases`, version: null }, windows: null, linux: null };
   if (flags.has("--offline")) return fallback;
   try {
     const token = process.env.GITHUB_TOKEN;
-    const response = await fetch("https://api.github.com/repos/Audiofool934/moondog/releases?per_page=20", {
+    const response = await fetch("https://api.github.com/repos/Audiofool934/moondog/releases?per_page=100", {
       headers: { accept: "application/vnd.github+json", ...(token ? { authorization: `Bearer ${token}` } : {}) },
       signal: AbortSignal.timeout(10_000),
     });
     if (!response.ok) throw new Error(`GitHub answered ${response.status}`);
-    const found = { ...fallback };
-    for (const release of await response.json()) {
-      if (release.draft) continue;
-      // electron-builder names an x64 AppImage x86_64, as AppImage tools expect.
-      for (const [platform, pattern] of Object.entries({ mac: /-arm64\.dmg$/u, windows: /-win-x64\.exe$/u, linux: /-linux-x86_64\.AppImage$/u })) {
-        if (found[platform]?.version) continue;
-        const asset = release.assets?.find((item) => pattern.test(item.name));
-        if (asset) found[platform] = { url: asset.browser_download_url, version: release.tag_name.replace(/^v/u, "") };
-      }
-    }
-    return found;
+    const found = stableDesktopDownloads(await response.json());
+    return { ...found, mac: found.mac ?? fallback.mac };
   } catch (error) {
     console.warn(`Desktop downloads link to the release list: ${error.message}`);
   }

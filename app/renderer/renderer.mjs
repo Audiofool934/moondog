@@ -474,8 +474,6 @@ const shrinkAt = (distance, size = recordSize()) => {
 };
 // A fold by hand, or opening again, takes this long, quick at first and settling at the end.
 const FOLD_MS = 300;
-// Growing back from half to full size under the hand takes at least this long.
-const GROW_MS = 600;
 let foldedByHand = store.get("moondog.record") === "folded";
 // The record as drawn: shrink, 0 full size to 1 half size above the words; dock, 0 above the words to 1 in the title bar.
 let fold = { shrink: 0, dock: 0 };
@@ -612,7 +610,6 @@ function stopGlide() {
   glided = null;
 }
 let placed = "";
-let placedAt = 0;
 function placeRecord() {
   placing = 0;
   placeTitle();
@@ -620,20 +617,14 @@ function placeRecord() {
   const size = recordSize();
   const where = measure();
   let at = foldWanted(size);
-  const now = performance.now();
-  const lapse = Math.min(50, now - placedAt);
-  placedAt = now;
   if (glided) {
     // A glide takes the record from its size where it began to its size where it ends, never through
     // the sizes on the way, so passing home on the way doesn't swell it.
     const arrive = shrinkAt(Math.abs(Math.min(glided.to(), end()) - home()), size);
     at = { ...at, shrink: lerp(glided.shrink, arrive, glided.eased) };
-  } else if (!tween && !reduced.matches && at.shrink < fold.shrink - lapse / GROW_MS) {
-    // Shrinking follows the hand; growing back takes its time, so a quick pass by home doesn't
-    // flash the record full, and it catches up once the hand slows.
-    at = { ...at, shrink: fold.shrink - lapse / GROW_MS };
-    placeSoon();
   }
+  // A hand on the scroll sets the size in both directions. Only an explicit glide or fold eases
+  // between sizes; a second catch-up animation would leave the record behind the moving words.
   if (tween) {
     const progress = reduced.matches ? 1 : Math.min(1, (performance.now() - tween.start) / FOLD_MS);
     const eased = 1 - (1 - progress) ** 4;
@@ -908,6 +899,7 @@ function renderEmpty(empty) {
     room.style.removeProperty("--record");
     recordButton.classList.remove("away");
     recordButton.tabIndex = -1;
+    expand.tabIndex = 0;
     leadHeight = 0;
     lead.style.height = "";
     scroller.style.removeProperty("--veil");

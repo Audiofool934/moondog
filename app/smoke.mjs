@@ -15,7 +15,9 @@ import { createFictionalSpotifyHistoryArchive } from "../src/demo/fictional-spot
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const target = desktopTarget();
-const base = path.join(here, "release", "apps.noindex", target.unpacked);
+const { version } = JSON.parse(await readFile(path.join(here, "..", "package.json"), "utf8"));
+// Where `npm run pack:dir` leaves the unpacked app.
+const base = path.join(here, "release", "qa.noindex", version, target.unpacked);
 const executable = process.env.MOONDOG_SMOKE_EXECUTABLE || path.join(base, ...({
   darwin: ["Moondog.app", "Contents", "MacOS", "Moondog"], win32: ["Moondog.exe"], linux: ["moondog"],
 }[target.platform]));

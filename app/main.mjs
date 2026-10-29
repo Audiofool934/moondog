@@ -5,21 +5,26 @@
 import { app, autoUpdater as squirrel, BrowserWindow, dialog, ipcMain, Menu, MessageChannelMain, nativeTheme, screen, shell, utilityProcess } from "electron";
 import electronUpdater from "electron-updater";
 import { execFile, spawn } from "node:child_process";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { windowLocale, windowStrings } from "./strings.mjs";
 import { createUpdates } from "./updates.mjs";
 import { accelerators, needsLoginShell, windowChrome } from "./platform.mjs";
-import { createQuitHandler, installDownloadedUpdate } from "./lifecycle.mjs";
+import { installDownloadedUpdate } from "./lifecycle.mjs";
+import { createCoreShutdown } from "./shutdown.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const isMac = process.platform === "darwin";
 if (!app.isPackaged && process.argv.includes("--simulated")) process.env.MOONDOG_APP_SIMULATED = "1";
-// Packaged smoke checks keep window state away from the listener's installed app too.
-if (process.env.MOONDOG_APP_USER_DATA && path.isAbsolute(process.env.MOONDOG_APP_USER_DATA)) {
-  app.setPath("userData", process.env.MOONDOG_APP_USER_DATA);
+// Packaged release and smoke checks keep window preferences and Chromium storage disposable too.
+if (process.env.MOONDOG_APP_USER_DATA) {
+  const directory = process.env.MOONDOG_APP_USER_DATA;
+  if (!path.isAbsolute(directory)) throw new Error("MOONDOG_APP_USER_DATA must be an absolute path.");
+  mkdirSync(directory, { recursive: true });
+  app.setPath("userData", directory);
+  app.setPath("sessionData", directory);
 }
 if (process.platform === "win32") app.setAppUserModelId("ai.audiofool.moondog");
 // One Moondog per profile. A second launch shows the open window instead of starting a second core on
@@ -59,8 +64,7 @@ function coreEnvironment(shellPath) {
 let window = null;
 let core = null;
 let quitting = false;
-// Set once the listener restarts into a downloaded update on Windows or Linux; it installs as the app exits.
-let installOnQuit = false;
+const shutdownCore = createCoreShutdown({ getCore: () => core, stopMusic: () => musicHelper?.stdin.end() });
 // What the page last said it can do; the menu greys out what would do nothing.
 const playback = { controllable: false, streaming: false };
 let dockMenu = null;
@@ -81,9 +85,18 @@ const updates = createUpdates({
   },
   // macOS closes the windows to install the update, so a closing window closes instead of hiding.
   onRestart: () => { quitting = true; },
-  // macOS installs through Squirrel after the app quits. Windows and Linux quit as usual first, so the
-  // core saves its conversations before the installer runs.
-  ...(isMac ? {} : { restart: () => { installOnQuit = true; app.quit(); } }),
+  beforeInstall: async () => {
+    quitting = true;
+    try { await shutdownCore(); } catch (error) { quitting = false; throw error; }
+  },
+  // macOS installs through Squirrel after the app quits. Windows and Linux install once the core has
+  // stopped, and quit.
+  ...(isMac ? {} : {
+    quitAndInstall: () => {
+      installDownloadedUpdate({ updater: electronUpdater.autoUpdater, platform: process.platform, relaunch: (options) => app.relaunch(options), appImage: process.env.APPIMAGE });
+      app.quit();
+    },
+  }),
 });
 function updateItem(t) {
   const { phase, installing } = updates.state();
@@ -494,15 +507,18 @@ ipcMain.on("playback", (_event, next) => {
 nativeTheme.on("updated", () => window?.setBackgroundColor(background()));
 // Quitting first asks the core to stop its replies and close its conversations, so each one is
 // saved as it ended; a core that takes too long is stopped.
-app.on("before-quit", createQuitHandler({
-  getCore: () => core,
-  stopMusic: () => musicHelper?.stdin.end(),
-  willQuit: () => { quitting = true; },
-  quit: () => app.quit(),
-}));
-app.on("will-quit", () => {
-  if (!installOnQuit) return;
-  installDownloadedUpdate({ updater: electronUpdater.autoUpdater, platform: process.platform, relaunch: (options) => app.relaunch(options), appImage: process.env.APPIMAGE });
+let stopping = false;
+app.on("before-quit", (event) => {
+  quitting = true;
+  if (!core) { void shutdownCore(); return; }
+  event.preventDefault();
+  if (stopping) return;
+  stopping = true;
+  void shutdownCore().then(() => app.quit(), (error) => {
+    stopping = false;
+    quitting = false;
+    dialog.showErrorBox("Moondog could not quit", error.message);
+  });
 });
 app.on("second-instance", () => {
   if (!window || quitting) return;

@@ -1,103 +1,121 @@
-// Puts a signed, notarized Moondog for Mac on the GitHub release for its version, where the app's
-// updater finds it. Run it on the Mac that holds the Developer ID key, from a clean checkout at the
-// release tag, after `Publish release` has created the release (it waits for it):
-//   node publish.mjs                build with pack.mjs --sign, then sign, notarize and upload
-//   node publish.mjs --skip-build   use the build already in release/ for this version
-//   node publish.mjs --create       make the release if the workflow did not (prerelease for a beta)
-// The DMG is signed, notarized and stapled too, and latest-mac.yml is uploaded last, because the
-// app acts on it. Nothing is deleted from the release.
-import { execFile } from "node:child_process";
-import { createHash } from "node:crypto";
-import { readFile, stat, writeFile } from "node:fs/promises";
+// Publish only a complete, verified Mac release. A failed upload leaves the draft private.
+// Repeat the same command to resume; --skip-build requires the recorded final artifacts.
+import { spawn } from "node:child_process";
+import { createWriteStream } from "node:fs";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import path from "node:path";
+import { pipeline } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
+import { command, commandFailure, digestFile, parseReleaseJson, phase, readJson, RELEASE_REPO, SIGNING_TEAM } from "./release-tools.mjs";
+import { releaseNames, verifyArtifacts } from "./release-artifacts.mjs";
+import { assertReleaseIdentity, findReleaseByTag, markAsLatest, publicationSource, uploadImmutableAssets, validateNpmRelease } from "./release-publication.mjs";
 
-const run = promisify(execFile);
-const here = path.dirname(fileURLToPath(import.meta.url));
-const root = path.join(here, "..");
-const flags = new Set(process.argv.slice(2));
-const sh = async (command, args, options = {}) => (await run(command, args, { maxBuffer: 64 * 1024 * 1024, ...options })).stdout.trim();
-const step = (words) => console.log(`\n${words}`);
-const fail = (words) => { console.error(`\n${words}`); process.exit(1); };
-const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-const { version } = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
-const tag = `v${version}`;
-const beta = version.includes("-");
-const profile = process.env.MOONDOG_NOTARY_PROFILE ?? process.env.APPLE_NOTARY_PROFILE ?? "mac-mini-notary";
-const release = path.join(here, "release");
-const files = {
-  zip: path.join(release, `Moondog-${version}-arm64-mac.zip`),
-  blockmap: path.join(release, `Moondog-${version}-arm64-mac.zip.blockmap`),
-  dmg: path.join(release, `Moondog-${version}-arm64.dmg`),
-  feed: path.join(release, "latest-mac.yml"),
+const here = path.dirname(fileURLToPath(import.meta.url)), root = path.join(here, "..");
+const args = process.argv.slice(2), flags = new Set();
+let fromTag;
+for (let i = 0; i < args.length; i++) {
+  const flag = args[i];
+  if (flag === "--from-tag") {
+    if (fromTag !== undefined || !args[i + 1] || args[i + 1].startsWith("--")) throw new Error("Provide --from-tag once with an exact release tag.");
+    fromTag = args[++i];
+  } else if (["--skip-build", "--create", "--verify-only"].includes(flag)) flags.add(flag);
+  else throw new Error(`Unknown publish option: ${flag}`);
+}
+const { name, version } = await readJson(path.join(root, "package.json"));
+const tag = `v${version}`, beta = version.includes("-");
+const releaseDir = path.join(here, "release"), names = releaseNames(version);
+const git = async args => (await command("git", ["-C", root, ...args])).stdout;
+if (await git(["status", "--porcelain"])) throw new Error("Publish from a clean checkout.");
+const head = await git(["rev-parse", "HEAD"]), tagSource = await git(["rev-parse", `${tag}^{commit}`]);
+const gh = async args => (await command("gh", [...args, "--repo", RELEASE_REPO], { cwd: root, timeout: 60 * 60_000 })).stdout;
+// gh api uses an explicit endpoint rather than gh's current-working-directory inference.
+const api = async endpoint => parseReleaseJson((await command("gh", ["api", `repos/${RELEASE_REPO}/${endpoint}`], { cwd: root })).stdout);
+const optionalApi = async endpoint => {
+  try { return await api(endpoint); }
+  catch (error) { if (error.httpStatus === 404) return null; throw error; }
 };
+let remoteTag = (await api(`git/ref/tags/${tag}`)).object;
+for (let depth = 0; remoteTag.type === "tag" && depth < 5; depth++) remoteTag = (await api(`git/tags/${remoteTag.sha}`)).object;
+const source = publicationSource({ version, fromTag, skipBuild: flags.has("--skip-build"), verifyOnly: flags.has("--verify-only"),
+  head, tagSource, remoteSource: remoteTag.type === "commit" ? remoteTag.sha : null });
+const provenance = { version, source, buildNumber: await git(["rev-list", "--count", source]), teamId: SIGNING_TEAM };
 
-step(`Moondog ${version}, release ${tag}`);
-// A build packs the working tree, so it needs a clean one; publishing an existing build only needs the tracked files unchanged.
-const untracked = flags.has("--skip-build") ? ["--untracked-files=no"] : [];
-if (await sh("git", ["-C", root, "status", "--porcelain", ...untracked])) fail("The checkout has changes. Publish from a clean checkout at the release tag.");
-const head = await sh("git", ["-C", root, "rev-parse", "HEAD"]);
-const tagged = await sh("git", ["-C", root, "rev-parse", `${tag}^{commit}`]).catch(() => "");
-if (tagged !== head) fail(`HEAD is not ${tag}. Push the tag first, then publish from a checkout at it.`);
-
-if (!flags.has("--skip-build")) {
-  step("Building, signing and notarizing the app (pack.mjs --sign)");
-  await sh(process.execPath, [path.join(here, "pack.mjs"), "--sign"], { cwd: here, timeout: 3 * 60 * 60_000 });
+if (!flags.has("--skip-build") && !flags.has("--verify-only")) {
+  await command(process.execPath, [path.join(here, "pack.mjs"), "--sign"], { cwd: here, live: true, timeout: 3 * 60 * 60_000 });
 }
-for (const file of Object.values(files)) await stat(file).catch(() => fail(`Missing ${path.relative(here, file)}. Build this version first.`));
-const feed = await readFile(files.feed, "utf8");
-if (!feed.startsWith(`version: ${version}\n`)) fail(`latest-mac.yml is for another version:\n${feed.split("\n")[0]}`);
+const manifest = await phase("Validate release provenance, hashes, signatures and containers", () => verifyArtifacts(releaseDir, provenance));
+if (flags.has("--verify-only")) { console.log(`Verified ${tag}; nothing was uploaded.`); process.exit(0); }
 
-step("Signing, notarizing and stapling the DMG");
-if ((await sh("xcrun", ["stapler", "validate", files.dmg]).catch(() => "")).includes("worked")) console.log("Already stapled.");
-else {
-  const identity = process.env.MOONDOG_SIGNING_IDENTITY ?? (await sh("security", ["find-identity", "-v", "-p", "codesigning"]))
-    .split("\n").map((line) => line.match(/"(Developer ID Application: [^"]+)"/u)?.[1]).find(Boolean);
-  if (!identity) fail("No Developer ID Application certificate in the keychain.");
-  await sh("codesign", ["--force", "--sign", identity, "--timestamp", files.dmg]);
-  console.log(await sh("xcrun", ["notarytool", "submit", files.dmg, "--keychain-profile", profile, "--wait"], { timeout: 3 * 60 * 60_000 }));
-  await sh("xcrun", ["stapler", "staple", files.dmg]);
+const npmMetadata = async selector => parseReleaseJson((await command("npm", ["view", `${name}@${selector}`, "--json", "--registry", "https://registry.npmjs.org"], { cwd: root })).stdout);
+const assertNpm = async () => validateNpmRelease(await npmMetadata(version), { name, version, source });
+await phase("Verify the published npm version and commit", assertNpm);
+
+const findRelease = () => findReleaseByTag({ tag, prerelease: beta,
+  listPage: page => api(`releases?per_page=100&page=${page}`) });
+let release = await findRelease();
+if (!release && flags.has("--create")) {
+  await gh(["release", "create", tag, "--verify-tag", "--generate-notes", "--draft", "--latest=false", ...(beta ? ["--prerelease"] : [])]);
+  release = await findRelease();
 }
-await sh("spctl", ["-a", "-t", "open", "--context", "context:primary-signature", "-v", files.dmg]).catch(() => fail("Gatekeeper does not accept the DMG."));
+if (!release) await phase(`Wait for the GitHub draft ${tag}`, async () => {
+  for (let attempts = 0; !release && attempts < 60; attempts++) {
+    await new Promise(resolve => setTimeout(resolve, 60_000));
+    release = await findRelease();
+  }
+});
+if (!release) throw new Error(`No draft ${tag}. Approve the npm workflow or use --create after npm is published.`);
+const identity = { id: release.id, tag, prerelease: beta };
+const endpoint = `releases/${identity.id}`;
+const getRelease = async () => assertReleaseIdentity(await api(endpoint), identity);
+release = await getRelease();
 
-// Signing and stapling changed the DMG, so its line in latest-mac.yml gets its new size and checksum.
-const dmg = await readFile(files.dmg);
-const sha512 = createHash("sha512").update(dmg).digest("base64");
-const name = path.basename(files.dmg);
-const updated = feed.replace(new RegExp(`(- url: ${name.replace(/\./gu, "\\.")}\\n\\s+sha512: )\\S+(\\n\\s+size: )\\d+`, "u"), `$1${sha512}$2${dmg.length}`);
-if (!updated.includes(sha512)) fail("Could not find the DMG in latest-mac.yml.");
-await writeFile(files.feed, updated);
+const items = [...manifest.files.filter(file => file.name !== names.feed), await digestFile(path.join(releaseDir, names.manifest)),
+  manifest.files.find(file => file.name === names.feed)];
+const remoteDigest = async asset => {
+  if (/^sha256:[a-f0-9]{64}$/u.test(asset.digest || "")) return asset.digest.slice(7);
+  const parent = path.join(releaseDir, ".state", version);
+  await mkdir(parent, { recursive: true });
+  const scratch = await mkdtemp(path.join(parent, "remote-"));
+  try {
+    // Pin the fallback download to the asset ID returned by the bound release.
+    if (!Number.isSafeInteger(asset.id) || asset.id <= 0) throw new Error("Invalid GitHub asset ID.");
+    const file = path.join(scratch, "asset");
+    const child = spawn("gh", ["api", `repos/${RELEASE_REPO}/releases/assets/${asset.id}`, "-H", "Accept: application/octet-stream"],
+      { cwd: root, stdio: ["ignore", "pipe", "pipe"] });
+    child.stderr.resume();
+    const done = new Promise((resolve, reject) => {
+      child.once("error", error => reject(commandFailure("gh", { code: error.code })));
+      child.once("close", (code, signal) => code === 0 ? resolve() : reject(commandFailure("gh", { code, signal })));
+    });
+    const timer = setTimeout(() => child.kill("SIGTERM"), 60 * 60_000);
+    try { await Promise.all([done, pipeline(child.stdout, createWriteStream(file))]); }
+    finally { clearTimeout(timer); if (child.exitCode === null) child.kill("SIGTERM"); await done.catch(() => {}); }
+    return (await digestFile(file)).sha256;
+  } finally { await rm(scratch, { recursive: true, force: true }); }
+};
+release = await phase("Upload and verify immutable release assets", () => uploadImmutableAssets({ items,
+  getRelease, remoteDigest,
+  upload: item => command("gh", ["api", "--method", "POST",
+    `https://uploads.github.com/repos/${RELEASE_REPO}/${endpoint}/assets?name=${encodeURIComponent(item.name)}`,
+    "-H", "Content-Type: application/octet-stream", "-H", `Content-Length: ${item.size}`,
+    "--input", path.join(releaseDir, item.name)], { cwd: root, timeout: 60 * 60_000 }),
+  deleteAsset: asset => command("gh", ["api", "--method", "DELETE", `repos/${RELEASE_REPO}/releases/assets/${asset.id}`], { cwd: root }),
+}));
 
-step(`Waiting for the GitHub release ${tag}`);
-const view = () => sh("gh", ["release", "view", tag, "--json", "isDraft,isPrerelease,assets"]).then(JSON.parse, () => null);
-let found = await view();
-if (!found && flags.has("--create")) {
-  await sh("gh", ["release", "create", tag, "--verify-tag", "--generate-notes", ...(beta ? ["--prerelease"] : ["--latest"])]);
-  found = await view();
+// Recheck immediately before promotion. A newer release can finish while Apple processes this one.
+await assertNpm();
+release = await getRelease();
+if (release.draft) {
+  const latest = await optionalApi("releases/latest");
+  const registryLatest = await npmMetadata("latest");
+  const latestFlag = markAsLatest(version, [latest?.tag_name?.replace(/^v/u, ""), registryLatest.version]);
+  release = await getRelease();
+  if (release.draft) await command("gh", ["api", "--method", "PATCH", `repos/${RELEASE_REPO}/${endpoint}`,
+    "-F", "draft=false", "-F", `prerelease=${beta}`, "-f", `make_latest=${latestFlag}`], { cwd: root });
 }
-for (let minutes = 0; !found && minutes < 60; minutes++) {
-  if (minutes === 0) console.log("Not there yet. Approve the Publish release run on GitHub; checking every minute for an hour.");
-  await wait(60_000);
-  found = await view();
-}
-if (!found) fail(`No release ${tag}. Run again with --create to make it here.`);
-if (found.isPrerelease !== beta) fail(`The release is ${found.isPrerelease ? "" : "not "}a prerelease, but ${version} is ${beta ? "" : "not "}a beta.`);
-
-step("Uploading the app, then latest-mac.yml");
-await sh("gh", ["release", "upload", tag, files.zip, files.blockmap, files.dmg, "--clobber"], { timeout: 60 * 60_000 });
-await sh("gh", ["release", "upload", tag, files.feed, "--clobber"]);
-
-const assets = (await view()).assets;
-const uploaded = (file) => assets.find((asset) => asset.name === path.basename(file));
-for (const file of Object.values(files)) {
-  const asset = uploaded(file);
-  if (!asset || asset.size !== (await stat(file)).size) fail(`${path.basename(file)} did not upload whole.`);
-}
-console.log(`\nMoondog ${version} is on https://github.com/Audiofool934/moondog/releases/tag/${tag}`);
-console.log(beta ? "Apps on a beta version will find it at their next check." : "Apps on a stable version will find it at their next check.");
-// The project page links the newest release that has a DMG, so it is built again now that this one has.
-await sh("gh", ["workflow", "run", "pages.yml", "--ref", "main"]).then(
-  () => console.log("The project page is being built again, to link this download."),
-  () => console.log("Run the Project page workflow on GitHub so the page links this download."));
+release = await getRelease();
+if (release.draft || release.prerelease !== beta) throw new Error("GitHub did not confirm the release publication.");
+console.log(`\nPublished and verified: ${release.html_url}`);
+await gh(["workflow", "run", "pages.yml", "--ref", "main"]).then(
+  () => console.log("The project page is rebuilding with the verified download."),
+  error => console.warn(`The release is published, but the project page refresh failed: ${error.message}`));

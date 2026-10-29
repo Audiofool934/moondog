@@ -272,8 +272,8 @@ img { -webkit-user-drag: none; }
 .expand:hover { background: none; color: var(--text); }
 .expand:hover .icon { transform: scale(1.12); transition-timing-function: var(--out); }
 .expand:active .icon { transform: scale(0.96); }
-.room:not(.empty) .record-frame:hover .record-button:not(.away) ~ .expand, .expand:focus-visible { opacity: 1; pointer-events: auto; transition: none; }
-.room.empty .expand, .record-button.away ~ .expand { display: none; }
+.record-frame:hover .record-button:not(.away) ~ .expand, .expand:focus-visible { opacity: 1; pointer-events: auto; transition: none; }
+.record-button.away ~ .expand { display: none; }
 /* Shrunk above the history, the record keeps its corner button at full size. */
 .expand { scale: calc(1 / var(--shown, 1)); transform-origin: 100% 100%; }
 /* While the record is scratched, its place in the song shows just above it, and fades once the music goes there. */

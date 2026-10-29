@@ -14,13 +14,16 @@ test("desktop builds require a supported native host and select its installer an
 
 test("only macOS carries MusicKit and all desktop packages carry the shared platform and shutdown code", () => {
   for (const [platform, arch] of [["darwin", "arm64"], ["win32", "x64"], ["linux", "x64"]]) {
-    const config = desktopConfig({ root: "/fixture", version: "0.3.0-beta.1", target: desktopTarget(platform, arch), music: true });
+    const config = desktopConfig({ root: "/fixture", version: "0.3.0-beta.1", buildNumber: "12", output: "/fixture/app/release/qa.noindex/0.3.0-beta.1",
+      target: desktopTarget(platform, arch), music: true });
     assert.equal(config.extraFiles.length, platform === "darwin" ? 1 : 0);
     assert.equal(config.extraMetadata.version, "0.3.0-beta.1");
     assert.ok(config.files.includes("platform.mjs"));
     assert.ok(config.files.includes("lifecycle.mjs"));
+    assert.ok(config.files.includes("shutdown.mjs"));
     assert.equal(config.publish[0].channel, "latest", "GitHub prereleases also need the standard per-OS feed");
-    assert.ok(config.directories.output.endsWith(".noindex"));
+    assert.equal(config.buildVersion, "12");
+    assert.equal(config.mac.notarize, false, "pack.mjs notarizes so an interrupted submission can resume");
     assert.equal(config.nsis.deleteAppDataOnUninstall, false);
   }
 });

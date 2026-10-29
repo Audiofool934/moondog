@@ -125,6 +125,29 @@ test("invalid metadata, unsupported Node and unmanaged installs never prepare a 
   assert.equal(f.calls.filter(call => call.file === "fixture-npm").length, 0);
 });
 
+test("beta checks follow the stable successor and retain a newer next-beta", async t => {
+  const f = await fixture(t, { version: "0.2.0-beta.7" });
+  const scenarios = [
+    { beta: metadata("0.2.0-beta.7"), latest: metadata("0.2.0"), expected: "0.2.0" },
+    { beta: metadata("0.3.0-beta.1"), latest: metadata("0.2.0"), expected: "0.3.0-beta.1" },
+    { beta: null, latest: metadata("0.2.0"), expected: "0.2.0" },
+    { beta: metadata("0.3.0-beta.1"), latest: null, expected: "0.3.0-beta.1" },
+    { beta: metadata("0.9.0", { name: "wrong-package" }), latest: metadata("0.2.0"), expected: "0.2.0" },
+    { beta: metadata("0.3.0-beta.1"), latest: metadata("0.9.0-beta.1"), expected: "0.3.0-beta.1" },
+  ];
+  for (const scenario of scenarios) {
+    const updater = createApplicationUpdater({ ...f.options, fetchImpl: async url => {
+      const value = scenario[url.endsWith("/beta") ? "beta" : "latest"];
+      return value ? new Response(JSON.stringify(value)) : new Response("", { status: 404 });
+    } });
+    const result = await updater.check({ channel: "beta", force: true });
+    assert.equal(result.state, "available");
+    assert.equal(result.latest, scenario.expected);
+    assert.equal(result.channel, "beta");
+  }
+  await f.unchangedData();
+});
+
 test("npm installs in staging, preserves the launcher and old package, and saves channel only on success", async t => {
   const f = await fixture(t); f.release = metadata("0.2.0-beta.1");
   const result = await f.updater.apply({ channel: "beta" });
