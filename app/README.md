@@ -235,8 +235,9 @@ To publish an update:
 2. Push the tag, `v` and the version.
    `Publish release` checks it, waits for the owner's approval in the `npm` environment, publishes or verifies the npm version, and prepares a GitHub draft.
    The desktop updater continues to see the previous complete release while the draft is prepared.
-3. On the Mac mini, in a clean worktree at the tag, run `npm ci` at the root and here, then `npm run publish-app`.
-   It builds and verifies the artifacts, uploads the ZIP, blockmap, DMG and update metadata to the draft, then publishes the complete release and rebuilds the project page.
+3. Right after pushing the tag, on the Mac mini, in a clean worktree at the tag, run `npm ci` at the root and here, then `npm run publish-app`.
+   It builds and verifies the artifacts while the workflow runs, then waits up to an hour for the npm version and the draft, so the approval can come before or after the build.
+   It uploads the ZIP, blockmap, DMG and release manifest to the draft together and the update metadata last, then publishes the complete release and rebuilds the project page.
    `--skip-build` requires the recorded build manifest and verifies its artifacts again.
    `--create` prepares a missing draft; it does not bypass npm or artifact verification.
    Existing remote assets with identical hashes are reused.
