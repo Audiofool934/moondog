@@ -98,6 +98,8 @@ New listening views, corrections, and discovery interactions must work in the te
 
 ## Later
 
+- [ ] Move beyond streaming-first toward music decentralization: the local personal library, generative music, and an open format for independent artists.
+  [Music decentralization](MUSIC_DECENTRALIZATION.md) records the stages, which stay vision until the owner opens the scope; the next item is the first concrete step toward them.
 - [ ] Connect one music-analysis or generation tool through an observable, permissioned interface.
 - [ ] Carry listener intent and selected references into creative work without uploading raw history by default.
 - [ ] Write a SQLite schema migration path before any release that changes stored data.
