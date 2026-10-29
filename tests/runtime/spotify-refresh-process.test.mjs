@@ -45,7 +45,6 @@ test("independent processes serialize the whole refresh and reuse persisted rota
   await Promise.all([a.wait("ready"), b.wait("ready")]);
   a.send("start");
   assert.equal((await a.wait("exchange")).refresh, "old-refresh");
-  assert.ok((await f.store.read()).refreshAttempt);
   b.send("start");
   a.send("release");
   const tokens = await Promise.all([a.wait("token"), b.wait("token")]);
@@ -58,18 +57,51 @@ test("independent processes serialize the whole refresh and reuse persisted rota
   assert.equal((await stat(f.root)).mode & 0o777, 0o700);
 });
 
-test("dead process after dispatch leaves a marker that blocks every contender without HTTP", async (t) => {
+test("a process that dies during the exchange does not sign the listener out", async (t) => {
   const f = await fixture(t);
   const a = worker(t, f.authFile);
   await a.wait("ready"); a.send("start"); await a.wait("exchange");
   const died = once(a.child, "exit"); a.child.kill("SIGKILL"); await died;
-  const contenders = Array.from({ length: 8 }, () => worker(t, f.authFile));
-  await Promise.all(contenders.map(async (c) => { await c.wait("ready"); c.send("start"); }));
-  assert.deepEqual(await Promise.all(contenders.map(async (c) => (await c.wait("error")).code)), Array(8).fill("spotify_refresh_uncertain"));
-  assert.equal(contenders.flatMap((c) => c.messages).filter((m) => m.event === "exchange").length, 0);
+  const sent = [];
+  const auth = authFor(f.store, async (_url, options) => { sent.push(options.body.get("refresh_token")); return response(); });
+  assert.equal(await auth.refreshAccessToken({ rejectedAccessToken: "old-access" }), "new-access");
+  assert.deepEqual(sent, ["old-refresh"]);
+  assert.equal((await f.store.read()).refreshToken, "new-refresh");
+});
+
+test("a refresh that fails before Spotify answers is tried again on the next request", async (t) => {
+  const f = await fixture(t);
+  await f.store.write({ ...old(), accessExpiresAt: Date.now() - 60_000 });
+  let online = false, requests = 0;
+  const auth = authFor(f.store, async () => { requests++; if (!online) throw new TypeError("fetch failed"); return response(); });
+  await assert.rejects(auth.getAccessToken(), { code: "spotify_token_refresh_failed" });
+  online = true;
+  assert.equal(await auth.getAccessToken(), "new-access");
+  assert.equal(requests, 2);
+});
+
+test("only Spotify rejecting the grant asks for a new sign-in", async (t) => {
+  const f = await fixture(t);
+  let answer;
+  const auth = authFor(f.store, async () => answer);
+  for (const [status, error] of [[503, "server_error"], [429, undefined]]) {
+    answer = { ok: false, status, json: async () => (error ? { error } : {}) };
+    await assert.rejects(auth.refreshAccessToken(), { code: "spotify_token_refresh_failed" });
+  }
+  answer = { ok: false, status: 400, json: async () => ({ error: "invalid_grant", error_description: "Refresh token revoked" }) };
+  await assert.rejects(auth.refreshAccessToken(), { code: "spotify_refresh_rejected" });
+  assert.equal((await f.store.read()).refreshToken, "old-refresh");
+});
+
+test("a credential an older version left marked as interrupted refreshes normally", async (t) => {
+  const f = await fixture(t);
+  await f.store.write({ ...old(), accessExpiresAt: Date.now() - 60_000,
+    refreshAttempt: { id: "6f1c2a52-8a52-4c1e-9d3b-0f6d2c1b9e47", startedAt: Date.now() - 3600_000 } });
   let requests = 0;
-  await assert.rejects(authFor(f.store, async () => { requests++; return response(); }).getAccessToken(), { code: "spotify_refresh_uncertain" });
-  assert.equal(requests, 0); // Valid old access expiry cannot bypass the marker.
+  const auth = authFor(f.store, async () => { requests++; return response(); });
+  assert.equal(await auth.getAccessToken(), "new-access");
+  assert.equal(requests, 1);
+  assert.equal((await f.store.read()).refreshAttempt, undefined);
 });
 
 test("dead process before refresh intent allows exactly one recovery exchange", async (t) => {
@@ -98,35 +130,37 @@ test("lock-wait cancellation is bounded and does not steal another process's loc
   await once(holder.child, "exit");
 });
 
-test("timeout fences a late response and explicit replacement; no unpersisted token is returned", async (t) => {
+test("a timed-out refresh is tried again, and its late response cannot write", async (t) => {
   const f = await fixture(t);
   let release, requests = 0;
-  const auth = authFor(f.store, async () => { requests++; await new Promise((r) => { release = r; }); return response(); }, { refreshTimeoutMs: 100 });
+  const auth = authFor(f.store, async () => {
+    requests++;
+    if (requests === 1) await new Promise((r) => { release = r; });
+    return response();
+  }, { refreshTimeoutMs: 100 });
   await assert.rejects(auth.refreshAccessToken(), { code: "spotify_refresh_timeout" });
-  assert.ok((await f.store.read()).refreshAttempt);
-  await assert.rejects(auth.refreshAccessToken(), { code: "spotify_refresh_uncertain" });
+  assert.equal((await f.store.read()).accessToken, "old-access");
   await f.store.write({ ...old(), accessToken: "explicit-replacement" });
   release(); await new Promise((r) => setImmediate(r));
   assert.equal((await f.store.read()).accessToken, "explicit-replacement");
-  assert.equal(requests, 1);
+  assert.equal(await auth.refreshAccessToken({ rejectedAccessToken: "explicit-replacement" }), "new-access");
+  assert.equal(requests, 2);
 });
 
-for (const failWrite of [1, 2, "after-rename"]) {
-  test(`persistence failure ${failWrite} never returns an uncommitted token`, async (t) => {
+for (const failure of ["before-rename", "after-rename"]) {
+  test(`persistence failure ${failure} never returns an uncommitted token`, async (t) => {
     const f = await fixture(t);
     const write = f.persistent.writeDocument.bind(f.persistent);
-    let writes = 0, requests = 0;
+    let requests = 0;
     f.persistent.writeDocument = async (...args) => {
-      writes++;
-      if (writes === failWrite) throw new Error("fictional disk failure");
+      if (failure === "before-rename") throw new Error("fictional disk failure");
       await write(...args);
-      if (failWrite === "after-rename" && writes === 2) throw new Error("fictional directory fsync failure");
+      throw new Error("fictional directory fsync failure");
     };
     await assert.rejects(authFor(f.store, async () => { requests++; return response(); }).refreshAccessToken(), { code: "spotify_credential_store_failed" });
     const reloaded = await new PersistentCredentialStore({ authFile: f.authFile }).read("spotify");
-    assert.equal(requests, failWrite === 1 ? 0 : 1);
-    assert.equal(Boolean(reloaded.refreshAttempt), failWrite === 2);
-    assert.equal(reloaded.accessToken, failWrite === "after-rename" ? "new-access" : "old-access");
+    assert.equal(requests, 1);
+    assert.equal(reloaded.accessToken, failure === "after-rename" ? "new-access" : "old-access");
   });
 }
 
@@ -137,29 +171,19 @@ test("unsupported nontransactional stores fail closed before token HTTP", async 
   assert.equal(requests, 0);
 });
 
-test("checkpoint remains durable after failure and its closure cannot write after release", async (t) => {
-  const f = await fixture(t);
-  let checkpoint;
-  await assert.rejects(f.persistent.modify("spotify", async (value, transaction) => {
-    checkpoint = transaction.checkpoint;
-    await checkpoint({ ...value, accessToken: "durable-checkpoint" });
-    throw new Error("interrupted operation");
-  }), /interrupted/u);
-  assert.equal((await f.store.read()).accessToken, "durable-checkpoint");
-  assert.throws(() => checkpoint(old()), { code: "credential_store_transaction_closed" });
-});
-
 test("cancelling the last waiter after dispatch still persists rotation under the deadline", async (t) => {
   const f = await fixture(t);
-  let release, started;
+  let release, started, requests = 0;
   const ready = new Promise((r) => { started = r; });
-  const auth = authFor(f.store, async () => { started(); await new Promise((r) => { release = r; }); return response(); });
+  const auth = authFor(f.store, async () => { requests++; started(); await new Promise((r) => { release = r; }); return response(); });
   const controller = new AbortController();
   const pending = assert.rejects(auth.refreshAccessToken({ signal: controller.signal }), { code: "spotify_auth_aborted" });
   await ready; controller.abort(); await pending;
   release();
-  assert.equal(await auth.getAccessToken(), "new-access");
+  // A later rejection of the old token joins the rotation still in flight.
+  assert.equal(await auth.refreshAccessToken({ rejectedAccessToken: "old-access" }), "new-access");
   assert.equal((await f.store.read()).refreshToken, "new-refresh");
+  assert.equal(requests, 1);
 });
 
 test("refresh caller deadline includes waiting behind another local credential mutation", async (t) => {
