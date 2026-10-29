@@ -5,7 +5,7 @@
 import { spawn } from "node:child_process";
 import { randomBytes, randomInt, randomUUID } from "node:crypto";
 import { unwatchFile, watchFile } from "node:fs";
-import { access, chmod, constants, mkdir, open, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { access, appendFile, chmod, constants, mkdir, open, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 
@@ -111,6 +111,10 @@ export async function checkStableAudioInstall(root, { platform = process.platfor
   return { state: "ready" };
 }
 
+// A made track the listener left within this many seconds was skipped; later, stopped.
+const SKIP_SECONDS = 30;
+const OUTCOMES = Object.freeze(["completed", "skipped", "stopped", "replayed"]);
+
 // The stage lines the script always prints, which are the only progress a pipe receives.
 const STAGES = new Map([["1", "reading"], ["2", "reading"], ["3", "composing"], ["4", "decoding"], ["5", "writing"]]);
 const doneLine = /done\s+([\d.]+)s\s+wall\s+\S+\s+([\d.]+)s\s+audio.*?peak\s+RAM\s+([\d.]+)\s+(MB|GB)/u;
@@ -168,6 +172,11 @@ export function createLocalGenerator({
 } = {}) {
   let current = { state: "unknown", enabled: false, install: "unknown", path: null, source: null };
   let running = null;
+  // The tracks made here, newest last, with what happened each time they played: the loop back
+  // from listening reads them. Each track's outcomes.jsonl keeps them; the receipt never changes.
+  const made = new Map();
+  // The made track playing now in this room's player: { id, heardMs, since }, since null while paused.
+  let playing = null;
   let checking = null;
   const listeners = new Set();
   const tracksDirectory = () => resolveGeneratedTracksDirectory(environment);
@@ -285,8 +294,91 @@ export function createLocalGenerator({
     });
   });
 
+  const remember = (receipt, outcomes = []) => {
+    if (!isGeneratedTrackId(receipt?.generated_track_id)) return;
+    made.set(receipt.generated_track_id, {
+      id: receipt.generated_track_id,
+      title: String(receipt.title ?? ""),
+      made_at: receipt.created_at,
+      seconds: receipt.audio?.duration_seconds ?? receipt.generator?.seconds ?? null,
+      sound: (Array.isArray(receipt.shaped_by) ? receipt.shaped_by : []).map((entry) => entry?.term).filter((term) => typeof term === "string").slice(0, 8),
+      outcomes,
+    });
+  };
+  // Appends one outcome to the track's own file, so the terminal and the window add to one record.
+  const recordOutcome = async (id, outcome) => {
+    if (!isGeneratedTrackId(id) || !OUTCOMES.includes(outcome?.outcome)) return;
+    const entry = { ...outcome, at: now().toISOString() };
+    made.get(id)?.outcomes.push(entry);
+    try {
+      await appendFile(path.join(tracksDirectory(), id, "outcomes.jsonl"), `${JSON.stringify(entry)}\n`, { encoding: "utf8", mode: 0o600 });
+    } catch { /* The track was removed; its outcome goes with it. */ }
+  };
+  const close = (finished) => {
+    if (!playing) return;
+    const heard = Math.round((playing.heardMs + (playing.since === null ? 0 : Date.now() - playing.since)) / 1000);
+    const { id } = playing;
+    playing = null;
+    void recordOutcome(id, { outcome: finished ? "completed" : heard < SKIP_SECONDS ? "skipped" : "stopped", heard_seconds: heard });
+  };
+
   return {
     status: () => structuredClone(current),
+    /**
+     * Reads the tracks made here, with their outcomes, from their folders. The terminal and the
+     * window each keep a generator on one folder, so each reply reads it again and sees the other's.
+     */
+    async load() {
+      let names = [];
+      try { names = await readdir(tracksDirectory()); } catch { names = []; }
+      made.clear();
+      for (const name of names.filter(isGeneratedTrackId)) {
+        try {
+          const receipt = JSON.parse(await readFile(path.join(tracksDirectory(), name, "receipt.json"), "utf8"));
+          const outcomes = (await readFile(path.join(tracksDirectory(), name, "outcomes.jsonl"), "utf8").catch(() => ""))
+            .split("\n").filter(Boolean).flatMap((line) => { try { return [JSON.parse(line)]; } catch { return []; } });
+          remember(receipt, outcomes);
+        } catch { /* A folder without a readable receipt is not a track. */ }
+      }
+    },
+    /**
+     * The newest made tracks and how each landed, for the agent: what Moondog made, never the
+     * listener's taste. Each outcome counts plays that ran to the end, were skipped within 30
+     * seconds, were stopped later, or that the listener asked for again by name. Moondog's own
+     * replays are counted apart, so its picks never read as the listener's.
+     */
+    recentTracks(limit = 5) {
+      const listeners = (entry) => entry.outcome !== "replayed" || entry.by === "listener";
+      return [...made.values()].sort((left, right) => String(right.made_at).localeCompare(String(left.made_at))).slice(0, limit)
+        .map(({ outcomes, ...track }) => {
+          const theirs = outcomes.filter(listeners);
+          const counts = Object.fromEntries(OUTCOMES.map((kind) => [kind === "replayed" ? "asked_for_again" : kind, theirs.filter((entry) => entry.outcome === kind).length]));
+          return { ...track, outcomes: { ...counts, replayed_by_moondog: outcomes.length - theirs.length },
+            ...(theirs.length ? { last_outcome: theirs.at(-1).outcome === "replayed" ? "asked_for_again" : theirs.at(-1).outcome } : {}) };
+        });
+    },
+    /** What a room's player reports. A made track that plays to its end was completed; one that stops or gives way was skipped or stopped. */
+    observe(event) {
+      const track = event?.track;
+      if (event?.type === "playing" && track?.generated === true && isGeneratedTrackId(track.id)) {
+        if (playing?.id !== track.id) {
+          close(false);
+          playing = { id: track.id, heardMs: 0, since: Date.now() };
+        } else if (playing.since === null) playing.since = Date.now();
+      } else if (event?.type === "paused" && playing && playing.since !== null) {
+        playing.heardMs += Date.now() - playing.since;
+        playing.since = null;
+      } else if (event?.type === "finished" && playing && (!track?.id || track.id === playing.id)) {
+        close(true);
+      } else if (event?.type === "stopped" || (event?.type === "queue" && !(event.tracks ?? []).some((entry) => entry?.id === playing?.id))) {
+        close(false);
+      }
+    },
+    // A replay of the track playing now starts it over; that is not a skip.
+    recordReplay: (id, by) => {
+      if (playing?.id === id) playing = null;
+      return recordOutcome(id, { outcome: "replayed", by: by === "listener" ? "listener" : "moondog" });
+    },
     ready: () => current.state === "ready",
     busy: () => running !== null,
     check,
@@ -367,6 +459,7 @@ export function createLocalGenerator({
         };
         await writeFile(path.join(temporary, "receipt.json"), `${JSON.stringify(document, null, 2)}\n`, { encoding: "utf8", mode: 0o600, flag: "wx" });
         await rename(temporary, path.join(folder, id));
+        remember(document);
         return { id, title, seconds, seed, prompt, elapsed_ms: elapsed, duration_seconds: audio.duration_seconds, ...(measured ? { measured } : {}) };
       } catch (error) {
         await rm(temporary, { recursive: true, force: true }).catch(() => {});

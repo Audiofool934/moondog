@@ -103,15 +103,16 @@ export async function createTerminalPreviewPlayer({
     return file;
   };
 
+  // Resolves true when the song played to its end, false when it was stopped or could not play.
   const playFile = (file) => new Promise((resolve) => {
     const playing = spawn(player.command, [...player.args, file], { stdio: "ignore" });
     child = playing;
-    const finish = () => {
+    const finish = (code) => {
       if (child === playing) child = null;
-      resolve();
+      resolve(code === 0);
     };
-    playing.once("error", finish);
-    playing.once("exit", finish);
+    playing.once("error", () => finish(null));
+    playing.once("exit", (code) => finish(code));
   });
 
   const start = (tracks) => {
@@ -134,8 +135,8 @@ export async function createTerminalPreviewPlayer({
     void (async () => {
       try {
         for (let index = 0; index < tracks.length; index += 1) {
-          const { title, artist_credit, catalog_url, generated } = tracks[index];
-          const song = { track: generated ? { title, artist_credit, generated: true } : { title, artist_credit, catalog_url }, position: index + 1, count: tracks.length };
+          const { title, artist_credit, catalog_url, generated, id } = tracks[index];
+          const song = { track: generated ? { title, artist_credit, generated: true, id } : { title, artist_credit, catalog_url }, position: index + 1, count: tracks.length };
           // A track Moondog made plays from its own folder, which outlives the queue.
           const pending = tracks[index].file
             ? { ready: true, file: Promise.resolve(tracks[index].file), abort: () => {}, skipped: () => false }
@@ -153,7 +154,9 @@ export async function createTerminalPreviewPlayer({
             continue;
           }
           emit({ type: "playing", ...song });
-          await playFile(file);
+          const ended = await playFile(file);
+          // A made track that played to its end, as the loop back from listening counts it.
+          if (generated && ended && !controller.signal.aborted) emit({ type: "finished", ...song });
           if (!tracks[index].file) await rm(file, { force: true });
           if (controller.signal.aborted) break;
         }

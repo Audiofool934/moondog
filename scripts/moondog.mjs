@@ -858,6 +858,9 @@ async function main() {
   await localGenerator?.check();
   void localGenerator?.sweep().catch(() => {});
   const unwatchGeneration = localGenerator?.watch() ?? (() => {});
+  // How each made track landed (played through, skipped, stopped) comes from this room's player.
+  await localGenerator?.load();
+  const unobservePlayer = localGenerator ? previewPlayer.subscribe?.((event) => localGenerator.observe(event)) : null;
   const playbackSelection = createPlaybackSelection({ service: playbackService, save: writePlaybackPreference });
   // The terminal and the window each run this core on one playback.json. A service chosen on the
   // other side reaches this side's picker and agents, and stops the previews this side plays.
@@ -1181,6 +1184,7 @@ async function main() {
   } finally {
     unwatchPlayback();
     unwatchGeneration();
+    unobservePlayer?.();
     listeningUpkeep?.stop();
     lyrics?.close();
     // Conversations close first: their domain services are forks of the main application's.

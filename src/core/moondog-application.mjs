@@ -538,6 +538,37 @@ export class MoondogApplication {
     return this.localGenerator?.status?.() ?? null;
   }
 
+  // Moondog's newest tracks and how each landed, for the agent to calibrate the next one by. They
+  // are outcomes of Moondog's own picks, never the listener's taste.
+  // Each reply reads the made tracks again, so the other surface's tracks and outcomes show too.
+  async refreshMadeTracks() {
+    if (this.localGenerationReady()) await this.localGenerator.load?.();
+  }
+
+  madeTracks() {
+    if (!this.localGenerationReady()) return null;
+    const tracks = this.localGenerator.recentTracks?.(5) ?? [];
+    return tracks.length ? tracks : null;
+  }
+
+  // Plays a track Moondog made again. A track the listener named in their own words is their pick:
+  // it stays out of the ledger and counts as their replay. Otherwise it is Moondog's pick again.
+  async playMadeTrack({ id } = {}, { request = null } = {}) {
+    if (!this.localGenerationReady()) throw Object.assign(new Error("Local generation is not ready. The listener can turn it on in Settings or with /generation."), { code: "generation_not_ready" });
+    const receipt = await this.localGenerator.receipt(id);
+    const file = receipt ? await this.localGenerator.trackFile(id) : null;
+    if (!file) throw Object.assign(new Error("There is no track Moondog made with that id on this Mac."), { code: "made_track_not_found" });
+    const title = String(receipt.title ?? "");
+    // Named means quoted, or the title with Moondog, as on every play path: an open request shares
+    // words with the plain titles Moondog gives its records ("something for a rainy day").
+    const named = typeof request === "string" && textNamesSong(request, title, ["Moondog"]);
+    await this.localGenerator.recordReplay?.(id, named ? "listener" : "moondog");
+    await this.quietOtherPlayers("apple_music");
+    this.musicPreviewPlayer.playGenerated({ id, title, seconds: receipt.audio?.duration_seconds, file });
+    if (!named) this.#noteGeneratedPlay({ id, title });
+    return { state: "playing", track: { id, title, seconds: receipt.audio?.duration_seconds ?? null }, chosen_by: named ? "listener" : "moondog" };
+  }
+
   // Makes one instrumental track from the listener's taste and plays it in Moondog's own player.
   // The agent proposes sound descriptors, each with its source; the taste compiler keeps only the
   // ones it can trace and none that names an artist or a song. The track and its receipt stay on
