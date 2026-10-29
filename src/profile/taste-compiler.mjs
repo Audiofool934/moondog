@@ -113,6 +113,10 @@ export function compileTaste(requested, context) {
       if (avoided(from)) { drop(term, "avoid"); continue; }
       const like = likes.find((choice) => [choice.name, choice.subject === "track" ? null : choice.artist].some((label) => label && avoidKey(label) === avoidKey(from)));
       if (!like) { drop(term, "not_a_like"); continue; }
+      // A Like of a song whose artist the listener now keeps out no longer shapes anything.
+      if (like.subject === "track" && like.artist && (artistAvoids.some((label) => avoidKey(label) === avoidKey(like.artist)) || context.avoidsName?.(like.artist) === true)) {
+        drop(term, "avoid"); continue;
+      }
       source = { kind, stance: "like", subject: like.subject, label: like.name, ...(like.artist ? { artist: like.artist } : {}) };
     } else if (kind === "recent") {
       if (avoided(from)) { drop(term, "avoid"); continue; }

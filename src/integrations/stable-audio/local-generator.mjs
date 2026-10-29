@@ -237,6 +237,8 @@ export function createLocalGenerator({
     let measured = null;
     let settled = false;
     let stopping = null;
+    // Why a run was stopped, reported once its process has really exited, so the slot stays taken until then.
+    let stopReason = null;
     const finish = (error, value) => {
       if (settled) return;
       settled = true;
@@ -246,10 +248,12 @@ export function createLocalGenerator({
       else resolve(value);
     };
     const kill = (reason) => {
+      if (settled || stopReason) return;
+      stopReason = reason;
+      clearTimeout(timer);
       child.kill("SIGTERM");
       // The script handles only Ctrl-C, so a run that ignores the request is ended.
       stopping = setTimeout(() => child.kill("SIGKILL"), stoppingGraceMs);
-      finish(reason);
     };
     const stop = () => kill(Object.assign(new Error("Making the track was stopped."), { name: "AbortError", code: "generation_stopped" }));
     const timer = setTimeout(() => kill(generationError("generation_timed_out", "Stable Audio 3 took too long, so the track was stopped.")), generationTimeoutMs);
@@ -272,10 +276,11 @@ export function createLocalGenerator({
     });
     // Its errors can carry the output path and tracebacks; only the exit code is reported.
     child.stderr.resume();
-    child.once("error", () => finish(generationError("generation_failed", "Stable Audio 3 could not be started.")));
+    child.once("error", () => finish(stopReason ?? generationError("generation_failed", "Stable Audio 3 could not be started.")));
     child.once("exit", (code) => {
       clearTimeout(stopping);
-      if (code === 0) finish(null, measured);
+      if (stopReason) finish(stopReason);
+      else if (code === 0) finish(null, measured);
       else finish(generationError("generation_failed", "Stable Audio 3 stopped without making the track."));
     });
   });

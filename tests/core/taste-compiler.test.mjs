@@ -70,6 +70,15 @@ test("a song Avoid keeps out that song, not its artist's Like", () => {
   assert.deepEqual(reasons(compiled), { "glassy synths": "avoid", hushed: "avoid" });
 });
 
+test("a Like of a song whose artist is now avoided shapes nothing", () => {
+  const compiled = compileTaste({ descriptors: [{ term: "glassy synths", facet: "instrument", source: "choice", from: "Pale Signals" },
+    { term: "ambient", facet: "genre", source: "request" }] }, context({
+    likes: [{ stance: "like", subject: "track", name: "Pale Signals", artist: "Low Lanterns" }],
+    avoids: [{ stance: "avoid", subject: "artist", name: "Low Lanterns" }],
+  }));
+  assert.deepEqual(reasons(compiled), { "glassy synths": "avoid" });
+});
+
 test("a term that lists several sounds becomes several descriptors with one source", () => {
   const compiled = compileTaste({ descriptors: [{ term: "hushed, unhurried", facet: "mood", source: "moment" },
     { term: "close; distant room", facet: "texture", source: "request" }] }, context());

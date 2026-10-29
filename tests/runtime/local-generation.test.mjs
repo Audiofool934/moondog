@@ -30,8 +30,11 @@ const fs = require("node:fs");
 const args = process.argv.slice(2);
 const value = (flag) => args[args.indexOf(flag) + 1];
 fs.writeFileSync(${JSON.stringify(path.join(root, "args.json"))}, JSON.stringify({ args, cwd: process.cwd(), offline: process.env.HF_HUB_OFFLINE }));
+// A stubborn run ignores the request to stop from its first line on.
+if (process.env.FAKE_SA3 === "stubborn") process.on("SIGTERM", () => {});
 console.log("  [1/5] T5Gemma encode ···· 10 ms");
 if (process.env.FAKE_SA3 === "hang") { setInterval(() => {}, 1000); return; }
+if (process.env.FAKE_SA3 === "stubborn") { setInterval(() => {}, 1000); return; }
 if (process.env.FAKE_SA3 === "fail") { console.error("Traceback: " + value("--out")); process.exit(1); }
 console.log("  [3/5] DiT \\u2014 load + sample (8 steps, \\u03c3max=1.00)");
 console.log("  [4/5] Decoder (same-l, FP32)");
@@ -125,10 +128,23 @@ test("a stopped, failed or second run leaves no track behind", async (t) => {
   const generator = hanging.generator({ FAKE_SA3: "hang" });
   await generator.save({ enabled: true });
   const controller = new AbortController();
-  const run = generator.generate({ prompt: "ambient", seconds: 15 }, { signal: controller.signal, onProgress: ({ stage }) => { if (stage === "reading") controller.abort(); } });
+  const run = assert.rejects(generator.generate({ prompt: "ambient", seconds: 15 }, { signal: controller.signal,
+    onProgress: ({ stage }) => { if (stage === "reading") controller.abort(); } }), { code: "generation_stopped" });
   await assert.rejects(generator.generate({ prompt: "ambient", seconds: 15 }), { code: "generation_busy" });
-  await assert.rejects(run, { code: "generation_stopped" });
+  await run;
   assert.deepEqual(await hanging.generated(), []);
+
+  // A run that ignores the request to stop keeps the slot until it is ended, so two never overlap.
+  const stubborn = await fakeInstall(t);
+  const holding = stubborn.generator({ FAKE_SA3: "stubborn" });
+  await holding.save({ enabled: true });
+  const stopping = new AbortController();
+  const held = assert.rejects(holding.generate({ prompt: "ambient", seconds: 15 }, { signal: stopping.signal,
+    onProgress: ({ stage }) => { if (stage === "reading") stopping.abort(); } }), { code: "generation_stopped" });
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  await assert.rejects(holding.generate({ prompt: "ambient", seconds: 15 }), { code: "generation_busy" });
+  await held;
+  assert.deepEqual(await stubborn.generated(), []);
 
   const failing = await fakeInstall(t);
   const broken = failing.generator({ FAKE_SA3: "fail" });
