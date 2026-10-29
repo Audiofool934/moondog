@@ -1,12 +1,17 @@
-// Signed releases retain their build and Apple submission receipts until publication.
-// Signed QA builds use --no-notarize and never create a publishable manifest.
+// Build on the target OS: macOS arm64 (DMG/zip), Windows x64 (NSIS), Linux x64 (AppImage).
+// The window carries exactly the npm package's core with production dependencies for this host.
+// `--dir` leaves an unpacked app for smoke tests. Nothing is published by this script.
+// Signed Mac releases retain their build and Apple submission receipts until publication.
+// Signed Mac QA builds use --no-notarize and never create a publishable manifest.
 import { randomUUID } from "node:crypto";
-import { copyFile, mkdir, readFile, rename, rm } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { copyFile, mkdir, readdir, readFile, rename, rm } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Arch, build, Platform } from "electron-builder";
 import { buildMusicHelper, MUSIC_USAGE } from "./native/build.mjs";
-import { builderSigningIdentity, command, digestFile, ELECTRON_DATA_SIGN_IGNORE, parseReleaseJson, phase, readJson, retryTimestampSigning, saveJson, signingIdentity, SIGNING_TEAM, RELEASE_REPO } from "./release-tools.mjs";
+import { desktopConfig, desktopTarget } from "./pack-config.mjs";
+import { builderSigningIdentity, command, digestFile, parseReleaseJson, phase, readJson, retryTimestampSigning, saveJson, signingIdentity, SIGNING_TEAM, RELEASE_REPO } from "./release-tools.mjs";
 import { assertProvenance, finalizeArtifacts, inspectApp, releaseNames, verifyArtifacts } from "./release-artifacts.mjs";
 import { notarizeFile, prepareDmgUpload } from "./release-notary.mjs";
 
@@ -14,8 +19,9 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(here, "..");
 const flags = new Set(process.argv.slice(2));
 for (const flag of flags) if (!["--sign", "--no-notarize", "--dir"].includes(flag)) throw new Error(`Unknown build option: ${flag}`);
-if (process.platform !== "darwin" || process.arch !== "arm64") throw new Error("Build this release on an Apple silicon Mac.");
+const target = desktopTarget();
 const sign = flags.has("--sign"), notarize = sign && !flags.has("--no-notarize");
+if (sign && target.platform !== "darwin") throw new Error("--sign is the macOS Developer ID release path. Windows signing uses electron-builder's CSC_LINK and CSC_KEY_PASSWORD.");
 if (notarize && flags.has("--dir")) throw new Error("Use --dir --sign --no-notarize for a local signed QA app.");
 const { version } = parseReleaseJson(await readFile(path.join(root, "package.json"), "utf8"));
 const git = async args => (await command("git", ["-C", root, ...args])).stdout;
@@ -27,7 +33,7 @@ if (!/^[1-9]\d{0,3}$/u.test(buildNumber)) throw new Error("The build number must
 const provenance = { version, source, buildNumber, teamId: SIGNING_TEAM };
 const release = path.join(here, "release"), state = path.join(release, ".state", version);
 const output = path.join(release, notarize ? "apps.noindex" : "qa.noindex", version);
-const app = path.join(output, "mac-arm64", "Moondog.app");
+const app = path.join(output, target.unpacked, "Moondog.app");
 const work = path.join(here, "build"), room = path.join(work, "room");
 const names = releaseNames(version), receiptFile = path.join(state, "build.json");
 const profile = process.env.MOONDOG_NOTARY_PROFILE ?? process.env.APPLE_NOTARY_PROFILE ?? "mac-mini-notary";
@@ -45,46 +51,59 @@ if (notarize) {
   if (existing && !existing.draft) throw new Error("This version is already public. Reuse its verified artifacts or publish a new version; do not rebuild it.");
 }
 const identity = sign ? await signingIdentity() : null;
-const config = {
-  appId: "ai.audiofool.moondog", productName: "Moondog", extraMetadata: { version }, buildVersion: buildNumber,
-  directories: { output, buildResources: "build-resources" },
-  files: ["package.json", "main.mjs", "preload.cjs", "core-process.mjs", "window-room.mjs", "preview-player.mjs", "strings.mjs", "updates.mjs", "shutdown.mjs", "dist/**/*", "!dist/**/*.map"],
-  publish: [{ provider: "github", owner: "Audiofool934", repo: "moondog", channel: "latest" }],
-  asar: false, forceCodeSigning: sign,
-  extraResources: [{ from: "build/room", to: ".", filter: ["**/*"] },
-    { from: "build/room/node_modules", to: "node_modules", filter: ["**/*"] },
-    { from: "build/release-provenance.json", to: "release-provenance.json" },
-    { from: path.join(root, "assets/brand"), to: "brand", filter: ["moondog-app-icon.png", "moondog-app-icon-dark.png"] }],
-  mac: { category: "public.app-category.music", icon: path.join(root, "assets/brand/moondog-app-icon.png"),
-    hardenedRuntime: true, gatekeeperAssess: false, type: "distribution",
-    entitlements: "build-resources/entitlements.mac.plist", entitlementsInherit: "build-resources/entitlements.mac.plist",
-    extendInfo: { NSAppleMusicUsageDescription: MUSIC_USAGE, NSAppleEventsUsageDescription: "Moondog reads what you play in Music, and the playlist it comes from." },
-    identity: builderSigningIdentity(identity), notarize: false, signIgnore: [ELECTRON_DATA_SIGN_IGNORE] },
-  dmg: { title: "Moondog ${version}" },
-};
+const configFor = (music) => desktopConfig({ root, version, buildNumber, output, target, sign, identity: builderSigningIdentity(identity), musicUsage: MUSIC_USAGE, music });
+let config = configFor(false);
+// npm.cmd cannot be spawned without a shell on Windows. Run npm's JavaScript entrypoint with this Node,
+// including when Node and npm live in a directory containing spaces.
+const npmCli = process.platform === "win32" ? process.env.npm_execpath || [
+  path.join(path.dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js"),
+  ...(process.env.PATH || process.env.Path || "").split(path.delimiter).map((dir) => path.join(dir, "node_modules", "npm", "bin", "npm-cli.js")),
+].find((candidate) => existsSync(candidate)) : null;
+if (process.platform === "win32" && !npmCli) throw new Error("Could not find npm's entrypoint. Run this build with npm run pack.");
+const npm = (args, options) => npmCli ? command(process.execPath, [npmCli, ...args], options) : command("npm", args, options);
+// Windows 10 and newer include bsdtar in System32. A GNU tar earlier on PATH, such as Git's,
+// would read the C: in an absolute path as a remote host.
+const tar = process.platform === "win32" ? path.join(process.env.SystemRoot || "C:\\Windows", "System32", "tar.exe") : "tar";
+const platform = { darwin: Platform.MAC, win32: Platform.WINDOWS, linux: Platform.LINUX }[target.platform];
 
 if (!receipt) {
   await phase("Build and sign the app", async () => {
     await rm(work, { recursive: true, force: true });
     await mkdir(room, { recursive: true });
     await saveJson(path.join(work, "release-provenance.json"), provenance);
-    const packed = await command("npm", ["pack", "--json", "--ignore-scripts", "--pack-destination", work], { cwd: root });
+    const packed = await npm(["pack", "--json", "--ignore-scripts", "--pack-destination", work], { cwd: root });
     const [{ filename }] = parseReleaseJson(packed.stdout);
-    await command("tar", ["-xzf", path.join(work, filename), "-C", room, "--strip-components=1"]);
+    await command(tar, ["-xzf", path.join(work, filename), "-C", room, "--strip-components=1"]);
     await copyFile(path.join(root, "package-lock.json"), path.join(room, "package-lock.json"));
-    await command("npm", ["ci", "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fund"], { cwd: room, live: true });
+    // The npm package lists macOS and Linux only, because its terminal launcher is a shell script.
+    // The Windows app carries the same core, so its install skips that platform check.
+    await npm(["ci", "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fund", ...(process.platform === "win32" ? ["--force"] : [])], { cwd: room, live: true });
     await command(process.execPath, [path.join(here, "build.mjs")], { live: true });
-    const music = await buildMusicHelper({ bundle: false, required: sign });
-    config.extraFiles = music ? [{ from: "native/build/moondog-music", to: "MacOS/moondog-music" }] : [];
+    // The Apple Music helper sits beside the Mac app's own executable, so MusicKit knows it as Moondog.
+    config = configFor(Boolean(await buildMusicHelper({ bundle: false, required: sign })));
     await rm(output, { recursive: true, force: true });
+    // macOS signs and notarizes the app before packaging it. Windows and Linux package it at once.
+    const targets = target.platform === "darwin" || flags.has("--dir") ? ["dir"] : target.targets;
     // electron-builder mutates nested file patterns while normalizing its options.
-    await build({ projectDir: here, targets: Platform.MAC.createTarget(["dir"], Arch.arm64), publish: "never", config: structuredClone(config) });
+    await build({ projectDir: here, targets: platform.createTarget(targets, Arch[target.arch]), publish: "never", config: structuredClone(config) });
   });
   if (notarize) {
     receipt = { schema: 1, ...provenance, appCdHash: await inspectApp(app, provenance, { notarized: false }),
       createdAt: new Date().toISOString(), inputName: `Moondog-${version}-${randomUUID()}.zip`, phase: "signed" };
     await saveJson(receiptFile, receipt);
   }
+}
+
+if (target.platform !== "darwin") {
+  // Only final deliverables move to release/, replacing a build of the same version. Earlier versions
+  // stay, so an update can be tried between two builds.
+  if (!flags.has("--dir")) for (const file of await readdir(output, { withFileTypes: true })) {
+    if (!file.isFile() || !/\.(?:exe|AppImage|blockmap|yml)$/u.test(file.name) || file.name.startsWith("builder-")) continue;
+    await rename(path.join(output, file.name), path.join(release, file.name));
+    console.log(path.join("release", file.name));
+  }
+  console.log(`Local QA output: ${flags.has("--dir") ? path.join(output, target.unpacked) : release}`);
+  process.exit(0);
 }
 
 if (!notarize) {

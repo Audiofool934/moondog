@@ -41,7 +41,8 @@ const maximumPackedBytes = 2_600_000;
 const maximumUnpackedBytes = 5_210_000;
 // Endpoints, the model menu's list and the terminal's endpoint command add three
 // entries and about 20 KB.
-const maximumEntries = 155;
+// The portable ZIP reader and the shared host helpers add two entries for the Windows desktop.
+const maximumEntries = 157;
 const packageOnlyPrivateSentinelPattern = new RegExp(
   ["PRIVATE", "(?:IP|PLATFORM)", "SENTINEL"].join("_"),
   "u",

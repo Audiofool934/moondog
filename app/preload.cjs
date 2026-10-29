@@ -4,6 +4,7 @@ const { contextBridge, ipcRenderer, webUtils } = require("electron");
 
 ipcRenderer.once("room", (event) => window.postMessage("moondog-room", "*", event.ports));
 contextBridge.exposeInMainWorld("moondogApp", {
+  platform: process.platform,
   pathForFile: (file) => webUtils.getPathForFile(file),
   onCommand: (callback) => ipcRenderer.on("command", (_event, name) => callback(String(name))),
   setLanguage: (locale) => ipcRenderer.send("language", String(locale)),
