@@ -53,7 +53,7 @@ import { startListeningUpkeep } from "../src/core/listening-upkeep.mjs";
 import { createAppleMusicCatalog } from "../src/integrations/apple-music/catalog.mjs";
 import { createTerminalPreviewPlayer } from "../src/integrations/apple-music/terminal-preview-player.mjs";
 import { createNeteasePlayer } from "../src/integrations/netease/ncm-cli-player.mjs";
-import { createLocalGenerator } from "../src/integrations/stable-audio/local-generator.mjs";
+import { createAtmosphereStream, createLocalGenerator } from "../src/integrations/stable-audio/local-generator.mjs";
 import { createMusicAppPlayer } from "../src/integrations/apple-music/music-app.mjs";
 import {
   createOpenMusicSimilarity,
@@ -861,11 +861,17 @@ async function main() {
   // How each made track landed (played through, skipped, stopped) comes from this room's player.
   await localGenerator?.load();
   const unobservePlayer = localGenerator ? previewPlayer.subscribe?.((event) => localGenerator.observe(event)) : null;
+  // Moondog's atmosphere stream: one per room, on its generator and its player, moved along by what the player reports.
+  const atmosphereStream = localGenerator && typeof previewPlayer?.enqueueGenerated === "function"
+    ? createAtmosphereStream({ generator: localGenerator, player: previewPlayer }) : null;
+  const unobserveStream = atmosphereStream ? previewPlayer.subscribe?.((event) => atmosphereStream.observe(event)) : null;
+  // Music making turned off, here or on the other surface, ends the stream.
+  const unwatchStreamGeneration = atmosphereStream ? localGenerator.subscribe((status) => { if (status.state !== "ready") atmosphereStream.stop("generation_off"); }) : null;
   const playbackSelection = createPlaybackSelection({ service: playbackService, save: writePlaybackPreference });
   // The terminal and the window each run this core on one playback.json. A service chosen on the
   // other side reaches this side's picker and agents, and stops the previews this side plays.
   const unwatchPlayback = watchPlaybackPreference(playbackSelection, {
-    onChange: (service) => { if (service !== "apple_music") previewPlayer?.stop?.(); },
+    onChange: (service) => { if (service !== "apple_music") { atmosphereStream?.stop("service_change"); previewPlayer?.stop?.(); } },
   });
   // The main application and every conversation the window opens beside it are built from
   // this one list, so they cannot drift apart. Each passes in what may change after launch:
@@ -874,7 +880,7 @@ async function main() {
   const spotifyTopArtists = { read_at: null, artists: [] };
   const applicationOptions = ({ domainServices, domainServicesError, spotifyConnection, locale, playbackService }) => ({
     domainServices, domainServicesError, spotifyConnection, locale, playbackService, playbackSelection,
-    webResearch, memoryStore, musicCatalog, musicPreviewPlayer: previewPlayer, neteasePlayer, localGenerator, musicSimilarity, artistIdentityResolver,
+    webResearch, memoryStore, musicCatalog, musicPreviewPlayer: previewPlayer, neteasePlayer, localGenerator, atmosphereStream, musicSimilarity, artistIdentityResolver,
     spotifyTopArtists, musicApp,
   });
   const application = new MoondogApplication(applicationOptions({
@@ -1190,6 +1196,9 @@ async function main() {
       await localGenerator.flush?.();
     }
     unobservePlayer?.();
+    unobserveStream?.();
+    unwatchStreamGeneration?.();
+    atmosphereStream?.stop("closed");
     listeningUpkeep?.stop();
     lyrics?.close();
     // Conversations close first: their domain services are forks of the main application's.

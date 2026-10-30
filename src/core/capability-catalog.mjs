@@ -627,6 +627,30 @@ const catalog = [
     },
   },
   {
+    id: "music.generate.stream",
+    version: "1",
+    state: "enabled",
+    effect: "generate_local",
+    description: "Keep making instrumental tracks on this Mac from the listener's taste, one after another, until they stop it or the time runs out.",
+    requires_local_generation: true,
+    agent_tool: {
+      name: "moondog_start_stream",
+      label: N_("Start a stream"),
+    },
+  },
+  {
+    id: "music.generate.stream.stop",
+    version: "1",
+    state: "enabled",
+    effect: "generate_local",
+    description: "Stop Moondog's stream of tracks made on this Mac.",
+    requires_local_generation: true,
+    agent_tool: {
+      name: "moondog_stop_stream",
+      label: N_("Stop the stream"),
+    },
+  },
+  {
     id: "music.generate",
     version: "1",
     state: "disabled",

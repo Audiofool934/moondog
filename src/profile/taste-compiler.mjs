@@ -167,6 +167,29 @@ export function listenedNames(tracks) {
   return { artists: [...artists], titles: [...titles] };
 }
 
+/**
+ * One track of Moondog's stream from a compiled taste: every genre, and a few of the other sounds,
+ * a different few each time, so the tracks differ in their prompts and not only their seeds.
+ * leaveOut holds the sounds of tracks the listener skipped; they stay out while any other sound is left.
+ * The tempo drifts a little around the taste's own.
+ */
+export function streamVariation({ descriptors = [], bpm = null } = {}, position = 0, leaveOut = new Set()) {
+  const genres = descriptors.filter((descriptor) => descriptor.facet === "genre");
+  const others = descriptors.filter((descriptor) => descriptor.facet !== "genre");
+  const kept = others.filter((descriptor) => !leaveOut.has(descriptor.term));
+  const pool = kept.length ? kept : others;
+  // Each track leaves at least one sound out, so the next one can feature it and the stream moves.
+  const size = pool.length > 1 ? Math.min(3, pool.length - 1) : pool.length;
+  const from = pool.length ? (position * size) % pool.length : 0;
+  const featured = Array.from({ length: size }, (_, index) => pool[(from + index) % pool.length]);
+  const drift = [0, -3, 3, -5, 5][position % 5];
+  return {
+    descriptors: [...genres, ...featured],
+    featured: featured.map((descriptor) => descriptor.term),
+    bpm: Number.isInteger(bpm) ? Math.min(BPM_RANGE.max, Math.max(BPM_RANGE.min, bpm + drift)) : null,
+  };
+}
+
 /** What the receipt and the tool result say shaped the sound, in order of the profile's layers. */
 export function tasteSources(descriptors) {
   const order = ["reading", "choice", "recent", "moment", "request"];

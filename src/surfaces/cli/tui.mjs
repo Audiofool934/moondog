@@ -722,7 +722,9 @@ export async function runMoondogTui({
   }) : null;
   // These act at once, even while Moondog is answering.
   const controlPreviews = (command) => {
-    const acted = command === "stop" ? previewPlayer.stop() : previewPlayer.skip();
+    // /stop also ends Moondog's stream while its next track is still being made and nothing plays.
+    const streamStopped = command === "stop" && application.stopStream?.()?.state === "stopped";
+    const acted = command === "stop" ? previewPlayer.stop() || streamStopped : previewPlayer.skip();
     if (!busy) setFooter(!acted ? tr("No previews are playing.") : command === "stop" ? tr("Previews stopped.") : tr("Skipped."));
     tui.requestRender();
   };

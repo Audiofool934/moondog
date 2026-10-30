@@ -131,6 +131,7 @@ export default {
   "choice.avoid": ({ title, artist }) => { const name = title ? `"${title}" di ${artist}` : artist; return `\n\nSalvato: terrò ${name} fuori da ciò che suono e ti propongo. Dimmelo quando vuoi cambiarlo.`; },
   "choice.retract": ({ title, artist }) => { const name = title ? `"${title}" di ${artist}` : artist; return `\n\nAnnullato: la tua scelta precedente su ${name}.`; },
   "generate.made": ({ title, length, seed }) => `Fatto su questo Mac con Stable Audio 3: «${title}» (${length}, seed ${seed}).`,
+  "generate.stream": ({ minutes }) => `Il flusso continua su questo Mac, con un brano nuovo ogni volta, fino a ${minutes} minuti. Puoi fermarlo quando vuoi.`,
   "turn.cancelled": "Ho annullato il resto.",
   "turn.interrupted": "La risposta si è interrotta. Gli esiti di Spotify registrati sono qui sotto; nessuna azione è stata ripetuta.",
 };

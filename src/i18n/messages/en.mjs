@@ -132,6 +132,7 @@ export default {
   "choice.avoid": ({ title, artist }) => { const name = title ? `"${title}" by ${artist}` : artist; return `\n\nSaved: I'll keep ${name} out of what I play and suggest. Tell me any time to change it.`; },
   "choice.retract": ({ title, artist }) => { const name = title ? `"${title}" by ${artist}` : artist; return `\n\nUndone: your earlier choice about ${name}.`; },
   "generate.made": ({ title, length, seed }) => `Made on this Mac with Stable Audio 3: "${title}" (${length}, seed ${seed}).`,
+  "generate.stream": ({ minutes }) => `The stream keeps going on this Mac, a new track each time, for up to ${minutes} minutes. Stop it any time.`,
   "turn.cancelled": "Cancelled further work.",
   "turn.interrupted": "The response was interrupted. The recorded Spotify outcomes are below; no action was replayed.",
 };
