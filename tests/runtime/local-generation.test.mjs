@@ -656,6 +656,35 @@ test("in the window, a queued track the stream cuts at its time limit gets no ou
   await assert.rejects(outcomes(queued), { code: "ENOENT" }, "the track Moondog cut off has no outcome");
 });
 
+test("in the terminal, a queued track that starts past the time limit never reaches the audio player", async (t) => {
+  const install = await fakeInstall(t);
+  const generator = install.generator();
+  await generator.save({ enabled: true });
+  const bin = path.join(install.root, "bin");
+  await mkdir(bin);
+  const log = path.join(install.root, "played.log");
+  await writeFile(path.join(bin, "afplay"), `#!/bin/sh\nfor last; do :; done\nprintf '%s\\n' "$last" >> "${log}"\nexec sleep 1.5\n`);
+  await chmod(path.join(bin, "afplay"), 0o755);
+  const player = await createTerminalPreviewPlayer({ platform: "darwin", environment: { PATH: `${bin}:${process.env.PATH}` }, temporaryRoot: install.root });
+  t.after(() => player.close());
+  let clock = 1_000_000;
+  // The room's order, then the time limit passing just as the first track ends.
+  player.subscribe((event) => generator.observe(event));
+  const stream = createAtmosphereStream({ generator, player, now: () => clock });
+  player.subscribe((event) => stream.observe(event));
+  const { made } = await stream.start({ compiled: compiledTaste, title: "Late tide", seconds: 15, minutes: 10, receipt: {} });
+  player.subscribe((event) => { if (event.type === "finished" && event.track?.id === made.id) clock += 60 * 60_000; });
+  await until(() => stream.status() === null);
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  assert.deepEqual((await readFile(log, "utf8")).trim().split("\n"), [await generator.trackFile(made.id)], "only the first track reached afplay");
+  await generator.flush();
+  const queued = (await install.generated()).find((id) => id !== made.id);
+  assert.ok(queued, "the next track had been made and queued");
+  const outcomes = (id) => readFile(path.join(install.root, "state", "generated", id, "outcomes.jsonl"), "utf8");
+  assert.match(await outcomes(made.id), /"outcome":"completed"/u);
+  await assert.rejects(outcomes(queued), { code: "ENOENT" }, "the track that never played has no outcome");
+});
+
 test("songs Moondog plays while a stream's first track is being made end the stream, which plays nothing", async (t) => {
   const install = await fakeInstall(t);
   const generator = install.generator({ FAKE_SA3: "slow" });

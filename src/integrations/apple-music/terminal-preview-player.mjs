@@ -155,6 +155,8 @@ export async function createTerminalPreviewPlayer({
             continue;
           }
           emit({ type: "playing", ...song });
+          // A listener may stop the queue as the song starts, as Moondog's stream does past its time limit.
+          if (controller.signal.aborted) break;
           const how = await playFile(file);
           // A made track that played to its end, that /skip ended, or that could not play, as the loop
           // back from listening and Moondog's stream count it; /stop aborts the queue first.
