@@ -220,7 +220,10 @@ export function createLocalGenerator({
       .map(([name]) => rm(path.join(folder, name), { recursive: true, force: true })));
   };
 
+  const stopped = () => Object.assign(new Error("Making the track was stopped."), { name: "AbortError", code: "generation_stopped" });
   const run = ({ root, prompt, seconds, seed, out }, { signal, onProgress }) => new Promise((resolve, reject) => {
+    // A stop that came while the install was checked starts nothing.
+    if (signal?.aborted) return reject(stopped());
     // The Python script itself, not Stability's ./sa3 wrapper: the wrapper wants uv on PATH and a
     // terminal, and its exec would leave a shell between this process and the one to stop.
     const child = spawnImpl(path.join(root, ".venv", "bin", "python"), [
@@ -255,9 +258,8 @@ export function createLocalGenerator({
       // The script handles only Ctrl-C, so a run that ignores the request is ended.
       stopping = setTimeout(() => child.kill("SIGKILL"), stoppingGraceMs);
     };
-    const stop = () => kill(Object.assign(new Error("Making the track was stopped."), { name: "AbortError", code: "generation_stopped" }));
+    const stop = () => kill(stopped());
     const timer = setTimeout(() => kill(generationError("generation_timed_out", "Stable Audio 3 took too long, so the track was stopped.")), generationTimeoutMs);
-    if (signal?.aborted) return stop();
     signal?.addEventListener("abort", stop, { once: true });
     child.stdout.setEncoding("utf8");
     child.stdout.on("data", (chunk) => {
