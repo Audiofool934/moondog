@@ -1049,4 +1049,5 @@ export default {
   "saving it": "salvando",
   "Let Moondog make music on this Mac": "Deixe o Moondog fazer música neste Mac",
   "Make a track": "Fazer uma faixa",
+  "Play a track Moondog made": "Tocar de novo uma faixa que o Moondog fez",
 };

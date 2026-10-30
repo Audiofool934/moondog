@@ -285,6 +285,34 @@ test("an Avoid older than the newest choices still keeps its artist out of a tra
   assert.deepEqual(made.shaped_by.map((entry) => entry.term), ["ambient"]);
 });
 
+test("a reply stopped while other players pause plays nothing, and a closing room keeps the last outcome", async (t) => {
+  const install = await fakeInstall(t);
+  const generator = install.generator();
+  await generator.save({ enabled: true });
+  const room = player();
+  const stopping = new AbortController();
+  // The Music app answers slowly, and the listener stops the reply meanwhile.
+  const musicApp = { nowPlaying: async () => { stopping.abort(); return { state: "stopped" }; } };
+  const app = new MoondogApplication({ importsRoot: "/private/moondog-synthetic-missing-source", localGenerator: generator, musicPreviewPlayer: room,
+    musicApp, playbackService: "apple_music", domainServices: domainServices() });
+  await assert.rejects(app.makeTrack({ descriptors: [{ term: "ambient", facet: "genre", source: "request" }], seconds: 15 }, { signal: stopping.signal }),
+    { code: "generation_stopped" });
+  assert.deepEqual(room.played, []);
+
+  // A replay stopped while the other players pause plays nothing and records no replay.
+  const replaying = new AbortController();
+  musicApp.nowPlaying = async () => { replaying.abort(); return { state: "stopped" }; };
+  const [made] = generator.recentTracks();
+  await assert.rejects(app.playMadeTrack({ id: made.id }, { signal: replaying.signal }), { code: "generation_stopped" });
+  assert.deepEqual(room.played, []);
+  assert.equal(generator.recentTracks()[0].outcomes.replayed_by_moondog, 0);
+
+  generator.observe({ type: "playing", track: { generated: true, id: made.id, title: made.title } });
+  generator.observe({ type: "stopped" });
+  await generator.flush();
+  assert.match(await readFile(path.join(install.root, "state", "generated", made.id, "outcomes.jsonl"), "utf8"), /"outcome":"skipped"/u);
+});
+
 test("one message makes one track, and a Like said while it plays is not saved as a real song's", async (t) => {
   const install = await fakeInstall(t);
   const generator = install.generator();
@@ -322,6 +350,81 @@ test("one message makes one track, and a Like said while it plays is not saved a
   assert.deepEqual(saved.map((choice) => [choice.label, choice.artistCredit]), [["Bird's Lament", "Moondog"]]);
 });
 
+test("a made track's plays come back as outcomes, and the agent sees them before it makes the next", async (t) => {
+  const install = await fakeInstall(t);
+  const generator = install.generator();
+  await generator.save({ enabled: true });
+  const first = await generator.generate({ prompt: "ambient", seconds: 15, title: "Night glass",
+    receipt: { shaped_by: [{ term: "ambient", facet: "genre", source: { kind: "request" } }] } });
+  const second = await generator.generate({ prompt: "dub techno", seconds: 15, title: "Low tide",
+    receipt: { shaped_by: [{ term: "dub techno", facet: "genre", source: { kind: "request" } }] } });
+  const playing = (id) => ({ type: "playing", track: { title: "x", artist_credit: "", generated: true, id } });
+  generator.observe(playing(first.id));
+  generator.observe({ type: "finished", track: { generated: true, id: first.id } });
+  generator.observe({ type: "stopped" });
+  generator.observe(playing(second.id));
+  generator.observe({ type: "stopped" });
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  const outcomes = (track) => Object.entries(track.outcomes).filter(([, count]) => count).map(([kind]) => kind);
+  const [newest, older] = generator.recentTracks();
+  assert.deepEqual([newest.title, outcomes(newest), older.title, outcomes(older)], ["Low tide", ["skipped"], "Night glass", ["completed"]]);
+  assert.deepEqual(newest.sound, ["dub techno"]);
+
+  // A new room reads the same record back from the tracks' folders.
+  const again = install.generator();
+  await again.load();
+  assert.deepEqual(again.recentTracks().map((track) => [track.title, track.last_outcome]), [["Low tide", "skipped"], ["Night glass", "completed"]]);
+
+  const recorded = [];
+  const room = player();
+  const app = new MoondogApplication({ importsRoot: "/private/moondog-synthetic-missing-source", localGenerator: again, musicPreviewPlayer: room,
+    playbackService: "apple_music", domainServices: domainServices(recorded) });
+  await again.check();
+  const { faux, runtime } = runtimeFor(app);
+  faux.setResponses([
+    (context) => {
+      const made = context.messages.map((message) => JSON.stringify(message)).join("\n");
+      assert.match(made, /made_tracks/u);
+      assert.match(made, /Low tide/u);
+      return fauxAssistantMessage([fauxToolCall("moondog_play_made_track", { id: older.id })], { stopReason: "toolUse" });
+    },
+    (context) => {
+      const value = JSON.parse(toolResult(context, "moondog_play_made_track").content[0].text);
+      assert.deepEqual([value.track.title, value.chosen_by], ["Night glass", "listener"]);
+      return fauxAssistantMessage([fauxText("Night glass again.")]);
+    },
+  ]);
+  assert.equal((await runtime.prompt("play \"Night glass\" again")).text, "Night glass again.");
+  assert.deepEqual(room.played.map((track) => track.title), ["Night glass"]);
+  assert.equal(recorded.length, 0, "a track the listener named is their pick, not Moondog's");
+  assert.equal(again.recentTracks().find((track) => track.id === older.id).outcomes.asked_for_again, 1);
+
+  // An open request that shares words with a plain title ("low tide") is Moondog's pick, not the listener's naming it.
+  faux.setResponses([fauxAssistantMessage([fauxToolCall("moondog_play_made_track", { id: second.id })], { stopReason: "toolUse" }),
+    fauxAssistantMessage([fauxText("Here's one of mine.")])]);
+  await runtime.prompt("play me something you made for low tide");
+  assert.deepEqual(recorded.map((entry) => [entry.providerTrackId, entry.title]), [[`moondog:generated:${second.id}`, "Low tide"]]);
+  const lowTide = again.recentTracks().find((track) => track.id === second.id);
+  assert.deepEqual([lowTide.outcomes.asked_for_again, lowTide.outcomes.replayed_by_moondog, lowTide.last_outcome], [0, 1, "skipped"]);
+
+  // A replay of the track already playing starts it over; that is not a skip.
+  again.observe(playing(second.id));
+  await again.recordReplay(second.id, "moondog");
+  again.observe({ type: "stopped" });
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.equal(again.recentTracks().find((track) => track.id === second.id).outcomes.skipped, 1);
+
+  // A Like said while a replayed track plays is about Moondog's own record.
+  faux.setResponses([
+    fauxAssistantMessage([fauxToolCall("moondog_taste_choice", { subject: "track", artist: "Moondog", title: "Low tide", stance: "like", source_text: "I love Low tide by you" })], { stopReason: "toolUse" }),
+    (context) => {
+      assert.match(toolResult(context, "moondog_taste_choice").content[0].text, /^taste_choice_generated_track:/u);
+      return fauxAssistantMessage([fauxText("Not saved yet.")]);
+    },
+  ]);
+  await runtime.prompt("I love Low tide by you");
+});
+
 test("the terminal plays a made track from its folder and keeps it; the window asks for it by id", async (t) => {
   const root = await mkdtemp(path.join(tmpdir(), "moondog-generated-play-"));
   t.after(() => rm(root, { recursive: true, force: true }));
@@ -340,7 +443,27 @@ test("the terminal plays a made track from its folder and keeps it; the window a
   terminal.close();
   assert.equal((await readFile(log, "utf8")).trim(), file);
   assert.equal(await readFile(file, "utf8"), "RIFF", "the track outlives its play");
-  assert.deepEqual(events.find((event) => event.type === "playing").track, { title: "Night glass", artist_credit: "", generated: true });
+  assert.deepEqual(events.find((event) => event.type === "playing").track, { title: "Night glass", artist_credit: "", generated: true, id: "x" });
+  assert.ok(events.some((event) => event.type === "finished"), "a track that plays to its end is reported finished");
+
+  // A player that cannot play the file reports a failure, which is no outcome at all.
+  const broken = path.join(root, "broken-bin");
+  await mkdir(broken);
+  await writeFile(path.join(broken, "afplay"), "#!/bin/sh\nexit 1\n");
+  await chmod(path.join(broken, "afplay"), 0o755);
+  const failing = await createTerminalPreviewPlayer({ platform: "darwin", environment: { PATH: broken }, temporaryRoot: root });
+  const failed = [];
+  const over = new Promise((resolve) => failing.subscribe((event) => { failed.push(event.type); if (event.type === "stopped") resolve(); }));
+  failing.playGenerated({ id: "c", title: "Three", file });
+  await over;
+  failing.close();
+  assert.ok(failed.includes("failed") && !failed.includes("finished"));
+  const quiet = createLocalGenerator({ environment: { MOONDOG_STATE_HOME: root, MOONDOG_CONFIG_HOME: root } });
+  quiet.observe({ type: "playing", track: { generated: true, id: "6f1c1b2e-3c4d-4e5f-8a9b-0c1d2e3f4a5b" } });
+  quiet.observe({ type: "failed", track: { generated: true, id: "6f1c1b2e-3c4d-4e5f-8a9b-0c1d2e3f4a5b" } });
+  quiet.observe({ type: "stopped" });
+  await quiet.flush();
+  await assert.rejects(readFile(path.join(root, "generated", "6f1c1b2e-3c4d-4e5f-8a9b-0c1d2e3f4a5b", "outcomes.jsonl"), "utf8"));
 
   const port = new EventEmitter();
   const sent = [];

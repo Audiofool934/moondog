@@ -615,6 +615,18 @@ const catalog = [
     },
   },
   {
+    id: "music.generate.replay",
+    version: "1",
+    state: "enabled",
+    effect: "generate_local",
+    description: "Play again a track Moondog made on this Mac, from its own folder.",
+    requires_local_generation: true,
+    agent_tool: {
+      name: "moondog_play_made_track",
+      label: N_("Play a track Moondog made"),
+    },
+  },
+  {
     id: "music.generate",
     version: "1",
     state: "disabled",

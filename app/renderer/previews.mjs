@@ -42,7 +42,7 @@ export function createPreviews({ send, onChange }) {
   const report = (type) => {
     const track = current();
     if (id === null || !track) return;
-    send({ type: "preview-event", id, event: { type, track: track.generated ? { title: track.title, artist_credit: "", generated: true }
+    send({ type: "preview-event", id, event: { type, track: track.generated ? { title: track.title, artist_credit: "", generated: true, id: track.generated_id }
       : { title: track.title, artist_credit: track.artist_credit, catalog_url: track.catalog_url }, position: index + 1, count: queue.length } });
   };
   const describe = () => {
@@ -79,7 +79,11 @@ export function createPreviews({ send, onChange }) {
   audio.addEventListener("playing", () => { failures = 0; report("playing"); describe(); });
   audio.addEventListener("pause", () => { if (!audio.ended && queue.length) { report("paused"); describe(); } });
   audio.addEventListener("timeupdate", onChange);
-  audio.addEventListener("ended", () => (index + 1 < queue.length ? load(index + 1) : stop()));
+  // A made track that played to its end is reported as finished, for the loop back from listening.
+  audio.addEventListener("ended", () => {
+    if (current()?.generated) report("finished");
+    return index + 1 < queue.length ? load(index + 1) : stop();
+  });
   audio.addEventListener("error", () => {
     if (!queue.length) return;
     report("failed");
@@ -126,7 +130,8 @@ export function createPreviews({ send, onChange }) {
       if (message.type === "preview") {
         const tracks = (Array.isArray(message.tracks) ? message.tracks : []).map((track) => track.generated === true ? {
           title: String(track.title ?? ""), artist_credit: "", preview_url: generatedMedia(track.media_url), catalog_url: null, image: null,
-          generated: true, duration_seconds: Number.isFinite(track.duration_seconds) ? track.duration_seconds : null,
+          generated: true, generated_id: generatedMedia(track.media_url)?.split("/").at(-1) ?? null,
+          duration_seconds: Number.isFinite(track.duration_seconds) ? track.duration_seconds : null,
         } : {
           title: String(track.title ?? ""), artist_credit: String(track.artist_credit ?? ""),
           preview_url: allowed(track.preview_url, "audio-ssl.itunes.apple.com"), catalog_url: allowed(track.catalog_url, "music.apple.com"),

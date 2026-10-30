@@ -538,6 +538,41 @@ export class MoondogApplication {
     return this.localGenerator?.status?.() ?? null;
   }
 
+  // Moondog's newest tracks and how each landed, for the agent to calibrate the next one by. They
+  // are outcomes of Moondog's own picks, never the listener's taste.
+  // Each reply reads the made tracks again, so the other surface's tracks and outcomes show too.
+  async refreshMadeTracks() {
+    if (this.localGenerationReady()) await this.localGenerator.load?.();
+  }
+
+  madeTracks() {
+    if (!this.localGenerationReady()) return null;
+    const tracks = this.localGenerator.recentTracks?.(5) ?? [];
+    return tracks.length ? tracks : null;
+  }
+
+  // Plays a track Moondog made again. A track the listener named in their own words is their pick:
+  // it stays out of the ledger and counts as their replay. Otherwise it is Moondog's pick again.
+  async playMadeTrack({ id } = {}, { request = null, signal } = {}) {
+    if (!this.localGenerationReady()) throw Object.assign(new Error("Local generation is not ready. The listener can turn it on in Settings or with /generation."), { code: "generation_not_ready" });
+    const receipt = await this.localGenerator.receipt(id);
+    const file = receipt ? await this.localGenerator.trackFile(id) : null;
+    if (!file) throw Object.assign(new Error("There is no track Moondog made with that id on this Mac."), { code: "made_track_not_found" });
+    const title = String(receipt.title ?? "");
+    // Named means quoted, or the title with Moondog, as on every play path: an open request shares
+    // words with the plain titles Moondog gives its records ("something for a rainy day").
+    const named = typeof request === "string" && textNamesSong(request, title, ["Moondog"]);
+    await this.quietOtherPlayers("apple_music", { signal });
+    // A reply stopped before the track starts plays nothing, and no replay is recorded.
+    if (signal?.aborted) throw Object.assign(new Error("Nothing was played, because the reply was stopped."), { code: "generation_stopped" });
+    // Nothing waits between this check and the play; the replay is written once it plays.
+    this.localGenerator.restart?.(id);
+    this.musicPreviewPlayer.playGenerated({ id, title, seconds: receipt.audio?.duration_seconds, file });
+    if (!named) this.#noteGeneratedPlay({ id, title });
+    await this.localGenerator.recordReplay?.(id, named ? "listener" : "moondog");
+    return { state: "playing", track: { id, title, seconds: receipt.audio?.duration_seconds ?? null }, chosen_by: named ? "listener" : "moondog" };
+  }
+
   // Makes one instrumental track from the listener's taste and plays it in Moondog's own player.
   // The agent proposes sound descriptors, each with its source; the taste compiler keeps only the
   // ones it can trace and none that names an artist or a song. The track and its receipt stay on
@@ -563,11 +598,12 @@ export class MoondogApplication {
       },
     }, { signal, onProgress });
     // A reply stopped as the track finished keeps the track, but plays nothing over what is on now.
-    if (signal?.aborted) throw Object.assign(new Error("The track was made but not played, because the reply was stopped."), { code: "generation_stopped" });
-    await this.quietOtherPlayers("apple_music");
+    await this.quietOtherPlayers("apple_music", { signal });
     // The terminal plays the file itself; the window asks for it by id and never sees the path.
-    this.musicPreviewPlayer.playGenerated({ id: made.id, title: made.title, seconds: made.duration_seconds,
-      file: await this.localGenerator.trackFile(made.id) });
+    const file = await this.localGenerator.trackFile(made.id);
+    // A reply stopped while the track was made, or while the other players paused, keeps the track but plays nothing.
+    if (signal?.aborted) throw Object.assign(new Error("The track was made but not played, because the reply was stopped."), { code: "generation_stopped" });
+    this.musicPreviewPlayer.playGenerated({ id: made.id, title: made.title, seconds: made.duration_seconds, file });
     this.#noteGeneratedPlay(made);
     return { state: "playing", track: { id: made.id, title: made.title, seconds: made.duration_seconds, seed: made.seed },
       prompt, shaped_by: compiled.descriptors, sources: tasteSources(compiled.descriptors), left_out: compiled.dropped,

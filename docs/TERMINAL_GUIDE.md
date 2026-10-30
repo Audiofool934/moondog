@@ -160,7 +160,7 @@ The layout reduces artwork before sacrificing room for the input, and works with
 `/service` chooses where Moondog plays music: Spotify, Apple Music, or NetEase Music.
 `/service apple_music` switches straight to one; the choice is saved and the desktop app follows it.
 `/generation` says whether Moondog can make music on this Mac with Stable Audio 3, powered by Stability AI; `/generation on` turns it on, `/generation on ~/path/to/mlx` points at another install of Stability AI's MLX build, and `/generation off` turns it off.
-Once it is on, ask for a track in your own words. Stable Audio 3 runs offline, and the track and its receipt stay in Moondog's state folder; your request still goes to the model you talk through.
+Once it is on, ask for a track in your own words, or ask to hear one Moondog made again. Stable Audio 3 runs offline, and the track and its receipt stay in Moondog's state folder; your request still goes to the model you talk through.
 `/import` opens a native guide for music-service exports and public playlist links, with preview and confirmation before saving.
 `/import "/path/to/history.zip"` opens the file preview directly.
 `/help` shows the terminal guide; `/help all` includes the complete CLI reference.

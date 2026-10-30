@@ -144,6 +144,7 @@ const KINDS = [
   [/^moondog_(?:playlist_plan|spotify_playlist_)/u, "playlist"],
   [/^moondog_music_preview$/u, "previews"],
   [/^moondog_make_track$/u, "make"],
+  [/^moondog_play_made_track$/u, "play"],
   [/^moondog_netease_control$/u, (args) => ({ pause: "pause", stop: "pause", next: "skip", previous: "skip" })[args?.action] ?? "play"],
   [/^moondog_netease_play$/u, (args) => (args?.mode === "queue" ? "queue" : "play")],
   [/^moondog_netease_search$/u, "search"],

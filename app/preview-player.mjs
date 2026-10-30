@@ -23,7 +23,7 @@ export function createWindowPreviewPlayer(port) {
     if (data?.type === "whole-songs") { wholeSongs = data.canPlay === true; return; }
     if (closed || queueId === null || data?.type !== "preview-event" || data.id !== queueId) return;
     const event = data.event;
-    if (!["queue", "loading", "playing", "paused", "failed", "stopped"].includes(event?.type)) return;
+    if (!["queue", "loading", "playing", "paused", "finished", "failed", "stopped"].includes(event?.type)) return;
     if (event.type === "stopped") active = false;
     else if (event.type !== "failed") active = true;
     emit(event);

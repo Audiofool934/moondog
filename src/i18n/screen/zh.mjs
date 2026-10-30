@@ -1049,4 +1049,5 @@ export default {
   "saving it": "保存中",
   "Let Moondog make music on this Mac": "让 Moondog 在这台 Mac 上做音乐",
   "Make a track": "做一首曲子",
+  "Play a track Moondog made": "再放一首 Moondog 做的曲子",
 };

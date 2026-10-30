@@ -55,6 +55,7 @@ New listening views, corrections, and discovery interactions must work in the te
 - [x] Make an instrumental track on this Mac with the listener's own Stable Audio 3, once they turn it on in Settings or with `/generation on`.
   The taste compiler keeps only sound descriptors it can trace to the listener's evidence or the moment, and none that names an artist, a song or an Avoid; the track plays in Moondog's own player, keeps a receipt, and enters the ledger as Moondog's pick.
   This is the first step of [music decentralization](MUSIC_DECENTRALIZATION.md), and the first generation tool connected through an observable, permissioned interface.
+  Each made track's plays come back as outcomes (played through, skipped, stopped, asked for again), which the agent reads before it makes the next one; the listener can ask to hear one again.
 - [x] Run the real room on fictional data on the project page.
 - [x] Run a deterministic offline demo and generate a fictional Spotify history ZIP, with no personal data, model, or credential.
 - [x] Rebuild and verify the public source tree on Node 22.19.0 and Node 24 in CI, scan the full history for private material, and install the packed npm tarball into an empty project.
@@ -103,7 +104,7 @@ New listening views, corrections, and discovery interactions must work in the te
 
 - [ ] Move beyond streaming-first toward music decentralization: the local personal library, generative music, and an open format for independent artists.
   [Music decentralization](MUSIC_DECENTRALIZATION.md) records the stages; the owner opened stage 2 on 2026-10-29, and its first slice is shipped above.
-  Next for it are the two loops back from listening, Likes on generated tracks, and an analysis stack.
+  Next for it are Likes on generated tracks, a listener's replay counted as their attention, and an analysis stack.
 - [ ] Carry listener intent and selected references into creative work without uploading raw history by default.
 - [ ] Write a SQLite schema migration path before any release that changes stored data.
 - [ ] Decide whether Windows belongs in the product; a port needs a player, paths, and the credential store.

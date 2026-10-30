@@ -18,7 +18,12 @@ The agent's `moondog_make_track` tool proposes sound descriptors with their sour
 A Stable Audio 3 adapter (`src/integrations/stable-audio/local-generator.mjs`) writes the prompt, runs the model offline, and keeps the WAV with a receipt of everything that shaped it in Moondog's state folder.
 Each play goes in the suggestions ledger as Moondog's own (`service` moondog, `action` generated.play), never as the listener's attention.
 Recent attention here means the stored plays of the last four weeks, which include plays the Spotify recent-play sync wrote; Spotify's own top artists are left out, and the owner kept this on 2026-10-29 (see Owner gates).
-The calibration loop, the taste loop, Likes on generated tracks, the analysis stack and the atmosphere stream are not built yet.
+A first version of the loops back from listening followed the same day.
+Moondog's own player reports how each made track landed: played through, skipped within 30 seconds, stopped later, or asked for again; each track's folder keeps these outcomes beside its receipt.
+The agent sees its newest tracks with their sound and outcomes before it makes the next one, read again each reply so the terminal and the window share them, and leans toward what played through; that is the calibration loop, and the outcomes never become taste.
+Moondog's own replays are counted apart, so its picks never read as the listener asking again.
+The listener can ask to hear a made track again; one they name is recorded as their own replay and stays out of the ledger, but it does not yet enter recent attention.
+Likes on generated tracks, the analysis stack and the atmosphere stream are not built yet.
 
 ## What decentralization means here
 
