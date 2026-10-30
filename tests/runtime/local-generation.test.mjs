@@ -285,6 +285,27 @@ test("an Avoid older than the newest choices still keeps its artist out of a tra
   assert.deepEqual(made.shaped_by.map((entry) => entry.term), ["ambient"]);
 });
 
+test("a reply stopped while other players pause plays nothing, and a closing room keeps the last outcome", async (t) => {
+  const install = await fakeInstall(t);
+  const generator = install.generator();
+  await generator.save({ enabled: true });
+  const room = player();
+  const stopping = new AbortController();
+  // The Music app answers slowly, and the listener stops the reply meanwhile.
+  const musicApp = { nowPlaying: async () => { stopping.abort(); return { state: "stopped" }; } };
+  const app = new MoondogApplication({ importsRoot: "/private/moondog-synthetic-missing-source", localGenerator: generator, musicPreviewPlayer: room,
+    musicApp, playbackService: "apple_music", domainServices: domainServices() });
+  await assert.rejects(app.makeTrack({ descriptors: [{ term: "ambient", facet: "genre", source: "request" }], seconds: 15 }, { signal: stopping.signal }),
+    { code: "generation_stopped" });
+  assert.deepEqual(room.played, []);
+
+  const [made] = generator.recentTracks();
+  generator.observe({ type: "playing", track: { generated: true, id: made.id, title: made.title } });
+  generator.observe({ type: "stopped" });
+  await generator.flush();
+  assert.match(await readFile(path.join(install.root, "state", "generated", made.id, "outcomes.jsonl"), "utf8"), /"outcome":"skipped"/u);
+});
+
 test("one message makes one track, and a Like said while it plays is not saved as a real song's", async (t) => {
   const install = await fakeInstall(t);
   const generator = install.generator();

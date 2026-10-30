@@ -5240,7 +5240,8 @@ function createToolFactories(
         ),
         executionMode: "sequential",
         execute: executeDomain(
-          async (_toolCallId, parameters) => application.playMadeTrack({ id: parameters.id }, { request: generationContext?.({ replay: true })?.request ?? null }),
+          async (_toolCallId, parameters, signal) => application.playMadeTrack({ id: parameters.id },
+            { request: generationContext?.({ replay: true })?.request ?? null, signal }),
           (value) => {
             if (!isPlainObject(value) || value.state !== "playing") throw new Error("domain_result_invalid:made_track");
             return {

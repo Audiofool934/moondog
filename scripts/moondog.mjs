@@ -1184,6 +1184,11 @@ async function main() {
   } finally {
     unwatchPlayback();
     unwatchGeneration();
+    // A made track still playing is stopped while the generator listens, so its outcome is kept.
+    if (localGenerator) {
+      previewPlayer?.stop?.();
+      await localGenerator.flush?.();
+    }
     unobservePlayer?.();
     listeningUpkeep?.stop();
     lyrics?.close();

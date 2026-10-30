@@ -177,6 +177,8 @@ export function createLocalGenerator({
   const made = new Map();
   // The made track playing now in this room's player: { id, heardMs, since }, since null while paused.
   let playing = null;
+  // Outcome writes still on their way, which a closing room waits for.
+  const writing = new Set();
   let checking = null;
   const listeners = new Set();
   const tracksDirectory = () => resolveGeneratedTracksDirectory(environment);
@@ -321,7 +323,9 @@ export function createLocalGenerator({
     const heard = Math.round((playing.heardMs + (playing.since === null ? 0 : Date.now() - playing.since)) / 1000);
     const { id } = playing;
     playing = null;
-    void recordOutcome(id, { outcome: finished ? "completed" : heard < SKIP_SECONDS ? "skipped" : "stopped", heard_seconds: heard });
+    const write = recordOutcome(id, { outcome: finished ? "completed" : heard < SKIP_SECONDS ? "skipped" : "stopped", heard_seconds: heard });
+    writing.add(write);
+    void write.finally(() => writing.delete(write));
   };
 
   return {
@@ -376,6 +380,8 @@ export function createLocalGenerator({
         close(false);
       }
     },
+    /** Waits for the outcomes still being written, as a room does before it closes. */
+    flush: () => Promise.allSettled([...writing]),
     // A replay of the track playing now starts it over; that is not a skip.
     recordReplay: (id, by) => {
       if (playing?.id === id) playing = null;
