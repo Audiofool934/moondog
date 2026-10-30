@@ -401,6 +401,10 @@ export function createLocalGenerator({
     restart(id) {
       if (playing?.id === id) playing = null;
     },
+    // A play Moondog cut off as it began, as a stream past its time limit does, says nothing about the listener.
+    discard(id) {
+      if (playing?.id === id) playing = null;
+    },
     recordReplay(id, by) {
       this.restart(id);
       return recordOutcome(id, { outcome: "replayed", by: by === "listener" ? "listener" : "moondog" });
@@ -542,6 +546,13 @@ export function createAtmosphereStream({ generator, player, now = Date.now, keep
     before.steered = true;
     for (const term of current.made.find((made) => made.id === before.id)?.featured ?? []) current.leaveOut.add(term);
   };
+  // Past the time limit a queued track never starts, even after a long pause; the player stops
+  // before it, and the stream ends.
+  const expired = (current) => now() >= current.endsAt;
+  const endInTime = () => {
+    end("time");
+    player.stop?.();
+  };
   // Nothing is queued after the track that just ended: the next plays once made, or the stream ends.
   const ranDry = (current) => {
     if (current.making || fits(current)) {
@@ -559,6 +570,8 @@ export function createAtmosphereStream({ generator, player, now = Date.now, keep
       if (stream !== current) return;
       const file = await generator.trackFile(made.id);
       if (stream !== current) return;
+      // A queue that ran dry waits for this track; past the time limit it does not start.
+      if (current.waiting && expired(current)) { end("time"); return; }
       current.made.push({ id: made.id, featured: variation.featured, started: false, seconds: made.duration_seconds });
       current.next = made.id;
       const track = { id: made.id, title: made.title, seconds: made.duration_seconds, file };
@@ -587,7 +600,7 @@ export function createAtmosphereStream({ generator, player, now = Date.now, keep
      */
     async start({ compiled, title, seconds, minutes, receipt = {} }, { signal, onProgress, onTrack, beforePlay } = {}) {
       const previous = end("replaced");
-      if (previous) player.stop?.();
+      if (previous?.current) player.stop?.();
       const current = { compiled, title, seconds, receipt, onTrack, startedAt: now(), endsAt: now() + minutes * 60_000,
         made: [], leaveOut: new Set(), current: null, next: null, waiting: false, making: true, controller: new AbortController() };
       stream = current;
@@ -617,7 +630,8 @@ export function createAtmosphereStream({ generator, player, now = Date.now, keep
     },
     stop(reason = "asked") {
       const ending = end(reason);
-      if (ending) player.stop?.();
+      // Before its first track plays, the player still holds the music from before the stream, which stays.
+      if (ending?.current) player.stop?.();
       return ending ? { tracks_made: ending.made.length } : null;
     },
     /** What the room's player reports, which moves the stream along or ends it. */
@@ -634,6 +648,9 @@ export function createAtmosphereStream({ generator, player, now = Date.now, keep
       }
       const isCurrent = track?.id && track.id === current.current.id;
       if (event?.type === "playing" && track?.id && track.id === current.next) {
+        // The window may already have moved on to it when the time limit had passed. The generator
+        // has begun counting it, and Moondog's own stop must not read as the listener's skip.
+        if (expired(current)) { generator.discard?.(track.id); endInTime(); return; }
         leftEarly(current);
         const made = current.made.find((entry) => entry.id === track.id);
         current.current = { id: track.id, heardMs: 0, since: now(), finished: false, seconds: made?.seconds };
@@ -652,10 +669,12 @@ export function createAtmosphereStream({ generator, player, now = Date.now, keep
         leftEarly(current);
         current.current.finished = true;
         if (!current.next) ranDry(current);
+        else if (expired(current)) endInTime();
       } else if ((event?.type === "finished" || event?.type === "failed") && isCurrent) {
         // A track that could not play says nothing about the listener; it is passed over like one that ended.
         current.current.finished = true;
         if (!current.next) ranDry(current);
+        else if (expired(current)) endInTime();
       } else if (event?.type === "stopped" && !current.waiting && !current.starting) {
         end("stopped");
       }

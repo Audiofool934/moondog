@@ -15,7 +15,7 @@ import { createAtmosphereStream, createLocalGenerator, readGenerationSettings } 
 import { PiAgentRuntime } from "../../src/runtime/pi/agent-runtime.mjs";
 
 // A stand-in for Stability AI's MLX build: its Python prints the stage lines the real script
-// prints, writes a short WAV where --out says, and logs its arguments. FAKE_SA3 makes it fail or hang.
+// prints, writes a short WAV where --out says, and logs its arguments. FAKE_SA3 makes it fail, hang or slow.
 async function fakeInstall(t, { weights = true, environment = true } = {}) {
   const root = await mkdtemp(path.join(tmpdir(), "moondog-generation-"));
   t.after(() => rm(root, { recursive: true, force: true }));
@@ -36,6 +36,7 @@ console.log("  [1/5] T5Gemma encode ···· 10 ms");
 if (process.env.FAKE_SA3 === "hang") { setInterval(() => {}, 1000); return; }
 if (process.env.FAKE_SA3 === "stubborn") { setInterval(() => {}, 1000); return; }
 if (process.env.FAKE_SA3 === "fail") { console.error("Traceback: " + value("--out")); process.exit(1); }
+const finish = () => {
 console.log("  [3/5] DiT \\u2014 load + sample (8 steps, \\u03c3max=1.00)");
 console.log("  [4/5] Decoder (same-l, FP32)");
 const seconds = Number(value("--seconds"));
@@ -49,6 +50,9 @@ fs.writeFileSync(value("--out"), Buffer.concat([header, data]));
 console.log("  [5/5] Unpatch + write WAV ···· 1 ms");
 console.log("  done   0.20s wall  \\u2192  " + seconds.toFixed(1) + "s audio  \\u2192  75.00\\u00d7 realtime   peak RAM  4.49 GB   seed " + value("--seed"));
 console.log("  \\u25b8 saved  " + value("--out"));
+};
+// A slow run writes its track after a second and a half, long enough to act while it is made.
+if (process.env.FAKE_SA3 === "slow") setTimeout(finish, 1500); else finish();
 `);
     await chmod(python, 0o755);
   }
@@ -497,8 +501,9 @@ test("a stream whose queue runs dry starts again with the next track, and ends a
   stream.observe({ type: "playing", track: { generated: true, id: second } });
   await until(() => player.calls.length === 3);
   const third = player.calls[2][1];
-  // Past the time limit nothing more is made, and the stream ends with the track that plays out.
-  clock += 11 * 60_000;
+  // Near the time limit nothing more is made, and the stream ends with the track that plays out.
+  // (A queued track whose start would come past the limit never starts; another test covers that.)
+  clock += 9 * 60_000 + 50_000;
   stream.observe({ type: "finished", track: { generated: true, id: second } });
   stream.observe({ type: "playing", track: { generated: true, id: third } });
   await new Promise((resolve) => setTimeout(resolve, 100));
@@ -568,6 +573,156 @@ test("a stream counts only the time a track was heard toward an early skip, paus
   assert.deepEqual(stream.status().steering_away_from.sort(), (await generator.receipt(made.id)).stream.featured.sort());
   await until(() => !generator.busy());
   stream.stop();
+});
+
+test("past its time limit a stream never starts a queued track, even after a long pause", async (t) => {
+  const install = await fakeInstall(t);
+  const generator = install.generator();
+  await generator.save({ enabled: true });
+  let clock = 1_000_000;
+  const player = streamPlayer();
+  const stream = createAtmosphereStream({ generator, player, now: () => clock });
+  const begin = () => stream.start({ compiled: compiledTaste, title: "Late tide", seconds: 15, minutes: 10, receipt: {} });
+
+  // Paused for an hour with the next track queued: once the one playing ends, the player stops before the next.
+  const first = await begin();
+  await until(() => player.calls.length === 2);
+  const track = { generated: true, id: first.made.id };
+  stream.observe({ type: "paused", track });
+  clock += 60 * 60_000;
+  stream.observe({ type: "playing", track });
+  stream.observe({ type: "finished", track });
+  assert.equal(stream.status(), null);
+  assert.deepEqual(player.calls.at(-1), ["stop"]);
+
+  // The window moves on by itself: the queued track starting past the limit ends the stream too.
+  const second = await begin();
+  await until(() => player.calls.at(-1)?.[0] === "enqueue");
+  const queued = player.calls.at(-1)[1];
+  stream.observe({ type: "playing", track: { generated: true, id: second.made.id } });
+  clock += 60 * 60_000;
+  stream.observe({ type: "playing", track: { generated: true, id: queued } });
+  assert.equal(stream.status(), null);
+  assert.deepEqual(player.calls.at(-1), ["stop"]);
+
+  // Skipped with the next track queued, past the limit: the player stops before it.
+  const skipping = await begin();
+  await until(() => player.calls.at(-1)?.[0] === "enqueue");
+  clock += 60 * 60_000;
+  stream.observe({ type: "skipped", track: { generated: true, id: skipping.made.id } });
+  assert.equal(stream.status(), null);
+  assert.deepEqual(player.calls.at(-1), ["stop"]);
+
+  // A queue that ran dry waits for its next track; one made past the limit does not start.
+  const third = await begin();
+  const calls = player.calls.length;
+  stream.observe({ type: "skipped", track: { generated: true, id: third.made.id } });
+  clock += 60 * 60_000;
+  await until(() => !generator.busy());
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.equal(stream.status(), null);
+  assert.ok(!player.calls.slice(calls).some(([kind]) => kind === "play" || kind === "enqueue"));
+});
+
+test("in the window, a queued track the stream cuts at its time limit gets no outcome", async (t) => {
+  const install = await fakeInstall(t);
+  const generator = install.generator();
+  await generator.save({ enabled: true });
+  let clock = 1_000_000;
+  const port = new EventEmitter();
+  const sent = [];
+  port.postMessage = (message) => sent.push(message);
+  const player = createWindowPreviewPlayer(port);
+  // The room's order: the generator records each event's outcome before the stream acts on it.
+  player.subscribe((event) => generator.observe(event));
+  const stream = createAtmosphereStream({ generator, player, now: () => clock });
+  player.subscribe((event) => stream.observe(event));
+  const { made } = await stream.start({ compiled: compiledTaste, title: "Late tide", seconds: 15, minutes: 10, receipt: {} });
+  await until(() => sent.some((message) => message.type === "preview-enqueue"));
+  const queue = sent[0].id;
+  const queued = sent.find((message) => message.type === "preview-enqueue").track.media_url.split("/").at(-1);
+  const report = (type, id) => port.emit("message", { data: { type: "preview-event", id: queue,
+    event: { type, track: { title: "Late tide", artist_credit: "", generated: true, id } } } });
+  report("playing", made.id);
+  // Back after the time limit, the listener presses Next: the window starts the queued track itself.
+  clock += 60 * 60_000;
+  report("loading", queued);
+  report("playing", queued);
+  assert.equal(stream.status(), null);
+  assert.deepEqual(sent.at(-1), { type: "preview-control", action: "stop", id: queue });
+  await generator.flush();
+  const outcomes = (id) => readFile(path.join(install.root, "state", "generated", id, "outcomes.jsonl"), "utf8");
+  assert.match(await outcomes(made.id), /"outcome":"skipped"/u, "the track the listener left is theirs to skip");
+  await assert.rejects(outcomes(queued), { code: "ENOENT" }, "the track Moondog cut off has no outcome");
+});
+
+test("in the terminal, a queued track that starts past the time limit never reaches the audio player", async (t) => {
+  const install = await fakeInstall(t);
+  const generator = install.generator();
+  await generator.save({ enabled: true });
+  const bin = path.join(install.root, "bin");
+  await mkdir(bin);
+  const log = path.join(install.root, "played.log");
+  await writeFile(path.join(bin, "afplay"), `#!/bin/sh\nfor last; do :; done\nprintf '%s\\n' "$last" >> "${log}"\nexec sleep 1.5\n`);
+  await chmod(path.join(bin, "afplay"), 0o755);
+  const player = await createTerminalPreviewPlayer({ platform: "darwin", environment: { PATH: `${bin}:${process.env.PATH}` }, temporaryRoot: install.root });
+  t.after(() => player.close());
+  let clock = 1_000_000;
+  // The room's order, then the time limit passing just as the first track ends.
+  player.subscribe((event) => generator.observe(event));
+  const stream = createAtmosphereStream({ generator, player, now: () => clock });
+  player.subscribe((event) => stream.observe(event));
+  const { made } = await stream.start({ compiled: compiledTaste, title: "Late tide", seconds: 15, minutes: 10, receipt: {} });
+  player.subscribe((event) => { if (event.type === "finished" && event.track?.id === made.id) clock += 60 * 60_000; });
+  await until(() => stream.status() === null);
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  assert.deepEqual((await readFile(log, "utf8")).trim().split("\n"), [await generator.trackFile(made.id)], "only the first track reached afplay");
+  await generator.flush();
+  const queued = (await install.generated()).find((id) => id !== made.id);
+  assert.ok(queued, "the next track had been made and queued");
+  const outcomes = (id) => readFile(path.join(install.root, "state", "generated", id, "outcomes.jsonl"), "utf8");
+  assert.match(await outcomes(made.id), /"outcome":"completed"/u);
+  await assert.rejects(outcomes(queued), { code: "ENOENT" }, "the track that never played has no outcome");
+});
+
+test("songs Moondog plays while a stream's first track is being made end the stream, which plays nothing", async (t) => {
+  const install = await fakeInstall(t);
+  const generator = install.generator({ FAKE_SA3: "slow" });
+  await generator.save({ enabled: true });
+  const player = streamPlayer();
+  player.play = async (tracks) => { player.calls.push(["catalog", tracks.map((track) => track.title)]); };
+  const stream = createAtmosphereStream({ generator, player });
+  t.after(() => stream.stop());
+  const app = new MoondogApplication({ importsRoot: "/private/moondog-synthetic-missing-source", localGenerator: generator, atmosphereStream: stream,
+    musicPreviewPlayer: player, playbackService: "apple_music", domainServices: domainServices(),
+    musicCatalog: { findArtistReleases: async () => ({ releases: [] }), findPreview: async ({ title, artist }) => ({ state: "resolved", track: { title, artist_credit: artist,
+      preview_url: "https://audio-ssl.itunes.apple.com/pink-moon.m4a", catalog_url: "https://music.apple.com/us/song/1" } }) } });
+  const starting = app.startStream({ descriptors: [{ term: "ambient", facet: "genre", source: "request" }, { term: "soft pads", facet: "instrument", source: "request" }],
+    seconds: 60, minutes: 30 }, { request: "keep some ambient soft pads going" }).catch((error) => error);
+  await until(() => generator.busy());
+  await app.playMusicPreview({ tracks: [{ title: "Pink Moon", artist: "Nick Drake" }] });
+  assert.equal(app.streamStatus(), null);
+  assert.equal((await starting).code, "generation_stopped");
+  await until(() => !generator.busy());
+  await new Promise((resolve) => setTimeout(resolve, 1700));
+  assert.ok(!player.calls.some(([kind]) => kind === "play"), "the stream's first track never plays");
+  assert.deepEqual(player.calls, [["catalog", ["Pink Moon"]]], "the songs asked for keep playing");
+  assert.deepEqual(await install.generated(), [], "the stopped run leaves no track behind");
+});
+
+test("a stream stopped before its first track plays leaves the music before it playing", async (t) => {
+  const install = await fakeInstall(t);
+  const generator = install.generator({ FAKE_SA3: "slow" });
+  await generator.save({ enabled: true });
+  const player = streamPlayer();
+  const stream = createAtmosphereStream({ generator, player });
+  const starting = stream.start({ compiled: compiledTaste, title: "Late tide", seconds: 15, minutes: 10, receipt: {} }).catch((error) => error);
+  await until(() => generator.busy());
+  // Music making turned off, for one, while the first track is made.
+  assert.deepEqual(stream.stop("generation_off"), { tracks_made: 0 });
+  assert.equal((await starting).code, "generation_stopped");
+  await until(() => !generator.busy());
+  assert.deepEqual(player.calls, [], "the player was never touched");
 });
 
 test("the terminal player reports a made track skipped past the end of its queue, and /stop is no skip", async (t) => {
