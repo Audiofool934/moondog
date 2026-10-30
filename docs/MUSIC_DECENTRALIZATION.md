@@ -350,7 +350,9 @@ The endpoints come only from sources that clear the source-terms gate.
   The license also sets attribution duties when Moondog distributes or makes available the weights, a derivative of them, or a product or service that uses any portion of them.
   The duties are a copy of the license, a Notice file, and a prominent "Powered by Stability AI" display.
   A Moondog release that runs Stable Audio 3 likely counts as such a product, even when listeners fetch the weights themselves.
-  Settings, `/generation` and these docs already say "Powered by Stability AI"; the copy of the license and the Notice file still wait for the owner before the next public release.
+  Settings, `/generation` and these docs say "Powered by Stability AI".
+  Since 2026-10-30 the repository and the npm package ship a copy of the license in `licenses/stability-ai-community-license.md` and a `NOTICE` file with the attribution notice, and the desktop app carries both inside its bundle.
+  Publishing the first release that contains them is the owner's acceptance of the license for a public product.
   Its T5Gemma text encoder is under the Gemma Terms of Use.
   Sung songs need a second model, local or a closed service.
 - Deciding whether profile layers that hold live Spotify Web API data (the recent-play sync and top artists) may shape a generation prompt, given Spotify Developer Policy sections III.13 and III.14.
