@@ -166,6 +166,15 @@ export function createPreviews({ send, onChange }) {
           if (full.status?.error && full.status.error !== "unavailable") void api.check();
         }
       }
+      // A made track queued behind this queue's last one, as Moondog's stream does.
+      if (message.type === "preview-enqueue" && message.id === id && message.track?.generated === true) {
+        const media = generatedMedia(message.track.media_url);
+        if (!media || queue.some((track) => !track.generated)) return;
+        queue.push({ title: String(message.track.title ?? ""), artist_credit: "", preview_url: media, catalog_url: null, image: null,
+          generated: true, generated_id: media.split("/").at(-1),
+          duration_seconds: Number.isFinite(message.track.duration_seconds) ? message.track.duration_seconds : null });
+        onChange();
+      }
       if (message.type === "preview-control" && message.id === id) {
         if (message.action === "skip") api.next();
         if (message.action === "stop") stop(false);
@@ -208,7 +217,10 @@ export function createPreviews({ send, onChange }) {
         if (index + 1 >= queue.length) return stop();
         return void bridge({ type: "next" });
       }
-      index + 1 < queue.length ? load(index + 1) : stop();
+      if (index + 1 < queue.length) return load(index + 1);
+      // A made track skipped past the end of its queue: Moondog's stream moves on once its next track is made.
+      if (current()?.generated) report("skipped");
+      stop();
     },
     stop() { stop(); },
     seek(ms) {

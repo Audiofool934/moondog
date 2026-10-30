@@ -120,7 +120,7 @@ export async function createTerminalPreviewPlayer({
     const controller = new AbortController();
     const downloads = new Map();
     // skip() ends the song playing, or the download of the song about to play.
-    const current = { controller, skipDownload: null };
+    const current = { controller, skipDownload: null, tracks };
     queue = current;
     const fetchFile = (index) => {
       if (!downloads.has(index)) {
@@ -156,8 +156,9 @@ export async function createTerminalPreviewPlayer({
           }
           emit({ type: "playing", ...song });
           const how = await playFile(file);
-          // A made track that played to its end, or that could not play, as the loop back from listening counts it.
-          if (generated && !controller.signal.aborted && how !== "stopped") emit({ type: how === "ended" ? "finished" : "failed", ...song });
+          // A made track that played to its end, that /skip ended, or that could not play, as the loop
+          // back from listening and Moondog's stream count it; /stop aborts the queue first.
+          if (generated && !controller.signal.aborted) emit({ type: { ended: "finished", stopped: "skipped", failed: "failed" }[how], ...song });
           if (!tracks[index].file) await rm(file, { force: true });
           if (controller.signal.aborted) break;
         }
@@ -213,6 +214,13 @@ export async function createTerminalPreviewPlayer({
       const track = { title: name, artist_credit: "", generated: true, id: String(id ?? "") };
       emit({ type: "queue", tracks: [{ title: track.title, artist_credit: "", generated: true }], album: null });
       start([{ ...track, file }]);
+    },
+    // A made track queued behind the one playing, as Moondog's stream does; with nothing playing, it plays now.
+    enqueueGenerated({ id, title, file } = {}) {
+      const name = String(title ?? "").trim();
+      if (closed || !name || typeof file !== "string" || !path.isAbsolute(file)) return;
+      if (!queue || !queue.tracks.every((track) => track.generated)) return this.playGenerated({ id, title, file });
+      queue.tracks.push({ title: name, artist_credit: "", generated: true, id: String(id ?? ""), file });
     },
     // Ends the song now playing, or still loading; the next one starts after it.
     skip() {

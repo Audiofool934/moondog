@@ -145,6 +145,8 @@ const KINDS = [
   [/^moondog_music_preview$/u, "previews"],
   [/^moondog_make_track$/u, "make"],
   [/^moondog_play_made_track$/u, "play"],
+  [/^moondog_start_stream$/u, "make"],
+  [/^moondog_stop_stream$/u, "pause"],
   [/^moondog_netease_control$/u, (args) => ({ pause: "pause", stop: "pause", next: "skip", previous: "skip" })[args?.action] ?? "play"],
   [/^moondog_netease_play$/u, (args) => (args?.mode === "queue" ? "queue" : "play")],
   [/^moondog_netease_search$/u, "search"],
@@ -1814,7 +1816,7 @@ const SIGN_IN_ERRORS = { connect_while_answering: "waitForReply", sign_in_busy: 
 const SETTINGS_MESSAGES = new Set(["models", "provider-models", "model-list", "endpoint", "devices", "memories", "auth-prompt", "auth-prompt-closed", "auth-event", "sign-in", "import", "notice", "netease-checked", "generation-checked"]);
 function receive({ data }) {
   if (!data?.type) return;
-  if (data.type === "preview" || data.type === "preview-control") { previews.receive(data); renderInspector(); return; }
+  if (data.type === "preview" || data.type === "preview-control" || data.type === "preview-enqueue") { previews.receive(data); renderInspector(); return; }
   if (SETTINGS_MESSAGES.has(data.type)) settings.receive(data);
   if (data.type === "model-list" && !data.error) { modelList = { models: data.models ?? [], default: data.default ?? null }; renderComposer(); }
   if (data.type === "devices" && devicePicker) {

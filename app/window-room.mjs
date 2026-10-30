@@ -318,7 +318,7 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     const now = await player.nowPlaying().catch(() => null);
     musicAppRunning = Boolean(now) && now.state !== "not_running";
     // Music the listener starts in the Music app stops Moondog's own player, so one thing plays at a time.
-    if (now?.state === "playing" && !musicAppPlaying) base.musicPreviewPlayer?.stop?.();
+    if (now?.state === "playing" && !musicAppPlaying) { base.atmosphereStream?.stop?.("other_music"); base.musicPreviewPlayer?.stop?.(); }
     musicAppPlaying = now?.state === "playing";
     if (!now?.song) return null;
     const id = `${now.song.id ?? now.song.title}\n${now.playlist?.id ?? ""}\n${now.shuffle}`;

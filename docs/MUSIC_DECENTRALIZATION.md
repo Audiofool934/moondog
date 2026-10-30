@@ -23,7 +23,12 @@ Moondog's own player reports how each made track landed: played through, skipped
 The agent sees its newest tracks with their sound and outcomes before it makes the next one, read again each reply so the terminal and the window share them, and leans toward what played through; that is the calibration loop, and the outcomes never become taste.
 Moondog's own replays are counted apart, so its picks never read as the listener asking again.
 The listener can ask to hear a made track again; one they name is recorded as their own replay and stays out of the ledger, but it does not yet enter recent attention.
-Likes on generated tracks, the analysis stack and the atmosphere stream are not built yet.
+The atmosphere stream followed the same day, when the owner opened it and so decided it fits Taste Over Volume.
+The listener asks for music to keep going, and Moondog plays one track made from their taste while it makes and queues the next, for up to three hours.
+Each track keeps the genres and features a different few of the other sounds, so the prompts differ; a track skipped within 30 seconds steers the stream away from what it featured, and a track played through counts for little in the background.
+Stopping it, other music Moondog plays (and, in the window, the Music app), or the time limit ends it, and only its newest tracks keep their audio, while every receipt stays.
+Without an analysis stack it does not yet score candidates against the profile before they play.
+Likes on generated tracks and the analysis stack are not built yet.
 
 ## What decentralization means here
 
@@ -148,7 +153,7 @@ Because generation outpaces listening, the analysis stack can score several cand
 The candidates should differ in their prompts, not only in their seeds, so the scoring has real choices.
 A non-stop stream comes close to the large undifferentiated feed that the charter's [Taste Over Volume](PRODUCT_CHARTER.md#taste-over-volume) principle warns against.
 Scoring each candidate against the profile before it plays is what keeps the stream selected.
-Whether a background stream fits that principle is an owner decision (see Owner gates).
+The owner decided on 2026-10-29 that a background stream fits that principle and opened it; until an analysis stack can score candidates, the stream is steered by the listener's skips instead.
 The stream can play in Moondog's own player, which already plays the tracks it makes.
 
 Atmosphere music is the limit of disintermediation at run time: the music is made and heard on the same machine.
@@ -359,7 +364,6 @@ The endpoints come only from sources that clear the source-terms gate.
   Bandcamp's acceptable-use policy may reach downloaded purchases.
 - Deciding whether Moondog plays local-library files with a player of its own, or hands that playback to the operating system or an existing player.
   Moondog already plays preview files itself, through afplay or ffplay in the terminal and an audio element in the window, and since 2026-10-29 the tracks it makes, which the window reads through a `moondog-media:` route that serves only those files.
-- Deciding whether a non-stop background stream fits the charter's Taste Over Volume principle.
 - Getting Bandcamp's written permission before any Moondog tooling reads Bandcamp pages or endpoints (see [BANDCAMP_NOTES.md](BANDCAMP_NOTES.md)).
 - Approving the artist package format before anyone outside the project publishes against it.
   The review first checks the existing carriers, and the embedding model must allow commercial use.

@@ -180,7 +180,8 @@ function agentCapabilityAllowed(descriptor) {
     (descriptor.capability_id.startsWith("netease.") &&
       spotifyCapabilityEffects.has(descriptor.effect)) ||
     (descriptor.capability_id === "music.preview.play" && descriptor.effect === "play_preview") ||
-    (["music.generate.local", "music.generate.replay"].includes(descriptor.capability_id) && descriptor.effect === "generate_local")
+    (["music.generate.local", "music.generate.replay", "music.generate.stream", "music.generate.stream.stop"].includes(descriptor.capability_id) &&
+      descriptor.effect === "generate_local")
   );
 }
 
@@ -3222,6 +3223,10 @@ function projectGeneratedTrack(value) {
 const trackLength = (seconds) => `${Math.floor(seconds / 60)}:${String(Math.round(seconds % 60)).padStart(2, "0")}`;
 
 function renderGeneratedTrack(value, t) {
+  if (value?.state === "streaming" && value.track) {
+    return [t("generate.made", { title: value.track.title, length: trackLength(value.track.seconds), seed: value.track.seed }),
+      t("generate.stream", { minutes: value.minutes })].join("\n");
+  }
   return value?.state === "playing" && value.track
     ? t("generate.made", { title: value.track.title, length: trackLength(value.track.seconds), seed: value.track.seed }) : null;
 }
@@ -5199,7 +5204,7 @@ function createToolFactories(
           name: descriptor.tool_name,
           label: descriptor.label,
           description:
-            "Make one instrumental track on this Mac with the listener's own Stable Audio 3, and play it at once in Moondog's player, whatever the music service. Use it only when the listener asks Moondog to make, compose or generate music; never to play existing songs. It needs no web research, search, candidate set or playlist plan: read the profile if it helps, then call this tool. Translate their taste into plain sound descriptors and give each its source: reading (from = a claim_id of the saved reading; none without one), choice (from = an artist or song they marked Like), recent (from = an artist in recent_attention.stored_plays, the last four weeks; not the profile's longer recent lists or Spotify's own top artists), moment (the listener_clock), or request (their words in this message). A term is one idea in a few plain words for a genre, instrument, texture, mood or rhythm, such as dream pop, rhodes piano, tape saturation, unhurried, brushed drums. moment is the listener's local day and hour as listener_clock gives them; a time the listener names, such as tonight, is request. Never put an artist or song name in a term or the title. The host leaves out any term that names one, cannot be traced, comes from something they Avoid, or asks for singing (the model makes instrumentals only); left_out says which and why. A track needs at least one genre, instrument, texture or mood. If state is not_made, fix the descriptors once from left_out and reason, or tell the listener what was missing. bpm is optional. seconds is 15 to 380, 120 when left out. title is Moondog's own name for the record, a few plain words. Making a track takes from a few seconds to about a minute; make at most one per message. product.made_tracks lists Moondog's newest tracks with their sound and outcomes: lean away from the sound of tracks the listener skipped and toward what they played through or asked for again by name (asked_for_again). replayed_by_moondog counts Moondog's own replays and says nothing about the listener. These are outcomes of Moondog's own picks, not the listener's taste; never call them likes. Once it plays, say in one or two sentences what shaped it in everyday words (their reading, a Like, what they play lately, the hour). Describe only what the result's prompt and shaped_by hold: the model takes no key, chord or melody, so never name one. Do not recite the descriptors, the prompt or the seed; the host writes its own line under the reply.",
+            "Make one instrumental track on this Mac with the listener's own Stable Audio 3, and play it at once in Moondog's player, whatever the music service. Use it only when the listener asks Moondog to make, compose or generate music; never to play existing songs. It needs no web research, search, candidate set or playlist plan: read the profile if it helps, then call this tool. Translate their taste into plain sound descriptors and give each its source: reading (from = a claim_id of the saved reading; none without one), choice (from = an artist or song they marked Like), recent (from = an artist in recent_attention.stored_plays, the last four weeks; not the profile's longer recent lists or Spotify's own top artists), moment (the listener_clock), or request (their words in this message). A term is one idea in a few plain words for a genre, instrument, texture, mood or rhythm, such as dream pop, rhodes piano, tape saturation, unhurried, brushed drums. Say what is in the sound, never what is absent (no drums): the model can't leave a named sound out, so naming it brings it in. moment is the listener's local day and hour as listener_clock gives them; a time the listener names, such as tonight, is request. Never put an artist or song name in a term or the title. The host leaves out any term that names one, cannot be traced, comes from something they Avoid, or asks for singing (the model makes instrumentals only); left_out says which and why. A track needs at least one genre, instrument, texture or mood. If state is not_made, fix the descriptors once from left_out and reason, or tell the listener what was missing. bpm is optional. seconds is 15 to 380, 120 when left out. title is Moondog's own name for the record, a few plain words. Making a track takes from a few seconds to about a minute; make at most one per message. Making one ends Moondog's stream if one runs. product.made_tracks lists Moondog's newest tracks with their sound and outcomes: lean away from the sound of tracks the listener skipped and toward what they played through or asked for again by name (asked_for_again). replayed_by_moondog counts Moondog's own replays and says nothing about the listener. A track with stream: true played in the background: its completions say little, but its skips still count. These are outcomes of Moondog's own picks, not the listener's taste; never call them likes. Once it plays, say in one or two sentences what shaped it in everyday words (their reading, a Like, what they play lately, the hour). Describe only what the result's prompt and shaped_by hold: the model takes no key, chord or melody, so never name one. Do not recite the descriptors, the prompt or the seed; the host writes its own line under the reply.",
           parameters: Type.Object(
             {
               descriptors: Type.Array(descriptorSchema, { minItems: 1, maxItems: DESCRIPTOR_LIMITS.total }),
@@ -5228,12 +5233,76 @@ function createToolFactories(
       },
     ],
     [
+      "music.generate.stream",
+      (descriptor) => {
+        const literals = (values) => Type.Union(values.map((value) => Type.Literal(value)));
+        const descriptorSchema = Type.Object(
+          {
+            term: Type.String({ minLength: 1, maxLength: DESCRIPTOR_LIMITS.characters }),
+            facet: literals(DESCRIPTOR_FACETS),
+            source: literals(DESCRIPTOR_SOURCES),
+            from: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
+          },
+          { additionalProperties: false },
+        );
+        return {
+          name: descriptor.tool_name,
+          label: descriptor.label,
+          description:
+            "Start Moondog's stream: instrumental tracks made on this Mac from the listener's taste, one after another, for background listening (work, reading, a long evening). The first plays at once; each next one is made while the last plays, and features a different few of the descriptors, so give a broad set: genres, plus several instruments, textures, moods and rhythms. Descriptors, sources and rules are the same as moondog_make_track. A track the listener skips within 30 seconds steers the stream away from what it featured. seconds is each track's length, 60 to 380, 150 when left out; minutes is how long the stream runs, 10 to 180, 60 when left out. Starting one replaces a stream already running, and making a single track ends it. Use it only when the listener asks for music to keep going in the background; for one track, use moondog_make_track. Say in one or two sentences what shapes it, and that they can stop it any time; the host writes its own line under the reply.",
+          parameters: Type.Object(
+            {
+              descriptors: Type.Array(descriptorSchema, { minItems: 1, maxItems: DESCRIPTOR_LIMITS.total }),
+              bpm: Type.Optional(Type.Integer({ minimum: BPM_RANGE.min, maximum: BPM_RANGE.max })),
+              bpm_source: Type.Optional(literals(["request", "moment", "reading"])),
+              seconds: Type.Optional(Type.Integer({ minimum: 60, maximum: GENERATION_SECONDS.max })),
+              minutes: Type.Optional(Type.Integer({ minimum: 10, maximum: 180 })),
+              title: Type.Optional(Type.String({ minLength: 1, maxLength: 60 })),
+            },
+            { additionalProperties: false },
+          ),
+          executionMode: "sequential",
+          execute: executeDomain(
+            async (_toolCallId, parameters, signal, onUpdate) => application.startStream({
+              descriptors: parameters.descriptors, bpm: parameters.bpm, bpmSource: parameters.bpm_source,
+              seconds: parameters.seconds ?? 150, minutes: parameters.minutes ?? 60, title: parameters.title,
+            }, {
+              ...(generationContext?.() ?? {}),
+              signal,
+              onProgress: ({ stage }) => onUpdate?.({ content: [{ type: "text", text: stage }], details: { stage } }),
+            }),
+            (value) => {
+              if (value?.state === "not_made") return projectGeneratedTrack(value);
+              if (value?.state !== "streaming") throw new Error("domain_result_invalid:stream");
+              return { ...projectGeneratedTrack({ ...value, state: "playing" }), state: "streaming", minutes: safeNonnegativeInteger(value.minutes ?? 0, "stream_minutes") };
+            },
+            onGeneratedTrack,
+          ),
+        };
+      },
+    ],
+    [
+      "music.generate.stream.stop",
+      (descriptor) => ({
+        name: descriptor.tool_name,
+        label: descriptor.label,
+        description: "Stop Moondog's stream of tracks made on this Mac when the listener asks to stop it. The track playing stops too.",
+        parameters: emptyParameters,
+        executionMode: "sequential",
+        execute: executeDomain(
+          async () => application.stopStream(),
+          (value) => ({ state: value?.state === "stopped" ? "stopped" : "not_running",
+            ...(Number.isInteger(value?.tracks_made) ? { tracks_made: value.tracks_made } : {}) }),
+        ),
+      }),
+    ],
+    [
       "music.generate.replay",
       (descriptor) => ({
         name: descriptor.tool_name,
         label: descriptor.label,
         description:
-          "Play again a track Moondog made on this Mac, by its id from product.made_tracks, in Moondog's own player. Use it when the listener asks to hear one of Moondog's tracks again; to make a new one, use moondog_make_track. chosen_by says whether the listener named it (their own pick) or Moondog chose it.",
+          "Play again a track Moondog made on this Mac, by its id from product.made_tracks, in Moondog's own player. Use it when the listener asks to hear one of Moondog's tracks again; to make a new one, use moondog_make_track. A track with audio_kept: false has only its receipt left, so it can't play again. Playing one again ends Moondog's stream if one runs. chosen_by says whether the listener named it (their own pick) or Moondog chose it.",
         parameters: Type.Object(
           { id: Type.String({ minLength: 36, maxLength: 36 }) },
           { additionalProperties: false },
@@ -6551,7 +6620,7 @@ function toolForModel(tool) {
 const SERVICE_NAMES = { apple_music: "Apple Music", netease: "NetEase Music (网易云音乐)" };
 
 // Making a track plays in Moondog's own player under every music service.
-const GENERATION_LINE = "- moondog_make_track makes an instrumental track on this Mac from the listener's taste and plays it in Moondog's own player, whatever the music service. Use it only when they ask Moondog to make, compose or generate music, not to play songs that exist. moondog_play_made_track plays again one Moondog already made (product.made_tracks).";
+const GENERATION_LINE = "- moondog_make_track makes an instrumental track on this Mac from the listener's taste and plays it in Moondog's own player, whatever the music service. Use it only when they ask Moondog to make, compose or generate music, not to play songs that exist. moondog_play_made_track plays again one Moondog already made (product.made_tracks). When the stream tools are offered, moondog_start_stream keeps making tracks one after another for background listening, and moondog_stop_stream ends it.";
 
 function sessionAvailability({ spotifyReady, spotifyPlaybackReady = spotifyReady, previewReady, playbackService = "apple_music", neteaseReady = false, localGenerationReady = false }) {
   if (spotifyPlaybackReady) return localGenerationReady ? `\n\nSession availability:\n${GENERATION_LINE}` : "";
@@ -7285,8 +7354,9 @@ function productContext(application, query, now, { runtime, source }) {
     spotify_playback_context: application.spotifyPlaybackContextStatus?.() ?? null,
     // A host that cannot know the listener's time zone passes no clock, and the time stays unknown.
     listener_clock: now ? listenerClock(now) : null,
-    // The tracks Moondog made lately and how each landed, once it can make them.
+    // The tracks Moondog made lately and how each landed, once it can make them, and its stream while one runs.
     ...(application.madeTracks?.() ? { made_tracks: application.madeTracks() } : {}),
+    ...(application.streamStatus?.() ? { stream: application.streamStatus() } : {}),
     reply_language: replyLanguage(query, application),
   };
 }
@@ -7467,7 +7537,7 @@ export class PiAgentRuntime {
         if (typeof value?.track?.title === "string") this.generatedTitles.add(avoidKey(value.track.title));
       },
       onGeneratedTrack: (value) => {
-        if (value?.state !== "playing") return;
+        if (!["playing", "streaming"].includes(value?.state)) return;
         this.generatedTitles.add(avoidKey(value.track.title));
         this.activePromptState?.generatedTracks.push(structuredClone(value));
       },

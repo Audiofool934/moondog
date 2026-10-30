@@ -4,7 +4,7 @@ import test from "node:test";
 import { stableAudioPrompt } from "../../src/integrations/stable-audio/local-generator.mjs";
 import { openEphemeralListeningHistoryStore } from "../../src/profile/listening-history-store.mjs";
 import { suggestionEntry, suggestionIdentities } from "../../src/profile/moondog-suggestions.mjs";
-import { compileTaste, listenedNames, namedBy } from "../../src/profile/taste-compiler.mjs";
+import { compileTaste, listenedNames, namedBy, streamVariation } from "../../src/profile/taste-compiler.mjs";
 
 // A fictional listener: a saved finding about a scene, a Like, an Avoid and what they play lately.
 const context = (extra = {}) => ({
@@ -77,6 +77,20 @@ test("a Like of a song whose artist is now avoided shapes nothing", () => {
     avoids: [{ stance: "avoid", subject: "artist", name: "Low Lanterns" }],
   }));
   assert.deepEqual(reasons(compiled), { "glassy synths": "avoid" });
+});
+
+test("each stream track keeps the genres and features a different few of the other sounds", () => {
+  const taste = { descriptors: ["dream pop", "rhodes", "tape hiss", "brushed drums", "hushed", "warm pads"]
+    .map((term, index) => ({ term, facet: index === 0 ? "genre" : "texture" })), bpm: 80 };
+  const tracks = [0, 1, 2].map((position) => streamVariation(taste, position));
+  assert.deepEqual(tracks.map((track) => track.featured), [["rhodes", "tape hiss", "brushed drums"], ["hushed", "warm pads", "rhodes"], ["tape hiss", "brushed drums", "hushed"]]);
+  assert.ok(tracks.every((track) => track.descriptors[0].term === "dream pop"));
+  assert.deepEqual(tracks.map((track) => track.bpm), [80, 77, 83]);
+  // A skipped track's sounds stay out while any other sound is left; only with none left do they come back.
+  // Each track leaves one of the kept sounds out, so the next track can still change.
+  assert.deepEqual([0, 1].map((position) => streamVariation(taste, position, new Set(["rhodes", "tape hiss", "brushed drums"])).featured), [["hushed"], ["warm pads"]]);
+  assert.deepEqual(streamVariation(taste, 0, new Set(["rhodes", "tape hiss", "brushed drums", "hushed"])).featured, ["warm pads"]);
+  assert.deepEqual(streamVariation(taste, 0, new Set(["rhodes", "tape hiss", "brushed drums", "hushed", "warm pads"])).featured, ["rhodes", "tape hiss", "brushed drums"]);
 });
 
 test("a term that lists several sounds becomes several descriptors with one source", () => {

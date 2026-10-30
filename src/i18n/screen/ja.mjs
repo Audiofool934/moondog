@@ -1050,4 +1050,6 @@ export default {
   "Let Moondog make music on this Mac": "この Mac で Moondog に音楽を作らせる",
   "Make a track": "曲を作る",
   "Play a track Moondog made": "Moondog が作った曲をもう一度かける",
+  "Start a stream": "音楽の流れを始める",
+  "Stop the stream": "音楽の流れを止める",
 };

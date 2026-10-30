@@ -10,6 +10,7 @@ import { homedir } from "node:os";
 import path from "node:path";
 
 import { resolveMoondogStateDirectory } from "../../core/state-directory.mjs";
+import { streamVariation } from "../../profile/taste-compiler.mjs";
 import { resolveMoondogAuthFile } from "../../runtime/pi/persistent-credential-store.mjs";
 
 // The weights Stable Audio 3 Medium needs for text to music: the text encoder, the model and its decoder.
@@ -298,7 +299,7 @@ export function createLocalGenerator({
     });
   });
 
-  const remember = (receipt, outcomes = []) => {
+  const remember = (receipt, outcomes = [], audioKept = true) => {
     if (!isGeneratedTrackId(receipt?.generated_track_id)) return;
     made.set(receipt.generated_track_id, {
       id: receipt.generated_track_id,
@@ -306,6 +307,9 @@ export function createLocalGenerator({
       made_at: receipt.created_at,
       seconds: receipt.audio?.duration_seconds ?? receipt.generator?.seconds ?? null,
       sound: (Array.isArray(receipt.shaped_by) ? receipt.shaped_by : []).map((entry) => entry?.term).filter((term) => typeof term === "string").slice(0, 8),
+      ...(receipt.stream ? { stream: true } : {}),
+      // A stream keeps only its newest tracks' audio; the agent must not offer the rest again.
+      ...(audioKept ? {} : { audio_kept: false }),
       outcomes,
     });
   };
@@ -343,7 +347,8 @@ export function createLocalGenerator({
           const receipt = JSON.parse(await readFile(path.join(tracksDirectory(), name, "receipt.json"), "utf8"));
           const outcomes = (await readFile(path.join(tracksDirectory(), name, "outcomes.jsonl"), "utf8").catch(() => ""))
             .split("\n").filter(Boolean).flatMap((line) => { try { return [JSON.parse(line)]; } catch { return []; } });
-          remember(receipt, outcomes);
+          const audioKept = await stat(path.join(tracksDirectory(), name, "track.wav")).then(() => true, () => false);
+          remember(receipt, outcomes, audioKept);
         } catch { /* A folder without a readable receipt is not a track. */ }
       }
     },
@@ -386,6 +391,13 @@ export function createLocalGenerator({
     /** Waits for the outcomes still being written, as a room does before it closes. */
     flush: () => Promise.allSettled([...writing]),
     // A replay of the track playing now starts it over; that is not a skip.
+    // A stream keeps only its newest tracks' audio; the receipt and outcomes of the rest stay.
+    async removeAudio(id) {
+      if (!isGeneratedTrackId(id)) return;
+      await rm(path.join(tracksDirectory(), id, "track.wav"), { force: true }).catch(() => {});
+      const entry = made.get(id);
+      if (entry) entry.audio_kept = false;
+    },
     restart(id) {
       if (playing?.id === id) playing = null;
     },
@@ -480,6 +492,172 @@ export function createLocalGenerator({
         throw error;
       } finally {
         running = null;
+      }
+    },
+  };
+}
+
+// Moondog's atmosphere stream (docs/MUSIC_DECENTRALIZATION.md): from one compiled taste, a track at a
+// time, each made while the last one plays and queued behind it, so a skip moves straight on. Each
+// track features a different few of the taste's sounds; one the listener skips within 30 seconds
+// steers the stream away from what it featured, and a track played through counts for little in the
+// background. Stopping the player, other music, or the time limit ends it. One stream per room, on
+// the room's one generator; only its newest tracks keep their audio, and every receipt stays.
+const STREAM_SKIP_MS = 30_000;
+export function createAtmosphereStream({ generator, player, now = Date.now, keepAudio = 3 }) {
+  let stream = null;
+  const end = (reason) => {
+    const ending = stream;
+    if (!ending) return null;
+    stream = null;
+    ending.controller.abort();
+    ending.ended = reason;
+    return ending;
+  };
+  const trackFor = (ending, position) => {
+    const variation = streamVariation(ending.compiled, position, ending.leaveOut);
+    return { variation, prompt: stableAudioPrompt(variation), title: `${ending.title} · ${position + 1}`,
+      receipt: { ...ending.receipt, shaped_by: variation.descriptors, ...(variation.bpm ? { bpm: variation.bpm } : {}),
+        stream: { started_at: new Date(ending.startedAt).toISOString(), position: position + 1, featured: variation.featured } } };
+  };
+  // The tracks that started playing keep their audio, the newest few; the rest keep their receipts.
+  const prune = (current) => {
+    const played = current.made.filter((made) => made.started);
+    for (const made of played.slice(0, Math.max(0, played.length - keepAudio))) {
+      if (!made.pruned) { made.pruned = true; void generator.removeAudio?.(made.id); }
+    }
+  };
+  // How long the track playing now was heard, pauses left out, as its outcome counts it.
+  const heard = (playing) => playing.heardMs + (playing.since === null ? 0 : now() - playing.since);
+  // Another track fits when it would end within the time limit, after what is left of the one playing now.
+  const fits = (current) => {
+    const playing = current.current;
+    const left = playing && !playing.finished ? Math.max(0, (playing.seconds ?? current.seconds) * 1000 - heard(playing)) : 0;
+    return now() + left + current.seconds * 1000 <= current.endsAt;
+  };
+  // The track playing now was left early: within 30 seconds, what it featured stays out from now on.
+  const leftEarly = (current) => {
+    const before = current.current;
+    if (!before || before.finished || before.steered || heard(before) >= STREAM_SKIP_MS) return;
+    before.steered = true;
+    for (const term of current.made.find((made) => made.id === before.id)?.featured ?? []) current.leaveOut.add(term);
+  };
+  // Nothing is queued after the track that just ended: the next plays once made, or the stream ends.
+  const ranDry = (current) => {
+    if (current.making || fits(current)) {
+      current.waiting = true;
+      void makeNext();
+    } else end("time");
+  };
+  const makeNext = async () => {
+    const current = stream;
+    if (!current || current.making || current.next || !fits(current)) return;
+    current.making = true;
+    try {
+      const { prompt, title, receipt, variation } = trackFor(current, current.made.length);
+      const made = await generator.generate({ prompt, seconds: current.seconds, title, receipt }, { signal: current.controller.signal });
+      if (stream !== current) return;
+      const file = await generator.trackFile(made.id);
+      if (stream !== current) return;
+      current.made.push({ id: made.id, featured: variation.featured, started: false, seconds: made.duration_seconds });
+      current.next = made.id;
+      const track = { id: made.id, title: made.title, seconds: made.duration_seconds, file };
+      // A queue that ran dry while this was made starts again with it.
+      if (current.waiting) { current.waiting = false; player.playGenerated(track); } else player.enqueueGenerated(track);
+      current.onTrack?.(made);
+    } catch (error) {
+      // A run stopped with the stream is not a failure; anything else ends the stream.
+      if (stream === current && error?.code !== "generation_stopped") end("failed");
+    } finally {
+      current.making = false;
+    }
+  };
+  return {
+    active: () => stream !== null,
+    status() {
+      if (!stream) return null;
+      // Fixed times, so the agent's context changes only when the stream does.
+      return { tracks_made: stream.made.length, started_at: new Date(stream.startedAt).toISOString(),
+        ends_at: new Date(stream.endsAt).toISOString(), steering_away_from: [...stream.leaveOut] };
+    },
+    /**
+     * Starts a stream from a compiled taste and plays its first track; the next is made at once.
+     * beforePlay runs once the first track exists, so other music pauses only when there is one to
+     * play. Returns the first track. A stream already running gives way to the new one.
+     */
+    async start({ compiled, title, seconds, minutes, receipt = {} }, { signal, onProgress, onTrack, beforePlay } = {}) {
+      const previous = end("replaced");
+      if (previous) player.stop?.();
+      const current = { compiled, title, seconds, receipt, onTrack, startedAt: now(), endsAt: now() + minutes * 60_000,
+        made: [], leaveOut: new Set(), current: null, next: null, waiting: false, making: true, controller: new AbortController() };
+      stream = current;
+      const stopped = () => Object.assign(new Error("The stream was stopped before it began."), { code: "generation_stopped" });
+      try {
+        const { prompt, title: first, receipt: firstReceipt, variation } = trackFor(current, 0);
+        const made = await generator.generate({ prompt, seconds, title: first, receipt: firstReceipt },
+          { signal: signal ? AbortSignal.any([signal, current.controller.signal]) : current.controller.signal, onProgress });
+        const file = await generator.trackFile(made.id);
+        // A stream replaced, or a reply stopped, while the first track was made plays nothing.
+        if (stream !== current || signal?.aborted) throw stopped();
+        await beforePlay?.();
+        if (stream !== current || signal?.aborted) throw stopped();
+        current.made.push({ id: made.id, featured: variation.featured, started: true, seconds: made.duration_seconds });
+        current.current = { id: made.id, heardMs: 0, since: now(), finished: false, seconds: made.duration_seconds };
+        current.making = false;
+        // Whatever was playing stops for the first track; that stop is not the listener's.
+        current.starting = true;
+        try { player.playGenerated({ id: made.id, title: made.title, seconds: made.duration_seconds, file }); } finally { current.starting = false; }
+        onTrack?.(made);
+        void makeNext();
+        return { made, prompt, variation };
+      } catch (error) {
+        if (stream === current) end("failed");
+        throw error;
+      }
+    },
+    stop(reason = "asked") {
+      const ending = end(reason);
+      if (ending) player.stop?.();
+      return ending ? { tracks_made: ending.made.length } : null;
+    },
+    /** What the room's player reports, which moves the stream along or ends it. */
+    observe(event) {
+      const current = stream;
+      // Until its first track plays, what the player reports is about the music before it.
+      if (!current || !current.current) return;
+      const track = event?.track;
+      const ours = (id) => current.made.some((made) => made.id === id);
+      // A queue or a song that is not one of the stream's tracks is other music, which ends the stream.
+      if (event?.type === "queue" || event?.type === "playing") {
+        const items = Array.isArray(event.tracks) ? event.tracks : track ? [track] : [];
+        if (items.some((item) => !item?.generated || (item.id && !ours(item.id)))) { end("other_music"); return; }
+      }
+      const isCurrent = track?.id && track.id === current.current.id;
+      if (event?.type === "playing" && track?.id && track.id === current.next) {
+        leftEarly(current);
+        const made = current.made.find((entry) => entry.id === track.id);
+        current.current = { id: track.id, heardMs: 0, since: now(), finished: false, seconds: made?.seconds };
+        if (made) made.started = true;
+        current.next = null;
+        current.waiting = false;
+        prune(current);
+        void makeNext();
+      } else if (event?.type === "paused" && isCurrent && current.current.since !== null) {
+        current.current.heardMs += now() - current.current.since;
+        current.current.since = null;
+      } else if (event?.type === "playing" && isCurrent && current.current.since === null) {
+        current.current.since = now();
+      } else if (event?.type === "skipped" && isCurrent) {
+        // A skip past the end of the queue moves on to the next track once it is made.
+        leftEarly(current);
+        current.current.finished = true;
+        if (!current.next) ranDry(current);
+      } else if ((event?.type === "finished" || event?.type === "failed") && isCurrent) {
+        // A track that could not play says nothing about the listener; it is passed over like one that ended.
+        current.current.finished = true;
+        if (!current.next) ranDry(current);
+      } else if (event?.type === "stopped" && !current.waiting && !current.starting) {
+        end("stopped");
       }
     },
   };

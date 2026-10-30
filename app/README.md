@@ -112,7 +112,7 @@ A model or music service chosen there lasts until the app quits, and sign-in and
   A click on a row unfolds that service's setup or its own controls (Spotify's devices and Disconnect), one row at a time.
   With the pointer on a row, a service that can play shows a switch at its right that uses it, and one that can't yet shows Set up.
   A Music generation group sits beside the services, with one Stable Audio 3 row: with the pointer on it, Turn on or Turn off, in words, once the install is found, and until then Set up, which unfolds its folder and Check again.
-  A track Moondog made plays in the window and reads "Made by Moondog" in now playing and the mini player.
+  A track Moondog made plays in the window and reads "Made by Moondog" in now playing and the mini player; during a stream, Up next shows the track Moondog made next.
   Changes are saved where the terminal reads them; the window never sees a key or token.
   The menu's list is `models.json`, each conversation's own model is `conversation-models.json`, and endpoints are `endpoints.json` (mode 600, with their keys), beside `settings.json`, so older Moondogs that read `settings.json` by a fixed shape keep working.
   OpenAI keeps a ChatGPT sign-in or an API key in `auth.json`; Moondog 0.2.0-beta.7 and older can't read a ChatGPT sign-in there.

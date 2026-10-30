@@ -224,6 +224,7 @@ export class MoondogApplication {
     musicPreviewPlayer = null,
     neteasePlayer = null,
     localGenerator = null,
+    atmosphereStream = null,
     musicApp = null,
     agentHostNotes = [],
     artistIdentityResolver = null,
@@ -271,6 +272,8 @@ export class MoondogApplication {
     this.neteasePlayer = neteasePlayer;
     // Stable Audio 3 on this Mac (src/integrations/stable-audio), shared by every conversation, so one track is made at a time.
     this.localGenerator = localGenerator;
+    // Moondog's atmosphere stream on that generator, one per room (src/integrations/stable-audio).
+    this.atmosphereStream = atmosphereStream;
     // The Music app on this Mac (src/integrations/apple-music/music-app.mjs), read for what the
     // listener plays there themselves.
     this.musicApp = musicApp;
@@ -556,8 +559,11 @@ export class MoondogApplication {
   async playMadeTrack({ id } = {}, { request = null, signal } = {}) {
     if (!this.localGenerationReady()) throw Object.assign(new Error("Local generation is not ready. The listener can turn it on in Settings or with /generation."), { code: "generation_not_ready" });
     const receipt = await this.localGenerator.receipt(id);
-    const file = receipt ? await this.localGenerator.trackFile(id) : null;
-    if (!file) throw Object.assign(new Error("There is no track Moondog made with that id on this Mac."), { code: "made_track_not_found" });
+    if (!receipt) throw Object.assign(new Error("There is no track Moondog made with that id on this Mac."), { code: "made_track_not_found" });
+    const file = await this.localGenerator.trackFile(id);
+    if (!file) throw Object.assign(new Error("That track was part of a stream, which keeps only its newest tracks' audio; its receipt is still here."), { code: "made_track_audio_not_kept" });
+    // Playing one of Moondog's tracks again ends its stream, on every surface.
+    await this.#endStream("replaced");
     const title = String(receipt.title ?? "");
     // Named means quoted, or the title with Moondog, as on every play path: an open request shares
     // words with the plain titles Moondog gives its records ("something for a rainy day").
@@ -579,24 +585,13 @@ export class MoondogApplication {
   // this Mac, and its play goes in the ledger as Moondog's own, never as the listener's attention.
   // moment and request come from the agent's host, not from the model.
   async makeTrack({ descriptors, bpm, bpmSource, seconds, title } = {}, { moment = null, request = null, transient = false, signal, onProgress } = {}) {
-    if (!this.localGenerationReady()) throw Object.assign(new Error("Local generation is not ready. The listener can turn it on in Settings or with /generation."), { code: "generation_not_ready" });
-    this.requireListenerAvoids();
-    const context = await this.#tasteContext({ descriptors, moment, request });
-    const compiled = compileTaste({ descriptors, bpm, bpm_source: bpmSource, title }, context);
+    const { compiled, receipt } = await this.#compileForGeneration({ descriptors, bpm, bpmSource, title }, { moment, request, transient });
     if (!compiled.usable) {
       return { state: "not_made", reason: compiled.descriptors.length ? "needs_a_sound" : "no_traceable_descriptors", dropped: compiled.dropped };
     }
     const prompt = stableAudioPrompt(compiled);
-    const made = await this.localGenerator.generate({
-      prompt, seconds, title: compiled.title,
-      receipt: {
-        shaped_by: compiled.descriptors, left_out: compiled.dropped,
-        ...(compiled.bpm ? { bpm: compiled.bpm, bpm_source: compiled.bpm_source } : {}),
-        // A conversation that read Spotify stays out of memory, and its words out of the receipt too.
-        ...(typeof request === "string" && !transient && !this.transientSpotifyContext ? { request: Array.from(request).slice(0, 300).join("") } : {}),
-        avoids_in_force: context.avoids.length,
-      },
-    }, { signal, onProgress });
+    await this.#endStream("replaced");
+    const made = await this.localGenerator.generate({ prompt, seconds, title: compiled.title, receipt }, { signal, onProgress });
     // A reply stopped as the track finished keeps the track, but plays nothing over what is on now.
     await this.quietOtherPlayers("apple_music", { signal });
     // The terminal plays the file itself; the window asks for it by id and never sees the path.
@@ -608,6 +603,60 @@ export class MoondogApplication {
     return { state: "playing", track: { id: made.id, title: made.title, seconds: made.duration_seconds, seed: made.seed },
       prompt, shaped_by: compiled.descriptors, sources: tasteSources(compiled.descriptors), left_out: compiled.dropped,
       ...(compiled.bpm ? { bpm: compiled.bpm } : {}), elapsed_ms: made.elapsed_ms };
+  }
+
+  // The taste compiled for a track or a stream, and what its receipts keep of why.
+  async #compileForGeneration({ descriptors, bpm, bpmSource, title }, { moment, request, transient }) {
+    if (!this.localGenerationReady()) throw Object.assign(new Error("Local generation is not ready. The listener can turn it on in Settings or with /generation."), { code: "generation_not_ready" });
+    this.requireListenerAvoids();
+    const context = await this.#tasteContext({ descriptors, moment, request });
+    const compiled = compileTaste({ descriptors, bpm, bpm_source: bpmSource, title }, context);
+    return { compiled, receipt: {
+      shaped_by: compiled.descriptors, left_out: compiled.dropped,
+      ...(compiled.bpm ? { bpm: compiled.bpm, bpm_source: compiled.bpm_source } : {}),
+      // A conversation that read Spotify stays out of memory, and its words out of the receipt too.
+      ...(typeof request === "string" && !transient && !this.transientSpotifyContext ? { request: Array.from(request).slice(0, 300).join("") } : {}),
+      avoids_in_force: context.avoids.length,
+    } };
+  }
+
+  // A stream needs a player that can queue a made track behind the one playing.
+  streamReady() {
+    return this.localGenerationReady() && typeof this.atmosphereStream?.start === "function" &&
+      typeof this.musicPreviewPlayer?.enqueueGenerated === "function";
+  }
+
+  streamStatus() {
+    return this.atmosphereStream?.status?.() ?? null;
+  }
+
+  // Starts Moondog's atmosphere stream from the listener's taste: its first track plays now, and
+  // each next one is made while the last plays. Every track goes in the ledger as Moondog's pick.
+  async startStream({ descriptors, bpm, bpmSource, seconds, minutes, title } = {}, { moment = null, request = null, transient = false, signal, onProgress } = {}) {
+    if (!this.streamReady()) throw Object.assign(new Error("A stream can't run here. Music making must be on, in the terminal room or the window."), { code: "stream_not_ready" });
+    const { compiled, receipt } = await this.#compileForGeneration({ descriptors, bpm, bpmSource, title }, { moment, request, transient });
+    if (!compiled.usable) {
+      return { state: "not_made", reason: compiled.descriptors.length ? "needs_a_sound" : "no_traceable_descriptors", dropped: compiled.dropped };
+    }
+    await this.#endStream("replaced");
+    // Other music pauses only once the first track exists, as for a single track.
+    const { made, prompt } = await this.atmosphereStream.start({ compiled, title: compiled.title, seconds, minutes, receipt },
+      { signal, onProgress, onTrack: (track) => this.#noteGeneratedPlay(track), beforePlay: () => this.quietOtherPlayers("apple_music", { signal }) });
+    return { state: "streaming", minutes, track: { id: made.id, title: made.title, seconds: made.duration_seconds, seed: made.seed },
+      prompt, shaped_by: compiled.descriptors, sources: tasteSources(compiled.descriptors), left_out: compiled.dropped,
+      ...(compiled.bpm ? { bpm: compiled.bpm } : {}), elapsed_ms: made.elapsed_ms };
+  }
+
+  // A single track or a new stream takes over from a running stream, once its next track stops being made.
+  async #endStream(reason) {
+    if (!this.atmosphereStream?.active?.()) return;
+    this.atmosphereStream.stop(reason);
+    for (let waited = 0; this.localGenerator?.busy?.() && waited < 5_000; waited += 100) await delay(100);
+  }
+
+  stopStream() {
+    const stopped = this.atmosphereStream?.stop?.("asked") ?? null;
+    return stopped ? { state: "stopped", tracks_made: stopped.tracks_made } : { state: "not_running" };
   }
 
   // What the compiler may trace a descriptor to. Each cited finding is read from the saved reading.
@@ -772,7 +821,10 @@ export class MoondogApplication {
         if (starting !== "netease" && this.neteaseReady() && (await this.neteasePlayer.nowPlaying()).state === "playing") await this.neteasePlayer.pause();
       })(),
       (async () => {
-        if (starting !== "apple_music") this.musicPreviewPlayer?.stop?.();
+        if (starting === "apple_music") return;
+        // Other music ends Moondog's stream too, even while its next track is still being made.
+        this.atmosphereStream?.stop?.("other_music");
+        this.musicPreviewPlayer?.stop?.();
       })(),
     ]);
   }
@@ -781,6 +833,7 @@ export class MoondogApplication {
   async #stopPlaybackService(service) {
     try {
       if (service === "apple_music") {
+        this.atmosphereStream?.stop?.("service_change");
         this.musicPreviewPlayer?.stop?.();
         // The listener's own Music app too, when it plays.
         if ((await this.musicApp?.nowPlaying?.())?.state === "playing") await this.musicApp.pause();
@@ -3428,13 +3481,15 @@ export class MoondogApplication {
       localGenerationReady: this.localGenerationReady(),
       }).map(capability => capability.state === "enabled" && this.#playbackServiceExcludes(capability.id)
         ? { ...capability, state: "blocked", blocked_by: capability.id === "listening.now" ? "no_readable_player" : capability.id === "music_app.control" ? "no_music_app" : capability.id === "playback.service" ? "no_playback_service"
-          : neteaseCapabilities.has(capability.id) ? "netease_not_ready" : "playback_service_not_spotify" } : capability),
+          : neteaseCapabilities.has(capability.id) ? "netease_not_ready" : capability.id.startsWith("music.generate.stream") ? "stream_not_ready"
+          : "playback_service_not_spotify" } : capability),
     };
   }
 
   // With another music service chosen, Spotify does not play or queue anything; NetEase's
   // tools exist only while it plays. What the listener plays is read wherever it can be.
   #playbackServiceExcludes(capabilityId) {
+    if (capabilityId.startsWith("music.generate.stream")) return !this.streamReady();
     if (capabilityId === "listening.now") return !this.listeningReadable();
     if (capabilityId === "music_app.control") return this.musicApp?.available !== true;
     if (capabilityId === "playback.service") return !this.playbackStatus().services.some((entry) => entry.available);

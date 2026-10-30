@@ -23,7 +23,7 @@ export function createWindowPreviewPlayer(port) {
     if (data?.type === "whole-songs") { wholeSongs = data.canPlay === true; return; }
     if (closed || queueId === null || data?.type !== "preview-event" || data.id !== queueId) return;
     const event = data.event;
-    if (!["queue", "loading", "playing", "paused", "finished", "failed", "stopped"].includes(event?.type)) return;
+    if (!["queue", "loading", "playing", "paused", "finished", "skipped", "failed", "stopped"].includes(event?.type)) return;
     if (event.type === "stopped") active = false;
     else if (event.type !== "failed") active = true;
     emit(event);
@@ -73,6 +73,17 @@ export function createWindowPreviewPlayer(port) {
         tracks: [{ title: name, artist_credit: "", generated: true, media_url: `moondog-media://generated/${id}`,
           ...(Number.isFinite(seconds) && seconds > 0 ? { duration_seconds: seconds } : {}) }],
         album: null,
+      });
+    },
+    // A made track queued behind the one playing, as Moondog's stream does; with nothing playing, it plays now.
+    enqueueGenerated({ id, title, seconds } = {}) {
+      const name = String(title ?? "").trim();
+      if (closed || !name || !generatedTrackId.test(String(id ?? ""))) return;
+      if (!active || queueId === null) return this.playGenerated({ id, title, seconds });
+      port.postMessage({
+        type: "preview-enqueue", id: queueId,
+        track: { title: name, artist_credit: "", generated: true, media_url: `moondog-media://generated/${id}`,
+          ...(Number.isFinite(seconds) && seconds > 0 ? { duration_seconds: seconds } : {}) },
       });
     },
     skip() {
