@@ -565,9 +565,11 @@ export class MoondogApplication {
     await this.quietOtherPlayers("apple_music", { signal });
     // A reply stopped before the track starts plays nothing, and no replay is recorded.
     if (signal?.aborted) throw Object.assign(new Error("Nothing was played, because the reply was stopped."), { code: "generation_stopped" });
-    await this.localGenerator.recordReplay?.(id, named ? "listener" : "moondog");
+    // Nothing waits between this check and the play; the replay is written once it plays.
+    this.localGenerator.restart?.(id);
     this.musicPreviewPlayer.playGenerated({ id, title, seconds: receipt.audio?.duration_seconds, file });
     if (!named) this.#noteGeneratedPlay({ id, title });
+    await this.localGenerator.recordReplay?.(id, named ? "listener" : "moondog");
     return { state: "playing", track: { id, title, seconds: receipt.audio?.duration_seconds ?? null }, chosen_by: named ? "listener" : "moondog" };
   }
 

@@ -299,7 +299,14 @@ test("a reply stopped while other players pause plays nothing, and a closing roo
     { code: "generation_stopped" });
   assert.deepEqual(room.played, []);
 
+  // A replay stopped while the other players pause plays nothing and records no replay.
+  const replaying = new AbortController();
+  musicApp.nowPlaying = async () => { replaying.abort(); return { state: "stopped" }; };
   const [made] = generator.recentTracks();
+  await assert.rejects(app.playMadeTrack({ id: made.id }, { signal: replaying.signal }), { code: "generation_stopped" });
+  assert.deepEqual(room.played, []);
+  assert.equal(generator.recentTracks()[0].outcomes.replayed_by_moondog, 0);
+
   generator.observe({ type: "playing", track: { generated: true, id: made.id, title: made.title } });
   generator.observe({ type: "stopped" });
   await generator.flush();

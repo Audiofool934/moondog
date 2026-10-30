@@ -383,8 +383,11 @@ export function createLocalGenerator({
     /** Waits for the outcomes still being written, as a room does before it closes. */
     flush: () => Promise.allSettled([...writing]),
     // A replay of the track playing now starts it over; that is not a skip.
-    recordReplay: (id, by) => {
+    restart(id) {
       if (playing?.id === id) playing = null;
+    },
+    recordReplay(id, by) {
+      this.restart(id);
       return recordOutcome(id, { outcome: "replayed", by: by === "listener" ? "listener" : "moondog" });
     },
     ready: () => current.state === "ready",
