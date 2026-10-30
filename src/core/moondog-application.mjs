@@ -886,6 +886,9 @@ export class MoondogApplication {
     }
     if (avoided) found.skipped_avoided_count = avoided;
     if (found.played.length) {
+      // Songs Moondog plays end its stream, even one whose first track is still being made; the
+      // stream's own tracks also start through quietOtherPlayers("apple_music"), so it can't do this.
+      this.atmosphereStream?.stop?.("other_music");
       await this.quietOtherPlayers("apple_music");
       await this.musicPreviewPlayer.play(structuredClone(found.played), found.album ? { album: structuredClone(found.album) } : {});
     }

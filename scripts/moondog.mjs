@@ -864,6 +864,8 @@ async function main() {
   // Moondog's atmosphere stream: one per room, on its generator and its player, moved along by what the player reports.
   const atmosphereStream = localGenerator && typeof previewPlayer?.enqueueGenerated === "function"
     ? createAtmosphereStream({ generator: localGenerator, player: previewPlayer }) : null;
+  // After the generator's own observer: the stream may stop the player while an event is still being
+  // delivered, and the generator must record that event's outcome first.
   const unobserveStream = atmosphereStream ? previewPlayer.subscribe?.((event) => atmosphereStream.observe(event)) : null;
   // Music making turned off, here or on the other surface, ends the stream.
   const unwatchStreamGeneration = atmosphereStream ? localGenerator.subscribe((status) => { if (status.state !== "ready") atmosphereStream.stop("generation_off"); }) : null;
