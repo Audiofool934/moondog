@@ -119,8 +119,8 @@ New listening views, corrections, and discovery interactions must work in the te
 - [ ] Publish the current source version to npm: choose the channel, configure npm trusted publishing, and tag the release.
   The npm registry still serves 0.1.0, which predates the updater.
 - [ ] Publish a security contact in `SECURITY.md` and a maintainer route.
-- [ ] Before the next public release that contains local generation, accept the Stability AI Community License for a public product and ship its copy and a Notice file ([Owner gates](MUSIC_DECENTRALIZATION.md#owner-gates)).
-  The copy and the `NOTICE` file are in the repository and the package since 2026-10-30; the owner accepts the license by publishing that release.
+- [x] Before the next public release that contains local generation, accept the Stability AI Community License for a public product and ship its copy and a Notice file ([Owner gates](MUSIC_DECENTRALIZATION.md#owner-gates)).
+  The copy and the `NOTICE` file are in the repository and the package since 2026-10-30; the owner accepted the license by publishing 0.3.0-beta.1, the first release that contains them (2026-10-30).
 - [x] Confirm which recent attention may shape a generation prompt, given Spotify's Developer Policy: stored plays, recent-play sync rows included; Spotify's own top artists stay out (2026-10-29, [Owner gates](MUSIC_DECENTRALIZATION.md#owner-gates)).
 
 These decisions are intentionally not inferred from code or local repository state.
