@@ -291,6 +291,8 @@ export async function runMoondogTui({
   let firstRunNote = null;
   let firstRunSetup = null;
   let firstRunTicket = 0;
+  // The skip being saved, which the room waits for before it closes.
+  let firstRunSaving = null;
   let stopWatchingFirstRun = null;
   let importPage = "start";
   let importReturnHome = false;
@@ -1850,10 +1852,11 @@ export async function runMoondogTui({
       ? tr("All set. /spotify help shows how to connect Spotify.")
       : tr("All set. Say anything, or press Tab to look around."), success);
   };
-  // The view closes at once; the saved skip then reaches the window too.
+  // The view closes at once; the saved skip then reaches the window too, and a room closed right
+  // after Esc still saves it.
   const skipFirstRun = () => {
     closeFirstRun(tr("Skipped. /service and /model are here when you want them."));
-    void firstRun.finish({ skipped: true }).catch(() => {});
+    firstRunSaving = firstRun.finish({ skipped: true }).catch(() => {});
   };
   const handleFirstRunAction = async ({ type, value } = {}) => {
     if (busy || cleanedUp || !firstRunView) return;
@@ -2795,6 +2798,7 @@ export async function runMoondogTui({
   } finally {
     cleanup();
     await lyricTask;
+    await firstRunSaving;
   }
   return exitRequest;
 }
