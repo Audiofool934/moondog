@@ -1,5 +1,6 @@
 // Plays the agent's Apple Music previews from the terminal. Each 30-second preview is
 // downloaded to a temporary file and played by the system's own player, one after another.
+// A track Moondog made on this Mac plays the same way, from its own folder.
 import { spawn } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { access, constants, rm, stat, writeFile } from "node:fs/promises";
@@ -133,16 +134,19 @@ export async function createTerminalPreviewPlayer({
     void (async () => {
       try {
         for (let index = 0; index < tracks.length; index += 1) {
-          const { title, artist_credit, catalog_url } = tracks[index];
-          const song = { track: { title, artist_credit, catalog_url }, position: index + 1, count: tracks.length };
-          const pending = fetchFile(index);
+          const { title, artist_credit, catalog_url, generated } = tracks[index];
+          const song = { track: generated ? { title, artist_credit, generated: true } : { title, artist_credit, catalog_url }, position: index + 1, count: tracks.length };
+          // A track Moondog made plays from its own folder, which outlives the queue.
+          const pending = tracks[index].file
+            ? { ready: true, file: Promise.resolve(tracks[index].file), abort: () => {}, skipped: () => false }
+            : fetchFile(index);
           if (!pending.ready) emit({ type: "loading", ...song });
           current.skipDownload = pending.abort;
           const file = await pending.file;
           current.skipDownload = null;
           if (controller.signal.aborted) break;
           // The next preview downloads while this one plays.
-          if (index + 1 < tracks.length) void fetchFile(index + 1);
+          if (index + 1 < tracks.length && !tracks[index + 1].file) void fetchFile(index + 1);
           if (!file) {
             // An error, a timeout, or an oversized file; a listener's /skip is not a failure.
             if (!pending.skipped()) emit({ type: "failed", ...song });
@@ -150,7 +154,7 @@ export async function createTerminalPreviewPlayer({
           }
           emit({ type: "playing", ...song });
           await playFile(file);
-          await rm(file, { force: true });
+          if (!tracks[index].file) await rm(file, { force: true });
           if (controller.signal.aborted) break;
         }
       } finally {
@@ -196,6 +200,15 @@ export async function createTerminalPreviewPlayer({
           : null,
       });
       start(accepted);
+    },
+    // A track Moondog made on this Mac: { id, title, file }, played whole and kept after it ends.
+    playGenerated({ id, title, file } = {}) {
+      const name = String(title ?? "").trim();
+      if (closed || !name || typeof file !== "string" || !path.isAbsolute(file)) return;
+      stop();
+      const track = { title: name, artist_credit: "", generated: true, id: String(id ?? "") };
+      emit({ type: "queue", tracks: [{ title: track.title, artist_credit: "", generated: true }], album: null });
+      start([{ ...track, file }]);
     },
     // Ends the song now playing, or still loading; the next one starts after it.
     skip() {

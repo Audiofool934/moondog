@@ -130,6 +130,7 @@ export default {
   "choice.like": ({ title, artist }) => { const name = title ? `${artist}的《${title}》` : artist; return `\n\n已保存：你喜欢${name}。想改的话随时告诉我。`; },
   "choice.avoid": ({ title, artist }) => { const name = title ? `${artist}的《${title}》` : artist; return `\n\n已保存：我播放和推荐时都会避开${name}。想改的话随时告诉我。`; },
   "choice.retract": ({ title, artist }) => { const name = title ? `${artist}的《${title}》` : artist; return `\n\n已撤销：你之前对${name}的选择。`; },
+  "generate.made": ({ title, length, seed }) => `用这台 Mac 上的 Stable Audio 3 做的：「${title}」（${length}，种子 ${seed}）。`,
   "turn.cancelled": "已取消后续操作。",
   "turn.interrupted": "回复中断；已确认的 Spotify 操作结果如下。未重新执行任何操作。",
 };

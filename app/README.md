@@ -111,6 +111,8 @@ A model or music service chosen there lasts until the app quits, and sign-in and
   Playback has one row per music service, its state under its name and the one in use checked.
   A click on a row unfolds that service's setup or its own controls (Spotify's devices and Disconnect), one row at a time.
   With the pointer on a row, a service that can play shows a switch at its right that uses it, and one that can't yet shows Set up.
+  A Music generation group sits beside the services, with one Stable Audio 3 row: with the pointer on it, Turn on or Turn off, in words, once the install is found, and until then Set up, which unfolds its folder and Check again.
+  A track Moondog made plays in the window and reads "Made by Moondog" in now playing and the mini player.
   Changes are saved where the terminal reads them; the window never sees a key or token.
   The menu's list is `models.json`, each conversation's own model is `conversation-models.json`, and endpoints are `endpoints.json` (mode 600, with their keys), beside `settings.json`, so older Moondogs that read `settings.json` by a fixed shape keep working.
   OpenAI keeps a ChatGPT sign-in or an API key in `auth.json`; Moondog 0.2.0-beta.7 and older can't read a ChatGPT sign-in there.
@@ -155,6 +157,7 @@ A model or music service chosen there lasts until the app quits, and sign-in and
   Replies render from Markdown into DOM text nodes (`markdown.mjs`), so a reply can't inject markup.
 - Menus for a conversation and the model, device and service pickers are native menus, built in `main.mjs` from plain items the page sends.
 - One message port carries everything between the core and the window, including the previews the agent plays.
+  A track Moondog makes is the exception: the port carries only its id, and the window reads the file from `moondog-media://generated/<id>`, which `main.mjs` serves from Moondog's state folder and nothing else.
 - The project page plays a scripted scene in this renderer and `window-room.mjs`, unchanged, in a browser, with `site/window/host.mjs` in place of the preload and the core process, so a change here shows there too (`site/README.md`).
 
 ## Whole Apple Music songs

@@ -40,8 +40,9 @@ const maximumPackedBytes = 2_600_000;
 // run page adds one entry and about 7 KB.
 const maximumUnpackedBytes = 5_210_000;
 // Endpoints, the model menu's list and the terminal's endpoint command add three
-// entries and about 20 KB.
-const maximumEntries = 155;
+// entries and about 20 KB. Local music generation and its taste compiler add two
+// entries and about 30 KB.
+const maximumEntries = 157;
 const packageOnlyPrivateSentinelPattern = new RegExp(
   ["PRIVATE", "(?:IP|PLATFORM)", "SENTINEL"].join("_"),
   "u",

@@ -14,6 +14,10 @@ export const SUGGESTION_WINDOW = Object.freeze({ beforeMs: 60_000, afterMs: 6 * 
 
 export const SUGGESTION_SERVICES = Object.freeze(["spotify", "netease", "apple_music"]);
 
+// A track Moondog made on this Mac (src/integrations/stable-audio). It has no artist, so no song
+// key forms, and only its own id can ever match it: never one of the listener's plays of a real song.
+const GENERATED_TRACK = /^moondog:generated:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
+
 // One artist's name can hold a separator ("AC/DC", "Simon & Garfunkel", "Tyler, The Creator"),
 // so a bare credit is tried whole, then by its comma parts, then by every part.
 function creditSplits(credit) {
@@ -72,6 +76,11 @@ export function suggestionIdentities(suggestion) {
  * started names its release instead, so every song of it that plays matches.
  */
 export function suggestionEntry({ service, action, providerTrackId = null, isrc = null, title, release = null, artists, artistCredit, mixSlot = null, requestedAt }) {
+  if (service === "moondog") {
+    if (!GENERATED_TRACK.test(providerTrackId ?? "") || typeof title !== "string" || !title.trim()) return null;
+    return { service, action, provider_track_id: providerTrackId, isrc: null, track_key: null, release_key: null,
+      title: Array.from(title.trim()).slice(0, 512).join(""), artist_credit: "", requested_at: requestedAt, mix_slot: null };
+  }
   const credit = typeof artistCredit === "string" && artistCredit.trim() ? artistCredit.trim()
     : Array.isArray(artists) ? artists.filter((name) => typeof name === "string").join(", ") : "";
   const named = { title, release, artists, artist_credit: credit };

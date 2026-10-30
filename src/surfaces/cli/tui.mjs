@@ -1,3 +1,4 @@
+import { homedir } from "node:os";
 import { LOCALES, N_, liveScreenTranslator, normalizeLocale } from "../../i18n/index.mjs";
 import {
   CombinedAutocompleteProvider,
@@ -52,6 +53,10 @@ import {
   paintBrandLine,
   setBrandText,
 } from "./brand-components.mjs";
+
+// What making a track says in the footer, stage by stage (src/integrations/stable-audio).
+const generationStages = { starting: N_("warming up"), reading: N_("reading your taste"), composing: N_("composing"),
+  decoding: N_("pressing the record"), writing: N_("saving it") };
 
 // The lines Moondog shows, as a radio host, while the model thinks; the window has the same ones.
 export const hostLines = (tr) => [tr("Reading the room"), tr("Checking the request line"), tr("Finding the groove"), tr("Working the decks"),
@@ -120,6 +125,7 @@ const slashCommands = [
   { name: "endpoint", description: N_("Add a model service by its address") },
   { name: "web", description: N_("Look things up on public music sites") },
   { name: "service", description: N_("Choose where Moondog plays music") },
+  { name: "generation", description: N_("Let Moondog make music on this Mac") },
   { name: "spotify", description: N_("Connect and control Spotify") },
   { name: "skip", description: N_("Skip to the next song preview") },
   { name: "stop", description: N_("Stop the song previews") },
@@ -223,6 +229,8 @@ export async function runMoondogTui({
   // The terminal's preview player. The room shows what it plays (subscribe) and
   // gives the listener /skip and /stop.
   previewPlayer,
+  // Making music on this Mac with Stable Audio 3: { status, check, save }, or nothing where the room can't play it.
+  generation,
   environment = process.env,
 }) {
   if (providers === listPiProviders && models === listPiModels) {
@@ -238,7 +246,8 @@ export async function runMoondogTui({
   // /skip and /stop exist only where the room controls the previews itself.
   const previewControls = typeof previewPlayer?.subscribe === "function" &&
     typeof previewPlayer.skip === "function" && typeof previewPlayer.stop === "function";
-  const commands = slashCommands.filter(({ name }) => previewControls || !["skip", "stop"].includes(name));
+  const commands = slashCommands.filter(({ name }) => (previewControls || !["skip", "stop"].includes(name)) &&
+    (name !== "generation" || typeof generation?.save === "function"));
   const localizedCommands = commands.map(({ name, description }) => ({ name, get description() { return tr.marked(description); } }));
   let activeRuntime = runtime;
   application.startNewSession?.("tui_start");
@@ -476,8 +485,10 @@ export async function runMoondogTui({
         // Where the terminal can't open links, the note in the conversation shows the address.
         const apple = getCapabilities().hyperlinks ? hyperlink("Apple Music", track.catalog_url) : "Apple Music";
         const state = type === "loading" ? tr("loading") : type === "paused" ? tr("paused") : "";
-        const controls = `  ${position}/${count}${state ? ` · ${state}` : ""} · ${apple} · /skip · /stop`;
-        const song = sanitizeTerminalText(`${track.title} · ${track.artist_credit}`).replace(/\s+/gu, " ").trim();
+        // A track Moondog made is its own record, kept on this Mac, with nothing to open elsewhere.
+        const controls = track.generated ? `${state ? `  ${state}` : ""}  · /stop`
+          : `  ${position}/${count}${state ? ` · ${state}` : ""} · ${apple} · /skip · /stop`;
+        const song = sanitizeTerminalText(`${track.title} · ${track.generated ? tr("Made by Moondog") : track.artist_credit}`).replace(/\s+/gu, " ").trim();
         const room = width - visibleWidth(prefix) - visibleWidth(controls);
         lines.push(paintBrandLine(room >= 12
           ? theme.accent(prefix) + theme.text(truncateToWidth(song, room, "…")) + theme.faint(controls)
@@ -702,7 +713,8 @@ export async function runMoondogTui({
   };
   const stopWatchingPreviews = previewControls ? previewPlayer.subscribe((event) => {
     if (cleanedUp) return;
-    if (event?.type === "queue") addPreviewNote(event);
+    // A track Moondog made needs no preview note: the reply names it, and the host's line says where it was made.
+    if (event?.type === "queue") { if (!event.tracks?.some((track) => track.generated)) addPreviewNote(event); }
     else if (event?.type === "failed") markPreviewFailed(event);
     else if (["loading", "playing", "paused"].includes(event?.type)) nowPlaying = event;
     else if (event?.type === "stopped") nowPlaying = null;
@@ -713,6 +725,38 @@ export async function runMoondogTui({
     const acted = command === "stop" ? previewPlayer.stop() : previewPlayer.skip();
     if (!busy) setFooter(!acted ? tr("No previews are playing.") : command === "stop" ? tr("Previews stopped.") : tr("Skipped."));
     tui.requestRender();
+  };
+
+  // Making music on this Mac. /generation says where it stands; /generation on [folder] turns it on,
+  // with the folder of Stability AI's MLX build when it is not the usual one; /generation off turns it off.
+  const home = homedir();
+  const shownFolder = (folder) => sanitizeTerminalText(String(folder ?? "")).replace(home, "~");
+  const generationMessage = (status) => {
+    const folder = shownFolder(status?.path);
+    if (status?.install === "unsupported") return tr("Stable Audio 3 needs a Mac with Apple silicon, so Moondog can't make music here.");
+    if (status?.state === "ready") return tr("Moondog makes music on this Mac with Stable Audio 3, powered by Stability AI. Ask for a track. Stable Audio 3 runs offline, and the track stays on this Mac.");
+    if (status?.state === "off") {
+      return status.install === "ready"
+        ? tr("Making music on this Mac is off. Stable Audio 3 is ready at {folder}; turn it on with /generation on.", { folder })
+        : tr("Making music on this Mac is off, and Stable Audio 3 isn't at {folder}. Install Stability AI's MLX build, then use /generation on with its folder.", { folder });
+    }
+    if (status?.state === "incomplete") {
+      return status.missing === "weights"
+        ? tr("Stable Audio 3 at {folder} doesn't have the Medium model yet. Run ./install.sh there, choose Medium, then use /generation again.", { folder })
+        : tr("Stable Audio 3 at {folder} isn't installed yet. Run ./install.sh there, then use /generation again.", { folder });
+    }
+    return tr("Stable Audio 3 isn't at {folder}. Use /generation on with the folder that holds its sa3 script.", { folder });
+  };
+  const manageGeneration = async (args) => {
+    const [action, ...rest] = args;
+    if ((action && !["on", "off"].includes(action)) || (action === "off" && rest.length)) {
+      throw new Error(tr("Use /generation, /generation on [folder], or /generation off."));
+    }
+    const status = action ? await generation.save({ enabled: action === "on", ...(rest.length ? { path: rest.join(" ") } : {}) })
+      : await generation.check();
+    addMoondogMessage(generationMessage(status));
+    setFooter(status.state === "ready" ? tr("Music making on.") : status.state === "off" ? tr("Music making off.") : tr("Music making isn't ready."),
+      status.state === "ready" || status.state === "off" ? dim : warning);
   };
 
   const removeLifecycleListeners = () => {
@@ -760,6 +804,8 @@ export async function runMoondogTui({
   };
 
   const shutdown = () => {
+    // A reply still running stops with the room, and so does a track it is making.
+    try { activeRuntime.abort(); } catch { /* Nothing was running. */ }
     cleanup();
     // The spoken line that closes Eclipse, the last thing on The Dark Side of the Moon.
     try {
@@ -2144,6 +2190,10 @@ export async function runMoondogTui({
       await pickService(args);
       return;
     }
+    if (command === "generation") {
+      await manageGeneration(args);
+      return;
+    }
     if (command === "spotify") {
       await runSpotifyCommand(args);
       return;
@@ -2312,7 +2362,7 @@ export async function runMoondogTui({
         setFooter(`/${command}...`);
         const argumentText = value.slice(1).trim().slice(rawCommand.length).trim();
         const parsedArgs = command === "import" ? argumentText ? [argumentText] : []
-          : ["profile", "spotify", "web"].includes(command)
+          : ["profile", "spotify", "web", "generation"].includes(command)
           ? parseTuiArguments(argumentText)
           : args;
         await runLocalCommand(command, parsedArgs);
@@ -2408,6 +2458,12 @@ export async function runMoondogTui({
           if (!cancellationRequested) setFooter(tr("Can't reach the model. Trying again ({attempt}/{max})...", { attempt, max: maxRetries }), warning);
         },
         onToolStart: (tool) => updateTool(tool, "running"),
+        // Making a track says where it is, from warming up to saving it.
+        onToolUpdate: (tool) => {
+          const stage = generationStages[tool?.stage];
+          if (cleanedUp || cancellationRequested || !stage) return;
+          setFooter(`${sanitizeTerminalText(tr.marked(tool.label ?? "Music tool"))} · ${tr.marked(stage)}...`);
+        },
         onToolEnd: (tool) => updateTool(tool, tool?.isError ? "failed" : "completed"),
         // The model names a new conversation after its first reply; the header shows that name from then on.
         onConversationNamed: ({ session_id, title }) => {

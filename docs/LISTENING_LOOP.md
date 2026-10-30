@@ -79,6 +79,7 @@ Spotify records a play when it ends, so the minute before only absorbs clock ske
 The match runs when the profile is computed, so the stored history is never rewritten and a later export is handled the same way.
 A later play of the same song, outside that window, is the listener's own choice; the ledger shows that suggestion as adopted.
 Adoption is outcome evidence, not proof of liking, and it does not enter the reading as taste.
+A track Moondog made on this Mac goes in the same ledger with the service moondog, the action generated.play and its own id, with no artist and no song key, so it can never claim a play of a real song.
 
 The ledger also lets the agent see what it already suggested.
 Language models repeat themselves across sessions: one study measured an effective diversity of about 0.2 to 0.3 across five samples for strong general models ([WeMusic-Agent, 2025](https://arxiv.org/abs/2512.16108)).

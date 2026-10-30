@@ -94,6 +94,7 @@ const STATUS = {
   locale: LOCALE, locales: LOCALES,
   model: { state: "configured", provider: "anthropic", model: "claude-sonnet-5-5", effort: "medium", thinking: "medium", effortLevels: ["low", "medium", "high", "xhigh", "max"], reason: null },
   spotify: "ready", spotifyAccount: { state: "ready", clientId: true }, playbackService: "spotify", memory: "ready", firstRun: null,
+  generation: { state: "ready", enabled: true, install: "ready", missing: null, path: "/Users/example/Developer/stable-audio-3/optimized/mlx" },
 };
 const OFFLINE = { ...STATUS, model: { state: "offline", provider: null, model: null, effort: null, effortLevels: [], reason: null },
   spotify: "unavailable", spotifyAccount: { state: "unavailable", clientId: true } };
@@ -336,6 +337,29 @@ const STATES = {
     setTimeout(() => document.querySelector('[data-key="endpoint:edit:endpoint-home"]')?.click(), 200);
   },
   "settings-playback"() { STATES.reply(); slash("service"); },
+  // Music generation beside the music services: on, with the pointer on its row; off with the install
+  // found; and not found, its row opened to the folder and Check again.
+  "settings-generation"() { STATES["settings-playback"](); return { hover: '.sheet [data-key="generation:stable-audio"]' }; },
+  "settings-generation-off"() {
+    ready({ generation: { ...STATUS.generation, state: "off", enabled: false } });
+    player();
+    slash("service");
+    return { hover: '.sheet [data-key="generation:stable-audio"]' };
+  },
+  "settings-generation-setup"() {
+    ready({ generation: { ...STATUS.generation, state: "missing", install: "missing" } });
+    player();
+    slash("service");
+    setTimeout(() => document.querySelector('[data-key="generation:stable-audio"]').click(), 300);
+  },
+  // A track Moondog made, playing in the window under the reply that made it.
+  generated() {
+    ready({ playbackService: "apple_music", transcript: [{ role: "user", text: "Make me something for late tonight" }, { role: "assistant", id: "t0",
+      text: "Something unhurried for the last hour of the day, out of the hushed dream pop you keep coming back to.\n\nMade on this Mac with Stable Audio 3: \"Unhurried dream pop\" (2:00, seed 1234)." }] });
+    silent();
+    send({ type: "preview", id: "g1", album: null, tracks: [{ title: "Unhurried dream pop", artist_credit: "", generated: true,
+      media_url: "moondog-media://generated/6f1c1b2e-3c4d-4e5f-8a9b-0c1d2e3f4a5b", duration_seconds: 120 }] });
+  },
   "settings-import"() { STATES.reply(); slash("import"); },
   "settings-memory"() { STATES.reply(); slash("memory"); },
   "settings-about"() { STATES.reply(); slash("help"); },
@@ -479,6 +503,12 @@ core.onmessage = ({ data }) => {
   if (data.type === "language") send({ type: "status", ...status, locale: data.locale });
   if (data.type === "music-service") send({ type: "status", ...status, playbackService: data.service, firstRun: over(status.firstRun && { ...status.firstRun, service: data.service }) });
   if (data.type === "netease-check") { send({ type: "status", ...status, ...neteaseCheck }); send({ type: "netease-checked" }); }
+  if (data.type === "generation") {
+    const generation = { ...status.generation, enabled: data.enabled === true, ...(data.path ? { path: data.path } : {}) };
+    send({ type: "status", ...status, generation: { ...generation, state: generation.enabled ? generation.install : "off" } });
+    send({ type: "generation-checked" });
+  }
+  if (data.type === "generation-check") { send({ type: "status", ...status }); send({ type: "generation-checked" }); }
   if (data.type === "model") {
     send({ type: "status", ...status, model: { ...status.model, state: "configured", provider: data.provider, model: data.model }, firstRun: over(status.firstRun && { ...status.firstRun, model: true }) });
   }

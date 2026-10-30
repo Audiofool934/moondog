@@ -4,6 +4,8 @@ import { readFileSync } from "node:fs";
 import { LOCALES, messageLocale, translator } from "../../i18n/index.mjs";
 import { PROFILE_SECTIONS, TRAJECTORIES } from "../../profile/profile-exploration.mjs";
 import { compactListenerProfile } from "../../profile/listener-profile-build.mjs";
+import { BPM_RANGE, DESCRIPTOR_FACETS, DESCRIPTOR_LIMITS, DESCRIPTOR_SOURCES } from "../../profile/taste-compiler.mjs";
+import { GENERATION_SECONDS } from "../../integrations/stable-audio/local-generator.mjs";
 import { avoidKey } from "../../core/listener-avoids.mjs";
 import { foldedWords, isCjkText, textNames, textNamesArtist } from "../../core/track-title.mjs";
 
@@ -177,7 +179,8 @@ function agentCapabilityAllowed(descriptor) {
       spotifyCapabilityEffects.has(descriptor.effect)) ||
     (descriptor.capability_id.startsWith("netease.") &&
       spotifyCapabilityEffects.has(descriptor.effect)) ||
-    (descriptor.capability_id === "music.preview.play" && descriptor.effect === "play_preview")
+    (descriptor.capability_id === "music.preview.play" && descriptor.effect === "play_preview") ||
+    (descriptor.capability_id === "music.generate.local" && descriptor.effect === "generate_local")
   );
 }
 
@@ -3181,6 +3184,48 @@ function renderMix(value, t) {
   return value?.mix ? t("queue.mix", value.mix) : null;
 }
 
+// What the model learns of a track Moondog made: what shaped it and what was left out, and never
+// where the file is.
+function projectGeneratedTrack(value) {
+  if (!isPlainObject(value) || !["playing", "not_made"].includes(value.state)) throw new Error("domain_result_invalid:generated_track");
+  const leftOut = (Array.isArray(value.left_out ?? value.dropped) ? value.left_out ?? value.dropped : []).slice(0, 24).map((entry) => ({
+    term: cleanOutputText(entry?.term || "-", 64, "generated_left_out_term"),
+    reason: cleanOutputText(entry?.reason, 32, "generated_left_out_reason"),
+  }));
+  if (value.state === "not_made") return { state: "not_made", reason: cleanOutputText(value.reason, 64, "generated_reason"), left_out: leftOut };
+  const source = (entry) => ({
+    kind: cleanOutputText(entry?.kind, 16, "generated_source_kind"),
+    ...(entry?.claim_id ? { claim_id: cleanOutputText(entry.claim_id, 64, "generated_claim") } : {}),
+    ...(entry?.label ? { from: cleanOutputText(entry.label, 256, "generated_from") } : {}),
+    ...(entry?.artist ? { artist: cleanOutputText(entry.artist, 256, "generated_artist") } : {}),
+    ...(entry?.part_of_day ? { part_of_day: cleanOutputText(entry.part_of_day, 32, "generated_part_of_day") } : {}),
+  });
+  return {
+    state: "playing",
+    made_with: "Stable Audio 3 Medium, on this Mac",
+    track: {
+      id: cleanOutputText(value.track?.id, 64, "generated_id"),
+      title: cleanOutputText(value.track?.title, 128, "generated_title"),
+      seconds: safeNonnegativeInteger(Math.round(value.track?.seconds ?? 0), "generated_seconds"),
+      seed: safeNonnegativeInteger(value.track?.seed ?? 0, "generated_seed"),
+    },
+    prompt: cleanOutputText(value.prompt, 1_024, "generated_prompt"),
+    shaped_by: (Array.isArray(value.shaped_by) ? value.shaped_by : []).slice(0, DESCRIPTOR_LIMITS.total).map((entry) => ({
+      term: cleanOutputText(entry?.term, 64, "generated_term"), facet: cleanOutputText(entry?.facet, 16, "generated_facet"), source: source(entry?.source),
+    })),
+    left_out: leftOut,
+    ...(Number.isInteger(value.bpm) ? { bpm: value.bpm } : {}),
+    seconds_to_make: Math.round((value.elapsed_ms ?? 0) / 100) / 10,
+  };
+}
+
+const trackLength = (seconds) => `${Math.floor(seconds / 60)}:${String(Math.round(seconds % 60)).padStart(2, "0")}`;
+
+function renderGeneratedTrack(value, t) {
+  return value?.state === "playing" && value.track
+    ? t("generate.made", { title: value.track.title, length: trackLength(value.track.seconds), seed: value.track.seed }) : null;
+}
+
 function projectSpotifyDiscovery(value) {
   if (!isPlainObject(value) || value.provider !== "spotify" || !["verified_candidates", "unavailable", "no_matches"].includes(value.state)) throw new Error("domain_result_invalid:spotify_discovery");
   const items = (value.items ?? []).slice(0, 36).map(item => {
@@ -4773,6 +4818,8 @@ function createToolFactories(
     onSpotifyPlaylistEditWrite,
     onExternalCandidateSet,
     onMusicPlayback,
+    onGeneratedTrack,
+    generationContext,
     onMusicCatalogArtistReleases,
     onWebResearch,
     onSpotifyQueuePlan,
@@ -5130,6 +5177,51 @@ function createToolFactories(
             projectMusicPreview,
             onMusicPlayback,
             () => onMusicPlayback?.({ state: "failed" }),
+          ),
+        };
+      },
+    ],
+    [
+      "music.generate.local",
+      (descriptor) => {
+        const literals = (values) => Type.Union(values.map((value) => Type.Literal(value)));
+        const descriptorSchema = Type.Object(
+          {
+            term: Type.String({ minLength: 1, maxLength: DESCRIPTOR_LIMITS.characters }),
+            facet: literals(DESCRIPTOR_FACETS),
+            source: literals(DESCRIPTOR_SOURCES),
+            from: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
+          },
+          { additionalProperties: false },
+        );
+        return {
+          name: descriptor.tool_name,
+          label: descriptor.label,
+          description:
+            "Make one instrumental track on this Mac with the listener's own Stable Audio 3, and play it at once in Moondog's player, whatever the music service. Use it only when the listener asks Moondog to make, compose or generate music; never to play existing songs. It needs no web research, search, candidate set or playlist plan: read the profile if it helps, then call this tool. Translate their taste into plain sound descriptors and give each its source: reading (from = a claim_id of the saved reading; none without one), choice (from = an artist or song they marked Like), recent (from = an artist in recent_attention.stored_plays, the last four weeks; not the profile's longer recent lists or Spotify's own top artists), moment (the listener_clock), or request (their words in this message). A term is one idea in a few plain words for a genre, instrument, texture, mood or rhythm, such as dream pop, rhodes piano, tape saturation, unhurried, brushed drums. moment is the listener's local day and hour as listener_clock gives them; a time the listener names, such as tonight, is request. Never put an artist or song name in a term or the title. The host leaves out any term that names one, cannot be traced, comes from something they Avoid, or asks for singing (the model makes instrumentals only); left_out says which and why. A track needs at least one genre, instrument, texture or mood. If state is not_made, fix the descriptors once from left_out and reason, or tell the listener what was missing. bpm is optional. seconds is 15 to 380, 120 when left out. title is Moondog's own name for the record, a few plain words. Making a track takes from a few seconds to about a minute; make at most one per message. Once it plays, say in one or two sentences what shaped it in everyday words (their reading, a Like, what they play lately, the hour). Describe only what the result's prompt and shaped_by hold: the model takes no key, chord or melody, so never name one. Do not recite the descriptors, the prompt or the seed; the host writes its own line under the reply.",
+          parameters: Type.Object(
+            {
+              descriptors: Type.Array(descriptorSchema, { minItems: 1, maxItems: DESCRIPTOR_LIMITS.total }),
+              bpm: Type.Optional(Type.Integer({ minimum: BPM_RANGE.min, maximum: BPM_RANGE.max })),
+              bpm_source: Type.Optional(literals(["request", "moment", "reading"])),
+              seconds: Type.Optional(Type.Integer({ minimum: GENERATION_SECONDS.min, maximum: GENERATION_SECONDS.max })),
+              title: Type.Optional(Type.String({ minLength: 1, maxLength: 60 })),
+            },
+            { additionalProperties: false },
+          ),
+          executionMode: "sequential",
+          execute: executeDomain(
+            async (_toolCallId, parameters, signal, onUpdate) => application.makeTrack({
+              descriptors: parameters.descriptors, bpm: parameters.bpm, bpmSource: parameters.bpm_source,
+              seconds: parameters.seconds ?? GENERATION_SECONDS.default, title: parameters.title,
+            }, {
+              // The moment and the listener's words come from the host, never from the model.
+              ...(generationContext?.() ?? {}),
+              signal,
+              onProgress: ({ stage }) => onUpdate?.({ content: [{ type: "text", text: stage }], details: { stage } }),
+            }),
+            projectGeneratedTrack,
+            onGeneratedTrack,
           ),
         };
       },
@@ -6426,8 +6518,11 @@ function toolForModel(tool) {
 // Spotify can be connected for reading while the listener chose another service to play music.
 const SERVICE_NAMES = { apple_music: "Apple Music", netease: "NetEase Music (网易云音乐)" };
 
-function sessionAvailability({ spotifyReady, spotifyPlaybackReady = spotifyReady, previewReady, playbackService = "apple_music", neteaseReady = false }) {
-  if (spotifyPlaybackReady) return "";
+// Making a track plays in Moondog's own player under every music service.
+const GENERATION_LINE = "- moondog_make_track makes an instrumental track on this Mac from the listener's taste and plays it in Moondog's own player, whatever the music service. Use it only when they ask Moondog to make, compose or generate music, not to play songs that exist.";
+
+function sessionAvailability({ spotifyReady, spotifyPlaybackReady = spotifyReady, previewReady, playbackService = "apple_music", neteaseReady = false, localGenerationReady = false }) {
+  if (spotifyPlaybackReady) return localGenerationReady ? `\n\nSession availability:\n${GENERATION_LINE}` : "";
   const lines = [
     "Session availability:",
     spotifyReady
@@ -6455,9 +6550,12 @@ function sessionAvailability({ spotifyReady, spotifyPlaybackReady = spotifyReady
         ? "- Do not suggest switching to Spotify or linking another account to play music here."
         : "- Do not suggest linking Spotify or another account to play music here.",
     );
+  } else if (localGenerationReady) {
+    lines.push("- No music service can play or queue songs in this session. Say so once, briefly, when the listener asks for songs; moondog_make_track can still make them a track of Moondog's own.");
   } else {
     lines.push("- You cannot play or queue music in this session. Say so once, briefly, then help with what you can: the song, its story, and what to try next.");
   }
+  if (localGenerationReady) lines.push(GENERATION_LINE);
   if (previewReady || neteaseReady) {
     lines.push(
       "- Playback verification belongs to the selected music service. Its play tool resolves and checks recordings. Use the returned songs and outcome to answer directly; do not run another catalog search or playlist planner just to recheck a successful playback result. A Spotify player or queue read cannot verify playback on another service.",
@@ -6478,6 +6576,7 @@ function sessionSection(application) {
     previewReady: application.musicPreviewReady?.() ?? false,
     playbackService: application.playbackService ?? "apple_music",
     neteaseReady: application.neteaseReady?.() ?? false,
+    localGenerationReady: application.localGenerationReady?.() ?? false,
   }).trim() || null;
 }
 
@@ -6490,6 +6589,7 @@ function playbackSurfaceKey(application) {
     application.musicPreviewReady?.() ?? false,
     application.neteaseReady?.() ?? false,
     application.listeningReadable?.() ?? false,
+    application.localGenerationReady?.() ?? false,
   ]);
 }
 
@@ -6638,7 +6738,7 @@ Output rules:
 - For a playlist with a stated size, return that many tracks. When the candidates cannot fill it with good fits, say so and ask before planning fewer. For a queue or an open pick, see Fewer, better.
 - For a library or history plan, explain the order and give a concrete reason for every selected track. The host shows an external plan as the songs plus one source line.
 - State uncertainty or ask to broaden the search when results are sparse.
-- Spotify playback controls, library saves, and private playlist writes may be used through the registered tools. Publishing, messaging, deletion, paid generation, and all other external effects remain disabled.
+- Spotify playback controls, library saves, and private playlist writes may be used through the registered tools. When the listener has turned it on, moondog_make_track makes music on this Mac, which nothing leaves. Publishing, messaging, deletion, paid or online generation, and all other external effects remain disabled.
 
 Curation craft:
 - Start from an anchor the listener already knows (a thread in the saved reading, an artist in recent attention, what is playing now) and move outward one step at a time: the same scene, era, producer, label, players or lineage. Name the anchor once.
@@ -7328,6 +7428,29 @@ export class PiAgentRuntime {
           if (value.playing_in_order?.length) this.activePromptState.previewsPlaying = true;
         }
       },
+      onGeneratedTrack: (value) => {
+        if (value?.state !== "playing") return;
+        this.generatedTitles.add(avoidKey(value.track.title));
+        this.activePromptState?.generatedTracks.push(structuredClone(value));
+      },
+      // A track is shaped by the moment and the listener's own words, which the host supplies and the
+      // model never does. One message makes at most one track, with one more try if nothing was made.
+      generationContext: () => {
+        const state = this.activePromptState;
+        const refuse = (code, message) => { throw Object.assign(new Error(message), { code }); };
+        if (!state) refuse("generation_no_prompt", "A track can be made only while answering the listener.");
+        if (state.generatedTracks.length > 0 || state.generationAttempts >= 2) {
+          refuse("generation_turn_limit", "Nothing more was made. One message makes at most one track; the listener can ask for another.");
+        }
+        state.generationAttempts += 1;
+        const now = this.clock?.();
+        return {
+          moment: now instanceof Date && Number.isFinite(now.getTime()) ? listenerClock(now) : null,
+          request: state.promptText,
+          // A conversation that read Spotify keeps the listener's words out of the receipt, as out of memory.
+          transient: this.transientSpotifyContext || this.application.transientSpotifyContext === true,
+        };
+      },
       onExternalCandidateSet: (value, { playbackLookup = false } = {}) => {
         if (this.activePromptState) {
           this.activePromptState.externalCandidateSetCreated = true;
@@ -7408,6 +7531,15 @@ export class PiAgentRuntime {
         }
         const track = parameters.subject === "track";
         if (track && !parameters.title) refuse("taste_choice_title_required", "Nothing was saved. A song choice needs its title and artist.");
+        // Moondog's own tracks have no artist, and "Moondog" is also a real composer's name. A choice is
+        // about a track Moondog made when it names one of their titles with Moondog as artist, puts such a
+        // title in place of the artist, or points at "this" while it names no song. Anything else, the
+        // real composer included, is saved as usual.
+        const madeHere = (value) => this.generatedTitles.has(avoidKey(value ?? ""));
+        const moondog = avoidKey(parameters.artist ?? "") === "moondog";
+        if (madeHere(parameters.artist) || (moondog && (track ? madeHere(parameters.title) : quoteIsDeictic(quote) && this.generatedTitles.size > 0))) {
+          refuse("taste_choice_generated_track", "Nothing was saved. This is a track Moondog made, and choices about Moondog's own tracks are not saved yet. Say so, and offer to make another one like it.");
+        }
         if (!quoteLongEnough(quote)) {
           refuse("taste_choice_quote_too_short", "Nothing was saved. source_text must quote the listener's whole statement of the choice, not one word.");
         }
@@ -7445,6 +7577,8 @@ export class PiAgentRuntime {
     };
     // Every tool name this agent has offered. One that later goes away left with a change of music service.
     this.offeredTools = new Set();
+    // The titles of the tracks this agent made, so a Like said while one plays is not saved as a real song's.
+    this.generatedTitles = new Set();
     const surface = this.#buildSurface();
     this.surfaceKey = surface.key;
     this.capabilityByToolName = surface.capabilities;
@@ -7666,6 +7800,8 @@ export class PiAgentRuntime {
       presentationFailure: false,
       stagedMemoryMutations: [],
       tasteChoices: [],
+      generatedTracks: [],
+      generationAttempts: 0,
     };
     this.activePromptState = promptState;
     const profileDiscoveryUnavailable = () => Boolean(callbacks.profileSeed) &&
@@ -7742,6 +7878,8 @@ export class PiAgentRuntime {
       receipts.push(...unresolvedPlaybackFailures().map((failure) => renderSpotifyPlaybackFailure(failure, t)));
       return receipts;
     };
+    // A track that was made stays made, so its line stays when the turn is cancelled or interrupted too.
+    const generatedTexts = () => promptState.generatedTracks.map((track) => renderGeneratedTrack(track, t)).filter(Boolean);
     // A choice is saved at once, so its line stays even when the turn is cancelled or interrupted.
     const choiceTexts = () => promptState.tasteChoices.map((choice) => t(`choice.${choice.state === "retracted" ? "retract" : choice.stance}`, {
       title: choice.entity_type === "track" ? choice.label : "",
@@ -7787,7 +7925,7 @@ export class PiAgentRuntime {
       const queueMix = promptState.spotifyQueuePlan?.queued?.length ? renderMix(promptState.spotifyQueuePlan, t) : null;
       const playbackMix = renderMix(promptState.musicPlaybackResult, t);
       const leftOut = [promptState.spotifyQueuePlan, ...promptState.spotifyWriteReceipts].map((receipt) => renderSkippedAvoided(receipt, t));
-      for (const mix of [queueMix, playbackMix, ...leftOut]) {
+      for (const mix of [queueMix, playbackMix, ...leftOut, ...generatedTexts()]) {
         if (!mix || resultText.includes(mix)) continue;
         const addition = resultText ? `\n\n${mix}` : mix;
         resultText += addition;
@@ -7949,6 +8087,18 @@ export class PiAgentRuntime {
             });
           }
 
+          // A long tool, such as making a track, says which stage it is in.
+          if (event.type === "tool_execution_update" && typeof event.partialResult?.details?.stage === "string") {
+            const descriptor = this.capabilityByToolName.get(event.toolName);
+            callbacks.onToolUpdate?.({
+              toolCallId: event.toolCallId,
+              toolName: event.toolName,
+              capabilityId: descriptor?.capability_id ?? "unknown",
+              label: descriptor?.label ?? event.toolName,
+              stage: event.partialResult.details.stage,
+            });
+          }
+
           if (event.type === "tool_execution_end") {
             const descriptor = this.capabilityByToolName.get(event.toolName);
             const resultText = event.result?.content?.map((part) => part.text ?? "").join("") ?? "";
@@ -8022,7 +8172,7 @@ export class PiAgentRuntime {
         this.application.cancelSpotifyQueueRequest?.();
         discardPromptHistory(this.agent, historyStartIndex);
         historyFinalized = true;
-        const receipts = [...spotifyEffectTexts(), ...choiceTexts()];
+        const receipts = [...spotifyEffectTexts(), ...generatedTexts(), ...choiceTexts()];
         const abortedText = receipts.length > 0
           ? [t("turn.cancelled"), ...receipts].join("\n\n")
           : promptState.toolExecutionStarted ? "" : streamedText || finalText;
@@ -8137,8 +8287,8 @@ To confirm, reply: ${preview.confirmation}`].join("\n\n");
         // Discovered songs need a validated plan; a catalog lookup, such as whether a song is there, is reported in the model's words.
         promptState.externalCandidateSets.some((set) => !set.playbackLookup) &&
         !promptState.playlistPlanAttempted &&
-        // A song the model played, queued or failed to play is reported in its own words.
-        !promptState.musicPlaybackResult &&
+        // A song the model played, queued or failed to play is reported in its own words, as is a track it made.
+        !promptState.musicPlaybackResult && !promptState.generatedTracks.length &&
         !promptState.spotifyPlayback.length && !promptState.spotifyWriteReceipts.length && !promptState.spotifyPlaybackFailures.length
       ) {
         const safeFailureText = [renderUnvalidatedPlaylistPlan(t), ...spotifyEffectTexts()].join("\n\n");
@@ -8183,7 +8333,7 @@ To confirm, reply: ${preview.confirmation}`].join("\n\n");
       // its receipt. Keep only host evidence; discard model claims and staged
       // memory/plans. The caller can still display the returned receipt if its
       // streaming callback itself was the source of the exception.
-      const receipts = [...spotifyEffectTexts(), ...choiceTexts()];
+      const receipts = [...spotifyEffectTexts(), ...generatedTexts(), ...choiceTexts()];
       if (!receipts.length) throw error;
       const interruptedText = [t("turn.interrupted"), ...receipts].join("\n\n");
       compactCompletedPromptHistory(this.agent, historyStartIndex, interruptedText);

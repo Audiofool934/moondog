@@ -12,6 +12,14 @@ Extended on 2026-10-29 with the hardware premise, the atmosphere stream, the tas
 Revised the same day after a review of its claims.
 Revised again the same day with the owner's definition of decentralization, the two loops back from listening, and the owner's decision on later plays of generated tracks.
 
+The first slice of stage 2 shipped on 2026-10-29, when the owner opened the scope: Moondog makes an instrumental track on this Mac with the listener's own Stable Audio 3 and plays it in its own player.
+The listener turns it on once, in Settings › Playback or with `/generation on`.
+The agent's `moondog_make_track` tool proposes sound descriptors with their sources, and the taste compiler (`src/profile/taste-compiler.mjs`) keeps only those it can trace to a saved finding, a Like, recent attention, the moment or the request, and none that names an artist, a song or an Avoid.
+A Stable Audio 3 adapter (`src/integrations/stable-audio/local-generator.mjs`) writes the prompt, runs the model offline, and keeps the WAV with a receipt of everything that shaped it in Moondog's state folder.
+Each play goes in the suggestions ledger as Moondog's own (`service` moondog, `action` generated.play), never as the listener's attention.
+Recent attention here means the stored plays of the last four weeks, which include plays the Spotify recent-play sync wrote; Spotify's own top artists are left out, and the owner kept this on 2026-10-29 (see Owner gates).
+The calibration loop, the taste loop, Likes on generated tracks, the analysis stack and the atmosphere stream are not built yet.
+
 ## What decentralization means here
 
 Here, decentralization means that the center moves from the platform to the listener.
@@ -136,7 +144,7 @@ The candidates should differ in their prompts, not only in their seeds, so the s
 A non-stop stream comes close to the large undifferentiated feed that the charter's [Taste Over Volume](PRODUCT_CHARTER.md#taste-over-volume) principle warns against.
 Scoring each candidate against the profile before it plays is what keeps the stream selected.
 Whether a background stream fits that principle is an owner decision (see Owner gates).
-The stream also needs a player for local files (see Owner gates).
+The stream can play in Moondog's own player, which already plays the tracks it makes.
 
 Atmosphere music is the limit of disintermediation at run time: the music is made and heard on the same machine.
 The supply chain does not vanish.
@@ -218,7 +226,7 @@ The moment shapes the prompt but does not become a profile entry.
 
 Recent attention is partly built from live Spotify Web API data.
 Spotify's Developer Policy bars feeding Spotify content, metadata included, into an AI model.
-Whether those layers may shape a generation prompt is an owner decision (see Owner gates).
+The owner decided on 2026-10-29 that stored plays of the last four weeks may shape descriptors, recent-play sync rows included, and that Spotify's own top artists stay out; names never reach the prompt either way (see Owner gates).
 
 Two extensions are needed before the compiler is honest:
 
@@ -332,17 +340,20 @@ The endpoints come only from sources that clear the source-terms gate.
   The license also sets attribution duties when Moondog distributes or makes available the weights, a derivative of them, or a product or service that uses any portion of them.
   The duties are a copy of the license, a Notice file, and a prominent "Powered by Stability AI" display.
   A Moondog release that runs Stable Audio 3 likely counts as such a product, even when listeners fetch the weights themselves.
+  Settings, `/generation` and these docs already say "Powered by Stability AI"; the copy of the license and the Notice file still wait for the owner before the next public release.
   Its T5Gemma text encoder is under the Gemma Terms of Use.
   Sung songs need a second model, local or a closed service.
 - Deciding whether profile layers that hold live Spotify Web API data (the recent-play sync and top artists) may shape a generation prompt, given Spotify Developer Policy sections III.13 and III.14.
+  Decided for generation on 2026-10-29: recent attention from stored plays, recent-play sync rows included, may shape descriptors, while Spotify's own top artists stay out and no name ever reaches a prompt.
+  A saved reading partly built from Web API rows raises the same question for the reading source.
   Building prompts only from export-derived evidence is one option.
   The listening loop's [Owner decisions](LISTENING_LOOP.md#owner-decisions) hold the same question for conversations.
 - Checking each audio source's terms before its recordings are embedded, fingerprinted, or used as generation seeds or interpolation endpoints.
   Apple's Media Services Terms bar measurement or analysis of Content from Apple's services, iTunes Store purchases included.
   They also bar using that Content or its outputs to train, fine-tune, or improve AI models.
   Bandcamp's acceptable-use policy may reach downloaded purchases.
-- Deciding whether Moondog plays local-library and generated files with a player of its own, as the atmosphere stream needs, or hands that playback to the operating system or an existing player.
-  Moondog already plays preview files itself, through afplay or ffplay in the terminal and an audio element in the window.
+- Deciding whether Moondog plays local-library files with a player of its own, or hands that playback to the operating system or an existing player.
+  Moondog already plays preview files itself, through afplay or ffplay in the terminal and an audio element in the window, and since 2026-10-29 the tracks it makes, which the window reads through a `moondog-media:` route that serves only those files.
 - Deciding whether a non-stop background stream fits the charter's Taste Over Volume principle.
 - Getting Bandcamp's written permission before any Moondog tooling reads Bandcamp pages or endpoints (see [BANDCAMP_NOTES.md](BANDCAMP_NOTES.md)).
 - Approving the artist package format before anyone outside the project publishes against it.

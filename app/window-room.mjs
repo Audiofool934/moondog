@@ -61,7 +61,7 @@ const errorText = (error) => String(error?.message ?? error ?? "").slice(0, 400)
 
 export function runWindowRoom(services, { port, send, quit = null, focus = null }) {
   const { application: base, rebuildRuntime, saveRuntimeSelection, toolTrace = null, openConversation, modelSettings, saveLanguage, savePlaybackService,
-    prepareImport, prepareRecentImport, refreshImportedData, lastfm, runSpotify, watchModelSettings, firstRun } = services;
+    prepareImport, prepareRecentImport, refreshImportedData, lastfm, runSpotify, watchModelSettings, firstRun, generation } = services;
   // Slot 0 is the core's own application and agent. The core closes every conversation after the room ends.
   const slots = [{ application: base, runtime: services.runtime, selection: null, turn: null, live: null, stale: null, rebuilding: null, waiting: false, close: null }];
   let current = slots[0];
@@ -207,10 +207,16 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
       // NetEase Cloud Music is offered once ncm-cli is installed and signed in; a failed check says why.
       netease: base.neteasePlayer?.status?.().state ?? "unavailable",
       neteaseMessage: base.neteasePlayer?.status?.().message ?? null,
+      // Making music on this Mac: whether it is on, what the core found at its folder, and that folder.
+      generation: generationStatus(),
       memory: base.memoryStatus?.().state ?? "unavailable",
       // { needed, service, model } once read, null before; see refreshFirstRun.
       firstRun: firstRunState,
     };
+  }
+  function generationStatus() {
+    const found = generation?.status?.();
+    return found ? { state: found.state, enabled: found.enabled === true, install: found.install, missing: found.missing ?? null, path: found.path ?? null } : null;
   }
   const sendStatus = () => {
     send({ type: "status", ...status() });
@@ -1014,6 +1020,18 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     "first-run-done": async (data) => { await firstRun?.finish({ skipped: data.skipped === true }); await refreshFirstRun(); },
     language: (data) => setLanguage(String(data.locale ?? "")),
     "music-service": (data) => setMusicService(String(data.service ?? "")),
+    // The listener turns music making on or off, or points it at another Stable Audio 3 folder.
+    generation: async (data) => {
+      await generation.save({ enabled: data.enabled === true, ...(typeof data.path === "string" ? { path: data.path } : {}) });
+      sendStatus();
+      send({ type: "generation-checked" });
+    },
+    // After ./install.sh runs in Terminal, the window asks again instead of waiting for the next launch.
+    "generation-check": async () => {
+      await generation?.check?.();
+      sendStatus();
+      send({ type: "generation-checked" });
+    },
     // After ncm-cli is set up in Terminal, the window asks again instead of waiting for the next launch.
     "netease-check": async () => {
       await base.neteasePlayer?.check?.();
@@ -1044,6 +1062,8 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     schedulePlayer();
   }
   const unsubscribePlayback = base.onPlaybackServiceChange?.(playbackChanged);
+  // Music making turned on or off in the terminal reaches Settings here.
+  const unwatchGeneration = generation?.subscribe?.(() => { if (!closed) sendStatus(); });
   const unwatchModel = watchModelSettings?.((selection, changed) => { void followModel(selection, changed).catch(() => {}); });
   const unwatchFirstRun = firstRun?.watch(() => { void refreshFirstRun(); });
 
@@ -1054,6 +1074,7 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     const stop = () => stopping ??= (async () => {
       closed = true;
       unsubscribePlayback?.();
+      unwatchGeneration?.();
       unwatchModel?.();
       unwatchFirstRun?.();
       clearTimeout(pollTimer);

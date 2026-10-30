@@ -52,6 +52,9 @@ New listening views, corrections, and discovery interactions must work in the te
 - [x] Update a global install or a clean checkout with `moondog update` and `/update`, on stable and preview channels.
 - [x] Reply in ten languages, with screens in five.
 - [x] Run the desktop app on the same core: conversations, now playing, up next, settings with in-app sign-in, and a signed and notarized build script.
+- [x] Make an instrumental track on this Mac with the listener's own Stable Audio 3, once they turn it on in Settings or with `/generation on`.
+  The taste compiler keeps only sound descriptors it can trace to the listener's evidence or the moment, and none that names an artist, a song or an Avoid; the track plays in Moondog's own player, keeps a receipt, and enters the ledger as Moondog's pick.
+  This is the first step of [music decentralization](MUSIC_DECENTRALIZATION.md), and the first generation tool connected through an observable, permissioned interface.
 - [x] Run the real room on fictional data on the project page.
 - [x] Run a deterministic offline demo and generate a fictional Spotify history ZIP, with no personal data, model, or credential.
 - [x] Rebuild and verify the public source tree on Node 22.19.0 and Node 24 in CI, scan the full history for private material, and install the packed npm tarball into an empty project.
@@ -99,8 +102,8 @@ New listening views, corrections, and discovery interactions must work in the te
 ## Later
 
 - [ ] Move beyond streaming-first toward music decentralization: the local personal library, generative music, and an open format for independent artists.
-  [Music decentralization](MUSIC_DECENTRALIZATION.md) records the stages, which stay vision until the owner opens the scope; the next item is the first concrete step toward them.
-- [ ] Connect one music-analysis or generation tool through an observable, permissioned interface.
+  [Music decentralization](MUSIC_DECENTRALIZATION.md) records the stages; the owner opened stage 2 on 2026-10-29, and its first slice is shipped above.
+  Next for it are the two loops back from listening, Likes on generated tracks, and an analysis stack.
 - [ ] Carry listener intent and selected references into creative work without uploading raw history by default.
 - [ ] Write a SQLite schema migration path before any release that changes stored data.
 - [ ] Decide whether Windows belongs in the product; a port needs a player, paths, and the credential store.
@@ -114,6 +117,8 @@ New listening views, corrections, and discovery interactions must work in the te
 - [ ] Publish the current source version to npm: choose the channel, configure npm trusted publishing, and tag the release.
   The npm registry still serves 0.1.0, which predates the updater.
 - [ ] Publish a security contact in `SECURITY.md` and a maintainer route.
+- [ ] Before the next public release that contains local generation, accept the Stability AI Community License for a public product and ship its copy and a Notice file ([Owner gates](MUSIC_DECENTRALIZATION.md#owner-gates)).
+- [x] Confirm which recent attention may shape a generation prompt, given Spotify's Developer Policy: stored plays, recent-play sync rows included; Spotify's own top artists stay out (2026-10-29, [Owner gates](MUSIC_DECENTRALIZATION.md#owner-gates)).
 
 These decisions are intentionally not inferred from code or local repository state.
 

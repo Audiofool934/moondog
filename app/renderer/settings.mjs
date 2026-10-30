@@ -21,6 +21,8 @@ const SPOTIFY_DASHBOARD = "https://developer.spotify.com/dashboard";
 const NETEASE_SETUP = "npm install -g @music163/ncm-cli && brew install mpv && ncm-cli login";
 // What NetEase's row says until ncm-cli is ready.
 const NETEASE_STATES = { missing: "neteaseMissing", signed_out: "neteaseSignedOut", unavailable: "neteaseUnavailable", unknown: "checking" };
+// What the Stable Audio 3 row says under its name, by what the core found at its folder.
+const GENERATION_STATES = { missing: "generationNotFound", incomplete: "generationIncomplete", unsupported: "generationUnsupported", unknown: "checking" };
 const LASTFM_KEY_PAGE = "https://www.last.fm/api/account/create";
 const SITE = "https://moondog.audiofool.ai";
 // The core's error codes the listener can act on. Anything else reads as a plain failure; the raw
@@ -33,7 +35,8 @@ const LASTFM_ACCESS = new Set(["lastfm_key_missing", "lastfm_key_invalid"]);
 const NOTICES = { model_unknown: ["model", "noticeModelUnknown", "model"], transfer_failed: ["playback", "noticeTransferFailed"],
   "sign-out": [null, "noticeFailed", "spotify"], "music-service": ["playback", "noticeFailed", "service"], language: ["general", "noticeFailed", "locale"],
   model: ["model", "noticeFailed", "model"], effort: ["model", "noticeFailed", "effort"], "default-model": ["model", "noticeFailed"],
-  "default-effort": ["model", "noticeFailed"], "list-model": ["model", "noticeFailed"], "endpoint-remove": ["model", "noticeFailed"] };
+  "default-effort": ["model", "noticeFailed"], "list-model": ["model", "noticeFailed"], "endpoint-remove": ["model", "noticeFailed"],
+  generation: ["playback", "noticeFailed", "generation"], "generation-check": ["playback", "noticeFailed"] };
 // The endpoint errors the listener can fix in the form; any other reads as a plain failure.
 const ENDPOINT_ERRORS = { endpoint_url_invalid: "endpointUrlInvalid", endpoint_models_unavailable: "endpointModelsUnavailable",
   endpoint_models_missing: "endpointModelsUnavailable", endpoint_name_invalid: "endpointNameInvalid" };
@@ -115,7 +118,7 @@ export function createSettings({ state, send, t, appleMusic = null, onHide = nul
     list: null, listError: false, toggles: new Map(), listPending: new Map(), endpoint: null,
     devices: null, devicesError: false, devicesLoading: false, memories: null, auth: null, error: null, importing: null, version: null, appearance: null, copied: null, focus: null, phaseOffset: null,
     lastfm: { username: "", needsKey: false, keyError: false, savingKey: false },
-    drafts: { remember: "", lastfm: "", lastfmKey: "", spotifyClientId: "", endpointName: "", endpointUrl: "", endpointKey: "", endpointModels: "" } };
+    drafts: { remember: "", lastfm: "", lastfmKey: "", spotifyClientId: "", endpointName: "", endpointUrl: "", endpointKey: "", endpointModels: "", generationPath: "" } };
 
   // A choice stands until the core's next status, which always brings a new model object and says
   // what really happened.
@@ -158,6 +161,7 @@ export function createSettings({ state, send, t, appleMusic = null, onHide = nul
       data.expanded = undefined;
       data.servicePanel = undefined;
       data.neteaseCheck = null;
+      data.generationCheck = null;
       if (!data.endpoint?.busy) data.endpoint = null;
     }
     isOpen = true;
@@ -784,7 +788,55 @@ export function createSettings({ state, send, t, appleMusic = null, onHide = nul
       panel.append(...inside[row.id]().filter(Boolean));
       list.push(panel);
     }
-    return [group(say("musicService"), sectionError(), choices(list))];
+    return [group(say("musicService"), sectionError(), choices(list)), musicGeneration()].filter(Boolean);
+  }
+  // Music generation sits beside the music services, not among them: what Moondog makes plays in its
+  // own player whatever service is in use. One row, Stable Audio 3, on this Mac; at its right, while
+  // the pointer is on it, Turn on or Turn off once the core finds the install, and Set up unfolds the
+  // folder and a check until then. A host without local generation shows no group.
+  function musicGeneration() {
+    const status = state.generation;
+    if (!status) return null;
+    const enabled = expected("generation", status.enabled === true);
+    const ready = status.install === "ready";
+    const detail = enabled && ready ? say("generationOn") : ready ? say("generationOff") : say(GENERATION_STATES[status.install] ?? "checking");
+    const expanded = data.generationPanel === true;
+    let trailing;
+    // Turning it on or off is not a choice between services, so it says so in words rather than the switch.
+    if (ready) {
+      trailing = button(say(enabled ? "turnOff" : "turnOn"), "button small reveal", () => {
+        expect("generation", !enabled);
+        send({ type: "generation", enabled: !enabled });
+        render();
+      }, "generation:switch");
+    } else if (status.install !== "unsupported") {
+      trailing = button(say("setUp"), "button small reveal", () => { data.generationPanel = true; render(); }, "set-up:generation");
+    }
+    const rows = [choice({ label: "Stable Audio 3", detail, chosen: enabled && ready, key: "generation:stable-audio", trailing, expanded,
+      onChoose: () => { data.generationPanel = !expanded; render(); } })];
+    if (expanded) {
+      const checking = data.generationCheck === "checking";
+      const again = button(say(checking ? "checking" : "checkAgain"), "button small", () => {
+        data.generationCheck = "checking";
+        send({ type: "generation-check" });
+        render();
+      }, "generation:check");
+      again.disabled = checking;
+      const why = data.generationCheck !== "done" || ready ? null
+        : failure(status.install === "incomplete" ? (status.missing === "weights" ? "generationNoWeights" : "generationNotInstalled") : "generationNotThere");
+      const stack = make("div", "stack");
+      stack.append(note(say("generationNote")), inlineForm({ key: "generationPath", placeholder: status.path || say("generationFolder"), action: say("save"),
+        onSubmit: (value) => {
+          data.generationCheck = "checking";
+          data.drafts.generationPath = "";
+          send({ type: "generation", enabled, path: value });
+          render();
+        } }), again, ...(why ? [why] : []));
+      const panel = make("div", "panel");
+      panel.append(stack);
+      rows.push(panel);
+    }
+    return group(say("musicGeneration"), choices(rows));
   }
   // The first run asks before any service is saved, so none is checked, and choosing the one in use
   // saves it too. Each service leads with its own mark, the one the composer shows beside send once it
@@ -1069,6 +1121,7 @@ export function createSettings({ state, send, t, appleMusic = null, onHide = nul
     }
     if (message.type === "memories") data.memories = message.memories ?? [];
     if (message.type === "netease-checked") data.neteaseCheck = "done";
+    if (message.type === "generation-checked") data.generationCheck = "done";
     if (message.type === "auth-prompt" && data.auth) {
       data.auth.prompt = { id: message.id, kind: message.kind, message: message.message, placeholder: message.placeholder, options: message.options };
     }
@@ -1136,6 +1189,7 @@ export function createSettings({ state, send, t, appleMusic = null, onHide = nul
         // The choice that failed shows as it really is again.
         if (kind) pending.delete(kind);
         if (message.code === "sign-out") data.signingOut.clear();
+        if (message.code === "generation" || message.code === "generation-check") data.generationCheck = null;
         if (message.code === "list-model") data.toggles.clear();
         if (message.code === "default-model") data.listPending.delete("default");
         if (message.code === "default-effort") data.listPending.delete("effort");
