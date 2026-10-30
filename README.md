@@ -212,3 +212,4 @@ Your profile, and anything Moondog remembers, carry over.
 
 Moondog is open source under the [Apache License 2.0](LICENSE).
 Copyright 2026 Audiofool.
+Music making runs Stable Audio 3, which you install yourself; [NOTICE](NOTICE) holds its attribution, and [licenses/](licenses/stability-ai-community-license.md) holds the Stability AI Community License.

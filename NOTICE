@@ -1,0 +1,12 @@
+Moondog
+Copyright 2026 Audiofool.
+
+Moondog can make music with Stable Audio 3 by Stability AI.
+Listeners install Stable Audio 3 and its weights on their own Mac; Moondog does not include them.
+
+This Stability AI Model is licensed under the Stability AI Community License, Copyright ©  Stability AI Ltd. All Rights Reserved
+
+A copy of the Stability AI Community License is in licenses/stability-ai-community-license.md.
+
+Stable Audio 3 uses the T5Gemma text encoder.
+Gemma is provided under and subject to the Gemma Terms of Use found at ai.google.dev/gemma/terms

@@ -18,6 +18,8 @@
     "moondog": "scripts/moondog"
   },
   "files": [
+    "NOTICE",
+    "licenses/stability-ai-community-license.md",
     "assets/brand/moondog-logo.svg",
     "contracts/v1",
     "contracts/v2",

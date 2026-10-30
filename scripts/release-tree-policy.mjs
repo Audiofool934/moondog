@@ -78,7 +78,10 @@ const exactAllowedPaths = new Set([
   "AGENTS.md",
   "CONTRIBUTING.md",
   "LICENSE",
+  "NOTICE",
   "README.md",
+  // The Stability AI Community License, whose attribution terms the NOTICE file follows.
+  "licenses/stability-ai-community-license.md",
   "package-lock.json",
   "package.json",
   // The showcase was removed, but its page stays in the public history the release check scans.
@@ -145,7 +148,9 @@ export const requiredReleasePaths = new Set([
   "AGENTS.md",
   "CONTRIBUTING.md",
   "LICENSE",
+  "NOTICE",
   "README.md",
+  "licenses/stability-ai-community-license.md",
   "assets/brand/README.md",
   "assets/brand/moondog-app-icon.png",
   "assets/brand/moondog-logo.svg",
