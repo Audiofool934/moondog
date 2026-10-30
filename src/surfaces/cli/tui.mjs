@@ -740,14 +740,14 @@ export async function runMoondogTui({
     if (status?.install === "unsupported") return tr("Stable Audio 3 needs a Mac with Apple silicon, so Moondog can't make music here.");
     if (status?.state === "ready") return tr("Moondog makes music on this Mac with Stable Audio 3, powered by Stability AI. Ask for a track. Stable Audio 3 runs offline, and the track stays on this Mac.");
     if (status?.state === "off") {
-      return status.install === "ready"
-        ? tr("Making music on this Mac is off. Stable Audio 3 is ready at {folder}; turn it on with /generation on.", { folder })
-        : tr("Making music on this Mac is off, and Stable Audio 3 isn't at {folder}. Install Stability AI's MLX build, then use /generation on with its folder.", { folder });
+      if (status.install === "ready") return tr("Making music on this Mac is off. Stable Audio 3 is ready at {folder}; turn it on with /generation on.", { folder });
+      if (status.install === "incomplete") return tr("Making music on this Mac is off, and Stable Audio 3 at {folder} isn't fully installed. Run ./install.sh --download medium there, then use /generation on.", { folder });
+      return tr("Making music on this Mac is off, and Stable Audio 3 isn't at {folder}. Install Stability AI's MLX build from github.com/Stability-AI/stable-audio-3, then use /generation on with its folder.", { folder });
     }
     if (status?.state === "incomplete") {
       return status.missing === "weights"
-        ? tr("Stable Audio 3 at {folder} doesn't have the Medium model yet. Run ./install.sh there, choose Medium, then use /generation again.", { folder })
-        : tr("Stable Audio 3 at {folder} isn't installed yet. Run ./install.sh there, then use /generation again.", { folder });
+        ? tr("Stable Audio 3 at {folder} doesn't have the Medium model yet. Run ./install.sh --download medium there, then use /generation again.", { folder })
+        : tr("Stable Audio 3 at {folder} isn't installed yet. Run ./install.sh --download medium there, then use /generation again.", { folder });
     }
     return tr("Stable Audio 3 isn't at {folder}. Use /generation on with the folder that holds its sa3 script.", { folder });
   };

@@ -161,6 +161,21 @@ The layout reduces artwork before sacrificing room for the input, and works with
 `/service apple_music` switches straight to one; the choice is saved and the desktop app follows it.
 `/generation` says whether Moondog can make music on this Mac with Stable Audio 3, powered by Stability AI; `/generation on` turns it on, `/generation on ~/path/to/mlx` points at another install of Stability AI's MLX build, and `/generation off` turns it off.
 Once it is on, ask for a track in your own words, ask to hear one Moondog made again, or ask for music to keep going while you work; `/skip` moves a stream to its next track and `/stop` ends it. Stable Audio 3 runs offline, and the track and its receipt stay in Moondog's state folder; your request still goes to the model you talk through.
+A stream keeps the audio of its newest three tracks; the others keep their receipts.
+
+Music making needs an Apple silicon Mac and Stability AI's MLX build of Stable Audio 3 with its Medium model.
+Moondog runs it offline and never downloads weights itself, so download the Medium model once when you install it:
+
+```bash
+git clone https://github.com/Stability-AI/stable-audio-3.git ~/Developer/stable-audio-3
+cd ~/Developer/stable-audio-3/optimized/mlx
+./install.sh --download medium
+```
+
+The installer sets up its own Python environment with uv, and offers to install uv when it is missing.
+The Medium model is about 5.9 GB from Hugging Face.
+Moondog looks in `~/Developer/stable-audio-3/optimized/mlx` first; for another folder, use `/generation on` with that folder, the folder field in the desktop app's Settings, or `MOONDOG_SA3_DIR`.
+Stable Audio 3 is under the Stability AI Community License.
 `/import` opens a native guide for music-service exports and public playlist links, with preview and confirmation before saving.
 `/import "/path/to/history.zip"` opens the file preview directly.
 `/help` shows the terminal guide; `/help all` includes the complete CLI reference.
