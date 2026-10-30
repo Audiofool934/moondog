@@ -549,6 +549,27 @@ test("music from before a stream's first track does not end it, a skip past its 
   assert.equal(stream.status(), null);
 });
 
+test("a stream counts only the time a track was heard toward an early skip, pauses left out", async (t) => {
+  const install = await fakeInstall(t);
+  const generator = install.generator();
+  await generator.save({ enabled: true });
+  let clock = 1_000_000;
+  const player = streamPlayer();
+  const stream = createAtmosphereStream({ generator, player, now: () => clock });
+  const { made } = await stream.start({ compiled: compiledTaste, title: "Late tide", seconds: 15, minutes: 10, receipt: {} });
+  const track = { generated: true, id: made.id };
+  // Five seconds, a minute's pause, then a skip one second after it plays again: six seconds heard.
+  clock += 5_000;
+  stream.observe({ type: "paused", track });
+  clock += 60_000;
+  stream.observe({ type: "playing", track });
+  clock += 1_000;
+  stream.observe({ type: "skipped", track });
+  assert.deepEqual(stream.status().steering_away_from.sort(), (await generator.receipt(made.id)).stream.featured.sort());
+  await until(() => !generator.busy());
+  stream.stop();
+});
+
 test("the terminal player reports a made track skipped past the end of its queue, and /stop is no skip", async (t) => {
   const root = await mkdtemp(path.join(tmpdir(), "moondog-generated-skip-"));
   t.after(() => rm(root, { recursive: true, force: true }));

@@ -527,16 +527,18 @@ export function createAtmosphereStream({ generator, player, now = Date.now, keep
       if (!made.pruned) { made.pruned = true; void generator.removeAudio?.(made.id); }
     }
   };
-  // Another track fits when it would end within the time limit, after the one playing now.
+  // How long the track playing now was heard, pauses left out, as its outcome counts it.
+  const heard = (playing) => playing.heardMs + (playing.since === null ? 0 : now() - playing.since);
+  // Another track fits when it would end within the time limit, after what is left of the one playing now.
   const fits = (current) => {
     const playing = current.current;
-    const playingEnds = playing && !playing.finished ? playing.startedAt + (playing.seconds ?? current.seconds) * 1000 : now();
-    return Math.max(now(), playingEnds) + current.seconds * 1000 <= current.endsAt;
+    const left = playing && !playing.finished ? Math.max(0, (playing.seconds ?? current.seconds) * 1000 - heard(playing)) : 0;
+    return now() + left + current.seconds * 1000 <= current.endsAt;
   };
   // The track playing now was left early: within 30 seconds, what it featured stays out from now on.
   const leftEarly = (current) => {
     const before = current.current;
-    if (!before || before.finished || before.steered || now() - before.startedAt >= STREAM_SKIP_MS) return;
+    if (!before || before.finished || before.steered || heard(before) >= STREAM_SKIP_MS) return;
     before.steered = true;
     for (const term of current.made.find((made) => made.id === before.id)?.featured ?? []) current.leaveOut.add(term);
   };
@@ -600,7 +602,7 @@ export function createAtmosphereStream({ generator, player, now = Date.now, keep
         await beforePlay?.();
         if (stream !== current || signal?.aborted) throw stopped();
         current.made.push({ id: made.id, featured: variation.featured, started: true, seconds: made.duration_seconds });
-        current.current = { id: made.id, startedAt: now(), finished: false, seconds: made.duration_seconds };
+        current.current = { id: made.id, heardMs: 0, since: now(), finished: false, seconds: made.duration_seconds };
         current.making = false;
         // Whatever was playing stops for the first track; that stop is not the listener's.
         current.starting = true;
@@ -634,12 +636,17 @@ export function createAtmosphereStream({ generator, player, now = Date.now, keep
       if (event?.type === "playing" && track?.id && track.id === current.next) {
         leftEarly(current);
         const made = current.made.find((entry) => entry.id === track.id);
-        current.current = { id: track.id, startedAt: now(), finished: false, seconds: made?.seconds };
+        current.current = { id: track.id, heardMs: 0, since: now(), finished: false, seconds: made?.seconds };
         if (made) made.started = true;
         current.next = null;
         current.waiting = false;
         prune(current);
         void makeNext();
+      } else if (event?.type === "paused" && isCurrent && current.current.since !== null) {
+        current.current.heardMs += now() - current.current.since;
+        current.current.since = null;
+      } else if (event?.type === "playing" && isCurrent && current.current.since === null) {
+        current.current.since = now();
       } else if (event?.type === "skipped" && isCurrent) {
         // A skip past the end of the queue moves on to the next track once it is made.
         leftEarly(current);
