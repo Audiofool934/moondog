@@ -9,7 +9,7 @@ Contribution information is in [CONTRIBUTING.md](../CONTRIBUTING.md).
 ## Distribution
 
 The current distribution is a source checkout with Node.js 22.19.0 or newer and locked npm dependencies, on macOS or Linux.
-The source version is `0.2.2`.
+The source version is `0.3.0-beta.1`.
 `@audiofool/moondog` is the public npm package name, and the registry serves 0.2.2 as `latest`.
 Version 0.1.0 predates the updater, so its installs need a one-time manual upgrade; see [updates and maintainer setup](UPDATES.md).
 A `v` tag publishes through npm trusted publishing with provenance, after the owner approves the `npm` environment.
