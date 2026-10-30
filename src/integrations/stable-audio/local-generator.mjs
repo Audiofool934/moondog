@@ -376,6 +376,9 @@ export function createLocalGenerator({
         playing.since = null;
       } else if (event?.type === "finished" && playing && (!track?.id || track.id === playing.id)) {
         close(true);
+      } else if (event?.type === "failed" && playing && (!track?.id || track.id === playing.id)) {
+        // A track the player could not play says nothing about the listener.
+        playing = null;
       } else if (event?.type === "stopped" || (event?.type === "queue" && !(event.tracks ?? []).some((entry) => entry?.id === playing?.id))) {
         close(false);
       }

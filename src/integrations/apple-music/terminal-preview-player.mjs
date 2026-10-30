@@ -103,16 +103,17 @@ export async function createTerminalPreviewPlayer({
     return file;
   };
 
-  // Resolves true when the song played to its end, false when it was stopped or could not play.
+  // Resolves "ended" when the song played to its end, "stopped" when /skip or /stop ended it, and
+  // "failed" when the player could not play it (no audio device, an unreadable file).
   const playFile = (file) => new Promise((resolve) => {
     const playing = spawn(player.command, [...player.args, file], { stdio: "ignore" });
     child = playing;
-    const finish = (code) => {
+    const finish = (how) => {
       if (child === playing) child = null;
-      resolve(code === 0);
+      resolve(how);
     };
-    playing.once("error", () => finish(null));
-    playing.once("exit", (code) => finish(code));
+    playing.once("error", () => finish("failed"));
+    playing.once("exit", (code, signal) => finish(code === 0 ? "ended" : signal ? "stopped" : "failed"));
   });
 
   const start = (tracks) => {
@@ -154,9 +155,9 @@ export async function createTerminalPreviewPlayer({
             continue;
           }
           emit({ type: "playing", ...song });
-          const ended = await playFile(file);
-          // A made track that played to its end, as the loop back from listening counts it.
-          if (generated && ended && !controller.signal.aborted) emit({ type: "finished", ...song });
+          const how = await playFile(file);
+          // A made track that played to its end, or that could not play, as the loop back from listening counts it.
+          if (generated && !controller.signal.aborted && how !== "stopped") emit({ type: how === "ended" ? "finished" : "failed", ...song });
           if (!tracks[index].file) await rm(file, { force: true });
           if (controller.signal.aborted) break;
         }

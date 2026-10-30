@@ -446,6 +446,25 @@ test("the terminal plays a made track from its folder and keeps it; the window a
   assert.deepEqual(events.find((event) => event.type === "playing").track, { title: "Night glass", artist_credit: "", generated: true, id: "x" });
   assert.ok(events.some((event) => event.type === "finished"), "a track that plays to its end is reported finished");
 
+  // A player that cannot play the file reports a failure, which is no outcome at all.
+  const broken = path.join(root, "broken-bin");
+  await mkdir(broken);
+  await writeFile(path.join(broken, "afplay"), "#!/bin/sh\nexit 1\n");
+  await chmod(path.join(broken, "afplay"), 0o755);
+  const failing = await createTerminalPreviewPlayer({ platform: "darwin", environment: { PATH: broken }, temporaryRoot: root });
+  const failed = [];
+  const over = new Promise((resolve) => failing.subscribe((event) => { failed.push(event.type); if (event.type === "stopped") resolve(); }));
+  failing.playGenerated({ id: "c", title: "Three", file });
+  await over;
+  failing.close();
+  assert.ok(failed.includes("failed") && !failed.includes("finished"));
+  const quiet = createLocalGenerator({ environment: { MOONDOG_STATE_HOME: root, MOONDOG_CONFIG_HOME: root } });
+  quiet.observe({ type: "playing", track: { generated: true, id: "6f1c1b2e-3c4d-4e5f-8a9b-0c1d2e3f4a5b" } });
+  quiet.observe({ type: "failed", track: { generated: true, id: "6f1c1b2e-3c4d-4e5f-8a9b-0c1d2e3f4a5b" } });
+  quiet.observe({ type: "stopped" });
+  await quiet.flush();
+  await assert.rejects(readFile(path.join(root, "generated", "6f1c1b2e-3c4d-4e5f-8a9b-0c1d2e3f4a5b", "outcomes.jsonl"), "utf8"));
+
   const port = new EventEmitter();
   const sent = [];
   port.postMessage = (message) => sent.push(message);
