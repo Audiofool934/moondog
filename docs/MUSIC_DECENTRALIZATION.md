@@ -17,7 +17,7 @@ The listener turns it on once, in Settings › Playback or with `/generation on`
 The agent's `moondog_make_track` tool proposes sound descriptors with their sources, and the taste compiler (`src/profile/taste-compiler.mjs`) keeps only those it can trace to a saved finding, a Like, recent attention, the moment or the request, and none that names an artist, a song or an Avoid.
 A Stable Audio 3 adapter (`src/integrations/stable-audio/local-generator.mjs`) writes the prompt, runs the model offline, and keeps the WAV with a receipt of everything that shaped it in Moondog's state folder.
 Each play goes in the suggestions ledger as Moondog's own (`service` moondog, `action` generated.play), never as the listener's attention.
-Recent attention here means the stored plays of the last four weeks, which include plays the Spotify recent-play sync wrote; Spotify's own top artists are left out, and the owner still has to confirm or narrow this (see Owner gates).
+Recent attention here means the stored plays of the last four weeks, which include plays the Spotify recent-play sync wrote; Spotify's own top artists are left out, and the owner kept this on 2026-10-29 (see Owner gates).
 A first version of the loops back from listening followed the same day.
 Moondog's own player reports how each made track landed: played through, skipped within 30 seconds, stopped later, or asked for again; each track's folder keeps these outcomes beside its receipt.
 The agent sees its newest tracks with their sound and outcomes before it makes the next one, read again each reply so the terminal and the window share them, and leans toward what played through; that is the calibration loop, and the outcomes never become taste.
@@ -231,8 +231,7 @@ The moment shapes the prompt but does not become a profile entry.
 
 Recent attention is partly built from live Spotify Web API data.
 Spotify's Developer Policy bars feeding Spotify content, metadata included, into an AI model.
-Whether those layers may shape a generation prompt is an owner decision (see Owner gates).
-The first slice lets stored plays of the last four weeks shape descriptors, recent-play sync rows included, and leaves Spotify's own top artists out; names never reach the prompt either way.
+The owner decided on 2026-10-29 that stored plays of the last four weeks may shape descriptors, recent-play sync rows included, and that Spotify's own top artists stay out; names never reach the prompt either way (see Owner gates).
 
 Two extensions are needed before the compiler is honest:
 
@@ -350,7 +349,7 @@ The endpoints come only from sources that clear the source-terms gate.
   Its T5Gemma text encoder is under the Gemma Terms of Use.
   Sung songs need a second model, local or a closed service.
 - Deciding whether profile layers that hold live Spotify Web API data (the recent-play sync and top artists) may shape a generation prompt, given Spotify Developer Policy sections III.13 and III.14.
-  The first slice accepts recent attention from stored plays, recent-play sync rows included, and refuses Spotify's own top artists; the owner has to confirm this or narrow it.
+  Decided for generation on 2026-10-29: recent attention from stored plays, recent-play sync rows included, may shape descriptors, while Spotify's own top artists stay out and no name ever reaches a prompt.
   A saved reading partly built from Web API rows raises the same question for the reading source.
   Building prompts only from export-derived evidence is one option.
   The listening loop's [Owner decisions](LISTENING_LOOP.md#owner-decisions) hold the same question for conversations.

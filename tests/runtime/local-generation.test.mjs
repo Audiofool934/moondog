@@ -134,6 +134,13 @@ test("a stopped, failed or second run leaves no track behind", async (t) => {
   await run;
   assert.deepEqual(await hanging.generated(), []);
 
+  // A stop that comes before the model starts frees the slot at once, and starts nothing.
+  const early = new AbortController();
+  await assert.rejects(generator.generate({ prompt: "ambient", seconds: 15 }, { signal: early.signal,
+    onProgress: ({ stage }) => { if (stage === "starting") early.abort(); } }), { code: "generation_stopped" });
+  assert.equal(generator.busy(), false);
+  assert.deepEqual(await hanging.generated(), []);
+
   // A run that ignores the request to stop keeps the slot until it is ended, so two never overlap.
   const stubborn = await fakeInstall(t);
   const holding = stubborn.generator({ FAKE_SA3: "stubborn" });
