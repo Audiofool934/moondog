@@ -1053,4 +1053,11 @@ export default {
   "Play a track Moondog made": "Volver a poner una pista que hizo Moondog",
   "Start a stream": "Empezar un flujo",
   "Stop the stream": "Parar el flujo",
+  "Go on air: Moondog keeps making music from your taste": "Sal al aire: Moondog sigue haciendo música a tu gusto",
+  "on air until {time}": "al aire hasta las {time}",
+  "Cutting the next record": "Grabando el siguiente disco",
+  "Off air: the next record couldn't be made.": "Fuera del aire: no se pudo hacer el siguiente disco.",
+  "The next record is still being cut.": "El siguiente disco aún se está grabando.",
+  "Off air.": "Fuera del aire.",
+  "Turn on music making first: /generation on.": "Primero activa la creación de música: /generation on.",
 };

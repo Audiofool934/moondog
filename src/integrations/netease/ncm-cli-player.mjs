@@ -245,9 +245,10 @@ export function createNeteasePlayer({
      * up. mode "play" replaces the queue and starts the first; "queue" adds after what is
      * playing. Songs NetEase marks as not playable are never sent to the player, nor songs
      * allow(song) refuses, such as the listener's Avoids; those are only counted. Before a lookup,
-     * allow gets the title and artist asked for, as { title, artist_credit }.
+     * allow gets the title and artist asked for, as { title, artist_credit }. beforePlay runs just
+     * before a song starts, which a queue with nothing loaded does too.
      */
-    async play({ items = [], mode = "play", intent, allow = () => true } = {}) {
+    async play({ items = [], mode = "play", intent, allow = () => true, beforePlay } = {}) {
       const found = [];
       const unplayable = [];
       const notFound = [];
@@ -278,6 +279,7 @@ export function createNeteasePlayer({
           queue = [...queue, ...songs];
           outcome = "queued";
         } else {
+          await beforePlay?.();
           queue = songs;
           await playAt(0);
           outcome = "playing";
@@ -297,15 +299,19 @@ export function createNeteasePlayer({
       checked(await run(["resume"]), "resume");
       stayConnected();
     },
-    async next() {
+    // beforePlay runs just before a song starts, so the other players go quiet only for one.
+    async next({ beforePlay } = {}) {
       if (index + 1 >= queue.length) throw failure("netease_failed", "Nothing is queued after this song.");
+      await beforePlay?.();
       await playAt(index + 1);
     },
     // Back to the start of the song, or to the one before when it has only just begun.
-    async previous() {
+    async previous({ beforePlay } = {}) {
       const now = await state();
-      if (index > 0 && (Number(now.position) || 0) <= 3) await playAt(index - 1);
-      else checked(await run(["seek", "0"]), "go back to the start");
+      if (index > 0 && (Number(now.position) || 0) <= 3) {
+        await beforePlay?.();
+        await playAt(index - 1);
+      } else checked(await run(["seek", "0"]), "go back to the start");
     },
     async seek({ positionMs = 0 } = {}) {
       checked(await run(["seek", String(Math.max(0, Math.round(positionMs / 1000)))]), "move in the song");

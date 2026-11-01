@@ -132,6 +132,7 @@ export default {
   "choice.retract": ({ title, artist }) => { const name = title ? `"${title}" de ${artist}` : artist; return `\n\nDeshecho: tu elección anterior sobre ${name}.`; },
   "generate.made": ({ title, length, seed }) => `Hecho en este Mac con Stable Audio 3: «${title}» (${length}, semilla ${seed}).`,
   "generate.stream": ({ minutes }) => `El flujo sigue en este Mac, con una pista nueva cada vez, hasta ${minutes} minutos. Puedes pararlo cuando quieras.`,
+  "onAir.request": "Sal al aire: que la música siga sonando para este momento",
   "turn.cancelled": "Cancelé el resto.",
   "turn.interrupted": "La respuesta se interrumpió. Abajo están los resultados registrados en Spotify; no se repitió ninguna acción.",
 };

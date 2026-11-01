@@ -1053,4 +1053,11 @@ export default {
   "Play a track Moondog made": "再放一首 Moondog 做的曲子",
   "Start a stream": "开始音乐流",
   "Stop the stream": "停止音乐流",
+  "Go on air: Moondog keeps making music from your taste": "开播：Moondog 照着你的口味一直做音乐",
+  "on air until {time}": "播出到 {time}",
+  "Cutting the next record": "正在刻下一张",
+  "Off air: the next record couldn't be made.": "停播了：下一张没刻成。",
+  "The next record is still being cut.": "下一张还在刻。",
+  "Off air.": "已停播。",
+  "Turn on music making first: /generation on.": "先开启音乐生成：/generation on。",
 };

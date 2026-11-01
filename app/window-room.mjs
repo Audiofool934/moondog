@@ -58,6 +58,9 @@ const trackOf = (item) => item && {
   durationMs: Number.isInteger(item.duration_ms) ? item.duration_ms : null,
 };
 const errorText = (error) => String(error?.message ?? error ?? "").slice(0, 400);
+// On Air, Moondog's own channel: null, or its stream's phase, when it started, when it ends at the
+// latest, and how many tracks it made.
+const onAirOf = (view) => (view ? { phase: view.phase, startedAt: view.started_at, endsAt: view.ends_at, tracks: view.tracks_made } : null);
 
 export function runWindowRoom(services, { port, send, quit = null, focus = null }) {
   const { application: base, rebuildRuntime, saveRuntimeSelection, toolTrace = null, openConversation, modelSettings, saveLanguage, savePlaybackService,
@@ -212,6 +215,7 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
       memory: base.memoryStatus?.().state ?? "unavailable",
       // { needed, service, model } once read, null before; see refreshFirstRun.
       firstRun: firstRunState,
+      onAir: onAirOf(base.streamView?.() ?? null),
     };
   }
   function generationStatus() {
@@ -255,12 +259,38 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     await sendList();
   }
 
+  // On Air. The stream's last change, so a read that began before it is not taken for news about it.
+  let onAirChangedAt = 0;
+  // Whether each player the window reads was playing at its last read that counted.
+  const heardPlaying = { musicApp: false, spotify: false, netease: false };
+  // While on air, music that starts anywhere Moondog can see ends the stream, so two things never play
+  // at once on this Mac. Only a change from not playing to playing counts, and only from a read that
+  // began after the stream's last change: an older read can still see the music the stream just paused,
+  // and the next read decides instead. Until the stream's first track plays, the music before it plays
+  // on. Without a stream, music started in the Music app still stops Moondog's own player.
+  // Spotify reports a pause late, as the window's pressed toggle allows for, so a read that began just
+  // after a change can still see the music the stream paused.
+  const SETTLE_MS = 2_000;
+  function heard(source, playing, startedAt) {
+    const before = heardPlaying[source];
+    const stream = base.streamView?.() ?? null;
+    if (playing && !before && stream && startedAt < onAirChangedAt + SETTLE_MS) return;
+    heardPlaying[source] = playing;
+    if (!playing || before) return;
+    const onAir = stream !== null && stream.phase !== "starting";
+    if (!onAir && source !== "musicApp") return;
+    if (onAir) base.atmosphereStream?.stop?.("other_music");
+    base.musicPreviewPlayer?.stop?.();
+  }
+
   // Player
   // NetEase plays through ncm-cli on this Mac; the core keeps the songs it queued there.
   async function readNetease() {
     const spotify = base.spotifyReady?.() === true ? "ready" : "unavailable";
     if (base.neteaseReady?.() !== true) return { type: "player", spotify, now: null, next: [] };
+    const startedAt = Date.now();
     const now = await base.neteasePlayer.nowPlaying();
+    heard("netease", now.state === "playing", startedAt);
     const track = (song) => ({ title: song.title, link: null, artists: song.artists, album: song.album, image: song.image, durationMs: song.duration_ms });
     return { type: "player", spotify,
       now: now.song ? { ...track(now.song), service: "netease", playing: now.state === "playing", progressMs: now.position_ms,
@@ -285,6 +315,7 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     if (base.spotifyReady?.() !== true || !service) return { type: "player", spotify: "unavailable", now: null, next: [] };
     if (spotifyLimitedUntil > Date.now()) return limited();
     let player;
+    const startedAt = Date.now();
     try {
       player = await service.currentPlayer();
     } catch (error) {
@@ -294,6 +325,8 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     spotifyLimitedUntil = 0;
     const item = player?.state === "available" ? player.item : null;
     playingNow = player?.is_playing === true && Boolean(item);
+    // Spotify on another device, such as a phone, plays nothing on this Mac.
+    heard("spotify", playingNow && base.spotifyOnThisMac?.(player.device) === true, startedAt);
     if (item && (queueStale || item.uri !== queueRead.uri || Date.now() - queueRead.at >= QUEUE_READ_MS)) {
       queueStale = false;
       queueRead = { uri: item.uri, at: Date.now(), queue: await service.queue?.().catch(() => null) };
@@ -310,16 +343,15 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
   // The Music app on this Mac, which the listener plays themselves. A new song reads its cover and,
   // without shuffle, the songs after it in its playlist.
   let musicAppRunning = false;
-  let musicAppPlaying = false;
   let musicAppSong = { id: null, image: null, next: [] };
   async function readMusicApp() {
     const player = base.musicApp;
     if (player?.available !== true) return null;
+    const startedAt = Date.now();
     const now = await player.nowPlaying().catch(() => null);
     musicAppRunning = Boolean(now) && now.state !== "not_running";
     // Music the listener starts in the Music app stops Moondog's own player, so one thing plays at a time.
-    if (now?.state === "playing" && !musicAppPlaying) { base.atmosphereStream?.stop?.("other_music"); base.musicPreviewPlayer?.stop?.(); }
-    musicAppPlaying = now?.state === "playing";
+    heard("musicApp", now?.state === "playing", startedAt);
     if (!now?.song) return null;
     const id = `${now.song.id ?? now.song.title}\n${now.playlist?.id ?? ""}\n${now.shuffle}`;
     if (id !== musicAppSong.id) {
@@ -442,7 +474,7 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
   }
 
   // Devices keep their Spotify ids here; the window sees only a reference.
-  let deviceIds = new Map();
+  let listedDevices = new Map();
   async function devices() {
     const service = base.spotifyConnection?.service;
     if (!service || base.spotifyReady?.() !== true) return send({ type: "devices", devices: [] });
@@ -455,17 +487,23 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
       if (noteLimit(error)) { send(limited()); schedulePlayer(); return send({ type: "devices", devices: [], error: "limited", resumeAt: spotifyLimitedUntil }); }
       return send({ type: "devices", devices: [], error: errorText(error) });
     }
-    deviceIds = new Map(listed.map((device, index) => [String(index), device.id]));
+    listedDevices = new Map(listed.map((device, index) => [String(index), device]));
     send({ type: "devices", devices: listed.map((device, index) => ({ ref: String(index), name: device.name, type: device.type ?? "unknown",
       active: device.is_active === true, restricted: device.is_restricted === true })) });
   }
   async function transfer(ref) {
     const service = base.spotifyConnection?.service;
-    const deviceId = deviceIds.get(String(ref));
-    if (!service || !deviceId) return;
+    const device = listedDevices.get(String(ref));
+    if (!service || !device?.id) return;
     toolTrace?.record({ source: "window", tool: "device_transfer", state: "start", args: { ref } });
     try {
-      await service.transfer({ deviceId });
+      // A move keeps playing what plays, read now rather than at the last poll; moved onto this Mac, it
+      // starts here, so the others go quiet first.
+      // A read that fails leaves it unknown, so the move may still bring music here.
+      const player = await service.currentPlayer?.().catch(() => null);
+      const play = player ? player.state === "available" && player.is_playing === true : undefined;
+      if (play !== false && base.spotifyOnThisMac?.(device) === true) await base.quietOtherPlayers?.("spotify");
+      await service.transfer({ deviceId: device.id, ...(play === undefined ? {} : { play }) });
     } catch (error) {
       send({ type: "notice", code: "transfer_failed", message: errorText(error) });
       await devices();
@@ -933,6 +971,12 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     edit: (data) => edit(String(data.entry ?? ""), String(data.text ?? "")),
     branch: (data) => branch(String(data.entry ?? "")),
     control: (data) => control(String(data.action ?? ""), data.via, data.positionMs),
+    // Off air: the stream stops and nothing resumes; the song it paused shows again, paused, from a fresh read.
+    "on-air-stop": async () => {
+      const stopped = (current.application.stopStream ? current.application : base).stopStream?.();
+      // A stream that ended already had the players read again, from its change.
+      if (stopped?.state !== "stopped") await refreshPlayer();
+    },
     storefront: (data) => { setAppleMusicStorefront(data.code); },
     visible: (data) => {
       visible = data.visible !== false;
@@ -1057,6 +1101,9 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
   function playbackChanged() {
     if (closed || base.playbackService === shownPlaybackService) return;
     shownPlaybackService = base.playbackService;
+    // Only the chosen service is read, so what the others did since is unknown: playing at the next read is news.
+    heardPlaying.spotify = false;
+    heardPlaying.netease = false;
     sendStatus();
     void refreshPlayer({ queue: true });
     schedulePlayer();
@@ -1066,6 +1113,19 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
   const unwatchGeneration = generation?.subscribe?.(() => { if (!closed) sendStatus(); });
   const unwatchModel = watchModelSettings?.((selection, changed) => { void followModel(selection, changed).catch(() => {}); });
   const unwatchFirstRun = firstRun?.watch(() => { void refreshFirstRun(); });
+  // Each change of the stream reaches the window as it happens. Once it ends, or a track ends its dry gap,
+  // the players are read again, so the song the stream paused shows as it is now.
+  let onAirPhase = null;
+  const unsubscribeStream = base.subscribeStream?.(({ view, ended }) => {
+    if (closed) return;
+    onAirChangedAt = Date.now();
+    const before = onAirPhase;
+    onAirPhase = view?.phase ?? null;
+    // The first track just paused the music before it, so playing at a later read is news.
+    if (before === "starting" && view && view.phase !== "starting") Object.assign(heardPlaying, { musicApp: false, spotify: false, netease: false });
+    send({ type: "on-air", onAir: onAirOf(view), ended: ended ?? null });
+    if (!view || (before === "waiting" && view.phase !== "waiting")) void refreshPlayer({ queue: true });
+  });
 
   return new Promise((resolve) => {
     // Quitting stops running replies and lets them settle, so each is saved as interrupted with what it
@@ -1077,6 +1137,7 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
       unwatchGeneration?.();
       unwatchModel?.();
       unwatchFirstRun?.();
+      unsubscribeStream?.();
       clearTimeout(pollTimer);
       clearTimeout(sessionsTimer);
       const settling = slots.filter((slot) => slot.turn).map((slot) => { slot.runtime.abort?.(); return slot.turn.settled; });

@@ -105,6 +105,7 @@ New listening views, corrections, and discovery interactions must work in the te
 - [ ] Move beyond streaming-first toward music decentralization: the local personal library, generative music, and an open format for independent artists.
   [Music decentralization](MUSIC_DECENTRALIZATION.md) records the stages; the owner opened stage 2 on 2026-10-29, and its first slice is shipped above.
   An atmosphere stream keeps making tracks for background listening, a new one queued while the last plays, steered away from what the listener skips.
+  On Air starts and stops it: a mark in the desktop app's bar, `⌃⌘O`, and `/onair` in the terminal (2026-11-01).
   Next for it are Likes on generated tracks, a listener's replay counted as their attention, and an analysis stack that can score a stream's candidates.
 - [ ] Carry listener intent and selected references into creative work without uploading raw history by default.
 - [ ] Write a SQLite schema migration path before any release that changes stored data.

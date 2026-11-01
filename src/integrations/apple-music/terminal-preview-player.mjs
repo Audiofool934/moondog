@@ -232,6 +232,8 @@ export async function createTerminalPreviewPlayer({
       return true;
     },
     stop,
+    // Leaving Apple Music stops its previews here, never the tracks Moondog made.
+    holdsCatalogSongs: () => Boolean(queue?.tracks.some((track) => !track.generated)),
     subscribe(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);

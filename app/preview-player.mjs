@@ -7,6 +7,8 @@ export function createWindowPreviewPlayer(port) {
   let sequence = 0;
   let queueId = null;
   let active = false;
+  // Whether the queue sent last holds Apple Music songs, rather than only tracks Moondog made.
+  let catalog = false;
   let closed = false;
   const https = (value, host) => {
     try {
@@ -53,6 +55,7 @@ export function createWindowPreviewPlayer(port) {
       if (!accepted.length) return;
       queueId = ++sequence;
       active = true;
+      catalog = true;
       port.postMessage({
         type: "preview", id: queueId, tracks: accepted,
         album: album?.title ? {
@@ -68,6 +71,7 @@ export function createWindowPreviewPlayer(port) {
       if (closed || !name || !generatedTrackId.test(String(id ?? ""))) return;
       queueId = ++sequence;
       active = true;
+      catalog = false;
       port.postMessage({
         type: "preview", id: queueId,
         tracks: [{ title: name, artist_credit: "", generated: true, media_url: `moondog-media://generated/${id}`,
@@ -92,6 +96,8 @@ export function createWindowPreviewPlayer(port) {
       return true;
     },
     stop,
+    // Leaving Apple Music stops its songs here, never the tracks Moondog made.
+    holdsCatalogSongs: () => active && catalog,
     wholeSongs: () => wholeSongs,
     subscribe(listener) {
       listeners.add(listener);
