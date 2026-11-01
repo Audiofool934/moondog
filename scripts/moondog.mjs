@@ -34,6 +34,7 @@ import { runListenerProfileCommand, savedProfileActions } from "../src/surfaces/
 import { createWebResearch } from "../src/integrations/web/web-research.mjs";
 import { runWebCommand } from "../src/surfaces/cli/web-command.mjs";
 import { openSpotifyConnection } from "../src/integrations/spotify/connection.mjs";
+import { preferredIdleDevice, thisComputerName } from "../src/integrations/spotify/service.mjs";
 import {
   openSpotifyResolutionCache,
 } from "../src/integrations/spotify/resolution-cache.mjs";
@@ -499,19 +500,27 @@ function watchMusicAppForStream(stream, { musicApp, interval = STREAM_MUSIC_APP_
   };
 }
 
-// Whether a /spotify command starts Spotify on this Mac: play, or a move onto this Mac with --play or
-// while Spotify plays (a move keeps playing what plays). Reads that fail count as not starting here.
+// Whether a /spotify command starts Spotify on this Mac: play on the device it resumes on (the active one,
+// or with none active the one it would pick), or a move onto this Mac with --play or while Spotify plays (a
+// move keeps playing what plays). A command its own checks refuse, or reads that fail, start nothing here.
 async function spotifyStartsHere(application, args, { signal } = {}) {
   if (!application.spotifyReady?.()) return false;
   // A trailing --json changes only how the result is written.
   if (args.at(-1) === "--json") args = args.slice(0, -1);
-  if (args[0] === "play") return args.length <= 2;
-  if (args[0] !== "transfer" || args.length < 2 || args.length > 3 || (args.length === 3 && args[2] !== "--play")) return false;
+  const play = args[0] === "play" && args.length <= 2;
+  const transfer = args[0] === "transfer" && args.length >= 2 && args.length <= 3 && (args.length === 2 || args[2] === "--play");
+  if (!play && !transfer) return false;
   const service = application.requireSpotifyService();
   const [listed, player] = await Promise.all([service.devices({ signal }).catch(() => null), service.currentPlayer({ signal }).catch(() => null)]);
-  const device = (listed?.devices ?? []).find((entry) => entry.id === args[1]);
-  const playing = player?.state === "available" && player.is_playing === true;
-  return Boolean(device) && application.spotifyOnThisMac(device) && (args[2] === "--play" || playing);
+  const devices = listed?.devices ?? [];
+  if (transfer) {
+    const device = devices.find((entry) => entry.id === args[1]);
+    const playing = player?.state === "available" && player.is_playing === true;
+    return Boolean(device) && application.spotifyOnThisMac(device) && (args[2] === "--play" || playing);
+  }
+  const active = player?.device?.is_active === true ? player.device : devices.find((device) => device.is_active === true);
+  const device = active ?? preferredIdleDevice(devices, { thisComputer: await thisComputerName() });
+  return Boolean(device) && application.spotifyOnThisMac(device);
 }
 
 async function main() {
