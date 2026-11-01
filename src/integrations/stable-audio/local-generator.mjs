@@ -401,9 +401,10 @@ export function createLocalGenerator({
     restart(id) {
       if (playing?.id === id) playing = null;
     },
-    // A play Moondog cut off as it began, as a stream past its time limit does, says nothing about the listener.
+    // A play Moondog cut off as it began, as a stream past its time limit does, says nothing about the
+    // listener. Without an id, whatever made track plays now, as when a stream's first track replaces it.
     discard(id) {
-      if (playing?.id === id) playing = null;
+      if (playing && (id === undefined || playing.id === id)) playing = null;
     },
     recordReplay(id, by) {
       this.restart(id);
@@ -510,12 +511,53 @@ export function createLocalGenerator({
 const STREAM_SKIP_MS = 30_000;
 export function createAtmosphereStream({ generator, player, now = Date.now, keepAudio = 3 }) {
   let stream = null;
+  // What the surfaces see (view()) and hear (subscribe): the phase, and the end with its reason.
+  const listeners = new Set();
+  let shown = "null";
+  // Events wait their turn, so a listener that stops the stream from inside one never reorders them.
+  const events = [];
+  let delivering = false;
+  const deliver = (event) => {
+    events.push(event);
+    if (delivering) return;
+    delivering = true;
+    try {
+      while (events.length) {
+        const next = events.shift();
+        for (const listener of [...listeners]) {
+          try { listener(structuredClone(next)); } catch { /* A surface's redraw cannot stop the stream. */ }
+        }
+      }
+    } finally {
+      delivering = false;
+    }
+  };
+  const viewOf = (current) => current ? {
+    // Nothing of it plays yet; it waits in the dry gap for its next track; it makes the next behind one loaded; or it only plays.
+    phase: !current.current ? "starting" : current.waiting ? "waiting" : current.making ? "making" : "playing",
+    started_at: new Date(current.startedAt).toISOString(), ends_at: new Date(current.endsAt).toISOString(), tracks_made: current.made.length,
+  } : null;
+  // Called after anything that may change the view; only a real change reaches the listeners.
+  const changed = () => {
+    const view = viewOf(stream);
+    const key = JSON.stringify(view);
+    if (key === shown) return;
+    shown = key;
+    deliver({ view, ended: null });
+  };
+  // The tracks of a stream that gave way to Moondog's next one, while the player may still hold one of
+  // them; a listener's stop before the new stream's first track plays stops them too.
+  let heldOver = null;
   const end = (reason) => {
     const ending = stream;
     if (!ending) return null;
     stream = null;
     ending.controller.abort();
     ending.ended = reason;
+    heldOver = reason === "replaced" && (ending.current || heldOver)
+      ? new Set([...(heldOver ?? []), ...ending.made.map((made) => made.id)]) : null;
+    shown = "null";
+    deliver({ view: null, ended: reason });
     return ending;
   };
   const trackFor = (ending, position) => {
@@ -564,6 +606,7 @@ export function createAtmosphereStream({ generator, player, now = Date.now, keep
     const current = stream;
     if (!current || current.making || current.next || !fits(current)) return;
     current.making = true;
+    changed();
     try {
       const { prompt, title, receipt, variation } = trackFor(current, current.made.length);
       const made = await generator.generate({ prompt, seconds: current.seconds, title, receipt }, { signal: current.controller.signal });
@@ -574,6 +617,8 @@ export function createAtmosphereStream({ generator, player, now = Date.now, keep
       if (current.waiting && expired(current)) { end("time"); return; }
       current.made.push({ id: made.id, featured: variation.featured, started: false, seconds: made.duration_seconds });
       current.next = made.id;
+      // Made, so what the player reports from here on sees the stream as only playing.
+      current.making = false;
       const track = { id: made.id, title: made.title, seconds: made.duration_seconds, file };
       // A queue that ran dry while this was made starts again with it.
       if (current.waiting) { current.waiting = false; player.playGenerated(track); } else player.enqueueGenerated(track);
@@ -583,6 +628,52 @@ export function createAtmosphereStream({ generator, player, now = Date.now, keep
       if (stream === current && error?.code !== "generation_stopped") end("failed");
     } finally {
       current.making = false;
+      changed();
+    }
+  };
+  // What the room's player reports moves the stream along or ends it.
+  const move = (event) => {
+    const current = stream;
+    // Until its first track plays, what the player reports is about the music before it.
+    if (!current || !current.current) return;
+    const track = event?.track;
+    const ours = (id) => current.made.some((made) => made.id === id);
+    // A queue or a song that is not one of the stream's tracks is other music, which ends the stream.
+    if (event?.type === "queue" || event?.type === "playing") {
+      const items = Array.isArray(event.tracks) ? event.tracks : track ? [track] : [];
+      if (items.some((item) => !item?.generated || (item.id && !ours(item.id)))) { end("other_music"); return; }
+    }
+    const isCurrent = track?.id && track.id === current.current.id;
+    if (event?.type === "playing" && track?.id && track.id === current.next) {
+      // The window may already have moved on to it when the time limit had passed. The generator
+      // has begun counting it, and Moondog's own stop must not read as the listener's skip.
+      if (expired(current)) { generator.discard?.(track.id); endInTime(); return; }
+      leftEarly(current);
+      const made = current.made.find((entry) => entry.id === track.id);
+      current.current = { id: track.id, heardMs: 0, since: now(), finished: false, seconds: made?.seconds };
+      if (made) made.started = true;
+      current.next = null;
+      current.waiting = false;
+      prune(current);
+      void makeNext();
+    } else if (event?.type === "paused" && isCurrent && current.current.since !== null) {
+      current.current.heardMs += now() - current.current.since;
+      current.current.since = null;
+    } else if (event?.type === "playing" && isCurrent && current.current.since === null) {
+      current.current.since = now();
+    } else if (event?.type === "skipped" && isCurrent) {
+      // A skip past the end of the queue moves on to the next track once it is made.
+      leftEarly(current);
+      current.current.finished = true;
+      if (!current.next) ranDry(current);
+      else if (expired(current)) endInTime();
+    } else if ((event?.type === "finished" || event?.type === "failed") && isCurrent) {
+      // A track that could not play says nothing about the listener; it is passed over like one that ended.
+      current.current.finished = true;
+      if (!current.next) ranDry(current);
+      else if (expired(current)) endInTime();
+    } else if (event?.type === "stopped" && !current.waiting && !current.starting) {
+      end("stopped");
     }
   };
   return {
@@ -593,17 +684,25 @@ export function createAtmosphereStream({ generator, player, now = Date.now, keep
       return { tracks_made: stream.made.length, started_at: new Date(stream.startedAt).toISOString(),
         ends_at: new Date(stream.endsAt).toISOString(), steering_away_from: [...stream.leaveOut] };
     },
+    /** For the surfaces: { phase, started_at, ends_at, tracks_made }, or null when no stream runs. */
+    view: () => viewOf(stream),
+    /** Hears { view, ended } once for each change: the start, each phase, each track made, and the end with its reason. */
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
     /**
      * Starts a stream from a compiled taste and plays its first track; the next is made at once.
      * beforePlay runs once the first track exists, so other music pauses only when there is one to
-     * play. Returns the first track. A stream already running gives way to the new one.
+     * play. Returns the first track. A stream already running gives way to the new one, and its track
+     * plays on until the first new one takes over, so nothing goes silent while that is made.
      */
     async start({ compiled, title, seconds, minutes, receipt = {} }, { signal, onProgress, onTrack, beforePlay } = {}) {
-      const previous = end("replaced");
-      if (previous?.current) player.stop?.();
+      end("replaced");
       const current = { compiled, title, seconds, receipt, onTrack, startedAt: now(), endsAt: now() + minutes * 60_000,
         made: [], leaveOut: new Set(), current: null, next: null, waiting: false, making: true, controller: new AbortController() };
       stream = current;
+      changed();
       const stopped = () => Object.assign(new Error("The stream was stopped before it began."), { code: "generation_stopped" });
       try {
         const { prompt, title: first, receipt: firstReceipt, variation } = trackFor(current, 0);
@@ -617,67 +716,43 @@ export function createAtmosphereStream({ generator, player, now = Date.now, keep
         current.made.push({ id: made.id, featured: variation.featured, started: true, seconds: made.duration_seconds });
         current.current = { id: made.id, heardMs: 0, since: now(), finished: false, seconds: made.duration_seconds };
         current.making = false;
+        // The made track it replaces, a single one or the last stream's, was cut off by Moondog, not
+        // left by the listener: counted as a skip, it would steer later tracks away from its sound.
+        generator.discard?.();
         // Whatever was playing stops for the first track; that stop is not the listener's.
         current.starting = true;
         try { player.playGenerated({ id: made.id, title: made.title, seconds: made.duration_seconds, file }); } finally { current.starting = false; }
+        heldOver = null;
         onTrack?.(made);
         void makeNext();
+        changed();
         return { made, prompt, variation };
       } catch (error) {
-        if (stream === current) end("failed");
+        // A reply stopped while the first track was made is the listener's own stop, not a failure.
+        if (stream === current) end(error?.code === "generation_stopped" ? "asked" : "failed");
+        // Why it ended tells the listener turning it off apart from a stop of the reply.
+        if (error?.code === "generation_stopped" && error.ended === undefined) error.ended = current.ended ?? null;
         throw error;
       }
     },
     stop(reason = "asked") {
+      const held = heldOver;
       const ending = end(reason);
-      // Before its first track plays, the player still holds the music from before the stream, which stays.
-      if (ending?.current) player.stop?.();
+      // Before its first track plays, the player still holds the music from before the stream, which
+      // stays, unless that is the track of the stream it replaced. A stream replaced by Moondog's next
+      // track or stream plays on until that one takes over.
+      if (ending && reason !== "replaced" && (ending.current || held)) player.stop?.();
       return ending ? { tracks_made: ending.made.length } : null;
     },
     /** What the room's player reports, which moves the stream along or ends it. */
     observe(event) {
-      const current = stream;
-      // Until its first track plays, what the player reports is about the music before it.
-      if (!current || !current.current) return;
-      const track = event?.track;
-      const ours = (id) => current.made.some((made) => made.id === id);
-      // A queue or a song that is not one of the stream's tracks is other music, which ends the stream.
-      if (event?.type === "queue" || event?.type === "playing") {
-        const items = Array.isArray(event.tracks) ? event.tracks : track ? [track] : [];
-        if (items.some((item) => !item?.generated || (item.id && !ours(item.id)))) { end("other_music"); return; }
+      // Other music, or a stop, means the player no longer holds the replaced stream's tracks.
+      if (heldOver) {
+        const items = Array.isArray(event?.tracks) ? event.tracks : event?.track ? [event.track] : [];
+        if (event?.type === "stopped" || ((event?.type === "queue" || event?.type === "playing") && items.some((item) => !heldOver.has(item?.id)))) heldOver = null;
       }
-      const isCurrent = track?.id && track.id === current.current.id;
-      if (event?.type === "playing" && track?.id && track.id === current.next) {
-        // The window may already have moved on to it when the time limit had passed. The generator
-        // has begun counting it, and Moondog's own stop must not read as the listener's skip.
-        if (expired(current)) { generator.discard?.(track.id); endInTime(); return; }
-        leftEarly(current);
-        const made = current.made.find((entry) => entry.id === track.id);
-        current.current = { id: track.id, heardMs: 0, since: now(), finished: false, seconds: made?.seconds };
-        if (made) made.started = true;
-        current.next = null;
-        current.waiting = false;
-        prune(current);
-        void makeNext();
-      } else if (event?.type === "paused" && isCurrent && current.current.since !== null) {
-        current.current.heardMs += now() - current.current.since;
-        current.current.since = null;
-      } else if (event?.type === "playing" && isCurrent && current.current.since === null) {
-        current.current.since = now();
-      } else if (event?.type === "skipped" && isCurrent) {
-        // A skip past the end of the queue moves on to the next track once it is made.
-        leftEarly(current);
-        current.current.finished = true;
-        if (!current.next) ranDry(current);
-        else if (expired(current)) endInTime();
-      } else if ((event?.type === "finished" || event?.type === "failed") && isCurrent) {
-        // A track that could not play says nothing about the listener; it is passed over like one that ended.
-        current.current.finished = true;
-        if (!current.next) ranDry(current);
-        else if (expired(current)) endInTime();
-      } else if (event?.type === "stopped" && !current.waiting && !current.starting) {
-        end("stopped");
-      }
+      move(event);
+      changed();
     },
   };
 }

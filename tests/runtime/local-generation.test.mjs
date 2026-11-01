@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { createModels, fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall } from "@earendil-works/pi-ai";
+import { createModels, fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall, getCurrentTools } from "@earendil-works/pi-ai";
 
 import { createWindowPreviewPlayer } from "../../app/preview-player.mjs";
 import { MoondogApplication } from "../../src/core/moondog-application.mjs";
@@ -840,6 +840,7 @@ test("the terminal plays a made track from its folder and keeps it; the window a
   }));
   queued.playGenerated({ id: "a", title: "One", file });
   queued.enqueueGenerated({ id: "b", title: "Two", file: second });
+  assert.equal(queued.holdsCatalogSongs(), false, "leaving Apple Music never stops a made track");
   await done;
   queued.close();
   assert.deepEqual(order, ["a", "b"]);
@@ -857,4 +858,283 @@ test("the terminal plays a made track from its folder and keeps it; the window a
   assert.deepEqual(sent[1], { type: "preview-enqueue", id: sent[0].id, track: { title: "Low tide", artist_credit: "", generated: true,
     media_url: "moondog-media://generated/7f1c1b2e-3c4d-4e5f-8a9b-0c1d2e3f4a5b", duration_seconds: 20 } });
   assert.doesNotMatch(JSON.stringify(sent), new RegExp(root.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u"));
+});
+
+test("a stream's view moves through its phases, and each change reaches its listeners once", async (t) => {
+  const install = await fakeInstall(t);
+  const generator = install.generator();
+  await generator.save({ enabled: true });
+  let clock = Date.UTC(2026, 10, 1, 21, 0);
+  const player = streamPlayer();
+  const stream = createAtmosphereStream({ generator, player, now: () => clock });
+  const heard = [];
+  stream.subscribe(() => { throw new Error("a surface that fails to redraw"); });
+  const off = stream.subscribe(({ view, ended }) => heard.push([view?.phase ?? null, view?.tracks_made ?? null, ended]));
+  assert.equal(stream.view(), null);
+  const { made } = await stream.start({ compiled: compiledTaste, title: "Late tide", seconds: 15, minutes: 10, receipt: {} });
+  assert.deepEqual(stream.view(), { phase: "making", started_at: "2026-11-01T21:00:00.000Z", ends_at: "2026-11-01T21:10:00.000Z", tracks_made: 1 });
+  await until(() => player.calls.length === 2);
+  const second = player.calls[1][1];
+  // The first plays through and the second takes over, with the third made behind it.
+  clock += 15_000;
+  stream.observe({ type: "finished", track: { generated: true, id: made.id } });
+  stream.observe({ type: "playing", track: { generated: true, id: second } });
+  await until(() => player.calls.length === 3);
+  const third = player.calls[2][1];
+  clock += 15_000;
+  stream.observe({ type: "finished", track: { generated: true, id: second } });
+  stream.observe({ type: "playing", track: { generated: true, id: third } });
+  // Skipped before the fourth is made: the dry gap, until the fourth starts the queue again.
+  stream.observe({ type: "skipped", track: { generated: true, id: third } });
+  stream.observe({ type: "stopped" });
+  assert.equal(stream.view().phase, "waiting");
+  await until(() => player.calls.length === 4);
+  assert.equal(player.calls[3][0], "play");
+  stream.observe({ type: "playing", track: { generated: true, id: player.calls[3][1] } });
+  stream.stop();
+  await until(() => !generator.busy());
+  assert.deepEqual(heard, [
+    ["starting", 0, null], ["making", 1, null], ["playing", 2, null], ["making", 2, null], ["playing", 3, null],
+    ["making", 3, null], ["waiting", 3, null], ["playing", 4, null], ["making", 4, null], [null, null, "asked"],
+  ]);
+  off();
+  await stream.start({ compiled: compiledTaste, title: "Late tide", seconds: 15, minutes: 10, receipt: {} });
+  stream.stop();
+  await until(() => !generator.busy());
+  assert.equal(heard.length, 10, "a listener that left hears nothing more");
+});
+
+test("every end of a stream says why, and a stream that gives way plays on until the new track takes over", async (t) => {
+  const install = await fakeInstall(t);
+  const generator = install.generator();
+  await generator.save({ enabled: true });
+  let clock = 1_000_000;
+  const player = streamPlayer();
+  const stream = createAtmosphereStream({ generator, player, now: () => clock });
+  const ended = [];
+  stream.subscribe((event) => { if (event.ended) ended.push(event.ended); });
+  const begin = async () => {
+    await until(() => !generator.busy());
+    const started = await stream.start({ compiled: compiledTaste, title: "Late tide", seconds: 15, minutes: 10, receipt: {} });
+    await until(() => !generator.busy());
+    return started;
+  };
+
+  // A new stream takes over: the old one's track is never stopped, only replaced by the new first track.
+  await begin();
+  let calls = player.calls.length;
+  const next = await begin();
+  assert.deepEqual(player.calls.slice(calls), [["play", next.made.id], ["enqueue", player.calls.at(-1)[1]]]);
+  calls = player.calls.length;
+  assert.deepEqual(stream.stop("replaced"), { tracks_made: 2 });
+  assert.equal(player.calls.length, calls, "Moondog's next track or stream takes over from this one's");
+
+  // A single track replaces a stream the same way.
+  const app = new MoondogApplication({ importsRoot: "/private/moondog-synthetic-missing-source", localGenerator: generator, atmosphereStream: stream,
+    musicPreviewPlayer: player, playbackService: "apple_music", domainServices: domainServices() });
+  await begin();
+  calls = player.calls.length;
+  const single = await app.makeTrack({ descriptors: [{ term: "ambient", facet: "genre", source: "request" }], seconds: 15 });
+  assert.deepEqual(player.calls.slice(calls), [["play", single.track.id]]);
+
+  const first = await begin();
+  stream.observe({ type: "stopped" });
+  await begin();
+  stream.observe({ type: "queue", tracks: [{ title: "Pink Moon", artist_credit: "Nick Drake" }] });
+  const late = await begin();
+  clock += 60 * 60_000;
+  stream.observe({ type: "skipped", track: { generated: true, id: late.made.id } });
+  for (const reason of ["generation_off", "closed", "asked"]) {
+    await begin();
+    stream.stop(reason);
+  }
+  assert.ok(first.made.id);
+  assert.deepEqual(ended, ["replaced", "replaced", "replaced", "stopped", "other_music", "time", "generation_off", "closed", "asked"]);
+
+  // A first track that can't be made ends the stream as failed.
+  const failing = await fakeInstall(t);
+  const broken = failing.generator({ FAKE_SA3: "fail" });
+  await broken.save({ enabled: true });
+  const lost = createAtmosphereStream({ generator: broken, player: streamPlayer() });
+  const heard = [];
+  lost.subscribe(({ view, ended: why }) => heard.push([view?.phase ?? null, why]));
+  await assert.rejects(lost.start({ compiled: compiledTaste, title: "Late tide", seconds: 15, minutes: 10, receipt: {} }), { code: "generation_failed" });
+  assert.deepEqual(heard, [["starting", null], [null, "failed"]]);
+});
+
+test("turned off while a new stream's first track is made, the replaced stream's track stops too; music from before stays", async (t) => {
+  const install = await fakeInstall(t);
+  const generator = install.generator();
+  await generator.save({ enabled: true });
+  const player = streamPlayer();
+  const stream = createAtmosphereStream({ generator, player });
+  const start = () => stream.start({ compiled: compiledTaste, title: "Late tide", seconds: 15, minutes: 10, receipt: {} });
+  const old = await start();
+  await until(() => !generator.busy());
+  // Moondog starts the next stream; the old one's track plays on while the new first track is made.
+  stream.stop("replaced");
+  let calls = player.calls.length;
+  const starting = start();
+  stream.stop("asked");
+  await assert.rejects(starting, { code: "generation_stopped" });
+  assert.deepEqual(player.calls.slice(calls), [["stop"]], "an explicit stop is quiet, the replaced stream's track included");
+
+  // Once other music took the player over, a stop while starting leaves that music alone.
+  await until(() => !generator.busy());
+  await start();
+  await until(() => !generator.busy());
+  stream.stop("replaced");
+  stream.observe({ type: "playing", track: { generated: true, id: old.made.id } });
+  stream.observe({ type: "playing", track: { title: "Pink Moon", artist_credit: "Nick Drake" } });
+  calls = player.calls.length;
+  const again = start();
+  stream.stop("asked");
+  await assert.rejects(again, { code: "generation_stopped" });
+  assert.deepEqual(player.calls.slice(calls), [], "the song the listener put on keeps playing");
+});
+
+test("a stream's first track that takes over from a made track gives that track no outcome", async (t) => {
+  const install = await fakeInstall(t);
+  const generator = install.generator();
+  await generator.save({ enabled: true });
+  const port = new EventEmitter();
+  const sent = [];
+  port.postMessage = (message) => sent.push(message);
+  const player = createWindowPreviewPlayer(port);
+  // The room's order: the generator records each event's outcome before the stream acts on it.
+  player.subscribe((event) => generator.observe(event));
+  const stream = createAtmosphereStream({ generator, player });
+  player.subscribe((event) => stream.observe(event));
+  const report = (queue, type, id) => port.emit("message", { data: { type: "preview-event", id: queue,
+    event: { type, track: { title: "Night glass", artist_credit: "", generated: true, id } } } });
+  // A single made track plays, and the listener goes on air ten seconds in.
+  const single = await generator.generate({ prompt: "TrackType: Music, VocalType: Instrumental, Genre: Ambient.", seconds: 15, title: "Night glass" });
+  player.playGenerated({ id: single.id, title: single.title, seconds: 15 });
+  report(sent[0].id, "playing", single.id);
+  const { made } = await stream.start({ compiled: compiledTaste, title: "Late tide", seconds: 15, minutes: 10, receipt: {} });
+  const first = sent.find((message) => message.type === "preview" && message.tracks[0].media_url.endsWith(made.id));
+  assert.ok(!sent.some((message) => message.type === "preview-control"), "nothing stopped before the first track took over");
+  report(first.id, "queue", made.id);
+  report(first.id, "playing", made.id);
+  stream.stop();
+  await until(() => !generator.busy());
+  await generator.flush();
+  const outcomes = (id) => readFile(path.join(install.root, "state", "generated", id, "outcomes.jsonl"), "utf8");
+  await assert.rejects(outcomes(single.id), { code: "ENOENT" }, "Moondog's own cut-off is not the listener's skip");
+  assert.match(await outcomes(made.id), /"outcome":"skipped"/u, "the stream's own track still counts");
+});
+
+test("changing the music service keeps the stream on air, and stops only Apple Music's songs", async (t) => {
+  const install = await fakeInstall(t);
+  const generator = install.generator();
+  await generator.save({ enabled: true });
+  const player = streamPlayer();
+  let catalog = false;
+  player.holdsCatalogSongs = () => catalog;
+  const stream = createAtmosphereStream({ generator, player });
+  t.after(() => stream.stop());
+  const app = new MoondogApplication({ importsRoot: "/private/moondog-synthetic-missing-source", localGenerator: generator, atmosphereStream: stream,
+    musicPreviewPlayer: player, playbackService: "apple_music", domainServices: domainServices() });
+  await app.startStream({ descriptors: [{ term: "ambient", facet: "genre", source: "request" }, { term: "soft pads", facet: "instrument", source: "request" }],
+    seconds: 60, minutes: 30 }, { request: "keep some ambient soft pads going" });
+  await until(() => !generator.busy());
+  const calls = player.calls.length;
+  await app.selectPlaybackService("spotify", { strict: false });
+  assert.equal(app.streamView().phase, "playing", "On Air is Moondog's own channel, not a service");
+  assert.deepEqual(player.calls.slice(calls), [], "the made track plays on");
+  // Apple Music's songs in Moondog's player still stop when the listener leaves it.
+  await app.selectPlaybackService("apple_music", { strict: false });
+  catalog = true;
+  await app.selectPlaybackService("spotify", { strict: false });
+  assert.deepEqual(player.calls.slice(calls), [["stop"]]);
+
+  const port = new EventEmitter();
+  port.postMessage = () => {};
+  const window = createWindowPreviewPlayer(port);
+  assert.equal(window.holdsCatalogSongs(), false);
+  window.play([{ title: "Pink Moon", artist_credit: "Nick Drake", preview_url: "https://audio-ssl.itunes.apple.com/pink-moon.m4a", catalog_url: "https://music.apple.com/us/song/1" }]);
+  assert.equal(window.holdsCatalogSongs(), true);
+  window.playGenerated({ id: "6f1c1b2e-3c4d-4e5f-8a9b-0c1d2e3f4a5b", title: "Late tide · 1", seconds: 15 });
+  assert.equal(window.holdsCatalogSongs(), false);
+});
+
+test("the listener turning the stream off while its first track is made is no failure for the agent to retry", async (t) => {
+  const install = await fakeInstall(t);
+  const generator = install.generator({ FAKE_SA3: "slow" });
+  await generator.save({ enabled: true });
+  const player = streamPlayer();
+  const stream = createAtmosphereStream({ generator, player });
+  const app = new MoondogApplication({ importsRoot: "/private/moondog-synthetic-missing-source", localGenerator: generator, atmosphereStream: stream,
+    musicPreviewPlayer: player, playbackService: "apple_music", domainServices: domainServices() });
+  const { faux, runtime } = runtimeFor(app);
+  faux.setResponses([
+    (context) => {
+      assert.match(getCurrentTools(context.messages).find((tool) => tool.name === "moondog_start_stream").description, /stopped_by_listener[^.]*do not start it again in this turn/u);
+      return fauxAssistantMessage([fauxToolCall("moondog_start_stream", { descriptors: [
+        { term: "ambient", facet: "genre", source: "request" }, { term: "soft pads", facet: "instrument", source: "request" }], seconds: 60, minutes: 30 })], { stopReason: "toolUse" });
+    },
+    (context) => {
+      const result = toolResult(context, "moondog_start_stream");
+      assert.equal(result.isError, false, result.content[0].text);
+      assert.deepEqual(JSON.parse(result.content[0].text), { state: "not_made", reason: "stopped_by_listener", left_out: [] });
+      return fauxAssistantMessage([fauxText("Off air, then.")]);
+    },
+  ]);
+  const reply = runtime.prompt("go on air: keep the music going for right now");
+  await until(() => generator.busy());
+  assert.equal(app.streamView().phase, "starting");
+  assert.deepEqual(app.stopStream(), { state: "stopped", tracks_made: 0 });
+  assert.equal((await reply).text, "Off air, then.");
+  await until(() => !generator.busy());
+  assert.deepEqual(player.calls, [], "nothing played, and the music before it stays");
+});
+
+test("music Moondog starts on Spotify or NetEase ends the stream first, on the queue paths too", async (t) => {
+  const install = await fakeInstall(t);
+  const generator = install.generator();
+  await generator.save({ enabled: true });
+  const order = [];
+  const player = streamPlayer();
+  player.stop = () => { order.push("moondog:stop"); };
+  const stream = createAtmosphereStream({ generator, player });
+  t.after(() => stream.stop());
+  stream.subscribe(({ ended }) => { if (ended) order.push(`stream:${ended}`); });
+  // The listener's own song plays in the Music app until the stream's first track pauses it.
+  let musicApp = "playing";
+  const app = new MoondogApplication({ importsRoot: "/private/moondog-synthetic-missing-source", localGenerator: generator, atmosphereStream: stream,
+    musicPreviewPlayer: player, playbackService: "netease", domainServices: domainServices(),
+    musicApp: { available: true, nowPlaying: async () => ({ state: musicApp }), pause: async () => { musicApp = "paused"; order.push("music_app:pause"); return {}; } },
+    spotifyConnection: { ready: () => true, service: {
+      currentPlayer: async () => ({ state: "inactive" }),
+      queueTarget: async () => ({ active: false }),
+      resume: async ({ uris }) => { order.push(`spotify:play ${uris[0]}`); return { ok: true }; },
+    } },
+    neteasePlayer: { ready: () => true, nowPlaying: async () => ({ state: "paused", song: null, position_ms: 0, next: [] }),
+      resume: async () => { order.push("netease:resume"); },
+      play: async ({ mode, beforePlay }) => { await beforePlay?.(); order.push(`netease:${mode}`); return { mode: "playing", songs: [] }; } } });
+  const onAir = async () => {
+    await until(() => !generator.busy());
+    await app.startStream({ descriptors: [{ term: "ambient", facet: "genre", source: "request" }, { term: "soft pads", facet: "instrument", source: "request" }],
+      seconds: 60, minutes: 30 }, { request: "keep some ambient soft pads going" });
+    order.length = 0;
+    musicApp = "playing";
+  };
+  const quieted = (last) => {
+    assert.equal(order.at(-1), last);
+    assert.deepEqual([...new Set(order.slice(0, -1))].sort(), ["moondog:stop", "music_app:pause", "stream:other_music"]);
+    assert.equal(app.streamView(), null);
+  };
+
+  // One Spotify song queued on an idle device starts it: the others go quiet first.
+  await onAir();
+  await app.spotifyAddToQueue({ uri: "spotify:track:one" });
+  quieted("spotify:play spotify:track:one");
+  // A NetEase queue with nothing loaded plays its first song.
+  await onAir();
+  await app.playNetease({ items: [{ title: "稻香", artist: "周杰伦" }], mode: "queue" });
+  quieted("netease:queue");
+  // So does resuming NetEase.
+  await onAir();
+  await app.controlNetease({ action: "resume" });
+  quieted("netease:resume");
 });

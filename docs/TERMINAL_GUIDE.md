@@ -160,7 +160,10 @@ The layout reduces artwork before sacrificing room for the input, and works with
 `/service` chooses where Moondog plays music: Spotify, Apple Music, or NetEase Music.
 `/service apple_music` switches straight to one; the choice is saved and the desktop app follows it.
 `/generation` says whether Moondog can make music on this Mac with Stable Audio 3, powered by Stability AI; `/generation on` turns it on, `/generation on ~/path/to/mlx` points at another install of Stability AI's MLX build, and `/generation off` turns it off.
-Once it is on, ask for a track in your own words, ask to hear one Moondog made again, or ask for music to keep going while you work; `/skip` moves a stream to its next track and `/stop` ends it. Stable Audio 3 runs offline, and the track and its receipt stay in Moondog's state folder; your request still goes to the model you talk through.
+Once it is on, ask for a track in your own words, ask to hear one Moondog made again, or ask for music to keep going while you work; `/onair` asks for that stream in one word, and takes it off the air when one runs.
+`/skip` moves a stream to its next track and `/stop` ends it; the playing row says when the stream ends at the latest.
+Ending a stream starts nothing it paused.
+Stable Audio 3 runs offline, and the track and its receipt stay in Moondog's state folder; your request still goes to the model you talk through.
 A stream keeps the audio of its newest three tracks; the others keep their receipts.
 
 Music making needs an Apple silicon Mac and Stability AI's MLX build of Stable Audio 3 with its Medium model.

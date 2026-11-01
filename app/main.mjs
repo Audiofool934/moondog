@@ -92,10 +92,16 @@ let window = null;
 let core = null;
 let quitting = false;
 const shutdownCore = createCoreShutdown({ getCore: () => core, stopMusic: () => musicHelper?.stdin.end() });
-// What the page last said it can do; the menu greys out what would do nothing.
-const playback = { controllable: false, streaming: false };
+// What the page last said it can do; the menu greys out what would do nothing. onAir is Moondog's own
+// channel: whether it can start, and whether it is on.
+const playback = { controllable: false, streaming: false, onAir: { available: false, on: false } };
 let dockMenu = null;
 const command = (name) => () => window?.webContents.send("command", name);
+// On Air is checked while it is on. A click asks the page, whose answer sets the check, so the click
+// itself leaves the check as it was.
+const onAirItem = (t, extra = {}) => ({ id: "on-air", type: "checkbox", label: t("menuOnAir"), ...extra,
+  enabled: playback.onAir.available || playback.onAir.on, checked: playback.onAir.on,
+  click: (item) => { item.checked = playback.onAir.on; command("on-air")(); } });
 
 // A newer Moondog from GitHub releases (updates.mjs): the window offers it at the top right and shows
 // its download, and the Moondog menu checks for one, downloads it, or restarts into it.
@@ -166,6 +172,8 @@ function buildMenu() {
       { id: "toggle-playback", label: t("menuPlayPause"), accelerator: "Ctrl+Cmd+P", click: command("toggle-playback"), enabled: playback.controllable },
       { id: "next", label: t("menuNext"), accelerator: "Ctrl+Cmd+Right", click: command("next"), enabled: playback.controllable },
       { id: "previous", label: t("menuPrevious"), accelerator: "Ctrl+Cmd+Left", click: command("previous"), enabled: playback.controllable },
+      { type: "separator" },
+      onAirItem(t, { accelerator: "Ctrl+Cmd+O" }),
     ] },
     { label: t("menuView"), submenu: [
       { label: t("menuSidebar"), accelerator: "CmdOrCtrl+Alt+S", click: command("toggle-sidebar") },
@@ -188,6 +196,8 @@ function buildMenu() {
     { id: "toggle-playback", label: t("menuPlayPause"), click: command("toggle-playback"), enabled: playback.controllable },
     { id: "next", label: t("menuNext"), click: command("next"), enabled: playback.controllable },
     { id: "previous", label: t("menuPrevious"), click: command("previous"), enabled: playback.controllable },
+    { type: "separator" },
+    onAirItem(t),
   ]);
   app.dock?.setMenu(dockMenu);
 }
@@ -504,10 +514,14 @@ ipcMain.handle("pin", (_event, on) => {
 ipcMain.on("playback", (_event, next) => {
   const controllable = next?.controllable === true;
   const streaming = next?.streaming === true;
-  if (controllable === playback.controllable && streaming === playback.streaming) return;
-  Object.assign(playback, { controllable, streaming });
+  const onAir = { available: next?.onAir?.available === true, on: next?.onAir?.on === true };
+  if (controllable === playback.controllable && streaming === playback.streaming &&
+    onAir.available === playback.onAir.available && onAir.on === playback.onAir.on) return;
+  Object.assign(playback, { controllable, streaming, onAir });
   for (const menu of [Menu.getApplicationMenu(), dockMenu]) {
     for (const id of ["toggle-playback", "next", "previous"]) { const item = menu?.getMenuItemById(id); if (item) item.enabled = controllable; }
+    const item = menu?.getMenuItemById("on-air");
+    if (item) Object.assign(item, { enabled: onAir.available || onAir.on, checked: onAir.on });
   }
   const menu = Menu.getApplicationMenu();
   const stop = menu?.getMenuItemById("stop");

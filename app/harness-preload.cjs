@@ -95,6 +95,7 @@ const STATUS = {
   model: { state: "configured", provider: "anthropic", model: "claude-sonnet-5-5", effort: "medium", thinking: "medium", effortLevels: ["low", "medium", "high", "xhigh", "max"], reason: null },
   spotify: "ready", spotifyAccount: { state: "ready", clientId: true }, playbackService: "spotify", memory: "ready", firstRun: null,
   generation: { state: "ready", enabled: true, install: "ready", missing: null, path: "/Users/example/Developer/stable-audio-3/optimized/mlx" },
+  onAir: null,
 };
 const OFFLINE = { ...STATUS, model: { state: "offline", provider: null, model: null, effort: null, effortLevels: [], reason: null },
   spotify: "unavailable", spotifyAccount: { state: "unavailable", clientId: true } };
@@ -205,6 +206,24 @@ function player(options = {}) {
     next: [...TRACKS.slice(index + 1), ...TRACKS.slice(0, index)].slice(0, queue) });
 }
 const silent = () => send({ type: "player", spotify: "ready", now: null, next: [] });
+// On Air: the stream the stand-in core runs, as the window room reports it, and the tracks it made,
+// which play in the window as Moondog's own records do.
+let onAir = null;
+let onAirNext = false;
+let airTurn = null;
+const AIR_QUEUE = "air";
+const MADE = [
+  { title: "Late window light · 1", media_url: "moondog-media://generated/6f1c1b2e-3c4d-4e5f-8a9b-0c1d2e3f4a5b" },
+  { title: "Late window light · 2", media_url: "moondog-media://generated/7a2d3c4e-5f60-4a71-9b82-1c2d3e4f5a6b" },
+].map((track) => ({ ...track, artist_credit: "", generated: true, duration_seconds: 150 }));
+const stream = (phase, tracks) => ({ phase, tracks, startedAt: new Date(Date.now() - 6 * 60_000).toISOString(), endsAt: new Date(Date.now() + 41 * 60_000).toISOString() });
+function setOnAir(next, ended = null) {
+  onAir = next;
+  status = { ...status, onAir };
+  send({ type: "on-air", onAir, ended });
+}
+const ON_AIR = [{ role: "user", text: "Go on air: keep the music going for right now", entry: "e0" }, { role: "assistant", id: "t0", entry: "e0",
+  text: "On air. Warm, unhurried keys with the tape hiss left in, out of the late records you keep coming back to. I'll cut the next one while this one plays." }];
 const played = (index) => [{ action: "playback.resume", state: "accepted", targets: [{ title: TRACKS[index].title, artist_credit: TRACKS[index].artists.join(", ") }] }];
 const conversation = (pairs) => pairs.flatMap(([user, reply], index) => [{ role: "user", text: user, entry: `e${index}` },
   { role: "assistant", id: `t${index}`, text: reply, entry: `e${index}`, receipts: index === 0 ? played(0) : [] }]);
@@ -360,6 +379,31 @@ const STATES = {
     send({ type: "preview", id: "g1", album: null, tracks: [{ title: "Unhurried dream pop", artist_credit: "", generated: true,
       media_url: "moondog-media://generated/6f1c1b2e-3c4d-4e5f-8a9b-0c1d2e3f4a5b", duration_seconds: 120 }] });
   },
+  // On Air, Moondog's own channel: offered in the bar while music making and a model are ready, and named
+  // in its tooltip; lit after a click, while the reply makes the stream's first track; on air with a made
+  // track, the next one queued and the one after it being cut; and in the dry gap, where the record being
+  // cut shows instead of the paused Spotify song. Never "streaming", which means a reply here.
+  "on-air-available"() { ready(); silent(); },
+  "on-air-tip"() { STATES["on-air-available"](); return { hover: "[data-on-air]" }; },
+  "on-air-starting"() {
+    STATES["on-air-available"]();
+    onAirNext = true;
+    setTimeout(() => document.querySelector("[data-on-air]").click(), 150);
+  },
+  "on-air-playing"() {
+    ready({ transcript: ON_AIR });
+    player({ playing: false, fraction: 0.62 });
+    setOnAir(stream("making", 2));
+    send({ type: "preview", id: AIR_QUEUE, album: null, tracks: [MADE[0]] });
+    send({ type: "preview-enqueue", id: AIR_QUEUE, track: MADE[1] });
+    setTimeout(() => document.querySelector("[data-toggle-inspector]").click(), 150);
+  },
+  "on-air-waiting"() {
+    ready({ transcript: ON_AIR });
+    player({ playing: false, fraction: 0.62 });
+    setOnAir(stream("waiting", 2));
+    setTimeout(() => document.querySelector("[data-toggle-inspector]").click(), 150);
+  },
   "settings-import"() { STATES.reply(); slash("import"); },
   "settings-memory"() { STATES.reply(); slash("memory"); },
   "settings-about"() { STATES.reply(); slash("help"); },
@@ -448,6 +492,25 @@ function relabel(data) {
 core.onmessage = ({ data }) => {
   if (!data?.type) return;
   window.__harness?.sent.push(data);
+  // The request On Air sends, while a state waits for it: a reply that starts the stream and is still
+  // making its first track.
+  if (data.type === "prompt" && onAirNext) {
+    onAirNext = false;
+    airTurn = "air-turn";
+    send({ type: "turn", state: "start", id: airTurn, text: data.text, session: null });
+    send({ type: "activity", id: airTurn, call: 1, tool: "moondog_start_stream", args: {}, state: "running", session: null });
+    setTimeout(() => setOnAir(stream("starting", 0)), 250);
+    return;
+  }
+  // Off air: the stream ends and its record stops; the reply starting it, if any, stops too.
+  if (data.type === "on-air-stop" && onAir) {
+    setOnAir(null, "asked");
+    send({ type: "preview-control", id: AIR_QUEUE, action: "stop" });
+  }
+  if (data.type === "cancel" && airTurn) {
+    send({ type: "turn", state: "end", id: airTurn, text: "", status: "aborted", receipts: [], session: null });
+    airTurn = null;
+  }
   if (data.type === "new") { shown = []; send({ type: "session", current: null, transcript: [] }); }
   if (["label", "delete", "folder-save"].includes(data.type)) relabel(data);
   if (data.type === "models") send({ type: "models", providers });

@@ -6,6 +6,8 @@ const STRINGS = {
     untitled: "Untitled", nowPlaying: "Now playing", upNext: "Up next", nothingPlaying: "Nothing is playing",
     placeholder: "What do you want to hear?", send: "Send", stop: "Stop", play: "Play", pause: "Pause", next: "Next", previous: "Previous",
     armPrompt: "Play something for right now",
+    onAirPrompt: "Go on air: keep the music going for right now", goOnAir: "Go on air", goingOnAir: "Going on air", onAirUntil: "On air until {time}",
+    onAirMaking: "On air · cutting the next record", makingNext: "Cutting the next record", onAirFailed: "Off air: the next record couldn't be made.", menuOnAir: "On Air", onAir: "On air",
     conversations: "Conversations", latest: "Jump to latest", player: "Player", foldRecord: "Fold the record", showRecord: "Show the record", immerse: "Just the record", keepOnTop: "Keep on top", restore: "Back to the conversation", preview: "Preview", stopPreviews: "Stop previews", fullSong: "Open in Apple Music", openInSpotify: "Open in Spotify",
     stopped: "Stopped.", offline: "No model is set up.", unreachable: "Couldn't reach the model.", tryAgain: "Try again",
     "activity.search": "Digging through the crates", "activity.play": "Dropping the needle", "activity.pause": "Lifting the needle", "activity.skip": "Changing the record",
@@ -77,6 +79,8 @@ const STRINGS = {
     untitled: "未命名", nowPlaying: "正在播放", upNext: "接下来", nothingPlaying: "没有在播放",
     placeholder: "想听点什么？", send: "发送", stop: "停止", play: "播放", pause: "暂停", next: "下一首", previous: "上一首",
     armPrompt: "放点适合现在听的",
+    onAirPrompt: "开播吧，照着现在的感觉一直放下去", goOnAir: "开始播出", goingOnAir: "正在开播", onAirUntil: "播出中 · 到 {time}",
+    onAirMaking: "播出中 · 正在刻下一张", makingNext: "正在刻下一张", onAirFailed: "停播了：下一张没刻成。", menuOnAir: "播出", onAir: "播出",
     conversations: "对话", latest: "跳到最新", player: "播放器", foldRecord: "收起唱片", showRecord: "展开唱片", immerse: "只看唱片", keepOnTop: "置顶", restore: "回到对话", preview: "试听", stopPreviews: "停止试听", fullSong: "在 Apple Music 中打开", openInSpotify: "在 Spotify 中打开",
     stopped: "已停止。", offline: "还没有设置模型。",
     unreachable: "连不上模型。", tryAgain: "重试",
@@ -140,6 +144,8 @@ const STRINGS = {
     untitled: "未命名", nowPlaying: "正在播放", upNext: "接下來", nothingPlaying: "沒有在播放",
     placeholder: "想聽點什麼？", send: "傳送", stop: "停止", play: "播放", pause: "暫停", next: "下一首", previous: "上一首",
     armPrompt: "放點適合現在聽的",
+    onAirPrompt: "開播吧，照著現在的感覺一直放下去", goOnAir: "開始播出", goingOnAir: "正在開播", onAirUntil: "播出中 · 到 {time}",
+    onAirMaking: "播出中 · 正在刻下一張", makingNext: "正在刻下一張", onAirFailed: "停播了：下一張沒刻成。", menuOnAir: "播出", onAir: "播出",
     conversations: "對話", latest: "跳到最新", player: "播放器", foldRecord: "收起唱片", showRecord: "展開唱片", immerse: "只看唱片", keepOnTop: "置頂", restore: "回到對話", preview: "試聽", stopPreviews: "停止試聽", fullSong: "在 Apple Music 中開啟", openInSpotify: "在 Spotify 中開啟",
     stopped: "已停止。", offline: "還沒有設定模型。",
     unreachable: "連不上模型。", tryAgain: "重試",
@@ -203,6 +209,8 @@ const STRINGS = {
     untitled: "無題", nowPlaying: "再生中", upNext: "次に再生", nothingPlaying: "再生していません",
     placeholder: "何を聴きたいですか？", send: "送信", stop: "停止", play: "再生", pause: "一時停止", next: "次へ", previous: "前へ",
     armPrompt: "今にぴったりの曲をかけて",
+    onAirPrompt: "オンエアして。今の気分に合わせて音楽をかけ続けて", goOnAir: "オンエアする", goingOnAir: "オンエアの準備中", onAirUntil: "{time} までオンエア中",
+    onAirMaking: "オンエア中 · 次のレコードを刻んでいます", makingNext: "次のレコードを刻んでいます", onAirFailed: "オフエア：次のレコードを作れませんでした。", menuOnAir: "オンエア", onAir: "オンエア",
     conversations: "会話", latest: "最新へ移動", player: "プレーヤー", foldRecord: "レコードをしまう", showRecord: "レコードを表示", immerse: "レコードだけ", keepOnTop: "最前面に固定", restore: "会話に戻る", preview: "試聴", stopPreviews: "試聴を停止", fullSong: "Apple Music で開く", openInSpotify: "Spotify で開く",
     stopped: "停止しました。", offline: "モデルが設定されていません。",
     unreachable: "モデルに接続できませんでした。", tryAgain: "再試行",
@@ -266,6 +274,8 @@ const STRINGS = {
     untitled: "제목 없음", nowPlaying: "지금 재생 중", upNext: "다음 곡", nothingPlaying: "재생 중인 곡이 없습니다",
     placeholder: "무엇을 듣고 싶으세요?", send: "보내기", stop: "중지", play: "재생", pause: "일시 정지", next: "다음", previous: "이전",
     armPrompt: "지금 듣기 좋은 걸 틀어 줘",
+    onAirPrompt: "방송 시작해 줘. 지금 분위기에 맞춰 음악을 계속 틀어 줘", goOnAir: "방송 시작", goingOnAir: "방송 준비 중", onAirUntil: "{time}까지 방송 중",
+    onAirMaking: "방송 중 · 다음 레코드 찍는 중", makingNext: "다음 레코드 찍는 중", onAirFailed: "방송 종료: 다음 레코드를 만들지 못했습니다.", menuOnAir: "방송", onAir: "방송",
     conversations: "대화", latest: "최신으로 이동", player: "플레이어", foldRecord: "레코드 접기", showRecord: "레코드 보기", immerse: "레코드만 보기", keepOnTop: "항상 위에", restore: "대화로 돌아가기", preview: "미리 듣기", stopPreviews: "미리 듣기 중지", fullSong: "Apple Music에서 열기", openInSpotify: "Spotify에서 열기",
     stopped: "중지했습니다.", offline: "설정된 모델이 없습니다.",
     unreachable: "모델에 연결할 수 없습니다.", tryAgain: "다시 시도",
@@ -329,6 +339,8 @@ const STRINGS = {
     untitled: "Sin título", nowPlaying: "Sonando ahora", upNext: "A continuación", nothingPlaying: "No suena nada",
     placeholder: "¿Qué quieres escuchar?", send: "Enviar", stop: "Detener", play: "Reproducir", pause: "Pausa", next: "Siguiente", previous: "Anterior",
     armPrompt: "Pon algo para este momento",
+    onAirPrompt: "Sal al aire: que la música siga sonando para este momento", goOnAir: "Salir al aire", goingOnAir: "Saliendo al aire", onAirUntil: "Al aire hasta las {time}",
+    onAirMaking: "Al aire · grabando el próximo disco", makingNext: "Grabando el próximo disco", onAirFailed: "Fuera del aire: no se pudo grabar el próximo disco.", menuOnAir: "Al aire", onAir: "Al aire",
     conversations: "Conversaciones", latest: "Ir al final", player: "Reproductor", foldRecord: "Plegar el disco", showRecord: "Mostrar el disco", immerse: "Solo el disco", keepOnTop: "Mantener encima", restore: "Volver a la conversación", preview: "Avance", stopPreviews: "Detener avances", fullSong: "Abrir en Apple Music", openInSpotify: "Abrir en Spotify",
     stopped: "Detenido.", offline: "No hay ningún modelo configurado.",
     unreachable: "No se pudo conectar con el modelo.", tryAgain: "Reintentar",
@@ -392,6 +404,8 @@ const STRINGS = {
     untitled: "Sans titre", nowPlaying: "En cours de lecture", upNext: "À suivre", nothingPlaying: "Rien en lecture",
     placeholder: "Qu'aimeriez-vous écouter ?", send: "Envoyer", stop: "Arrêter", play: "Lire", pause: "Pause", next: "Suivant", previous: "Précédent",
     armPrompt: "Mets quelque chose pour maintenant",
+    onAirPrompt: "Prends l'antenne : que la musique continue pour ce moment", goOnAir: "Prendre l'antenne", goingOnAir: "Prise d'antenne", onAirUntil: "À l'antenne jusqu'à {time}",
+    onAirMaking: "À l'antenne · gravure du prochain disque", makingNext: "Gravure du prochain disque", onAirFailed: "Fin d'antenne : le prochain disque n'a pas pu être gravé.", menuOnAir: "À l'antenne", onAir: "À l'antenne",
     conversations: "Conversations", latest: "Aller au plus récent", player: "Lecteur", foldRecord: "Replier le disque", showRecord: "Afficher le disque", immerse: "Le disque seul", keepOnTop: "Garder au premier plan", restore: "Revenir à la conversation", preview: "Extrait", stopPreviews: "Arrêter les extraits", fullSong: "Ouvrir dans Apple Music", openInSpotify: "Ouvrir dans Spotify",
     stopped: "Arrêté.", offline: "Aucun modèle n'est configuré.",
     unreachable: "Impossible de joindre le modèle.", tryAgain: "Réessayer",
@@ -455,6 +469,8 @@ const STRINGS = {
     untitled: "Ohne Titel", nowPlaying: "Läuft gerade", upNext: "Als Nächstes", nothingPlaying: "Gerade läuft nichts",
     placeholder: "Was möchtest du hören?", send: "Senden", stop: "Stoppen", play: "Abspielen", pause: "Pause", next: "Weiter", previous: "Zurück",
     armPrompt: "Spiel etwas für jetzt",
+    onAirPrompt: "Geh auf Sendung: Lass die Musik für jetzt weiterlaufen", goOnAir: "Auf Sendung gehen", goingOnAir: "Gehe auf Sendung", onAirUntil: "Auf Sendung bis {time}",
+    onAirMaking: "Auf Sendung · schneide die nächste Platte", makingNext: "Schneide die nächste Platte", onAirFailed: "Sendeschluss: Die nächste Platte ließ sich nicht schneiden.", menuOnAir: "Auf Sendung", onAir: "Auf Sendung",
     conversations: "Unterhaltungen", latest: "Zum Neuesten", player: "Player", foldRecord: "Platte einklappen", showRecord: "Platte zeigen", immerse: "Nur die Platte", keepOnTop: "Im Vordergrund halten", restore: "Zurück zur Unterhaltung", preview: "Vorschau", stopPreviews: "Vorschauen stoppen", fullSong: "In Apple Music öffnen", openInSpotify: "In Spotify öffnen",
     stopped: "Gestoppt.", offline: "Kein Modell eingerichtet.",
     unreachable: "Das Modell war nicht erreichbar.", tryAgain: "Erneut versuchen",
@@ -518,6 +534,8 @@ const STRINGS = {
     untitled: "Sem título", nowPlaying: "Tocando agora", upNext: "A seguir", nothingPlaying: "Nada tocando",
     placeholder: "O que você quer ouvir?", send: "Enviar", stop: "Parar", play: "Tocar", pause: "Pausar", next: "Próxima", previous: "Anterior",
     armPrompt: "Toque algo para agora",
+    onAirPrompt: "Entre no ar: mantenha a música tocando para agora", goOnAir: "Entrar no ar", goingOnAir: "Entrando no ar", onAirUntil: "No ar até {time}",
+    onAirMaking: "No ar · gravando o próximo disco", makingNext: "Gravando o próximo disco", onAirFailed: "Fora do ar: não deu para gravar o próximo disco.", menuOnAir: "No ar", onAir: "No ar",
     conversations: "Conversas", latest: "Ir para o mais recente", player: "Player", foldRecord: "Recolher o disco", showRecord: "Mostrar o disco", immerse: "Só o disco", keepOnTop: "Manter na frente", restore: "Voltar à conversa", preview: "Prévia", stopPreviews: "Parar prévias", fullSong: "Abrir no Apple Music", openInSpotify: "Abrir no Spotify",
     stopped: "Parado.", offline: "Nenhum modelo configurado.",
     unreachable: "Não foi possível alcançar o modelo.", tryAgain: "Tentar de novo",
@@ -581,6 +599,8 @@ const STRINGS = {
     untitled: "Senza titolo", nowPlaying: "In riproduzione", upNext: "A seguire", nothingPlaying: "Non suona niente",
     placeholder: "Cosa vuoi ascoltare?", send: "Invia", stop: "Interrompi", play: "Riproduci", pause: "Pausa", next: "Successivo", previous: "Precedente",
     armPrompt: "Metti qualcosa per adesso",
+    onAirPrompt: "Vai in onda: tieni la musica accesa per adesso", goOnAir: "Vai in onda", goingOnAir: "Vado in onda", onAirUntil: "In onda fino alle {time}",
+    onAirMaking: "In onda · incido il prossimo disco", makingNext: "Incido il prossimo disco", onAirFailed: "Fuori onda: non sono riuscito a incidere il prossimo disco.", menuOnAir: "In onda", onAir: "In onda",
     conversations: "Conversazioni", latest: "Vai al più recente", player: "Player", foldRecord: "Riduci il disco", showRecord: "Mostra il disco", immerse: "Solo il disco", keepOnTop: "Mantieni in primo piano", restore: "Torna alla conversazione", preview: "Anteprima", stopPreviews: "Interrompi anteprime", fullSong: "Apri in Apple Music", openInSpotify: "Apri in Spotify",
     stopped: "Interrotto.", offline: "Nessun modello configurato.",
     unreachable: "Impossibile raggiungere il modello.", tryAgain: "Riprova",
@@ -646,10 +666,11 @@ export const windowStringKeys = (locale) => Object.keys(STRINGS[locale] ?? {});
 // The tag for <html lang>, Intl and the spell checker.
 export const languageTag = (locale) => ({ zh: "zh-Hans", "zh-Hant": "zh-Hant", pt: "pt-BR" }[locale] ?? locale);
 
-// When a wait ends: "11:10", or "Sat 11:10" when that is not today.
-export function timeOfDay(at, locale) {
+// When a wait ends: "11:10", or "Sat 11:10" when that is not today. A time that is always near, such
+// as the end of a stream, leaves the day out.
+export function timeOfDay(at, locale, { day = true } = {}) {
   const when = new Date(at);
-  const today = when.toDateString() === new Date().toDateString();
+  const today = !day || when.toDateString() === new Date().toDateString();
   try {
     return new Intl.DateTimeFormat(languageTag(locale), { ...(today ? {} : { weekday: "short" }), hour: "numeric", minute: "2-digit" }).format(when);
   } catch { return when.toTimeString().slice(0, 5); }

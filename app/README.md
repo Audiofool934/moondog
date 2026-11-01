@@ -114,6 +114,13 @@ A model or music service chosen there lasts until the app quits, and sign-in and
   A Music generation group sits beside the services, with one Stable Audio 3 row: with the pointer on it, Turn on or Turn off, in words, once the install is found, and until then Set up, which unfolds its folder and Check again.
   The [terminal guide](../docs/TERMINAL_GUIDE.md#use-the-listening-room) says how to install Stable Audio 3 and its Medium model.
   A track Moondog made plays in the window and reads "Made by Moondog" in now playing and the mini player; during a stream, Up next shows the track Moondog made next.
+- On Air: once music generation is on and a model is set up, a mark beside the mini player starts Moondog's stream.
+  A click sends "Go on air: keep the music going for right now" into the open conversation, and the agent starts the stream from your taste and the moment.
+  The mark is lit while the stream runs; its tooltip says when the stream ends at the latest, and it dips once every few seconds while a record is being cut and nothing of the stream plays.
+  Another click, `⌃⌘O`, the Playback menu, the Dock menu or the player's stop button takes it off the air at once, without the agent; nothing that the stream paused starts again, and that song waits in the player, paused.
+  While on air, the stream owns the player: its track shows even paused, Up next ends with the record being cut, and between two tracks the player shows that record instead of a paused song elsewhere.
+  Music that starts on this Mac ends the stream: a song Moondog plays, the Music app, Spotify on this Mac, or NetEase. Spotify on another device doesn't. Changing the music service doesn't end it.
+  A stream that ends by itself goes dark without a word; one whose next record couldn't be made says so once.
   Changes are saved where the terminal reads them; the window never sees a key or token.
   The menu's list is `models.json`, each conversation's own model is `conversation-models.json`, and endpoints are `endpoints.json` (mode 600, with their keys), beside `settings.json`, so older Moondogs that read `settings.json` by a fixed shape keep working.
   OpenAI keeps a ChatGPT sign-in or an API key in `auth.json`; Moondog 0.2.0-beta.7 and older can't read a ChatGPT sign-in there.
@@ -138,7 +145,7 @@ A model or music service chosen there lasts until the app quits, and sign-in and
   The side panels hold only their own content.
 - Keys: Enter sends and Shift+Enter starts a new line. `⌘.` or Esc stops a reply.
   Typing anywhere goes to the composer. No plain key plays, pauses or skips, because a chat window is typed in all the time.
-  `⌃⌘P` plays or pauses, and `⌃⌘→` and `⌃⌘←` skip, from the Playback menu; the media keys work too.
+  `⌃⌘P` plays or pauses, and `⌃⌘→` and `⌃⌘←` skip, from the Playback menu; the media keys work too. `⌃⌘O` goes on or off the air.
   `⌥⌘S` and `⌥⌘P` show or hide the conversations and the player; a narrow window folds them on its own. `⌥⌘R` folds or opens the record.
 - Language: the window speaks the language the core speaks, which follows the choice in Settings or `/language`, then the system's language.
   The window's words, its menus included, exist in English, Simplified and Traditional Chinese, Japanese, Korean, Spanish, French, German, Brazilian Portuguese and Italian (`strings.mjs`).
@@ -187,6 +194,7 @@ It needs no model, no music service and none of your data.
 `MOONDOG_HARNESS_STATES=long MOONDOG_HARNESS_EVAL=check-ui.mjs npm run harness` checks tooltip timing and themes, the record handoff and corner placement, and pin feedback in both themes.
 With `first-run`, `first-run-model-only` and `first-run-netease` among the states, it also checks the first run: both steps from the keyboard, one ended in the terminal, and one skipped with Esc.
 The `first-run-*` states draw its steps, sign-ins and skip tooltip on their own.
+With the `on-air-*` states among them (`on-air-available`, `on-air-tip`, `on-air-starting`, `on-air-playing`, `on-air-waiting`), it checks On Air: going on air, stopping while starting, stopping from the mark and from the player, and the song the stream paused showing again.
 An evaluation failure exits with a nonzero status.
 
 ## Build the app

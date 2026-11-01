@@ -1,5 +1,5 @@
 import { homedir } from "node:os";
-import { LOCALES, N_, liveScreenTranslator, normalizeLocale } from "../../i18n/index.mjs";
+import { LOCALES, N_, intlLocale, liveScreenTranslator, normalizeLocale, translator } from "../../i18n/index.mjs";
 import {
   CombinedAutocompleteProvider,
   Container,
@@ -126,6 +126,7 @@ const slashCommands = [
   { name: "web", description: N_("Look things up on public music sites") },
   { name: "service", description: N_("Choose where Moondog plays music") },
   { name: "generation", description: N_("Let Moondog make music on this Mac") },
+  { name: "onair", description: N_("Go on air: Moondog keeps making music from your taste") },
   { name: "spotify", description: N_("Connect and control Spotify") },
   { name: "skip", description: N_("Skip to the next song preview") },
   { name: "stop", description: N_("Stop the song previews") },
@@ -246,8 +247,10 @@ export async function runMoondogTui({
   // /skip and /stop exist only where the room controls the previews itself.
   const previewControls = typeof previewPlayer?.subscribe === "function" &&
     typeof previewPlayer.skip === "function" && typeof previewPlayer.stop === "function";
+  // /onair needs both: the room's own player and music making here.
+  const onAirControls = previewControls && typeof generation?.save === "function";
   const commands = slashCommands.filter(({ name }) => (previewControls || !["skip", "stop"].includes(name)) &&
-    (name !== "generation" || typeof generation?.save === "function"));
+    (name !== "generation" || typeof generation?.save === "function") && (name !== "onair" || onAirControls));
   const localizedCommands = commands.map(({ name, description }) => ({ name, get description() { return tr.marked(description); } }));
   let activeRuntime = runtime;
   application.startNewSession?.("tui_start");
@@ -326,7 +329,20 @@ export async function runMoondogTui({
     : Math.min(messageQueue.length, 4) + (messageQueue.length > 4 ? 1 : 0);
   // The preview now playing sits on its own line above the draft.
   let nowPlaying = null;
-  const nowPlayingRows = () => (nowPlaying && !profileView && !importView && !firstRunView ? 1 : 0);
+  // Moondog's stream as the core shows it: null, or { phase, started_at, ends_at, tracks_made }.
+  let onAir = application.streamView?.() ?? null;
+  // Between two of the stream's tracks nothing plays, and the line says the next one is being made.
+  const dryGap = () => !nowPlaying && onAir?.phase === "waiting";
+  const nowPlayingRows = () => ((nowPlaying || dryGap()) && !profileView && !importView && !firstRunView ? 1 : 0);
+  // When the stream ends at the latest, as a clock time: an upper bound, so never a countdown. The clock
+  // follows the screen's language, as the words around it do.
+  const onAirUntil = () => {
+    const ends = new Date(onAir?.ends_at);
+    let time;
+    try { time = new Intl.DateTimeFormat(intlLocale(tr.locale), { hour: "numeric", minute: "2-digit" }).format(ends); }
+    catch { time = ends.toTimeString().slice(0, 5); }
+    return tr("on air until {time}", { time });
+  };
   let cancelWork = null;
   let cancellationRequested = false;
   let workStartedAt = 0;
@@ -481,16 +497,21 @@ export async function runMoondogTui({
     render(width) {
       if (profileView || importView || firstRunView) return [];
       const lines = [];
-      if (nowPlaying) {
-        const { track, position, count, type } = nowPlaying;
+      if (nowPlaying || dryGap()) {
+        const { track, position, count, type } = nowPlaying ?? {};
         const prefix = `  ${theme.plain ? ">" : "♪"} `;
         // Where the terminal can't open links, the note in the conversation shows the address.
-        const apple = getCapabilities().hyperlinks ? hyperlink("Apple Music", track.catalog_url) : "Apple Music";
+        const apple = nowPlaying && getCapabilities().hyperlinks ? hyperlink("Apple Music", track.catalog_url) : "Apple Music";
         const state = type === "loading" ? tr("loading") : type === "paused" ? tr("paused") : "";
+        // Once its first track plays, a made track is the stream's, which goes on to the next with /skip.
+        const onAirTrack = track?.generated && onAir && onAir.phase !== "starting";
         // A track Moondog made is its own record, kept on this Mac, with nothing to open elsewhere.
-        const controls = track.generated ? `${state ? `  ${state}` : ""}  · /stop`
+        const controls = !nowPlaying ? `  · ${onAirUntil()} · /stop`
+          : onAirTrack ? `${state ? `  ${state}` : ""}  · ${onAirUntil()} · /skip · /stop`
+          : track.generated ? `${state ? `  ${state}` : ""}  · /stop`
           : `  ${position}/${count}${state ? ` · ${state}` : ""} · ${apple} · /skip · /stop`;
-        const song = sanitizeTerminalText(`${track.title} · ${track.generated ? tr("Made by Moondog") : track.artist_credit}`).replace(/\s+/gu, " ").trim();
+        const song = !nowPlaying ? tr("Cutting the next record")
+          : sanitizeTerminalText(`${track.title} · ${track.generated ? tr("Made by Moondog") : track.artist_credit}`).replace(/\s+/gu, " ").trim();
         const room = width - visibleWidth(prefix) - visibleWidth(controls);
         lines.push(paintBrandLine(room >= 12
           ? theme.accent(prefix) + theme.text(truncateToWidth(song, room, "…")) + theme.faint(controls)
@@ -722,13 +743,42 @@ export async function runMoondogTui({
     else if (event?.type === "stopped") nowPlaying = null;
     tui.requestRender();
   }) : null;
+  // The stream redraws the line above the draft as it moves on. Ending by itself, it goes dark
+  // without a word; only a track that couldn't be made says so.
+  const stopWatchingStream = application.subscribeStream?.(({ view, ended } = {}) => {
+    if (cleanedUp) return;
+    onAir = view ?? null;
+    if (ended === "failed") setFooter(tr("Off air: the next record couldn't be made."), failure);
+    tui.requestRender();
+  }) ?? null;
   // These act at once, even while Moondog is answering.
   const controlPreviews = (command) => {
     // /stop also ends Moondog's stream while its next track is still being made and nothing plays.
     const streamStopped = command === "stop" && application.stopStream?.()?.state === "stopped";
     const acted = command === "stop" ? previewPlayer.stop() || streamStopped : previewPlayer.skip();
-    if (!busy) setFooter(!acted ? tr("No previews are playing.") : command === "stop" ? tr("Previews stopped.") : tr("Skipped."));
+    const waiting = !acted && command === "skip" && application.streamView?.()?.phase === "waiting";
+    // Off air shows even during a reply: a stream stopped while its first track is made has no row to lose.
+    if (!busy || streamStopped) {
+      setFooter(waiting ? tr("The next record is still being cut.") : !acted ? tr("No previews are playing.")
+        : streamStopped ? tr("Off air.") : command === "stop" ? tr("Previews stopped.") : tr("Skipped."));
+    }
     tui.requestRender();
+  };
+  // /onair goes off air at once while a stream runs, even while Moondog is answering, and says so
+  // when music making is off. Otherwise it returns the request to send, in the reply's language.
+  const onAirRequest = () => {
+    if (application.streamView?.()) {
+      application.stopStream();
+      // Said even during a reply: a stream stopped while its first track is made has no line to clear.
+      setFooter(tr("Off air."));
+      return null;
+    }
+    // Music making can be turned off, here or in the window, after the room opened.
+    if (!application.streamReady?.()) {
+      setFooter(tr("Turn on music making first: /generation on."), warning);
+      return null;
+    }
+    return translator(application.locale)("onAir.request");
   };
 
   // Making music on this Mac. /generation says where it stands; /generation on [folder] turns it on,
@@ -780,6 +830,7 @@ export async function runMoondogTui({
     stopWatchingModel?.();
     stopWatchingFirstRun?.();
     stopWatchingPreviews?.();
+    stopWatchingStream?.();
     clearInterval(indicator);
     indicator = null;
     clearInterval(homeMotion);
@@ -2358,6 +2409,12 @@ export async function runMoondogTui({
         await openCommandPalette();
         return;
       }
+      // Going on air is a request like any other, which the agent answers by starting the stream.
+      if (command === "onair") {
+        const request = onAirRequest();
+        if (request) await submitListeningTurn(request);
+        return;
+      }
       try {
         if (!["home", "theme", "art", "motion", "model", "service", "resume", "rewind", "branch", "new", "taste", "profile", "import"].includes(command)) enterConversation();
         if (command !== "auth") editor.addToHistory(value);
@@ -2545,9 +2602,11 @@ export async function runMoondogTui({
         controlPreviews(pending.slice(1));
         return;
       }
-      if (pending) {
-        if (messageQueue.length >= 30) editor.setText(pending);
-        else messageQueue.push(pending);
+      // /onair stops a stream at once; the request to go on air waits in the queue like any message.
+      const queued = onAirControls && pending === "/onair" ? onAirRequest() : pending;
+      if (queued) {
+        if (messageQueue.length >= 30) editor.setText(queued);
+        else messageQueue.push(queued);
         if (rewindPending) queuePaused = true;
       }
       if (!cleanedUp) tui.requestRender();

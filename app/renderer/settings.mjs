@@ -42,7 +42,7 @@ const ENDPOINT_ERRORS = { endpoint_url_invalid: "endpointUrlInvalid", endpoint_m
   endpoint_models_missing: "endpointModelsUnavailable", endpoint_name_invalid: "endpointNameInvalid" };
 // Window keys on the left, player keys on the right.
 const SHORTCUTS = [["⌘N", "newConversation"], ["⌘,", "settings"], ["⌘.", "stopReply"], ["/", "commands"], ["⌥⌘S", "conversations"],
-  ["⌥⌘P", "player"], ["⌃⌘P", "playPause"], ["⌃⌘→", "nextSong"], ["⌃⌘←", "previousSong"]];
+  ["⌥⌘P", "player"], ["⌃⌘P", "playPause"], ["⌃⌘→", "nextSong"], ["⌃⌘←", "previousSong"], ["⌃⌘O", "onAir"]];
 const warn = (what, message) => { if (message) console.warn(`[moondog] ${what}: ${message}`); };
 
 // Each control carries a key, so the focus comes back to it when the section redraws. A button

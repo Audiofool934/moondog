@@ -132,6 +132,7 @@ export default {
   "choice.retract": ({ title, artist }) => { const name = title ? `${artist}의 "${title}"` : artist; return `\n\n취소했습니다: ${name}에 대한 이전 선택.`; },
   "generate.made": ({ title, length, seed }) => `이 Mac의 Stable Audio 3로 만들었습니다: "${title}" (${length}, 시드 ${seed}).`,
   "generate.stream": ({ minutes }) => `이 Mac에서 매번 새 곡을 만들며 최대 ${minutes}분 동안 이어집니다. 언제든 멈출 수 있습니다.`,
+  "onAir.request": "방송 시작해 줘. 지금 분위기에 맞춰 음악을 계속 틀어 줘",
   "turn.cancelled": "남은 작업을 취소했습니다.",
   "turn.interrupted": "답변이 중단되었습니다. 기록된 Spotify 결과는 아래와 같으며, 어떤 작업도 다시 실행하지 않았습니다.",
 };
