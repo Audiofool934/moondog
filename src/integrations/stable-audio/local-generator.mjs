@@ -54,7 +54,7 @@ function literalFolder(value) {
   return path.isAbsolute(expanded) ? path.resolve(expanded) : null;
 }
 
-async function readSavedSettings(environment) {
+export async function readSavedSettings(environment) {
   try {
     const document = JSON.parse(await readFile(resolveGenerationSettingsFile(environment), "utf8"));
     return document?.version === 1 ? document : {};
@@ -77,11 +77,12 @@ export async function readGenerationSettings(environment = process.env, { platfo
   const managed = !fromEnvironment && saved.source === "managed";
   const folder = fromFile ?? defaultStableAudioRoot();
   let model = isStableAudioModel(saved.model) ? saved.model : DEFAULT_STABLE_AUDIO_MODEL;
-  // MOONDOG_SA3_DIR pins the folder, so a model chosen for Moondog's own install can't apply there:
-  // the pinned folder keeps a model it has, and the choice waits until the variable is gone.
-  if (fromEnvironment) {
+  // A folder Moondog doesn't manage (MOONDOG_SA3_DIR, a typed folder, ~/Developer) runs the saved model
+  // only if it has it, otherwise the first model it can run; a model chosen for Moondog's own install
+  // waits until that install is chosen again. A folder that runs nothing keeps the saved model.
+  if (!managed) {
     for (const name of [...new Set([model, DEFAULT_STABLE_AUDIO_MODEL, ...Object.keys(STABLE_AUDIO_MODELS)])]) {
-      if ((await checkStableAudioInstall(fromEnvironment, { model: name, platform, arch })).state === "ready") { model = name; break; }
+      if ((await checkStableAudioInstall(fromEnvironment ?? folder, { model: name, platform, arch })).state === "ready") { model = name; break; }
     }
   }
   return {
@@ -100,7 +101,8 @@ export async function readGenerationSettings(environment = process.env, { platfo
  * Older Moondogs read the same version 1 file and see only enabled and path.
  */
 export async function writeGenerationSettings({ enabled, path: folder, source, model } = {}, environment = process.env, { platform = process.platform, arch = process.arch } = {}) {
-  const current = await readGenerationSettings(environment, { platform, arch });
+  // The file's own view: a folder MOONDOG_SA3_DIR pins in this process is never written into it.
+  const current = await readGenerationSettings({ ...environment, MOONDOG_SA3_DIR: "" }, { platform, arch });
   const saved = await readSavedSettings(environment);
   const typed = folder === undefined ? undefined : literalFolder(folder);
   if (folder !== undefined && folder !== null && !typed) {
@@ -121,6 +123,8 @@ export async function writeGenerationSettings({ enabled, path: folder, source, m
   if (model === undefined && !managed && (typed || source === "settings")) {
     const folderRoot = savedFolder ?? current.folder;
     const candidates = [current.model, DEFAULT_STABLE_AUDIO_MODEL, ...Object.keys(STABLE_AUDIO_MODELS)];
+    // A folder that runs nothing yet gets Medium, the model the install steps Moondog shows download.
+    chosen = DEFAULT_STABLE_AUDIO_MODEL;
     for (const name of [...new Set(candidates)]) {
       if ((await checkStableAudioInstall(folderRoot, { model: name, platform, arch })).state === "ready") { chosen = name; break; }
     }

@@ -1164,7 +1164,8 @@ async function main() {
         check: () => localGenerator.check(),
         save: (settings) => localGenerator.save(settings),
         // Uses an installed model of Moondog's own install.
-        use: (model) => localGenerator.save({ source: "managed", model }),
+        use: async (model) => (generationSetup?.status()?.models?.[model]?.state === "ready"
+          ? localGenerator.save({ source: "managed", model }) : localGenerator.check()),
         subscribe: (listener) => localGenerator.subscribe(listener),
         // Download, cancel and remove, shared by the window and the terminal.
         setup: generationSetup,

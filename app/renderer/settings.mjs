@@ -1003,7 +1003,7 @@ export function createSettings({ state, send, t, appleMusic = null, onHide = nul
       onSubmit: (value) => {
         data.generationCheck = "checking";
         data.drafts.generationPath = "";
-        send({ type: "generation", enabled: expected("generation", status.enabled === true), path: value });
+        send({ type: "generation", path: value });
         render();
       } }), again, ...(why ? [why] : []));
     const panel = make("div", "panel");

@@ -10,7 +10,7 @@ import { access, constants, lstat, mkdir, open, readdir, rename, rm, stat, statf
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { checkStableAudioInstall, readGenerationSettings, resolveGenerationSettingsFile, resolveStableAudioManagedRoot, writeGenerationSettings } from "./local-generator.mjs";
+import { checkStableAudioInstall, readGenerationSettings, readSavedSettings, resolveGenerationSettingsFile, resolveStableAudioManagedRoot, writeGenerationSettings } from "./local-generator.mjs";
 import { DEFAULT_STABLE_AUDIO_MODEL, isStableAudioModel, SHARED_WEIGHTS, STABLE_AUDIO_MODELS, STABLE_AUDIO_SOURCES } from "./sources.mjs";
 
 const MB = 1024 ** 2;
@@ -463,9 +463,12 @@ export function createStableAudioSetup({
     // themselves runs now (they can still pick this one with Use) or MOONDOG_SA3_DIR decides.
     const settings = await readGenerationSettings(environment);
     if (settings.source === "environment") return;
+    // A choice the listener made while this ran, here or in the other window or terminal, stands.
+    if (JSON.stringify(await readSavedSettings(environment)) !== job.settingsAtStart) return;
     const runsNow = async () => (await checkStableAudioInstall(settings.path, { model: settings.model, platform, arch })).state === "ready";
-    // A model of Moondog's own already in use stays in use too.
-    if ((settings.source === "settings" || (settings.source === "managed" && settings.enabled)) && (await runsNow())) return;
+    // A folder they chose, or one turned on that runs (~/Developer included), or a model of Moondog's
+    // own already in use stays in use.
+    if ((settings.source === "settings" || settings.enabled) && (await runsNow())) return;
     await writeGenerationSettings({ source: "managed", model, enabled: true }, environment);
   };
 
@@ -508,7 +511,8 @@ export function createStableAudioSetup({
       await takeLock(model, token);
       await rm(files.cancel, { force: true });
       const controller = new AbortController();
-      job = { model, token, controller, step: "uv", received: 0, total: 0 };
+      job = { model, token, controller, step: "uv", received: 0, total: 0,
+        settingsAtStart: JSON.stringify(await readSavedSettings(environment)) };
       await saveJob();
       const unwatch = watchCancel(token, controller);
       job.done = (async () => {
@@ -582,7 +586,7 @@ export function createStableAudioSetup({
       }
       // Music making that used this model moves to the other one, or back to the listener's folder with a
       // model that folder has, so a working own install is never checked for weights it never had.
-      const settings = await readGenerationSettings(environment);
+      const settings = await readGenerationSettings({ ...environment, MOONDOG_SA3_DIR: "" }, { platform, arch });
       if (settings.source === "managed" && settings.model === model) {
         if (status().models[other].state === "ready") await writeGenerationSettings({ model: other }, environment);
         else {

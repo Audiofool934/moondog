@@ -432,3 +432,47 @@ test("with MOONDOG_SA3_DIR pinning a folder, a managed model chosen meanwhile ne
   const status = await generator.check();
   assert.deepEqual([status.state, status.source, status.model], ["ready", "environment", "medium"]);
 });
+
+// A folder of the listener's own with the given models' weights.
+async function ownFolder(home, name, models) {
+  const own = path.join(home, name, "mlx");
+  await mkdir(path.join(own, "scripts"), { recursive: true });
+  await mkdir(path.join(own, ".venv", "bin"), { recursive: true });
+  await mkdir(path.join(own, "models", "mlx"), { recursive: true });
+  await writeFile(path.join(own, "scripts", "sa3_mlx.py"), "# stand-in\n");
+  await writeFile(path.join(own, ".venv", "bin", "python"), "#!/bin/sh\n");
+  await chmod(path.join(own, ".venv", "bin", "python"), 0o755);
+  const files = { medium: ["dit_medium_f16.npz", "same_l_decoder_f32.npz"], "small-music": ["dit_sm-music_f16.npz", "same_s_decoder_f32.npz"] };
+  for (const file of ["t5gemma_f16.npz", ...models.flatMap((model) => files[model])]) await writeFile(path.join(own, "models", "mlx", file), randomBytes(2048));
+  return own;
+}
+
+test("a save made while MOONDOG_SA3_DIR pins a folder never writes that folder's model into the file", async (t) => {
+  const home = await mkdtemp(path.join(tmpdir(), "moondog-sa3-pinned-save-"));
+  t.after(() => rm(home, { recursive: true, force: true }));
+  const pinned = await ownFolder(home, "pinned", ["medium"]);
+  const plain = { MOONDOG_STATE_HOME: home, MOONDOG_CONFIG_HOME: home };
+  await writeGenerationSettings({ enabled: true, source: "managed", model: "small-music" }, plain);
+  // /generation off and on in a terminal started with the variable.
+  const pinnedEnvironment = { ...plain, MOONDOG_SA3_DIR: pinned };
+  await writeGenerationSettings({ enabled: false }, pinnedEnvironment, { platform: "darwin", arch: "arm64" });
+  await writeGenerationSettings({ enabled: true }, pinnedEnvironment, { platform: "darwin", arch: "arm64" });
+  const file = await readGenerationSettings(plain);
+  assert.deepEqual([file.source, file.model, file.enabled], ["managed", "small-music", true], "the window without the variable still runs Moondog's install");
+});
+
+test("the listener's own folder runs a model it has, whatever model the file names", async (t) => {
+  const home = await mkdtemp(path.join(tmpdir(), "moondog-sa3-own-read-"));
+  t.after(() => rm(home, { recursive: true, force: true }));
+  const environment = { MOONDOG_STATE_HOME: home, MOONDOG_CONFIG_HOME: home };
+  const own = await ownFolder(home, "own", ["small-music"]);
+  // A file an older Moondog wrote: a folder and no model, which reads as Medium.
+  await writeFile(path.join(home, "generation.json"), JSON.stringify({ version: 1, enabled: true, path: own }));
+  const generator = createLocalGenerator({ environment, platform: "darwin", arch: "arm64" });
+  const status = await generator.check();
+  assert.deepEqual([status.state, status.model], ["ready", "small-music"]);
+  // A folder typed before it is installed gets Medium, the model the install steps download.
+  const empty = path.join(home, "empty", "mlx");
+  await generator.save({ path: empty });
+  assert.equal((await readGenerationSettings(environment)).model, "medium");
+});

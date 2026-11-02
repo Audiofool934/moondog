@@ -1089,7 +1089,8 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     "music-service": (data) => setMusicService(String(data.service ?? "")),
     // The listener turns music making on or off, or points it at another Stable Audio 3 folder.
     generation: async (data) => {
-      await generation.save({ enabled: data.enabled === true, ...(typeof data.path === "string" ? { path: data.path } : {}) });
+      // A folder saved alone leaves on or off as saved, so a change made in the terminal meanwhile stands.
+      await generation.save({ ...(typeof data.enabled === "boolean" ? { enabled: data.enabled } : {}), ...(typeof data.path === "string" ? { path: data.path } : {}) });
       sendStatus();
       send({ type: "generation-checked" });
     },
@@ -1127,7 +1128,10 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     },
     // An installed model put in use, which also moves music making to the install Moondog manages.
     "generation-model": async (data) => {
-      await generation.save({ enabled: generation.status?.()?.enabled === true, source: "managed", model: String(data.model ?? "") });
+      const model = String(data.model ?? "");
+      // A model removed meanwhile, here or in the terminal, is never put in use; on or off stays as saved.
+      if ((await setup?.status?.())?.models?.[model]?.state === "ready") await generation.save({ source: "managed", model });
+      await readSetup();
       sendStatus();
     },
     // After ncm-cli is set up in Terminal, the window asks again instead of waiting for the next launch.
