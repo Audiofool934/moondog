@@ -1,11 +1,13 @@
-// What the listener plays right now, wherever it plays: the Music app on this Mac, Spotify on its
-// active device, or NetEase through ncm-cli, with the playlist, album or queue it plays from.
-// Two players rarely play at once. When they do, one that plays wins over a paused one, then the
-// listener's chosen service, then this order.
-export const LISTENING_ORDER = Object.freeze(["apple_music", "spotify", "netease"]);
+// What the listener plays right now, wherever it plays: Moondog's own player (the songs it played or
+// queued, the tracks it made, its stream), the Music app on this Mac, Spotify on its active device,
+// or NetEase through ncm-cli, with the playlist, album or queue it plays from.
+// Two players rarely play at once. When they do, one that plays wins over a paused one, then
+// Moondog's own player, which pauses the others when it starts, then the listener's chosen service,
+// then this order.
+export const LISTENING_ORDER = Object.freeze(["moondog", "apple_music", "spotify", "netease"]);
 
 export function activeListening(sources, chosen) {
-  const order = [...new Set([chosen, ...LISTENING_ORDER])];
+  const order = [...new Set(["moondog", chosen, ...LISTENING_ORDER])];
   const heard = sources.filter((source) => source.song && (source.state === "playing" || source.state === "paused"));
   return heard.sort((a, b) => (a.state === "playing" ? 0 : 1) - (b.state === "playing" ? 0 : 1) ||
     order.indexOf(a.service) - order.indexOf(b.service))[0] ?? null;
@@ -75,6 +77,21 @@ async function spotify(application, { signal }) {
   };
 }
 
+// Moondog's own player: Apple Music songs in the window or the terminal, and the tracks Moondog made.
+const madeBy = (track) => ({ title: track.title, artists: track.generated ? ["Moondog"] : track.artist_credit ? [track.artist_credit] : [] });
+function moondogPlayer(application) {
+  const now = application.musicPreviewPlayer.nowPlaying();
+  if (!now?.song?.title) return { state: "stopped" };
+  const kind = !now.song.generated ? "moondog_queue" : application.streamView?.() ? "moondog_stream" : "moondog_made";
+  return {
+    state: now.state,
+    player: "Moondog's own player",
+    song: madeBy(now.song),
+    from: { kind, name: null, tracks_total: now.count, position: now.position },
+    next: now.next.map(madeBy),
+  };
+}
+
 async function netease(application) {
   const now = await application.neteaseNowPlaying();
   if (now.state === "stopped" || !now.song) return { state: "stopped" };
@@ -91,6 +108,7 @@ async function netease(application) {
 /** Every player Moondog can read, the one the listener hears first: { active, sources }. */
 export async function readListeningNow(application, { signal } = {}) {
   const readers = [
+    typeof application.musicPreviewPlayer?.nowPlaying === "function" ? ["moondog", () => moondogPlayer(application)] : null,
     application.musicApp?.available ? ["apple_music", () => musicApp(application)] : null,
     application.spotifyReady() ? ["spotify", () => spotify(application, { signal })] : null,
     application.neteaseReady() ? ["netease", () => netease(application)] : null,

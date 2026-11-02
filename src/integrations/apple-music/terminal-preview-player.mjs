@@ -7,6 +7,8 @@ import { access, constants, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
+import { createPlayerNow } from "../../core/moondog-player-now.mjs";
+
 // Players that play one file without a window and exit at its end, in order of preference.
 // None of them may read or write the terminal: the listening room owns it.
 const systemPlayers = {
@@ -69,8 +71,11 @@ export async function createTerminalPreviewPlayer({
   let queue = null;
   let child = null;
   let closed = false;
+  // What it plays, for the agent: the queue it holds, moved along by its own events.
+  const now = createPlayerNow();
 
   const emit = (event) => {
+    now.observe(event);
     for (const listener of listeners) {
       try { listener(event); } catch {}
     }
@@ -223,6 +228,7 @@ export async function createTerminalPreviewPlayer({
       if (closed || !name || typeof file !== "string" || !path.isAbsolute(file)) return;
       if (!queue || !queue.tracks.every((track) => track.generated)) return this.playGenerated({ id, title, file });
       queue.tracks.push({ title: name, artist_credit: "", generated: true, id: String(id ?? ""), file });
+      now.appended({ title: name, generated: true });
     },
     // Ends the song now playing, or still loading; the next one starts after it.
     skip() {
@@ -232,6 +238,8 @@ export async function createTerminalPreviewPlayer({
       return true;
     },
     stop,
+    // What plays now, as createPlayerNow reads it: null, or { state, song, position, count, next }.
+    nowPlaying: () => (closed ? null : now.read()),
     // Leaving Apple Music stops its previews here, never the tracks Moondog made.
     holdsCatalogSongs: () => Boolean(queue?.tracks.some((track) => !track.generated)),
     subscribe(listener) {
