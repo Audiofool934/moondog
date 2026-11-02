@@ -13,6 +13,8 @@ import { MoondogApplication } from "../../src/core/moondog-application.mjs";
 import { createTerminalPreviewPlayer } from "../../src/integrations/apple-music/terminal-preview-player.mjs";
 import { createAtmosphereStream, createLocalGenerator, readGenerationSettings } from "../../src/integrations/stable-audio/local-generator.mjs";
 import { PiAgentRuntime } from "../../src/runtime/pi/agent-runtime.mjs";
+import { cleanRecordName } from "../../src/runtime/pi/record-name.mjs";
+import { acceptableRecordTitle } from "../../src/profile/taste-compiler.mjs";
 
 // A stand-in for Stability AI's MLX build: its Python prints the stage lines the real script
 // prints, writes a short WAV where --out says, and logs its arguments. FAKE_SA3 makes it fail, hang or slow.
@@ -485,6 +487,48 @@ test("a stream makes each next track while the last plays, steers away from a sk
   assert.equal(tracks.length, 4, "every track went to the ledger as Moondog's");
 });
 
+test("a stream names each later track with its namer, and keeps a numbered name when the namer repeats or fails", async (t) => {
+  const install = await fakeInstall(t);
+  const generator = install.generator();
+  await generator.save({ enabled: true });
+  const player = streamPlayer();
+  const stream = createAtmosphereStream({ generator, player, now: () => 1_000_000 });
+  const asked = [];
+  // The second track gets a name of its own; the third's repeats the stream's; the fourth's namer is offline.
+  const answers = ["Low tide window", "late tide", new Error("offline")];
+  const nameTrack = async (context) => {
+    asked.push(context);
+    const answer = answers.shift();
+    if (answer instanceof Error) throw answer;
+    return answer;
+  };
+  const { made } = await stream.start({ compiled: compiledTaste, title: "Late tide", seconds: 15, minutes: 10, receipt: {} }, { nameTrack });
+  assert.equal(made.title, "Late tide", "the first track carries the stream's own name, unnumbered");
+  await until(() => player.calls.length === 2);
+  stream.observe({ type: "playing", track: { generated: true, id: player.calls[1][1] } });
+  await until(() => player.calls.length === 3);
+  stream.observe({ type: "playing", track: { generated: true, id: player.calls[2][1] } });
+  await until(() => player.calls.length === 4);
+  const receipts = await Promise.all(player.calls.map(([, id]) => generator.receipt(id)));
+  assert.deepEqual(receipts.map((receipt) => receipt.title), ["Late tide", "Low tide window", "Late tide · 3", "Late tide · 4"]);
+  assert.ok(receipts.every((receipt) => receipt.stream.name === "Late tide"));
+  assert.equal(asked[0].stream, "Late tide");
+  assert.deepEqual(asked[0].featured, receipts[1].stream.featured, "the namer hears what this track features");
+  assert.deepEqual(asked[1].earlier, ["Late tide", "Low tide window"], "and the names this stream already gave");
+  stream.stop?.("stopped");
+});
+
+test("a record's name is tidied, and one that names someone or asks for singing is not kept", () => {
+  assert.equal(cleanRecordName("Title: “Low tide window.”\nA quiet one."), "Low tide window");
+  assert.equal(cleanRecordName("《潮退后的窗》"), "潮退后的窗");
+  assert.equal(cleanRecordName("Untitled"), null);
+  assert.equal(cleanRecordName(""), null);
+  const names = { artists: ["Slowdive"], titles: [], historyArtists: [], historyTitles: [] };
+  assert.equal(acceptableRecordTitle("Low tide window", names), "Low tide window");
+  assert.equal(acceptableRecordTitle("Slowdive at dawn", names), null);
+  assert.equal(acceptableRecordTitle("Choir in the hall", names), null);
+});
+
 test("a stream whose queue runs dry starts again with the next track, and ends at its time limit", async (t) => {
   const install = await fakeInstall(t);
   const generator = install.generator();
@@ -766,8 +810,11 @@ test("the agent starts a stream when the listener asks for music to keep going, 
     musicPreviewPlayer: player, playbackService: "apple_music", domainServices: domainServices(recorded) });
   assert.ok(ids(app).includes("music.generate.stream") && ids(app).includes("music.generate.stream.stop"));
   const { faux, runtime } = runtimeFor(app);
-  faux.setResponses([
-    fauxAssistantMessage([fauxToolCall("moondog_start_stream", { descriptors: [
+  // The stream names its second track with the same model while the reply goes on, so each answer goes
+  // to whichever call asks for it rather than to whichever comes first.
+  const named = [];
+  const agentSteps = [
+    () => fauxAssistantMessage([fauxToolCall("moondog_start_stream", { title: "Low tide window", descriptors: [
       { term: "ambient", facet: "genre", source: "request" }, { term: "soft pads", facet: "instrument", source: "request" },
       { term: "tape hiss", facet: "texture", source: "request" }, { term: "unhurried", facet: "mood", source: "moment" }], seconds: 60, minutes: 30 })], { stopReason: "toolUse" }),
     (context) => {
@@ -775,11 +822,27 @@ test("the agent starts a stream when the listener asks for music to keep going, 
       assert.deepEqual([value.state, value.minutes], ["streaming", 30]);
       return fauxAssistantMessage([fauxText("Something quiet to work to; stop it whenever.")]);
     },
-  ]);
+  ];
+  const route = (context) => {
+    const asked = context.messages.at(-1)?.content;
+    if (typeof asked === "string" && asked.startsWith("Name this track.")) {
+      named.push(asked);
+      return fauxAssistantMessage([fauxText("Title: “Harbor lights, slowly.”")]);
+    }
+    return agentSteps.shift()(context);
+  };
+  faux.setResponses(Array.from({ length: 6 }, () => route));
   const reply = await runtime.prompt("keep some quiet music going while I work");
-  assert.match(reply.text, /Made on this Mac with Stable Audio 3: "[^"]+ · 1" \(1:00, seed \d+\)\.\nThe stream keeps going on this Mac, a new track each time, for up to 30 minutes\. Stop it any time\.$/u);
+  // The first track carries the stream's own name, unnumbered, and the reply was not cut short.
+  assert.equal(reply.text, "Something quiet to work to; stop it whenever.\n\nMade on this Mac with Stable Audio 3: \"Low tide window\" (1:00, seed " +
+    `${/seed (\d+)/u.exec(reply.text)?.[1]}).\nThe stream keeps going on this Mac, a new track each time, for up to 30 minutes. Stop it any time.`);
   assert.ok(app.streamStatus());
   await until(() => player.calls.length === 2);
+  // The second track was named by the conversation's model, from its own sound and the stream's name.
+  assert.equal((await generator.receipt(player.calls[1][1])).title, "Harbor lights, slowly");
+  assert.equal(named.length, 1);
+  assert.match(named[0], /<stream_name>Low tide window<\/stream_name>/u);
+  assert.match(named[0], /<listener_words>keep some quiet music going while I work<\/listener_words>/u);
   faux.setResponses([fauxAssistantMessage([fauxToolCall("moondog_stop_stream", {})], { stopReason: "toolUse" }),
     (context) => {
       assert.equal(JSON.parse(toolResult(context, "moondog_stop_stream").content[0].text).state, "stopped");

@@ -5,7 +5,7 @@ import { compactListenerProfile, readListenerProfile } from "../profile/listener
 import { mixCounts, songKeys } from "../profile/moondog-suggestions.mjs";
 import { ARTIST_CREDIT_SEPARATORS } from "./listener-avoids.mjs";
 import { textNamesSong } from "./track-title.mjs";
-import { compileTaste, tasteSources } from "../profile/taste-compiler.mjs";
+import { acceptableRecordTitle, compileTaste, tasteSources } from "../profile/taste-compiler.mjs";
 import { stableAudioPrompt } from "../integrations/stable-audio/local-generator.mjs";
 
 import {
@@ -636,7 +636,7 @@ export class MoondogApplication {
 
   // Starts Moondog's atmosphere stream from the listener's taste: its first track plays now, and
   // each next one is made while the last plays. Every track goes in the ledger as Moondog's pick.
-  async startStream({ descriptors, bpm, bpmSource, seconds, minutes, title } = {}, { moment = null, request = null, transient = false, signal, onProgress } = {}) {
+  async startStream({ descriptors, bpm, bpmSource, seconds, minutes, title } = {}, { moment = null, request = null, transient = false, signal, onProgress, nameRecord } = {}) {
     if (!this.streamReady()) throw Object.assign(new Error("A stream can't run here. Music making must be on, in the terminal room or the window."), { code: "stream_not_ready" });
     const { compiled, receipt } = await this.#compileForGeneration({ descriptors, bpm, bpmSource, title }, { moment, request, transient });
     if (!compiled.usable) {
@@ -647,7 +647,8 @@ export class MoondogApplication {
     let started;
     try {
       started = await this.atmosphereStream.start({ compiled, title: compiled.title, seconds, minutes, receipt },
-        { signal, onProgress, onTrack: (track) => this.#noteGeneratedPlay(track), beforePlay: () => this.quietOtherPlayers("apple_music", { signal }) });
+        { signal, onProgress, onTrack: (track) => this.#noteGeneratedPlay(track), beforePlay: () => this.quietOtherPlayers("apple_music", { signal }),
+          nameTrack: typeof nameRecord === "function" ? this.#streamNamer(nameRecord, compiled) : undefined });
     } catch (error) {
       // The listener turned it off while its first track was made: their choice, not a failure to retry.
       if (error?.code === "generation_stopped" && error.ended === "asked" && !signal?.aborted) return { state: "not_made", reason: "stopped_by_listener" };
@@ -657,6 +658,15 @@ export class MoondogApplication {
     return { state: "streaming", minutes, track: { id: made.id, title: made.title, seconds: made.duration_seconds, seed: made.seed },
       prompt, shaped_by: compiled.descriptors, sources: tasteSources(compiled.descriptors), left_out: compiled.dropped,
       ...(compiled.bpm ? { bpm: compiled.bpm } : {}), elapsed_ms: made.elapsed_ms };
+  }
+
+  // Names a stream's later tracks: the agent's namer asks the model, with the names of Moondog's recent
+  // tracks so it does not repeat them, and a name passes the same check as the agent's own titles.
+  #streamNamer(nameRecord, compiled) {
+    return async (context, options) => {
+      const recent = (this.localGenerator?.recentTracks?.(8) ?? []).map((track) => track.title).filter(Boolean);
+      return acceptableRecordTitle(await nameRecord({ ...context, recent }, options), compiled.names);
+    };
   }
 
   // A single track or a new stream takes over from a running stream, once its next track stops being made.

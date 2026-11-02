@@ -136,14 +136,23 @@ export function compileTaste(requested, context) {
   const usable = kept.some((descriptor) => ["genre", "instrument", "mood", "texture"].includes(descriptor.facet));
   const bpm = Number.isInteger(requested?.bpm) && requested.bpm >= BPM_RANGE.min && requested.bpm <= BPM_RANGE.max ? requested.bpm : null;
   const bpmSource = bpm && ["request", "moment", "reading"].includes(requested?.bpm_source) ? requested.bpm_source : bpm ? "moondog" : null;
-  return { usable, descriptors: kept, dropped, bpm, ...(bpm ? { bpm_source: bpmSource } : {}), title: trackTitle(requested?.title, kept, names) };
+  return { usable, descriptors: kept, dropped, bpm, ...(bpm ? { bpm_source: bpmSource } : {}), title: trackTitle(requested?.title, kept, names), names };
 }
 
-// Moondog names its own records. A proposed title stays when it is short, plain and names no one;
-// otherwise the title is the sound in a few words.
-function trackTitle(proposed, descriptors, names) {
+/**
+ * A name Moondog may give its own record: short, plain, naming no one (names is what compileTaste
+ * returned) and asking for no singing. Returns the tidied name, or null.
+ */
+export function acceptableRecordTitle(proposed, names = {}) {
   const title = clean(proposed);
-  if (title && Array.from(title).length <= 60 && TITLE_SHAPE.test(title) && !namedBy(title, names) && !VOCAL_WORDS.test(title)) return title;
+  return title && Array.from(title).length <= 60 && TITLE_SHAPE.test(title) && !namedBy(title, names) && !VOCAL_WORDS.test(title) ? title : null;
+}
+
+// Moondog names its own records. A proposed title stays when it is acceptable; otherwise the title
+// is the sound in a few words.
+function trackTitle(proposed, descriptors, names) {
+  const title = acceptableRecordTitle(proposed, names);
+  if (title) return title;
   const pick = (facets) => descriptors.find((descriptor) => facets.includes(descriptor.facet))?.term;
   const words = [pick(["mood"]) ?? pick(["texture"]), pick(["genre"]) ?? pick(["instrument"])].filter(Boolean);
   const text = [...new Set(words)].join(" ");
