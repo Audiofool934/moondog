@@ -1,5 +1,5 @@
 // Page-side interaction checks for the fictional-data harness, not shipped with the app.
-// MOONDOG_HARNESS_STATES=long,first-run,first-run-model-only,first-run-netease,on-air-available,on-air-tip,on-air-starting,on-air-playing,on-air-waiting MOONDOG_HARNESS_EVAL=check-ui.mjs npm run harness
+// MOONDOG_HARNESS_STATES=long,first-run,first-run-model-only,first-run-netease,on-air-available,on-air-tip,on-air-starting,on-air-playing,on-air-waiting,generation-setup-agreement,generation-setup-both,generation-setup-error MOONDOG_HARNESS_EVAL=check-ui.mjs npm run harness
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const assert = (ok, message) => { if (!ok) throw new Error(message); };
 const $ = (name) => document.querySelector(`[data-${name}]`);
@@ -103,7 +103,7 @@ if (harness.state?.startsWith("on-air")) {
     assert(glyph() === "#i-on-air" && button.getAttribute("aria-pressed") === "false" && button.dataset.tip === "Go on air", "Off air, the mark is unlit and offers to go on air");
     button.click();
     await wait(100);
-    assert(sent("prompt").at(-1)?.text === "Go on air: keep the music going for right now", "A click asks for On Air in the conversation, in the listener's words");
+    assert(sent("prompt").at(-1)?.text === "Go on air: make new music for right now and keep it going", "A click asks for On Air in the conversation, in the listener's words");
     assert(glyph() === "#i-on-air-lit" && button.dataset.tip === "Going on air", "Asked, the mark lights while it waits");
     return { onAir: "asked" };
   }
@@ -136,6 +136,63 @@ if (harness.state?.startsWith("on-air")) {
     assert(sent("on-air-stop").length === 1, "The player's stop takes it off the air");
     return { onAir: "stopped from the player" };
   }
+}
+
+// One-click Stable Audio 3: the licenses asked for once, in the row, before the first download; progress
+// that moves without replacing the row under the pointer; Cancel, Use, and a Remove that asks first.
+if (harness.state?.startsWith("generation-setup")) {
+  await wait(700);
+  const sheet = document.querySelector(".sheet");
+  const sent = (type) => harness.sent.filter((message) => message.type === type);
+  const at = (key) => sheet.querySelector(`[data-key="${key}"]`);
+  if (harness.state === "generation-setup-agreement") {
+    assert(!sent("generation-install").length, "The first Download asks for the licenses before it starts anything");
+    const panel = at("generation:agree:medium")?.closest(".panel");
+    assert(panel, "The licenses are asked for in the row");
+    const links = [...panel.querySelectorAll("a")].map((link) => link.href);
+    assert(links.includes("https://stability.ai/license") && links.some((href) => href.endsWith("LICENSE_GEMMA.md")), "Both licenses are linked");
+    assert(document.activeElement === at("generation:agree:medium"), "Agree and download takes the focus");
+    at("generation:agree:medium").click();
+    await wait(150);
+    const asked = sent("generation-install").at(-1);
+    assert(asked?.model === "medium" && asked.accepted === true, "Agree and download starts Medium with the licenses agreed to");
+    const bar = sheet.querySelector('[data-progress="medium:bar"]');
+    const cancel = at("generation:cancel:medium");
+    assert(bar && cancel, "Downloading, the row shows its progress and Cancel");
+    await wait(450);
+    assert(at("generation:cancel:medium") === cancel && sheet.querySelector('[data-progress="medium:bar"]') === bar, "Progress moves without replacing the row");
+    cancel.click();
+    await wait(150);
+    assert(sent("generation-cancel").length === 1 && at("generation:download:medium"), "Cancel stops it, and Download can go on");
+    at("generation:download:medium").click();
+    await wait(150);
+    assert(!at("generation:agree:medium") && sent("generation-install").at(-1)?.accepted === false, "Once agreed, Download starts without asking again");
+    return { generation: "agreed, downloaded, cancelled" };
+  }
+  if (harness.state === "generation-setup-both") {
+    at("generation:use:small-music").click();
+    await wait(150);
+    assert(sent("generation-model").at(-1)?.model === "small-music", "Use puts Small Music in use");
+    assert(at("generation:use:medium") && !at("generation:use:small-music"), "Medium can be used again; Small Music is the one in use");
+    at("generation:remove:medium").click();
+    await wait(50);
+    assert(!sent("generation-remove").length && at("generation:remove-yes:medium"), "Remove asks first");
+    assert(document.activeElement === at("generation:keep:medium"), "The question takes the focus on its Cancel");
+    at("generation:remove-yes:medium").click();
+    await wait(150);
+    assert(sent("generation-remove").at(-1)?.model === "medium" && at("generation:download:medium"), "Removed, Medium can be downloaded again");
+    return { generation: "used and removed" };
+  }
+  if (harness.state === "generation-setup-error") {
+    assert(sheet.querySelector('.alert')?.textContent === "There isn't enough free space on this Mac.", "A download that stopped says why");
+    at("generation:retry:medium").click();
+    await wait(150);
+    assert(sent("generation-install").at(-1)?.model === "medium", "Try again starts the download again");
+    return { generation: "tried again" };
+  }
+  const names = [...sheet.querySelectorAll(".choice.model .choice-label")].map((label) => label.textContent);
+  assert(names.join() === "Medium,Small Music", "Both models are listed, Medium first");
+  return { generation: "shown" };
 }
 
 await wait(700);

@@ -132,7 +132,7 @@ export default {
   "choice.retract": ({ title, artist }) => { const name = title ? `${artist}的《${title}》` : artist; return `\n\n已撤销：你之前对${name}的选择。`; },
   "generate.made": ({ title, length, seed }) => `用这台 Mac 上的 Stable Audio 3 做的：「${title}」（${length}，种子 ${seed}）。`,
   "generate.stream": ({ minutes }) => `音乐流会在这台 Mac 上一首接一首地做下去，最多 ${minutes} 分钟，随时可以停。`,
-  "onAir.request": "开播吧，照着现在的感觉一直放下去",
+  "onAir.request": "开播吧：按现在的感觉做新的音乐，一直放下去",
   "turn.cancelled": "已取消后续操作。",
   "turn.interrupted": "回复中断；已确认的 Spotify 操作结果如下。未重新执行任何操作。",
 };

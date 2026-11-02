@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { createModels, fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall, getCurrentTools } from "@earendil-works/pi-ai";
+import { createModels, fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall, getCurrentSystemMessage, getCurrentTools } from "@earendil-works/pi-ai";
 
 import { createWindowPreviewPlayer } from "../../app/preview-player.mjs";
 import { MoondogApplication } from "../../src/core/moondog-application.mjs";
@@ -18,9 +18,10 @@ import { acceptableRecordTitle } from "../../src/profile/taste-compiler.mjs";
 
 // A stand-in for Stability AI's MLX build: its Python prints the stage lines the real script
 // prints, writes a short WAV where --out says, and logs its arguments. FAKE_SA3 makes it fail, hang or slow.
-async function fakeInstall(t, { weights = true, environment = true } = {}) {
+async function fakeInstall(t, { weights = true, environment = true, models = ["medium"] } = {}) {
   const root = await mkdtemp(path.join(tmpdir(), "moondog-generation-"));
-  t.after(() => rm(root, { recursive: true, force: true }));
+  // A stream may still be writing its next track as the test ends; the delete retries until it is done.
+  t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   const install = path.join(root, "mlx");
   await mkdir(path.join(install, "scripts"), { recursive: true });
   await writeFile(path.join(install, "scripts", "sa3_mlx.py"), "# stand-in\n");
@@ -60,7 +61,8 @@ if (process.env.FAKE_SA3 === "slow") setTimeout(finish, 1500); else finish();
   }
   if (weights) {
     await mkdir(path.join(install, "models", "mlx"), { recursive: true });
-    for (const name of ["t5gemma_f16.npz", "dit_medium_f16.npz", "same_l_decoder_f32.npz"]) {
+    const names = { medium: ["dit_medium_f16.npz", "same_l_decoder_f32.npz"], "small-music": ["dit_sm-music_f16.npz", "same_s_decoder_f32.npz"] };
+    for (const name of ["t5gemma_f16.npz", ...models.flatMap((model) => names[model])]) {
       await writeFile(path.join(install, "models", "mlx", name), Buffer.alloc(2048));
     }
   }
@@ -129,6 +131,33 @@ test("a track is made with every choice passed, offline, and kept with a receipt
   assert.ok(!JSON.stringify(receipt).includes(path.basename(install.root)), "the receipt keeps no folder of this Mac");
   assert.ok(await generator.trackFile(made.id));
   assert.equal(await generator.trackFile("../config"), null);
+});
+
+test("the chosen model's weights are checked, and a track is made with its flags", async (t) => {
+  const install = await fakeInstall(t);
+  const generator = install.generator();
+  // The install is pinned by MOONDOG_SA3_DIR and has Medium only: a Small Music choice can't apply there,
+  // so the folder keeps the model it has and stays ready.
+  await generator.save({ enabled: true, source: "settings", model: "small-music" });
+  assert.deepEqual([generator.status().state, generator.status().missing, generator.status().model], ["ready", undefined, "medium"]);
+
+  const both = await fakeInstall(t, { models: ["medium", "small-music"] });
+  const switching = both.generator();
+  await switching.save({ enabled: true, source: "settings", model: "small-music" });
+  assert.deepEqual([switching.status().state, switching.status().managed], ["ready", false]);
+  const made = await switching.generate({ prompt: "ambient", seconds: 15, seed: 1, title: "Small" });
+  const { args } = await both.args();
+  assert.deepEqual([args[args.indexOf("--dit") + 1], args[args.indexOf("--decoder") + 1]], ["sm-music", "same-s"]);
+  assert.deepEqual([(await switching.receipt(made.id)).generator.model, (await switching.receipt(made.id)).generator.decoder], ["sa3-sm-music-ARC", "same-s"]);
+
+  await switching.save({ model: "medium" });
+  assert.equal(switching.status().model, "medium");
+  await switching.generate({ prompt: "ambient", seconds: 15, seed: 1, title: "Medium" });
+  const again = (await both.args()).args;
+  assert.deepEqual([again[again.indexOf("--dit") + 1], again[again.indexOf("--decoder") + 1]], ["medium", "same-l"]);
+  // MOONDOG_SA3_DIR still wins over Moondog's own install.
+  assert.equal((await readGenerationSettings(both.env)).source, "environment");
+  await assert.rejects(switching.save({ model: "small" }), { code: "generation_model_invalid" });
 });
 
 test("a stopped, failed or second run leaves no track behind", async (t) => {
@@ -773,7 +802,8 @@ test("a stream stopped before its first track plays leaves the music before it p
 
 test("the terminal player reports a made track skipped past the end of its queue, and /stop is no skip", async (t) => {
   const root = await mkdtemp(path.join(tmpdir(), "moondog-generated-skip-"));
-  t.after(() => rm(root, { recursive: true, force: true }));
+  // A stream may still be writing its next track as the test ends; the delete retries until it is done.
+  t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   const bin = path.join(root, "bin");
   await mkdir(bin);
   await writeFile(path.join(bin, "afplay"), "#!/bin/sh\nexec sleep 5\n");
@@ -861,7 +891,8 @@ test("the agent starts a stream when the listener asks for music to keep going, 
 
 test("the terminal plays a made track from its folder and keeps it; the window asks for it by id", async (t) => {
   const root = await mkdtemp(path.join(tmpdir(), "moondog-generated-play-"));
-  t.after(() => rm(root, { recursive: true, force: true }));
+  // A stream may still be writing its next track as the test ends; the delete retries until it is done.
+  t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   const bin = path.join(root, "bin");
   await mkdir(bin);
   const log = path.join(root, "played.log");
@@ -1110,7 +1141,8 @@ test("changing the music service keeps the stream on air, and stops only Apple M
   await until(() => !generator.busy());
   const calls = player.calls.length;
   await app.selectPlaybackService("spotify", { strict: false });
-  assert.equal(app.streamView().phase, "playing", "On Air is Moondog's own channel, not a service");
+  // Still on air, whether or not its next track is being made yet: the check is that the switch ended nothing.
+  assert.ok(["playing", "making"].includes(app.streamView()?.phase), "On Air is Moondog's own channel, not a service");
   assert.deepEqual(player.calls.slice(calls), [], "the made track plays on");
   // Apple Music's songs in Moondog's player still stop when the listener leaves it.
   await app.selectPlaybackService("apple_music", { strict: false });
@@ -1150,7 +1182,7 @@ test("the listener turning the stream off while its first track is made is no fa
       return fauxAssistantMessage([fauxText("Off air, then.")]);
     },
   ]);
-  const reply = runtime.prompt("go on air: keep the music going for right now");
+  const reply = runtime.prompt("Go on air: make new music for right now and keep it going");
   await until(() => generator.busy());
   assert.equal(app.streamView().phase, "starting");
   assert.deepEqual(app.stopStream(), { state: "stopped", tracks_made: 0 });
@@ -1207,4 +1239,29 @@ test("music Moondog starts on Spotify or NetEase ends the stream first, on the q
   await onAir();
   await app.controlNetease({ action: "resume" });
   quieted("netease:resume");
+});
+
+test("On Air's request tells the agent, for that reply only, to start the stream rather than play catalog music", async (t) => {
+  const install = await fakeInstall(t);
+  const generator = install.generator();
+  await generator.save({ enabled: true });
+  const player = streamPlayer();
+  const stream = createAtmosphereStream({ generator, player });
+  t.after(() => stream.stop());
+  const app = new MoondogApplication({ importsRoot: "/private/moondog-synthetic-missing-source", localGenerator: generator, atmosphereStream: stream,
+    musicPreviewPlayer: player, playbackService: "apple_music", domainServices: domainServices() });
+  const { faux, runtime } = runtimeFor(app);
+  const session = (context) => getCurrentSystemMessage(context.messages)?.sections?.session ?? "";
+  const seen = [];
+  faux.setResponses([
+    (context) => { seen.push(session(context)); return fauxAssistantMessage([fauxText("On air.")]); },
+    (context) => { seen.push(session(context)); return fauxAssistantMessage([fauxText("开播。")]); },
+    (context) => { seen.push(session(context)); return fauxAssistantMessage([fauxText("Here's one.")]); },
+  ]);
+  await runtime.prompt("Go on air: make new music for right now and keep it going");
+  await runtime.prompt("开播吧：按现在的感觉做新的音乐，一直放下去");
+  await runtime.prompt("play something for right now");
+  assert.match(seen[0], /The listener pressed On Air\. Answer this message by starting Moondog's stream with moondog_start_stream/u);
+  assert.match(seen[1], /The listener pressed On Air/u, "in every language On Air sends its request in");
+  assert.doesNotMatch(seen[2], /pressed On Air/u, "the next reply is an ordinary one again");
 });

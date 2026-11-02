@@ -46,3 +46,48 @@ test("the agent reads what plays everywhere, with the playlist and its songs bou
   assert.equal(music.from.tracks[0].position, 2);
   assert.deepEqual(spotify, { service: "spotify", state: "not_allowed", reason: "Spotify is idle." });
 });
+
+test("a cancelled read says so, and a failed one names its kind of error", async () => {
+  const faux = fauxProvider();
+  const models = createModels();
+  models.setProvider(faux.provider);
+  let failure;
+  const runtime = new PiAgentRuntime({
+    application: {
+      memoryStatus: () => ({ state: "not_persistent" }),
+      agentCapabilityDescriptors: () => listAgentCapabilityDescriptors({}),
+      async listeningNow() { throw failure; },
+    },
+    models, model: faux.getModel(), provider: "faux", modelId: "faux-1",
+  });
+  const tool = runtime.agent.state.tools.find((entry) => entry.name === "moondog_listening_now");
+  failure = new DOMException("This operation was aborted", "AbortError");
+  await assert.rejects(tool.execute("call-1", {}, new AbortController().signal), /^Error: domain_tool_cancelled: /u);
+  failure = new TypeError("Cannot read properties of undefined (reading 'song')");
+  await assert.rejects(tool.execute("call-2", {}, new AbortController().signal), (error) =>
+    error.message === "domain_tool_failed: The trusted Moondog domain service failed (TypeError).");
+});
+
+test("the agent reads Moondog's own player, with no position it does not keep", async () => {
+  const faux = fauxProvider();
+  const models = createModels();
+  models.setProvider(faux.provider);
+  const runtime = new PiAgentRuntime({
+    application: {
+      memoryStatus: () => ({ state: "not_persistent" }),
+      agentCapabilityDescriptors: () => listAgentCapabilityDescriptors({}),
+      async listeningNow() {
+        return { active: "moondog", sources: [{ service: "moondog", state: "playing", player: "Moondog's own player",
+          song: { title: "Us and Them", artists: ["Pink Floyd"] }, from: { kind: "moondog_queue", name: null, tracks_total: 6, position: 1 },
+          next: [{ title: "The Rain Song", artists: ["Led Zeppelin"] }] }] };
+      },
+    },
+    models, model: faux.getModel(), provider: "faux", modelId: "faux-1",
+  });
+  const tool = runtime.agent.state.tools.find((entry) => entry.name === "moondog_listening_now");
+  const value = JSON.parse((await tool.execute("call-1", {}, new AbortController().signal)).content[0].text);
+  assert.equal(value.active, "moondog");
+  assert.deepEqual(value.sources[0], { service: "moondog", state: "playing", player: "Moondog's own player",
+    song: { title: "Us and Them", artists: ["Pink Floyd"] }, from: { kind: "moondog_queue", tracks_total: 6, playing_position: 1 },
+    next: [{ title: "The Rain Song", artists: ["Led Zeppelin"] }] });
+});

@@ -55,6 +55,7 @@ import { createAppleMusicCatalog } from "../src/integrations/apple-music/catalog
 import { createTerminalPreviewPlayer } from "../src/integrations/apple-music/terminal-preview-player.mjs";
 import { createNeteasePlayer } from "../src/integrations/netease/ncm-cli-player.mjs";
 import { createAtmosphereStream, createLocalGenerator } from "../src/integrations/stable-audio/local-generator.mjs";
+import { createStableAudioSetup } from "../src/integrations/stable-audio/setup.mjs";
 import { createMusicAppPlayer } from "../src/integrations/apple-music/music-app.mjs";
 import {
   createOpenMusicSimilarity,
@@ -922,10 +923,14 @@ async function main() {
   const neteasePlayer = createNeteasePlayer();
   const playbackService = await resolvePlaybackService();
   if (playbackService === "netease") await neteasePlayer.check();
-  // Moondog makes music on this Mac with the listener's own Stable Audio 3 once they turn it on, in a
-  // room that can play what it makes. The terminal and the window each keep one generator, so each
-  // makes one track at a time; a choice saved on one side is checked again on the other.
+  // Moondog makes music on this Mac with Stable Audio 3 once the listener turns it on, in a room
+  // that can play what it makes: Moondog's own install, downloaded when they ask, or their folder.
+  // The terminal and the window each keep one generator, so each makes one track at a time; a
+  // choice saved on one side is checked again on the other.
   const localGenerator = previewPlayer ? createLocalGenerator() : null;
+  const generationSetup = localGenerator ? createStableAudioSetup() : null;
+  // A model set up or removed, here or on the other side, is checked again.
+  const unwatchGenerationSetup = generationSetup?.subscribe(() => { void localGenerator.check().catch(() => {}); }) ?? (() => {});
   await localGenerator?.check();
   void localGenerator?.sweep().catch(() => {});
   const unwatchGeneration = localGenerator?.watch() ?? (() => {});
@@ -1158,7 +1163,12 @@ async function main() {
         status: () => localGenerator.status(),
         check: () => localGenerator.check(),
         save: (settings) => localGenerator.save(settings),
+        // Uses an installed model of Moondog's own install.
+        use: async (model) => (generationSetup?.status()?.models?.[model]?.state === "ready"
+          ? localGenerator.save({ source: "managed", model }) : localGenerator.check()),
         subscribe: (listener) => localGenerator.subscribe(listener),
+        // Download, cancel and remove, shared by the window and the terminal.
+        setup: generationSetup,
       },
       // The room asks whether a Last.fm key is set, and saves one the listener pastes.
       lastfm: {
@@ -1270,6 +1280,10 @@ async function main() {
   } finally {
     unwatchPlayback();
     unwatchGeneration();
+    unwatchGenerationSetup();
+    // A download or uv run this process owns would keep it alive after the room closes; it stops and
+    // resumes next time. One owned by the other window or terminal runs on.
+    await generationSetup?.close?.();
     // A made track still playing is stopped while the generator listens, so its outcome is kept.
     if (localGenerator) {
       previewPlayer?.stop?.();

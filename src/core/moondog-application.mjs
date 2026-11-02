@@ -823,9 +823,10 @@ export class MoondogApplication {
     return this.requireNetease().nowPlaying();
   }
 
-  // Whether any player the listener uses can be read: the Music app, Spotify or NetEase.
+  // Whether any player the listener uses can be read: Moondog's own, the Music app, Spotify or NetEase.
   listeningReadable() {
-    return this.musicApp?.available === true || this.spotifyReady() || this.neteaseReady();
+    return typeof this.musicPreviewPlayer?.nowPlaying === "function" || this.musicApp?.available === true ||
+      this.spotifyReady() || this.neteaseReady();
   }
 
   // What the listener plays right now on any of them, and what it plays from (src/core/listening-now.mjs).
@@ -2232,6 +2233,10 @@ export class MoondogApplication {
     const rest = new Set();
     while (album && queue.at(-1)?.album_uri === album && !rest.has(queue.at(-1).uri)) rest.add(queue.pop().uri);
     const seen = new Set([observed.currently_playing?.uri, ...queue.map(track => track.uri)].filter(Boolean));
+    // With nothing playing and nothing queued, Spotify has dropped what Moondog queued (its device
+    // went idle), so those songs were not heard: a new request may queue them again.
+    // A player that could not be read says nothing, so the songs stay held back.
+    if (!seen.size && player && player.is_playing !== true && !player.item) this.recentSimilarQueueUris.clear();
     for (const [uri, acceptedAt] of this.recentSimilarQueueUris) {
       if (Date.now() - acceptedAt > 15 * 60_000) this.recentSimilarQueueUris.delete(uri);
       else seen.add(uri);
