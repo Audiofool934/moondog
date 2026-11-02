@@ -312,3 +312,32 @@ test("a development build keeps the choice but checks nothing", () => {
   assert.equal(updates.setBeta(true), true);
   assert.equal(updates.beta(), true);
 });
+
+test("a channel change during a running check drops its offer and checks the chosen channel", async () => {
+  const autoUpdater = fakeUpdater();
+  const updates = createUpdates({ autoUpdater, squirrel: new EventEmitter(), platform: "linux", onChange() {}, onRestart() {}, beta: true });
+  // As electron-updater does, a second call while one check runs gets that same check.
+  let release;
+  let pending = null;
+  autoUpdater.checkForUpdates = () => {
+    pending ??= (async () => {
+      autoUpdater.checks += 1;
+      const beta = autoUpdater.allowPrerelease;
+      await new Promise((resolve) => { release = resolve; });
+      if (beta) autoUpdater.emit("update-available", { version: "0.3.0-beta.9" });
+      return { isUpdateAvailable: beta };
+    })().finally(() => { pending = null; });
+    return pending;
+  };
+  const first = updates.check();
+  await tick();
+  updates.setBeta(false);
+  release();
+  await tick(); await tick();
+  // The beta check's offer was dropped, and a stable check began.
+  assert.equal(updates.state().phase, "idle");
+  assert.equal(autoUpdater.checks, 2);
+  release();
+  assert.equal(await first, "current");
+  assert.equal(updates.state().phase, "idle");
+});
