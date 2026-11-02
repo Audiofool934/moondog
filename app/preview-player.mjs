@@ -1,6 +1,6 @@
 // The room uses the same player interface in a terminal and in the desktop app.
 // Audio stays in the window; its events come back so the room can show and control it.
-import { createPlayerNow } from "../src/core/moondog-player-now.mjs";
+import { createPlayerNow } from "../src/core/listening-now.mjs";
 
 const generatedTrackId = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 

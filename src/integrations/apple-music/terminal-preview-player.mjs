@@ -7,7 +7,7 @@ import { access, constants, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { createPlayerNow } from "../../core/moondog-player-now.mjs";
+import { createPlayerNow } from "../../core/listening-now.mjs";
 
 // Players that play one file without a window and exit at its end, in order of preference.
 // None of them may read or write the terminal: the listening room owns it.

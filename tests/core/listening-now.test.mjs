@@ -50,7 +50,7 @@ test("the Music app's playlist and Spotify's active device are read together, th
 });
 
 test("Moondog's own player is read first, with what it queued and the tracks it made", async () => {
-  const { createPlayerNow } = await import("../../src/core/moondog-player-now.mjs");
+  const { createPlayerNow } = await import("../../src/core/listening-now.mjs");
   const now = createPlayerNow();
   now.queued([{ title: "Us and Them", artist_credit: "Pink Floyd" }, { title: "Space Song", artist_credit: "Beach House" }, { title: "Alison", artist_credit: "Slowdive" }]);
   now.observe({ type: "playing", position: 2 });
