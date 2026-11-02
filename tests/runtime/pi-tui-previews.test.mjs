@@ -219,7 +219,7 @@ test("/onair asks in the reply's language, and the stream's line shows its end t
   fixture.submit("/onair");
   await until(() => asked.length === 1);
   // The listener's language is German here; the screen stays English, which has no German catalog.
-  assert.equal(asked[0], "Geh auf Sendung: Lass die Musik für jetzt weiterlaufen");
+  assert.equal(asked[0], "Geh auf Sendung: Mach neue Musik für jetzt und lass sie weiterlaufen");
   const line = new RegExp(`♪ Night Drive · 1 · Made by Moondog\\s+· on air until ${until40} · /skip · /stop`, "u");
   await until(() => line.test(fixture.body()));
   assert.ok(fixture.body().includes("Geh auf Sendung"), "the request shows as the listener's message");

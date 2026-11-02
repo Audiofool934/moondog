@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { createModels, fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall, getCurrentTools } from "@earendil-works/pi-ai";
+import { createModels, fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall, getCurrentSystemMessage, getCurrentTools } from "@earendil-works/pi-ai";
 
 import { createWindowPreviewPlayer } from "../../app/preview-player.mjs";
 import { MoondogApplication } from "../../src/core/moondog-application.mjs";
@@ -1080,7 +1080,7 @@ test("the listener turning the stream off while its first track is made is no fa
       return fauxAssistantMessage([fauxText("Off air, then.")]);
     },
   ]);
-  const reply = runtime.prompt("go on air: keep the music going for right now");
+  const reply = runtime.prompt("Go on air: make new music for right now and keep it going");
   await until(() => generator.busy());
   assert.equal(app.streamView().phase, "starting");
   assert.deepEqual(app.stopStream(), { state: "stopped", tracks_made: 0 });
@@ -1137,4 +1137,29 @@ test("music Moondog starts on Spotify or NetEase ends the stream first, on the q
   await onAir();
   await app.controlNetease({ action: "resume" });
   quieted("netease:resume");
+});
+
+test("On Air's request tells the agent, for that reply only, to start the stream rather than play catalog music", async (t) => {
+  const install = await fakeInstall(t);
+  const generator = install.generator();
+  await generator.save({ enabled: true });
+  const player = streamPlayer();
+  const stream = createAtmosphereStream({ generator, player });
+  t.after(() => stream.stop());
+  const app = new MoondogApplication({ importsRoot: "/private/moondog-synthetic-missing-source", localGenerator: generator, atmosphereStream: stream,
+    musicPreviewPlayer: player, playbackService: "apple_music", domainServices: domainServices() });
+  const { faux, runtime } = runtimeFor(app);
+  const session = (context) => getCurrentSystemMessage(context.messages)?.sections?.session ?? "";
+  const seen = [];
+  faux.setResponses([
+    (context) => { seen.push(session(context)); return fauxAssistantMessage([fauxText("On air.")]); },
+    (context) => { seen.push(session(context)); return fauxAssistantMessage([fauxText("开播。")]); },
+    (context) => { seen.push(session(context)); return fauxAssistantMessage([fauxText("Here's one.")]); },
+  ]);
+  await runtime.prompt("Go on air: make new music for right now and keep it going");
+  await runtime.prompt("开播吧：按现在的感觉做新的音乐，一直放下去");
+  await runtime.prompt("play something for right now");
+  assert.match(seen[0], /The listener pressed On Air\. Answer this message by starting Moondog's stream with moondog_start_stream/u);
+  assert.match(seen[1], /The listener pressed On Air/u, "in every language On Air sends its request in");
+  assert.doesNotMatch(seen[2], /pressed On Air/u, "the next reply is an ordinary one again");
 });

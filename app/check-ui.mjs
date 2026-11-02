@@ -103,7 +103,7 @@ if (harness.state?.startsWith("on-air")) {
     assert(glyph() === "#i-on-air" && button.getAttribute("aria-pressed") === "false" && button.dataset.tip === "Go on air", "Off air, the mark is unlit and offers to go on air");
     button.click();
     await wait(100);
-    assert(sent("prompt").at(-1)?.text === "Go on air: keep the music going for right now", "A click asks for On Air in the conversation, in the listener's words");
+    assert(sent("prompt").at(-1)?.text === "Go on air: make new music for right now and keep it going", "A click asks for On Air in the conversation, in the listener's words");
     assert(glyph() === "#i-on-air-lit" && button.dataset.tip === "Going on air", "Asked, the mark lights while it waits");
     return { onAir: "asked" };
   }
