@@ -74,6 +74,10 @@ export function commandFailure(program, { stdout = "", stderr = "", code, signal
   if (timedOut) { fields.timedOut = true; details.push("timed out"); }
   const statuses = [...new Set([...output.matchAll(/\bHTTP(?:\/[12](?:\.\d)?)? ([1-5]\d{2})(?=[)\s]|$)/gu)].map(match => Number(match[1])))];
   if (statuses.length === 1) { fields.httpStatus = statuses[0]; details.push(`HTTP ${statuses[0]}`); }
+  // A connection to GitHub or Apple that broke on the way, as on a slow proxy; never the command's own failure.
+  if (/TLS handshake timeout|i\/o timeout|connection reset by peer|unexpected EOF|Client\.Timeout exceeded/u.test(output)) {
+    fields.networkTimeout = true; details.push("network timeout");
+  }
   if (/timestamp[^\n]*(?:unavailable|not available|timed out)/iu.test(output)) {
     fields.timestampUnavailable = true; details.push("timestamp service unavailable");
   }

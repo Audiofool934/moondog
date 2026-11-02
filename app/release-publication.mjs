@@ -65,6 +65,22 @@ export async function waitFor(read, { deadline, now = Date.now, sleep = ms => ne
 // Check every existing asset before uploading anything. Public releases are immutable;
 // incomplete drafts can resume, but changed bytes require a new release version.
 // The other assets upload together; the last item, the update feed, goes up only after they are verified.
+// GitHub's upload host answers 408 or a 5xx, or the connection times out, when the line to it is
+// slow. Each attempt checks what is already there by its hash and removes the empty placeholder a
+// broken upload leaves, so trying the whole step again changes nothing that was already uploaded.
+const TRANSIENT_UPLOAD_STATUSES = new Set([408, 500, 502, 503, 504]);
+export async function retryTransientUpload(operation, { attempts = 3, wait = ms => new Promise(resolve => setTimeout(resolve, ms)), warn = console.warn } = {}) {
+  for (let attempt = 1; ; attempt++) {
+    try { return await operation(); }
+    catch (error) {
+      const transient = TRANSIENT_UPLOAD_STATUSES.has(error?.httpStatus) || error?.networkTimeout === true;
+      if (attempt >= attempts || !transient) throw error;
+      warn(`GitHub's upload did not finish (${error.httpStatus ? `HTTP ${error.httpStatus}` : "network timeout"}). Retry ${attempt + 1}/${attempts} in ${attempt * 30} s.`);
+      await wait(attempt * 30_000);
+    }
+  }
+}
+
 export async function uploadImmutableAssets({ items, getRelease, upload, remoteDigest, deleteAsset }) {
   let release = await getRelease();
   const missing = [];
