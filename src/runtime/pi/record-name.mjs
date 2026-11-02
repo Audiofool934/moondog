@@ -57,6 +57,7 @@ export async function chooseRecordName({ models, model, context = {}, signal, ma
       role: "user",
       content: [
         `Name this track. Write the name in ${excerpt(context.language || "English (en)", 40)}, even if the listener's words or the earlier names use another language.`,
+        context.draft ? `<draft_name>${excerpt(context.draft, 60)}</draft_name>\nThe draft name is in another language: keep its picture, and write it as a name in the language above.` : null,
         context.stream ? `<stream_name>${excerpt(context.stream, 60)}</stream_name>` : null,
         `<featured_sound>${list(context.featured)}</featured_sound>`,
         context.sound?.length ? `<rest_of_sound>${list(context.sound)}</rest_of_sound>` : null,

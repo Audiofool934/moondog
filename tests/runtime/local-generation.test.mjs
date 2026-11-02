@@ -827,25 +827,27 @@ test("the agent starts a stream when the listener asks for music to keep going, 
     const asked = context.messages.at(-1)?.content;
     if (typeof asked === "string" && asked.startsWith("Name this track.")) {
       named.push(asked);
-      return fauxAssistantMessage([fauxText("Title: “Harbor lights, slowly.”")]);
+      return fauxAssistantMessage([fauxText(asked.includes("<draft_name>") ? "Title: “退潮的窗”" : "港口慢慢亮起的灯")]);
     }
     return agentSteps.shift()(context);
   };
   faux.setResponses(Array.from({ length: 6 }, () => route));
-  // Moondog is set to Simplified Chinese while the listener writes in English: records are named in the setting's language.
+  // Moondog is set to Simplified Chinese while the listener writes in English, and the agent named the
+  // stream in English: records are named in the setting's language, the agent's picture kept.
   app.locale = "zh";
   const reply = await runtime.prompt("keep some quiet music going while I work");
   // The first track carries the stream's own name, unnumbered, and the reply was not cut short.
-  assert.equal(reply.text, "Something quiet to work to; stop it whenever.\n\nMade on this Mac with Stable Audio 3: \"Low tide window\" (1:00, seed " +
+  assert.equal(reply.text, "Something quiet to work to; stop it whenever.\n\nMade on this Mac with Stable Audio 3: \"退潮的窗\" (1:00, seed " +
     `${/seed (\d+)/u.exec(reply.text)?.[1]}).\nThe stream keeps going on this Mac, a new track each time, for up to 30 minutes. Stop it any time.`);
+  assert.match(named[0], /^Name this track\. Write the name in Simplified Chinese \(zh\), even if the listener's words/u);
+  assert.match(named[0], /<draft_name>Low tide window<\/draft_name>/u, "the agent's English title is carried into Chinese");
   assert.ok(app.streamStatus());
   await until(() => player.calls.length === 2);
   // The second track was named by the conversation's model, from its own sound and the stream's name.
-  assert.equal((await generator.receipt(player.calls[1][1])).title, "Harbor lights, slowly");
-  assert.equal(named.length, 1);
-  assert.match(named[0], /^Name this track\. Write the name in Simplified Chinese \(zh\), even if the listener's words/u);
-  assert.match(named[0], /<stream_name>Low tide window<\/stream_name>/u);
-  assert.match(named[0], /<listener_words>keep some quiet music going while I work<\/listener_words>/u);
+  assert.equal((await generator.receipt(player.calls[1][1])).title, "港口慢慢亮起的灯");
+  assert.equal(named.length, 2);
+  assert.match(named[1], /<stream_name>退潮的窗<\/stream_name>/u);
+  assert.match(named[1], /<listener_words>keep some quiet music going while I work<\/listener_words>/u);
   faux.setResponses([fauxAssistantMessage([fauxToolCall("moondog_stop_stream", {})], { stopReason: "toolUse" }),
     (context) => {
       assert.equal(JSON.parse(toolResult(context, "moondog_stop_stream").content[0].text).state, "stopped");
