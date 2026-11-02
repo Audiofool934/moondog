@@ -5,13 +5,13 @@
 // that runs the job, and that process writes its progress to a status file the other one reads.
 import { spawn } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
-import { createReadStream, readFileSync, statSync } from "node:fs";
+import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
 import { access, constants, lstat, mkdir, open, readdir, rename, rm, stat, statfs, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { checkStableAudioInstall, readGenerationSettings, resolveGenerationSettingsFile, resolveStableAudioManagedRoot, writeGenerationSettings } from "./local-generator.mjs";
-import { isStableAudioModel, SHARED_WEIGHTS, STABLE_AUDIO_MODELS, STABLE_AUDIO_SOURCES } from "./sources.mjs";
+import { DEFAULT_STABLE_AUDIO_MODEL, isStableAudioModel, SHARED_WEIGHTS, STABLE_AUDIO_MODELS, STABLE_AUDIO_SOURCES } from "./sources.mjs";
 
 const MB = 1024 ** 2;
 // Room kept free after each step, so a download never fills the disk.
@@ -149,6 +149,10 @@ export function createStableAudioSetup({
     const steps = base();
     const current = jobView();
     const baseReady = Object.values(steps).every((state) => state === "ready");
+    const ownFiles = (model) => STABLE_AUDIO_MODELS[model].weights.some((name) => sizeOf(path.join(files.weights, name)) !== null || sizeOf(part(name)) !== null);
+    // A first setup stopped before any model's own weights arrived still left uv, Python, caches or the
+    // shared encoder: the model it was for reads as partial, so its Remove can take them away.
+    const leftover = !Object.keys(STABLE_AUDIO_MODELS).some(ownFiles) && existsSync(root) ? (current?.model ?? DEFAULT_STABLE_AUDIO_MODEL) : null;
     const models = Object.fromEntries(Object.keys(STABLE_AUDIO_MODELS).map((model) => {
       let bytes = 0;
       let complete = true;
@@ -158,7 +162,7 @@ export function createStableAudioSetup({
         if (!present) complete = false;
         bytes += present ? size : Math.min(size, sizeOf(part(name)) ?? 0);
       }
-      const own = STABLE_AUDIO_MODELS[model].weights.some((name) => sizeOf(path.join(files.weights, name)) !== null || sizeOf(part(name)) !== null);
+      const own = ownFiles(model) || leftover === model;
       const total = weightFiles(model).reduce((sum, name) => sum + weightSize(name), 0);
       const state = complete && baseReady ? "ready" : own || (current?.running && current.model === model) ? "partial" : "absent";
       return [model, { state, bytes, total }];

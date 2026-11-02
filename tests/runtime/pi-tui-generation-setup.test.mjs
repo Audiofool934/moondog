@@ -107,10 +107,15 @@ test("/generation downloads a model after the licenses, shows its progress, and 
   fixture.submit("/generation download small");
   await until(() => fixture.status().includes("Another download is running."));
 
-  // Done: the line goes, and with nothing making music yet, Moondog turns the new model on.
-  generation.setup.emit({ job: null, models: { ...generation.setup.current.models, medium: { state: "ready", bytes: 5_179_055_990, total: 5_179_055_990 } } });
+  // Done: the line goes. The core's setup turned the new model on itself; the terminal reads that
+  // choice and changes no setting of its own.
+  const finished = { ...generation.setup.current.models, medium: { state: "ready", bytes: 5_179_055_990, total: 5_179_055_990 } };
+  generation.setup.current = { ...generation.setup.current, models: finished };
+  await generation.save({ enabled: true, source: "managed", model: "medium" });
+  generation.saves.length = 0;
+  generation.setup.emit({ job: null, models: finished });
   await until(() => fixture.status().includes("Stable Audio 3 Medium is ready. Ask for a track."));
-  assert.deepEqual(generation.saves, [{ enabled: true, source: "managed", model: "medium" }]);
+  assert.deepEqual(generation.saves, [], "the terminal leaves the choice to the core");
   assert.doesNotMatch(fixture.body(), /↓ Stable Audio 3/u);
 
   fixture.submit("/generation");

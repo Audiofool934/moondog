@@ -834,13 +834,12 @@ export async function runMoondogTui({
     const detail = sanitizeTerminalText(String(typeof error === "string" ? error : error?.message ?? code ?? "")).trim();
     return tr("The download didn't finish: {error}. Use /generation download to try again.", { error: detail || tr("unknown error") });
   };
-  // The model this room asked for. When it finishes and nothing else makes music yet, Moondog uses it.
+  // The model this room asked for. The core's setup chooses what makes music once it finishes; the
+  // terminal reads that choice and says how to switch when it kept another one.
   let setupStarted = null;
   const setupFinished = async (model) => {
-    const startedHere = setupStarted === model;
     setupStarted = null;
-    let status = await generation.check().catch(() => null);
-    if (startedHere && status?.state !== "ready") status = await generation.save({ enabled: true, source: "managed", model }).catch(() => status);
+    const status = await generation.check().catch(() => null);
     if (cleanedUp) return;
     const choice = sa3Models[model]?.choice ?? "medium";
     setFooter(status?.state === "ready" && status.managed && status.model === model

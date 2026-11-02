@@ -335,3 +335,17 @@ test("the setup refuses a Mac without Apple silicon", async (t) => {
   assert.equal(setup.status().supported, false);
   await assert.rejects(setup.install("medium", { accepted: true }), { code: "setup_unsupported" });
 });
+
+test("a first setup stopped before any model's weights arrived can still be removed", async (t) => {
+  const home = await mkdtemp(path.join(tmpdir(), "moondog-sa3-leftover-"));
+  t.after(() => rm(home, { recursive: true, force: true }));
+  const environment = { MOONDOG_STATE_HOME: home, MOONDOG_CONFIG_HOME: home };
+  const setup = createStableAudioSetup({ environment, platform: "darwin", arch: "arm64" });
+  // What a cancelled first setup leaves: uv and caches, but no model's own weights.
+  await mkdir(path.join(setup.root, "uv-cache"), { recursive: true });
+  await writeFile(path.join(setup.root, "uv-cache", "wheel"), "partial");
+  assert.equal(setup.status().models.medium.state, "partial", "the model it was for offers Remove");
+  assert.equal(setup.status().models["small-music"].state, "absent");
+  await setup.remove("medium");
+  assert.equal(await exists(setup.root), false, "removing it takes the whole setup away");
+});

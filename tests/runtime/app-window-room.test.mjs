@@ -866,14 +866,13 @@ test("Stable Audio 3's setup reaches the window as it goes, and a download start
     assert.equal(last("generation-setup").setup.job.received, 4, "progress reaches the window");
     push({ ...snapshot, job: null, models: { ...snapshot.models, medium: { state: "ready", bytes: 10, total: 10 } } });
     await tick();
-    assert.deepEqual(calls.find(([kind]) => kind === "save"), ["save", { enabled: true, source: "managed", model: "medium" }], "the finished model is put in use");
-    assert.equal(last("status").generation.model, "medium");
+    assert.equal(calls.find(([kind]) => kind === "save"), undefined, "the core's setup chooses what makes music; the window changes no setting");
     assert.equal(last("status").generation.setup.models.medium.state, "ready", "the status carries the setup too");
     await harness.post({ type: "generation-model", model: "small-music" });
     await harness.post({ type: "generation-cancel" });
     await harness.post({ type: "generation-remove", model: "medium" });
     await tick();
-    assert.deepEqual(calls.at(-3), ["save", { enabled: true, source: "managed", model: "small-music" }], "Use keeps music making on or off as it was");
+    assert.deepEqual(calls.at(-3), ["save", { enabled: false, source: "managed", model: "small-music" }], "Use keeps music making on or off as it was");
     assert.deepEqual(calls.slice(-2), [["cancel"], ["remove", "medium"]]);
   } finally {
     await harness.stop();

@@ -242,11 +242,10 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     setupShown = next;
     send({ type: "generation-setup", setup: next });
     if (!before || before.error || next.job) return;
-    const model = startedHere === before.model ? startedHere : null;
     startedHere = null;
+    // The core's setup already chose what makes music once the download ended; the window only reads it.
     void (async () => {
-      const found = await generation.check();
-      if (model && found?.state !== "ready" && next.models?.[model]?.state === "ready") await generation.save({ enabled: true, source: "managed", model });
+      await generation.check();
       sendStatus();
     })().catch(() => {});
   }
