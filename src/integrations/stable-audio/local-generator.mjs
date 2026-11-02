@@ -1,7 +1,8 @@
 // Makes music on this Mac with a local Stable Audio 3 install (Stability AI's optimized MLX
 // build). The listener turns it on once, in Settings or with /generation; until then nothing
 // runs. Each track is a WAV and a receipt in Moondog's state directory, and nothing leaves the
-// machine: weights are never downloaded here, and the receipt keeps no absolute path.
+// machine: a run never downloads anything, and the receipt keeps no absolute path. Moondog's own
+// install (setup.mjs) downloads only when the listener asks, from the pinned official sources.
 import { spawn } from "node:child_process";
 import { randomBytes, randomInt, randomUUID } from "node:crypto";
 import { unwatchFile, watchFile } from "node:fs";
@@ -12,10 +13,11 @@ import path from "node:path";
 import { resolveMoondogStateDirectory } from "../../core/state-directory.mjs";
 import { streamVariation } from "../../profile/taste-compiler.mjs";
 import { resolveMoondogAuthFile } from "../../runtime/pi/persistent-credential-store.mjs";
+import { DEFAULT_STABLE_AUDIO_MODEL, isStableAudioModel, SHARED_WEIGHTS, STABLE_AUDIO_MODELS } from "./sources.mjs";
 
-// The weights Stable Audio 3 Medium needs for text to music: the text encoder, the model and its decoder.
-const MEDIUM_WEIGHTS = ["t5gemma_f16.npz", "dit_medium_f16.npz", "same_l_decoder_f32.npz"];
-// Medium was trained on up to 380 seconds; very short clips come out rough.
+// The weights a model needs for text to music: the text encoder, the model and its decoder.
+export const stableAudioWeights = (model = DEFAULT_STABLE_AUDIO_MODEL) => [...SHARED_WEIGHTS, ...STABLE_AUDIO_MODELS[model].weights];
+// Medium and Small Music were trained on up to 380 seconds; very short clips come out rough.
 export const GENERATION_SECONDS = Object.freeze({ min: 15, max: 380, default: 120 });
 // A cold start reads about 4.8 GB of weights before the first step; a 380-second track then takes about 35 seconds.
 const generationTimeoutMs = 10 * 60_000;
@@ -27,6 +29,11 @@ export const isGeneratedTrackId = (value) => typeof value === "string" && trackI
 /** Where Stability's own install script puts the MLX build when it runs from ~/Developer. */
 export function defaultStableAudioRoot() {
   return path.join(homedir(), "Developer", "stable-audio-3", "optimized", "mlx");
+}
+
+/** The install Moondog downloads and manages itself; the MLX build is in its mlx folder. */
+export function resolveStableAudioManagedRoot(environment = process.env) {
+  return path.join(resolveMoondogStateDirectory(environment), "stable-audio-3");
 }
 
 // Kept next to the playback preference, apart from runtime settings.
@@ -47,36 +54,65 @@ function literalFolder(value) {
   return path.isAbsolute(expanded) ? path.resolve(expanded) : null;
 }
 
+async function readSavedSettings(environment) {
+  try {
+    const document = JSON.parse(await readFile(resolveGenerationSettingsFile(environment), "utf8"));
+    return document?.version === 1 ? document : {};
+  } catch {
+    return {}; // Not set up yet.
+  }
+}
+
 /**
- * The listener's choice: { enabled, path, source }. Generation is off until they turn it on;
- * MOONDOG_SA3_DIR can point at another install but never turns it on.
+ * The listener's choice: { enabled, path, source, model, folder }. Generation is off until they
+ * turn it on; MOONDOG_SA3_DIR can point at another install but never turns it on. source is
+ * "managed" for Moondog's own install, "settings" or "default" for the listener's own folder
+ * (folder, which Moondog only reads), or "environment". model picks the weights in either.
  * A missing or unreadable file reads as off, so an older or newer file never stops the room.
  */
 export async function readGenerationSettings(environment = process.env) {
-  let document = null;
-  try {
-    document = JSON.parse(await readFile(resolveGenerationSettingsFile(environment), "utf8"));
-  } catch { /* Not set up yet. */ }
-  const saved = document?.version === 1 ? document : {};
+  const saved = await readSavedSettings(environment);
   const fromEnvironment = literalFolder(environment.MOONDOG_SA3_DIR);
   const fromFile = literalFolder(saved.path);
+  const managed = !fromEnvironment && saved.source === "managed";
+  const folder = fromFile ?? defaultStableAudioRoot();
   return {
     enabled: saved.enabled === true,
-    path: fromEnvironment ?? fromFile ?? defaultStableAudioRoot(),
-    source: fromEnvironment ? "environment" : fromFile ? "settings" : "default",
+    path: fromEnvironment ?? (managed ? path.join(resolveStableAudioManagedRoot(environment), "mlx") : folder),
+    source: fromEnvironment ? "environment" : managed ? "managed" : fromFile ? "settings" : "default",
+    model: isStableAudioModel(saved.model) ? saved.model : DEFAULT_STABLE_AUDIO_MODEL,
+    folder,
   };
 }
 
-export async function writeGenerationSettings({ enabled, path: folder } = {}, environment = process.env) {
+/**
+ * Saves what the listener changed: enabled; path, their own folder, which also switches to it;
+ * source "managed" or "settings" to switch between Moondog's install and their folder; model.
+ * A model chosen without a folder or a source switches to Moondog's install, which holds it.
+ * Older Moondogs read the same version 1 file and see only enabled and path.
+ */
+export async function writeGenerationSettings({ enabled, path: folder, source, model } = {}, environment = process.env) {
   const current = await readGenerationSettings(environment);
+  const saved = await readSavedSettings(environment);
   const typed = folder === undefined ? undefined : literalFolder(folder);
   if (folder !== undefined && folder !== null && !typed) {
     throw Object.assign(new Error("Give the Stable Audio 3 folder as a full path, or one starting with ~/."), { code: "generation_path_invalid" });
   }
+  if (model !== undefined && !isStableAudioModel(model)) {
+    throw Object.assign(new Error("Choose medium or small-music."), { code: "generation_model_invalid" });
+  }
+  const savedFolder = typed ?? literalFolder(saved.path);
+  const managed = typed ? false
+    : source === "managed" ? true
+      : source === "settings" ? false
+        : model !== undefined ? true
+          : saved.source === "managed";
   const document = {
     version: 1,
     enabled: enabled === undefined ? current.enabled : enabled === true,
-    ...(typed ? { path: typed } : current.source === "settings" ? { path: current.path } : {}),
+    ...(savedFolder ? { path: savedFolder } : {}),
+    ...(managed ? { source: "managed" } : {}),
+    model: model ?? current.model,
   };
   const file = resolveGenerationSettingsFile(environment);
   await mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
@@ -97,16 +133,16 @@ const isFile = async (file, { executable = false, minimumBytes = 0 } = {}) => {
 };
 
 /**
- * Whether an install can make music now, without running it: "ready", "unsupported" (MLX needs
- * Apple silicon), "missing" (no install at the folder) or "incomplete" (no Python environment
- * or no Medium weights, which Stability's ./install.sh fetches).
+ * Whether an install can make music now with a model, without running it: "ready", "unsupported"
+ * (MLX needs Apple silicon), "missing" (no install at the folder) or "incomplete" (no Python
+ * environment or not that model's weights, which Moondog's setup or Stability's ./install.sh fetches).
  */
-export async function checkStableAudioInstall(root, { platform = process.platform, arch = process.arch } = {}) {
+export async function checkStableAudioInstall(root, { model = DEFAULT_STABLE_AUDIO_MODEL, platform = process.platform, arch = process.arch } = {}) {
   if (platform !== "darwin" || arch !== "arm64") return { state: "unsupported" };
   if (!root || !path.isAbsolute(root)) return { state: "missing" };
   if (!(await isFile(path.join(root, "scripts", "sa3_mlx.py")))) return { state: "missing" };
   if (!(await isFile(path.join(root, ".venv", "bin", "python"), { executable: true }))) return { state: "incomplete", missing: "environment" };
-  for (const weight of MEDIUM_WEIGHTS) {
+  for (const weight of stableAudioWeights(isStableAudioModel(model) ? model : DEFAULT_STABLE_AUDIO_MODEL)) {
     if (!(await isFile(path.join(root, "models", "mlx", weight), { minimumBytes: 1024 }))) return { state: "incomplete", missing: "weights" };
   }
   return { state: "ready" };
@@ -171,7 +207,7 @@ export function createLocalGenerator({
   spawnImpl = spawn,
   now = () => new Date(),
 } = {}) {
-  let current = { state: "unknown", enabled: false, install: "unknown", path: null, source: null };
+  let current = { state: "unknown", enabled: false, install: "unknown", path: null, source: null, model: DEFAULT_STABLE_AUDIO_MODEL, managed: false };
   let running = null;
   // The tracks made here, newest last, with what happened each time they played: the loop back
   // from listening reads them. Each track's outcomes.jsonl keeps them; the receipt never changes.
@@ -197,7 +233,7 @@ export function createLocalGenerator({
     checking ??= (async () => {
       try {
         const settings = await readGenerationSettings(environment);
-        const install = await checkStableAudioInstall(settings.path, { platform, arch });
+        const install = await checkStableAudioInstall(settings.path, { model: settings.model, platform, arch });
         return publish({
           state: !settings.enabled ? "off" : install.state,
           enabled: settings.enabled,
@@ -205,6 +241,8 @@ export function createLocalGenerator({
           ...(install.missing ? { missing: install.missing } : {}),
           path: settings.path,
           source: settings.source,
+          model: settings.model,
+          managed: settings.source === "managed",
         });
       } finally {
         checking = null;
@@ -233,13 +271,13 @@ export function createLocalGenerator({
   };
 
   const stopped = () => Object.assign(new Error("Making the track was stopped."), { name: "AbortError", code: "generation_stopped" });
-  const run = ({ root, prompt, seconds, seed, out }, { signal, onProgress }) => new Promise((resolve, reject) => {
+  const run = ({ root, model, prompt, seconds, seed, out }, { signal, onProgress }) => new Promise((resolve, reject) => {
     // A stop that came while the install was checked starts nothing.
     if (signal?.aborted) return reject(stopped());
     // The Python script itself, not Stability's ./sa3 wrapper: the wrapper wants uv on PATH and a
     // terminal, and its exec would leave a shell between this process and the one to stop.
     const child = spawnImpl(path.join(root, ".venv", "bin", "python"), [
-      "scripts/sa3_mlx.py", "--prompt", prompt, "--dit", "medium", "--decoder", "same-l",
+      "scripts/sa3_mlx.py", "--prompt", prompt, "--dit", STABLE_AUDIO_MODELS[model].dit, "--decoder", STABLE_AUDIO_MODELS[model].decoder,
       "--seconds", String(seconds), "--seed", String(seed), "--steps", "8", "--out", out,
     ], {
       cwd: root,
@@ -469,7 +507,8 @@ export function createLocalGenerator({
         await mkdir(temporary, { mode: 0o700 });
         const wav = path.join(temporary, "track.wav");
         onProgress?.({ stage: "starting" });
-        const measured = await run({ root: status.path, prompt, seconds, seed, out: wav }, { signal, onProgress });
+        const model = isStableAudioModel(status.model) ? status.model : DEFAULT_STABLE_AUDIO_MODEL;
+        const measured = await run({ root: status.path, model, prompt, seconds, seed, out: wav }, { signal, onProgress });
         const audio = await wavInfo(wav).catch(() => null);
         if (!audio || audio.duration_seconds <= 0) throw generationError("generation_failed", "Stable Audio 3 finished but wrote no playable track.");
         await chmod(wav, 0o600);
@@ -482,7 +521,7 @@ export function createLocalGenerator({
           title,
           ...receipt,
           generator: {
-            adapter: "stable-audio-3", adapter_version: 1, model: "sa3-medium-ARC", decoder: "same-l",
+            adapter: "stable-audio-3", adapter_version: 1, model: STABLE_AUDIO_MODELS[model].receipt, decoder: STABLE_AUDIO_MODELS[model].decoder,
             prompt, seconds, seed, steps: 8, cfg: 1, elapsed_ms: elapsed, ...(measured ? { measured } : {}),
             license: "Stability AI Community License; outputs belong to the listener",
           },

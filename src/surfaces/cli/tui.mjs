@@ -334,6 +334,10 @@ export async function runMoondogTui({
   // Between two of the stream's tracks nothing plays, and the line says the next one is being made.
   const dryGap = () => !nowPlaying && onAir?.phase === "waiting";
   const nowPlayingRows = () => ((nowPlaying || dryGap()) && !profileView && !importView && !firstRunView ? 1 : 0);
+  // Stable Audio 3's setup as the core shows it, here or from the window; a running download has its own line too.
+  let setupStatus = null;
+  const downloading = () => setupStatus?.job && !setupStatus.job.error ? setupStatus.job : null;
+  const downloadRows = () => (downloading() && !profileView && !importView && !firstRunView ? 1 : 0);
   // When the stream ends at the latest, as a clock time: an upper bound, so never a countdown. The clock
   // follows the screen's language, as the words around it do.
   const onAirUntil = () => {
@@ -391,7 +395,7 @@ export async function runMoondogTui({
   };
   const sleeve = new RecordSleeve({ terminal, getTheme, environment, getState: () => ({
     focused: homeFocused, selected: homeSelected, motionEnabled,
-    editorRows: (editor.rowCount || 3) + queuedLineCount() + nowPlayingRows(),
+    editorRows: (editor.rowCount || 3) + queuedLineCount() + nowPlayingRows() + downloadRows(),
   }), getNextLyric: () => {
     try {
       homeLyric = homeLyricSeeds ? lyrics.selectHome(homeLyricSeeds) : null;
@@ -457,7 +461,7 @@ export async function runMoondogTui({
     render(width) {
       const lines = conversation.render(width);
       const footerRows = terminal.rows >= 20 ? 2 : 1;
-      const bodyRows = Math.max(1, terminal.rows - 2 - footerRows - queuedLineCount() - nowPlayingRows() - (editor.rowCount || 3));
+      const bodyRows = Math.max(1, terminal.rows - 2 - footerRows - queuedLineCount() - nowPlayingRows() - downloadRows() - (editor.rowCount || 3));
       while (lines.length < bodyRows) lines.push(paintBrandLine("", width, theme));
       return lines;
     },
@@ -517,6 +521,7 @@ export async function runMoondogTui({
           ? theme.accent(prefix) + theme.text(truncateToWidth(song, room, "…")) + theme.faint(controls)
           : theme.accent(prefix) + theme.text(truncateToWidth(song, Math.max(1, width - visibleWidth(prefix)), "…")), width, theme));
       }
+      if (downloadRows()) lines.push(paintBrandLine(downloadLine(width), width, theme));
       if (messageQueue.length) {
         const hidden = Math.max(0, messageQueue.length - 4);
         const shown = messageQueue.slice(-4);
@@ -617,6 +622,7 @@ export async function runMoondogTui({
     new CombinedAutocompleteProvider(withCommandCompletions(localizedCommands, {
       // Service keys, such as Brave Search, have no models, so only /auth offers them.
       providers: () => [...providers(), ...serviceKeyProviders], models, authProviderIds: supportedAuthProviderIds, tr,
+      generationSetup: typeof generation?.setup?.install === "function",
     }), process.cwd(), null),
   );
   tui.setFocus(editor);
@@ -783,13 +789,125 @@ export async function runMoondogTui({
 
   // Making music on this Mac. /generation says where it stands; /generation on [folder] turns it on,
   // with the folder of Stability AI's MLX build when it is not the usual one; /generation off turns it off.
+  // Where the core can set Stable Audio 3 up itself (generation.setup), /generation download, use, remove
+  // and cancel manage the models Moondog keeps in its own folder. The window runs the same job, so a
+  // download started there shows here too.
   const home = homedir();
   const shownFolder = (folder) => sanitizeTerminalText(String(folder ?? "")).replace(home, "~");
+  const setup = typeof generation?.setup?.install === "function" ? generation.setup : null;
+  // The two models offered, by the word the listener types; sizes are the weights in all, before the
+  // setup reports its own.
+  const sa3Models = {
+    medium: { name: "Medium", choice: "medium", detail: N_("best sound"), total: 5_179_055_990 },
+    "small-music": { name: "Small Music", choice: "small", detail: N_("faster, lighter"), total: 1_704_727_702 },
+  };
+  const modelArgument = (value) => value === "medium" ? "medium" : ["small", "small-music"].includes(value) ? "small-music" : null;
+  const modelName = (model) => sa3Models[model]?.name ?? "Medium";
+  const gigabytes = (bytes) => {
+    const value = Math.max(0, Number(bytes) || 0) / 1e9;
+    try { return new Intl.NumberFormat(intlLocale(tr.locale), { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(value); }
+    catch { return value.toFixed(1); }
+  };
+  const modelSize = (model, status = setupStatus) => gigabytes(status?.models?.[model]?.total || sa3Models[model]?.total);
+  const setupSteps = { uv: N_("getting uv"), code: N_("getting Stable Audio 3's code"), python: N_("setting up Python"),
+    weights: N_("downloading the model"), verifying: N_("checking the files") };
+  const jobPercent = (job) => job?.total > 0 ? Math.min(100, Math.floor(((job.received ?? 0) / job.total) * 100)) : null;
+  const downloadLine = (width) => {
+    const job = downloading();
+    const prefix = `  ${theme.plain ? "v" : "↓"} `;
+    const percent = jobPercent(job);
+    const step = setupSteps[job.step] ? tr.marked(setupSteps[job.step]) : tr("getting ready");
+    const text = `Stable Audio 3 ${modelName(job.model)} · ${step}${percent === null ? "" : ` ${percent}%`}`;
+    const controls = "  · /generation cancel";
+    const room = width - visibleWidth(prefix) - visibleWidth(controls);
+    return room >= 12 ? theme.accent(prefix) + theme.text(truncateToWidth(text, room, "…")) + theme.faint(controls)
+      : theme.accent(prefix) + theme.text(truncateToWidth(text, Math.max(1, width - visibleWidth(prefix)), "…"));
+  };
+  // One short sentence for a download that stopped on an error, by the setup's code, with the way to try again.
+  const setupErrorText = (error) => {
+    const code = typeof error === "string" ? error : error?.code;
+    if (code === "setup_disk_full") return tr("There isn't enough free space on this Mac for the download. Free some up, then use /generation download again.");
+    if (code === "setup_verification_failed") return tr("A downloaded file didn't match the one Stability AI publishes, so Moondog deleted it. Use /generation download to try again.");
+    if (code === "setup_offline" || code === "setup_download_failed") return tr("The download couldn't reach its source. Check your connection, then use /generation download to try again.");
+    if (code === "setup_python_failed") return tr("Stable Audio 3's Python environment couldn't be set up. Check your connection, then use /generation download to try again.");
+    if (code === "setup_busy") return tr("Another Moondog window or terminal is already downloading. /generation shows how far it is.");
+    const detail = sanitizeTerminalText(String(typeof error === "string" ? error : error?.message ?? code ?? "")).trim();
+    return tr("The download didn't finish: {error}. Use /generation download to try again.", { error: detail || tr("unknown error") });
+  };
+  // The model this room asked for. When it finishes and nothing else makes music yet, Moondog uses it.
+  let setupStarted = null;
+  const setupFinished = async (model) => {
+    const startedHere = setupStarted === model;
+    setupStarted = null;
+    let status = await generation.check().catch(() => null);
+    if (startedHere && status?.state !== "ready") status = await generation.save({ enabled: true, source: "managed", model }).catch(() => status);
+    if (cleanedUp) return;
+    const choice = sa3Models[model]?.choice ?? "medium";
+    setFooter(status?.state === "ready" && status.managed && status.model === model
+      ? tr("Stable Audio 3 {model} is ready. Ask for a track.", { model: modelName(model) })
+      : tr("Stable Audio 3 {model} is downloaded. Use it with /generation use {choice}.", { model: modelName(model), choice }), success);
+  };
+  const stopWatchingSetup = setup?.subscribe?.((status) => {
+    if (cleanedUp) return;
+    // The first snapshot is where things stand, not a change: an old failure waits for /generation.
+    const first = setupStatus === null;
+    const before = setupStatus?.job ?? null;
+    setupStatus = status ?? null;
+    const job = setupStatus?.job ?? null;
+    if (first) { tui.requestRender(); return; }
+    if (job?.error && !before?.error) setFooter(setupErrorText(job.error), failure);
+    else if (before && !before.error && !job) {
+      if (setupStatus?.models?.[before.model]?.state === "ready") void setupFinished(before.model);
+      else {
+        if (setupStarted === before.model) setupStarted = null;
+        setFooter(tr("Download stopped. /generation download {choice} picks it up where it left off.", { choice: sa3Models[before.model]?.choice ?? "medium" }));
+      }
+    }
+    tui.requestRender();
+  }) ?? null;
+  if (setup) {
+    Promise.resolve().then(() => setup.status()).then((status) => {
+      if (cleanedUp || setupStatus) return;
+      setupStatus = status ?? null;
+      tui.requestRender();
+    }, () => {});
+  }
+  // A fresh read for a command. The line above the draft follows subscribe alone, so a job that ends
+  // while a command reads still counts as finished.
+  const readSetup = async () => await setup.status();
+  // What each model is: its size, whether it's here, in use, or on its way.
+  const setupSummary = (status, generationStatus) => {
+    const lines = Object.entries(sa3Models).map(([model, { name, detail }]) => {
+      const entry = status?.models?.[model] ?? { state: "absent" };
+      const job = status?.job?.model === model ? status.job : null;
+      const percent = jobPercent(job);
+      const state = job?.error ? tr("download stopped on an error")
+        : job ? percent === null ? tr("downloading") : tr("downloading, {percent}%", { percent })
+        : entry.state === "ready"
+          ? generationStatus?.managed && generationStatus.model === model ? tr("installed, in use") : tr("installed")
+          : entry.state === "partial" ? tr("partly downloaded") : tr("not downloaded");
+      return `- Stable Audio 3 ${name} · ${tr.marked(detail)} · ${tr("{size} GB", { size: modelSize(model, status) })} · ${state}`;
+    });
+    const notes = [];
+    if (status?.job?.error) notes.push(setupErrorText(status.job.error));
+    if (generationStatus && !generationStatus.managed && generationStatus.install === "ready") {
+      notes.push(tr("In use: your own install at {folder}.", { folder: shownFolder(generationStatus.path) }));
+    }
+    notes.push(tr("Get a model with /generation download medium or small. /generation use, remove and cancel manage them."));
+    return [lines.join("\n"), ...notes].join("\n\n");
+  };
   const generationMessage = (status) => {
     const folder = shownFolder(status?.path);
     if (status?.install === "unsupported") return tr("Stable Audio 3 needs a Mac with Apple silicon, so Moondog can't make music here.");
     if (status?.state === "ready") return tr("Moondog makes music on this Mac with Stable Audio 3, powered by Stability AI. Ask for a track. Stable Audio 3 runs offline, and the track stays on this Mac.");
+    // Moondog's own install, or nothing anywhere yet: a download sets it up.
+    if (setup && status?.install !== "ready" && (status?.managed || (status?.source === "default" && status?.install === "missing"))) {
+      if (status?.state === "off") return tr("Making music on this Mac is off. Get Stable Audio 3 with /generation download medium, or small for a lighter model; music making turns on when it's done.");
+      const model = status?.model in sa3Models ? status.model : "medium";
+      return tr("Stable Audio 3 {model} isn't downloaded yet. Get it with /generation download {choice}.", { model: modelName(model), choice: sa3Models[model].choice });
+    }
     if (status?.state === "off") {
+      if (status.install === "ready" && status.managed) return tr("Making music on this Mac is off. Stable Audio 3 {model} is ready; turn it on with /generation on.", { model: modelName(status.model) });
       if (status.install === "ready") return tr("Making music on this Mac is off. Stable Audio 3 is ready at {folder}; turn it on with /generation on.", { folder });
       if (status.install === "incomplete") return tr("Making music on this Mac is off, and Stable Audio 3 at {folder} isn't fully installed. Run ./install.sh --download medium there, then use /generation on.", { folder });
       return tr("Making music on this Mac is off, and Stable Audio 3 isn't at {folder}. Install Stability AI's MLX build from github.com/Stability-AI/stable-audio-3, then use /generation on with its folder.", { folder });
@@ -801,16 +919,121 @@ export async function runMoondogTui({
     }
     return tr("Stable Audio 3 isn't at {folder}. Use /generation on with the folder that holds its sa3 script.", { folder });
   };
+  const generationFooter = (status) => setFooter(status.state === "ready" ? tr("Music making on.") : status.state === "off" ? tr("Music making off.") : tr("Music making isn't ready."),
+    status.state === "ready" || status.state === "off" ? dim : warning);
+  const setupUsage = () => tr("Use /generation download, use or remove with medium or small, or /generation cancel.");
+  // /generation download, use, remove and cancel. A first download asks for the licenses with --agree;
+  // a removal asks once with --yes. The download runs in the background, on its own line above the draft.
+  const manageSetup = async (action, rest) => {
+    const flags = rest.filter((value) => value.startsWith("--"));
+    const values = rest.filter((value) => !value.startsWith("--"));
+    const allowed = action === "download" ? ["--agree"] : action === "remove" ? ["--yes"] : [];
+    const model = modelArgument(values[0]);
+    if ((action === "cancel" ? values.length > 0 : values.length !== 1 || !model) || flags.some((flag) => !allowed.includes(flag))) {
+      throw new Error(setupUsage());
+    }
+    const status = await readSetup();
+    if (status?.supported === false) {
+      addMoondogMessage(tr("Stable Audio 3 needs a Mac with Apple silicon, so Moondog can't make music here."));
+      setFooter(tr("Music making isn't ready."), warning);
+      return;
+    }
+    const running = status?.job && !status.job.error ? status.job : null;
+    if (action === "cancel") {
+      if (!running) { setFooter(tr("No download is running.")); return; }
+      await setup.cancel();
+      setFooter(tr("Download stopped. /generation download {choice} picks it up where it left off.", { choice: sa3Models[running.model]?.choice ?? "medium" }));
+      return;
+    }
+    const name = modelName(model);
+    const { choice } = sa3Models[model];
+    const entry = status?.models?.[model] ?? { state: "absent" };
+    if (action === "download") {
+      if (running) {
+        setFooter(running.model === model ? tr("Stable Audio 3 {model} is already downloading.", { model: name })
+          : tr("Another download is running. /generation cancel stops it."), running.model === model ? dim : warning);
+        return;
+      }
+      if (entry.state === "ready") {
+        addMoondogMessage(tr("Stable Audio 3 {model} is already on this Mac. Use it with /generation use {choice}.", { model: name, choice }));
+        setFooter(tr("Already downloaded."));
+        return;
+      }
+      const accepted = flags.includes("--agree");
+      if (!status?.licenses?.accepted && !accepted) {
+        addMoondogMessage(tr("Stable Audio 3 comes under the Stability AI Community License ({license}), and its text encoder, T5Gemma, under the Gemma Terms of Use ({gemma}). Moondog downloads it only from Stability AI's official sources and checks every file.\n\nTo agree and download {model} ({size} GB): /generation download {choice} --agree", {
+          license: status?.licenses?.links?.find(({ id }) => id === "stability-ai-community")?.url ?? "https://stability.ai/license",
+          gemma: status?.licenses?.links?.find(({ id }) => id === "gemma-terms")?.url ?? "https://huggingface.co/stabilityai/stable-audio-3-optimized/blob/main/LICENSE_GEMMA.md",
+          model: name, size: modelSize(model, status), choice,
+        }));
+        setFooter(tr("Waiting for your agreement."));
+        return;
+      }
+      setupStarted = model;
+      Promise.resolve().then(() => setup.install(model, { accepted })).catch((error) => {
+        if (setupStarted === model) setupStarted = null;
+        // A cancel ends the job too; the setup's own snapshot says so.
+        if (cleanedUp || error?.code === "setup_cancelled") return;
+        addMoondogMessage(setupErrorText(error));
+        setFooter(tr("The download didn't finish."), failure);
+      });
+      addMoondogMessage(tr("Downloading Stable Audio 3 {model} ({size} GB) from Stability AI's official sources. It runs in the background; /generation cancel stops it, and a later download picks up where it left off.", {
+        model: name, size: modelSize(model, status),
+      }));
+      setFooter(tr("Downloading Stable Audio 3 {model}.", { model: name }));
+      return;
+    }
+    if (action === "use") {
+      if (entry.state !== "ready") {
+        addMoondogMessage(tr("Stable Audio 3 {model} isn't downloaded yet. Get it with /generation download {choice}.", { model: name, choice }));
+        setFooter(tr("Music making isn't ready."), warning);
+        return;
+      }
+      const result = await generation.save({ enabled: true, source: "managed", model });
+      addMoondogMessage(generationMessage(result));
+      generationFooter(result);
+      return;
+    }
+    // remove
+    if (running) {
+      addMoondogMessage(tr("Wait for the download to finish, or stop it with /generation cancel, before removing a model."));
+      setFooter(tr("A download is running."), warning);
+      return;
+    }
+    if (entry.state === "absent") {
+      setFooter(tr("Stable Audio 3 {model} isn't on this Mac.", { model: name }));
+      return;
+    }
+    if (!flags.includes("--yes")) {
+      const last = Object.keys(sa3Models).every((other) => other === model || (status?.models?.[other]?.state ?? "absent") === "absent");
+      const size = gigabytes(entry.bytes || entry.total || sa3Models[model].total);
+      addMoondogMessage(last
+        ? tr("Removing Stable Audio 3 {model} deletes its {size} GB from this Mac. It's the last model, so the rest of Moondog's Stable Audio 3 setup goes too. To go ahead: /generation remove {choice} --yes", { model: name, size, choice })
+        : tr("Removing Stable Audio 3 {model} deletes its {size} GB from this Mac. To go ahead: /generation remove {choice} --yes", { model: name, size, choice }));
+      setFooter(tr("Nothing removed yet."));
+      return;
+    }
+    await setup.remove(model);
+    await readSetup().catch(() => null);
+    const after = await generation.check().catch(() => null);
+    addMoondogMessage(tr("Removed Stable Audio 3 {model} from this Mac.", { model: name }));
+    setFooter(after?.state === "ready" ? tr("Removed.") : tr("Removed. Music making isn't ready."), after?.state === "ready" ? success : warning);
+  };
   const manageGeneration = async (args) => {
     const [action, ...rest] = args;
+    if (setup && ["download", "use", "remove", "cancel"].includes(action)) {
+      await manageSetup(action, rest);
+      return;
+    }
     if ((action && !["on", "off"].includes(action)) || (action === "off" && rest.length)) {
-      throw new Error(tr("Use /generation, /generation on [folder], or /generation off."));
+      throw new Error(setup ? tr("Use /generation, /generation on [folder] or off, or /generation download, use or remove with medium or small.")
+        : tr("Use /generation, /generation on [folder], or /generation off."));
     }
     const status = action ? await generation.save({ enabled: action === "on", ...(rest.length ? { path: rest.join(" ") } : {}) })
       : await generation.check();
-    addMoondogMessage(generationMessage(status));
-    setFooter(status.state === "ready" ? tr("Music making on.") : status.state === "off" ? tr("Music making off.") : tr("Music making isn't ready."),
-      status.state === "ready" || status.state === "off" ? dim : warning);
+    const summary = setup && !action && status?.install !== "unsupported" ? await readSetup().then((current) => setupSummary(current, status), () => null) : null;
+    addMoondogMessage(summary ? `${generationMessage(status)}\n\n${summary}` : generationMessage(status));
+    generationFooter(status);
   };
 
   const removeLifecycleListeners = () => {
@@ -831,6 +1054,7 @@ export async function runMoondogTui({
     stopWatchingFirstRun?.();
     stopWatchingPreviews?.();
     stopWatchingStream?.();
+    stopWatchingSetup?.();
     clearInterval(indicator);
     indicator = null;
     clearInterval(homeMotion);

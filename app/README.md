@@ -111,7 +111,10 @@ A model or music service chosen there lasts until the app quits, and sign-in and
   Playback has one row per music service, its state under its name and the one in use checked.
   A click on a row unfolds that service's setup or its own controls (Spotify's devices and Disconnect), one row at a time.
   With the pointer on a row, a service that can play shows a switch at its right that uses it, and one that can't yet shows Set up.
-  A Music generation group sits beside the services, with one Stable Audio 3 row: with the pointer on it, Turn on or Turn off, in words, once the install is found, and until then Set up, which unfolds its folder and Check again.
+  A Music generation group sits beside the services, with one Stable Audio 3 row: with the pointer on it, Turn on or Turn off, in words, once a model is installed, and until then Set up.
+  Unfolded, it lists Medium and Small Music, each with its size and state: Download, Cancel while it downloads with a thin progress line, the switch to use it once installed, and Remove, which asks once inline.
+  The first Download shows the Stability AI Community License and the Gemma Terms of Use in one sentence with Agree and download; the core then fetches the pinned, checked files into its own folder (see the [terminal guide](../docs/TERMINAL_GUIDE.md#use-the-listening-room)).
+  Your own folder is the last row: it unfolds to its folder field and Check again, and is never removed.
   The [terminal guide](../docs/TERMINAL_GUIDE.md#use-the-listening-room) says how to install Stable Audio 3 and its Medium model.
   A track Moondog made plays in the window and reads "Made by Moondog" in now playing and the mini player; during a stream, Up next shows the track Moondog made next.
 - On Air: once music generation is on and a model is set up, a mark beside the mini player starts Moondog's stream.

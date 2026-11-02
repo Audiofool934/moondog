@@ -16,7 +16,7 @@ import { PiAgentRuntime } from "../../src/runtime/pi/agent-runtime.mjs";
 
 // A stand-in for Stability AI's MLX build: its Python prints the stage lines the real script
 // prints, writes a short WAV where --out says, and logs its arguments. FAKE_SA3 makes it fail, hang or slow.
-async function fakeInstall(t, { weights = true, environment = true } = {}) {
+async function fakeInstall(t, { weights = true, environment = true, models = ["medium"] } = {}) {
   const root = await mkdtemp(path.join(tmpdir(), "moondog-generation-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const install = path.join(root, "mlx");
@@ -58,7 +58,8 @@ if (process.env.FAKE_SA3 === "slow") setTimeout(finish, 1500); else finish();
   }
   if (weights) {
     await mkdir(path.join(install, "models", "mlx"), { recursive: true });
-    for (const name of ["t5gemma_f16.npz", "dit_medium_f16.npz", "same_l_decoder_f32.npz"]) {
+    const names = { medium: ["dit_medium_f16.npz", "same_l_decoder_f32.npz"], "small-music": ["dit_sm-music_f16.npz", "same_s_decoder_f32.npz"] };
+    for (const name of ["t5gemma_f16.npz", ...models.flatMap((model) => names[model])]) {
       await writeFile(path.join(install, "models", "mlx", name), Buffer.alloc(2048));
     }
   }
@@ -125,6 +126,31 @@ test("a track is made with every choice passed, offline, and kept with a receipt
   assert.ok(!JSON.stringify(receipt).includes(path.basename(install.root)), "the receipt keeps no folder of this Mac");
   assert.ok(await generator.trackFile(made.id));
   assert.equal(await generator.trackFile("../config"), null);
+});
+
+test("the chosen model's weights are checked, and a track is made with its flags", async (t) => {
+  const install = await fakeInstall(t);
+  const generator = install.generator();
+  await generator.save({ enabled: true, source: "settings", model: "small-music" });
+  assert.deepEqual([generator.status().state, generator.status().missing, generator.status().model], ["incomplete", "weights", "small-music"]);
+
+  const both = await fakeInstall(t, { models: ["medium", "small-music"] });
+  const switching = both.generator();
+  await switching.save({ enabled: true, source: "settings", model: "small-music" });
+  assert.deepEqual([switching.status().state, switching.status().managed], ["ready", false]);
+  const made = await switching.generate({ prompt: "ambient", seconds: 15, seed: 1, title: "Small" });
+  const { args } = await both.args();
+  assert.deepEqual([args[args.indexOf("--dit") + 1], args[args.indexOf("--decoder") + 1]], ["sm-music", "same-s"]);
+  assert.deepEqual([(await switching.receipt(made.id)).generator.model, (await switching.receipt(made.id)).generator.decoder], ["sa3-sm-music-ARC", "same-s"]);
+
+  await switching.save({ model: "medium" });
+  assert.equal(switching.status().model, "medium");
+  await switching.generate({ prompt: "ambient", seconds: 15, seed: 1, title: "Medium" });
+  const again = (await both.args()).args;
+  assert.deepEqual([again[again.indexOf("--dit") + 1], again[again.indexOf("--decoder") + 1]], ["medium", "same-l"]);
+  // MOONDOG_SA3_DIR still wins over Moondog's own install.
+  assert.equal((await readGenerationSettings(both.env)).source, "environment");
+  await assert.rejects(switching.save({ model: "small" }), { code: "generation_model_invalid" });
 });
 
 test("a stopped, failed or second run leaves no track behind", async (t) => {

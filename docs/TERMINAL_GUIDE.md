@@ -166,18 +166,17 @@ Ending a stream starts nothing it paused.
 Stable Audio 3 runs offline, and the track and its receipt stay in Moondog's state folder; your request still goes to the model you talk through.
 A stream keeps the audio of its newest three tracks; the others keep their receipts.
 
-Music making needs an Apple silicon Mac and Stability AI's MLX build of Stable Audio 3 with its Medium model.
-Moondog runs it offline and never downloads weights itself, so download the Medium model once when you install it:
+Music making needs an Apple silicon Mac and Stability AI's MLX build of Stable Audio 3.
+Moondog sets it up when you ask: `/generation download medium` or `/generation download small`, or Download in the desktop app's Settings › Playback › Music generation.
+The first download asks you to agree to the Stability AI Community License and the Gemma Terms of Use, which cover the T5Gemma text encoder.
+Moondog downloads only from the official sources, pinned to versions it has been tested with: uv from Astral's GitHub releases, the code from Stability AI's GitHub repository, Python and its packages through uv, and the weights from Stability AI's Hugging Face repository.
+It checks every file against its SHA-256 before use, keeps everything in `stable-audio-3` in Moondog's state folder, and resumes a download that stopped.
+Medium (best sound) is about 5.2 GB, and Small Music (faster and lighter) about 1.7 GB.
+`/generation use medium` or `/generation use small` picks the model, `/generation cancel` stops a download, and `/generation remove medium` deletes a model; removing the last one deletes the whole setup.
+Making music itself never downloads anything.
 
-```bash
-git clone https://github.com/Stability-AI/stable-audio-3.git ~/Developer/stable-audio-3
-cd ~/Developer/stable-audio-3/optimized/mlx
-./install.sh --download medium
-```
-
-The installer sets up its own Python environment with uv, and offers to install uv when it is missing.
-The Medium model is about 5.9 GB from Hugging Face.
-Moondog looks in `~/Developer/stable-audio-3/optimized/mlx` first; for another folder, use `/generation on` with that folder, the folder field in the desktop app's Settings, or `MOONDOG_SA3_DIR`.
+An install you already have keeps working: Moondog looks in `~/Developer/stable-audio-3/optimized/mlx`, and for another folder, use `/generation on` with that folder, the folder field in Settings, or `MOONDOG_SA3_DIR`.
+Moondog only reads such a folder and never deletes it.
 Stable Audio 3 is under the Stability AI Community License.
 `/import` opens a native guide for music-service exports and public playlist links, with preview and confirmation before saving.
 `/import "/path/to/history.zip"` opens the file preview directly.

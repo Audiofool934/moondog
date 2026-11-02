@@ -826,3 +826,56 @@ test("choosing the service already in use in the first run ends it at once, with
     await harness.stop();
   }
 });
+
+test("Stable Audio 3's setup reaches the window as it goes, and a download started here is put in use when it ends", async () => {
+  const listeners = new Set();
+  const calls = [];
+  let snapshot = { supported: true, licenses: { accepted: false, at: null }, job: null,
+    models: { medium: { state: "absent", bytes: 0, total: 10 }, "small-music": { state: "absent", bytes: 0, total: 5 } } };
+  const push = (next) => { snapshot = next; for (const listener of listeners) listener(structuredClone(next)); };
+  const setup = {
+    status: () => structuredClone(snapshot),
+    async install(model, { accepted }) {
+      calls.push(["install", model, accepted]);
+      if (!accepted && !snapshot.licenses.accepted) throw Object.assign(new Error("Agree first."), { code: "setup_license_required" });
+      push({ ...snapshot, licenses: { accepted: true, at: "now" }, job: { model, step: "weights", received: 4, total: 10, running: true } });
+      return setup.status();
+    },
+    async cancel() { calls.push(["cancel"]); },
+    async remove(model) { calls.push(["remove", model]); },
+    subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); },
+  };
+  let settings = { enabled: false, source: "default", model: "medium" };
+  const generation = {
+    setup,
+    status: () => ({ state: settings.enabled ? "ready" : "off", enabled: settings.enabled, install: settings.source === "managed" ? "ready" : "missing",
+      path: null, source: settings.source, model: settings.model, managed: settings.source === "managed" }),
+    async check() { return this.status(); },
+    async save(next) { calls.push(["save", next]); settings = { ...settings, ...next }; return this.status(); },
+    subscribe() { return () => {}; },
+  };
+  const harness = await openRoom({ services: { generation } });
+  const last = (type) => harness.messages.findLast((message) => message.type === type);
+  try {
+    assert.equal(last("generation-setup").setup.models.medium.state, "absent", "the setup is read once the room opens");
+    await harness.post({ type: "generation-install", model: "medium", accepted: false });
+    await tick();
+    assert.equal(last("notice")?.error, "setup_license_required", "a download without the licenses is refused with its code");
+    await harness.post({ type: "generation-install", model: "medium", accepted: true });
+    await tick();
+    assert.equal(last("generation-setup").setup.job.received, 4, "progress reaches the window");
+    push({ ...snapshot, job: null, models: { ...snapshot.models, medium: { state: "ready", bytes: 10, total: 10 } } });
+    await tick();
+    assert.deepEqual(calls.find(([kind]) => kind === "save"), ["save", { enabled: true, source: "managed", model: "medium" }], "the finished model is put in use");
+    assert.equal(last("status").generation.model, "medium");
+    assert.equal(last("status").generation.setup.models.medium.state, "ready", "the status carries the setup too");
+    await harness.post({ type: "generation-model", model: "small-music" });
+    await harness.post({ type: "generation-cancel" });
+    await harness.post({ type: "generation-remove", model: "medium" });
+    await tick();
+    assert.deepEqual(calls.at(-3), ["save", { enabled: true, source: "managed", model: "small-music" }], "Use keeps music making on or off as it was");
+    assert.deepEqual(calls.slice(-2), [["cancel"], ["remove", "medium"]]);
+  } finally {
+    await harness.stop();
+  }
+});

@@ -214,3 +214,11 @@
 .sheet .endpoint .alert { margin: 0; }
 .sheet .endpoint .actions { align-items: center; margin-top: 4px; }
 .sheet .actions .end { margin-inline-start: auto; }
+/* A model Moondog downloads: its buttons at the right show with the pointer, except a removal it asks
+   about, which stays until answered. While it downloads, a thin line under its words fills. */
+.sheet .choice.model .choice-main { min-height: 44px; }
+.sheet .row-actions { flex: none; display: flex; align-items: center; gap: 4px; margin-inline-end: 6px; }
+.sheet .row-actions > .tool { width: 28px; height: 28px; }
+.sheet .meter { display: block; height: 2px; margin-top: 6px; border-radius: 1px; background: var(--line); overflow: hidden; }
+.sheet .meter > i { display: block; height: 100%; background: var(--text-2); transform-origin: left; transition: transform var(--enter) linear; }
+.sheet .panel > .alert { margin: 0; }

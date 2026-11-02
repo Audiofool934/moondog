@@ -23,6 +23,17 @@ const NETEASE_SETUP = "npm install -g @music163/ncm-cli && brew install mpv && n
 const NETEASE_STATES = { missing: "neteaseMissing", signed_out: "neteaseSignedOut", unavailable: "neteaseUnavailable", unknown: "checking" };
 // What the Stable Audio 3 row says under its name, by what the core found at its folder.
 const GENERATION_STATES = { missing: "generationNotFound", incomplete: "generationIncomplete", unsupported: "generationUnsupported", unknown: "checking" };
+// The two models Moondog downloads, best sound first. The sizes, the shared text encoder included,
+// stand in until the core reports its own.
+const GENERATION_MODELS = [
+  { id: "medium", name: "Medium", detail: "generationBestSound", bytes: 5_179_055_990 },
+  { id: "small-music", name: "Small Music", detail: "generationLighter", bytes: 1_704_727_702 },
+];
+const STABILITY_LICENSE = "https://stability.ai/license";
+const GEMMA_TERMS = "https://huggingface.co/stabilityai/stable-audio-3-optimized/blob/main/LICENSE_GEMMA.md";
+// A download that stopped, by the setup's error code: the sentence that says why. Anything else reads as a plain stop.
+const SETUP_ERRORS = { setup_disk_full: "generationNoSpace", setup_verification_failed: "generationBadFile", setup_offline: "generationOffline",
+  setup_busy: "generationBusy", setup_unsupported: "generationUnsupported" };
 const LASTFM_KEY_PAGE = "https://www.last.fm/api/account/create";
 const SITE = "https://moondog.audiofool.ai";
 // The core's error codes the listener can act on. Anything else reads as a plain failure; the raw
@@ -36,7 +47,8 @@ const NOTICES = { model_unknown: ["model", "noticeModelUnknown", "model"], trans
   "sign-out": [null, "noticeFailed", "spotify"], "music-service": ["playback", "noticeFailed", "service"], language: ["general", "noticeFailed", "locale"],
   model: ["model", "noticeFailed", "model"], effort: ["model", "noticeFailed", "effort"], "default-model": ["model", "noticeFailed"],
   "default-effort": ["model", "noticeFailed"], "list-model": ["model", "noticeFailed"], "endpoint-remove": ["model", "noticeFailed"],
-  generation: ["playback", "noticeFailed", "generation"], "generation-check": ["playback", "noticeFailed"] };
+  generation: ["playback", "noticeFailed", "generation"], "generation-check": ["playback", "noticeFailed"], "generation-cancel": ["playback", "noticeFailed"],
+  "generation-remove": ["playback", "noticeFailed", "generation"], "generation-model": ["playback", "noticeFailed"] };
 // The endpoint errors the listener can fix in the form; any other reads as a plain failure.
 const ENDPOINT_ERRORS = { endpoint_url_invalid: "endpointUrlInvalid", endpoint_models_unavailable: "endpointModelsUnavailable",
   endpoint_models_missing: "endpointModelsUnavailable", endpoint_name_invalid: "endpointNameInvalid" };
@@ -162,6 +174,8 @@ export function createSettings({ state, send, t, appleMusic = null, onHide = nul
       data.servicePanel = undefined;
       data.neteaseCheck = null;
       data.generationCheck = null;
+      data.agreeing = null;
+      data.removing = null;
       if (!data.endpoint?.busy) data.endpoint = null;
     }
     isOpen = true;
@@ -792,14 +806,23 @@ export function createSettings({ state, send, t, appleMusic = null, onHide = nul
   }
   // Music generation sits beside the music services, not among them: what Moondog makes plays in its
   // own player whatever service is in use. One row, Stable Audio 3, on this Mac; at its right, while
-  // the pointer is on it, Turn on or Turn off once the core finds the install, and Set up unfolds the
-  // folder and a check until then. A host without local generation shows no group.
+  // the pointer is on it, Turn on or Turn off once an install is ready, and Set up unfolds the models
+  // until then. Unfolded, it lists the two models Moondog downloads, each with what can be done about
+  // it at its right, and below them a folder of the listener's own. A host without local generation
+  // shows no group.
   function musicGeneration() {
     const status = state.generation;
     if (!status) return null;
+    const setup = data.setup ?? status.setup ?? null;
     const enabled = expected("generation", status.enabled === true);
     const ready = status.install === "ready";
-    const detail = enabled && ready ? say("generationOn") : ready ? say("generationOff") : say(GENERATION_STATES[status.install] ?? "checking");
+    const job = setup?.job && !setup.job.error ? setup.job : null;
+    const own = ownFolder(status);
+    const anyModel = GENERATION_MODELS.some((model) => setup?.models?.[model.id]?.state === "ready");
+    const detail = job ? jobWords(job, setup)
+      : enabled && ready ? say("generationOn") : ready ? say("generationOff")
+        : setup?.supported !== false && status.install !== "unsupported" && !own ? say("generationNotDownloaded")
+          : say(GENERATION_STATES[status.install] ?? "checking");
     const expanded = data.generationPanel === true;
     let trailing;
     // Turning it on or off is not a choice between services, so it says so in words rather than the switch.
@@ -809,34 +832,184 @@ export function createSettings({ state, send, t, appleMusic = null, onHide = nul
         send({ type: "generation", enabled: !enabled });
         render();
       }, "generation:switch");
-    } else if (status.install !== "unsupported") {
+    } else if (status.install !== "unsupported" && !expanded) {
       trailing = button(say("setUp"), "button small reveal", () => { data.generationPanel = true; render(); }, "set-up:generation");
     }
     const rows = [choice({ label: "Stable Audio 3", detail, chosen: enabled && ready, key: "generation:stable-audio", trailing, expanded,
       onChoose: () => { data.generationPanel = !expanded; render(); } })];
+    if (job) rows[0].querySelector(".choice-detail").dataset.progress = "generation:words";
     if (expanded) {
-      const checking = data.generationCheck === "checking";
-      const again = button(say(checking ? "checking" : "checkAgain"), "button small", () => {
-        data.generationCheck = "checking";
-        send({ type: "generation-check" });
-        render();
-      }, "generation:check");
-      again.disabled = checking;
-      const why = data.generationCheck !== "done" || ready ? null
-        : failure(status.install === "incomplete" ? (status.missing === "weights" ? "generationNoWeights" : "generationNotInstalled") : "generationNotThere");
-      const stack = make("div", "stack");
-      stack.append(note(say("generationNote")), inlineForm({ key: "generationPath", placeholder: status.path || say("generationFolder"), action: say("save"),
-        onSubmit: (value) => {
-          data.generationCheck = "checking";
-          data.drafts.generationPath = "";
-          send({ type: "generation", enabled, path: value });
-          render();
-        } }), again, ...(why ? [why] : []));
-      const panel = make("div", "panel");
-      panel.append(stack);
-      rows.push(panel);
+      // What it is, said once, until a model is on this Mac.
+      const list = !anyModel && !own ? [note(say("generationNote"))] : [];
+      if (setup?.supported !== false && status.install !== "unsupported") {
+        for (const model of GENERATION_MODELS) list.push(...modelRows(model, status, setup, job));
+      }
+      list.push(...ownFolderRows(status, own, ready));
+      rows.push(choices(list, "choices inner"));
     }
     return group(say("musicGeneration"), choices(rows));
+  }
+  // A folder of the listener's own: one Moondog only reads, named by MOONDOG_SA3_DIR or saved here. The
+  // default folder counts once something is there.
+  const ownFolder = (status) => status.source === "environment" || status.source === "settings"
+    || (status.source !== "managed" && status.install === "ready");
+  // Sizes as macOS gives them, in gigabytes of 10^9 bytes.
+  const size = (bytes) => new Intl.NumberFormat(languageTag(state.locale), { style: "unit", unit: "gigabyte", maximumFractionDigits: 1 }).format(bytes / 1e9);
+  const percent = (fraction) => new Intl.NumberFormat(languageTag(state.locale), { style: "percent" }).format(Math.min(0.99, Math.floor(fraction * 100) / 100));
+  // How much of a model's weights are on this Mac, the shared text encoder included; null before its
+  // weights start. The steps before them (uv, the code, Python) are short and read as setting up.
+  const fractionOf = (job, setup) => {
+    const found = setup?.models?.[job.model];
+    return job.step === "weights" && found?.total > 0 ? Math.min(1, (found.bytes ?? 0) / found.total) : null;
+  };
+  // A running job in words: downloading with how far, or the step it is on.
+  function jobWords(job, setup) {
+    if (job.step === "verifying") return say("generationVerifying");
+    const fraction = fractionOf(job, setup);
+    return fraction === null ? say("generationSettingUp") : `${say("generationDownloading")} · ${percent(fraction)}`;
+  }
+  // A model's row: its name, what it is for and its size, and how far a download is. The one in use is
+  // checked. At its right, while the pointer is on it: Download, Cancel, the switch that uses it, and Remove.
+  function modelRows(model, status, setup, job) {
+    const found = setup?.models?.[model.id] ?? { state: "absent" };
+    const total = found.total || model.bytes;
+    const running = job?.model === model.id;
+    const failed = setup?.job?.error && setup.job.model === model.id ? setup.job.error : data.generationError?.model === model.id ? data.generationError.code : null;
+    const inUse = found.state === "ready" && status.source === "managed" && status.model === model.id;
+    const removing = data.removing === model.id && found.state !== "absent" && !running;
+    const agreeing = data.agreeing === model.id && !running && found.state !== "ready";
+    const item = make("div", "choice model");
+    const main = make("div", "choice-main");
+    const words = make("span", "choice-words");
+    words.append(make("span", "choice-label", model.name));
+    const line = running ? jobWords(job, setup)
+      : removing ? say("generationRemoveAsk", { size: size(found.bytes || total) })
+        : found.state === "partial" && found.bytes ? `${say("generationPaused")} · ${percent(found.bytes / total)}`
+          : `${say(model.detail)} · ${size(total)}`;
+    const shown = make("span", "choice-detail", line);
+    if (running) shown.dataset.progress = `${model.id}:words`;
+    words.append(shown);
+    // A thin line under the words while it downloads.
+    const fraction = running ? fractionOf(job, setup) : null;
+    if (fraction !== null) {
+      const meter = make("span", "meter");
+      meter.setAttribute("role", "progressbar");
+      meter.setAttribute("aria-label", model.name);
+      const fill = make("i");
+      fill.style.transform = `scaleX(${fraction.toFixed(3)})`;
+      fill.dataset.progress = `${model.id}:bar`;
+      meter.append(fill);
+      words.append(meter);
+    }
+    main.append(words);
+    item.append(main);
+    const actions = make("span", "row-actions");
+    const download = () => {
+      data.generationError = null;
+      if (!setup?.licenses?.accepted) { data.agreeing = model.id; data.focus = `generation:agree:${model.id}`; render(); return; }
+      data.installing = model.id;
+      send({ type: "generation-install", model: model.id, accepted: false });
+      render();
+    };
+    if (removing) {
+      actions.classList.add("asking");
+      actions.append(button(say("cancel"), "button quiet small", () => { data.removing = null; render(); }, `generation:keep:${model.id}`),
+        button(say("remove"), "button primary small", () => {
+          data.removing = null;
+          if (status.source === "managed" && status.model === model.id) expect("generation", false);
+          send({ type: "generation-remove", model: model.id });
+          render();
+        }, `generation:remove-yes:${model.id}`));
+    } else if (running) {
+      actions.append(button(say("cancel"), "button quiet small reveal", () => { send({ type: "generation-cancel" }); }, `generation:cancel:${model.id}`));
+    } else if (found.state === "ready") {
+      if (!inUse) {
+        const use = make("button", "tool reveal");
+        use.type = "button";
+        use.dataset.key = `generation:use:${model.id}`;
+        use.append(icon("switch"));
+        name(use, say("useService", { service: model.name }));
+        use.addEventListener("click", () => { send({ type: "generation-model", model: model.id }); });
+        actions.append(use);
+      }
+      actions.append(button(say("remove"), "button quiet small reveal", () => { data.removing = model.id; data.focus = `generation:keep:${model.id}`; render(); },
+        `generation:remove:${model.id}`));
+    } else if (!agreeing) {
+      // Another job holds the one download at a time; this row waits for it.
+      const node = button(say("download"), "button small reveal", download, `generation:download:${model.id}`);
+      node.disabled = Boolean(job);
+      if (found.state === "partial") actions.append(button(say("remove"), "button quiet small reveal", () => { data.removing = model.id; data.focus = `generation:keep:${model.id}`; render(); },
+        `generation:remove:${model.id}`));
+      actions.append(node);
+    }
+    if (actions.childElementCount) item.append(actions);
+    if (inUse) item.append(icon("check", "icon check"));
+    const rows = [item];
+    // The first download asks for the two licenses once, in the row, with links to read them.
+    if (agreeing) {
+      const panel = make("div", "panel");
+      const text = say("generationLicense");
+      const words = make("p", "note");
+      const parts = text.split(/(\{stability\}|\{gemma\})/u);
+      for (const part of parts) {
+        if (part === "{stability}" || part === "{gemma}") {
+          const [label, href] = part === "{stability}" ? ["Stability AI Community License", STABILITY_LICENSE] : ["Gemma Terms of Use", GEMMA_TERMS];
+          const anchor = make("a", "", label);
+          anchor.href = href;
+          anchor.target = "_blank";
+          anchor.rel = "noreferrer";
+          words.append(anchor);
+        } else if (part) words.append(part);
+      }
+      const line = make("div", "actions");
+      line.append(button(say("agreeAndDownload"), "button primary small", () => {
+        data.agreeing = null;
+        data.generationError = null;
+        data.installing = model.id;
+        send({ type: "generation-install", model: model.id, accepted: true });
+        render();
+      }, `generation:agree:${model.id}`), button(say("cancel"), "button quiet small", () => { data.agreeing = null; render(); }, `generation:disagree:${model.id}`));
+      panel.append(words, line);
+      rows.push(panel);
+    }
+    // A download that stopped says why in one sentence, with the way to go on.
+    if (failed && !running) {
+      const panel = make("div", "panel");
+      panel.append(failure(SETUP_ERRORS[failed?.code ?? failed] ?? "generationFailed"),
+        button(say("tryAgain"), "button small", download, `generation:retry:${model.id}`));
+      rows.push(panel);
+    }
+    return rows;
+  }
+  // The listener's own folder, for an install made outside Moondog: its path once there is one, checked
+  // while it is in use. A click unfolds the folder field and a check; Moondog never removes it.
+  function ownFolderRows(status, own, ready) {
+    const inUse = own && ready;
+    const expanded = data.folderPanel === true;
+    const rows = [choice({ label: say("generationOwnFolder"), detail: own && status.path ? status.path : say("generationOwnFolderNote"),
+      chosen: inUse, expanded, key: "generation:folder", onChoose: () => { data.folderPanel = !expanded; render(); } })];
+    if (!expanded) return rows;
+    const checking = data.generationCheck === "checking";
+    const again = button(say(checking ? "checking" : "checkAgain"), "button small", () => {
+      data.generationCheck = "checking";
+      send({ type: "generation-check" });
+      render();
+    }, "generation:check");
+    again.disabled = checking;
+    const why = data.generationCheck !== "done" || ready ? null
+      : failure(status.install === "incomplete" ? (status.missing === "weights" ? "generationNoWeights" : "generationNotInstalled") : "generationNotThere");
+    const stack = make("div", "stack");
+    stack.append(inlineForm({ key: "generationPath", placeholder: own && status.path ? status.path : say("generationFolder"), action: say("save"),
+      onSubmit: (value) => {
+        data.generationCheck = "checking";
+        data.drafts.generationPath = "";
+        send({ type: "generation", enabled: expected("generation", status.enabled === true), path: value });
+        render();
+      } }), again, ...(why ? [why] : []));
+    const panel = make("div", "panel");
+    panel.append(stack);
+    rows.push(panel);
+    return rows;
   }
   // The first run asks before any service is saved, so none is checked, and choosing the one in use
   // saves it too. Each service leads with its own mark, the one the composer shows beside send once it
@@ -1064,6 +1237,14 @@ export function createSettings({ state, send, t, appleMusic = null, onHide = nul
     // pointer and the field being typed in are never replaced. Passing states, such as the refresh
     // turning, are set on both before they are compared, so they alone never cause a redraw.
     for (const root of [content, fresh]) root?.querySelector('[data-key="devices:refresh"]')?.classList.toggle("spinning", data.devicesLoading);
+    // A download's progress moves several times a second. The shown section takes the new words and
+    // length in place, so the row and the Cancel under the pointer stay.
+    if (content?.isConnected) for (const node of fresh.querySelectorAll("[data-progress]")) {
+      const old = content.querySelector(`[data-progress="${CSS.escape(node.dataset.progress)}"]`);
+      if (!old) continue;
+      old.textContent = node.textContent;
+      if (node.hasAttribute("style")) old.setAttribute("style", node.getAttribute("style")); else old.removeAttribute("style");
+    }
     if (!entering && content?.dataset.section === section && content.isConnected && content.innerHTML === fresh.innerHTML) return;
     if (content?.isConnected) content.replaceWith(fresh); else scroller.replaceChildren(fresh);
     content = fresh;
@@ -1122,6 +1303,12 @@ export function createSettings({ state, send, t, appleMusic = null, onHide = nul
     if (message.type === "memories") data.memories = message.memories ?? [];
     if (message.type === "netease-checked") data.neteaseCheck = "done";
     if (message.type === "generation-checked") data.generationCheck = "done";
+    // A refused download says why under its model; one that runs clears it.
+    if (message.type === "generation-setup") {
+      data.setup = message.setup ?? null;
+      if (data.setup?.job) data.generationError = null;
+    }
+
     if (message.type === "auth-prompt" && data.auth) {
       data.auth.prompt = { id: message.id, kind: message.kind, message: message.message, placeholder: message.placeholder, options: message.options };
     }
@@ -1182,7 +1369,12 @@ export function createSettings({ state, send, t, appleMusic = null, onHide = nul
     }
     if (message.type === "notice") {
       if (message.code === "lastfm-key") { data.lastfm.savingKey = false; data.lastfm.keyError = true; }
-      else if (message.code === "provider-models") { for (const id of requested) if (!data.models.has(id)) data.modelsFailed.add(id); }
+      else if (message.code === "generation-install") {
+        // Licenses agreed to on another Mac's copy of the folder, or since forgotten, are asked for again.
+        if (message.error === "setup_license_required") data.agreeing = data.installing;
+        else data.generationError = { model: data.installing, code: message.error || "" };
+        warn("generation", message.message);
+      } else if (message.code === "provider-models") { for (const id of requested) if (!data.models.has(id)) data.modelsFailed.add(id); }
       else if (NOTICES[message.code]) {
         const [where, key, kind] = NOTICES[message.code];
         data.error = { section: where, key };
