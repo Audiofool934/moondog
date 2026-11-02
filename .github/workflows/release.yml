@@ -38,8 +38,23 @@ jobs:
           git merge-base --is-ancestor HEAD origin/main
       - run: npm run verify:clean-source
 
-  publish:
+  # A stable version waits for the owner's approval in the release-approval environment.
+  # A prerelease (a version with a hyphen, such as 0.3.0-beta.6) skips this job and publishes on its own.
+  approve-stable:
+    name: Approve the stable release
     needs: verify
+    if: ${{ !contains(github.ref_name, '-') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: release-approval
+    steps:
+      - run: echo "Approved ${{ github.ref_name }} for publication."
+
+  publish:
+    needs: [verify, approve-stable]
+    # Runs after verify passes, and after the approval for a stable version; a rejected,
+    # cancelled or failed approval stops it. Only a prerelease may skip the approval.
+    if: ${{ always() && needs.verify.result == 'success' && (needs.approve-stable.result == 'success' || (needs.approve-stable.result == 'skipped' && contains(github.ref_name, '-'))) }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: npm

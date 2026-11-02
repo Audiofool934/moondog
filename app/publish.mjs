@@ -53,7 +53,8 @@ const assertNpm = async () => validateNpmRelease(await npmMetadata(version), { n
 const readNpm = () => npmMetadata(version).catch(error => { if (error.npmCodes?.includes("E404")) return null; throw error; });
 const deadline = Date.now() + 60 * 60_000;
 let npmRelease = await readNpm();
-if (!npmRelease) npmRelease = await phase(`Wait for npm ${version}: approve the npm environment on the Publish release run`, () => waitFor(readNpm, { deadline }));
+if (!npmRelease) npmRelease = await phase(beta ? `Wait for npm ${version} from the Publish release run`
+  : `Wait for npm ${version}: approve release-approval on the Publish release run`, () => waitFor(readNpm, { deadline }));
 if (!npmRelease) throw new Error(`npm ${version} is not published. Approve the npm environment on the Publish release run, then run the same command again.`);
 await phase("Verify the published npm version and commit", () => validateNpmRelease(npmRelease, { name, version, source }));
 
