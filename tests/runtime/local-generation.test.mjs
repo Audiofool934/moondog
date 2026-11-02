@@ -832,6 +832,8 @@ test("the agent starts a stream when the listener asks for music to keep going, 
     return agentSteps.shift()(context);
   };
   faux.setResponses(Array.from({ length: 6 }, () => route));
+  // Moondog is set to Simplified Chinese while the listener writes in English: records are named in the setting's language.
+  app.locale = "zh";
   const reply = await runtime.prompt("keep some quiet music going while I work");
   // The first track carries the stream's own name, unnumbered, and the reply was not cut short.
   assert.equal(reply.text, "Something quiet to work to; stop it whenever.\n\nMade on this Mac with Stable Audio 3: \"Low tide window\" (1:00, seed " +
@@ -841,6 +843,7 @@ test("the agent starts a stream when the listener asks for music to keep going, 
   // The second track was named by the conversation's model, from its own sound and the stream's name.
   assert.equal((await generator.receipt(player.calls[1][1])).title, "Harbor lights, slowly");
   assert.equal(named.length, 1);
+  assert.match(named[0], /^Name this track\. Write the name in Simplified Chinese \(zh\), even if the listener's words/u);
   assert.match(named[0], /<stream_name>Low tide window<\/stream_name>/u);
   assert.match(named[0], /<listener_words>keep some quiet music going while I work<\/listener_words>/u);
   faux.setResponses([fauxAssistantMessage([fauxToolCall("moondog_stop_stream", {})], { stopReason: "toolUse" }),

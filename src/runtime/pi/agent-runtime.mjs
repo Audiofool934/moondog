@@ -5205,7 +5205,7 @@ function createToolFactories(
           name: descriptor.tool_name,
           label: descriptor.label,
           description:
-            "Make one instrumental track on this Mac with the listener's own Stable Audio 3, and play it at once in Moondog's player, whatever the music service. Use it only when the listener asks Moondog to make, compose or generate music; never to play existing songs. It needs no web research, search, candidate set or playlist plan: read the profile if it helps, then call this tool. Translate their taste into plain sound descriptors and give each its source: reading (from = a claim_id of the saved reading; none without one), choice (from = an artist or song they marked Like), recent (from = an artist in recent_attention.stored_plays, the last four weeks; not the profile's longer recent lists or Spotify's own top artists), moment (the listener_clock), or request (their words in this message). A term is one idea in a few plain words for a genre, instrument, texture, mood or rhythm, such as dream pop, rhodes piano, tape saturation, unhurried, brushed drums. Say what is in the sound, never what is absent (no drums): the model can't leave a named sound out, so naming it brings it in. moment is the listener's local day and hour as listener_clock gives them; a time the listener names, such as tonight, is request. Never put an artist or song name in a term or the title. The host leaves out any term that names one, cannot be traced, comes from something they Avoid, or asks for singing (the model makes instrumentals only); left_out says which and why. A track needs at least one genre, instrument, texture or mood. If state is not_made, fix the descriptors once from left_out and reason, or tell the listener what was missing. bpm is optional. seconds is 15 to 380, 120 when left out. title is Moondog's own name for the record. " + RECORD_NAME_RULES.join(" ") + " product.made_tracks has the names Moondog gave before. Making a track takes from a few seconds to about a minute; make at most one per message. Making one ends Moondog's stream if one runs. product.made_tracks lists Moondog's newest tracks with their sound and outcomes: lean away from the sound of tracks the listener skipped and toward what they played through or asked for again by name (asked_for_again). replayed_by_moondog counts Moondog's own replays and says nothing about the listener. A track with stream: true played in the background: its completions say little, but its skips still count. These are outcomes of Moondog's own picks, not the listener's taste; never call them likes. Once it plays, say in one or two sentences what shaped it in everyday words (their reading, a Like, what they play lately, the hour). Describe only what the result's prompt and shaped_by hold: the model takes no key, chord or melody, so never name one. Do not recite the descriptors, the prompt or the seed; the host writes its own line under the reply.",
+            "Make one instrumental track on this Mac with the listener's own Stable Audio 3, and play it at once in Moondog's player, whatever the music service. Use it only when the listener asks Moondog to make, compose or generate music; never to play existing songs. It needs no web research, search, candidate set or playlist plan: read the profile if it helps, then call this tool. Translate their taste into plain sound descriptors and give each its source: reading (from = a claim_id of the saved reading; none without one), choice (from = an artist or song they marked Like), recent (from = an artist in recent_attention.stored_plays, the last four weeks; not the profile's longer recent lists or Spotify's own top artists), moment (the listener_clock), or request (their words in this message). A term is one idea in a few plain words for a genre, instrument, texture, mood or rhythm, such as dream pop, rhodes piano, tape saturation, unhurried, brushed drums. Say what is in the sound, never what is absent (no drums): the model can't leave a named sound out, so naming it brings it in. moment is the listener's local day and hour as listener_clock gives them; a time the listener names, such as tonight, is request. Never put an artist or song name in a term or the title. The host leaves out any term that names one, cannot be traced, comes from something they Avoid, or asks for singing (the model makes instrumentals only); left_out says which and why. A track needs at least one genre, instrument, texture or mood. If state is not_made, fix the descriptors once from left_out and reason, or tell the listener what was missing. bpm is optional. seconds is 15 to 380, 120 when left out. title is Moondog's own name for the record. " + RECORD_NAME_RULES.join(" ") + " Write it in product.record_name_language, even when the listener writes in another language or mixes languages. product.made_tracks has the names Moondog gave before. Making a track takes from a few seconds to about a minute; make at most one per message. Making one ends Moondog's stream if one runs. product.made_tracks lists Moondog's newest tracks with their sound and outcomes: lean away from the sound of tracks the listener skipped and toward what they played through or asked for again by name (asked_for_again). replayed_by_moondog counts Moondog's own replays and says nothing about the listener. A track with stream: true played in the background: its completions say little, but its skips still count. These are outcomes of Moondog's own picks, not the listener's taste; never call them likes. Once it plays, say in one or two sentences what shaped it in everyday words (their reading, a Like, what they play lately, the hour). Describe only what the result's prompt and shaped_by hold: the model takes no key, chord or melody, so never name one. Do not recite the descriptors, the prompt or the seed; the host writes its own line under the reply.",
           parameters: Type.Object(
             {
               descriptors: Type.Array(descriptorSchema, { minItems: 1, maxItems: DESCRIPTOR_LIMITS.total }),
@@ -7019,6 +7019,13 @@ function replyLanguage(text, application) {
   return `${LOCALES[locale]?.name ?? "English"} (${locale})`;
 }
 
+// The language Moondog is set to, by name. Moondog's records are named in it, whatever language the
+// listener writes in, so a listener who mixes languages still gets one language on their records.
+export function recordNameLanguage(application) {
+  const locale = LOCALES[application?.locale] ? application.locale : "en";
+  return `${LOCALES[locale].name} (${locale})`;
+}
+
 function groundedPlaylistPresentation(plan, t) {
   if (!plan.tracks?.some((track) => track.candidate_scope === "external_catalog")) return plan;
   const result = structuredClone(plan);
@@ -7359,6 +7366,7 @@ function productContext(application, query, now, { runtime, source }) {
     ...(application.madeTracks?.() ? { made_tracks: application.madeTracks() } : {}),
     ...(application.streamStatus?.() ? { stream: application.streamStatus() } : {}),
     reply_language: replyLanguage(query, application),
+    ...(application.madeTracks?.() ? { record_name_language: recordNameLanguage(application) } : {}),
   };
 }
 
@@ -7568,7 +7576,8 @@ export class PiAgentRuntime {
           nameRecord: (context, { signal } = {}) => {
             const at = this.clock?.();
             return chooseRecordName({ models: this.models, model: this.model, signal,
-              context: { ...context, moment: at instanceof Date && Number.isFinite(at.getTime()) ? listenerClock(at) : null, request: state.promptText } });
+              context: { ...context, moment: at instanceof Date && Number.isFinite(at.getTime()) ? listenerClock(at) : null, request: state.promptText,
+                language: recordNameLanguage(this.application) } });
           },
         };
       },

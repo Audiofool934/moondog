@@ -10,7 +10,7 @@ import { clampThinkingLevel } from "@earendil-works/pi-ai";
 export const RECORD_NAME_RULES = [
   "Name it the way the artist of an instrumental record would: a concrete image, place, moment or small action the sound suggests, as on a real record sleeve.",
   "Never list what it is made of: no genre, instrument, tempo or texture words such as lofi, ambient, synth, piano, beat or mix.",
-  "One to five words, at most about 24 characters, in the language the listener writes in.",
+  "One to five words, at most about 24 characters, in the language Moondog is set to, never the language the conversation happens to use.",
   "Moondog is a late-night radio host for one listener, with a record turning under the moon. Its world (the radio, the needle, the groove, the moon, the dog) may show in a name now and then, never in most of them.",
   "Do not reuse the words or the shape of names Moondog gave before: each name should be new.",
   "No artist, song or album names, no singing words, no numbers, quotes, emoji or end punctuation, and never Untitled.",
@@ -38,10 +38,11 @@ export function cleanRecordName(text) {
 }
 
 /**
- * One name for a made track, or null. context: { stream, featured, sound, bpm, moment, request,
- * earlier, recent }: the stream's name, what this track features and the rest of its sound, its
- * tempo, the listener's clock, the listener's words (for their language), the names this stream
- * gave so far, and the names of Moondog's other recent tracks.
+ * One name for a made track, or null. context: { language, stream, featured, sound, bpm, moment,
+ * request, earlier, recent }: the language Moondog is set to, which the name is written in; the
+ * stream's name, what this track features and the rest of its sound, its tempo, the listener's
+ * clock, the listener's words (for the mood they asked for), the names this stream gave so far, and
+ * the names of Moondog's other recent tracks.
  */
 export async function chooseRecordName({ models, model, context = {}, signal, maxTokens = 60 }) {
   if (typeof models?.completeSimple !== "function" || !model) return null;
@@ -55,7 +56,7 @@ export async function chooseRecordName({ models, model, context = {}, signal, ma
     messages: [{
       role: "user",
       content: [
-        "Name this track.",
+        `Name this track. Write the name in ${excerpt(context.language || "English (en)", 40)}, even if the listener's words or the earlier names use another language.`,
         context.stream ? `<stream_name>${excerpt(context.stream, 60)}</stream_name>` : null,
         `<featured_sound>${list(context.featured)}</featured_sound>`,
         context.sound?.length ? `<rest_of_sound>${list(context.sound)}</rest_of_sound>` : null,
