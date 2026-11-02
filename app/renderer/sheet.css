@@ -176,6 +176,8 @@
 .sheet .facts li:first-child { font-weight: 500; color: var(--text); }
 .sheet .facts-empty { margin-top: 18px; font-size: var(--t-ui); color: var(--text-2); }
 .sheet .actions { display: flex; gap: 8px; margin-top: 22px; }
+.sheet .update-check { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 10px; }
+.sheet .update-check .note { margin: 0; }
 .sheet .facts + .alert, .sheet .facts-empty + .alert { margin: 18px 0 -10px; }
 
 /* Memory: each line on its own row, Forget only where the pointer or the focus is. */

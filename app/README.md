@@ -231,7 +231,11 @@ Keep raw tool diagnostics private if a failed step needs further investigation.
 The packaged app updates itself from this repository's GitHub releases (`updates.mjs`, with electron-updater).
 
 - It checks at launch and every six hours, and downloads nothing until you ask.
-  A beta version also takes releases marked as prereleases; a stable version takes only the others. It never goes back to an older version.
+  Settings › About chooses the channel: Beta also takes releases marked as prereleases, Stable only the others.
+  Until you choose, a beta version follows Beta and a stable one Stable; the choice is kept in `updates.json` beside the window's place.
+  A change of channel takes back a build offered from the other one, unless it is already downloading, and checks again.
+  It never goes back to an older version, so moving from Beta to Stable waits for a stable release newer than the installed beta.
+- Settings › About › Check for Updates checks at once and answers in the sheet, with a button that downloads and installs a newer build.
 - A newer build shows at the top right, before Settings, as a small solid button whose tooltip names the version.
   A click downloads it, the ring around the button fills as it arrives, and Moondog restarts into the new version when the download ends.
   A failed download leaves the installed app as it is and the button in place, so another click tries again.

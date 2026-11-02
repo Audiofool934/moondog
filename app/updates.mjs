@@ -2,8 +2,8 @@
 // at launch and every six hours and shows a newer build at the top right, but downloads nothing
 // until the listener asks: one click downloads it and restarts after macOS validates the build.
 // macOS takes only a build signed by the same developer, and the download must match the checksum
-// its release lists. A beta version follows the releases GitHub marks as prereleases; a stable one,
-// only the others.
+// its release lists. The listener picks the channel in Settings: beta also takes the releases GitHub
+// marks as prereleases, stable only the others. Until they pick, a beta version follows beta.
 
 const EVERY_MS = 6 * 60 * 60_000;
 
@@ -15,8 +15,9 @@ const EVERY_MS = 6 * 60 * 60_000;
  * install, and only then. autoUpdater is electron-updater's, or null when the app is not packaged;
  * squirrel is Electron's own autoUpdater, which installs the download.
  */
-export function createUpdates({ autoUpdater, squirrel, onChange, onRestart, beforeInstall = () => {}, platform = process.platform }) {
+export function createUpdates({ autoUpdater, squirrel, onChange, onRestart, beforeInstall = () => {}, platform = process.platform, beta = false }) {
   let state = { phase: "idle" };
+  let followsBeta = beta === true;
   let installing = false;
   let preparing = false;
   let nativeReady = false;
@@ -75,6 +76,8 @@ export function createUpdates({ autoUpdater, squirrel, onChange, onRestart, befo
     // A newer build is the listener's to fetch: a 150 MB download and a restart should not start unasked.
     autoUpdater.autoDownload = false;
     autoUpdater.autoInstallOnAppQuit = false;
+    // The chosen channel, not the installed version, decides whether prereleases count.
+    autoUpdater.allowPrerelease = followsBeta;
     // Trying an update before it is published: MOONDOG_UPDATE_FEED names a folder served over HTTP
     // that holds a newer build's zip and its latest-mac.yml. That install quits without relaunching,
     // because the relaunched app has none of the test's settings and would open the listener's profile.
@@ -134,5 +137,17 @@ export function createUpdates({ autoUpdater, squirrel, onChange, onRestart, befo
     setInterval(() => void check(), EVERY_MS);
   }
 
-  return { enabled, state: () => ({ ...state, installing }), check, install, start };
+  // A change of channel takes back a build offered from the other one, unless it is already
+  // downloading or downloaded, and looks again at once.
+  function setBeta(next) {
+    if (Boolean(next) === followsBeta) return followsBeta;
+    followsBeta = Boolean(next);
+    if (!enabled) return followsBeta;
+    autoUpdater.allowPrerelease = followsBeta;
+    if (state.phase === "available") set({ phase: "idle" });
+    void check();
+    return followsBeta;
+  }
+
+  return { enabled, state: () => ({ ...state, installing }), check, install, start, beta: () => followsBeta, setBeta };
 }

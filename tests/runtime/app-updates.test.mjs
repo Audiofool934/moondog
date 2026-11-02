@@ -274,3 +274,41 @@ test("a validated Mac build retries failed core shutdown without another native 
   assert.equal(autoUpdater.downloads, 1);
   assert.equal(squirrel.checks, 1);
 });
+
+test("the chosen channel decides whether prereleases count, and a change looks again", async () => {
+  const autoUpdater = fakeUpdater();
+  const updates = createUpdates({ autoUpdater, squirrel: new EventEmitter(), platform: "linux", onChange() {}, onRestart() {}, beta: false });
+  assert.equal(autoUpdater.allowPrerelease, false);
+  assert.equal(updates.beta(), false);
+  assert.equal(await updates.check(), "available");
+  assert.equal(updates.state().phase, "available");
+  // Moving to beta takes back the stable offer and checks again with prereleases.
+  autoUpdater.checkForUpdates = async () => { autoUpdater.checks += 1; return { isUpdateAvailable: false }; };
+  assert.equal(updates.setBeta(true), true);
+  assert.equal(autoUpdater.allowPrerelease, true);
+  assert.equal(updates.state().phase, "idle");
+  await tick();
+  assert.equal(autoUpdater.checks, 2);
+  // The same choice again changes nothing and checks nothing.
+  updates.setBeta(true);
+  await tick();
+  assert.equal(autoUpdater.checks, 2);
+});
+
+test("a build already downloading stays when the channel changes", async () => {
+  const autoUpdater = fakeUpdater();
+  const updates = createUpdates({ autoUpdater, squirrel: new EventEmitter(), platform: "linux", onChange() {}, onRestart() {}, beta: true });
+  assert.equal(autoUpdater.allowPrerelease, true);
+  await updates.check();
+  updates.install();
+  assert.equal(updates.state().phase, "downloading");
+  updates.setBeta(false);
+  assert.equal(updates.state().phase, "downloading");
+  assert.equal(autoUpdater.allowPrerelease, false);
+});
+
+test("a development build keeps the choice but checks nothing", () => {
+  const updates = createUpdates({ autoUpdater: null, squirrel: null, onChange() {}, onRestart() {}, beta: false });
+  assert.equal(updates.setBeta(true), true);
+  assert.equal(updates.beta(), true);
+});

@@ -28,6 +28,9 @@ contextBridge.exposeInMainWorld("moondogApp", {
   updateState: () => ipcRenderer.invoke("update"),
   onUpdate: (callback) => ipcRenderer.on("update", (_event, state) => callback(state)),
   installUpdate: () => ipcRenderer.send("install-update"),
+  updateChannel: () => ipcRenderer.invoke("update-channel"),
+  setUpdateChannel: (beta) => ipcRenderer.invoke("set-update-channel", beta === true),
+  checkUpdate: () => ipcRenderer.invoke("check-update"),
   // Whole Apple Music songs through the app's MusicKit helper, where this Mac allows them.
   appleMusic: (command) => ipcRenderer.invoke("apple-music", command),
   onAppleMusic: (callback) => ipcRenderer.on("apple-music", (_event, message) => callback(message)),
