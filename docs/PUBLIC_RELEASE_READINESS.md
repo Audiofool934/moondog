@@ -12,7 +12,7 @@ The current distribution is a source checkout with Node.js 22.19.0 or newer and 
 The source version is `0.3.0-beta.5`.
 `@audiofool/moondog` is the public npm package name, and the registry serves 0.2.2 as `latest`.
 Version 0.1.0 predates the updater, so its installs need a one-time manual upgrade; see [updates and maintainer setup](UPDATES.md).
-A `v` tag publishes through npm trusted publishing with provenance, after the owner approves the `npm` environment.
+A `v` tag publishes through npm trusted publishing with provenance. A prerelease tag publishes on its own; a stable tag waits for the owner's approval in the `release-approval` environment.
 The tagged release workflow runs the clean-source check before OIDC publication.
 It prepares a draft GitHub release; verified Mac artifacts must be uploaded before that release becomes public.
 The project page selects stable downloads and leaves preview releases on GitHub.
