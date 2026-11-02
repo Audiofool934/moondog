@@ -573,10 +573,19 @@ export function createStableAudioSetup({
       } finally {
         await releaseLock(token);
       }
-      // Music making that used this model moves to the other one, or back to the listener's folder.
+      // Music making that used this model moves to the other one, or back to the listener's folder with a
+      // model that folder has, so a working own install is never checked for weights it never had.
       const settings = await readGenerationSettings(environment);
       if (settings.source === "managed" && settings.model === model) {
-        await writeGenerationSettings(status().models[other].state === "ready" ? { model: other } : { source: "settings" }, environment);
+        if (status().models[other].state === "ready") await writeGenerationSettings({ model: other }, environment);
+        else {
+          const candidates = [DEFAULT_STABLE_AUDIO_MODEL, ...Object.keys(STABLE_AUDIO_MODELS).filter((name) => name !== DEFAULT_STABLE_AUDIO_MODEL)];
+          let found = DEFAULT_STABLE_AUDIO_MODEL;
+          for (const name of candidates) {
+            if ((await checkStableAudioInstall(settings.folder, { model: name, platform, arch })).state === "ready") { found = name; break; }
+          }
+          await writeGenerationSettings({ source: "settings", model: found }, environment);
+        }
       }
       push();
       return status();

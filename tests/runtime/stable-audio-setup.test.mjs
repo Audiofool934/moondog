@@ -349,3 +349,29 @@ test("a first setup stopped before any model's weights arrived can still be remo
   await setup.remove("medium");
   assert.equal(await exists(setup.root), false, "removing it takes the whole setup away");
 });
+
+test("removing the last managed model goes back to the listener's folder with a model it has", async (t) => {
+  const home = await mkdtemp(path.join(tmpdir(), "moondog-sa3-fallback-"));
+  t.after(() => rm(home, { recursive: true, force: true }));
+  const environment = { MOONDOG_STATE_HOME: home, MOONDOG_CONFIG_HOME: home };
+  // The listener's own folder, with Medium only.
+  const own = path.join(home, "own", "mlx");
+  await mkdir(path.join(own, "scripts"), { recursive: true });
+  await mkdir(path.join(own, ".venv", "bin"), { recursive: true });
+  await mkdir(path.join(own, "models", "mlx"), { recursive: true });
+  await writeFile(path.join(own, "scripts", "sa3_mlx.py"), "# stand-in\n");
+  await writeFile(path.join(own, ".venv", "bin", "python"), "#!/bin/sh\n");
+  await chmod(path.join(own, ".venv", "bin", "python"), 0o755);
+  for (const name of ["t5gemma_f16.npz", "dit_medium_f16.npz", "same_l_decoder_f32.npz"]) await writeFile(path.join(own, "models", "mlx", name), randomBytes(2048));
+  await writeGenerationSettings({ enabled: true, path: own }, environment);
+  // Then managed Small Music, in use.
+  const setup = createStableAudioSetup({ environment, platform: "darwin", arch: "arm64" });
+  await mkdir(path.join(setup.root, "mlx", "models", "mlx"), { recursive: true });
+  await writeFile(path.join(setup.root, "mlx", "models", "mlx", "dit_sm-music_f16.npz"), "partial");
+  await writeGenerationSettings({ source: "managed", model: "small-music" }, environment);
+  await setup.remove("small-music");
+  const settings = await readGenerationSettings(environment);
+  assert.deepEqual([settings.source, settings.path, settings.model], ["settings", own, "medium"]);
+  const generator = createLocalGenerator({ environment, platform: "darwin", arch: "arm64" });
+  assert.equal((await generator.check()).state, "ready", "the folder that worked before still works");
+});
