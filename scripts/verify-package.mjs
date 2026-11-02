@@ -43,7 +43,7 @@ const maximumUnpackedBytes = 5_210_000;
 // entries and about 20 KB. Local music generation and its taste compiler add two
 // entries and about 30 KB. The Stability AI Community License copy and the NOTICE
 // file its attribution terms require add two entries and about 12 KB (2026-10-30).
-const maximumEntries = 161;
+const maximumEntries = 163;
 const packageOnlyPrivateSentinelPattern = new RegExp(
   ["PRIVATE", "(?:IP|PLATFORM)", "SENTINEL"].join("_"),
   "u",

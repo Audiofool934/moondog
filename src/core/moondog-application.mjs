@@ -34,7 +34,10 @@ const SCRIPTS = { zh: /\p{Script=Han}/u, "zh-Hant": /\p{Script=Han}/u, ja: /[\p{
 export function nameFitsLanguage(name, locale) {
   const text = String(name ?? "");
   if (SCRIPTS[locale] ? !SCRIPTS[locale].test(text) : CJK.test(text)) return false;
-  return messageLocale(text, locale) === locale;
+  const guess = messageLocale(text, locale);
+  // Kanji with no kana, such as 月夜 or 雨音, is Japanese as much as Chinese, so the Japanese setting decides.
+  if (locale === "ja" && (guess === "zh" || guess === "zh-Hant") && !/\p{Script=Hangul}/u.test(text)) return true;
+  return guess === locale;
 }
 import { createPlaybackSelection, DEFAULT_PLAYBACK_SERVICE, normalizePlaybackService } from "./playback-preferences.mjs";
 
