@@ -39,7 +39,7 @@ function memoryCredentialStore(initial) {
     async modify(fn, { signal } = {}) {
       return lock(async () => {
         signal?.throwIfAborted();
-        const next = await fn(structuredClone(credential), { checkpoint: async (value) => { credential = structuredClone(value); } });
+        const next = await fn(structuredClone(credential));
         signal?.throwIfAborted();
         if (next !== undefined) credential = structuredClone(next);
         return structuredClone(credential);
@@ -472,9 +472,7 @@ for (const stop of ["cancel", "logout", "replace"]) {
     if (stop === "cancel") controller.abort();
     if (stop === "logout") mutation = auth.logout();
     if (stop === "replace") {
-      const replacement = { ...store.snapshot(), accessToken: "replacement", refreshToken: "replacement-refresh" };
-      delete replacement.refreshAttempt;
-      mutation = store.write(replacement);
+      mutation = store.write({ ...store.snapshot(), accessToken: "replacement", refreshToken: "replacement-refresh" });
     }
     release();
     await result;

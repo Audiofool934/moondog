@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://i.scdn.co https://*.mzstatic.com https://*.music.126.net; media-src https://audio-ssl.itunes.apple.com; connect-src 'none'; object-src 'none'; base-uri 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://i.scdn.co https://*.mzstatic.com https://*.music.126.net; media-src https://audio-ssl.itunes.apple.com moondog-media:; connect-src 'none'; object-src 'none'; base-uri 'none'">
   <title>Moondog</title>
   <link rel="stylesheet" href="renderer.css">
 </head>
@@ -41,6 +41,9 @@
     <symbol id="i-zai" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M12.105 2L9.927 4.953H.653L2.83 2h9.276zM23.254 19.048L21.078 22h-9.242l2.174-2.952h9.244zM24 2L9.264 22H0L14.736 2H24z"/></symbol>
     <symbol id="i-close" viewBox="0 0 16 16"><path d="M4.25 4.25l7.5 7.5M11.75 4.25l-7.5 7.5"/></symbol>
     <symbol id="i-plus" viewBox="0 0 16 16"><path d="M8 3.25v9.5M3.25 8h9.5"/></symbol>
+    <!-- On Air: a broadcast mark, its centre dot filled while on air. -->
+    <symbol id="i-on-air" viewBox="0 0 16 16"><circle cx="8" cy="8" r="1.75"/><path d="M11 5a4.25 4.25 0 0 1 0 6M5 11a4.25 4.25 0 0 1 0-6M12.77 3.23a6.75 6.75 0 0 1 0 9.54M3.23 12.77a6.75 6.75 0 0 1 0-9.54"/></symbol>
+    <symbol id="i-on-air-lit" viewBox="0 0 16 16"><circle cx="8" cy="8" r="1.75" fill="currentColor"/><path d="M11 5a4.25 4.25 0 0 1 0 6M5 11a4.25 4.25 0 0 1 0-6M12.77 3.23a6.75 6.75 0 0 1 0 9.54M3.23 12.77a6.75 6.75 0 0 1 0-9.54"/></symbol>
     <symbol id="i-update" viewBox="0 0 16 16"><path d="M8 3.25v7.5M4.75 7.5 8 10.75l3.25-3.25M4.25 13.25h7.5"/></symbol>
     <symbol id="i-branch" viewBox="0 0 16 16"><path d="M4.25 2.25v7.75"/><circle cx="4.25" cy="11.75" r="1.75"/><circle cx="11.75" cy="4.25" r="1.75"/><path d="M11.75 6a5.75 5.75 0 0 1-5.75 5.75"/></symbol>
     <symbol id="i-edit" viewBox="0 0 16 16"><path d="M10.6 2.9a1.45 1.45 0 0 1 2.05 2.05L6 11.6l-2.75.7.7-2.75z"/><path d="M9.4 4.1l2.5 2.5"/></symbol>
@@ -79,6 +82,7 @@
           <button type="button" class="tool" data-mini-toggle data-tip-at="below"><svg class="icon fill"><use href="#i-pause"/></svg></button>
           <button type="button" class="tool" data-mini-next data-tip-at="below"><svg class="icon fill"><use href="#i-next"/></svg></button>
         </div>
+        <button type="button" class="tool on-air" data-on-air data-tip-at="below" aria-pressed="false" hidden><svg class="icon"><use href="#i-on-air"/></svg></button>
         <button type="button" class="tool update" data-update data-tip-at="below" hidden><svg class="ring" viewBox="0 0 24 24" aria-hidden="true"><circle class="track" cx="12" cy="12" r="10.5"/><circle class="done" cx="12" cy="12" r="10.5" pathLength="100" data-update-done/></svg><svg class="icon"><use href="#i-update"/></svg></button>
         <button type="button" class="tool" data-settings-button data-tip-at="below"><svg class="icon"><use href="#i-settings"/></svg></button>
         <button type="button" class="tool" data-toggle-inspector data-tip-at="below"><svg class="icon"><use href="#i-panel"/></svg></button>

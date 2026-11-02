@@ -6,7 +6,7 @@ import test from "node:test";
 import { inspect } from "node:util";
 import { assertProvenance, releaseNames, updateFeed, verifyArtifacts } from "../../app/release-artifacts.mjs";
 import { notarizeFile, prepareDmgUpload } from "../../app/release-notary.mjs";
-import { assertReleaseIdentity, findReleaseByTag, markAsLatest, publicationSource, uploadImmutableAssets, validateNpmRelease } from "../../app/release-publication.mjs";
+import { assertReleaseIdentity, findReleaseByTag, markAsLatest, publicationSource, uploadImmutableAssets, validateNpmRelease, waitFor } from "../../app/release-publication.mjs";
 import { builderSigningIdentity, command, commandFailure, digestFile, ELECTRON_DATA_SIGN_IGNORE, parseReleaseJson, readJson, retryTimestampSigning, saveJson, SIGNING_TEAM } from "../../app/release-tools.mjs";
 
 const provenance = { version: "0.2.1", source: "a".repeat(40), buildNumber: "123", teamId: SIGNING_TEAM };
@@ -326,6 +326,48 @@ test("failed draft upload can resume identical bytes without overwriting the fir
   await uploadImmutableAssets(options);
   assert.deepEqual(uploads, ["app.zip", "latest-mac.yml", "latest-mac.yml"]);
   assert.equal(release.draft, true, "only the final publisher can expose the draft");
+});
+
+test("assets upload together and the update feed goes up only after they are verified", async () => {
+  const names = ["app.zip", "app.zip.blockmap", "app.dmg", "release.json", "latest-mac.yml"];
+  const items = names.map((name, i) => ({ name, size: i + 1, sha256: name }));
+  const release = { draft: true, assets: [] }, events = [];
+  let running = 0, peak = 0;
+  await uploadImmutableAssets({ items, getRelease: async () => structuredClone(release), remoteDigest: async asset => asset.hash,
+    upload: async item => {
+      events.push(`start ${item.name}`);
+      peak = Math.max(peak, ++running);
+      await new Promise(resolve => setTimeout(resolve, 10));
+      release.assets.push({ name: item.name, size: item.size, hash: item.sha256, state: "uploaded" });
+      running--;
+      events.push(`end ${item.name}`);
+    } });
+  assert.equal(peak, 4);
+  assert.deepEqual(events.slice(-2), ["start latest-mac.yml", "end latest-mac.yml"]);
+});
+
+test("a failed upload lets the others finish and never uploads the update feed", async () => {
+  const items = ["app.zip", "app.dmg", "latest-mac.yml"].map(name => ({ name, size: 1, sha256: name }));
+  const release = { draft: true, assets: [] }, uploads = [];
+  await assert.rejects(uploadImmutableAssets({ items, getRelease: async () => structuredClone(release), remoteDigest: async asset => asset.hash,
+    upload: async item => {
+      uploads.push(item.name);
+      if (item.name === "app.dmg") throw new Error("Network lost");
+      await new Promise(resolve => setTimeout(resolve, 10));
+      release.assets.push({ name: item.name, size: item.size, hash: item.sha256, state: "uploaded" });
+    } }), /Network lost/u);
+  assert.deepEqual(uploads, ["app.zip", "app.dmg"]);
+  assert.deepEqual(release.assets.map(asset => asset.name), ["app.zip"], "the zip finished before the failure was reported");
+});
+
+test("waits share one deadline and stop as soon as the value appears", async () => {
+  let clock = 0, reads = 0;
+  const options = { deadline: 150_000, now: () => clock, sleep: async ms => { clock += ms; } };
+  assert.equal(await waitFor(async () => ++reads >= 3 && "draft", options), "draft");
+  assert.equal(reads, 3);
+  assert.equal(clock, 120_000);
+  assert.equal(await waitFor(async () => null, options), null);
+  assert.equal(clock, 150_000, "a later wait ends at the shared deadline");
 });
 
 test("changed remote bytes and incomplete public releases fail before any upload", async () => {

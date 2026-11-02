@@ -85,8 +85,12 @@ test("a queue request adds after the song playing, and plays when nothing is loa
   const { run, calls } = fakeCli();
   const player = createNeteasePlayer({ run, wait: async () => {} });
   const songs = await player.search({ query: "稻香" });
-  assert.equal((await player.play({ items: [{ id: songs[0].id }], mode: "queue" })).mode, "playing");
-  assert.equal((await player.play({ items: [{ id: songs[2].id }], mode: "queue" })).mode, "queued");
+  // Only the queue that starts a song quiets the other players, just before it starts.
+  let quieted = 0;
+  const beforePlay = async () => { quieted += 1; };
+  assert.equal((await player.play({ items: [{ id: songs[0].id }], mode: "queue", beforePlay })).mode, "playing");
+  assert.equal((await player.play({ items: [{ id: songs[2].id }], mode: "queue", beforePlay })).mode, "queued");
+  assert.equal(quieted, 1);
   assert.deepEqual(plays(calls), [songs[0].id]);
   assert.deepEqual((await player.nowPlaying()).next.map((song) => song.title), ["稻香(治愈版)"]);
   await player.stop();

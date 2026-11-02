@@ -107,7 +107,7 @@ Profiles backed by Spotify Extended Streaming History can additionally use the p
 Existing-playlist editing is now available for owned private, non-collaborative Spotify playlists with at most 100 ordinary Spotify tracks.
 The model receives only prompt-local opaque playlist and item references.
 The first turn produces a complete exact-order preview with no external effect, and only a later explicit confirmation can apply the host-retained draft after a live snapshot preflight.
-Public or collaborative playlists, unsupported items, clearing a playlist to zero tracks, playlists above 100 tracks, durable drafts across restarts, publishing, and generated music remain later capabilities.
+Public or collaborative playlists, unsupported items, clearing a playlist to zero tracks, playlists above 100 tracks, durable drafts across restarts, publishing, and online or paid music generation remain later capabilities.
 
 ## Product Principles
 

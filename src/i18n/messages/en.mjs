@@ -131,6 +131,10 @@ export default {
   "choice.like": ({ title, artist }) => { const name = title ? `"${title}" by ${artist}` : artist; return `\n\nSaved: you like ${name}. Tell me any time to change it.`; },
   "choice.avoid": ({ title, artist }) => { const name = title ? `"${title}" by ${artist}` : artist; return `\n\nSaved: I'll keep ${name} out of what I play and suggest. Tell me any time to change it.`; },
   "choice.retract": ({ title, artist }) => { const name = title ? `"${title}" by ${artist}` : artist; return `\n\nUndone: your earlier choice about ${name}.`; },
+  "generate.made": ({ title, length, seed }) => `Made on this Mac with Stable Audio 3: "${title}" (${length}, seed ${seed}).`,
+  "generate.stream": ({ minutes }) => `The stream keeps going on this Mac, a new track each time, for up to ${minutes} minutes. Stop it any time.`,
+  // What the listener says to go on air, in the language the reply follows (/onair in the terminal).
+  "onAir.request": "Go on air: make new music for right now and keep it going",
   "turn.cancelled": "Cancelled further work.",
   "turn.interrupted": "The response was interrupted. The recorded Spotify outcomes are below; no action was replayed.",
 };

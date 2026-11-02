@@ -602,6 +602,55 @@ const catalog = [
     },
   },
   {
+    id: "music.generate.local",
+    version: "1",
+    state: "enabled",
+    effect: "generate_local",
+    description:
+      "Make an instrumental track on this Mac with the listener's own Stable Audio 3 install, shaped by their taste, and play it in Moondog's player. Stable Audio 3 runs offline; the track stays on this Mac.",
+    requires_local_generation: true,
+    agent_tool: {
+      name: "moondog_make_track",
+      label: N_("Make a track"),
+    },
+  },
+  {
+    id: "music.generate.replay",
+    version: "1",
+    state: "enabled",
+    effect: "generate_local",
+    description: "Play again a track Moondog made on this Mac, from its own folder.",
+    requires_local_generation: true,
+    agent_tool: {
+      name: "moondog_play_made_track",
+      label: N_("Play a track Moondog made"),
+    },
+  },
+  {
+    id: "music.generate.stream",
+    version: "1",
+    state: "enabled",
+    effect: "generate_local",
+    description: "Keep making instrumental tracks on this Mac from the listener's taste, one after another, until they stop it or the time runs out.",
+    requires_local_generation: true,
+    agent_tool: {
+      name: "moondog_start_stream",
+      label: N_("Start a stream"),
+    },
+  },
+  {
+    id: "music.generate.stream.stop",
+    version: "1",
+    state: "enabled",
+    effect: "generate_local",
+    description: "Stop Moondog's stream of tracks made on this Mac.",
+    requires_local_generation: true,
+    agent_tool: {
+      name: "moondog_stop_stream",
+      label: N_("Stop the stream"),
+    },
+  },
+  {
     id: "music.generate",
     version: "1",
     state: "disabled",
@@ -636,7 +685,11 @@ function withRuntimeAvailability(
   profileBuildReady,
   musicPreviewReady,
   tasteChoicesReady,
+  localGenerationReady,
 ) {
+  if (capability.requires_local_generation && !localGenerationReady) {
+    return { ...capability, state: "blocked", blocked_by: "local_generation_not_ready" };
+  }
   if (capability.requires_taste_choices && !tasteChoicesReady) {
     return { ...capability, state: "blocked", blocked_by: "taste_choices_not_ready" };
   }
@@ -769,6 +822,7 @@ export function listCapabilities({
   profileBuildReady = false,
   musicPreviewReady = false,
   tasteChoicesReady = false,
+  localGenerationReady = false,
 } = {}) {
   return structuredClone(
     catalog.map((capability) =>
@@ -791,6 +845,7 @@ export function listCapabilities({
         profileBuildReady,
         musicPreviewReady,
         tasteChoicesReady,
+        localGenerationReady,
       ),
     ),
   );

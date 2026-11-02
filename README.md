@@ -4,7 +4,7 @@
 
 <h1 align="center">Moondog</h1>
 
-<p align="center">Version 0.2.1</p>
+<p align="center">Source candidate 0.3.0-beta.3</p>
 
 <p align="center"><strong>A listening room that shows its work.</strong></p>
 
@@ -33,7 +33,7 @@ npm ci
 npm start
 ```
 
-[@audiofool/moondog](https://www.npmjs.com/package/@audiofool/moondog) 0.2.1 is the published package; `npm install --global @audiofool/moondog` installs it.
+[@audiofool/moondog](https://www.npmjs.com/package/@audiofool/moondog) 0.2.2 is the published package; `npm install --global @audiofool/moondog` installs it.
 To see the agent work through fictional data, with no sign-in at all, run `npm run demo` from the checkout.
 
 The source version supports `moondog update` and `/update`, with stable (`latest`) and preview (`beta`) channels.
@@ -214,3 +214,4 @@ Your profile, and anything Moondog remembers, carry over.
 
 Moondog is open source under the [Apache License 2.0](LICENSE).
 Copyright 2026 Audiofool.
+Music making runs Stable Audio 3, which you install yourself; [NOTICE](NOTICE) holds its attribution, and [licenses/](licenses/stability-ai-community-license.md) holds the Stability AI Community License.

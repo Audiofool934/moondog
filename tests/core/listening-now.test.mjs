@@ -48,3 +48,39 @@ test("the Music app's playlist and Spotify's active device are read together, th
   assert.equal(spotify.from.kind, "playlist");
   assert.match(spotify.from.unavailable, /not found/u);
 });
+
+test("Moondog's own player is read first, with what it queued and the tracks it made", async () => {
+  const { createPlayerNow } = await import("../../src/core/listening-now.mjs");
+  const now = createPlayerNow();
+  now.queued([{ title: "Us and Them", artist_credit: "Pink Floyd" }, { title: "Space Song", artist_credit: "Beach House" }, { title: "Alison", artist_credit: "Slowdive" }]);
+  now.observe({ type: "playing", position: 2 });
+  const application = {
+    playbackService: "apple_music",
+    musicPreviewPlayer: { nowPlaying: () => now.read() },
+    musicApp: { available: true, async nowPlaying() { return { state: "paused", song: { title: "Hey Jude", artists: ["The Beatles"] }, position_ms: 61_000 }; } },
+    spotifyReady: () => false,
+    neteaseReady: () => false,
+    streamView: () => null,
+  };
+  let result = await readListeningNow(application);
+  assert.equal(result.active, "moondog");
+  assert.deepEqual(result.sources[0].song, { title: "Space Song", artists: ["Beach House"] });
+  assert.deepEqual(result.sources[0].from, { kind: "moondog_queue", name: null, tracks_total: 3, position: 2 });
+  assert.deepEqual(result.sources[0].next.map((song) => song.title), ["Alison"]);
+  // A paused Moondog queue still comes before a paused Music app.
+  now.observe({ type: "paused", position: 2 });
+  assert.equal((await readListeningNow(application)).active, "moondog");
+  // A stream's tracks are Moondog's own.
+  now.queued([{ title: "Night Tape · 1", generated: true }]);
+  now.appended({ title: "Night Tape · 2", generated: true });
+  application.streamView = () => ({ phase: "playing" });
+  result = await readListeningNow(application);
+  assert.equal(result.sources[0].from.kind, "moondog_stream");
+  assert.deepEqual(result.sources[0].song.artists, ["Moondog"]);
+  assert.equal(result.sources[0].next[0].title, "Night Tape · 2");
+  // Once the queue stops, the Music app is what they hear.
+  now.observe({ type: "stopped" });
+  result = await readListeningNow(application);
+  assert.equal(result.active, "apple_music");
+  assert.equal(result.sources.find((source) => source.service === "moondog").state, "stopped");
+});

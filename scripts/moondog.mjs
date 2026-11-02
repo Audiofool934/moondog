@@ -33,6 +33,7 @@ import { runListenerProfileCommand, savedProfileActions } from "../src/surfaces/
 import { createWebResearch } from "../src/integrations/web/web-research.mjs";
 import { runWebCommand } from "../src/surfaces/cli/web-command.mjs";
 import { openSpotifyConnection } from "../src/integrations/spotify/connection.mjs";
+import { preferredIdleDevice, thisComputerName } from "../src/integrations/spotify/service.mjs";
 import {
   openSpotifyResolutionCache,
 } from "../src/integrations/spotify/resolution-cache.mjs";
@@ -52,6 +53,8 @@ import { startListeningUpkeep } from "../src/core/listening-upkeep.mjs";
 import { createAppleMusicCatalog } from "../src/integrations/apple-music/catalog.mjs";
 import { createTerminalPreviewPlayer } from "../src/integrations/apple-music/terminal-preview-player.mjs";
 import { createNeteasePlayer } from "../src/integrations/netease/ncm-cli-player.mjs";
+import { createAtmosphereStream, createLocalGenerator } from "../src/integrations/stable-audio/local-generator.mjs";
+import { createStableAudioSetup } from "../src/integrations/stable-audio/setup.mjs";
 import { createMusicAppPlayer } from "../src/integrations/apple-music/music-app.mjs";
 import {
   createOpenMusicSimilarity,
@@ -446,6 +449,76 @@ async function emitTasteprintArtifact(
     process.stdout.write(`${lines.join("\n")}\n`);
   }
   return result;
+}
+
+// While the terminal's stream runs, the Music app is read this often. Only a change from not playing
+// to playing ends the stream, and only in a read that began after the stream last changed and past its
+// start: the song the first track pauses keeps playing while that track is made.
+const STREAM_MUSIC_APP_MS = 5_000;
+function watchMusicAppForStream(stream, { musicApp, interval = STREAM_MUSIC_APP_MS }) {
+  if (musicApp?.available !== true) return () => {};
+  let timer = null;
+  let reading = false;
+  let playing = null;
+  let phase = null;
+  let changedAt = 0;
+  const read = async () => {
+    if (reading) return;
+    reading = true;
+    const began = Date.now();
+    try {
+      const now = await musicApp.nowPlaying().catch(() => null);
+      const view = stream.view();
+      if (!view || began <= changedAt) return;
+      const playingNow = now?.state === "playing";
+      if (playingNow && playing === false && view.phase !== "starting") stream.stop("other_music");
+      playing = playingNow;
+    } finally {
+      reading = false;
+    }
+  };
+  const unsubscribe = stream.subscribe(({ view }) => {
+    changedAt = Date.now();
+    // The first track just paused the Music app, so playing at a later read is news.
+    if (phase === "starting" && view && view.phase !== "starting") playing = false;
+    phase = view?.phase ?? null;
+    if (view && !timer) {
+      playing = null;
+      timer = setInterval(() => void read(), interval);
+      timer.unref?.();
+    } else if (!view && timer) {
+      clearInterval(timer);
+      timer = null;
+    }
+  });
+  return () => {
+    unsubscribe();
+    clearInterval(timer);
+    timer = null;
+  };
+}
+
+// Whether a /spotify command starts Spotify on this Mac: play on the device it resumes on (the active one,
+// or with none active the one it would pick), or a move onto this Mac with --play or while Spotify plays (a
+// move keeps playing what plays). A command its own checks refuse, or reads that fail, start nothing here.
+async function spotifyStartsHere(application, args, { signal } = {}) {
+  if (!application.spotifyReady?.()) return false;
+  // A trailing --json changes only how the result is written.
+  if (args.at(-1) === "--json") args = args.slice(0, -1);
+  const play = args[0] === "play" && args.length <= 2;
+  const transfer = args[0] === "transfer" && args.length >= 2 && args.length <= 3 && (args.length === 2 || args[2] === "--play");
+  if (!play && !transfer) return false;
+  const service = application.requireSpotifyService();
+  const [listed, player] = await Promise.all([service.devices({ signal }).catch(() => null), service.currentPlayer({ signal }).catch(() => null)]);
+  const devices = listed?.devices ?? [];
+  if (transfer) {
+    const device = devices.find((entry) => entry.id === args[1]);
+    const playing = player?.state === "available" && player.is_playing === true;
+    return Boolean(device) && application.spotifyOnThisMac(device) && (args[2] === "--play" || playing);
+  }
+  const active = player?.device?.is_active === true ? player.device : devices.find((device) => device.is_active === true);
+  const device = active ?? preferredIdleDevice(devices, { thisComputer: await thisComputerName() });
+  return Boolean(device) && application.spotifyOnThisMac(device);
 }
 
 async function main() {
@@ -847,11 +920,37 @@ async function main() {
   const neteasePlayer = createNeteasePlayer();
   const playbackService = await resolvePlaybackService();
   if (playbackService === "netease") await neteasePlayer.check();
+  // Moondog makes music on this Mac with Stable Audio 3 once the listener turns it on, in a room
+  // that can play what it makes: Moondog's own install, downloaded when they ask, or their folder.
+  // The terminal and the window each keep one generator, so each makes one track at a time; a
+  // choice saved on one side is checked again on the other.
+  const localGenerator = previewPlayer ? createLocalGenerator() : null;
+  const generationSetup = localGenerator ? createStableAudioSetup() : null;
+  // A model set up or removed, here or on the other side, is checked again.
+  const unwatchGenerationSetup = generationSetup?.subscribe(() => { void localGenerator.check().catch(() => {}); }) ?? (() => {});
+  await localGenerator?.check();
+  void localGenerator?.sweep().catch(() => {});
+  const unwatchGeneration = localGenerator?.watch() ?? (() => {});
+  // How each made track landed (played through, skipped, stopped) comes from this room's player.
+  await localGenerator?.load();
+  const unobservePlayer = localGenerator ? previewPlayer.subscribe?.((event) => localGenerator.observe(event)) : null;
+  // Moondog's atmosphere stream: one per room, on its generator and its player, moved along by what the player reports.
+  const atmosphereStream = localGenerator && typeof previewPlayer?.enqueueGenerated === "function"
+    ? createAtmosphereStream({ generator: localGenerator, player: previewPlayer }) : null;
+  // After the generator's own observer: the stream may stop the player while an event is still being
+  // delivered, and the generator must record that event's outcome first.
+  const unobserveStream = atmosphereStream ? previewPlayer.subscribe?.((event) => atmosphereStream.observe(event)) : null;
+  // Music making turned off, here or on the other surface, ends the stream.
+  const unwatchStreamGeneration = atmosphereStream ? localGenerator.subscribe((status) => { if (status.state !== "ready") atmosphereStream.stop("generation_off"); }) : null;
+  // The window watches the Music app for its own stream; the terminal has no window, so while its
+  // stream runs it reads the Music app itself, and music the listener starts there ends the stream.
+  const unwatchStreamMusicApp = atmosphereStream && !host ? watchMusicAppForStream(atmosphereStream, { musicApp }) : null;
   const playbackSelection = createPlaybackSelection({ service: playbackService, save: writePlaybackPreference });
   // The terminal and the window each run this core on one playback.json. A service chosen on the
-  // other side reaches this side's picker and agents, and stops the previews this side plays.
+  // other side reaches this side's picker and agents, and stops the Apple Music songs this side plays.
+  // Moondog's stream is not a service: its made tracks play on.
   const unwatchPlayback = watchPlaybackPreference(playbackSelection, {
-    onChange: (service) => { if (service !== "apple_music") previewPlayer?.stop?.(); },
+    onChange: (service) => { if (service !== "apple_music" && previewPlayer?.holdsCatalogSongs?.() !== false) previewPlayer?.stop?.(); },
   });
   // The main application and every conversation the window opens beside it are built from
   // this one list, so they cannot drift apart. Each passes in what may change after launch:
@@ -860,7 +959,7 @@ async function main() {
   const spotifyTopArtists = { read_at: null, artists: [] };
   const applicationOptions = ({ domainServices, domainServicesError, spotifyConnection, locale, playbackService }) => ({
     domainServices, domainServicesError, spotifyConnection, locale, playbackService, playbackSelection,
-    webResearch, memoryStore, musicCatalog, musicPreviewPlayer: previewPlayer, neteasePlayer, musicSimilarity, artistIdentityResolver,
+    webResearch, memoryStore, musicCatalog, musicPreviewPlayer: previewPlayer, neteasePlayer, localGenerator, atmosphereStream, musicSimilarity, artistIdentityResolver,
     spotifyTopArtists, musicApp,
   });
   const application = new MoondogApplication(applicationOptions({
@@ -1056,6 +1155,18 @@ async function main() {
         return prepareTuiHistoryImport(undefined, { recentPage, librarySnapshot, libraryUnavailable });
       },
       openImportHelp,
+      // Local generation: what the room shows and the switch the listener turns, in Settings or with /generation.
+      generation: localGenerator && {
+        status: () => localGenerator.status(),
+        check: () => localGenerator.check(),
+        save: (settings) => localGenerator.save(settings),
+        // Uses an installed model of Moondog's own install.
+        use: async (model) => (generationSetup?.status()?.models?.[model]?.state === "ready"
+          ? localGenerator.save({ source: "managed", model }) : localGenerator.check()),
+        subscribe: (listener) => localGenerator.subscribe(listener),
+        // Download, cancel and remove, shared by the window and the terminal.
+        setup: generationSetup,
+      },
       // The room asks whether a Last.fm key is set, and saves one the listener pastes.
       lastfm: {
         status: async () => {
@@ -1138,6 +1249,9 @@ async function main() {
         return json ? `\`\`\`json\n${output.trim()}\n\`\`\`` : output.trim();
       },
       runSpotify: async (args, { signal, stderr } = {}) => {
+        // /spotify play, and a move onto this Mac that plays there, start Spotify here: the other players go
+        // quiet first. A command its own checks will refuse, or a move to another device, quiets nothing.
+        if (await spotifyStartsHere(application, args, { signal })) await application.quietOtherPlayers("spotify", { signal });
         let output = "";
         const capture = {
           write(value) {
@@ -1162,6 +1276,21 @@ async function main() {
     });
   } finally {
     unwatchPlayback();
+    unwatchGeneration();
+    unwatchGenerationSetup();
+    // A download or uv run this process owns would keep it alive after the room closes; it stops and
+    // resumes next time. One owned by the other window or terminal runs on.
+    await generationSetup?.close?.();
+    // A made track still playing is stopped while the generator listens, so its outcome is kept.
+    if (localGenerator) {
+      previewPlayer?.stop?.();
+      await localGenerator.flush?.();
+    }
+    unobservePlayer?.();
+    unobserveStream?.();
+    unwatchStreamGeneration?.();
+    unwatchStreamMusicApp?.();
+    atmosphereStream?.stop("closed");
     listeningUpkeep?.stop();
     lyrics?.close();
     // Conversations close first: their domain services are forks of the main application's.

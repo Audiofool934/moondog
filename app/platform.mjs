@@ -19,6 +19,7 @@ export function accelerators(platform) {
     play: mac ? "Ctrl+Cmd+P" : "Alt+Shift+P",
     next: mac ? "Ctrl+Cmd+Right" : "Alt+Shift+Right",
     previous: mac ? "Ctrl+Cmd+Left" : "Alt+Shift+Left",
+    onAir: mac ? "Ctrl+Cmd+O" : "Alt+Shift+O",
   };
 }
 

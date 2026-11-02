@@ -40,15 +40,19 @@ const maximumPackedBytes = 2_600_000;
 // run page adds one entry and about 7 KB.
 const maximumUnpackedBytes = 5_210_000;
 // Endpoints, the model menu's list and the terminal's endpoint command add three
-// entries and about 20 KB.
+// entries and about 20 KB. Local music generation and its taste compiler add two
+// entries and about 30 KB. The Stability AI Community License copy and the NOTICE
+// file its attribution terms require add two entries and about 12 KB (2026-10-30).
 // The portable ZIP reader and the shared host helpers add two entries for the Windows desktop.
-const maximumEntries = 157;
+const maximumEntries = 163;
 const packageOnlyPrivateSentinelPattern = new RegExp(
   ["PRIVATE", "(?:IP|PLATFORM)", "SENTINEL"].join("_"),
   "u",
 );
 const requiredPackagePaths = new Set([
   "LICENSE",
+  "NOTICE",
+  "licenses/stability-ai-community-license.md",
   "README.md",
   "assets/brand/moondog-logo.svg",
   "contracts/v1/definitions.schema.json",
@@ -95,6 +99,7 @@ const exactAllowedPackagePaths = new Set([
   "LICENSE.md",
   "LICENSE.txt",
   "NOTICE",
+  "licenses/stability-ai-community-license.md",
   "package.json",
   "assets/brand/moondog-logo.svg",
   "scripts/contract-lib.mjs",

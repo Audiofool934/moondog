@@ -114,6 +114,19 @@ A model or music service chosen there lasts until the app quits, and sign-in and
   Playback has one row per music service, its state under its name and the one in use checked.
   A click on a row unfolds that service's setup or its own controls (Spotify's devices and Disconnect), one row at a time.
   With the pointer on a row, a service that can play shows a switch at its right that uses it, and one that can't yet shows Set up.
+  A Music generation group sits beside the services, with one Stable Audio 3 row: with the pointer on it, Turn on or Turn off, in words, once a model is installed, and until then Set up.
+  Unfolded, it lists Medium and Small Music, each with its size and state: Download, Cancel while it downloads with a thin progress line, the switch to use it once installed, and Remove, which asks once inline.
+  The first Download shows the Stability AI Community License and the Gemma Terms of Use in one sentence with Agree and download; the core then fetches the pinned, checked files into its own folder (see the [terminal guide](../docs/TERMINAL_GUIDE.md#use-the-listening-room)).
+  Your own folder is the last row: it unfolds to its folder field and Check again, and is never removed.
+  The [terminal guide](../docs/TERMINAL_GUIDE.md#use-the-listening-room) says how to install Stable Audio 3 and its Medium model.
+  A track Moondog made plays in the window and reads "Made by Moondog" in now playing and the mini player; during a stream, Up next shows the track Moondog made next.
+- On Air: once music generation is on and a model is set up, a mark beside the mini player starts Moondog's stream.
+  A click sends "Go on air: make new music for right now and keep it going" into the open conversation, and the agent starts the stream from your taste and the moment.
+  The mark is lit while the stream runs; its tooltip says when the stream ends at the latest, and it dips once every few seconds while a record is being cut and nothing of the stream plays.
+  Another click, `⌃⌘O`, the Playback menu, the Dock menu or the player's stop button takes it off the air at once, without the agent; nothing that the stream paused starts again, and that song waits in the player, paused.
+  While on air, the stream owns the player: its track shows even paused, Up next ends with the record being cut, and between two tracks the player shows that record instead of a paused song elsewhere.
+  Music that starts on this Mac ends the stream: a song Moondog plays, the Music app, Spotify on this Mac, or NetEase. Spotify on another device doesn't. Changing the music service doesn't end it.
+  A stream that ends by itself goes dark without a word; one whose next record couldn't be made says so once.
   Changes are saved where the terminal reads them; the window never sees a key or token.
   The menu's list is `models.json`, each conversation's own model is `conversation-models.json`, and endpoints are `endpoints.json` (mode 600, with their keys), beside `settings.json`, so older Moondogs that read `settings.json` by a fixed shape keep working.
   OpenAI keeps a ChatGPT sign-in or an API key in `auth.json`; Moondog 0.2.0-beta.7 and older can't read a ChatGPT sign-in there.
@@ -138,7 +151,7 @@ A model or music service chosen there lasts until the app quits, and sign-in and
   The side panels hold only their own content.
 - Keys: Enter sends and Shift+Enter starts a new line. `⌘.` or Esc stops a reply.
   Typing anywhere goes to the composer. No plain key plays, pauses or skips, because a chat window is typed in all the time.
-  `⌃⌘P` plays or pauses, and `⌃⌘→` and `⌃⌘←` skip, from the Playback menu; the media keys work too.
+  `⌃⌘P` plays or pauses, and `⌃⌘→` and `⌃⌘←` skip, from the Playback menu; the media keys work too. `⌃⌘O` goes on or off the air.
   `⌥⌘S` and `⌥⌘P` show or hide the conversations and the player; a narrow window folds them on its own. `⌥⌘R` folds or opens the record.
   On Windows and Linux, Control replaces Command in editing shortcuts and in New, Settings and Stop.
   There, Ctrl+Shift+S, Ctrl+Shift+P and Ctrl+Shift+R show or hide the conversations, the player and the record.
@@ -167,6 +180,7 @@ A model or music service chosen there lasts until the app quits, and sign-in and
   Replies render from Markdown into DOM text nodes (`markdown.mjs`), so a reply can't inject markup.
 - Menus for a conversation and the model, device and service pickers are native menus, built in `main.mjs` from plain items the page sends.
 - One message port carries everything between the core and the window, including the previews the agent plays.
+  A track Moondog makes is the exception: the port carries only its id, and the window reads the file from `moondog-media://generated/<id>`, which `main.mjs` serves from Moondog's state folder and nothing else.
 - The project page plays a scripted scene in this renderer and `window-room.mjs`, unchanged, in a browser, with `site/window/host.mjs` in place of the preload and the core process, so a change here shows there too (`site/README.md`).
 
 ## Whole Apple Music songs
@@ -195,6 +209,7 @@ It needs no model, no music service and none of your data.
 `MOONDOG_HARNESS_STATES=long MOONDOG_HARNESS_EVAL=check-ui.mjs npm run harness` checks tooltip timing and themes, the record handoff and corner placement, and pin feedback in both themes.
 With `first-run`, `first-run-model-only` and `first-run-netease` among the states, it also checks the first run: both steps from the keyboard, one ended in the terminal, and one skipped with Esc.
 The `first-run-*` states draw its steps, sign-ins and skip tooltip on their own.
+With the `on-air-*` states among them (`on-air-available`, `on-air-tip`, `on-air-starting`, `on-air-playing`, `on-air-waiting`), it checks On Air: going on air, stopping while starting, stopping from the mark and from the player, and the song the stream paused showing again.
 An evaluation failure exits with a nonzero status.
 
 ## Build the app
@@ -276,8 +291,9 @@ To publish an update:
 2. Push the tag, `v` and the version.
    `Publish release` checks it, waits for the owner's approval in the `npm` environment, publishes or verifies the npm version, and prepares a GitHub draft.
    The desktop updater continues to see the previous complete release while the draft is prepared.
-3. On the Mac mini, in a clean worktree at the tag, run `npm ci` at the root and here, then `npm run publish-app`.
-   It builds and verifies the artifacts, uploads the ZIP, blockmap, DMG and update metadata to the draft, then publishes the complete release and rebuilds the project page.
+3. Right after pushing the tag, on the Mac mini, in a clean worktree at the tag, run `npm ci` at the root and here, then `npm run publish-app`.
+   It builds and verifies the artifacts while the workflow runs, then waits up to an hour for the npm version and the draft, so the approval can come before or after the build.
+   It uploads the ZIP, blockmap, DMG and release manifest to the draft together and the update metadata last, then publishes the complete release and rebuilds the project page.
    `--skip-build` requires the recorded build manifest and verifies its artifacts again.
    `--create` prepares a missing draft; it does not bypass npm or artifact verification.
    Existing remote assets with identical hashes are reused.

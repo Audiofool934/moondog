@@ -57,6 +57,7 @@ One-time owner setup: configure the npm package's **trusted publisher** for GitH
    It prepares a GitHub draft after npm confirms publication.
    Draft recovery finds the exact tag in the authenticated release list, then checks the release ID and channel again.
 4. Complete the [Mac publication procedure](../app/README.md#updates) from that tag.
+   Start it as soon as the tag is pushed; it waits for the npm approval and the draft after its build.
    The draft becomes public only after the publisher has verified and uploaded the app and update metadata.
    Retry the same command after an interruption; do not rebuild or replace an already published version.
 5. Verify the registry version, `gitHead`, channel, provenance, GitHub assets, a fresh install, and an update from the previous version.

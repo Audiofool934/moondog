@@ -2,13 +2,16 @@
 // app is to its command line. The core runs in its own Node process (core-process.mjs); the
 // window draws conversations, the conversation, and what is playing. On macOS the music
 // keeps going when the window hides.
-import { app, autoUpdater as squirrel, BrowserWindow, dialog, ipcMain, Menu, MessageChannelMain, nativeTheme, screen, shell, utilityProcess } from "electron";
+import { app, autoUpdater as squirrel, BrowserWindow, dialog, ipcMain, Menu, MessageChannelMain, nativeTheme, protocol, screen, shell, utilityProcess } from "electron";
 import electronUpdater from "electron-updater";
 import { execFile, spawn } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { createReadStream, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { Readable } from "node:stream";
 import { fileURLToPath } from "node:url";
+import { resolveMoondogStateDirectory } from "../src/core/state-directory.mjs";
 import { windowLocale, windowStrings } from "./strings.mjs";
 import { createUpdates } from "./updates.mjs";
 import { accelerators, needsLoginShell, windowChrome } from "./platform.mjs";
@@ -33,6 +36,39 @@ const primary = app.requestSingleInstanceLock();
 if (!primary) app.quit();
 // For automated checks: lets a DevTools client drive the window.
 if (process.env.MOONDOG_APP_DEBUG_PORT) app.commandLine.appendSwitch("remote-debugging-port", process.env.MOONDOG_APP_DEBUG_PORT);
+
+// The tracks Moondog makes on this Mac (src/integrations/stable-audio) play in the window from
+// moondog-media://generated/<id>. The scheme serves those files and nothing else, so the page never
+// holds a path or reads a folder; it answers byte ranges, so the listener can move in a track.
+protocol.registerSchemesAsPrivileged([{ scheme: "moondog-media", privileges: { standard: true, secure: true, stream: true } }]);
+const generatedTrackId = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
+async function generatedTrack(request) {
+  const url = new URL(request.url);
+  const id = url.pathname.slice(1);
+  if (url.hostname !== "generated" || !generatedTrackId.test(id)) return new Response(null, { status: 404 });
+  const file = path.join(resolveMoondogStateDirectory(), "generated", id, "track.wav");
+  let size;
+  try {
+    const info = await stat(file);
+    if (!info.isFile()) return new Response(null, { status: 404 });
+    size = info.size;
+  } catch {
+    return new Response(null, { status: 404 });
+  }
+  const range = /^bytes=(\d*)-(\d*)$/u.exec(request.headers.get("range") ?? "");
+  let start = 0;
+  let end = size - 1;
+  if (range && (range[1] || range[2])) {
+    start = range[1] ? Number(range[1]) : Math.max(0, size - Number(range[2]));
+    end = range[1] && range[2] ? Math.min(Number(range[2]), size - 1) : size - 1;
+    if (start > end || start >= size) return new Response(null, { status: 416, headers: { "Content-Range": `bytes */${size}` } });
+  }
+  return new Response(Readable.toWeb(createReadStream(file, { start, end })), {
+    status: range ? 206 : 200,
+    headers: { "Content-Type": "audio/wav", "Content-Length": String(end - start + 1), "Accept-Ranges": "bytes",
+      ...(range ? { "Content-Range": `bytes ${start}-${end}/${size}` } : {}) },
+  });
+}
 
 // The window's canvas, from app/renderer/style.css.
 const background = () => (nativeTheme.shouldUseDarkColors ? "#141413" : "#F7F6F2");
@@ -65,10 +101,16 @@ let window = null;
 let core = null;
 let quitting = false;
 const shutdownCore = createCoreShutdown({ getCore: () => core, stopMusic: () => musicHelper?.stdin.end() });
-// What the page last said it can do; the menu greys out what would do nothing.
-const playback = { controllable: false, streaming: false };
+// What the page last said it can do; the menu greys out what would do nothing. onAir is Moondog's own
+// channel: whether it can start, and whether it is on.
+const playback = { controllable: false, streaming: false, onAir: { available: false, on: false } };
 let dockMenu = null;
 const command = (name) => () => window?.webContents.send("command", name);
+// On Air is checked while it is on. A click asks the page, whose answer sets the check, so the click
+// itself leaves the check as it was.
+const onAirItem = (t, extra = {}) => ({ id: "on-air", type: "checkbox", label: t("menuOnAir"), ...extra,
+  enabled: playback.onAir.available || playback.onAir.on, checked: playback.onAir.on,
+  click: (item) => { item.checked = playback.onAir.on; command("on-air")(); } });
 
 // A newer Moondog from GitHub releases (updates.mjs): the window offers it at the top right and shows
 // its download, and the Moondog menu checks for one, downloads it, or restarts into it.
@@ -151,6 +193,8 @@ function buildMenu() {
       { id: "toggle-playback", label: t("menuPlayPause"), accelerator: keys.play, click: command("toggle-playback"), enabled: playback.controllable },
       { id: "next", label: t("menuNext"), accelerator: keys.next, click: command("next"), enabled: playback.controllable },
       { id: "previous", label: t("menuPrevious"), accelerator: keys.previous, click: command("previous"), enabled: playback.controllable },
+      { type: "separator" },
+      onAirItem(t, { accelerator: keys.onAir }),
     ] },
     { label: t("menuView"), submenu: [
       { label: t("menuSidebar"), accelerator: keys.sidebar, click: command("toggle-sidebar") },
@@ -172,6 +216,8 @@ function buildMenu() {
     { id: "toggle-playback", label: t("menuPlayPause"), click: command("toggle-playback"), enabled: playback.controllable },
     { id: "next", label: t("menuNext"), click: command("next"), enabled: playback.controllable },
     { id: "previous", label: t("menuPrevious"), click: command("previous"), enabled: playback.controllable },
+    { type: "separator" },
+    onAirItem(t),
   ]);
   app.dock?.setMenu(dockMenu);
 }
@@ -495,10 +541,14 @@ ipcMain.handle("pin", (_event, on) => {
 ipcMain.on("playback", (_event, next) => {
   const controllable = next?.controllable === true;
   const streaming = next?.streaming === true;
-  if (controllable === playback.controllable && streaming === playback.streaming) return;
-  Object.assign(playback, { controllable, streaming });
+  const onAir = { available: next?.onAir?.available === true, on: next?.onAir?.on === true };
+  if (controllable === playback.controllable && streaming === playback.streaming &&
+    onAir.available === playback.onAir.available && onAir.on === playback.onAir.on) return;
+  Object.assign(playback, { controllable, streaming, onAir });
   for (const menu of [Menu.getApplicationMenu(), dockMenu]) {
     for (const id of ["toggle-playback", "next", "previous"]) { const item = menu?.getMenuItemById(id); if (item) item.enabled = controllable; }
+    const item = menu?.getMenuItemById("on-air");
+    if (item) Object.assign(item, { enabled: onAir.available || onAir.on, checked: onAir.on });
   }
   const menu = Menu.getApplicationMenu();
   const stop = menu?.getMenuItemById("stop");
@@ -529,6 +579,7 @@ app.on("second-instance", () => {
 app.on("activate", () => window?.show());
 app.whenReady().then(() => {
   if (!primary) return;
+  protocol.handle("moondog-media", generatedTrack);
   locale = windowLocale(app.getPreferredSystemLanguages());
   try { appearance = appearanceOf(JSON.parse(readFileSync(appearanceFile(), "utf8"))); } catch { /* The system's look and the light icon. */ }
   applyAppearance({ starting: true });

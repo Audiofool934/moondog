@@ -1,11 +1,19 @@
 // The room uses the same player interface in a terminal and in the desktop app.
 // Audio stays in the window; its events come back so the room can show and control it.
+import { createPlayerNow } from "../src/core/listening-now.mjs";
+
+const generatedTrackId = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
+
 export function createWindowPreviewPlayer(port) {
   const listeners = new Set();
   let sequence = 0;
   let queueId = null;
   let active = false;
+  // Whether the queue sent last holds Apple Music songs, rather than only tracks Moondog made.
+  let catalog = false;
   let closed = false;
+  // What it plays, for the agent: the queue sent last, moved along by the window's events.
+  const now = createPlayerNow();
   const https = (value, host) => {
     try {
       const url = new URL(value);
@@ -21,9 +29,10 @@ export function createWindowPreviewPlayer(port) {
     if (data?.type === "whole-songs") { wholeSongs = data.canPlay === true; return; }
     if (closed || queueId === null || data?.type !== "preview-event" || data.id !== queueId) return;
     const event = data.event;
-    if (!["queue", "loading", "playing", "paused", "failed", "stopped"].includes(event?.type)) return;
+    if (!["queue", "loading", "playing", "paused", "finished", "skipped", "failed", "stopped"].includes(event?.type)) return;
     if (event.type === "stopped") active = false;
     else if (event.type !== "failed") active = true;
+    now.observe(event);
     emit(event);
   };
   port.on("message", receive);
@@ -34,6 +43,7 @@ export function createWindowPreviewPlayer(port) {
     // Ignore events already in transit from the queue that was just stopped.
     queueId = null;
     active = false;
+    now.clear();
     emit({ type: "stopped" });
     return true;
   };
@@ -51,6 +61,8 @@ export function createWindowPreviewPlayer(port) {
       if (!accepted.length) return;
       queueId = ++sequence;
       active = true;
+      catalog = true;
+      now.queued(accepted);
       port.postMessage({
         type: "preview", id: queueId, tracks: accepted,
         album: album?.title ? {
@@ -59,12 +71,44 @@ export function createWindowPreviewPlayer(port) {
         } : null,
       });
     },
+    // A track Moondog made on this Mac. The window asks main for it by id through moondog-media:,
+    // so its path never reaches the page.
+    playGenerated({ id, title, seconds } = {}) {
+      const name = String(title ?? "").trim();
+      if (closed || !name || !generatedTrackId.test(String(id ?? ""))) return;
+      queueId = ++sequence;
+      active = true;
+      catalog = false;
+      now.queued([{ title: name, generated: true }]);
+      port.postMessage({
+        type: "preview", id: queueId,
+        tracks: [{ title: name, artist_credit: "", generated: true, media_url: `moondog-media://generated/${id}`,
+          ...(Number.isFinite(seconds) && seconds > 0 ? { duration_seconds: seconds } : {}) }],
+        album: null,
+      });
+    },
+    // A made track queued behind the one playing, as Moondog's stream does; with nothing playing, it plays now.
+    enqueueGenerated({ id, title, seconds } = {}) {
+      const name = String(title ?? "").trim();
+      if (closed || !name || !generatedTrackId.test(String(id ?? ""))) return;
+      if (!active || queueId === null) return this.playGenerated({ id, title, seconds });
+      now.appended({ title: name, generated: true });
+      port.postMessage({
+        type: "preview-enqueue", id: queueId,
+        track: { title: name, artist_credit: "", generated: true, media_url: `moondog-media://generated/${id}`,
+          ...(Number.isFinite(seconds) && seconds > 0 ? { duration_seconds: seconds } : {}) },
+      });
+    },
     skip() {
       if (!active || closed) return false;
       port.postMessage({ type: "preview-control", action: "skip", id: queueId });
       return true;
     },
     stop,
+    // What plays now, as createPlayerNow reads it: null, or { state, song, position, count, next }.
+    nowPlaying: () => (closed ? null : now.read()),
+    // Leaving Apple Music stops its songs here, never the tracks Moondog made.
+    holdsCatalogSongs: () => active && catalog,
     wholeSongs: () => wholeSongs,
     subscribe(listener) {
       listeners.add(listener);

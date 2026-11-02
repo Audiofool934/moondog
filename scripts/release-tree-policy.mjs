@@ -78,7 +78,10 @@ const exactAllowedPaths = new Set([
   "AGENTS.md",
   "CONTRIBUTING.md",
   "LICENSE",
+  "NOTICE",
   "README.md",
+  // The Stability AI Community License, whose attribution terms the NOTICE file follows.
+  "licenses/stability-ai-community-license.md",
   "package-lock.json",
   "package.json",
   // The showcase was removed, but its page stays in the public history the release check scans.
@@ -129,6 +132,7 @@ const forbiddenBasenames = new Set([
 ]);
 
 // Raised when the project page (site/) arrived: main was at 346 entries and 14.9 MiB.
+// Raised again on 2026-10-29 for local music generation, its taste compiler and their tests: main was at 448.
 // Raised again when the Windows and Linux desktop met the resumable Mac release: 458 entries and 10.4 MiB.
 // The ceilings still catch bulk accidents such as a data dump or a build folder.
 export const maximumReleaseEntries = 600;
@@ -145,7 +149,9 @@ export const requiredReleasePaths = new Set([
   "AGENTS.md",
   "CONTRIBUTING.md",
   "LICENSE",
+  "NOTICE",
   "README.md",
+  "licenses/stability-ai-community-license.md",
   "assets/brand/README.md",
   "assets/brand/moondog-app-icon.png",
   "assets/brand/moondog-logo.svg",

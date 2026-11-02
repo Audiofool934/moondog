@@ -1,4 +1,5 @@
-// The Apple Music songs the agent plays when Spotify isn't there. Audio lives in the window; every
+// The Apple Music songs the agent plays when Spotify isn't there, and the tracks Moondog makes on
+// this Mac. Audio lives in the window; every
 // change goes back to the core, which reports it as the terminal's player would. When the Apple Music
 // helper can play the catalog (native/music.swift, through MusicKit), the same queue plays whole
 // songs; until it can, or if it fails, the window plays 30-second previews as before.
@@ -13,6 +14,10 @@ const artwork = (url) => {
   const safe = allowed(url, (host) => host.endsWith(".mzstatic.com"));
   return safe ? safe.replace(/\/\d+x\d+bb\.(jpg|png|webp)$/u, "/600x600bb.$1") : null;
 };
+
+// A track Moondog made on this Mac, which main serves by its id and nothing else.
+const generatedMedia = (value) => /^moondog-media:\/\/generated\/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u
+  .test(String(value ?? "")) ? value : null;
 
 // A catalog song's id is the i parameter of its music.apple.com link.
 const catalogId = (url) => { try { return new URL(url).searchParams.get("i") || null; } catch { return null; } };
@@ -37,13 +42,13 @@ export function createPreviews({ send, onChange }) {
   const report = (type) => {
     const track = current();
     if (id === null || !track) return;
-    send({ type: "preview-event", id, event: { type, track: { title: track.title, artist_credit: track.artist_credit, catalog_url: track.catalog_url },
-      position: index + 1, count: queue.length } });
+    send({ type: "preview-event", id, event: { type, track: track.generated ? { title: track.title, artist_credit: "", generated: true, id: track.generated_id }
+      : { title: track.title, artist_credit: track.artist_credit, catalog_url: track.catalog_url }, position: index + 1, count: queue.length } });
   };
   const describe = () => {
     const track = current();
     if (session && track) {
-      session.metadata = new MediaMetadata({ title: track.title, artist: track.artist_credit,
+      session.metadata = new MediaMetadata({ title: track.title, artist: track.generated ? "Moondog" : track.artist_credit,
         artwork: track.image ? [{ src: track.image, sizes: "600x600", type: "image/jpeg" }] : [] });
       session.playbackState = audio.paused ? "paused" : "playing";
     }
@@ -74,7 +79,11 @@ export function createPreviews({ send, onChange }) {
   audio.addEventListener("playing", () => { failures = 0; report("playing"); describe(); });
   audio.addEventListener("pause", () => { if (!audio.ended && queue.length) { report("paused"); describe(); } });
   audio.addEventListener("timeupdate", onChange);
-  audio.addEventListener("ended", () => (index + 1 < queue.length ? load(index + 1) : stop()));
+  // A made track that played to its end is reported as finished, for the loop back from listening.
+  audio.addEventListener("ended", () => {
+    if (current()?.generated) report("finished");
+    return index + 1 < queue.length ? load(index + 1) : stop();
+  });
   audio.addEventListener("error", () => {
     if (!queue.length) return;
     report("failed");
@@ -119,19 +128,25 @@ export function createPreviews({ send, onChange }) {
   const api = {
     receive(message) {
       if (message.type === "preview") {
-        const tracks = (Array.isArray(message.tracks) ? message.tracks : []).map((track) => ({
+        const tracks = (Array.isArray(message.tracks) ? message.tracks : []).map((track) => track.generated === true ? {
+          title: String(track.title ?? ""), artist_credit: "", preview_url: generatedMedia(track.media_url), catalog_url: null, image: null,
+          generated: true, generated_id: generatedMedia(track.media_url)?.split("/").at(-1) ?? null,
+          duration_seconds: Number.isFinite(track.duration_seconds) ? track.duration_seconds : null,
+        } : {
           title: String(track.title ?? ""), artist_credit: String(track.artist_credit ?? ""),
           preview_url: allowed(track.preview_url, "audio-ssl.itunes.apple.com"), catalog_url: allowed(track.catalog_url, "music.apple.com"),
           image: artwork(track.artwork_url ?? message.album?.artwork_url),
-        })).filter((track) => track.title && track.preview_url);
-        if (!tracks.length) return;
+        }).filter((track) => track.title && track.preview_url);
+        // The core believes a queue plays once it sends one, so a queue this window cannot play says so.
+        if (!tracks.length) { send({ type: "preview-event", id: message.id, event: { type: "stopped" } }); return; }
         if (queue.length) stop();
         queue = tracks;
         id = message.id;
         index = 0;
         report("queue");
         const ids = tracks.map((track) => catalogId(track.catalog_url));
-        if (full.status?.canPlay && ids.every(Boolean)) {
+        // A track Moondog made has no catalog id, so this window plays it itself.
+        if (full.status?.canPlay && ids.every(Boolean) && !tracks.some((track) => track.generated)) {
           mode = "full";
           Object.assign(full, { state: null, started: false, reported: "" });
           report("loading");
@@ -150,6 +165,15 @@ export function createPreviews({ send, onChange }) {
           // A check that failed for a passing reason (the helper was slow, or went away) is asked again for the next queue.
           if (full.status?.error && full.status.error !== "unavailable") void api.check();
         }
+      }
+      // A made track queued behind this queue's last one, as Moondog's stream does.
+      if (message.type === "preview-enqueue" && message.id === id && message.track?.generated === true) {
+        const media = generatedMedia(message.track.media_url);
+        if (!media || queue.some((track) => !track.generated)) return;
+        queue.push({ title: String(message.track.title ?? ""), artist_credit: "", preview_url: media, catalog_url: null, image: null,
+          generated: true, generated_id: media.split("/").at(-1),
+          duration_seconds: Number.isFinite(message.track.duration_seconds) ? message.track.duration_seconds : null });
+        onChange();
       }
       if (message.type === "preview-control" && message.id === id) {
         if (message.action === "skip") api.next();
@@ -193,7 +217,10 @@ export function createPreviews({ send, onChange }) {
         if (index + 1 >= queue.length) return stop();
         return void bridge({ type: "next" });
       }
-      index + 1 < queue.length ? load(index + 1) : stop();
+      if (index + 1 < queue.length) return load(index + 1);
+      // A made track skipped past the end of its queue: Moondog's stream moves on once its next track is made.
+      if (current()?.generated) report("skipped");
+      stop();
     },
     stop() { stop(); },
     seek(ms) {
@@ -223,8 +250,9 @@ export function createPreviews({ send, onChange }) {
           next: queue.slice(index + 1, index + 9).map((item) => ({ title: item.title, artists: [item.artist_credit], image: item.image })) };
       }
       return { title: track.title, artists: track.artist_credit ? [track.artist_credit] : [], image: track.image, link: track.catalog_url,
+        ...(track.generated ? { generated: true } : {}),
         playing: !audio.paused, progressMs: Math.round((audio.currentTime || 0) * 1000),
-        durationMs: Math.round((Number.isFinite(audio.duration) ? audio.duration : 30) * 1000),
+        durationMs: Math.round((Number.isFinite(audio.duration) ? audio.duration : track.duration_seconds ?? 30) * 1000),
         next: queue.slice(index + 1, index + 9).map((item) => ({ title: item.title, artists: [item.artist_credit], image: item.image })) };
     },
   };

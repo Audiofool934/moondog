@@ -472,6 +472,7 @@ function formatTools(value, tr) {
 const doctorLabels = {
   "web.search": N_("Web search"),
   "web.read": N_("Web page reading"),
+  "music.generate.local": N_("Making music on this Mac"),
   "node.version": "Node.js",
   "apple_music.source": N_("Apple Music library"),
   "profile.projection": N_("Listening profile"),

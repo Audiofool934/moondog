@@ -4,6 +4,7 @@ import { createListenerProfileInput, savedListenerChoices } from "../profile/lis
 import { lyricSeedsFromProfile } from "./lyric-profile.mjs";
 import { cachedAvoidGate, listeningVersion } from "./listener-avoids.mjs";
 import { recordListenerChoice } from "../profile/listener-corrections.mjs";
+import { listenedNames } from "../profile/taste-compiler.mjs";
 
 import { isUuid } from "./uuid-v5.mjs";
 import { createListeningHistoryProfileProjection } from "../profile/spotify-archive-taste.mjs";
@@ -599,6 +600,17 @@ export class ListeningProfileDomainServices {
 
   isKnownDiscoveryTrack(track) {
     return (this.#store.listenedTracks?.({ subjectId: this.#subjectId }) ?? []).some(heard => exactTitleArtistMatch(track, heard));
+  }
+
+  // Every Avoid in force, imported bans included, as the play paths read them.
+  activeAvoids() {
+    return (this.#store.activeAvoidances?.({ subjectId: this.#subjectId }) ?? [])
+      .map((avoid) => ({ stance: "avoid", subject: avoid.entity_type ?? "artist", name: avoid.label, ...(avoid.artist_credit ? { artist: avoid.artist_credit } : {}) }));
+  }
+
+  // Every artist, song and album the listener has played, so a track Moondog makes names none of them.
+  listenedNames() {
+    return listenedNames(this.#store.listenedTracks?.({ subjectId: this.#subjectId }) ?? []);
   }
 
   registerExternalCandidateSet({ tracks, source, excludeKnown = true } = {}) {

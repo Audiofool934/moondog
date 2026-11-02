@@ -159,6 +159,25 @@ Minimal layouts can still scroll the lyric when there is room to display it.
 The layout reduces artwork before sacrificing room for the input, and works without Kitty or iTerm image support.
 `/service` chooses where Moondog plays music: Spotify, Apple Music, or NetEase Music.
 `/service apple_music` switches straight to one; the choice is saved and the desktop app follows it.
+`/generation` says whether Moondog can make music on this Mac with Stable Audio 3, powered by Stability AI; `/generation on` turns it on, `/generation on ~/path/to/mlx` points at another install of Stability AI's MLX build, and `/generation off` turns it off.
+Once it is on, ask for a track in your own words, ask to hear one Moondog made again, or ask for music to keep going while you work; `/onair` asks for that stream in one word, and takes it off the air when one runs.
+`/skip` moves a stream to its next track and `/stop` ends it; the playing row says when the stream ends at the latest.
+Ending a stream starts nothing it paused.
+Stable Audio 3 runs offline, and the track and its receipt stay in Moondog's state folder; your request still goes to the model you talk through.
+A stream keeps the audio of its newest three tracks; the others keep their receipts.
+
+Music making needs an Apple silicon Mac and Stability AI's MLX build of Stable Audio 3.
+Moondog sets it up when you ask: `/generation download medium` or `/generation download small`, or Download in the desktop app's Settings › Playback › Music generation.
+The first download asks you to agree to the Stability AI Community License and the Gemma Terms of Use, which cover the T5Gemma text encoder.
+Moondog downloads only from the official sources, pinned to versions it has been tested with: uv from Astral's GitHub releases, the code from Stability AI's GitHub repository, Python and its packages through uv, and the weights from Stability AI's Hugging Face repository.
+It checks every file against its SHA-256 before use, keeps everything in `stable-audio-3` in Moondog's state folder, and resumes a download that stopped.
+Medium (best sound) is about 5.2 GB, and Small Music (faster and lighter) about 1.7 GB.
+`/generation use medium` or `/generation use small` picks the model, `/generation cancel` stops a download, and `/generation remove medium` deletes a model; removing the last one deletes the whole setup.
+Making music itself never downloads anything.
+
+An install you already have keeps working: Moondog looks in `~/Developer/stable-audio-3/optimized/mlx`, and for another folder, use `/generation on` with that folder, the folder field in Settings, or `MOONDOG_SA3_DIR`.
+Moondog only reads such a folder and never deletes it.
+Stable Audio 3 is under the Stability AI Community License.
 `/import` opens a native guide for music-service exports and public playlist links, with preview and confirmation before saving.
 `/import "/path/to/history.zip"` opens the file preview directly.
 `/help` shows the terminal guide; `/help all` includes the complete CLI reference.
@@ -1487,7 +1506,8 @@ Every selected track must come from a current prompt candidate set or the one-pr
 
 Conversation persistence and explicit durable claims are enabled locally.
 
-Durable playlist-draft persistence across process restarts, public or collaborative playlist editing, playlists above 100 tracks, Telegram, music generation, and revision-aware listening-data promotion are not enabled.
+Durable playlist-draft persistence across process restarts, public or collaborative playlist editing, playlists above 100 tracks, Telegram, online or paid music generation, and revision-aware listening-data promotion are not enabled.
+Local instrumental generation with the listener's own Stable Audio 3 is enabled once they turn it on with `/generation on`.
 
 Direct Spotify Connect playback control, explicit private-playlist creation, exact quick edits, and previewed existing private-playlist editing are enabled only after explicit local OAuth setup.
 

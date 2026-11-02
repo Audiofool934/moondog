@@ -34,17 +34,19 @@ function launch(context, options = {}) {
   fixture.status = () => fixture.lines.at(-2) ?? "";
   fixture.submit = (text) => { terminal.input(text); terminal.input("\r"); };
   const running = runMoondogTui({
-    application: { async sourceStatus() { return { state: "missing", latest: null }; } },
+    application: { async sourceStatus() { return { state: "missing", latest: null }; }, ...options.application },
     runtime: { publicStatus: () => ({ state: "configured", provider: "fixture", model: "offline-test" }), reset() {}, abort() {}, ...options.runtime },
     terminal, signalTarget,
     environment: { TERM: "xterm-256color", MOONDOG_ART: "off", MOONDOG_MOTION: "off" },
     ...(options.previewPlayer ? { previewPlayer: options.previewPlayer } : {}),
+    ...(options.generation ? { generation: options.generation } : {}),
   });
   context.after(async () => {
     signalTarget.emit("SIGTERM");
     await running;
     assert.equal(terminal.stops, 1);
     if (options.previewPlayer) assert.equal(options.previewPlayer.listeners(), 0, "a closed room stops watching the player");
+    if (options.stream) assert.equal(options.stream.listeners(), 0, "a closed room stops watching the stream");
   });
   return fixture;
 }
@@ -167,4 +169,143 @@ test("a preview that cannot load is marked in the note, and the note says when n
   player.emit({ type: "stopped" });
   await until(() => fixture.body().includes("None of these previews could load. Check your connection, then ask again."));
   assert.doesNotMatch(fixture.body(), /♪ Wind of Change · Scorpions/u, "nothing is left playing");
+});
+
+// Stands in for the core's stream: the test moves it along, the room reads it, stops it, and asks for it.
+function stream({ ready = true, locale = "de" } = {}) {
+  const listeners = new Set();
+  const core = {
+    view: null, stops: 0, ready,
+    listeners: () => listeners.size,
+    change(view, ended = null) { core.view = view; for (const listener of listeners) listener({ view, ended }); },
+    application: {
+      locale,
+      streamView: () => core.view,
+      streamReady: () => core.ready,
+      subscribeStream(listener) { listeners.add(listener); return () => listeners.delete(listener); },
+      stopStream() {
+        if (!core.view) return { state: "not_running" };
+        core.stops += 1;
+        core.change(null, "asked");
+        return { state: "stopped", tracks_made: 1 };
+      },
+    },
+  };
+  return core;
+}
+const generation = { status() {}, async check() {}, async save() {} };
+const madeTrack = { title: "Night Drive · 1", artist_credit: "", generated: true, id: "made-1" };
+const onAirView = (phase) => ({ phase, started_at: "2026-11-01T21:00:00.000Z", ends_at: "2026-11-01T21:40:00.000Z", tracks_made: 1 });
+// The listener speaks German, which has no screen catalog, so the row and its clock are English.
+const until40 = new Intl.DateTimeFormat("en", { hour: "numeric", minute: "2-digit" }).format(new Date("2026-11-01T21:40:00.000Z"));
+
+test("/onair asks in the reply's language, and the stream's line shows its end time and controls", async (context) => {
+  const player = previewPlayer();
+  const core = stream();
+  const asked = [];
+  let finish;
+  const fixture = launch(context, { previewPlayer: player, stream: core, application: core.application, generation, runtime: {
+    async prompt(text, callbacks) {
+      asked.push(text);
+      // The agent starts the stream; its first track plays once made.
+      core.change(onAirView("starting"));
+      player.emit({ type: "queue", tracks: [madeTrack], album: null });
+      player.emit({ type: "playing", track: madeTrack, position: 1, count: 1 });
+      core.change(onAirView("making"));
+      return await new Promise((resolve) => { finish = (result) => { callbacks.onTextDelta(result.text); resolve(result); }; });
+    },
+  } });
+  await until(() => fixture.body().includes("New conversation"));
+  fixture.submit("/onair");
+  await until(() => asked.length === 1);
+  // The listener's language is German here; the screen stays English, which has no German catalog.
+  assert.equal(asked[0], "Geh auf Sendung: Mach neue Musik für jetzt und lass sie weiterlaufen");
+  const line = new RegExp(`♪ Night Drive · 1 · Made by Moondog\\s+· on air until ${until40} · /skip · /stop`, "u");
+  await until(() => line.test(fixture.body()));
+  assert.ok(fixture.body().includes("Geh auf Sendung"), "the request shows as the listener's message");
+
+  // While the reply runs, /onair with no stream waits in the queue as the request itself.
+  core.view = null;
+  fixture.submit("/onair");
+  await until(() => /1\s+Geh auf Sendung/u.test(fixture.body()));
+  core.view = onAirView("making");
+  finish({ status: "completed", text: "On air." });
+  await until(() => asked.length === 2);
+  finish({ status: "completed", text: "Still on air." });
+  await until(() => fixture.body().includes("Still on air."));
+
+  // The track ends with nothing made yet: the line says the next one is being cut.
+  player.emit({ type: "stopped" });
+  core.change(onAirView("waiting"));
+  await until(() => fixture.body().includes(`♪ Cutting the next record  · on air until ${until40} · /stop`));
+  player.skip = function () { this.controls.push("skip"); return false; };
+  fixture.submit("/skip");
+  await until(() => fixture.status().includes("The next record is still being cut."));
+
+  // /onair while on air goes off air at once.
+  fixture.submit("/onair");
+  await until(() => fixture.status().includes("Off air."));
+  assert.equal(core.stops, 1);
+  assert.doesNotMatch(fixture.body(), /Cutting the next record/u);
+  assert.equal(asked.length, 2, "going off air asks the agent nothing");
+});
+
+test("/onair stops a stream at once while a reply runs, and /stop says off air", async (context) => {
+  const player = previewPlayer();
+  const core = stream();
+  let finish;
+  const fixture = launch(context, { previewPlayer: player, stream: core, application: core.application, generation, runtime: {
+    async prompt(_text, callbacks) {
+      return await new Promise((resolve) => { finish = (result) => { callbacks.onTextDelta(result.text); resolve(result); }; });
+    },
+  } });
+  await until(() => fixture.body().includes("New conversation"));
+  core.change(onAirView("making"));
+  player.emit({ type: "playing", track: madeTrack, position: 1, count: 1 });
+  fixture.submit("Something to read by");
+  await until(() => fixture.status().includes("..."));
+  fixture.submit("/onair");
+  await until(() => core.stops === 1);
+  assert.doesNotMatch(fixture.body(), /queued/u, "/onair is not queued behind the reply");
+  await until(() => fixture.status().includes("Off air."));
+  finish({ status: "completed", text: "Here you go." });
+  await until(() => fixture.body().includes("Here you go."));
+
+  core.change(onAirView("making"));
+  fixture.submit("/stop");
+  await until(() => fixture.status().includes("Off air."));
+  assert.equal(core.stops, 2);
+  assert.deepEqual(player.controls, ["stop"]);
+});
+
+test("a stream that ends by itself goes dark silently; only a failure says a line", async (context) => {
+  const player = previewPlayer();
+  const core = stream();
+  const fixture = launch(context, { previewPlayer: player, stream: core, application: core.application, generation });
+  await until(() => fixture.body().includes("New conversation"));
+  core.change(onAirView("waiting"));
+  await until(() => fixture.body().includes("Cutting the next record"));
+  core.change(null, "time");
+  await until(() => !fixture.body().includes("Cutting the next record"));
+  assert.match(fixture.status(), /New conversation/u, "a stream that ran its time says nothing");
+  core.change(onAirView("waiting"));
+  core.change(null, "failed");
+  await until(() => fixture.status().includes("Off air: the next record couldn't be made."));
+});
+
+test("/onair points to /generation on when music making is off, and needs music making here", async (context) => {
+  const player = previewPlayer();
+  const core = stream({ ready: false });
+  const asked = [];
+  const fixture = launch(context, { previewPlayer: player, stream: core, application: core.application, generation,
+    runtime: { async prompt(text) { asked.push(text); return { status: "completed", text: "" }; } } });
+  await until(() => fixture.body().includes("New conversation"));
+  fixture.submit("/onair");
+  await until(() => fixture.status().includes("Turn on music making first: /generation on."));
+  assert.deepEqual(asked, []);
+
+  const elsewhere = launch(context, { previewPlayer: previewPlayer() });
+  await until(() => elsewhere.body().includes("New conversation"));
+  elsewhere.submit("/onair");
+  await until(() => elsewhere.body().includes("I don't know /onair."));
 });

@@ -1,10 +1,13 @@
 // Plays the agent's Apple Music previews from the terminal. Each 30-second preview is
 // downloaded to a temporary file and played by the system's own player, one after another.
+// A track Moondog made on this Mac plays the same way, from its own folder.
 import { spawn } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { access, constants, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+
+import { createPlayerNow } from "../../core/listening-now.mjs";
 
 // Players that play one file without a window and exit at its end, in order of preference.
 // None of them may read or write the terminal: the listening room owns it.
@@ -68,8 +71,11 @@ export async function createTerminalPreviewPlayer({
   let queue = null;
   let child = null;
   let closed = false;
+  // What it plays, for the agent: the queue it holds, moved along by its own events.
+  const now = createPlayerNow();
 
   const emit = (event) => {
+    now.observe(event);
     for (const listener of listeners) {
       try { listener(event); } catch {}
     }
@@ -102,22 +108,24 @@ export async function createTerminalPreviewPlayer({
     return file;
   };
 
+  // Resolves "ended" when the song played to its end, "stopped" when /skip or /stop ended it, and
+  // "failed" when the player could not play it (no audio device, an unreadable file).
   const playFile = (file) => new Promise((resolve) => {
     const playing = spawn(player.command, [...player.args, file], { stdio: "ignore" });
     child = playing;
-    const finish = () => {
+    const finish = (how) => {
       if (child === playing) child = null;
-      resolve();
+      resolve(how);
     };
-    playing.once("error", finish);
-    playing.once("exit", finish);
+    playing.once("error", () => finish("failed"));
+    playing.once("exit", (code, signal) => finish(code === 0 ? "ended" : signal ? "stopped" : "failed"));
   });
 
   const start = (tracks) => {
     const controller = new AbortController();
     const downloads = new Map();
     // skip() ends the song playing, or the download of the song about to play.
-    const current = { controller, skipDownload: null };
+    const current = { controller, skipDownload: null, tracks };
     queue = current;
     const fetchFile = (index) => {
       if (!downloads.has(index)) {
@@ -133,24 +141,32 @@ export async function createTerminalPreviewPlayer({
     void (async () => {
       try {
         for (let index = 0; index < tracks.length; index += 1) {
-          const { title, artist_credit, catalog_url } = tracks[index];
-          const song = { track: { title, artist_credit, catalog_url }, position: index + 1, count: tracks.length };
-          const pending = fetchFile(index);
+          const { title, artist_credit, catalog_url, generated, id } = tracks[index];
+          const song = { track: generated ? { title, artist_credit, generated: true, id } : { title, artist_credit, catalog_url }, position: index + 1, count: tracks.length };
+          // A track Moondog made plays from its own folder, which outlives the queue.
+          const pending = tracks[index].file
+            ? { ready: true, file: Promise.resolve(tracks[index].file), abort: () => {}, skipped: () => false }
+            : fetchFile(index);
           if (!pending.ready) emit({ type: "loading", ...song });
           current.skipDownload = pending.abort;
           const file = await pending.file;
           current.skipDownload = null;
           if (controller.signal.aborted) break;
           // The next preview downloads while this one plays.
-          if (index + 1 < tracks.length) void fetchFile(index + 1);
+          if (index + 1 < tracks.length && !tracks[index + 1].file) void fetchFile(index + 1);
           if (!file) {
             // An error, a timeout, or an oversized file; a listener's /skip is not a failure.
             if (!pending.skipped()) emit({ type: "failed", ...song });
             continue;
           }
           emit({ type: "playing", ...song });
-          await playFile(file);
-          await rm(file, { force: true });
+          // A listener may stop the queue as the song starts, as Moondog's stream does past its time limit.
+          if (controller.signal.aborted) break;
+          const how = await playFile(file);
+          // A made track that played to its end, that /skip ended, or that could not play, as the loop
+          // back from listening and Moondog's stream count it; /stop aborts the queue first.
+          if (generated && !controller.signal.aborted) emit({ type: { ended: "finished", stopped: "skipped", failed: "failed" }[how], ...song });
+          if (!tracks[index].file) await rm(file, { force: true });
           if (controller.signal.aborted) break;
         }
       } finally {
@@ -197,6 +213,23 @@ export async function createTerminalPreviewPlayer({
       });
       start(accepted);
     },
+    // A track Moondog made on this Mac: { id, title, file }, played whole and kept after it ends.
+    playGenerated({ id, title, file } = {}) {
+      const name = String(title ?? "").trim();
+      if (closed || !name || typeof file !== "string" || !path.isAbsolute(file)) return;
+      stop();
+      const track = { title: name, artist_credit: "", generated: true, id: String(id ?? "") };
+      emit({ type: "queue", tracks: [{ title: track.title, artist_credit: "", generated: true }], album: null });
+      start([{ ...track, file }]);
+    },
+    // A made track queued behind the one playing, as Moondog's stream does; with nothing playing, it plays now.
+    enqueueGenerated({ id, title, file } = {}) {
+      const name = String(title ?? "").trim();
+      if (closed || !name || typeof file !== "string" || !path.isAbsolute(file)) return;
+      if (!queue || !queue.tracks.every((track) => track.generated)) return this.playGenerated({ id, title, file });
+      queue.tracks.push({ title: name, artist_credit: "", generated: true, id: String(id ?? ""), file });
+      now.appended({ title: name, generated: true });
+    },
     // Ends the song now playing, or still loading; the next one starts after it.
     skip() {
       if (!queue) return false;
@@ -205,6 +238,10 @@ export async function createTerminalPreviewPlayer({
       return true;
     },
     stop,
+    // What plays now, as createPlayerNow reads it: null, or { state, song, position, count, next }.
+    nowPlaying: () => (closed ? null : now.read()),
+    // Leaving Apple Music stops its previews here, never the tracks Moondog made.
+    holdsCatalogSongs: () => Boolean(queue?.tracks.some((track) => !track.generated)),
     subscribe(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);

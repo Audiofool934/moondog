@@ -22,9 +22,10 @@ let t = windowStrings(locale);
 const tr = () => t;
 // Spotify's state is unknown (null) until the core first reads it, and so is the first run. turns and
 // streaming belong to the conversation on screen; other conversations keep answering in the core and
-// come back when opened.
+// come back when opened. streaming is a reply being written; onAir is Moondog's own channel.
 const state = { sessions: [], folders: [], running: [], current: null, turns: [], model: null, spotify: null, spotifyAccount: null,
-  playbackService: "spotify", locale, locales: [], player: null, streaming: null, ready: false, waiting: null, update: { phase: "idle" }, firstRun: null };
+  playbackService: "spotify", locale, locales: [], player: null, streaming: null, ready: false, waiting: null, update: { phase: "idle" }, firstRun: null,
+  onAir: null };
 const store = {
   get: (key) => { try { return localStorage.getItem(key); } catch { return null; } },
   set: (key, value) => { try { localStorage.setItem(key, value); } catch { /* A private window keeps the default. */ } },
@@ -145,6 +146,10 @@ const KINDS = [
   [/^moondog_web_/u, "web"],
   [/^moondog_(?:playlist_plan|spotify_playlist_)/u, "playlist"],
   [/^moondog_music_preview$/u, "previews"],
+  [/^moondog_make_track$/u, "make"],
+  [/^moondog_play_made_track$/u, "play"],
+  [/^moondog_start_stream$/u, "make"],
+  [/^moondog_stop_stream$/u, "pause"],
   [/^moondog_netease_control$/u, (args) => ({ pause: "pause", stop: "pause", next: "skip", previous: "skip" })[args?.action] ?? "play"],
   [/^moondog_netease_play$/u, (args) => (args?.mode === "queue" ? "queue" : "play")],
   [/^moondog_netease_search$/u, "search"],
@@ -708,13 +713,14 @@ const armReady = () => {
   const now = nowPlaying();
   return now ? can(now, now.playing ? "pausing" : "resuming") : !cueing(now) && state.ready && !state.streaming;
 };
-// While it waits, the arm still keeps its clicks, so another click neither asks again nor folds the record.
-const onArm = (target, event) => (armReady() || Boolean(cue)) && target?.hit(event.clientX, event.clientY) === "arm";
+// While it waits, the arm still keeps its clicks, so another click neither asks again nor folds the
+// record; so does an arm resting on the record On Air is cutting.
+const onArm = (target, event) => (armReady() || Boolean(cue) || Boolean(nowPlaying()?.making)) && target?.hit(event.clientX, event.clientY) === "arm";
 const nearArm = (target, event) => (armReady() ? target?.near(event.clientX, event.clientY) : target?.near(null));
-// The arm rests on the record while the music plays, whatever started or stopped it, and while it
-// waits for the song it asked for; the record turns only with the music. Its wait ends when the music
-// plays, so a later pause lifts it at once.
-const armDown = (now) => cueing(now) || Boolean(now?.playing);
+// The arm rests on the record while the music plays, whatever started or stopped it, while it waits for
+// the song it asked for, and while On Air cuts its next record; the record turns only with the music.
+// Its wait ends when the music plays, so a later pause lifts it at once.
+const armDown = (now) => cueing(now) || Boolean(now?.playing) || Boolean(now?.making);
 function setArm() {
   if (nowPlaying()) { control("toggle", "record"); return; }
   if (cueing(null) || !state.ready || state.streaming) return;
@@ -726,18 +732,23 @@ function setArm() {
   deep?.near(null);
   renderInspector();
 }
-// Whether the arm still waits on the record for the song it asked for. A reply that ends without
-// music, or none started within 15 seconds, lifts the arm once the grace runs out.
-function cueing(now) {
-  if (!cue) return false;
-  clearTimeout(cue.timer);
-  if (now?.playing) { cue = null; return false; }
-  if (state.streaming) cue.seen = true;
-  else if (cue.seen || Date.now() - cue.at > 15_000) cue.ended ||= Date.now();
-  if (cue.ended && Date.now() - cue.ended >= CUE_GRACE_MS) { cue = null; return false; }
-  // The arm looks again when its wait could run out; a reply's end looks for itself.
-  if (!state.streaming) cue.timer = setTimeout(renderInspector, (cue.ended ? cue.ended + CUE_GRACE_MS : cue.at + 15_000) - Date.now() + 20);
+// Whether a request still waits for what it asked for: the arm for its song, On Air for its stream.
+// It ends once `done`; a reply that ends without it, or none started within 15 seconds, ends it once
+// the grace runs out.
+function waits(ask, done) {
+  clearTimeout(ask.timer);
+  if (done) return false;
+  if (state.streaming) ask.seen = true;
+  else if (ask.seen || Date.now() - ask.at > 15_000) ask.ended ||= Date.now();
+  if (ask.ended && Date.now() - ask.ended >= CUE_GRACE_MS) return false;
+  // The window looks again when the wait could run out; a reply's end looks for itself.
+  if (!state.streaming) ask.timer = setTimeout(renderInspector, (ask.ended ? ask.ended + CUE_GRACE_MS : ask.at + 15_000) - Date.now() + 20);
   return true;
+}
+// Whether the arm still waits on the record for the song it asked for.
+function cueing(now) {
+  if (cue && !waits(cue, now?.playing)) cue = null;
+  return Boolean(cue);
 }
 recordFrame.addEventListener("click", (event) => {
   if (event.target.closest("[data-expand]")) return;
@@ -1034,9 +1045,12 @@ function prettyModel(model, provider = state.model?.provider) {
   const claude = String(model ?? "").match(/^claude-(opus|sonnet|haiku|fable)-(\d+)-(\d+)/u);
   return claude ? `Claude ${claude[1][0].toUpperCase()}${claude[1].slice(1)} ${claude[2]}.${claude[3]}` : String(model ?? "");
 }
-// The menu greys out what would do nothing: transport without a song, Stop Response without a reply.
+// The menu greys out what would do nothing: transport without a song (or with only the record On Air
+// is cutting), Stop Response without a reply, On Air where it can't start; and it checks On Air while on.
 function syncMenu() {
-  window.moondogApp?.setPlayback?.({ controllable: Boolean(nowPlaying()), streaming: Boolean(state.streaming) });
+  const now = nowPlaying();
+  window.moondogApp?.setPlayback?.({ controllable: Boolean(now) && !now.making, streaming: Boolean(state.streaming),
+    onAir: { available: onAirAvailable(), on: Boolean(state.onAir) } });
 }
 function renderComposer() {
   const button = $("send");
@@ -1201,9 +1215,12 @@ async function pickService(event) {
   else chooseService(chosen.slice(8));
   renderComposer();
 }
+// Leaving Apple Music stops its songs in the window's player, never a track Moondog made: On Air and
+// Moondog's own records are no music service's.
+const holdsSongs = () => previews.active() && !previews.state()?.generated;
 function chooseService(service) {
   if (service === (sourceWanted ?? state.playbackService)) return;
-  if (previews.active() && service === "spotify") previews.stop();
+  if (holdsSongs() && service === "spotify") previews.stop();
   sourceWanted = service;
   clearTimeout(wantedTimer);
   wantedTimer = setTimeout(() => { sourceWanted = null; renderComposer(); }, 10_000);
@@ -1233,7 +1250,7 @@ async function showDevices(devices) {
   if (chosen === "settings") settings.show("playback");
   else if (chosen?.startsWith("device:")) send({ type: "transfer", ref: chosen.slice(7) });
   else if (chosen?.startsWith("service:") && chosen.slice(8) !== state.playbackService) {
-    if (previews.active() && chosen === "service:spotify") previews.stop();
+    if (holdsSongs() && chosen === "service:spotify") previews.stop();
     send({ type: "music-service", service: chosen.slice(8) });
   }
 }
@@ -1269,23 +1286,127 @@ $("update").addEventListener("click", () => {
 $("connect").addEventListener("click", () => settings.show("playback"));
 $("connect-player").addEventListener("click", () => settings.show("playback"));
 
+// ── On Air ───────────────────────────────────────────────────────────────────────────────────
+// Moondog's own channel, beside the music in the bar. A click asks for it in the open conversation, in
+// the listener's words, as the arm asks for a song; the agent starts the stream from the listener's
+// taste and the moment. Another click, its key or the menu takes it off the air, and nothing resumes. The
+// mark lights in ink, with no fill of its own, from the click on; while it waits for a record it dips
+// once every few seconds.
+const onAirButton = $("on-air");
+const onAirAvailable = () => state.ready && state.generation?.state === "ready" && state.model?.state === "configured";
+// The click that asked, until the stream appears, or the grace after a reply that started none runs out.
+let onAirAsk = null;
+// The arm's cue that click set, so taking it off the air lifts the arm at once.
+let onAirCue = null;
+function onAirPending() {
+  if (onAirAsk && !waits(onAirAsk, Boolean(state.onAir))) onAirAsk = null;
+  return Boolean(onAirAsk);
+}
+let onAirDrawn = "";
+function renderOnAir() {
+  const phase = state.onAir?.phase ?? (onAirPending() ? "pending" : null);
+  const waiting = phase === "pending" || phase === "starting" || phase === "waiting";
+  // A running stream can always be stopped; a disabled button would get no tooltip, so it hides instead.
+  const hidden = !state.onAir && !onAirAvailable();
+  // The end is an upper bound, so it reads as a clock, never a countdown.
+  const label = !phase ? t("goOnAir") : phase === "waiting" ? t("onAirMaking") : waiting ? t("goingOnAir")
+    : t("onAirUntil", { time: timeOfDay(state.onAir.endsAt, state.locale, { day: false }) });
+  const key = [hidden, phase, label].join("|");
+  if (key !== onAirDrawn) {
+    onAirDrawn = key;
+    onAirButton.hidden = hidden;
+    onAirButton.classList.toggle("lit", Boolean(phase));
+    setIcon(onAirButton, phase ? "on-air-lit" : "on-air");
+    onAirButton.setAttribute("aria-pressed", String(Boolean(state.onAir)));
+    name(onAirButton, label, shortcuts.onAir);
+  }
+  pulse(waiting && !hidden);
+}
+// One 400 ms dip every 5 seconds, added by a timer, so nothing loops on its own; it rests while the
+// window is hidden and never runs with reduced motion.
+const PULSE_MS = 5_000;
+let pulseTimer = 0;
+function pulse(on) {
+  if (on && !document.hidden && !reduced.matches) { pulseTimer ||= setInterval(() => onAirButton.classList.add("pulse"), PULSE_MS); return; }
+  clearInterval(pulseTimer);
+  pulseTimer = 0;
+  onAirButton.classList.remove("pulse");
+}
+onAirButton.addEventListener("animationend", (event) => { if (event.animationName === "on-air-dip") onAirButton.classList.remove("pulse"); });
+document.addEventListener("visibilitychange", renderOnAir);
+function toggleOnAir() {
+  if (state.onAir) { stopOnAir(); return; }
+  // Asked and not on air yet: the request is taken back, with the reply making it.
+  if (onAirPending()) {
+    // Only the reply to the click, in the conversation it was sent in, is stopped.
+    if (state.streaming && state.current === onAirAsk.session) send({ type: "cancel" });
+    dropOnAirAsk();
+    liftOnAirCue();
+    renderInspector();
+    return;
+  }
+  if (!onAirAvailable()) return;
+  if (state.streaming) { notice(t("waitForReply")); return; }
+  rest();
+  if (!submitText(t("onAirPrompt"))) return;
+  onAirAsk = { at: Date.now(), seen: false, ended: 0, session: state.current };
+  // With nothing loaded on any player, the arm goes down on the still record too: music is coming.
+  if (!nowPlaying() && state.model?.state === "configured") {
+    cue = onAirCue = { at: Date.now(), seen: false, ended: 0 };
+    record?.near(null);
+    deep?.near(null);
+  }
+  renderInspector();
+}
+// Off air. A reply still starting the stream stops with it, so its agent never takes the stop for a
+// failure to try again.
+function stopOnAir() {
+  send({ type: "on-air-stop" });
+  if (state.onAir?.phase === "starting" && startingHere()) send({ type: "cancel" });
+  dropOnAirAsk();
+  liftOnAirCue();
+  renderInspector();
+}
+// Whether the reply on screen is the one starting the stream; a reply in another conversation may be.
+const startingHere = () => Boolean(streamingTurn(state.streaming)?.activity?.some((call) => call.tool === "moondog_start_stream" && call.state === "running"));
+// The click's wait is over once the stream appears or the listener takes it back, so a stream that
+// ends later never falls back to looking asked for.
+function dropOnAirAsk() {
+  if (onAirAsk) clearTimeout(onAirAsk.timer);
+  onAirAsk = null;
+}
+function liftOnAirCue() {
+  if (cue && cue === onAirCue) { clearTimeout(cue.timer); cue = null; }
+  onAirCue = null;
+}
+onAirButton.addEventListener("click", toggleOnAir);
+
 // ── What is playing ──────────────────────────────────────────────────────────────────────────
 const clock = (ms) => {
   const seconds = Math.max(0, Math.floor((ms ?? 0) / 1000));
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 };
 // A preview in the window shows while it plays, or while Spotify has nothing playing; a paused
-// preview never hides the song Spotify is playing.
+// preview never hides the song Spotify is playing. On air, once its first track plays, the stream owns
+// the display: its track shows even paused, and in its dry gap the record being cut, which nothing plays.
 function nowPlaying() {
   const preview = previews.state();
   const now = state.player?.now;
+  if (state.onAir && state.onAir.phase !== "starting") {
+    if (preview?.generated) return { ...preview, local: true, preview: false };
+    // In the dry gap, and from a skip or an ended track until the core says so, nothing of it is loaded.
+    if (state.onAir.phase === "waiting" || (state.onAir.phase === "making" && !preview)) {
+      return { title: t("makingNext"), artists: [], generated: true, local: true, making: true, playing: false, progressMs: 0, durationMs: null, next: [] };
+    }
+  }
   // local: it plays in the window (whole songs or previews); preview: it is a 30-second preview.
-  if (preview && (preview.playing || !now?.playing)) return { ...preview, local: true, preview: !preview.full };
+  // A track Moondog made is its own record, never a preview.
+  if (preview && (preview.playing || !now?.playing)) return { ...preview, local: true, preview: !preview.full && !preview.generated };
   if (!now) return null;
   const progressMs = now.playing ? now.progressMs + (Date.now() - now.observedAt) : now.progressMs;
   return { ...now, progressMs: now.durationMs ? Math.min(progressMs, now.durationMs) : progressMs, next: state.player.next ?? [] };
 }
-const can = (now, action) => Boolean(now) && (now.local || !(now.disallows ?? []).includes(action));
+const can = (now, action) => Boolean(now) && !now.making && (now.local || !(now.disallows ?? []).includes(action));
 const spotifyLimited = (at) => t("spotifyLimited", { time: timeOfDay(at, state.locale) });
 const DEVICE_ICONS = { computer: "laptop", smartphone: "phone", tablet: "phone", speaker: "speaker", tv: "tv", castvideo: "tv", castaudio: "speaker", avr: "speaker", stb: "tv" };
 // The inspector redraws several times a second while music plays, so a node changes only when its content does.
@@ -1406,6 +1527,15 @@ function queueItem(track) {
   item.append(words);
   return item;
 }
+// The record On Air is cutting, after what is queued: a blank sleeve, quieter than a real one.
+function cuttingItem() {
+  const item = make("li", "making");
+  item.append(thumb(null));
+  const words = make("div");
+  words.append(make("strong", "", t("makingNext")));
+  item.append(words);
+  return item;
+}
 // The player's buttons and the bar's follow one rule: what the service won't do now is dimmed.
 function drawControls(now, toggle, next) {
   name(toggle, now.playing ? t("pause") : t("play"), shortcuts.play);
@@ -1415,6 +1545,7 @@ function drawControls(now, toggle, next) {
 }
 function renderInspector() {
   const now = nowPlaying();
+  renderOnAir();
   const art = $("art");
   showCover(art, now?.image ?? null, "cover");
   showCover($("ambient"), now?.image ?? null, "glow");
@@ -1432,13 +1563,14 @@ function renderInspector() {
   }
   set($("blank"), "textContent", limitedUntil ? spotifyLimited(limitedUntil) : t("nothingPlaying"));
   set($("song"), "textContent", now?.title ?? "");
-  set($("artist"), "textContent", now ? now.artists.join(", ") : "");
+  set($("artist"), "textContent", now ? (now.generated ? t("madeByMoondog") : now.artists.join(", ")) : "");
   set($("album"), "textContent", now?.album ?? "");
   renderProgress(now);
 
-  set($("transport"), "hidden", !now);
+  // The record On Air is cutting can't be played, paused or skipped, so it offers no transport.
+  set($("transport"), "hidden", !now || Boolean(now.making));
   deep?.turn(immersed() && Boolean(now?.playing));
-  if (now) {
+  if (now && !now.making) {
     drawControls(now, $("toggle"), $("next"));
     set($("previous"), "disabled", !can(now, "skipping_prev"));
   }
@@ -1446,7 +1578,7 @@ function renderInspector() {
   // playing in the window, or NetEase playing through ncm-cli on this Mac.
   const neteaseNow = now?.service === "netease";
   const spotifyNow = now && !now.local && !neteaseNow;
-  const appleNow = now?.local && state.playbackService === "apple_music";
+  const appleNow = now?.local && !now.generated && state.playbackService === "apple_music";
   set($("where"), "hidden", !(spotifyNow ? now.device || now.link : now?.local || neteaseNow));
   set($("device-row"), "hidden", spotifyNow ? !now.device : !(appleNow || neteaseNow));
   if (spotifyNow) {
@@ -1472,11 +1604,13 @@ function renderInspector() {
   set($("connect"), "hidden", !offline || shown("inspector"));
 
   const next = now?.next ?? [];
-  set($("next-panel"), "hidden", !next.length);
-  const shownQueue = JSON.stringify(next.map((track) => [track.title, track.artists, track.image]));
+  // While On Air cuts its next record behind the one playing, that record waits at the end of Up next.
+  const cutting = state.onAir?.phase === "making" && Boolean(now?.generated) && !now.making;
+  set($("next-panel"), "hidden", !next.length && !cutting);
+  const shownQueue = JSON.stringify([next.map((track) => [track.title, track.artists, track.image]), cutting && t("makingNext")]);
   if (shownQueue !== drawnQueue) {
     drawnQueue = shownQueue;
-    $("queue").replaceChildren(...next.map(queueItem));
+    $("queue").replaceChildren(...next.map(queueItem), ...(cutting ? [cuttingItem()] : []));
   }
   // With the player folded away, the song and its two most used controls stay in the bar.
   const mini = $("mini");
@@ -1486,11 +1620,13 @@ function renderInspector() {
     if (now.image && cover.getAttribute("src") !== now.image) cover.src = now.image;
     if (!now.image) cover.removeAttribute("src");
     cover.onerror = () => cover.removeAttribute("src");
-    set($("mini-song"), "textContent", [now.title, now.artists[0]].filter(Boolean).join(" · "));
+    set($("mini-song"), "textContent", [now.title, now.generated ? t("madeByMoondog") : now.artists[0]].filter(Boolean).join(" · "));
     // The song reads as itself and opens the player; a tooltip gives the whole line only when it is cut off.
     const song = $("mini-song");
     if (song.scrollWidth > song.clientWidth) $("mini-open").dataset.tip = song.textContent; else delete $("mini-open").dataset.tip;
-    drawControls(now, $("mini-toggle"), $("mini-next"));
+    set($("mini-toggle"), "hidden", Boolean(now.making));
+    set($("mini-next"), "hidden", Boolean(now.making));
+    if (!now.making) drawControls(now, $("mini-toggle"), $("mini-next"));
   }
   placeTitle();
   record?.turn(now?.playing && (!talking() || fold.dock < 1));
@@ -1507,6 +1643,8 @@ function renderInspector() {
 let toggled = null;
 function control(action, via = "button") {
   const now = nowPlaying();
+  // Nothing plays yet while On Air cuts its next record.
+  if (now?.making) return;
   if (now?.local) {
     if (action === "toggle") previews.toggle();
     if (action === "next") previews.next();
@@ -1542,7 +1680,11 @@ $("previous").addEventListener("click", () => control("previous"));
 $("mini-open").addEventListener("click", () => togglePanel("inspector"));
 $("mini-toggle").addEventListener("click", () => control("toggle"));
 $("mini-next").addEventListener("click", () => control("next"));
-$("stop-previews").addEventListener("click", () => previews.stop());
+// On air, the stop under a made track, or under the record being cut, takes the stream off the air too.
+$("stop-previews").addEventListener("click", () => {
+  if (state.onAir && nowPlaying()?.generated) stopOnAir();
+  previews.stop();
+});
 
 // Taking hold of the progress line moves the song there when you let go; the arrow keys move it by
 // five seconds (fifteen with Shift), Home and End to either end.
@@ -1788,7 +1930,7 @@ document.addEventListener("keydown", (event) => {
 });
 // Commands from the menu bar.
 window.moondogApp?.onCommand?.((command) => {
-  if (settings.open && !["settings", "stop", "toggle-playback", "next", "previous"].includes(command)) return;
+  if (settings.open && !["settings", "stop", "toggle-playback", "next", "previous", "on-air"].includes(command)) return;
   // A command that shows the conversation, a panel or Settings first brings the window back from the record alone.
   if (immersed() && ["new", "settings", "toggle-sidebar", "toggle-inspector", "toggle-record"].includes(command)) immerse(false);
   if (command === "new") openSession(null);
@@ -1797,6 +1939,7 @@ window.moondogApp?.onCommand?.((command) => {
   if (command === "toggle-playback") control("toggle", "menu");
   if (command === "next") control("next", "menu");
   if (command === "previous") control("previous", "menu");
+  if (command === "on-air") toggleOnAir();
   if (command === "toggle-sidebar") togglePanel("sidebar");
   if (command === "toggle-inspector") togglePanel("inspector");
   if (command === "toggle-record") toggleRecord();
@@ -1810,10 +1953,10 @@ function streamingTurn(id) {
 }
 const onScreen = (data) => !data.session || data.session === state.current;
 const SIGN_IN_ERRORS = { connect_while_answering: "waitForReply", sign_in_busy: "signInBusy" };
-const SETTINGS_MESSAGES = new Set(["models", "provider-models", "model-list", "endpoint", "devices", "memories", "auth-prompt", "auth-prompt-closed", "auth-event", "sign-in", "import", "notice", "netease-checked"]);
+const SETTINGS_MESSAGES = new Set(["models", "provider-models", "model-list", "endpoint", "devices", "memories", "auth-prompt", "auth-prompt-closed", "auth-event", "sign-in", "import", "notice", "netease-checked", "generation-checked", "generation-setup"]);
 function receive({ data }) {
   if (!data?.type) return;
-  if (data.type === "preview" || data.type === "preview-control") { previews.receive(data); renderInspector(); return; }
+  if (data.type === "preview" || data.type === "preview-control" || data.type === "preview-enqueue") { previews.receive(data); renderInspector(); return; }
   if (SETTINGS_MESSAGES.has(data.type)) settings.receive(data);
   if (data.type === "model-list" && !data.error) { modelList = { models: data.models ?? [], default: data.default ?? null }; renderComposer(); }
   if (data.type === "devices" && devicePicker) {
@@ -1839,7 +1982,8 @@ function receive({ data }) {
   }
   if (data.type === "ready" || data.type === "status") {
     if (data.locale && data.locale !== locale) applyLanguage(data.locale);
-    for (const key of ["model", "spotify", "spotifyAccount", "playbackService", "netease", "neteaseMessage", "locales", "firstRun"]) if (data[key] !== undefined) state[key] = data[key];
+    for (const key of ["model", "spotify", "spotifyAccount", "playbackService", "netease", "neteaseMessage", "generation", "locales", "firstRun", "onAir"]) if (data[key] !== undefined) state[key] = data[key];
+    if (state.onAir) dropOnAirAsk();
     if (sourceWanted === state.playbackService) sourceWanted = null;
     // With Apple Music chosen, the window learns once whether it can play whole songs.
     if (state.playbackService === "apple_music" && !previews.fullStatus()) void previews.check();
@@ -1876,8 +2020,9 @@ function receive({ data }) {
   }
   if (data.type === "ready") {
     state.ready = true;
-    // A message typed while the core started can be sent now.
+    // A message typed while the core started can be sent now, and On Air can be asked for.
     renderComposer();
+    renderInspector();
     send({ type: "model-list" });
     const waiting = state.waiting;
     state.waiting = null;
@@ -1899,8 +2044,9 @@ function receive({ data }) {
   if (data.type === "turn" && onScreen(data)) {
     if (data.state === "start") {
       state.streaming = data.id;
-      // The reply to the arm's request has begun, so its end can lift the arm.
+      // The reply to the arm's or On Air's request has begun, so its end can lift the arm and the mark.
       if (cue) cue.seen = true;
+      if (onAirAsk) onAirAsk.seen = true;
       const pending = state.turns.findLastIndex((turn) => turn.pending && turn.text === data.text);
       if (pending >= 0) state.turns.splice(pending, 1);
       state.turns.push({ role: "user", text: data.text }, { role: "assistant", id: data.id, text: "", activity: [], streaming: true });
@@ -1924,6 +2070,14 @@ function receive({ data }) {
       if (state.streaming === data.id) state.streaming = null;
     }
     renderConversation();
+    renderInspector();
+  }
+  // On Air's stream changed: it started, moved to another phase, made a track, or ended. A stream that
+  // ends by itself goes dark silently; only one that couldn't make its next record says so.
+  if (data.type === "on-air") {
+    state.onAir = data.onAir ?? null;
+    if (state.onAir) dropOnAirAsk();
+    if (data.ended === "failed") notice(t("onAirFailed"));
     renderInspector();
   }
   if (data.type === "retry" && onScreen(data)) {

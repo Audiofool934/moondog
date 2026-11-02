@@ -96,7 +96,9 @@ test("previews play one after another from temporary files, each next to its App
     song("missing"),
     song("two"),
   ], { album: { title: "Fixture Album", artist_credit: "Fixture Artist", catalog_url: "https://music.apple.com/us/album/fixture/1" } });
+  assert.equal(player.holdsCatalogSongs(), true, "leaving Apple Music stops these");
   await until(() => events.at(-1)?.type === "stopped");
+  assert.equal(player.holdsCatalogSongs(), false);
 
   assert.deepEqual(events[0], {
     type: "queue",

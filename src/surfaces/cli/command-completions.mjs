@@ -24,6 +24,14 @@ const serviceChoices = choices([
   ["apple_music", N_("30-second previews, played here")],
   ["netease", N_("Whole songs through ncm-cli")],
 ]);
+const generationChoices = choices([["on", N_("Make music on this Mac with Stable Audio 3")], ["off", N_("Stop making music here")]]);
+const generationSetupChoices = choices([
+  ["download", N_("Download a Stable Audio 3 model from Stability AI")],
+  ["use", N_("Make music with a downloaded model")],
+  ["remove", N_("Delete a downloaded model from this Mac")],
+  ["cancel", N_("Stop the download")],
+]);
+const sa3ModelChoices = choices([["medium", N_("Medium: best sound, about 5.2 GB")], ["small", N_("Small Music: faster, lighter, about 1.7 GB")]]);
 const webChoices = choices([
   ["search", N_("Search public music sites")],
   ["read", N_("Read a public page")],
@@ -78,6 +86,7 @@ export function withCommandCompletions(commands, {
   providers = () => [],
   models = () => [],
   authProviderIds = [],
+  generationSetup = false,
   tr,
 } = {}) {
   if (tr) translate = tr;
@@ -93,6 +102,12 @@ export function withCommandCompletions(commands, {
     art: { argumentHint: "[braille|ascii|off|auto]", choices: firstArgument(artChoices) },
     motion: { argumentHint: "[on|off]", choices: firstArgument(motionChoices) },
     service: { argumentHint: "[spotify|apple_music|netease]", choices: firstArgument(serviceChoices) },
+    // With the core's setup, /generation also downloads, uses and removes Moondog's own models.
+    generation: generationSetup ? {
+      argumentHint: "[on [folder]|off|download|use|remove|cancel]",
+      choices: (previous) => previous.length === 0 ? [...generationChoices, ...generationSetupChoices]
+        : previous.length === 1 && ["download", "use", "remove"].includes(previous[0]) ? sa3ModelChoices : [],
+    } : { argumentHint: "[on [folder]|off]", choices: firstArgument(generationChoices) },
     lyrics: { argumentHint: "[sync]", choices: firstArgument(choices([["sync", N_("Check profile songs for lyrics")]])) },
     web: { argumentHint: "search <query> | read <url> | status", choices: firstArgument(webChoices) },
     spotify: {
