@@ -412,3 +412,23 @@ test("switching back to the listener's folder keeps a model that folder has", as
   const status = await generator.check();
   assert.deepEqual([status.state, status.model, status.managed], ["ready", "medium", false]);
 });
+
+test("with MOONDOG_SA3_DIR pinning a folder, a managed model chosen meanwhile never breaks it", async (t) => {
+  const home = await mkdtemp(path.join(tmpdir(), "moondog-sa3-pinned-"));
+  t.after(() => rm(home, { recursive: true, force: true }));
+  const pinned = path.join(home, "pinned", "mlx");
+  await mkdir(path.join(pinned, "scripts"), { recursive: true });
+  await mkdir(path.join(pinned, ".venv", "bin"), { recursive: true });
+  await mkdir(path.join(pinned, "models", "mlx"), { recursive: true });
+  await writeFile(path.join(pinned, "scripts", "sa3_mlx.py"), "# stand-in\n");
+  await writeFile(path.join(pinned, ".venv", "bin", "python"), "#!/bin/sh\n");
+  await chmod(path.join(pinned, ".venv", "bin", "python"), 0o755);
+  for (const name of ["t5gemma_f16.npz", "dit_medium_f16.npz", "same_l_decoder_f32.npz"]) await writeFile(path.join(pinned, "models", "mlx", name), randomBytes(2048));
+  const environment = { MOONDOG_STATE_HOME: home, MOONDOG_CONFIG_HOME: home, MOONDOG_SA3_DIR: pinned };
+  const generator = createLocalGenerator({ environment, platform: "darwin", arch: "arm64" });
+  await generator.save({ enabled: true });
+  // Settings' Use, or /generation use small, with the variable still set.
+  await generator.save({ enabled: true, source: "managed", model: "small-music" });
+  const status = await generator.check();
+  assert.deepEqual([status.state, status.source, status.model], ["ready", "environment", "medium"]);
+});

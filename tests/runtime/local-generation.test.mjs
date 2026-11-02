@@ -131,8 +131,10 @@ test("a track is made with every choice passed, offline, and kept with a receipt
 test("the chosen model's weights are checked, and a track is made with its flags", async (t) => {
   const install = await fakeInstall(t);
   const generator = install.generator();
+  // The install is pinned by MOONDOG_SA3_DIR and has Medium only: a Small Music choice can't apply there,
+  // so the folder keeps the model it has and stays ready.
   await generator.save({ enabled: true, source: "settings", model: "small-music" });
-  assert.deepEqual([generator.status().state, generator.status().missing, generator.status().model], ["incomplete", "weights", "small-music"]);
+  assert.deepEqual([generator.status().state, generator.status().missing, generator.status().model], ["ready", undefined, "medium"]);
 
   const both = await fakeInstall(t, { models: ["medium", "small-music"] });
   const switching = both.generator();

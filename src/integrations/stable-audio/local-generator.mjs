@@ -70,17 +70,25 @@ async function readSavedSettings(environment) {
  * (folder, which Moondog only reads), or "environment". model picks the weights in either.
  * A missing or unreadable file reads as off, so an older or newer file never stops the room.
  */
-export async function readGenerationSettings(environment = process.env) {
+export async function readGenerationSettings(environment = process.env, { platform = process.platform, arch = process.arch } = {}) {
   const saved = await readSavedSettings(environment);
   const fromEnvironment = literalFolder(environment.MOONDOG_SA3_DIR);
   const fromFile = literalFolder(saved.path);
   const managed = !fromEnvironment && saved.source === "managed";
   const folder = fromFile ?? defaultStableAudioRoot();
+  let model = isStableAudioModel(saved.model) ? saved.model : DEFAULT_STABLE_AUDIO_MODEL;
+  // MOONDOG_SA3_DIR pins the folder, so a model chosen for Moondog's own install can't apply there:
+  // the pinned folder keeps a model it has, and the choice waits until the variable is gone.
+  if (fromEnvironment) {
+    for (const name of [...new Set([model, DEFAULT_STABLE_AUDIO_MODEL, ...Object.keys(STABLE_AUDIO_MODELS)])]) {
+      if ((await checkStableAudioInstall(fromEnvironment, { model: name, platform, arch })).state === "ready") { model = name; break; }
+    }
+  }
   return {
     enabled: saved.enabled === true,
     path: fromEnvironment ?? (managed ? path.join(resolveStableAudioManagedRoot(environment), "mlx") : folder),
     source: fromEnvironment ? "environment" : managed ? "managed" : fromFile ? "settings" : "default",
-    model: isStableAudioModel(saved.model) ? saved.model : DEFAULT_STABLE_AUDIO_MODEL,
+    model,
     folder,
   };
 }
@@ -92,7 +100,7 @@ export async function readGenerationSettings(environment = process.env) {
  * Older Moondogs read the same version 1 file and see only enabled and path.
  */
 export async function writeGenerationSettings({ enabled, path: folder, source, model } = {}, environment = process.env, { platform = process.platform, arch = process.arch } = {}) {
-  const current = await readGenerationSettings(environment);
+  const current = await readGenerationSettings(environment, { platform, arch });
   const saved = await readSavedSettings(environment);
   const typed = folder === undefined ? undefined : literalFolder(folder);
   if (folder !== undefined && folder !== null && !typed) {
@@ -127,7 +135,7 @@ export async function writeGenerationSettings({ enabled, path: folder, source, m
   const file = resolveGenerationSettingsFile(environment);
   await mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
   await writeFile(file, `${JSON.stringify(document, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
-  return readGenerationSettings(environment);
+  return readGenerationSettings(environment, { platform, arch });
 }
 
 const isFile = async (file, { executable = false, minimumBytes = 0 } = {}) => {
@@ -242,7 +250,7 @@ export function createLocalGenerator({
   const check = () => {
     checking ??= (async () => {
       try {
-        const settings = await readGenerationSettings(environment);
+        const settings = await readGenerationSettings(environment, { platform, arch });
         const install = await checkStableAudioInstall(settings.path, { model: settings.model, platform, arch });
         return publish({
           state: !settings.enabled ? "off" : install.state,
