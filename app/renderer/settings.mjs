@@ -222,6 +222,7 @@ export function createSettings({ state, send, t, appleMusic = null, onHide = nul
       void appleMusic?.check().then(() => render());
     }
     if (section === "about" && !data.version) void window.moondogApp?.version?.().then((version) => { data.version = version; render(); });
+    if (section === "about") void window.moondogApp?.updateChannel?.().then((channel) => { data.updates = channel; render(); }, () => {});
     if (section === "appearance") void window.moondogApp?.appearance?.().then((value) => { data.appearance = value; render(); });
   }
 
@@ -1210,7 +1211,52 @@ export function createSettings({ state, send, t, appleMusic = null, onHide = nul
       pair.append(term, make("dd", "", say(label)));
       keys.append(pair);
     }
-    return [group(null, title, link(SITE.replace("https://", ""), SITE)), group(say("shortcuts"), keys)];
+    return [group(null, title, link(SITE.replace("https://", ""), SITE)), updatesGroup(), group(say("shortcuts"), keys)].filter(Boolean);
+  }
+
+  // Updates: stable or beta, and a check that answers here. The window's update button and the
+  // checks every six hours follow the same choice. Only a packaged app updates.
+  function updatesGroup() {
+    if (!data.updates?.enabled) return null;
+    const pick = (beta) => {
+      data.updates = { ...data.updates, beta };
+      data.updateCheck = null;
+      render();
+      window.moondogApp.setUpdateChannel(beta).then((saved) => { data.updates = saved; render(); },
+        () => { data.error = { section: "about", key: "noticeFailed" }; render(); });
+    };
+    const channels = make("div", "segments");
+    channels.setAttribute("role", "radiogroup");
+    channels.setAttribute("aria-label", say("updates"));
+    for (const [beta, label] of [[false, "updateStable"], [true, "updateBeta"]]) {
+      const chosen = data.updates.beta === beta;
+      const segment = button(say(label), "segment", () => { if (!chosen) pick(beta); }, `update-channel:${beta ? "beta" : "stable"}`);
+      segment.setAttribute("role", "radio");
+      segment.setAttribute("aria-checked", String(chosen));
+      segment.tabIndex = chosen ? 0 : -1;
+      channels.append(segment);
+    }
+    const check = async () => {
+      data.updateCheck = { phase: "checking" };
+      render();
+      let result = "failed";
+      try { result = await window.moondogApp.checkUpdate(); } catch { /* Said as a failed check. */ }
+      const offered = result === "available" ? await window.moondogApp.updateState?.().catch(() => null) : null;
+      data.updateCheck = { phase: result, version: offered?.version ?? null };
+      render();
+    };
+    const checking = data.updateCheck?.phase === "checking";
+    const action = button(say(checking ? "checkingUpdates" : "checkUpdates"), "button small", checking ? () => {} : check, "update-check");
+    action.disabled = checking;
+    const result = data.updateCheck;
+    const line = !result || checking ? null
+      : result.phase === "current" ? note(say("updateCurrent", { version: data.version ?? "" }))
+        : result.phase === "available" ? null : note(say("updateFailed"));
+    const install = result?.phase === "available" && result.version
+      ? button(say("updateAvailable", { version: result.version }), "button primary small", () => window.moondogApp.installUpdate(), "update-install") : null;
+    const row = make("div", "update-check");
+    row.append(...[action, install, line].filter(Boolean));
+    return group(say("updates"), channels, note(say("updateBetaNote")), row);
   }
 
   function render({ entering = false } = {}) {

@@ -116,7 +116,18 @@ const onAirItem = (t, extra = {}) => ({ id: "on-air", type: "checkbox", label: t
 // A newer Moondog from GitHub releases (updates.mjs): the window offers it at the top right and shows
 // its download, and the Moondog menu checks for one, downloads it, or restarts into it.
 let updatePhase = "idle";
+// The update channel the listener picked in Settings, kept beside the window's place. Until they
+// pick, a beta version follows beta and a stable one stable.
+const updateChannelFile = () => path.join(app.getPath("userData"), "updates.json");
+const savedBeta = () => {
+  try {
+    const saved = JSON.parse(readFileSync(updateChannelFile(), "utf8"));
+    if (typeof saved?.beta === "boolean") return saved.beta;
+  } catch { /* Nothing picked yet. */ }
+  return app.getVersion().includes("-");
+};
 const updates = createUpdates({
+  beta: savedBeta(),
   // Only a packaged app updates; reading autoUpdater makes electron-updater's macOS updater.
   autoUpdater: app.isPackaged ? electronUpdater.autoUpdater : null,
   squirrel,
@@ -381,6 +392,14 @@ ipcMain.handle("set-appearance", (_event, choice) => {
 });
 ipcMain.handle("update", () => updates.state());
 ipcMain.on("install-update", () => updates.install());
+ipcMain.handle("update-channel", () => ({ enabled: updates.enabled, beta: updates.beta() }));
+ipcMain.handle("set-update-channel", (_event, beta) => {
+  const next = updates.setBeta(beta === true);
+  try { writeFileSync(updateChannelFile(), JSON.stringify({ beta: next })); } catch { /* The choice holds until Moondog quits. */ }
+  return { enabled: updates.enabled, beta: next };
+});
+// Settings' own check answers in the sheet: "available", "current" or "failed".
+ipcMain.handle("check-update", () => updates.check());
 
 // Apple Music's whole songs come from a helper MusicKit knows as Moondog (native/music.swift): it sits
 // beside the app's own executable when packaged, and in its own bundle for development. It starts the

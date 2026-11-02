@@ -27,6 +27,13 @@ window.moondogApp = { pathForFile: () => null, onCommand() {}, setLanguage() {},
 const updateListeners = [];
 const setUpdate = (update) => updateListeners.forEach((listener) => listener(update));
 Object.assign(window.moondogApp, { updateState: async () => null, onUpdate: (listener) => updateListeners.push(listener), installUpdate() {} });
+// The update channel as the main process keeps it, and what a check from Settings finds.
+const updateChannel = { enabled: true, beta: false, finds: "current" };
+Object.assign(window.moondogApp, {
+  updateChannel: async () => ({ enabled: updateChannel.enabled, beta: updateChannel.beta }),
+  setUpdateChannel: async (beta) => { updateChannel.beta = beta; return { enabled: true, beta }; },
+  checkUpdate: async () => updateChannel.finds,
+});
 // The window's look as the main process keeps it. The harness sets the theme itself, so a choice here only shows.
 let appearance = { theme: "system", icon: "light" };
 Object.assign(window.moondogApp, { appearance: async () => appearance, setAppearance: async (choice) => (appearance = { ...appearance, ...choice }) });
@@ -395,6 +402,19 @@ const STATES = {
   },
   typing() { STATES.reply(); const input = document.querySelector("[data-input]"); input.focus(); input.value = "Something like this but with more piano, and nothing from before 1970"; input.dispatchEvent(new Event("input", { bubbles: true })); },
   "settings-general"() { STATES.reply(); slash("language"); },
+  "settings-about"() { STATES.reply(); slash("help"); },
+  "settings-about-beta"() { updateChannel.beta = true; STATES["settings-about"](); },
+  "settings-about-current"() {
+    STATES["settings-about"]();
+    setTimeout(() => document.querySelector('.sheet [data-key="update-check"]')?.click(), 300);
+  },
+  "settings-about-available"() {
+    updateChannel.beta = true;
+    updateChannel.finds = "available";
+    window.moondogApp.updateState = async () => ({ phase: "available", version: "0.3.0-beta.5" });
+    STATES["settings-about"]();
+    setTimeout(() => document.querySelector('.sheet [data-key="update-check"]')?.click(), 300);
+  },
   "settings-appearance"() { STATES.reply(); slash("appearance"); },
   "settings-model"() { STATES.reply(); slash("model"); },
   // A provider open to its models, each ticked when the menu offers it.
