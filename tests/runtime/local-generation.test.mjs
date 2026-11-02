@@ -18,7 +18,8 @@ import { PiAgentRuntime } from "../../src/runtime/pi/agent-runtime.mjs";
 // prints, writes a short WAV where --out says, and logs its arguments. FAKE_SA3 makes it fail, hang or slow.
 async function fakeInstall(t, { weights = true, environment = true, models = ["medium"] } = {}) {
   const root = await mkdtemp(path.join(tmpdir(), "moondog-generation-"));
-  t.after(() => rm(root, { recursive: true, force: true }));
+  // A stream may still be writing its next track as the test ends; the delete retries until it is done.
+  t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   const install = path.join(root, "mlx");
   await mkdir(path.join(install, "scripts"), { recursive: true });
   await writeFile(path.join(install, "scripts", "sa3_mlx.py"), "# stand-in\n");
@@ -755,7 +756,8 @@ test("a stream stopped before its first track plays leaves the music before it p
 
 test("the terminal player reports a made track skipped past the end of its queue, and /stop is no skip", async (t) => {
   const root = await mkdtemp(path.join(tmpdir(), "moondog-generated-skip-"));
-  t.after(() => rm(root, { recursive: true, force: true }));
+  // A stream may still be writing its next track as the test ends; the delete retries until it is done.
+  t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   const bin = path.join(root, "bin");
   await mkdir(bin);
   await writeFile(path.join(bin, "afplay"), "#!/bin/sh\nexec sleep 5\n");
@@ -819,7 +821,8 @@ test("the agent starts a stream when the listener asks for music to keep going, 
 
 test("the terminal plays a made track from its folder and keeps it; the window asks for it by id", async (t) => {
   const root = await mkdtemp(path.join(tmpdir(), "moondog-generated-play-"));
-  t.after(() => rm(root, { recursive: true, force: true }));
+  // A stream may still be writing its next track as the test ends; the delete retries until it is done.
+  t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   const bin = path.join(root, "bin");
   await mkdir(bin);
   const log = path.join(root, "played.log");
