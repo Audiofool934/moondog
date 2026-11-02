@@ -121,7 +121,9 @@ test("a track is made with every choice passed, offline, and kept with a receipt
   const receipt = await generator.receipt(made.id);
   assert.equal(receipt.moondog_id, `moondog:generated:${made.id}`);
   assert.equal(receipt.generator.prompt, "TrackType: Music, VocalType: Instrumental, Genre: Dream Pop.");
-  assert.deepEqual(receipt.audio, { file: "track.wav", sample_rate: 44100, channels: 2, bit_depth: 16, size_bytes: 44 + 15 * 176400, duration_seconds: 15 });
+  // An even (here silent) track reads as level all the way through; its cover draws from these.
+  assert.deepEqual(receipt.audio, { file: "track.wav", sample_rate: 44100, channels: 2, bit_depth: 16, size_bytes: 44 + 15 * 176400, duration_seconds: 15,
+    loudness: Array(64).fill(1) });
   assert.ok(!JSON.stringify(receipt).includes(path.basename(install.root)), "the receipt keeps no folder of this Mac");
   assert.ok(await generator.trackFile(made.id));
   assert.equal(await generator.trackFile("../config"), null);

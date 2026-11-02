@@ -12,6 +12,7 @@ import path from "node:path";
 import { resolveMoondogStateDirectory } from "../../core/state-directory.mjs";
 import { streamVariation } from "../../profile/taste-compiler.mjs";
 import { resolveMoondogAuthFile } from "../../runtime/pi/persistent-credential-store.mjs";
+import { readLoudness } from "./cover.mjs";
 
 // The weights Stable Audio 3 Medium needs for text to music: the text encoder, the model and its decoder.
 const MEDIUM_WEIGHTS = ["t5gemma_f16.npz", "dit_medium_f16.npz", "same_l_decoder_f32.npz"];
@@ -473,6 +474,8 @@ export function createLocalGenerator({
         const audio = await wavInfo(wav).catch(() => null);
         if (!audio || audio.duration_seconds <= 0) throw generationError("generation_failed", "Stable Audio 3 finished but wrote no playable track.");
         await chmod(wav, 0o600);
+        // How loud it runs from start to end, which its cover draws (cover.mjs); kept after a stream drops the audio.
+        const loudness = await readLoudness(wav).catch(() => null);
         const elapsed = Date.now() - started;
         const document = {
           receipt_version: "moondog-generated-track/1",
@@ -486,7 +489,7 @@ export function createLocalGenerator({
             prompt, seconds, seed, steps: 8, cfg: 1, elapsed_ms: elapsed, ...(measured ? { measured } : {}),
             license: "Stability AI Community License; outputs belong to the listener",
           },
-          audio: { file: "track.wav", ...audio },
+          audio: { file: "track.wav", ...audio, ...(loudness ? { loudness } : {}) },
         };
         await writeFile(path.join(temporary, "receipt.json"), `${JSON.stringify(document, null, 2)}\n`, { encoding: "utf8", mode: 0o600, flag: "wx" });
         await rename(temporary, path.join(folder, id));

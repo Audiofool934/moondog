@@ -12,6 +12,7 @@ import path from "node:path";
 import { Readable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { resolveMoondogStateDirectory } from "../src/core/state-directory.mjs";
+import { trackFolderCover } from "../src/integrations/stable-audio/cover.mjs";
 import { windowLocale, windowStrings } from "./strings.mjs";
 import { createUpdates } from "./updates.mjs";
 import { createCoreShutdown } from "./shutdown.mjs";
@@ -31,10 +32,19 @@ if (process.env.MOONDOG_APP_DEBUG_PORT) app.commandLine.appendSwitch("remote-deb
 // The tracks Moondog makes on this Mac (src/integrations/stable-audio) play in the window from
 // moondog-media://generated/<id>. The scheme serves those files and nothing else, so the page never
 // holds a path or reads a folder; it answers byte ranges, so the listener can move in a track.
-protocol.registerSchemesAsPrivileged([{ scheme: "moondog-media", privileges: { standard: true, secure: true, stream: true } }]);
+// moondog-media://generated/<id>/cover.svg is the track's cover, drawn from its receipt (cover.mjs);
+// it allows a cross-origin read, so the window can take its colours as it does any cover's.
+protocol.registerSchemesAsPrivileged([{ scheme: "moondog-media", privileges: { standard: true, secure: true, stream: true, corsEnabled: true } }]);
 const generatedTrackId = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 async function generatedTrack(request) {
   const url = new URL(request.url);
+  const cover = /^\/([^/]+)\/cover\.svg$/u.exec(url.pathname);
+  if (cover) {
+    const svg = url.hostname === "generated" && generatedTrackId.test(cover[1])
+      ? await trackFolderCover(path.join(resolveMoondogStateDirectory(), "generated", cover[1])).catch(() => null) : null;
+    return svg ? new Response(svg, { headers: { "Content-Type": "image/svg+xml", "Access-Control-Allow-Origin": "*", "Cache-Control": "max-age=3600" } })
+      : new Response(null, { status: 404 });
+  }
   const id = url.pathname.slice(1);
   if (url.hostname !== "generated" || !generatedTrackId.test(id)) return new Response(null, { status: 404 });
   const file = path.join(resolveMoondogStateDirectory(), "generated", id, "track.wav");
