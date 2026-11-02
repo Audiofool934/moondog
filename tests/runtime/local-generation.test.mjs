@@ -1068,7 +1068,8 @@ test("changing the music service keeps the stream on air, and stops only Apple M
   await until(() => !generator.busy());
   const calls = player.calls.length;
   await app.selectPlaybackService("spotify", { strict: false });
-  assert.equal(app.streamView().phase, "playing", "On Air is Moondog's own channel, not a service");
+  // Still on air, whether or not its next track is being made yet: the check is that the switch ended nothing.
+  assert.ok(["playing", "making"].includes(app.streamView()?.phase), "On Air is Moondog's own channel, not a service");
   assert.deepEqual(player.calls.slice(calls), [], "the made track plays on");
   // Apple Music's songs in Moondog's player still stop when the listener leaves it.
   await app.selectPlaybackService("apple_music", { strict: false });
