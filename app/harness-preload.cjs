@@ -239,7 +239,7 @@ function setOnAir(next, ended = null) {
   status = { ...status, onAir };
   send({ type: "on-air", onAir, ended });
 }
-const ON_AIR = [{ role: "user", text: "Go on air: keep the music going for right now", entry: "e0" }, { role: "assistant", id: "t0", entry: "e0",
+const ON_AIR = [{ role: "user", text: "Go on air: make new music for right now and keep it going", entry: "e0" }, { role: "assistant", id: "t0", entry: "e0",
   text: "On air. Warm, unhurried keys with the tape hiss left in, out of the late records you keep coming back to. I'll cut the next one while this one plays." }];
 const played = (index) => [{ action: "playback.resume", state: "accepted", targets: [{ title: TRACKS[index].title, artist_credit: TRACKS[index].artists.join(", ") }] }];
 const conversation = (pairs) => pairs.flatMap(([user, reply], index) => [{ role: "user", text: user, entry: `e${index}` },

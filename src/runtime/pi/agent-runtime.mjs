@@ -6669,6 +6669,15 @@ function sessionAvailability({ spotifyReady, spotifyPlaybackReady = spotifyReady
 
 // The agent's instructions carry this as their "session" section, after the base prompt, so a
 // change of music service replaces it in place.
+// On Air's request, in every language the window and the terminal send it in. The words alone read like
+// "play something", so the host says what the listener pressed, for that reply only.
+let onAirRequests = null;
+const isOnAirRequest = (text) => {
+  onAirRequests ??= new Set(Object.keys(LOCALES).map((locale) => translator(locale)("onAir.request")));
+  return onAirRequests.has(String(text ?? "").trim());
+};
+const ON_AIR_NOTE = "The listener pressed On Air. Answer this message by starting Moondog's stream with moondog_start_stream: instrumental tracks made on this Mac from their taste and the moment, one after another, with a broad set of descriptors as that tool asks. Do not search, play or queue catalog music for it. If making music isn't available here, say so in one sentence.";
+
 function sessionSection(application) {
   return sessionAvailability({
     spotifyReady: application.spotifyReady?.() ?? false,
@@ -7843,7 +7852,8 @@ export class PiAgentRuntime {
   // The system message that brings a transcript's session section up to date, if it is behind.
   // A finished reply keeps only its text, so the transcript, not this agent, says what was declared.
   #sessionUpdate(messages) {
-    const session = sessionSection(this.application);
+    // An On Air reply carries the host's note in its session section; the next reply drops it again.
+    const session = [sessionSection(this.application), this.onAirTurn ? ON_AIR_NOTE : null].filter(Boolean).join("\n\n") || null;
     if ((getCurrentSystemMessage(messages)?.sections?.session ?? null) === session) return [];
     return [{ role: "system", content: "", sections: { session }, timestamp: Date.now() }];
   }
@@ -7881,6 +7891,7 @@ export class PiAgentRuntime {
     // changes itself; the session section is set here, before this reply's history begins.
     this.#refreshSurface();
     this.loopSurfaceVersion = this.surfaceVersion;
+    this.onAirTurn = isOnAirRequest(text);
     const sessionUpdate = this.#sessionUpdate(this.agent.state.messages);
     if (sessionUpdate.length) this.agent.state.messages = [...this.agent.state.messages, ...sessionUpdate];
     const historyStartIndex = this.agent.state.messages.length;
