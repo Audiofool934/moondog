@@ -91,7 +91,7 @@ export async function readGenerationSettings(environment = process.env) {
  * A model chosen without a folder or a source switches to Moondog's install, which holds it.
  * Older Moondogs read the same version 1 file and see only enabled and path.
  */
-export async function writeGenerationSettings({ enabled, path: folder, source, model } = {}, environment = process.env) {
+export async function writeGenerationSettings({ enabled, path: folder, source, model } = {}, environment = process.env, { platform = process.platform, arch = process.arch } = {}) {
   const current = await readGenerationSettings(environment);
   const saved = await readSavedSettings(environment);
   const typed = folder === undefined ? undefined : literalFolder(folder);
@@ -107,12 +107,22 @@ export async function writeGenerationSettings({ enabled, path: folder, source, m
       : source === "settings" ? false
         : model !== undefined ? true
           : saved.source === "managed";
+  // Switching to the listener's own folder without a model keeps the model only if that folder has it;
+  // otherwise the first model it can run, so a working install is never checked for weights it lacks.
+  let chosen = model ?? current.model;
+  if (model === undefined && !managed && (typed || source === "settings")) {
+    const folderRoot = savedFolder ?? current.folder;
+    const candidates = [current.model, DEFAULT_STABLE_AUDIO_MODEL, ...Object.keys(STABLE_AUDIO_MODELS)];
+    for (const name of [...new Set(candidates)]) {
+      if ((await checkStableAudioInstall(folderRoot, { model: name, platform, arch })).state === "ready") { chosen = name; break; }
+    }
+  }
   const document = {
     version: 1,
     enabled: enabled === undefined ? current.enabled : enabled === true,
     ...(savedFolder ? { path: savedFolder } : {}),
     ...(managed ? { source: "managed" } : {}),
-    model: model ?? current.model,
+    model: chosen,
   };
   const file = resolveGenerationSettingsFile(environment);
   await mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
@@ -452,7 +462,7 @@ export function createLocalGenerator({
     busy: () => running !== null,
     check,
     async save(settings) {
-      await writeGenerationSettings(settings, environment);
+      await writeGenerationSettings(settings, environment, { platform, arch });
       return check();
     },
     subscribe(listener) {
