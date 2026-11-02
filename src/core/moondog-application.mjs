@@ -5,7 +5,7 @@ import { compactListenerProfile, readListenerProfile } from "../profile/listener
 import { mixCounts, songKeys } from "../profile/moondog-suggestions.mjs";
 import { ARTIST_CREDIT_SEPARATORS } from "./listener-avoids.mjs";
 import { textNamesSong } from "./track-title.mjs";
-import { compileTaste, tasteSources } from "../profile/taste-compiler.mjs";
+import { acceptableRecordTitle, compileTaste, tasteSources } from "../profile/taste-compiler.mjs";
 import { stableAudioPrompt } from "../integrations/stable-audio/local-generator.mjs";
 
 import {
@@ -21,7 +21,24 @@ import { webProviderName } from "../integrations/web/web-result.mjs";
 import { musicAppSource, readListeningNow } from "./listening-now.mjs";
 import { normalizeConversationFolder, normalizeConversationLabel, normalizeMemoryContent, shortConversationTitle } from "../memory/local-memory-store.mjs";
 import { queueListeningIntent, queueCancellationRequested, unheardRequested } from "./spotify-listening-intent.mjs";
-import { DEFAULT_LOCALE, normalizeLocale } from "../i18n/index.mjs";
+import { DEFAULT_LOCALE, messageLocale, normalizeLocale } from "../i18n/index.mjs";
+
+// How long a record's title in the wrong language waits to be named again before the agent's stays.
+const TITLE_LANGUAGE_TIMEOUT_MS = 10_000;
+
+// Whether a record's name is written in a language. A short name gives the word-based guess little to
+// go on, and the guess then falls back to the setting, so the script decides first: Chinese, Japanese
+// and Korean names are in their own script, and the other languages Moondog speaks in none of those.
+const CJK = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
+const SCRIPTS = { zh: /\p{Script=Han}/u, "zh-Hant": /\p{Script=Han}/u, ja: /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/u, ko: /\p{Script=Hangul}/u };
+export function nameFitsLanguage(name, locale) {
+  const text = String(name ?? "");
+  if (SCRIPTS[locale] ? !SCRIPTS[locale].test(text) : CJK.test(text)) return false;
+  const guess = messageLocale(text, locale);
+  // Kanji with no kana, such as 月夜 or 雨音, is Japanese as much as Chinese, so the Japanese setting decides.
+  if (locale === "ja" && (guess === "zh" || guess === "zh-Hant") && !/\p{Script=Hangul}/u.test(text)) return true;
+  return guess === locale;
+}
 import { createPlaybackSelection, DEFAULT_PLAYBACK_SERVICE, normalizePlaybackService } from "./playback-preferences.mjs";
 
 const minimumNodeVersion = [22, 19, 0];
@@ -586,14 +603,15 @@ export class MoondogApplication {
   // ones it can trace and none that names an artist or a song. The track and its receipt stay on
   // this Mac, and its play goes in the ledger as Moondog's own, never as the listener's attention.
   // moment and request come from the agent's host, not from the model.
-  async makeTrack({ descriptors, bpm, bpmSource, seconds, title } = {}, { moment = null, request = null, transient = false, signal, onProgress } = {}) {
+  async makeTrack({ descriptors, bpm, bpmSource, seconds, title } = {}, { moment = null, request = null, transient = false, signal, onProgress, nameRecord } = {}) {
     const { compiled, receipt } = await this.#compileForGeneration({ descriptors, bpm, bpmSource, title }, { moment, request, transient });
     if (!compiled.usable) {
       return { state: "not_made", reason: compiled.descriptors.length ? "needs_a_sound" : "no_traceable_descriptors", dropped: compiled.dropped };
     }
     const prompt = stableAudioPrompt(compiled);
     const endedStream = await this.#endStream("replaced");
-    const made = await this.localGenerator.generate({ prompt, seconds, title: compiled.title, receipt }, { signal, onProgress });
+    const named = await this.#titleInSettingLanguage(compiled, nameRecord, signal);
+    const made = await this.localGenerator.generate({ prompt, seconds, title: named, receipt }, { signal, onProgress });
     // A reply stopped as the track finished keeps the track, but plays nothing over what is on now.
     await this.quietOtherPlayers("apple_music", { signal });
     // The terminal plays the file itself; the window asks for it by id and never sees the path.
@@ -636,18 +654,21 @@ export class MoondogApplication {
 
   // Starts Moondog's atmosphere stream from the listener's taste: its first track plays now, and
   // each next one is made while the last plays. Every track goes in the ledger as Moondog's pick.
-  async startStream({ descriptors, bpm, bpmSource, seconds, minutes, title } = {}, { moment = null, request = null, transient = false, signal, onProgress } = {}) {
+  async startStream({ descriptors, bpm, bpmSource, seconds, minutes, title } = {}, { moment = null, request = null, transient = false, signal, onProgress, nameRecord } = {}) {
     if (!this.streamReady()) throw Object.assign(new Error("A stream can't run here. Music making must be on, in the terminal room or the window."), { code: "stream_not_ready" });
     const { compiled, receipt } = await this.#compileForGeneration({ descriptors, bpm, bpmSource, title }, { moment, request, transient });
     if (!compiled.usable) {
       return { state: "not_made", reason: compiled.descriptors.length ? "needs_a_sound" : "no_traceable_descriptors", dropped: compiled.dropped };
     }
     await this.#endStream("replaced");
+    // The stream's name, which its first track carries, in the language Moondog is set to.
+    const named = await this.#titleInSettingLanguage(compiled, nameRecord, signal);
     // Other music pauses only once the first track exists, as for a single track.
     let started;
     try {
-      started = await this.atmosphereStream.start({ compiled, title: compiled.title, seconds, minutes, receipt },
-        { signal, onProgress, onTrack: (track) => this.#noteGeneratedPlay(track), beforePlay: () => this.quietOtherPlayers("apple_music", { signal }) });
+      started = await this.atmosphereStream.start({ compiled, title: named, seconds, minutes, receipt },
+        { signal, onProgress, onTrack: (track) => this.#noteGeneratedPlay(track), beforePlay: () => this.quietOtherPlayers("apple_music", { signal }),
+          nameTrack: typeof nameRecord === "function" ? this.#streamNamer(nameRecord, compiled) : undefined });
     } catch (error) {
       // The listener turned it off while its first track was made: their choice, not a failure to retry.
       if (error?.code === "generation_stopped" && error.ended === "asked" && !signal?.aborted) return { state: "not_made", reason: "stopped_by_listener" };
@@ -657,6 +678,37 @@ export class MoondogApplication {
     return { state: "streaming", minutes, track: { id: made.id, title: made.title, seconds: made.duration_seconds, seed: made.seed },
       prompt, shaped_by: compiled.descriptors, sources: tasteSources(compiled.descriptors), left_out: compiled.dropped,
       ...(compiled.bpm ? { bpm: compiled.bpm } : {}), elapsed_ms: made.elapsed_ms };
+  }
+
+  // The agent writes a record's title itself, but can follow the conversation's language instead of
+  // the one Moondog is set to. A title in another language is named again in the setting's language,
+  // keeping its picture; if that cannot be done in time, the agent's title stays.
+  async #titleInSettingLanguage(compiled, nameRecord, signal) {
+    if (typeof nameRecord !== "function" || nameFitsLanguage(compiled.title, this.locale)) return compiled.title;
+    const terms = compiled.descriptors.map((descriptor) => descriptor.term);
+    const timeout = AbortSignal.timeout(TITLE_LANGUAGE_TIMEOUT_MS);
+    try {
+      const name = await Promise.race([
+        this.#streamNamer(nameRecord, compiled)({ draft: compiled.title, featured: terms.slice(0, 3), sound: terms.slice(3),
+          ...(compiled.bpm ? { bpm: compiled.bpm } : {}), earlier: [] }, { signal: signal ? AbortSignal.any([signal, timeout]) : timeout }),
+        new Promise((resolve) => { timeout.addEventListener("abort", () => resolve(null), { once: true }); }),
+      ]);
+      return name ?? compiled.title;
+    } catch {
+      return compiled.title;
+    }
+  }
+
+  // Names a stream's later tracks: the agent's namer asks the model, with the names of Moondog's recent
+  // tracks so it does not repeat them, and a name passes the same check as the agent's own titles and
+  // must be in the language Moondog is set to.
+  #streamNamer(nameRecord, compiled) {
+    return async (context, options) => {
+      const recent = (this.localGenerator?.recentTracks?.(8) ?? []).map((track) => track.title).filter(Boolean);
+      const name = acceptableRecordTitle(await nameRecord({ ...context, recent }, options), compiled.names);
+      // A name in another language than Moondog's setting is not kept.
+      return name && nameFitsLanguage(name, this.locale) ? name : null;
+    };
   }
 
   // A single track or a new stream takes over from a running stream, once its next track stops being made.

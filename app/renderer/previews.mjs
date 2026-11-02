@@ -19,6 +19,9 @@ const artwork = (url) => {
 const generatedMedia = (value) => /^moondog-media:\/\/generated\/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u
   .test(String(value ?? "")) ? value : null;
 
+// Its cover, which main draws from the track's receipt in characters (src/integrations/stable-audio/cover.mjs).
+const coverOf = (media) => (media ? `${media}/cover.svg` : null);
+
 // A catalog song's id is the i parameter of its music.apple.com link.
 const catalogId = (url) => { try { return new URL(url).searchParams.get("i") || null; } catch { return null; } };
 
@@ -49,7 +52,7 @@ export function createPreviews({ send, onChange }) {
     const track = current();
     if (session && track) {
       session.metadata = new MediaMetadata({ title: track.title, artist: track.generated ? "Moondog" : track.artist_credit,
-        artwork: track.image ? [{ src: track.image, sizes: "600x600", type: "image/jpeg" }] : [] });
+        artwork: track.image && !track.generated ? [{ src: track.image, sizes: "600x600", type: "image/jpeg" }] : [] });
       session.playbackState = audio.paused ? "paused" : "playing";
     }
     onChange();
@@ -129,7 +132,7 @@ export function createPreviews({ send, onChange }) {
     receive(message) {
       if (message.type === "preview") {
         const tracks = (Array.isArray(message.tracks) ? message.tracks : []).map((track) => track.generated === true ? {
-          title: String(track.title ?? ""), artist_credit: "", preview_url: generatedMedia(track.media_url), catalog_url: null, image: null,
+          title: String(track.title ?? ""), artist_credit: "", preview_url: generatedMedia(track.media_url), catalog_url: null, image: coverOf(generatedMedia(track.media_url)),
           generated: true, generated_id: generatedMedia(track.media_url)?.split("/").at(-1) ?? null,
           duration_seconds: Number.isFinite(track.duration_seconds) ? track.duration_seconds : null,
         } : {
@@ -170,7 +173,7 @@ export function createPreviews({ send, onChange }) {
       if (message.type === "preview-enqueue" && message.id === id && message.track?.generated === true) {
         const media = generatedMedia(message.track.media_url);
         if (!media || queue.some((track) => !track.generated)) return;
-        queue.push({ title: String(message.track.title ?? ""), artist_credit: "", preview_url: media, catalog_url: null, image: null,
+        queue.push({ title: String(message.track.title ?? ""), artist_credit: "", preview_url: media, catalog_url: null, image: coverOf(media),
           generated: true, generated_id: media.split("/").at(-1),
           duration_seconds: Number.isFinite(message.track.duration_seconds) ? message.track.duration_seconds : null });
         onChange();

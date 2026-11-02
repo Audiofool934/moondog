@@ -16,6 +16,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { drawCover } from "../src/integrations/stable-audio/cover.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const out = process.env.MOONDOG_HARNESS_OUT || path.join(here, "release", "harness");
@@ -41,8 +42,19 @@ for (const name of readdirSync(os.tmpdir())) {
 }
 if (!show) setTimeout(() => { process.stderr.write("[harness] timed out\n"); app.exit(1); }, 240_000);
 
-// A track Moondog made plays from moondog-media: as in the app; here every id answers with two minutes of silence.
-protocol.registerSchemesAsPrivileged([{ scheme: "moondog-media", privileges: { standard: true, secure: true, stream: true } }]);
+// A track Moondog made plays from moondog-media: as in the app; here every id answers with two minutes of
+// silence, and its cover is drawn as main draws one, from a made-up receipt for that id.
+protocol.registerSchemesAsPrivileged([{ scheme: "moondog-media", privileges: { standard: true, secure: true, stream: true, corsEnabled: true } }]);
+const madeUpReceipt = (id) => {
+  const position = parseInt(id.slice(0, 2), 16) % 6 + 1;
+  return {
+    generated_track_id: id, created_at: "2026-11-02T21:40:00.000Z", bpm: 82,
+    shaped_by: [{ term: "dream pop", facet: "genre" }, { term: "reverb wash", facet: "texture" }, { term: "tape saturation", facet: "texture" }],
+    stream: { position, featured: ["dream pop", "reverb wash"] },
+    generator: { seed: parseInt(id.slice(0, 8), 16), seconds: 150 }, audio: { duration_seconds: 150,
+      loudness: Array.from({ length: 64 }, (_, index) => Math.min(1, index / 6) * (0.7 + 0.3 * Math.sin(index / (3 + position)))) },
+  };
+};
 const silence = (() => {
   const data = Buffer.alloc(120 * 44100 * 4);
   const header = Buffer.alloc(44);
@@ -54,7 +66,11 @@ const silence = (() => {
 })();
 
 app.whenReady().then(async () => {
-  protocol.handle("moondog-media", () => new Response(silence, { headers: { "Content-Type": "audio/wav" } }));
+  protocol.handle("moondog-media", (request) => {
+    const cover = /^\/([0-9a-f-]{36})\/cover\.svg$/u.exec(new URL(request.url).pathname);
+    if (cover) return new Response(drawCover(madeUpReceipt(cover[1])).svg, { headers: { "Content-Type": "image/svg+xml", "Access-Control-Allow-Origin": "*" } });
+    return new Response(silence, { headers: { "Content-Type": "audio/wav" } });
+  });
   const window = new BrowserWindow({
     width, height, useContentSize: true, show, title: "Moondog harness",
     titleBarStyle: "hiddenInset", trafficLightPosition: { x: 18, y: 15 },

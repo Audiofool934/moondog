@@ -13,6 +13,7 @@ import path from "node:path";
 import { resolveMoondogStateDirectory } from "../../core/state-directory.mjs";
 import { streamVariation } from "../../profile/taste-compiler.mjs";
 import { resolveMoondogAuthFile } from "../../runtime/pi/persistent-credential-store.mjs";
+import { readLoudness } from "./cover.mjs";
 import { DEFAULT_STABLE_AUDIO_MODEL, isStableAudioModel, SHARED_WEIGHTS, STABLE_AUDIO_MODELS } from "./sources.mjs";
 
 // The weights a model needs for text to music: the text encoder, the model and its decoder.
@@ -534,6 +535,8 @@ export function createLocalGenerator({
         const audio = await wavInfo(wav).catch(() => null);
         if (!audio || audio.duration_seconds <= 0) throw generationError("generation_failed", "Stable Audio 3 finished but wrote no playable track.");
         await chmod(wav, 0o600);
+        // How loud it runs from start to end, which its cover draws (cover.mjs); kept after a stream drops the audio.
+        const loudness = await readLoudness(wav).catch(() => null);
         const elapsed = Date.now() - started;
         const document = {
           receipt_version: "moondog-generated-track/1",
@@ -547,7 +550,7 @@ export function createLocalGenerator({
             prompt, seconds, seed, steps: 8, cfg: 1, elapsed_ms: elapsed, ...(measured ? { measured } : {}),
             license: "Stability AI Community License; outputs belong to the listener",
           },
-          audio: { file: "track.wav", ...audio },
+          audio: { file: "track.wav", ...audio, ...(loudness ? { loudness } : {}) },
         };
         await writeFile(path.join(temporary, "receipt.json"), `${JSON.stringify(document, null, 2)}\n`, { encoding: "utf8", mode: 0o600, flag: "wx" });
         await rename(temporary, path.join(folder, id));
@@ -570,6 +573,8 @@ export function createLocalGenerator({
 // background. Stopping the player, other music, or the time limit ends it. One stream per room, on
 // the room's one generator; only its newest tracks keep their audio, and every receipt stays.
 const STREAM_SKIP_MS = 30_000;
+// How long a later track waits for its own name before it takes a numbered one.
+const NAMING_TIMEOUT_MS = 10_000;
 export function createAtmosphereStream({ generator, player, now = Date.now, keepAudio = 3 }) {
   let stream = null;
   // What the surfaces see (view()) and hear (subscribe): the phase, and the end with its reason.
@@ -623,9 +628,30 @@ export function createAtmosphereStream({ generator, player, now = Date.now, keep
   };
   const trackFor = (ending, position) => {
     const variation = streamVariation(ending.compiled, position, ending.leaveOut);
-    return { variation, prompt: stableAudioPrompt(variation), title: `${ending.title} · ${position + 1}`,
+    // The first track carries the stream's own name; a later one is named as it is made (nameFor), or numbered.
+    return { variation, prompt: stableAudioPrompt(variation), title: position === 0 ? ending.title : `${ending.title} · ${position + 1}`,
       receipt: { ...ending.receipt, shaped_by: variation.descriptors, ...(variation.bpm ? { bpm: variation.bpm } : {}),
-        stream: { started_at: new Date(ending.startedAt).toISOString(), position: position + 1, featured: variation.featured } } };
+        stream: { name: ending.title, started_at: new Date(ending.startedAt).toISOString(), position: position + 1, featured: variation.featured } } };
+  };
+  // A name of its own for a later track, asked of the stream's namer within a few seconds. One that
+  // fails, is slow, or repeats a name this stream gave keeps the numbered name.
+  const nameFor = async (ending, variation, numbered) => {
+    if (typeof ending.nameTrack !== "function") return numbered;
+    const timeout = AbortSignal.timeout(NAMING_TIMEOUT_MS);
+    try {
+      const name = await Promise.race([
+        ending.nameTrack({
+          stream: ending.title, featured: variation.featured,
+          sound: variation.descriptors.map((descriptor) => descriptor.term).filter((term) => !variation.featured.includes(term)),
+          ...(variation.bpm ? { bpm: variation.bpm } : {}), earlier: [...ending.names],
+        }, { signal: AbortSignal.any([timeout, ending.controller.signal]) }),
+        new Promise((resolve) => { timeout.addEventListener("abort", () => resolve(null), { once: true }); }),
+      ]);
+      const text = typeof name === "string" ? name.trim() : "";
+      return text && !ending.names.some((earlier) => earlier.toLocaleLowerCase() === text.toLocaleLowerCase()) ? text : numbered;
+    } catch {
+      return numbered;
+    }
   };
   // The tracks that started playing keep their audio, the newest few; the rest keep their receipts.
   const prune = (current) => {
@@ -669,7 +695,10 @@ export function createAtmosphereStream({ generator, player, now = Date.now, keep
     current.making = true;
     changed();
     try {
-      const { prompt, title, receipt, variation } = trackFor(current, current.made.length);
+      const { prompt, title: numbered, receipt, variation } = trackFor(current, current.made.length);
+      const title = await nameFor(current, variation, numbered);
+      if (stream !== current) return;
+      current.names.push(title);
       const made = await generator.generate({ prompt, seconds: current.seconds, title, receipt }, { signal: current.controller.signal });
       if (stream !== current) return;
       const file = await generator.trackFile(made.id);
@@ -758,10 +787,10 @@ export function createAtmosphereStream({ generator, player, now = Date.now, keep
      * play. Returns the first track. A stream already running gives way to the new one, and its track
      * plays on until the first new one takes over, so nothing goes silent while that is made.
      */
-    async start({ compiled, title, seconds, minutes, receipt = {} }, { signal, onProgress, onTrack, beforePlay } = {}) {
+    async start({ compiled, title, seconds, minutes, receipt = {} }, { signal, onProgress, onTrack, beforePlay, nameTrack } = {}) {
       end("replaced");
       const current = { compiled, title, seconds, receipt, onTrack, startedAt: now(), endsAt: now() + minutes * 60_000,
-        made: [], leaveOut: new Set(), current: null, next: null, waiting: false, making: true, controller: new AbortController() };
+        made: [], names: [title], nameTrack, leaveOut: new Set(), current: null, next: null, waiting: false, making: true, controller: new AbortController() };
       stream = current;
       changed();
       const stopped = () => Object.assign(new Error("The stream was stopped before it began."), { code: "generation_stopped" });
