@@ -540,6 +540,13 @@ export function createStableAudioSetup({
     /** Waits for this process's job to end; resolves with status(). */
     wait: () => job?.done ?? Promise.resolve(status()),
     /** Stops the job, here or in the other process; verified and .part files stay for a later install. */
+    /** Stops this process's own job as it closes, keeping what was verified; another process's job runs on. */
+    async close() {
+      if (!job) return false;
+      job.controller.abort();
+      await job.done;
+      return true;
+    },
     async cancel() {
       if (job) {
         job.controller.abort();

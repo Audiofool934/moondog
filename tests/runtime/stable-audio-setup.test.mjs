@@ -262,6 +262,23 @@ test("a cancel in the same process stops the job at once", async (t) => {
   assert.equal(await setup.cancel(), false, "nothing runs to cancel");
 });
 
+test("closing stops this process's own job and leaves another process's job alone", async (t) => {
+  const fake = await fakeSources(t);
+  fake.behavior.set("/w/t5gemma_f16.npz", "stall");
+  const setup = fake.setup();
+  assert.equal(await setup.close(), false, "nothing of its own runs");
+  await setup.install("medium", { accepted: true });
+  await until(() => fake.stalled.size === 1);
+  assert.equal(await setup.close(), true);
+  assert.equal(setup.status().job, null, "the room can close without waiting for the download");
+
+  const other = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+  t.after(() => other.kill());
+  await writeFile(path.join(fake.root, "setup.lock"), JSON.stringify({ pid: other.pid, token: "theirs", model: "small-music" }));
+  assert.equal(await fake.setup().close(), false);
+  assert.equal(await exists(path.join(fake.root, "cancel.json")), false, "the other window's download is not asked to stop");
+});
+
 test("a lock held by a running process refuses a second job; one left by a process that ended is taken over", async (t) => {
   const fake = await fakeSources(t);
   const setup = fake.setup();

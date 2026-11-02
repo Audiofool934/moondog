@@ -1280,6 +1280,9 @@ async function main() {
     unwatchPlayback();
     unwatchGeneration();
     unwatchGenerationSetup();
+    // A download or uv run this process owns would keep it alive after the room closes; it stops and
+    // resumes next time. One owned by the other window or terminal runs on.
+    await generationSetup?.close?.();
     // A made track still playing is stopped while the generator listens, so its outcome is kept.
     if (localGenerator) {
       previewPlayer?.stop?.();
