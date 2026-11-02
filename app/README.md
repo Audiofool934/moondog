@@ -115,7 +115,7 @@ A model or music service chosen there lasts until the app quits, and sign-in and
   The [terminal guide](../docs/TERMINAL_GUIDE.md#use-the-listening-room) says how to install Stable Audio 3 and its Medium model.
   A track Moondog made plays in the window and reads "Made by Moondog" in now playing and the mini player; during a stream, Up next shows the track Moondog made next.
 - On Air: once music generation is on and a model is set up, a mark beside the mini player starts Moondog's stream.
-  A click sends "Go on air: keep the music going for right now" into the open conversation, and the agent starts the stream from your taste and the moment.
+  A click sends "Go on air: make new music for right now and keep it going" into the open conversation, and the agent starts the stream from your taste and the moment.
   The mark is lit while the stream runs; its tooltip says when the stream ends at the latest, and it dips once every few seconds while a record is being cut and nothing of the stream plays.
   Another click, `⌃⌘O`, the Playback menu, the Dock menu or the player's stop button takes it off the air at once, without the agent; nothing that the stream paused starts again, and that song waits in the player, paused.
   While on air, the stream owns the player: its track shows even paused, Up next ends with the record being cut, and between two tracks the player shows that record instead of a paused song elsewhere.
