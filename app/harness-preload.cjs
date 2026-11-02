@@ -94,9 +94,26 @@ const STATUS = {
   locale: LOCALE, locales: LOCALES,
   model: { state: "configured", provider: "anthropic", model: "claude-sonnet-5-5", effort: "medium", thinking: "medium", effortLevels: ["low", "medium", "high", "xhigh", "max"], reason: null },
   spotify: "ready", spotifyAccount: { state: "ready", clientId: true }, playbackService: "spotify", memory: "ready", firstRun: null,
-  generation: { state: "ready", enabled: true, install: "ready", missing: null, path: "/Users/example/Developer/stable-audio-3/optimized/mlx" },
+  generation: null,
   onAir: null,
 };
+// Stable Audio 3's downloads as the core's setup reports them: Medium on this Mac and in use, unless a
+// state says otherwise. Sizes are the real ones, the shared text encoder counted in each model.
+const MANAGED = "/Users/example/Library/Application Support/Moondog/stable-audio-3/mlx";
+const MODEL_BYTES = { medium: 5_179_055_990, "small-music": 1_704_727_702 };
+const models = (medium, small, partial = 0.31) => Object.fromEntries([["medium", medium], ["small-music", small]].map(([id, state]) =>
+  [id, { state, bytes: state === "ready" ? MODEL_BYTES[id] : state === "partial" ? Math.round(MODEL_BYTES[id] * partial) : 0, total: MODEL_BYTES[id] }]));
+const setupOf = ({ medium = "ready", small = "absent", accepted = true, job = null, partial } = {}) => ({ supported: true,
+  root: "/Users/example/Library/Application Support/Moondog/stable-audio-3", licenses: { accepted, at: accepted ? "2026-10-30T09:00:00.000Z" : null },
+  job, models: models(medium, small, partial), base: { uv: "ready", code: "ready", python: "ready" } });
+const generationOf = ({ setup = setupOf(), enabled = true, model = "medium" } = {}) => {
+  const install = setup.models[model]?.state === "ready" ? "ready" : "missing";
+  return { state: !enabled ? "off" : install, enabled, install, missing: null, path: MANAGED, source: "managed", model, managed: true, setup };
+};
+STATUS.generation = generationOf();
+// Nothing downloaded yet and the licenses not agreed to; the default folder is empty too.
+const NONE = () => ({ ...generationOf({ setup: setupOf({ medium: "absent", accepted: false }) }), source: "default", managed: false,
+  path: "/Users/example/Developer/stable-audio-3/optimized/mlx" });
 const OFFLINE = { ...STATUS, model: { state: "offline", provider: null, model: null, effort: null, effortLevels: [], reason: null },
   spotify: "unavailable", spotifyAccount: { state: "unavailable", clientId: true } };
 // The one-time first run, as the core reports it: over once a service is saved and a model answers.
@@ -236,6 +253,44 @@ function slash(command) {
   input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
 }
 
+// Playback with music generation unfolded, as the given status has it, before the harness aims the pointer.
+function unfoldGeneration(generation) {
+  ready({ generation });
+  player();
+  slash("service");
+  setTimeout(unfoldShown, 60);
+}
+// Its row clicked open and scrolled to the top of the sheet, under Spotify's open devices.
+function unfoldShown() {
+  const row = document.querySelector('[data-key="generation:stable-audio"]');
+  row.click();
+  document.querySelector('.sheet [data-key="generation:stable-audio"]').closest(".group").scrollIntoView({ block: "start" });
+}
+// A download the stand-in core runs: a few steps of progress, then the model on this Mac and in use.
+let downloading = null;
+function setupSent(setup) {
+  status = { ...status, generation: { ...status.generation, setup } };
+  core.postMessage({ type: "generation-setup", setup });
+}
+function download(model) {
+  clearInterval(downloading);
+  const total = MODEL_BYTES[model];
+  let received = 0;
+  const step = () => {
+    const setup = status.generation.setup;
+    received = Math.min(total, received + total / 12);
+    if (received < total) return setupSent({ ...setup, licenses: { accepted: true, at: new Date().toISOString() },
+      job: { model, step: "weights", running: true, received, total }, models: { ...setup.models, [model]: { state: "partial", bytes: received, total } } });
+    clearInterval(downloading);
+    downloading = null;
+    const next = { ...setup, job: null, models: { ...setup.models, [model]: { state: "ready", bytes: total, total } } };
+    setupSent(next);
+    send({ type: "status", ...status, generation: status.generation.install === "ready" ? { ...status.generation, setup: next } : generationOf({ setup: next, model }) });
+  };
+  step();
+  downloading = setInterval(step, 400);
+}
+
 // Each state leaves the page settled; the main process captures after the entrances finish.
 // A state may return actions for the main process: { hover: selector } moves the real pointer there.
 // Set by the Spotify-limited states, so the devices answer the same way the core does.
@@ -366,10 +421,38 @@ const STATES = {
     return { hover: '.sheet [data-key="generation:stable-audio"]' };
   },
   "settings-generation-setup"() {
-    ready({ generation: { ...STATUS.generation, state: "missing", install: "missing" } });
+    ready({ generation: NONE() });
     player();
     slash("service");
-    setTimeout(() => document.querySelector('[data-key="generation:stable-audio"]').click(), 300);
+    setTimeout(unfoldShown, 300);
+  },
+  // One-click Stable Audio 3, unfolded under its row: nothing downloaded, with the pointer on Medium; the
+  // licenses asked for at the first Download; Medium downloading; Medium in use, the pointer on Small
+  // Music; both on this Mac; and a download that stopped for want of space.
+  "generation-setup-none"() {
+    unfoldGeneration(NONE());
+    return { hover: '.sheet [data-key="generation:download:medium"]' };
+  },
+  "generation-setup-agreement"() {
+    unfoldGeneration(NONE());
+    setTimeout(() => document.querySelector('[data-key="generation:download:medium"]').click(), 120);
+  },
+  "generation-setup-downloading"() {
+    const job = { model: "medium", step: "weights", running: true, received: Math.round(MODEL_BYTES.medium * 0.42), total: MODEL_BYTES.medium };
+    unfoldGeneration(generationOf({ setup: setupOf({ medium: "partial", job, partial: 0.42 }) }));
+    return { hover: '.sheet [data-key="generation:cancel:medium"]' };
+  },
+  "generation-setup-installed"() {
+    unfoldGeneration(generationOf());
+    return { hover: '.sheet [data-key="generation:download:small-music"]' };
+  },
+  "generation-setup-both"() {
+    unfoldGeneration(generationOf({ setup: setupOf({ small: "ready" }) }));
+    return { hover: '.sheet [data-key="generation:use:small-music"]' };
+  },
+  "generation-setup-error"() {
+    unfoldGeneration(generationOf({ setup: setupOf({ medium: "partial", job: { model: "medium", step: "weights", running: false, received: 0, total: MODEL_BYTES.medium,
+      error: { code: "setup_disk_full", message: "Not enough free space." } } }), enabled: false }));
   },
   // A track Moondog made, playing in the window under the reply that made it.
   generated() {
@@ -572,6 +655,20 @@ core.onmessage = ({ data }) => {
     send({ type: "generation-checked" });
   }
   if (data.type === "generation-check") { send({ type: "status", ...status }); send({ type: "generation-checked" }); }
+  if (data.type === "generation-install") download(data.model);
+  if (data.type === "generation-cancel") {
+    clearInterval(downloading);
+    downloading = null;
+    setupSent({ ...status.generation.setup, job: null });
+  }
+  if (data.type === "generation-remove") {
+    const setup = status.generation.setup;
+    const next = { ...setup, models: { ...setup.models, [data.model]: { state: "absent", bytes: 0, total: MODEL_BYTES[data.model] } } };
+    setupSent(next);
+    const other = Object.keys(next.models).find((id) => next.models[id].state === "ready");
+    send({ type: "status", ...status, generation: status.generation.model === data.model ? generationOf({ setup: next, model: other ?? data.model, enabled: Boolean(other) && status.generation.enabled }) : { ...status.generation, setup: next } });
+  }
+  if (data.type === "generation-model") send({ type: "status", ...status, generation: generationOf({ setup: status.generation.setup, model: data.model, enabled: status.generation.enabled }) });
   if (data.type === "model") {
     send({ type: "status", ...status, model: { ...status.model, state: "configured", provider: data.provider, model: data.model }, firstRun: over(status.firstRun && { ...status.firstRun, model: true }) });
   }

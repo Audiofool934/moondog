@@ -218,15 +218,38 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
       onAir: onAirOf(base.streamView?.() ?? null),
     };
   }
+  // source: where the install comes from, "managed" for the one Moondog downloaded; model: the one in use.
+  // setup: the downloads, as the core's setup last reported them, or null before its first report.
   function generationStatus() {
     const found = generation?.status?.();
-    return found ? { state: found.state, enabled: found.enabled === true, install: found.install, missing: found.missing ?? null, path: found.path ?? null } : null;
+    return found ? { state: found.state, enabled: found.enabled === true, install: found.install, missing: found.missing ?? null, path: found.path ?? null,
+      source: found.source ?? null, model: found.model ?? null, managed: found.managed === true, setup: setupShown } : null;
   }
   const sendStatus = () => {
     send({ type: "status", ...status() });
     // Until the first run is over, any change of model or music service may end it.
     if (firstRun && firstRunState?.needed !== false) void refreshFirstRun();
   };
+
+  // Stable Audio 3's downloads, shared with the terminal: what is installed and the one job that may run.
+  // A job this window started that ends well puts its model in use, unless another install already is.
+  const setup = generation?.setup ?? null;
+  let setupShown = null;
+  let startedHere = null;
+  function setupChanged(next) {
+    if (closed || !next) return;
+    const before = setupShown?.job;
+    setupShown = next;
+    send({ type: "generation-setup", setup: next });
+    if (!before || before.error || next.job) return;
+    startedHere = null;
+    // The core's setup already chose what makes music once the download ended; the window only reads it.
+    void (async () => {
+      await generation.check();
+      sendStatus();
+    })().catch(() => {});
+  }
+  const readSetup = () => Promise.resolve().then(() => setup?.status()).then(setupChanged, () => {});
 
   // The one-time music service and model setup. The window asks while `needed`; the terminal shares
   // first-run.json, so finishing or skipping on either side ends it on both. Once over it stays over.
@@ -1066,7 +1089,8 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     "music-service": (data) => setMusicService(String(data.service ?? "")),
     // The listener turns music making on or off, or points it at another Stable Audio 3 folder.
     generation: async (data) => {
-      await generation.save({ enabled: data.enabled === true, ...(typeof data.path === "string" ? { path: data.path } : {}) });
+      // A folder saved alone leaves on or off as saved, so a change made in the terminal meanwhile stands.
+      await generation.save({ ...(typeof data.enabled === "boolean" ? { enabled: data.enabled } : {}), ...(typeof data.path === "string" ? { path: data.path } : {}) });
       sendStatus();
       send({ type: "generation-checked" });
     },
@@ -1075,6 +1099,40 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
       await generation?.check?.();
       sendStatus();
       send({ type: "generation-checked" });
+    },
+    // Stable Audio 3 downloaded on the listener's click: the first time with the licenses agreed to in
+    // the window. The job runs on after this answers; its progress arrives as generation-setup.
+    "generation-install": async (data) => {
+      const model = String(data.model ?? "");
+      startedHere = model;
+      const job = Promise.resolve().then(() => setup.install(model, { accepted: data.accepted === true }));
+      // A refusal comes at once and reads as a notice; a job that fails later says so in its status.
+      job.catch((error) => {
+        if (startedHere === model) startedHere = null;
+        if (closed || setupShown?.job?.error || /cancel|abort/iu.test(String(error?.code ?? error?.name ?? ""))) return;
+        send({ type: "notice", code: "generation-install", error: String(error?.code ?? ""), message: errorText(error) });
+      });
+      await readSetup();
+    },
+    // Downloaded files stay, so a later Download goes on where this one stopped.
+    "generation-cancel": async () => {
+      startedHere = null;
+      await setup.cancel();
+      await readSetup();
+    },
+    "generation-remove": async (data) => {
+      await setup.remove(String(data.model ?? ""));
+      await readSetup();
+      await generation.check();
+      sendStatus();
+    },
+    // An installed model put in use, which also moves music making to the install Moondog manages.
+    "generation-model": async (data) => {
+      const model = String(data.model ?? "");
+      // A model removed meanwhile, here or in the terminal, is never put in use; on or off stays as saved.
+      if ((await setup?.status?.())?.models?.[model]?.state === "ready") await generation.save({ source: "managed", model });
+      await readSetup();
+      sendStatus();
     },
     // After ncm-cli is set up in Terminal, the window asks again instead of waiting for the next launch.
     "netease-check": async () => {
@@ -1111,6 +1169,9 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
   const unsubscribePlayback = base.onPlaybackServiceChange?.(playbackChanged);
   // Music making turned on or off in the terminal reaches Settings here.
   const unwatchGeneration = generation?.subscribe?.(() => { if (!closed) sendStatus(); });
+  // A download started here or in the terminal shows its progress here as it goes.
+  const unwatchSetup = setup?.subscribe?.(setupChanged);
+  void readSetup();
   const unwatchModel = watchModelSettings?.((selection, changed) => { void followModel(selection, changed).catch(() => {}); });
   const unwatchFirstRun = firstRun?.watch(() => { void refreshFirstRun(); });
   // Each change of the stream reaches the window as it happens. Once it ends, or a track ends its dry gap,
@@ -1135,6 +1196,7 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
       closed = true;
       unsubscribePlayback?.();
       unwatchGeneration?.();
+      unwatchSetup?.();
       unwatchModel?.();
       unwatchFirstRun?.();
       unsubscribeStream?.();
