@@ -168,8 +168,9 @@ function nowPlayingOf(answer) {
   };
 }
 
-export function createMusicAppPlayer({ platform = process.platform, run = osascript, now = Date.now } = {}) {
-  const available = platform === "darwin";
+export function createMusicAppPlayer({ platform = process.platform, environment = process.env, run = osascript, now = Date.now } = {}) {
+  // Disposable desktop checks can opt out of the listener's system Music app as well as local data.
+  const available = platform === "darwin" && environment.MOONDOG_SYSTEM_MUSIC !== "off";
   let refusedAt = null;
   const covers = new Map();
 

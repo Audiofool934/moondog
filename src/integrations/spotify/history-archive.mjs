@@ -1,11 +1,8 @@
-import { execFile } from "node:child_process";
 import path from "node:path";
-import { promisify } from "node:util";
+import { listZipMembers } from "../../importers/zip-reader.mjs";
 
 import { readSpotifyAccountDataHistoryArchive } from "./account-data-history.mjs";
 import { readSpotifyExtendedStreamingHistoryArchive } from "./extended-streaming-history.mjs";
-
-const execFileAsync = promisify(execFile);
 
 function fail(message, code = "spotify_history_archive_invalid") {
   const error = new Error(message);
@@ -20,15 +17,7 @@ export async function readSpotifyHistoryArchive(options = {}) {
   const archivePath = path.resolve(options.archivePath);
   let listing;
   try {
-    ({ stdout: listing } = await execFileAsync(
-      "/usr/bin/unzip",
-      ["-Z1", archivePath],
-      {
-        encoding: "utf8",
-        maxBuffer: 1024 * 1024,
-        windowsHide: true,
-      },
-    ));
+    listing = (await listZipMembers(archivePath)).join("\n");
   } catch {
     fail(
       "The Spotify history ZIP could not be read safely.",

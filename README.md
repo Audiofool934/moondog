@@ -42,9 +42,11 @@ See [updating and release channels](docs/UPDATES.md), including the one-time upg
 
 ## Other ways in
 
-[Moondog for Mac](app/README.md) is a native window on the same core as the terminal room.
+[Moondog desktop](app/README.md) is a native window on the same core as the terminal room, with build targets for macOS (Apple silicon), Windows (x64), and Linux (x64).
 It shares your profile, settings, sign-ins, and conversations with `moondog`, and draws its own conversation, now playing, and up next.
 Run it from this checkout with `cd app && npm ci && npm start`.
+The Windows and Linux desktop builds use Spotify playback and Apple Music previews; full Apple Music songs and reading the Music app require macOS.
+Windows support applies to the desktop app; the terminal launcher and its updater remain supported on macOS and Linux.
 
 The [project page](https://moondog.audiofool.ai) plays a short scene in this window, in a browser, with a made-up listener ([how](site/README.md)).
 

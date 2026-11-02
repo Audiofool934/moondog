@@ -5,6 +5,7 @@
 // Rows are kept by id and moved rather than rebuilt, so the row under the pointer keeps its hover,
 // a focused row keeps the focus, and a running dot keeps breathing when the list changes.
 import { icon, make } from "./ui.mjs";
+import { primaryModifier } from "./platform.mjs";
 
 const dayStart = (date) => new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
 function groupOf(updatedAt) {
@@ -37,14 +38,15 @@ export function createSidebar({ root, state, send, t, open, store, menuPoint }) 
   const selected = new Set();
   let anchor = null;
   const shownIds = () => [...root.querySelectorAll(".row")].map((item) => item.dataset.id);
-  function select(id, { metaKey, shiftKey }) {
+  function select(id, event) {
+    const { shiftKey } = event;
     const order = shownIds();
     // A selection starts from the open conversation, as one in Finder starts from the selected file.
     if (!selected.size && order.includes(state.current)) selected.add(state.current);
     if (shiftKey) {
       const from = order.indexOf(order.includes(anchor) ? anchor : state.current);
       const to = order.indexOf(id);
-      if (!metaKey) selected.clear();
+      if (!primaryModifier(event)) selected.clear();
       for (const each of from < 0 ? [id] : order.slice(Math.min(from, to), Math.max(from, to) + 1)) selected.add(each);
     } else if (selected.has(id)) {
       // Taking a row out leaves the anchor on a chosen row.
@@ -198,10 +200,10 @@ export function createSidebar({ root, state, send, t, open, store, menuPoint }) 
         }
         if (event.key === "Escape" && deselect()) event.preventDefault();
         // ⌘⌫ or Delete deletes the row, or the selection it is in, after asking.
-        if ((event.key === "Backspace" && event.metaKey) || event.key === "Delete") { event.preventDefault(); void confirmDelete(chosenWith(id)); }
+        if ((event.key === "Backspace" && primaryModifier(event)) || event.key === "Delete") { event.preventDefault(); void confirmDelete(chosenWith(id)); }
       });
       button.addEventListener("click", (event) => {
-        if (event.metaKey || event.shiftKey) { select(entry.session.id, event); return; }
+        if (primaryModifier(event) || event.shiftKey) { select(entry.session.id, event); return; }
         deselect();
         anchor = entry.session.id;
         // The choice shows at once; the core confirms it a moment later.

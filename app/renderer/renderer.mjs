@@ -10,10 +10,12 @@ import { createMark, scratchMark } from "./mark.mjs";
 import { mountRecord } from "./record.mjs";
 import { createSettings, EFFORTS } from "./settings.mjs";
 import { createSidebar } from "./sidebar.mjs";
+import { platform, shortcuts } from "./platform.mjs";
 import { icon, make, marquee, name, scrollbar, setIcon, tooltips } from "./ui.mjs";
 import "./style.css";
 
 const $ = (selector) => document.querySelector(`[data-${selector}]`);
+document.documentElement.dataset.platform = platform;
 
 let locale = windowLocale(navigator.languages);
 let t = windowStrings(locale);
@@ -66,18 +68,18 @@ function applyLanguage(next) {
   t = windowStrings(locale);
   document.documentElement.lang = languageTag(locale);
   input.placeholder = t("placeholder");
-  name($("toggle-sidebar"), t("conversations"), "⌥⌘S");
-  name($("toggle-inspector"), t("player"), "⌥⌘P");
-  name($("new"), t("newConversation"), "⌘N");
+  name($("toggle-sidebar"), t("conversations"), shortcuts.sidebar);
+  name($("toggle-inspector"), t("player"), shortcuts.player);
+  name($("new"), t("newConversation"), shortcuts.new);
   // These self-explanatory controls keep accessible names without floating labels over the record.
   for (const [node, key] of [[recordButton, "foldRecord"], [barRecord, "showRecord"], [$("expand"), "immerse"], [$("pin"), "keepOnTop"], [$("immersive"), "restore"]]) {
     node.setAttribute("aria-label", t(key));
   }
-  name($("settings-button"), t("settings"), "⌘,");
+  name($("settings-button"), t("settings"), shortcuts.settings);
   renderUpdate();
-  name($("previous"), t("previous"), "⌃⌘←");
-  name($("next"), t("next"), "⌃⌘→");
-  name($("mini-next"), t("next"), "⌃⌘→");
+  name($("previous"), t("previous"), shortcuts.previous);
+  name($("next"), t("next"), shortcuts.next);
+  name($("mini-next"), t("next"), shortcuts.next);
   $("device-row").dataset.tip = t("devices");
   $("track").setAttribute("aria-label", t("position"));
   name($("jump"), t("latest"));
@@ -1054,7 +1056,7 @@ function renderComposer() {
   const button = $("send");
   const streaming = Boolean(state.streaming);
   button.disabled = !streaming && (!input.value.trim() || Boolean(state.waiting && !state.ready));
-  name(button, streaming ? t("stop") : t("send"), streaming ? "⌘." : "↩");
+  name(button, streaming ? t("stop") : t("send"), streaming ? shortcuts.stop : "↩");
   setIcon(button, streaming ? "stop" : "up");
   renderPicks();
   syncMenu();
@@ -1287,7 +1289,7 @@ $("connect-player").addEventListener("click", () => settings.show("playback"));
 // ── On Air ───────────────────────────────────────────────────────────────────────────────────
 // Moondog's own channel, beside the music in the bar. A click asks for it in the open conversation, in
 // the listener's words, as the arm asks for a song; the agent starts the stream from the listener's
-// taste and the moment. Another click, ⌃⌘O or the menu takes it off the air, and nothing resumes. The
+// taste and the moment. Another click, its key or the menu takes it off the air, and nothing resumes. The
 // mark lights in ink, with no fill of its own, from the click on; while it waits for a record it dips
 // once every few seconds.
 const onAirButton = $("on-air");
@@ -1316,7 +1318,7 @@ function renderOnAir() {
     onAirButton.classList.toggle("lit", Boolean(phase));
     setIcon(onAirButton, phase ? "on-air-lit" : "on-air");
     onAirButton.setAttribute("aria-pressed", String(Boolean(state.onAir)));
-    name(onAirButton, label, "⌃⌘O");
+    name(onAirButton, label, shortcuts.onAir);
   }
   pulse(waiting && !hidden);
 }
@@ -1536,7 +1538,7 @@ function cuttingItem() {
 }
 // The player's buttons and the bar's follow one rule: what the service won't do now is dimmed.
 function drawControls(now, toggle, next) {
-  name(toggle, now.playing ? t("pause") : t("play"), "⌃⌘P");
+  name(toggle, now.playing ? t("pause") : t("play"), shortcuts.play);
   setIcon(toggle, now.playing ? "pause" : "play");
   set(toggle, "disabled", !can(now, now.playing ? "pausing" : "resuming"));
   set(next, "disabled", !can(now, "skipping_next"));
@@ -1916,7 +1918,7 @@ window.addEventListener("drop", (event) => {
 });
 
 // Keys: typing anywhere goes to the composer. No plain key plays, pauses or skips, because a chat
-// window is typed in all the time; ⌃⌘P, ⌃⌘→ and ⌃⌘← in the Playback menu do.
+// window is typed in all the time; the Playback menu's keys do (app/platform.mjs).
 document.addEventListener("keydown", (event) => {
   // Escape that just closed Settings is spent; it must not also stop the reply behind it.
   if (settings.open || event.defaultPrevented) return;

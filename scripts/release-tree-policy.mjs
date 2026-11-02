@@ -133,8 +133,9 @@ const forbiddenBasenames = new Set([
 
 // Raised when the project page (site/) arrived: main was at 346 entries and 14.9 MiB.
 // Raised again on 2026-10-29 for local music generation, its taste compiler and their tests: main was at 448.
+// Raised again when the Windows and Linux desktop met the resumable Mac release: 458 entries and 10.4 MiB.
 // The ceilings still catch bulk accidents such as a data dump or a build folder.
-export const maximumReleaseEntries = 480;
+export const maximumReleaseEntries = 600;
 export const maximumReleaseFileBytes = 5 * 1024 * 1024;
 export const maximumReleaseTreeBytes = 20 * 1024 * 1024;
 
