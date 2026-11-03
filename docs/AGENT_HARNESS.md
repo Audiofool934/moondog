@@ -91,7 +91,7 @@ Keys came from the Hermes Agent on the same Mac, in a throwaway Moondog config f
 | Hunyuan hy4-preview | Tencent TokenHub | 69/69 | 21/23, then 6/6 on the scenario that failed |
 | Qwen 3.8 Max | Alibaba Bailian (US) | 67/69, both failures Alibaba's content filter | 23/23 |
 | MiniMax M3 | MiniMax China | 66/69 | 19 of 20 answered runs passed; the account then ran out of balance |
-| Kimi K3 | Moonshot China | not measured: the account allows 3 requests a minute and 1 at a time | not measured |
+| Kimi K3 | Moonshot China | not measured at first: the account allows 3 requests a minute and 1 at a time | 18/23 with `MOONDOG_EVAL_REQUEST_INTERVAL_MS=21000`; 2 network resets, 2 low-balance refusals, 1 invented reference it recovered from |
 | DeepSeek V4.1 Flash | DeepSeek | 69/69 | 23/23 |
 
 The models' failures pointed at the harness, not only at the models:
@@ -102,7 +102,8 @@ The models' failures pointed at the harness, not only at the models:
 - Hunyuan quoted "HTTP 403" to the listener; the status in a tool error is now labelled as diagnosis only.
 - The simulated Spotify lacked the saved tracks and albums endpoints.
 
-Doubao Seed 2.1 (Volcengine) could not be reached from this Mac at the time.
+Doubao Seed 2.1 (Volcengine) could not be reached from this Mac at the time, directly or through its proxy.
+An account with a low request limit is measured with `MOONDOG_EVAL_REQUEST_INTERVAL_MS`, which sends model requests one at a time, at least that many milliseconds apart.
 
 ## Sources
 
