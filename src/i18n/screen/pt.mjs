@@ -874,6 +874,7 @@ export default {
   "See what you're listening to": "Ver o que você está ouvindo",
   "Control the Music app": "Controlar o app Música",
   "Choose a music service": "Escolher um serviço de música",
+  "Read or change Moondog's settings": "Ver ou mudar as configurações do Moondog",
   "Search outside your library": "Buscar fora da sua biblioteca",
   "Find music nearby": "Encontrar música parecida",
   "Remember what you've told me": "Lembrar o que você me disse",

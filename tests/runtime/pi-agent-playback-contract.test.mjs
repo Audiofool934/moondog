@@ -225,3 +225,81 @@ test("a song the listener queued from the album playing is not queued again", as
   assert.deepEqual(f.spotify.state.queue.map(track => track.id), ["simShuZhiGuNiao", "simQianGua"]);
   assert.equal(result.spotify_queue_plan.skipped_duplicate_count, 1, "the listener already queued 樹枝孤鳥");
 });
+
+test("a queue pick skipped as a duplicate is filled from this request's discovery results by the same artist", async t => {
+  const f = fixture(t, { active: "simMac", playing: "simBeidong" });
+  const titles = ["被動", "牽掛", "淚橋"];
+  const refs = c => JSON.parse(f.lastResult(c).content[0].text).items.filter(item => titles.includes(item.name))
+    .sort((left, right) => titles.indexOf(left.name) - titles.indexOf(right.name)).map(item => item.item_ref_id);
+  const result = await f.prompt("add three more Wu Bai songs to the queue", [f.call("moondog_spotify_discover", { queries: ["伍佰"] }),
+    c => f.call("moondog_spotify_queue_batch", { item_refs: refs(c), count: 3 }), f.say("Queued three.")]);
+  const queued = result.spotify_queue_plan.queued.map(track => track.title);
+  assert.equal(queued.length, 3, "the playing song is skipped and a third Wu Bai song takes its place");
+  assert.deepEqual(queued.slice(0, 2), ["牽掛", "淚橋"]);
+  assert.ok(f.spotify.state.queue.every(track => track.artists.some(artist => /伍佰|Wu Bai/u.test(artist.name))));
+  assert.equal(result.spotify_queue_plan.skipped_duplicate_count, 1);
+});
+
+test("a failed search for songs by title sends nothing and leaves later playback in the turn open", async t => {
+  const f = fixture(t, { active: "simMac", playing: "simReckoner" });
+  const search = f.application.spotifySearchTracks.bind(f.application);
+  let failed = false;
+  f.application.spotifySearchTracks = async (...args) => {
+    if (!failed) { failed = true; throw Object.assign(new Error("Spotify search failed."), { code: "spotify_search_unavailable", status: 503 }); }
+    return search(...args);
+  };
+  const result = await f.prompt("放伍佰的被动", [f.call("moondog_spotify_player_control", { action: "resume", songs: [{ title: "被動", artist: "伍佰" }] }),
+    f.call("moondog_spotify_player_control", { action: "resume", songs: [{ title: "被動", artist: "伍佰" }] }), f.say("在放《被動》了。")]);
+  assert.equal(result.spotify_playback_failures[0].not_sent, true);
+  assert.equal(f.spotify.state.current.id, "simBeidong");
+});
+
+test("songs with a reference are refused before any search, and a similar Chinese title is not guessed", async t => {
+  const f = fixture(t, { active: "simMac", playing: "simReckoner" });
+  let conflict;
+  await f.prompt("放伍佰的被动", [f.call("moondog_spotify_player_control", { action: "resume", songs: [{ title: "被動", artist: "伍佰" }], track_refs: ["not-a-real-ref"] }),
+    c => { conflict = f.lastResult(c); return f.say("没放。"); }]);
+  assert.equal(conflict.isError, true);
+  assert.match(conflict.content[0].text, /spotify_playback_source_conflict/u);
+  assert.equal(f.plays(), 0);
+  // 突然的愛 shares half its characters with 突然的自我 by the same artist, yet is another song.
+  let seen;
+  await f.prompt("放伍佰的突然的爱", [f.call("moondog_spotify_player_control", { action: "resume", songs: [{ title: "突然的愛", artist: "伍佰" }] }),
+    c => { seen = JSON.parse(f.lastResult(c).content[0].text); return f.say("没找到。"); }]);
+  assert.equal(seen.state, "not_found");
+  assert.equal(f.plays(), 0);
+  assert.equal(f.spotify.state.current.id, "simReckoner");
+});
+
+test("a named version must match as named, and a shared prefix is not the song", async t => {
+  const f = fixture(t, { active: "simMac", playing: "simReckoner" });
+  const ask = async (title, artist) => {
+    let seen;
+    await f.prompt(`play ${title}`, [f.call("moondog_spotify_player_control", { action: "resume", songs: [{ title, artist }] }),
+      c => { seen = JSON.parse(f.lastResult(c).content[0].text); return f.say("ok"); }]);
+    return seen;
+  };
+  // Only the studio Nude exists: a live take asked for is not swapped for it.
+  assert.equal((await ask("Nude - Live", "Radiohead")).state, "not_found");
+  // "Weird Fishes" only starts the title "Weird Fishes/Arpeggi": a candidate, not a guess.
+  assert.equal((await ask("Weird Fishes", "Radiohead")).state, "not_found");
+  assert.equal(f.plays(), 0);
+  // The same song in another version, when none was named, still plays: 被動 asked for, 被動 found.
+  assert.equal((await ask("被動", "伍佰")).state, "accepted");
+  assert.equal(f.spotify.state.current.id, "simBeidong");
+});
+
+test("a finished turn keeps its playback call and outcome in the history, and drops its reads", async t => {
+  const f = fixture(t, { active: "simMac", playing: "simReckoner" });
+  await f.prompt("我要听伍佰的被动", [f.call("moondog_spotify_search", { query: "伍佰 被动" }),
+    c => f.call("moondog_spotify_player_control", { action: "resume", item_ref_id: f.found(c, "被動") }), f.say("在放《被動》了。")]);
+  let history;
+  await f.prompt("暂停", [c => { history = c.messages.map(message => message.role === "toolResult"
+    ? `result ${message.toolName} ${message.content[0].text}`
+    : message.role === "assistant" ? `assistant ${message.content.map(block => block.type === "toolCall" ? `call ${block.name}` : "text").join(",")}` : message.role);
+  return f.say("好。"); }]);
+  const earlier = history.slice(0, history.lastIndexOf("user"));
+  assert.ok(earlier.includes("assistant call moondog_spotify_player_control"));
+  assert.ok(earlier.includes("result moondog_spotify_player_control Done."));
+  assert.ok(!earlier.some(line => line.includes("moondog_spotify_search")));
+});

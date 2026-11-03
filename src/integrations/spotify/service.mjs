@@ -587,7 +587,8 @@ function refusedMove(error, target, player) {
   const refused = new SpotifyServiceError("spotify_device_refused",
     `Spotify would not move playback to ${clipText(target.name, 80)}, either as a transfer or as a song started there. ` +
     `${stayed ? `Playback stays on ${stayed}${player.is_playing === false ? ", paused" : ""}. ` : ""}` +
-    "The Spotify app on that device usually needs to be open and played once before it accepts remote control.");
+    "The Spotify app on that device usually needs to be open and played once before it accepts remote control. " +
+    "Both ways were already tried, so do not try another way in this turn; tell the listener.");
   refused.status = error?.status;
   refused.playbackStayedOn = stayed;
   return refused;

@@ -8,6 +8,11 @@ const catalog = [
     agent_tool: { name: "moondog_playback_service", label: N_("Choose a music service") },
   },
   {
+    id: "settings", version: "1", state: "enabled", effect: "write_local",
+    description: "Read Moondog's own setup (model, music service, reply language) and change the settings the listener may change by asking.",
+    agent_tool: { name: "moondog_settings", label: N_("Read or change Moondog's settings") },
+  },
+  {
     id: "spotify.discovery.search", version: "1", state: "enabled", effect: "read_external", requires_spotify: true,
     description: "Verify open-world music hypotheses with bounded Spotify queries, retaining a shared candidate pool.",
     agent_tool: { name: "moondog_spotify_discover", label: N_("Discover verified Spotify tracks") },

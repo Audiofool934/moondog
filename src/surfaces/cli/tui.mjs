@@ -2414,6 +2414,8 @@ export async function runMoondogTui({
       application.locale = locale;
       // A chosen language also becomes the conversation's, so the next short reply follows it.
       application.conversationLocale = locale;
+      // A language chosen here ends one the listener asked the agent to keep.
+      application.replyLanguagePin = null;
       await saveLanguage?.(locale);
       const pinned = normalizeLocale(environment.MOONDOG_LANGUAGE);
       transcript.invalidate();

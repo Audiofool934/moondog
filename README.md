@@ -203,6 +203,7 @@ Your profile, and anything Moondog remembers, carry over.
 - [Product charter](docs/PRODUCT_CHARTER.md) and [public roadmap](docs/ROADMAP.md): where Moondog is headed, and what it will not do.
 - [Voice](docs/VOICE.md): how Moondog talks, and where Pink Floyd shows up.
 - [The listening loop](docs/LISTENING_LOOP.md): how the agent keeps your choices, your recent listening, and its own picks apart.
+- [The agent harness](docs/AGENT_HARNESS.md): how the tools keep the model's part small, so every supported model can play what you ask, and how each model is measured.
 - [Runtime architecture](docs/ADR_0001_AGENT_RUNTIME_AND_CLI.md) and [data contracts](contracts/README.md): how the pieces fit together.
 - [Contribution guide](CONTRIBUTING.md): local setup, checks, and how private data is kept out.
 - [Release status](docs/PUBLIC_RELEASE_READINESS.md): what is published, and what the checks cover.

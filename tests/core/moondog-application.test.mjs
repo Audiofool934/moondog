@@ -295,11 +295,12 @@ test("ready domain services expose four descriptor-driven A1 capabilities", () =
     tools.find((capability) => capability.id === "playlist.plan").effect,
     "derive_local",
   );
+  // The settings tool saves only the reply language the listener asks for; every other tool here only reads.
   assert.ok(
     descriptors.every((descriptor) =>
       new Set(["read_local", "read_runtime", "derive_local"]).has(
         descriptor.effect,
-      ),
+      ) || descriptor.capability_id === "settings",
     ),
   );
 
@@ -806,4 +807,43 @@ test("Spotify catalog resolution asks for a fresh login when search scope is mis
     },
   );
   assert.equal(resolverCalls, 0);
+});
+
+test("the agent reads its own setup and changes the reply language the listener asks for", async () => {
+  const { createLanguageSelection } = await import("../../src/i18n/preferences.mjs");
+  const saved = [];
+  const heard = [];
+  const languageSelection = createLanguageSelection({ save: async (locale) => { saved.push(locale); } });
+  languageSelection.subscribe((locale) => heard.push(locale));
+  const application = new MoondogApplication({ locale: "en", languageSelection });
+  const runtime = { provider: "deepseek", model: "deepseek-flash", effort: "high" };
+  const status = application.settingsStatus(runtime);
+  assert.deepEqual(status.model, { provider: "deepseek", model: "deepseek-flash", effort: "high", change: "not_by_agent",
+    where: "Settings › Models in the window, or /model in the terminal" });
+  assert.equal(status.reply_language.current, "en");
+  assert.ok(status.reply_language.choices.includes("zh"));
+  const changed = await application.setReplyLanguage("zh", runtime);
+  assert.deepEqual(changed.changed, { setting: "reply_language", from: "en", to: "zh" });
+  assert.equal(application.locale, "zh");
+  assert.equal(application.conversationLocale, "zh");
+  assert.equal(application.replyLanguagePin, "zh");
+  assert.deepEqual(saved, ["zh"]);
+  assert.deepEqual(heard, ["zh"]);
+  await assert.rejects(application.setReplyLanguage("klingon", runtime), { code: "unsupported_reply_language" });
+});
+
+test("a song by title and artist matches the artist's identity, never a name inside another act's", async () => {
+  const application = new MoondogApplication({});
+  const items = {
+    "Hello Adele": [{ type: "track", name: "Hello", artists: ["Adele Tribute Band"], track_ref_id: "tribute", item_ref_id: "tribute" },
+      { type: "track", name: "Hello", artists: ["Adele"], track_ref_id: "adele", item_ref_id: "adele" }],
+    "被動 伍佰": [{ type: "track", name: "被動", artists: ["伍佰 & China Blue"], track_ref_id: "wubai", item_ref_id: "wubai" }],
+    "Slow Dancing V": [{ type: "track", name: "Slow Dancing", artists: ["V"], track_ref_id: "v", item_ref_id: "v" }],
+    "Tribute Only Adele": [{ type: "track", name: "Tribute Only", artists: ["Adele Tribute Band"], track_ref_id: "only", item_ref_id: "only" }],
+  };
+  application.spotifySearchTracks = async ({ query }) => ({ items: items[query] ?? [] });
+  const { matched, unmatched } = await application.spotifyResolveSongs([
+    { title: "Hello", artist: "Adele" }, { title: "被動", artist: "伍佰" }, { title: "Slow Dancing", artist: "V" }, { title: "Tribute Only", artist: "Adele" }]);
+  assert.deepEqual(matched.map((item) => item.track_ref_id), ["adele", "wubai", "v"]);
+  assert.deepEqual(unmatched.map((song) => [song.title, song.candidates.map((item) => item.item_ref_id)]), [["Tribute Only", ["only"]]]);
 });

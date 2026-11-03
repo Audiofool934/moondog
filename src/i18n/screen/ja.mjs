@@ -874,6 +874,7 @@ export default {
   "See what you're listening to": "聴いている曲を確認",
   "Control the Music app": "ミュージックAppを操作",
   "Choose a music service": "音楽サービスを選ぶ",
+  "Read or change Moondog's settings": "Moondog の設定を確認・変更",
   "Search outside your library": "ライブラリの外を探す",
   "Find music nearby": "近い音楽を探す",
   "Remember what you've told me": "教えてもらったことを覚える",

@@ -79,7 +79,7 @@ for (const [prompt, title, artist] of [
 ]) {
   test(`one song plays from a host-issued Spotify search reference: ${prompt}`, async t => {
     const f = fixture(t, { title, artist });
-    assert.match(f.runtime.agent.state.systemPrompt, /Use moondog_spotify_search with the title and artist first/u);
+    assert.match(f.runtime.agent.state.systemPrompt, /play it in one call: moondog_spotify_player_control with action resume and songs/u);
     f.faux.setResponses([tool("moondog_spotify_search", { query: `${title} ${artist}` }), context =>
       tool("moondog_spotify_player_control", { action: "resume", track_refs: [results(context, "moondog_spotify_search")[0].items[0].track_ref_id] }), answer("Started the requested song.")]);
     const result = await f.runtime.prompt(prompt);
@@ -89,6 +89,30 @@ for (const [prompt, title, artist] of [
     assert.doesNotMatch(result.text, /playlist plan/u);
   });
 }
+
+for (const [prompt, title, artist] of [[exactPrompt, "天长地久", "刘森"], ['Play "Midnight Lines" by Mara Vale', "Midnight Lines", "Mara Vale"]]) {
+  test(`one song plays by title and artist in one call, with no reference: ${prompt}`, async t => {
+    const f = fixture(t, { title, artist });
+    f.faux.setResponses([tool("moondog_spotify_player_control", { action: "resume", songs: [{ title, artist }] }), answer("Started the requested song.")]);
+    const result = await f.runtime.prompt(prompt);
+    assert.equal(result.status, "completed");
+    assert.deepEqual(f.writes, [{ pathname: "/v1/me/player/play", body: { uris: ["spotify:track:fictional0"] } }]);
+    assert.equal(result.spotify_write_receipts[0].state, "accepted");
+  });
+}
+
+test("a song with no clear match is not guessed: nothing plays and its candidates come back", async t => {
+  const f = fixture(t, { title: "天长地久", artist: "刘森" });
+  let seen;
+  f.faux.setResponses([tool("moondog_spotify_player_control", { action: "resume", songs: [{ title: "Another Song", artist: "Someone Else" }] }),
+    context => { seen = results(context, "moondog_spotify_player_control")[0]; return answer("Not found."); }]);
+  const result = await f.runtime.prompt("play Another Song by Someone Else");
+  assert.equal(result.status, "completed");
+  assert.deepEqual(f.writes, []);
+  assert.equal(seen.state, "not_found");
+  assert.equal(seen.not_sent, true);
+  assert.equal(seen.unmatched[0].title, "Another Song");
+});
 
 for (const status of [204, 400, 503]) {
   test(`a model failure after HTTP ${status} preserves Spotify outcomes without replay`, async t => {

@@ -103,6 +103,8 @@ test("a reply follows the message's language, then the listener's setting", () =
     ["füg ein paar Songs zur Warteschlange hinzu", "en", "de"],
     ["antworte mir bitte auf Englisch", "de", "en"],
     ["metti un po' di jazz in coda", "en", "it"],
+    ["sposta la musica sul PC", "en", "it"],
+    ["Ho spostato la riproduzione su PC.", "en", "it"],
     ["riproduci qualcosa di rilassante", "es", "it"],
     ["rispondi in inglese", "it", "en"],
     ["reply in traditional Chinese", "en", "zh-Hant"],
