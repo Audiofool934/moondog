@@ -10,6 +10,8 @@ import { createMark, scratchMark } from "./mark.mjs";
 import { mountRecord } from "./record.mjs";
 import { createSettings, EFFORTS } from "./settings.mjs";
 import { createSidebar } from "./sidebar.mjs";
+import { createLibrary } from "./library.mjs";
+import { createShelf } from "./shelf.mjs";
 import { icon, make, marquee, name, scrollbar, setIcon, tooltips } from "./ui.mjs";
 import "./style.css";
 
@@ -23,7 +25,9 @@ const tr = () => t;
 // come back when opened. streaming is a reply being written; onAir is Moondog's own channel.
 const state = { sessions: [], folders: [], running: [], current: null, turns: [], model: null, spotify: null, spotifyAccount: null,
   playbackService: "spotify", locale, locales: [], player: null, streaming: null, ready: false, waiting: null, update: { phase: "idle" }, firstRun: null,
-  onAir: null };
+  onAir: null,
+  // The listener's library, and the playlist open in the room in the conversation's place ({ id, playlist }, or none).
+  library: { folders: [], playlists: [] }, shelf: null };
 const store = {
   get: (key) => { try { return localStorage.getItem(key); } catch { return null; } },
   set: (key, value) => { try { localStorage.setItem(key, value); } catch { /* A private window keeps the default. */ } },
@@ -47,6 +51,8 @@ const settings = createSettings({ state, send, t: tr,
 // The one-time first run asks for a music service, then a model, in the Settings sheet (first-run.mjs).
 const firstRun = createFirstRun({ settings, send, read: () => ({ run: state.firstRun, modelReady: state.model?.state === "configured" }) });
 const sidebar = createSidebar({ root: $("sessions"), state, send, t: tr, open: (id) => openSession(id), store, menuPoint: (event) => menuPoint(event) });
+const library = createLibrary({ root: $("library"), state, send, t: tr, open: (id) => openPlaylist(id), store, menuPoint: (event) => menuPoint(event) });
+const shelf = createShelf({ root: $("shelf"), state, send, t: tr, menuPoint: (event) => menuPoint(event), onClose: () => closePlaylist() });
 const tips = tooltips();
 // A native menu opens at the pointer, or under its control when the keyboard pressed it.
 function menuPoint(event) {
@@ -69,6 +75,8 @@ function applyLanguage(next) {
   name($("toggle-sidebar"), t("conversations"), "⌥⌘S");
   name($("toggle-inspector"), t("player"), "⌥⌘P");
   name($("new"), t("newConversation"), "⌘N");
+  renderSidebarMode();
+  name($("keep"), t("saveToSaved"));
   // These self-explanatory controls keep accessible names without floating labels over the record.
   for (const [node, key] of [[recordButton, "foldRecord"], [barRecord, "showRecord"], [$("expand"), "immerse"], [$("pin"), "keepOnTop"], [$("immersive"), "restore"]]) {
     node.setAttribute("aria-label", t(key));
@@ -112,8 +120,53 @@ function renderTitle() {
   // The folded record sits before the title, so it moves when the title does.
   placeSoon();
 }
+// The sidebar shows the conversations or the library; the choice is remembered, as the sidebar itself is.
+let sidebarMode = store.get("moondog.sidebar.mode") === "library" ? "library" : "conversations";
+function renderSidebarMode() {
+  // A core without a library (the project page's scene) shows only the conversations.
+  $("toggle-library").hidden = !state.libraryReady;
+  const inLibrary = sidebarMode === "library" && state.libraryReady === true;
+  $("sessions").hidden = inLibrary;
+  $("library").hidden = !inLibrary;
+  $("toggle-library").setAttribute("aria-pressed", String(inLibrary));
+  name($("toggle-library"), inLibrary ? t("conversations") : t("library"), "⌥⌘L");
+  // In the library the new button makes a playlist or a folder; ⌘N still starts a conversation.
+  setIcon($("new"), inLibrary ? "plus" : "compose");
+  name($("new"), inLibrary ? t("libraryNew") : t("newConversation"), inLibrary ? "" : "⌘N");
+  if (inLibrary) library.render();
+}
+function toggleLibrary() {
+  sidebarMode = sidebarMode === "library" ? "conversations" : "library";
+  store.set("moondog.sidebar.mode", sidebarMode);
+  if (!shown("sidebar")) togglePanel("sidebar");
+  renderSidebarMode();
+  (sidebarMode === "library" ? $("library") : $("sessions")).querySelector("[aria-current='true'] button, .row button")?.focus({ preventScroll: true });
+}
+// A playlist opens in the room in the conversation's place, and the conversation comes back when it closes.
+function openPlaylist(id) {
+  if (state.shelf?.id === id) { shelf.focus(); return; }
+  state.shelf = { id, playlist: null };
+  shelf.reset();
+  send({ type: "library-open", id });
+  renderShelf();
+}
+function closePlaylist() {
+  if (!state.shelf) return;
+  state.shelf = null;
+  send({ type: "library-open", id: null });
+  renderShelf();
+  input.focus();
+}
+function renderShelf() {
+  room.classList.toggle("shelving", Boolean(state.shelf));
+  shelf.render();
+  library.render();
+  if (!state.shelf) { renderConversation({ redraw: true }); placeSoon(); }
+}
 // Another conversation can open while this one is still answering; it keeps going in the core.
 function openSession(id) {
+  // Opening a conversation, or a new one, puts the conversation back in the room.
+  if (state.shelf) closePlaylist();
   if (id && id === state.current) return;
   // An empty new conversation is already the new conversation.
   if (!id && !state.turns.length && !state.streaming) { input.focus(); return; }
@@ -131,7 +184,10 @@ function notice(text) {
 }
 const NOTICES = { too_many_running: "noticeTooMany", model_unknown: "noticeModelUnknown", waiting_for_import: "noticeWaitingForImport", message_busy: "noticeMessageBusy",
   delete_running: "noticeDeleteRunning", delete_open_elsewhere: "noticeDeleteElsewhere", delete_failed: "noticeDeleteFailed", transfer_failed: "noticeTransferFailed",
-  rewind_busy: "waitForReply", rewind_failed: "noticeFailed" };
+  rewind_busy: "waitForReply", rewind_failed: "noticeFailed",
+  library_nothing_playing: "noticeNothingToSave", library_too_deep: "noticeTooDeep", library_folder_cycle: "noticeFailed", library_full: "noticePlaylistFull",
+  library_playlist_not_found: "noticePlaylistGone", made_track_audio_not_kept: "receiptOnly", made_track_not_found: "receiptOnly",
+  spotify_not_ready: "noticePlaybackFailed", library_no_player: "noticePlaybackFailed", library_not_ready: "noticeFailed" };
 
 // ── The conversation ─────────────────────────────────────────────────────────────────────────
 const KINDS = [
@@ -153,6 +209,9 @@ const KINDS = [
   [/^moondog_netease_search$/u, "search"],
   [/^moondog_netease_now_playing$/u, "status"],
   [/^moondog_listening_now$/u, "status"],
+  [/^moondog_collection_play$/u, "play"],
+  [/^moondog_collection_save$/u, "keep"],
+  [/^moondog_collection_list$/u, "shelf"],
   [/^moondog_music_app_control$/u, (args) => ({ pause: "pause", next: "skip", previous: "skip" })[args?.action] ?? "play"],
   [/^moondog_(?:memory_|taste_choice$)/u, "memory"],
   [/^moondog_music_/u, "search"],
@@ -1117,6 +1176,8 @@ function submitText(text) {
     renderConversation();
     return true;
   }
+  // A message sent while a playlist is open brings the conversation back to show the reply.
+  if (state.shelf) closePlaylist();
   // The words show at once; the core's start of the turn adopts them.
   state.turns.push({ role: "user", text, pending: true });
   renderConversation();
@@ -1140,6 +1201,7 @@ input.addEventListener("keydown", (event) => {
   // Enter sends; while a reply runs it does nothing, so a typed follow-up waits instead of stopping the reply.
   if (event.key === "Enter" && !event.shiftKey && !event.isComposing && event.keyCode !== 229) { event.preventDefault(); if (!state.streaming) submit(); }
   if (event.key === "Escape" && state.streaming) { event.preventDefault(); send({ type: "cancel" }); }
+  else if (event.key === "Escape" && state.shelf && !input.value) { event.preventDefault(); closePlaylist(); }
   // The conversation scrolls from the composer, so reading back never needs the mouse.
   if (event.key === "PageUp" || event.key === "PageDown") {
     event.preventDefault();
@@ -1164,7 +1226,13 @@ const COMMANDS = [
   { name: "remember", label: "remember", argument: "cmdRememberArgument", run: (text) => { if (text) { send({ type: "remember", text }); notice(t("remembered")); } } },
   { name: "folder", label: "newFolder", run: () => {
     if (!shown("sidebar")) togglePanel("sidebar");
-    sidebar.startNewFolder();
+    if (sidebarMode === "library") library.startNew("folder", null); else sidebar.startNewFolder();
+  } },
+  { name: "library", label: "library", run: () => toggleLibrary() },
+  { name: "playlist", label: "newPlaylist", run: () => {
+    if (sidebarMode !== "library") toggleLibrary();
+    else if (!shown("sidebar")) togglePanel("sidebar");
+    library.startNew("playlist", null);
   } },
   { name: "settings", label: "settings", run: () => settings.show() },
   { name: "help", label: "shortcuts", run: () => settings.show("about") },
@@ -1541,6 +1609,9 @@ function drawControls(now, toggle, next) {
   set(toggle, "disabled", !can(now, now.playing ? "pausing" : "resuming"));
   set(next, "disabled", !can(now, "skipping_next"));
 }
+// The song the heart last kept, by title and artists, so its heart shows filled while it plays.
+let keptNow = null;
+const songKey = (now) => `${now.title}\u0000${now.generated ? "moondog" : (now.artists ?? []).join(",")}`;
 function renderInspector() {
   const now = nowPlaying();
   renderOnAir();
@@ -1563,6 +1634,11 @@ function renderInspector() {
   set($("song"), "textContent", now?.title ?? "");
   set($("artist"), "textContent", now ? (now.generated ? t("madeByMoondog") : now.artists.join(", ")) : "");
   set($("album"), "textContent", now?.album ?? "");
+  // The heart keeps what plays now; it fills once this song is kept, until another one plays.
+  const keep = $("keep");
+  set(keep, "hidden", !now || Boolean(now.making) || !state.libraryReady || (!now.generated && !now.artists?.length));
+  setIcon(keep, now && keptNow === songKey(now) ? "saved-fill" : "saved");
+  keep.setAttribute("aria-pressed", String(Boolean(now) && keptNow === songKey(now)));
   renderProgress(now);
 
   // The record On Air is cutting can't be played, paused or skipped, so it offers no transport.
@@ -1888,11 +1964,26 @@ for (const panel of ["sidebar", "inspector"]) {
 }
 $("toggle-sidebar").addEventListener("click", () => togglePanel("sidebar"));
 $("toggle-inspector").addEventListener("click", () => togglePanel("inspector"));
-$("new").addEventListener("click", () => openSession(null));
+$("new").addEventListener("click", (event) => (sidebarMode === "library" ? void library.newMenu(event) : openSession(null)));
+$("toggle-library").addEventListener("click", () => toggleLibrary());
+// The heart beside the song keeps it in Saved; a right-click offers the listener's playlists, or a new one.
+$("keep").addEventListener("click", () => send({ type: "library-save", ...keepArtwork() }));
+$("keep").addEventListener("contextmenu", async (event) => {
+  event.preventDefault();
+  const playlists = state.library.playlists.filter((each) => !each.saved).sort((a, b) => a.name.localeCompare(b.name));
+  const chosen = await menu([{ id: "saved", label: t("saved") }, ...(playlists.length ? [{ type: "separator" }] : []),
+    ...playlists.map((each) => ({ id: `to:${each.id}`, label: each.name }))], event);
+  if (chosen === "saved") send({ type: "library-save", ...keepArtwork() });
+  if (chosen?.startsWith("to:")) send({ type: "library-save", playlistId: chosen.slice(3), ...keepArtwork() });
+});
+const keepArtwork = () => { const image = nowPlaying()?.image; return typeof image === "string" && image.startsWith("https://") ? { artwork: image } : {}; };
 scrollbar($("sessions"));
+scrollbar($("library"));
+scrollbar($("shelf").querySelector(".shelf-scroll"));
 scrollbar($("inspector-scroll"));
 // Long conversation names and long song lines roll into view under the pointer. A conversation's
 // name keeps clear of the ⋯ button that floats over its end; a branch's number already steps aside.
+marquee($("library"), ".row, .folder-head", { find: (row) => row.querySelector(".name"), tail: (line) => (line.closest(".row") ? 34 : 0) });
 marquee($("sessions"), ".row, .folder-head", {
   find: (row) => row.querySelector(".name .base") ?? row.querySelector(".name"),
   tail: (line) => (line.closest(".row") && !line.classList.contains("base") ? 34 : 0),
@@ -1924,13 +2015,14 @@ document.addEventListener("keydown", (event) => {
   if (event.target === input || event.target.closest?.("input, textarea")) return;
   if (event.key === " " && event.target.closest?.("button, a, select, [role=button]")) return;
   if (event.key === "Escape" && state.streaming) { send({ type: "cancel" }); return; }
+  if (event.key === "Escape" && state.shelf) { closePlaylist(); return; }
   if (event.key.length === 1 && !event.metaKey && !event.ctrlKey && !event.altKey) input.focus();
 });
 // Commands from the menu bar.
 window.moondogApp?.onCommand?.((command) => {
   if (settings.open && !["settings", "stop", "toggle-playback", "next", "previous", "on-air"].includes(command)) return;
   // A command that shows the conversation, a panel or Settings first brings the window back from the record alone.
-  if (immersed() && ["new", "settings", "toggle-sidebar", "toggle-inspector", "toggle-record"].includes(command)) immerse(false);
+  if (immersed() && ["new", "settings", "toggle-sidebar", "toggle-library", "toggle-inspector", "toggle-record"].includes(command)) immerse(false);
   if (command === "new") openSession(null);
   if (command === "stop" && state.streaming) send({ type: "cancel" });
   if (command === "settings") settings.show();
@@ -1939,6 +2031,7 @@ window.moondogApp?.onCommand?.((command) => {
   if (command === "previous") control("previous", "menu");
   if (command === "on-air") toggleOnAir();
   if (command === "toggle-sidebar") togglePanel("sidebar");
+  if (command === "toggle-library") toggleLibrary();
   if (command === "toggle-inspector") togglePanel("inspector");
   if (command === "toggle-record") toggleRecord();
 });
@@ -1962,6 +2055,30 @@ function receive({ data }) {
     else void showDevices(data.devices ?? []);
   }
   if (data.type === "player-error") notice(t("noticePlaybackFailed"));
+  if (data.type === "library") {
+    state.library = { folders: data.folders ?? [], playlists: data.playlists ?? [] };
+    if (!state.libraryReady) { state.libraryReady = true; renderSidebarMode(); renderInspector(); }
+    library.render();
+    shelf.render();
+  }
+  if (data.type === "library-playlist" && state.shelf?.id === data.id) {
+    // A playlist deleted here, in the terminal or by Moondog closes, and the conversation comes back.
+    if (!data.playlist) closePlaylist();
+    else { state.shelf.playlist = data.playlist; shelf.render(); }
+  }
+  if (data.type === "library-made" && data.id) openPlaylist(data.id);
+  if (data.type === "library-saved") {
+    const now = nowPlaying();
+    if (now && data.playlist?.saved) keptNow = songKey(now);
+    const where = data.playlist?.saved ? t("saved") : data.playlist?.name ?? "";
+    notice(data.added ? (data.playlist?.saved ? t("keptInSaved") : t("savedTo", { name: where })) : t("alreadyIn", { name: where }));
+    renderInspector();
+  }
+  if (data.type === "library-played") {
+    if (data.state === "not_found" || data.state === "empty") notice(t(data.state === "empty" ? "playlistEmpty" : "noticeNothingFound"));
+    else if (data.left_out_made) notice(t("madeLeftOut"));
+    else if (data.not_found) notice(t("notFoundSome"));
+  }
   // The sheet shows its own sign-in errors. sign_in_busy is the exception: the sheet keeps the running panel.
   if (data.type === "sign-in" && data.state === "error" && !(settings.open && data.code !== "sign_in_busy")) notice(SIGN_IN_ERRORS[data.code] ? t(SIGN_IN_ERRORS[data.code]) : t("signInFailed"));
   if (data.type === "import" && data.stage === "refresh-failed") notice(t("importRefreshFailed"));

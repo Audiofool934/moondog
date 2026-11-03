@@ -165,6 +165,16 @@ Once it is on, ask for a track in your own words, ask to hear one Moondog made a
 Ending a stream starts nothing it paused.
 Stable Audio 3 runs offline, and the track and its receipt stay in Moondog's state folder; your request still goes to the model you talk through.
 A stream keeps the audio of its newest three tracks; the others keep their receipts.
+A track you keep in your library keeps its audio.
+
+`/library` lists your library: Saved, then your folders and playlists.
+Songs by artists and the tracks Moondog made sit in it side by side, and each says which it is.
+`/library save` keeps the song or track playing now in Saved, and `/library save Night drive` keeps it in that playlist, which it makes if there is none.
+`/library play Night drive` plays a playlist on the music service you chose.
+With Apple Music, its songs and Moondog's tracks play in one queue in Moondog's player; with Spotify or NetEase, its songs play there and Moondog's tracks are left out.
+You can also ask in your own words, such as "save this" or "play my rainy-day playlist".
+The desktop app shows the same library in its sidebar (⌥⌘L), with folders inside folders, four levels deep.
+The library is `library.sqlite` in Moondog's state folder, and it stays on this Mac.
 
 Music making needs an Apple silicon Mac and Stability AI's MLX build of Stable Audio 3.
 Moondog sets it up when you ask: `/generation download medium` or `/generation download small`, or Download in the desktop app's Settings › Playback › Music generation.

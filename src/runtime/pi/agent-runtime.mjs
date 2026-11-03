@@ -183,6 +183,7 @@ function agentCapabilityAllowed(descriptor) {
     (descriptor.capability_id.startsWith("netease.") &&
       spotifyCapabilityEffects.has(descriptor.effect)) ||
     (descriptor.capability_id === "music.preview.play" && descriptor.effect === "play_preview") ||
+    (descriptor.capability_id === "collection.play" && descriptor.effect === "play_library") ||
     (["music.generate.local", "music.generate.replay", "music.generate.stream", "music.generate.stream.stop"].includes(descriptor.capability_id) &&
       descriptor.effect === "generate_local")
   );
@@ -6608,6 +6609,93 @@ function createToolFactories(
       }),
     ],
     [
+      "collection.list",
+      (descriptor) => ({
+        name: descriptor.tool_name,
+        label: descriptor.label,
+        description:
+          "Find playlists in the listener's own library on this Mac by words of their name, or list the newest ones without words. Saved is the built-in playlist of single songs and made tracks they kept. Each playlist says how many entries it holds and how many of them Moondog made. With playlist_id, it reads that playlist's entries in order.",
+        parameters: Type.Object(
+          {
+            query: Type.Optional(Type.String({ maxLength: 120 })),
+            playlist_id: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
+          },
+          { additionalProperties: false },
+        ),
+        execute: executeDomain(
+          async (_toolCallId, parameters) => {
+            if (parameters.playlist_id) {
+              const playlist = await application.libraryPlaylist(parameters.playlist_id);
+              if (!playlist) throw Object.assign(new Error("That playlist is not in the library."), { code: "library_playlist_not_found" });
+              return { playlist: { id: playlist.id, name: playlist.saved ? "Saved" : playlist.name, origin: playlist.origin,
+                entries: playlist.entries.slice(0, 60).map((entry) => ({ title: entry.title, artist: entry.artist_credit, ...(entry.kind === "made" ? { made_by_moondog: true } : {}) })),
+                total: playlist.entries.length } };
+            }
+            return { playlists: application.findLibraryPlaylists(parameters.query ?? "") };
+          },
+          (value) => structuredClone(value),
+        ),
+      }),
+    ],
+    [
+      "collection.save",
+      (descriptor) => ({
+        name: descriptor.tool_name,
+        label: descriptor.label,
+        description:
+          "Keep music in the listener's own library on this Mac, only when they ask to save, keep, like or collect it. from now_playing keeps the song or made track playing now; from queue keeps it and what plays after it (the queue, or the rest of the playlist it plays from). Or give songs by title and artist, or made_track_id for a track Moondog made (product.made_tracks). With no playlist it goes in Saved; playlist_id adds to one of their playlists (from moondog_collection_list); playlist_name makes a new playlist with that name, in the listener's language. Saved holds each song once; already says how many were there.",
+        parameters: Type.Object(
+          {
+            from: Type.Optional(Type.Union([Type.Literal("now_playing"), Type.Literal("queue")])),
+            songs: Type.Optional(Type.Array(Type.Object({
+              title: Type.String({ minLength: 1, maxLength: 200 }),
+              artist: Type.String({ minLength: 1, maxLength: 200 }),
+              album: Type.Optional(Type.String({ maxLength: 200 })),
+            }, { additionalProperties: false }), { minItems: 1, maxItems: 50 })),
+            made_track_id: Type.Optional(Type.String({ minLength: 36, maxLength: 36 })),
+            playlist_id: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
+            playlist_name: Type.Optional(Type.String({ minLength: 1, maxLength: 120 })),
+          },
+          { additionalProperties: false },
+        ),
+        executionMode: "sequential",
+        execute: executeDomain(
+          async (_toolCallId, parameters, signal) => application.saveToLibrary({
+            from: parameters.from, songs: parameters.songs, madeTrackId: parameters.made_track_id,
+            playlistId: parameters.playlist_id, playlistName: parameters.playlist_name,
+          }, { by: "listener", signal }),
+          (value) => ({
+            playlist: { id: cleanOutputText(value.playlist?.id, 128, "playlist_id"), name: cleanOutputText(value.playlist?.name, 120, "playlist_name"),
+              ...(value.playlist?.created ? { created: true } : {}) },
+            added: Number(value.added) || 0,
+            already: Number(value.already) || 0,
+            titles: (value.titles ?? []).slice(0, 50).map((title) => cleanOutputText(title, 200, "title")),
+          }),
+        ),
+      }),
+    ],
+    [
+      "collection.play",
+      (descriptor) => ({
+        name: descriptor.tool_name,
+        label: descriptor.label,
+        description:
+          "Play a playlist from the listener's own library, by its id from moondog_collection_list, on the music service they chose. It is the listener's own music, so say its name and let it play; don't describe it as Moondog's pick. With Apple Music, songs and Moondog's tracks play in one queue in Moondog's player. With Spotify or NetEase its songs play there, and left_out_made says how many of Moondog's tracks in it could not play there. not_found counts songs no service found.",
+        parameters: Type.Object(
+          {
+            playlist_id: Type.String({ minLength: 1, maxLength: 128 }),
+            shuffle: Type.Optional(Type.Boolean()),
+          },
+          { additionalProperties: false },
+        ),
+        executionMode: "sequential",
+        execute: executeDomain(
+          async (_toolCallId, parameters, signal) => application.playLibrary({ playlistId: parameters.playlist_id, shuffle: parameters.shuffle === true }, { signal }),
+          (value) => structuredClone(value),
+        ),
+      }),
+    ],
+    [
       "playlist.plan",
       (descriptor) => ({
         name: descriptor.tool_name,
@@ -6824,6 +6912,7 @@ Public web research rules:
 
 Grounding and evidence rules:
 - Before naming or selecting tracks as present in the user's library, call moondog_library_search.
+- The listener's collection in Moondog (Saved and their own playlists, which can hold songs and tracks Moondog made) is separate from their imported library and from Spotify. When they ask to save, keep, collect or like music (收藏, 存下来) without naming Spotify, use moondog_collection_save; use moondog_spotify_library_save only when they name Spotify or Liked Songs. To play one of their playlists, find it with moondog_collection_list and play it with moondog_collection_play.
 - When personalization matters, call moondog_profile_summary instead of assuming a profile.
 - Before saying how often, when, or whether the listener played something, check the listening coverage. Plays inside a gap, outside every source's span, or after recent_plays_checked_at are unknown, not zero. When a gap could hold the plays in question, lead with that boundary, for example "I have no records from August 30 to October 21", and do not conclude that the listener rarely plays it or only just found it.
 - The saved reading is enduring taste up to its listening date. Recent attention is the present: stored plays from the last four weeks, and Spotify's four-week top artists, which count listening on every device, including plays Moondog never stored and songs Moondog itself played or queued; stored plays count those apart as moondog_started_plays. When they disagree about what the listener plays lately, trust recent attention, and say which one you read.

@@ -218,6 +218,110 @@ let shown = [];
 function ready(extra = {}) {
   shown = extra.transcript ?? [];
   send({ type: "ready", ...STATUS, sessions: SESSIONS, folders: FOLDERS, current: "s1", running: [], transcript: [], ...extra });
+  sendLibrary();
+}
+
+// The listener's library, as the room sends it: Saved, folders inside folders, and playlists that hold songs
+// and Moondog's tracks side by side. Edits change it as the core would, so the sidebar and the room can be tried.
+const MADE_IDS = ["6f1c1b2e-3c4d-4e5f-8a9b-0c1d2e3f4a5b", "7a2d3c4e-5f60-4a71-9b82-1c2d3e4f5a6b", "8b3e4d5f-6a71-4b82-8c93-2d3e4f5a6b7c"];
+const song = (index, id) => ({ id, kind: "song", title: TRACKS[index].title, artist_credit: TRACKS[index].artists.join(", "), album: TRACKS[index].album,
+  refs: { artwork_url: COVERS[index] }, added_by: "listener", added_at: "2026-11-02T21:00:00.000Z" });
+const made = (index, id, title, kept = true) => ({ id, kind: "made", title, artist_credit: "Moondog", made_id: MADE_IDS[index], refs: {}, audio_kept: kept,
+  added_by: "listener", added_at: "2026-11-02T21:00:00.000Z" });
+const LIBRARY = {
+  folders: [
+    { id: "lf1", parentId: null, name: "Moods", position: 0 },
+    { id: "lf2", parentId: "lf1", name: "After dark", position: 1 },
+    { id: "lf3", parentId: null, name: "Work", position: 2 },
+  ],
+  playlists: {
+    saved: { id: "saved", folderId: null, name: "Saved", origin: "listener", saved: true, position: -1,
+      entries: [made(0, "e1", "Late window light"), song(3, "e2"), song(1, "e3"), song(5, "e4")] },
+    lp1: { id: "lp1", folderId: "lf2", name: "Rainy Tuesday", origin: "listener", position: 0,
+      entries: [song(1, "e5"), made(1, "e6", "Tide glass"), song(3, "e7"), song(0, "e8"), made(2, "e9", "Paper lanterns", false), song(4, "e10")] },
+    lp2: { id: "lp2", folderId: "lf1", name: "Sunday kitchen", origin: "moondog", position: 0, entries: [song(0, "e11"), song(2, "e12"), song(4, "e13")] },
+    lp3: { id: "lp3", folderId: "lf3", name: "Deep focus", origin: "listener", position: 0, entries: [song(5, "e14"), made(1, "e15", "Tide glass")] },
+    lp4: { id: "lp4", folderId: null, name: "Records Moondog cut for me", origin: "moondog", position: 3, entries: [made(0, "e16", "Late window light"), made(1, "e17", "Tide glass")] },
+    lp5: { id: "lp5", folderId: null, name: "Road trip, someday", origin: "listener", position: 4, entries: [] },
+  },
+};
+let libraryOpen = null;
+let entryCount = 100;
+const coverOf = (playlist) => {
+  for (const entry of playlist.entries) {
+    if (entry.made_id) return { made_id: entry.made_id };
+    if (entry.refs?.artwork_url) return { artwork_url: entry.refs.artwork_url };
+  }
+  return null;
+};
+function sendLibrary() {
+  send({ type: "library", folders: LIBRARY.folders, playlists: Object.values(LIBRARY.playlists).map(({ entries, ...playlist }) => ({
+    ...playlist, count: entries.length, made: entries.filter((entry) => entry.kind === "made").length, cover: coverOf({ entries }), updatedAt: "2026-11-02T21:00:00.000Z" })) });
+  if (libraryOpen) send({ type: "library-playlist", id: libraryOpen, playlist: LIBRARY.playlists[libraryOpen] ?? null });
+}
+// Places a folder or playlist in a parent before a sibling, renumbering the parent as the store does.
+function place(kind, id, parentId, beforeId) {
+  const nodes = [...LIBRARY.folders.filter((folder) => folder.parentId === parentId).map((node) => ["folder", node]),
+    ...Object.values(LIBRARY.playlists).filter((playlist) => !playlist.saved && playlist.folderId === parentId).map((node) => ["playlist", node])]
+    .sort((a, b) => a[1].position - b[1].position).filter(([, node]) => node.id !== id);
+  const node = kind === "folder" ? LIBRARY.folders.find((folder) => folder.id === id) : LIBRARY.playlists[id];
+  if (kind === "folder") node.parentId = parentId; else node.folderId = parentId;
+  const at = beforeId ? nodes.findIndex(([, each]) => each.id === beforeId) : -1;
+  nodes.splice(at < 0 ? nodes.length : at, 0, [kind, node]);
+  nodes.forEach(([, each], index) => { each.position = index; });
+}
+function library(data) {
+  if (data.type === "library-open") libraryOpen = data.id ?? null;
+  if (data.type === "library-folder-save") {
+    if (!data.id) { const id = `lf${LIBRARY.folders.length + 10}`; LIBRARY.folders.push({ id, parentId: data.parentId ?? null, name: data.name, position: 0 }); place("folder", id, data.parentId ?? null, LIBRARY.folders.find((folder) => (folder.parentId ?? null) === (data.parentId ?? null))?.id); }
+    else {
+      const folder = LIBRARY.folders.find((each) => each.id === data.id);
+      if (data.name) folder.name = data.name;
+      if (data.parentId !== undefined || data.beforeId !== undefined) place("folder", data.id, data.parentId === undefined ? folder.parentId : data.parentId, data.beforeId ?? null);
+    }
+  }
+  if (data.type === "library-folder-delete") {
+    const folder = LIBRARY.folders.find((each) => each.id === data.id);
+    for (const each of LIBRARY.folders) if (each.parentId === data.id) each.parentId = folder.parentId;
+    for (const each of Object.values(LIBRARY.playlists)) if (each.folderId === data.id) each.folderId = folder.parentId;
+    LIBRARY.folders.splice(LIBRARY.folders.indexOf(folder), 1);
+  }
+  if (data.type === "library-playlist-save") {
+    if (!data.id) {
+      const id = `lp${Object.keys(LIBRARY.playlists).length + 10}`;
+      LIBRARY.playlists[id] = { id, folderId: data.folderId ?? null, name: data.name, origin: "listener", position: 0, entries: [] };
+      place("playlist", id, data.folderId ?? null, null);
+      send({ type: "library-made", id });
+    } else {
+      const playlist = LIBRARY.playlists[data.id];
+      if (data.name) playlist.name = data.name;
+      if (data.folderId !== undefined || data.beforeId !== undefined) place("playlist", data.id, data.folderId === undefined ? playlist.folderId : data.folderId, data.beforeId ?? null);
+    }
+  }
+  if (data.type === "library-playlist-delete") delete LIBRARY.playlists[data.id];
+  const playlist = LIBRARY.playlists[data.playlistId];
+  if (data.type === "library-entries-remove" && playlist) playlist.entries = playlist.entries.filter((entry) => !data.ids.includes(entry.id));
+  if (data.type === "library-entries-move" && playlist) {
+    const moving = playlist.entries.filter((entry) => data.ids.includes(entry.id));
+    const rest = playlist.entries.filter((entry) => !data.ids.includes(entry.id));
+    const at = data.beforeId ? rest.findIndex((entry) => entry.id === data.beforeId) : -1;
+    rest.splice(at < 0 ? rest.length : at, 0, ...moving);
+    playlist.entries = rest;
+  }
+  if (data.type === "library-entries-copy" && playlist) {
+    const from = LIBRARY.playlists[data.fromPlaylistId];
+    playlist.entries.push(...from.entries.filter((entry) => data.ids.includes(entry.id)).map((entry) => ({ ...entry, id: `e${entryCount += 1}` })));
+  }
+  if (data.type === "library-save") {
+    const target = LIBRARY.playlists[data.playlistId ?? "saved"];
+    target.entries.unshift({ ...song(last.index, `e${entryCount += 1}`) });
+    send({ type: "library-saved", playlist: { id: target.id, name: target.name, ...(target.saved ? { saved: true } : {}) }, added: 1, already: 0 });
+  }
+  if (data.type === "library-play") {
+    send({ type: "library-played", state: "playing", player: "spotify", playlist: { id: data.playlistId }, playing: 4, left_out_made: 2 });
+    player({ index: 1, fraction: 0.05, playing: true });
+  }
+  sendLibrary();
 }
 // The last song the stand-in played, so pause, skip and seek answer about that song.
 let last = { fraction: 0.38, playing: true, index: 0, device: "Mac mini", queue: 5 };
@@ -328,6 +432,16 @@ const STATES = {
     setTimeout(() => send({ type: "status", ...status, firstRun: run }), 60);
   },
   "first-run-netease"() { STATES["first-run"](undefined, { netease: "ready" }); },
+  // The library in the sidebar's place, a playlist open in the room, Saved, and a playlist with nothing in it yet.
+  library() { STATES.reply(); setTimeout(() => document.querySelector("[data-toggle-library]").click(), 120); },
+  playlist(id = "lp1") {
+    STATES.library();
+    setTimeout(() => document.querySelector(`[data-library] .row[data-id="${id}"] .open`)?.click(), 260);
+  },
+  "playlist-saved"() { STATES.playlist("saved"); },
+  "playlist-empty"() { STATES.playlist("lp5"); },
+  // The heart beside the song in the player, after a click kept it.
+  "keep-song"() { STATES.reply(); setTimeout(() => document.querySelector("[data-toggle-inspector]")?.click(), 150); setTimeout(() => document.querySelector("[data-keep]")?.click(), 450); },
   "first-run-model"() { STATES["first-run"](); setTimeout(() => document.querySelector('[data-key="service:apple_music"]').click(), 400); },
   "first-run-model-only"() { STATES["first-run"]({ needed: true, service: "spotify", model: false }); },
   "first-run-key"() { STATES["first-run-model-only"](); setTimeout(() => document.querySelector('[data-key="sign-in:anthropic:api_key"]').click(), 500); },
@@ -616,6 +730,7 @@ core.onmessage = ({ data }) => {
   }
   if (data.type === "new") { shown = []; send({ type: "session", current: null, transcript: [] }); }
   if (["label", "delete", "folder-save"].includes(data.type)) relabel(data);
+  if (data.type.startsWith("library-")) library(data);
   if (data.type === "models") send({ type: "models", providers });
   if (data.type === "provider-models") send({ type: "provider-models", provider: data.provider,
     models: (PROVIDER_MODELS[data.provider] ?? []).map(([id, name]) => ({ id, name })) });

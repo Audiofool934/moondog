@@ -125,6 +125,7 @@ const slashCommands = [
   { name: "endpoint", description: N_("Add a model service by its address") },
   { name: "web", description: N_("Look things up on public music sites") },
   { name: "service", description: N_("Choose where Moondog plays music") },
+  { name: "library", description: N_("Your saved songs and playlists") },
   { name: "generation", description: N_("Let Moondog make music on this Mac") },
   { name: "onair", description: N_("Go on air: Moondog keeps making music from your taste") },
   { name: "spotify", description: N_("Connect and control Spotify") },
@@ -250,7 +251,8 @@ export async function runMoondogTui({
   // /onair needs both: the room's own player and music making here.
   const onAirControls = previewControls && typeof generation?.save === "function";
   const commands = slashCommands.filter(({ name }) => (previewControls || !["skip", "stop"].includes(name)) &&
-    (name !== "generation" || typeof generation?.save === "function") && (name !== "onair" || onAirControls));
+    (name !== "generation" || typeof generation?.save === "function") && (name !== "onair" || onAirControls) &&
+    (name !== "library" || application.libraryReady?.() === true));
   const localizedCommands = commands.map(({ name, description }) => ({ name, get description() { return tr.marked(description); } }));
   let activeRuntime = runtime;
   application.startNewSession?.("tui_start");
@@ -1035,6 +1037,59 @@ export async function runMoondogTui({
     const summary = setup && !action && status?.install !== "unsupported" ? await readSetup().then((current) => setupSummary(current, status), () => null) : null;
     addMoondogMessage(summary ? `${generationMessage(status)}\n\n${summary}` : generationMessage(status));
     generationFooter(status);
+  };
+
+  // /library lists Saved and the listener's folders and playlists, plays one by name, or keeps the song
+  // playing now, in Saved or in a playlist by name (made when there is none). The window shares this library.
+  const manageLibrary = async (args) => {
+    if (!application.libraryReady?.()) throw new Error(tr("The library isn't available here."));
+    const [action, ...rest] = args;
+    const words = rest.join(" ").trim();
+    const nameOf = (playlist) => (playlist.saved ? tr("Saved") : playlist.name);
+    if (!action) {
+      const { folders, playlists } = application.libraryView();
+      const count = (playlist) => tr.n(playlist.count, "{count} song", "{count} songs");
+      const lines = [];
+      const saved = playlists.find((playlist) => playlist.saved);
+      if (saved) lines.push(`- **${nameOf(saved)}** · ${count(saved)}`);
+      const walk = (parentId, depth) => {
+        const nodes = [...folders.filter((folder) => folder.parentId === parentId).map((node) => ["folder", node]),
+          ...playlists.filter((playlist) => !playlist.saved && playlist.folderId === parentId).map((node) => ["playlist", node])]
+          .sort((a, b) => a[1].position - b[1].position);
+        for (const [kind, node] of nodes) {
+          const indent = "  ".repeat(depth);
+          if (kind === "folder") { lines.push(`${indent}- ${node.name}/`); walk(node.id, depth + 1); }
+          else lines.push(`${indent}- **${node.name}** · ${count(node)}`);
+        }
+      };
+      walk(null, 0);
+      addMoondogMessage(`${lines.join("\n")}\n\n${tr("Play one with `/library play <name>`, or keep the song playing now with `/library save`.")}`);
+      return;
+    }
+    if (action === "play") {
+      const [playlist] = application.findLibraryPlaylists(words);
+      if (!playlist || !words) throw new Error(tr("No playlist is called “{name}”.", { name: words }));
+      const played = await application.playLibrary({ playlistId: playlist.id });
+      if (played.state !== "playing") {
+        addMoondogMessage(played.state === "empty" ? tr("{name} has nothing in it yet.", { name: nameOf(playlist) }) : tr("None of its songs could be found."));
+        return;
+      }
+      addMoondogMessage([tr("Playing {name}.", { name: nameOf(playlist) }),
+        played.left_out_made ? tr("Moondog's tracks were left out. They play with Apple Music chosen.") : "",
+        played.not_found ? tr("Some songs couldn't be found.") : ""].filter(Boolean).join(" "));
+      setFooter(tr("Playing {name}.", { name: nameOf(playlist) }), success);
+      return;
+    }
+    if (action === "save") {
+      const target = words ? application.findLibraryPlaylists(words).find((playlist) => playlist.name.toLocaleLowerCase() === words.toLocaleLowerCase() || (playlist.saved && /^saved$/iu.test(words))) : null;
+      const saved = await application.saveToLibrary({ from: "now_playing", ...(target ? { playlistId: target.id } : words ? { playlistName: words } : {}) });
+      const where = saved.playlist.saved ? tr("Saved") : saved.playlist.name;
+      const text = !saved.added ? tr("Already in {name}.", { name: where }) : saved.playlist.saved ? tr("Saved.") : tr("Saved to {name}.", { name: where });
+      addMoondogMessage(text);
+      setFooter(text, success);
+      return;
+    }
+    throw new Error(tr("Use /library, /library play <name>, or /library save [playlist]."));
   };
 
   const removeLifecycleListeners = () => {
@@ -2497,6 +2552,10 @@ export async function runMoondogTui({
     }
     if (command === "generation") {
       await manageGeneration(args);
+      return;
+    }
+    if (command === "library") {
+      await manageLibrary(args);
       return;
     }
     if (command === "spotify") {

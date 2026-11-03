@@ -81,6 +81,14 @@ New listening views, corrections, and discovery interactions must work in the te
 - [ ] Move `fast-uri` past its current security advisory, or move Ajv to a release that does, then rerun contract validation.
 - [ ] Replace the `Moondog/0.1 (https://ai.ruc.edu.cn/)` identity on Wikidata and ListenBrainz requests with the project's own contact.
 
+### Library
+
+- [ ] Use the first library slice daily and fix what that use finds: Saved, playlists in nested folders, songs and made tracks side by side, play on the chosen service, `/library`, and the agent's collection tools.
+  The center stays the listener's: entries keep what names a song, not one platform's id, so a playlist outlives any one service.
+- [ ] Import a Spotify, Apple Music or NetEase playlist into the library as a copy, and export a playlist back to Spotify, to the Music app, or as an open file (M3U and JSON with the made tracks' audio).
+- [ ] Play a mixed playlist's made tracks between Spotify or NetEase songs, instead of leaving them out.
+- [ ] Let a conversation opened from a playlist know which playlist it is about.
+
 ### First-run journey
 
 - [ ] Write a short newcomer journey for the terminal room: install, open, import fictional history, read the profile, make one correction.

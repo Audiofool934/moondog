@@ -71,6 +71,28 @@ export function createWindowPreviewPlayer(port) {
         } : null,
       });
     },
+    // A playlist from the listener's library: Apple Music songs and tracks Moondog made, in one queue. The
+    // window plays whole songs through MusicKit and the made tracks itself, one after another.
+    playList(tracks) {
+      if (closed) return;
+      const accepted = (Array.isArray(tracks) ? tracks : []).map((track) => {
+        if (track?.generated === true) {
+          const id = String(track.id ?? "");
+          const name = String(track.title ?? "").trim();
+          return generatedTrackId.test(id) && name ? { title: name, artist_credit: "", generated: true, id, media_url: `moondog-media://generated/${id}`,
+            ...(Number.isFinite(track.seconds) && track.seconds > 0 ? { duration_seconds: track.seconds } : {}) } : null;
+        }
+        const song = { title: String(track?.title ?? "").trim(), artist_credit: String(track?.artist_credit ?? "").trim(),
+          preview_url: https(track?.preview_url, "audio-ssl.itunes.apple.com"), catalog_url: https(track?.catalog_url, "music.apple.com"), artwork_url: track?.artwork_url };
+        return song.title && song.preview_url && song.catalog_url ? song : null;
+      }).filter(Boolean).slice(0, 50);
+      if (!accepted.length) return;
+      queueId = ++sequence;
+      active = true;
+      catalog = accepted.some((track) => !track.generated);
+      now.queued(accepted);
+      port.postMessage({ type: "preview", id: queueId, tracks: accepted.map(({ id: _id, ...track }) => track), album: null });
+    },
     // A track Moondog made on this Mac. The window asks main for it by id through moondog-media:,
     // so its path never reaches the page.
     playGenerated({ id, title, seconds } = {}) {
@@ -79,7 +101,7 @@ export function createWindowPreviewPlayer(port) {
       queueId = ++sequence;
       active = true;
       catalog = false;
-      now.queued([{ title: name, generated: true }]);
+      now.queued([{ title: name, generated: true, id }]);
       port.postMessage({
         type: "preview", id: queueId,
         tracks: [{ title: name, artist_credit: "", generated: true, media_url: `moondog-media://generated/${id}`,
@@ -92,7 +114,7 @@ export function createWindowPreviewPlayer(port) {
       const name = String(title ?? "").trim();
       if (closed || !name || !generatedTrackId.test(String(id ?? ""))) return;
       if (!active || queueId === null) return this.playGenerated({ id, title, seconds });
-      now.appended({ title: name, generated: true });
+      now.appended({ title: name, generated: true, id });
       port.postMessage({
         type: "preview-enqueue", id: queueId,
         track: { title: name, artist_credit: "", generated: true, media_url: `moondog-media://generated/${id}`,
@@ -107,6 +129,8 @@ export function createWindowPreviewPlayer(port) {
     stop,
     // What plays now, as createPlayerNow reads it: null, or { state, song, position, count, next }.
     nowPlaying: () => (closed ? null : now.read()),
+    // The song playing and every one after it, for keeping the whole queue in the library.
+    remaining: () => (closed ? [] : now.remaining()),
     // Leaving Apple Music stops its songs here, never the tracks Moondog made.
     holdsCatalogSongs: () => active && catalog,
     wholeSongs: () => wholeSongs,
