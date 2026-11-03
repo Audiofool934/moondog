@@ -27,7 +27,10 @@ This document records how the harness keeps the model's part small, and how it m
 6. **The model knows its own setup.**
    The model can read which model answers, which service plays and which language it replies in, and it changes the settings the listener may change by asking.
    A setting asked for in words holds, as if it was chosen in the settings.
-7. **Measure per model, repeatedly.**
+7. **History shows how actions were done.**
+   A finished turn keeps its calls that changed something, each with a one-line outcome.
+   A history of replies alone teaches a model that saying an action does it.
+8. **Measure per model, repeatedly.**
    A change is judged by the playback evaluation on each model, with several runs per scenario, not by one model or one run.
 
 ## What follows from the rules
@@ -35,9 +38,10 @@ This document records how the harness keeps the model's part small, and how it m
 | Rule | In the code |
 | --- | --- |
 | One intent, one call; names in | `moondog_spotify_player_control` takes `songs: [{title, artist}]` with action `resume`; `MoondogApplication.spotifyResolveSongs` searches and matches each song. Apple Music (`moondog_music_preview`) and NetEase (`moondog_netease_play`) already took songs by title and artist. |
-| Never guess silently | A song without a clear match comes back as `not_found` with `not_sent: true` and up to five candidates with `item_ref_id`. The match needs the artist, then the exact title, the same song in another version, or a title that starts with the one asked for. A title in the other Chinese script (被动 for 被動) is not guessed: it comes back as a candidate. |
+| Never guess silently | A song without a clear match comes back as `not_found` with `not_sent: true` and up to five candidates with `item_ref_id`. The match needs the artist, then the exact title, or the same song in another version when the listener named no version. A version asked for must match as named, and a title that only starts the same way is another song. A title in the other Chinese script (被动 for 被動) is not guessed: it comes back as a candidate. |
 | Repair with one reading | `src/runtime/pi/tool-arguments.mjs` runs as Pi's `prepareArguments` step before validation. |
 | The model knows its setup | `moondog_settings` reads the model, the music service and the reply language, and sets the reply language. `moondog_playback_service` changes the music service. A reply language asked for in words holds whatever language the listener writes in, until the picker or `/language` chooses another. |
+| History shows actions | `compactCompletedPromptHistory` keeps the turn's play, queue, move, make and settings calls with "Done." or "Failed."; reads and their results leave the history as before. |
 | Measure per model | `scripts/eval-spotify-playback.mjs` runs everyday requests against a simulated Spotify. Each tool call in the local trace records its provider and model, so a real failure can be traced to the model that made it. |
 
 ## Evaluating a change
@@ -62,14 +66,17 @@ The playback evaluation on 2026-11-03, against a simulated Spotify, three runs p
 | DeepSeek V4 Pro | not run | 59/66 | 66/66 |
 
 Before the change, every failure was the same: the listener recalled a duet version, and the model described it without playing it.
-The first run after the change found four harness problems, which the last column includes fixes for:
+The first run after the change found these harness problems, which the last column includes fixes for:
 
 - Italian such as "sposta la musica sul PC" read as Spanish, so the host asked for a Spanish reply.
 - After Spotify refused a device move both ways, the error did not say to stop, and the model tried a third way.
 - A queue pick skipped as a duplicate left the batch one song short, with no way to fill it.
 - The evaluation itself read English replies with Chinese song names as Chinese.
 
-Two failures in that run were the model's alone, and no harness change targets them: once a reply claimed a skip without calling the tool, and once a Spanish request got a Chinese reply.
+One failure looked like the model's alone: a reply claimed a skip without calling the tool, in 3 of 9 runs on V4 Pro.
+Its cause was the harness: finished turns kept only their reply text, so the history showed actions done by words alone.
+Keeping those calls in the history took the scenario to 8 of 8 runs on V4 Pro.
+Once, a Spanish request got a Chinese reply, and no change targets it yet.
 A clean run is evidence, not proof of 100%: rerun the evaluation for each change and each model.
 Claude and OpenAI models were not run, because this Mac had no usable key for them at the time.
 

@@ -270,3 +270,36 @@ test("songs with a reference are refused before any search, and a similar Chines
   assert.equal(f.plays(), 0);
   assert.equal(f.spotify.state.current.id, "simReckoner");
 });
+
+test("a named version must match as named, and a shared prefix is not the song", async t => {
+  const f = fixture(t, { active: "simMac", playing: "simReckoner" });
+  const ask = async (title, artist) => {
+    let seen;
+    await f.prompt(`play ${title}`, [f.call("moondog_spotify_player_control", { action: "resume", songs: [{ title, artist }] }),
+      c => { seen = JSON.parse(f.lastResult(c).content[0].text); return f.say("ok"); }]);
+    return seen;
+  };
+  // Only the studio Nude exists: a live take asked for is not swapped for it.
+  assert.equal((await ask("Nude - Live", "Radiohead")).state, "not_found");
+  // "Weird Fishes" only starts the title "Weird Fishes/Arpeggi": a candidate, not a guess.
+  assert.equal((await ask("Weird Fishes", "Radiohead")).state, "not_found");
+  assert.equal(f.plays(), 0);
+  // The same song in another version, when none was named, still plays: 被動 asked for, 被動 found.
+  assert.equal((await ask("被動", "伍佰")).state, "accepted");
+  assert.equal(f.spotify.state.current.id, "simBeidong");
+});
+
+test("a finished turn keeps its playback call and outcome in the history, and drops its reads", async t => {
+  const f = fixture(t, { active: "simMac", playing: "simReckoner" });
+  await f.prompt("我要听伍佰的被动", [f.call("moondog_spotify_search", { query: "伍佰 被动" }),
+    c => f.call("moondog_spotify_player_control", { action: "resume", item_ref_id: f.found(c, "被動") }), f.say("在放《被動》了。")]);
+  let history;
+  await f.prompt("暂停", [c => { history = c.messages.map(message => message.role === "toolResult"
+    ? `result ${message.toolName} ${message.content[0].text}`
+    : message.role === "assistant" ? `assistant ${message.content.map(block => block.type === "toolCall" ? `call ${block.name}` : "text").join(",")}` : message.role);
+  return f.say("好。"); }]);
+  const earlier = history.slice(0, history.lastIndexOf("user"));
+  assert.ok(earlier.includes("assistant call moondog_spotify_player_control"));
+  assert.ok(earlier.includes("result moondog_spotify_player_control Done."));
+  assert.ok(!earlier.some(line => line.includes("moondog_spotify_search")));
+});

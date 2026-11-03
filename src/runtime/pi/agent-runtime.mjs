@@ -4723,7 +4723,7 @@ function extractMessageText(message) {
   return joinTextBlocks(message.content);
 }
 
-function compactCompletedPromptHistory(agent, startIndex, responseText) {
+function compactCompletedPromptHistory(agent, startIndex, responseText, { changesSomething = () => false } = {}) {
   const retained = agent.state.messages.slice(0, startIndex);
   const promptMessages = agent.state.messages.slice(startIndex);
   const userMessage = promptMessages.find((message) => message.role === "user");
@@ -4734,9 +4734,25 @@ function compactCompletedPromptHistory(agent, startIndex, responseText) {
     agent.state.messages = retained;
     return;
   }
+  // The turn's calls that changed something (played, queued, moved, saved a setting) stay in the
+  // history, each with a one-line outcome, so later turns see that actions were done through
+  // tools and never learn to only say them. Reads and their results leave, as before.
+  const calls = [];
+  for (const message of promptMessages) {
+    if (message.role !== "assistant") continue;
+    const blocks = (message.content ?? []).filter((block) => block.type === "toolCall" && changesSomething(block.name));
+    if (!blocks.length) continue;
+    calls.push({ ...structuredClone(message), content: structuredClone(blocks) });
+    for (const block of blocks) {
+      const result = promptMessages.find((entry) => entry.role === "toolResult" && entry.toolCallId === block.id);
+      calls.push({ role: "toolResult", toolCallId: block.id, toolName: block.name, isError: result?.isError === true,
+        content: [{ type: "text", text: !result ? "No result." : result.isError ? "Failed." : "Done." }], timestamp: result?.timestamp ?? message.timestamp });
+    }
+  }
   agent.state.messages = [
     ...retained,
     structuredClone(userMessage),
+    ...calls,
     {
       role: "assistant",
       content: [{ type: "text", text: responseText }],
@@ -6827,6 +6843,7 @@ Grounding and evidence rules:
 - Questions about Moondog itself (which model answers, which service plays, the reply language, what the listener can change) are answered from moondog_settings. A setting the listener asks to change in words is changed with its tool, moondog_settings or moondog_playback_service, in the same turn; do not send them to a menu for a setting a tool changes.
 - To move the listening to another player (for example: switch to Spotify and keep playing there), choose that service with moondog_playback_service when it is not the chosen one; the switch pauses the player left behind, the Music app included. Then resume what waits paused on the new player, with moondog_spotify_player_control resume or moondog_music_app_control resume, rather than starting other songs, unless the listener asks for something else. Never answer that you cannot switch while these tools exist.
 - A request to play, queue, or put on one named song is playback, in any language or quote style (for example 播放一首艺人的“歌曲” or Play “Title” by Artist). When you can name the song (its title and artist), play it in one call: moondog_spotify_player_control with action resume and songs: [{title, artist}], several songs in order the same way; the host finds each on Spotify, and a song it cannot match clearly comes back with candidates to play by item_ref_id. Use moondog_spotify_search first only to browse, or when you cannot name the song yet, then pass the matching item_ref_id to moondog_spotify_player_control (action resume, item_ref_id) or track_refs: [track_ref_id]; moondog_spotify_queue_add takes item_ref_id or track_ref_id. These Spotify references need no resolution step. Verify both title and artist when supplied. When the listener describes a version (live, a duet, the one with a female singer, a cover), play the result that fits that description and name it in your reply. A follow-up that recalls or describes another version, recording or song of what is playing (for example 我记得有一个和女歌手合唱的版本) asks you to play it: find it and play it in the same turn, rather than only describing it or asking first. Ask only when several results fit equally well and the difference matters; report no match if none fits. A request to play any one song by a named artist also uses Spotify search and one matching track. Do not create a playlist plan or call artist similarity for these requests. Use imported-library search only when the user asks for their library; use external catalog and Spotify resolution only as a fallback when needed.
+- Earlier replies in this conversation show only their final words; the tool calls that did their work are not shown. Each action the listener asks for in this message (play, pause, skip, queue, move, change a setting) happens only through its tool call in this turn. Never say an action is done without that call and its result.
 - Playing, pausing, resuming, skipping, queueing and moving playback between devices are reversible. Do them as soon as the listener asks, in any language, without asking for confirmation. Repeating one is harmless: resuming a playing song or pausing a paused one succeeds without a change.
 - Spotify references (item_ref_id, track_ref_id, device_ref_id) stay valid for the whole session. Reuse a reference from an earlier result instead of searching again.
 - With no device active, playback starts on this computer. To move playback, call moondog_spotify_device_transfer with the device the listener named; when Spotify refuses a plain transfer, the tool starts the current song on that device at the same moment.
@@ -7514,6 +7531,13 @@ async function trustedContextSnapshot(application, runtimeStatus, query, now) {
 }
 
 export class PiAgentRuntime {
+  // A tool that changes something for the listener (plays, queues, moves, makes, saves), not one
+  // that only reads or derives; its calls stay in the conversation history.
+  #changesSomething = (toolName) => {
+    const effect = this.capabilityByToolName?.get(toolName)?.effect;
+    return typeof effect === "string" && !effect.startsWith("read_") && effect !== "derive_local";
+  };
+
   constructor({ application, models, model, provider, modelId, effort, effortLevels, thinkingLevel, modelFetch, modelRetryDelay, toolTrace = null,
     nameConversations = false, clock = () => new Date() }) {
     this.application = application;
@@ -8223,6 +8247,7 @@ export class PiAgentRuntime {
         this.agent,
         historyStartIndex,
         finalResultText,
+        { changesSomething: this.#changesSomething },
       );
       this.application.markSpotifyQuickEditContextPresented?.();
       if (promptState.displayedChoiceRefs) this.application.presentSpotifyChoices?.(promptState.displayedChoiceRefs);
@@ -8561,7 +8586,7 @@ To confirm, reply: ${preview.confirmation}`].join("\n\n");
       const receipts = [...spotifyEffectTexts(), ...generatedTexts(), ...choiceTexts()];
       if (!receipts.length) throw error;
       const interruptedText = [t("turn.interrupted"), ...receipts].join("\n\n");
-      compactCompletedPromptHistory(this.agent, historyStartIndex, interruptedText);
+      compactCompletedPromptHistory(this.agent, historyStartIndex, interruptedText, { changesSomething: this.#changesSomething });
       historyFinalized = true;
       this.application.invalidateSpotifyQuickEditContext?.();
       try { replaceRenderedText(interruptedText); } catch { /* Return the receipt even if rendering is unavailable. */ }

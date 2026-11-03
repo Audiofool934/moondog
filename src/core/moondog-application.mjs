@@ -2123,12 +2123,15 @@ export class MoondogApplication {
       const tracks = result.items.filter((item) => item.type === "track" && item.track_ref_id);
       const wantedTitle = foldedWords(song.title);
       const wantedCore = fold(song.title);
-      const byArtist = tracks.filter((item) => item.artists.some((artist) => textNamesArtist(artist, song.artist) || textNamesArtist(song.artist, artist)));
-      // The exact title first (a version the listener named, such as a live take, included), then
-      // the same song in another version, then a title that starts with the one asked for.
+      // A one-letter artist (V) is matched by equality; textNamesArtist needs two letters.
+      const byArtist = tracks.filter((item) => item.artists.some((artist) => foldedWords(artist) === foldedWords(song.artist) ||
+        textNamesArtist(artist, song.artist) || textNamesArtist(song.artist, artist)));
+      // The exact title first. A version the listener named (a live take, a duet) must match as
+      // named; otherwise the same song in another version (a remaster) is the song asked for.
+      // Nothing looser is guessed: a shared prefix ("One", "One Tree Hill") is another song.
+      const versionNamed = wantedTitle !== wantedCore;
       const pick = byArtist.find((item) => foldedWords(item.name) === wantedTitle) ??
-        byArtist.find((item) => fold(item.name) === wantedCore) ??
-        byArtist.find((item) => wantedCore && fold(item.name).startsWith(wantedCore));
+        (versionNamed ? undefined : byArtist.find((item) => fold(item.name) === wantedCore));
       if (pick) matched.push(pick);
       else unmatched.push({ title: song.title, artist: song.artist,
         candidates: tracks.slice(0, 5).map(({ item_ref_id, name, artists, album }) => ({ item_ref_id, name, artists, ...(album ? { album } : {}) })) });
