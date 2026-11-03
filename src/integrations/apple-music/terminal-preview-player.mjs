@@ -256,6 +256,8 @@ export async function createTerminalPreviewPlayer({
     stop,
     // What plays now, as createPlayerNow reads it: null, or { state, song, position, count, next }.
     nowPlaying: () => (closed ? null : now.read()),
+    // The song playing and every one after it, for keeping the whole queue in the library.
+    remaining: () => (closed ? [] : now.remaining()),
     // Leaving Apple Music stops its previews here, never the tracks Moondog made.
     holdsCatalogSongs: () => Boolean(queue?.tracks.some((track) => !track.generated)),
     subscribe(listener) {

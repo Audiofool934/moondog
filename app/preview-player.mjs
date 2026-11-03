@@ -129,6 +129,8 @@ export function createWindowPreviewPlayer(port) {
     stop,
     // What plays now, as createPlayerNow reads it: null, or { state, song, position, count, next }.
     nowPlaying: () => (closed ? null : now.read()),
+    // The song playing and every one after it, for keeping the whole queue in the library.
+    remaining: () => (closed ? [] : now.remaining()),
     // Leaving Apple Music stops its songs here, never the tracks Moondog made.
     holdsCatalogSongs: () => active && catalog,
     wholeSongs: () => wholeSongs,

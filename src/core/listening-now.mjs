@@ -162,6 +162,10 @@ export function createPlayerNow() {
     clear() {
       queue = null;
     },
+    /** The song playing and every one after it, for keeping the whole queue: read() shows only ten. */
+    remaining() {
+      return queue ? queue.tracks.slice(queue.index).map((track) => ({ ...track })) : [];
+    },
     /** null when nothing is queued, or { state, song, position, count, next } with up to ten songs after it. */
     read() {
       if (!queue) return null;

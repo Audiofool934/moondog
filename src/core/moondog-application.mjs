@@ -674,9 +674,15 @@ export class MoondogApplication {
     const active = now.sources.find((source) => source.service === now.active);
     if (!active?.song) throw Object.assign(new Error("Nothing is playing, so there is nothing to save."), { code: "library_nothing_playing" });
     if (from === "queue") {
+      // What plays from now on: Moondog's whole remaining queue (its status shows only the next ten); the Music
+      // app's playlist from the song playing, which it places; otherwise the song and the service's own queue.
+      const remaining = active.service === "moondog" ? this.musicPreviewPlayer?.remaining?.() : null;
       const tracks = active.from?.tracks;
-      const list = tracks?.length ? tracks.slice(Math.max(0, (active.from.position ?? 1) - (active.from.first_position ?? 1)))
-        : [active.song, ...(active.next ?? [])];
+      const placed = tracks?.length && Number.isInteger(active.from.position) && Number.isInteger(active.from.first_position);
+      const list = remaining?.length ? remaining.map((track) => ({ title: track.title, artists: track.generated ? ["Moondog"] : [track.artist_credit].filter(Boolean),
+        ...(track.generated && track.id ? { made_track_id: track.id } : {}) }))
+        : placed ? tracks.slice(Math.max(0, active.from.position - active.from.first_position))
+          : [active.song, ...(active.next ?? [])];
       return list.map((song) => this.#entryOfSong(song)).filter(Boolean);
     }
     const one = this.#entryOfSong(active.song);

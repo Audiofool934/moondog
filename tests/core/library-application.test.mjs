@@ -16,6 +16,8 @@ function ownPlayer() {
     playList(tracks) { played.push(tracks); now.queued(tracks); },
     playGenerated() {},
     nowPlaying: () => now.read(),
+    remaining: () => now.remaining(),
+    at(position) { now.observe({ type: "playing", position }); },
     wholeSongs: () => true,
     holdsCatalogSongs: () => false,
     stop() { now.clear(); return true; },
@@ -81,6 +83,29 @@ test("the library keeps what plays now and plays songs and made tracks as one qu
   const madeOnly = libraryStore.savePlaylist({ name: "Cut for me", entries: [{ kind: "made", id: MADE, title: "Tide glass" }] });
   assert.equal((await onSpotify.playLibrary({ playlistId: madeOnly.id })).player, "moondog");
   onSpotify.close();
+  application.close();
+});
+
+test("keeping the queue keeps everything from the song playing on, past what the status shows", async () => {
+  const libraryStore = await openLibraryStore({ databasePath: ":memory:" });
+  const player = ownPlayer();
+  const application = new MoondogApplication({ libraryStore, musicPreviewPlayer: player, playbackService: "apple_music" });
+  player.play(Array.from({ length: 20 }, (_, index) => ({ title: `Song ${index + 1}`, artist_credit: "Band" })));
+  player.at(3);
+  const saved = await application.saveToLibrary({ from: "queue", playlistName: "All of it" });
+  assert.equal(saved.added, 18);
+  assert.deepEqual([saved.titles[0], saved.titles.at(-1)], ["Song 3", "Song 20"]);
+
+  // Spotify playing a playlist: the song now and Spotify's queue, not the playlist from its first song.
+  const spotify = new MoondogApplication({ libraryStore, playbackService: "spotify", ownsServices: false });
+  spotify.spotifyReady = () => true;
+  spotify.spotifyNowPlaying = async () => ({ state: "available", is_playing: true, progress_ms: 0, item: { name: "B", artists: ["X"] },
+    context: { type: "playlist", uri: "spotify:playlist:1" } });
+  spotify.spotifyQueueStatus = async () => ({ queue: [{ name: "C", artists: ["X"] }] });
+  spotify.requireSpotifyService = () => ({ playingPlaylist: async () => ({ name: "Mix", tracks_total: 3, tracks: ["A", "B", "C"].map((name) => ({ name, artists: ["X"] })) }) });
+  const fromSpotify = await spotify.saveToLibrary({ from: "queue", playlistName: "Rest of it" });
+  assert.deepEqual(fromSpotify.titles, ["B", "C"]);
+  spotify.close();
   application.close();
 });
 
