@@ -109,6 +109,20 @@ test("keeping the queue keeps everything from the song playing on, past what the
   application.close();
 });
 
+test("an Avoid holds against the recording the catalog finds, not only the saved credit", async () => {
+  const libraryStore = await openLibraryStore({ databasePath: ":memory:" });
+  const player = ownPlayer();
+  const featuring = { findPreview: async ({ title, artist }) => ({ state: "resolved", track: { title, artist_credit: title === "Duet" ? `${artist} feat. Avoided` : artist,
+    catalog_id: title, preview_url: "https://audio-ssl.itunes.apple.com/a.m4a", catalog_url: `https://music.apple.com/us/song/x?i=${title.length}` } }) };
+  const application = new MoondogApplication({ libraryStore, musicPreviewPlayer: player, musicCatalog: featuring, playbackService: "apple_music" });
+  application.avoidAllows = (track) => !String(track.artist_credit ?? "").includes("Avoided");
+  const set = libraryStore.savePlaylist({ name: "Mixed", entries: [{ title: "Duet", artist: "Singer" }, { title: "Solo", artist: "Singer" }] });
+  const played = await application.playLibrary({ playlistId: set.id });
+  assert.deepEqual(player.played.at(-1).map((track) => track.title), ["Solo"]);
+  assert.deepEqual([played.skipped_avoided_count, played.not_found], [1, 0]);
+  application.close();
+});
+
 test("the agent's library tools appear only with a library", async () => {
   const without = new MoondogApplication({});
   assert.ok(!without.agentCapabilityDescriptors().some((descriptor) => descriptor.tool_name.startsWith("moondog_collection_")));

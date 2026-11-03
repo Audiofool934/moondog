@@ -741,18 +741,23 @@ export class MoondogApplication {
     // Only made tracks, or Apple Music chosen: Moondog's own player, with both in one queue.
     if ((!songs.length || service === "apple_music") && typeof this.musicPreviewPlayer?.playList === "function") {
       const refs = [];
+      const avoidedFound = [];
       const found = await mapLimited(entries.slice(0, 50), 6, async (entry) => {
         if (entry.kind === "made") return { generated: true, id: entry.made_id, title: entry.title, file: await this.localGenerator.trackFile(entry.made_id) };
         if (!this.musicCatalog) return null;
         const result = await this.musicCatalog.findPreview({ title: entry.title, artist: entry.artist_credit }).catch(() => null);
         if (result?.state !== "resolved") return null;
+        // The catalog's recording can credit more than the entry named (a feature, a longer title); an Avoid still holds.
+        if (!this.avoidAllows(result.track)) { avoidedFound.push(entry.id); return null; }
         if (result.track.catalog_id) refs.push({ entryId: entry.id, refs: { apple_music_id: String(result.track.catalog_id),
           ...(entry.refs?.artwork_url || !result.track.artwork_url ? {} : { artwork_url: result.track.artwork_url }) } });
         return result.track;
       });
       signal?.throwIfAborted();
       const tracks = found.filter(Boolean);
-      const notFound = found.length - tracks.length;
+      const notFound = found.length - tracks.length - avoidedFound.length;
+      const skipped = avoided.length + avoidedFound.length;
+      Object.assign(extra, skipped ? { skipped_avoided_count: skipped } : {});
       if (!tracks.length) return { state: "not_found", playlist: named, not_found: notFound, ...extra };
       this.libraryStore.rememberRefs(refs);
       // A playlist replaces Moondog's stream and quiets the other players, as any music Moondog starts does.
