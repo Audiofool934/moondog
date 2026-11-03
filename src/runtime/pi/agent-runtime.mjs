@@ -8439,6 +8439,8 @@ export class PiAgentRuntime {
           // A language the listener had the agent keep in this very turn is the one to answer in.
           locale: this.application?.replyLanguagePin && this.application.replyLanguagePin === this.application.locale ? this.application.replyLanguagePin : t.locale,
           signal: promptState.restatement.signal });
+      // Every reply assembled below, the one with citations too, starts from the restated words.
+      if (restated) finalText = restated;
 
       if (finalStopReason === "aborted" || promptState.abortRequested) {
         this.application.cancelSpotifyQueueRequest?.();
@@ -8594,11 +8596,8 @@ To confirm, reply: ${preview.confirmation}`].join("\n\n");
         return completedResult(failureText);
       }
 
-      // The restatement, made before the cancellation check below.
-      if (restated) {
-        finalText = restated;
-        if (textWasRendered) replaceRenderedText(restated);
-      }
+      // The restatement replaces what the surface already showed.
+      if (restated && textWasRendered) replaceRenderedText(restated);
 
       if (!textWasRendered && finalText.length > 0) {
         callbacks.onTextDelta?.(finalText);

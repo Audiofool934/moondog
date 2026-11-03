@@ -18,7 +18,8 @@ export function replyInOtherLanguage(text, locale) {
   const han = prose.match(/\p{Script=Han}/gu)?.length ?? 0;
   const latin = prose.match(/\p{Script=Latin}+/gu)?.length ?? 0;
   const names = !CJK_LOCALES.has(locale) && latin > han;
-  const read = messageLocale(names ? prose.replace(/\p{Script=Han}+/gu, " ") : prose, locale);
+  // The reply's own language; words that name a language ("I'll answer in Spanish") are not a request here.
+  const read = messageLocale(names ? prose.replace(/\p{Script=Han}+/gu, " ") : prose, locale, { explicit: false });
   return !sameFamily(read, locale);
 }
 

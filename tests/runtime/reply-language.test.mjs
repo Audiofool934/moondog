@@ -10,6 +10,9 @@ test("a reply is in another language only when its prose clearly is", () => {
   // Simplified and Traditional Chinese are one family; a script difference is not restated.
   assert.equal(replyInOtherLanguage("現在播放《被動》。", "zh"), false);
   assert.equal(replyInOtherLanguage("ok", "fr"), false);
+  // A reply that names a language is read for its own language, not as a request.
+  assert.equal(replyInOtherLanguage("好的，以后用英文回答。", "en"), true);
+  assert.equal(replyInOtherLanguage("I will reply in Spanish from now on.", "es"), true);
 });
 
 test("a reply in another language is restated once, and a failed restatement changes nothing", async () => {
