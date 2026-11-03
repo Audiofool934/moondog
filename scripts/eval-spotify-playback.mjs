@@ -108,6 +108,37 @@ const scenarios = [
       { text: "일시 정지해 줘", expect: (s) => check(!s.playing, "expected paused") },
       { text: "다시 틀어 줘", expect: (s) => check(s.playing && s.current?.id === "simShiLuoShaZhou", `expected 失落沙洲 playing, got ${s.current?.name}${s.playing ? "" : " (paused)"}`) },
     ] },
+  // Harder everyday requests, where weaker models slip: an implicit follow-up, a misspelled name,
+  // only an artist, a duet described rather than named, a pronoun, and a setting said in words.
+  { name: "artist-only", language: "zh", setup: {},
+    turns: [{ text: "放点伍佰的歌", expect: (s) => check(s.playing && isWuBai(s.current), `expected a Wu Bai song playing, got ${s.current?.name ?? "nothing"}`) }] },
+  { name: "misspelled-artist", language: "zh", setup: {},
+    turns: [{ text: "播放陈亦迅的浮夸", expect: (s) => check(s.current?.id === "simFuKua" && s.playing, `expected 浮誇, got ${s.current?.name ?? "nothing"}`) }] },
+  { name: "described-duet", language: "zh", setup: {},
+    turns: [{ text: "放一首周杰伦和女生对唱的歌", expect: (s) => check(s.current?.id === "simWuDing" && s.playing, `expected 屋頂, got ${s.current?.name ?? "nothing"}`) }] },
+  { name: "pronoun-followup", language: "zh", setup: {},
+    turns: [
+      { text: "我要听Beyond的海阔天空", expect: (s) => check(s.current?.id === "simHaiKuoTianKong" && s.playing, `expected 海闊天空, got ${s.current?.name ?? "nothing"}`) },
+      { text: "换成他们的光辉岁月", expect: (s) => check(s.current?.id === "simGuangHui" && s.playing, `expected 光輝歲月, got ${s.current?.name ?? "nothing"}`) },
+    ] },
+  { name: "chat-then-play", language: "zh", setup: { active: "simMac", playing: "simReckoner" },
+    turns: [
+      { text: "你觉得陈奕迅最好的粤语歌是哪首？先聊聊，别放", expect: (s) => check(s.current?.id === "simReckoner", "expected nothing to change yet") },
+      { text: "好，那就放那首富士山下", expect: (s) => check(s.current?.id === "simFuShiShanXia" && s.playing, `expected 富士山下, got ${s.current?.name ?? "nothing"}`) },
+    ] },
+  { name: "volume-words", language: "en", setup: { active: "simMac", playing: "simNude" },
+    turns: [{ text: "turn it down to 30 percent", expect: (s) => check(s.writes.some((write) => write.path === "/me/player/volume" && Number(write.query.volume_percent) === 30) && s.current?.id === "simNude",
+      "expected the volume set to 30 with Nude still on") }] },
+  // The model knows its own setup: it says which model answers, and changes the reply language when asked in words.
+  { name: "settings-model", language: "zh", setup: { active: "simMac", playing: "simNude" },
+    turns: [{ text: "你现在用的是什么模型？能在这里换吗？", expect: (s, reply) => check(reply.toLowerCase().replace(/[^a-z0-9]/gu, "").includes(String(process.env.MOONDOG_MODEL).toLowerCase().replace(/[^a-z0-9]/gu, "")) && s.current?.id === "simNude" && s.playing,
+      `expected the reply to name ${process.env.MOONDOG_MODEL} with Nude still playing`) }] },
+  { name: "settings-language", language: "zh", setup: {},
+    turns: [
+      { text: "以后都用英文回答我", language: "en", expect: (s, reply, application) => check(application.locale === "en", `expected the reply language set to English, got ${application.locale}`) },
+      { text: "放伍佰的被动", language: "en", expect: (s) => check(s.current?.id === "simBeidong" && s.playing, `expected 被動, got ${s.current?.name ?? "nothing"}`) },
+      { text: "这首歌是哪年的？", language: "en", expect: (s) => check(s.current?.id === "simBeidong", "expected 被動 to keep playing") },
+    ] },
   { name: "play-traditional", language: "zh-Hant", setup: {},
     turns: [{ text: "播放陳奕迅的浮誇", expect: (s) => check(s.current?.id === "simFuKua" && s.playing, `expected 浮誇, got ${s.current?.name ?? "nothing"}`) }] },
 ];
@@ -126,7 +157,7 @@ async function runScenario(scenario, run) {
     ...scenario.setup });
   const client = createSpotifyWebApiClient({ tokenProvider: async () => "SIMULATED_TOKEN", fetchImpl: spotify.fetchImpl });
   const stateHome = await mkdtemp(path.join(process.env.MOONDOG_STATE_HOME, `${scenario.name}-${run}-`));
-  const application = new MoondogApplication({ importsRoot: path.join(stateHome, "imports"),
+  const application = new MoondogApplication({ importsRoot: path.join(stateHome, "imports"), locale: scenario.language,
     domainServices: createSyntheticDomainServices({ subjectScope: { subjectId: `playback-eval-${scenario.name}` } }),
     spotifyConnection: { ready: () => true, missingScopes: () => [], publicStatus: () => ({ provider: "spotify", state: "ready" }),
       service: createSpotifyService({ client, thisComputerName: "Fictional MacBook Pro" }) } });
@@ -153,13 +184,17 @@ async function runScenario(scenario, run) {
     const toolEvents = events.splice(0);
     const toolErrors = toolEvents.filter((event) => event.kind === "result" && event.error).slice(turn.allowedErrors ?? 0);
     // Song, album and artist names travel across languages; read the reply around them.
-    const replyLocale = messageLocale(catalogNames().reduce((prose, name) => prose.replaceAll(name, " "), reply), scenario.language);
+    const language = turn.language ?? scenario.language;
+    // In a reply expected in a Latin-script language, Chinese characters are song, album and artist
+    // names (a simplified spelling the catalog lacks, too), not the reply's language.
+    const prose = catalogNames().reduce((text, name) => text.replaceAll(name, " "), reply);
+    const replyLocale = messageLocale(["zh", "zh-Hant", "ja", "ko"].includes(language) ? prose : prose.replace(/\p{Script=Han}+/gu, " "), language);
     const problems = [
       failure,
-      turn.expect(spotify.state, reply),
+      turn.expect(spotify.state, reply, application),
       toolErrors.length ? `${toolErrors.length} tool error(s): ${toolErrors.map((event) => `${event.tool}: ${event.text.slice(0, 160)}`).join(" | ")}` : null,
       JARGON.test(reply) ? `the reply shows internal detail: ${reply.match(JARGON)[0]}` : null,
-      reply.trim() && !(replyLocale === scenario.language || (scenario.language === "zh" && replyLocale === "zh-Hant")) ? `the reply is in ${replyLocale}, not ${scenario.language}` : null,
+      reply.trim() && !(replyLocale === language || (language === "zh" && replyLocale === "zh-Hant")) ? `the reply is in ${replyLocale}, not ${language}` : null,
       !reply.trim() ? "no reply" : null,
     ].filter(Boolean);
     turns.push({ text: turn.text, seconds: (Date.now() - started) / 1000, reply, problems, tools: toolEvents,

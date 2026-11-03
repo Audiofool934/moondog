@@ -1167,6 +1167,11 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     schedulePlayer();
   }
   const unsubscribePlayback = base.onPlaybackServiceChange?.(playbackChanged);
+  // A language the agent set when the listener asked in words: every conversation and the window follow it.
+  const unsubscribeLanguage = base.languageSelection?.subscribe?.((locale) => {
+    for (const slot of slots) { slot.application.locale = locale; slot.application.conversationLocale = locale; }
+    sendStatus();
+  });
   // Music making turned on or off in the terminal reaches Settings here.
   const unwatchGeneration = generation?.subscribe?.(() => { if (!closed) sendStatus(); });
   // A download started here or in the terminal shows its progress here as it goes.
@@ -1195,6 +1200,7 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     const stop = () => stopping ??= (async () => {
       closed = true;
       unsubscribePlayback?.();
+      unsubscribeLanguage?.();
       unwatchGeneration?.();
       unwatchSetup?.();
       unwatchModel?.();

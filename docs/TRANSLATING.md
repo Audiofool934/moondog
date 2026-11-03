@@ -27,6 +27,11 @@ For each message, Moondog decides the reply language in this order:
 
 Quoted titles and track metadata are removed before any of this, because song names travel across languages.
 
+A language you ask Moondog to keep, such as "from now on, answer in English", comes before all of these.
+The agent saves it with `moondog_settings`, like a choice made with `/language`.
+It then holds for the rest of the conversation, whatever language you write in.
+Choosing another language with `/language` or the window's language picker ends it.
+
 ## Where the pieces live
 
 | File | What it holds |

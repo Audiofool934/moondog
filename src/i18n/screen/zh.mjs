@@ -874,6 +874,7 @@ export default {
   "See what you're listening to": "查看你在听什么",
   "Control the Music app": "控制“音乐”App",
   "Choose a music service": "选择音乐服务",
+  "Read or change Moondog's settings": "读取或更改 Moondog 的设置",
   "Search outside your library": "在你的曲库之外搜索",
   "Find music nearby": "找附近的音乐",
   "Remember what you've told me": "记住你告诉我的",

@@ -295,11 +295,12 @@ test("ready domain services expose four descriptor-driven A1 capabilities", () =
     tools.find((capability) => capability.id === "playlist.plan").effect,
     "derive_local",
   );
+  // The settings tool saves only the reply language the listener asks for; every other tool here only reads.
   assert.ok(
     descriptors.every((descriptor) =>
       new Set(["read_local", "read_runtime", "derive_local"]).has(
         descriptor.effect,
-      ),
+      ) || descriptor.capability_id === "settings",
     ),
   );
 
@@ -806,4 +807,27 @@ test("Spotify catalog resolution asks for a fresh login when search scope is mis
     },
   );
   assert.equal(resolverCalls, 0);
+});
+
+test("the agent reads its own setup and changes the reply language the listener asks for", async () => {
+  const { createLanguageSelection } = await import("../../src/i18n/preferences.mjs");
+  const saved = [];
+  const heard = [];
+  const languageSelection = createLanguageSelection({ save: async (locale) => { saved.push(locale); } });
+  languageSelection.subscribe((locale) => heard.push(locale));
+  const application = new MoondogApplication({ locale: "en", languageSelection });
+  const runtime = { provider: "deepseek", model: "deepseek-flash", effort: "high" };
+  const status = application.settingsStatus(runtime);
+  assert.deepEqual(status.model, { provider: "deepseek", model: "deepseek-flash", effort: "high", change: "not_by_agent",
+    where: "Settings › Models in the window, or /model in the terminal" });
+  assert.equal(status.reply_language.current, "en");
+  assert.ok(status.reply_language.choices.includes("zh"));
+  const changed = await application.setReplyLanguage("zh", runtime);
+  assert.deepEqual(changed.changed, { setting: "reply_language", from: "en", to: "zh" });
+  assert.equal(application.locale, "zh");
+  assert.equal(application.conversationLocale, "zh");
+  assert.equal(application.replyLanguagePin, "zh");
+  assert.deepEqual(saved, ["zh"]);
+  assert.deepEqual(heard, ["zh"]);
+  await assert.rejects(application.setReplyLanguage("klingon", runtime), { code: "unsupported_reply_language" });
 });

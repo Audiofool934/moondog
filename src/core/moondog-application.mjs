@@ -4,7 +4,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { compactListenerProfile, readListenerProfile } from "../profile/listener-profile-build.mjs";
 import { mixCounts, songKeys } from "../profile/moondog-suggestions.mjs";
 import { ARTIST_CREDIT_SEPARATORS } from "./listener-avoids.mjs";
-import { textNamesSong } from "./track-title.mjs";
+import { foldedWords, normalizedTrackTitle, textNamesArtist, textNamesSong } from "./track-title.mjs";
 import { acceptableRecordTitle, compileTaste, tasteSources } from "../profile/taste-compiler.mjs";
 import { stableAudioPrompt } from "../integrations/stable-audio/local-generator.mjs";
 
@@ -21,7 +21,7 @@ import { webProviderName } from "../integrations/web/web-result.mjs";
 import { musicAppSource, readListeningNow } from "./listening-now.mjs";
 import { normalizeConversationFolder, normalizeConversationLabel, normalizeMemoryContent, shortConversationTitle } from "../memory/local-memory-store.mjs";
 import { queueListeningIntent, queueCancellationRequested, unheardRequested } from "./spotify-listening-intent.mjs";
-import { DEFAULT_LOCALE, messageLocale, normalizeLocale } from "../i18n/index.mjs";
+import { DEFAULT_LOCALE, LOCALES, messageLocale, normalizeLocale } from "../i18n/index.mjs";
 
 // How long a record's title in the wrong language waits to be named again before the agent's stays.
 const TITLE_LANGUAGE_TIMEOUT_MS = 10_000;
@@ -225,6 +225,16 @@ function exactArtistReleaseHint(searchResult, artistName) {
 // How long the model may take to name a conversation before its first message stays the name.
 export const CONVERSATION_NAME_TIMEOUT_MS = 20_000;
 
+// A Chinese title written in the other script (被动 and 被動, 浮夸 and 浮誇): the same number of
+// Han characters, at least half of them identical. Only used once the artist already matched.
+function otherChineseScript(left, right) {
+  const a = Array.from(left);
+  const b = Array.from(right);
+  if (a.length < 2 || a.length !== b.length || !a.every((character) => /\p{Script=Han}/u.test(character)) ||
+      !b.every((character) => /\p{Script=Han}/u.test(character))) return false;
+  return a.filter((character, index) => character === b[index]).length * 2 >= a.length;
+}
+
 export class MoondogApplication {
   // Model calls naming conversations, stopped when the application closes.
   #naming = new Set();
@@ -239,6 +249,7 @@ export class MoondogApplication {
     musicCatalog = null,
     musicSimilarity = null,
     musicPreviewPlayer = null,
+    languageSelection = null,
     neteasePlayer = null,
     localGenerator = null,
     atmosphereStream = null,
@@ -266,6 +277,7 @@ export class MoondogApplication {
     // The language of the conversation so far. A reply such as "2" or "ok" carries none of
     // its own, so it keeps this one rather than switching to the setting mid-conversation.
     this.conversationLocale = null;
+    this.replyLanguagePin = null;
     this.domainServices = domainServices;
     this.domainServicesError =
       typeof domainServicesError === "string" &&
@@ -285,6 +297,8 @@ export class MoondogApplication {
     // Hosts that can play audio pass { play(tracks, { album }) }: the website, and the
     // terminal when the system has a player.
     this.musicPreviewPlayer = musicPreviewPlayer;
+    // Shared with every surface and conversation of this core, so a language chosen in words is saved and shown everywhere.
+    this.languageSelection = languageSelection;
     // NetEase Cloud Music through ncm-cli (src/integrations/netease), shared by every conversation.
     this.neteasePlayer = neteasePlayer;
     // Stable Audio 3 on this Mac (src/integrations/stable-audio), shared by every conversation, so one track is made at a time.
@@ -936,6 +950,33 @@ export class MoondogApplication {
 
   onPlaybackServiceChange(listener) {
     return this.playbackSelection.subscribe(listener);
+  }
+
+  // What the agent can tell the listener about its own setup, and what it can change when asked.
+  settingsStatus(runtime = {}) {
+    const playback = this.playbackStatus();
+    return {
+      model: { provider: runtime.provider ?? null, model: runtime.model ?? null, ...(runtime.effort ? { effort: runtime.effort } : {}),
+        change: "not_by_agent", where: "Settings › Models in the window, or /model in the terminal" },
+      music_service: { selected: playback.selected_service ?? null, effective: playback.effective_service ?? null,
+        available: (playback.services ?? []).filter((entry) => entry.available).map((entry) => entry.service),
+        change: "moondog_playback_service" },
+      reply_language: { current: this.locale, choices: Object.keys(LOCALES), change: "moondog_settings reply_language" },
+    };
+  }
+
+  // The reply language the listener asked for in words: used from the next reply on, saved like
+  // the language picker's choice, and shown by each surface.
+  async setReplyLanguage(code, runtime = {}) {
+    const locale = normalizeLocale(code);
+    if (!locale) throw Object.assign(new Error("Unsupported reply language."), { code: "unsupported_reply_language" });
+    const previous = this.locale;
+    this.locale = locale;
+    this.conversationLocale = locale;
+    // Asked for in words, the language holds in this conversation whatever language the listener writes in.
+    this.replyLanguagePin = locale;
+    await this.languageSelection?.change(locale);
+    return { ...this.settingsStatus(runtime), changed: { setting: "reply_language", from: previous, to: locale } };
   }
 
   // A host-only in-memory change, kept for hosts with no saved settings.
@@ -2073,6 +2114,37 @@ export class MoondogApplication {
       truncated: result.truncated === true || raw.length > 10 };
   }
 
+  // Songs the listener named, by title and artist: the host searches Spotify for each one and
+  // keeps the result whose artist and title match, so the model passes no references and makes
+  // no second call. A song without a clear match is never guessed; its closest results come back
+  // with item_ref_id values, to choose from and play by reference.
+  async spotifyResolveSongs(songs, { signal } = {}) {
+    if (!Array.isArray(songs) || songs.length < 1 || songs.length > 12 ||
+        songs.some((song) => typeof song?.title !== "string" || !song.title.trim() || typeof song?.artist !== "string" || !song.artist.trim())) {
+      throw spotifyResolutionError("invalid_spotify_songs", "Give from 1 to 12 songs, each with a title and an artist.");
+    }
+    const fold = (value) => foldedWords(normalizedTrackTitle(value));
+    const matched = [];
+    const unmatched = [];
+    for (const song of songs) {
+      const result = await this.spotifySearchTracks({ query: `${song.title} ${song.artist}`, type: "track", limit: 10 }, { signal });
+      const tracks = result.items.filter((item) => item.type === "track" && item.track_ref_id);
+      const wantedTitle = foldedWords(song.title);
+      const wantedCore = fold(song.title);
+      const byArtist = tracks.filter((item) => item.artists.some((artist) => textNamesArtist(artist, song.artist) || textNamesArtist(song.artist, artist)));
+      // The exact title first (a version the listener named, such as a live take, included), then
+      // the same song in another version, then a title that starts with the one asked for.
+      const pick = byArtist.find((item) => foldedWords(item.name) === wantedTitle) ??
+        byArtist.find((item) => fold(item.name) === wantedCore) ??
+        byArtist.find((item) => wantedCore && fold(item.name).startsWith(wantedCore)) ??
+        byArtist.find((item) => otherChineseScript(fold(item.name), wantedCore));
+      if (pick) matched.push(pick);
+      else unmatched.push({ title: song.title, artist: song.artist,
+        candidates: tracks.slice(0, 5).map(({ item_ref_id, name, artists, album }) => ({ item_ref_id, name, artists, ...(album ? { album } : {}) })) });
+    }
+    return { matched, unmatched };
+  }
+
   spotifyDiscoveryAllowed(item) {
     return this.avoidAllows({ title: item.name, artist_credit: item.artists.join(", "), artists: item.artists });
   }
@@ -2196,7 +2268,14 @@ export class MoondogApplication {
     // named in their language; otherwise a sensible batch from the candidates.
     const requested = intent?.requested ?? count ?? Math.min(itemRefs.length, 12);
     if (!Number.isInteger(requested) || requested < 1 || requested > 12) throw spotifyResolutionError("spotify_queue_count_limit", "A queue request supports 1 to 12 songs. No write was sent.");
-    const items = itemRefs.map(ref => this.requireSpotifyReadItem(ref, ["track"]));
+    const chosen = itemRefs.map(ref => this.requireSpotifyReadItem(ref, ["track"]));
+    // The rest of this request's verified discovery results by the artists the model picked stand
+    // behind its picks, in the order found, so a pick skipped as a duplicate or an Avoid still
+    // leaves the count asked for. A song by another artist may have been left out on purpose.
+    const pickedArtists = new Set(chosen.flatMap(item => item.artists));
+    const backups = transaction.discoveryPoolStarted ? (this.spotifyReadSelections.get("discovery") ?? [])
+      .filter(item => item.type === "track" && item.uri && !itemRefs.includes(item.item_ref_id) && item.artists.some(artist => pickedArtists.has(artist))) : [];
+    const items = [...chosen, ...backups].slice(0, 36);
     this.requireSpotifyWriteScopes(["user-modify-playback-state"]);
     this.requireSpotifyScopes(["user-read-playback-state"]);
     transaction.queueBatchAttempted = true;

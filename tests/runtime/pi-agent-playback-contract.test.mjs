@@ -225,3 +225,31 @@ test("a song the listener queued from the album playing is not queued again", as
   assert.deepEqual(f.spotify.state.queue.map(track => track.id), ["simShuZhiGuNiao", "simQianGua"]);
   assert.equal(result.spotify_queue_plan.skipped_duplicate_count, 1, "the listener already queued 樹枝孤鳥");
 });
+
+test("a queue pick skipped as a duplicate is filled from this request's discovery results by the same artist", async t => {
+  const f = fixture(t, { active: "simMac", playing: "simBeidong" });
+  const titles = ["被動", "牽掛", "淚橋"];
+  const refs = c => JSON.parse(f.lastResult(c).content[0].text).items.filter(item => titles.includes(item.name))
+    .sort((left, right) => titles.indexOf(left.name) - titles.indexOf(right.name)).map(item => item.item_ref_id);
+  const result = await f.prompt("add three more Wu Bai songs to the queue", [f.call("moondog_spotify_discover", { queries: ["伍佰"] }),
+    c => f.call("moondog_spotify_queue_batch", { item_refs: refs(c), count: 3 }), f.say("Queued three.")]);
+  const queued = result.spotify_queue_plan.queued.map(track => track.title);
+  assert.equal(queued.length, 3, "the playing song is skipped and a third Wu Bai song takes its place");
+  assert.deepEqual(queued.slice(0, 2), ["牽掛", "淚橋"]);
+  assert.ok(f.spotify.state.queue.every(track => track.artists.some(artist => /伍佰|Wu Bai/u.test(artist.name))));
+  assert.equal(result.spotify_queue_plan.skipped_duplicate_count, 1);
+});
+
+test("a failed search for songs by title sends nothing and leaves later playback in the turn open", async t => {
+  const f = fixture(t, { active: "simMac", playing: "simReckoner" });
+  const search = f.application.spotifySearchTracks.bind(f.application);
+  let failed = false;
+  f.application.spotifySearchTracks = async (...args) => {
+    if (!failed) { failed = true; throw Object.assign(new Error("Spotify search failed."), { code: "spotify_search_unavailable", status: 503 }); }
+    return search(...args);
+  };
+  const result = await f.prompt("放伍佰的被动", [f.call("moondog_spotify_player_control", { action: "resume", songs: [{ title: "被動", artist: "伍佰" }] }),
+    f.call("moondog_spotify_player_control", { action: "resume", songs: [{ title: "被動", artist: "伍佰" }] }), f.say("在放《被動》了。")]);
+  assert.equal(result.spotify_playback_failures[0].not_sent, true);
+  assert.equal(f.spotify.state.current.id, "simBeidong");
+});
