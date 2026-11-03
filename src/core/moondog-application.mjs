@@ -225,16 +225,6 @@ function exactArtistReleaseHint(searchResult, artistName) {
 // How long the model may take to name a conversation before its first message stays the name.
 export const CONVERSATION_NAME_TIMEOUT_MS = 20_000;
 
-// A Chinese title written in the other script (被动 and 被動, 浮夸 and 浮誇): the same number of
-// Han characters, at least half of them identical. Only used once the artist already matched.
-function otherChineseScript(left, right) {
-  const a = Array.from(left);
-  const b = Array.from(right);
-  if (a.length < 2 || a.length !== b.length || !a.every((character) => /\p{Script=Han}/u.test(character)) ||
-      !b.every((character) => /\p{Script=Han}/u.test(character))) return false;
-  return a.filter((character, index) => character === b[index]).length * 2 >= a.length;
-}
-
 export class MoondogApplication {
   // Model calls naming conversations, stopped when the application closes.
   #naming = new Set();
@@ -2118,7 +2108,9 @@ export class MoondogApplication {
   // keeps the result whose artist and title match, so the model passes no references and makes
   // no second call. A song without a clear match is never guessed; its closest results come back
   // with item_ref_id values, to choose from and play by reference.
-  async spotifyResolveSongs(songs, { signal } = {}) {
+  async spotifyResolveSongs(songs, { signal, otherSources = [] } = {}) {
+    // Songs and a reference together are two choices of what to play; neither wins silently.
+    if (otherSources.length) throw spotifyResolutionError("spotify_playback_source_conflict", "Choose one playback source for resume: songs, or one reference. Nothing was played.");
     if (!Array.isArray(songs) || songs.length < 1 || songs.length > 12 ||
         songs.some((song) => typeof song?.title !== "string" || !song.title.trim() || typeof song?.artist !== "string" || !song.artist.trim())) {
       throw spotifyResolutionError("invalid_spotify_songs", "Give from 1 to 12 songs, each with a title and an artist.");
@@ -2136,8 +2128,7 @@ export class MoondogApplication {
       // the same song in another version, then a title that starts with the one asked for.
       const pick = byArtist.find((item) => foldedWords(item.name) === wantedTitle) ??
         byArtist.find((item) => fold(item.name) === wantedCore) ??
-        byArtist.find((item) => wantedCore && fold(item.name).startsWith(wantedCore)) ??
-        byArtist.find((item) => otherChineseScript(fold(item.name), wantedCore));
+        byArtist.find((item) => wantedCore && fold(item.name).startsWith(wantedCore));
       if (pick) matched.push(pick);
       else unmatched.push({ title: song.title, artist: song.artist,
         candidates: tracks.slice(0, 5).map(({ item_ref_id, name, artists, album }) => ({ item_ref_id, name, artists, ...(album ? { album } : {}) })) });

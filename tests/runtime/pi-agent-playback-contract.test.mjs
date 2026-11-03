@@ -253,3 +253,20 @@ test("a failed search for songs by title sends nothing and leaves later playback
   assert.equal(result.spotify_playback_failures[0].not_sent, true);
   assert.equal(f.spotify.state.current.id, "simBeidong");
 });
+
+test("songs with a reference are refused before any search, and a similar Chinese title is not guessed", async t => {
+  const f = fixture(t, { active: "simMac", playing: "simReckoner" });
+  let conflict;
+  await f.prompt("放伍佰的被动", [f.call("moondog_spotify_player_control", { action: "resume", songs: [{ title: "被動", artist: "伍佰" }], track_refs: ["not-a-real-ref"] }),
+    c => { conflict = f.lastResult(c); return f.say("没放。"); }]);
+  assert.equal(conflict.isError, true);
+  assert.match(conflict.content[0].text, /spotify_playback_source_conflict/u);
+  assert.equal(f.plays(), 0);
+  // 突然的愛 shares half its characters with 突然的自我 by the same artist, yet is another song.
+  let seen;
+  await f.prompt("放伍佰的突然的爱", [f.call("moondog_spotify_player_control", { action: "resume", songs: [{ title: "突然的愛", artist: "伍佰" }] }),
+    c => { seen = JSON.parse(f.lastResult(c).content[0].text); return f.say("没找到。"); }]);
+  assert.equal(seen.state, "not_found");
+  assert.equal(f.plays(), 0);
+  assert.equal(f.spotify.state.current.id, "simReckoner");
+});

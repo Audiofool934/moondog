@@ -4891,7 +4891,7 @@ function createToolFactories(
   return new Map([
     ["settings", descriptor => ({
       name: descriptor.tool_name, label: descriptor.label,
-      description: "Read Moondog's own setup: the model answering now, the music service, and the reply language, with how each one changes. Call it when the listener asks what you are running on or what they can change, in any language. Pass reply_language when the listener asks you to answer in another language from now on, in any wording; it is saved like the language picker, so no confirmation is needed, and you reply in it from then on. Change the music service with moondog_playback_service. You cannot change the model or effort yourself; say where the listener can.",
+      description: "Read Moondog's own setup: the model answering now, the music service, and the reply language, with how each one changes. Call it when the listener asks what you are running on or what they can change, in any language. Pass reply_language when the listener asks you to answer in a language from now on, in any wording, unless saved_reply_language already says it is kept as asked; the reply_language of one message does not keep it. It is saved like the language picker, so no confirmation is needed, and you reply in it from then on. Change the music service with moondog_playback_service. You cannot change the model or effort yourself; say where the listener can.",
       parameters: Type.Object({ reply_language: Type.Optional(Type.Union(Object.keys(LOCALES).map((code) => Type.Literal(code)))) }, { additionalProperties: false }),
       executionMode: "sequential",
       execute: executeDomain(async (_id, parameters) => parameters.reply_language
@@ -5666,10 +5666,10 @@ function createToolFactories(
               }, { signal });
             }
             let songs = null;
-            // songs with another source is refused by spotifyControl as a source conflict.
             if (parameters.songs !== undefined) {
+              const otherSources = ["item_ref_id", "uri", "context_uri", "context_ref_id", "track_refs"].filter((key) => parameters[key] !== undefined);
               // Finding the songs only reads Spotify: a failure here sent nothing to the player.
-              songs = await application.spotifyResolveSongs(parameters.songs, { signal }).catch((error) => {
+              songs = await application.spotifyResolveSongs(parameters.songs, { signal, otherSources }).catch((error) => {
                 if (error && typeof error === "object" && error.outcomeUnknown !== true) error.actionNotDispatched = true;
                 throw error;
               });
@@ -7447,6 +7447,11 @@ function productContext(application, query, now, { runtime, source }) {
     ...(application.madeTracks?.() ? { made_tracks: application.madeTracks() } : {}),
     ...(application.streamStatus?.() ? { stream: application.streamStatus() } : {}),
     reply_language: replyLanguage(query, application),
+    // The saved choice apart from this message's language, so a request to keep a language sees
+    // whether it still needs moondog_settings.
+    saved_reply_language: application.replyLanguagePin && application.replyLanguagePin === application.locale
+      ? `${LOCALES[application.locale]?.name ?? "English"} (${application.locale}), kept as asked`
+      : `${LOCALES[application.locale]?.name ?? "English"} (${application.locale ?? "en"})`,
     ...(application.madeTracks?.() ? { record_name_language: recordNameLanguage(application) } : {}),
   };
 }
