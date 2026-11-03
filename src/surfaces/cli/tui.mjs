@@ -317,6 +317,7 @@ export async function runMoondogTui({
   let busy = false;
   // A model chosen or a sign-in made in the window while a turn ran here; it applies once the turn ends.
   let modelChangedElsewhere = false;
+  let modelAskedFor = null;
   // A reply another Moondog window or terminal is writing in this conversation: { id, response, text }.
   let elsewhere = null;
   let watchTimer = null;
@@ -642,6 +643,7 @@ export async function runMoondogTui({
     }
     if (!cleanedUp) tui.requestRender();
     if (!value && modelChangedElsewhere) void followModel();
+    if (!value && modelAskedFor) void applyModelAskedFor();
   };
   const setFooter = (text, color = dim) => {
     if (cleanedUp) return;
@@ -1050,6 +1052,7 @@ export async function runMoondogTui({
     cleanedUp = true;
     clearTimeout(watchTimer);
     stopWatchingModel?.();
+    stopModelSwitch?.();
     stopWatchingFirstRun?.();
     stopWatchingPreviews?.();
     stopWatchingStream?.();
@@ -1332,6 +1335,19 @@ export async function runMoondogTui({
     void refreshFirstRun();
     return nextStatus;
   };
+  // A model the listener asked the agent for in words, switched to as /model does once the reply ends.
+  const applyModelAskedFor = async () => {
+    const selection = modelAskedFor;
+    modelAskedFor = null;
+    if (!selection || cleanedUp || busy) { modelAskedFor ??= selection; return; }
+    const status = await replaceRuntime(runtimeSelection(selection.provider, selection.model, selection.effort ?? runtimeStatus.effort)).catch(() => null);
+    if (status?.state === "configured") setFooter(tr("Model ready."), success);
+  };
+  const stopModelSwitch = application.modelSwitch?.subscribe?.(({ application: from, selection }) => {
+    if (from !== application) return;
+    modelAskedFor = selection;
+    if (!busy) void applyModelAskedFor();
+  });
   // The window saved another model, or a sign-in that lets this side answer. The terminal's own
   // choices rebuild at once, so their saves find this agent already on them.
   const followModel = async () => {

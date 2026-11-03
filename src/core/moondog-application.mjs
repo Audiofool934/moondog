@@ -240,6 +240,7 @@ export class MoondogApplication {
     musicSimilarity = null,
     musicPreviewPlayer = null,
     languageSelection = null,
+    modelSwitch = null,
     neteasePlayer = null,
     localGenerator = null,
     atmosphereStream = null,
@@ -289,6 +290,8 @@ export class MoondogApplication {
     this.musicPreviewPlayer = musicPreviewPlayer;
     // Shared with every surface and conversation of this core, so a language chosen in words is saved and shown everywhere.
     this.languageSelection = languageSelection;
+    // The listener's model menu, and the way a model asked for in words reaches the surface that runs this agent.
+    this.modelSwitch = modelSwitch;
     // NetEase Cloud Music through ncm-cli (src/integrations/netease), shared by every conversation.
     this.neteasePlayer = neteasePlayer;
     // Stable Audio 3 on this Mac (src/integrations/stable-audio), shared by every conversation, so one track is made at a time.
@@ -943,11 +946,13 @@ export class MoondogApplication {
   }
 
   // What the agent can tell the listener about its own setup, and what it can change when asked.
-  settingsStatus(runtime = {}) {
+  async settingsStatus(runtime = {}) {
     const playback = this.playbackStatus();
+    const choices = await this.modelSwitch?.choices().catch(() => []) ?? [];
     return {
       model: { provider: runtime.provider ?? null, model: runtime.model ?? null, ...(runtime.effort ? { effort: runtime.effort } : {}),
-        change: "not_by_agent", where: "Settings › Models in the window, or /model in the terminal" },
+        ...(this.modelSwitch ? { change: "moondog_settings model", choices } : { change: "not_by_agent" }),
+        where: "Settings › Models in the window, or /model in the terminal" },
       music_service: { selected: playback.selected_service ?? null, effective: playback.effective_service ?? null,
         available: (playback.services ?? []).filter((entry) => entry.available).map((entry) => entry.service),
         change: "moondog_playback_service" },
@@ -966,7 +971,24 @@ export class MoondogApplication {
     // Asked for in words, the language holds in this conversation whatever language the listener writes in.
     this.replyLanguagePin = locale;
     await this.languageSelection?.change(locale);
-    return { ...this.settingsStatus(runtime), changed: { setting: "reply_language", from: previous, to: locale } };
+    return { ...await this.settingsStatus(runtime), changed: { setting: "reply_language", from: previous, to: locale } };
+  }
+
+  // A model the listener asked for in words, from their model menu: by provider/model, model ID or
+  // name. It takes over when this reply ends; a model not set up, or not signed in, is refused.
+  async requestModel(wanted, runtime = {}) {
+    if (!this.modelSwitch) throw Object.assign(new Error("This host cannot change the model from a conversation."), { code: "model_change_unavailable" });
+    const choices = await this.modelSwitch.choices();
+    const key = String(wanted ?? "").trim().toLowerCase();
+    const folded = (value) => String(value).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+    const match = choices.find((choice) => choice.model.toLowerCase() === key) ??
+      choices.find((choice) => choice.model.split("/").slice(1).join("/").toLowerCase() === key) ??
+      choices.find((choice) => folded(choice.name) === folded(key));
+    if (!match) throw Object.assign(new Error(`That model is not in the listener's model menu. Choose one of: ${choices.map((choice) => choice.model).join(", ") || "none"}. Others are added in Settings › Models or with /model.`), { code: "model_not_listed" });
+    if (!match.ready) throw Object.assign(new Error(`${match.model} is in the menu but not signed in. The listener signs in from Settings › Models or with /auth.`), { code: "model_not_signed_in" });
+    const [provider, ...rest] = match.model.split("/");
+    this.modelSwitch.request(this, { provider, model: rest.join("/") });
+    return { ...await this.settingsStatus(runtime), changed: { setting: "model", from: `${runtime.provider}/${runtime.model}`, to: match.model, takes_effect: "after this reply" } };
   }
 
   // A host-only in-memory change, kept for hosts with no saved settings.
