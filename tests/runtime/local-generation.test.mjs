@@ -348,6 +348,13 @@ test("a reply stopped while other players pause plays nothing, and a closing roo
   generator.observe({ type: "stopped" });
   await generator.flush();
   assert.match(await readFile(path.join(install.root, "state", "generated", made.id, "outcomes.jsonl"), "utf8"), /"outcome":"skipped"/u);
+
+  // In a library playlist, a catalog song after the made track ends the made track's play there, not at the queue's end.
+  generator.observe({ type: "playing", track: { generated: true, id: made.id, title: made.title } });
+  generator.observe({ type: "playing", track: { title: "Pink Moon", artist_credit: "Nick Drake" } });
+  await generator.flush();
+  const outcomes = await readFile(path.join(install.root, "state", "generated", made.id, "outcomes.jsonl"), "utf8");
+  assert.equal(outcomes.match(/"outcome":"skipped"/gu).length, 2);
 });
 
 test("one message makes one track, and a Like said while it plays is not saved as a real song's", async (t) => {

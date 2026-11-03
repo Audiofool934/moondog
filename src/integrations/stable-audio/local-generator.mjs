@@ -439,6 +439,9 @@ export function createLocalGenerator({
           close(false);
           playing = { id: track.id, heardMs: 0, since: Date.now() };
         } else if (playing.since === null) playing.since = Date.now();
+      } else if (event?.type === "playing" && playing && track && track.generated !== true) {
+        // A song from the catalog after a made track in a library playlist: the made track's play ended there.
+        close(false);
       } else if (event?.type === "paused" && playing && playing.since !== null) {
         playing.heardMs += Date.now() - playing.since;
         playing.since = null;
