@@ -2456,8 +2456,10 @@ export class MoondogApplication {
     // The retained receipt takes in each accepted fill, so its queued songs are the count so far.
     const missing = batch ? (batch.requested ?? 0) - (batch.queued?.length ?? 0) : 0;
     const candidate = batch && input?.itemRefId !== undefined ? this.spotifyHostReadItems().find((entry) => entry.item_ref_id === input.itemRefId) : null;
+    // The same song is the same title by the same primary artist, as the batch itself decides.
+    const candidateSongs = candidate ? songKeys({ title: candidate.name, artist_credit: candidate.artists?.join(", ") ?? "", artists: candidate.artists ?? [] }) : [];
     const fillsBatch = missing > 0 && candidate?.type === "track" &&
-      !batch.queued.some((queued) => foldedWords(queued.title) === foldedWords(candidate.name)) &&
+      !batch.queued.some((queued) => songKeys(queued).some((key) => candidateSongs.includes(key))) &&
       !(transaction.batchFillUris ?? []).includes(candidate.uri);
     this.requireSpotifyNonRemovalAction({ batchFill: fillsBatch });
     let uri;

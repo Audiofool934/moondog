@@ -7251,8 +7251,11 @@ function mergedQueueReceipt(plan, singles) {
   // A batch's mix line does not cover the single adds beside it.
   const { mix: _mix, ...base } = plan ?? { provider: "spotify", action: "playback.queue.add", state: "accepted", queued: [], unmatched: [], not_added: [] };
   const checks = [base.verification, ...singles.map(receipt => receipt.verification)].filter(Boolean);
+  const queued = [...base.queued, ...targets];
   return { ...base, state: ["no_candidates", "no_playback"].includes(base.state) ? "accepted" : base.state,
-    queued: [...base.queued, ...targets],
+    queued,
+    // Single adds that filled a short batch count against its shortfall too.
+    ...(Number.isInteger(base.requested) ? { shortfall: Math.max(0, base.requested - queued.length) } : {}),
     ...(base.device ?? singles.find(receipt => receipt.device)?.device ? { device: base.device ?? singles.find(receipt => receipt.device).device } : {}),
     ...(base.started_playback ? {} : singles[0]?.started_playback ? { started_playback: targets[0] } : {}),
     ...(checks.length ? { verification: { checked: checks.every(check => check.checked),
@@ -7924,7 +7927,8 @@ export class PiAgentRuntime {
         const fillRef = toolCall.arguments?.item_ref_id ?? toolCall.arguments?.track_ref_id;
         const fillItem = batch && descriptor.capability_id === "spotify.queue.add" && typeof fillRef === "string" && !toolCall.arguments?.pending_plan
           ? application.spotifyHostReadItems?.().find((item) => item.item_ref_id === fillRef) : null;
-        const fillsBatch = fillItem && shortfall > 0 && !batch.queued.some((track) => foldedWords(track.title) === foldedWords(fillItem.name));
+        // Which song is a duplicate is the application's call, by title and artist, against the queue too.
+        const fillsBatch = Boolean(fillItem?.type === "track" && shortfall > 0);
         if (batch && !fillsBatch &&
             ["spotify.player.control", "spotify.queue.add", "spotify.queue.batch", "spotify.device.transfer", "spotify.queue.similar"].includes(descriptor.capability_id)) {
           return { block: true, reason: shortfall > 0 && descriptor.capability_id === "spotify.queue.add"

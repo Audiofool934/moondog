@@ -410,3 +410,19 @@ test("an accepted fill is part of the retained queue receipt", async t => {
   assert.equal(receipt.queued_count, 2);
   assert.equal(receipt.shortfall, 0);
 });
+
+test("a same-title song by another artist can fill a short batch, and an interrupted reply reports no false shortfall", async t => {
+  const f = fixture(t, { active: "simMac", playing: "simBeidong" });
+  const ref = (c, name) => JSON.parse(f.lastResult(c).content[0].text).items.find(item => item.name === name)?.item_ref_id;
+  let studio, live;
+  await f.prompt("搜一下挪威的森林", [f.call("moondog_spotify_search", { query: "挪威的森林", limit: 10 }),
+    c => { studio = ref(c, "挪威的森林"); live = ref(c, "挪威的森林 - Live"); return f.say("找到了。"); }]);
+  const result = await f.prompt("把两首挪威的森林加到队列里", [
+    f.call("moondog_spotify_queue_batch", { item_refs: [studio], count: 2 }),
+    f.call("moondog_spotify_queue_add", { item_ref_id: live }),
+    () => { throw new Error("The model stream broke after the writes."); }]);
+  assert.deepEqual(f.spotify.state.queue.map(track => track.id), ["simNuoWeiDeSenLin", "simNuoWeiLive"]);
+  assert.equal(result.status, "interrupted");
+  assert.match(result.text, /请求 2 首；Spotify 已接受 2 首。/u);
+  assert.doesNotMatch(result.text, /还差/u);
+});
