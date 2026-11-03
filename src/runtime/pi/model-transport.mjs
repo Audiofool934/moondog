@@ -89,11 +89,27 @@ function replayableBody(input, init) {
     ArrayBuffer.isView(body) || body instanceof URLSearchParams || body instanceof Blob;
 }
 
+// Statuses that say the provider is busy right now, not that the request is wrong.
+const overloadStatuses = new Set([502, 503, 504, 529]);
+const maximumOverloadRetries = 3;
+
+// How long to wait before sending an overloaded request again, or null to return the response.
+// A 429 is retried only when the provider asks for a short wait; a long one is usually a quota.
+function overloadRetryDelay(response, retries) {
+  if (!response || typeof response.status !== "number") return null;
+  const value = response.headers?.get?.("retry-after");
+  const header = value === null || value === undefined || value === "" ? NaN : Number(value);
+  const asked = Number.isFinite(header) && header >= 0 ? header * 1000 : null;
+  if (response.status === 429) return asked !== null && asked <= 10_000 ? asked : null;
+  if (!overloadStatuses.has(response.status)) return null;
+  return Math.min(asked ?? 1000 * 2 ** retries, 10_000);
+}
+
 async function retryDelay(milliseconds, signal) {
   await delay(milliseconds, undefined, { signal });
 }
 
-/** Recover only rejected model HTTP fetches, before a Response or stream exists. */
+/** Recover rejected model HTTP fetches, and overloaded answers, before a stream exists. */
 export function createModelFetch({
   provider,
   fetchImpl = globalThis.fetch,
@@ -104,11 +120,24 @@ export function createModelFetch({
   return async (input, init) => {
     const signal = init?.signal ?? (input instanceof Request ? input.signal : undefined);
     const canReplay = replayableBody(input, init);
-    for (let attempt = 0; ; attempt += 1) {
+    // Connection failures and overloaded answers each have their own small budget.
+    let overloadAttempts = 0;
+    let attempt = 0;
+    for (;;) {
       signal?.throwIfAborted();
       try {
-        // Status codes and response-body errors remain Pi's responsibility.
-        return await fetchImpl(input, init);
+        const response = await fetchImpl(input, init);
+        // A provider that is overloaded answers before it produces anything, so the same request
+        // is sent again after a short wait. Other status codes and body errors stay Pi's.
+        const retryAfter = overloadRetryDelay(response, overloadAttempts);
+        if (canReplay && retryAfter !== null && overloadAttempts < maximumOverloadRetries) {
+          overloadAttempts += 1;
+          await response.body?.cancel().catch(() => {});
+          onRetry?.({ attempt: overloadAttempts, maxRetries: maximumOverloadRetries, status: response.status });
+          await wait(retryAfter, signal);
+          continue;
+        }
+        return response;
       } catch (cause) {
         if (signal?.aborted || cause?.name === "AbortError") throw cause;
         const failure = connectionFailure(cause);
@@ -116,6 +145,7 @@ export function createModelFetch({
         if (canReplay && failure.retryable && attempt < maximumRetries) {
           onRetry?.({ attempt: attempt + 1, maxRetries: maximumRetries });
           await wait(250 * 2 ** attempt, signal);
+          attempt += 1;
           continue;
         }
         const error = createModelConnectionError({ provider, cause });
