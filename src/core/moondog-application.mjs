@@ -19,9 +19,23 @@ import {
 import { recoverArtistReleasesWithCrossCatalogIdentity } from "../integrations/cross-catalog-artist-identity.mjs";
 import { webProviderName } from "../integrations/web/web-result.mjs";
 import { musicAppSource, readListeningNow } from "./listening-now.mjs";
+import { SAVED_PLAYLIST_ID } from "./library-store.mjs";
 import { normalizeConversationFolder, normalizeConversationLabel, normalizeMemoryContent, shortConversationTitle } from "../memory/local-memory-store.mjs";
 import { queueListeningIntent, queueCancellationRequested, unheardRequested } from "./spotify-listening-intent.mjs";
 import { DEFAULT_LOCALE, LOCALES, messageLocale, normalizeLocale } from "../i18n/index.mjs";
+
+// Runs work over a list with at most limit calls at once, keeping the list's order.
+async function mapLimited(list, limit, work) {
+  const results = new Array(list.length);
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(limit, list.length) }, async () => {
+    while (next < list.length) {
+      const at = next++;
+      results[at] = await work(list[at], at);
+    }
+  }));
+  return results;
+}
 
 // How long a record's title in the wrong language waits to be named again before the agent's stays.
 const TITLE_LANGUAGE_TIMEOUT_MS = 10_000;
@@ -244,6 +258,8 @@ export class MoondogApplication {
     localGenerator = null,
     atmosphereStream = null,
     musicApp = null,
+    // The listener's library (src/core/library-store.mjs), shared by every conversation and both surfaces.
+    libraryStore = null,
     agentHostNotes = [],
     artistIdentityResolver = null,
     webResearch = null,
@@ -298,6 +314,7 @@ export class MoondogApplication {
     // The Music app on this Mac (src/integrations/apple-music/music-app.mjs), read for what the
     // listener plays there themselves.
     this.musicApp = musicApp;
+    this.libraryStore = libraryStore;
     // Hosts can tell the agent where it runs; the terminal passes none.
     this.hostNotes = Array.isArray(agentHostNotes) ? agentHostNotes.filter((note) => typeof note === "string") : [];
     this.artistIdentityResolver = artistIdentityResolver;
@@ -600,6 +617,174 @@ export class MoondogApplication {
     if (!named) this.#noteGeneratedPlay({ id, title });
     await this.localGenerator.recordReplay?.(id, named ? "listener" : "moondog");
     return { state: "playing", track: { id, title, seconds: receipt.audio?.duration_seconds ?? null }, chosen_by: named ? "listener" : "moondog" };
+  }
+
+  // The listener's library: their playlists and the songs and made tracks they kept, side by side.
+  libraryReady() {
+    return Boolean(this.libraryStore);
+  }
+
+  requireLibrary() {
+    if (!this.libraryStore) throw Object.assign(new Error("The library is not available here."), { code: "library_not_ready" });
+    return this.libraryStore;
+  }
+
+  libraryView() {
+    return this.libraryReady() ? this.libraryStore.view() : null;
+  }
+
+  // One playlist with its entries; a made track says whether its audio is still on this Mac.
+  async libraryPlaylist(id) {
+    const playlist = this.requireLibrary().playlist(id);
+    if (!playlist) return null;
+    for (const entry of playlist.entries) {
+      if (entry.kind === "made") entry.audio_kept = Boolean(await this.localGenerator?.trackFile?.(entry.made_id));
+    }
+    return playlist;
+  }
+
+  // The song or made track one listening source plays now, as a library entry.
+  #entryOfSong(song) {
+    if (!song?.title) return null;
+    if (song.made_track_id) return { kind: "made", id: song.made_track_id, title: song.title };
+    const artist = Array.isArray(song.artists) ? song.artists.join(", ") : "";
+    if (!artist) return null;
+    const album = typeof song.album === "string" ? song.album : song.album?.name;
+    return { kind: "song", title: song.title, artist_credit: artist, ...(album ? { album } : {}) };
+  }
+
+  // What to save: the song playing now, what plays from now on (its playlist or queue), songs the agent names,
+  // or a made track by id.
+  async #entriesToSave({ from, songs, madeTrackId }, { signal } = {}) {
+    if (madeTrackId) {
+      const receipt = await this.localGenerator?.receipt?.(madeTrackId);
+      if (!receipt) throw Object.assign(new Error("There is no track Moondog made with that id on this Mac."), { code: "made_track_not_found" });
+      if (!(await this.localGenerator.trackFile(madeTrackId))) {
+        throw Object.assign(new Error("Only the receipt of that track is left, so it can't be kept."), { code: "made_track_audio_not_kept" });
+      }
+      return [{ kind: "made", id: madeTrackId, title: String(receipt.title ?? "Moondog") }];
+    }
+    if (Array.isArray(songs) && songs.length) {
+      return songs.map((song) => ({ kind: "song", title: song.title, artist_credit: song.artist ?? song.artist_credit, ...(song.album ? { album: song.album } : {}) }));
+    }
+    const now = await readListeningNow(this, { signal });
+    const active = now.sources.find((source) => source.service === now.active);
+    if (!active?.song) throw Object.assign(new Error("Nothing is playing, so there is nothing to save."), { code: "library_nothing_playing" });
+    if (from === "queue") {
+      const tracks = active.from?.tracks;
+      const list = tracks?.length ? tracks.slice(Math.max(0, (active.from.position ?? 1) - (active.from.first_position ?? 1)))
+        : [active.song, ...(active.next ?? [])];
+      return list.map((song) => this.#entryOfSong(song)).filter(Boolean);
+    }
+    const one = this.#entryOfSong(active.song);
+    if (!one) throw Object.assign(new Error("The song playing now has no artist to keep it by."), { code: "library_nothing_playing" });
+    return [one];
+  }
+
+  /**
+   * Keeps songs or made tracks in the library: in Saved when no playlist is named, in a playlist by id, or
+   * in a new playlist by name. by says who chose to keep them: the listener, or Moondog at their request.
+   */
+  async saveToLibrary({ from = "now_playing", songs, madeTrackId, playlistId, playlistName, folderId, artwork } = {}, { by = "listener", signal } = {}) {
+    const library = this.requireLibrary();
+    const entries = await this.#entriesToSave({ from, songs, madeTrackId }, { signal });
+    if (!entries.length) throw Object.assign(new Error("There is nothing to save."), { code: "library_nothing_playing" });
+    // The window passes the cover it shows for the song playing now.
+    if (artwork && from === "now_playing" && !songs?.length && !madeTrackId && entries[0].kind === "song") entries[0].refs = { artwork_url: artwork };
+    if (!playlistId && playlistName) {
+      const made = library.savePlaylist({ name: playlistName, folderId: folderId ?? null, origin: by === "moondog" ? "moondog" : "listener", entries, addedBy: by });
+      return { playlist: { id: made.id, name: library.playlist(made.id).name, created: true }, added: made.added, already: made.already,
+        titles: entries.map((entry) => entry.title) };
+    }
+    const target = playlistId ?? SAVED_PLAYLIST_ID;
+    const added = library.addEntries(target, entries, { addedBy: by });
+    const playlist = library.playlist(target);
+    return { playlist: { id: playlist.id, name: playlist.saved ? "Saved" : playlist.name, ...(playlist.saved ? { saved: true } : {}) },
+      added: added.added, already: added.already, titles: entries.map((entry) => entry.title) };
+  }
+
+  /** Playlists by name for the agent, or the newest ones when no words are given. */
+  findLibraryPlaylists(query) {
+    return this.requireLibrary().findPlaylists(query).map(({ id, name, count, made, origin, saved }) => ({
+      id, name: saved ? "Saved" : name, count, made, origin, ...(saved ? { saved: true } : {}) }));
+  }
+
+  /**
+   * Plays a playlist from the library, from its first entry or from one entry. It plays on the listener's
+   * chosen service: Moondog's own player holds Apple Music songs and made tracks in one queue; Spotify and
+   * NetEase play its songs, and its made tracks wait for Moondog's own player (left_out_made says how many).
+   * The listener's own playlist is their pick, so nothing of it goes in the suggestions ledger.
+   */
+  async playLibrary({ playlistId, entryId, shuffle = false } = {}, { signal } = {}) {
+    const playlist = await this.libraryPlaylist(playlistId);
+    if (!playlist) throw Object.assign(new Error("That playlist is not in the library."), { code: "library_playlist_not_found" });
+    const named = { id: playlist.id, name: playlist.saved ? "Saved" : playlist.name };
+    let entries = playlist.entries;
+    const start = entryId ? entries.findIndex((entry) => entry.id === entryId) : 0;
+    entries = entries.slice(Math.max(0, start));
+    if (shuffle) entries = entries.map((entry) => [Math.random(), entry]).sort((a, b) => a[0] - b[0]).map(([, entry]) => entry);
+    const avoided = entries.filter((entry) => entry.kind === "song" && !this.avoidAllows({ title: entry.title, artist_credit: entry.artist_credit }));
+    entries = entries.filter((entry) => !avoided.includes(entry) && (entry.kind === "song" || entry.audio_kept));
+    const extra = avoided.length ? { skipped_avoided_count: avoided.length } : {};
+    if (!entries.length) return { state: "empty", playlist: named, ...extra };
+    const songs = entries.filter((entry) => entry.kind === "song");
+    const service = this.playbackService;
+    // Only made tracks, or Apple Music chosen: Moondog's own player, with both in one queue.
+    if ((!songs.length || service === "apple_music") && typeof this.musicPreviewPlayer?.playList === "function") {
+      const refs = [];
+      const found = await mapLimited(entries.slice(0, 50), 6, async (entry) => {
+        if (entry.kind === "made") return { generated: true, id: entry.made_id, title: entry.title, file: await this.localGenerator.trackFile(entry.made_id) };
+        if (!this.musicCatalog) return null;
+        const result = await this.musicCatalog.findPreview({ title: entry.title, artist: entry.artist_credit }).catch(() => null);
+        if (result?.state !== "resolved") return null;
+        if (result.track.catalog_id) refs.push({ entryId: entry.id, refs: { apple_music_id: String(result.track.catalog_id),
+          ...(entry.refs?.artwork_url || !result.track.artwork_url ? {} : { artwork_url: result.track.artwork_url }) } });
+        return result.track;
+      });
+      signal?.throwIfAborted();
+      const tracks = found.filter(Boolean);
+      const notFound = found.length - tracks.length;
+      if (!tracks.length) return { state: "not_found", playlist: named, not_found: notFound, ...extra };
+      this.libraryStore.rememberRefs(refs);
+      // A playlist replaces Moondog's stream and quiets the other players, as any music Moondog starts does.
+      await this.#endStream("replaced");
+      await this.quietOtherPlayers("apple_music", { signal });
+      signal?.throwIfAborted();
+      this.musicPreviewPlayer.playList(tracks);
+      return { state: "playing", player: "moondog", playlist: named, playing: tracks.length, not_found: notFound,
+        whole_songs: this.musicPreviewPlayer.wholeSongs?.() === true, ...extra };
+    }
+    const leftOut = entries.length - songs.length;
+    if (service === "spotify") {
+      if (!this.spotifyPlaybackReady()) throw Object.assign(new Error("Spotify is not ready to play here."), { code: "spotify_not_ready" });
+      const list = songs.slice(0, 100);
+      const refs = [];
+      const uris = await mapLimited(list, 4, async (entry) => {
+        if (entry.refs?.spotify_uri) return entry.refs.spotify_uri;
+        const { matched } = await this.spotifyResolveSongs([{ title: entry.title, artist: entry.artist_credit }], { signal }).catch(() => ({ matched: [] }));
+        const uri = typeof matched[0]?.uri === "string" ? matched[0].uri : null;
+        if (uri) refs.push({ entryId: entry.id, refs: { spotify_uri: uri } });
+        return uri;
+      });
+      signal?.throwIfAborted();
+      this.libraryStore.rememberRefs(refs);
+      const playable = uris.filter(Boolean);
+      if (!playable.length) return { state: "not_found", playlist: named, not_found: list.length, left_out_made: leftOut, ...extra };
+      await this.quietOtherPlayers("spotify", { signal });
+      const receipt = await this.#resumeSpotifySelection({ uris: playable }, { signal, played: [] });
+      return { state: receipt.state === "accepted" ? "playing" : receipt.state, player: "spotify", playlist: named, playing: playable.length,
+        not_found: list.length - playable.length, left_out_made: leftOut, ...extra };
+    }
+    if (service === "netease" && this.neteaseReady()) {
+      const player = this.requireNetease();
+      await this.quietOtherPlayers("netease", { signal });
+      const receipt = await player.play({ items: songs.slice(0, 20).map((entry) => ({ title: entry.title, artist: entry.artist_credit })), mode: "play",
+        intent: "播放听者自己的歌单", allow: (song) => this.avoidAllows(Array.isArray(song.artists)
+          ? { title: song.title, artist_credit: song.artists.join(", "), artists: song.artists } : song) });
+      return { state: receipt?.mode === "playing" ? "playing" : "not_found", player: "netease", playlist: named,
+        playing: receipt?.songs?.length ?? 0, left_out_made: leftOut, ...extra };
+    }
+    throw Object.assign(new Error("No player here can play this playlist."), { code: "library_no_player" });
   }
 
   // Makes one instrumental track from the listener's taste and plays it in Moondog's own player.
@@ -3692,7 +3877,8 @@ export class MoondogApplication {
       musicPreviewReady: this.musicPreviewReady(),
       tasteChoicesReady: this.tasteChoicesReady(),
       localGenerationReady: this.localGenerationReady(),
-    }).filter(descriptor => !this.#playbackServiceExcludes(descriptor.capability_id));
+    }).filter(descriptor => !this.#playbackServiceExcludes(descriptor.capability_id) &&
+      (this.libraryReady() || !descriptor.capability_id.startsWith("collection.")));
   }
 
   async findArtistReleases(input) {
@@ -4083,7 +4269,7 @@ export class MoondogApplication {
       this.pendingPlaylistPromptTransaction = null;
     } finally {
       const owned = this.ownsServices
-        ? [this.memoryStore, this.domainServices, this.musicCatalog, this.musicSimilarity, this.musicPreviewPlayer, this.webResearch]
+        ? [this.memoryStore, this.libraryStore, this.domainServices, this.musicCatalog, this.musicSimilarity, this.musicPreviewPlayer, this.webResearch]
         : [this.domainServices];
       for (const service of owned) service?.close?.();
     }

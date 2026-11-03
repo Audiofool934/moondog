@@ -213,13 +213,29 @@ export async function createTerminalPreviewPlayer({
       });
       start(accepted);
     },
+    // A playlist from the listener's library: Apple Music previews and tracks Moondog made, in one queue.
+    // A song is { title, artist_credit, catalog_url, preview_url }; a made track { generated: true, id, title, file }.
+    playList(tracks) {
+      if (closed) return;
+      const accepted = (Array.isArray(tracks) ? tracks : []).map((track) => (track?.generated === true
+        ? { title: String(track.title ?? "").trim(), artist_credit: "", generated: true, id: String(track.id ?? ""),
+          file: typeof track.file === "string" && path.isAbsolute(track.file) ? track.file : null }
+        : { title: String(track?.title ?? "").trim(), artist_credit: String(track?.artist_credit ?? "").trim(),
+          catalog_url: https(track?.catalog_url, linkHost), preview: https(track?.preview_url, previewHost) }))
+        .filter((track) => track.title && (track.generated ? track.file : track.catalog_url && track.preview)).slice(0, longestQueue);
+      if (!accepted.length) return;
+      stop();
+      emit({ type: "queue", tracks: accepted.map(({ title, artist_credit, catalog_url, generated, id }) => (generated
+        ? { title, artist_credit: "", generated: true, id } : { title, artist_credit, catalog_url })), album: null });
+      start(accepted);
+    },
     // A track Moondog made on this Mac: { id, title, file }, played whole and kept after it ends.
     playGenerated({ id, title, file } = {}) {
       const name = String(title ?? "").trim();
       if (closed || !name || typeof file !== "string" || !path.isAbsolute(file)) return;
       stop();
       const track = { title: name, artist_credit: "", generated: true, id: String(id ?? "") };
-      emit({ type: "queue", tracks: [{ title: track.title, artist_credit: "", generated: true }], album: null });
+      emit({ type: "queue", tracks: [{ title: track.title, artist_credit: "", generated: true, id: track.id }], album: null });
       start([{ ...track, file }]);
     },
     // A made track queued behind the one playing, as Moondog's stream does; with nothing playing, it plays now.
@@ -228,7 +244,7 @@ export async function createTerminalPreviewPlayer({
       if (closed || !name || typeof file !== "string" || !path.isAbsolute(file)) return;
       if (!queue || !queue.tracks.every((track) => track.generated)) return this.playGenerated({ id, title, file });
       queue.tracks.push({ title: name, artist_credit: "", generated: true, id: String(id ?? ""), file });
-      now.appended({ title: name, generated: true });
+      now.appended({ title: name, generated: true, id: String(id ?? "") });
     },
     // Ends the song now playing, or still loading; the next one starts after it.
     skip() {

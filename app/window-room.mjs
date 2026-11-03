@@ -108,6 +108,7 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
   // The saved transcript the window last got, so a look that finds nothing new sends nothing.
   let drawn = null;
   function lookForChanges() {
+    lookForLibrary();
     try {
       follow();
       const version = base.memoryStore?.dataVersion?.();
@@ -986,8 +987,102 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
       id: memory.memory_id, text: memory.text, kind: memory.kind, updatedAt: memory.updated_at })) });
   }
 
+  // The listener's library: its tree for the sidebar, and the one playlist the room shows. The terminal's
+  // writes reach it through the data version, the agent's and this window's through the store's own listener.
+  const library = base.libraryStore ?? null;
+  let libraryShown = null;
+  let playlistOpen = null;
+  let playlistShown = null;
+  let libraryTimer = null;
+  async function sendPlaylist(force = false) {
+    if (!library || !playlistOpen) return;
+    const playlist = await base.libraryPlaylist(playlistOpen);
+    const text = JSON.stringify(playlist);
+    if (!force && text === playlistShown) return;
+    playlistShown = text;
+    send({ type: "library-playlist", id: playlistOpen, playlist });
+  }
+  async function sendLibrary(force = false) {
+    if (!library || closed) return;
+    const view = base.libraryView();
+    const text = JSON.stringify(view);
+    if (force || text !== libraryShown) {
+      libraryShown = text;
+      send({ type: "library", ...view });
+    }
+    await sendPlaylist(force);
+  }
+  const librarySoon = () => {
+    clearTimeout(libraryTimer);
+    libraryTimer = setTimeout(() => { void sendLibrary().catch(() => {}); }, 40);
+  };
+  const unsubscribeLibrary = library?.subscribe?.(librarySoon) ?? null;
+  let librarySeen = null;
+  function lookForLibrary() {
+    try {
+      const version = library?.dataVersion?.();
+      if (version === undefined || version === librarySeen) return;
+      const first = librarySeen === null;
+      librarySeen = version;
+      if (!first) librarySoon();
+    } catch { /* A busy or closing store; the next look tries again. */ }
+  }
+  const libraryNotice = (error) => send({ type: "notice", code: error?.code ?? "library_failed", message: errorText(error) });
+  const libraryHandlers = {
+    "library-open": async (data) => {
+      playlistOpen = data.id ? String(data.id) : null;
+      playlistShown = null;
+      if (playlistOpen) await sendPlaylist(true);
+    },
+    "library-folder-save": (data) => library.saveFolder({ ...(data.id ? { id: String(data.id) } : {}), ...(typeof data.name === "string" ? { name: data.name } : {}),
+      ...(data.parentId !== undefined ? { parentId: data.parentId } : {}), ...(data.beforeId !== undefined ? { beforeId: data.beforeId } : {}) }),
+    "library-folder-delete": (data) => library.deleteFolder(String(data.id ?? "")),
+    "library-playlist-save": (data) => {
+      const saved = library.savePlaylist({ ...(data.id ? { id: String(data.id) } : {}), ...(typeof data.name === "string" ? { name: data.name } : {}),
+        ...(data.folderId !== undefined ? { folderId: data.folderId } : {}), ...(data.beforeId !== undefined ? { beforeId: data.beforeId } : {}) });
+      // A playlist made here opens, so its name can be given and songs dropped on it.
+      if (!data.id) send({ type: "library-made", id: saved.id });
+    },
+    "library-playlist-delete": (data) => { library.deletePlaylist(String(data.id ?? "")); if (playlistOpen === data.id) playlistOpen = null; },
+    "library-entries-remove": (data) => library.removeEntries(String(data.playlistId ?? ""), idsOf(data)),
+    "library-entries-move": (data) => library.moveEntries(String(data.playlistId ?? ""), idsOf(data), data.beforeId ? String(data.beforeId) : null),
+    // Entries dragged from one playlist onto another are copied there, as songs are in a music app.
+    "library-entries-copy": (data) => {
+      const source = library.playlist(String(data.fromPlaylistId ?? ""));
+      const wanted = new Set(idsOf(data));
+      const entries = (source?.entries ?? []).filter((entry) => wanted.has(entry.id)).map((entry) => (entry.kind === "made"
+        ? { kind: "made", id: entry.made_id, title: entry.title } : { ...entry, refs: entry.refs }));
+      if (entries.length) library.addEntries(String(data.playlistId ?? ""), entries, { addedBy: "listener" });
+    },
+    // The listener's own save: the song or made track playing now, into Saved or a playlist.
+    "library-save": async (data) => {
+      try {
+        const saved = await base.saveToLibrary({ from: data.from === "queue" ? "queue" : "now_playing", ...(data.playlistId ? { playlistId: String(data.playlistId) } : {}),
+          ...(typeof data.playlistName === "string" && data.playlistName.trim() ? { playlistName: data.playlistName } : {}),
+          ...(typeof data.artwork === "string" ? { artwork: data.artwork } : {}) }, { by: "listener" });
+        send({ type: "library-saved", playlist: saved.playlist, added: saved.added, already: saved.already });
+      } catch (error) { libraryNotice(error); }
+    },
+    "library-play": async (data) => {
+      try {
+        const played = await base.playLibrary({ playlistId: String(data.playlistId ?? ""), ...(data.entryId ? { entryId: String(data.entryId) } : {}), shuffle: data.shuffle === true });
+        send({ type: "library-played", ...played });
+        await refreshPlayer({ queue: true });
+      } catch (error) { libraryNotice(error); }
+    },
+  };
+
+  // A refused library edit says why in the store's own words, so the window can name it.
+  for (const [type, handle] of Object.entries(libraryHandlers)) {
+    libraryHandlers[type] = async (data) => {
+      if (!library) return libraryNotice({ code: "library_not_ready" });
+      try { await handle(data); } catch (error) { libraryNotice(error); }
+    };
+  }
+
   const idsOf = (data) => (Array.isArray(data.ids) ? data.ids : [data.id ?? ""]).map(String);
   const handlers = {
+    ...libraryHandlers,
     prompt: (data) => prompt(String(data.text ?? "")),
     cancel: () => { if (current.turn) current.runtime.abort?.(); },
     new: () => openSession(null),
@@ -1207,6 +1302,8 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
       unwatchModel?.();
       unwatchFirstRun?.();
       unsubscribeStream?.();
+      unsubscribeLibrary?.();
+      clearTimeout(libraryTimer);
       clearTimeout(pollTimer);
       clearTimeout(sessionsTimer);
       const settling = slots.filter((slot) => slot.turn).map((slot) => { slot.runtime.abort?.(); return slot.turn.settled; });
@@ -1250,6 +1347,8 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     shown = JSON.stringify([saved, folderList]);
     drawn = JSON.stringify([sessionOf(current), transcript(current)]);
     send({ type: "ready", ...status(), sessions: saved, folders: folderList, current: sessionOf(current), running: [], transcript: [] });
+    lookForLibrary();
+    void sendLibrary(true).catch(() => {});
     void refreshFirstRun();
     void refreshPlayer();
     schedulePlayer();

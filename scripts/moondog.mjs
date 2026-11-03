@@ -7,6 +7,7 @@ import { runUpdateCommand } from "../src/surfaces/cli/update-command.mjs";
 
 import { MoondogApplication } from "../src/core/moondog-application.mjs";
 import { openLocalMemoryStore } from "../src/memory/local-memory-store.mjs";
+import { openLibraryStore } from "../src/core/library-store.mjs";
 import {
   openAppleProjectionDomainServices,
   resolveAppleMusicSubjectId,
@@ -902,6 +903,9 @@ async function main() {
 
   const domainState = await loadDomainServices();
   const memoryStore = await openLocalMemoryStore();
+  // The listener's library: Saved, their playlists and folders, on one file the terminal and the window share.
+  // A library that can't open leaves the rest of Moondog working, without it.
+  const libraryStore = await openLibraryStore().catch(() => null);
   const spotifyConnection = await loadSpotifyConnection();
   const musicCatalog = createAppleMusicCatalog();
   const artistIdentityResolver = createWikidataArtistResolver();
@@ -927,7 +931,7 @@ async function main() {
   // that can play what it makes: Moondog's own install, downloaded when they ask, or their folder.
   // The terminal and the window each keep one generator, so each makes one track at a time; a
   // choice saved on one side is checked again on the other.
-  const localGenerator = previewPlayer ? createLocalGenerator() : null;
+  const localGenerator = previewPlayer ? createLocalGenerator({ keeps: (id) => libraryStore?.holdsMade(id) === true }) : null;
   const generationSetup = localGenerator ? createStableAudioSetup() : null;
   // A model set up or removed, here or on the other side, is checked again.
   const unwatchGenerationSetup = generationSetup?.subscribe(() => { void localGenerator.check().catch(() => {}); }) ?? (() => {});
@@ -965,7 +969,7 @@ async function main() {
   const applicationOptions = ({ domainServices, domainServicesError, spotifyConnection, locale, playbackService }) => ({
     domainServices, domainServicesError, spotifyConnection, locale, playbackService, playbackSelection, languageSelection,
     webResearch, memoryStore, musicCatalog, musicPreviewPlayer: previewPlayer, neteasePlayer, localGenerator, atmosphereStream, musicSimilarity, artistIdentityResolver,
-    spotifyTopArtists, musicApp,
+    spotifyTopArtists, musicApp, libraryStore,
   });
   const application = new MoondogApplication(applicationOptions({
     ...domainState, spotifyConnection, locale: await resolveListenerLocale(), playbackService,

@@ -198,6 +198,7 @@ function buildMenu() {
     ] },
     { label: t("menuView"), submenu: [
       { label: t("menuSidebar"), accelerator: "CmdOrCtrl+Alt+S", click: command("toggle-sidebar") },
+      { label: t("menuLibrary"), accelerator: "CmdOrCtrl+Alt+L", click: command("toggle-library") },
       { label: t("menuPlayer"), accelerator: "CmdOrCtrl+Alt+P", click: command("toggle-inspector") },
       { label: t("menuRecord"), accelerator: "CmdOrCtrl+Alt+R", click: command("toggle-record") },
       { type: "separator" },

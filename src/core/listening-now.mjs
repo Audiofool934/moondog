@@ -78,7 +78,8 @@ async function spotify(application, { signal }) {
 }
 
 // Moondog's own player: Apple Music songs in the window or the terminal, and the tracks Moondog made.
-const madeBy = (track) => ({ title: track.title, artists: track.generated ? ["Moondog"] : track.artist_credit ? [track.artist_credit] : [] });
+const madeBy = (track) => ({ title: track.title, artists: track.generated ? ["Moondog"] : track.artist_credit ? [track.artist_credit] : [],
+  ...(track.generated && track.id ? { made_track_id: track.id } : {}) });
 function moondogPlayer(application) {
   const now = application.musicPreviewPlayer.nowPlaying();
   if (!now?.song?.title) return { state: "stopped" };
@@ -132,7 +133,7 @@ export async function readListeningNow(application, { signal } = {}) {
 const entry = (track) => ({
   title: String(track?.title ?? "").trim(),
   artist_credit: String(track?.artist_credit ?? "").trim(),
-  ...(track?.generated === true ? { generated: true } : {}),
+  ...(track?.generated === true ? { generated: true, ...(typeof track.id === "string" && track.id ? { id: track.id } : {}) } : {}),
 });
 
 export function createPlayerNow() {

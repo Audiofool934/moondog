@@ -7,6 +7,7 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { MoondogApplication } from "../src/core/moondog-application.mjs";
+import { openLibraryStore } from "../src/core/library-store.mjs";
 import { createPlaybackSelection } from "../src/core/playback-preferences.mjs";
 import { createSyntheticDomainServices } from "../src/core/synthetic-domain-services.mjs";
 import { createSimulatedSpotify } from "../src/evaluation/simulated-spotify.mjs";
@@ -55,7 +56,9 @@ const shown = Object.freeze({ ...service,
   currentPlayer: async (options) => { const player = await service.currentPlayer(options); return { ...player, item: drawn(player.item) }; },
   queue: async (options) => { const queue = await service.queue(options); return { ...queue, queue: queue.queue.map(drawn) }; } });
 const domainServices = createSyntheticDomainServices({ subjectScope: { subjectId: "window-simulated" } });
-const shared = { importsRoot: path.join(state, "imports"), musicPreviewPlayer: createWindowPreviewPlayer(port), playbackSelection: createPlaybackSelection(),
+// The library lives in memory, so it goes with the window, as the rest of the simulated state does.
+const libraryStore = await openLibraryStore({ databasePath: ":memory:" });
+const shared = { importsRoot: path.join(state, "imports"), musicPreviewPlayer: createWindowPreviewPlayer(port), playbackSelection: createPlaybackSelection(), libraryStore,
   spotifyConnection: { service: shown, ready: () => true, missingScopes: () => [], publicStatus: () => ({ provider: "spotify", state: "ready" }) } };
 const application = new MoondogApplication({ ...shared, locale: await resolveListenerLocale(environment), domainServices });
 const runtime = await createConfiguredRuntime(application, environment);

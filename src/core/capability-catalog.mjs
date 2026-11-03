@@ -607,6 +607,39 @@ const catalog = [
     },
   },
   {
+    id: "collection.list",
+    version: "1",
+    state: "enabled",
+    effect: "read_local",
+    description: "Find playlists in the listener's own library on this Mac, by name, with what each holds.",
+    agent_tool: {
+      name: "moondog_collection_list",
+      label: N_("Look in the library"),
+    },
+  },
+  {
+    id: "collection.save",
+    version: "1",
+    state: "enabled",
+    effect: "write_local",
+    description: "Keep songs or tracks Moondog made in the listener's library on this Mac: in Saved, in one of their playlists, or in a new playlist.",
+    agent_tool: {
+      name: "moondog_collection_save",
+      label: N_("Save to the library"),
+    },
+  },
+  {
+    id: "collection.play",
+    version: "1",
+    state: "enabled",
+    effect: "play_library",
+    description: "Play a playlist from the listener's library on the music service they chose.",
+    agent_tool: {
+      name: "moondog_collection_play",
+      label: N_("Play from the library"),
+    },
+  },
+  {
     id: "music.generate.local",
     version: "1",
     state: "enabled",

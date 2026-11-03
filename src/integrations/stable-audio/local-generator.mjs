@@ -229,6 +229,8 @@ export function createLocalGenerator({
   arch = process.arch,
   spawnImpl = spawn,
   now = () => new Date(),
+  // Whether the listener's library holds a made track: a stream never drops the audio of one they kept.
+  keeps = () => false,
 } = {}) {
   let current = { state: "unknown", enabled: false, install: "unknown", path: null, source: null, model: DEFAULT_STABLE_AUDIO_MODEL, managed: false };
   let running = null;
@@ -452,9 +454,11 @@ export function createLocalGenerator({
     /** Waits for the outcomes still being written, as a room does before it closes. */
     flush: () => Promise.allSettled([...writing]),
     // A replay of the track playing now starts it over; that is not a skip.
-    // A stream keeps only its newest tracks' audio; the receipt and outcomes of the rest stay.
+    // A stream keeps only its newest tracks' audio; the receipt and outcomes of the rest stay. A track in the
+    // listener's library keeps its audio, and a library that can't be read keeps it too.
     async removeAudio(id) {
       if (!isGeneratedTrackId(id)) return;
+      try { if (keeps(id)) return; } catch { return; }
       await rm(path.join(tracksDirectory(), id, "track.wav"), { force: true }).catch(() => {});
       const entry = made.get(id);
       if (entry) entry.audio_kept = false;
