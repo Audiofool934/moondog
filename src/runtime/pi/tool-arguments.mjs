@@ -15,8 +15,12 @@ function passes(tool, args) {
   }
 }
 
+// A key that is no identifier ("/invoke", "invoke name=\"…\"") is a model's own tool-call markup
+// leaking into the arguments. No tool takes such a key, so it carries no meaning to refuse.
+const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/u;
+
 function withoutEmpty(args) {
-  return Object.fromEntries(Object.entries(args).filter(([, value]) =>
+  return Object.fromEntries(Object.entries(args).filter(([key, value]) => IDENTIFIER.test(key) &&
     value !== null && value !== undefined && !(typeof value === "string" && !value.trim())));
 }
 

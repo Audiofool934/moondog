@@ -7915,9 +7915,20 @@ export class PiAgentRuntime {
           };
         }
         const state = this.activePromptState;
-        if (state?.spotifyQueuePlan?.action === "queue.batch" && state.spotifyQueuePlan.queued.length > 0 &&
+        const batch = state?.spotifyQueuePlan?.action === "queue.batch" && state.spotifyQueuePlan.queued.length > 0 ? state.spotifyQueuePlan : null;
+        // A batch that came up short may still be filled by single adds of other songs, one per
+        // missing song; a song the batch queued is never added again.
+        const shortfall = batch ? Math.max(0, (batch.requested ?? 0) - batch.queued.length - (state.batchFillAdds ?? 0)) : 0;
+        const fillRef = toolCall.arguments?.item_ref_id ?? toolCall.arguments?.track_ref_id;
+        const fillItem = batch && descriptor.capability_id === "spotify.queue.add" && typeof fillRef === "string" && !toolCall.arguments?.pending_plan
+          ? application.spotifyHostReadItems?.().find((item) => item.item_ref_id === fillRef) : null;
+        const fillsBatch = fillItem && shortfall > 0 && !batch.queued.some((track) => foldedWords(track.title) === foldedWords(fillItem.name));
+        if (fillsBatch) state.batchFillAdds = (state.batchFillAdds ?? 0) + 1;
+        if (batch && !fillsBatch &&
             ["spotify.player.control", "spotify.queue.add", "spotify.queue.batch", "spotify.device.transfer", "spotify.queue.similar"].includes(descriptor.capability_id)) {
-          return { block: true, reason: "The requested queue batch already has a receipt. Do not add, replay or replace its writes in this turn." };
+          return { block: true, reason: shortfall > 0 && descriptor.capability_id === "spotify.queue.add"
+            ? "That song is already in the batch's receipt, or its reference is unknown. Add only a missing song by its item_ref_id."
+            : "The requested queue batch already has a receipt. Do not add, replay or replace its writes in this turn." };
         }
         const listeningContext = application.spotifyPlaybackContextStatus?.();
         if (listeningContext?.queue_request && state) {
@@ -7927,7 +7938,7 @@ export class PiAgentRuntime {
         if (listeningContext?.queue_request?.clarification_only && descriptor.effect === "write_external") {
           return { block: true, reason: "The earlier queue already has an accepted, failed or uncertain receipt. A clarification about queue versus playlist must not replay it. Report the existing receipt." };
         }
-        if (listeningContext?.queue_request?.requested > 1 && descriptor.capability_id === "spotify.queue.add" && !toolCall.arguments?.pending_plan) {
+        if (listeningContext?.queue_request?.requested > 1 && descriptor.capability_id === "spotify.queue.add" && !toolCall.arguments?.pending_plan && !fillsBatch) {
           return { block: true, reason: "Use moondog_spotify_queue_batch for this multi-song queue request so Avoid, deduplication, count and partial receipts are preserved." };
         }
         // A refused or uncertain write ends the turn's playback writes; the model explains it.

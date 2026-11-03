@@ -2444,7 +2444,15 @@ export class MoondogApplication {
 
   async spotifyAddToQueue(input, { signal } = {}) {
     signal?.throwIfAborted();
-    this.requireSpotifyNonRemovalAction();
+    // A batch that came up short may be filled by single adds of songs it did not queue, one per
+    // missing song; anything else after a batch is refused as before.
+    const transaction = this.pendingPlaylistPromptTransaction;
+    const batch = transaction?.queueBatchAttempted && this.spotifyQueueRequest?.receipt?.action === "queue.batch" ? this.spotifyQueueRequest.receipt : null;
+    const missing = batch ? (batch.requested ?? 0) - (batch.queued?.length ?? 0) - (transaction.batchFills ?? 0) : 0;
+    const candidate = batch && input?.itemRefId !== undefined ? this.spotifyHostReadItems().find((entry) => entry.item_ref_id === input.itemRefId) : null;
+    const fillsBatch = missing > 0 && candidate?.type === "track" &&
+      !batch.queued.some((queued) => foldedWords(queued.title) === foldedWords(candidate.name));
+    this.requireSpotifyNonRemovalAction({ batchFill: fillsBatch });
     let uri;
     if (input?.itemRefId !== undefined) {
       if (input.trackRefId !== undefined || input.uri !== undefined) throw spotifyResolutionError("spotify_queue_selection_conflict", "Choose one queue item.");
@@ -2462,6 +2470,7 @@ export class MoondogApplication {
     const receipt = await this.#queueSpotifyTracks([track], new Map([["single", uri]]), { signal, deviceId: input.deviceId, rethrow: true });
     this.recentSimilarQueueUris.set(uri, Date.now());
     while (this.recentSimilarQueueUris.size > 100) this.recentSimilarQueueUris.delete(this.recentSimilarQueueUris.keys().next().value);
+    if (fillsBatch) transaction.batchFills = (transaction.batchFills ?? 0) + 1;
     return { provider: "spotify", ok: true, effect: "write_external", action: "playback.queue.add", state: "accepted",
       ...(item?.name ? { targets: [{ title: item.name, artist_credit: item.artists.join(", ") }] } : {}),
       ...(receipt.device ? { device: receipt.device } : {}), ...(receipt.started_playback ? { started_playback: true } : {}),
@@ -2597,12 +2606,12 @@ export class MoondogApplication {
     }
   }
 
-  requireSpotifyNonRemovalAction({ quickEdit = false } = {}) {
+  requireSpotifyNonRemovalAction({ quickEdit = false, batchFill = false } = {}) {
     const requested = this.pendingPlaylistPromptTransaction?.queueIntent?.requested;
     if (requested != null && (!Number.isInteger(requested) || requested < 1 || requested > 12)) {
       throw spotifyResolutionError("spotify_queue_count_limit", "Specify one exact queue count from 1 to 12 songs. No write was sent.");
     }
-    if (this.pendingPlaylistPromptTransaction?.queueBatchAttempted) throw spotifyResolutionError("spotify_queue_batch_already_attempted", "The requested queue batch was already attempted. Keep its receipt; do not replay or add another action.");
+    if (this.pendingPlaylistPromptTransaction?.queueBatchAttempted && !batchFill) throw spotifyResolutionError("spotify_queue_batch_already_attempted", "The requested queue batch was already attempted. Keep its receipt; do not replay or add another action.");
     if (this.pendingPlaylistPromptTransaction?.quickEditIntent && !quickEdit) {
       throw spotifyResolutionError("spotify_quick_edit_action_conflict", "This request authorizes only its exact quick playlist edit. An earlier preview or another Spotify action needs its own explicit request.");
     }
