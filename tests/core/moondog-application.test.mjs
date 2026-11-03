@@ -831,3 +831,19 @@ test("the agent reads its own setup and changes the reply language the listener 
   assert.deepEqual(heard, ["zh"]);
   await assert.rejects(application.setReplyLanguage("klingon", runtime), { code: "unsupported_reply_language" });
 });
+
+test("a song by title and artist matches the artist's identity, never a name inside another act's", async () => {
+  const application = new MoondogApplication({});
+  const items = {
+    "Hello Adele": [{ type: "track", name: "Hello", artists: ["Adele Tribute Band"], track_ref_id: "tribute", item_ref_id: "tribute" },
+      { type: "track", name: "Hello", artists: ["Adele"], track_ref_id: "adele", item_ref_id: "adele" }],
+    "被動 伍佰": [{ type: "track", name: "被動", artists: ["伍佰 & China Blue"], track_ref_id: "wubai", item_ref_id: "wubai" }],
+    "Slow Dancing V": [{ type: "track", name: "Slow Dancing", artists: ["V"], track_ref_id: "v", item_ref_id: "v" }],
+    "Tribute Only Adele": [{ type: "track", name: "Tribute Only", artists: ["Adele Tribute Band"], track_ref_id: "only", item_ref_id: "only" }],
+  };
+  application.spotifySearchTracks = async ({ query }) => ({ items: items[query] ?? [] });
+  const { matched, unmatched } = await application.spotifyResolveSongs([
+    { title: "Hello", artist: "Adele" }, { title: "被動", artist: "伍佰" }, { title: "Slow Dancing", artist: "V" }, { title: "Tribute Only", artist: "Adele" }]);
+  assert.deepEqual(matched.map((item) => item.track_ref_id), ["adele", "wubai", "v"]);
+  assert.deepEqual(unmatched.map((song) => [song.title, song.candidates.map((item) => item.item_ref_id)]), [["Tribute Only", ["only"]]]);
+});

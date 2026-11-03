@@ -4,7 +4,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { compactListenerProfile, readListenerProfile } from "../profile/listener-profile-build.mjs";
 import { mixCounts, songKeys } from "../profile/moondog-suggestions.mjs";
 import { ARTIST_CREDIT_SEPARATORS } from "./listener-avoids.mjs";
-import { foldedWords, normalizedTrackTitle, textNamesArtist, textNamesSong } from "./track-title.mjs";
+import { foldedWords, normalizedTrackTitle, textNamesSong } from "./track-title.mjs";
 import { acceptableRecordTitle, compileTaste, tasteSources } from "../profile/taste-compiler.mjs";
 import { stableAudioPrompt } from "../integrations/stable-audio/local-generator.mjs";
 
@@ -2123,9 +2123,11 @@ export class MoondogApplication {
       const tracks = result.items.filter((item) => item.type === "track" && item.track_ref_id);
       const wantedTitle = foldedWords(song.title);
       const wantedCore = fold(song.title);
-      // A one-letter artist (V) is matched by equality; textNamesArtist needs two letters.
-      const byArtist = tracks.filter((item) => item.artists.some((artist) => foldedWords(artist) === foldedWords(song.artist) ||
-        textNamesArtist(artist, song.artist) || textNamesArtist(song.artist, artist)));
+      // The same artist: equal names, or one credited artist of a joint credit ("伍佰" in
+      // "伍佰 & China Blue"). A name inside another act's name ("Adele Tribute Band") is another act.
+      const credited = (name) => [name, ...String(name).split(ARTIST_CREDIT_SEPARATORS)].map(foldedWords).filter(Boolean);
+      const wantedArtists = new Set(credited(song.artist));
+      const byArtist = tracks.filter((item) => item.artists.some((artist) => credited(artist).some((name) => wantedArtists.has(name))));
       // The exact title first. A version the listener named (a live take, a duet) must match as
       // named; otherwise the same song in another version (a remaster) is the song asked for.
       // Nothing looser is guessed: a shared prefix ("One", "One Tree Hill") is another song.
