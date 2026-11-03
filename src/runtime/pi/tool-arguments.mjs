@@ -28,9 +28,6 @@ const PLAYER_ACTIONS = new Map([
 ]);
 const PLAYER_SOURCES = ["item_ref_id", "uri", "context_uri", "context_ref_id", "track_refs", "songs", "pending_plan"];
 
-const asSong = (value) => isPlainObject(value) && typeof value.title === "string" && typeof value.artist === "string"
-  ? { title: value.title, artist: value.artist } : null;
-
 const repairs = {
   moondog_spotify_player_control(args) {
     const result = { ...args };
@@ -45,10 +42,9 @@ const repairs = {
       delete result.title;
       delete result.artist;
     }
-    if (result.songs !== undefined) {
-      const songs = (Array.isArray(result.songs) ? result.songs : [result.songs]).map(asSong);
-      if (songs.every(Boolean)) result.songs = songs;
-    }
+    // A song keeps every field it came with: an extra one ("version": "Live") may be a constraint
+    // the tool cannot honor, and validation must refuse it rather than play another recording.
+    if (isPlainObject(result.songs)) result.songs = [result.songs];
     if (typeof result.track_refs === "string") result.track_refs = [result.track_refs];
     // A search's type copied into the play call says nothing the player needs.
     delete result.type;

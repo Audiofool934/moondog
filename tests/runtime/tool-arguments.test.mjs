@@ -32,6 +32,9 @@ test("arguments without a clear repair are left for validation to report", () =>
   assert.equal(repairToolArguments(player, args), args);
   const noArtist = { action: "resume", songs: [{ title: "Nude" }] };
   assert.equal(repairToolArguments(player, noArtist), noArtist);
+  // A song's extra field may be a constraint: it is kept, so validation refuses the call.
+  const live = { action: "resume", songs: [{ title: "Nude", artist: "Radiohead", version: "Live" }] };
+  assert.equal(repairToolArguments(player, live), live);
 });
 
 test("search types are read in their plural and song forms", () => {
