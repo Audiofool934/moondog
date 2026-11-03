@@ -46,3 +46,10 @@ test("search types are read in their plural and song forms", () => {
   const unknown = { query: "Nude", type: "songs", subject_id: "someone-else" };
   assert.equal(repairToolArguments(search, unknown), unknown);
 });
+
+test("a model's own tool-call markup leaking into the arguments is dropped", () => {
+  const search = { name: "moondog_spotify_search", parameters: Type.Object({ query: Type.String({ minLength: 1 }),
+    type: Type.Optional(Type.Union(["track", "album"].map((value) => Type.Literal(value)))) }, { additionalProperties: false }) };
+  const leaked = { query: "陳奕迅", type: "track", "/invoke": { 'invoke name="moondify_spotify_search"': { query: "Eason Chan" } } };
+  assert.deepEqual(repairToolArguments(search, leaked), { query: "陳奕迅", type: "track" });
+});

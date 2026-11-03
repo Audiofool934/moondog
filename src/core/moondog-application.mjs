@@ -2286,7 +2286,11 @@ export class MoondogApplication {
     // named in their language; otherwise a sensible batch from the candidates.
     const requested = intent?.requested ?? count ?? Math.min(itemRefs.length, 12);
     if (!Number.isInteger(requested) || requested < 1 || requested > 12) throw spotifyResolutionError("spotify_queue_count_limit", "A queue request supports 1 to 12 songs. No write was sent.");
-    const chosen = itemRefs.map(ref => this.requireSpotifyReadItem(ref, ["track"]));
+    // A reference the host never issued (a model's slip) is left out and counted; only a batch
+    // with no usable reference at all is refused.
+    const chosen = itemRefs.map((ref) => { try { return this.requireSpotifyReadItem(ref, ["track"]); } catch { return null; } }).filter(Boolean);
+    const skippedUnavailable = itemRefs.length - chosen.length;
+    if (!chosen.length) this.requireSpotifyReadItem(itemRefs[0], ["track"]);
     // The rest of this request's verified discovery results by the artists the model picked stand
     // behind its picks, in the order found, so a pick skipped as a duplicate or an Avoid still
     // leaves the count asked for. A song by another artist may have been left out on purpose.
@@ -2318,9 +2322,12 @@ export class MoondogApplication {
       knownTrack: intent?.excludeKnown ? track => this.domainServices?.isKnownDiscoveryTrack?.(track) === true : null });
     if (!receipt.queued.length && !receipt.stopped) transaction.queueBatchAttempted = false;
     const result = { ...receipt, action: "queue.batch", requested, queued_count: receipt.queued.length,
-      shortfall: requested - receipt.queued.length, queue_observation_truncated: observed.truncated === true };
+      shortfall: requested - receipt.queued.length, queue_observation_truncated: observed.truncated === true,
+      ...(skippedUnavailable ? { skipped_unavailable_count: skippedUnavailable } : {}) };
     this.spotifyDisplayedChoices = null;
     if (this.spotifyQueueRequest && (receipt.queued.length || receipt.stopped)) Object.assign(this.spotifyQueueRequest, { attempted: true, receipt: structuredClone(result) });
+    // Kept on the request itself, so a fill finds the batch even when no queue intent was parsed.
+    if (receipt.queued.length) transaction.batchReceipt = structuredClone(result);
     return result;
   }
 
@@ -2444,7 +2451,24 @@ export class MoondogApplication {
 
   async spotifyAddToQueue(input, { signal } = {}) {
     signal?.throwIfAborted();
-    this.requireSpotifyNonRemovalAction();
+    // A batch that came up short may be filled by single adds of songs it did not queue, one per
+    // missing song; anything else after a batch is refused as before.
+    const transaction = this.pendingPlaylistPromptTransaction;
+    const batch = transaction?.queueBatchAttempted && transaction.batchReceipt?.action === "queue.batch" ? transaction.batchReceipt : null;
+    // The retained receipt takes in each accepted fill, so its queued songs are the count so far.
+    const missing = batch ? (batch.requested ?? 0) - (batch.queued?.length ?? 0) : 0;
+    // Either supported reference names the song: a read's item_ref_id, or a retained or resolved track_ref_id.
+    const fillRef = input?.itemRefId ?? input?.trackRefId;
+    const resolved = batch && input?.trackRefId !== undefined ? this.spotifyResolutions.get(input.trackRefId) : null;
+    const candidate = !batch || fillRef === undefined ? null
+      : this.spotifyHostReadItems().find((entry) => entry.item_ref_id === fillRef || entry.track_ref_id === fillRef) ??
+        (resolved?.uri ? { type: "track", uri: resolved.uri, name: resolved.matched?.title ?? "", artists: resolved.matched?.artists ?? [] } : null);
+    // The same song is the same title by the same primary artist, as the batch itself decides.
+    const candidateSongs = candidate ? songKeys({ title: candidate.name, artist_credit: candidate.artists?.join(", ") ?? "", artists: candidate.artists ?? [] }) : [];
+    const fillsBatch = missing > 0 && candidate?.type === "track" &&
+      !batch.queued.some((queued) => songKeys(queued).some((key) => candidateSongs.includes(key))) &&
+      !(transaction.batchFillUris ?? []).includes(candidate.uri);
+    this.requireSpotifyNonRemovalAction({ batchFill: fillsBatch });
     let uri;
     if (input?.itemRefId !== undefined) {
       if (input.trackRefId !== undefined || input.uri !== undefined) throw spotifyResolutionError("spotify_queue_selection_conflict", "Choose one queue item.");
@@ -2457,11 +2481,37 @@ export class MoondogApplication {
     const item = this.spotifyHostReadItems().find(item => item.uri === uri);
     if (item && !this.#spotifyItemAllowed(item)) throw listenerAvoidError();
     const track = { track_ref_id: "single", title: item?.name ?? "the selected track", artist_credit: item?.artists?.join(", ") ?? "", artists: item?.artists ?? [], ...(item?.isrc ? { isrc: item.isrc } : {}) };
+    // A fill keeps the batch's own rules: nothing already in Spotify's queue or playing, and only
+    // unheard songs when the listener asked for those.
+    let fillRules = {};
+    if (fillsBatch) {
+      const service = this.requireSpotifyService();
+      const [observed, player] = await Promise.all([service.queue({ signal }), service.currentPlayer({ signal }).catch(() => null)]);
+      signal?.throwIfAborted();
+      const seenUris = this.#observedQueueUris(observed, player);
+      if (player?.item?.uri) seenUris.add(player.item.uri);
+      fillRules = { seenUris, ...(transaction.queueIntent?.excludeKnown ? { knownTrack: (entry) => this.domainServices?.isKnownDiscoveryTrack?.(entry) === true } : {}) };
+    }
     // One entry takes the same path as a batch: one device decision, start
     // playback when nothing is playing, and a check of Spotify's real queue.
-    const receipt = await this.#queueSpotifyTracks([track], new Map([["single", uri]]), { signal, deviceId: input.deviceId, rethrow: true });
+    const receipt = await this.#queueSpotifyTracks([track], new Map([["single", uri]]), { signal, deviceId: input.deviceId, rethrow: true, ...fillRules });
+    if (fillsBatch && !receipt.queued.length) {
+      throw spotifyResolutionError("spotify_queue_fill_skipped", receipt.skipped_known_count
+        ? "That song is one the listener already knows, and they asked for unheard songs only. Nothing was queued."
+        : "That song is already in Spotify's queue or playing. Nothing was queued; choose another song for the missing place.");
+    }
     this.recentSimilarQueueUris.set(uri, Date.now());
     while (this.recentSimilarQueueUris.size > 100) this.recentSimilarQueueUris.delete(this.recentSimilarQueueUris.keys().next().value);
+    if (fillsBatch) {
+      transaction.batchFillUris = [...(transaction.batchFillUris ?? []), uri];
+      // The receipt a later "queue, not playlist" reply shows says what is queued now.
+      for (const kept of [batch, this.spotifyQueueRequest?.receipt?.action === "queue.batch" ? this.spotifyQueueRequest.receipt : null]) {
+        if (!kept) continue;
+        kept.queued = [...kept.queued, ...receipt.queued];
+        kept.queued_count = kept.queued.length;
+        kept.shortfall = Math.max(0, (kept.requested ?? 0) - kept.queued.length);
+      }
+    }
     return { provider: "spotify", ok: true, effect: "write_external", action: "playback.queue.add", state: "accepted",
       ...(item?.name ? { targets: [{ title: item.name, artist_credit: item.artists.join(", ") }] } : {}),
       ...(receipt.device ? { device: receipt.device } : {}), ...(receipt.started_playback ? { started_playback: true } : {}),
@@ -2597,12 +2647,12 @@ export class MoondogApplication {
     }
   }
 
-  requireSpotifyNonRemovalAction({ quickEdit = false } = {}) {
+  requireSpotifyNonRemovalAction({ quickEdit = false, batchFill = false } = {}) {
     const requested = this.pendingPlaylistPromptTransaction?.queueIntent?.requested;
     if (requested != null && (!Number.isInteger(requested) || requested < 1 || requested > 12)) {
       throw spotifyResolutionError("spotify_queue_count_limit", "Specify one exact queue count from 1 to 12 songs. No write was sent.");
     }
-    if (this.pendingPlaylistPromptTransaction?.queueBatchAttempted) throw spotifyResolutionError("spotify_queue_batch_already_attempted", "The requested queue batch was already attempted. Keep its receipt; do not replay or add another action.");
+    if (this.pendingPlaylistPromptTransaction?.queueBatchAttempted && !batchFill) throw spotifyResolutionError("spotify_queue_batch_already_attempted", "The requested queue batch was already attempted. Keep its receipt; do not replay or add another action.");
     if (this.pendingPlaylistPromptTransaction?.quickEditIntent && !quickEdit) {
       throw spotifyResolutionError("spotify_quick_edit_action_conflict", "This request authorizes only its exact quick playlist edit. An earlier preview or another Spotify action needs its own explicit request.");
     }

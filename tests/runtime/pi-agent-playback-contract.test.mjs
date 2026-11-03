@@ -334,3 +334,119 @@ test("a reply language changed in this turn is the one a restatement aims at", a
   assert.equal(result.text, "Listo, desde ahora te respondo en español.");
   assert.deepEqual(calls, [], "the Spanish acknowledgment is not restated in English");
 });
+
+test("a queue batch that came up short is filled by a single add of a missing song, never of a queued one", async t => {
+  const f = fixture(t, { active: "simMac", playing: "simBeidong" });
+  const ref = (c, title) => JSON.parse(f.lastResult(c).content[0].text).items.find(item => item.name === title)?.item_ref_id;
+  let qianGua, tuRan;
+  await f.prompt("搜一下伍佰的牵挂和突然的自我", [f.call("moondog_spotify_search", { query: "伍佰", limit: 10 }),
+    c => { qianGua = ref(c, "牽掛"); tuRan = ref(c, "突然的自我"); return f.say("找到了。"); }]);
+  const result = await f.prompt("把伍佰的牵挂和突然的自我加到队列里", [
+    f.call("moondog_spotify_queue_batch", { item_refs: [qianGua], count: 2 }),
+    f.call("moondog_spotify_queue_add", { item_ref_id: qianGua }),
+    f.call("moondog_spotify_queue_add", { item_ref_id: tuRan }),
+    f.say("都加好了。")]);
+  assert.deepEqual(f.spotify.state.queue.map(track => track.id), ["simQianGua", "simTuRanDeZiWo"]);
+  assert.equal(result.status, "completed");
+});
+
+test("a queue batch leaves out a reference the host never issued and queues the rest", async t => {
+  const f = fixture(t, { active: "simMac", playing: "simBeidong" });
+  const titles = ["牽掛", "淚橋"];
+  const refs = c => JSON.parse(f.lastResult(c).content[0].text).items.filter(item => titles.includes(item.name)).map(item => item.item_ref_id);
+  let receipt;
+  await f.prompt("add two more Wu Bai songs to the queue", [f.call("moondog_spotify_search", { query: "伍佰", limit: 10 }),
+    c => f.call("moondog_spotify_queue_batch", { item_refs: [...refs(c), "00000000-0000-4000-8000-000000000000"], count: 2 }),
+    c => { receipt = JSON.parse(f.lastResult(c).content[0].text); return f.say("Queued two."); }]);
+  assert.equal(receipt.state, "accepted");
+  assert.equal(receipt.queued.length, 2);
+  assert.equal(receipt.skipped_unavailable_count, 1);
+});
+
+test("a fill is never the same song twice, nor one already in Spotify's queue", async t => {
+  const f = fixture(t, { active: "simMac", playing: "simBeidong", queue: ["simLeiQiao"] });
+  const ref = (c, title) => JSON.parse(f.lastResult(c).content[0].text).items.find(item => item.name === title)?.item_ref_id;
+  let qianGua, tuRan, leiQiao;
+  await f.prompt("搜一下伍佰", [f.call("moondog_spotify_search", { query: "伍佰", limit: 10 }),
+    c => { qianGua = ref(c, "牽掛"); tuRan = ref(c, "突然的自我"); leiQiao = ref(c, "淚橋"); return f.say("找到了。"); }]);
+  const errors = [];
+  await f.prompt("把伍佰的三首歌加到队列里", [
+    f.call("moondog_spotify_queue_batch", { item_refs: [qianGua], count: 3 }),
+    f.call("moondog_spotify_queue_add", { item_ref_id: tuRan }),
+    c => { return f.call("moondog_spotify_queue_add", { item_ref_id: tuRan }); },
+    c => { errors.push(f.lastResult(c).isError); return f.call("moondog_spotify_queue_add", { item_ref_id: leiQiao }); },
+    c => { errors.push(f.lastResult(c).isError); return f.say("好。"); }]);
+  assert.deepEqual(f.spotify.state.queue.map(track => track.id), ["simLeiQiao", "simQianGua", "simTuRanDeZiWo"]);
+  assert.deepEqual(errors, [true, true], "the same song again, and a song already queued, are refused");
+});
+
+test("a fill keeps an unheard-only request: a known song is not queued", async t => {
+  const f = fixture(t, { active: "simMac", playing: "simBeidong" });
+  const ref = (c, title) => JSON.parse(f.lastResult(c).content[0].text).items.find(item => item.name === title)?.item_ref_id;
+  let qianGua, tuRan;
+  await f.prompt("搜一下伍佰", [f.call("moondog_spotify_search", { query: "伍佰", limit: 10 }),
+    c => { qianGua = ref(c, "牽掛"); tuRan = ref(c, "突然的自我"); return f.say("找到了。"); }]);
+  f.application.domainServices = { ...(f.application.domainServices ?? {}), isKnownDiscoveryTrack: (track) => track.title === "突然的自我" };
+  let refused;
+  await f.prompt("把两首我没听过的伍佰的歌加到队列里", [
+    f.call("moondog_spotify_queue_batch", { item_refs: [qianGua], count: 2 }),
+    f.call("moondog_spotify_queue_add", { item_ref_id: tuRan }),
+    c => { refused = f.lastResult(c); return f.say("ok"); }]);
+  assert.ok(!f.spotify.state.queue.some(track => track.id === "simTuRanDeZiWo"));
+  assert.equal(refused.isError, true);
+});
+
+test("an accepted fill is part of the retained queue receipt", async t => {
+  const f = fixture(t, { active: "simMac", playing: "simBeidong" });
+  const ref = (c, title) => JSON.parse(f.lastResult(c).content[0].text).items.find(item => item.name === title)?.item_ref_id;
+  let qianGua, tuRan;
+  await f.prompt("搜一下伍佰", [f.call("moondog_spotify_search", { query: "伍佰", limit: 10 }),
+    c => { qianGua = ref(c, "牽掛"); tuRan = ref(c, "突然的自我"); return f.say("找到了。"); }]);
+  await f.prompt("把伍佰的牵挂和突然的自我加到队列里", [
+    f.call("moondog_spotify_queue_batch", { item_refs: [qianGua], count: 2 }),
+    f.call("moondog_spotify_queue_add", { item_ref_id: tuRan }), f.say("都加好了。")]);
+  const receipt = f.application.spotifyQueueRequest?.receipt;
+  assert.deepEqual(receipt.queued.map(track => track.title), ["牽掛", "突然的自我"]);
+  assert.equal(receipt.queued_count, 2);
+  assert.equal(receipt.shortfall, 0);
+});
+
+test("a same-title song by another artist can fill a short batch, and an interrupted reply reports no false shortfall", async t => {
+  const f = fixture(t, { active: "simMac", playing: "simBeidong" });
+  const ref = (c, name) => JSON.parse(f.lastResult(c).content[0].text).items.find(item => item.name === name)?.item_ref_id;
+  let studio, live;
+  await f.prompt("搜一下挪威的森林", [f.call("moondog_spotify_search", { query: "挪威的森林", limit: 10 }),
+    c => { studio = ref(c, "挪威的森林"); live = ref(c, "挪威的森林 - Live"); return f.say("找到了。"); }]);
+  const result = await f.prompt("把两首挪威的森林加到队列里", [
+    f.call("moondog_spotify_queue_batch", { item_refs: [studio], count: 2 }),
+    f.call("moondog_spotify_queue_add", { item_ref_id: live }),
+    () => { throw new Error("The model stream broke after the writes."); }]);
+  assert.deepEqual(f.spotify.state.queue.map(track => track.id), ["simNuoWeiDeSenLin", "simNuoWeiLive"]);
+  assert.equal(result.status, "interrupted");
+  assert.match(result.text, /请求 2 首；Spotify 已接受 2 首。/u);
+  assert.doesNotMatch(result.text, /还差/u);
+});
+
+test("a fill works when the queue phrasing was not recognized, as long as the batch named its count", async t => {
+  const f = fixture(t, { active: "simMac", playing: "simBeidong" });
+  const ref = (c, title) => JSON.parse(f.lastResult(c).content[0].text).items.find(item => item.name === title)?.item_ref_id;
+  let qianGua, tuRan;
+  await f.prompt("busca canciones de Wu Bai", [f.call("moondog_spotify_search", { query: "伍佰", limit: 10 }),
+    c => { qianGua = ref(c, "牽掛"); tuRan = ref(c, "突然的自我"); return f.say("Listo."); }]);
+  await f.prompt("Pon dos canciones de Wu Bai en la cola", [
+    f.call("moondog_spotify_queue_batch", { item_refs: [qianGua], count: 2 }),
+    f.call("moondog_spotify_queue_add", { item_ref_id: tuRan }), f.say("Hecho.")]);
+  assert.deepEqual(f.spotify.state.queue.map(track => track.id), ["simQianGua", "simTuRanDeZiWo"]);
+});
+
+test("a fill by track_ref_id is recognized like one by item_ref_id", async t => {
+  const f = fixture(t, { active: "simMac", playing: "simBeidong" });
+  const ref = (c, title) => JSON.parse(f.lastResult(c).content[0].text).items.find(item => item.name === title)?.track_ref_id;
+  let qianGua, tuRan;
+  await f.prompt("搜一下伍佰", [f.call("moondog_spotify_search", { query: "伍佰", limit: 10 }),
+    c => { qianGua = ref(c, "牽掛"); tuRan = ref(c, "突然的自我"); return f.say("找到了。"); }]);
+  await f.prompt("把伍佰的牵挂和突然的自我加到队列里", [
+    f.call("moondog_spotify_queue_batch", { item_refs: [qianGua], count: 2 }),
+    f.call("moondog_spotify_queue_add", { track_ref_id: tuRan }), f.say("都加好了。")]);
+  assert.deepEqual(f.spotify.state.queue.map(track => track.id), ["simQianGua", "simTuRanDeZiWo"]);
+});

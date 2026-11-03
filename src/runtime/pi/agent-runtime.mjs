@@ -3055,7 +3055,8 @@ function safeDomainFailure(error) {
   }
   const details = spotifyFailureDetails(error);
   const evidence = [details.status ? `HTTP ${details.status}` : "", details.reason].filter(Boolean);
-  return new Error(`${code}: ${message}${evidence.length ? ` (${evidence.join("; ")})` : ""}${details.not_sent ? " No Spotify write was dispatched for this attempt. Correct the arguments using retained host references; this is not an uncertain external effect." : ""}`);
+  // The status is for the model's diagnosis; labelled so, it is not copied into a reply.
+  return new Error(`${code}: ${message}${evidence.length ? ` [diagnosis only, never for the listener: ${evidence.join("; ")}]` : ""}${details.not_sent ? " No Spotify write was dispatched for this attempt. Correct the arguments using retained host references; this is not an uncertain external effect." : ""}`);
 }
 
 function spotifyFailureDetails(error) {
@@ -3487,7 +3488,7 @@ function projectSpotifyQueuePlan(value) {
     result.stopped = projectQueueTrackList([value.stopped], "spotify_queue_stopped")[0];
     if (value.failure) result.failure = { action: "playback.queue.add", ...spotifyFailureDetails(value.failure) };
   }
-  for (const field of ["skipped_duplicate_count", "skipped_avoided_count", "skipped_known_count", "skipped_uncertain_count", "not_added_count"]) {
+  for (const field of ["skipped_duplicate_count", "skipped_avoided_count", "skipped_known_count", "skipped_uncertain_count", "skipped_unavailable_count", "not_added_count"]) {
     if (value[field] !== undefined) result[field] = safeNonnegativeInteger(value[field], field);
   }
   if (["queue.similar", "queue.batch"].includes(value.action)) {
@@ -7250,8 +7251,11 @@ function mergedQueueReceipt(plan, singles) {
   // A batch's mix line does not cover the single adds beside it.
   const { mix: _mix, ...base } = plan ?? { provider: "spotify", action: "playback.queue.add", state: "accepted", queued: [], unmatched: [], not_added: [] };
   const checks = [base.verification, ...singles.map(receipt => receipt.verification)].filter(Boolean);
+  const queued = [...base.queued, ...targets];
   return { ...base, state: ["no_candidates", "no_playback"].includes(base.state) ? "accepted" : base.state,
-    queued: [...base.queued, ...targets],
+    queued,
+    // Single adds that filled a short batch count against its shortfall too.
+    ...(Number.isInteger(base.requested) ? { shortfall: Math.max(0, base.requested - queued.length) } : {}),
     ...(base.device ?? singles.find(receipt => receipt.device)?.device ? { device: base.device ?? singles.find(receipt => receipt.device).device } : {}),
     ...(base.started_playback ? {} : singles[0]?.started_playback ? { started_playback: targets[0] } : {}),
     ...(checks.length ? { verification: { checked: checks.every(check => check.checked),
@@ -7915,9 +7919,21 @@ export class PiAgentRuntime {
           };
         }
         const state = this.activePromptState;
-        if (state?.spotifyQueuePlan?.action === "queue.batch" && state.spotifyQueuePlan.queued.length > 0 &&
+        const batch = state?.spotifyQueuePlan?.action === "queue.batch" && state.spotifyQueuePlan.queued.length > 0 ? state.spotifyQueuePlan : null;
+        // A batch that came up short may still be filled by single adds of other songs, one per
+        // missing song; a song the batch queued is never added again.
+        // The application counts the fills and checks each against the queue; this only lets one through.
+        const shortfall = batch ? Math.max(0, (batch.requested ?? 0) - batch.queued.length) : 0;
+        const fillRef = toolCall.arguments?.item_ref_id ?? toolCall.arguments?.track_ref_id;
+        const fillItem = batch && descriptor.capability_id === "spotify.queue.add" && typeof fillRef === "string" && !toolCall.arguments?.pending_plan
+          ? application.spotifyHostReadItems?.().find((item) => item.item_ref_id === fillRef) : null;
+        // Which song is a duplicate is the application's call, by title and artist, against the queue too.
+        const fillsBatch = Boolean(fillItem?.type === "track" && shortfall > 0);
+        if (batch && !fillsBatch &&
             ["spotify.player.control", "spotify.queue.add", "spotify.queue.batch", "spotify.device.transfer", "spotify.queue.similar"].includes(descriptor.capability_id)) {
-          return { block: true, reason: "The requested queue batch already has a receipt. Do not add, replay or replace its writes in this turn." };
+          return { block: true, reason: shortfall > 0 && descriptor.capability_id === "spotify.queue.add"
+            ? "That song is already in the batch's receipt, or its reference is unknown. Add only a missing song by its item_ref_id."
+            : "The requested queue batch already has a receipt. Do not add, replay or replace its writes in this turn." };
         }
         const listeningContext = application.spotifyPlaybackContextStatus?.();
         if (listeningContext?.queue_request && state) {
@@ -7927,7 +7943,7 @@ export class PiAgentRuntime {
         if (listeningContext?.queue_request?.clarification_only && descriptor.effect === "write_external") {
           return { block: true, reason: "The earlier queue already has an accepted, failed or uncertain receipt. A clarification about queue versus playlist must not replay it. Report the existing receipt." };
         }
-        if (listeningContext?.queue_request?.requested > 1 && descriptor.capability_id === "spotify.queue.add" && !toolCall.arguments?.pending_plan) {
+        if (listeningContext?.queue_request?.requested > 1 && descriptor.capability_id === "spotify.queue.add" && !toolCall.arguments?.pending_plan && !fillsBatch) {
           return { block: true, reason: "Use moondog_spotify_queue_batch for this multi-song queue request so Avoid, deduplication, count and partial receipts are preserved." };
         }
         // A refused or uncertain write ends the turn's playback writes; the model explains it.
