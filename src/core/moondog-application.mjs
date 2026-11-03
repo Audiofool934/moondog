@@ -2326,6 +2326,8 @@ export class MoondogApplication {
       ...(skippedUnavailable ? { skipped_unavailable_count: skippedUnavailable } : {}) };
     this.spotifyDisplayedChoices = null;
     if (this.spotifyQueueRequest && (receipt.queued.length || receipt.stopped)) Object.assign(this.spotifyQueueRequest, { attempted: true, receipt: structuredClone(result) });
+    // Kept on the request itself, so a fill finds the batch even when no queue intent was parsed.
+    if (receipt.queued.length) transaction.batchReceipt = structuredClone(result);
     return result;
   }
 
@@ -2452,7 +2454,7 @@ export class MoondogApplication {
     // A batch that came up short may be filled by single adds of songs it did not queue, one per
     // missing song; anything else after a batch is refused as before.
     const transaction = this.pendingPlaylistPromptTransaction;
-    const batch = transaction?.queueBatchAttempted && this.spotifyQueueRequest?.receipt?.action === "queue.batch" ? this.spotifyQueueRequest.receipt : null;
+    const batch = transaction?.queueBatchAttempted && transaction.batchReceipt?.action === "queue.batch" ? transaction.batchReceipt : null;
     // The retained receipt takes in each accepted fill, so its queued songs are the count so far.
     const missing = batch ? (batch.requested ?? 0) - (batch.queued?.length ?? 0) : 0;
     const candidate = batch && input?.itemRefId !== undefined ? this.spotifyHostReadItems().find((entry) => entry.item_ref_id === input.itemRefId) : null;
@@ -2498,9 +2500,12 @@ export class MoondogApplication {
     if (fillsBatch) {
       transaction.batchFillUris = [...(transaction.batchFillUris ?? []), uri];
       // The receipt a later "queue, not playlist" reply shows says what is queued now.
-      batch.queued = [...batch.queued, ...receipt.queued];
-      batch.queued_count = batch.queued.length;
-      batch.shortfall = Math.max(0, (batch.requested ?? 0) - batch.queued.length);
+      for (const kept of [batch, this.spotifyQueueRequest?.receipt?.action === "queue.batch" ? this.spotifyQueueRequest.receipt : null]) {
+        if (!kept) continue;
+        kept.queued = [...kept.queued, ...receipt.queued];
+        kept.queued_count = kept.queued.length;
+        kept.shortfall = Math.max(0, (kept.requested ?? 0) - kept.queued.length);
+      }
     }
     return { provider: "spotify", ok: true, effect: "write_external", action: "playback.queue.add", state: "accepted",
       ...(item?.name ? { targets: [{ title: item.name, artist_credit: item.artists.join(", ") }] } : {}),

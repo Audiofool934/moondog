@@ -426,3 +426,15 @@ test("a same-title song by another artist can fill a short batch, and an interru
   assert.match(result.text, /请求 2 首；Spotify 已接受 2 首。/u);
   assert.doesNotMatch(result.text, /还差/u);
 });
+
+test("a fill works when the queue phrasing was not recognized, as long as the batch named its count", async t => {
+  const f = fixture(t, { active: "simMac", playing: "simBeidong" });
+  const ref = (c, title) => JSON.parse(f.lastResult(c).content[0].text).items.find(item => item.name === title)?.item_ref_id;
+  let qianGua, tuRan;
+  await f.prompt("busca canciones de Wu Bai", [f.call("moondog_spotify_search", { query: "伍佰", limit: 10 }),
+    c => { qianGua = ref(c, "牽掛"); tuRan = ref(c, "突然的自我"); return f.say("Listo."); }]);
+  await f.prompt("Pon dos canciones de Wu Bai en la cola", [
+    f.call("moondog_spotify_queue_batch", { item_refs: [qianGua], count: 2 }),
+    f.call("moondog_spotify_queue_add", { item_ref_id: tuRan }), f.say("Hecho.")]);
+  assert.deepEqual(f.spotify.state.queue.map(track => track.id), ["simQianGua", "simTuRanDeZiWo"]);
+});
