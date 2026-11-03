@@ -362,3 +362,36 @@ test("a queue batch leaves out a reference the host never issued and queues the 
   assert.equal(receipt.queued.length, 2);
   assert.equal(receipt.skipped_unavailable_count, 1);
 });
+
+test("a fill is never the same song twice, nor one already in Spotify's queue", async t => {
+  const f = fixture(t, { active: "simMac", playing: "simBeidong", queue: ["simLeiQiao"] });
+  const ref = (c, title) => JSON.parse(f.lastResult(c).content[0].text).items.find(item => item.name === title)?.item_ref_id;
+  let qianGua, tuRan, leiQiao;
+  await f.prompt("搜一下伍佰", [f.call("moondog_spotify_search", { query: "伍佰", limit: 10 }),
+    c => { qianGua = ref(c, "牽掛"); tuRan = ref(c, "突然的自我"); leiQiao = ref(c, "淚橋"); return f.say("找到了。"); }]);
+  const errors = [];
+  await f.prompt("把伍佰的三首歌加到队列里", [
+    f.call("moondog_spotify_queue_batch", { item_refs: [qianGua], count: 3 }),
+    f.call("moondog_spotify_queue_add", { item_ref_id: tuRan }),
+    c => { return f.call("moondog_spotify_queue_add", { item_ref_id: tuRan }); },
+    c => { errors.push(f.lastResult(c).isError); return f.call("moondog_spotify_queue_add", { item_ref_id: leiQiao }); },
+    c => { errors.push(f.lastResult(c).isError); return f.say("好。"); }]);
+  assert.deepEqual(f.spotify.state.queue.map(track => track.id), ["simLeiQiao", "simQianGua", "simTuRanDeZiWo"]);
+  assert.deepEqual(errors, [true, true], "the same song again, and a song already queued, are refused");
+});
+
+test("a fill keeps an unheard-only request: a known song is not queued", async t => {
+  const f = fixture(t, { active: "simMac", playing: "simBeidong" });
+  const ref = (c, title) => JSON.parse(f.lastResult(c).content[0].text).items.find(item => item.name === title)?.item_ref_id;
+  let qianGua, tuRan;
+  await f.prompt("搜一下伍佰", [f.call("moondog_spotify_search", { query: "伍佰", limit: 10 }),
+    c => { qianGua = ref(c, "牽掛"); tuRan = ref(c, "突然的自我"); return f.say("找到了。"); }]);
+  f.application.domainServices = { ...(f.application.domainServices ?? {}), isKnownDiscoveryTrack: (track) => track.title === "突然的自我" };
+  let refused;
+  await f.prompt("把两首我没听过的伍佰的歌加到队列里", [
+    f.call("moondog_spotify_queue_batch", { item_refs: [qianGua], count: 2 }),
+    f.call("moondog_spotify_queue_add", { item_ref_id: tuRan }),
+    c => { refused = f.lastResult(c); return f.say("ok"); }]);
+  assert.ok(!f.spotify.state.queue.some(track => track.id === "simTuRanDeZiWo"));
+  assert.equal(refused.isError, true);
+});

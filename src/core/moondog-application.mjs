@@ -2456,7 +2456,8 @@ export class MoondogApplication {
     const missing = batch ? (batch.requested ?? 0) - (batch.queued?.length ?? 0) - (transaction.batchFills ?? 0) : 0;
     const candidate = batch && input?.itemRefId !== undefined ? this.spotifyHostReadItems().find((entry) => entry.item_ref_id === input.itemRefId) : null;
     const fillsBatch = missing > 0 && candidate?.type === "track" &&
-      !batch.queued.some((queued) => foldedWords(queued.title) === foldedWords(candidate.name));
+      !batch.queued.some((queued) => foldedWords(queued.title) === foldedWords(candidate.name)) &&
+      !(transaction.batchFillUris ?? []).includes(candidate.uri);
     this.requireSpotifyNonRemovalAction({ batchFill: fillsBatch });
     let uri;
     if (input?.itemRefId !== undefined) {
@@ -2470,12 +2471,31 @@ export class MoondogApplication {
     const item = this.spotifyHostReadItems().find(item => item.uri === uri);
     if (item && !this.#spotifyItemAllowed(item)) throw listenerAvoidError();
     const track = { track_ref_id: "single", title: item?.name ?? "the selected track", artist_credit: item?.artists?.join(", ") ?? "", artists: item?.artists ?? [], ...(item?.isrc ? { isrc: item.isrc } : {}) };
+    // A fill keeps the batch's own rules: nothing already in Spotify's queue or playing, and only
+    // unheard songs when the listener asked for those.
+    let fillRules = {};
+    if (fillsBatch) {
+      const service = this.requireSpotifyService();
+      const [observed, player] = await Promise.all([service.queue({ signal }), service.currentPlayer({ signal }).catch(() => null)]);
+      signal?.throwIfAborted();
+      const seenUris = this.#observedQueueUris(observed, player);
+      if (player?.item?.uri) seenUris.add(player.item.uri);
+      fillRules = { seenUris, ...(transaction.queueIntent?.excludeKnown ? { knownTrack: (entry) => this.domainServices?.isKnownDiscoveryTrack?.(entry) === true } : {}) };
+    }
     // One entry takes the same path as a batch: one device decision, start
     // playback when nothing is playing, and a check of Spotify's real queue.
-    const receipt = await this.#queueSpotifyTracks([track], new Map([["single", uri]]), { signal, deviceId: input.deviceId, rethrow: true });
+    const receipt = await this.#queueSpotifyTracks([track], new Map([["single", uri]]), { signal, deviceId: input.deviceId, rethrow: true, ...fillRules });
+    if (fillsBatch && !receipt.queued.length) {
+      throw spotifyResolutionError("spotify_queue_fill_skipped", receipt.skipped_known_count
+        ? "That song is one the listener already knows, and they asked for unheard songs only. Nothing was queued."
+        : "That song is already in Spotify's queue or playing. Nothing was queued; choose another song for the missing place.");
+    }
     this.recentSimilarQueueUris.set(uri, Date.now());
     while (this.recentSimilarQueueUris.size > 100) this.recentSimilarQueueUris.delete(this.recentSimilarQueueUris.keys().next().value);
-    if (fillsBatch) transaction.batchFills = (transaction.batchFills ?? 0) + 1;
+    if (fillsBatch) {
+      transaction.batchFills = (transaction.batchFills ?? 0) + 1;
+      transaction.batchFillUris = [...(transaction.batchFillUris ?? []), uri];
+    }
     return { provider: "spotify", ok: true, effect: "write_external", action: "playback.queue.add", state: "accepted",
       ...(item?.name ? { targets: [{ title: item.name, artist_credit: item.artists.join(", ") }] } : {}),
       ...(receipt.device ? { device: receipt.device } : {}), ...(receipt.started_playback ? { started_playback: true } : {}),

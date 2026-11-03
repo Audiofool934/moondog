@@ -7919,12 +7919,12 @@ export class PiAgentRuntime {
         const batch = state?.spotifyQueuePlan?.action === "queue.batch" && state.spotifyQueuePlan.queued.length > 0 ? state.spotifyQueuePlan : null;
         // A batch that came up short may still be filled by single adds of other songs, one per
         // missing song; a song the batch queued is never added again.
-        const shortfall = batch ? Math.max(0, (batch.requested ?? 0) - batch.queued.length - (state.batchFillAdds ?? 0)) : 0;
+        // The application counts the fills and checks each against the queue; this only lets one through.
+        const shortfall = batch ? Math.max(0, (batch.requested ?? 0) - batch.queued.length) : 0;
         const fillRef = toolCall.arguments?.item_ref_id ?? toolCall.arguments?.track_ref_id;
         const fillItem = batch && descriptor.capability_id === "spotify.queue.add" && typeof fillRef === "string" && !toolCall.arguments?.pending_plan
           ? application.spotifyHostReadItems?.().find((item) => item.item_ref_id === fillRef) : null;
         const fillsBatch = fillItem && shortfall > 0 && !batch.queued.some((track) => foldedWords(track.title) === foldedWords(fillItem.name));
-        if (fillsBatch) state.batchFillAdds = (state.batchFillAdds ?? 0) + 1;
         if (batch && !fillsBatch &&
             ["spotify.player.control", "spotify.queue.add", "spotify.queue.batch", "spotify.device.transfer", "spotify.queue.similar"].includes(descriptor.capability_id)) {
           return { block: true, reason: shortfall > 0 && descriptor.capability_id === "spotify.queue.add"
