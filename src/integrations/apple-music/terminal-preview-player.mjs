@@ -19,6 +19,8 @@ const systemPlayers = {
   ],
 };
 const longestQueue = 30;
+// A library playlist plays as many entries as the application sends it, as the window does.
+const longestPlaylist = 50;
 const largestPreview = 10 * 1024 * 1024;
 // Some routes to Apple's audio host take over 20 seconds for one preview.
 const downloadTimeoutMs = 60_000;
@@ -222,7 +224,7 @@ export async function createTerminalPreviewPlayer({
           file: typeof track.file === "string" && path.isAbsolute(track.file) ? track.file : null }
         : { title: String(track?.title ?? "").trim(), artist_credit: String(track?.artist_credit ?? "").trim(),
           catalog_url: https(track?.catalog_url, linkHost), preview: https(track?.preview_url, previewHost) }))
-        .filter((track) => track.title && (track.generated ? track.file : track.catalog_url && track.preview)).slice(0, longestQueue);
+        .filter((track) => track.title && (track.generated ? track.file : track.catalog_url && track.preview)).slice(0, longestPlaylist);
       if (!accepted.length) return;
       stop();
       emit({ type: "queue", tracks: accepted.map(({ title, artist_credit, catalog_url, generated, id }) => (generated

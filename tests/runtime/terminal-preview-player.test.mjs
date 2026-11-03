@@ -117,6 +117,21 @@ test("previews play one after another from temporary files, each next to its App
   assert.deepEqual(await readdir(players.temporaryRoot), []);
 });
 
+test("a library playlist plays up to fifty entries, songs and made tracks in one queue", async (t) => {
+  const players = await silentPlayers(t, ["afplay"], { seconds: 5 });
+  const apple = fakeApple();
+  const player = await createTerminalPreviewPlayer({ platform: "darwin", environment: players.environment, fetchImpl: apple.fetchImpl, temporaryRoot: players.temporaryRoot });
+  t.after(() => player.close());
+  const made = path.join(players.temporaryRoot, "made.wav");
+  await writeFile(made, "made");
+  player.playList(Array.from({ length: 55 }, (_, index) => (index === 1
+    ? { generated: true, id: "0b7c6f1e-2a3d-4c5e-8f90-1a2b3c4d5e6f", title: "Tide glass", file: made }
+    : song(`s${index}`))));
+  const queue = player.remaining();
+  assert.equal(queue.length, 50);
+  assert.deepEqual([queue[1].title, queue[1].generated], ["Tide glass", true]);
+});
+
 test("a new queue replaces the one playing; skip, stop, and close end the sound at once", async (t) => {
   const players = await silentPlayers(t, ["ffplay"], { seconds: 30 });
   const apple = fakeApple();
