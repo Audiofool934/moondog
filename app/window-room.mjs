@@ -928,7 +928,8 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
   async function setLanguage(code) {
     const locale = normalizeLocale(code);
     if (!locale) return;
-    for (const slot of slots) { slot.application.locale = locale; slot.application.conversationLocale = locale; }
+    // A language chosen in the picker ends one the listener asked the agent to keep.
+    for (const slot of slots) { slot.application.locale = locale; slot.application.conversationLocale = locale; slot.application.replyLanguagePin = null; }
     await saveLanguage?.(locale);
     sendStatus();
   }
