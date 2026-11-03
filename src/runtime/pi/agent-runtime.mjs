@@ -3055,7 +3055,8 @@ function safeDomainFailure(error) {
   }
   const details = spotifyFailureDetails(error);
   const evidence = [details.status ? `HTTP ${details.status}` : "", details.reason].filter(Boolean);
-  return new Error(`${code}: ${message}${evidence.length ? ` (${evidence.join("; ")})` : ""}${details.not_sent ? " No Spotify write was dispatched for this attempt. Correct the arguments using retained host references; this is not an uncertain external effect." : ""}`);
+  // The status is for the model's diagnosis; labelled so, it is not copied into a reply.
+  return new Error(`${code}: ${message}${evidence.length ? ` [diagnosis only, never for the listener: ${evidence.join("; ")}]` : ""}${details.not_sent ? " No Spotify write was dispatched for this attempt. Correct the arguments using retained host references; this is not an uncertain external effect." : ""}`);
 }
 
 function spotifyFailureDetails(error) {

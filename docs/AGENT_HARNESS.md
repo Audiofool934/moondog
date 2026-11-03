@@ -79,7 +79,30 @@ Its cause was the harness: finished turns kept only their reply text, so the his
 Keeping those calls in the history took the scenario to 8 of 8 runs on V4 Pro.
 Once, a Spanish request got a Chinese reply; a reply clearly in another language is now restated once in the chosen one.
 A clean run is evidence, not proof of 100%: rerun the evaluation for each change and each model.
-Claude and OpenAI models were not run, because this Mac had no usable key for them at the time.
+Claude and OpenAI models were not run: the owner judged them able to handle Moondog's tools, and the point is the models other listeners use.
+
+### Other models (2026-11-03)
+
+Keys came from the Hermes Agent on the same Mac, in a throwaway Moondog config folder (`MOONDOG_CONFIG_HOME`), so the listener's settings were never touched.
+
+| Model | Provider | First run (23 scenarios × 3) | After the fixes below (23 × 1) |
+| --- | --- | --- | --- |
+| GLM 5.3 Flash | Z.ai | 69/69 | 23/23 |
+| Hunyuan hy4-preview | Tencent TokenHub | 69/69 | 21/23, then 6/6 on the scenario that failed |
+| Qwen 3.8 Max | Alibaba Bailian (US) | 67/69, both failures Alibaba's content filter | 23/23 |
+| MiniMax M3 | MiniMax China | 66/69 | 19 of 20 answered runs passed; the account then ran out of balance |
+| Kimi K3 | Moonshot China | not measured: the account allows 3 requests a minute and 1 at a time | not measured |
+| DeepSeek V4.1 Flash | DeepSeek | 69/69 | 23/23 |
+
+The models' failures pointed at the harness, not only at the models:
+
+- MiniMax leaked its own tool-call markup into the arguments (`"/invoke": …`); repair now drops keys that are no identifier.
+- A queue batch that came up short could not be filled by a single add of the missing song; it can now, one per missing song.
+- One mistyped reference made a whole queue batch fail; the usable references are now queued and the others counted.
+- Hunyuan quoted "HTTP 403" to the listener; the status in a tool error is now labelled as diagnosis only.
+- The simulated Spotify lacked the saved tracks and albums endpoints.
+
+Doubao Seed 2.1 (Volcengine) could not be reached from this Mac at the time.
 
 ## Sources
 
