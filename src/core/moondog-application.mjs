@@ -2453,7 +2453,8 @@ export class MoondogApplication {
     // missing song; anything else after a batch is refused as before.
     const transaction = this.pendingPlaylistPromptTransaction;
     const batch = transaction?.queueBatchAttempted && this.spotifyQueueRequest?.receipt?.action === "queue.batch" ? this.spotifyQueueRequest.receipt : null;
-    const missing = batch ? (batch.requested ?? 0) - (batch.queued?.length ?? 0) - (transaction.batchFills ?? 0) : 0;
+    // The retained receipt takes in each accepted fill, so its queued songs are the count so far.
+    const missing = batch ? (batch.requested ?? 0) - (batch.queued?.length ?? 0) : 0;
     const candidate = batch && input?.itemRefId !== undefined ? this.spotifyHostReadItems().find((entry) => entry.item_ref_id === input.itemRefId) : null;
     const fillsBatch = missing > 0 && candidate?.type === "track" &&
       !batch.queued.some((queued) => foldedWords(queued.title) === foldedWords(candidate.name)) &&
@@ -2493,8 +2494,11 @@ export class MoondogApplication {
     this.recentSimilarQueueUris.set(uri, Date.now());
     while (this.recentSimilarQueueUris.size > 100) this.recentSimilarQueueUris.delete(this.recentSimilarQueueUris.keys().next().value);
     if (fillsBatch) {
-      transaction.batchFills = (transaction.batchFills ?? 0) + 1;
       transaction.batchFillUris = [...(transaction.batchFillUris ?? []), uri];
+      // The receipt a later "queue, not playlist" reply shows says what is queued now.
+      batch.queued = [...batch.queued, ...receipt.queued];
+      batch.queued_count = batch.queued.length;
+      batch.shortfall = Math.max(0, (batch.requested ?? 0) - batch.queued.length);
     }
     return { provider: "spotify", ok: true, effect: "write_external", action: "playback.queue.add", state: "accepted",
       ...(item?.name ? { targets: [{ title: item.name, artist_credit: item.artists.join(", ") }] } : {}),

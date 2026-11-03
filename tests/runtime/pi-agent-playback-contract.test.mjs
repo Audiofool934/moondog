@@ -395,3 +395,18 @@ test("a fill keeps an unheard-only request: a known song is not queued", async t
   assert.ok(!f.spotify.state.queue.some(track => track.id === "simTuRanDeZiWo"));
   assert.equal(refused.isError, true);
 });
+
+test("an accepted fill is part of the retained queue receipt", async t => {
+  const f = fixture(t, { active: "simMac", playing: "simBeidong" });
+  const ref = (c, title) => JSON.parse(f.lastResult(c).content[0].text).items.find(item => item.name === title)?.item_ref_id;
+  let qianGua, tuRan;
+  await f.prompt("搜一下伍佰", [f.call("moondog_spotify_search", { query: "伍佰", limit: 10 }),
+    c => { qianGua = ref(c, "牽掛"); tuRan = ref(c, "突然的自我"); return f.say("找到了。"); }]);
+  await f.prompt("把伍佰的牵挂和突然的自我加到队列里", [
+    f.call("moondog_spotify_queue_batch", { item_refs: [qianGua], count: 2 }),
+    f.call("moondog_spotify_queue_add", { item_ref_id: tuRan }), f.say("都加好了。")]);
+  const receipt = f.application.spotifyQueueRequest?.receipt;
+  assert.deepEqual(receipt.queued.map(track => track.title), ["牽掛", "突然的自我"]);
+  assert.equal(receipt.queued_count, 2);
+  assert.equal(receipt.shortfall, 0);
+});
