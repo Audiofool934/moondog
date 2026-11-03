@@ -1336,12 +1336,20 @@ export async function runMoondogTui({
     return nextStatus;
   };
   // A model the listener asked the agent for in words, switched to as /model does once the reply ends.
+  // The terminal stays busy while it switches, so a message queued during the reply waits for the new model.
   const applyModelAskedFor = async () => {
     const selection = modelAskedFor;
     modelAskedFor = null;
     if (!selection || cleanedUp || busy) { modelAskedFor ??= selection; return; }
-    const status = await replaceRuntime(runtimeSelection(selection.provider, selection.model, selection.effort ?? runtimeStatus.effort)).catch(() => null);
+    setBusy(true);
+    let status = null;
+    try {
+      status = await replaceRuntime(runtimeSelection(selection.provider, selection.model, selection.effort ?? runtimeStatus.effort)).catch(() => null);
+    } finally {
+      setBusy(false);
+    }
     if (status?.state === "configured") setFooter(tr("Model ready."), success);
+    settleQueue();
   };
   const stopModelSwitch = application.modelSwitch?.subscribe?.(({ application: from, selection }) => {
     if (from !== application) return;
