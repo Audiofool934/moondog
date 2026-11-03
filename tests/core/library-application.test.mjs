@@ -79,6 +79,12 @@ test("the library keeps what plays now and plays songs and made tracks as one qu
   assert.deepEqual([onAir.state, onAir.playing, onAir.left_out_made, onAir.not_found], ["playing", 2, 1, 0]);
   assert.deepEqual(resumed, [["spotify:track:0", "spotify:track:1"]]);
   assert.equal(libraryStore.playlist(set.playlist.id).entries[1].refs.spotify_uri, "spotify:track:1");
+  // An Avoid added later holds against the cached recording's own credit, with no new search.
+  onSpotify.avoidAllows = (track) => track.title !== "Road";
+  onSpotify.spotifyResolveSongs = async () => { throw new Error("cached songs need no search"); };
+  const later = await onSpotify.playLibrary({ playlistId: set.playlist.id });
+  assert.deepEqual([later.playing, later.skipped_avoided_count, later.not_found], [1, 1, 0]);
+  assert.deepEqual(resumed.at(-1), ["spotify:track:0"]);
   // A playlist of made tracks alone plays in Moondog's own player under any service.
   const madeOnly = libraryStore.savePlaylist({ name: "Cut for me", entries: [{ kind: "made", id: MADE, title: "Tide glass" }] });
   assert.equal((await onSpotify.playLibrary({ playlistId: madeOnly.id })).player, "moondog");
@@ -106,6 +112,18 @@ test("keeping the queue keeps everything from the song playing on, past what the
   const fromSpotify = await spotify.saveToLibrary({ from: "queue", playlistName: "Rest of it" });
   assert.deepEqual(fromSpotify.titles, ["B", "C"]);
   spotify.close();
+
+  // The Music app's status shows a window of a long playlist; keeping the queue reads on to its end.
+  const songs = Array.from({ length: 80 }, (_, index) => ({ title: `Track ${index + 1}`, artists: ["Band"] }));
+  const musicApp = {
+    available: true,
+    nowPlaying: async () => ({ state: "playing", song: songs[19], position_ms: 0, playlist: { name: "Long", tracks_total: 80, position: 20, first_position: 15, tracks: songs.slice(14, 64) } }),
+    remainingPlaylist: async () => ({ state: "playing", song: songs[19], position_ms: 0, playlist: { name: "Long", tracks_total: 80, position: 20, first_position: 20, tracks: songs.slice(19) } }),
+  };
+  const onMusic = new MoondogApplication({ libraryStore, musicApp, playbackService: "apple_music", ownsServices: false });
+  const fromMusic = await onMusic.saveToLibrary({ from: "queue", playlistName: "Long rest" });
+  assert.deepEqual([fromMusic.added, fromMusic.titles[0], fromMusic.titles.at(-1)], [61, "Track 20", "Track 80"]);
+  onMusic.close();
   application.close();
 });
 

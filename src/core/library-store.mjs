@@ -70,7 +70,8 @@ const cleanId = (value, label) => cleanText(value, 128, label);
 const madeIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 
 // The ids a service gave a song, kept so the next play skips the search. Only short plain strings are kept.
-const REF_KEYS = ["spotify_uri", "apple_music_id", "netease_id"];
+// A cached Spotify recording keeps its own title and credit, so a later Avoid is checked against it.
+const REF_KEYS = ["spotify_uri", "spotify_title", "spotify_credit", "apple_music_id", "netease_id"];
 function cleanRefs(refs) {
   const kept = {};
   if (!refs || typeof refs !== "object") return kept;

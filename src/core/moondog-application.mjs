@@ -677,11 +677,18 @@ export class MoondogApplication {
       // What plays from now on: Moondog's whole remaining queue (its status shows only the next ten); the Music
       // app's playlist from the song playing, which it places; otherwise the song and the service's own queue.
       const remaining = active.service === "moondog" ? this.musicPreviewPlayer?.remaining?.() : null;
-      const tracks = active.from?.tracks;
-      const placed = tracks?.length && Number.isInteger(active.from.position) && Number.isInteger(active.from.first_position);
+      let playing = active.from;
+      // The Music app's status reads a window around the playing song; a longer playlist is read on to its end.
+      if (active.service === "apple_music" && playing?.tracks?.length && Number.isInteger(playing.tracks_total) &&
+          (playing.first_position ?? 1) - 1 + playing.tracks.length < playing.tracks_total && typeof this.musicApp?.remainingPlaylist === "function") {
+        const rest = await this.musicApp.remainingPlaylist().then((now) => musicAppSource(now).from, () => null);
+        if (rest?.tracks?.length && Number.isInteger(rest.position) && Number.isInteger(rest.first_position)) playing = rest;
+      }
+      const tracks = playing?.tracks;
+      const placed = tracks?.length && Number.isInteger(playing.position) && Number.isInteger(playing.first_position);
       const list = remaining?.length ? remaining.map((track) => ({ title: track.title, artists: track.generated ? ["Moondog"] : [track.artist_credit].filter(Boolean),
         ...(track.generated && track.id ? { made_track_id: track.id } : {}) }))
-        : placed ? tracks.slice(Math.max(0, active.from.position - active.from.first_position))
+        : placed ? tracks.slice(Math.max(0, playing.position - playing.first_position))
           : [active.song, ...(active.next ?? [])];
       return list.map((song) => this.#entryOfSong(song)).filter(Boolean);
     }
@@ -773,24 +780,39 @@ export class MoondogApplication {
       if (!this.spotifyPlaybackReady()) throw Object.assign(new Error("Spotify is not ready to play here."), { code: "spotify_not_ready" });
       const list = songs.slice(0, 100);
       const refs = [];
+      const avoidedFound = [];
+      // A recording's own title and credit can name more than the entry does (a feature); an Avoid holds against it.
+      const allowed = (title, credit) => this.avoidAllows({ title, artist_credit: credit });
       const uris = await mapLimited(list, 4, async (entry) => {
-        if (entry.refs?.spotify_uri) return entry.refs.spotify_uri;
+        // A cached recording plays without a search, once its own credit passes today's Avoids.
+        if (entry.refs?.spotify_uri && entry.refs.spotify_credit) {
+          if (allowed(entry.refs.spotify_title ?? entry.title, entry.refs.spotify_credit)) return entry.refs.spotify_uri;
+          avoidedFound.push(entry.id);
+          return null;
+        }
         const { matched } = await this.spotifyResolveSongs([{ title: entry.title, artist: entry.artist_credit }], { signal }).catch(() => ({ matched: [] }));
         // A match reaches the model without its URI; the host keeps it under the match's reference.
         const ref = matched[0]?.item_ref_id;
         const known = ref ? this.spotifyHostReadItems().find((item) => item.item_ref_id === ref) : null;
         const uri = typeof known?.uri === "string" ? known.uri : typeof matched[0]?.uri === "string" ? matched[0].uri : null;
-        if (uri) refs.push({ entryId: entry.id, refs: { spotify_uri: uri } });
+        if (!uri) return null;
+        const title = known?.name ?? matched[0]?.name ?? entry.title;
+        const credit = (known?.artists ?? matched[0]?.artists ?? []).join(", ") || entry.artist_credit;
+        refs.push({ entryId: entry.id, refs: { spotify_uri: uri, spotify_title: title, spotify_credit: credit } });
+        if (!allowed(title, credit)) { avoidedFound.push(entry.id); return null; }
         return uri;
       });
       signal?.throwIfAborted();
       this.libraryStore.rememberRefs(refs);
       const playable = uris.filter(Boolean);
-      if (!playable.length) return { state: "not_found", playlist: named, not_found: list.length, left_out_made: leftOut, ...extra };
+      const skipped = avoided.length + avoidedFound.length;
+      Object.assign(extra, skipped ? { skipped_avoided_count: skipped } : {});
+      const unfound = list.length - playable.length - avoidedFound.length;
+      if (!playable.length) return { state: "not_found", playlist: named, not_found: unfound, left_out_made: leftOut, ...extra };
       await this.quietOtherPlayers("spotify", { signal });
       const receipt = await this.#resumeSpotifySelection({ uris: playable }, { signal, played: [] });
       return { state: receipt.state === "accepted" ? "playing" : receipt.state, player: "spotify", playlist: named, playing: playable.length,
-        not_found: list.length - playable.length, left_out_made: leftOut, ...extra };
+        not_found: unfound, left_out_made: leftOut, ...extra };
     }
     if (service === "netease" && this.neteaseReady()) {
       const player = this.requireNetease();
