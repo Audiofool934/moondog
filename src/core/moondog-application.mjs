@@ -2286,7 +2286,11 @@ export class MoondogApplication {
     // named in their language; otherwise a sensible batch from the candidates.
     const requested = intent?.requested ?? count ?? Math.min(itemRefs.length, 12);
     if (!Number.isInteger(requested) || requested < 1 || requested > 12) throw spotifyResolutionError("spotify_queue_count_limit", "A queue request supports 1 to 12 songs. No write was sent.");
-    const chosen = itemRefs.map(ref => this.requireSpotifyReadItem(ref, ["track"]));
+    // A reference the host never issued (a model's slip) is left out and counted; only a batch
+    // with no usable reference at all is refused.
+    const chosen = itemRefs.map((ref) => { try { return this.requireSpotifyReadItem(ref, ["track"]); } catch { return null; } }).filter(Boolean);
+    const skippedUnavailable = itemRefs.length - chosen.length;
+    if (!chosen.length) this.requireSpotifyReadItem(itemRefs[0], ["track"]);
     // The rest of this request's verified discovery results by the artists the model picked stand
     // behind its picks, in the order found, so a pick skipped as a duplicate or an Avoid still
     // leaves the count asked for. A song by another artist may have been left out on purpose.
@@ -2318,7 +2322,8 @@ export class MoondogApplication {
       knownTrack: intent?.excludeKnown ? track => this.domainServices?.isKnownDiscoveryTrack?.(track) === true : null });
     if (!receipt.queued.length && !receipt.stopped) transaction.queueBatchAttempted = false;
     const result = { ...receipt, action: "queue.batch", requested, queued_count: receipt.queued.length,
-      shortfall: requested - receipt.queued.length, queue_observation_truncated: observed.truncated === true };
+      shortfall: requested - receipt.queued.length, queue_observation_truncated: observed.truncated === true,
+      ...(skippedUnavailable ? { skipped_unavailable_count: skippedUnavailable } : {}) };
     this.spotifyDisplayedChoices = null;
     if (this.spotifyQueueRequest && (receipt.queued.length || receipt.stopped)) Object.assign(this.spotifyQueueRequest, { attempted: true, receipt: structuredClone(result) });
     return result;

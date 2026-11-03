@@ -3487,7 +3487,7 @@ function projectSpotifyQueuePlan(value) {
     result.stopped = projectQueueTrackList([value.stopped], "spotify_queue_stopped")[0];
     if (value.failure) result.failure = { action: "playback.queue.add", ...spotifyFailureDetails(value.failure) };
   }
-  for (const field of ["skipped_duplicate_count", "skipped_avoided_count", "skipped_known_count", "skipped_uncertain_count", "not_added_count"]) {
+  for (const field of ["skipped_duplicate_count", "skipped_avoided_count", "skipped_known_count", "skipped_uncertain_count", "skipped_unavailable_count", "not_added_count"]) {
     if (value[field] !== undefined) result[field] = safeNonnegativeInteger(value[field], field);
   }
   if (["queue.similar", "queue.batch"].includes(value.action)) {

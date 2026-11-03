@@ -349,3 +349,16 @@ test("a queue batch that came up short is filled by a single add of a missing so
   assert.deepEqual(f.spotify.state.queue.map(track => track.id), ["simQianGua", "simTuRanDeZiWo"]);
   assert.equal(result.status, "completed");
 });
+
+test("a queue batch leaves out a reference the host never issued and queues the rest", async t => {
+  const f = fixture(t, { active: "simMac", playing: "simBeidong" });
+  const titles = ["牽掛", "淚橋"];
+  const refs = c => JSON.parse(f.lastResult(c).content[0].text).items.filter(item => titles.includes(item.name)).map(item => item.item_ref_id);
+  let receipt;
+  await f.prompt("add two more Wu Bai songs to the queue", [f.call("moondog_spotify_search", { query: "伍佰", limit: 10 }),
+    c => f.call("moondog_spotify_queue_batch", { item_refs: [...refs(c), "00000000-0000-4000-8000-000000000000"], count: 2 }),
+    c => { receipt = JSON.parse(f.lastResult(c).content[0].text); return f.say("Queued two."); }]);
+  assert.equal(receipt.state, "accepted");
+  assert.equal(receipt.queued.length, 2);
+  assert.equal(receipt.skipped_unavailable_count, 1);
+});
