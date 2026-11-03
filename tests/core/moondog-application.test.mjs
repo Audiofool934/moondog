@@ -817,7 +817,7 @@ test("the agent reads its own setup and changes the reply language the listener 
   languageSelection.subscribe((locale) => heard.push(locale));
   const application = new MoondogApplication({ locale: "en", languageSelection });
   const runtime = { provider: "deepseek", model: "deepseek-flash", effort: "high" };
-  const status = application.settingsStatus(runtime);
+  const status = await application.settingsStatus(runtime);
   assert.deepEqual(status.model, { provider: "deepseek", model: "deepseek-flash", effort: "high", change: "not_by_agent",
     where: "Settings › Models in the window, or /model in the terminal" });
   assert.equal(status.reply_language.current, "en");
@@ -846,4 +846,30 @@ test("a song by title and artist matches the artist's identity, never a name ins
     { title: "Hello", artist: "Adele" }, { title: "被動", artist: "伍佰" }, { title: "Slow Dancing", artist: "V" }, { title: "Tribute Only", artist: "Adele" }]);
   assert.deepEqual(matched.map((item) => item.track_ref_id), ["adele", "wubai", "v"]);
   assert.deepEqual(unmatched.map((song) => [song.title, song.candidates.map((item) => item.item_ref_id)]), [["Tribute Only", ["only"]]]);
+});
+
+test("a model asked for in words comes from the listener's menu, signed in, and goes to the surface", async () => {
+  const { createModelSwitch } = await import("../../src/runtime/pi/model-switch.mjs");
+  const modelSwitch = createModelSwitch({ list: async () => ({ models: [
+    { provider: "deepseek", model: "deepseek-flash", name: "DeepSeek V4.1 Flash", ready: true },
+    { provider: "deepseek", model: "deepseek-v4-pro", name: "DeepSeek V4 Pro", ready: true },
+    { provider: "openai", model: "gpt-6.1-sol", name: "GPT 6.1 sol", ready: false },
+  ] }) });
+  const requests = [];
+  modelSwitch.subscribe((request) => requests.push(request));
+  const application = new MoondogApplication({ locale: "en", modelSwitch });
+  const runtime = { provider: "deepseek", model: "deepseek-flash" };
+  assert.deepEqual((await application.settingsStatus(runtime)).model.choices.map((choice) => choice.model),
+    ["deepseek/deepseek-flash", "deepseek/deepseek-v4-pro", "openai/gpt-6.1-sol"]);
+  for (const wanted of ["deepseek/deepseek-v4-pro", "deepseek-v4-pro", "DeepSeek V4 Pro"]) {
+    const result = await application.requestModel(wanted, runtime);
+    assert.deepEqual(result.changed, { setting: "model", from: "deepseek/deepseek-flash", to: "deepseek/deepseek-v4-pro", takes_effect: "after this reply" });
+  }
+  assert.equal(requests.length, 3);
+  assert.equal(requests[0].application, application);
+  assert.deepEqual(requests[0].selection, { provider: "deepseek", model: "deepseek-v4-pro" });
+  await assert.rejects(application.requestModel("gpt-6.1-sol", runtime), { code: "model_not_signed_in" });
+  await assert.rejects(application.requestModel("claude-opus-5-5", runtime), { code: "model_not_listed" });
+  assert.equal(requests.length, 3);
+  await assert.rejects(new MoondogApplication({}).requestModel("deepseek-v4-pro", runtime), { code: "model_change_unavailable" });
 });

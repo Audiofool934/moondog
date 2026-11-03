@@ -40,7 +40,8 @@ This document records how the harness keeps the model's part small, and how it m
 | One intent, one call; names in | `moondog_spotify_player_control` takes `songs: [{title, artist}]` with action `resume`; `MoondogApplication.spotifyResolveSongs` searches and matches each song. Apple Music (`moondog_music_preview`) and NetEase (`moondog_netease_play`) already took songs by title and artist. |
 | Never guess silently | A song without a clear match comes back as `not_found` with `not_sent: true` and up to five candidates with `item_ref_id`. The match needs the same artist (equal names, or one credited artist of a joint credit; "Adele Tribute Band" is not Adele), then the exact title, or the same song in another version when the listener named no version. A version asked for must match as named, and a title that only starts the same way is another song. A title in the other Chinese script (被动 for 被動) is not guessed: it comes back as a candidate. |
 | Repair with one reading | `src/runtime/pi/tool-arguments.mjs` runs as Pi's `prepareArguments` step before validation. |
-| The model knows its setup | `moondog_settings` reads the model, the music service and the reply language, and sets the reply language. `moondog_playback_service` changes the music service. A reply language asked for in words holds whatever language the listener writes in, until the picker or `/language` chooses another. |
+| The model knows its setup | `moondog_settings` reads the model (with the listener's model menu), the music service and the reply language. It sets the reply language, and it switches to another signed-in model from the menu, which the window or the terminal applies when the reply ends (`src/runtime/pi/model-switch.mjs`). `moondog_playback_service` changes the music service. A reply language asked for in words holds whatever language the listener writes in, until the picker or `/language` chooses another. |
+| Replies in the chosen language | `src/runtime/pi/reply-language.mjs`: a final reply clearly in another language than the one chosen for the message is restated once by the same model, without tools. A few Chinese names among more Latin words are names, not the reply's language. |
 | History shows actions | `compactCompletedPromptHistory` keeps the turn's play, queue, move, make and settings calls with "Done." or "Failed."; reads and their results leave the history as before. |
 | Measure per model | `scripts/eval-spotify-playback.mjs` runs everyday requests against a simulated Spotify. Each tool call in the local trace records its provider and model, so a real failure can be traced to the model that made it. |
 
@@ -76,7 +77,7 @@ The first run after the change found these harness problems, which the last colu
 One failure looked like the model's alone: a reply claimed a skip without calling the tool, in 3 of 9 runs on V4 Pro.
 Its cause was the harness: finished turns kept only their reply text, so the history showed actions done by words alone.
 Keeping those calls in the history took the scenario to 8 of 8 runs on V4 Pro.
-Once, a Spanish request got a Chinese reply, and no change targets it yet.
+Once, a Spanish request got a Chinese reply; a reply clearly in another language is now restated once in the chosen one.
 A clean run is evidence, not proof of 100%: rerun the evaluation for each change and each model.
 Claude and OpenAI models were not run, because this Mac had no usable key for them at the time.
 
@@ -93,12 +94,13 @@ Claude and OpenAI models were not run, because this Mac had no usable key for th
 
 ## Next slices
 
-- **Fewer tools per turn.**
+- **Fewer tools per turn, only with evidence.**
   A turn declares about 35 tools and a system prompt of about 41,000 characters.
-  Keep a small core always declared, and load rare tools and their instructions on demand.
+  The sources put the point where tool choice degrades at 30 to 50 tools, and the evaluation has found no wrong-tool failure at 35.
+  Deferring tools behind a search adds a step every model must get right, so it waits for a measured tool-choice failure.
 - **A schema adapter per provider.**
-  Declare each tool once and translate it for each provider's strict mode and schema subset.
+  Declare each tool once and translate it for each provider's strict mode and schema subset, when a provider's schema rules break a call.
 - **A profile per model.**
   Record per model what it supports (strict schemas, tool search, examples) and how many core tools it gets.
-- **More settings by words.**
-  Extend `moondog_settings` to further settings a listener changes in the window or the terminal.
+- **More models measured.**
+  Run the evaluation on Claude, OpenAI, Gemini, Kimi and GLM models once their keys are on the machine.

@@ -180,13 +180,15 @@ function explicitLocale(prose) {
  * message's own script and words, then the listener's configured language.
  * Quoted titles never decide it, because song names travel across languages.
  */
-export function messageLocale(text, fallback = DEFAULT_LOCALE) {
+// explicit: false reads only the language a text is written in, for Moondog's own replies, where
+// "I'll answer in Spanish" is not a request.
+export function messageLocale(text, fallback = DEFAULT_LOCALE, { explicit: readRequest = true } = {}) {
   const configured = normalizeLocale(fallback) ?? DEFAULT_LOCALE;
   if (typeof text !== "string") return configured;
   const prose = text
     .replace(/^(?:Track|Artist): "(?:[^"\\\n]|\\.)*"[ \t]*$/gmu, "")
     .replace(/"(?:[^"\\]|\\.)*"|“[^”]*”|«[^»]*»|「[^」]*」|『[^』]*』|《[^》]*》/gu, "");
-  const explicit = explicitLocale(prose);
+  const explicit = readRequest ? explicitLocale(prose) : null;
   if (explicit) return explicit;
   // Hangul is only Korean and kana only Japanese; whichever the message uses more decides.
   const hangul = prose.match(/\p{Script=Hangul}/gu)?.length ?? 0;

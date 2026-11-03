@@ -31,7 +31,12 @@ const { createSpotifyService } = await import(`${root}/src/integrations/spotify/
 const { createConfiguredRuntime } = await import(`${root}/src/runtime/pi/configured-runtime.mjs`);
 const { catalogNames, createSimulatedSpotify } = await import(`${root}/src/evaluation/simulated-spotify.mjs`);
 const { messageLocale } = await import(`${root}/src/i18n/index.mjs`);
+const { replyInOtherLanguage } = await import(`${root}/src/runtime/pi/reply-language.mjs`);
 
+// The model under test and another one the listener could ask for by name.
+const OTHER_MODEL = process.env.MOONDOG_MODEL === "deepseek-v4-pro"
+  ? { model: "deepseek/deepseek-flash", name: "DeepSeek V4.1 Flash" } : { model: "deepseek/deepseek-v4-pro", name: "DeepSeek V4 Pro" };
+const MODEL_CHOICES = [{ model: `${process.env.MOONDOG_PROVIDER}/${process.env.MOONDOG_MODEL}`, name: process.env.MOONDOG_MODEL }, OTHER_MODEL];
 const artistOf = (track) => track?.artists.map((artist) => artist.name).join(", ") ?? "";
 const isWuBai = (track) => /伍佰|Wu Bai/u.test(artistOf(track));
 const check = (ok, failure) => (ok ? null : failure);
@@ -139,6 +144,9 @@ const scenarios = [
       { text: "放伍佰的被动", language: "en", expect: (s) => check(s.current?.id === "simBeidong" && s.playing, `expected 被動, got ${s.current?.name ?? "nothing"}`) },
       { text: "这首歌是哪年的？", language: "en", expect: (s) => check(s.current?.id === "simBeidong", "expected 被動 to keep playing") },
     ] },
+  { name: "settings-switch-model", language: "zh", setup: { active: "simMac", playing: "simNude" },
+    turns: [{ text: `换成 ${OTHER_MODEL.name} 来回答我`, expect: (s, reply, application, requested) => check(requested.length === 1 && requested[0] === OTHER_MODEL.model && s.current?.id === "simNude",
+      `expected one switch to ${OTHER_MODEL.model}, got [${requested.join(", ")}]`) }] },
   { name: "play-traditional", language: "zh-Hant", setup: {},
     turns: [{ text: "播放陳奕迅的浮誇", expect: (s) => check(s.current?.id === "simFuKua" && s.playing, `expected 浮誇, got ${s.current?.name ?? "nothing"}`) }] },
 ];
@@ -157,7 +165,11 @@ async function runScenario(scenario, run) {
     ...scenario.setup });
   const client = createSpotifyWebApiClient({ tokenProvider: async () => "SIMULATED_TOKEN", fetchImpl: spotify.fetchImpl });
   const stateHome = await mkdtemp(path.join(process.env.MOONDOG_STATE_HOME, `${scenario.name}-${run}-`));
-  const application = new MoondogApplication({ importsRoot: path.join(stateHome, "imports"), locale: scenario.language,
+  // The listener's model menu here: the model under test and one other DeepSeek model, both signed in.
+  const requestedModels = [];
+  const modelSwitch = { choices: async () => MODEL_CHOICES.map((choice) => ({ ...choice, ready: true })),
+    request: (_application, selection) => requestedModels.push(`${selection.provider}/${selection.model}`), subscribe: () => () => {} };
+  const application = new MoondogApplication({ importsRoot: path.join(stateHome, "imports"), locale: scenario.language, modelSwitch,
     domainServices: createSyntheticDomainServices({ subjectScope: { subjectId: `playback-eval-${scenario.name}` } }),
     spotifyConnection: { ready: () => true, missingScopes: () => [], publicStatus: () => ({ provider: "spotify", state: "ready" }),
       service: createSpotifyService({ client, thisComputerName: "Fictional MacBook Pro" }) } });
@@ -185,16 +197,15 @@ async function runScenario(scenario, run) {
     const toolErrors = toolEvents.filter((event) => event.kind === "result" && event.error).slice(turn.allowedErrors ?? 0);
     // Song, album and artist names travel across languages; read the reply around them.
     const language = turn.language ?? scenario.language;
-    // In a reply expected in a Latin-script language, Chinese characters are song, album and artist
-    // names (a simplified spelling the catalog lacks, too), not the reply's language.
+    // The host's own check reads the rest: a few Chinese characters among more Latin words are names.
     const prose = catalogNames().reduce((text, name) => text.replaceAll(name, " "), reply);
-    const replyLocale = messageLocale(["zh", "zh-Hant", "ja", "ko"].includes(language) ? prose : prose.replace(/\p{Script=Han}+/gu, " "), language);
+    const replyLocale = messageLocale(prose, language);
     const problems = [
       failure,
-      turn.expect(spotify.state, reply, application),
+      turn.expect(spotify.state, reply, application, requestedModels),
       toolErrors.length ? `${toolErrors.length} tool error(s): ${toolErrors.map((event) => `${event.tool}: ${event.text.slice(0, 160)}`).join(" | ")}` : null,
       JARGON.test(reply) ? `the reply shows internal detail: ${reply.match(JARGON)[0]}` : null,
-      reply.trim() && !(replyLocale === language || (language === "zh" && replyLocale === "zh-Hant")) ? `the reply is in ${replyLocale}, not ${language}` : null,
+      reply.trim() && replyInOtherLanguage(prose, language) ? `the reply is in ${replyLocale}, not ${language}` : null,
       !reply.trim() ? "no reply" : null,
     ].filter(Boolean);
     turns.push({ text: turn.text, seconds: (Date.now() - started) / 1000, reply, problems, tools: toolEvents,

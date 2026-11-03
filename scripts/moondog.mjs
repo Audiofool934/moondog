@@ -72,6 +72,7 @@ import {
 } from "../src/profile/spotify-archive-taste.mjs";
 import { deriveArtistReleaseHintsFromSpotifyArchive } from "../src/profile/spotify-archive-catalog-hints.mjs";
 import { createLanguageSelection, resolveListenerLocale, writeLanguagePreference } from "../src/i18n/preferences.mjs";
+import { createModelSwitch } from "../src/runtime/pi/model-switch.mjs";
 import { createPlaybackSelection, resolvePlaybackService, watchPlaybackPreference, writePlaybackPreference } from "../src/core/playback-preferences.mjs";
 import { createFirstRun } from "../src/core/first-run.mjs";
 
@@ -951,6 +952,9 @@ async function main() {
   const playbackSelection = createPlaybackSelection({ service: playbackService, save: writePlaybackPreference });
   // A reply language the listener asks for in words is saved like the picker's and reaches every surface.
   const languageSelection = createLanguageSelection({ save: (locale) => writeLanguagePreference(locale) });
+  // The listener's model menu, shared by the window, the terminal and a model asked for in words.
+  const modelSettings = createModelSettings({ environment: process.env });
+  const modelSwitch = createModelSwitch({ list: () => modelSettings.list() });
   // The terminal and the window each run this core on one playback.json. A service chosen on the
   // other side reaches this side's picker and agents, and stops the Apple Music songs this side plays.
   // Moondog's stream is not a service: its made tracks play on.
@@ -963,7 +967,7 @@ async function main() {
   // Spotify's four-week top artists, as the listening upkeep last read them.
   const spotifyTopArtists = { read_at: null, artists: [] };
   const applicationOptions = ({ domainServices, domainServicesError, spotifyConnection, locale, playbackService }) => ({
-    domainServices, domainServicesError, spotifyConnection, locale, playbackService, playbackSelection, languageSelection,
+    domainServices, domainServicesError, spotifyConnection, locale, playbackService, playbackSelection, languageSelection, modelSwitch,
     webResearch, memoryStore, musicCatalog, musicPreviewPlayer: previewPlayer, neteasePlayer, localGenerator, atmosphereStream, musicSimilarity, artistIdentityResolver,
     spotifyTopArtists, musicApp,
   });
@@ -1200,7 +1204,7 @@ async function main() {
         return createConfiguredRuntime(target, process.env, { selection, toolTrace });
       },
       // The desktop window lists models and signs in here, with no terminal.
-      modelSettings: createModelSettings({ environment: process.env }),
+      modelSettings,
       // A model chosen or a sign-in made on the other surface. Model variables fix the model at
       // launch, so a saved choice has nothing to change then.
       watchModelSettings: (onChange) => (process.env.MOONDOG_PROVIDER !== undefined || process.env.MOONDOG_MODEL !== undefined
