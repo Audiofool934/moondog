@@ -27,8 +27,14 @@ const requestInterval = Number(process.env.MOONDOG_EVAL_REQUEST_INTERVAL_MS ?? 0
 if (requestInterval > 0) {
   const send = globalThis.fetch;
   let next = Promise.resolve();
+  // fetch resolves at the headers; the body is read in full before the next request may start,
+  // so a long streamed answer still counts as one request in flight.
   globalThis.fetch = (...args) => {
-    const turn = next.then(() => send(...args));
+    const turn = next.then(async () => {
+      const response = await send(...args);
+      const body = await response.arrayBuffer();
+      return new Response(body, { status: response.status, statusText: response.statusText, headers: response.headers });
+    });
     next = turn.catch(() => {}).then(() => new Promise((resolve) => setTimeout(resolve, requestInterval)));
     return turn;
   };
