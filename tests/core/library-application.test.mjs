@@ -66,6 +66,17 @@ test("the library keeps what plays now and plays songs and made tracks as one qu
   onSpotify.avoidAllows = () => true;
   assert.equal(onSpotify.playbackService, "spotify");
   await assert.rejects(onSpotify.playLibrary({ playlistId: set.playlist.id }), { code: "spotify_not_ready" });
+  // Ready, it plays the songs by the URIs the host kept for the matches, remembers them, and leaves the made track out.
+  const resumed = [];
+  onSpotify.spotifyPlaybackReady = () => true;
+  onSpotify.quietOtherPlayers = async () => {};
+  onSpotify.spotifyResolveSongs = async ([wanted]) => ({ matched: [{ item_ref_id: `ref-${wanted.title}`, name: wanted.title }], unmatched: [] });
+  onSpotify.spotifyHostReadItems = () => ["Pink Moon", "Road"].map((title, index) => ({ item_ref_id: `ref-${title}`, uri: `spotify:track:${index}`, type: "track", name: title, artists: ["Nick Drake"] }));
+  onSpotify.requireSpotifyService = () => ({ resume: async (parameters) => { resumed.push(parameters.uris); return { state: "accepted" }; } });
+  const onAir = await onSpotify.playLibrary({ playlistId: set.playlist.id });
+  assert.deepEqual([onAir.state, onAir.playing, onAir.left_out_made, onAir.not_found], ["playing", 2, 1, 0]);
+  assert.deepEqual(resumed, [["spotify:track:0", "spotify:track:1"]]);
+  assert.equal(libraryStore.playlist(set.playlist.id).entries[1].refs.spotify_uri, "spotify:track:1");
   // A playlist of made tracks alone plays in Moondog's own player under any service.
   const madeOnly = libraryStore.savePlaylist({ name: "Cut for me", entries: [{ kind: "made", id: MADE, title: "Tide glass" }] });
   assert.equal((await onSpotify.playLibrary({ playlistId: madeOnly.id })).player, "moondog");

@@ -53,6 +53,11 @@ test("the window gets the library, edits it, and hears the terminal's changes", 
   await settle();
   assert.deepEqual(last("library-playlist").playlist.entries.map((entry) => entry.title), ["Pink Moon"]);
 
+  // Deleting the open playlist tells the window it is gone, so the window closes it.
+  listener({ data: { type: "library-playlist-delete", id: made.id } });
+  await settle();
+  assert.deepEqual([last("library-playlist").id, last("library-playlist").playlist], [made.id, null]);
+
   // A refused edit comes back as a notice with the store's code.
   listener({ data: { type: "library-playlist-delete", id: "saved" } });
   await settle();

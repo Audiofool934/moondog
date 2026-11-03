@@ -995,12 +995,15 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
   let playlistShown = null;
   let libraryTimer = null;
   async function sendPlaylist(force = false) {
-    if (!library || !playlistOpen) return;
-    const playlist = await base.libraryPlaylist(playlistOpen);
+    const id = playlistOpen;
+    if (!library || !id) return;
+    const playlist = await base.libraryPlaylist(id);
+    // Another playlist opened while this one was read; its own read answers for it.
+    if (id !== playlistOpen) return;
     const text = JSON.stringify(playlist);
     if (!force && text === playlistShown) return;
     playlistShown = text;
-    send({ type: "library-playlist", id: playlistOpen, playlist });
+    send({ type: "library-playlist", id, playlist });
   }
   async function sendLibrary(force = false) {
     if (!library || closed) return;
@@ -1043,7 +1046,8 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
       // A playlist made here opens, so its name can be given and songs dropped on it.
       if (!data.id) send({ type: "library-made", id: saved.id });
     },
-    "library-playlist-delete": (data) => { library.deletePlaylist(String(data.id ?? "")); if (playlistOpen === data.id) playlistOpen = null; },
+    // The open playlist's next read finds it gone and closes it in the window.
+    "library-playlist-delete": (data) => { library.deletePlaylist(String(data.id ?? "")); },
     "library-entries-remove": (data) => library.removeEntries(String(data.playlistId ?? ""), idsOf(data)),
     "library-entries-move": (data) => library.moveEntries(String(data.playlistId ?? ""), idsOf(data), data.beforeId ? String(data.beforeId) : null),
     // Entries dragged from one playlist onto another are copied there, as songs are in a music app.

@@ -762,7 +762,10 @@ export class MoondogApplication {
       const uris = await mapLimited(list, 4, async (entry) => {
         if (entry.refs?.spotify_uri) return entry.refs.spotify_uri;
         const { matched } = await this.spotifyResolveSongs([{ title: entry.title, artist: entry.artist_credit }], { signal }).catch(() => ({ matched: [] }));
-        const uri = typeof matched[0]?.uri === "string" ? matched[0].uri : null;
+        // A match reaches the model without its URI; the host keeps it under the match's reference.
+        const ref = matched[0]?.item_ref_id;
+        const known = ref ? this.spotifyHostReadItems().find((item) => item.item_ref_id === ref) : null;
+        const uri = typeof known?.uri === "string" ? known.uri : typeof matched[0]?.uri === "string" ? matched[0].uri : null;
         if (uri) refs.push({ entryId: entry.id, refs: { spotify_uri: uri } });
         return uri;
       });
