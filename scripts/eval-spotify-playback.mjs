@@ -20,6 +20,19 @@ const { values: options } = parseArgs({ options: {
 } });
 process.env.MOONDOG_STATE_HOME = await mkdtemp(path.join(tmpdir(), "moondog-playback-eval-"));
 process.env.MOONDOG_UPDATE_CHECK = "off";
+// A model account with a low request limit (Kimi's lowest tier allows 3 a minute) is measured with
+// MOONDOG_EVAL_REQUEST_INTERVAL_MS: model requests then leave one at a time, at least that far apart.
+// The simulated Spotify does not go through this fetch.
+const requestInterval = Number(process.env.MOONDOG_EVAL_REQUEST_INTERVAL_MS ?? 0);
+if (requestInterval > 0) {
+  const send = globalThis.fetch;
+  let next = Promise.resolve();
+  globalThis.fetch = (...args) => {
+    const turn = next.then(() => send(...args));
+    next = turn.catch(() => {}).then(() => new Promise((resolve) => setTimeout(resolve, requestInterval)));
+    return turn;
+  };
+}
 process.env.MOONDOG_LYRICS = "off";
 process.env.MOONDOG_PROVIDER ??= "anthropic";
 process.env.MOONDOG_MODEL ??= "claude-sonnet-5-5";
