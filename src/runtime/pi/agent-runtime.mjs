@@ -8435,7 +8435,9 @@ export class PiAgentRuntime {
       // surface that can only append keeps what it already showed, rather than show both.
       const restated = finalStopReason === "aborted" || promptState.abortRequested ||
         (textWasRendered && typeof callbacks.onTextReplace !== "function") ? null
-        : await restateInLanguage({ models: this.models, model: this.model, text: finalText || streamedText, locale: t.locale,
+        : await restateInLanguage({ models: this.models, model: this.model, text: finalText || streamedText,
+          // A language the listener had the agent keep in this very turn is the one to answer in.
+          locale: this.application?.replyLanguagePin && this.application.replyLanguagePin === this.application.locale ? this.application.replyLanguagePin : t.locale,
           signal: promptState.restatement.signal });
 
       if (finalStopReason === "aborted" || promptState.abortRequested) {

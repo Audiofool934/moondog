@@ -26,3 +26,8 @@ test("a reply in another language is restated once, and a failed restatement cha
   const failing = { completeSimple: async () => { throw new Error("offline"); } };
   assert.equal(await restateInLanguage({ models: failing, model, text: "已把三首歌放进队列。", locale: "es" }), null);
 });
+
+test("a restatement cut at the token limit leaves the reply as it was", async () => {
+  const models = { completeSimple: async () => ({ stopReason: "length", content: [{ type: "text", text: "Listo: tres canciones de" }] }) };
+  assert.equal(await restateInLanguage({ models, model: { id: "fixture" }, text: "已把三首 Radiohead 放进队列。", locale: "es" }), null);
+});

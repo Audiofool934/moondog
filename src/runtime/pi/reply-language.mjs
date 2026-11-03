@@ -33,7 +33,8 @@ export async function restateInLanguage({ models, model, text, locale, signal, m
       systemPrompt: SYSTEM_PROMPT,
       messages: [{ role: "user", content: `Restate this reply in ${LOCALES[locale].name} (${locale}).\n\n${text}`, timestamp: Date.now() }],
     }, { maxTokens, maxRetries: 0, signal, ...(lightest !== "off" ? { reasoning: lightest } : {}) });
-    if (!message || message.stopReason === "error" || message.stopReason === "aborted") return null;
+    // Only a restatement that ended on its own replaces the reply; one cut at the token limit would lose its end.
+    if (!message || message.stopReason !== "stop") return null;
     const restated = (message.content ?? []).filter((block) => block.type === "text").map((block) => block.text).join("").trim();
     // A restatement still in the wrong language is no better than the reply it replaces.
     return restated && !replyInOtherLanguage(restated, locale) ? restated : null;

@@ -323,3 +323,14 @@ test("a reply in another language is restated, and cancelling during the restate
   const cancelled = await turn;
   assert.equal(cancelled.status, "aborted");
 });
+
+test("a reply language changed in this turn is the one a restatement aims at", async t => {
+  const f = fixture(t, { active: "simMac", playing: "simReckoner" });
+  const calls = [];
+  f.runtime.models = { ...f.runtime.models, completeSimple: async (_model, context) => { calls.push(context.messages[0].content); return { stopReason: "stop", content: [{ type: "text", text: "unused" }] }; } };
+  f.application.locale = "en";
+  f.application.replyLanguagePin = "en";
+  const result = await f.prompt("from now on answer in Spanish", [f.call("moondog_settings", { reply_language: "es" }), f.say("Listo, desde ahora te respondo en español.")]);
+  assert.equal(result.text, "Listo, desde ahora te respondo en español.");
+  assert.deepEqual(calls, [], "the Spanish acknowledgment is not restated in English");
+});
