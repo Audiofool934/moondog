@@ -188,10 +188,11 @@ test("profile worker reports safe provider errors after bounded retries or termi
   assert.equal(session.state.checks, 0);
   assert.equal(fixture.runtime.activeAgent, null);
 
-  for (const [status, message, expected] of [
-    [401, "Incorrect API key provided: PRIVATE_KEY_SENTINEL", /auth login deepseek/u],
-    [429, "insufficient_quota", /429.*insufficient_quota/u],
-    [503, "Service unavailable", /503.*Service unavailable/u],
+  // 401 and a quota 429 are final at once; an overloaded 503 is sent again three times first.
+  for (const [status, message, expected, requests, waits] of [
+    [401, "Incorrect API key provided: PRIVATE_KEY_SENTINEL", /auth login deepseek/u, 1, []],
+    [429, "insufficient_quota", /429.*insufficient_quota/u, 1, []],
+    [503, "Service unavailable", /503.*Service unavailable/u, 4, [1000, 2000, 4000]],
   ]) {
     const terminal = runtimeFixture(() => new Response(JSON.stringify({ error: { message } }), {
       status, headers: { "content-type": "application/json" },
@@ -202,8 +203,8 @@ test("profile worker reports safe provider errors after bounded retries or termi
       assert.doesNotMatch(error.message, /PRIVATE_KEY_SENTINEL/u);
       return true;
     });
-    assert.equal(terminal.requests.length, 1);
-    assert.deepEqual(terminal.waits, []);
+    assert.equal(terminal.requests.length, requests);
+    assert.deepEqual(terminal.waits, waits);
     assert.equal(terminal.runtime.activeAgent, null);
   }
 });
@@ -425,4 +426,26 @@ test("malformed, authentication, and certificate fetch errors are never retried"
     assert.equal(count, 1);
     assert.deepEqual(retries, []);
   }
+});
+
+test("an overloaded provider is asked again, and a request it then answers completes the turn", async () => {
+  const retryEvents = [];
+  const fixture = runtimeFixture(({ count }) => count < 3
+    ? new Response(JSON.stringify({ error: { message: "Service is too busy." } }), { status: 503, headers: { "content-type": "application/json" } })
+    : textResponse("Answered after the provider recovered."));
+  const result = await fixture.runtime.prompt("Answer once the provider recovers.", { onModelRetry: (event) => retryEvents.push(event) });
+  assert.equal(result.status, "completed");
+  assert.equal(result.text, "Answered after the provider recovered.");
+  assert.equal(fixture.requests.length, 3);
+  assert.deepEqual(fixture.waits, [1000, 2000]);
+  assert.deepEqual(retryEvents.map((event) => event.status), [503, 503]);
+});
+
+test("a 429 is asked again only when the provider asks for a short wait", async () => {
+  const fixture = runtimeFixture(({ count }) => count < 2
+    ? new Response(JSON.stringify({ error: { message: "Rate limited." } }), { status: 429, headers: { "content-type": "application/json", "retry-after": "2" } })
+    : textResponse("Answered after the short wait."));
+  const result = await fixture.runtime.prompt("Answer after a short wait.");
+  assert.equal(result.text, "Answered after the short wait.");
+  assert.deepEqual(fixture.waits, [2000]);
 });

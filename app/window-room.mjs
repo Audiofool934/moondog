@@ -705,8 +705,7 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     sendStatus();
   }
   // The shown conversation's own model. Choosing exactly the default gives it back to the default.
-  async function pick(selection) {
-    const slot = current;
+  async function pick(selection, slot = current) {
     const session = sessionOf(slot);
     const own = defaults && sameSelection(selection, defaults) ? null : selection;
     keep(session, own);
@@ -1267,6 +1266,12 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     schedulePlayer();
   }
   const unsubscribePlayback = base.onPlaybackServiceChange?.(playbackChanged);
+  // A model the listener asked a conversation's agent for in words: that conversation's own pick, as
+  // in the menu, taking over when its reply ends.
+  const unsubscribeModelSwitch = base.modelSwitch?.subscribe?.(({ application, selection }) => {
+    const slot = slots.find((candidate) => candidate.application === application);
+    if (slot) void pick({ ...selection, ...(defaults?.effort && !selection.effort ? { effort: defaults.effort } : {}) }, slot).catch(() => {});
+  });
   // A language the agent set when the listener asked in words: every conversation and the window follow it.
   const unsubscribeLanguage = base.languageSelection?.subscribe?.((locale) => {
     for (const slot of slots) { slot.application.locale = locale; slot.application.conversationLocale = locale; }
@@ -1301,6 +1306,7 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
       closed = true;
       unsubscribePlayback?.();
       unsubscribeLanguage?.();
+      unsubscribeModelSwitch?.();
       unwatchGeneration?.();
       unwatchSetup?.();
       unwatchModel?.();

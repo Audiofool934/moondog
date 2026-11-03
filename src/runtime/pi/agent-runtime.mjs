@@ -15,6 +15,7 @@ import { appleMusicStorefront } from "../../integrations/apple-music/storefront.
 import { formatWebSources } from "../../surfaces/cli/web-command.mjs";
 import { chooseConversationName } from "./conversation-name.mjs";
 import { withArgumentRepair } from "./tool-arguments.mjs";
+import { restateInLanguage } from "./reply-language.mjs";
 import { chooseRecordName, RECORD_NAME_RULES } from "./record-name.mjs";
 import {
   createModelConnectionError,
@@ -4908,12 +4909,21 @@ function createToolFactories(
   return new Map([
     ["settings", descriptor => ({
       name: descriptor.tool_name, label: descriptor.label,
-      description: "Read Moondog's own setup: the model answering now, the music service, and the reply language, with how each one changes. Call it when the listener asks what you are running on or what they can change, in any language. Pass reply_language when the listener asks you to answer in a language from now on, in any wording, unless saved_reply_language already says it is kept as asked; the reply_language of one message does not keep it. It is saved like the language picker, so no confirmation is needed, and you reply in it from then on. Change the music service with moondog_playback_service. You cannot change the model or effort yourself; say where the listener can.",
-      parameters: Type.Object({ reply_language: Type.Optional(Type.Union(Object.keys(LOCALES).map((code) => Type.Literal(code)))) }, { additionalProperties: false }),
+      description: "Read Moondog's own setup: the model answering now, the music service, and the reply language, with how each one changes. Call it when the listener asks what you are running on or what they can change, in any language. Pass reply_language when the listener asks you to answer in a language from now on, in any wording, unless saved_reply_language already says it is kept as asked; the reply_language of one message does not keep it. It is saved like the language picker, so no confirmation is needed, and you reply in it from then on. Change the music service with moondog_playback_service. Pass model when the listener asks to talk through another model, choosing from model.choices (read it first when unsure); the switch takes over after this reply, so say so. A model that is not in the choices, or not signed in, is added or signed in by the listener in Settings › Models or with /model and /auth; say that instead. Effort is changed only there.",
+      parameters: Type.Object({
+        reply_language: Type.Optional(Type.Union(Object.keys(LOCALES).map((code) => Type.Literal(code)))),
+        model: Type.Optional(Type.String({ minLength: 1, maxLength: 160, description: "A model from model.choices, as provider/model." })),
+      }, { additionalProperties: false }),
       executionMode: "sequential",
-      execute: executeDomain(async (_id, parameters) => parameters.reply_language
-        ? application.setReplyLanguage(parameters.reply_language, runtimeStatus)
-        : application.settingsStatus(runtimeStatus), value => value),
+      execute: executeDomain(async (_id, parameters) => {
+        let result = null;
+        if (parameters.reply_language) result = await application.setReplyLanguage(parameters.reply_language, runtimeStatus);
+        if (parameters.model) {
+          const changed = await application.requestModel(parameters.model, runtimeStatus);
+          result = result ? { ...changed, changed: [result.changed, changed.changed] } : changed;
+        }
+        return result ?? application.settingsStatus(runtimeStatus);
+      }, value => value),
     })],
     ["playback.service", descriptor => ({
       name: descriptor.tool_name, label: descriptor.label,
@@ -8130,6 +8140,8 @@ export class PiAgentRuntime {
       onModelRetry: callbacks.onModelRetry,
       modelConnectionFailure: null,
       abortRequested: false,
+      // Stops a restatement in another language when the listener cancels the turn.
+      restatement: new AbortController(),
       presentationFailure: false,
       stagedMemoryMutations: [],
       tasteChoices: [],
@@ -8507,6 +8519,18 @@ export class PiAgentRuntime {
       }
       if (promptState.presentationFailure) throw new Error("Moondog response presentation was interrupted.");
 
+      // A reply clearly in another language than the one chosen for this message is restated once,
+      // before the cancellation check, so cancelling stops it and ends the turn as cancelled. A
+      // surface that can only append keeps what it already showed, rather than show both.
+      const restated = finalStopReason === "aborted" || promptState.abortRequested ||
+        (textWasRendered && typeof callbacks.onTextReplace !== "function") ? null
+        : await restateInLanguage({ models: this.models, model: this.model, text: finalText || streamedText,
+          // A language the listener had the agent keep in this very turn is the one to answer in.
+          locale: this.application?.replyLanguagePin && this.application.replyLanguagePin === this.application.locale ? this.application.replyLanguagePin : t.locale,
+          signal: promptState.restatement.signal });
+      // Every reply assembled below, the one with citations too, starts from the restated words.
+      if (restated) finalText = restated;
+
       if (finalStopReason === "aborted" || promptState.abortRequested) {
         this.application.cancelSpotifyQueueRequest?.();
         discardPromptHistory(this.agent, historyStartIndex);
@@ -8661,6 +8685,9 @@ To confirm, reply: ${preview.confirmation}`].join("\n\n");
         return completedResult(failureText);
       }
 
+      // The restatement replaces what the surface already showed.
+      if (restated && textWasRendered) replaceRenderedText(restated);
+
       if (!textWasRendered && finalText.length > 0) {
         callbacks.onTextDelta?.(finalText);
         textWasRendered = true;
@@ -8727,6 +8754,7 @@ To confirm, reply: ${preview.confirmation}`].join("\n\n");
   abort() {
     if (this.activePromptState) {
       this.activePromptState.abortRequested = true;
+      this.activePromptState.restatement?.abort();
     }
     this.agent.abort();
   }
