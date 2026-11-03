@@ -1,7 +1,7 @@
 // Signed releases retain their build and Apple submission receipts until publication.
 // Signed QA builds use --no-notarize and never create a publishable manifest.
 import { randomUUID } from "node:crypto";
-import { copyFile, mkdir, readFile, rename, rm } from "node:fs/promises";
+import { copyFile, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Arch, build, Platform } from "electron-builder";
@@ -62,6 +62,8 @@ const config = {
     identity: builderSigningIdentity(identity), notarize: false, signIgnore: [ELECTRON_DATA_SIGN_IGNORE] },
   dmg: { title: "Moondog ${version}" },
 };
+// What electron-builder wrote before 0.2.1; the cache folder keeps the name installed apps use.
+const UPDATE_CONFIG = "owner: Audiofool934\nrepo: moondog\nprovider: github\nupdaterCacheDirName: moondog-app-updater\n";
 
 if (!receipt) {
   await phase("Build and sign the app", async () => {
@@ -77,8 +79,12 @@ if (!receipt) {
     const music = await buildMusicHelper({ bundle: false, required: sign });
     config.extraFiles = music ? [{ from: "native/build/moondog-music", to: "MacOS/moondog-music" }] : [];
     await rm(output, { recursive: true, force: true });
+    // electron-builder writes the updater's app-update.yml only when it packs a zip or DMG, and the
+    // later prepackaged step never does, so write it here, before the app is signed. Without it
+    // every check for updates fails, as it did from 0.2.1 through 0.3.0-beta.6.
+    const afterPack = ({ appOutDir, packager }) => writeFile(path.join(packager.getResourcesDir(appOutDir), "app-update.yml"), UPDATE_CONFIG);
     // electron-builder mutates nested file patterns while normalizing its options.
-    await build({ projectDir: here, targets: Platform.MAC.createTarget(["dir"], Arch.arm64), publish: "never", config: structuredClone(config) });
+    await build({ projectDir: here, targets: Platform.MAC.createTarget(["dir"], Arch.arm64), publish: "never", config: { ...structuredClone(config), afterPack } });
   });
   if (notarize) {
     receipt = { schema: 1, ...provenance, appCdHash: await inspectApp(app, provenance, { notarized: false }),

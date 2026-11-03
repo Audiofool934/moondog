@@ -31,6 +31,7 @@ export async function inspectApp(app, expected, { notarized = true, run = comman
     if ((await readJson(path.join(app, relative))).version !== expected.version) throw new Error("The app and its core have different versions.");
   }
   if (!(await stat(path.join(app, "Contents/MacOS/moondog-music"))).isFile()) throw new Error("The release is missing its Apple Music helper.");
+  if (!(await stat(path.join(app, "Contents/Resources/app-update.yml")).catch(() => null))?.isFile()) throw new Error("The release is missing its update feed, app-update.yml.");
   if (expected.appCdHash && expected.appCdHash !== cdhash) throw new Error("The app signature differs from the recorded build.");
   if (notarized) {
     await run("xcrun", ["stapler", "validate", app]);
