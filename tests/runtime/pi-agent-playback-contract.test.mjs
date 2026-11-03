@@ -25,7 +25,7 @@ function fixture(t, setup = {}, { toolTrace } = {}) {
     .at(-1).content[0].text).items.find(item => item.name === title).item_ref_id;
   const prompt = (text, responses) => { faux.setResponses(responses); return runtime.prompt(text); };
   const plays = () => spotify.state.writes.filter(write => write.path === "/me/player/play").length;
-  return { spotify, application, call, say, lastResult, found, prompt, plays };
+  return { spotify, application, runtime, call, say, lastResult, found, prompt, plays };
 }
 
 test("the model's reply stands after it plays a song, and the result keeps the receipt", async t => {
@@ -302,4 +302,24 @@ test("a finished turn keeps its playback call and outcome in the history, and dr
   assert.ok(earlier.includes("assistant call moondog_spotify_player_control"));
   assert.ok(earlier.includes("result moondog_spotify_player_control Done."));
   assert.ok(!earlier.some(line => line.includes("moondog_spotify_search")));
+});
+
+test("a reply in another language is restated, and cancelling during the restatement ends the turn as cancelled", async t => {
+  const f = fixture(t, { active: "simMac", playing: "simReckoner" });
+  const models = f.runtime.models;
+  f.runtime.models = { ...models, completeSimple: async () => ({ stopReason: "stop", content: [{ type: "text", text: "Listo, sigue sonando Reckoner." }] }) };
+  const restated = await f.prompt("pon algo de jazz, por favor", [f.say("好的，继续放着 Reckoner。")]);
+  assert.equal(restated.status, "completed");
+  assert.equal(restated.text, "Listo, sigue sonando Reckoner.");
+  let started;
+  const waiting = new Promise(resolve => { started = resolve; });
+  f.runtime.models = { ...models, completeSimple: (_model, _context, options) => new Promise((_resolve, reject) => {
+    started();
+    options.signal.addEventListener("abort", () => reject(new Error("aborted")));
+  }) };
+  const turn = f.prompt("pon algo de jazz, por favor", [f.say("好的，继续放着 Reckoner。")]);
+  await waiting;
+  f.runtime.abort();
+  const cancelled = await turn;
+  assert.equal(cancelled.status, "aborted");
 });

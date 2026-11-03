@@ -8051,6 +8051,8 @@ export class PiAgentRuntime {
       onModelRetry: callbacks.onModelRetry,
       modelConnectionFailure: null,
       abortRequested: false,
+      // Stops a restatement in another language when the listener cancels the turn.
+      restatement: new AbortController(),
       presentationFailure: false,
       stagedMemoryMutations: [],
       tasteChoices: [],
@@ -8428,6 +8430,14 @@ export class PiAgentRuntime {
       }
       if (promptState.presentationFailure) throw new Error("Moondog response presentation was interrupted.");
 
+      // A reply clearly in another language than the one chosen for this message is restated once,
+      // before the cancellation check, so cancelling stops it and ends the turn as cancelled. A
+      // surface that can only append keeps what it already showed, rather than show both.
+      const restated = finalStopReason === "aborted" || promptState.abortRequested ||
+        (textWasRendered && typeof callbacks.onTextReplace !== "function") ? null
+        : await restateInLanguage({ models: this.models, model: this.model, text: finalText || streamedText, locale: t.locale,
+          signal: promptState.restatement.signal });
+
       if (finalStopReason === "aborted" || promptState.abortRequested) {
         this.application.cancelSpotifyQueueRequest?.();
         discardPromptHistory(this.agent, historyStartIndex);
@@ -8582,10 +8592,7 @@ To confirm, reply: ${preview.confirmation}`].join("\n\n");
         return completedResult(failureText);
       }
 
-      // A reply clearly in another language than the one chosen for this message is restated once.
-      // A surface that can only append keeps what it already showed, rather than show both.
-      const restated = textWasRendered && typeof callbacks.onTextReplace !== "function" ? null
-        : await restateInLanguage({ models: this.models, model: this.model, text: finalText || streamedText, locale: t.locale });
+      // The restatement, made before the cancellation check below.
       if (restated) {
         finalText = restated;
         if (textWasRendered) replaceRenderedText(restated);
@@ -8657,6 +8664,7 @@ To confirm, reply: ${preview.confirmation}`].join("\n\n");
   abort() {
     if (this.activePromptState) {
       this.activePromptState.abortRequested = true;
+      this.activePromptState.restatement?.abort();
     }
     this.agent.abort();
   }
