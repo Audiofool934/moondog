@@ -438,3 +438,15 @@ test("a fill works when the queue phrasing was not recognized, as long as the ba
     f.call("moondog_spotify_queue_add", { item_ref_id: tuRan }), f.say("Hecho.")]);
   assert.deepEqual(f.spotify.state.queue.map(track => track.id), ["simQianGua", "simTuRanDeZiWo"]);
 });
+
+test("a fill by track_ref_id is recognized like one by item_ref_id", async t => {
+  const f = fixture(t, { active: "simMac", playing: "simBeidong" });
+  const ref = (c, title) => JSON.parse(f.lastResult(c).content[0].text).items.find(item => item.name === title)?.track_ref_id;
+  let qianGua, tuRan;
+  await f.prompt("搜一下伍佰", [f.call("moondog_spotify_search", { query: "伍佰", limit: 10 }),
+    c => { qianGua = ref(c, "牽掛"); tuRan = ref(c, "突然的自我"); return f.say("找到了。"); }]);
+  await f.prompt("把伍佰的牵挂和突然的自我加到队列里", [
+    f.call("moondog_spotify_queue_batch", { item_refs: [qianGua], count: 2 }),
+    f.call("moondog_spotify_queue_add", { track_ref_id: tuRan }), f.say("都加好了。")]);
+  assert.deepEqual(f.spotify.state.queue.map(track => track.id), ["simQianGua", "simTuRanDeZiWo"]);
+});

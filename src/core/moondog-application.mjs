@@ -2457,7 +2457,12 @@ export class MoondogApplication {
     const batch = transaction?.queueBatchAttempted && transaction.batchReceipt?.action === "queue.batch" ? transaction.batchReceipt : null;
     // The retained receipt takes in each accepted fill, so its queued songs are the count so far.
     const missing = batch ? (batch.requested ?? 0) - (batch.queued?.length ?? 0) : 0;
-    const candidate = batch && input?.itemRefId !== undefined ? this.spotifyHostReadItems().find((entry) => entry.item_ref_id === input.itemRefId) : null;
+    // Either supported reference names the song: a read's item_ref_id, or a retained or resolved track_ref_id.
+    const fillRef = input?.itemRefId ?? input?.trackRefId;
+    const resolved = batch && input?.trackRefId !== undefined ? this.spotifyResolutions.get(input.trackRefId) : null;
+    const candidate = !batch || fillRef === undefined ? null
+      : this.spotifyHostReadItems().find((entry) => entry.item_ref_id === fillRef || entry.track_ref_id === fillRef) ??
+        (resolved?.uri ? { type: "track", uri: resolved.uri, name: resolved.matched?.title ?? "", artists: resolved.matched?.artists ?? [] } : null);
     // The same song is the same title by the same primary artist, as the batch itself decides.
     const candidateSongs = candidate ? songKeys({ title: candidate.name, artist_credit: candidate.artists?.join(", ") ?? "", artists: candidate.artists ?? [] }) : [];
     const fillsBatch = missing > 0 && candidate?.type === "track" &&
