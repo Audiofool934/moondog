@@ -92,6 +92,16 @@ New listening views, corrections, and discovery interactions must work in the te
 - [ ] Play a mixed playlist's made tracks between Spotify or NetEase songs, instead of leaving them out.
 - [ ] Let a conversation opened from a playlist know which playlist it is about.
 
+### Window layout
+
+The owner's direction (2026-11-04): the window supports more than one form, and the listener arranges it.
+
+- [ ] Make the sidebar's conversations and library two views the listener arranges: stacked as tabs, or split one above the other, by dragging a view's header; the layout is kept.
+  This ends the sidebar showing one or the other under a second switch, which fought the sidebar's own show and hide.
+- [ ] Let a view dock in another column, such as the library beside the player, once the sidebar views have settled in daily use.
+- [ ] Add a record wall as a form of its own: one click turns the room from the conversation and its record to a wall of the library's sleeves, as a wall turning round, and back.
+  Saved, folders and playlists stand as sleeves; one opens to its playlist. With reduced motion it fades instead of turning.
+
 ### First-run journey
 
 - [ ] Write a short newcomer journey for the terminal room: install, open, import fictional history, read the profile, make one correction.
