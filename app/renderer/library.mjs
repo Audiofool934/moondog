@@ -348,6 +348,13 @@ export function createLibrary({ root, state, send, t, open, store, menuPoint }) 
     accepts.drop = (_kind, data) => moveNode(data, null);
     dropTarget(tail, accepts);
   }
+  // The library's own new button: a bar across the top of the list, a plus in its middle, that offers a
+  // playlist or a folder. The bar's new button stays the conversation's.
+  const addBar = make("button", "library-add");
+  addBar.type = "button";
+  addBar.dataset.tipAt = "below";
+  addBar.append(icon("plus"));
+  addBar.addEventListener("click", (event) => void newMenu(event));
   let queued = 0;
   function refresh() {
     // Updates wait while a name is being typed, so the field and its text stay.
@@ -356,7 +363,9 @@ export function createLibrary({ root, state, send, t, open, store, menuPoint }) 
   }
   function render() {
     const saved = library().playlists.find((playlist) => playlist.saved);
-    const wanted = [];
+    const wanted = [addBar];
+    addBar.setAttribute("aria-label", t()("libraryNew"));
+    addBar.dataset.tip = t()("libraryNew");
     if (saved) wanted.push(rowFor(saved, 0));
     if (naming && !naming.id && naming.parentId === null) wanted.push(newField(null, 0));
     wanted.push(...nodes(null, 0), tail);
