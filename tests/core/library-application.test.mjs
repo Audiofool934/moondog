@@ -147,7 +147,7 @@ test("the agent's library tools appear only with a library", async () => {
   const libraryStore = await openLibraryStore({ databasePath: ":memory:" });
   const withLibrary = new MoondogApplication({ libraryStore });
   assert.deepEqual(withLibrary.agentCapabilityDescriptors().filter((descriptor) => descriptor.tool_name.startsWith("moondog_collection_"))
-    .map((descriptor) => descriptor.tool_name).sort(), ["moondog_collection_list", "moondog_collection_play", "moondog_collection_save"]);
+    .map((descriptor) => descriptor.tool_name).sort(), ["moondog_collection_import", "moondog_collection_list", "moondog_collection_play", "moondog_collection_save"]);
   withLibrary.close();
   without.close();
 });

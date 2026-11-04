@@ -22,7 +22,7 @@ class FakeAudio extends EventTarget {
 window.Audio = FakeAudio;
 // The real preload's bridge, minus what needs the main process: menus and dialogs answer "nothing".
 window.moondogApp = { pathForFile: () => null, onCommand() {}, setLanguage() {}, setBusy() {}, setPlayback() {}, showMenu: async () => null,
-  confirm: async () => false, chooseFile: async () => null, version: async () => "0.2.0-beta.1" };
+  confirm: async () => false, ask: async () => ({ confirmed: false, checked: false }), chooseFile: async () => null, version: async () => "0.2.0-beta.1" };
 // A newer Moondog, as the main process reports one; the states below push it.
 const updateListeners = [];
 const setUpdate = (update) => updateListeners.forEach((listener) => listener(update));

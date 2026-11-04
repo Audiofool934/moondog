@@ -20,6 +20,7 @@ import { recoverArtistReleasesWithCrossCatalogIdentity } from "../integrations/c
 import { webProviderName } from "../integrations/web/web-result.mjs";
 import { musicAppSource, readListeningNow } from "./listening-now.mjs";
 import { SAVED_PLAYLIST_ID } from "./library-store.mjs";
+import { parsePlaylistLink, readApplePlaylist, readPublicPlaylistLink } from "../integrations/playlist-links.mjs";
 import { normalizeConversationFolder, normalizeConversationLabel, normalizeMemoryContent, shortConversationTitle } from "../memory/local-memory-store.mjs";
 import { queueListeningIntent, queueCancellationRequested, unheardRequested } from "./spotify-listening-intent.mjs";
 import { DEFAULT_LOCALE, LOCALES, messageLocale, normalizeLocale } from "../i18n/index.mjs";
@@ -261,6 +262,8 @@ export class MoondogApplication {
     musicApp = null,
     // The listener's library (src/core/library-store.mjs), shared by every conversation and both surfaces.
     libraryStore = null,
+    // Adds an imported playlist's songs to the listener's taste evidence: async ({ provider, id, url, name, tracks }) => receipt.
+    playlistTaste = null,
     agentHostNotes = [],
     artistIdentityResolver = null,
     webResearch = null,
@@ -318,6 +321,9 @@ export class MoondogApplication {
     // listener plays there themselves.
     this.musicApp = musicApp;
     this.libraryStore = libraryStore;
+    this.playlistTaste = playlistTaste;
+    // Playlists read from links and waiting for the listener's yes, by token, newest last.
+    this.pendingPlaylistImports = new Map();
     // Hosts can tell the agent where it runs; the terminal passes none.
     this.hostNotes = Array.isArray(agentHostNotes) ? agentHostNotes.filter((note) => typeof note === "string") : [];
     this.artistIdentityResolver = artistIdentityResolver;
@@ -717,6 +723,72 @@ export class MoondogApplication {
     const playlist = library.playlist(target);
     return { playlist: { id: playlist.id, name: playlist.saved ? "Saved" : playlist.name, ...(playlist.saved ? { saved: true } : {}) },
       added: added.added, already: added.already, titles: entries.map((entry) => entry.title) };
+  }
+
+  /**
+   * Reads a playlist link (Spotify, Apple Music, NetEase Music, QQ Music) and holds what it found for the
+   * listener to import: { token, provider, name, read, total, owned, sample }. owned is true for a playlist the
+   * listener made, false for one a service or someone else made, and null when the service doesn't say.
+   */
+  async previewPlaylistLink({ link } = {}, { signal } = {}) {
+    this.requireLibrary();
+    const parsed = parsePlaylistLink(link);
+    let found;
+    if (parsed.provider === "spotify") {
+      if (!this.spotifyReady()) throw Object.assign(new Error("Connect Spotify first, so Moondog can read its playlists."), { code: "spotify_not_ready" });
+      const playlist = await this.requireSpotifyService().readPlaylist({ playlistId: parsed.id }, { signal });
+      found = { provider: "spotify", id: parsed.id, url: parsed.url, name: playlist.name || "Spotify playlist", total: playlist.tracks_total, owned: playlist.owned,
+        tracks: playlist.tracks.map((track) => { const credit = track.artists.join(", "); return { id: track.uri, title: track.name, artist: credit,
+          ...(track.album ? { album: track.album } : {}), ...(track.isrc ? { isrc: track.isrc } : {}),
+          refs: { spotify_uri: track.uri, spotify_title: track.name, spotify_credit: credit } }; }) };
+    } else if (parsed.provider === "apple_music") {
+      const playlist = await readApplePlaylist(parsed, { signal });
+      // A playlist a listener shared has a pl.u- id; the others are Apple's own.
+      found = { ...playlist, owned: parsed.id.startsWith("pl.u-") ? null : false,
+        tracks: playlist.tracks.map((track) => ({ id: track.id, title: track.title, artist: track.artist, refs: { apple_music_id: track.id, ...(track.artwork ? { artwork_url: track.artwork } : {}) } })) };
+    } else {
+      const playlist = await readPublicPlaylistLink(parsed);
+      found = { ...playlist, owned: null, tracks: playlist.tracks.map((track) => ({ ...track, ...(playlist.provider === "netease" ? { refs: { netease_id: String(track.id) } } : {}) })) };
+    }
+    signal?.throwIfAborted();
+    // A library playlist holds up to 2,000 songs; a longer one comes in from its start, and total says how long it is.
+    found.tracks = found.tracks.filter((track) => track.title && track.artist).slice(0, 2000);
+    if (found.total === null || found.total === undefined) found.total = null;
+    if (!found.tracks.length) throw Object.assign(new Error("No songs could be read from this playlist."), { code: "playlist_empty" });
+    const token = randomUUID();
+    this.pendingPlaylistImports.set(token, found);
+    while (this.pendingPlaylistImports.size > 5) this.pendingPlaylistImports.delete(this.pendingPlaylistImports.keys().next().value);
+    return { token, provider: found.provider, name: found.name, read: found.tracks.length, total: found.total ?? null, owned: found.owned,
+      sample: found.tracks.slice(0, 3).map((track) => `${track.title} - ${track.artist}`) };
+  }
+
+  /**
+   * Imports a previewed playlist: a copy in the library that remembers its link, and, when taste is true, its songs
+   * as evidence of what the listener keeps. A playlist the listener didn't make shapes their taste only when they say so.
+   */
+  async importPlaylistLink({ token, taste, name, folderId } = {}) {
+    const library = this.requireLibrary();
+    const found = this.pendingPlaylistImports.get(String(token ?? ""));
+    if (!found) throw Object.assign(new Error("That preview is gone. Paste the link again."), { code: "playlist_preview_gone" });
+    const shapes = typeof taste === "boolean" ? taste : found.owned === true;
+    const made = library.savePlaylist({ name: typeof name === "string" && name.trim() ? name : found.name, folderId: folderId ?? null,
+      origin: found.provider, source: { provider: found.provider, id: found.id, url: found.url },
+      entries: found.tracks.map((track) => ({ kind: "song", title: track.title, artist_credit: track.artist,
+        ...(track.album ? { album: track.album } : {}), ...(track.isrc ? { isrc: track.isrc } : {}), refs: track.refs ?? {} })) });
+    this.pendingPlaylistImports.delete(String(token));
+    let tasteState = "not_added";
+    if (shapes) {
+      if (typeof this.playlistTaste !== "function") tasteState = "unavailable";
+      else tasteState = await this.playlistTaste(found).then(() => "added", () => "failed");
+    }
+    return { playlist: { id: made.id, name: library.playlist(made.id).name }, added: made.added, read: found.tracks.length,
+      total: found.total ?? null, owned: found.owned, taste: tasteState };
+  }
+
+  /** Reads and imports a playlist link in one step, as the agent and the terminal do. */
+  async importPlaylistFromLink({ link, taste, name, folderId } = {}, { signal } = {}) {
+    const preview = await this.previewPlaylistLink({ link }, { signal });
+    return { ...(await this.importPlaylistLink({ token: preview.token, taste, name, folderId })), provider: preview.provider };
   }
 
   /** Playlists by name for the agent, or the newest ones when no words are given. */

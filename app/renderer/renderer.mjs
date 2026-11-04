@@ -187,7 +187,10 @@ const NOTICES = { too_many_running: "noticeTooMany", model_unknown: "noticeModel
   rewind_busy: "waitForReply", rewind_failed: "noticeFailed",
   library_nothing_playing: "noticeNothingToSave", library_too_deep: "noticeTooDeep", library_folder_cycle: "noticeFailed", library_full: "noticePlaylistFull",
   library_playlist_not_found: "noticePlaylistGone", made_track_audio_not_kept: "receiptOnly", made_track_not_found: "receiptOnly",
-  spotify_not_ready: "noticePlaybackFailed", library_no_player: "noticePlaybackFailed", library_not_ready: "noticeFailed" };
+  spotify_not_ready: "noticeSpotifyNotReady", library_no_player: "noticePlaybackFailed", library_not_ready: "noticeFailed",
+  playlist_link_missing: "noticePlaylistLink", playlist_link_unsupported: "noticePlaylistLink", playlist_unavailable: "noticePlaylistUnavailable",
+  spotify_playlist_unavailable: "noticePlaylistUnavailable", playlist_unreachable: "noticePlaylistUnreachable", playlist_empty: "noticePlaylistUnavailable",
+  playlist_too_large: "noticePlaylistFull", playlist_preview_gone: "noticePlaylistLink" };
 
 // ── The conversation ─────────────────────────────────────────────────────────────────────────
 const KINDS = [
@@ -1609,6 +1612,16 @@ function drawControls(now, toggle, next) {
   set(toggle, "disabled", !can(now, now.playing ? "pausing" : "resuming"));
   set(next, "disabled", !can(now, "skipping_next"));
 }
+const SERVICE_OF_PLAYLIST = { spotify: "Spotify", apple_music: "Apple Music", netease: "netease", qq_music: "qqMusic" };
+async function askImport(preview) {
+  const service = SERVICE_OF_PLAYLIST[preview.provider] ?? "";
+  const from = service === "netease" || service === "qqMusic" ? t(service) : service;
+  const count = preview.total && preview.total > preview.read ? t("importReadOf", { read: preview.read, total: preview.total }) : t("entries", { count: preview.read });
+  const answer = await window.moondogApp?.ask?.({ message: t("importQuestion", { name: preview.name }), detail: `${count} · ${from}\n${preview.sample.join("\n")}`,
+    confirm: t("importConfirm"), cancel: t("cancel"), checkbox: t("importShapesTaste"), checked: preview.owned === true });
+  if (!answer?.confirmed) { library.importDone(); return; }
+  send({ type: "library-import", token: preview.token, taste: answer.checked === true, folderId: preview.folderId ?? null });
+}
 // The song the heart last kept, by title and artists, so its heart shows filled while it plays.
 let keptNow = null;
 const songKey = (now) => `${now.title}\u0000${now.generated ? "moondog" : (now.artists ?? []).join(",")}`;
@@ -2067,6 +2080,16 @@ function receive({ data }) {
     else { state.shelf.playlist = data.playlist; shelf.render(); }
   }
   if (data.type === "library-made" && data.id) openPlaylist(data.id);
+  // A playlist link read: one question, with whether it shapes the listener's taste beside it. A playlist they made
+  // starts checked; one a service or someone else made starts unchecked.
+  if (data.type === "library-import-preview") void askImport(data);
+  if (data.type === "library-imported") {
+    library.importDone();
+    if (data.playlist?.id) openPlaylist(data.playlist.id);
+    notice(data.taste === "added" ? t("importedWithTaste", { name: data.playlist?.name ?? "" }) : data.taste === "failed" ? t("importedTasteFailed")
+      : t("importedPlaylist", { name: data.playlist?.name ?? "" }));
+  }
+  if (data.type === "notice") library.importDone();
   if (data.type === "library-saved") {
     const now = nowPlaying();
     if (now && data.playlist?.saved) keptNow = songKey(now);

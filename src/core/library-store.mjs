@@ -16,7 +16,7 @@ export const LIBRARY_SCHEMA_VERSION = 1;
 export const SAVED_PLAYLIST_ID = "saved";
 export const MAX_DEPTH = 4;
 export const MAX_ENTRIES = 2000;
-const ORIGINS = new Set(["listener", "moondog", "spotify", "apple_music", "netease", "file"]);
+const ORIGINS = new Set(["listener", "moondog", "spotify", "apple_music", "netease", "qq_music", "file"]);
 const ADDERS = new Set(["listener", "moondog"]);
 
 export const resolveLibraryPath = (environment = process.env) => path.join(resolveMoondogStateDirectory(environment), "library.sqlite");

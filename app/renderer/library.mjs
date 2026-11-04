@@ -82,6 +82,7 @@ export function createLibrary({ root, state, send, t, open, store, menuPoint }) 
     const chosen = await menu([
       { id: "new-playlist", label: t()("newPlaylist") },
       { id: "new-folder", label: t()("newFolder"), enabled: !deep },
+      { id: "new-import", label: t()("importPlaylist") },
       { type: "separator" },
       { id: "rename", label: t()("renameFolder") },
       { id: "move", label: t()("moveTo"), submenu: placesFor({ kind: "folder", id: folder.id, parentId: folder.parentId }) },
@@ -89,7 +90,7 @@ export function createLibrary({ root, state, send, t, open, store, menuPoint }) 
       { id: "delete", label: t()("deleteFolder") },
     ], event);
     if (!chosen) return;
-    if (chosen === "new-playlist" || chosen === "new-folder") startNew(chosen === "new-folder" ? "folder" : "playlist", folder.id);
+    if (chosen?.startsWith("new-")) startNew({ "new-folder": "folder", "new-import": "import" }[chosen] ?? "playlist", folder.id);
     if (chosen === "rename") { naming = { kind: "folder", id: folder.id }; render(); }
     if (chosen.startsWith("into:")) send({ type: "library-folder-save", id: folder.id, parentId: chosen.slice(5) || null });
     if (chosen === "delete") {
@@ -100,7 +101,8 @@ export function createLibrary({ root, state, send, t, open, store, menuPoint }) 
   }
   // The menu for making something new: from the bar's button, or a right-click on the list's empty space.
   async function newMenu(event) {
-    const chosen = await menu([{ id: "playlist", label: t()("newPlaylist") }, { id: "folder", label: t()("newFolder") }], event);
+    const chosen = await menu([{ id: "playlist", label: t()("newPlaylist") }, { id: "folder", label: t()("newFolder") },
+      { type: "separator" }, { id: "import", label: t()("importPlaylist") }], event);
     if (chosen) startNew(chosen, null);
   }
   function startNew(kind, parentId) {
@@ -140,9 +142,11 @@ export function createLibrary({ root, state, send, t, open, store, menuPoint }) 
     field = nameField("", (value) => {
       naming = null;
       field = null;
-      if (value) send(kind === "folder" ? { type: "library-folder-save", name: value, parentId } : { type: "library-playlist-save", name: value, folderId: parentId });
+      // A link is read first; the window asks before the playlist is kept (renderer.mjs, library-import-preview).
+      if (value && kind === "import") { importing = true; send({ type: "library-import-preview", link: value, folderId: parentId }); }
+      else if (value) send(kind === "folder" ? { type: "library-folder-save", name: value, parentId } : { type: "library-playlist-save", name: value, folderId: parentId });
       render();
-    }, kind === "folder" ? t()("newFolder") : t()("newPlaylist"), depth);
+    }, { folder: t()("newFolder"), import: t()("pastePlaylistLink") }[kind] ?? t()("newPlaylist"), depth);
     return field;
   }
 
@@ -355,6 +359,19 @@ export function createLibrary({ root, state, send, t, open, store, menuPoint }) 
   addBar.dataset.tipAt = "below";
   addBar.append(icon("plus"));
   addBar.addEventListener("click", (event) => void newMenu(event));
+  // A playlist link being read: the bar breathes until the window has asked about it.
+  let importing = false;
+  // A link dropped on the list is read as one pasted into the import field.
+  root.addEventListener("dragover", (event) => { if (!dragged(event) && event.dataTransfer.types.includes("text/uri-list")) event.preventDefault(); });
+  root.addEventListener("drop", (event) => {
+    if (dragged(event) || !event.dataTransfer.types.includes("text/uri-list")) return;
+    const link = event.dataTransfer.getData("text/uri-list").split("\n").find((line) => line.startsWith("http"));
+    if (!link) return;
+    event.preventDefault();
+    importing = true;
+    send({ type: "library-import-preview", link: link.trim(), folderId: null });
+    render();
+  });
   let queued = 0;
   function refresh() {
     // Updates wait while a name is being typed, so the field and its text stay.
@@ -364,8 +381,9 @@ export function createLibrary({ root, state, send, t, open, store, menuPoint }) 
   function render() {
     const saved = library().playlists.find((playlist) => playlist.saved);
     const wanted = [addBar];
-    addBar.setAttribute("aria-label", t()("libraryNew"));
-    addBar.dataset.tip = t()("libraryNew");
+    addBar.setAttribute("aria-label", importing ? t()("readingPlaylist") : t()("libraryNew"));
+    addBar.dataset.tip = importing ? t()("readingPlaylist") : t()("libraryNew");
+    addBar.classList.toggle("busy", importing);
     if (saved) wanted.push(rowFor(saved, 0));
     if (naming && !naming.id && naming.parentId === null) wanted.push(newField(null, 0));
     wanted.push(...nodes(null, 0), tail);
@@ -381,5 +399,5 @@ export function createLibrary({ root, state, send, t, open, store, menuPoint }) 
     void newMenu(event);
   });
 
-  return { render: refresh, newMenu, startNew };
+  return { render: refresh, newMenu, startNew, importDone() { importing = false; render(); } };
 }

@@ -85,7 +85,10 @@ New listening views, corrections, and discovery interactions must work in the te
 
 - [ ] Use the first library slice daily and fix what that use finds: Saved, playlists in nested folders, songs and made tracks side by side, play on the chosen service, `/library`, and the agent's collection tools.
   The center stays the listener's: entries keep what names a song, not one platform's id, so a playlist outlives any one service.
-- [ ] Import a Spotify, Apple Music or NetEase playlist into the library as a copy, and export a playlist back to Spotify, to the Music app, or as an open file (M3U and JSON with the made tracks' audio).
+- [x] Import a playlist link (Spotify, Apple Music, NetEase Music, QQ Music) into the library as a copy that keeps its link, and let it shape the listener's taste: a playlist they made does by default, any other one only when they say so.
+  Playlists are the most direct way for a listener to tell Moondog their taste without exporting their listening data, so this stays a focus.
+- [ ] Read a long Apple Music playlist past the songs its public page lists, through MusicKit in the window, and the same in the terminal.
+- [ ] Bring an imported playlist up to date from its link, and export a playlist back to Spotify, to the Music app, or as an open file (M3U and JSON with the made tracks' audio).
 - [ ] Play a mixed playlist's made tracks between Spotify or NetEase songs, instead of leaving them out.
 - [ ] Let a conversation opened from a playlist know which playlist it is about.
 

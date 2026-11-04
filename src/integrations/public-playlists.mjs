@@ -54,7 +54,8 @@ async function boundedJson(response) {
   catch { throw new Error("The service changed its playlist response or requires sign-in. No music was imported."); }
 }
 
-export async function readPublicPlaylist({ input, subjectId, capturedAt, provider, fetchImpl = fetch }) {
+/** A public QQ Music or NetEase playlist by its share link: { provider, id, url, name, total, rows, skipped }. */
+export async function fetchPublicPlaylist({ input, provider, fetchImpl = fetch }) {
   let url = playlistLink(input);
   let identity = playlistIdentity(url);
   // Follow only official share redirects, never arbitrary network destinations or cookies.
@@ -93,9 +94,14 @@ export async function readPublicPlaylist({ input, subjectId, capturedAt, provide
       playlistId: identity.id, playlistName: name, position: index + 1, member: "public-playlist.json",
     };
   }).filter((row) => row.id && row.title);
-  const bytes = Buffer.from(JSON.stringify({ provider: identity.provider, id: identity.id, name, rows }));
-  const prepared = prepareMusicBundle({ provider: identity.provider, subjectId, capturedAt, rows,
-    digest: musicHash(bytes), size: bytes.length, members: ["public-playlist.json"], fileName: name, skipped: songs.length - rows.length,
+  return { provider: identity.provider, id: identity.id, url: url.href, name, total, rows, skipped: songs.length - rows.length };
+}
+
+export async function readPublicPlaylist({ input, subjectId, capturedAt, provider, fetchImpl = fetch }) {
+  const { provider: source, id, name, total, rows, skipped } = await fetchPublicPlaylist({ input, provider, fetchImpl });
+  const bytes = Buffer.from(JSON.stringify({ provider: source, id, name, rows }));
+  const prepared = prepareMusicBundle({ provider: source, subjectId, capturedAt, rows,
+    digest: musicHash(bytes), size: bytes.length, members: ["public-playlist.json"], fileName: name, skipped,
     scopeNote: `${rows.length} of ${total ?? "an unknown number of"} songs could be read; the service hides some. Only this playlist is added. It shows what you keep, not what you played, and it may not be one you made.`,
   });
   prepared.preview.source = "public-playlist";

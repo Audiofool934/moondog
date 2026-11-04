@@ -629,6 +629,17 @@ const catalog = [
     },
   },
   {
+    id: "collection.import",
+    version: "1",
+    state: "enabled",
+    effect: "write_local",
+    description: "Import a playlist link from Spotify, Apple Music, NetEase Music or QQ Music into the listener's library on this Mac.",
+    agent_tool: {
+      name: "moondog_collection_import",
+      label: N_("Import a playlist"),
+    },
+  },
+  {
     id: "collection.play",
     version: "1",
     state: "enabled",
