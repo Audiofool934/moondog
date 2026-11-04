@@ -247,6 +247,17 @@ The packaged app updates itself from this repository's GitHub releases (`updates
 - Before starting the installer, Moondog stops its old core and waits for it to exit.
   A failure to stop it leaves the downloaded update available for another explicit attempt.
 
+Notarization signs in with an App Store Connect API key when one is set up, and with the `mac-mini-notary` Keychain profile otherwise.
+The key needs no Keychain item and no app-specific password, and it works the same in a remote session; it lasts until it is revoked.
+To set it up once:
+
+1. In App Store Connect › Users and Access › Integrations › App Store Connect API, make a team key with the Developer role, and download its `.p8` file (Apple offers it only once).
+2. Put the file in `~/.config/apple-notary/` and run `chmod 600` on it.
+3. Write `~/.config/apple-notary/api-key.json` as `{ "key": "/Users/<you>/.config/apple-notary/AuthKey_<KEY ID>.p8", "keyId": "<KEY ID>", "issuer": "<Issuer ID>" }`; the issuer ID is shown above the keys.
+
+`MOONDOG_NOTARY_KEY`, `MOONDOG_NOTARY_KEY_ID` and `MOONDOG_NOTARY_ISSUER` override the file.
+The build says which of the two it notarizes with.
+
 To publish an update:
 
 1. Bump the version at the repository root (`package.json` and `package-lock.json`), commit and push it.
