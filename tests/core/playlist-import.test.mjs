@@ -44,6 +44,27 @@ test("an Apple Music playlist page gives its name, its total and each song once,
   await assert.rejects(readApplePlaylist(link, { fetchImpl: respond("<html></html>") }), { code: "playlist_unavailable" });
 });
 
+test("a NetEase playlist reads every song, in its order, when the playlist answer details only the first", async () => {
+  const song = (id, name) => ({ id, name, artists: [{ name: "求导乐队" }], album: { name: "圈中乐园", picUrl: `http://p2.music.126.net/${id}.jpg` } });
+  const asked = [];
+  const fetchImpl = async (url) => {
+    asked.push(new URL(url).pathname);
+    if (url.includes("/api/v6/playlist/detail")) return new Response(JSON.stringify({ code: 200, playlist: { id: 1983017976, name: "Audiofool喜欢的音乐", privacy: 0, trackCount: 3,
+      trackIds: [{ id: 11 }, { id: 12 }, { id: 13 }], tracks: [song(11, "First")] } }));
+    // song/detail answers in its own order; the playlist's order is restored.
+    if (url.includes("/api/song/detail")) return new Response(JSON.stringify({ code: 200, songs: [song(13, "Third"), song(12, "Second")] }));
+    return new Response("{}", { status: 404 });
+  };
+  const { readPublicPlaylistLink } = await import("../../src/integrations/playlist-links.mjs");
+  const playlist = await readPublicPlaylistLink({ url: "https://music.163.com/#/playlist?id=1983017976" }, { fetchImpl });
+  assert.deepEqual([playlist.name, playlist.total, playlist.tracks.map((track) => track.title)], ["Audiofool喜欢的音乐", 3, ["First", "Second", "Third"]]);
+  assert.equal(playlist.tracks[1].artwork, "https://p2.music.126.net/12.jpg");
+  assert.deepEqual(asked, ["/api/v6/playlist/detail", "/api/song/detail/"]);
+  // A private one says so, with a kind the window can name.
+  const closed = async () => new Response(JSON.stringify({ code: 200, playlist: { id: 5, name: "Mine", privacy: 10, trackIds: [] } }));
+  await assert.rejects(readPublicPlaylistLink({ url: "https://music.163.com/#/playlist?id=5" }, { fetchImpl: closed }), { code: "playlist_unavailable" });
+});
+
 test("a Spotify playlist imports as a copy; one the listener made shapes their taste unless they say no", async () => {
   const libraryStore = await openLibraryStore({ databasePath: ":memory:" });
   const tasted = [];

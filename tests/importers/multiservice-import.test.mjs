@@ -139,7 +139,8 @@ test("official short links resolve with a strict boundary, private and malformed
   let calls = 0;
   const fetchImpl = async () => ++calls === 1 ? new Response(null, { status: 302, headers: { location: "https://music.163.com/playlist?id=1234" } }) : Response.json(playlistData());
   assert.equal((await prepare("https://163cn.tv/example", { fetchImpl })).preview.tracks, 1);
-  assert.equal(calls, 2);
+  // The share link's redirect, NetEase's v6 playlist read (answered here in the old shape), then the older endpoint.
+  assert.equal(calls, 3);
   const redirect = async () => new Response(null, { status: 302, headers: { location: "http://127.0.0.1/private" } });
   await assert.rejects(prepare("https://163cn.tv/example", { fetchImpl: redirect }), /official share/u);
   await assert.rejects(prepare("https://evil.example/playlist?id=1234", { fetchImpl: () => assert.fail("must not fetch") }), /official share/u);
