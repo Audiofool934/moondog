@@ -13,6 +13,7 @@ import { createSidebar } from "./sidebar.mjs";
 import { createLibrary } from "./library.mjs";
 import { createShelf } from "./shelf.mjs";
 import { createTaste } from "./taste.mjs";
+import { createTasteList } from "./taste-list.mjs";
 import { createSidebarViews } from "./views.mjs";
 import { icon, make, marquee, name, scrollbar, setIcon, tooltips } from "./ui.mjs";
 import "./style.css";
@@ -30,8 +31,9 @@ const state = { sessions: [], folders: [], running: [], current: null, turns: []
   onAir: null,
   // The listener's library, and the playlist open in the room in the conversation's place ({ id, playlist }, or none).
   library: { folders: [], playlists: [] }, shelf: null,
-  // The listener's taste, open in the room in the conversation's place ({ data }, or none; data is the core's page).
-  taste: null };
+  // The listener's taste: the core's latest page of it, for the taste view and the page, and the page open in the
+  // room in the conversation's place ({} while open, or none).
+  tasteData: null, taste: null };
 const store = {
   get: (key) => { try { return localStorage.getItem(key); } catch { return null; } },
   set: (key, value) => { try { localStorage.setItem(key, value); } catch { /* A private window keeps the default. */ } },
@@ -55,10 +57,13 @@ const settings = createSettings({ state, send, t: tr,
 // The one-time first run asks for a music service, then a model, in the Settings sheet (first-run.mjs).
 const firstRun = createFirstRun({ settings, send, read: () => ({ run: state.firstRun, modelReady: state.model?.state === "configured" }) });
 const sidebar = createSidebar({ root: $("sessions"), state, send, t: tr, open: (id) => openSession(id), store, menuPoint: (event) => menuPoint(event) });
-const library = createLibrary({ root: $("library"), state, send, t: tr, open: (id) => openPlaylist(id), openTaste: () => openTaste(), store, menuPoint: (event) => menuPoint(event),
+const library = createLibrary({ root: $("library"), state, send, t: tr, open: (id) => openPlaylist(id), store, menuPoint: (event) => menuPoint(event),
   onBusy: (value) => views.setBusy("library", value) });
 const shelf = createShelf({ root: $("shelf"), state, send, t: tr, menuPoint: (event) => menuPoint(event), onClose: () => closePlaylist() });
-const taste = createTaste({ root: $("taste"), state, send, t: tr, onClose: () => closeTaste(), onAsk: (text) => askFromTaste(text) });
+const taste = createTaste({ root: $("taste"), state, send, t: tr, onClose: () => closeTaste() });
+// The taste view in the sidebar: a row unfolded there opens the page and lights that artist across its record.
+const tasteList = createTasteList({ root: $("taste-list"), state, send, t: tr, onAsk: (text) => askFromTaste(text),
+  onSelect: (name) => { if (name && !state.taste) openTaste({ fromView: true }); taste.pin(name); } });
 const tips = tooltips();
 // A native menu opens at the pointer, or under its control when the keyboard pressed it.
 function menuPoint(event) {
@@ -132,6 +137,10 @@ const views = createSidebarViews({ root: $("sidebar"), store, t: tr, menu: (item
   // Back to the conversations as the one tab is back to the conversation, so a playlist open in the room closes.
   if (view === "conversations" && views?.layout.mode === "tabs" && state.shelf) closePlaylist();
   if (views?.showing("library")) library.render();
+  // The taste view asks the core for the profile; as the one tab, it brings the taste page into the room, and
+  // turning to another tab takes the page away, as the conversations take a playlist away.
+  if (view === "taste") { send({ type: "taste" }); tasteList.render(); if (views?.layout.mode === "tabs") openTaste({ fromView: true }); }
+  else if (views?.layout.mode === "tabs" && state.taste) closeTaste();
 },
 // Each view's +: a folder for the conversations, and the library's menu (playlist, folder, import).
 onAdd: (view, event) => {
@@ -142,8 +151,11 @@ addLabel: (view) => (view === "library" ? (library?.importing ? t("readingPlayli
 function renderSidebarMode() {
   // A core without a library (the project page's scene) shows only the conversations.
   views.setEnabled(state.libraryReady === true);
+  // Taste is a view of its own beside the library, on the same core; the project page's scene has neither.
+  views.enable("taste", state.libraryReady === true);
   views.render();
   if (views.showing("library")) library.render();
+  if (views.showing("taste")) tasteList.render();
 }
 // ⌥⌘L and the palette: the library's view, with the sidebar shown if it was folded away.
 function toggleLibrary() {
@@ -176,12 +188,13 @@ function renderShelf() {
   if (!state.shelf && !state.taste) { renderConversation({ redraw: true }); placeSoon(); }
 }
 // The taste page opens in the room as a playlist does, and asks the core for the profile each time it opens.
-function openTaste() {
+// Opened from anywhere but its own view, it turns the sidebar to the taste view first, so the two show together.
+function openTaste({ fromView = false } = {}) {
+  if (!fromView && state.libraryReady === true && !views.showing("taste")) { views.show("taste"); if (state.taste) return; }
   if (state.shelf) { state.shelf = null; send({ type: "library-open", id: null }); }
-  if (!state.taste) { state.taste = { data: null }; taste.reset(); }
+  if (!state.taste) { state.taste = {}; taste.reset(); }
   send({ type: "taste" });
   renderShelf();
-  $("taste").querySelector(".taste-open, .taste-filter, button")?.focus({ preventScroll: true });
 }
 function closeTaste({ quiet = false } = {}) {
   if (!state.taste) return;
@@ -2147,10 +2160,10 @@ function receive({ data }) {
   // The sheet shows its own sign-in errors. sign_in_busy is the exception: the sheet keeps the running panel.
   if (data.type === "sign-in" && data.state === "error" && !(settings.open && data.code !== "sign_in_busy")) notice(SIGN_IN_ERRORS[data.code] ? t(SIGN_IN_ERRORS[data.code]) : t("signInFailed"));
   if (data.type === "import" && data.stage === "refresh-failed") notice(t("importRefreshFailed"));
-  // The taste page shows the core's profile; it asks again after an import or a reply, which can change it.
-  if (data.type === "taste" && state.taste) { state.taste.data = data; taste.render(); }
-  if (data.type === "taste-why" || (data.type === "notice" && String(data.code).startsWith("taste"))) taste.receive(data);
-  if (state.taste && ((data.type === "import" && data.stage === "done") || (data.type === "turn" && data.state !== "start"))) send({ type: "taste" });
+  // The taste view and page show the core's profile; they ask again after an import or a reply, which can change it.
+  if (data.type === "taste") { state.tasteData = data; tasteList.render(); if (state.taste) taste.render(); }
+  if (data.type === "taste-why" || (data.type === "notice" && String(data.code).startsWith("taste"))) tasteList.receive(data);
+  if ((state.taste || views.showing("taste")) && ((data.type === "import" && data.stage === "done") || (data.type === "turn" && data.state !== "start"))) send({ type: "taste" });
   if (data.type === "notice") {
     // The core did not take this message. Put it back so the listener can send it again.
     const pending = state.turns.findLastIndex((turn) => turn.pending && (!data.text || turn.text === data.text));

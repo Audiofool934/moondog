@@ -389,6 +389,25 @@ img { -webkit-user-drag: none; }
 .taste-actions { display: flex; flex-wrap: wrap; gap: 2px; margin: 6px 0 0 -9px; }
 .taste-list + .taste-note { margin-top: 6px; }
 
+/* Your taste in the sidebar: the artists and tracks the profile rests on, at the sidebar's own row size, with the
+   filters as a quiet row above them and a row's evidence and choices unfolding under it. */
+.taste-side .taste-filters { margin: 2px 0 8px; gap: 1px; max-width: none; }
+.taste-side .taste-filter { height: 24px; padding: 0 7px; }
+.taste-side .taste-list { margin: 0; max-width: none; }
+.taste-side .taste-row { margin-bottom: 1px; }
+.taste-side .taste-row[aria-current="true"], .taste-side .taste-row.open { background: var(--current); }
+.taste-side .taste-open { min-height: 40px; padding: 5px 10px; gap: 8px; }
+.taste-side .taste-words strong { font-size: var(--t-ui); font-weight: 400; color: var(--text-2); }
+.taste-side .taste-row:hover .taste-words strong, .taste-side .taste-row.open .taste-words strong { color: var(--text); }
+.taste-side .taste-words span { font-size: var(--t-caption); }
+/* Unfolded, a row's details say in full what its one line summed up. */
+.taste-side .taste-row.open .taste-words span { display: none; }
+.taste-side .taste-stance { font-size: var(--t-caption); }
+.taste-side .taste-detail { padding: 0 10px 10px; }
+.taste-side .taste-detail > p, .taste-side .taste-why p { font-size: var(--t-caption); }
+.taste-side .taste-actions { margin: 6px 0 0 -9px; }
+.taste-side-note { margin: 4px 10px; font-size: var(--t-small); line-height: 1.5; color: var(--text-3); }
+
 /* The record of the listener's history: wider than the words, up to the room's width, with its liner notes
    beside it where the room has space and under it where it doesn't. */
 .pressing { margin: 0 0 52px; display: grid; gap: 22px 40px; align-items: start; }

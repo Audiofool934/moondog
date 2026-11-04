@@ -25,7 +25,7 @@ export function coverUrl(cover) {
   return cover?.artwork_url ?? null;
 }
 
-export function createLibrary({ root, state, send, t, open, openTaste = null, store, menuPoint, onBusy = () => {} }) {
+export function createLibrary({ root, state, send, t, open, store, menuPoint, onBusy = () => {} }) {
   const collapsed = new Set(JSON.parse(store.get("moondog.library.collapsed") ?? "[]"));
   const rows = new Map();
   const heads = new Map();
@@ -372,30 +372,9 @@ export function createLibrary({ root, state, send, t, open, openTaste = null, st
     if (field && root.contains(document.activeElement)) return;
     if (!queued) queued = requestAnimationFrame(() => { queued = 0; render(); });
   }
-  // Your taste, first on the shelf: the record of your own listening, open in the room as a playlist opens.
-  const taste = (() => {
-    const item = make("div", "row taste-row");
-    const button = make("button", "open");
-    button.type = "button";
-    const thumb = make("span", "sleeve");
-    thumb.append(icon("record"));
-    const label = make("span", "name");
-    button.append(thumb, label);
-    item.append(button);
-    button.addEventListener("click", () => openTaste?.());
-    button.addEventListener("keydown", (event) => {
-      if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); step(button, event.key === "ArrowDown" ? 1 : -1); }
-    });
-    return { item, label };
-  })();
   function render() {
     const saved = library().playlists.find((playlist) => playlist.saved);
     const wanted = [];
-    if (openTaste) {
-      if (taste.label.textContent !== t()("tasteTitle")) taste.label.textContent = t()("tasteTitle");
-      if (state.taste) taste.item.setAttribute("aria-current", "true"); else taste.item.removeAttribute("aria-current");
-      wanted.push(taste.item);
-    }
     if (saved) wanted.push(rowFor(saved, 0));
     if (naming && !naming.id && naming.parentId === null) wanted.push(newField(null, 0));
     wanted.push(...nodes(null, 0), tail);

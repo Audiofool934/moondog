@@ -532,6 +532,14 @@ export function createPressing({ t, locale }) {
       const named = artists.find((artist) => text.toLocaleLowerCase().includes(artist.name.toLocaleLowerCase()));
       setFocus(named ? named.name : pinned);
     },
+    // An artist held lit from outside, as a row unfolded in the taste view; null lets it go. A name that isn't on
+    // the record lights nothing.
+    pin(name) {
+      const wanted = typeof name === "string" ? name.normalize("NFKC").toLocaleLowerCase() : null;
+      const match = wanted ? artists.find((artist) => artist.name.normalize("NFKC").toLocaleLowerCase() === wanted) : null;
+      pinned = match ? match.name : null;
+      if (history) setFocus(pinned);
+    },
     language() { if (shown) { renderRange(); renderLabel(); notes(true); describe(stylusAt(), false); } },
     reset() { stack = []; focus = pinned = null; picks = false; history = null; shown = null; width = 0; },
   };

@@ -508,11 +508,17 @@ const STATES = {
     const click = () => { const tab = document.querySelector('[data-view-tab="library"]'); if (tab && !tab.hidden) tab.click(); else setTimeout(click, 30); };
     setTimeout(click, 60);
   },
-  // Your taste opened from its row at the top of the library, as a listener finds it.
-  "taste-library"() {
-    STATES.library();
-    const open = () => { const row = document.querySelector("[data-library] .taste-row .open"); if (row) row.click(); else setTimeout(open, 30); };
-    setTimeout(open, 200);
+  // Your taste from its own tab in the sidebar, as a listener finds it: the list beside, the record in the room.
+  "taste-view"() {
+    STATES.reply();
+    const click = () => { const tab = document.querySelector('[data-view-tab="taste"]'); if (tab && !tab.hidden) tab.click(); else setTimeout(click, 30); };
+    setTimeout(click, 60);
+  },
+  // A row of the taste view unfolded: its evidence and choices under it, and its artist lit across the record.
+  "taste-row"() {
+    STATES["taste-view"]();
+    const open = () => { const row = document.querySelector("[data-taste-list] .taste-open"); if (row) row.click(); else setTimeout(open, 30); };
+    setTimeout(open, 300);
   },
   // The library dragged by its tab to the lower part of the sidebar: conversations above, the library below.
   "library-split"() {
