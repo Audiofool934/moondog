@@ -54,12 +54,9 @@ export function createTaste({ root, state, send, t, onClose, onAsk }) {
     title.append(make("h1", "taste-name", say("tasteTitle")));
     if (data?.state === "ready") title.append(button(say("tasteReport"), "button small quiet", () => send({ type: "taste-report" }), "taste:report"));
     node.append(title);
+    // The overview reads as one line of facts under the title, wrapping where the room is narrow.
     const lines = data?.state === "ready" ? data.overview ?? [] : [];
-    if (lines.length) {
-      const overview = make("div", "taste-overview");
-      for (const line of lines) overview.append(make("p", "", line));
-      node.append(overview);
-    }
+    if (lines.length) node.append(make("p", "taste-overview", lines.join(" · ")));
     return node;
   }
 

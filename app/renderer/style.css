@@ -322,13 +322,15 @@ img { -webkit-user-drag: none; }
 /* The page fades under the title bar as the conversation does, so its words never run under the bar's controls. */
 .taste-scroll { height: 100%; overflow-y: auto; scrollbar-width: none; overscroll-behavior: contain; padding: calc(var(--bar) + 26px) 44px 28px;
   mask-image: linear-gradient(to bottom, transparent 0, transparent calc(var(--bar) - 14px), #000 calc(var(--bar) + 14px), #000 calc(100% - 24px), transparent); }
-.taste-column { max-width: var(--column); margin-inline: auto; }
+/* One left edge for the whole page: the column is as wide as the record and its notes, and the words in it
+   keep a reading width. */
+.taste-column { max-width: 960px; margin-inline: auto; }
+.taste-reading, .taste-filters, .taste-list, .taste-empty, .taste-column > .taste-note { max-width: var(--column); }
 .taste-scroll { container-type: inline-size; }
-.taste-head { margin-bottom: 30px; }
+.taste-head { margin-bottom: 26px; }
 .taste-title { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; }
 .taste-name { margin: 0; font-size: 24px; font-weight: 600; line-height: 1.25; letter-spacing: -0.015em; color: var(--text); }
-.taste-overview { margin-top: 10px; display: grid; gap: 3px; }
-.taste-overview p { margin: 0; font-size: var(--t-small); line-height: 1.5; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.taste-overview { max-width: var(--column); margin: 8px 0 0; font-size: var(--t-small); line-height: 1.6; color: var(--text-3); font-variant-numeric: tabular-nums; text-wrap: pretty; }
 .taste-heading { margin: 0 0 10px; font-size: var(--t-small); font-weight: 600; color: var(--text-2); }
 .taste-reading { margin-bottom: 34px; }
 .taste-summary { margin: 0 0 16px; font-family: var(--serif); font-size: var(--t-reply); line-height: 1.7; color: var(--text); text-wrap: pretty; }
@@ -367,9 +369,9 @@ img { -webkit-user-drag: none; }
 
 /* The record of the listener's history: wider than the words, up to the room's width, with its liner notes
    beside it where the room has space and under it where it doesn't. */
-.pressing { --wide: min(960px, 100cqi); width: var(--wide); margin: 0 calc((100% - var(--wide)) / 2) 40px; display: grid; gap: 22px 36px; align-items: start; }
+.pressing { margin: 0 0 52px; display: grid; gap: 22px 40px; align-items: start; }
 .pressing[hidden] { display: none; }
-@container (min-width: 760px) { .pressing { grid-template-columns: minmax(0, 1fr) 300px; } .pressing-notes { position: sticky; top: 0; } }
+@container (min-width: 760px) { .pressing { grid-template-columns: minmax(0, 1fr) 280px; } .pressing-notes { position: sticky; top: 0; } }
 .pressing-deck { min-width: 0; display: grid; justify-items: center; }
 .pressing-range { justify-self: stretch; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 16px; min-height: 28px; }
 .pressing-crumbs, .pressing-presets { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; margin-inline-start: -8px; }
@@ -393,8 +395,8 @@ img { -webkit-user-drag: none; }
 .pressing-readout strong { display: block; font-size: var(--t-ui); font-weight: 500; color: var(--text); }
 .pressing-readout span { font-size: var(--t-small); color: var(--text-3); }
 .pressing-hint { margin: 8px 0 0; max-width: 460px; font-size: var(--t-caption); line-height: 1.5; color: var(--text-4); text-align: center; text-wrap: balance; }
-.pressing-notes { min-width: 0; padding-top: 28px; }
-.pressing-notes .era { font-size: 26px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.15; color: var(--text); font-variant-numeric: tabular-nums; }
+.pressing-notes { min-width: 0; padding-top: 34px; }
+.pressing-notes .era { font-size: 20px; font-weight: 600; letter-spacing: -0.012em; line-height: 1.2; color: var(--text); font-variant-numeric: tabular-nums; }
 .pressing-notes .era-sub { margin: 6px 0 0; font-size: var(--t-small); color: var(--text-3); font-variant-numeric: tabular-nums; }
 .pressing-notes .label { margin: 20px 0 8px; font-size: var(--t-small); font-weight: 600; color: var(--text-2); }
 .pressing-notes .song { margin: 0; font-family: var(--serif); font-size: var(--t-reply); line-height: 1.5; color: var(--text); }

@@ -134,6 +134,7 @@ function renderSidebarMode() {
   $("library").hidden = !inLibrary;
   $("toggle-library").setAttribute("aria-pressed", String(inLibrary));
   name($("toggle-library"), inLibrary ? t("conversations") : t("library"), "⌥⌘L");
+  name($("toggle-taste"), t("taste"), "⌥⌘T");
   // The new button always starts a conversation; the library makes its playlists and folders from its own bar.
   if (inLibrary) library.render();
 }
@@ -164,6 +165,9 @@ function closePlaylist() {
 }
 function renderShelf() {
   room.classList.toggle("shelving", Boolean(state.shelf || state.taste));
+  // Taste sits beside the library in the title bar, pressed while its page is open.
+  $("toggle-taste").setAttribute("aria-pressed", String(Boolean(state.taste)));
+  name($("toggle-taste"), t("taste"), "⌥⌘T");
   shelf.render();
   taste.render();
   library.render();
@@ -2014,6 +2018,7 @@ $("toggle-sidebar").addEventListener("click", () => togglePanel("sidebar"));
 $("toggle-inspector").addEventListener("click", () => togglePanel("inspector"));
 $("new").addEventListener("click", () => openSession(null));
 $("toggle-library").addEventListener("click", () => toggleLibrary());
+$("toggle-taste").addEventListener("click", () => toggleTaste());
 // The heart beside the song keeps it in Saved; a right-click offers the listener's playlists, or a new one.
 $("keep").addEventListener("click", () => send({ type: "library-save", ...keepArtwork() }));
 $("keep").addEventListener("contextmenu", async (event) => {
