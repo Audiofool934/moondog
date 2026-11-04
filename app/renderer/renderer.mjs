@@ -12,6 +12,7 @@ import { createSettings, EFFORTS } from "./settings.mjs";
 import { createSidebar } from "./sidebar.mjs";
 import { createLibrary } from "./library.mjs";
 import { createShelf } from "./shelf.mjs";
+import { createTaste } from "./taste.mjs";
 import { icon, make, marquee, name, scrollbar, setIcon, tooltips } from "./ui.mjs";
 import "./style.css";
 
@@ -27,7 +28,9 @@ const state = { sessions: [], folders: [], running: [], current: null, turns: []
   playbackService: "spotify", locale, locales: [], player: null, streaming: null, ready: false, waiting: null, update: { phase: "idle" }, firstRun: null,
   onAir: null,
   // The listener's library, and the playlist open in the room in the conversation's place ({ id, playlist }, or none).
-  library: { folders: [], playlists: [] }, shelf: null };
+  library: { folders: [], playlists: [] }, shelf: null,
+  // The listener's taste, open in the room in the conversation's place ({ data }, or none; data is the core's page).
+  taste: null };
 const store = {
   get: (key) => { try { return localStorage.getItem(key); } catch { return null; } },
   set: (key, value) => { try { localStorage.setItem(key, value); } catch { /* A private window keeps the default. */ } },
@@ -53,6 +56,7 @@ const firstRun = createFirstRun({ settings, send, read: () => ({ run: state.firs
 const sidebar = createSidebar({ root: $("sessions"), state, send, t: tr, open: (id) => openSession(id), store, menuPoint: (event) => menuPoint(event) });
 const library = createLibrary({ root: $("library"), state, send, t: tr, open: (id) => openPlaylist(id), store, menuPoint: (event) => menuPoint(event) });
 const shelf = createShelf({ root: $("shelf"), state, send, t: tr, menuPoint: (event) => menuPoint(event), onClose: () => closePlaylist() });
+const taste = createTaste({ root: $("taste"), state, send, t: tr, onClose: () => closeTaste(), onAsk: (text) => askFromTaste(text) });
 const tips = tooltips();
 // A native menu opens at the pointer, or under its control when the keyboard pressed it.
 function menuPoint(event) {
@@ -145,6 +149,7 @@ function toggleLibrary() {
 // A playlist opens in the room in the conversation's place, and the conversation comes back when it closes.
 function openPlaylist(id) {
   if (state.shelf?.id === id) { shelf.focus(); return; }
+  if (state.taste) closeTaste({ quiet: true });
   state.shelf = { id, playlist: null };
   shelf.reset();
   send({ type: "library-open", id });
@@ -158,15 +163,41 @@ function closePlaylist() {
   input.focus();
 }
 function renderShelf() {
-  room.classList.toggle("shelving", Boolean(state.shelf));
+  room.classList.toggle("shelving", Boolean(state.shelf || state.taste));
   shelf.render();
+  taste.render();
   library.render();
-  if (!state.shelf) { renderConversation({ redraw: true }); placeSoon(); }
+  if (!state.shelf && !state.taste) { renderConversation({ redraw: true }); placeSoon(); }
+}
+// The taste page opens in the room as a playlist does, and asks the core for the profile each time it opens.
+function openTaste() {
+  if (state.shelf) { state.shelf = null; send({ type: "library-open", id: null }); }
+  if (!state.taste) { state.taste = { data: null }; taste.reset(); }
+  send({ type: "taste" });
+  renderShelf();
+  $("taste").querySelector(".taste-open, .taste-filter, button")?.focus({ preventScroll: true });
+}
+function closeTaste({ quiet = false } = {}) {
+  if (!state.taste) return;
+  state.taste = null;
+  if (quiet) return;
+  renderShelf();
+  input.focus();
+}
+const toggleTaste = () => (state.taste ? closeTaste() : openTaste());
+// Find more like this: the request waits in the composer with the track named, for the listener to edit and send.
+function askFromTaste(text) {
+  closeTaste();
+  input.value = text;
+  renderComposer();
+  input.focus();
+  input.setSelectionRange(0, text.indexOf("\n") < 0 ? text.length : text.indexOf("\n"));
 }
 // Another conversation can open while this one is still answering; it keeps going in the core.
 function openSession(id) {
   // Opening a conversation, or a new one, puts the conversation back in the room.
   if (state.shelf) closePlaylist();
+  if (state.taste) closeTaste();
   if (id && id === state.current) return;
   // An empty new conversation is already the new conversation.
   if (!id && !state.turns.length && !state.streaming) { input.focus(); return; }
@@ -1179,8 +1210,9 @@ function submitText(text) {
     renderConversation();
     return true;
   }
-  // A message sent while a playlist is open brings the conversation back to show the reply.
+  // A message sent while a playlist or the taste page is open brings the conversation back to show the reply.
   if (state.shelf) closePlaylist();
+  if (state.taste) closeTaste();
   // The words show at once; the core's start of the turn adopts them.
   state.turns.push({ role: "user", text, pending: true });
   renderConversation();
@@ -1205,6 +1237,7 @@ input.addEventListener("keydown", (event) => {
   if (event.key === "Enter" && !event.shiftKey && !event.isComposing && event.keyCode !== 229) { event.preventDefault(); if (!state.streaming) submit(); }
   if (event.key === "Escape" && state.streaming) { event.preventDefault(); send({ type: "cancel" }); }
   else if (event.key === "Escape" && state.shelf && !input.value) { event.preventDefault(); closePlaylist(); }
+  else if (event.key === "Escape" && state.taste && !input.value) { event.preventDefault(); closeTaste(); }
   // The conversation scrolls from the composer, so reading back never needs the mouse.
   if (event.key === "PageUp" || event.key === "PageDown") {
     event.preventDefault();
@@ -1225,6 +1258,8 @@ const COMMANDS = [
   { name: "service", label: "musicService", run: () => settings.show("playback") },
   { name: "device", label: "devices", run: () => pickDevice(null) },
   { name: "import", label: "importHistory", run: () => settings.show("library") },
+  { name: "taste", label: "taste", run: () => openTaste() },
+  { name: "profile", label: "taste", run: () => openTaste() },
   { name: "memory", label: "memory", run: () => settings.show("memory") },
   { name: "remember", label: "remember", argument: "cmdRememberArgument", run: (text) => { if (text) { send({ type: "remember", text }); notice(t("remembered")); } } },
   { name: "folder", label: "newFolder", run: () => {
@@ -2029,13 +2064,14 @@ document.addEventListener("keydown", (event) => {
   if (event.key === " " && event.target.closest?.("button, a, select, [role=button]")) return;
   if (event.key === "Escape" && state.streaming) { send({ type: "cancel" }); return; }
   if (event.key === "Escape" && state.shelf) { closePlaylist(); return; }
+  if (event.key === "Escape" && state.taste) { closeTaste(); return; }
   if (event.key.length === 1 && !event.metaKey && !event.ctrlKey && !event.altKey) input.focus();
 });
 // Commands from the menu bar.
 window.moondogApp?.onCommand?.((command) => {
   if (settings.open && !["settings", "stop", "toggle-playback", "next", "previous", "on-air"].includes(command)) return;
   // A command that shows the conversation, a panel or Settings first brings the window back from the record alone.
-  if (immersed() && ["new", "settings", "toggle-sidebar", "toggle-library", "toggle-inspector", "toggle-record"].includes(command)) immerse(false);
+  if (immersed() && ["new", "settings", "toggle-sidebar", "toggle-library", "toggle-taste", "toggle-inspector", "toggle-record"].includes(command)) immerse(false);
   if (command === "new") openSession(null);
   if (command === "stop" && state.streaming) send({ type: "cancel" });
   if (command === "settings") settings.show();
@@ -2045,6 +2081,7 @@ window.moondogApp?.onCommand?.((command) => {
   if (command === "on-air") toggleOnAir();
   if (command === "toggle-sidebar") togglePanel("sidebar");
   if (command === "toggle-library") toggleLibrary();
+  if (command === "toggle-taste") toggleTaste();
   if (command === "toggle-inspector") togglePanel("inspector");
   if (command === "toggle-record") toggleRecord();
 });
@@ -2105,6 +2142,10 @@ function receive({ data }) {
   // The sheet shows its own sign-in errors. sign_in_busy is the exception: the sheet keeps the running panel.
   if (data.type === "sign-in" && data.state === "error" && !(settings.open && data.code !== "sign_in_busy")) notice(SIGN_IN_ERRORS[data.code] ? t(SIGN_IN_ERRORS[data.code]) : t("signInFailed"));
   if (data.type === "import" && data.stage === "refresh-failed") notice(t("importRefreshFailed"));
+  // The taste page shows the core's profile; it asks again after an import or a reply, which can change it.
+  if (data.type === "taste" && state.taste) { state.taste.data = data; taste.render(); }
+  if (data.type === "taste-why" || (data.type === "notice" && String(data.code).startsWith("taste"))) taste.receive(data);
+  if (state.taste && ((data.type === "import" && data.stage === "done") || (data.type === "turn" && data.state !== "start"))) send({ type: "taste" });
   if (data.type === "notice") {
     // The core did not take this message. Put it back so the listener can send it again.
     const pending = state.turns.findLastIndex((turn) => turn.pending && (!data.text || turn.text === data.text));

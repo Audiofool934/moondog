@@ -7,6 +7,7 @@ import { randomUUID } from "node:crypto";
 import { LOCALES, normalizeLocale, screenTranslator } from "../src/i18n/index.mjs";
 import { formatLocalResult } from "../src/surfaces/cli/format-output.mjs";
 import { HistoryImportView } from "../src/surfaces/cli/history-import-view.mjs";
+import { buildTasteProfileModel } from "../src/surfaces/cli/taste-profile-model.mjs";
 import { setAppleMusicStorefront } from "../src/integrations/apple-music/storefront.mjs";
 import { shortConversationTitle } from "../src/memory/local-memory-store.mjs";
 import { runtimeBehindSelection } from "../src/runtime/pi/runtime-selection.mjs";
@@ -986,6 +987,61 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
       id: memory.memory_id, text: memory.text, kind: memory.kind, updatedAt: memory.updated_at })) });
   }
 
+  // The listener's taste, for the taste page: the profile the terminal's /taste shows, built from the same
+  // view model, so the two say the same thing in the same words. The saved reading comes beside it. The window
+  // asks again each time the page opens and after anything that can change it: a reply, an import, a choice.
+  async function taste() {
+    const tr = screenTranslator(base.locale);
+    const empty = [tr("Nothing to look at yet."), tr("Import your history or library and it will show up here.")];
+    if (base.profileServicesReady?.() !== true) return send({ type: "taste", state: "empty", lines: empty });
+    // The overview's saved-reading line names terminal commands, so the page draws the reading itself.
+    const { listener_model: _saved, ...profile } = (await base.getProfileSummary({ maxItems: 10 })) ?? {};
+    const model = buildTasteProfileModel(profile, tr);
+    send({ type: "taste", state: model.subjects.length || model.summaryLines.length ? "ready" : "empty",
+      overview: model.summaryLines, lines: empty, reading: await savedReading(),
+      subjects: model.subjects.map(({ key, label, subtitle, kind, stance, correctionId, detailLines, evidence, target }) =>
+        ({ key, label, subtitle, kind, stance: stance ?? null, chosen: Boolean(correctionId), details: detailLines, evidence, target })),
+      canChoose: base.tasteChoicesReady?.() === true,
+      // The request "Find more like this" starts in the composer, in the core's language as the terminal's.
+      ask: tr("Find me 3 songs to go to from here, and tell me why each one.") });
+  }
+  // The reading a connected model wrote with /profile build: its summary and the findings /profile saved shows.
+  async function savedReading() {
+    if (base.profileBuildReady?.() !== true) return null;
+    const value = await base.getListenerProfile?.();
+    if (!value || value.state === "missing") return { state: "missing" };
+    const findings = [...new Map([...(value.highlights ?? []), ...(value.listener_assertions ?? [])]
+      .map((claim) => [claim.claim_id, claim])).values()].sort((a, b) => a.finding_number - b.finding_number);
+    return { state: value.state === "stale" && value.newer_listening_only ? "current_through" : value.state,
+      version: value.sequence ?? null, builtAt: String(value.built_at ?? "").slice(0, 10) || null, summary: value.summary ?? "",
+      findings: findings.map((claim) => ({ number: claim.finding_number, statement: claim.statement, kind: claim.kind, scope: claim.scope ?? "" })) };
+  }
+  // A Like, an Avoid or its undoing, saved as /profile correct saves it, so the agent, the Avoid check and the
+  // terminal see it at once. The page then gets the profile again with the choice in it.
+  async function tasteChoice(data) {
+    const stance = ["like", "avoid", "retract"].includes(data.stance) ? data.stance : null;
+    const target = data.target ?? {};
+    if (!stance || !["artist", "track"].includes(target.entityType)) return;
+    base.recordTasteChoice({ entityType: target.entityType, label: String(target.label ?? ""),
+      ...(target.entityType === "track" ? { artistCredit: String(target.artistCredit ?? "") } : {}), stance });
+    send({ type: "taste-saved", key: data.key ?? null, stance });
+    await taste();
+  }
+  // Why an artist or track is in the profile, and what that evidence can't say, as the terminal's "Why it's here".
+  async function tasteWhy(data) {
+    const evidenceId = String(data.evidenceId ?? "");
+    const explanation = await base.explainProfileEvidence({ evidenceId });
+    send({ type: "taste-why", key: data.key ?? null, evidenceId, basis: explanation?.basis_summary ?? "",
+      limit: explanation?.interpretation_limit ?? "", confidence: Number.isFinite(explanation?.confidence) ? explanation.confidence : null });
+  }
+  // The whole report, in the conversation, as after an import.
+  async function tasteReport() {
+    if (base.profileServicesReady?.() !== true) return;
+    const tr = screenTranslator(base.locale);
+    const report = formatLocalResult("taste", await base.runLocalCommand("taste", current.runtime.publicStatus?.()), tr);
+    send({ type: "local", session: sessionOf(current), markdown: report });
+  }
+
   // The listener's library: its tree for the sidebar, and the one playlist the room shows. The terminal's
   // writes reach it through the data version, the agent's and this window's through the store's own listener.
   const library = base.libraryStore ?? null;
@@ -1254,6 +1310,10 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     memories: () => memories(),
     remember: (data) => { const text = String(data.text ?? "").trim(); if (text) base.rememberMemory?.({ text, kind: "fact" }); memories(); },
     forget: (data) => { base.forgetMemory?.(String(data.id ?? "")); memories(); },
+    taste: () => taste(),
+    "taste-choice": (data) => tasteChoice(data),
+    "taste-why": (data) => tasteWhy(data),
+    "taste-report": () => tasteReport(),
     "import-file": (data) => prepare("file", String(data.path ?? "")),
     "import-lastfm": (data) => prepare("lastfm", String(data.username ?? "").trim()),
     "import-spotify": () => prepare("spotify"),

@@ -315,10 +315,59 @@ img { -webkit-user-drag: none; }
 /* A made track whose audio a stream already let go keeps its place and receipt, faded. */
 .shelf-row.gone .shelf-open { opacity: 0.45; }
 .shelf-empty { margin-top: 6px; padding-inline-start: 6px; font-size: var(--t-ui); color: var(--text-3); }
+
+/* The listener's taste, in the room in the conversation's place as a playlist is: the profile, the reading,
+   and the artists and tracks it rests on. Spacing groups it; nothing has a ground or a line of its own. */
+.taste { position: relative; flex: 1; min-height: 0; }
+.taste-scroll { height: 100%; overflow-y: auto; scrollbar-width: none; overscroll-behavior: contain; padding: calc(var(--bar) + 26px) 44px 28px;
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent); }
+.taste-column { max-width: var(--column); margin-inline: auto; }
+.taste-head { margin-bottom: 30px; }
+.taste-title { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; }
+.taste-name { margin: 0; font-size: 24px; font-weight: 600; line-height: 1.25; letter-spacing: -0.015em; color: var(--text); }
+.taste-overview { margin-top: 10px; display: grid; gap: 3px; }
+.taste-overview p { margin: 0; font-size: var(--t-small); line-height: 1.5; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.taste-heading { margin: 0 0 10px; font-size: var(--t-small); font-weight: 600; color: var(--text-2); }
+.taste-reading { margin-bottom: 34px; }
+.taste-summary { margin: 0 0 16px; font-family: var(--serif); font-size: var(--t-reply); line-height: 1.7; color: var(--text); text-wrap: pretty; }
+.taste-findings { margin: 0 0 14px; padding-inline-start: 22px; display: grid; gap: 10px; }
+.taste-findings li { font-size: var(--t-body); line-height: 1.55; color: var(--text); }
+.taste-findings li::marker { font-size: var(--t-small); color: var(--text-4); font-variant-numeric: tabular-nums; }
+.taste-findings p { margin: 0; text-wrap: pretty; }
+.taste-findings span { display: block; margin-top: 2px; font-size: var(--t-small); color: var(--text-3); }
+.taste-note { margin: 0; font-size: var(--t-small); line-height: 1.5; color: var(--text-3); }
+.taste-empty p { margin: 0 0 4px; font-size: var(--t-ui); color: var(--text-3); }
+.taste-filters { display: flex; flex-wrap: wrap; gap: 2px; margin-bottom: 8px; margin-inline-start: -8px; }
+.taste-filter { height: 26px; padding: 0 8px; display: inline-flex; align-items: center; gap: 6px; border-radius: var(--r-2); font-size: var(--t-small);
+  font-weight: 500; color: var(--text-3); transition: background-color var(--quick) var(--soft), color var(--quick) var(--soft); }
+.taste-filter:hover { background: var(--hover); color: var(--text); transition: none; }
+.taste-filter[aria-pressed="true"] { background: var(--current); color: var(--text); }
+.taste-count { color: var(--text-4); font-variant-numeric: tabular-nums; }
+.taste-filter[aria-pressed="true"] .taste-count { color: var(--text-3); }
+.taste-list { list-style: none; margin: 0 0 0 -8px; padding: 0; display: grid; gap: 1px; }
+.taste-row { border-radius: var(--r-2); transition: background-color var(--quick) var(--soft); }
+.taste-row:hover, .taste-row.open { background: var(--hover); transition: none; }
+.taste-open { width: 100%; min-height: 44px; padding: 6px 8px; display: flex; align-items: center; gap: 12px; border-radius: var(--r-2); text-align: start; }
+.taste-words { flex: 1; min-width: 0; display: grid; }
+.taste-words strong, .taste-words span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.taste-words strong { font-size: var(--t-ui); font-weight: 500; color: var(--text); }
+.taste-words span { font-size: var(--t-small); color: var(--text-3); }
+.taste-stance { flex: none; font-size: var(--t-small); color: var(--text-2); }
+.taste-stance.avoid { color: var(--text-3); }
+.taste-detail { padding: 0 8px 10px; display: grid; gap: 4px; }
+.taste-detail > p { margin: 0; font-size: var(--t-small); line-height: 1.5; color: var(--text-2); }
+.taste-why { margin-top: 6px; display: grid; gap: 4px; }
+.taste-why p { margin: 0; font-size: var(--t-small); line-height: 1.5; color: var(--text-2); text-wrap: pretty; }
+.taste-why .taste-label { margin-top: 4px; font-weight: 600; }
+.taste-why .taste-limit { color: var(--text-3); }
+.taste-actions { display: flex; flex-wrap: wrap; gap: 2px; margin: 6px 0 0 -9px; }
+.taste-list + .taste-note { margin-top: 6px; }
 @media (max-width: 720px) {
   .shelf-scroll { padding-inline: 24px; }
   .shelf-art { width: 120px; }
   .shelf-name, .shelf-rename { font-size: 20px; }
+  .taste-scroll { padding-inline: 24px; }
+  .taste-name { font-size: 20px; }
 }
 
 /* ── The conversation ─────────────────────────────────────────────────────────────────────── */

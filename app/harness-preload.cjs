@@ -405,6 +405,41 @@ function download(model) {
 // Each state leaves the page settled; the main process captures after the entrances finish.
 // A state may return actions for the main process: { hover: selector } moves the real pointer there.
 // Set by the Spotify-limited states, so the devices answer the same way the core does.
+// A fictional listener's taste, in the shape the core's taste page sends: the terminal's /taste view, the saved
+// reading beside it, and choices that stick as the core would keep them.
+const taste = { reading: true, empty: false, choices: new Map([["artist:the hollow pines", "like"], ["track:paper boats|mira lune", "avoid"]]) };
+const tasteSubject = (kind, label, artist, details) => {
+  const key = kind === "track" ? `track:${label.toLowerCase()}|${artist.toLowerCase()}` : `artist:${label.toLowerCase()}`;
+  return { key, label, subtitle: kind === "track" ? artist : "Artist", kind, details, evidence: [{ id: `ev-${key}`, source: details[0].split(":")[0] }],
+    target: kind === "track" ? { entityType: "track", label, artistCredit: artist } : { entityType: "artist", label } };
+};
+const TASTE_SUBJECTS = [
+  tasteSubject("artist", "The Hollow Pines", null, ["Across the years: 1,284 plays · 96 tracks · last played 2026-11-01"]),
+  tasteSubject("track", "Lanterns on the Water", "Juniper & Vale", ["Most played: 212 plays · 182 heard properly · up to 9 in a row · last played 2026-10-30", "Your song of 2024: 88 plays"]),
+  tasteSubject("artist", "Mira Lune", null, ["Lately (last 28 days): 64 plays · 11 tracks"]),
+  tasteSubject("track", "Slow Static", "The Hollow Pines", ["Came back: came back 3 times · longest time away 412 days"]),
+  tasteSubject("artist", "Okara Strings", null, ["Gone quiet: 340 plays · quiet for 610 days"]),
+  tasteSubject("track", "Paper Boats", "Mira Lune", ["Played in a row: up to 6 in a row · 2 separate runs"]),
+  tasteSubject("track", "Northbound, 5 a.m.", "Delmar Frost", ["Saved in your Spotify library", "On your Spotify playlists: on 4 playlists"]),
+  tasteSubject("artist", "Juniper & Vale", null, ["Followed on Spotify", "Across the years: 702 plays · 41 tracks"]),
+];
+function tastePage() {
+  if (taste.empty) return { type: "taste", state: "empty", lines: ["Nothing to look at yet.", "Import your history or library and it will show up here."] };
+  const subjects = TASTE_SUBJECTS.map((subject) => {
+    const stance = taste.choices.get(subject.key) ?? null;
+    const said = stance === "like" ? "You said: I like this · 2026-10-12" : stance === "avoid" ? "You said: keep this out · 2026-10-20" : null;
+    return { ...subject, stance, chosen: Boolean(stance), details: said ? [said, ...subject.details] : subject.details };
+  });
+  return { type: "taste", state: "ready", subjects, canChoose: true, ask: "Find me 3 songs to go to from here, and tell me why each one.",
+    overview: ["18,406 plays · 1,212.5 h · 3,904 tracks", "Spotify history · 2016-02-03 to 2026-11-02", `${taste.choices.size} choices you've made`],
+    reading: taste.reading ? { state: "current", version: 3, builtAt: "2026-10-28",
+      summary: "A listener who keeps a small circle of quiet, guitar-led bands for years and lets newer, brighter pop pass through in short bursts. Late evenings carry most of the listening, and old favourites come back after long gaps rather than fading for good.",
+      findings: [
+        { number: 1, statement: "The Hollow Pines are the steadiest thread: played in every year of the history, with no gap longer than three months.", kind: "observation", scope: "enduring" },
+        { number: 2, statement: "Recent attention leans to Mira Lune, but at four weeks this is a burst, not yet a change in enduring taste.", kind: "hypothesis", scope: "recent" },
+        { number: 4, statement: "Keeps Paper Boats out of suggestions, while still liking the artist's other work.", kind: "listener_assertion", scope: "track" },
+      ] } : { state: "missing" } };
+}
 let limitedUntil = 0;
 const STATES = {
   empty() { ready(); player(); },
@@ -623,6 +658,14 @@ const STATES = {
   },
   "settings-import"() { STATES.reply(); slash("import"); },
   "settings-memory"() { STATES.reply(); slash("memory"); },
+  taste() { STATES.reply(); slash("taste"); },
+  "taste-open"() {
+    STATES.taste();
+    setTimeout(() => document.querySelector('[data-key="subject:track:lanterns on the water|juniper & vale"]')?.click(), 250);
+    setTimeout(() => document.querySelector('[data-key="why:track:lanterns on the water|juniper & vale"]')?.click(), 450);
+  },
+  "taste-no-reading"() { taste.reading = false; STATES.taste(); },
+  "taste-empty"() { taste.empty = true; STATES.taste(); },
   "settings-about"() { STATES.reply(); slash("help"); },
   "settings-offline"() { STATES.offline(); slash("service"); },
   // NetEase Cloud Music chosen and signed in, playing another artist's recording of a song.
@@ -774,6 +817,18 @@ core.onmessage = ({ data }) => {
     { id: "m2", text: "Doesn't like live recordings unless asked.", kind: "preference" },
     { id: "m3", text: "Listens to Cantonese classics on Sunday mornings.", kind: "fact" } ] });
   if (data.type === "settings") send({ type: "status", ...status });
+  if (data.type === "taste") send(tastePage());
+  if (data.type === "taste-why") send({ type: "taste-why", key: data.key, evidenceId: data.evidenceId,
+    basis: "Counted from 212 plays in your Spotify history between 2019 and 2026; 182 of them ran past 30 seconds.",
+    limit: "Play counts show attention, not how much you like it. A song left on repeat while working counts the same as one you chose.",
+    confidence: 0.82 });
+  if (data.type === "taste-choice") {
+    const key = data.target.entityType === "track" ? `track:${data.target.label.toLowerCase()}|${data.target.artistCredit.toLowerCase()}` : `artist:${data.target.label.toLowerCase()}`;
+    if (data.stance === "retract") taste.choices.delete(key); else taste.choices.set(key, data.stance);
+    send({ type: "taste-saved", key: data.key, stance: data.stance });
+    send(tastePage());
+  }
+  if (data.type === "taste-report") send({ type: "local", session: "s1", markdown: "# Your listening\n\n18,406 plays · 1,212.5 h · 3,904 tracks\n\n## Across the years\n\n1. The Hollow Pines\n2. Juniper & Vale\n3. Okara Strings" });
   if (data.type === "control") {
     if (data.action === "pause" || data.action === "resume") player({ playing: data.action === "resume" });
     if (data.action === "next") player({ index: (last.index + 1) % TRACKS.length, fraction: 0, playing: true });
