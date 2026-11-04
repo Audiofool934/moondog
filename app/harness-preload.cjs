@@ -390,6 +390,12 @@ async function pasteImages(labels) {
   input.focus();
   input.dispatchEvent(new ClipboardEvent("paste", { clipboardData: transfer, bubbles: true, cancelable: true }));
 }
+// Brings a file over the window, as a drag from Finder would, without letting go.
+function dragOver(file) {
+  const transfer = new DataTransfer();
+  transfer.items.add(file);
+  window.dispatchEvent(new DragEvent("dragenter", { dataTransfer: transfer, bubbles: true }));
+}
 // Opens a settings section the way a listener can: a slash command typed into the composer.
 function slash(command) {
   const input = document.querySelector("[data-input]");
@@ -609,15 +615,10 @@ const STATES = {
       field.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
     }, 200);
   },
-  // An image dragged over the window: its drop covers the conversation, not the sidebar or the window's edge.
-  "drop-image"() {
-    STATES.reply();
-    setTimeout(() => {
-      const transfer = new DataTransfer();
-      transfer.items.add(new File([new Uint8Array([137, 80, 78, 71])], "cover.png", { type: "image/png" }));
-      window.dispatchEvent(new DragEvent("dragenter", { dataTransfer: transfer, bubbles: true }));
-    }, 200);
-  },
+  // A file dragged over the window blurs all of it, without a frame: an image goes with the next
+  // message, a history file to import.
+  "drop-image"() { STATES.reply(); setTimeout(() => dragOver(new File([new Uint8Array([137, 80, 78, 71])], "cover.png", { type: "image/png" })), 200); },
+  "drop-file"() { STATES.reply(); setTimeout(() => dragOver(new File(["{}"], "my_spotify_data.zip", { type: "application/zip" })), 200); },
   // The sent image opened at full size over the window.
   "image-open"() {
     STATES["reply-image"]();

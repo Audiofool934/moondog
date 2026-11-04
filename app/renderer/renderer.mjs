@@ -2132,15 +2132,14 @@ marquee($("now"), ".song h2, .song p", { tail: () => 16 });
 let dragDepth = 0;
 const hasFiles = (event) => [...(event.dataTransfer?.types ?? [])].includes("Files");
 const onlyImages = (list) => list.length > 0 && [...list].every((entry) => IMAGE_TYPES.has(entry.type));
-// Images show their drop over the conversation; anything else over the whole window.
-const hideDrops = () => { $("drop").hidden = true; $("drop-attach").hidden = true; };
+const hideDrops = () => { $("drop").hidden = true; };
 window.addEventListener("dragenter", (event) => {
   if (!hasFiles(event)) return;
   dragDepth += 1;
   const images = onlyImages(event.dataTransfer.items ?? []);
-  $("drop-attach-hint").textContent = t("dropToAttach");
-  $("drop-attach").hidden = !images;
-  $("drop").hidden = images;
+  $("drop-hint").textContent = t(images ? "dropToAttach" : "dropToImport");
+  setIcon($("drop"), images ? "plus" : "record");
+  $("drop").hidden = false;
 });
 window.addEventListener("dragleave", (event) => { if (!hasFiles(event)) return; dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) hideDrops(); });
 window.addEventListener("dragover", (event) => { if (hasFiles(event)) event.preventDefault(); });
