@@ -205,8 +205,21 @@ const modelName = (provider, model) => PROVIDER_MODELS[provider]?.find(([id]) =>
 let listed = [["anthropic", "claude-sonnet-5-5"], ["anthropic", "claude-opus-5-5"], ["deepseek", "deepseek-flash"], ["endpoint-home", "qwen3:32b"]];
 let defaultModel = { provider: "anthropic", model: "claude-sonnet-5-5", effort: "medium" };
 const sendList = () => send({ type: "model-list",
-  models: listed.map(([provider, model]) => ({ provider, model, name: modelName(provider, model), providerName: providerName(provider), ready: true, reasoning: provider !== "endpoint-home" })),
+  models: listed.map(([provider, model]) => ({ provider, model, name: modelName(provider, model), providerName: providerName(provider), ready: true, reasoning: provider !== "endpoint-home", vision: provider === "anthropic" })),
   default: { ...defaultModel, effort: defaultModel.effort ?? null, reasoning: true, thinking: defaultModel.provider === "deepseek" && defaultModel.effort === "medium" ? "low" : defaultModel.effort ?? null } });
+// What each model is for: vision on auto follows a chat model that sees images; web search lists its services.
+let roleChoices = { vision: null, web_search: null };
+const describe = ({ provider, model }) => ({ provider, model, name: modelName(provider, model), providerName: providerName(provider), known: true, vision: provider === "anthropic" });
+const sendRoles = () => send({ type: "model-roles", roles: [
+  { id: "chat", kind: "model", state: "enabled", choice: describe(defaultModel) },
+  { id: "vision", kind: "model", state: "enabled", input: "image", choice: roleChoices.vision && describe(roleChoices.vision),
+    auto: defaultModel.provider === "anthropic" ? describe(defaultModel) : null },
+  { id: "web_search", kind: "service", state: "enabled", choice: roleChoices.web_search, search: roleChoices.web_search?.service === "brave" ? "brave" : "deepseek", read: "deepseek",
+    services: [{ id: "deepseek", provider: "deepseek", name: "DeepSeek", ready: true, search: true, read: true },
+      { id: "brave", provider: "brave", name: "Brave Search", ready: true, search: true, read: false },
+      { id: "codex", provider: "codex_cli", name: "Codex CLI", ready: false, search: false, read: false }] },
+  { id: "audio", kind: "model", state: "planned", input: "audio", choice: null },
+] });
 // What Check again finds: NetEase ready, unless a state says otherwise.
 let neteaseCheck = { netease: "ready" };
 const send = (message) => {
@@ -540,6 +553,15 @@ const STATES = {
     STATES.reply(); slash("model");
     setTimeout(() => document.querySelector('[data-key="provider:openai"]')?.click(), 200);
   },
+  // Uses, open to vision and to web search: auto first, then the models or services it can pick.
+  "settings-model-vision"() {
+    STATES.reply(); slash("model");
+    setTimeout(() => document.querySelector('[data-key="role:vision"]')?.click(), 200);
+  },
+  "settings-model-web"() {
+    STATES.reply(); slash("model");
+    setTimeout(() => document.querySelector('[data-key="role:web_search"]')?.click(), 200);
+  },
   "settings-endpoint"() {
     STATES.reply(); slash("model");
     setTimeout(() => document.querySelector('[data-key="endpoint:edit:endpoint-home"]')?.click(), 200);
@@ -735,6 +757,8 @@ core.onmessage = ({ data }) => {
   if (data.type === "provider-models") send({ type: "provider-models", provider: data.provider,
     models: (PROVIDER_MODELS[data.provider] ?? []).map(([id, name]) => ({ id, name })) });
   if (data.type === "model-list") sendList();
+  if (data.type === "model-roles") sendRoles();
+  if (data.type === "model-role") { roleChoices[data.role] = data.choice ?? null; sendRoles(); }
   if (data.type === "list-model") {
     listed = listed.filter(([provider, model]) => provider !== data.provider || model !== data.model);
     if (data.listed) listed.push([data.provider, data.model]);

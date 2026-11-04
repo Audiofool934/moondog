@@ -2057,7 +2057,7 @@ function streamingTurn(id) {
 }
 const onScreen = (data) => !data.session || data.session === state.current;
 const SIGN_IN_ERRORS = { connect_while_answering: "waitForReply", sign_in_busy: "signInBusy" };
-const SETTINGS_MESSAGES = new Set(["models", "provider-models", "model-list", "endpoint", "devices", "memories", "auth-prompt", "auth-prompt-closed", "auth-event", "sign-in", "import", "notice", "netease-checked", "generation-checked", "generation-setup"]);
+const SETTINGS_MESSAGES = new Set(["models", "provider-models", "model-list", "model-roles", "endpoint", "devices", "memories", "auth-prompt", "auth-prompt-closed", "auth-event", "sign-in", "import", "notice", "netease-checked", "generation-checked", "generation-setup"]);
 function receive({ data }) {
   if (!data?.type) return;
   if (data.type === "preview" || data.type === "preview-control" || data.type === "preview-enqueue") { previews.receive(data); renderInspector(); return; }

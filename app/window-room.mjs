@@ -281,6 +281,8 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     if (behind.length) sendStatus();
     if (behind.length || changed !== "settings") await sendModels();
     await sendList();
+    // A new chat model changes what vision on auto means; a key or a role changes web search.
+    await sendRoles();
   }
 
   // On Air. The stream's last change, so a read that began before it is not taken for news about it.
@@ -722,6 +724,7 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     forgetWhere((chosen) => sameSelection(chosen, selection));
     await rebuildAll();
     await sendList();
+    await sendRoles();
   }
   async function sendList() {
     if (!modelSettings?.list) return;
@@ -793,6 +796,29 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     } catch (error) {
       send({ type: "models", providers: [], error: errorText(error) });
     }
+  }
+  // What each model is for. Web search lists its services with whether each is set up.
+  async function sendRoles() {
+    if (!modelSettings?.roles) return send({ type: "model-roles", roles: [] });
+    try {
+      const web = await base.webResearch?.services?.().catch(() => null) ?? null;
+      send({ type: "model-roles", roles: await modelSettings.roles({ web }) });
+    } catch (error) {
+      send({ type: "model-roles", roles: [], error: errorText(error) });
+    }
+  }
+  async function setRole(data) {
+    const choice = data.choice === null || data.choice === "auto" || data.choice === undefined ? null
+      : data.choice.service !== undefined ? { service: String(data.choice.service) }
+        : { provider: String(data.choice.provider ?? ""), model: String(data.choice.model ?? "") };
+    try {
+      await modelSettings?.setRole?.(String(data.role ?? ""), choice);
+    } catch (error) {
+      send({ type: "notice", code: "model-role", message: errorText(error) });
+    }
+    // The web search service takes effect at once; every conversation shares one web research.
+    if (data.role === "web_search") await base.webResearch?.refresh?.().catch(() => {});
+    await sendRoles();
   }
   async function sendProviderModels(provider, force = false) {
     if (!modelSettings) return;
@@ -1142,6 +1168,9 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     },
     // Settings' choices: the default, the thinking level it asks for, and which models the menu offers.
     "model-list": () => sendList(),
+    // What each model is for: vision and web search, with audio's place kept for later.
+    "model-roles": () => sendRoles(),
+    "model-role": (data) => setRole(data),
     "default-model": async (data) => {
       const provider = String(data.provider ?? "");
       const model = String(data.model ?? "");

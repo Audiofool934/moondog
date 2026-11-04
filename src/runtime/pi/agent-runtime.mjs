@@ -4957,11 +4957,11 @@ function createToolFactories(
         name: descriptor.tool_name,
         label: descriptor.label,
         description: kind === "search"
-          ? "Search public reviews, music news, interviews and concert information. Send only a concise public query under 128 characters, never private history or profile data; site:, quoted phrases and -exclusions narrow it. Results come with source links; content_kind says whether they are search-engine snippets or a generated summary."
-          : "Read a public HTTP(S) page. Send only its URL. The result is the page's own text (cut short when long) or a generated summary, as content_kind says. Inaccessible pages are reported; this does not log in or operate an interactive browser.",
+          ? "Search public reviews, music news, interviews and concert information. Send only a concise public query under 128 characters, never private history or profile data; site:, quoted phrases and -exclusions narrow it. Returns 5 sources by default; ask for up to 10 with limit when the first ones aren't enough. Results come with source links; content_kind says whether they are search-engine snippets or a generated summary."
+          : "Read a public HTTP(S) page. Send only its URL. The result is the page's own text or a generated summary, as content_kind says. A long page comes about 15,000 characters at a time: when next_offset is set, call again with that offset to read on. Inaccessible pages are reported; this does not log in or operate an interactive browser.",
         parameters: Type.Object(kind === "search"
-          ? { query: Type.String({ minLength: 1, maxLength: 500 }) }
-          : { url: Type.String({ minLength: 1, maxLength: 2048 }) }, { additionalProperties: false }),
+          ? { query: Type.String({ minLength: 1, maxLength: 500 }), limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 10 })) }
+          : { url: Type.String({ minLength: 1, maxLength: 2048 }), offset: Type.Optional(Type.Integer({ minimum: 0, maximum: 200_000 })) }, { additionalProperties: false }),
         executionMode: "sequential",
         execute: async (_toolCallId, parameters, signal) => executeDomain(
           () => kind === "search"

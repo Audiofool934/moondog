@@ -69,7 +69,7 @@ export function createDeepSeekWebResearch({ apiKey, fetch: fetchImpl = globalThi
     if (status !== 200) throw serviceError(status, body);
     const title = typeof body.title === "string" && body.title.trim() ? clip(body.title.trim(), 300) : url;
     return webResult({ provider: "deepseek", kind: "read", status: "found", retrievedAt,
-      summary: clip(text, webLimits.textChars), truncated: text.length > webLimits.textChars,
+      summary: clip(text, webLimits.fullTextChars), truncated: text.length > webLimits.fullTextChars,
       sources: [{ title, url, snippet: "", published_at: null }] });
   }
 
