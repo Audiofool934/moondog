@@ -609,6 +609,11 @@ const STATES = {
       field.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
     }, 200);
   },
+  // The sent image opened at full size over the window.
+  "image-open"() {
+    STATES["reply-image"]();
+    setTimeout(() => document.querySelector(".you-image")?.click(), 1400);
+  },
   // Auxiliary models, open to vision and to web search: auto first, then the models or services it can pick.
   "settings-model-vision"() {
     STATES.reply(); slash("model");

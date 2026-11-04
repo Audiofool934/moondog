@@ -1010,12 +1010,7 @@ function renderConversation({ redraw = false } = {}) {
       // A message's images sit above its words, as they were attached.
       if (turn.role === "user" && turn.images?.length) {
         const pictures = make("div", "you-images");
-        for (const image of turn.images) {
-          const picture = make("img");
-          picture.alt = image.name ?? "";
-          picture.src = image.url;
-          pictures.append(picture);
-        }
+        for (const image of turn.images) pictures.append(imageButton(image, "you-image"));
         node.append(pictures);
       }
       if (turn.role === "user" && turn.text) node.append(make("p", "", turn.text));
@@ -1173,14 +1168,47 @@ async function attachImages(files) {
   renderComposer();
   input.focus();
 }
+// A picture that opens at full size over the window; a click anywhere or Escape closes it.
+function imageButton(image, className) {
+  const button = make("button", className);
+  button.type = "button";
+  const picture = make("img");
+  picture.alt = image.name ?? "";
+  picture.src = image.url;
+  button.append(picture);
+  name(button, t("viewImage"));
+  button.addEventListener("click", () => showImage(image));
+  return button;
+}
+let imageOpener = null;
+function showImage(image) {
+  const box = $("lightbox");
+  const picture = box.querySelector("img");
+  picture.src = image.url;
+  picture.alt = image.name ?? "";
+  imageOpener = document.activeElement;
+  box.hidden = false;
+}
+function closeImage() {
+  const box = $("lightbox");
+  if (box.hidden) return false;
+  box.hidden = true;
+  box.querySelector("img").removeAttribute("src");
+  imageOpener?.focus?.();
+  imageOpener = null;
+  return true;
+}
+$("lightbox").addEventListener("click", () => closeImage());
+// Escape closes the picture first, before it could stop a reply or close anything behind it.
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && closeImage()) { event.preventDefault(); event.stopImmediatePropagation(); }
+}, true);
 function renderAttachments() {
   const tray = $("attachments");
   tray.hidden = !attachments.length;
   tray.replaceChildren(...attachments.map((image, index) => {
     const item = make("div", "attachment");
-    const picture = make("img");
-    picture.alt = image.name;
-    picture.src = image.url;
+    const picture = imageButton(image, "attachment-open");
     const remove = make("button", "tool attachment-remove");
     remove.type = "button";
     remove.append(icon("close"));
