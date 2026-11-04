@@ -2,6 +2,7 @@
 // time, or split one above the other with a grip between them. A view's tab or header drags: dropped on the upper or
 // lower part of the sidebar it splits there, dropped on the tab row or the middle they stack as tabs again. The
 // header's menu does the same without a drag. The layout is kept. A core without a library shows conversations alone.
+import { icon, make } from "./ui.mjs";
 
 const VIEW_DRAG = "application/x-moondog-view";
 const VIEWS = ["conversations", "library"];
@@ -44,7 +45,11 @@ export function createSidebarViews({ root, store, t, menu, onShow }) {
       sections[view].hidden = !showing;
       sections[view].style.order = String(layout.order.indexOf(view) * 2);
       heads[view].hidden = !split;
-      if (heads[view].textContent !== label(view)) heads[view].textContent = label(view);
+      // Split, a header carries its tab's icon before its name, so the two forms read as one.
+      if (heads[view].dataset.label !== label(view)) {
+        heads[view].dataset.label = label(view);
+        heads[view].replaceChildren(icon(view === "library" ? "library" : "chat"), make("span", "view-name", label(view)));
+      }
       const tab = tabButtons[view];
       tab.setAttribute("aria-selected", String(!split && layout.active === view));
       tab.setAttribute("aria-label", label(view));
@@ -70,13 +75,18 @@ export function createSidebarViews({ root, store, t, menu, onShow }) {
 
   // ── Dragging a view ───────────────────────────────────────────────────────────────────────
   let dragging = null;
+  // Split, either header stacks the views as tabs, as the tab row does when they are tabs.
   const zoneOf = (event) => {
     if (tabs.contains(event.target)) return "tabs";
+    if (VIEWS.some((view) => heads[view].contains(event.target))) return "tabs";
     const box = area.getBoundingClientRect();
     const at = (event.clientY - box.top) / Math.max(1, box.height);
     return at < 0.35 ? "top" : at > 0.65 ? "bottom" : "tabs";
   };
-  const mark = (zone) => { for (const name of ["top", "bottom", "tabs"]) root.classList.toggle(`view-drop-${name}`, zone === name); };
+  const mark = (zone, target = null) => {
+    for (const name of ["top", "bottom", "tabs"]) root.classList.toggle(`view-drop-${name}`, zone === name);
+    for (const view of VIEWS) heads[view].classList.toggle("drop-target", zone === "tabs" && Boolean(target) && heads[view].contains(target));
+  };
   for (const view of VIEWS) {
     for (const handle of [tabButtons[view], heads[view]]) {
       handle.draggable = true;
@@ -114,7 +124,7 @@ export function createSidebarViews({ root, store, t, menu, onShow }) {
     if (!dragging || !event.dataTransfer.types.includes(VIEW_DRAG)) return;
     event.preventDefault();
     event.dataTransfer.dropEffect = "move";
-    mark(zoneOf(event));
+    mark(zoneOf(event), event.target);
   });
   root.addEventListener("dragleave", (event) => { if (dragging && !root.contains(event.relatedTarget)) mark(null); });
   root.addEventListener("drop", (event) => {

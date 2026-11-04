@@ -52,7 +52,8 @@ const settings = createSettings({ state, send, t: tr,
 // The one-time first run asks for a music service, then a model, in the Settings sheet (first-run.mjs).
 const firstRun = createFirstRun({ settings, send, read: () => ({ run: state.firstRun, modelReady: state.model?.state === "configured" }) });
 const sidebar = createSidebar({ root: $("sessions"), state, send, t: tr, open: (id) => openSession(id), store, menuPoint: (event) => menuPoint(event) });
-const library = createLibrary({ root: $("library"), state, send, t: tr, open: (id) => openPlaylist(id), store, menuPoint: (event) => menuPoint(event) });
+const library = createLibrary({ root: $("library"), state, send, t: tr, open: (id) => openPlaylist(id), store, menuPoint: (event) => menuPoint(event),
+  outerAdd: $("view-add") });
 const shelf = createShelf({ root: $("shelf"), state, send, t: tr, menuPoint: (event) => menuPoint(event), onClose: () => closePlaylist() });
 const tips = tooltips();
 // A native menu opens at the pointer, or under its control when the keyboard pressed it.
@@ -126,12 +127,21 @@ function renderTitle() {
 const views = createSidebarViews({ root: $("sidebar"), store, t: tr, menu: (items, event) => menu(items, event), onShow: (view) => {
   // Back to the conversations as the one tab is back to the conversation, so a playlist open in the room closes.
   if (view === "conversations" && views?.layout.mode === "tabs" && state.shelf) closePlaylist();
+  syncLibraryAdd();
   if (views?.showing("library")) library.render();
 } });
+// Stacked as tabs, the library's new button is a + at the tab row's end, there only while the library shows; split,
+// it is the bar above the library's list.
+function syncLibraryAdd() {
+  const tabs = views?.layout.mode === "tabs";
+  library.setCompact(tabs);
+  $("view-add").hidden = !(tabs && state.libraryReady === true && views.layout.active === "library");
+}
 function renderSidebarMode() {
   // A core without a library (the project page's scene) shows only the conversations.
   views.setEnabled(state.libraryReady === true);
   views.render();
+  syncLibraryAdd();
   if (views.showing("library")) library.render();
 }
 // ⌥⌘L and the palette: the library's view, with the sidebar shown if it was folded away.
