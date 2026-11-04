@@ -63,6 +63,11 @@ test("a NetEase playlist reads every song, in its order, when the playlist answe
   // A private one says so, with a kind the window can name.
   const closed = async () => new Response(JSON.stringify({ code: 200, playlist: { id: 5, name: "Mine", privacy: 10, trackIds: [] } }));
   await assert.rejects(readPublicPlaylistLink({ url: "https://music.163.com/#/playlist?id=5" }, { fetchImpl: closed }), { code: "playlist_unavailable" });
+  // A service that answers with an error status is an unavailable playlist, not a bad link, though its words mention the link.
+  const failing = async () => new Response("{}", { status: 500 });
+  await assert.rejects(readPublicPlaylistLink({ url: "https://music.163.com/#/playlist?id=5" }, { fetchImpl: failing }), { code: "playlist_unavailable" });
+  // A song link is a link the library can't read.
+  await assert.rejects(readPublicPlaylistLink({ url: "https://music.163.com/#/song?id=5" }, { fetchImpl: failing }), { code: "playlist_link_unsupported" });
 });
 
 test("a Spotify playlist imports as a copy; one the listener made shapes their taste unless they say no", async () => {
