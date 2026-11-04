@@ -74,7 +74,19 @@ function menuPoint(event) {
   }
   return event ? { x: event.clientX, y: event.clientY } : undefined;
 }
-const menu = (items, event) => window.moondogApp?.showMenu?.(items, menuPoint(event));
+// A menu that is a control's own, such as a split header's switcher, opens as a native pop-up button does: over the
+// control, its current choice set on the control's words. The menu's text sits past its check column, so the menu
+// starts that far before the words. Any other menu opens at the pointer, or under its control from the keyboard.
+const MENU_TEXT_INSET = 21;
+const MENU_ROW = 22;
+function menuAt(event, anchor) {
+  const words = anchor?.element;
+  if (!words?.getBoundingClientRect) return menuPoint(event);
+  const box = words.getBoundingClientRect();
+  return { x: box.left - MENU_TEXT_INSET, y: box.top + box.height / 2 - MENU_ROW / 2,
+    ...(Number.isInteger(anchor.selected) && anchor.selected >= 0 ? { positioningItem: anchor.selected } : {}) };
+}
+const menu = (items, event, anchor) => window.moondogApp?.showMenu?.(items, menuAt(event, anchor));
 
 // Words
 function applyLanguage(next) {
@@ -133,7 +145,7 @@ function renderTitle() {
 }
 // The sidebar's views, conversations and the library, as tabs or split (views.mjs). The bar's own switch only shows
 // and hides the sidebar; which view shows is the sidebar's business, so the two never fight.
-const views = createSidebarViews({ root: $("sidebar"), store, t: tr, menu: (items, event) => menu(items, event), onShow: (view) => {
+const views = createSidebarViews({ root: $("sidebar"), store, t: tr, menu: (items, event, anchor) => menu(items, event, anchor), onShow: (view) => {
   // Back to the conversations as the one tab is back to the conversation, so a playlist open in the room closes.
   if (view === "conversations" && views?.layout.mode === "tabs" && state.shelf) closePlaylist();
   if (views?.showing("library")) library.render();

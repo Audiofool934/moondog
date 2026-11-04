@@ -91,10 +91,12 @@ app.whenReady().then(async () => {
       ...(item.checked !== undefined ? { type: "checkbox", checked: item.checked === true } : {}),
       ...(Array.isArray(item.submenu) ? { submenu: template(item.submenu, choose) } : { click: () => choose(item.id) }),
     });
-    ipcMain.handle("harness-menu", (_event, { items, x, y }) => new Promise((resolve) => {
+    ipcMain.handle("harness-menu", (_event, { items, x, y, positioningItem }) => new Promise((resolve) => {
       let chosen = null;
-      const menu = Menu.buildFromTemplate(template(Array.isArray(items) ? items : [], (id) => { chosen = id; resolve(id); }));
+      const list = Array.isArray(items) ? items : [];
+      const menu = Menu.buildFromTemplate(template(list, (id) => { chosen = id; resolve(id); }));
       menu.popup({ window, ...(Number.isFinite(x) && Number.isFinite(y) ? { x: Math.round(x), y: Math.round(y) } : {}),
+        ...(Number.isInteger(positioningItem) && positioningItem >= 0 && positioningItem < list.length ? { positioningItem } : {}),
         callback: () => setTimeout(() => resolve(chosen), 50) });
     }));
     await load();

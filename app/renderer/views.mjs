@@ -209,11 +209,13 @@ export function createSidebarViews({ root, store, t, menu, onShow, onAdd = () =>
       if (chosen === "split") arrange({ mode: "split", order: slots().includes(view) || available().length < 3 ? layout.order : place(view, "bottom"), active: view });
       return;
     }
+    // It opens as the header's own pop-up, the view there set over the header's name.
+    const choices = available();
     const chosen = await menu([
-      ...available().map((each) => ({ id: `view:${each}`, label: label(each), checked: each === view })),
+      ...choices.map((each) => ({ id: `view:${each}`, label: label(each), checked: each === view })),
       { type: "separator" },
       { id: "tabs", label: t()("viewsAsTabs") },
-    ], event);
+    ], event, { element: heads[view].querySelector(".view-name"), selected: choices.indexOf(view) });
     if (chosen === "tabs") { arrange({ mode: "tabs", active: view }); return; }
     const next = typeof chosen === "string" && chosen.startsWith("view:") ? chosen.slice(5) : null;
     if (!next || next === view || !enabled[next]) return;
