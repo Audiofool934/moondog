@@ -8,7 +8,7 @@ import { Arch, build, Platform } from "electron-builder";
 import { buildMusicHelper, MUSIC_USAGE } from "./native/build.mjs";
 import { builderSigningIdentity, command, digestFile, ELECTRON_DATA_SIGN_IGNORE, parseReleaseJson, phase, readJson, retryTimestampSigning, saveJson, signingIdentity, SIGNING_TEAM, RELEASE_REPO } from "./release-tools.mjs";
 import { assertProvenance, finalizeArtifacts, inspectApp, releaseNames, verifyArtifacts } from "./release-artifacts.mjs";
-import { notarizeFile, prepareDmgUpload } from "./release-notary.mjs";
+import { notarizeFile, notaryAuth, prepareDmgUpload } from "./release-notary.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(here, "..");
@@ -30,7 +30,9 @@ const output = path.join(release, notarize ? "apps.noindex" : "qa.noindex", vers
 const app = path.join(output, "mac-arm64", "Moondog.app");
 const work = path.join(here, "build"), room = path.join(work, "room");
 const names = releaseNames(version), receiptFile = path.join(state, "build.json");
-const profile = process.env.MOONDOG_NOTARY_PROFILE ?? process.env.APPLE_NOTARY_PROFILE ?? "mac-mini-notary";
+// An App Store Connect API key when one is set (release-notary.mjs notaryAuth), else the Keychain profile.
+const credentials = notarize ? notaryAuth() : null;
+if (credentials) console.log(`Notarizing with the ${credentials.kind === "api-key" ? "App Store Connect API key" : "Keychain profile"}.`);
 let receipt = notarize ? await readJson(receiptFile, true) : null;
 if (receipt) assertProvenance(receipt, provenance);
 if (receipt?.phase === "ready") {
@@ -113,7 +115,7 @@ if (["signed", "stapled"].includes(receipt.phase)) {
     }
     const archived = await readJson(path.join(state, "app-archive.json"));
     if ((await digestFile(upload)).sha256 !== archived.sha256) throw new Error("The saved app upload archive changed.");
-    await notarizeFile({ file: upload, receiptFile: path.join(state, "app-notary.json"), profile });
+    await notarizeFile({ file: upload, receiptFile: path.join(state, "app-notary.json"), credentials });
     await phase("Staple and verify the app", async () => {
       await command("xcrun", ["stapler", "staple", app], { live: true });
       await inspectApp(app, receipt);
@@ -144,7 +146,7 @@ if (receipt.phase === "packaged") {
 const stapled = await command("xcrun", ["stapler", "validate", dmg]).then(() => true, () => false);
 if (!stapled) {
   const upload = await prepareDmgUpload({ file: dmg, receipt, receiptFile });
-  await notarizeFile({ file: upload, receiptFile: path.join(state, "dmg-notary.json"), profile });
+  await notarizeFile({ file: upload, receiptFile: path.join(state, "dmg-notary.json"), credentials });
   await phase("Staple the DMG", () => command("xcrun", ["stapler", "staple", dmg], { live: true }));
 }
 await phase("Verify the exact ZIP and DMG and record their hashes", () => finalizeArtifacts(release, { ...provenance, appCdHash: receipt.appCdHash }, receipt.createdAt));
