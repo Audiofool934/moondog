@@ -13,6 +13,7 @@ import { createSidebar } from "./sidebar.mjs";
 import { createLibrary } from "./library.mjs";
 import { createShelf } from "./shelf.mjs";
 import { createSidebarViews } from "./views.mjs";
+import { discButton } from "./disc.mjs";
 import { icon, make, marquee, name, scrollbar, setIcon, tooltips } from "./ui.mjs";
 import "./style.css";
 
@@ -47,6 +48,8 @@ let port = null;
 const outbox = [];
 const send = (message) => (port ? port.postMessage(message) : outbox.push(message));
 const previews = createPreviews({ send, onChange: () => renderInspector() });
+// The composer's send button is a record button (disc.mjs), as the playlist's play button is.
+const sendDisc = discButton($("send"), { size: 26, glyph: "send" });
 const settings = createSettings({ state, send, t: tr,
   appleMusic: { status: () => previews.fullStatus(), check: (command) => previews.check(command) }, onHide: () => firstRun.update() });
 // The one-time first run asks for a music service, then a model, in the Settings sheet (first-run.mjs).
@@ -1123,7 +1126,9 @@ function renderComposer() {
   const streaming = Boolean(state.streaming);
   button.disabled = !streaming && (!input.value.trim() || Boolean(state.waiting && !state.ready));
   name(button, streaming ? t("stop") : t("send"), streaming ? "⌘." : "↩");
-  setIcon(button, streaming ? "stop" : "up");
+  setIcon(button, streaming ? "stop" : "send");
+  // While Moondog writes its reply, the send button's glints turn, as the record's do while music plays.
+  sendDisc.setTurning(streaming);
   renderPicks();
   syncMenu();
 }
@@ -1634,6 +1639,7 @@ const songKey = (now) => `${now.title}\u0000${now.generated ? "moondog" : (now.a
 function renderInspector() {
   const now = nowPlaying();
   renderOnAir();
+  shelf.syncPlaying(now);
   const art = $("art");
   showCover(art, now?.image ?? null, "cover");
   showCover($("ambient"), now?.image ?? null, "glow");

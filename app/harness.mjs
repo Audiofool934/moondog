@@ -111,8 +111,8 @@ app.whenReady().then(async () => {
         .catch((error) => { process.stderr.write(`[harness] ${entry}: ${error.message}\n`); return { skip: true }; });
       if (actions?.skip) continue;
       if (actions?.hover) {
-        // The page draws a state on its next frame; the pointer aims once it has.
-        await wait(250);
+        // The page draws a state on its next frame; the pointer aims once it has, or later when the state says so.
+        await wait(actions.hoverAfter ?? 250);
         const point = await window.webContents.executeJavaScript(`(() => { const r = document.querySelector(${JSON.stringify(actions.hover)})?.getBoundingClientRect();
           return r ? { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) } : null; })()`);
         if (point) window.webContents.sendInputEvent({ type: "mouseMove", ...point });
