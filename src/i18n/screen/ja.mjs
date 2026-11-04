@@ -714,6 +714,7 @@ export default {
   "Full report above. /taste opens the profile.": "完全なレポートは上にあります。/taste でプロフィールを開けます。",
   "Web lookups aren't available when Moondog is started this way.": "この起動方法では Web 検索を使えません。",
   "Model roles aren't available when Moondog is started this way.": "この起動方法ではモデルの用途を設定できません。",
+  "Looking at the attached images... Ctrl+C cancels.": "添付の画像を見ています... Ctrl+C で取り消します。",
   "/home doesn't take anything after it.": "/home のあとには何も付けません。",
   "Say anything, or press Tab to look around.": "なんでも話しかけてください。Tab で見て回ることもできます。",
   "Use /theme, or /theme paper, charcoal, terminal, or auto.": "/theme、または /theme paper、charcoal、terminal、auto を使ってください。",

@@ -14,6 +14,7 @@ import { spotifyErrorReason } from "../../integrations/spotify/web-api-client.mj
 import { appleMusicStorefront } from "../../integrations/apple-music/storefront.mjs";
 import { formatWebSources } from "../../surfaces/cli/web-command.mjs";
 import { chooseConversationName } from "./conversation-name.mjs";
+import { prepareImageInput } from "./image-input.mjs";
 import { withArgumentRepair } from "./tool-arguments.mjs";
 import { restateInLanguage } from "./reply-language.mjs";
 import { chooseRecordName, RECORD_NAME_RULES } from "./record-name.mjs";
@@ -7671,8 +7672,11 @@ export class PiAgentRuntime {
   };
 
   constructor({ application, models, model, provider, modelId, effort, effortLevels, thinkingLevel, modelFetch, modelRetryDelay, toolTrace = null,
-    nameConversations = false, clock = () => new Date() }) {
+    nameConversations = false, clock = () => new Date(), visionChoice = null }) {
     this.application = application;
+    // The vision model chosen in Settings, read at each message with images, so a change there
+    // needs no new agent; null leaves images to the chat model.
+    this.visionChoice = typeof visionChoice === "function" ? visionChoice : null;
     // The command passes a local trace of tool calls; tests and other hosts leave it out.
     this.toolTrace = toolTrace;
     this.clock = clock;
@@ -8129,6 +8133,28 @@ export class PiAgentRuntime {
       throw Object.assign(new Error("Moondog is answering in this conversation in another window or terminal."), { code: "conversation_busy" });
     }
     if ((this.application?.latestConversationEntryId?.() ?? null) !== this.syncedEntryId) this.restoreSession();
+    // Attached images become text the conversation keeps, and, for a chat model that sees, the
+    // images themselves. A vision model's description can take a few seconds, so the prompt counts
+    // as running from here; Ctrl+C stops it.
+    let nativeImages = [];
+    if (callbacks.images?.length) {
+      this.promptInFlight = true;
+      this.imageAbort = new AbortController();
+      try {
+        const visionChoice = await Promise.resolve(this.visionChoice?.()).catch(() => null);
+        callbacks.onImagesStart?.({ count: callbacks.images.length, vision: Boolean(visionChoice) });
+        const prepared = await prepareImageInput({ text, images: callbacks.images, models: this.models, model: this.model,
+          visionChoice, signal: this.imageAbort.signal });
+        text = prepared.text;
+        nativeImages = prepared.images;
+        callbacks.onImagesReady?.({ mode: prepared.mode, text, ...(prepared.vision ? { vision: prepared.vision } : {}) });
+      } catch (error) {
+        this.promptInFlight = false;
+        throw error;
+      } finally {
+        this.imageAbort = null;
+      }
+    }
     // What the listener sees of the reply is saved as it grows, so the other one shows it too.
     const host = callbacks;
     let shownText = "";
@@ -8544,7 +8570,8 @@ export class PiAgentRuntime {
         }
       });
 
-      await this.agent.prompt(text);
+      if (nativeImages.length) await this.agent.prompt(text, nativeImages);
+      else await this.agent.prompt(text);
       // One bounded continuation keeps an explicit queue request from stopping
       // at a plan/empty adjacency result or a redundant confirmation. It cannot
       // grant new authority, retry a write, or outlive cancellation.
@@ -8797,6 +8824,8 @@ To confirm, reply: ${preview.confirmation}`].join("\n\n");
   }
 
   abort() {
+    // A vision model may still be describing the message's images.
+    this.imageAbort?.abort();
     if (this.activePromptState) {
       this.activePromptState.abortRequested = true;
       this.activePromptState.restatement?.abort();

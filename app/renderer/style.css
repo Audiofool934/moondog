@@ -389,6 +389,10 @@ img { -webkit-user-drag: none; }
 
 .turn { margin: 0 0 30px; }
 .you { position: relative; display: flex; justify-content: flex-end; margin: 0 0 30px; }
+/* A message with images shows them above its words, on the same right edge. */
+.you:has(.you-images) { flex-direction: column; align-items: flex-end; gap: 6px; }
+.you-images { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; max-width: 78%; }
+.you-images img { max-width: 180px; max-height: 180px; border-radius: var(--r-4) var(--r-4) var(--r-1) var(--r-4); box-shadow: var(--glass-edge); display: block; }
 /* Copy, Edit on your own messages and Branch on replies sit just under a message while the pointer is
    on it. They take no room of their own, so the conversation never shifts when they appear. */
 .message-tools { position: absolute; top: 100%; display: flex; gap: 2px; margin-top: 2px; opacity: 0;
@@ -478,6 +482,15 @@ img { -webkit-user-drag: none; }
 
 /* ── The composer ─────────────────────────────────────────────────────────────────────────── */
 .composer { position: relative; flex: none; padding: 4px 44px 18px; }
+/* Images waiting for the next message sit just above the field, each with a way to take it off. */
+.attachments { max-width: var(--column); margin: 0 auto 8px; display: flex; flex-wrap: wrap; gap: 8px; }
+.attachments[hidden] { display: none; }
+.attachment { position: relative; width: 64px; height: 64px; border-radius: var(--r-3); overflow: hidden; background: var(--glass); box-shadow: var(--glass-edge); }
+.attachment img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.attachment-remove { position: absolute; top: 3px; right: 3px; width: 20px; height: 20px; border-radius: 50%; color: #fff; background: rgb(0 0 0 / 0.55);
+  opacity: 0; transition: opacity var(--quick) var(--soft); }
+.attachment-remove .icon { width: 12px; height: 12px; }
+.attachment:hover .attachment-remove, .attachment-remove:focus-visible { opacity: 1; transition: none; }
 .field { position: relative; max-width: var(--column); margin: 0 auto; display: flex; align-items: flex-end; gap: 4px; padding: 8px 8px 8px 16px;
   border-radius: var(--r-4); background: var(--glass); box-shadow: var(--glass-edge); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
   transition: box-shadow 160ms var(--soft); }

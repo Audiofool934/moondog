@@ -1003,11 +1003,22 @@ function renderConversation({ redraw = false } = {}) {
   if (opened) { column.replaceChildren(); nodes = []; drawnAsks = null; chosen = null; rest(); }
   renderEmpty(!state.turns.length);
   state.turns.forEach((turn, index) => {
-    const key = turn.role === "user" ? `u|${turn.text}` : `a|${turn.id ?? index}|${turn.local ? "l" : ""}`;
+    const key = turn.role === "user" ? `u|${turn.text}|${turn.images?.length ?? 0}` : `a|${turn.id ?? index}|${turn.local ? "l" : ""}`;
     let entry = nodes[index];
     if (!entry || entry.key !== key) {
       const node = turn.role === "user" ? make("div", "you") : make("div", "turn reply");
-      if (turn.role === "user") node.append(make("p", "", turn.text));
+      // A message's images sit above its words, as they were attached.
+      if (turn.role === "user" && turn.images?.length) {
+        const pictures = make("div", "you-images");
+        for (const image of turn.images) {
+          const picture = make("img");
+          picture.alt = image.name ?? "";
+          picture.src = image.url;
+          pictures.append(picture);
+        }
+        node.append(pictures);
+      }
+      if (turn.role === "user" && turn.text) node.append(make("p", "", turn.text));
       // Only what just arrived moves; a conversation opened or redrawn stays still.
       if (!opened) node.classList.add("arrive");
       if (entry) entry.node.replaceWith(node); else column.append(node);
@@ -1118,10 +1129,76 @@ function syncMenu() {
   window.moondogApp?.setPlayback?.({ controllable: Boolean(now) && !now.making, streaming: Boolean(state.streaming),
     onAir: { available: onAirAvailable(), on: Boolean(state.onAir) } });
 }
+// ── Images on the next message ──
+// Pasted or dropped images wait above the composer and go with the next message. The core routes
+// them to a model that sees, or to the vision model chosen in Settings (Auxiliary models). Large ones
+// are scaled down here first, so a phone screenshot or a camera photo stays a reasonable request.
+const IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
+const IMAGE_LIMIT = 4;
+const IMAGE_SIDE = 2048;
+const IMAGE_KEEP_BYTES = 1_500_000;
+let attachments = [];
+const dataOf = (blob) => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.addEventListener("load", () => resolve(String(reader.result).split(",")[1] ?? ""), { once: true });
+  reader.addEventListener("error", () => reject(reader.error), { once: true });
+  reader.readAsDataURL(blob);
+});
+async function readImage(file) {
+  let blob = file;
+  let mimeType = file.type;
+  // A GIF may move, so it goes as it is; a large still is drawn again at most 2048 pixels on its long side.
+  if (mimeType !== "image/gif") {
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, IMAGE_SIDE / Math.max(bitmap.width, bitmap.height));
+    if (scale < 1 || file.size > IMAGE_KEEP_BYTES) {
+      const canvas = new OffscreenCanvas(Math.round(bitmap.width * scale), Math.round(bitmap.height * scale));
+      canvas.getContext("2d").drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      blob = await canvas.convertToBlob({ type: "image/jpeg", quality: 0.88 });
+      mimeType = "image/jpeg";
+    }
+    bitmap.close();
+  }
+  const data = await dataOf(blob);
+  // The window's content policy shows data: images, not blob: ones.
+  return { data, mimeType, name: file.name || t("image"), url: `data:${mimeType};base64,${data}` };
+}
+async function attachImages(files) {
+  const images = [...files].filter((file) => IMAGE_TYPES.has(file.type));
+  for (const file of images) {
+    if (attachments.length >= IMAGE_LIMIT) { notice(t("noticeImageLimit", { count: IMAGE_LIMIT })); break; }
+    try { attachments.push(await readImage(file)); } catch { notice(t("noticeImageUnreadable")); }
+  }
+  renderAttachments();
+  renderComposer();
+  input.focus();
+}
+function renderAttachments() {
+  const tray = $("attachments");
+  tray.hidden = !attachments.length;
+  tray.replaceChildren(...attachments.map((image, index) => {
+    const item = make("div", "attachment");
+    const picture = make("img");
+    picture.alt = image.name;
+    picture.src = image.url;
+    const remove = make("button", "tool attachment-remove");
+    remove.type = "button";
+    remove.append(icon("close"));
+    name(remove, t("removeImage"));
+    remove.addEventListener("click", () => {
+      attachments = attachments.filter((_, kept) => kept !== index);
+      renderAttachments();
+      renderComposer();
+      input.focus();
+    });
+    item.append(picture, remove);
+    return item;
+  }));
+}
 function renderComposer() {
   const button = $("send");
   const streaming = Boolean(state.streaming);
-  button.disabled = !streaming && (!input.value.trim() || Boolean(state.waiting && !state.ready));
+  button.disabled = !streaming && ((!input.value.trim() && !attachments.length) || Boolean(state.waiting && !state.ready));
   name(button, streaming ? t("stop") : t("send"), streaming ? "⌘." : "↩");
   setIcon(button, streaming ? "stop" : "up");
   renderPicks();
@@ -1170,42 +1247,56 @@ function renderPicks() {
 // The composer grows with its words up to 40% of the window (field-sizing in style.css), then scrolls.
 function clearComposer() {
   input.value = "";
+  // The sent message's bubble keeps its own copy of each picture.
+  attachments = [];
+  renderAttachments();
 }
-function submitText(text) {
+// A message's images as the core takes them, and as its bubble shows them.
+const imagesFor = (images) => (images.length ? { images: images.map(({ url, name: label }) => ({ url, name: label })),
+  attachments: images } : {});
+function submitText(text, images = []) {
   // A message typed while the core starts waits for it, shown as sent; more stay in the composer.
+  // Images wait in the composer until the core is ready.
   if (!state.ready) {
-    if (state.waiting) return false;
+    if (state.waiting || images.length) return false;
     state.waiting = text;
     state.turns.push({ role: "user", text, waiting: true });
     renderConversation();
     return true;
   }
   if (state.model?.state !== "configured") {
-    state.turns.push({ role: "user", text }, { role: "assistant", text: t("offline"), failed: true, offline: true, local: true });
+    state.turns.push({ role: "user", text, ...imagesFor(images) }, { role: "assistant", text: t("offline"), failed: true, offline: true, local: true });
     renderConversation();
     return true;
   }
   // A message sent while a playlist is open brings the conversation back to show the reply.
   if (state.shelf) closePlaylist();
   // The words show at once; the core's start of the turn adopts them.
-  state.turns.push({ role: "user", text, pending: true });
+  state.turns.push({ role: "user", text, pending: true, ...imagesFor(images) });
   renderConversation();
-  send({ type: "prompt", text });
+  send({ type: "prompt", text, ...(images.length ? { images: images.map(({ data, mimeType, name: label }) => ({ data, mimeType, name: label })) } : {}) });
   return true;
 }
 function submit() {
   if (state.streaming) { send({ type: "cancel" }); return; }
   const text = input.value.trim();
-  if (!text) return;
+  if (!text && !attachments.length) return;
   // A mistyped command stays in the composer instead of going to Moondog as a message.
   const command = text.match(/^\/([A-Za-z]+)$/u)?.[1];
   if (command && !COMMANDS.some((entry) => entry.name === command.toLowerCase())) { notice(t("unknownCommand", { name: command })); return; }
   rest();
-  if (submitText(text)) clearComposer();
+  if (submitText(text, attachments)) clearComposer();
   renderComposer();
 }
 $("form").addEventListener("submit", (event) => { event.preventDefault(); submit(); });
 input.addEventListener("input", () => renderComposer());
+// A pasted image waits above the composer; words pasted with it still go into the composer.
+input.addEventListener("paste", (event) => {
+  const files = [...(event.clipboardData?.files ?? [])].filter((file) => IMAGE_TYPES.has(file.type));
+  if (!files.length) return;
+  if (!event.clipboardData.types.includes("text/plain")) event.preventDefault();
+  void attachImages(files);
+});
 input.addEventListener("keydown", (event) => {
   // Enter sends; while a reply runs it does nothing, so a typed follow-up waits instead of stopping the reply.
   if (event.key === "Enter" && !event.shiftKey && !event.isComposing && event.keyCode !== 229) { event.preventDefault(); if (!state.streaming) submit(); }
@@ -2009,9 +2100,16 @@ marquee($("sessions"), ".row, .folder-head", {
 marquee($("now"), ".song h2, .song p", { tail: () => 16 });
 
 // A music history file dropped anywhere goes to import, which shows what it read before saving.
+// Images go with the next message instead, and the hint says which will happen.
 let dragDepth = 0;
 const hasFiles = (event) => [...(event.dataTransfer?.types ?? [])].includes("Files");
-window.addEventListener("dragenter", (event) => { if (!hasFiles(event)) return; dragDepth += 1; $("drop").hidden = false; });
+const onlyImages = (list) => list.length > 0 && [...list].every((entry) => IMAGE_TYPES.has(entry.type));
+window.addEventListener("dragenter", (event) => {
+  if (!hasFiles(event)) return;
+  dragDepth += 1;
+  $("drop-hint").textContent = t(onlyImages(event.dataTransfer.items ?? []) ? "dropToAttach" : "dropToImport");
+  $("drop").hidden = false;
+});
 window.addEventListener("dragleave", (event) => { if (!hasFiles(event)) return; dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) $("drop").hidden = true; });
 window.addEventListener("dragover", (event) => { if (hasFiles(event)) event.preventDefault(); });
 window.addEventListener("drop", (event) => {
@@ -2019,6 +2117,7 @@ window.addEventListener("drop", (event) => {
   event.preventDefault();
   dragDepth = 0;
   $("drop").hidden = true;
+  if (onlyImages(event.dataTransfer.files)) { void attachImages(event.dataTransfer.files); return; }
   const file = event.dataTransfer.files[0];
   const path = file ? window.moondogApp?.pathForFile?.(file) : null;
   if (path) { send({ type: "import-file", path }); settings.show("library"); }
@@ -2117,6 +2216,8 @@ function receive({ data }) {
       const [turn] = state.turns.splice(pending, 1);
       renderConversation();
       if (!input.value.trim()) { input.value = turn.text; renderComposer(); }
+      // Its images go back above the composer too.
+      if (turn.attachments?.length && !attachments.length) { attachments = turn.attachments; renderAttachments(); renderComposer(); }
     }
     if (data.message) console.warn(`[moondog] ${data.code}: ${data.message}`);
     // A refused switch leaves the open conversation marked as open.
@@ -2191,8 +2292,10 @@ function receive({ data }) {
       if (cue) cue.seen = true;
       if (onAirAsk) onAirAsk.seen = true;
       const pending = state.turns.findLastIndex((turn) => turn.pending && turn.text === data.text);
-      if (pending >= 0) state.turns.splice(pending, 1);
-      state.turns.push({ role: "user", text: data.text }, { role: "assistant", id: data.id, text: "", activity: [], streaming: true });
+      // The bubble keeps the images the listener attached.
+      const [sent] = pending >= 0 ? state.turns.splice(pending, 1) : [];
+      state.turns.push({ role: "user", text: data.text, ...(sent?.images ? { images: sent.images } : {}) },
+        { role: "assistant", id: data.id, text: "", activity: [], streaming: true });
     } else {
       const turn = streamingTurn(data.id);
       if (turn) {

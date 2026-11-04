@@ -2,6 +2,7 @@ import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 
 import { PiAgentRuntime } from "./agent-runtime.mjs";
 import { createPiAuthContext } from "./authentication.mjs";
+import { readModelRoles } from "./model-roles.mjs";
 import { getPublicPiModelCatalog } from "./public-model-catalog.mjs";
 import { createPersistentCredentialStore } from "./persistent-credential-store.mjs";
 import { clampEffort, EFFORT_LEVELS, readPiRuntimeSelection } from "./runtime-settings.mjs";
@@ -110,5 +111,7 @@ export async function createConfiguredRuntime(
     effortLevels: getSupportedThinkingLevels(model),
     thinkingLevel: effort ? clampEffort(model, effort) : undefined,
     ...(toolTrace ? { toolTrace } : {}),
+    // Read at each message with images: the vision model from Settings, or null for the chat model.
+    visionChoice: async () => (await readModelRoles(environment).catch(() => ({}))).vision ?? null,
   });
 }

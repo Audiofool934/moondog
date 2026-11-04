@@ -46,7 +46,8 @@ const maximumUnpackedBytes = 5_210_000;
 // The listener's library store adds one entry and about 20 KB (2026-11-03).
 // Reading playlist links into the library adds one entry and about 6 KB (2026-11-04).
 // Model roles and the terminal's /model roles command add two entries and about 9 KB (2026-11-04).
-const maximumEntries = 170;
+// Image input, routed to a model that sees or the vision model, adds one entry and about 8 KB (2026-11-04).
+const maximumEntries = 171;
 const packageOnlyPrivateSentinelPattern = new RegExp(
   ["PRIVATE", "(?:IP|PLATFORM)", "SENTINEL"].join("_"),
   "u",

@@ -714,6 +714,7 @@ export default {
   "Full report above. /taste opens the profile.": "完整报告在上面。/taste 打开资料。",
   "Web lookups aren't available when Moondog is started this way.": "这种启动方式不支持网页查询。",
   "Model roles aren't available when Moondog is started this way.": "这种启动方式不支持设置模型用途。",
+  "Looking at the attached images... Ctrl+C cancels.": "正在看附上的图片…… Ctrl+C 取消。",
   "/home doesn't take anything after it.": "/home 后面不需要加内容。",
   "Say anything, or press Tab to look around.": "随便说点什么，或按 Tab 四处看看。",
   "Use /theme, or /theme paper, charcoal, terminal, or auto.": "使用 /theme，或 /theme paper、charcoal、terminal 或 auto。",

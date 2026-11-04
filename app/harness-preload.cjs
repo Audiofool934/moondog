@@ -368,6 +368,28 @@ const ON_AIR = [{ role: "user", text: "Go on air: make new music for right now a
 const played = (index) => [{ action: "playback.resume", state: "accepted", targets: [{ title: TRACKS[index].title, artist_credit: TRACKS[index].artists.join(", ") }] }];
 const conversation = (pairs) => pairs.flatMap(([user, reply], index) => [{ role: "user", text: user, entry: `e${index}` },
   { role: "assistant", id: `t${index}`, text: reply, entry: `e${index}`, receipts: index === 0 ? played(0) : [] }]);
+// Pastes made-up record sleeves into the composer, one per label, through a real paste event.
+async function pasteImages(labels) {
+  const transfer = new DataTransfer();
+  for (const [index, label] of labels.entries()) {
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = 480;
+    const context = canvas.getContext("2d");
+    const gradient = context.createLinearGradient(0, 0, 480, 480);
+    gradient.addColorStop(0, ["#c9653f", "#3f6fc9"][index % 2]);
+    gradient.addColorStop(1, ["#2b1d3a", "#1d3a2b"][index % 2]);
+    context.fillStyle = gradient;
+    context.fillRect(0, 0, 480, 480);
+    context.fillStyle = "rgba(255,255,255,0.9)";
+    context.font = "600 64px -apple-system, sans-serif";
+    context.fillText(label, 40, 420);
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+    transfer.items.add(new File([blob], `${label.toLowerCase()}.png`, { type: "image/png" }));
+  }
+  const input = document.querySelector("[data-input]");
+  input.focus();
+  input.dispatchEvent(new ClipboardEvent("paste", { clipboardData: transfer, bubbles: true, cancelable: true }));
+}
 // Opens a settings section the way a listener can: a slash command typed into the composer.
 function slash(command) {
   const input = document.querySelector("[data-input]");
@@ -572,6 +594,20 @@ const STATES = {
   "settings-model-openai"() {
     STATES.reply(); slash("model");
     setTimeout(() => document.querySelector('[data-key="provider:openai"]')?.click(), 200);
+  },
+  // Images pasted into the composer, as a listener would, waiting above it for the next message.
+  "composer-images"() { STATES.reply(); setTimeout(() => void pasteImages(["LP", "Live"]), 200); },
+  // A message sent with an image: the picture sits above its words in the bubble, and the reply streams.
+  "reply-image"() {
+    STATES.reply();
+    setTimeout(async () => {
+      await pasteImages(["LP"]);
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      const field = document.querySelector("[data-input]");
+      field.value = "What record is this?";
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+      field.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    }, 200);
   },
   // Auxiliary models, open to vision and to web search: auto first, then the models or services it can pick.
   "settings-model-vision"() {

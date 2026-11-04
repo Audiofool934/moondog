@@ -578,9 +578,10 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     sendStatus();
   }
 
-  async function prompt(text) {
+  // Images come as {data, mimeType, name}; the agent checks them and routes them to a model that sees.
+  async function prompt(text, images = []) {
     const slot = current;
-    if (typeof text !== "string" || !text.trim()) return;
+    if (typeof text !== "string" || (!text.trim() && !images.length)) return;
     // A second message cannot start while the first is in a turn or waiting to start. The window
     // put the text back in the composer; dropping it here would lose it.
     if (slot.turn || slot.waiting) return send({ type: "notice", code: "message_busy", text });
@@ -622,6 +623,10 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     }) ?? (() => {});
     try {
       const result = await slot.runtime.prompt(text, {
+        ...(images.length ? { images } : {}),
+        // The conversation keeps the words with each image's stand-in or description, so the saved
+        // turn matches this live one by that text.
+        onImagesReady: ({ text: kept }) => { if (slot.live) slot.live.user = kept; },
         onTextDelta: (delta) => { if (slot.live) slot.live.text += delta; send({ type: "text", session, id, delta }); },
         onTextReplace: (replacement) => { if (slot.live) slot.live.text = replacement; send({ type: "text", session, id, replace: replacement }); },
         onModelRetry: ({ attempt, maxRetries }) => send({ type: "retry", session, id, attempt, maxRetries }),
@@ -1122,7 +1127,7 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
   const idsOf = (data) => (Array.isArray(data.ids) ? data.ids : [data.id ?? ""]).map(String);
   const handlers = {
     ...libraryHandlers,
-    prompt: (data) => prompt(String(data.text ?? "")),
+    prompt: (data) => prompt(String(data.text ?? ""), Array.isArray(data.images) ? data.images.slice(0, 8) : []),
     cancel: () => { if (current.turn) current.runtime.abort?.(); },
     new: () => openSession(null),
     open: (data) => openSession(String(data.id ?? "")),

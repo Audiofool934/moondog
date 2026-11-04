@@ -25,6 +25,7 @@ import { serviceKeyProviders, supportedAuthProviderIds } from "../../runtime/pi/
 import { EFFORT_LEVELS, EFFORT_SCALE } from "../../runtime/pi/runtime-settings.mjs";
 import { runtimeBehindSelection } from "../../runtime/pi/runtime-selection.mjs";
 import { MODEL_ROLE_WORDS } from "./model-roles-command.mjs";
+import { imagesFromText } from "../../runtime/pi/image-input.mjs";
 import {
   formatLocalResult,
   helpText,
@@ -2836,8 +2837,12 @@ export async function runMoondogTui({
     };
 
     try {
+      // An image path in the message goes with it, as Hermes Agent's terminal does; the words stay.
+      const images = await imagesFromText(value);
+      if (images.length) setFooter(tr("Looking at the attached images... Ctrl+C cancels."));
       const result = await activeRuntime.prompt(value, {
         ...(profileSeed ? { profileSeed } : {}),
+        ...(images.length ? { images } : {}),
         onTextDelta: (delta) => {
           if (cleanedUp) return;
           work.quiet();
