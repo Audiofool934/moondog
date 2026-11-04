@@ -394,7 +394,7 @@ img { -webkit-user-drag: none; }
 .you-images { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; max-width: 78%; }
 /* An image opens at full size over the window, on the same scrim as Settings; a click or Escape closes it. */
 .you-image, .attachment-open { display: block; padding: 0; border: 0; background: none; cursor: zoom-in; border-radius: var(--r-4); }
-.attachment-open { width: 100%; height: 100%; border-radius: 0; }
+.attachment-open { width: 100%; height: 100%; border-radius: inherit; overflow: hidden; }
 .lightbox { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; padding: 48px; background: var(--scrim);
   -webkit-backdrop-filter: blur(8px) saturate(1.1); backdrop-filter: blur(8px) saturate(1.1); -webkit-app-region: no-drag; cursor: zoom-out; }
 .lightbox[hidden] { display: none; }
@@ -489,14 +489,15 @@ img { -webkit-user-drag: none; }
 
 /* ── The composer ─────────────────────────────────────────────────────────────────────────── */
 .composer { position: relative; flex: none; padding: 4px 44px 18px; }
-/* Images waiting for the next message sit just above the field, each with a way to take it off. */
-.attachments { max-width: var(--column); margin: 0 auto 8px; display: flex; flex-wrap: wrap; gap: 8px; }
+/* Images waiting for the next message sit just above the field, their left edge where its words begin.
+   Each takes off with a mark just outside its top right corner, shown while the pointer is on it. */
+.attachments { max-width: var(--column); margin: 0 auto 8px; padding: 8px 16px 0; display: flex; flex-wrap: wrap; gap: 14px; }
 .attachments[hidden] { display: none; }
-.attachment { position: relative; width: 64px; height: 64px; border-radius: var(--r-3); overflow: hidden; background: var(--glass); box-shadow: var(--glass-edge); }
+.attachment { position: relative; width: 64px; height: 64px; border-radius: var(--r-3); background: var(--glass); box-shadow: var(--glass-edge); }
 .attachment img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.attachment-remove { position: absolute; top: 3px; right: 3px; width: 20px; height: 20px; border-radius: 50%; color: #fff; background: rgb(0 0 0 / 0.55);
-  opacity: 0; transition: opacity var(--quick) var(--soft); }
-.attachment-remove .icon { width: 12px; height: 12px; }
+.attachment-remove { position: absolute; top: -7px; right: -7px; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 50%; display: grid; place-items: center;
+  color: var(--canvas); background: var(--text); box-shadow: 0 0 0 2px var(--canvas); cursor: pointer; opacity: 0; transition: opacity var(--quick) var(--soft); }
+.attachment-remove .icon { width: 11px; height: 11px; stroke-width: 2.2; }
 .attachment:hover .attachment-remove, .attachment-remove:focus-visible { opacity: 1; transition: none; }
 .field { position: relative; max-width: var(--column); margin: 0 auto; display: flex; align-items: flex-end; gap: 4px; padding: 8px 8px 8px 16px;
   border-radius: var(--r-4); background: var(--glass); box-shadow: var(--glass-edge); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);

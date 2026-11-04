@@ -1209,7 +1209,7 @@ function renderAttachments() {
   tray.replaceChildren(...attachments.map((image, index) => {
     const item = make("div", "attachment");
     const picture = imageButton(image, "attachment-open");
-    const remove = make("button", "tool attachment-remove");
+    const remove = make("button", "attachment-remove");
     remove.type = "button";
     remove.append(icon("close"));
     name(remove, t("removeImage"));
