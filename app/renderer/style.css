@@ -194,6 +194,7 @@ img { -webkit-user-drag: none; }
 .view-head { flex: none; margin: 4px 10px 0; padding: 4px 10px; border-radius: var(--r-2); font-size: var(--t-caption); font-weight: 600; color: var(--text-3);
   letter-spacing: 0.01em; cursor: default; user-select: none; }
 .view-head:hover { color: var(--text-2); }
+.view-head:focus-visible { outline: none; color: var(--text); background: var(--hover); }
 .view-grip { flex: none; height: 9px; cursor: row-resize; position: relative; }
 .view-grip::after { content: ""; position: absolute; left: 20px; right: 20px; top: 4px; height: 1px; background: transparent; transition: background-color var(--quick) var(--soft); }
 .view-grip:hover::after, .view-grip.dragging::after { background: var(--line-2); transition-delay: 80ms; }

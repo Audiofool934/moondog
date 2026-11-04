@@ -97,6 +97,18 @@ export function createSidebarViews({ root, store, t, menu, onShow }) {
     tabButtons[view].addEventListener("contextmenu", (event) => { event.preventDefault(); void viewMenu(view, event); });
     heads[view].addEventListener("contextmenu", (event) => { event.preventDefault(); void viewMenu(view, event); });
     heads[view].addEventListener("click", () => show(view));
+    // Split, a header is the only control for its arrangement, so the keyboard reaches it as it reaches a tab.
+    heads[view].tabIndex = 0;
+    heads[view].setAttribute("role", "button");
+    heads[view].addEventListener("keydown", (event) => {
+      if (event.key === "ContextMenu" || (event.key === "F10" && event.shiftKey)) { event.preventDefault(); void viewMenu(view, event); }
+    });
+    // Split, the view the listener works in is the active one, so ⌥⌘L and the palette act where they are.
+    sections[view].addEventListener("focusin", () => {
+      if (layout.mode !== "split" || layout.active === view) return;
+      layout.active = view;
+      save();
+    });
   }
   root.addEventListener("dragover", (event) => {
     if (!dragging || !event.dataTransfer.types.includes(VIEW_DRAG)) return;
