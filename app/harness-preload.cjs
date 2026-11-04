@@ -20,8 +20,12 @@ class FakeAudio extends EventTarget {
   removeAttribute(name) { if (name === "src") this.src = ""; }
 }
 window.Audio = FakeAudio;
-// The real preload's bridge, minus what needs the main process: menus and dialogs answer "nothing".
-window.moondogApp = { pathForFile: () => null, onCommand() {}, setLanguage() {}, setBusy() {}, setPlayback() {}, showMenu: async () => null,
+// The real preload's bridge, minus what needs the main process: dialogs answer "nothing", and so do menus, except in
+// a window shown to try by hand, where harness.mjs opens real ones.
+const { ipcRenderer } = require("electron");
+const handsOn = process.env.MOONDOG_HARNESS_SHOW === "1";
+window.moondogApp = { pathForFile: () => null, onCommand() {}, setLanguage() {}, setBusy() {}, setPlayback() {},
+  showMenu: handsOn ? (items, at) => ipcRenderer.invoke("harness-menu", { items, ...(at ?? {}) }) : async () => null,
   confirm: async () => false, ask: async () => ({ confirmed: false, checked: false }), chooseFile: async () => null, version: async () => "0.2.0-beta.1" };
 // A newer Moondog, as the main process reports one; the states below push it.
 const updateListeners = [];
