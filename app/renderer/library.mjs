@@ -25,7 +25,9 @@ export function coverUrl(cover) {
   return cover?.artwork_url ?? null;
 }
 
-export function createLibrary({ root, state, send, t, open, store, menuPoint }) {
+export function createLibrary({ root, state, send, t, open, store, menuPoint, outerAdd = null }) {
+  // Whether the new button is the tab row's + (stacked as tabs) rather than the bar above the list (split).
+  let compact = false;
   const collapsed = new Set(JSON.parse(store.get("moondog.library.collapsed") ?? "[]"));
   const rows = new Map();
   const heads = new Map();
@@ -359,6 +361,7 @@ export function createLibrary({ root, state, send, t, open, store, menuPoint }) 
   addBar.dataset.tipAt = "below";
   addBar.append(icon("plus"));
   addBar.addEventListener("click", (event) => void newMenu(event));
+  outerAdd?.addEventListener("click", (event) => void newMenu(event));
   // A playlist link being read: the bar breathes until the window has asked about it.
   let importing = false;
   // A link dropped on the list is read as one pasted into the import field.
@@ -380,10 +383,13 @@ export function createLibrary({ root, state, send, t, open, store, menuPoint }) 
   }
   function render() {
     const saved = library().playlists.find((playlist) => playlist.saved);
-    const wanted = [addBar];
-    addBar.setAttribute("aria-label", importing ? t()("readingPlaylist") : t()("libraryNew"));
-    addBar.dataset.tip = importing ? t()("readingPlaylist") : t()("libraryNew");
-    addBar.classList.toggle("busy", importing);
+    // Stacked as tabs, the new button is the + at the tab row's end (outerAdd); split, the bar heads the list.
+    const wanted = compact ? [] : [addBar];
+    for (const button of [addBar, outerAdd].filter(Boolean)) {
+      button.setAttribute("aria-label", importing ? t()("readingPlaylist") : t()("libraryNew"));
+      button.dataset.tip = importing ? t()("readingPlaylist") : t()("libraryNew");
+      button.classList.toggle("busy", importing);
+    }
     if (saved) wanted.push(rowFor(saved, 0));
     if (naming && !naming.id && naming.parentId === null) wanted.push(newField(null, 0));
     wanted.push(...nodes(null, 0), tail);
@@ -399,5 +405,6 @@ export function createLibrary({ root, state, send, t, open, store, menuPoint }) 
     void newMenu(event);
   });
 
-  return { render: refresh, newMenu, startNew, importDone() { importing = false; render(); } };
+  return { render: refresh, newMenu, startNew, importDone() { importing = false; render(); },
+    setCompact(value) { if (compact !== value) { compact = value; render(); } } };
 }

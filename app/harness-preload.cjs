@@ -433,7 +433,12 @@ const STATES = {
   },
   "first-run-netease"() { STATES["first-run"](undefined, { netease: "ready" }); },
   // The library in the sidebar's place, a playlist open in the room, Saved, and a playlist with nothing in it yet.
-  library() { STATES.reply(); setTimeout(() => document.querySelector('[data-view-tab="library"]').click(), 120); },
+  // The library's tab shows once the core has sent the library; the click waits for it.
+  library() {
+    STATES.reply();
+    const click = () => { const tab = document.querySelector('[data-view-tab="library"]'); if (tab && !tab.hidden) tab.click(); else setTimeout(click, 30); };
+    setTimeout(click, 60);
+  },
   // The library dragged by its tab to the lower part of the sidebar: conversations above, the library below.
   "library-split"() {
     STATES.reply();
