@@ -130,7 +130,7 @@ A model or music service chosen there lasts until the app quits, and sign-in and
   A model or a sign-in saved in an open terminal reaches the window within a few seconds, and the other way round; a reply that is running keeps its model until it ends.
 - Import: choose a Spotify, Apple Music, ListenBrainz or Last.fm export, read recent Spotify listening, read a Last.fm account (the window asks for a Last.fm API key the first time), or drop a file anywhere on the window.
   The preview uses the terminal's words, nothing is saved until you add it, and the updated profile then shows in the conversation.
-- Taste (`/taste`, `/profile`, or `⌥⌘T` from the View menu) opens what Moondog's profile says about you in the room, in the conversation's place, as a playlist opens.
+- Your taste, the first row of the library view above Saved (or `/taste`, `/profile`, or `⌥⌘T` from the View menu), opens what Moondog's profile says about you in the room, in the conversation's place, as a playlist opens.
   The core builds it with the terminal's own `/taste` view, so both show the same artists and tracks in the same words.
   At the top: plays, hours, the history it covers and how many choices you've made, with Full report, which posts the whole report in the conversation.
   Then your history pressed as a record, in the record's own dots: one spiral groove from the rim to the label, a turn a year, a quarter, a month or a week, whichever gives between four and fourteen turns, so a short history is a small single and a long one an album.

@@ -740,7 +740,7 @@ export class MoondogApplication {
       found = { provider: "spotify", id: parsed.id, url: parsed.url, name: playlist.name || "Spotify playlist", total: playlist.tracks_total, owned: playlist.owned,
         tracks: playlist.tracks.map((track) => { const credit = track.artists.join(", "); return { id: track.uri, title: track.name, artist: credit,
           ...(track.album ? { album: track.album } : {}), ...(track.isrc ? { isrc: track.isrc } : {}),
-          refs: { spotify_uri: track.uri, spotify_title: track.name, spotify_credit: credit } }; }) };
+          refs: { spotify_uri: track.uri, spotify_title: track.name, spotify_credit: credit, ...(track.image ? { artwork_url: track.image } : {}) } }; }) };
     } else if (parsed.provider === "apple_music") {
       const playlist = await readApplePlaylist(parsed, { signal });
       // A playlist a listener shared has a pl.u- id; the others are Apple's own.
@@ -748,7 +748,8 @@ export class MoondogApplication {
         tracks: playlist.tracks.map((track) => ({ id: track.id, title: track.title, artist: track.artist, refs: { apple_music_id: track.id, ...(track.artwork ? { artwork_url: track.artwork } : {}) } })) };
     } else {
       const playlist = await readPublicPlaylistLink(parsed);
-      found = { ...playlist, owned: null, tracks: playlist.tracks.map((track) => ({ ...track, ...(playlist.provider === "netease" ? { refs: { netease_id: String(track.id) } } : {}) })) };
+      found = { ...playlist, owned: null, tracks: playlist.tracks.map(({ artwork, ...track }) => ({ ...track,
+        refs: { ...(playlist.provider === "netease" ? { netease_id: String(track.id) } : {}), ...(artwork ? { artwork_url: artwork } : {}) } })) };
     }
     signal?.throwIfAborted();
     // A library playlist holds up to 2,000 songs; a longer one comes in from its start, and total says how long it is.

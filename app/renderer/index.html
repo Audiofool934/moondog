@@ -26,6 +26,8 @@
     <symbol id="i-more" viewBox="0 0 16 16"><circle cx="3.5" cy="8" r="1" fill="currentColor" stroke="none"/><circle cx="8" cy="8" r="1" fill="currentColor" stroke="none"/><circle cx="12.5" cy="8" r="1" fill="currentColor" stroke="none"/></symbol>
     <symbol id="i-folder" viewBox="0 0 16 16"><path d="M2 4.6c0-.8.6-1.4 1.4-1.4h2.8l1.5 1.6h4.9c.8 0 1.4.6 1.4 1.4v5.6c0 .8-.6 1.4-1.4 1.4H3.4c-.8 0-1.4-.6-1.4-1.4z"/></symbol>
     <symbol id="i-chevron" viewBox="0 0 16 16"><path d="M6 4l4 4-4 4"/></symbol>
+    <!-- Conversations: a speech balloon, for the sidebar's conversations view. -->
+    <symbol id="i-chat" viewBox="0 0 16 16"><path d="M3.25 3.25h9.5a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H7.5l-2.75 2.25v-2.25h-1.5a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1z"/></symbol>
     <!-- The library: records standing on a shelf, the newest leaning out. -->
     <symbol id="i-library" viewBox="0 0 16 16"><path d="M3 2.75v10.5M6 2.75v10.5"/><path d="M8.6 3.4l2.5-.6 2.6 10.2-2.5.6z"/><path d="M2 13.25h12"/></symbol>
     <!-- Saved: a heart; filled once the song is kept. -->
@@ -80,8 +82,6 @@
       <div class="bar-title"><button type="button" class="bar-record" data-bar-record data-tip-at="below" tabindex="-1"></button></div>
       <div class="bar-start">
         <button type="button" class="tool" data-toggle-sidebar data-tip-at="below"><svg class="icon"><use href="#i-sidebar"/></svg></button>
-        <button type="button" class="tool" data-toggle-library data-tip-at="below" aria-pressed="false" hidden><svg class="icon"><use href="#i-library"/></svg></button>
-        <button type="button" class="tool" data-toggle-taste data-tip-at="below" aria-pressed="false"><svg class="icon"><use href="#i-record"/></svg></button>
         <button type="button" class="tool" data-new data-tip-at="below"><svg class="icon"><use href="#i-compose"/></svg></button>
         <span class="bar-name" data-title></span>
       </div>
@@ -99,7 +99,16 @@
     </header>
 
     <aside class="sidebar" data-sidebar>
-      <div class="frame"><nav class="sessions" data-sessions></nav><nav class="sessions library" data-library hidden></nav></div>
+      <div class="view-tabs" data-view-tabs role="tablist" hidden>
+        <button type="button" class="tool view-tab" role="tab" data-view-tab="conversations" data-tip-at="below"><svg class="icon"><use href="#i-chat"/></svg></button>
+        <button type="button" class="tool view-tab" role="tab" data-view-tab="library" data-tip-at="below"><svg class="icon"><use href="#i-library"/></svg></button>
+        <button type="button" class="tool view-add" data-view-add data-tip-at="below" hidden><svg class="icon"><use href="#i-plus"/></svg></button>
+      </div>
+      <div class="views" data-views>
+        <section class="view" data-view="conversations"><h2 class="view-head" data-view-head="conversations" hidden></h2><div class="frame"><nav class="sessions" data-sessions></nav></div></section>
+        <div class="view-grip" data-view-grip hidden></div>
+        <section class="view" data-view="library" hidden><h2 class="view-head" data-view-head="library" hidden></h2><div class="frame"><nav class="sessions library" data-library></nav></div></section>
+      </div>
       <button type="button" class="link-button connect-line" data-connect hidden></button>
     </aside>
 

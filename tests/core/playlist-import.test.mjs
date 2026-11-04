@@ -44,13 +44,39 @@ test("an Apple Music playlist page gives its name, its total and each song once,
   await assert.rejects(readApplePlaylist(link, { fetchImpl: respond("<html></html>") }), { code: "playlist_unavailable" });
 });
 
+test("a NetEase playlist reads every song, in its order, when the playlist answer details only the first", async () => {
+  const song = (id, name) => ({ id, name, artists: [{ name: "求导乐队" }], album: { name: "圈中乐园", picUrl: `http://p2.music.126.net/${id}.jpg` } });
+  const asked = [];
+  const fetchImpl = async (url) => {
+    asked.push(new URL(url).pathname);
+    if (url.includes("/api/v6/playlist/detail")) return new Response(JSON.stringify({ code: 200, playlist: { id: 1983017976, name: "Audiofool喜欢的音乐", privacy: 0, trackCount: 3,
+      trackIds: [{ id: 11 }, { id: 12 }, { id: 13 }], tracks: [song(11, "First")] } }));
+    // song/detail answers in its own order; the playlist's order is restored.
+    if (url.includes("/api/song/detail")) return new Response(JSON.stringify({ code: 200, songs: [song(13, "Third"), song(12, "Second")] }));
+    return new Response("{}", { status: 404 });
+  };
+  const { readPublicPlaylistLink } = await import("../../src/integrations/playlist-links.mjs");
+  const playlist = await readPublicPlaylistLink({ url: "https://music.163.com/#/playlist?id=1983017976" }, { fetchImpl });
+  assert.deepEqual([playlist.name, playlist.total, playlist.tracks.map((track) => track.title)], ["Audiofool喜欢的音乐", 3, ["First", "Second", "Third"]]);
+  assert.equal(playlist.tracks[1].artwork, "https://p2.music.126.net/12.jpg");
+  assert.deepEqual(asked, ["/api/v6/playlist/detail", "/api/song/detail/"]);
+  // A private one says so, with a kind the window can name.
+  const closed = async () => new Response(JSON.stringify({ code: 200, playlist: { id: 5, name: "Mine", privacy: 10, trackIds: [] } }));
+  await assert.rejects(readPublicPlaylistLink({ url: "https://music.163.com/#/playlist?id=5" }, { fetchImpl: closed }), { code: "playlist_unavailable" });
+  // A service that answers with an error status is an unavailable playlist, not a bad link, though its words mention the link.
+  const failing = async () => new Response("{}", { status: 500 });
+  await assert.rejects(readPublicPlaylistLink({ url: "https://music.163.com/#/playlist?id=5" }, { fetchImpl: failing }), { code: "playlist_unavailable" });
+  // A song link is a link the library can't read.
+  await assert.rejects(readPublicPlaylistLink({ url: "https://music.163.com/#/song?id=5" }, { fetchImpl: failing }), { code: "playlist_link_unsupported" });
+});
+
 test("a Spotify playlist imports as a copy; one the listener made shapes their taste unless they say no", async () => {
   const libraryStore = await openLibraryStore({ databasePath: ":memory:" });
   const tasted = [];
   const application = new MoondogApplication({ libraryStore, playlistTaste: async (found) => { tasted.push(found.id); return { state: "ready" }; } });
   const playlists = {
     mine: { name: "Night drive", owned: true, tracks_total: 2, tracks: [
-      { type: "track", uri: "spotify:track:a", name: "Pink Moon", artists: ["Nick Drake"], isrc: "GBAAA0000001" },
+      { type: "track", uri: "spotify:track:a", name: "Pink Moon", artists: ["Nick Drake"], isrc: "GBAAA0000001", image: "https://i.scdn.co/image/ab67616d0000b273aaaa" },
       { type: "track", uri: "spotify:track:b", name: "Road", artists: ["Nick Drake"] }] },
     theirs: { name: "Today's Top Hits", owned: false, tracks_total: 50, tracks: [{ type: "track", uri: "spotify:track:c", name: "Hit", artists: ["Star"] }] },
   };
@@ -63,6 +89,9 @@ test("a Spotify playlist imports as a copy; one the listener made shapes their t
   assert.deepEqual([mine.added, mine.taste], [2, "added"]);
   const kept = libraryStore.playlist(mine.playlist.id);
   assert.deepEqual([kept.origin, kept.source.url, kept.entries[0].refs.spotify_uri, kept.entries[0].isrc], ["spotify", "https://open.spotify.com/playlist/MINE00000000", "spotify:track:a", "GBAAA0000001"]);
+  // Each song keeps its album cover, so the playlist and its rows show it as an Apple Music import does.
+  assert.equal(kept.entries[0].refs.artwork_url, "https://i.scdn.co/image/ab67616d0000b273aaaa");
+  assert.deepEqual(libraryStore.view().playlists.find((playlist) => playlist.id === mine.playlist.id).cover, { artwork_url: "https://i.scdn.co/image/ab67616d0000b273aaaa" });
   // A preview imports once.
   await assert.rejects(application.importPlaylistLink({ token: preview.token }), { code: "playlist_preview_gone" });
 

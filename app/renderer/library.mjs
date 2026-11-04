@@ -25,7 +25,7 @@ export function coverUrl(cover) {
   return cover?.artwork_url ?? null;
 }
 
-export function createLibrary({ root, state, send, t, open, store, menuPoint }) {
+export function createLibrary({ root, state, send, t, open, openTaste = null, store, menuPoint, onBusy = () => {} }) {
   const collapsed = new Set(JSON.parse(store.get("moondog.library.collapsed") ?? "[]"));
   const rows = new Map();
   const heads = new Map();
@@ -143,7 +143,7 @@ export function createLibrary({ root, state, send, t, open, store, menuPoint }) 
       naming = null;
       field = null;
       // A link is read first; the window asks before the playlist is kept (renderer.mjs, library-import-preview).
-      if (value && kind === "import") { importing = true; send({ type: "library-import-preview", link: value, folderId: parentId }); }
+      if (value && kind === "import") { setImporting(true); send({ type: "library-import-preview", link: value, folderId: parentId }); }
       else if (value) send(kind === "folder" ? { type: "library-folder-save", name: value, parentId } : { type: "library-playlist-save", name: value, folderId: parentId });
       render();
     }, { folder: t()("newFolder"), import: t()("pastePlaylistLink") }[kind] ?? t()("newPlaylist"), depth);
@@ -352,15 +352,10 @@ export function createLibrary({ root, state, send, t, open, store, menuPoint }) 
     accepts.drop = (_kind, data) => moveNode(data, null);
     dropTarget(tail, accepts);
   }
-  // The library's own new button: a bar across the top of the list, a plus in its middle, that offers a
-  // playlist or a folder. The bar's new button stays the conversation's.
-  const addBar = make("button", "library-add");
-  addBar.type = "button";
-  addBar.dataset.tipAt = "below";
-  addBar.append(icon("plus"));
-  addBar.addEventListener("click", (event) => void newMenu(event));
-  // A playlist link being read: the bar breathes until the window has asked about it.
+  // The library's new button is its view's + (views.mjs), which opens newMenu. While a pasted playlist link is read,
+  // that + breathes (onBusy) until the window has asked about it.
   let importing = false;
+  const setImporting = (value) => { importing = value; onBusy(value); };
   // A link dropped on the list is read as one pasted into the import field.
   root.addEventListener("dragover", (event) => { if (!dragged(event) && event.dataTransfer.types.includes("text/uri-list")) event.preventDefault(); });
   root.addEventListener("drop", (event) => {
@@ -368,9 +363,8 @@ export function createLibrary({ root, state, send, t, open, store, menuPoint }) 
     const link = event.dataTransfer.getData("text/uri-list").split("\n").find((line) => line.startsWith("http"));
     if (!link) return;
     event.preventDefault();
-    importing = true;
+    setImporting(true);
     send({ type: "library-import-preview", link: link.trim(), folderId: null });
-    render();
   });
   let queued = 0;
   function refresh() {
@@ -378,12 +372,30 @@ export function createLibrary({ root, state, send, t, open, store, menuPoint }) 
     if (field && root.contains(document.activeElement)) return;
     if (!queued) queued = requestAnimationFrame(() => { queued = 0; render(); });
   }
+  // Your taste, first on the shelf: the record of your own listening, open in the room as a playlist opens.
+  const taste = (() => {
+    const item = make("div", "row taste-row");
+    const button = make("button", "open");
+    button.type = "button";
+    const thumb = make("span", "sleeve");
+    thumb.append(icon("record"));
+    const label = make("span", "name");
+    button.append(thumb, label);
+    item.append(button);
+    button.addEventListener("click", () => openTaste?.());
+    button.addEventListener("keydown", (event) => {
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); step(button, event.key === "ArrowDown" ? 1 : -1); }
+    });
+    return { item, label };
+  })();
   function render() {
     const saved = library().playlists.find((playlist) => playlist.saved);
-    const wanted = [addBar];
-    addBar.setAttribute("aria-label", importing ? t()("readingPlaylist") : t()("libraryNew"));
-    addBar.dataset.tip = importing ? t()("readingPlaylist") : t()("libraryNew");
-    addBar.classList.toggle("busy", importing);
+    const wanted = [];
+    if (openTaste) {
+      if (taste.label.textContent !== t()("tasteTitle")) taste.label.textContent = t()("tasteTitle");
+      if (state.taste) taste.item.setAttribute("aria-current", "true"); else taste.item.removeAttribute("aria-current");
+      wanted.push(taste.item);
+    }
     if (saved) wanted.push(rowFor(saved, 0));
     if (naming && !naming.id && naming.parentId === null) wanted.push(newField(null, 0));
     wanted.push(...nodes(null, 0), tail);
@@ -399,5 +411,5 @@ export function createLibrary({ root, state, send, t, open, store, menuPoint }) 
     void newMenu(event);
   });
 
-  return { render: refresh, newMenu, startNew, importDone() { importing = false; render(); } };
+  return { render: refresh, newMenu, startNew, importDone() { if (importing) setImporting(false); }, get importing() { return importing; } };
 }

@@ -90,7 +90,13 @@ export async function readApplePlaylist({ id, url }, { fetchImpl = fetch, signal
 
 /** A NetEase Music or QQ Music playlist through its public share link, as library songs. */
 export async function readPublicPlaylistLink({ url }, { fetchImpl = fetch } = {}) {
-  const playlist = await fetchPublicPlaylist({ input: url, fetchImpl });
+  // The public reader explains itself in words; the library's surfaces also need its kind, to say it in their language.
+  const playlist = await fetchPublicPlaylist({ input: url, fetchImpl }).catch((error) => {
+    // Only the link checks' own refusals are about the link; any answer the service gave is about the playlist.
+    const aboutLink = /^(Paste a QQ Music|Use a playlist link|Open this share link|This link belongs to another service)/u;
+    if (!error.code) error.code = /^Could not reach/u.test(error.message) ? "playlist_unreachable" : aboutLink.test(error.message) ? "playlist_link_unsupported" : "playlist_unavailable";
+    throw error;
+  });
   return { provider: playlist.provider, id: playlist.id, url: playlist.url, name: playlist.name, total: playlist.total,
-    tracks: playlist.rows.map((row) => ({ id: row.id, title: row.title, artist: row.artist, ...(row.album ? { album: row.album } : {}) })).filter((track) => track.artist) };
+    tracks: playlist.rows.map((row) => ({ id: row.id, title: row.title, artist: row.artist, ...(row.album ? { album: row.album } : {}), ...(row.artwork ? { artwork: row.artwork } : {}) })).filter((track) => track.artist) };
 }
