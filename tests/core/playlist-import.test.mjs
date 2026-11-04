@@ -50,7 +50,7 @@ test("a Spotify playlist imports as a copy; one the listener made shapes their t
   const application = new MoondogApplication({ libraryStore, playlistTaste: async (found) => { tasted.push(found.id); return { state: "ready" }; } });
   const playlists = {
     mine: { name: "Night drive", owned: true, tracks_total: 2, tracks: [
-      { type: "track", uri: "spotify:track:a", name: "Pink Moon", artists: ["Nick Drake"], isrc: "GBAAA0000001" },
+      { type: "track", uri: "spotify:track:a", name: "Pink Moon", artists: ["Nick Drake"], isrc: "GBAAA0000001", image: "https://i.scdn.co/image/ab67616d0000b273aaaa" },
       { type: "track", uri: "spotify:track:b", name: "Road", artists: ["Nick Drake"] }] },
     theirs: { name: "Today's Top Hits", owned: false, tracks_total: 50, tracks: [{ type: "track", uri: "spotify:track:c", name: "Hit", artists: ["Star"] }] },
   };
@@ -63,6 +63,9 @@ test("a Spotify playlist imports as a copy; one the listener made shapes their t
   assert.deepEqual([mine.added, mine.taste], [2, "added"]);
   const kept = libraryStore.playlist(mine.playlist.id);
   assert.deepEqual([kept.origin, kept.source.url, kept.entries[0].refs.spotify_uri, kept.entries[0].isrc], ["spotify", "https://open.spotify.com/playlist/MINE00000000", "spotify:track:a", "GBAAA0000001"]);
+  // Each song keeps its album cover, so the playlist and its rows show it as an Apple Music import does.
+  assert.equal(kept.entries[0].refs.artwork_url, "https://i.scdn.co/image/ab67616d0000b273aaaa");
+  assert.deepEqual(libraryStore.view().playlists.find((playlist) => playlist.id === mine.playlist.id).cover, { artwork_url: "https://i.scdn.co/image/ab67616d0000b273aaaa" });
   // A preview imports once.
   await assert.rejects(application.importPlaylistLink({ token: preview.token }), { code: "playlist_preview_gone" });
 

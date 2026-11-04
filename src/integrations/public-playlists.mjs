@@ -91,6 +91,8 @@ export async function fetchPublicPlaylist({ input, provider, fetchImpl = fetch }
       title: musicText(qq ? song.songname : song.name),
       artist: musicText(Array.isArray(artists) ? artists.map((artist) => musicText(artist?.name)).filter(Boolean).join(", ") : ""),
       album: musicText(qq ? song.albumname : (song.album ?? song.al)?.name),
+      // NetEase names each album cover on its own image host; it is shown over https.
+      ...(!qq && /^https?:\/\/p[0-9]+\.music\.126\.net\//u.test((song.album ?? song.al)?.picUrl ?? "") ? { artwork: (song.album ?? song.al).picUrl.replace(/^http:/u, "https:") } : {}),
       playlistId: identity.id, playlistName: name, position: index + 1, member: "public-playlist.json",
     };
   }).filter((row) => row.id && row.title);
