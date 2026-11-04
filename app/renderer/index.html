@@ -12,6 +12,10 @@
     <symbol id="i-panel" viewBox="0 0 16 16"><rect x="1.75" y="2.75" width="12.5" height="10.5" rx="2.25"/><path d="M10.25 3v10"/></symbol>
     <symbol id="i-compose" viewBox="0 0 16 16"><path d="M13.25 8.5v3.75a1.5 1.5 0 0 1-1.5 1.5h-8a1.5 1.5 0 0 1-1.5-1.5v-8a1.5 1.5 0 0 1 1.5-1.5H7.5"/><path d="M11.6 2.15a1.27 1.27 0 0 1 1.8 1.8L8.25 9.1l-2.35.6.6-2.35z"/></symbol>
     <symbol id="i-up" viewBox="0 0 16 16"><path d="M8 12.75v-9.5M4 7.1 8 3.1l4 4"/></symbol>
+    <!-- On the record buttons (.disc): the send arrow, short and even, and a play triangle with rounded corners set at
+         its optical centre (halfway between its centroid and its box), so it sits still on the label. -->
+    <symbol id="i-send" viewBox="0 0 16 16"><path d="M8 12.1V4.3M4.85 7.45 8 4.3l3.15 3.15"/></symbol>
+    <symbol id="i-play-disc" viewBox="0 0 24 24"><path d="M8.7 7.2v9.6c0 .62.67 1 1.2.68l7.7-4.8a.8.8 0 0 0 0-1.36L9.9 6.52a.8.8 0 0 0-1.2.68z"/></symbol>
     <symbol id="i-down" viewBox="0 0 16 16"><path d="M8 3.25v9.5M4 8.9l4 4 4-4"/></symbol>
     <symbol id="i-stop" viewBox="0 0 16 16"><rect x="4.5" y="4.5" width="7" height="7" rx="1.6" fill="currentColor" stroke="none"/></symbol>
     <symbol id="i-laptop" viewBox="0 0 16 16"><rect x="3" y="3.5" width="10" height="7" rx="1.2"/><path d="M1.5 12.75h13"/></symbol>
@@ -123,7 +127,7 @@
           <textarea rows="1" data-input spellcheck="true" autofocus></textarea>
           <button type="button" class="pick" data-service><svg class="icon fill"><use href="#i-spotify"/></svg><span></span></button>
           <button type="button" class="pick" data-model><svg class="icon fill"><use href="#i-model"/></svg><span></span></button>
-          <button type="submit" class="send" data-send disabled><svg class="icon"><use href="#i-up"/></svg></button>
+          <button type="submit" class="send disc" data-send disabled><svg class="icon"><use href="#i-send"/></svg></button>
         </form>
       </div>
     </main>

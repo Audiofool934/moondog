@@ -318,10 +318,11 @@ img { -webkit-user-drag: none; }
 .shelf-actions { display: flex; align-items: center; gap: 6px; margin-top: 16px; }
 .shelf-play { width: 36px; height: 36px; display: grid; place-items: center; flex: none; border-radius: 50%; background: var(--solid); color: var(--on-solid);
   transition: transform var(--quick) var(--soft), background-color var(--quick) var(--soft); }
-.shelf-play:hover { background: var(--text); transform: scale(1.04); transition: none; }
+.shelf-play:hover { background: var(--text); transition: none; }
 .shelf-play:active { transform: scale(0.97); }
 .shelf-play:disabled { opacity: 0.35; transform: none; pointer-events: none; }
-.shelf-play .icon { width: 16px; height: 16px; translate: 1px 0; }
+/* The triangle's own path sits it at its optical centre; nothing nudges it here. */
+.shelf-play .icon { width: 15px; height: 15px; }
 .shelf-tracks { list-style: none; margin-block: 0; padding: 0; display: grid; gap: 1px; min-height: 40px; }
 .shelf-row { position: relative; display: flex; align-items: center; border-radius: var(--r-2); outline: 0; transition: background-color var(--quick) var(--soft); }
 .shelf-row:hover { background: var(--hover); transition: none; }
@@ -501,11 +502,25 @@ img { -webkit-user-drag: none; }
 .pick.needed { padding: 0 9px; color: var(--text); background: var(--hover); font-weight: 500; }
 .pick.needed:hover { background: var(--press); }
 .pick[hidden] { display: none; }
-.send { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; flex: none; background: var(--solid); color: var(--on-solid);
+.send { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; flex: none; background: var(--solid); color: var(--on-solid);
   transition: background-color 140ms var(--soft), transform 90ms var(--soft); }
 .send:active { transform: scale(0.92); }
 .send:disabled { background: rgb(var(--ink-rgb) / 0.12); color: var(--surface); }
-.send .icon { width: 15px; height: 15px; stroke-width: 2; }
+.send .icon { width: 14px; height: 14px; stroke-width: 1.75; }
+
+/* A record button: the window's solid buttons that start music or a reply are small records. Faint grooves run
+   between a clean label and the rim, and on hover two glints turn round them, as the light does on the record
+   above the conversation. The glyph sits on the label. A disabled one is a blank disc. */
+.disc { position: relative; isolation: isolate; overflow: hidden; }
+.disc::before, .disc::after { content: ""; position: absolute; inset: 0; border-radius: 50%; pointer-events: none; z-index: -1;
+  -webkit-mask: radial-gradient(circle, transparent 0 46%, #000 47% 86%, transparent 87%); mask: radial-gradient(circle, transparent 0 46%, #000 47% 86%, transparent 87%); }
+.disc::before { background: repeating-radial-gradient(circle, transparent 0 0.85px, color-mix(in srgb, var(--on-solid) 11%, transparent) 0.85px 1.25px); }
+.disc::after { background: conic-gradient(from 200deg, transparent 0 6%, color-mix(in srgb, var(--on-solid) 22%, transparent) 11%, transparent 17% 50%,
+  color-mix(in srgb, var(--on-solid) 22%, transparent) 61%, transparent 67%); opacity: 0; transition: opacity var(--enter) var(--soft); }
+.disc:hover:not(:disabled)::after { opacity: 1; animation: disc-turn 3.2s linear infinite; }
+.disc:disabled::before, .disc:disabled::after { display: none; }
+@keyframes disc-turn { to { rotate: 1turn; } }
+@media (prefers-reduced-motion: reduce) { .disc:hover:not(:disabled)::after { animation: none; } }
 .jump { position: absolute; left: 50%; bottom: calc(100% + 8px); width: 32px; height: 32px; margin-left: -16px; border-radius: 50%; display: grid; place-items: center;
   background: var(--glass); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); color: var(--text-2); box-shadow: var(--glass-edge);
   z-index: 3; animation: pop var(--enter) var(--out) both; }

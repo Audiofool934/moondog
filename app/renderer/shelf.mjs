@@ -17,9 +17,9 @@ export function createShelf({ root, state, send, t, menuPoint, onClose }) {
   const title = make("h1", "shelf-name");
   const count = make("p", "shelf-count");
   const actions = make("div", "shelf-actions");
-  const play = make("button", "shelf-play");
+  const play = make("button", "shelf-play disc");
   play.type = "button";
-  play.append(icon("play", "icon fill"));
+  play.append(icon("play-disc", "icon fill"));
   const shuffle = make("button", "tool");
   shuffle.type = "button";
   shuffle.append(icon("shuffle"));

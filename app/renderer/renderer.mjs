@@ -410,7 +410,7 @@ function editMessage(node) {
     return control;
   };
   const cancel = button("close", t("cancel"), "esc");
-  const done = button("up", t("send"), "↩");
+  const done = button("send", t("send"), "↩");
   node.editing = true;
   node.classList.add("editing");
   words.hidden = true;
@@ -1126,7 +1126,7 @@ function renderComposer() {
   const streaming = Boolean(state.streaming);
   button.disabled = !streaming && (!input.value.trim() || Boolean(state.waiting && !state.ready));
   name(button, streaming ? t("stop") : t("send"), streaming ? "⌘." : "↩");
-  setIcon(button, streaming ? "stop" : "up");
+  setIcon(button, streaming ? "stop" : "send");
   renderPicks();
   syncMenu();
 }
