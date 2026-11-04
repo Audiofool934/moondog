@@ -51,6 +51,8 @@ export function discButton(button, { size, glyph, label = 0.32, fill = false }) 
   // The glyph keeps the icon's own drawing, sized to the label; setIcon still swaps it by its one <use>.
   const glyphSize = labelRadius * 1.2;
   const holder = shape("svg", { class: `icon disc-glyph${fill ? " fill" : ""}`, x: center - glyphSize / 2, y: center - glyphSize / 2, width: glyphSize, height: glyphSize }, svg);
+  // An inline size, because svg.icon's own 16px would otherwise win over the attributes.
+  holder.style.width = holder.style.height = `${glyphSize}px`;
   shape("use", { href: `#i-${glyph}` }, holder);
   button.replaceChildren(svg);
   button.classList.add("disc");
