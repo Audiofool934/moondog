@@ -919,7 +919,9 @@ export function createSpotifyService(options = {}) {
       const pageSize = SPOTIFY_SERVICE_LIMITS.playlistItemsPageMax;
       for (let offset = 0; offset < 2000; offset += pageSize) {
         const page = await client.getPlaylistItems({ playlistId: id, limit: pageSize, offset }, { signal });
-        tracks.push(...page.items.map((entry) => entry.item).filter((item) => item?.type === "track" && item.name && item.artists?.length));
+        // A local file on the owner's computer has no catalog song to play or name; it stays out.
+        tracks.push(...page.items.filter((entry) => entry.is_local !== true).map((entry) => entry.item)
+          .filter((item) => item?.type === "track" && item.name && item.artists?.length && /^spotify:track:/u.test(item.uri ?? "")));
         if (!page.has_more || !page.items.length) break;
       }
       const account = await client.getAccount({ signal }).catch((error) => (signal?.aborted ? Promise.reject(error) : null));

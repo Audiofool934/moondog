@@ -3,6 +3,18 @@ import test from "node:test";
 import { openLibraryStore } from "../../src/core/library-store.mjs";
 import { MoondogApplication } from "../../src/core/moondog-application.mjs";
 import { parsePlaylistLink, readApplePlaylist } from "../../src/integrations/playlist-links.mjs";
+import { createSpotifyService } from "../../src/integrations/spotify/service.mjs";
+
+test("a Spotify playlist reads its catalog songs and whether the listener owns it, leaving local files out", async () => {
+  const song = (id, name) => ({ is_local: false, item: { type: "track", uri: `spotify:track:${id}`, name, artists: ["Nick Drake"] } });
+  const client = {
+    getPlaylist: async () => ({ name: "Night drive", uri: "spotify:playlist:MINE00000000", owner_id: "me", tracks_total: 3 }),
+    getPlaylistItems: async () => ({ items: [song("a", "Pink Moon"), { is_local: true, item: { type: "track", uri: "spotify:local:x:y:z:1", name: "Demo", artists: ["Me"] } }, song("b", "Road")], has_more: false }),
+    getAccount: async () => ({ account_id: "me" }),
+  };
+  const read = await createSpotifyService({ client }).readPlaylist({ playlistId: "MINE00000000" });
+  assert.deepEqual([read.owned, read.tracks_total, read.tracks.map((track) => track.uri)], [true, 3, ["spotify:track:a", "spotify:track:b"]]);
+});
 
 test("playlist links are recognized by service, and anything else is refused", () => {
   assert.deepEqual(parsePlaylistLink("listen https://open.spotify.com/intl-de/playlist/37i9dQZF1DXcBWIGoYBM5M?si=abc"),

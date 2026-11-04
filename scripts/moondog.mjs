@@ -996,7 +996,9 @@ async function main() {
   const applicationOptions = ({ domainServices, domainServicesError, spotifyConnection, locale, playbackService }) => ({
     domainServices, domainServicesError, spotifyConnection, locale, playbackService, playbackSelection, languageSelection, modelSwitch,
     webResearch, memoryStore, musicCatalog, musicPreviewPlayer: previewPlayer, neteasePlayer, localGenerator, atmosphereStream, musicSimilarity, artistIdentityResolver,
-    spotifyTopArtists, musicApp, libraryStore, playlistTaste: addPlaylistToTaste,
+    spotifyTopArtists, musicApp, libraryStore,
+    // A playlist that shapes the taste reloads the profile services at once, so the evidence counts in this session.
+    playlistTaste: async (found) => { const receipt = await addPlaylistToTaste(found); replaceDomainServices(await loadDomainServices()); return receipt; },
   });
   const application = new MoondogApplication(applicationOptions({
     ...domainState, spotifyConnection, locale: await resolveListenerLocale(), playbackService,

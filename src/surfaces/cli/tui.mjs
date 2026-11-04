@@ -1104,6 +1104,8 @@ export async function runMoondogTui({
           : tr("It doesn't shape your taste; add taste after the link if it should.");
       addMoondogMessage(`${tr("Imported {name}.", { name: imported.playlist.name })} ${counted} ${taste}`);
       setFooter(tr("Imported {name}.", { name: imported.playlist.name }), success);
+      // A playlist that shapes the taste shows the profile it now reads, as any import into the profile does.
+      if (imported.taste === "added") await openProfile({ imported: true }).catch(() => {});
       return;
     }
     throw new Error(tr("Use /library, /library play <name>, /library save [playlist], or /library import <link>."));
