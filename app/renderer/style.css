@@ -323,6 +323,7 @@ img { -webkit-user-drag: none; }
 .taste-scroll { height: 100%; overflow-y: auto; scrollbar-width: none; overscroll-behavior: contain; padding: calc(var(--bar) + 26px) 44px 28px;
   mask-image: linear-gradient(to bottom, transparent 0, transparent calc(var(--bar) - 14px), #000 calc(var(--bar) + 14px), #000 calc(100% - 24px), transparent); }
 .taste-column { max-width: var(--column); margin-inline: auto; }
+.taste-scroll { container-type: inline-size; }
 .taste-head { margin-bottom: 30px; }
 .taste-title { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; }
 .taste-name { margin: 0; font-size: 24px; font-weight: 600; line-height: 1.25; letter-spacing: -0.015em; color: var(--text); }
@@ -363,6 +364,53 @@ img { -webkit-user-drag: none; }
 .taste-why .taste-limit { color: var(--text-3); }
 .taste-actions { display: flex; flex-wrap: wrap; gap: 2px; margin: 6px 0 0 -9px; }
 .taste-list + .taste-note { margin-top: 6px; }
+
+/* The record of the listener's history: wider than the words, up to the room's width, with its liner notes
+   beside it where the room has space and under it where it doesn't. */
+.pressing { --wide: min(960px, 100cqi); width: var(--wide); margin: 0 calc((100% - var(--wide)) / 2) 40px; display: grid; gap: 22px 36px; align-items: start; }
+.pressing[hidden] { display: none; }
+@container (min-width: 760px) { .pressing { grid-template-columns: minmax(0, 1fr) 300px; } .pressing-notes { position: sticky; top: 0; } }
+.pressing-deck { min-width: 0; display: grid; justify-items: center; }
+.pressing-range { justify-self: stretch; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 16px; min-height: 28px; }
+.pressing-crumbs, .pressing-presets { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; margin-inline-start: -8px; }
+.pressing-presets { margin-inline: 0 -8px; }
+.pressing-range button { height: 26px; padding: 0 8px; border-radius: var(--r-2); font-size: var(--t-small); font-weight: 500; color: var(--text-3); font-variant-numeric: tabular-nums;
+  transition: background-color var(--quick) var(--soft), color var(--quick) var(--soft); }
+.pressing-range button:hover { background: var(--hover); color: var(--text); transition: none; }
+.pressing-crumbs button[aria-current="true"] { color: var(--text); cursor: default; }
+.pressing-crumbs button[aria-current="true"]:hover { background: none; }
+.pressing-presets button[aria-pressed="true"] { background: var(--current); color: var(--text); }
+.pressing-crumbs .chev { font-size: var(--t-small); color: var(--text-4); }
+.pressing-platter { position: relative; }
+.pressing-platter canvas { display: block; touch-action: none; outline: 0; transition: opacity 240ms var(--out), scale 420ms var(--out); }
+.pressing-platter canvas.grab { cursor: grab; }
+.pressing-platter canvas.dragging { cursor: grabbing; }
+.pressing-platter canvas.pressing-out { opacity: 0; scale: 0.97; transition-duration: 140ms; }
+.pressing-label { position: absolute; translate: -50% -50%; text-align: center; pointer-events: none; font-variant-numeric: tabular-nums; }
+.pressing-label strong { display: block; font-size: var(--t-small); font-weight: 600; color: var(--text-2); white-space: nowrap; }
+.pressing-label span { display: block; margin-top: 18px; font-size: var(--t-caption); color: var(--text-4); white-space: nowrap; }
+.pressing-readout { min-height: 40px; text-align: center; font-variant-numeric: tabular-nums; }
+.pressing-readout strong { display: block; font-size: var(--t-ui); font-weight: 500; color: var(--text); }
+.pressing-readout span { font-size: var(--t-small); color: var(--text-3); }
+.pressing-hint { margin: 8px 0 0; max-width: 460px; font-size: var(--t-caption); line-height: 1.5; color: var(--text-4); text-align: center; text-wrap: balance; }
+.pressing-notes { min-width: 0; padding-top: 28px; }
+.pressing-notes .era { font-size: 26px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.15; color: var(--text); font-variant-numeric: tabular-nums; }
+.pressing-notes .era-sub { margin: 6px 0 0; font-size: var(--t-small); color: var(--text-3); font-variant-numeric: tabular-nums; }
+.pressing-notes .label { margin: 20px 0 8px; font-size: var(--t-small); font-weight: 600; color: var(--text-2); }
+.pressing-notes .song { margin: 0; font-family: var(--serif); font-size: var(--t-reply); line-height: 1.5; color: var(--text); }
+.pressing-notes .song span { display: block; font-family: var(--sans); font-size: var(--t-small); color: var(--text-3); }
+.pressing-notes .people { list-style: none; margin: 0 -8px; padding: 0; display: grid; gap: 1px; }
+.pressing-notes .person { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 4px 12px; padding: 6px 8px; border-radius: var(--r-2);
+  transition: background-color var(--quick) var(--soft); }
+.pressing-notes .person:hover, .pressing-notes .person.on { background: var(--hover); transition: none; }
+.pressing-notes .person strong { font-size: var(--t-ui); font-weight: 500; color: var(--text); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.pressing-notes .person em { font-style: normal; font-size: var(--t-small); color: var(--text-3); white-space: nowrap; }
+.pressing-notes .person canvas { grid-column: 1 / -1; display: block; }
+.pressing-notes .caption { margin: 10px 0 0; font-size: var(--t-caption); line-height: 1.5; color: var(--text-4); }
+.pressing-notes .toggle { margin: 12px 0 0 -9px; height: 26px; padding: 0 9px; border-radius: var(--r-2); font-size: var(--t-small); font-weight: 500; color: var(--text-3); }
+.pressing-notes .toggle:hover { background: var(--hover); color: var(--text); }
+.pressing-notes .toggle[aria-pressed="true"] { background: var(--current); color: var(--text); }
+@media (prefers-reduced-motion: reduce) { .pressing-platter canvas { transition: none; } }
 @media (max-width: 720px) {
   .shelf-scroll { padding-inline: 24px; }
   .shelf-art { width: 120px; }

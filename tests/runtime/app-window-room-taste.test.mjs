@@ -53,6 +53,12 @@ test("the taste page shows the real profile, saves a choice and its undoing, and
   assert.equal(band.stance, null);
   // The overview names no terminal command; the page draws the reading itself.
   assert.ok(!page.overview.some((line) => line.includes("/profile")));
+  // The record: thirteen plays over thirteen local days, the band on twelve of them, nothing Moondog started.
+  assert.equal(page.history.days.reduce((sum, [, plays]) => sum + plays, 0), 13);
+  assert.equal(page.history.days.length, 13);
+  assert.deepEqual(page.history.artists.map((artist) => [artist.name, artist.plays]), [["The Hollow Pines", 12], ["Mira Lune", 1]]);
+  assert.equal(page.history.artists[0].days.length, 12);
+  assert.deepEqual(page.history.moondog_days, []);
 
   await ask({ type: "taste-choice", key: band.key, target: band.target, stance: "like" });
   assert.equal(last("taste-saved").stance, "like");

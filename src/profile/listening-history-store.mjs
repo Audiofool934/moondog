@@ -844,6 +844,7 @@ export class ListeningHistoryStore {
   #coverageSources = null;
   #evidence = null;
   #ledgerChanges = 0;
+  #listeningDays = null;
 
   constructor(database) {
     this.#database = database;
@@ -2056,6 +2057,59 @@ export class ListeningHistoryStore {
       GROUP BY name ORDER BY plays DESC, last_played_at DESC LIMIT ?`).all(subject, from, JSON.stringify(started), limit);
     return structuredClone({ from_date: localDate(start), through_date: localDate(today), plays,
       ...(started.length ? { moondog_started_plays: started.length } : {}), top_artists: artists });
+  }
+
+  // The listener's own plays a local day at a time, for the window's taste record: every day's plays, the
+  // same for the most played artists, and the plays Moondog started, kept apart as recentAttention keeps
+  // them. Counts and artist names only. Kept until the stored plays change, since a long history is many rows.
+  listeningDays({ subjectId, artists = 8 } = {}) {
+    if (this.#closed) throw new Error("Listening history store is closed");
+    if (!isUuid(subjectId)) throw new TypeError("A valid profile subject is required");
+    if (!Number.isSafeInteger(artists) || artists < 0 || artists > 20) throw new TypeError("Artist count is invalid");
+    const subject = subjectId.toLowerCase();
+    const version = `${this.listeningDataVersion()}:${subject}:${artists}`;
+    if (this.#listeningDays?.version === version) return structuredClone(this.#listeningDays.value);
+    const effective = `e.subject_id = ?
+      AND NOT EXISTS (SELECT 1 FROM listening_event_supersessions s WHERE s.superseded_event_id = e.listening_event_id)
+      AND NOT EXISTS (SELECT 1 FROM listening_event_mirrors m WHERE m.mirror_event_id = e.listening_event_id)`;
+    const suggestions = this.#suggestionsForMatching();
+    const since = suggestions.length ? new Date(Date.parse(suggestions[0].requested_at) - SUGGESTION_WINDOW.beforeMs).toISOString() : null;
+    const started = !since ? [] : markMoondogStartedPlays(this.#database.prepare(`SELECT
+      e.listening_event_id, e.record_json AS event_json, t.record_json AS track_json FROM listening_events e
+      JOIN track_refs t ON t.track_ref_id = e.track_ref_id AND t.revision = e.track_ref_revision
+      WHERE ${effective} AND e.occurred_at >= ?`)
+      .all(subject, since).map((row) => ({ id: row.listening_event_id, event: JSON.parse(row.event_json), track: JSON.parse(row.track_json) })),
+    suggestions).rows.filter((row) => row.moondog_suggestion_id).map((row) => row.id);
+    const own = `${effective} AND e.listening_event_id NOT IN (SELECT value FROM json_each(?))`;
+    const left = JSON.stringify(started);
+    const pairs = (rows) => rows.map((row) => [row.day, row.plays]);
+    const days = this.#database.prepare(`SELECT date(e.occurred_at, 'localtime') AS day, COUNT(*) AS plays
+      FROM listening_events e WHERE ${own} GROUP BY day ORDER BY day`).all(subject, left);
+    let value = null;
+    if (days.length) {
+      const credited = `FROM listening_events e
+        JOIN track_refs t ON t.track_ref_id = e.track_ref_id AND t.revision = e.track_ref_revision
+        JOIN json_each(t.record_json, '$.artist_credits') a
+        WHERE ${own} AND json_extract(a.value, '$.name') IS NOT NULL`;
+      const top = artists === 0 ? [] : this.#database.prepare(`SELECT json_extract(a.value, '$.name') AS name, COUNT(*) AS plays
+        ${credited} GROUP BY name ORDER BY plays DESC, name LIMIT ?`).all(subject, left, artists);
+      const byArtist = new Map(top.map((row) => [row.name, []]));
+      if (top.length) {
+        for (const row of this.#database.prepare(`SELECT json_extract(a.value, '$.name') AS name,
+          date(e.occurred_at, 'localtime') AS day, COUNT(*) AS plays
+          ${credited} AND json_extract(a.value, '$.name') IN (SELECT value FROM json_each(?))
+          GROUP BY name, day ORDER BY day`).iterate(subject, left, JSON.stringify(top.map((artist) => artist.name)))) {
+          byArtist.get(row.name)?.push([row.day, row.plays]);
+        }
+      }
+      const moondog = started.length ? this.#database.prepare(`SELECT date(occurred_at, 'localtime') AS day, COUNT(*) AS plays
+        FROM listening_events WHERE listening_event_id IN (SELECT value FROM json_each(?)) GROUP BY day ORDER BY day`).all(left) : [];
+      value = { first_day: days[0].day, last_day: days.at(-1).day, days: pairs(days),
+        artists: top.map((artist) => ({ name: artist.name, plays: artist.plays, days: byArtist.get(artist.name) })),
+        moondog_days: pairs(moondog) };
+    }
+    this.#listeningDays = { version, value };
+    return structuredClone(value);
   }
 
   // Which spans of time the stored plays cover, and where plays may be missing.

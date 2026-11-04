@@ -133,6 +133,12 @@ A model or music service chosen there lasts until the app quits, and sign-in and
 - Taste (`/taste`, `/profile`, or `⌥⌘T` from the View menu) opens what Moondog's profile says about you in the room, in the conversation's place, as a playlist opens.
   The core builds it with the terminal's own `/taste` view, so both show the same artists and tracks in the same words.
   At the top: plays, hours, the history it covers and how many choices you've made, with Full report, which posts the whole report in the conversation.
+  Then your history pressed as a record, in the record's own dots: one spiral groove from the rim to the label, a turn a year, a quarter, a month or a week, whichever gives between four and fourteen turns, so a short history is a small single and a long one an album.
+  A stretch of groove darkens with that stretch's plays. The arm is the needle in time and rests on now; the wheel scratches back through the years as the record turns and the arm swings out, a click drops the needle on a groove, and the arm drags.
+  A double-click, a pinch, or Enter opens one turn as its own record (a year in months, a month in days), and the trail above, or Esc, goes back out; Last 12 months and Last 3 months press a recent stretch.
+  Beside it, the liner notes follow the turn under the needle: its plays, the song of the year as `/taste` picks it, and who moved across the range, each with a dot a turn. Rising, fading and returning are read within the range only, and a range under two years says only more or less lately, since a season can look like a change.
+  A name lights that artist's plays across the whole record, and a finding in the reading that names an artist does the same. Moondog's picks shows the plays Moondog started as hollow dots, apart from your own.
+  The core counts the plays a local day at a time from the listening history (`listeningDays`), with the plays Moondog started kept apart as everywhere else; only counts and artist names reach the window.
   Under it, the saved reading a model wrote with `/profile build`, its summary and its findings, each marked measured, interpretation or your choice; until there is one, it says so.
   Then every artist and track the profile rests on, filtered by All, Artists, Tracks and Your choices.
   A click or Enter unfolds one row at a time: where it comes from, Why it's here (the evidence and what it can't tell), I like this, Keep it out and Undo my choice, saved as `/profile correct` saves them, and for a track, Find more like this, which starts a request in the composer.

@@ -3,6 +3,7 @@
 // builds it with the terminal's own view of /taste, so the words and the choices are the same in both.
 // A row unfolds to why it's there and what the listener can say about it: I like this, Keep it out, Undo my
 // choice, and Find more like this, which starts a request in the composer. The composer stays below.
+import { createPressing } from "./pressing.mjs";
 import { make } from "./ui.mjs";
 
 const FILTERS = ["all", "artist", "track", "choices"];
@@ -15,6 +16,9 @@ export function createTaste({ root, state, send, t, onClose, onAsk }) {
   const column = make("div", "taste-column");
   scroller.append(column);
   root.append(scroller);
+  // The record of the listener's history, built once so its needle and range stay while the page redraws.
+  const pressing = createPressing({ t, locale: () => state.locale });
+  let pressed = null;
   root.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && !event.defaultPrevented) { event.preventDefault(); onClose(); return; }
     // Up and Down move between the rows, as in the conversations.
@@ -73,6 +77,9 @@ export function createTaste({ root, state, send, t, onClose, onAsk }) {
       for (const finding of value.findings) {
         const item = make("li");
         item.value = finding.number;
+        // A finding that names an artist on the record lights that artist there.
+        item.addEventListener("mouseenter", () => pressing.focusFrom(finding.statement));
+        item.addEventListener("mouseleave", () => pressing.focusFrom(""));
         item.append(make("p", "", finding.statement));
         const kind = KIND_LABELS[finding.kind];
         const meta = [kind ? say(kind) : "", finding.scope].filter(Boolean).join(" · ");
@@ -182,6 +189,8 @@ export function createTaste({ root, state, send, t, onClose, onAsk }) {
     const data = page();
     // The control that had the focus gets it back after the page redraws.
     const focused = scroller.contains(document.activeElement) ? document.activeElement.dataset.key : null;
+    // The record is the same node across redraws; a control in it keeps the focus it had.
+    const held = pressing.node.contains(document.activeElement) ? document.activeElement : null;
     const nodes = [head(data)];
     if (!data) nodes.push(make("p", "taste-note", say("loading")));
     else if (data.state !== "ready") {
@@ -189,6 +198,8 @@ export function createTaste({ root, state, send, t, onClose, onAsk }) {
       for (const line of data.lines ?? []) empty.append(make("p", "", line));
       nodes.push(empty);
     } else {
+      if (pressed !== data) { pressed = data; pressing.update(data, data.subjects); } else pressing.language();
+      if (data.history) nodes.push(pressing.node);
       const saved = reading(data.reading);
       if (saved) nodes.push(saved);
       if (data.subjects?.length) {
@@ -204,12 +215,13 @@ export function createTaste({ root, state, send, t, onClose, onAsk }) {
     const top = scroller.scrollTop;
     column.replaceChildren(...nodes);
     scroller.scrollTop = top;
-    if (focused) scroller.querySelector(`[data-key="${CSS.escape(focused)}"]`)?.focus({ preventScroll: true });
+    if (held?.isConnected) held.focus({ preventScroll: true });
+    else if (focused) scroller.querySelector(`[data-key="${CSS.escape(focused)}"]`)?.focus({ preventScroll: true });
   }
 
   return {
     render,
-    reset() { filter = "all"; unfolded = null; why.clear(); asking.clear(); scroller.scrollTop = 0; },
+    reset() { filter = "all"; unfolded = null; why.clear(); asking.clear(); scroller.scrollTop = 0; pressing.reset(); pressed = null; },
     receive(data) {
       if (data.type === "taste-why") {
         asking.delete(data.evidenceId);

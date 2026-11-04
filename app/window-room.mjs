@@ -1002,6 +1002,10 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
       subjects: model.subjects.map(({ key, label, subtitle, kind, stance, correctionId, detailLines, evidence, target }) =>
         ({ key, label, subtitle, kind, stance: stance ?? null, chosen: Boolean(correctionId), details: detailLines, evidence, target })),
       canChoose: base.tasteChoicesReady?.() === true,
+      // The record: the listener's own plays a day at a time, and each year's song, as /taste picks it.
+      history: base.listeningDays?.() ?? null,
+      songs: (profile.listening_behavior?.time_capsule_tracks ?? []).filter((track) => Number.isSafeInteger(track?.capsule_year))
+        .map((track) => ({ year: track.capsule_year, title: track.label ?? "", artist: track.artist_credit ?? "" })),
       // The request "Find more like this" starts in the composer, in the core's language as the terminal's.
       ask: tr("Find me 3 songs to go to from here, and tell me why each one.") });
   }

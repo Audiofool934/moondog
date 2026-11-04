@@ -423,6 +423,36 @@ const TASTE_SUBJECTS = [
   tasteSubject("track", "Northbound, 5 a.m.", "Delmar Frost", ["Saved in your Spotify library", "On your Spotify playlists: on 4 playlists"]),
   tasteSubject("artist", "Juniper & Vale", null, ["Followed on Spotify", "Across the years: 702 plays · 41 tracks"]),
 ];
+// A fictional listener's plays a day at a time, in the shape the core's listeningDays sends: by calendar year,
+// so a shorter history is the same listener's latest stretch.
+const TASTE_HISTORY = (() => {
+  const DAY = 86400000, end = Date.UTC(2026, 10, 2);
+  const yearly = {
+    "The Hollow Pines": [[120, 140, 130, 150, 135, 128, 140, 132, 138, 126, 120], "autumn"], "Okara Strings": [[10, 60, 180, 220, 160, 90, 40, 15, 6, 2, 0], "winter"],
+    "Mira Lune": [[0, 0, 0, 0, 0, 0, 5, 20, 60, 140, 230], "summer"], "Delmar Frost": [[80, 90, 40, 5, 0, 0, 0, 2, 30, 90, 80], "flat"],
+    "Juniper & Vale": [[40, 50, 60, 70, 80, 70, 60, 65, 70, 60, 55], "flat"], "Salt Harbor": [[0, 0, 0, 0, 210, 12, 0, 0, 0, 0, 0], "summer"],
+  };
+  const others = [520, 610, 760, 880, 960, 700, 640, 690, 760, 820, 760];
+  const season = { flat: (f) => 1 + 0.25 * Math.sin(Math.PI * 4 * f), winter: (f) => 1 + 0.85 * Math.cos(Math.PI * 2 * f),
+    summer: (f) => 1 - 0.7 * Math.cos(Math.PI * 2 * f), autumn: (f) => 1 + 0.8 * Math.cos(Math.PI * 2 * (f - 0.77)) };
+  return (startDay) => {
+    let seed = 7;
+    const rand = () => { seed = (seed + 0x6D2B79F5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t ^= t + Math.imul(t ^ (t >>> 7), 61 | t); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+    const start = Date.parse(`${startDay}T00:00:00Z`);
+    const iso = (ts) => new Date(ts).toISOString().slice(0, 10);
+    const totals = new Map(), byArtist = new Map(Object.keys(yearly).map((name) => [name, []])), moondog = [];
+    for (let ts = start; ts <= end; ts += DAY) {
+      const date = new Date(ts), y = date.getUTCFullYear(), f = (ts - Date.UTC(y, 0, 1)) / (365 * DAY), weekend = [0, 6].includes(date.getUTCDay()) ? 1.35 : 0.86;
+      const draw = (level, shape, gap = 1) => { const lambda = (level ?? 0) / 365 * season[shape](f) * weekend * gap; return rand() < 0.55 ? Math.round(lambda * (0.4 + rand() * 1.6) / 0.55) : 0; };
+      let day = draw(others[y - 2016], "flat", y === 2021 && date.getUTCMonth() >= 5 && date.getUTCMonth() <= 7 ? 0.15 : 1);
+      for (const [name, [levels, shape]] of Object.entries(yearly)) { const plays = draw(levels[y - 2016], shape); if (plays) byArtist.get(name).push([iso(ts), plays]); day += plays; }
+      if (day) totals.set(iso(ts), day);
+      if (ts >= Date.UTC(2025, 6, 1) && rand() < 0.4) moondog.push([iso(ts), 1 + Math.round(rand() * 2)]);
+    }
+    const artists = [...byArtist].map(([name, days]) => ({ name, plays: days.reduce((sum, [, n]) => sum + n, 0), days })).filter((a) => a.plays).sort((a, b) => b.plays - a.plays);
+    return { first_day: startDay, last_day: iso(end), days: [...totals], artists, moondog_days: moondog };
+  };
+})();
 function tastePage() {
   if (taste.empty) return { type: "taste", state: "empty", lines: ["Nothing to look at yet.", "Import your history or library and it will show up here."] };
   const subjects = TASTE_SUBJECTS.map((subject) => {
@@ -431,6 +461,10 @@ function tastePage() {
     return { ...subject, stance, chosen: Boolean(stance), details: said ? [said, ...subject.details] : subject.details };
   });
   return { type: "taste", state: "ready", subjects, canChoose: true, ask: "Find me 3 songs to go to from here, and tell me why each one.",
+    history: TASTE_HISTORY(taste.from ?? "2016-02-03"),
+    songs: [[2016, "Northbound, 5 a.m.", "Delmar Frost"], [2017, "Paper Lanterns", "Delmar Frost"], [2018, "Cold Orchard", "Okara Strings"], [2019, "Cold Orchard", "Okara Strings"],
+      [2020, "Tidewater", "Salt Harbor"], [2021, "Slow Static", "The Hollow Pines"], [2022, "Pine Light", "The Hollow Pines"], [2023, "Lanterns on the Water", "Juniper & Vale"],
+      [2024, "Low Tide", "The Hollow Pines"], [2025, "Paper Boats", "Mira Lune"], [2026, "Glass Summer", "Mira Lune"]].map(([year, title, artist]) => ({ year, title, artist })),
     overview: ["18,406 plays · 1,212.5 h · 3,904 tracks", "Spotify history · 2016-02-03 to 2026-11-02", `${taste.choices.size} choices you've made`],
     reading: taste.reading ? { state: "current", version: 3, builtAt: "2026-10-28",
       summary: "A listener who keeps a small circle of quiet, guitar-led bands for years and lets newer, brighter pop pass through in short bursts. Late evenings carry most of the listening, and old favourites come back after long gaps rather than fading for good.",
@@ -666,6 +700,13 @@ const STATES = {
   },
   "taste-no-reading"() { taste.reading = false; STATES.taste(); },
   "taste-empty"() { taste.empty = true; STATES.taste(); },
+  "taste-short"() { taste.from = "2026-04-06"; STATES.taste(); },
+  // The needle scratched back a few years from the keyboard, and one artist lit across the record.
+  "taste-back"() {
+    STATES.taste();
+    setTimeout(() => { const record = document.querySelector(".pressing canvas"); record?.focus(); for (let i = 0; i < 4; i += 1) record?.dispatchEvent(new KeyboardEvent("keydown", { key: "PageUp", bubbles: true })); }, 400);
+  },
+  "taste-focus"() { STATES.taste(); return { hover: ".pressing .person:nth-child(4)" }; },
   "settings-about"() { STATES.reply(); slash("help"); },
   "settings-offline"() { STATES.offline(); slash("service"); },
   // NetEase Cloud Music chosen and signed in, playing another artist's recording of a song.
