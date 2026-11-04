@@ -23,8 +23,13 @@ function savedLayout(store) {
   };
 }
 
-export function createSidebarViews({ root, store, t, menu, onShow }) {
+// Each view has one +, at its header's end when split and at the tab row's end for the tab showing when stacked:
+// onAdd(view, event) makes what that view holds (a conversation folder; a playlist, folder or imported playlist),
+// and addLabel(view) names it.
+export function createSidebarViews({ root, store, t, menu, onShow, onAdd = () => {}, addLabel = () => "" }) {
   const tabs = root.querySelector("[data-view-tabs]");
+  const tabAdd = root.querySelector("[data-view-add]");
+  const busy = new Set();
   const area = root.querySelector("[data-views]");
   const grip = root.querySelector("[data-view-grip]");
   const sections = Object.fromEntries(VIEWS.map((view) => [view, root.querySelector(`[data-view="${view}"]`)]));
@@ -33,7 +38,26 @@ export function createSidebarViews({ root, store, t, menu, onShow }) {
   let layout = savedLayout(store);
   let enabled = false;
   const save = () => store.set("moondog.sidebar.views", JSON.stringify(layout));
-  const label = (view) => (view === "library" ? t()("library") : t()("conversations"));
+  // The views' own short names ("Chats" rather than the longer "Conversations" the bar's tooltip uses).
+  const label = (view) => (view === "library" ? t()("library") : t()("viewChats"));
+  const headAdds = Object.fromEntries(VIEWS.map((view) => {
+    const button = make("button", "tool view-head-add");
+    button.type = "button";
+    button.dataset.tipAt = "below";
+    button.append(icon("plus"));
+    button.addEventListener("click", (event) => { event.stopPropagation(); onAdd(view, event); });
+    // A press on the + is not the start of a header drag.
+    button.addEventListener("dragstart", (event) => event.preventDefault());
+    return [view, button];
+  }));
+  tabAdd?.addEventListener("click", (event) => onAdd(layout.active, event));
+  const paintAdd = (button, view) => {
+    if (!button) return;
+    const text = addLabel(view);
+    button.setAttribute("aria-label", text);
+    button.dataset.tip = text;
+    button.classList.toggle("busy", busy.has(view));
+  };
 
   function render() {
     const split = enabled && layout.mode === "split";
@@ -48,14 +72,17 @@ export function createSidebarViews({ root, store, t, menu, onShow }) {
       // Split, a header carries its tab's icon before its name, so the two forms read as one.
       if (heads[view].dataset.label !== label(view)) {
         heads[view].dataset.label = label(view);
-        heads[view].replaceChildren(icon(view === "library" ? "library" : "chat"), make("span", "view-name", label(view)));
+        heads[view].replaceChildren(icon(view === "library" ? "library" : "chat"), make("span", "view-name", label(view)), headAdds[view]);
       }
+      paintAdd(headAdds[view], view);
       const tab = tabButtons[view];
       tab.setAttribute("aria-selected", String(!split && layout.active === view));
       tab.setAttribute("aria-label", label(view));
       tab.dataset.tip = label(view);
     }
     tabButtons.library.hidden = !enabled;
+    // Stacked, the row's + is the + of the tab showing.
+    if (tabAdd) { tabAdd.hidden = !enabled || split; paintAdd(tabAdd, layout.active); }
     grip.style.order = "1";
     // The first view takes the split's share of the height, the second the rest.
     const [first, second] = layout.order;
@@ -171,6 +198,8 @@ export function createSidebarViews({ root, store, t, menu, onShow }) {
     render,
     show,
     setEnabled(value) { if (enabled !== value) { enabled = value; render(); } },
+    // A view's + breathes while what it makes is on its way, as a pasted playlist link is read.
+    setBusy(view, value) { if (busy.has(view) !== value) { if (value) busy.add(view); else busy.delete(view); render(); } },
     // Whether a view shows now: always when split, else only the active tab.
     showing: (view) => (view === "conversations" ? !enabled || layout.mode === "split" || layout.active === view : enabled && (layout.mode === "split" || layout.active === view)),
     get layout() { return { ...layout }; },
