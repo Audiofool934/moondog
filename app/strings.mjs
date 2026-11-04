@@ -2,6 +2,7 @@
 // them; the conversation itself comes from the core. English is the source and the fallback.
 const STRINGS = {
   en: {
+    viewChats: "Chats",
     viewsAsTabs: "Show as tabs", viewsSplit: "Show one above the other", viewsSwap: "Swap places",
     importPlaylist: "Import a playlist…", pastePlaylistLink: "Paste a playlist link", readingPlaylist: "Reading the playlist…", importQuestion: "Import “{name}”?", importReadOf: "{read} of {total} songs", importConfirm: "Import", importShapesTaste: "Let it shape my taste", importedPlaylist: "Imported {name}.", importedWithTaste: "Imported {name}. It now shapes your taste.", importedTasteFailed: "Imported, but it couldn't shape your taste this time.", noticeSpotifyNotReady: "Spotify isn't connected.", noticePlaylistLink: "Paste one playlist link from Spotify, Apple Music, NetEase Music or QQ Music.", noticePlaylistUnavailable: "That playlist couldn't be read. Check that it's public.", noticePlaylistUnreachable: "Couldn't reach the music service.", qqMusic: "QQ Music",
     keptInSaved: "Saved.",
@@ -79,6 +80,7 @@ const STRINGS = {
     firstRunService: "Where do you listen?", firstRunModel: "Which model should Moondog use?", skipSetup: "Skip setup",
   },
   zh: {
+    viewChats: "对话",
     viewsAsTabs: "叠成标签", viewsSplit: "上下分开显示", viewsSwap: "交换位置",
     importPlaylist: "导入歌单…", pastePlaylistLink: "粘贴歌单链接", readingPlaylist: "正在读取歌单…", importQuestion: "导入“{name}”？", importReadOf: "{total} 首中的 {read} 首", importConfirm: "导入", importShapesTaste: "用它来了解我的口味", importedPlaylist: "已导入“{name}”。", importedWithTaste: "已导入“{name}”，它会影响你的口味画像。", importedTasteFailed: "已导入，但这次没能加入你的口味画像。", noticeSpotifyNotReady: "还没有连接 Spotify。", noticePlaylistLink: "粘贴一个 Spotify、Apple Music、网易云音乐或 QQ 音乐的歌单链接。", noticePlaylistUnavailable: "读不到这个歌单，确认它是公开的。", noticePlaylistUnreachable: "连不上音乐服务。", qqMusic: "QQ 音乐",
     keptInSaved: "已收藏。",
@@ -148,6 +150,7 @@ const STRINGS = {
     firstRunService: "你在哪里听歌？", firstRunModel: "Moondog 用哪个模型？", skipSetup: "跳过设置",
   },
   "zh-Hant": {
+    viewChats: "對話",
     viewsAsTabs: "疊成標籤", viewsSplit: "上下分開顯示", viewsSwap: "交換位置",
     importPlaylist: "匯入歌單…", pastePlaylistLink: "貼上歌單連結", readingPlaylist: "正在讀取歌單…", importQuestion: "匯入「{name}」？", importReadOf: "{total} 首中的 {read} 首", importConfirm: "匯入", importShapesTaste: "用它來了解我的口味", importedPlaylist: "已匯入「{name}」。", importedWithTaste: "已匯入「{name}」，它會影響你的口味輪廓。", importedTasteFailed: "已匯入，但這次沒能加入你的口味輪廓。", noticeSpotifyNotReady: "還沒有連接 Spotify。", noticePlaylistLink: "貼上一個 Spotify、Apple Music、網易雲音樂或 QQ 音樂的歌單連結。", noticePlaylistUnavailable: "讀不到這個歌單，確認它是公開的。", noticePlaylistUnreachable: "連不上音樂服務。", qqMusic: "QQ 音樂",
     keptInSaved: "已收藏。",
@@ -217,6 +220,7 @@ const STRINGS = {
     firstRunService: "你在哪裡聽歌？", firstRunModel: "Moondog 要用哪個模型？", skipSetup: "略過設定",
   },
   ja: {
+    viewChats: "チャット",
     viewsAsTabs: "タブにまとめる", viewsSplit: "上下に並べる", viewsSwap: "入れ替える",
     importPlaylist: "プレイリストを読み込む…", pastePlaylistLink: "プレイリストのリンクを貼り付け", readingPlaylist: "プレイリストを読み込んでいます…", importQuestion: "「{name}」を読み込みますか？", importReadOf: "{total} 曲中 {read} 曲", importConfirm: "読み込む", importShapesTaste: "好みの理解に使う", importedPlaylist: "「{name}」を読み込みました。", importedWithTaste: "「{name}」を読み込みました。好みのプロフィールに反映されます。", importedTasteFailed: "読み込みましたが、今回は好みに反映できませんでした。", noticeSpotifyNotReady: "Spotify に接続していません。", noticePlaylistLink: "Spotify、Apple Music、NetEase Music、QQ Music のプレイリストのリンクをひとつ貼り付けてください。", noticePlaylistUnavailable: "このプレイリストを読めませんでした。公開されているか確認してください。", noticePlaylistUnreachable: "音楽サービスに接続できませんでした。", qqMusic: "QQ Music",
     keptInSaved: "保存しました。",
@@ -286,6 +290,7 @@ const STRINGS = {
     firstRunService: "どこで音楽を聴きますか？", firstRunModel: "Moondog が使うモデルは？", skipSetup: "設定をスキップ",
   },
   ko: {
+    viewChats: "대화",
     viewsAsTabs: "탭으로 합치기", viewsSplit: "위아래로 나누기", viewsSwap: "자리 바꾸기",
     importPlaylist: "플레이리스트 가져오기…", pastePlaylistLink: "플레이리스트 링크 붙여넣기", readingPlaylist: "플레이리스트를 읽는 중…", importQuestion: "‘{name}’을(를) 가져올까요?", importReadOf: "{total}곡 중 {read}곡", importConfirm: "가져오기", importShapesTaste: "내 취향을 아는 데 사용", importedPlaylist: "‘{name}’을(를) 가져왔습니다.", importedWithTaste: "‘{name}’을(를) 가져왔습니다. 이제 취향 프로필에 반영됩니다.", importedTasteFailed: "가져왔지만 이번에는 취향에 반영하지 못했습니다.", noticeSpotifyNotReady: "Spotify가 연결되어 있지 않습니다.", noticePlaylistLink: "Spotify, Apple Music, NetEase Music, QQ Music의 플레이리스트 링크를 하나 붙여넣으세요.", noticePlaylistUnavailable: "이 플레이리스트를 읽을 수 없습니다. 공개 상태인지 확인하세요.", noticePlaylistUnreachable: "음악 서비스에 연결할 수 없습니다.", qqMusic: "QQ Music",
     keptInSaved: "저장했습니다.",
@@ -355,6 +360,7 @@ const STRINGS = {
     firstRunService: "어디에서 음악을 듣나요?", firstRunModel: "Moondog이 어떤 모델을 쓸까요?", skipSetup: "설정 건너뛰기",
   },
   es: {
+    viewChats: "Chats",
     viewsAsTabs: "Mostrar como pestañas", viewsSplit: "Mostrar una sobre otra", viewsSwap: "Intercambiar",
     importPlaylist: "Importar una lista…", pastePlaylistLink: "Pega el enlace de una lista", readingPlaylist: "Leyendo la lista…", importQuestion: "¿Importar “{name}”?", importReadOf: "{read} de {total} canciones", importConfirm: "Importar", importShapesTaste: "Que defina mi gusto", importedPlaylist: "Importada: {name}.", importedWithTaste: "Importada: {name}. Ahora forma parte de tu gusto.", importedTasteFailed: "Importada, pero esta vez no pudo sumarse a tu gusto.", noticeSpotifyNotReady: "Spotify no está conectado.", noticePlaylistLink: "Pega un enlace de lista de Spotify, Apple Music, NetEase Music o QQ Music.", noticePlaylistUnavailable: "No se pudo leer esa lista. Comprueba que sea pública.", noticePlaylistUnreachable: "No se pudo contactar con el servicio de música.", qqMusic: "QQ Music",
     keptInSaved: "Guardada.",
@@ -424,6 +430,7 @@ const STRINGS = {
     firstRunService: "¿Dónde escuchas música?", firstRunModel: "¿Qué modelo debe usar Moondog?", skipSetup: "Omitir la configuración",
   },
   fr: {
+    viewChats: "Discussions",
     viewsAsTabs: "Afficher en onglets", viewsSplit: "Afficher l'un au-dessus de l'autre", viewsSwap: "Échanger",
     importPlaylist: "Importer une playlist…", pastePlaylistLink: "Collez le lien d'une playlist", readingPlaylist: "Lecture de la playlist…", importQuestion: "Importer « {name} » ?", importReadOf: "{read} morceaux sur {total}", importConfirm: "Importer", importShapesTaste: "S'en servir pour mes goûts", importedPlaylist: "{name} importée.", importedWithTaste: "{name} importée. Elle compte désormais dans vos goûts.", importedTasteFailed: "Importée, mais elle n'a pas pu compter dans vos goûts cette fois.", noticeSpotifyNotReady: "Spotify n'est pas connecté.", noticePlaylistLink: "Collez un lien de playlist Spotify, Apple Music, NetEase Music ou QQ Music.", noticePlaylistUnavailable: "Impossible de lire cette playlist. Vérifiez qu'elle est publique.", noticePlaylistUnreachable: "Impossible de joindre le service de musique.", qqMusic: "QQ Music",
     keptInSaved: "Enregistré.",
@@ -493,6 +500,7 @@ const STRINGS = {
     firstRunService: "Où écoutez-vous de la musique ?", firstRunModel: "Quel modèle Moondog doit-il utiliser ?", skipSetup: "Passer la configuration",
   },
   de: {
+    viewChats: "Chats",
     viewsAsTabs: "Als Tabs zeigen", viewsSplit: "Übereinander zeigen", viewsSwap: "Plätze tauschen",
     importPlaylist: "Playlist importieren…", pastePlaylistLink: "Playlist-Link einfügen", readingPlaylist: "Playlist wird gelesen…", importQuestion: "„{name}“ importieren?", importReadOf: "{read} von {total} Songs", importConfirm: "Importieren", importShapesTaste: "Für meinen Geschmack nutzen", importedPlaylist: "{name} importiert.", importedWithTaste: "{name} importiert. Sie prägt jetzt deinen Geschmack.", importedTasteFailed: "Importiert, aber diesmal nicht in deinen Geschmack übernommen.", noticeSpotifyNotReady: "Spotify ist nicht verbunden.", noticePlaylistLink: "Füge einen Playlist-Link von Spotify, Apple Music, NetEase Music oder QQ Music ein.", noticePlaylistUnavailable: "Diese Playlist ließ sich nicht lesen. Prüfe, ob sie öffentlich ist.", noticePlaylistUnreachable: "Der Musikdienst war nicht erreichbar.", qqMusic: "QQ Music",
     keptInSaved: "Gespeichert.",
@@ -562,6 +570,7 @@ const STRINGS = {
     firstRunService: "Wo hörst du Musik?", firstRunModel: "Welches Modell soll Moondog nutzen?", skipSetup: "Einrichtung überspringen",
   },
   pt: {
+    viewChats: "Conversas",
     viewsAsTabs: "Mostrar como abas", viewsSplit: "Mostrar um sobre o outro", viewsSwap: "Trocar de lugar",
     importPlaylist: "Importar uma playlist…", pastePlaylistLink: "Cole o link de uma playlist", readingPlaylist: "Lendo a playlist…", importQuestion: "Importar “{name}”?", importReadOf: "{read} de {total} músicas", importConfirm: "Importar", importShapesTaste: "Usar para entender meu gosto", importedPlaylist: "{name} importada.", importedWithTaste: "{name} importada. Agora ela molda seu gosto.", importedTasteFailed: "Importada, mas desta vez não entrou no seu gosto.", noticeSpotifyNotReady: "O Spotify não está conectado.", noticePlaylistLink: "Cole um link de playlist do Spotify, Apple Music, NetEase Music ou QQ Music.", noticePlaylistUnavailable: "Não deu para ler essa playlist. Confira se ela é pública.", noticePlaylistUnreachable: "Não deu para acessar o serviço de música.", qqMusic: "QQ Music",
     keptInSaved: "Salva.",
@@ -631,6 +640,7 @@ const STRINGS = {
     firstRunService: "Onde você ouve música?", firstRunModel: "Qual modelo o Moondog deve usar?", skipSetup: "Pular a configuração",
   },
   it: {
+    viewChats: "Chat",
     viewsAsTabs: "Mostra come schede", viewsSplit: "Mostra uno sopra l'altro", viewsSwap: "Scambia",
     importPlaylist: "Importa una playlist…", pastePlaylistLink: "Incolla il link di una playlist", readingPlaylist: "Lettura della playlist…", importQuestion: "Importare “{name}”?", importReadOf: "{read} brani su {total}", importConfirm: "Importa", importShapesTaste: "Usala per capire i miei gusti", importedPlaylist: "{name} importata.", importedWithTaste: "{name} importata. Ora contribuisce ai tuoi gusti.", importedTasteFailed: "Importata, ma questa volta non è entrata nei tuoi gusti.", noticeSpotifyNotReady: "Spotify non è collegato.", noticePlaylistLink: "Incolla un link di playlist di Spotify, Apple Music, NetEase Music o QQ Music.", noticePlaylistUnavailable: "Impossibile leggere questa playlist. Controlla che sia pubblica.", noticePlaylistUnreachable: "Impossibile raggiungere il servizio musicale.", qqMusic: "QQ Music",
     keptInSaved: "Salvato.",

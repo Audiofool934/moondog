@@ -53,7 +53,7 @@ const settings = createSettings({ state, send, t: tr,
 const firstRun = createFirstRun({ settings, send, read: () => ({ run: state.firstRun, modelReady: state.model?.state === "configured" }) });
 const sidebar = createSidebar({ root: $("sessions"), state, send, t: tr, open: (id) => openSession(id), store, menuPoint: (event) => menuPoint(event) });
 const library = createLibrary({ root: $("library"), state, send, t: tr, open: (id) => openPlaylist(id), store, menuPoint: (event) => menuPoint(event),
-  outerAdd: $("view-add") });
+  onBusy: (value) => views.setBusy("library", value) });
 const shelf = createShelf({ root: $("shelf"), state, send, t: tr, menuPoint: (event) => menuPoint(event), onClose: () => closePlaylist() });
 const tips = tooltips();
 // A native menu opens at the pointer, or under its control when the keyboard pressed it.
@@ -127,21 +127,18 @@ function renderTitle() {
 const views = createSidebarViews({ root: $("sidebar"), store, t: tr, menu: (items, event) => menu(items, event), onShow: (view) => {
   // Back to the conversations as the one tab is back to the conversation, so a playlist open in the room closes.
   if (view === "conversations" && views?.layout.mode === "tabs" && state.shelf) closePlaylist();
-  syncLibraryAdd();
   if (views?.showing("library")) library.render();
-} });
-// Stacked as tabs, the library's new button is a + at the tab row's end, there only while the library shows; split,
-// it is the bar above the library's list.
-function syncLibraryAdd() {
-  const tabs = views?.layout.mode === "tabs";
-  library.setCompact(tabs);
-  $("view-add").hidden = !(tabs && state.libraryReady === true && views.layout.active === "library");
-}
+},
+// Each view's +: a folder for the conversations, and the library's menu (playlist, folder, import).
+onAdd: (view, event) => {
+  if (view === "library") void library.newMenu(event);
+  else sidebar.startNewFolder();
+},
+addLabel: (view) => (view === "library" ? (library?.importing ? t("readingPlaylist") : t("libraryNew")) : t("newFolder")) });
 function renderSidebarMode() {
   // A core without a library (the project page's scene) shows only the conversations.
   views.setEnabled(state.libraryReady === true);
   views.render();
-  syncLibraryAdd();
   if (views.showing("library")) library.render();
 }
 // ⌥⌘L and the palette: the library's view, with the sidebar shown if it was folded away.
