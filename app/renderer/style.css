@@ -196,6 +196,9 @@ img { -webkit-user-drag: none; }
 .view-head-add .icon { width: 13px; height: 13px; }
 .view-head { display: flex; align-items: center; gap: 7px; }
 .view-head .icon { width: 13px; height: 13px; flex: none; }
+/* A header is its part's switcher: a small chevron after the name says it opens. */
+.view-head .view-chevron { width: 10px; height: 10px; margin-inline-start: -3px; color: var(--text-4); transform: rotate(90deg); }
+.view-head:hover .view-chevron { color: var(--text-3); }
 .view-head.drop-target { color: var(--text); }
 .views { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .view { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; }
@@ -392,7 +395,9 @@ img { -webkit-user-drag: none; }
 /* Your taste in the sidebar: the artists and tracks the profile rests on, at the sidebar's own row size, with the
    filters as a quiet row above them and a row's evidence and choices unfolding under it. */
 .taste-side .taste-filters { margin: 2px 0 8px; gap: 1px; max-width: none; }
-.taste-side .taste-filter { height: 24px; padding: 0 7px; }
+.taste-side .taste-filters { flex-wrap: nowrap; }
+.taste-side .taste-filter { height: 24px; padding: 0 7px; flex: none; }
+.taste-side .taste-count { display: none; }
 .taste-side .taste-list { margin: 0; max-width: none; }
 .taste-side .taste-row { margin-bottom: 1px; }
 .taste-side .taste-row[aria-current="true"], .taste-side .taste-row.open { background: var(--current); }

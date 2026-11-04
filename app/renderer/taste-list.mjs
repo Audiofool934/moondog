@@ -6,7 +6,8 @@
 import { make } from "./ui.mjs";
 
 const FILTERS = ["all", "artist", "track", "choices"];
-const FILTER_LABELS = { all: "tasteAll", artist: "tasteArtists", track: "tasteTracks", choices: "tasteChoices" };
+// The sidebar is narrow, so the choices filter takes its short name.
+const FILTER_LABELS = { all: "tasteAll", artist: "tasteArtists", track: "tasteTracks", choices: "tasteChoicesShort" };
 
 export function createTasteList({ root, state, send, t, onSelect, onAsk }) {
   const say = (key, params) => t()(key, params);
@@ -44,6 +45,7 @@ export function createTasteList({ root, state, send, t, onSelect, onAsk }) {
       const count = subjectsFor(value).length;
       const chip = button("", "taste-filter", () => { filter = value; render(); root.querySelector(`[data-key="filter:${value}"]`)?.focus(); }, `filter:${value}`);
       chip.append(make("span", "", say(FILTER_LABELS[value])), make("span", "taste-count", count.toLocaleString(state.locale)));
+      chip.title = `${say(value === "choices" ? "tasteChoices" : FILTER_LABELS[value])} · ${count.toLocaleString(state.locale)}`;
       chip.setAttribute("aria-pressed", String(filter === value));
       node.append(chip);
     }

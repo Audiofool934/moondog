@@ -521,10 +521,12 @@ const STATES = {
     setTimeout(open, 300);
   },
   // The library dragged by its tab to the lower part of the sidebar: conversations above, the library below.
-  "library-split"() {
+  // The taste view dragged by its tab to the lower part: conversations above, taste below, each named once.
+  "taste-split"() { STATES["library-split"]("taste"); },
+  "library-split"(view = "library") {
     STATES.reply();
     setTimeout(() => {
-      const tab = document.querySelector('[data-view-tab="library"]');
+      const tab = document.querySelector(`[data-view-tab="${view}"]`);
       const sidebar = document.querySelector("[data-sidebar]");
       const views = document.querySelector("[data-views]").getBoundingClientRect();
       const transfer = new DataTransfer();

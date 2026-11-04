@@ -1,14 +1,15 @@
 // The sidebar's views, conversations, the library and your taste, arranged by the listener: stacked as tabs, one
 // showing at a time, or split two at a time one above the other with a grip between them. A view's tab or header
 // drags: dropped on the upper or lower part of the sidebar it takes that place, dropped on the tab row or the middle
-// they stack as tabs again. Split with three views, the tab row stays, and a tab that isn't showing takes the place
-// of the view being worked in. The header's menu does the same without a drag. The layout is kept. A core without a
+// they stack as tabs again. Split, each part's header is its switcher: a click lists the views, the one there
+// checked; the other part's view trades places with it, the third takes its place, and Show as tabs stacks them.
+// So each view shows once, as a tab or as a header, never both. The layout is kept. A core without a
 // library shows no library, and one without a profile no taste; with neither, conversations show alone.
 import { icon, make } from "./ui.mjs";
 
 const VIEW_DRAG = "application/x-moondog-view";
 const VIEWS = ["conversations", "library", "taste"];
-const ICONS = { conversations: "chat", library: "library", taste: "record" };
+const ICONS = { conversations: "chat", library: "library", taste: "taste" };
 const SPLIT_MIN = 0.2;
 const SPLIT_DEFAULT = 0.55;
 
@@ -76,8 +77,8 @@ export function createSidebarViews({ root, store, t, menu, onShow, onAdd = () =>
   function render() {
     const isSplit = split();
     const many = available().length;
-    // Stacked, the tabs pick the view; split with three, they pick which two share the sidebar.
-    tabs.hidden = many < 2 || (isSplit && many < 3);
+    // Stacked, the tabs pick the view; split, the headers do, so the tab row goes.
+    tabs.hidden = many < 2 || isSplit;
     grip.hidden = !isSplit;
     root.classList.toggle("views-split", isSplit);
     const [first, second] = slots();
@@ -88,7 +89,8 @@ export function createSidebarViews({ root, store, t, menu, onShow, onAdd = () =>
       // Split, a header carries its tab's icon before its name, so the two forms read as one.
       if (heads[view].dataset.label !== label(view)) {
         heads[view].dataset.label = label(view);
-        heads[view].replaceChildren(icon(ICONS[view]), make("span", "view-name", label(view)), ...(makes(view) ? [headAdds[view]] : []));
+        heads[view].replaceChildren(icon(ICONS[view]), make("span", "view-name", label(view)), icon("chevron", "icon view-chevron"),
+          ...(makes(view) ? [headAdds[view]] : []));
       }
       paintAdd(headAdds[view], view);
       const tab = tabButtons[view];
@@ -165,12 +167,13 @@ export function createSidebarViews({ root, store, t, menu, onShow, onAdd = () =>
     });
     tabButtons[view].addEventListener("contextmenu", (event) => { event.preventDefault(); void viewMenu(view, event); });
     heads[view].addEventListener("contextmenu", (event) => { event.preventDefault(); void viewMenu(view, event); });
-    heads[view].addEventListener("click", () => show(view));
-    // Split, a header is the only control for its arrangement, so the keyboard reaches it as it reaches a tab.
+    // Split, a header is its part's switcher, by a click, Enter, Space or the context menu key.
+    heads[view].addEventListener("click", (event) => { layout.active = view; save(); void viewMenu(view, event); });
     heads[view].tabIndex = 0;
     heads[view].setAttribute("role", "button");
+    heads[view].setAttribute("aria-haspopup", "menu");
     heads[view].addEventListener("keydown", (event) => {
-      if (event.key === "ContextMenu" || (event.key === "F10" && event.shiftKey)) { event.preventDefault(); void viewMenu(view, event); }
+      if (event.key === "Enter" || event.key === " " || event.key === "ContextMenu" || (event.key === "F10" && event.shiftKey)) { event.preventDefault(); void viewMenu(view, event); }
     });
     // Split, the view the listener works in is the active one, so ⌥⌘L and the palette act where they are.
     sections[view].addEventListener("focusin", () => {
@@ -197,16 +200,24 @@ export function createSidebarViews({ root, store, t, menu, onShow, onAdd = () =>
     else arrange({ mode: "split", order: place(view, zone), active: view });
   });
 
-  // The same arrangements without a drag, from a view's tab or header.
+  // Split, a header's menu is its part's switcher: every view, the one there checked, then Show as tabs. Stacked, a
+  // tab's menu splits the sidebar.
   async function viewMenu(view, event) {
-    const isSplit = split();
-    const chosen = await menu(isSplit
-      ? [{ id: "tabs", label: t()("viewsAsTabs") }, { id: "swap", label: t()("viewsSwap") }]
-      : [{ id: "split", label: t()("viewsSplit") }], event);
-    if (chosen === "tabs") arrange({ mode: "tabs", active: view });
-    // Split from a tab, that view takes a place beside the one above it.
-    if (chosen === "split") arrange({ mode: "split", order: slots().includes(view) || available().length < 3 ? layout.order : place(view, "bottom"), active: view });
-    if (chosen === "swap") { const [first, second] = slots(); arrange({ order: layout.order.map((each) => (each === first ? second : each === second ? first : each)) }); }
+    if (!split()) {
+      const chosen = await menu([{ id: "split", label: t()("viewsSplit") }], event);
+      // Split from a tab, that view takes a place beside the one above it.
+      if (chosen === "split") arrange({ mode: "split", order: slots().includes(view) || available().length < 3 ? layout.order : place(view, "bottom"), active: view });
+      return;
+    }
+    const chosen = await menu([
+      ...available().map((each) => ({ id: `view:${each}`, label: label(each), checked: each === view })),
+      { type: "separator" },
+      { id: "tabs", label: t()("viewsAsTabs") },
+    ], event);
+    if (chosen === "tabs") { arrange({ mode: "tabs", active: view }); return; }
+    const next = typeof chosen === "string" && chosen.startsWith("view:") ? chosen.slice(5) : null;
+    if (!next || next === view || !enabled[next]) return;
+    arrange({ order: place(next, slots().indexOf(view) === 0 ? "top" : "bottom"), active: next });
   }
 
   // The grip between split views sets their shares; a double-click restores the default.
