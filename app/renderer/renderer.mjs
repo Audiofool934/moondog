@@ -12,6 +12,7 @@ import { createSettings, EFFORTS } from "./settings.mjs";
 import { createSidebar } from "./sidebar.mjs";
 import { createLibrary } from "./library.mjs";
 import { createShelf } from "./shelf.mjs";
+import { createSidebarViews } from "./views.mjs";
 import { icon, make, marquee, name, scrollbar, setIcon, tooltips } from "./ui.mjs";
 import "./style.css";
 
@@ -51,7 +52,8 @@ const settings = createSettings({ state, send, t: tr,
 // The one-time first run asks for a music service, then a model, in the Settings sheet (first-run.mjs).
 const firstRun = createFirstRun({ settings, send, read: () => ({ run: state.firstRun, modelReady: state.model?.state === "configured" }) });
 const sidebar = createSidebar({ root: $("sessions"), state, send, t: tr, open: (id) => openSession(id), store, menuPoint: (event) => menuPoint(event) });
-const library = createLibrary({ root: $("library"), state, send, t: tr, open: (id) => openPlaylist(id), store, menuPoint: (event) => menuPoint(event) });
+const library = createLibrary({ root: $("library"), state, send, t: tr, open: (id) => openPlaylist(id), store, menuPoint: (event) => menuPoint(event),
+  onBusy: (value) => views.setBusy("library", value) });
 const shelf = createShelf({ root: $("shelf"), state, send, t: tr, menuPoint: (event) => menuPoint(event), onClose: () => closePlaylist() });
 const tips = tooltips();
 // A native menu opens at the pointer, or under its control when the keyboard pressed it.
@@ -120,27 +122,31 @@ function renderTitle() {
   // The folded record sits before the title, so it moves when the title does.
   placeSoon();
 }
-// The sidebar shows the conversations or the library; the choice is remembered, as the sidebar itself is.
-let sidebarMode = store.get("moondog.sidebar.mode") === "library" ? "library" : "conversations";
+// The sidebar's views, conversations and the library, as tabs or split (views.mjs). The bar's own switch only shows
+// and hides the sidebar; which view shows is the sidebar's business, so the two never fight.
+const views = createSidebarViews({ root: $("sidebar"), store, t: tr, menu: (items, event) => menu(items, event), onShow: (view) => {
+  // Back to the conversations as the one tab is back to the conversation, so a playlist open in the room closes.
+  if (view === "conversations" && views?.layout.mode === "tabs" && state.shelf) closePlaylist();
+  if (views?.showing("library")) library.render();
+},
+// Each view's +: a folder for the conversations, and the library's menu (playlist, folder, import).
+onAdd: (view, event) => {
+  if (view === "library") void library.newMenu(event);
+  else sidebar.startNewFolder();
+},
+addLabel: (view) => (view === "library" ? (library?.importing ? t("readingPlaylist") : t("libraryNew")) : t("newFolder")) });
 function renderSidebarMode() {
   // A core without a library (the project page's scene) shows only the conversations.
-  $("toggle-library").hidden = !state.libraryReady;
-  const inLibrary = sidebarMode === "library" && state.libraryReady === true;
-  $("sessions").hidden = inLibrary;
-  $("library").hidden = !inLibrary;
-  $("toggle-library").setAttribute("aria-pressed", String(inLibrary));
-  name($("toggle-library"), inLibrary ? t("conversations") : t("library"), "⌥⌘L");
-  // The new button always starts a conversation; the library makes its playlists and folders from its own bar.
-  if (inLibrary) library.render();
+  views.setEnabled(state.libraryReady === true);
+  views.render();
+  if (views.showing("library")) library.render();
 }
+// ⌥⌘L and the palette: the library's view, with the sidebar shown if it was folded away.
 function toggleLibrary() {
-  sidebarMode = sidebarMode === "library" ? "conversations" : "library";
-  store.set("moondog.sidebar.mode", sidebarMode);
-  // Back to the conversations is back to the conversation, so a playlist open in the room closes.
-  if (sidebarMode === "conversations" && state.shelf) closePlaylist();
   if (!shown("sidebar")) togglePanel("sidebar");
-  renderSidebarMode();
-  (sidebarMode === "library" ? $("library") : $("sessions")).querySelector("[aria-current='true'] button, .row button")?.focus({ preventScroll: true });
+  views.toggleLibrary();
+  (views.showing("library") && views.layout.active === "library" ? $("library") : $("sessions"))
+    .querySelector("[aria-current='true'] button, .row button")?.focus({ preventScroll: true });
 }
 // A playlist opens in the room in the conversation's place, and the conversation comes back when it closes.
 function openPlaylist(id) {
@@ -1229,11 +1235,11 @@ const COMMANDS = [
   { name: "remember", label: "remember", argument: "cmdRememberArgument", run: (text) => { if (text) { send({ type: "remember", text }); notice(t("remembered")); } } },
   { name: "folder", label: "newFolder", run: () => {
     if (!shown("sidebar")) togglePanel("sidebar");
-    if (sidebarMode === "library") library.startNew("folder", null); else sidebar.startNewFolder();
+    if (views.showing("library") && views.layout.active === "library") library.startNew("folder", null); else sidebar.startNewFolder();
   } },
   { name: "library", label: "library", run: () => toggleLibrary() },
   { name: "playlist", label: "newPlaylist", run: () => {
-    if (sidebarMode !== "library") toggleLibrary();
+    if (!views.showing("library")) toggleLibrary();
     else if (!shown("sidebar")) togglePanel("sidebar");
     library.startNew("playlist", null);
   } },
@@ -1978,7 +1984,6 @@ for (const panel of ["sidebar", "inspector"]) {
 $("toggle-sidebar").addEventListener("click", () => togglePanel("sidebar"));
 $("toggle-inspector").addEventListener("click", () => togglePanel("inspector"));
 $("new").addEventListener("click", () => openSession(null));
-$("toggle-library").addEventListener("click", () => toggleLibrary());
 // The heart beside the song keeps it in Saved; a right-click offers the listener's playlists, or a new one.
 $("keep").addEventListener("click", () => send({ type: "library-save", ...keepArtwork() }));
 $("keep").addEventListener("contextmenu", async (event) => {
