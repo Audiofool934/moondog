@@ -41,7 +41,8 @@ export async function prepareDmgUpload({ file, receipt, receiptFile, copy = copy
 export const NOTARY_KEY_FILE = path.join(homedir(), ".config", "apple-notary", "api-key.json");
 export function notaryAuth(environment = process.env, { exists = existsSync, read = (file) => readFileSync(file, "utf8"), file = NOTARY_KEY_FILE } = {}) {
   let saved = null;
-  if (!environment.MOONDOG_NOTARY_KEY && exists(file)) {
+  // Each variable overrides only its own field, so moving the .p8 file needs just MOONDOG_NOTARY_KEY.
+  if (exists(file)) {
     try { saved = JSON.parse(read(file)); } catch { throw new Error(`${file} is not valid JSON.`); }
   }
   const key = (environment.MOONDOG_NOTARY_KEY ?? saved?.key)?.trim();
