@@ -1,6 +1,6 @@
 {
   "name": "@audiofool/moondog",
-  "version": "0.3.0-beta.9",
+  "version": "0.3.0-beta.10",
   "type": "module",
   "description": "Local-first personal AI music agent.",
   "license": "Apache-2.0",
