@@ -319,8 +319,9 @@ img { -webkit-user-drag: none; }
 /* The listener's taste, in the room in the conversation's place as a playlist is: the profile, the reading,
    and the artists and tracks it rests on. Spacing groups it; nothing has a ground or a line of its own. */
 .taste { position: relative; flex: 1; min-height: 0; }
+/* The page fades under the title bar as the conversation does, so its words never run under the bar's controls. */
 .taste-scroll { height: 100%; overflow-y: auto; scrollbar-width: none; overscroll-behavior: contain; padding: calc(var(--bar) + 26px) 44px 28px;
-  mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent); }
+  mask-image: linear-gradient(to bottom, transparent 0, transparent calc(var(--bar) - 14px), #000 calc(var(--bar) + 14px), #000 calc(100% - 24px), transparent); }
 .taste-column { max-width: var(--column); margin-inline: auto; }
 .taste-head { margin-bottom: 30px; }
 .taste-title { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; }
