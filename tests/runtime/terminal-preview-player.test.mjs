@@ -130,6 +130,9 @@ test("a library playlist plays up to fifty entries, songs and made tracks in one
   const queue = player.remaining();
   assert.equal(queue.length, 50);
   assert.deepEqual([queue[1].title, queue[1].generated], ["Tide glass", true]);
+  // The first preview is still downloading; the folder goes only once the player has let go of it.
+  player.close();
+  await until(async () => (await readdir(players.temporaryRoot)).every((name) => name === "made.wav"), "the player left preview files behind");
 });
 
 test("a new queue replaces the one playing; skip, stop, and close end the sound at once", async (t) => {
