@@ -92,5 +92,5 @@ export async function readApplePlaylist({ id, url }, { fetchImpl = fetch, signal
 export async function readPublicPlaylistLink({ url }, { fetchImpl = fetch } = {}) {
   const playlist = await fetchPublicPlaylist({ input: url, fetchImpl });
   return { provider: playlist.provider, id: playlist.id, url: playlist.url, name: playlist.name, total: playlist.total,
-    tracks: playlist.rows.map((row) => ({ id: row.id, title: row.title, artist: row.artist, ...(row.album ? { album: row.album } : {}) })).filter((track) => track.artist) };
+    tracks: playlist.rows.map((row) => ({ id: row.id, title: row.title, artist: row.artist, ...(row.album ? { album: row.album } : {}), ...(row.artwork ? { artwork: row.artwork } : {}) })).filter((track) => track.artist) };
 }
