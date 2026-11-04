@@ -433,7 +433,22 @@ const STATES = {
   },
   "first-run-netease"() { STATES["first-run"](undefined, { netease: "ready" }); },
   // The library in the sidebar's place, a playlist open in the room, Saved, and a playlist with nothing in it yet.
-  library() { STATES.reply(); setTimeout(() => document.querySelector("[data-toggle-library]").click(), 120); },
+  library() { STATES.reply(); setTimeout(() => document.querySelector('[data-view-tab="library"]').click(), 120); },
+  // The library dragged by its tab to the lower part of the sidebar: conversations above, the library below.
+  "library-split"() {
+    STATES.reply();
+    setTimeout(() => {
+      const tab = document.querySelector('[data-view-tab="library"]');
+      const sidebar = document.querySelector("[data-sidebar]");
+      const views = document.querySelector("[data-views]").getBoundingClientRect();
+      const transfer = new DataTransfer();
+      const at = { clientX: views.left + 40, clientY: views.bottom - 40, bubbles: true, dataTransfer: transfer };
+      tab.dispatchEvent(new DragEvent("dragstart", { bubbles: true, dataTransfer: transfer }));
+      sidebar.querySelector("[data-views]").dispatchEvent(new DragEvent("dragover", at));
+      sidebar.querySelector("[data-views]").dispatchEvent(new DragEvent("drop", at));
+      tab.dispatchEvent(new DragEvent("dragend", { bubbles: true }));
+    }, 160);
+  },
   playlist(id = "lp1") {
     STATES.library();
     setTimeout(() => document.querySelector(`[data-library] .row[data-id="${id}"] .open`)?.click(), 260);
