@@ -45,6 +45,7 @@ import {
 import { runSpotifyCommand } from "../src/surfaces/cli/spotify-command.mjs";
 import { runListenBrainzCommand } from "../src/surfaces/cli/listenbrainz-command.mjs";
 import { openListeningHistoryStore } from "../src/profile/listening-history-store.mjs";
+import { musicHash, prepareMusicBundle } from "../src/profile/music-import-bundle.mjs";
 import { commitSpotifyQuickImport, prepareHistoryImport, prepareSpotifyQuickImport } from "../src/profile/history-import.mjs";
 import { persistAppleLibraryImport, refreshAppleLibraryImport } from "../src/profile/apple-library-import.mjs";
 import { IMPORT_GUIDE_URLS } from "../src/surfaces/cli/import-guides.mjs";
@@ -148,6 +149,28 @@ function parseArguments(argv) {
     from: fromArchives[0] ?? null,
     fromArchives,
   };
+}
+
+// A playlist imported into the library adds its songs to the listener's taste evidence, as a kept playlist, the
+// same way a public playlist imported from the Import guide does. Its source names where it came from.
+const PLAYLIST_TASTE_SOURCES = { spotify: "spotify_playlist", apple_music: "apple_music_playlist", netease: "netease", qq_music: "qq_music" };
+async function addPlaylistToTaste(found) {
+  const provider = PLAYLIST_TASTE_SOURCES[found.provider];
+  if (!provider) throw new Error("This playlist's service can't shape the profile.");
+  const historyStore = await openListeningHistoryStore();
+  try {
+    const appleSubjectId = await optionalAppleMusicSubjectId();
+    const subjectId = historyStore.localSubjectId({ ...(appleSubjectId ? { preferredSubjectId: appleSubjectId } : {}), create: true });
+    const rows = found.tracks.map((track, index) => ({ id: track.id, title: track.title, artist: track.artist, ...(track.album ? { album: track.album } : {}),
+      playlistId: found.id, playlistName: found.name, position: index + 1, member: "playlist-link.json", listenerMade: found.owned === true }));
+    const bytes = Buffer.from(JSON.stringify({ provider, id: found.id, name: found.name, rows }));
+    const prepared = prepareMusicBundle({ provider, subjectId, capturedAt: new Date().toISOString(), rows, digest: musicHash(bytes), size: bytes.length,
+      members: ["playlist-link.json"], fileName: found.name,
+      scopeNote: "A playlist the listener imported into their library. It shows what they keep, not what they played." });
+    return historyStore.ingestImport(prepared.bundle);
+  } finally {
+    historyStore.close();
+  }
 }
 
 async function optionalAppleMusicSubjectId() {
@@ -974,6 +997,8 @@ async function main() {
     domainServices, domainServicesError, spotifyConnection, locale, playbackService, playbackSelection, languageSelection, modelSwitch,
     webResearch, memoryStore, musicCatalog, musicPreviewPlayer: previewPlayer, neteasePlayer, localGenerator, atmosphereStream, musicSimilarity, artistIdentityResolver,
     spotifyTopArtists, musicApp, libraryStore,
+    // A playlist that shapes the taste reloads the profile services at once, so the evidence counts in this session.
+    playlistTaste: async (found) => { const receipt = await addPlaylistToTaste(found); replaceDomainServices(await loadDomainServices()); return receipt; },
   });
   const application = new MoondogApplication(applicationOptions({
     ...domainState, spotifyConnection, locale: await resolveListenerLocale(), playbackService,

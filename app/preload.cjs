@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld("moondogApp", {
     onAir: { available: playback?.onAir?.available === true, on: playback?.onAir?.on === true } }),
   showMenu: (items, at) => ipcRenderer.invoke("menu", { items, ...(at ?? {}) }),
   confirm: (options) => ipcRenderer.invoke("confirm", options),
+  ask: (options) => ipcRenderer.invoke("ask", options),
   chooseFile: (options) => ipcRenderer.invoke("choose-file", options),
   version: () => ipcRenderer.invoke("version"),
   // The window's light, dark or the system's, and the Dock's icon: { theme, icon }.

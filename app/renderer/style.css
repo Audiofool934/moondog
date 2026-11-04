@@ -260,6 +260,8 @@ img { -webkit-user-drag: none; }
 .library-add:hover { background: var(--press); color: var(--text); transition: none; }
 .library-add:active { background: var(--current); }
 .library-add .icon { width: 15px; height: 15px; }
+/* Reading a pasted playlist link: the plus breathes as a running conversation's dot does. */
+.library-add.busy .icon { animation: breathe 1.6s ease-in-out infinite; }
 .library .sleeve { width: 16px; height: 16px; flex: none; display: grid; place-items: center; border-radius: 3px; overflow: hidden; color: var(--text-3); }
 .library .sleeve img { width: 100%; height: 100%; object-fit: cover; display: block; box-shadow: var(--edge); }
 .library .sleeve .icon { width: 15px; height: 15px; }

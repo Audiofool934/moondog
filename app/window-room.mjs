@@ -1066,6 +1066,16 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
         send({ type: "library-saved", playlist: saved.playlist, added: saved.added, already: saved.already });
       } catch (error) { libraryNotice(error); }
     },
+    // A pasted playlist link: read first, so the window can ask before anything is kept.
+    "library-import-preview": async (data) => {
+      const preview = await base.previewPlaylistLink({ link: String(data.link ?? "") });
+      send({ type: "library-import-preview", ...preview, folderId: data.folderId ?? null });
+    },
+    "library-import": async (data) => {
+      const imported = await base.importPlaylistLink({ token: String(data.token ?? ""), taste: data.taste === true,
+        ...(data.folderId ? { folderId: String(data.folderId) } : {}) });
+      send({ type: "library-imported", ...imported });
+    },
     "library-play": async (data) => {
       try {
         const played = await base.playLibrary({ playlistId: String(data.playlistId ?? ""), ...(data.entryId ? { entryId: String(data.entryId) } : {}), shuffle: data.shuffle === true });

@@ -1089,7 +1089,26 @@ export async function runMoondogTui({
       setFooter(text, success);
       return;
     }
-    throw new Error(tr("Use /library, /library play <name>, or /library save [playlist]."));
+    // A playlist link: a copy in the library, and its songs in the listener's taste when they made it or say taste.
+    if (action === "import") {
+      const choice = rest.find((word) => ["taste", "no-taste"].includes(word));
+      const link = rest.filter((word) => word !== choice).join(" ").trim();
+      if (!link) throw new Error(tr("Paste a playlist link after /library import."));
+      setFooter(tr("Reading the playlist…"));
+      const imported = await application.importPlaylistFromLink({ link, ...(choice ? { taste: choice === "taste" } : {}) });
+      const counted = imported.total && imported.total > imported.added
+        ? tr("{added} of {total} songs came in.", { added: imported.added, total: imported.total })
+        : tr.n(imported.added, "{count} song came in.", "{count} songs came in.");
+      const taste = imported.taste === "added" ? tr("It now shapes your taste.")
+        : imported.taste === "failed" ? tr("It couldn't shape your taste this time.")
+          : tr("It doesn't shape your taste; add taste after the link if it should.");
+      addMoondogMessage(`${tr("Imported {name}.", { name: imported.playlist.name })} ${counted} ${taste}`);
+      setFooter(tr("Imported {name}.", { name: imported.playlist.name }), success);
+      // A playlist that shapes the taste shows the profile it now reads, as any import into the profile does.
+      if (imported.taste === "added") await openProfile({ imported: true }).catch(() => {});
+      return;
+    }
+    throw new Error(tr("Use /library, /library play <name>, /library save [playlist], or /library import <link>."));
   };
 
   const removeLifecycleListeners = () => {

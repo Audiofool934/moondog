@@ -171,6 +171,9 @@ A track you keep in your library keeps its audio.
 Songs by artists and the tracks Moondog made sit in it side by side, and each says which it is.
 `/library save` keeps the song or track playing now in Saved, and `/library save Night drive` keeps it in that playlist, which it makes if there is none.
 `/library play Night drive` plays a playlist on the music service you chose.
+`/library import <link>` copies a Spotify, Apple Music, NetEase Music or QQ Music playlist into your library.
+A playlist you made on Spotify also shapes your taste; for any other one, add `taste` after the link if it should, or `no-taste` if yours shouldn't.
+A Spotify link needs Spotify connected; the others need no sign-in.
 With Apple Music, its songs and Moondog's tracks play in one queue in Moondog's player; with Spotify or NetEase, its songs play there and Moondog's tracks are left out.
 You can also ask in your own words, such as "save this" or "play my rainy-day playlist".
 The desktop app shows the same library in its sidebar (⌥⌘L), with folders inside folders, four levels deep.

@@ -1616,7 +1616,7 @@ function persistedExplanation(record) {
     library_artist_followed: `The artist appears in the followed-artists snapshot captured at ${record.provenance.captured_at}.`,
     library_track_banned: `The track appears in the explicitly banned-tracks snapshot captured at ${record.provenance.captured_at}.`,
     library_artist_banned: `The artist appears in the explicitly banned-artists snapshot captured at ${record.provenance.captured_at}.`,
-    playlist_track_added: `The track appears in the ${provider} playlist named ${JSON.stringify(attributes.playlist_name)} at position ${attributes.playlist_position}.` + (attributes.selected_public_playlist ? " You selected this public playlist; ownership and listening are not established." : ""),
+    playlist_track_added: `The track appears in the ${provider} playlist named ${JSON.stringify(attributes.playlist_name)} at position ${attributes.playlist_position}.` + (attributes.listener_made ? " You made this playlist; listening is not established." : attributes.selected_public_playlist ? " You selected this public playlist; ownership and listening are not established." : ""),
     search_result_interacted: `A Spotify search for ${JSON.stringify(label)} led to an interaction with a ${attributes.result_entity_type} result at ${record.observed_at}.`,
     wrapped_track_ranked: `Spotify Wrapped ranked this track at position ${attributes.rank} for ${attributes.period}.`,
     wrapped_artist_ranked: `Spotify Wrapped ranked this artist at position ${attributes.rank} for ${attributes.period}.`,

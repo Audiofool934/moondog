@@ -909,6 +909,26 @@ export function createSpotifyService(options = {}) {
         tracks: page ? page.items.map((entry) => entry.item).filter(Boolean) : null };
     },
 
+    // A whole playlist for the listener's library: its name, whether the signed-in listener owns it, and its
+    // songs page by page, up to 2,000. Spotify's own editorial playlists answer most apps with not found.
+    async readPlaylist({ playlistId } = {}, { signal } = {}) {
+      const id = requiredPlaylistId(String(playlistId ?? ""));
+      const playlist = await client.getPlaylist({ playlistId: id }, { signal });
+      if (!playlist) fail("spotify_playlist_unavailable", "Spotify did not describe this playlist.");
+      const tracks = [];
+      const pageSize = SPOTIFY_SERVICE_LIMITS.playlistItemsPageMax;
+      for (let offset = 0; offset < 2000; offset += pageSize) {
+        const page = await client.getPlaylistItems({ playlistId: id, limit: pageSize, offset }, { signal });
+        // A local file on the owner's computer has no catalog song to play or name; it stays out.
+        tracks.push(...page.items.filter((entry) => entry.is_local !== true).map((entry) => entry.item)
+          .filter((item) => item?.type === "track" && item.name && item.artists?.length && /^spotify:track:/u.test(item.uri ?? "")));
+        if (!page.has_more || !page.items.length) break;
+      }
+      const account = await client.getAccount({ signal }).catch((error) => (signal?.aborted ? Promise.reject(error) : null));
+      return { name: playlist.name, uri: playlist.uri, tracks_total: playlist.tracks_total ?? null,
+        owned: account?.account_id && playlist.owner_id ? account.account_id === playlist.owner_id : null, tracks };
+    },
+
     // One device decision for a whole queue request. An idle device cannot take a
     // queue entry, so the caller starts the first song there and queues the rest.
     async queueTarget(value, { signal } = {}) {

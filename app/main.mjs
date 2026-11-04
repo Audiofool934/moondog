@@ -378,6 +378,13 @@ ipcMain.handle("confirm", async (_event, { message, detail, confirm, cancel }) =
     buttons: [String(confirm ?? "OK"), String(cancel ?? "Cancel")], defaultId: 1, cancelId: 1 });
   return response === 0;
 });
+// A plain question with one choice beside it, such as importing a playlist and whether it shapes the listener's taste.
+ipcMain.handle("ask", async (_event, { message, detail, confirm, cancel, checkbox, checked } = {}) => {
+  const { response, checkboxChecked } = await dialog.showMessageBox(window, { type: "none", message: String(message ?? ""), detail: String(detail ?? ""),
+    buttons: [String(confirm ?? "OK"), String(cancel ?? "Cancel")], defaultId: 0, cancelId: 1,
+    ...(checkbox ? { checkboxLabel: String(checkbox), checkboxChecked: checked === true } : {}) });
+  return { confirmed: response === 0, checked: checkboxChecked === true };
+});
 ipcMain.handle("choose-file", async (_event, { title, filterName } = {}) => {
   const { canceled, filePaths } = await dialog.showOpenDialog(window, { title: String(title ?? ""), properties: ["openFile"],
     filters: [{ name: String(filterName ?? "Listening history"), extensions: ["zip", "json", "xml", "csv"] }] });

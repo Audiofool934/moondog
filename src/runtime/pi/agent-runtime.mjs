@@ -6675,6 +6675,35 @@ function createToolFactories(
       }),
     ],
     [
+      "collection.import",
+      (descriptor) => ({
+        name: descriptor.tool_name,
+        label: descriptor.label,
+        description:
+          "Import a playlist into the listener's library from a link they pasted (Spotify, Apple Music, NetEase Music or QQ Music), only when they ask to import, add or bring in that playlist. It makes a copy in their library. taste says whether its songs also shape their listening profile: pass it only when they said so; left out, a playlist they made on Spotify shapes it and any other playlist does not. Report the playlist's name, how many songs came in out of the playlist's total, and whether it shapes their taste (taste: added, not_added, failed).",
+        parameters: Type.Object(
+          {
+            link: Type.String({ minLength: 8, maxLength: 600 }),
+            taste: Type.Optional(Type.Boolean()),
+            name: Type.Optional(Type.String({ minLength: 1, maxLength: 120 })),
+          },
+          { additionalProperties: false },
+        ),
+        executionMode: "sequential",
+        execute: executeDomain(
+          async (_toolCallId, parameters, signal) => application.importPlaylistFromLink({ link: parameters.link, taste: parameters.taste, name: parameters.name }, { signal }),
+          (value) => ({
+            playlist: { id: cleanOutputText(value.playlist?.id, 128, "playlist_id"), name: cleanOutputText(value.playlist?.name, 120, "playlist_name") },
+            provider: cleanOutputText(value.provider, 32, "provider"),
+            added: Number(value.added) || 0,
+            ...(Number.isInteger(value.total) ? { total: value.total } : {}),
+            owned_by_listener: value.owned === true ? true : value.owned === false ? false : "unknown",
+            taste: ["added", "not_added", "failed", "unavailable"].includes(value.taste) ? value.taste : "not_added",
+          }),
+        ),
+      }),
+    ],
+    [
       "collection.play",
       (descriptor) => ({
         name: descriptor.tool_name,
@@ -6912,7 +6941,7 @@ Public web research rules:
 
 Grounding and evidence rules:
 - Before naming or selecting tracks as present in the user's library, call moondog_library_search.
-- The listener's collection in Moondog (Saved and their own playlists, which can hold songs and tracks Moondog made) is separate from their imported library and from Spotify. When they ask to save, keep, collect or like music (收藏, 存下来) without naming Spotify, use moondog_collection_save; use moondog_spotify_library_save only when they name Spotify or Liked Songs. To play one of their playlists, find it with moondog_collection_list and play it with moondog_collection_play.
+- The listener's collection in Moondog (Saved and their own playlists, which can hold songs and tracks Moondog made) is separate from their imported library and from Spotify. When they ask to save, keep, collect or like music (收藏, 存下来) without naming Spotify, use moondog_collection_save; use moondog_spotify_library_save only when they name Spotify or Liked Songs. To play one of their playlists, find it with moondog_collection_list and play it with moondog_collection_play. When they paste a playlist link and ask to import or add it, use moondog_collection_import.
 - When personalization matters, call moondog_profile_summary instead of assuming a profile.
 - Before saying how often, when, or whether the listener played something, check the listening coverage. Plays inside a gap, outside every source's span, or after recent_plays_checked_at are unknown, not zero. When a gap could hold the plays in question, lead with that boundary, for example "I have no records from August 30 to October 21", and do not conclude that the listener rarely plays it or only just found it.
 - The saved reading is enduring taste up to its listening date. Recent attention is the present: stored plays from the last four weeks, and Spotify's four-week top artists, which count listening on every device, including plays Moondog never stored and songs Moondog itself played or queued; stored plays count those apart as moondog_started_plays. When they disagree about what the listener plays lately, trust recent attention, and say which one you read.
