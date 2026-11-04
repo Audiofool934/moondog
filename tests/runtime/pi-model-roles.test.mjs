@@ -77,14 +77,14 @@ test("/model roles, vision and web show and set what each model is for", async (
   const run = (args) => runModelRolesCommand({ args, modelSettings: settings, webResearch });
 
   const shown = await run(["roles"]);
-  assert.match(shown, /Seeing images: auto, now Claude Sonnet 5\.5 \(Anthropic\)/u);
+  assert.match(shown, /Vision: auto, now Claude Sonnet 5\.5 \(Anthropic\)/u);
   assert.match(shown, /Web search: auto, now DeepSeek/u);
-  assert.match(shown, /Hearing audio: not available yet/u);
+  assert.match(shown, /Audio: not available yet/u);
 
   assert.match(await run(["web", "brave"]), /Web search: Brave Search \(not set up; falls back to the next service\)/u);
   assert.equal(refreshed, 1);
   assert.deepEqual(await readModelRoles(environment), { web_search: { service: "brave" } });
-  assert.match(await run(["vision", "anthropic", "claude-opus-5-5"]), /Seeing images: Claude Opus 5\.5 \(Anthropic\)/u);
+  assert.match(await run(["vision", "anthropic", "claude-opus-5-5"]), /Vision: Claude Opus 5\.5 \(Anthropic\)/u);
   assert.match(await run(["audio"]), /isn't available yet/u);
   await assert.rejects(run(["web", "google"]), /Usage: \/model roles/u);
 });

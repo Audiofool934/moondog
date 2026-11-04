@@ -521,7 +521,7 @@ export function createSettings({ state, send, t, appleMusic = null, onHide = nul
     parts.push(group(say("providers"), providerList(chosen)));
     return parts.filter(Boolean);
   }
-  // What each model is for, after Hermes Agent's auxiliary models. The menu above is the chat model;
+  // Auxiliary models, after Hermes Agent's. The menu above is the chat model;
   // here vision and web search each open to auto and their choices, and audio holds its place.
   const roleChoice = (role) => (data.rolePending.has(role.id) ? data.rolePending.get(role.id) : role.choice);
   const sameRoleChoice = (left, right) => (left?.service !== undefined ? left.service === right?.service : sameModel(left, right));

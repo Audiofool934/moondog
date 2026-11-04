@@ -553,7 +553,7 @@ const STATES = {
     STATES.reply(); slash("model");
     setTimeout(() => document.querySelector('[data-key="provider:openai"]')?.click(), 200);
   },
-  // Uses, open to vision and to web search: auto first, then the models or services it can pick.
+  // Auxiliary models, open to vision and to web search: auto first, then the models or services it can pick.
   "settings-model-vision"() {
     STATES.reply(); slash("model");
     setTimeout(() => document.querySelector('[data-key="role:vision"]')?.click(), 200);
