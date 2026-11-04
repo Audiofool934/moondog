@@ -3,6 +3,7 @@
 // Enter plays from that entry. Entries drag to a new place in the list, or onto a playlist in the sidebar to
 // copy them there. The composer stays below, so the listener can go on talking to Moondog.
 import { coverUrl, ENTRY_DRAG } from "./library.mjs";
+import { discButton } from "./disc.mjs";
 import { icon, make, name } from "./ui.mjs";
 
 const madeCover = (id) => `moondog-media://generated/${id}/cover.svg`;
@@ -19,7 +20,14 @@ export function createShelf({ root, state, send, t, menuPoint, onClose }) {
   const actions = make("div", "shelf-actions");
   const play = make("button", "shelf-play");
   play.type = "button";
-  play.append(icon("play", "icon fill"));
+  // A record button (disc.mjs): its glints turn while this playlist plays.
+  const playDisc = discButton(play, { size: 36, glyph: "play-disc", fill: true });
+  let playingNow = null;
+  const turnIfPlaying = () => {
+    const current = playlist();
+    const title = String(playingNow?.title ?? "");
+    playDisc.setTurning(Boolean(playingNow?.playing && current && title && current.entries.some((entry) => entry.title === title)));
+  };
   const shuffle = make("button", "tool");
   shuffle.type = "button";
   shuffle.append(icon("shuffle"));
@@ -233,6 +241,7 @@ export function createShelf({ root, state, send, t, menuPoint, onClose }) {
     root.hidden = !state.shelf?.id;
     if (!current) {
       list.replaceChildren();
+      turnIfPlaying();
       return;
     }
     if (!renaming && title.textContent !== shownName(current)) title.textContent = shownName(current);
@@ -272,6 +281,7 @@ export function createShelf({ root, state, send, t, menuPoint, onClose }) {
     empty.textContent = songs ? "" : current.saved ? t()("savedEmpty") : t()("playlistEmpty");
     empty.hidden = Boolean(songs);
     paint();
+    turnIfPlaying();
   }
   const set = (node, key, value) => { if (node[key] !== value) node[key] = value; };
 
@@ -279,5 +289,8 @@ export function createShelf({ root, state, send, t, menuPoint, onClose }) {
     render,
     reset() { selected.clear(); shownArt = undefined; scroller.scrollTop = 0; },
     focus() { play.focus({ preventScroll: true }); },
+    // The song playing now belongs to this playlist: its play button's glints turn. A paused song stills them.
+    // The playlist can arrive after the player's news, so each draw of the playlist looks again.
+    syncPlaying(now) { playingNow = now ?? null; turnIfPlaying(); },
   };
 }
