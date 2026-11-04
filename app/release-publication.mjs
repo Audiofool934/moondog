@@ -69,16 +69,27 @@ export async function waitFor(read, { deadline, now = Date.now, sleep = ms => ne
 // slow. Each attempt checks what is already there by its hash and removes the empty placeholder a
 // broken upload leaves, so trying the whole step again changes nothing that was already uploaded.
 const TRANSIENT_UPLOAD_STATUSES = new Set([408, 500, 502, 503, 504]);
+// An upload that runs past its time limit (uploadTimeoutMs) stalled on the way; it is tried again like a network timeout.
 export async function retryTransientUpload(operation, { attempts = 3, wait = ms => new Promise(resolve => setTimeout(resolve, ms)), warn = console.warn } = {}) {
   for (let attempt = 1; ; attempt++) {
     try { return await operation(); }
     catch (error) {
-      const transient = TRANSIENT_UPLOAD_STATUSES.has(error?.httpStatus) || error?.networkTimeout === true;
+      const transient = TRANSIENT_UPLOAD_STATUSES.has(error?.httpStatus) || error?.networkTimeout === true || error?.timedOut === true;
       if (attempt >= attempts || !transient) throw error;
-      warn(`GitHub's upload did not finish (${error.httpStatus ? `HTTP ${error.httpStatus}` : "network timeout"}). Retry ${attempt + 1}/${attempts} in ${attempt * 30} s.`);
+      warn(`GitHub's upload did not finish (${error.httpStatus ? `HTTP ${error.httpStatus}` : error.timedOut ? "it stalled" : "network timeout"}). Retry ${attempt + 1}/${attempts} in ${attempt * 30} s.`);
       await wait(attempt * 30_000);
     }
   }
+}
+
+// How long one upload may run: its bytes at a slow line (128 KB/s, shared by the big files that upload at once),
+// plus two minutes to connect, between ten minutes and an hour. A connection that stalls without breaking sends
+// nothing and reports nothing, so this limit is what gives it up for another try; a flat two hours once left a
+// release waiting three hours on one stalled ZIP (0.3.0-beta.9).
+const SLOW_LINE_BYTES_PER_SECOND = 128_000;
+export function uploadTimeoutMs(bytes, { sharing = 1 } = {}) {
+  const seconds = 120 + (Number(bytes) || 0) * Math.max(1, sharing) / SLOW_LINE_BYTES_PER_SECOND;
+  return Math.round(Math.min(60 * 60, Math.max(10 * 60, seconds)) * 1000);
 }
 
 export async function uploadImmutableAssets({ items, getRelease, upload, remoteDigest, deleteAsset }) {
