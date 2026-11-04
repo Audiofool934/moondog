@@ -609,6 +609,15 @@ const STATES = {
       field.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
     }, 200);
   },
+  // An image dragged over the window: its drop covers the conversation, not the sidebar or the window's edge.
+  "drop-image"() {
+    STATES.reply();
+    setTimeout(() => {
+      const transfer = new DataTransfer();
+      transfer.items.add(new File([new Uint8Array([137, 80, 78, 71])], "cover.png", { type: "image/png" }));
+      window.dispatchEvent(new DragEvent("dragenter", { dataTransfer: transfer, bubbles: true }));
+    }, 200);
+  },
   // The sent image opened at full size over the window.
   "image-open"() {
     STATES["reply-image"]();

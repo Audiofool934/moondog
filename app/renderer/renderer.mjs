@@ -2132,19 +2132,23 @@ marquee($("now"), ".song h2, .song p", { tail: () => 16 });
 let dragDepth = 0;
 const hasFiles = (event) => [...(event.dataTransfer?.types ?? [])].includes("Files");
 const onlyImages = (list) => list.length > 0 && [...list].every((entry) => IMAGE_TYPES.has(entry.type));
+// Images show their drop over the conversation; anything else over the whole window.
+const hideDrops = () => { $("drop").hidden = true; $("drop-attach").hidden = true; };
 window.addEventListener("dragenter", (event) => {
   if (!hasFiles(event)) return;
   dragDepth += 1;
-  $("drop-hint").textContent = t(onlyImages(event.dataTransfer.items ?? []) ? "dropToAttach" : "dropToImport");
-  $("drop").hidden = false;
+  const images = onlyImages(event.dataTransfer.items ?? []);
+  $("drop-attach-hint").textContent = t("dropToAttach");
+  $("drop-attach").hidden = !images;
+  $("drop").hidden = images;
 });
-window.addEventListener("dragleave", (event) => { if (!hasFiles(event)) return; dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) $("drop").hidden = true; });
+window.addEventListener("dragleave", (event) => { if (!hasFiles(event)) return; dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) hideDrops(); });
 window.addEventListener("dragover", (event) => { if (hasFiles(event)) event.preventDefault(); });
 window.addEventListener("drop", (event) => {
   if (!hasFiles(event)) return;
   event.preventDefault();
   dragDepth = 0;
-  $("drop").hidden = true;
+  hideDrops();
   if (onlyImages(event.dataTransfer.files)) { void attachImages(event.dataTransfer.files); return; }
   const file = event.dataTransfer.files[0];
   const path = file ? window.moondogApp?.pathForFile?.(file) : null;
