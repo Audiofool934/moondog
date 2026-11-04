@@ -54,6 +54,30 @@ async function boundedJson(response) {
   catch { throw new Error("The service changed its playlist response or requires sign-in. No music was imported."); }
 }
 
+// A NetEase playlist, as { code, result: { id, name, privacy, trackCount, tracks } }. NetEase's web player reads
+// playlists with v6, which answers every public one, a listener's Liked songs among them, with all its song ids but
+// details for only the first few without a sign-in; the rest come from song/detail, 200 at a time, in the
+// playlist's order. The older endpoint, which some playlists answer with code 20001, is the fallback.
+const NETEASE_SONGS_MAX = 3000;
+async function neteasePlaylist(id, fetchImpl) {
+  const referer = "https://music.163.com/";
+  const current = await boundedJson(await responseFor(`https://music.163.com/api/v6/playlist/detail?id=${id}&n=100000`, fetchImpl, referer)).catch(() => null);
+  const playlist = current?.code === 200 ? current.playlist : null;
+  if (!playlist || !Array.isArray(playlist.trackIds)) {
+    return boundedJson(await responseFor(`https://music.163.com/api/playlist/detail?id=${id}`, fetchImpl, referer));
+  }
+  const ids = playlist.trackIds.map((entry) => String(entry?.id ?? "")).filter((value) => numericId.test(value)).slice(0, NETEASE_SONGS_MAX);
+  const songs = new Map((Array.isArray(playlist.tracks) ? playlist.tracks : []).map((song) => [String(song?.id ?? ""), song]));
+  const missing = ids.filter((songId) => !songs.has(songId));
+  for (let start = 0; start < missing.length; start += 200) {
+    const batch = missing.slice(start, start + 200);
+    const detail = await boundedJson(await responseFor(`https://music.163.com/api/song/detail/?ids=${encodeURIComponent(`[${batch.join(",")}]`)}`, fetchImpl, referer));
+    for (const song of Array.isArray(detail?.songs) ? detail.songs : []) songs.set(String(song?.id ?? ""), song);
+  }
+  return { code: 200, result: { id: playlist.id, name: playlist.name, privacy: playlist.privacy, trackCount: playlist.trackCount ?? ids.length,
+    tracks: ids.map((songId) => songs.get(songId)).filter(Boolean) } };
+}
+
 /** A public QQ Music or NetEase playlist by its share link: { provider, id, url, name, total, rows, skipped }. */
 export async function fetchPublicPlaylist({ input, provider, fetchImpl = fetch }) {
   let url = playlistLink(input);
@@ -70,10 +94,9 @@ export async function fetchPublicPlaylist({ input, provider, fetchImpl = fetch }
   if (!identity) throw new Error("Open this share link in your browser, then copy the full playlist page URL. Song, album and private playlist links are not supported.");
   if (provider && ["qq_music", "netease"].includes(provider) && provider !== identity.provider) throw new Error("This link belongs to another service. Go back and choose that service, or paste the matching playlist link.");
   const qq = identity.provider === "qq_music";
-  const endpoint = qq
-    ? `https://c.y.qq.com/qzone/fcg-bin/fcg_ucc_getcdinfo_byids_cp.fcg?type=1&json=1&utf8=1&onlysong=0&disstid=${identity.id}&format=json`
-    : `https://music.163.com/api/playlist/detail?id=${identity.id}`;
-  const data = await boundedJson(await responseFor(endpoint, fetchImpl, qq ? "https://y.qq.com/" : "https://music.163.com/"));
+  const data = qq
+    ? await boundedJson(await responseFor(`https://c.y.qq.com/qzone/fcg-bin/fcg_ucc_getcdinfo_byids_cp.fcg?type=1&json=1&utf8=1&onlysong=0&disstid=${identity.id}&format=json`, fetchImpl, "https://y.qq.com/"))
+    : await neteasePlaylist(identity.id, fetchImpl);
   const playlist = qq ? data?.cdlist?.[0] : data?.result;
   if ((qq ? data?.code !== 0 || data?.subcode !== 0 : data?.code !== 200) || !playlist
     || (qq ? Number(playlist.dir_show) === 0 : Number(playlist.privacy) === 10)) throw new Error("This playlist is unavailable publicly. Choose a playlist you can open without signing in; no account password or cookies are needed.");
