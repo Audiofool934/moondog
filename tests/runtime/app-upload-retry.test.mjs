@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { retryTransientUpload } from "../../app/release-publication.mjs";
+import { retryTransientUpload, uploadTimeoutMs } from "../../app/release-publication.mjs";
 import { commandFailure } from "../../app/release-tools.mjs";
 
 const quiet = { wait: async () => {}, warn: () => {} };
@@ -18,6 +18,19 @@ test("a timed-out upload to GitHub is tried again, at most three times", async (
   calls = 0;
   await assert.rejects(retryTransientUpload(async () => { calls += 1; throw commandFailure("gh", { code: 1, stderr: "HTTP 502" }); }, quiet), /HTTP 502/u);
   assert.equal(calls, 3);
+});
+
+test("an upload that stalls past its time limit is tried again, and the limit follows the file's size", async () => {
+  let calls = 0;
+  await retryTransientUpload(async () => { calls += 1; if (calls === 1) throw commandFailure("gh", { code: null, signal: "SIGTERM", timedOut: true }); }, quiet);
+  assert.equal(calls, 2);
+  const minutes = (bytes, options) => uploadTimeoutMs(bytes, options) / 60_000;
+  // The update feed and the manifest get the floor; a 150 MB ZIP sharing the line with the DMG gets about 41 minutes.
+  assert.equal(minutes(1_500), 10);
+  assert.equal(Math.round(minutes(150_887_031, { sharing: 2 })), 41);
+  assert.ok(minutes(150_887_031) < minutes(150_887_031, { sharing: 2 }));
+  // Never the flat two hours that once left a stalled ZIP waiting.
+  assert.equal(minutes(2_000_000_000, { sharing: 2 }), 60);
 });
 
 test("a broken connection counts as transient, and other failures stop at once", async () => {

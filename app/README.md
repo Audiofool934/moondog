@@ -262,6 +262,7 @@ To publish an update:
    `--create` prepares a missing draft; it does not bypass npm or artifact verification.
    Existing remote assets with identical hashes are reused.
    An upload that GitHub answers with 408 or a 5xx, or that times out on the way, is tried again up to three times, 30 and 60 seconds apart.
+   Each upload has a time limit sized to its file (a slow line, shared by the big files uploading at once, between ten minutes and an hour), so one that stalls without breaking is given up and tried again.
    Different bytes under the same filename are rejected; release a new version instead of overwriting a published build.
 
 If publication tooling needs a fix after a version is tagged, keep its original artifacts and manifest.
