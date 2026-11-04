@@ -130,14 +130,14 @@ function renderSidebarMode() {
   $("library").hidden = !inLibrary;
   $("toggle-library").setAttribute("aria-pressed", String(inLibrary));
   name($("toggle-library"), inLibrary ? t("conversations") : t("library"), "⌥⌘L");
-  // In the library the new button makes a playlist or a folder; ⌘N still starts a conversation.
-  setIcon($("new"), inLibrary ? "plus" : "compose");
-  name($("new"), inLibrary ? t("libraryNew") : t("newConversation"), inLibrary ? "" : "⌘N");
+  // The new button always starts a conversation; the library makes its playlists and folders from its own bar.
   if (inLibrary) library.render();
 }
 function toggleLibrary() {
   sidebarMode = sidebarMode === "library" ? "conversations" : "library";
   store.set("moondog.sidebar.mode", sidebarMode);
+  // Back to the conversations is back to the conversation, so a playlist open in the room closes.
+  if (sidebarMode === "conversations" && state.shelf) closePlaylist();
   if (!shown("sidebar")) togglePanel("sidebar");
   renderSidebarMode();
   (sidebarMode === "library" ? $("library") : $("sessions")).querySelector("[aria-current='true'] button, .row button")?.focus({ preventScroll: true });
@@ -1964,7 +1964,7 @@ for (const panel of ["sidebar", "inspector"]) {
 }
 $("toggle-sidebar").addEventListener("click", () => togglePanel("sidebar"));
 $("toggle-inspector").addEventListener("click", () => togglePanel("inspector"));
-$("new").addEventListener("click", (event) => (sidebarMode === "library" ? void library.newMenu(event) : openSession(null)));
+$("new").addEventListener("click", () => openSession(null));
 $("toggle-library").addEventListener("click", () => toggleLibrary());
 // The heart beside the song keeps it in Saved; a right-click offers the listener's playlists, or a new one.
 $("keep").addEventListener("click", () => send({ type: "library-save", ...keepArtwork() }));
