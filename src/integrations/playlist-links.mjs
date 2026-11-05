@@ -70,13 +70,17 @@ export async function readApplePlaylist({ id, url }, { fetchImpl = fetch, signal
     const url = node.artwork?.dictionary?.url;
     return typeof url === "string" && url.startsWith("https://") ? url.replace("{w}x{h}", `${size}x${size}`).replace("{c}", "").replace("{f}", "jpg") : null;
   };
+  // The playlist's own entry in the server data. A listener's own playlist has no schema block, and its og:title
+  // reads "Name by Listener on Apple Music", so this entry's title and count come first.
+  let own = null;
   let cover = null;
   // The server data lists each song as a track lockup with its title, its artist and its catalog id.
   const walk = (node, depth) => {
     if (!node || typeof node !== "object" || depth > 12 || tracks.length >= 2000) return;
     if (Array.isArray(node)) { for (const each of node) walk(each, depth + 1); return; }
     const catalog = node.contentDescriptor?.identifiers?.storeAdamID;
-    if (!cover && node.contentDescriptor?.kind === "playlist" && catalog === id) cover = artworkAt(node, 600);
+    // The page's intent carries the same id with no title or artwork, and comes first.
+    if (!own && node.contentDescriptor?.kind === "playlist" && catalog === id && typeof node.title === "string") { own = node; cover = artworkAt(node, 600); }
     if (typeof node.title === "string" && typeof node.artistName === "string" && node.contentDescriptor?.kind === "song" && catalog) {
       const key = String(catalog);
       if (!seen.has(key)) {
@@ -89,8 +93,9 @@ export async function readApplePlaylist({ id, url }, { fetchImpl = fetch, signal
     for (const value of Object.values(node)) walk(value, depth + 1);
   };
   walk(data, 0);
-  const name = text(schema?.name) || text(/<meta property="og:title" content="([^"]+)"/u.exec(html)?.[1]) || "Apple Music playlist";
-  const total = Number.isSafeInteger(Number(schema?.numTracks)) ? Number(schema.numTracks) : null;
+  const name = text(own?.title) || text(schema?.name) || text(/<meta property="og:title" content="([^"]+)"/u.exec(html)?.[1]) || "Apple Music playlist";
+  const count = schema?.numTracks ?? own?.trackCount;
+  const total = count !== null && count !== undefined && Number.isSafeInteger(Number(count)) ? Number(count) : null;
   if (!tracks.length) fail("playlist_unavailable", "Apple Music didn't list the songs of this playlist. Check that it is shared publicly.");
   return { provider: "apple_music", id, url, name, ...(cover ? { cover } : {}), total: total !== null && total >= tracks.length ? total : null, tracks: tracks.filter((track) => track.title && track.artist) };
 }

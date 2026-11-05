@@ -44,6 +44,18 @@ test("an Apple Music playlist page gives its name, its total and each song once,
   await assert.rejects(readApplePlaylist(link, { fetchImpl: respond("<html></html>") }), { code: "playlist_unavailable" });
 });
 
+test("a listener's own Apple Music playlist has no schema block: its name, count and cover come from its own entry", async () => {
+  const link = parsePlaylistLink("https://music.apple.com/us/playlist/a-song/pl.u-1abcdefg");
+  const header = { title: "A Song", trackCount: 80, contentDescriptor: { kind: "playlist", identifiers: { storeAdamID: "pl.u-1abcdefg" } },
+    artwork: { dictionary: { url: "https://is1-ssl.mzstatic.com/image/thumb/gen/{w}x{h}AM.PDCXS14.{f}?t=x" } } };
+  const other = { ...header, title: "Another", trackCount: 3, contentDescriptor: { kind: "playlist", identifiers: { storeAdamID: "pl.other" } } };
+  const intent = { contentDescriptor: header.contentDescriptor };
+  const data = { data: [{ intent, data: { sections: [{ items: [other] }, { items: [header] }, { items: [lockup("11", "Pink Moon", "Nick Drake")] }] } }] };
+  const page = `<html><meta property="og:title" content="A Song by A Listener on Apple Music"><script type="application/json" id="serialized-server-data">${JSON.stringify(data)}</script></html>`;
+  const playlist = await readApplePlaylist(link, { fetchImpl: respond(page) });
+  assert.deepEqual([playlist.name, playlist.total, playlist.cover], ["A Song", 80, "https://is1-ssl.mzstatic.com/image/thumb/gen/600x600AM.PDCXS14.jpg?t=x"]);
+});
+
 test("a NetEase playlist reads every song, in its order, when the playlist answer details only the first", async () => {
   const song = (id, name) => ({ id, name, artists: [{ name: "求导乐队" }], album: { name: "圈中乐园", picUrl: `http://p2.music.126.net/${id}.jpg` } });
   const asked = [];
