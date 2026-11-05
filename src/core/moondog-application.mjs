@@ -857,18 +857,23 @@ export class MoondogApplication {
       total: found.total ?? null, owned: found.owned, taste: tasteState };
   }
 
-  /** Fills in the cover of Spotify playlists imported before Moondog kept one, each tried once while Moondog runs. */
+  /** Fills in the cover of Spotify and Apple Music playlists imported before Moondog kept one, each tried once while Moondog runs. */
   async refreshLibraryCovers({ signal } = {}) {
-    if (!this.libraryReady() || !this.spotifyReady()) return;
+    if (!this.libraryReady()) return;
     this.libraryCoversTried ??= new Set();
     const library = this.libraryStore;
+    const readers = {
+      // Spotify may connect later, so a playlist waiting for it is not counted as tried.
+      ...(this.spotifyReady() ? { spotify: (source) => this.requireSpotifyService().readPlaylistCover({ playlistId: source.id }, { signal }) } : {}),
+      apple_music: async (source) => (await readApplePlaylist(source, { signal })).cover ?? null,
+    };
     for (const { id, origin } of library.view().playlists) {
-      if (origin !== "spotify" || this.libraryCoversTried.has(id)) continue;
+      if (!readers[origin] || this.libraryCoversTried.has(id)) continue;
       this.libraryCoversTried.add(id);
       const source = library.playlist(id)?.source;
-      if (source?.provider !== "spotify" || !source.id || source.cover) continue;
+      if (source?.provider !== origin || !source.id || source.cover) continue;
       // A playlist since made private or deleted keeps the first song's cover.
-      const cover = await this.requireSpotifyService().readPlaylistCover({ playlistId: source.id }, { signal }).catch(() => null);
+      const cover = await readers[origin](source).catch(() => null);
       signal?.throwIfAborted();
       if (cover) library.setPlaylistCover(id, cover);
     }

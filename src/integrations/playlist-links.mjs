@@ -55,7 +55,8 @@ const text = (value, maximum = 200) => (typeof value === "string" ? Array.from(v
 
 /**
  * An Apple Music playlist from its public page: its name, how many songs it has, and the songs the page
- * lists with their Apple Music ids and covers. A long playlist's page may list only its first songs;
+ * lists with their Apple Music ids and covers, and the playlist's own square cover (the page's og:image is a
+ * wide share card). A long playlist's page may list only its first songs;
  * read and total say how many.
  */
 export async function readApplePlaylist({ id, url }, { fetchImpl = fetch, signal } = {}) {
@@ -65,17 +66,23 @@ export async function readApplePlaylist({ id, url }, { fetchImpl = fetch, signal
   const data = block(/<script[^>]*id="serialized-server-data"[^>]*>([\s\S]*?)<\/script>/u);
   const tracks = [];
   const seen = new Set();
+  const artworkAt = (node, size) => {
+    const url = node.artwork?.dictionary?.url;
+    return typeof url === "string" && url.startsWith("https://") ? url.replace("{w}x{h}", `${size}x${size}`).replace("{c}", "").replace("{f}", "jpg") : null;
+  };
+  let cover = null;
   // The server data lists each song as a track lockup with its title, its artist and its catalog id.
   const walk = (node, depth) => {
     if (!node || typeof node !== "object" || depth > 12 || tracks.length >= 2000) return;
     if (Array.isArray(node)) { for (const each of node) walk(each, depth + 1); return; }
     const catalog = node.contentDescriptor?.identifiers?.storeAdamID;
+    if (!cover && node.contentDescriptor?.kind === "playlist" && catalog === id) cover = artworkAt(node, 600);
     if (typeof node.title === "string" && typeof node.artistName === "string" && node.contentDescriptor?.kind === "song" && catalog) {
       const key = String(catalog);
       if (!seen.has(key)) {
         seen.add(key);
-        const artwork = typeof node.artwork?.dictionary?.url === "string" ? node.artwork.dictionary.url.replace("{w}x{h}", "300x300").replace("{f}", "jpg") : null;
-        tracks.push({ id: key, title: text(node.title), artist: text(node.artistName), ...(artwork?.startsWith("https://") ? { artwork } : {}) });
+        const artwork = artworkAt(node, 300);
+        tracks.push({ id: key, title: text(node.title), artist: text(node.artistName), ...(artwork ? { artwork } : {}) });
       }
       return;
     }
@@ -85,7 +92,7 @@ export async function readApplePlaylist({ id, url }, { fetchImpl = fetch, signal
   const name = text(schema?.name) || text(/<meta property="og:title" content="([^"]+)"/u.exec(html)?.[1]) || "Apple Music playlist";
   const total = Number.isSafeInteger(Number(schema?.numTracks)) ? Number(schema.numTracks) : null;
   if (!tracks.length) fail("playlist_unavailable", "Apple Music didn't list the songs of this playlist. Check that it is shared publicly.");
-  return { provider: "apple_music", id, url, name, total: total !== null && total >= tracks.length ? total : null, tracks: tracks.filter((track) => track.title && track.artist) };
+  return { provider: "apple_music", id, url, name, ...(cover ? { cover } : {}), total: total !== null && total >= tracks.length ? total : null, tracks: tracks.filter((track) => track.title && track.artist) };
 }
 
 /** A NetEase Music or QQ Music playlist through its public share link, as library songs. */

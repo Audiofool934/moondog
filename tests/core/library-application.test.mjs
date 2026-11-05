@@ -225,3 +225,20 @@ test("an imported playlist shows its own cover, and an older import gets it from
   libraryStore.close();
 });
 
+test("an Apple Music playlist imported earlier gets its own cover from its page", async (t) => {
+  const libraryStore = await openLibraryStore({ databasePath: ":memory:" });
+  t.after(() => libraryStore.close());
+  const application = new MoondogApplication({ libraryStore, playbackService: "apple_music" });
+  const id = "pl.35c4af69844a475ab73f6b7bee6ae15d";
+  const data = { data: [{ data: { sections: [
+    { items: [{ title: "Sounds", contentDescriptor: { kind: "playlist", identifiers: { storeAdamID: id } }, artwork: { dictionary: { url: "https://is1-ssl.mzstatic.com/own/{w}x{h}SC.DN02.{f}?l=en-US" } } }] },
+    { items: [{ title: "Song", artistName: "A", contentDescriptor: { kind: "song", identifiers: { storeAdamID: "1" } }, artwork: { dictionary: { url: "https://is1-ssl.mzstatic.com/song/{w}x{h}bb.{f}" } } }] },
+  ] } }] };
+  const html = `<html><meta property="og:image" content="https://is1-ssl.mzstatic.com/own/1200x630.jpg"><script id="serialized-server-data" type="application/json">${JSON.stringify(data)}</script></html>`;
+  t.mock.method(globalThis, "fetch", async () => new Response(html, { status: 200, headers: { "content-type": "text/html" } }));
+  const old = libraryStore.savePlaylist({ name: "Sounds", origin: "apple_music", source: { provider: "apple_music", id, url: `https://music.apple.com/us/playlist/${id}` },
+    entries: [{ kind: "song", title: "Song", artist_credit: "A", refs: { artwork_url: "https://is1-ssl.mzstatic.com/song/300x300bb.jpg" } }] });
+  await application.refreshLibraryCovers();
+  assert.deepEqual(libraryStore.view().playlists.find((playlist) => playlist.id === old.id).cover, { artwork_url: "https://is1-ssl.mzstatic.com/own/600x600SC.DN02.jpg?l=en-US" });
+});
+
