@@ -209,8 +209,21 @@ const modelName = (provider, model) => PROVIDER_MODELS[provider]?.find(([id]) =>
 let listed = [["anthropic", "claude-sonnet-5-5"], ["anthropic", "claude-opus-5-5"], ["deepseek", "deepseek-flash"], ["endpoint-home", "qwen3:32b"]];
 let defaultModel = { provider: "anthropic", model: "claude-sonnet-5-5", effort: "medium" };
 const sendList = () => send({ type: "model-list",
-  models: listed.map(([provider, model]) => ({ provider, model, name: modelName(provider, model), providerName: providerName(provider), ready: true, reasoning: provider !== "endpoint-home" })),
+  models: listed.map(([provider, model]) => ({ provider, model, name: modelName(provider, model), providerName: providerName(provider), ready: true, reasoning: provider !== "endpoint-home", vision: provider === "anthropic" })),
   default: { ...defaultModel, effort: defaultModel.effort ?? null, reasoning: true, thinking: defaultModel.provider === "deepseek" && defaultModel.effort === "medium" ? "low" : defaultModel.effort ?? null } });
+// What each model is for: vision on auto follows a chat model that sees images; web search lists its services.
+let roleChoices = { vision: null, web_search: null };
+const describe = ({ provider, model }) => ({ provider, model, name: modelName(provider, model), providerName: providerName(provider), known: true, vision: provider === "anthropic" });
+const sendRoles = () => send({ type: "model-roles", roles: [
+  { id: "chat", kind: "model", state: "enabled", choice: describe(defaultModel) },
+  { id: "vision", kind: "model", state: "enabled", input: "image", choice: roleChoices.vision && describe(roleChoices.vision),
+    auto: defaultModel.provider === "anthropic" ? describe(defaultModel) : null },
+  { id: "web_search", kind: "service", state: "enabled", choice: roleChoices.web_search, search: roleChoices.web_search?.service === "brave" ? "brave" : "deepseek", read: "deepseek",
+    services: [{ id: "deepseek", provider: "deepseek", name: "DeepSeek", ready: true, search: true, read: true },
+      { id: "brave", provider: "brave", name: "Brave Search", ready: true, search: true, read: false },
+      { id: "codex", provider: "codex_cli", name: "Codex CLI", ready: false, search: false, read: false }] },
+  { id: "audio", kind: "model", state: "planned", input: "audio", choice: null },
+] });
 // What Check again finds: NetEase ready, unless a state says otherwise.
 let neteaseCheck = { netease: "ready" };
 const send = (message) => {
@@ -359,6 +372,34 @@ const ON_AIR = [{ role: "user", text: "Go on air: make new music for right now a
 const played = (index) => [{ action: "playback.resume", state: "accepted", targets: [{ title: TRACKS[index].title, artist_credit: TRACKS[index].artists.join(", ") }] }];
 const conversation = (pairs) => pairs.flatMap(([user, reply], index) => [{ role: "user", text: user, entry: `e${index}` },
   { role: "assistant", id: `t${index}`, text: reply, entry: `e${index}`, receipts: index === 0 ? played(0) : [] }]);
+// Pastes made-up record sleeves into the composer, one per label, through a real paste event.
+async function pasteImages(labels) {
+  const transfer = new DataTransfer();
+  for (const [index, label] of labels.entries()) {
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = 480;
+    const context = canvas.getContext("2d");
+    const gradient = context.createLinearGradient(0, 0, 480, 480);
+    gradient.addColorStop(0, ["#c9653f", "#3f6fc9"][index % 2]);
+    gradient.addColorStop(1, ["#2b1d3a", "#1d3a2b"][index % 2]);
+    context.fillStyle = gradient;
+    context.fillRect(0, 0, 480, 480);
+    context.fillStyle = "rgba(255,255,255,0.9)";
+    context.font = "600 64px -apple-system, sans-serif";
+    context.fillText(label, 40, 420);
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+    transfer.items.add(new File([blob], `${label.toLowerCase()}.png`, { type: "image/png" }));
+  }
+  const input = document.querySelector("[data-input]");
+  input.focus();
+  input.dispatchEvent(new ClipboardEvent("paste", { clipboardData: transfer, bubbles: true, cancelable: true }));
+}
+// Brings a file over the window, as a drag from Finder would, without letting go.
+function dragOver(file) {
+  const transfer = new DataTransfer();
+  transfer.items.add(file);
+  window.dispatchEvent(new DragEvent("dragenter", { dataTransfer: transfer, bubbles: true }));
+}
 // Opens a settings section the way a listener can: a slash command typed into the composer.
 function slash(command) {
   const input = document.querySelector("[data-input]");
@@ -654,6 +695,38 @@ const STATES = {
     STATES.reply(); slash("model");
     setTimeout(() => document.querySelector('[data-key="provider:openai"]')?.click(), 200);
   },
+  // Images pasted into the composer, as a listener would, waiting above it for the next message.
+  "composer-images"() { STATES.reply(); setTimeout(() => void pasteImages(["LP", "Live"]), 200); },
+  // A message sent with an image: the picture sits above its words in the bubble, and the reply streams.
+  "reply-image"() {
+    STATES.reply();
+    setTimeout(async () => {
+      await pasteImages(["LP"]);
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      const field = document.querySelector("[data-input]");
+      field.value = "What record is this?";
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+      field.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    }, 200);
+  },
+  // A file dragged over the window blurs all of it, without a frame: an image goes with the next
+  // message, a history file to import.
+  "drop-image"() { STATES.reply(); setTimeout(() => dragOver(new File([new Uint8Array([137, 80, 78, 71])], "cover.png", { type: "image/png" })), 200); },
+  "drop-file"() { STATES.reply(); setTimeout(() => dragOver(new File(["{}"], "listening-history.zip", { type: "application/zip" })), 200); },
+  // The sent image opened at full size over the window.
+  "image-open"() {
+    STATES["reply-image"]();
+    setTimeout(() => document.querySelector(".you-image")?.click(), 1400);
+  },
+  // Auxiliary models, open to vision and to web search: auto first, then the models or services it can pick.
+  "settings-model-vision"() {
+    STATES.reply(); slash("model");
+    setTimeout(() => document.querySelector('[data-key="role:vision"]')?.click(), 200);
+  },
+  "settings-model-web"() {
+    STATES.reply(); slash("model");
+    setTimeout(() => document.querySelector('[data-key="role:web_search"]')?.click(), 200);
+  },
   "settings-endpoint"() {
     STATES.reply(); slash("model");
     setTimeout(() => document.querySelector('[data-key="endpoint:edit:endpoint-home"]')?.click(), 200);
@@ -864,6 +937,8 @@ core.onmessage = ({ data }) => {
   if (data.type === "provider-models") send({ type: "provider-models", provider: data.provider,
     models: (PROVIDER_MODELS[data.provider] ?? []).map(([id, name]) => ({ id, name })) });
   if (data.type === "model-list") sendList();
+  if (data.type === "model-roles") sendRoles();
+  if (data.type === "model-role") { roleChoices[data.role] = data.choice ?? null; sendRoles(); }
   if (data.type === "list-model") {
     listed = listed.filter(([provider, model]) => provider !== data.provider || model !== data.model);
     if (data.listed) listed.push([data.provider, data.model]);

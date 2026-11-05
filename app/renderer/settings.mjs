@@ -47,6 +47,7 @@ const NOTICES = { model_unknown: ["model", "noticeModelUnknown", "model"], trans
   "sign-out": [null, "noticeFailed", "spotify"], "music-service": ["playback", "noticeFailed", "service"], language: ["general", "noticeFailed", "locale"],
   model: ["model", "noticeFailed", "model"], effort: ["model", "noticeFailed", "effort"], "default-model": ["model", "noticeFailed"],
   "default-effort": ["model", "noticeFailed"], "list-model": ["model", "noticeFailed"], "endpoint-remove": ["model", "noticeFailed"],
+  "model-role": ["model", "noticeFailed"],
   generation: ["playback", "noticeFailed", "generation"], "generation-check": ["playback", "noticeFailed"], "generation-cancel": ["playback", "noticeFailed"],
   "generation-remove": ["playback", "noticeFailed", "generation"], "generation-model": ["playback", "noticeFailed"] };
 // The endpoint errors the listener can fix in the form; any other reads as a plain failure.
@@ -128,6 +129,7 @@ export function createSettings({ state, send, t, appleMusic = null, onHide = nul
   // What the core told this sheet; the sheet asks again each time a section opens.
   const data = { providers: null, providersError: false, models: new Map(), modelsFailed: new Set(), expanded: undefined, signingOut: new Set(),
     list: null, listError: false, toggles: new Map(), listPending: new Map(), endpoint: null,
+    roles: null, rolesError: false, rolePending: new Map(), expandedRole: null,
     devices: null, devicesError: false, devicesLoading: false, memories: null, auth: null, error: null, importing: null, version: null, appearance: null, copied: null, focus: null, phaseOffset: null,
     lastfm: { username: "", needsKey: false, keyError: false, savingKey: false },
     drafts: { remember: "", lastfm: "", lastfmKey: "", spotifyClientId: "", endpointName: "", endpointUrl: "", endpointKey: "", endpointModels: "", generationPath: "" } };
@@ -211,7 +213,7 @@ export function createSettings({ state, send, t, appleMusic = null, onHide = nul
   function refresh() {
     // The status and the memories come back for every section.
     send({ type: "settings" });
-    if (section === "model") { send({ type: "models" }); send({ type: "model-list" }); }
+    if (section === "model") { send({ type: "models" }); send({ type: "model-list" }); send({ type: "model-roles" }); }
     if (section === "playback") {
       // Spotify's devices are asked for only while Spotify is the service in use.
       if (state.spotify === "ready" && (state.playbackService ?? "spotify") === "spotify") {
@@ -515,8 +517,79 @@ export function createSettings({ state, send, t, appleMusic = null, onHide = nul
     if (asking) return [question("firstRunModel"), sectionError(), group(null, providerList(chosen)), steps()].filter(Boolean);
     const parts = [sectionError(), group(say("models"), menuList(chosen))];
     if (saved?.reasoning && sameModel(chosen, saved)) parts.push(group(say("effort"), efforts(saved)));
+    parts.push(group(say("modelRoles"), rolesList()));
     parts.push(group(say("providers"), providerList(chosen)));
     return parts.filter(Boolean);
+  }
+  // Auxiliary models, after Hermes Agent's. The menu above is the chat model;
+  // here vision and web search each open to auto and their choices, and audio holds its place.
+  const roleChoice = (role) => (data.rolePending.has(role.id) ? data.rolePending.get(role.id) : role.choice);
+  const sameRoleChoice = (left, right) => (left?.service !== undefined ? left.service === right?.service : sameModel(left, right));
+  function rolesList() {
+    if (!data.roles) return waiting();
+    if (data.rolesError) return failure("noticeFailed");
+    const rows = [];
+    for (const role of data.roles.filter((entry) => entry.id !== "chat")) {
+      if (role.state !== "enabled") {
+        rows.push(choice({ label: say(`role.${role.id}`), detail: say("roleLater"), disabled: true, key: `role:${role.id}`, lead: icon("chevron", "icon disclose"), expanded: false }));
+        continue;
+      }
+      const expanded = data.expandedRole === role.id;
+      rows.push(choice({ label: say(`role.${role.id}`), detail: roleDetail(role), expanded, key: `role:${role.id}`, lead: icon("chevron", "icon disclose"),
+        onChoose: () => { data.expandedRole = expanded ? null : role.id; render(); } }));
+      if (expanded) rows.push(choices(roleOptions(role), "choices inner"));
+    }
+    return choices(rows);
+  }
+  // Auto names what it uses now, so the row says what will happen without opening it. The Auto
+  // option under it names only the model or service, since its label already says Auto.
+  function autoTarget(role) {
+    if (role.kind === "service") return role.services?.find((service) => service.provider === role.search && service.ready)?.name ?? null;
+    return role.auto?.name ?? null;
+  }
+  function autoDetail(role) {
+    const name = autoTarget(role);
+    return name ? say("roleAutoUses", { name }) : say(role.kind === "service" ? "roleWebNone" : "roleVisionNone");
+  }
+  function roleDetail(role) {
+    const chosen = roleChoice(role);
+    if (!chosen) return autoDetail(role);
+    if (role.kind === "service") {
+      const service = role.services?.find((entry) => entry.id === chosen.service);
+      return service ? (service.ready ? service.name : `${service.name} · ${say("notSetUp")}`) : chosen.service;
+    }
+    return `${chosen.name ?? chosen.model} · ${chosen.providerName ?? chosen.provider}`;
+  }
+  function chooseRole(role, value) {
+    data.rolePending.set(role.id, value);
+    send({ type: "model-role", role: role.id, choice: value ?? null });
+    render();
+  }
+  function roleOptions(role) {
+    const chosen = roleChoice(role);
+    const rows = [choice({ label: say("roleAuto"), detail: autoTarget(role) ?? autoDetail(role), chosen: !chosen, key: `role:${role.id}:auto`,
+      onChoose: chosen ? () => chooseRole(role, null) : null })];
+    if (role.kind === "service") {
+      for (const service of role.services ?? []) {
+        const value = { service: service.id };
+        const isChosen = sameRoleChoice(value, chosen);
+        rows.push(choice({ label: service.name, detail: !service.ready ? say("notSetUp") : service.read ? null : say("searchOnly"),
+          chosen: isChosen, disabled: !service.ready && !isChosen, key: `role:${role.id}:${service.id}`,
+          onChoose: isChosen ? null : () => chooseRole(role, value) }));
+      }
+      return rows;
+    }
+    // A model for a role comes from the menu above, among the ones that take its input.
+    const fits = (data.list?.models ?? []).filter((entry) => entry.vision === true);
+    for (const entry of fits) {
+      const value = { provider: entry.provider, model: entry.model, name: entry.name, providerName: entry.providerName };
+      const isChosen = sameRoleChoice(value, chosen);
+      rows.push(choice({ label: entry.name ?? entry.model, detail: entry.ready === false ? `${entry.providerName} · ${say("notConnected")}` : entry.providerName,
+        chosen: isChosen, disabled: entry.ready === false && !isChosen, key: `role:${role.id}:${modelKey(entry)}`,
+        onChoose: isChosen ? null : () => chooseRole(role, value) }));
+    }
+    if (!fits.length) rows.push(note(say("roleVisionAdd")));
+    return rows;
   }
   // The menu's models as they will be once the core confirms what was just ticked.
   function menuModels() {
@@ -1327,6 +1400,12 @@ export function createSettings({ state, send, t, appleMusic = null, onHide = nul
       data.toggles.clear();
       data.listPending.clear();
       warn("model list", message.error);
+    }
+    if (message.type === "model-roles") {
+      data.roles = message.roles ?? [];
+      data.rolesError = Boolean(message.error);
+      data.rolePending.clear();
+      warn("model roles", message.error);
     }
     // A saved endpoint opens to its models; a refused one keeps the form with what to fix.
     if (message.type === "endpoint") {

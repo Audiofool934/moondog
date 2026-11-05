@@ -134,6 +134,7 @@ const forbiddenBasenames = new Set([
 // Raised when the project page (site/) arrived: main was at 346 entries and 14.9 MiB.
 // Raised again on 2026-10-29 for local music generation, its taste compiler and their tests: main was at 448.
 // Raised again on 2026-11-04 for the library, its playlist import and the sidebar's views: main was at 480.
+// Model roles (vision, web search, audio later) and their tests add three more entries within it.
 // The window's taste page and its record add three more files under the same ceiling.
 // The ceilings still catch bulk accidents such as a data dump or a build folder.
 export const maximumReleaseEntries = 520;

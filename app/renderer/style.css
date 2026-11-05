@@ -516,6 +516,17 @@ img { -webkit-user-drag: none; }
 
 .turn { margin: 0 0 30px; }
 .you { position: relative; display: flex; justify-content: flex-end; margin: 0 0 30px; }
+/* A message with images shows them above its words, on the same right edge. */
+.you:has(.you-images) { flex-direction: column; align-items: flex-end; gap: 6px; }
+.you-images { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; max-width: 78%; }
+/* An image opens at full size over the window, on the same scrim as Settings; a click or Escape closes it. */
+.you-image, .attachment-open { display: block; padding: 0; border: 0; background: none; cursor: zoom-in; border-radius: var(--r-4); }
+.attachment-open { width: 100%; height: 100%; border-radius: inherit; overflow: hidden; }
+.lightbox { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; padding: 48px; background: var(--scrim);
+  -webkit-backdrop-filter: blur(8px) saturate(1.1); backdrop-filter: blur(8px) saturate(1.1); -webkit-app-region: no-drag; cursor: zoom-out; }
+.lightbox[hidden] { display: none; }
+.lightbox img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: var(--r-3); box-shadow: 0 12px 48px rgb(0 0 0 / 0.35); }
+.you-images img { max-width: 180px; max-height: 180px; border-radius: var(--r-4) var(--r-4) var(--r-1) var(--r-4); box-shadow: var(--glass-edge); display: block; }
 /* Copy, Edit on your own messages and Branch on replies sit just under a message while the pointer is
    on it. They take no room of their own, so the conversation never shifts when they appear. */
 .message-tools { position: absolute; top: 100%; display: flex; gap: 2px; margin-top: 2px; opacity: 0;
@@ -605,6 +616,16 @@ img { -webkit-user-drag: none; }
 
 /* ── The composer ─────────────────────────────────────────────────────────────────────────── */
 .composer { position: relative; flex: none; padding: 4px 44px 18px; }
+/* Images waiting for the next message sit just above the field, their left edge where its words begin.
+   Each takes off with a mark just outside its top right corner, shown while the pointer is on it. */
+.attachments { max-width: var(--column); margin: 0 auto 8px; padding: 8px 16px 0; display: flex; flex-wrap: wrap; gap: 14px; }
+.attachments[hidden] { display: none; }
+.attachment { position: relative; width: 64px; height: 64px; border-radius: var(--r-3); background: var(--glass); box-shadow: var(--glass-edge); }
+.attachment img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.attachment-remove { position: absolute; top: -7px; right: -7px; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 50%; display: grid; place-items: center;
+  color: var(--canvas); background: var(--text); box-shadow: 0 0 0 2px var(--canvas); cursor: pointer; opacity: 0; transition: opacity var(--quick) var(--soft); }
+.attachment-remove .icon { width: 11px; height: 11px; stroke-width: 2.2; }
+.attachment:hover .attachment-remove, .attachment-remove:focus-visible { opacity: 1; transition: none; }
 .field { position: relative; max-width: var(--column); margin: 0 auto; display: flex; align-items: flex-end; gap: 4px; padding: 8px 8px 8px 16px;
   border-radius: var(--r-4); background: var(--glass); box-shadow: var(--glass-edge); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
   transition: box-shadow 160ms var(--soft); }
@@ -686,10 +707,14 @@ img { -webkit-user-drag: none; }
 .corner[data-pin][aria-pressed="true"] .icon { transform: none; transition: none; }
 .corner[aria-pressed="true"] { color: var(--text); }
 .immersive.hovered .corner, .corner:focus-visible { opacity: 1; transition-duration: 160ms; }
+/* A file over the window blurs all of it, with no frame to meet the window's edge: a drop anywhere
+   works, an image going with the next message and anything else to import. */
 .drop { position: absolute; inset: 0; z-index: 20; display: grid; place-items: center; align-content: center; gap: 16px;
-  background: color-mix(in srgb, var(--canvas) 92%, transparent); pointer-events: none; animation: rise 160ms var(--out) both; }
-.drop::before { content: ""; position: absolute; inset: 16px; border: 1.5px dashed var(--line-2); border-radius: var(--r-4); }
+  background: color-mix(in srgb, var(--canvas) 62%, transparent); -webkit-backdrop-filter: blur(14px) saturate(1.1); backdrop-filter: blur(14px) saturate(1.1);
+  pointer-events: none; animation: drop-in 160ms var(--out) both; }
+@keyframes drop-in { from { opacity: 0; } }
 .drop .icon { width: 44px; height: 44px; color: var(--text-3); stroke-width: 1.2; }
+.drop[hidden] { display: none; }
 .drop p { margin: 0; font-family: var(--serif); font-size: 22px; color: var(--text); }
 
 /* ── What is playing ──────────────────────────────────────────────────────────────────────── */

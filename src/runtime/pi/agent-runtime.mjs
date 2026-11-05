@@ -14,6 +14,7 @@ import { spotifyErrorReason } from "../../integrations/spotify/web-api-client.mj
 import { appleMusicStorefront } from "../../integrations/apple-music/storefront.mjs";
 import { formatWebSources } from "../../surfaces/cli/web-command.mjs";
 import { chooseConversationName } from "./conversation-name.mjs";
+import { prepareImageInput } from "./image-input.mjs";
 import { withArgumentRepair } from "./tool-arguments.mjs";
 import { restateInLanguage } from "./reply-language.mjs";
 import { chooseRecordName, RECORD_NAME_RULES } from "./record-name.mjs";
@@ -4957,11 +4958,11 @@ function createToolFactories(
         name: descriptor.tool_name,
         label: descriptor.label,
         description: kind === "search"
-          ? "Search public reviews, music news, interviews and concert information. Send only a concise public query under 128 characters, never private history or profile data; site:, quoted phrases and -exclusions narrow it. Results come with source links; content_kind says whether they are search-engine snippets or a generated summary."
-          : "Read a public HTTP(S) page. Send only its URL. The result is the page's own text (cut short when long) or a generated summary, as content_kind says. Inaccessible pages are reported; this does not log in or operate an interactive browser.",
+          ? "Search public reviews, music news, interviews and concert information. Send only a concise public query under 128 characters, never private history or profile data; site:, quoted phrases and -exclusions narrow it. Returns 5 sources by default; ask for up to 10 with limit when the first ones aren't enough. Results come with source links; content_kind says whether they are search-engine snippets or a generated summary."
+          : "Read a public HTTP(S) page. Send only its URL. The result is the page's own text or a generated summary, as content_kind says. A long page comes about 15,000 characters at a time: when next_offset is set, call again with that offset to read on. Inaccessible pages are reported; this does not log in or operate an interactive browser.",
         parameters: Type.Object(kind === "search"
-          ? { query: Type.String({ minLength: 1, maxLength: 500 }) }
-          : { url: Type.String({ minLength: 1, maxLength: 2048 }) }, { additionalProperties: false }),
+          ? { query: Type.String({ minLength: 1, maxLength: 500 }), limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 10 })) }
+          : { url: Type.String({ minLength: 1, maxLength: 2048 }), offset: Type.Optional(Type.Integer({ minimum: 0, maximum: 200_000 })) }, { additionalProperties: false }),
         executionMode: "sequential",
         execute: async (_toolCallId, parameters, signal) => executeDomain(
           () => kind === "search"
@@ -7671,8 +7672,11 @@ export class PiAgentRuntime {
   };
 
   constructor({ application, models, model, provider, modelId, effort, effortLevels, thinkingLevel, modelFetch, modelRetryDelay, toolTrace = null,
-    nameConversations = false, clock = () => new Date() }) {
+    nameConversations = false, clock = () => new Date(), visionChoice = null }) {
     this.application = application;
+    // The vision model chosen in Settings, read at each message with images, so a change there
+    // needs no new agent; null leaves images to the chat model.
+    this.visionChoice = typeof visionChoice === "function" ? visionChoice : null;
     // The command passes a local trace of tool calls; tests and other hosts leave it out.
     this.toolTrace = toolTrace;
     this.clock = clock;
@@ -8129,6 +8133,28 @@ export class PiAgentRuntime {
       throw Object.assign(new Error("Moondog is answering in this conversation in another window or terminal."), { code: "conversation_busy" });
     }
     if ((this.application?.latestConversationEntryId?.() ?? null) !== this.syncedEntryId) this.restoreSession();
+    // Attached images become text the conversation keeps, and, for a chat model that sees, the
+    // images themselves. A vision model's description can take a few seconds, so the prompt counts
+    // as running from here; Ctrl+C stops it.
+    let nativeImages = [];
+    if (callbacks.images?.length) {
+      this.promptInFlight = true;
+      this.imageAbort = new AbortController();
+      try {
+        const visionChoice = await Promise.resolve(this.visionChoice?.()).catch(() => null);
+        callbacks.onImagesStart?.({ count: callbacks.images.length, vision: Boolean(visionChoice) });
+        const prepared = await prepareImageInput({ text, images: callbacks.images, models: this.models, model: this.model,
+          visionChoice, signal: this.imageAbort.signal });
+        text = prepared.text;
+        nativeImages = prepared.images;
+        callbacks.onImagesReady?.({ mode: prepared.mode, text, ...(prepared.vision ? { vision: prepared.vision } : {}) });
+      } catch (error) {
+        this.promptInFlight = false;
+        throw error;
+      } finally {
+        this.imageAbort = null;
+      }
+    }
     // What the listener sees of the reply is saved as it grows, so the other one shows it too.
     const host = callbacks;
     let shownText = "";
@@ -8544,7 +8570,8 @@ export class PiAgentRuntime {
         }
       });
 
-      await this.agent.prompt(text);
+      if (nativeImages.length) await this.agent.prompt(text, nativeImages);
+      else await this.agent.prompt(text);
       // One bounded continuation keeps an explicit queue request from stopping
       // at a plan/empty adjacency result or a redundant confirmation. It cannot
       // grant new authority, retry a write, or outlive cancellation.
@@ -8797,6 +8824,8 @@ To confirm, reply: ${preview.confirmation}`].join("\n\n");
   }
 
   abort() {
+    // A vision model may still be describing the message's images.
+    this.imageAbort?.abort();
     if (this.activePromptState) {
       this.activePromptState.abortRequested = true;
       this.activePromptState.restatement?.abort();

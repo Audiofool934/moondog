@@ -24,6 +24,8 @@ import { getPublicPiModelCatalog } from "../../runtime/pi/public-model-catalog.m
 import { serviceKeyProviders, supportedAuthProviderIds } from "../../runtime/pi/authentication.mjs";
 import { EFFORT_LEVELS, EFFORT_SCALE } from "../../runtime/pi/runtime-settings.mjs";
 import { runtimeBehindSelection } from "../../runtime/pi/runtime-selection.mjs";
+import { MODEL_ROLE_WORDS } from "./model-roles-command.mjs";
+import { imagesFromText } from "../../runtime/pi/image-input.mjs";
 import {
   formatLocalResult,
   helpText,
@@ -209,6 +211,7 @@ export async function runMoondogTui({
   runProfile,
   runProfileAction,
   runWeb,
+  runModelRoles,
   checkUpdates,
   runUpdate,
   lyrics,
@@ -1440,7 +1443,7 @@ export async function runMoondogTui({
   // The window's endpoints reach /model here; an agent on an endpoint that changed is rebuilt, since its
   // address or key may have. The window's menu list and its per-conversation choices don't move this one.
   const stopWatchingModel = watchModelSettings?.((selection, changed) => {
-    if (changed === "models") return;
+    if (changed === "models" || changed === "roles") return;
     if (changed === "endpoints") void refreshEndpoints?.();
     const onEndpoint = changed === "endpoints" && String(runtimeStatus.provider ?? "").startsWith("endpoint-");
     if (!onEndpoint && !runtimeBehindSelection(runtimeStatus, selection)) return;
@@ -2550,6 +2553,13 @@ export async function runMoondogTui({
       return;
     }
     if (command === "model") {
+      // /model roles, vision, web and audio set what other models are for; the rest pick the chat model.
+      if (args[0] && Object.hasOwn(MODEL_ROLE_WORDS, args[0].toLowerCase())) {
+        if (typeof runModelRoles !== "function") throw new Error(tr("Model roles aren't available when Moondog is started this way."));
+        addMoondogMessage(await runModelRoles(args));
+        setFooter(tr("Done."), success);
+        return;
+      }
       await selectModel(args);
       return;
     }
@@ -2827,8 +2837,12 @@ export async function runMoondogTui({
     };
 
     try {
+      // An image path in the message goes with it, as Hermes Agent's terminal does; the words stay.
+      const images = await imagesFromText(value);
+      if (images.length) setFooter(tr("Looking at the attached images... Ctrl+C cancels."));
       const result = await activeRuntime.prompt(value, {
         ...(profileSeed ? { profileSeed } : {}),
+        ...(images.length ? { images } : {}),
         onTextDelta: (delta) => {
           if (cleanedUp) return;
           work.quiet();
