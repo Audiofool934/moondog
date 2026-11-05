@@ -713,6 +713,8 @@ export default {
   "Use /taste, or /taste report.": "Usa /taste o /taste report.",
   "Full report above. /taste opens the profile.": "El informe completo está arriba. /taste abre el perfil.",
   "Web lookups aren't available when Moondog is started this way.": "Las consultas web no están disponibles cuando Moondog se abre de esta forma.",
+  "Model roles aren't available when Moondog is started this way.": "Los usos de los modelos no están disponibles cuando Moondog se abre de esta forma.",
+  "Looking at the attached images... Ctrl+C cancels.": "Mirando las imágenes adjuntas... Ctrl+C cancela.",
   "/home doesn't take anything after it.": "/home no admite nada después.",
   "Say anything, or press Tab to look around.": "Di lo que quieras, o pulsa Tab para echar un vistazo.",
   "Use /theme, or /theme paper, charcoal, terminal, or auto.": "Usa /theme, o /theme paper, charcoal, terminal o auto.",

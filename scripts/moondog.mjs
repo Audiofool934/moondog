@@ -33,6 +33,7 @@ import { runCatalogCommand } from "../src/surfaces/cli/catalog-command.mjs";
 import { runProfileCommand } from "../src/surfaces/cli/profile-command.mjs";
 import { runListenerProfileCommand, savedProfileActions } from "../src/surfaces/cli/listener-profile-command.mjs";
 import { createWebResearch } from "../src/integrations/web/web-research.mjs";
+import { runModelRolesCommand } from "../src/surfaces/cli/model-roles-command.mjs";
 import { runWebCommand } from "../src/surfaces/cli/web-command.mjs";
 import { openSpotifyConnection } from "../src/integrations/spotify/connection.mjs";
 import { preferredIdleDevice, thisComputerName } from "../src/integrations/spotify/service.mjs";
@@ -1235,10 +1236,14 @@ async function main() {
       // The desktop window lists models and signs in here, with no terminal.
       modelSettings,
       // A model chosen or a sign-in made on the other surface. Model variables fix the model at
-      // launch, so a saved choice has nothing to change then.
-      watchModelSettings: (onChange) => (process.env.MOONDOG_PROVIDER !== undefined || process.env.MOONDOG_MODEL !== undefined
-        ? () => {}
-        : watchRuntimeSettings({ environment: process.env, onChange })),
+      // launch, so a saved choice has nothing to change then; a role chosen elsewhere still does.
+      watchModelSettings: (onChange) => {
+        const fixed = process.env.MOONDOG_PROVIDER !== undefined || process.env.MOONDOG_MODEL !== undefined;
+        return watchRuntimeSettings({ environment: process.env, onChange: (selection, changed) => {
+          if (changed === "roles") return void webResearch.refresh().then(() => onChange(selection, changed), () => {});
+          if (!fixed) onChange(selection, changed);
+        } });
+      },
       // The one-time music service and model setup, shared by the terminal and the window.
       firstRun: createFirstRun({ environment: process.env }),
       // A host with its own terminal streams takes the sign-in prompts. The
@@ -1264,6 +1269,7 @@ async function main() {
           }),
         }),
       runWeb: (args, options) => runWebCommand({ args, webResearch, ...options }),
+      runModelRoles: (args) => runModelRolesCommand({ args: args.map(String), modelSettings, webResearch }),
       runProfileAction: (args) => runProfileCommand({
         args,
         commandPrefix: "/profile",

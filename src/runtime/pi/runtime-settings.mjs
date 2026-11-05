@@ -109,11 +109,13 @@ export async function writePiRuntimeSelection(
 // saved selection, or undefined when none is saved; the surface decides whether to rebuild, with
 // runtimeBehindSelection.
 // The second argument says which file changed: "settings" (the default), "auth" (a sign-in),
-// "endpoints" (an endpoint added, edited or removed) or "models" (the window's menu list).
+// "endpoints" (an endpoint added, edited or removed), "models" (the window's menu list) or "roles"
+// (a vision model or web service chosen in model-roles.json).
 export function watchRuntimeSettings({ environment = process.env, interval = 2000, onChange } = {}) {
   const directory = path.dirname(resolveMoondogAuthFile(environment));
   const files = { settings: resolveMoondogSettingsFile(environment), auth: resolveMoondogAuthFile(environment),
-    endpoints: path.join(directory, "endpoints.json"), models: path.join(directory, "models.json") };
+    endpoints: path.join(directory, "endpoints.json"), models: path.join(directory, "models.json"),
+    roles: path.join(directory, "model-roles.json") };
   const listeners = Object.entries(files).map(([changed, file]) => {
     const listener = (now, before) => {
       if (now.mtimeMs === before.mtimeMs) return;
