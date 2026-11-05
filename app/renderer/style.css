@@ -196,6 +196,9 @@ img { -webkit-user-drag: none; }
 .view-head-add .icon { width: 13px; height: 13px; }
 .view-head { display: flex; align-items: center; gap: 7px; }
 .view-head .icon { width: 13px; height: 13px; flex: none; }
+/* A header is its part's switcher: a small chevron after the name says it opens. */
+.view-head .view-chevron { width: 10px; height: 10px; margin-inline-start: -3px; color: var(--text-4); transform: rotate(90deg); }
+.view-head:hover .view-chevron { color: var(--text-3); }
 .view-head.drop-target { color: var(--text); }
 .views { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .view { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; }
@@ -205,8 +208,10 @@ img { -webkit-user-drag: none; }
 .view-head:hover { color: var(--text-2); }
 .view-head:focus-visible { outline: none; color: var(--text); background: var(--hover); }
 .view-grip { flex: none; height: 9px; cursor: row-resize; position: relative; }
-.view-grip::after { content: ""; position: absolute; left: 20px; right: 20px; top: 4px; height: 1px; background: transparent; transition: background-color var(--quick) var(--soft); }
+/* The grip always shows its line, faintly, so the two parts read as two; it darkens under the pointer and while held. */
+.view-grip::after { content: ""; position: absolute; left: 20px; right: 20px; top: 4px; height: 1px; background: var(--line); transition: background-color var(--quick) var(--soft); }
 .view-grip:hover::after, .view-grip.dragging::after { background: var(--line-2); transition-delay: 80ms; }
+.view-grip.dragging::after { background: var(--text-4); }
 /* Dragging a view: the part of the sidebar it would land in takes a breath of ink. */
 .view-drop-top .views, .view-drop-bottom .views { position: relative; }
 .view-drop-top .views::before, .view-drop-bottom .views::before { content: ""; position: absolute; left: 6px; right: 6px; height: 50%; border-radius: var(--r-3);
@@ -338,10 +343,131 @@ img { -webkit-user-drag: none; }
 /* A made track whose audio a stream already let go keeps its place and receipt, faded. */
 .shelf-row.gone .shelf-open { opacity: 0.45; }
 .shelf-empty { margin-top: 6px; padding-inline-start: 6px; font-size: var(--t-ui); color: var(--text-3); }
+
+/* The listener's taste, in the room in the conversation's place as a playlist is: the profile, the reading,
+   and the artists and tracks it rests on. Spacing groups it; nothing has a ground or a line of its own. */
+.taste { position: relative; flex: 1; min-height: 0; }
+/* The page fades under the title bar as the conversation does, so its words never run under the bar's controls. */
+.taste-scroll { height: 100%; overflow-y: auto; scrollbar-width: none; overscroll-behavior: contain; padding: calc(var(--bar) + 26px) 44px 28px;
+  mask-image: linear-gradient(to bottom, transparent 0, transparent calc(var(--bar) - 14px), #000 calc(var(--bar) + 14px), #000 calc(100% - 24px), transparent); }
+/* One left edge for the whole page: the column is as wide as the record and its notes, and the words in it
+   keep a reading width. */
+.taste-column { max-width: 960px; margin-inline: auto; }
+.taste-reading, .taste-filters, .taste-list, .taste-empty, .taste-column > .taste-note { max-width: var(--column); }
+.taste-scroll { container-type: inline-size; }
+.taste-head { margin-bottom: 26px; }
+.taste-title { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; }
+.taste-name { margin: 0; font-size: 24px; font-weight: 600; line-height: 1.25; letter-spacing: -0.015em; color: var(--text); }
+.taste-overview { max-width: var(--column); margin: 8px 0 0; font-size: var(--t-small); line-height: 1.6; color: var(--text-3); font-variant-numeric: tabular-nums; text-wrap: pretty; }
+.taste-heading { margin: 0 0 10px; font-size: var(--t-small); font-weight: 600; color: var(--text-2); }
+.taste-reading { margin-bottom: 34px; }
+.taste-summary { margin: 0 0 16px; font-family: var(--serif); font-size: var(--t-reply); line-height: 1.7; color: var(--text); text-wrap: pretty; }
+.taste-findings { margin: 0 0 14px; padding-inline-start: 22px; display: grid; gap: 10px; }
+.taste-findings li { font-size: var(--t-body); line-height: 1.55; color: var(--text); }
+.taste-findings li::marker { font-size: var(--t-small); color: var(--text-4); font-variant-numeric: tabular-nums; }
+.taste-findings p { margin: 0; text-wrap: pretty; }
+.taste-findings span { display: block; margin-top: 2px; font-size: var(--t-small); color: var(--text-3); }
+.taste-note { margin: 0; font-size: var(--t-small); line-height: 1.5; color: var(--text-3); }
+.taste-empty p { margin: 0 0 4px; font-size: var(--t-ui); color: var(--text-3); }
+.taste-filters { display: flex; flex-wrap: wrap; gap: 2px; margin-bottom: 8px; margin-inline-start: -8px; }
+.taste-filter { height: 26px; padding: 0 8px; display: inline-flex; align-items: center; gap: 6px; border-radius: var(--r-2); font-size: var(--t-small);
+  font-weight: 500; color: var(--text-3); transition: background-color var(--quick) var(--soft), color var(--quick) var(--soft); }
+.taste-filter:hover { background: var(--hover); color: var(--text); transition: none; }
+.taste-filter[aria-pressed="true"] { background: var(--current); color: var(--text); }
+.taste-count { color: var(--text-4); font-variant-numeric: tabular-nums; }
+.taste-filter[aria-pressed="true"] .taste-count { color: var(--text-3); }
+.taste-list { list-style: none; margin: 0 0 0 -8px; padding: 0; display: grid; gap: 1px; }
+.taste-row { border-radius: var(--r-2); transition: background-color var(--quick) var(--soft); }
+.taste-row:hover, .taste-row.open { background: var(--hover); transition: none; }
+.taste-open { width: 100%; min-height: 44px; padding: 6px 8px; display: flex; align-items: center; gap: 12px; border-radius: var(--r-2); text-align: start; }
+.taste-words { flex: 1; min-width: 0; display: grid; }
+.taste-words strong, .taste-words span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.taste-words strong { font-size: var(--t-ui); font-weight: 500; color: var(--text); }
+.taste-words span { font-size: var(--t-small); color: var(--text-3); }
+.taste-stance { flex: none; font-size: var(--t-small); color: var(--text-2); }
+.taste-stance.avoid { color: var(--text-3); }
+.taste-detail { padding: 0 8px 10px; display: grid; gap: 4px; }
+.taste-detail > p { margin: 0; font-size: var(--t-small); line-height: 1.5; color: var(--text-2); }
+.taste-why { margin-top: 6px; display: grid; gap: 4px; }
+.taste-why p { margin: 0; font-size: var(--t-small); line-height: 1.5; color: var(--text-2); text-wrap: pretty; }
+.taste-why .taste-label { margin-top: 4px; font-weight: 600; }
+.taste-why .taste-limit { color: var(--text-3); }
+.taste-actions { display: flex; flex-wrap: wrap; gap: 2px; margin: 6px 0 0 -9px; }
+.taste-list + .taste-note { margin-top: 6px; }
+
+/* Your taste in the sidebar: the artists and tracks the profile rests on, at the sidebar's own row size, with the
+   filters as a quiet row above them and a row's evidence and choices unfolding under it. */
+.taste-side .taste-filters { margin: 2px 0 8px; gap: 1px; max-width: none; }
+.taste-side .taste-filters { flex-wrap: nowrap; }
+.taste-side .taste-filter { height: 24px; padding: 0 7px; flex: none; }
+.taste-side .taste-count { display: none; }
+.taste-side .taste-list { margin: 0; max-width: none; }
+.taste-side .taste-row { margin-bottom: 1px; }
+.taste-side .taste-row[aria-current="true"], .taste-side .taste-row.open { background: var(--current); }
+.taste-side .taste-open { min-height: 40px; padding: 5px 10px; gap: 8px; }
+.taste-side .taste-words strong { font-size: var(--t-ui); font-weight: 400; color: var(--text-2); }
+.taste-side .taste-row:hover .taste-words strong, .taste-side .taste-row.open .taste-words strong { color: var(--text); }
+.taste-side .taste-words span { font-size: var(--t-caption); }
+/* Unfolded, a row's details say in full what its one line summed up. */
+.taste-side .taste-row.open .taste-words span { display: none; }
+.taste-side .taste-stance { font-size: var(--t-caption); }
+.taste-side .taste-detail { padding: 0 10px 10px; }
+.taste-side .taste-detail > p, .taste-side .taste-why p { font-size: var(--t-caption); }
+.taste-side .taste-actions { margin: 6px 0 0 -9px; }
+.taste-side-note { margin: 4px 10px; font-size: var(--t-small); line-height: 1.5; color: var(--text-3); }
+
+/* The record of the listener's history: wider than the words, up to the room's width, with its liner notes
+   beside it where the room has space and under it where it doesn't. */
+.pressing { margin: 0 0 52px; display: grid; gap: 22px 40px; align-items: start; }
+.pressing[hidden] { display: none; }
+@container (min-width: 760px) { .pressing { grid-template-columns: minmax(0, 1fr) 280px; } .pressing-notes { position: sticky; top: 0; } }
+.pressing-deck { min-width: 0; display: grid; justify-items: center; }
+.pressing-range { justify-self: stretch; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 16px; min-height: 28px; }
+.pressing-crumbs, .pressing-presets { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; margin-inline-start: -8px; }
+.pressing-presets { margin-inline: 0 -8px; }
+.pressing-range button { height: 26px; padding: 0 8px; border-radius: var(--r-2); font-size: var(--t-small); font-weight: 500; color: var(--text-3); font-variant-numeric: tabular-nums;
+  transition: background-color var(--quick) var(--soft), color var(--quick) var(--soft); }
+.pressing-range button:hover { background: var(--hover); color: var(--text); transition: none; }
+.pressing-crumbs button[aria-current="true"] { color: var(--text); cursor: default; }
+.pressing-crumbs button[aria-current="true"]:hover { background: none; }
+.pressing-presets button[aria-pressed="true"] { background: var(--current); color: var(--text); }
+.pressing-crumbs .chev { font-size: var(--t-small); color: var(--text-4); }
+.pressing-platter { position: relative; }
+.pressing-platter canvas { display: block; touch-action: none; outline: 0; transition: opacity 240ms var(--out), scale 420ms var(--out); }
+.pressing-platter canvas.grab { cursor: grab; }
+.pressing-platter canvas.dragging { cursor: grabbing; }
+.pressing-platter canvas.pressing-out { opacity: 0; scale: 0.97; transition-duration: 140ms; }
+.pressing-label { position: absolute; translate: -50% -50%; text-align: center; pointer-events: none; font-variant-numeric: tabular-nums; }
+.pressing-label strong { display: block; font-size: var(--t-small); font-weight: 600; color: var(--text-2); white-space: nowrap; }
+.pressing-label span { display: block; margin-top: 18px; font-size: var(--t-caption); color: var(--text-4); white-space: nowrap; }
+.pressing-readout { min-height: 40px; text-align: center; font-variant-numeric: tabular-nums; }
+.pressing-readout strong { display: block; font-size: var(--t-ui); font-weight: 500; color: var(--text); }
+.pressing-readout span { font-size: var(--t-small); color: var(--text-3); }
+.pressing-hint { margin: 8px 0 0; max-width: 460px; font-size: var(--t-caption); line-height: 1.5; color: var(--text-4); text-align: center; text-wrap: balance; }
+.pressing-notes { min-width: 0; padding-top: 34px; }
+.pressing-notes .era { font-size: 20px; font-weight: 600; letter-spacing: -0.012em; line-height: 1.2; color: var(--text); font-variant-numeric: tabular-nums; }
+.pressing-notes .era-sub { margin: 6px 0 0; font-size: var(--t-small); color: var(--text-3); font-variant-numeric: tabular-nums; }
+.pressing-notes .label { margin: 20px 0 8px; font-size: var(--t-small); font-weight: 600; color: var(--text-2); }
+.pressing-notes .song { margin: 0; font-family: var(--serif); font-size: var(--t-reply); line-height: 1.5; color: var(--text); }
+.pressing-notes .song span { display: block; font-family: var(--sans); font-size: var(--t-small); color: var(--text-3); }
+.pressing-notes .people { list-style: none; margin: 0 -8px; padding: 0; display: grid; gap: 1px; }
+.pressing-notes .person { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 4px 12px; padding: 6px 8px; border-radius: var(--r-2);
+  transition: background-color var(--quick) var(--soft); }
+.pressing-notes .person:hover, .pressing-notes .person.on { background: var(--hover); transition: none; }
+.pressing-notes .person strong { font-size: var(--t-ui); font-weight: 500; color: var(--text); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.pressing-notes .person em { font-style: normal; font-size: var(--t-small); color: var(--text-3); white-space: nowrap; }
+.pressing-notes .person canvas { grid-column: 1 / -1; display: block; }
+.pressing-notes .caption { margin: 10px 0 0; font-size: var(--t-caption); line-height: 1.5; color: var(--text-4); }
+.pressing-notes .toggle { margin: 12px 0 0 -9px; height: 26px; padding: 0 9px; border-radius: var(--r-2); font-size: var(--t-small); font-weight: 500; color: var(--text-3); }
+.pressing-notes .toggle:hover { background: var(--hover); color: var(--text); }
+.pressing-notes .toggle[aria-pressed="true"] { background: var(--current); color: var(--text); }
+@media (prefers-reduced-motion: reduce) { .pressing-platter canvas { transition: none; } }
 @media (max-width: 720px) {
   .shelf-scroll { padding-inline: 24px; }
   .shelf-art { width: 120px; }
   .shelf-name, .shelf-rename { font-size: 20px; }
+  .taste-scroll { padding-inline: 24px; }
+  .taste-name { font-size: 20px; }
 }
 
 /* ── The conversation ─────────────────────────────────────────────────────────────────────── */

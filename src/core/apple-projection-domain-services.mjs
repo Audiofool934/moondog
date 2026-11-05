@@ -1296,6 +1296,10 @@ export class AppleProjectionDomainServices {
     return this.#listeningHistoryStore?.recentAttention?.({ subjectId: this.#subjectId }) ?? null;
   }
 
+  listeningDays() {
+    return this.#listeningHistoryStore?.listeningDays?.({ subjectId: this.#subjectId }) ?? null;
+  }
+
   // Moondog's suggestions ledger and the declared mix (src/profile/moondog-suggestions.mjs).
   recordMoondogSuggestions(entries) {
     return this.#listeningHistoryStore?.recordMoondogSuggestions?.({ entries }) ?? null;

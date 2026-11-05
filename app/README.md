@@ -103,7 +103,7 @@ A model or music service chosen there lasts until the app quits, and sign-in and
   The model's menu shows the models kept in Settings, flat, the one this conversation uses checked, and how hard it thinks.
   A model chosen there is that conversation's alone, and the conversation keeps it after a restart; a new conversation starts on the default, which Settings sets and the terminal uses.
   While the first run still asks for a service, the service reads "Choose a music service", as the model reads "Choose a model" until there is one.
-- Typing `/` lists commands by what they open (a mistyped one stays in the composer instead of going to Moondog): `/new`, `/model`, `/language`, `/service`, `/device`, `/import`, `/memory`, `/remember`, `/folder`, `/settings` and `/help`.
+- Typing `/` lists commands by what they open (a mistyped one stays in the composer instead of going to Moondog): `/new`, `/model`, `/language`, `/service`, `/device`, `/import`, `/taste` (or `/profile`), `/memory`, `/remember`, `/folder`, `/settings` and `/help`.
 - Settings (`⌘,`, or the button at the top right beside the player's) has Language, Model, Playback, Import, Memory and About.
   Model lists the menu's models with the default named, one thinking scale for every model (a level a model lacks reaches it as the nearest lighter one), and the providers: OpenAI by a ChatGPT subscription or an API key, then Anthropic, Google and xAI by key, any other Pi provider once it has a key, and endpoints.
   An endpoint is any service that speaks OpenAI's Chat Completions or Anthropic's Messages, added by its address, an optional key and its model IDs (asked of the endpoint when left empty).
@@ -130,6 +130,19 @@ A model or music service chosen there lasts until the app quits, and sign-in and
   A model or a sign-in saved in an open terminal reaches the window within a few seconds, and the other way round; a reply that is running keeps its model until it ends.
 - Import: choose a Spotify, Apple Music, ListenBrainz or Last.fm export, read recent Spotify listening, read a Last.fm account (the window asks for a Last.fm API key the first time), or drop a file anywhere on the window.
   The preview uses the terminal's words, nothing is saved until you add it, and the updated profile then shows in the conversation.
+- Taste is the sidebar's third view, beside Chats and the library, by the record's mark; as the one tab, it brings your taste page into the room in the conversation's place, as a playlist opens, and another tab takes it away. `/taste`, `/profile`, and `⌥⌘T` from the View menu turn to it too. Split, any two of the three views share the sidebar and the tab row goes: each part's header is its switcher, a click listing the three views with the one there checked, so the other part's view trades places with it, the third takes its place, and Show as tabs stacks them again. Each view shows once, as a tab or as a header. Split, the taste page opens from a row of the taste view rather than on its own, since the other part may be the one using the room.
+  The core builds it with the terminal's own `/taste` view, so both show the same artists and tracks in the same words.
+  At the top: plays, hours, the history it covers and how many choices you've made, with Full report, which posts the whole report in the conversation.
+  Then your history pressed as a record, in the record's own dots: one spiral groove from the rim to the label, a turn a year, a quarter, a month or a week, whichever gives between four and fourteen turns, so a short history is a small single and a long one an album.
+  A stretch of groove darkens with that stretch's plays. The arm is the needle in time and rests on now; the wheel scratches back through the years as the record turns and the arm swings out, a click drops the needle on a groove, and the arm drags.
+  A double-click, a pinch, or Enter opens one turn as its own record (a year in months, a month in days), and the trail above, or Esc, goes back out; Last 12 months and Last 3 months press a recent stretch.
+  Beside it, the liner notes follow the turn under the needle: its plays, the song of the year as `/taste` picks it, and who moved across the range, each with a dot a turn. Rising, fading and returning are read within the range only, and a range under two years says only more or less lately, since a season can look like a change.
+  A name lights that artist's plays across the whole record, and a finding in the reading that names an artist does the same. Moondog's picks shows the plays Moondog started as hollow dots, apart from your own.
+  The core counts the plays a local day at a time from the listening history (`listeningDays`), with the plays Moondog started kept apart as everywhere else; only counts and artist names reach the window.
+  Under it, the saved reading a model wrote with `/profile build`, its summary and its findings, each marked measured, interpretation or your choice; until there is one, it says so.
+  The taste view lists every artist and track the profile rests on, filtered by All, Artists, Tracks and Your choices.
+  A click or Enter there unfolds one row at a time, opens the page if it was closed, and lights that artist across the record: where it comes from, Why it's here (the evidence and what it can't tell), I like this, Keep it out and Undo my choice, saved as `/profile correct` saves them, and for a track, Find more like this, which starts a request in the composer.
+  The page asks the core again when it opens and after an import, a choice or a reply. Esc, a message sent or another conversation brings the conversation back; Up and Down move between rows.
 - Apple Music plays whole songs where it can and 30-second previews where it can't.
   Whole songs come from a small helper beside the app's executable (`native/music.swift`) that plays the Apple Music catalog through MusicKit, so they need an Apple Music subscription and the listener's permission, which Settings › Playback asks for once.
   Until the helper can play, the window plays previews in itself, with media keys and the system's Now Playing.
@@ -149,7 +162,7 @@ A model or music service chosen there lasts until the app quits, and sign-in and
 - Keys: Enter sends and Shift+Enter starts a new line. `⌘.` or Esc stops a reply.
   Typing anywhere goes to the composer. No plain key plays, pauses or skips, because a chat window is typed in all the time.
   `⌃⌘P` plays or pauses, and `⌃⌘→` and `⌃⌘←` skip, from the Playback menu; the media keys work too. `⌃⌘O` goes on or off the air.
-  `⌥⌘S` and `⌥⌘P` show or hide the conversations and the player; a narrow window folds them on its own. `⌥⌘R` folds or opens the record.
+  `⌥⌘S` and `⌥⌘P` show or hide the conversations and the player; a narrow window folds them on its own. `⌥⌘R` folds or opens the record. `⌥⌘T` opens or closes your taste.
 - Language: the window speaks the language the core speaks, which follows the choice in Settings or `/language`, then the system's language.
   The window's words, its menus included, exist in English, Simplified and Traditional Chinese, Japanese, Korean, Spanish, French, German, Brazilian Portuguese and Italian (`strings.mjs`).
 - Closing the window hides it, and the music keeps going until you quit. A reply in progress shows in the Dock, and the Dock icon's menu plays, pauses and skips.
@@ -292,7 +305,7 @@ Extract test copies into a folder whose name ends in `.noindex`, so Spotlight do
 
 ## Not yet
 
-- The full taste report happens in the terminal (`moondog`).
+- A saved reading is built in the terminal (`/profile build`); the window shows it once it exists.
 - The terminal plays Apple Music previews; only the window plays whole songs.
 - Builds from before the updater have none: install the first build with it by hand, as before.
 - The build is for Apple silicon only.

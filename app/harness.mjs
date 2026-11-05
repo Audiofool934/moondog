@@ -10,7 +10,7 @@
 //                                                    MOONDOG_HARNESS_STATES when it names one
 //   MOONDOG_HARNESS_EVAL=check.js npm run harness    runs a script in the page after each state, before the
 //                                                    capture, and prints what it returns (for checks)
-import { app, BrowserWindow, nativeTheme, protocol } from "electron";
+import { app, BrowserWindow, ipcMain, Menu, nativeTheme, protocol } from "electron";
 import { readdirSync, readFileSync, rmSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import os from "node:os";
@@ -85,6 +85,20 @@ app.whenReady().then(async () => {
   });
   const load = () => window.loadFile(path.join(here, "dist", "index.html"), { query: { locale } });
   if (show) {
+    // A window to try by hand opens real menus, as main.mjs builds them, so a menu's choices can be tried too.
+    const template = (items, choose) => items.map((item) => item.type === "separator" ? { type: "separator" } : item.type === "header" ? { type: "header", label: String(item.label ?? "") } : {
+      label: String(item.label ?? ""), enabled: item.enabled !== false,
+      ...(item.checked !== undefined ? { type: "checkbox", checked: item.checked === true } : {}),
+      ...(Array.isArray(item.submenu) ? { submenu: template(item.submenu, choose) } : { click: () => choose(item.id) }),
+    });
+    ipcMain.handle("harness-menu", (_event, { items, x, y, positioningItem }) => new Promise((resolve) => {
+      let chosen = null;
+      const list = Array.isArray(items) ? items : [];
+      const menu = Menu.buildFromTemplate(template(list, (id) => { chosen = id; resolve(id); }));
+      menu.popup({ window, ...(Number.isFinite(x) && Number.isFinite(y) ? { x: Math.round(x), y: Math.round(y) } : {}),
+        ...(Number.isInteger(positioningItem) && positioningItem >= 0 && positioningItem < list.length ? { positioningItem } : {}),
+        callback: () => setTimeout(() => resolve(chosen), 50) });
+    }));
     await load();
     const first = process.env.MOONDOG_HARNESS_STATES?.split(",")[0];
     if (first) { await wait(350); await window.webContents.executeJavaScript(`window.__harness.setState(${JSON.stringify(first)})`); }
