@@ -124,9 +124,9 @@ jobs:
           MOONDOG_NOTARY_KEY_ID: ${{ secrets.MAC_NOTARY_KEY_ID }}
           MOONDOG_NOTARY_ISSUER: ${{ secrets.MAC_NOTARY_ISSUER }}
         run: |
-          umask 077
           export MOONDOG_NOTARY_KEY="$RUNNER_TEMP/notary-key.p8"
-          printf '%s' "$MAC_NOTARY_KEY" > "$MOONDOG_NOTARY_KEY"
+          # Only the key is private. A umask left on for the build would ship the app's folders as owner-only.
+          (umask 077; printf '%s' "$MAC_NOTARY_KEY" > "$MOONDOG_NOTARY_KEY")
           unset MAC_NOTARY_KEY
           node pack.mjs --sign
       - uses: actions/upload-artifact@v4
