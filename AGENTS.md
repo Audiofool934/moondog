@@ -2,7 +2,8 @@
 
 ## Current Product Surface
 
-- Build and evaluate the personal listening loop in the Pi-based TUI.
+- Moondog is a radio host just for the listener, working from a listening room with two clients on one core: the Pi-based terminal and the desktop app.
+  Build and evaluate the personal listening loop there.
 - The browser Studio and the static showcase were removed on 2026-10-22; Git history keeps them for reference.
   Do not rebuild a separate browser product unless the project owner reopens that scope.
 - The project page in `site/` is in scope.

@@ -1,6 +1,6 @@
 # Terminal guide and reference
 
-Moondog's current product is the Pi-based terminal listening room.
+Moondog is a radio host just for you, and the Pi-based terminal listening room is one of the two places it works from, beside the [desktop app](../app/README.md).
 This guide covers the local listening loop, optional connected capabilities, and the detailed contracts behind them.
 Earlier browser prototypes were removed; Git history keeps them.
 For the predecessor's relationship to this project, see the public [DJ Claw lineage boundary](DJ_CLAW_LINEAGE.md).
