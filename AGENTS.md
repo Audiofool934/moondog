@@ -26,8 +26,8 @@
   Missing platform history or personal context must remain unknown rather than becoming an invented explanation.
 - Use development-time listener feedback to improve general build behavior and evaluate fresh builds; do not make that feedback loop part of required onboarding or hard-code one listener's answers.
   Evaluate whether the model's interpretation makes sense from its evidence, rather than requiring exact agreement with the listener's self-description.
-- A dedicated user-facing profile inspection experience is a possible later feature, not the current priority or a prerequisite for first-build quality.
-  Preserve existing evidence and correction commands without expanding an inspection workflow ahead of the build itself.
+- The desktop app's taste page and the terminal's `/taste` show the profile at any time, with its evidence and the listener's choices.
+  They never become a required onboarding step, and they do not replace first-build quality: improve the builder rather than asking the listener to repair its reading.
 
 ## Development Pace
 
