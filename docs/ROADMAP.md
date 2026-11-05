@@ -99,6 +99,11 @@ The owner's direction (2026-11-04): the window supports more than one form, and 
 - [ ] Make the sidebar's conversations and library two views the listener arranges: stacked as tabs, or split one above the other, by dragging a view's header; the layout is kept.
   This ends the sidebar showing one or the other under a second switch, which fought the sidebar's own show and hide.
 - [ ] Let a view dock in another column, such as the library beside the player, once the sidebar views have settled in daily use.
+- [ ] Make every menu that belongs to a control a native dropdown (owner direction, 2026-11-04).
+  It opens from its control as a macOS pop-up or pull-down button does: over or under the control, with the current choice set on the control's words, not at the pointer.
+  Only a right-click or context-menu-key menu opens at the pointer.
+  The split sidebar's header switcher already works this way: `menuAt` in `app/renderer/renderer.mjs` anchors the menu to the control, and `positioningItem` sets its choice.
+  Still opening at the pointer: the model, music service and device pickers beside the composer, a conversation's and a playlist's `⋯` menu, and the library's `+` menu.
 - [ ] Add a record wall as a form of its own: one click turns the room from the conversation and its record to a wall of the library's sleeves, as a wall turning round, and back.
   Saved, folders and playlists stand as sleeves; one opens to its playlist. With reduced motion it fades instead of turning.
 

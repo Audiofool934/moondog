@@ -199,6 +199,7 @@ function buildMenu() {
     { label: t("menuView"), submenu: [
       { label: t("menuSidebar"), accelerator: "CmdOrCtrl+Alt+S", click: command("toggle-sidebar") },
       { label: t("menuLibrary"), accelerator: "CmdOrCtrl+Alt+L", click: command("toggle-library") },
+      { label: t("menuTaste"), accelerator: "CmdOrCtrl+Alt+T", click: command("toggle-taste") },
       { label: t("menuPlayer"), accelerator: "CmdOrCtrl+Alt+P", click: command("toggle-inspector") },
       { label: t("menuRecord"), accelerator: "CmdOrCtrl+Alt+R", click: command("toggle-record") },
       { type: "separator" },
@@ -367,9 +368,13 @@ const menuTemplate = (items, choose) => items.map((item) => item.type === "separ
 });
 // On macOS the menu can report closing before the chosen item's click runs, so a click answers at
 // once and closing answers "nothing" only a moment later.
-ipcMain.handle("menu", (_event, { items, x, y }) => new Promise((resolve) => {
-  const menu = Menu.buildFromTemplate(menuTemplate(Array.isArray(items) ? items : [], (id) => resolve(id)));
+// A menu that belongs to a control can name the item to set at the point, so it opens over the control with its
+// current choice there, as a native pop-up button opens (positioningItem, macOS).
+ipcMain.handle("menu", (_event, { items, x, y, positioningItem }) => new Promise((resolve) => {
+  const list = Array.isArray(items) ? items : [];
+  const menu = Menu.buildFromTemplate(menuTemplate(list, (id) => resolve(id)));
   menu.popup({ window, ...(Number.isFinite(x) && Number.isFinite(y) ? { x: Math.round(x), y: Math.round(y) } : {}),
+    ...(Number.isInteger(positioningItem) && positioningItem >= 0 && positioningItem < list.length ? { positioningItem } : {}),
     callback: () => setTimeout(() => resolve(null), 150) });
 }));
 // A confirmation for something that cannot be undone, such as deleting a conversation.

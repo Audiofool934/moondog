@@ -1405,6 +1405,13 @@ export class MoondogApplication {
     return this.domainServices?.listeningCoverage?.() ?? null;
   }
 
+  // The listener's own plays a day at a time, with the most played artists' and Moondog's own kept
+  // apart, for the window's taste record. Host-only; never a model tool.
+  listeningDays() {
+    if (!this.profileServicesReady()) return null;
+    return this.domainServices?.listeningDays?.() ?? null;
+  }
+
   // What the listener has played lately, apart from the saved reading: stored plays from
   // the last four weeks, and Spotify's own four-week top artists when the room has read them.
   recentAttention() {
