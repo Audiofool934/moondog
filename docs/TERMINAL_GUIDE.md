@@ -81,7 +81,7 @@ Ctrl+C leaves Moondog as usual; a first run that is not finished asks again at t
 
 The desktop app in `app/` is a native window on the same core, and it shares the same profile, settings, and sign-ins as the terminal room.
 From a checkout with dependencies installed, start it with `cd app && npm ci && npm start`; the [desktop app README](../app/README.md) has the details.
-The project page in `site/` runs the real listening room in the browser on fictional data, as the [project page README](../site/README.md) describes.
+The project page in `site/` plays a short scene in the desktop app's real window, in the browser, on made-up data, as the [project page README](../site/README.md) describes.
 
 ## Use the listening room
 
@@ -201,12 +201,13 @@ Use `/auth` and `/model` only when you want agent conversation.
 
 ## Language
 
-Moondog speaks English, Spanish, Brazilian Portuguese, Japanese, and Simplified Chinese.
+Moondog replies in English, Simplified and Traditional Chinese, Japanese, Korean, Spanish, French, German, Brazilian Portuguese, and Italian.
+The terminal's screens exist in English, Spanish, Brazilian Portuguese, Japanese, and Simplified Chinese; the Mac app's words exist in all ten.
 Each reply follows the language of your message: its script, its common words, or an explicit request such as "reply in Spanish" or "responde en inglés".
 Song, album, and artist names never decide it, so "Play La Bamba" stays English.
 When a message gives no clear sign, such as a bare artist name, Moondog uses your chosen language.
 
-Choose it with `/language`, or name one directly: `/language en`, `es`, `pt`, `ja`, or `zh`.
+Choose it with `/language`, or name one directly: `/language en`, `es`, `pt`, `ja`, `zh`, `zh-Hant`, `ko`, `fr`, `de`, or `it`.
 The choice is saved in `language.json` next to Moondog's other settings.
 On a fresh install it follows your system language (`LANG`), and the `MOONDOG_LANGUAGE` environment variable overrides both.
 
@@ -215,6 +216,7 @@ Names of artists, albums, songs, and playlists stay exactly as they are.
 
 Moondog's own confirmations, Spotify receipts, and errors are translated, and so are the menus, the import guide, help, the profile view, and the footers.
 Screen text follows your chosen language and switches as soon as you use `/language`.
+With Traditional Chinese chosen, the terminal's screens read Simplified Chinese; with the other languages without screens, they read English.
 Output from shell commands such as `moondog spotify ...` stays English.
 To add a language, see [Translating Moondog](TRANSLATING.md).
 
@@ -367,7 +369,7 @@ Other existing sources remain available under **Other sources**.
 | Spotify | Connect for your library, top artists and tracks, and up to 50 recent plays, with current developer-app setup requirements | Account Data or Extended Streaming History ZIP |
 | Apple Music | Export Library.xml from Music on Mac | Privacy-request guide only; archive parsing is not available |
 | YouTube Music | Takeout music-library-songs.csv or a ZIP containing it | Takeout watch-history.json or a ZIP containing it |
-| Last.fm | Your username, with a free API key you make once | Every scrobble and your loved tracks, read from Last.fm |
+| Last.fm | Your username | Every scrobble and your loved tracks, read from Last.fm |
 | QQ Music | Paste a public playlist share link | Account history import is not available |
 | NetEase Music | Paste a public playlist share link | Account history import is not available |
 
@@ -772,8 +774,10 @@ Search uses DeepSeek when a DeepSeek key is set, then Brave Search, then the Cod
 Page reading uses DeepSeek, then the Codex CLI.
 The DeepSeek key is the same one `/auth deepseek` saves for DeepSeek models.
 A key saved with `/auth` comes before the environment variable, as for model keys.
-`MOONDOG_WEB_SEARCH_PROVIDER` (`deepseek`, `brave` or `codex`) and `MOONDOG_WEB_READ_PROVIDER` (`deepseek` or `codex`) choose a service instead.
-A chosen service that is not set up stays unavailable; Moondog does not fall back silently.
+`/model web deepseek`, `brave` or `codex` chooses a service, as does Settings › Model › Auxiliary models in the desktop app, and `/model web auto` takes the first one set up.
+`MOONDOG_WEB_SEARCH_PROVIDER` (`deepseek`, `brave` or `codex`) and `MOONDOG_WEB_READ_PROVIDER` (`deepseek` or `codex`) choose over that.
+With Brave chosen, a page still goes to the first service that can read it.
+A call that fails on the chosen service, or a page it can't open, goes once to each other service that is set up, and the heading over the links names the service that answered.
 
 ```text
 /web status
@@ -789,7 +793,7 @@ The heading over those links names the service that found them.
 From the shell, use `npm run moondog -- web search "artist interview" --json` or the corresponding `status` and `read` commands.
 A key saved with `/auth` during a session takes effect at once; `/reload` checks a new Codex sign-in.
 
-Each request has a timeout, returns up to five sources, and caches successful results for five minutes within the running process.
+Each request has a timeout, returns five sources unless the agent asks for up to ten, and caches successful results for five minutes within the running process.
 Ctrl+C cancels the active request.
 Only the supplied public query or URL leaves the machine, with no automatic profile, history, conversation or local-file attachment.
 Moondog checks that a URL is a public `http` or `https` address before it asks a service to read it.
@@ -797,9 +801,9 @@ Moondog checks that a URL is a public `http` or `https` address before it asks a
 What each service returns:
 
 - DeepSeek and Brave return search-engine results: titles, URLs, snippets and publication dates as the engine gives them.
-  Moondog removes duplicate pages and keeps the first five.
+  Moondog removes duplicate pages and keeps up to ten.
   DeepSeek queries can be up to 128 characters and support `site:`, `-site:`, quoted phrases, `lang:` and `after:`.
-- DeepSeek Fetch returns the page's own text, cut to its first 12,000 characters.
+- DeepSeek Fetch returns the page's own text, up to 200,000 characters, and the agent reads it 15,000 characters at a time, asking for the next part when it needs more.
   A page that DeepSeek cannot or may not fetch is reported as unavailable.
 - The Codex CLI returns a generated summary with source links.
   Moondog requires evidence that Codex ran a native web search or opened the requested URL.
@@ -855,7 +859,7 @@ The effort applies to conversation and profile builds, is saved with the model, 
 
 The model picker starts with Pi's bundled catalog and a validated local cache. Opening a supported provider checks Pi's public catalog when the cache is more than four hours old. This updates compatible model choices without upgrading Pi or changing your selected model. A failed check keeps the last usable cache and bundled choices.
 
-Use `/model refresh` to refresh all ten sign-in-supported providers, or `/model refresh deepseek` for one. Ctrl+C cancels the check. Refresh sends only the provider ID, Pi compatibility version and optional public catalog ETag to `pi.dev`; it sends no credentials, prompts or custom provider configuration and makes no model or OAuth request. It does not restart the current conversation. Other bundled Pi providers retain their installed catalogs.
+Use `/model refresh` to refresh all nine sign-in-supported providers, or `/model refresh deepseek` for one. Ctrl+C cancels the check. Refresh sends only the provider ID, Pi compatibility version and optional public catalog ETag to `pi.dev`; it sends no credentials, prompts or custom provider configuration and makes no model or OAuth request. It does not restart the current conversation. Other bundled Pi providers retain their installed catalogs.
 
 Moondog accepts only metadata compatible with the installed provider's transport, keeps its API endpoint and preserves previously known model IDs. Incompatible entries are skipped; retained IDs absent from the current catalog are marked in the picker. The public cache lives in `model-catalog/` beside Moondog's settings, separate from credentials. Existing custom runtime factories remain authoritative; Moondog does not import another application's `models.json`.
 
@@ -902,6 +906,28 @@ Moondog stores its API keys and OAuth credentials in `auth.json` under `MOONDOG_
 On POSIX systems, Moondog creates or requires mode `0700` on the directory and `0600` on the credential file.
 The file contains credentials and must be protected like a password.
 Do not put credentials in this repository.
+
+### Endpoints
+
+`/endpoint add` adds any service that speaks OpenAI's Chat Completions or Anthropic's Messages, by its address, an optional key and its model IDs.
+`/endpoint remove <id>` removes it and its key.
+
+### Auxiliary models and images
+
+`/model roles` lists the chat model and what side tasks use.
+`/model vision <provider> <model>` gives images a model of its own, and `/model vision auto` gives them back to the chat model when it can see.
+`/model web deepseek|brave|codex` picks the web search service, and `/model web auto` takes the first one set up.
+Audio holds its place for a later Moondog.
+The choices are kept in `model-roles.json` beside `settings.json`.
+
+An absolute or `~/` path to a PNG, JPEG, WebP or GIF in your message goes with it, up to four images.
+A chosen vision model describes each image for the chat model; otherwise a chat model that can see gets it as it is; otherwise the message is refused with what to change.
+The conversation keeps only text: the description, or a short stand-in.
+
+### Settings in your own words
+
+You can ask the agent which model answers, which service plays, or which language it replies in, and ask it to change them.
+A model switch applies when the reply ends.
 
 ### Recover from a model connection failure
 
@@ -1104,6 +1130,14 @@ Leaving the room stops the sound and removes the rest.
 Without one of those players, the agent says that it cannot play music here.
 With Spotify connected, the agent plays the full songs on Spotify instead.
 
+## NetEase Music
+
+NetEase Music (网易云音乐) plays whole songs through NetEase's own command line tool, for listeners in mainland China.
+Install it with `npm install -g @music163/ncm-cli` and `brew install mpv`, and sign in with `ncm-cli login`; then `/service netease` uses it.
+Moondog never reads its key or sign-in.
+Songs NetEase marks as not playable are not sent, and Moondog says so.
+Each search sends NetEase a short summary of the request.
+
 ## Spotify connected actions
 
 Moondog can authorize a Spotify account, control an existing Spotify Connect player, resolve imported library tracks against the Spotify catalog, save tracks, create private playlists, and edit eligible existing private playlists through the official Web API.
@@ -1283,7 +1317,7 @@ The bundled [field policy](SPOTIFY_EXTENDED_HISTORY_FIELD_POLICY.md) records how
 
 The import is transactional, records a SHA-256-backed batch manifest, and is idempotent when the same archive or overlapping records are supplied again.
 
-Unverified search rows, payment data, account identity, advertising segments, podcast history, audiobook history, and video history are not imported into the music profile.
+Unverified search rows, payment data, account identity, advertising segments, podcast history, audiobook history, and non-music video rows are not imported into the music profile.
 
 The default store is `~/.local/state/moondog/listening-history.sqlite`, with the same `MOONDOG_STATE_HOME`, `MOONDOG_CONFIG_HOME`, and `XDG_STATE_HOME` overrides used by other local state.
 

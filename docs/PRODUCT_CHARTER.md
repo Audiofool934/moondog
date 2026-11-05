@@ -5,7 +5,7 @@
 Moondog is a local listening room.
 It turns the listening history and library data that a listener supplies into an evidence-based profile.
 With a connected model, an agent uses that profile to talk about music, find music, and plan playlists.
-It can also control Spotify after the listener connects Spotify.
+It can also control Spotify after the listener connects it, and play through Apple Music and NetEase Music.
 
 Moondog has three surfaces:
 
@@ -13,6 +13,7 @@ Moondog has three surfaces:
   It is a local CLI and TUI built on Pi.
 - The desktop app in `app/` is a native client on the same core.
   It shares the profile, settings, and sign-ins with the terminal.
+  It shows the same taste, library and conversations in its own window.
 - The project page in `site/` plays a short scene in the desktop app's real window, in the browser, on made-up data.
 
 Pi supplies replaceable agent-loop, model, and terminal adapters, while Moondog owns profile, memory, policy, persistence, and connectors.

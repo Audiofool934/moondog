@@ -29,7 +29,7 @@ The source archive remains unchanged.
 | `user_agent_decrypted` | Ignore | Device and browser fingerprint with no necessary use in the current product |
 | `offline_timestamp` | Ignore | `ts` remains the canonical event time; the additional offline-mode timestamp has no supported taste interpretation |
 | Episode, show, and audiobook fields | Exclude from the music profile | Non-music history remains outside the current product scope |
-| Video-history members | Do not read | Non-audio history remains outside the current importer scope |
+| Video-history members | Read music rows only | Music records in `Streaming_History_Video` count as listening; non-music rows are excluded |
 
 ## Cross-format track identity
 

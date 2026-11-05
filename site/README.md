@@ -18,7 +18,7 @@ npm run dev
 
 Then open <http://localhost:8737>.
 `npm run build` writes the page to `dist/`.
-The build asks GitHub for the newest release with a Mac download; `node build.mjs --offline` links the release list instead.
+The build asks GitHub for the newest stable release with a Mac download; if there is none, or with `node build.mjs --offline`, it links the release list.
 
 ## The scene
 

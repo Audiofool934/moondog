@@ -127,4 +127,4 @@ An account with a low request limit is measured with `MOONDOG_EVAL_REQUEST_INTER
 - **A profile per model.**
   Record per model what it supports (strict schemas, tool search, examples) and how many core tools it gets.
 - **More models measured.**
-  Run the evaluation on Claude, OpenAI, Gemini, Kimi and GLM models once their keys are on the machine.
+  Run the evaluation on Claude, OpenAI and Gemini models once their keys are on the machine.

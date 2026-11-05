@@ -83,8 +83,11 @@ A model or music service chosen there lasts until the app quits, and sign-in and
   Under each message, while the pointer is on it, Copy copies its words.
   Your own saved messages also have Edit, as `/rewind` in the terminal: the message opens in its own place, Enter sends the new words there and the replies after it go, and Esc leaves it as it was.
   Moondog's saved replies also have Branch, as `/branch`: a new conversation goes on from that reply, and the original stays among the conversations.
+- Paste or drop up to four PNG, JPEG, WebP or GIF images, and they wait above the composer and go with the next message.
+  A vision model chosen in Settings describes them for the chat model; otherwise a chat model that can see gets them as they are; otherwise the message comes back with what to change.
+  The conversation keeps only text: the description, or a short stand-in for the image.
 - What is playing on the right: a large cover that tints the panel with its own colours, the song, a progress line you can drag to move in the song (or focus it and use the arrow keys, five seconds a press, fifteen with Shift), previous, play or pause, and next.
-  Where the music plays, under it, opens Spotify's devices and the choice between Spotify and Apple Music; while Apple Music plays, it reads Apple Music.
+  Where the music plays, under it, opens Spotify's devices and the choice among the services that can play now; while Apple Music plays, it reads Apple Music.
   A control Spotify won't take right now, such as skipping on a free account, is dimmed.
   Music you play yourself in the Music app on this Mac shows here too, with the next songs of its playlist, and the buttons act on it there.
   When it and Spotify both play, the one that plays wins over a paused one, then the chosen service; a player you just pressed stays in view for 30 seconds.
@@ -103,11 +106,15 @@ A model or music service chosen there lasts until the app quits, and sign-in and
   The model's menu shows the models kept in Settings, flat, the one this conversation uses checked, and how hard it thinks.
   A model chosen there is that conversation's alone, and the conversation keeps it after a restart; a new conversation starts on the default, which Settings sets and the terminal uses.
   While the first run still asks for a service, the service reads "Choose a music service", as the model reads "Choose a model" until there is one.
-- Typing `/` lists commands by what they open (a mistyped one stays in the composer instead of going to Moondog): `/new`, `/model`, `/language`, `/service`, `/device`, `/import`, `/taste` (or `/profile`), `/memory`, `/remember`, `/folder`, `/settings` and `/help`.
-- Settings (`⌘,`, or the button at the top right beside the player's) has Language, Model, Playback, Import, Memory and About.
+- Typing `/` lists commands by what they open (a mistyped one stays in the composer instead of going to Moondog): `/new`, `/model`, `/language`, `/appearance`, `/service`, `/device`, `/import`, `/taste` (or `/profile`), `/memory`, `/remember`, `/folder`, `/library`, `/playlist`, `/settings` and `/help`.
+- Settings (`⌘,`, or the button at the top right beside the player's) has Language, Appearance, Model, Playback, Import, Memory and About.
+  Appearance sets the theme (System, Light or Dark) and the app icon.
   Model lists the menu's models with the default named, one thinking scale for every model (a level a model lacks reaches it as the nearest lighter one), and the providers: OpenAI by a ChatGPT subscription or an API key, then Anthropic, Google and xAI by key, any other Pi provider once it has a key, and endpoints.
   An endpoint is any service that speaks OpenAI's Chat Completions or Anthropic's Messages, added by its address, an optional key and its model IDs (asked of the endpoint when left empty).
   Opening a provider lists its models, each ticked when the menu offers it.
+  Auxiliary models hold what a side task uses: Vision and Web search each open to Auto and their choices, and Audio holds its place for later.
+  Vision takes a model from the menu that can see images; Web search takes DeepSeek, Brave Search or the Codex CLI.
+  They are kept in `model-roles.json` beside `settings.json`, and `/model roles` shows them in the terminal.
   Playback has one row per music service, its state under its name and the one in use checked.
   A click on a row unfolds that service's setup or its own controls (Spotify's devices and Disconnect), one row at a time.
   With the pointer on a row, a service that can play shows a switch at its right that uses it, and one that can't yet shows Set up.
@@ -128,8 +135,14 @@ A model or music service chosen there lasts until the app quits, and sign-in and
   The menu's list is `models.json`, each conversation's own model is `conversation-models.json`, and endpoints are `endpoints.json` (mode 600, with their keys), beside `settings.json`, so older Moondogs that read `settings.json` by a fixed shape keep working.
   OpenAI keeps a ChatGPT sign-in or an API key in `auth.json`; Moondog 0.2.0-beta.7 and older can't read a ChatGPT sign-in there.
   A model or a sign-in saved in an open terminal reaches the window within a few seconds, and the other way round; a reply that is running keeps its model until it ends.
-- Import: choose a Spotify, Apple Music, ListenBrainz or Last.fm export, read recent Spotify listening, read a Last.fm account (the window asks for a Last.fm API key the first time), or drop a file anywhere on the window.
+- Import: choose a Spotify, Apple Music, YouTube Music, ListenBrainz or Last.fm export, read recent Spotify listening, read a Last.fm account (the window asks for your own API key only if Last.fm refuses Moondog's), or drop a file anywhere on the window.
   The preview uses the terminal's words, nothing is saved until you add it, and the updated profile then shows in the conversation.
+- The library is the sidebar's second view (`⌥⌘L`, `/library`): Saved, then folders and playlists, folders inside folders four levels deep, with songs and the tracks Moondog made side by side.
+  Its `+` makes a playlist or a folder, or imports a playlist from a Spotify, Apple Music, NetEase Music or QQ Music link; the window shows what it read and asks before it keeps the copy, and whether it should shape your taste.
+  A click opens a playlist in the room, and its `⋯` button or a right-click opens its menu.
+  It is the same library as `/library` in the terminal, in `library.sqlite` in Moondog's state folder.
+- The sidebar's views show as tabs or split in two.
+  Drag a tab or a header onto the upper or lower half of the sidebar to place it there, or onto the tab row or a header to stack them as tabs again; the layout is kept.
 - Taste is the sidebar's third view, beside Chats and the library, by the record's mark; as the one tab, it brings your taste page into the room in the conversation's place, as a playlist opens, and another tab takes it away. `/taste`, `/profile`, and `⌥⌘T` from the View menu turn to it too. Split, any two of the three views share the sidebar and the tab row goes: each part's header is its switcher, a click listing the three views with the one there checked, so the other part's view trades places with it, the third takes its place, and Show as tabs stacks them again. Each view shows once, as a tab or as a header. Split, the taste page opens from a row of the taste view rather than on its own, since the other part may be the one using the room.
   The core builds it with the terminal's own `/taste` view, so both show the same artists and tracks in the same words.
   At the top: plays, hours, the history it covers and how many choices you've made, with Full report, which posts the whole report in the conversation.
@@ -162,7 +175,7 @@ A model or music service chosen there lasts until the app quits, and sign-in and
 - Keys: Enter sends and Shift+Enter starts a new line. `⌘.` or Esc stops a reply.
   Typing anywhere goes to the composer. No plain key plays, pauses or skips, because a chat window is typed in all the time.
   `⌃⌘P` plays or pauses, and `⌃⌘→` and `⌃⌘←` skip, from the Playback menu; the media keys work too. `⌃⌘O` goes on or off the air.
-  `⌥⌘S` and `⌥⌘P` show or hide the conversations and the player; a narrow window folds them on its own. `⌥⌘R` folds or opens the record. `⌥⌘T` opens or closes your taste.
+  `⌥⌘S` and `⌥⌘P` show or hide the conversations and the player; a narrow window folds them on its own. `⌥⌘L` shows or hides the library. `⌥⌘R` folds or opens the record. `⌥⌘T` opens or closes your taste.
 - Language: the window speaks the language the core speaks, which follows the choice in Settings or `/language`, then the system's language.
   The window's words, its menus included, exist in English, Simplified and Traditional Chinese, Japanese, Korean, Spanish, French, German, Brazilian Portuguese and Italian (`strings.mjs`).
 - Closing the window hides it, and the music keeps going until you quit. A reply in progress shows in the Dock, and the Dock icon's menu plays, pauses and skips.
@@ -176,7 +189,7 @@ A model or music service chosen there lasts until the app quits, and sign-in and
   Every read counts against the listener's Spotify app quota; when Spotify answers that the quota is used up, the window reads nothing until the time Spotify gave and says so.
   Each conversation that answers beside the first gets its own application and agent from `openConversation`, on the same memory and Spotify.
   Settings go through the services the terminal uses: `modelSettings` for providers, sign-in, the menu's list and endpoints, `rebuildRuntime`, `saveRuntimeSelection` for the default, `saveLanguage`, `savePlaybackService` and the import services.
-- `renderer/` draws the window: `sidebar.mjs` (conversations and folders), `settings.mjs` (the Settings sheet), `palette.mjs` (slash commands), `previews.mjs`, `record.mjs` (the turning record), `ui.mjs` (icons, tooltips, the overlay scrollbar), and `renderer.mjs` for the rest.
+- `renderer/` draws the window: `views.mjs` (the sidebar's views, as tabs or split), `sidebar.mjs` (conversations and folders), `library.mjs` and `shelf.mjs` (the library and a playlist in the room), `taste.mjs`, `taste-list.mjs` and `pressing.mjs` (the taste page, the taste view and the pressed record), `settings.mjs` (the Settings sheet), `first-run.mjs`, `palette.mjs` (slash commands), `previews.mjs`, `record.mjs` (the turning record), `ui.mjs` (icons, tooltips, the overlay scrollbar), and `renderer.mjs` for the rest.
   Every colour, size, corner and duration is a token in `tokens.css`; `style.css` and `sheet.css` use only the tokens.
   Replies render from Markdown into DOM text nodes (`markdown.mjs`), so a reply can't inject markup.
 - Menus for a conversation and the model, device and service pickers are native menus, built in `main.mjs` from plain items the page sends.
@@ -225,9 +238,9 @@ Keep raw tool diagnostics private if a failed step needs further investigation.
 
 - The app carries the core exactly as the npm package ships it: `npm pack` decides the files, and `npm ci --omit=dev` adds their dependencies.
 - Signing needs the Developer ID Application certificate in the login keychain.
-  Notarization uses `MOONDOG_NOTARY_PROFILE`, then the shared `APPLE_NOTARY_PROFILE`, then `mac-mini-notary`.
-  The Mac mini stores one `mac-mini-notary` profile for all products in the same developer team.
-  To configure another machine, run `xcrun notarytool store-credentials mac-mini-notary --team-id <your team ID>` and enter the Apple ID and app-specific password at the secure prompts.
+  Notarization signs in with an App Store Connect API key when one is set up (see Updates below).
+  Without a key, it uses the Keychain profile named by `MOONDOG_NOTARY_PROFILE`, then `APPLE_NOTARY_PROFILE`, then `mac-mini-notary`.
+  To configure a profile on another machine, run `xcrun notarytool store-credentials mac-mini-notary --team-id <your team ID>` and enter the Apple ID and app-specific password at the secure prompts.
   `MOONDOG_SIGNING_IDENTITY` selects a different certificate.
   Keep passwords in Keychain; profile names and environment variables contain no password.
 - The app records its source commit, version, build number and signing team inside the signed bundle.
@@ -285,7 +298,7 @@ To publish an update:
    `--skip-build` requires the recorded build manifest and verifies its artifacts again.
    `--create` prepares a missing draft; it does not bypass npm or artifact verification.
    Existing remote assets with identical hashes are reused.
-   An upload that GitHub answers with 408 or a 5xx, or that times out on the way, is tried again up to three times, 30 and 60 seconds apart.
+   An upload that GitHub answers with 408 or a 5xx, or that times out on the way, is tried up to three times in all, 30 and 60 seconds apart.
    Each upload has a time limit sized to its file (a slow line, shared by the big files uploading at once, between ten minutes and an hour), so one that stalls without breaking is given up and tried again.
    Different bytes under the same filename are rejected; release a new version instead of overwriting a published build.
 
