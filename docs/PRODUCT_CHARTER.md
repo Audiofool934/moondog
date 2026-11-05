@@ -19,6 +19,7 @@ Moondog has three surfaces:
 Pi supplies replaceable agent-loop, model, and terminal adapters, while Moondog owns profile, memory, policy, persistence, and connectors.
 
 Moondog has the M0 foundation and a working A1 curator, with bounded A2 memory, A3 external discovery, and A4 connected-action slices in active development.
+The first M4 creative tool, Stable Audio 3, makes instrumental tracks on the listener's Mac.
 The provider-neutral contract foundation, private listening-evidence projection, bounded Agent tools, prompt-local external candidates, conversational playlist revision, and guarded Spotify creation and existing-playlist editing exist, but the product contract is not complete.
 
 The current Spotify priority is a smooth conversational listening experience and useful device control.
@@ -120,7 +121,7 @@ Moondog should not claim to understand a listener more deeply than its data supp
 
 Users should be able to inspect, correct, reset, export, and revoke personal profile data.
 These controls do not make profile inspection or correction a mandatory onboarding step.
-A dedicated profile inspection experience remains a possible later product decision; first-build quality takes priority over expanding it.
+The desktop app's taste page is that inspection experience, beside the terminal's `/taste`; first-build quality takes priority over expanding it.
 
 ### Local-First Privacy
 
@@ -235,10 +236,4 @@ Add a stable tool interface and connect the first music analysis or generation c
 - What profile dimensions are useful without becoming reductive?
 - Which knowledge sources can provide reliable identity, release, credit, and relationship data?
 - How should each concrete product capability be classified for risk, confirmation, budget, and execution mode?
-- How should recommendation and profile quality be evaluated with a small Lab team?
-- Which generation model or tool protocol should be integrated first?
-
-## Repository Boundary
-
-Product code, connectors, agent runtime, evaluation, and technical demos belong here.
-求索育研 administration, presentations, meeting records, and Lab-wide sharing materials belong in the AI Music Lab integration repository.
+- How should recommendation and profile quality be evaluated?

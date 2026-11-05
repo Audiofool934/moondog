@@ -18,8 +18,6 @@ The product should feel useful before a model or music-service connection is req
 - The earlier browser Studio and static showcase were removed on 2026-10-22.
   Git history keeps them for reference.
 
-New listening views, corrections, and discovery interactions must work in the terminal room first.
-
 ## Status language
 
 - **Shipped** means the behavior exists on `main` and has direct automated or runtime evidence.
