@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: moondog-media: https://i.scdn.co https://*.mzstatic.com https://*.music.126.net; media-src https://audio-ssl.itunes.apple.com moondog-media:; connect-src 'none'; object-src 'none'; base-uri 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: moondog-media: https://*.scdn.co https://*.spotifycdn.com https://*.mzstatic.com https://*.music.126.net; media-src https://audio-ssl.itunes.apple.com moondog-media:; connect-src 'none'; object-src 'none'; base-uri 'none'">
   <title>Moondog</title>
   <link rel="stylesheet" href="renderer.css">
 </head>
@@ -130,6 +130,7 @@
         <p class="notice" data-notice role="status" hidden></p>
         <div class="attachments" data-attachments hidden></div>
         <form class="field" data-form>
+          <button type="button" class="pick library-add" data-library-add data-tip-at="above" hidden><svg class="icon"><use href="#i-plus"/></svg></button>
           <textarea rows="1" data-input spellcheck="true" autofocus></textarea>
           <button type="button" class="pick" data-service><svg class="icon fill"><use href="#i-spotify"/></svg><span></span></button>
           <button type="button" class="pick" data-model><svg class="icon fill"><use href="#i-model"/></svg><span></span></button>

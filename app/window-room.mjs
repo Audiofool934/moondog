@@ -1125,6 +1125,7 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     "library-open": async (data) => {
       playlistOpen = data.id ? String(data.id) : null;
       playlistShown = null;
+      void base.refreshLibraryCovers?.().catch(() => {});
       if (playlistOpen) await sendPlaylist(true);
     },
     "library-folder-save": (data) => library.saveFolder({ ...(data.id ? { id: String(data.id) } : {}), ...(typeof data.name === "string" ? { name: data.name } : {}),
@@ -1187,7 +1188,16 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
   const idsOf = (data) => (Array.isArray(data.ids) ? data.ids : [data.id ?? ""]).map(String);
   const handlers = {
     ...libraryHandlers,
-    prompt: (data) => prompt(String(data.text ?? ""), Array.isArray(data.images) ? data.images.slice(0, 8) : []),
+    prompt: async (data) => {
+      const text = String(data.text ?? "");
+      // A message from an open playlist starts its own conversation. If none can open, it goes back to the composer.
+      if (data.fresh === true) {
+        const left = sessionOf(current);
+        await openSession(null);
+        if (sessionOf(current) === left) { send({ type: "notice", code: "message_busy", text }); return sendSession(current); }
+      }
+      return prompt(text, Array.isArray(data.images) ? data.images.slice(0, 8) : []);
+    },
     cancel: () => { if (current.turn) current.runtime.abort?.(); },
     new: () => openSession(null),
     open: (data) => openSession(String(data.id ?? "")),
@@ -1467,6 +1477,7 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     send({ type: "ready", ...status(), sessions: saved, folders: folderList, current: sessionOf(current), running: [], transcript: [] });
     lookForLibrary();
     void sendLibrary(true).catch(() => {});
+    void base.refreshLibraryCovers?.().catch(() => {});
     void refreshFirstRun();
     void refreshPlayer();
     schedulePlayer();

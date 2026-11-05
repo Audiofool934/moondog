@@ -125,6 +125,38 @@ const entryOf = (row) => ({
   added_at: row.added_at,
 });
 
+// A word that goes on past a name is another word: @Night is not in @Nightfall. Chinese and Japanese run on without spaces, so they end it.
+const WORD = /[\p{Script=Latin}\p{N}]/u;
+// Saved goes by its name in each of the window's languages.
+const SAVED_NAMES = ["Saved", "收藏", "保存済み", "저장됨", "Guardadas", "Enregistrés", "Gespeichert", "Salvas", "Salvati"];
+
+/**
+ * The playlists and folders a listener's messages name with @, newest message first. A longer name wins over one
+ * it starts with, so @Night drive is not also @Night.
+ */
+export function libraryMentions({ folders = [], playlists = [] } = {}, texts = [], { limit = 5 } = {}) {
+  const names = [
+    ...playlists.flatMap((playlist) => (playlist.saved ? SAVED_NAMES : [playlist.name]).map((name) => ({ kind: "playlist", id: playlist.id, name }))),
+    ...folders.map((folder) => ({ kind: "folder", id: folder.id, name: folder.name })),
+  ].sort((a, b) => b.name.length - a.name.length);
+  const found = new Map();
+  for (const text of [...texts].reverse()) {
+    let rest = String(text ?? "").toLowerCase();
+    if (!rest.includes("@")) continue;
+    for (const { kind, id, name } of names) {
+      const wanted = `@${name.toLowerCase()}`;
+      for (let at = rest.indexOf(wanted); at >= 0; at = rest.indexOf(wanted, at + 1)) {
+        const end = at + wanted.length;
+        if ((at > 0 && WORD.test(rest[at - 1])) || (end < rest.length && WORD.test(rest[end]) && WORD.test(wanted.at(-1)))) continue;
+        if (!found.has(`${kind}:${id}`)) found.set(`${kind}:${id}`, { kind, id });
+        rest = rest.slice(0, at) + " ".repeat(wanted.length) + rest.slice(end);
+        break;
+      }
+    }
+  }
+  return [...found.values()].slice(0, limit);
+}
+
 export class LibraryStore {
   #database;
   #clock;
@@ -204,8 +236,9 @@ export class LibraryStore {
   }
 
   /**
-   * The tree the sidebar draws: folders, and playlists with their counts and a cover (the first entry's
-   * artwork, or the first made track, whose cover the window draws), Saved among them.
+   * The tree the sidebar draws: folders, and playlists with their counts and a cover (the playlist's own from
+   * where it was imported, else the first entry's artwork or the first made track, whose cover the window draws),
+   * Saved among them.
    */
   view() {
     this.#open();
@@ -220,12 +253,13 @@ export class LibraryStore {
       }
       return null;
     };
-    const playlists = this.#database.prepare(`SELECT p.playlist_id, p.folder_id, p.name, p.origin, p.position, p.updated_at,
+    const ownCover = (row) => (row.source_json ? JSON.parse(row.source_json).cover : null);
+    const playlists = this.#database.prepare(`SELECT p.playlist_id, p.folder_id, p.name, p.origin, p.source_json, p.position, p.updated_at,
         (SELECT COUNT(*) FROM library_entries e WHERE e.playlist_id = p.playlist_id) AS count,
         (SELECT COUNT(*) FROM library_entries e WHERE e.playlist_id = p.playlist_id AND e.kind = 'made') AS made
       FROM library_playlists p`).all()
       .map((row) => ({ id: row.playlist_id, folderId: row.folder_id ?? null, name: row.name, origin: row.origin, position: row.position,
-        updatedAt: row.updated_at, count: row.count, made: row.made, cover: coverOf(row.playlist_id),
+        updatedAt: row.updated_at, count: row.count, made: row.made, cover: ownCover(row) ? { artwork_url: ownCover(row) } : coverOf(row.playlist_id),
         ...(row.playlist_id === SAVED_PLAYLIST_ID ? { saved: true } : {}) }));
     return { folders, playlists };
   }
@@ -408,6 +442,16 @@ export class LibraryStore {
       this.#renumberEntries(this.#database.prepare("SELECT entry_id FROM library_entries WHERE playlist_id = ? ORDER BY position").all(id).map((row) => row.entry_id));
       this.#touch(id);
       return { removed };
+    });
+  }
+
+  /** An imported playlist's own cover, found after it came in. */
+  setPlaylistCover(playlistId, cover) {
+    return this.#transaction(() => {
+      const id = cleanId(playlistId, "Playlist");
+      const row = this.#database.prepare("SELECT source_json FROM library_playlists WHERE playlist_id = ?").get(id);
+      if (!row?.source_json) return;
+      this.#database.prepare("UPDATE library_playlists SET source_json = ? WHERE playlist_id = ?").run(JSON.stringify({ ...JSON.parse(row.source_json), cover }), id);
     });
   }
 

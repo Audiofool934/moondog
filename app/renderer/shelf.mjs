@@ -254,8 +254,9 @@ export function createShelf({ root, state, send, t, menuPoint, onClose }) {
     name(play, t()("play"));
     name(shuffle, t()("shufflePlaylist"));
     name(more, t()("playlistActions"));
-    // The sleeve is the first cover in it, as in the sidebar; a playlist with none shows the blank record.
-    const first = current.entries.map(entryCover).find(Boolean) ?? coverUrl(state.library?.playlists?.find((each) => each.id === current.id)?.cover);
+    // The sleeve is its own cover from where it was imported, or the first cover in it, as in the sidebar; a playlist
+    // with none shows the blank record.
+    const first = current.source?.cover ?? current.entries.map(entryCover).find(Boolean) ?? coverUrl(state.library?.playlists?.find((each) => each.id === current.id)?.cover);
     if (first !== shownArt) {
       shownArt = first;
       if (first) {

@@ -629,6 +629,9 @@ img { -webkit-user-drag: none; }
 .field { position: relative; max-width: var(--column); margin: 0 auto; display: flex; align-items: flex-end; gap: 4px; padding: 8px 8px 8px 16px;
   border-radius: var(--r-4); background: var(--glass); box-shadow: var(--glass-edge); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
   transition: box-shadow 160ms var(--soft); }
+/* The library's + stands where the words begin, so the field's left edge gives it the room. */
+.field:has(.library-add:not([hidden])) { padding-inline-start: 8px; }
+.library-add { margin-inline-end: 4px; }
 .field:focus-within { box-shadow: var(--glass-edge), inset 0 0 0 1px rgb(var(--ink-rgb) / 0.12); }
 .field textarea { flex: 1; min-width: 96px; resize: none; border: 0; outline: 0; background: transparent; color: var(--text); font-size: var(--t-body); line-height: 1.55;
   field-sizing: content; min-height: 28px; max-height: 40vh; padding: 3px 0 2px; overflow-y: auto; scrollbar-width: none; }
@@ -677,10 +680,17 @@ img { -webkit-user-drag: none; }
 
 /* Slash commands open above the composer, as a short menu. */
 .palette { position: absolute; inset: auto 0 calc(100% + 8px) 0; z-index: 4; max-height: 360px; overflow-y: auto; scrollbar-width: none; padding: 4px;
-  border-radius: var(--r-3); background: color-mix(in srgb, var(--raised) 82%, transparent); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
+  border-radius: var(--r-3); background: color-mix(in srgb, var(--raised) 97%, transparent); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
   box-shadow: var(--float); animation: rise 150ms var(--out) both; }
 .palette-item { display: flex; align-items: center; gap: 12px; height: 32px; padding: 0 10px; border-radius: var(--r-2); font-size: var(--t-ui); color: var(--text); }
 .palette-item.on { background: var(--current); }
+.mention-sleeve { width: 20px; height: 20px; flex: none; display: grid; place-items: center; border-radius: 3px; overflow: hidden; color: var(--text-3); }
+.mention-sleeve img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.mention-sleeve .icon { width: 14px; height: 14px; }
+.mention-name { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+/* What a message names from the library, in its own words. */
+.mention { display: inline; padding: 0; font: inherit; font-weight: 500; color: inherit; user-select: text; }
+button.mention:hover { text-decoration: underline; text-underline-offset: 2px; }
 .palette-command { font: 12.5px var(--mono); color: var(--text); white-space: nowrap; }
 .palette-name { min-width: 0; margin-inline-start: auto; font-size: var(--t-small); color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 

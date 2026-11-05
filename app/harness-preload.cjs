@@ -1030,6 +1030,7 @@ core.onmessage = ({ data }) => {
     send({ type: "session", current: "s1-branch", transcript: shown });
     send({ type: "branched", session: "s1-branch" });
   }
+  if (data.type === "prompt" && data.fresh) send({ type: "session", current: "s-fresh", transcript: [] });
   if (data.type === "prompt" || data.type === "edit") {
     // A reply arriving word by word, so streaming can be watched rather than posed.
     const id = `live-${Math.random().toString(36).slice(2)}`;

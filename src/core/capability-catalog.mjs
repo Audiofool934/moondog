@@ -629,6 +629,17 @@ const catalog = [
     },
   },
   {
+    id: "collection.edit",
+    version: "1",
+    state: "enabled",
+    effect: "write_local",
+    description: "Rename one of the listener's playlists on this Mac, take songs out of it, or move songs within it, when they ask.",
+    agent_tool: {
+      name: "moondog_collection_edit",
+      label: N_("Change a playlist"),
+    },
+  },
+  {
     id: "collection.import",
     version: "1",
     state: "enabled",

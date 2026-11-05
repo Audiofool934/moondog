@@ -905,8 +905,13 @@ export function createSpotifyService(options = {}) {
       if (!playlist) fail("spotify_playlist_unavailable", "Spotify did not describe this playlist.");
       const page = await client.getPlaylistItems({ playlistId, limit: SPOTIFY_SERVICE_LIMITS.playlistItemsPageMax, offset: 0 }, { signal })
         .catch((error) => (signal?.aborted ? Promise.reject(error) : null));
-      return { name: playlist.name, uri: playlist.uri, tracks_total: playlist.tracks_total ?? null,
+      return { name: playlist.name, uri: playlist.uri, tracks_total: playlist.tracks_total ?? null, ...(playlist.image ? { image: playlist.image } : {}),
         tracks: page ? page.items.map((entry) => entry.item).filter(Boolean) : null };
+    },
+
+    // Only a playlist's cover, for one imported before Moondog kept it.
+    async readPlaylistCover({ playlistId } = {}, { signal } = {}) {
+      return (await client.getPlaylist({ playlistId: requiredPlaylistId(String(playlistId ?? "")) }, { signal }))?.image ?? null;
     },
 
     // A whole playlist for the listener's library: its name, whether the signed-in listener owns it, and its

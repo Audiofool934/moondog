@@ -10,7 +10,8 @@ import { createMark, scratchMark } from "./mark.mjs";
 import { mountRecord } from "./record.mjs";
 import { createSettings, EFFORTS } from "./settings.mjs";
 import { createSidebar } from "./sidebar.mjs";
-import { createLibrary } from "./library.mjs";
+import { coverUrl, createLibrary } from "./library.mjs";
+import { createMentions } from "./mentions.mjs";
 import { createShelf } from "./shelf.mjs";
 import { createTaste } from "./taste.mjs";
 import { createTasteList } from "./taste-list.mjs";
@@ -97,7 +98,8 @@ function applyLanguage(next) {
   state.locale = next;
   t = windowStrings(locale);
   document.documentElement.lang = languageTag(locale);
-  input.placeholder = t("placeholder");
+  renderPlaceholder();
+  name($("library-add"), t("libraryAdd"), "@");
   name($("toggle-sidebar"), t("conversations"), "⌥⌘S");
   name($("toggle-inspector"), t("player"), "⌥⌘P");
   name($("new"), t("newConversation"), "⌘N");
@@ -195,8 +197,19 @@ function closePlaylist() {
   renderShelf();
   input.focus();
 }
+// The name a message from the open playlist goes by, as the sidebar shows it.
+function shelfName() {
+  if (!state.shelf) return null;
+  const open = state.shelf.playlist ?? state.library.playlists.find((each) => each.id === state.shelf.id);
+  return open ? (open.saved ? t("saved") : open.name) : null;
+}
+function renderPlaceholder() {
+  const about = shelfName();
+  input.placeholder = about ? t("askAbout", { name: about }) : t("placeholder");
+}
 function renderShelf() {
   room.classList.toggle("shelving", Boolean(state.shelf || state.taste));
+  renderPlaceholder();
   shelf.render();
   taste.render();
   library.render();
@@ -278,7 +291,7 @@ const KINDS = [
   [/^moondog_netease_now_playing$/u, "status"],
   [/^moondog_listening_now$/u, "status"],
   [/^moondog_collection_play$/u, "play"],
-  [/^moondog_collection_save$/u, "keep"],
+  [/^moondog_collection_(?:save|edit)$/u, "keep"],
   [/^moondog_collection_list$/u, "shelf"],
   [/^moondog_music_app_control$/u, (args) => ({ pause: "pause", next: "skip", previous: "skip" })[args?.action] ?? "play"],
   [/^moondog_(?:memory_|taste_choice$)/u, "memory"],
@@ -1072,7 +1085,7 @@ function renderConversation({ redraw = false } = {}) {
         for (const image of turn.images) pictures.append(imageButton(image, "you-image"));
         node.append(pictures);
       }
-      if (turn.role === "user" && turn.text) node.append(make("p", "", turn.text));
+      if (turn.role === "user" && turn.text) node.append(wordsOf(turn.text));
       // Only what just arrived moves; a conversation opened or redrawn stays still.
       if (!opened) node.classList.add("arrive");
       if (entry) entry.node.replaceWith(node); else column.append(node);
@@ -1227,6 +1240,51 @@ async function attachImages(files) {
   renderComposer();
   input.focus();
 }
+// ── The library in the composer ──
+// What @ and the + offer: Saved, the playlists, then the folders, by the names the sidebar shows.
+function libraryItems() {
+  const { playlists, folders } = state.library;
+  const named = playlists.map((each) => ({ kind: "playlist", id: each.id, name: each.saved ? t("saved") : each.name, saved: each.saved, cover: each.cover,
+    note: each.count === 1 ? t("oneEntry") : t("entries", { count: each.count }) }));
+  const byName = (a, b) => a.name.localeCompare(b.name);
+  return [...named.filter((each) => each.saved), ...named.filter((each) => !each.saved).sort(byName),
+    ...folders.map((each) => ({ kind: "folder", id: each.id, name: each.name })).sort(byName)];
+}
+const mentions = createMentions({ input, anchor: $("form"), items: libraryItems, coverOf: (item) => coverUrl(item.cover) });
+// The + beside the words: the library as the sidebar lays it out, a folder opening onto what it holds.
+function libraryMenu(parent = null) {
+  const { playlists, folders } = state.library;
+  const here = [...folders.filter((each) => each.parentId === parent).map((each) => ({ folder: each, position: each.position })),
+    ...playlists.filter((each) => !each.saved && each.folderId === parent).map((each) => ({ playlist: each, position: each.position }))]
+    .sort((a, b) => a.position - b.position);
+  return here.map(({ folder, playlist }) => (playlist ? { id: `@${playlist.name}`, label: playlist.name } : { label: folder.name, submenu: [
+    { id: `@${folder.name}`, label: t("wholeFolder") }, { type: "separator" }, ...libraryMenu(folder.id)] }));
+}
+$("library-add").addEventListener("click", async (event) => {
+  const chosen = await menu([{ id: `@${t("saved")}`, label: t("saved") }, ...libraryMenu()], event, $("library-add"));
+  if (chosen?.startsWith("@")) mentions.insert(chosen.slice(1));
+});
+// A message's words, with what it names from the library in the words: a playlist opens from there.
+function wordsOf(text) {
+  const words = make("p");
+  const items = text.includes("@") ? libraryItems().sort((a, b) => b.name.length - a.name.length) : [];
+  let rest = text;
+  while (rest) {
+    const found = items.flatMap((item) => { const at = rest.indexOf(`@${item.name}`); return at < 0 ? [] : [{ item, at }]; })
+      .sort((a, b) => a.at - b.at)[0];
+    if (!found) { words.append(rest); break; }
+    words.append(rest.slice(0, found.at));
+    const label = `@${found.item.name}`;
+    if (found.item.kind === "playlist") {
+      const open = make("button", "mention", label);
+      open.type = "button";
+      open.addEventListener("click", () => openPlaylist(found.item.id));
+      words.append(open);
+    } else words.append(make("span", "mention", label));
+    rest = rest.slice(found.at + label.length);
+  }
+  return words;
+}
 // A picture that opens at full size over the window; a click anywhere or Escape closes it.
 function imageButton(image, className) {
   const button = make("button", className);
@@ -1343,7 +1401,7 @@ function clearComposer() {
 // A message's images as the core takes them, and as its bubble shows them.
 const imagesFor = (images) => (images.length ? { images: images.map(({ url, name: label }) => ({ url, name: label })),
   attachments: images } : {});
-function submitText(text, images = []) {
+function submitText(text, images = [], { about = null } = {}) {
   // A message typed while the core starts waits for it, shown as sent; more stay in the composer.
   // Images wait in the composer until the core is ready.
   if (!state.ready) {
@@ -1358,13 +1416,17 @@ function submitText(text, images = []) {
     renderConversation();
     return true;
   }
+  // Written from an open playlist, it asks about that playlist in a conversation of its own; a conversation with
+  // nothing in it yet is already one.
+  const fresh = Boolean(about && state.turns.length);
+  if (fresh) state.turns = [];
   // A message sent while a playlist or the taste page is open brings the conversation back to show the reply.
   if (state.shelf) closePlaylist();
   if (state.taste) closeTaste();
   // The words show at once; the core's start of the turn adopts them.
-  state.turns.push({ role: "user", text, pending: true, ...imagesFor(images) });
+  state.turns.push({ role: "user", text, pending: true, ...(fresh ? { fresh } : {}), ...imagesFor(images) });
   renderConversation();
-  send({ type: "prompt", text, ...(images.length ? { images: images.map(({ data, mimeType, name: label }) => ({ data, mimeType, name: label })) } : {}) });
+  send({ type: "prompt", text, ...(fresh ? { fresh } : {}), ...(images.length ? { images: images.map(({ data, mimeType, name: label }) => ({ data, mimeType, name: label })) } : {}) });
   return true;
 }
 function submit() {
@@ -1375,7 +1437,9 @@ function submit() {
   const command = text.match(/^\/([A-Za-z]+)$/u)?.[1];
   if (command && !COMMANDS.some((entry) => entry.name === command.toLowerCase())) { notice(t("unknownCommand", { name: command })); return; }
   rest();
-  if (submitText(text, attachments)) clearComposer();
+  const about = shelfName();
+  const said = about && !text.includes(`@${about}`) ? `@${about} ${text}`.trim() : text;
+  if (submitText(said, attachments, { about })) clearComposer();
   renderComposer();
 }
 $("form").addEventListener("submit", (event) => { event.preventDefault(); submit(); });
@@ -2273,14 +2337,17 @@ function receive({ data }) {
   if (data.type === "player-error") notice(t("noticePlaybackFailed"));
   if (data.type === "library") {
     state.library = { folders: data.folders ?? [], playlists: data.playlists ?? [] };
-    if (!state.libraryReady) { state.libraryReady = true; renderSidebarMode(); renderInspector(); }
+    // A message's @ names are drawn from the library, which comes after the conversation at launch.
+    if (!state.libraryReady) { state.libraryReady = true; renderSidebarMode(); renderInspector(); if (!state.shelf && !state.taste) renderConversation({ redraw: true }); }
+    set($("library-add"), "hidden", false);
+    renderPlaceholder();
     library.render();
     shelf.render();
   }
   if (data.type === "library-playlist" && state.shelf?.id === data.id) {
     // A playlist deleted here, in the terminal or by Moondog closes, and the conversation comes back.
     if (!data.playlist) closePlaylist();
-    else { state.shelf.playlist = data.playlist; shelf.render(); }
+    else { state.shelf.playlist = data.playlist; shelf.render(); renderPlaceholder(); }
   }
   if (data.type === "library-made" && data.id) openPlaylist(data.id);
   // A playlist link read: one question, with whether it shapes the listener's taste beside it. A playlist they made
@@ -2351,7 +2418,8 @@ function receive({ data }) {
   }
   if (data.type === "ready" || data.type === "session") {
     // A message waiting for the core stays on screen until the core takes it.
-    const waiting = data.type === "ready" ? state.turns.filter((turn) => turn.waiting) : [];
+    // So does a message starting its own conversation, until that conversation's turn starts.
+    const waiting = state.turns.filter((turn) => (data.type === "ready" && turn.waiting) || (data.type === "session" && turn.pending && turn.fresh));
     state.current = data.current ?? null;
     state.turns = [...(data.transcript ?? []).map((turn) => ({ ...turn })), ...waiting];
     state.streaming = null;
