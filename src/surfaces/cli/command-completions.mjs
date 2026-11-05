@@ -38,6 +38,33 @@ const webChoices = choices([
   ["status", N_("Check whether web lookups work")],
   ["help", N_("Web lookup commands")],
 ]);
+// The picker's own words. The scale matches EFFORT_SCALE; the test holds them together.
+const effortChoices = choices([
+  ["default", N_("Moondog's default: thinking off where the model allows it")],
+  ["off", N_("No extra thinking")],
+  ["low", N_("Quick answers")],
+  ["medium", N_("Between speed and depth")],
+  ["high", N_("Thinks more before answering")],
+  ["xhigh", N_("Thinks longer; slower and costs more")],
+  ["max", N_("Thinks the most; slowest and costs the most")],
+]);
+const libraryChoices = choices([
+  ["play", N_("Play a playlist by name")],
+  ["save", N_("Keep the song playing now")],
+  ["import", N_("Copy a playlist from a link")],
+]);
+const modelRoleChoices = choices([
+  ["roles", N_("See what side tasks use")],
+  ["vision", N_("Choose the model that reads images")],
+  ["web", N_("Choose the web search service")],
+]);
+const visionAutoChoices = choices([["auto", N_("Let the chat model read images when it can")]]);
+const webServiceChoices = choices([
+  ["auto", N_("Take the first service that is set up")],
+  ["deepseek", N_("Search with DeepSeek")],
+  ["brave", N_("Search with Brave Search")],
+  ["codex", N_("Search with the Codex CLI")],
+]);
 const spotifyChoices = choices([
   ["status", N_("Check your Spotify connection")],
   ["now", N_("What's playing now")],
@@ -102,6 +129,8 @@ export function withCommandCompletions(commands, {
     art: { argumentHint: "[braille|ascii|off|auto]", choices: firstArgument(artChoices) },
     motion: { argumentHint: "[on|off]", choices: firstArgument(motionChoices) },
     service: { argumentHint: "[spotify|apple_music|netease]", choices: firstArgument(serviceChoices) },
+    library: { argumentHint: "[play <name> | save [playlist] | import <link>]", choices: firstArgument(libraryChoices) },
+    effort: { argumentHint: "[default|off|low|medium|high|xhigh|max]", choices: firstArgument(effortChoices) },
     // With the core's setup, /generation also downloads, uses and removes Moondog's own models.
     generation: generationSetup ? {
       argumentHint: "[on [folder]|off|download|use|remove|cancel]",
@@ -130,13 +159,23 @@ export function withCommandCompletions(commands, {
         .map((provider) => ({ value: provider.id, label: provider.id, description: provider.name })) : [],
     },
     model: {
-      argumentHint: "[provider] [model] | refresh [provider]",
+      argumentHint: "[provider] [model] | refresh [provider] | roles | vision auto|<provider> <model> | web auto|deepseek|brave|codex",
       choices: (previous) => {
-        if (previous.length > 1) return [];
         const available = providers().filter((provider) => provider.modelCount > 0);
+        const asChoice = (provider) => ({ value: provider.id, label: provider.id, description: provider.name });
+        const subcommand = previous[0]?.toLowerCase();
+        if (subcommand === "roles") return [];
+        if (subcommand === "web") return previous.length === 1 ? webServiceChoices : [];
+        if (subcommand === "vision") {
+          if (previous.length === 1) return [...visionAutoChoices, ...available.map(asChoice)];
+          const provider = previous[1].toLowerCase();
+          return previous.length === 2 && available.some((item) => item.id === provider)
+            ? models(provider).map((model) => ({ value: model.id, label: model.id, description: model.name })) : [];
+        }
+        if (previous.length > 1) return [];
         if (previous.length === 0) {
           return [{ value: "refresh", label: "refresh", description: translate("Refresh public model metadata; keep selection") },
-            ...available.map((provider) => ({ value: provider.id, label: provider.id, description: provider.name }))];
+            ...modelRoleChoices, ...available.map(asChoice)];
         }
         const providerId = previous[0].toLowerCase();
         if (providerId === "refresh") return available.filter(provider => authProviderIds.includes(provider.id))
