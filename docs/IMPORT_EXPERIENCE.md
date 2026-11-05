@@ -1,7 +1,7 @@
 # Listening-data import experience
 
 The import journey should help a listener bring useful evidence into Moondog, understand what arrived, and return when more history becomes available.
-It starts before the listener has a file and ends with an inspectable listening profile in the same Pi TUI session.
+It starts before the listener has a file and ends with an inspectable listening profile in the same session, in the terminal or the desktop app.
 
 ## Product direction: bring music from the services people use
 
@@ -64,6 +64,7 @@ Last.fm reads a listener's public scrobbles and loved tracks by username, with n
 The YouTube Music, QQ Music and NetEase paths retain the inspected bundle, require confirmation, commit into the shared private subject and open the cumulative profile in the same session.
 Repeated identical imports are idempotent, and overlapping YouTube observations use stable provider/video/time fingerprints across ZIP and extracted files.
 Snapshots add observations without claiming to synchronize removed playlist entries.
+`/library import <link>` and the desktop app's library copy a Spotify, Apple Music, NetEase Music or QQ Music playlist into the library; a playlist the listener made on Spotify also shapes their taste, and any other one only when they say so.
 Collection evidence and profile summaries carry their real source labels; Spotify-specific counters remain specific to Spotify.
 
 ## Getting started and adding history

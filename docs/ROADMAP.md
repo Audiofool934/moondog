@@ -10,11 +10,11 @@ A listener can bring authorized music history, understand the evidence behind Mo
 
 The product should feel useful before a model or music-service connection is required.
 
-## Current scope (2026-10-22)
+## Current scope (2026-11-04)
 
 - The listening room in the terminal is the main product, launched with `npm start` from a checkout or `moondog` when installed.
 - The desktop app in [`app/`](../app/README.md) is a native window on the same core, first for the owner's daily use and then for developers.
-- The project page in [`site/`](../site/README.md) runs the real room in a browser on fictional data.
+- The project page in [`site/`](../site/README.md) plays a short scene in the desktop app's real window, in a browser, on made-up data.
 - The earlier browser Studio and static showcase were removed on 2026-10-22.
   Git history keeps them for reference.
 
@@ -46,17 +46,23 @@ New listening views, corrections, and discovery interactions must work in the te
 - [x] Save the full report or a short recap card as a private page that works offline, with `/taste report`, `moondog taste --html`, or `moondog taste --card`.
 - [x] Talk with an agent through Pi, with bounded profile, evidence, library, and playlist tools, memory kept apart from profile evidence, and `/web` research through DeepSeek, Brave Search, or the Codex CLI.
 - [x] Play, queue, and build private Spotify playlists after explicit authorization, and edit an existing playlist only after a preview and a later confirmation.
-  Without Spotify, play 30-second Apple Music previews.
+  Without Spotify, play Apple Music, as 30-second previews in the terminal and whole songs through MusicKit in the desktop app, or NetEase Music through `ncm-cli`.
 - [x] Answer an artist's latest released single from public catalogs without a model, with deterministic identity recovery.
 - [x] Inspect, export, and recoverably reset local music data through a content-bound confirmation token.
 - [x] Update a global install or a clean checkout with `moondog update` and `/update`, on stable and preview channels.
 - [x] Reply in ten languages, with screens in five.
-- [x] Run the desktop app on the same core: conversations, now playing, up next, settings with in-app sign-in, and a signed and notarized build script.
+- [x] Run the desktop app on the same core: conversations, now playing, up next, settings with in-app sign-in, and signed and notarized releases that update themselves on a Stable or Beta channel.
 - [x] Make an instrumental track on this Mac with the listener's own Stable Audio 3, once they turn it on in Settings or with `/generation on`.
+  Moondog can download the pinned official model when asked, in Settings or with `/generation download`.
   The taste compiler keeps only sound descriptors it can trace to the listener's evidence or the moment, and none that names an artist, a song or an Avoid; the track plays in Moondog's own player, keeps a receipt, and enters the ledger as Moondog's pick.
   This is the first step of [music decentralization](MUSIC_DECENTRALIZATION.md), and the first generation tool connected through an observable, permissioned interface.
   Each made track's plays come back as outcomes (played through, skipped, stopped, asked for again), which the agent reads before it makes the next one; the listener can ask to hear one again.
-- [x] Run the real room on fictional data on the project page.
+- [x] Go on air: an atmosphere stream of made tracks, with a mark in the desktop app, `⌃⌘O` and `/onair`.
+- [x] Keep a library: Saved, playlists in nested folders, songs and made tracks side by side, `/library`, the agent's collection tools, and playlist links imported as copies.
+- [x] Show the listener's taste in the desktop app's room: the sidebar's taste view, the history pressed as a record, and the saved reading (`/taste`, `⌥⌘T`).
+- [x] Give side tasks their own models: a vision model and a web search service, with images in a message and web search that falls back to the next service.
+- [x] Change model, service and reply language by asking, and add any OpenAI- or Anthropic-style endpoint by its address.
+- [x] Play a short scene in the desktop app's real window on the project page, on made-up data.
 - [x] Run a deterministic offline demo and generate a fictional Spotify history ZIP, with no personal data, model, or credential.
 - [x] Rebuild and verify the public source tree on Node 22.19.0 and Node 24 in CI, scan the full history for private material, and install the packed npm tarball into an empty project.
 
@@ -96,8 +102,8 @@ New listening views, corrections, and discovery interactions must work in the te
 
 The owner's direction (2026-11-04): the window supports more than one form, and the listener arranges it.
 
-- [ ] Make the sidebar's conversations and library two views the listener arranges: stacked as tabs, or split one above the other, by dragging a view's header; the layout is kept.
-  This ends the sidebar showing one or the other under a second switch, which fought the sidebar's own show and hide.
+- [x] Make the sidebar's conversations, library and taste three views the listener arranges: stacked as tabs, or split two at a time one above the other, by dragging a view's tab or header; the layout is kept.
+  This ended the sidebar showing one or the other under a second switch, which fought the sidebar's own show and hide.
 - [ ] Let a view dock in another column, such as the library beside the player, once the sidebar views have settled in daily use.
 - [ ] Make every menu that belongs to a control a native dropdown (owner direction, 2026-11-04).
   It opens from its control as a macOS pop-up or pull-down button does: over or under the control, with the current choice set on the control's words, not at the pointer.
@@ -143,8 +149,8 @@ The owner's direction (2026-11-04): the window supports more than one form, and 
 - [x] Select the [Apache License 2.0](../LICENSE) (2026-10-06).
 - [x] Use [Audiofool934/moondog](https://github.com/Audiofool934/moondog) as the canonical repository.
 - [x] Use the Moondog name and the lunar-record visual identity.
-- [ ] Publish the current source version to npm: choose the channel, configure npm trusted publishing, and tag the release.
-  The npm registry still serves 0.1.0, which predates the updater.
+- [x] Publish to npm through trusted publishing with provenance (2026-10-25).
+  The registry serves the newest stable version as `latest` and the newest beta as `beta`; a stable version waits for the owner's approval in `release-approval`.
 - [ ] Publish a security contact in `SECURITY.md` and a maintainer route.
 - [x] Before the next public release that contains local generation, accept the Stability AI Community License for a public product and ship its copy and a Notice file ([Owner gates](MUSIC_DECENTRALIZATION.md#owner-gates)).
   The copy and the `NOTICE` file are in the repository and the package since 2026-10-30; the owner accepted the license by publishing 0.3.0-beta.1, the first release that contains them (2026-10-30).

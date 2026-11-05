@@ -46,7 +46,7 @@ Automatic rollback is limited to a failure inside this update operation. This re
 
 ## Maintainer release procedure
 
-One-time owner setup: configure the npm package's **trusted publisher** for GitHub Actions, repository `Audiofool934/moondog`, workflow `release.yml`, environment `npm`. Create that GitHub environment and protect it with the desired reviewer policy. This uses npm OIDC on hosted runners; no long-lived npm token belongs in the repository. See [npm trusted publishing](https://docs.npmjs.com/trusted-publishers/).
+One-time owner setup: configure the npm package's **trusted publisher** for GitHub Actions, repository `Audiofool934/moondog`, workflow `release.yml`, environment `npm`. Create that GitHub environment and protect it with the desired reviewer policy. This uses npm OIDC on hosted runners; no long-lived npm token belongs in the repository. See [npm trusted publishing](https://docs.npmjs.com/trusted-publishers/). Create a `release-approval` environment too, with the owner as its required reviewer, so a stable version waits for approval; a prerelease skips it.
 
 1. Bump `package.json` and both root versions in `package-lock.json` together in a reviewed PR. Use `X.Y.Z-beta.N` for previews or `X.Y.Z` for stable releases. Record user-visible changes and validation in the PR.
 2. Merge only after CI passes for that exact head; wait for main CI. Tag that verified main commit as `vX.Y.Z` (or `vX.Y.Z-beta.N`) and push that specific tag. Never move a published tag or reuse a version.

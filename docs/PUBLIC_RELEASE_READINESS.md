@@ -1,6 +1,6 @@
 # Public source status
 
-Updated 2026-10-27.
+Updated 2026-11-04.
 
 The canonical repository is [Audiofool934/moondog](https://github.com/Audiofool934/moondog).
 The source is open under the [Apache License 2.0](../LICENSE), selected by the owner on 2026-10-06.
@@ -8,9 +8,9 @@ Contribution information is in [CONTRIBUTING.md](../CONTRIBUTING.md).
 
 ## Distribution
 
-The current distribution is a source checkout with Node.js 22.19.0 or newer and locked npm dependencies, on macOS or Linux.
+Moondog is distributed as a signed and notarized Mac app for Apple silicon, as the npm package for macOS or Linux on Node.js 22.19.0 or newer, and as a source checkout with locked npm dependencies.
 The source version is `0.3.0-beta.10`.
-`@audiofool/moondog` is the public npm package name, and the registry serves 0.2.2 as `latest`.
+`@audiofool/moondog` is the public npm package name, and the registry serves 0.2.2 as `latest` and the newest beta as `beta`.
 Version 0.1.0 predates the updater, so its installs need a one-time manual upgrade; see [updates and maintainer setup](UPDATES.md).
 A `v` tag publishes through npm trusted publishing with provenance. A prerelease tag publishes on its own; a stable tag waits for the owner's approval in the `release-approval` environment.
 The tagged release workflow runs the clean-source check before OIDC publication.
@@ -18,7 +18,7 @@ It prepares a draft GitHub release; verified Mac artifacts must be uploaded befo
 The project page selects stable downloads and leaves preview releases on GitHub.
 
 The desktop app builds as an unsigned or signed and notarized Mac app from [`app/`](../app/README.md).
-Each GitHub release carries the signed and notarized build for Apple silicon, and the [project page](https://moondog.audiofool.ai) links the newest one.
+Each GitHub release carries the signed and notarized build for Apple silicon, and the [project page](https://moondog.audiofool.ai) links the newest stable one.
 
 ## Source boundary
 

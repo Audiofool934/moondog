@@ -44,7 +44,8 @@ See [updating and release channels](docs/UPDATES.md), including the one-time upg
 
 [Moondog for Mac](app/README.md) is a native window on the same core as the terminal room.
 It shares your profile, settings, sign-ins, and conversations with `moondog`, and draws its own conversation, now playing, and up next.
-Run it from this checkout with `cd app && npm ci && npm start`.
+Download the notarized build for Apple silicon from the [project page](https://moondog.audiofool.ai), or run it from this checkout with `cd app && npm ci && npm start`.
+It updates itself, on a Stable or Beta channel you choose in Settings.
 
 The [project page](https://moondog.audiofool.ai) plays a short scene in this window, in a browser, with a made-up listener ([how](site/README.md)).
 
@@ -147,11 +148,17 @@ OpenAI takes your ChatGPT subscription or an API key.
 In the Mac app, any service that speaks OpenAI's or Anthropic's API can be added as an endpoint by its address, and `/endpoint` does it in the terminal.
 You can switch models in the middle of a conversation.
 The [model setup guide](docs/TERMINAL_GUIDE.md#enable-agent-conversation) lists each provider and the environment variable it reads.
+`/model roles` shows the models and services behind side tasks: a vision model for images, and the web search service.
+Moondog takes images too: an image path in your message in the terminal, or a pasted or dropped image in the Mac app.
+You can also change settings in your own words, such as which model answers or the language it replies in.
 
 While an answer is on the way, each step appears in the conversation as it starts.
 The steps stay above the reply, with a count of what finished, what failed, and what was not confirmed.
 The agent can use musical knowledge and web research to find candidates, then verify the recordings on Spotify before playing or queueing them.
 Without Spotify, it plays 30-second Apple Music previews from the terminal instead, each next to a link to the full song.
+With NetEase Music, it plays whole songs through NetEase's own `ncm-cli`.
+In the Mac app, Apple Music plays whole songs with a subscription.
+`/service` chooses where Moondog plays.
 It also sees what you already play: the song and playlist in the Music app on a Mac, or on Spotify's active device, so “more like this playlist” needs no names.
 macOS asks once before Moondog may read the Music app.
 For example, “Pon doce de salsa clásica a la cola” asks it to add up to twelve verified songs directly; your history guides the choice without limiting it to your library.
@@ -164,12 +171,27 @@ Songs Moondog chose for you do not count as your own taste.
 | A model through Pi | Conversation, discovery, and playlists built together. |
 | A web search service | `/web` lookups with links to their sources, through DeepSeek (`/auth deepseek`, which also reads pages), Brave Search (`/auth brave`), or your own signed-in Codex CLI. |
 | Spotify sign-in | Playback, and private playlists made only when you ask. |
+| NetEase Music | Whole songs through its own `ncm-cli`, for listeners in mainland China. |
 
 Your profile never touches the network.
 The agent talks only to the services you set up.
 `/web` sends the question or the link you give it, and nothing from your profile, history, or files.
+An image you attach goes to the model that reads it.
 A Spotify ZIP does not need a Spotify sign-in.
 Read the [connection and data details](docs/TERMINAL_GUIDE.md) before you connect anything.
+
+## Your library
+
+`/library` keeps songs and the tracks Moondog made side by side: Saved, then your playlists.
+`/library save` keeps what is playing, and `/library play Night drive` plays a playlist on the service you chose.
+`/library import <link>` copies a Spotify, Apple Music, NetEase Music or QQ Music playlist into it.
+A playlist you made on Spotify also shapes your taste; for any other one, you decide.
+
+## Music it makes
+
+On an Apple silicon Mac, Moondog can make instrumental tracks offline with Stable Audio 3, powered by Stability AI.
+`/generation download medium` sets it up after you agree to its licenses, and `/generation on` turns it on.
+Ask for a track, or type `/onair` and Moondog keeps making music from your taste until you stop it.
 
 ## Getting around
 
@@ -186,7 +208,10 @@ Read the [connection and data details](docs/TERMINAL_GUIDE.md) before you connec
 | Enter while Moondog is working | Queue the next message. It sends when this one finishes. |
 | `/resume`, `/new` | Pick up a saved conversation, or start a fresh one. |
 | `/home` | Back to the sleeve, without clearing the conversation. |
-| `/skip`, `/stop` | Skip to the next song preview, or stop the previews. |
+| `/skip`, `/stop` | Skip to the next song preview or stream track, or stop them. |
+| `/library` | Your saved songs and playlists. |
+| `/onair` | Go on air, or come off it. |
+| `/rewind`, `/branch` | Change an earlier message, or go on in a new conversation. |
 | `/lyrics` | See which line is on the sleeve, and which song it came from. |
 | `/theme paper` | Black ink on white. |
 | `/theme charcoal` | Moonlight on a black sky. |
@@ -213,4 +238,4 @@ Your profile, and anything Moondog remembers, carry over.
 
 Moondog is open source under the [Apache License 2.0](LICENSE).
 Copyright 2026 Audiofool.
-Music making runs Stable Audio 3, which you install yourself; [NOTICE](NOTICE) holds its attribution, and [licenses/](licenses/stability-ai-community-license.md) holds the Stability AI Community License.
+Music making runs Stable Audio 3, which Moondog downloads from Stability AI when you ask, or your own install; [NOTICE](NOTICE) holds its attribution, and [licenses/](licenses/stability-ai-community-license.md) holds the Stability AI Community License.

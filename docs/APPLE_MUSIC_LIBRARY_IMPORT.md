@@ -177,8 +177,6 @@ To rebuild it, use `/import` again with a Library.xml file whose batch you kept.
 To set all Apple data aside instead, run `moondog data inspect --scope apple` and then `moondog data reset --scope apple --confirm <token>`.
 The reset archives the import batches and the projection rather than deleting them.
 
-## Next Data Source
+## Other data sources
 
-Spotify Extended Streaming History remains the leading candidate for complete per-play events.
-
-When that export arrives, it should feed `ListeningEvent` records while Apple Music Library XML continues to provide catalog, curation, and aggregate-state context.
+Spotify Extended Streaming History now supplies per-play events, while Apple Music Library XML continues to provide catalog, curation, and aggregate-state context.

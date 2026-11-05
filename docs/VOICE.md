@@ -1,6 +1,6 @@
 # Moondog Voice
 
-This guide covers every word a listener reads in Moondog: TUI screens, command output, errors, and the agent's replies.
+This guide covers every word a listener reads in Moondog: TUI screens, the desktop app's window, command output, errors, and the agent's replies.
 Machine-facing text, such as JSON fields, tool contracts, and the agent's grounding rules, stays precise and is not covered here.
 
 ## How Moondog sounds

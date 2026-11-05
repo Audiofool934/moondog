@@ -125,6 +125,7 @@ The first memory slice stores Moondog relationship state in a local SQLite datab
 The local TUI uses the stable route key `local:main`.
 
 Its active logical session resumes across process restarts and model or authentication changes, while `/new` closes that session and starts another.
+Amendment: each launch now starts a new conversation, and `/resume` restores a saved one.
 
 The canonical stored transcript contains only completed user and assistant exchanges.
 
@@ -251,6 +252,7 @@ Moondog supports Pi's `openai-codex` provider through an explicit `moondog auth 
 This authorization belongs to Moondog and is intentionally separate from the Codex CLI and ChatGPT desktop credential caches.
 
 Moondog does not parse or copy `~/.codex/auth.json`, and `moondog auth logout openai-codex` removes only Moondog's credential.
+Amendment, 2026-10-27: the `openai-codex` provider is gone. ChatGPT sign-in now runs through the `openai` provider, with `moondog auth login openai --chatgpt` or `/auth openai`, and it stays separate from the Codex CLI and ChatGPT desktop credential caches.
 
 The credential store is selected from `MOONDOG_CONFIG_HOME`, then absolute `XDG_CONFIG_HOME`, then `~/.config/moondog`.
 
