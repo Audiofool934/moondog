@@ -209,7 +209,7 @@ img { -webkit-user-drag: none; }
 .view-grip:hover::after, .view-grip.dragging::after { background: var(--line-2); transition-delay: 80ms; }
 /* Dragging a view: the part of the sidebar it would land in takes a breath of ink. */
 .view-drop-top .views, .view-drop-bottom .views { position: relative; }
-.view-drop-top .views::before, .view-drop-bottom .views::before { content: ""; position: absolute; left: 6px; right: 6px; height: 40%; border-radius: var(--r-3);
+.view-drop-top .views::before, .view-drop-bottom .views::before { content: ""; position: absolute; left: 6px; right: 6px; height: 50%; border-radius: var(--r-3);
   background: var(--press); pointer-events: none; z-index: 1; }
 .view-drop-top .views::before { top: 0; }
 .view-drop-bottom .views::before { bottom: 0; }

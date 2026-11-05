@@ -1,6 +1,6 @@
 // The sidebar's views, conversations and the library, arranged by the listener: stacked as tabs, one showing at a
 // time, or split one above the other with a grip between them. A view's tab or header drags: dropped on the upper or
-// lower part of the sidebar it splits there, dropped on the tab row or the middle they stack as tabs again. The
+// lower half of the sidebar it splits there, dropped on the tab row or a header they stack as tabs again. The
 // header's menu does the same without a drag. The layout is kept. A core without a library shows conversations alone.
 import { icon, make } from "./ui.mjs";
 
@@ -107,8 +107,7 @@ export function createSidebarViews({ root, store, t, menu, onShow, onAdd = () =>
     if (tabs.contains(event.target)) return "tabs";
     if (VIEWS.some((view) => heads[view].contains(event.target))) return "tabs";
     const box = area.getBoundingClientRect();
-    const at = (event.clientY - box.top) / Math.max(1, box.height);
-    return at < 0.35 ? "top" : at > 0.65 ? "bottom" : "tabs";
+    return event.clientY < box.top + box.height / 2 ? "top" : "bottom";
   };
   const mark = (zone, target = null) => {
     for (const name of ["top", "bottom", "tabs"]) root.classList.toggle(`view-drop-${name}`, zone === name);
