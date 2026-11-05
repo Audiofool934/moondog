@@ -159,6 +159,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24.x
+      - run: npm install --global npm@11.16.0
+      # Verifying the build rebuilds the ZIP's blockmap with the app's own electron-builder.
+      - run: npm ci --no-audit --no-fund
+        working-directory: app
       - uses: actions/download-artifact@v4
         with:
           name: mac-release
