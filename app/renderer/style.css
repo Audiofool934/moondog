@@ -321,7 +321,8 @@ img { -webkit-user-drag: none; }
 .shelf-play:hover { background: var(--text); transform: scale(1.04); transition: none; }
 .shelf-play:active { transform: scale(0.97); }
 .shelf-play:disabled { opacity: 0.35; transform: none; pointer-events: none; }
-.shelf-play .icon { width: 16px; height: 16px; translate: 1px 0; }
+.shelf-play.disc:hover { transform: none; }
+.shelf-play .icon:not(.disc-glyph) { width: 16px; height: 16px; }
 .shelf-tracks { list-style: none; margin-block: 0; padding: 0; display: grid; gap: 1px; min-height: 40px; }
 .shelf-row { position: relative; display: flex; align-items: center; border-radius: var(--r-2); outline: 0; transition: background-color var(--quick) var(--soft); }
 .shelf-row:hover { background: var(--hover); transition: none; }
@@ -622,11 +623,30 @@ img { -webkit-user-drag: none; }
 .pick.needed { padding: 0 9px; color: var(--text); background: var(--hover); font-weight: 500; }
 .pick.needed:hover { background: var(--press); }
 .pick[hidden] { display: none; }
-.send { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; flex: none; background: var(--solid); color: var(--on-solid);
+.send { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; flex: none; background: var(--solid); color: var(--on-solid);
   transition: background-color 140ms var(--soft), transform 90ms var(--soft); }
 .send:active { transform: scale(0.92); }
 .send:disabled { background: rgb(var(--ink-rgb) / 0.12); color: var(--surface); }
-.send .icon { width: 15px; height: 15px; stroke-width: 2; }
+.send .icon:not(.disc-glyph) { width: 15px; height: 15px; stroke-width: 2; }
+
+/* A record button (disc.mjs): no ground of its own. Its grooves and label are ink, its glyph is paper, and the
+   label's edge is crisp against the dots around it. While what it started is going, two glints turn round the
+   grooves; with reduced motion they stay where they are. A disabled one is a pale blank disc. */
+.disc, .disc:hover, .disc:disabled { background: none; }
+.disc { color: var(--solid); }
+.disc-art { display: block; overflow: visible; }
+.disc-art circle { fill: currentColor; transition: fill-opacity 160ms var(--soft); }
+.disc-art .disc-label { fill: var(--solid); transition: fill 140ms var(--soft); }
+.disc .disc-glyph { color: var(--on-solid); }
+.disc-glyph.icon { stroke-width: 1.6; }
+.disc-glints { opacity: 0; transform-box: view-box; transform-origin: 50% 50%; transition: opacity 400ms var(--soft); }
+.disc.turning .disc-glints { opacity: 1; animation: disc-turn 4.8s linear infinite; }
+@keyframes disc-turn { to { rotate: 1turn; } }
+@media (prefers-reduced-motion: reduce) { .disc.turning .disc-glints { animation: none; } }
+.disc:disabled .disc-grooves, .disc:disabled .disc-glints { opacity: 0; }
+.disc:disabled .disc-label { fill: rgb(var(--ink-rgb) / 0.12); }
+.disc:disabled .disc-glyph { color: var(--surface); }
+.disc:hover:not(:disabled) .disc-label { fill: var(--text); }
 .jump { position: absolute; left: 50%; bottom: calc(100% + 8px); width: 32px; height: 32px; margin-left: -16px; border-radius: 50%; display: grid; place-items: center;
   background: var(--glass); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); color: var(--text-2); box-shadow: var(--glass-edge);
   z-index: 3; animation: pop var(--enter) var(--out) both; }

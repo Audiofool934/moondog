@@ -546,6 +546,13 @@ const STATES = {
     setTimeout(() => document.querySelector(`[data-library] .row[data-id="${id}"] .open`)?.click(), 260);
   },
   "playlist-saved"() { STATES.playlist("saved"); },
+  // The record buttons (disc.mjs): the playlist's play under the pointer, and the composer's send with words typed.
+  "play-hover"() { STATES.playlist(); return { hover: "[data-shelf] .shelf-play", hoverAfter: 900 }; },
+  "send-ready"() {
+    STATES.reply();
+    setTimeout(() => { const input = document.querySelector("[data-input]"); input.value = "Something for a slow Sunday"; input.dispatchEvent(new Event("input", { bubbles: true })); }, 200);
+    return { hover: "[data-send]", hoverAfter: 500 };
+  },
   "playlist-empty"() { STATES.playlist("lp5"); },
   // The heart beside the song in the player, after a click kept it.
   "keep-song"() { STATES.reply(); setTimeout(() => document.querySelector("[data-toggle-inspector]")?.click(), 150); setTimeout(() => document.querySelector("[data-keep]")?.click(), 450); },
