@@ -74,7 +74,7 @@ async function neteasePlaylist(id, fetchImpl) {
     const detail = await boundedJson(await responseFor(`https://music.163.com/api/song/detail/?ids=${encodeURIComponent(`[${batch.join(",")}]`)}`, fetchImpl, referer));
     for (const song of Array.isArray(detail?.songs) ? detail.songs : []) songs.set(String(song?.id ?? ""), song);
   }
-  return { code: 200, result: { id: playlist.id, name: playlist.name, privacy: playlist.privacy, trackCount: playlist.trackCount ?? ids.length,
+  return { code: 200, result: { id: playlist.id, name: playlist.name, coverImgUrl: playlist.coverImgUrl, privacy: playlist.privacy, trackCount: playlist.trackCount ?? ids.length,
     tracks: ids.map((songId) => songs.get(songId)).filter(Boolean) } };
 }
 
@@ -119,7 +119,9 @@ export async function fetchPublicPlaylist({ input, provider, fetchImpl = fetch }
       playlistId: identity.id, playlistName: name, position: index + 1, member: "public-playlist.json",
     };
   }).filter((row) => row.id && row.title);
-  return { provider: identity.provider, id: identity.id, url: url.href, name, total, rows, skipped: songs.length - rows.length };
+  // NetEase's own image host, shown over https, as a song's cover is.
+  const cover = !qq && /^https?:\/\/p[0-9]+\.music\.126\.net\//u.test(playlist.coverImgUrl ?? "") ? playlist.coverImgUrl.replace(/^http:/u, "https:") : null;
+  return { provider: identity.provider, id: identity.id, url: url.href, name, total, rows, skipped: songs.length - rows.length, ...(cover ? { cover } : {}) };
 }
 
 export async function readPublicPlaylist({ input, subjectId, capturedAt, provider, fetchImpl = fetch }) {

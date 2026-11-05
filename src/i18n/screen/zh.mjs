@@ -1147,6 +1147,7 @@ export default {
   "Your saved songs and playlists": "你收藏的歌和播放列表",
   "Look in the library": "翻翻资料库",
   "Save to the library": "收进资料库",
+  "Change a playlist": "修改播放列表",
   "Play from the library": "播放资料库里的歌",
   "Paste a playlist link after /library import.": "在 /library import 后面粘贴歌单链接。",
   "Reading the playlist…": "正在读取歌单…",

@@ -84,3 +84,40 @@ test("the window gets the library, edits it, and hears the terminal's changes", 
   await room;
   libraryStore.close();
 });
+
+test("a message from an open playlist starts its own conversation, or goes back to the composer", async (t) => {
+  const libraryStore = await openLibraryStore({ databasePath: ":memory:" });
+  const messages = [];
+  let listener = null;
+  const quit = new AbortController();
+  t.after(() => { quit.abort(); libraryStore.close(); });
+  let opened = 0;
+  const app = { ...application(libraryStore), startNewSession() { opened += 1; this.sessionId = `new-${opened}`; } };
+  const asked = [];
+  const answering = { ...runtime, async prompt(text) { asked.push([app.sessionId, text]); return { status: "completed", text: "ok" }; } };
+  const room = runWindowRoom({ application: app, runtime: answering, modelSettings: { async models() { return { models: [] }; } },
+    openConversation: async () => { throw new Error("unused"); } }, {
+    port: { on(_type, fn) { listener = fn; }, start() {} }, send: (message) => { messages.push(message); }, quit: quit.signal, focus: new EventTarget(),
+  });
+  await tick();
+
+  listener({ data: { type: "prompt", text: "stays here" } });
+  await settle();
+  const first = asked.at(-1)[0];
+  assert.equal(asked.at(-1)[1], "stays here");
+
+  listener({ data: { type: "prompt", text: "@Rain too loud", fresh: true } });
+  await settle();
+  assert.equal(asked.at(-1)[1], "@Rain too loud");
+  assert.notEqual(asked.at(-1)[0], first);
+  assert.equal(messages.findLast((message) => message.type === "session").current, asked.at(-1)[0]);
+
+  // No new conversation could open: the message is not sent into the one on screen.
+  app.startNewSession = () => {};
+  listener({ data: { type: "prompt", text: "@Rain again", fresh: true } });
+  await settle();
+  assert.equal(asked.length, 2);
+  assert.equal(messages.findLast((message) => message.type === "notice").text, "@Rain again");
+  quit.abort();
+  await room;
+});

@@ -97,6 +97,6 @@ export async function readPublicPlaylistLink({ url }, { fetchImpl = fetch } = {}
     if (!error.code) error.code = /^Could not reach/u.test(error.message) ? "playlist_unreachable" : aboutLink.test(error.message) ? "playlist_link_unsupported" : "playlist_unavailable";
     throw error;
   });
-  return { provider: playlist.provider, id: playlist.id, url: playlist.url, name: playlist.name, total: playlist.total,
+  return { provider: playlist.provider, id: playlist.id, url: playlist.url, name: playlist.name, total: playlist.total, ...(playlist.cover ? { cover: playlist.cover } : {}),
     tracks: playlist.rows.map((row) => ({ id: row.id, title: row.title, artist: row.artist, ...(row.album ? { album: row.album } : {}), ...(row.artwork ? { artwork: row.artwork } : {}) })).filter((track) => track.artist) };
 }

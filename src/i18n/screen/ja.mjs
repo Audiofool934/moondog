@@ -1147,6 +1147,7 @@ export default {
   "Your saved songs and playlists": "保存した曲とプレイリスト",
   "Look in the library": "ライブラリを見る",
   "Save to the library": "ライブラリに保存",
+  "Change a playlist": "プレイリストを変更",
   "Play from the library": "ライブラリから再生",
   "Paste a playlist link after /library import.": "/library import のあとにプレイリストのリンクを貼り付けてください。",
   "Reading the playlist…": "プレイリストを読み込んでいます…",

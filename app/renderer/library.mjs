@@ -19,7 +19,7 @@ function reconcile(parent, wanted) {
   while (cursor) { const next = cursor.nextSibling; cursor.remove(); cursor = next; }
 }
 
-// A playlist's cover: the first song's artwork, or the first made track's drawn cover.
+// A playlist's cover: its own or the first song's artwork, or the first made track's drawn cover.
 export function coverUrl(cover) {
   if (cover?.made_id) return `moondog-media://generated/${cover.made_id}/cover.svg`;
   return cover?.artwork_url ?? null;

@@ -1147,6 +1147,7 @@ export default {
   "Your saved songs and playlists": "Suas músicas salvas e playlists",
   "Look in the library": "Olhar na biblioteca",
   "Save to the library": "Salvar na biblioteca",
+  "Change a playlist": "Alterar uma playlist",
   "Play from the library": "Tocar da biblioteca",
   "Paste a playlist link after /library import.": "Cole um link de playlist depois de /library import.",
   "Reading the playlist…": "Lendo a playlist…",

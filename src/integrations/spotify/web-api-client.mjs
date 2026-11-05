@@ -160,13 +160,17 @@ function normalizeArtistNames(rawArtists) {
 }
 
 // Cover art a window can draw: one Spotify CDN image, the largest that is at most 640 pixels.
-function coverImage(images) {
+function coverImage(images, allowed = /^https:\/\/i\.scdn\.co\/image\/[A-Za-z0-9_-]{1,128}$/u) {
   const usable = (Array.isArray(images) ? images : []).filter((image) =>
-    typeof image?.url === "string" && /^https:\/\/i\.scdn\.co\/image\/[A-Za-z0-9_-]{1,128}$/u.test(image.url));
+    typeof image?.url === "string" && allowed.test(image.url));
   const sized = usable.filter((image) => !Number.isInteger(image.width) || image.width <= 640)
     .sort((left, right) => (right.width ?? 0) - (left.width ?? 0));
   return (sized[0] ?? usable.at(-1))?.url;
 }
+
+// A playlist's cover lives on more hosts than an album's: one a listener uploaded on image-cdn-*.spotifycdn.com, the
+// four-album mosaic on mosaic.scdn.co. The window's image policy (renderer/index.html) names the same two domains.
+const PLAYLIST_COVER = /^https:\/\/[a-z0-9-]{1,40}\.(?:scdn\.co|spotifycdn\.com)\/[A-Za-z0-9_/-]{1,200}$/u;
 
 // A track's album, kept so a song played alone can go on into the rest of its album.
 // Hosts keep it next to the track URI and never show it to the model.
@@ -462,6 +466,8 @@ function normalizePlaylist(payload, { includeControlMetadata = false } = {}) {
     const snapshotId = safeText(payload.snapshot_id, 128);
     if (ownerId) playlist.owner_id = ownerId;
     if (snapshotId) playlist.snapshot_id = snapshotId;
+    const cover = coverImage(payload.images, PLAYLIST_COVER);
+    if (cover) playlist.image = cover;
   }
   const tracksTotal = safeInteger(
     payload.items?.total ?? payload.tracks?.total,

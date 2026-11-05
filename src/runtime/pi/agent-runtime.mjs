@@ -6615,11 +6615,12 @@ function createToolFactories(
         name: descriptor.tool_name,
         label: descriptor.label,
         description:
-          "Find playlists in the listener's own library on this Mac by words of their name, or list the newest ones without words. Saved is the built-in playlist of single songs and made tracks they kept. Each playlist says how many entries it holds and how many of them Moondog made. With playlist_id, it reads that playlist's entries in order.",
+          "Find playlists in the listener's own library on this Mac by words of their name, or list the newest ones without words. Saved is the built-in playlist of single songs and made tracks they kept. Each playlist says how many entries it holds and how many of them Moondog made. With playlist_id, it reads that playlist's entries in order, 200 at a time; offset reads on.",
         parameters: Type.Object(
           {
             query: Type.Optional(Type.String({ maxLength: 120 })),
             playlist_id: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
+            offset: Type.Optional(Type.Integer({ minimum: 0 })),
           },
           { additionalProperties: false },
         ),
@@ -6629,8 +6630,8 @@ function createToolFactories(
               const playlist = await application.libraryPlaylist(parameters.playlist_id);
               if (!playlist) throw Object.assign(new Error("That playlist is not in the library."), { code: "library_playlist_not_found" });
               return { playlist: { id: playlist.id, name: playlist.saved ? "Saved" : playlist.name, origin: playlist.origin,
-                entries: playlist.entries.slice(0, 60).map((entry) => ({ title: entry.title, artist: entry.artist_credit, ...(entry.kind === "made" ? { made_by_moondog: true } : {}) })),
-                total: playlist.entries.length } };
+                entries: playlist.entries.slice(parameters.offset ?? 0, (parameters.offset ?? 0) + 200).map((entry) => ({ title: entry.title, artist: entry.artist_credit, ...(entry.kind === "made" ? { made_by_moondog: true } : {}) })),
+                offset: parameters.offset ?? 0, total: playlist.entries.length } };
             }
             return { playlists: application.findLibraryPlaylists(parameters.query ?? "") };
           },
@@ -6672,6 +6673,31 @@ function createToolFactories(
             already: Number(value.already) || 0,
             titles: (value.titles ?? []).slice(0, 50).map((title) => cleanOutputText(title, 200, "title")),
           }),
+        ),
+      }),
+    ],
+    [
+      "collection.edit",
+      (descriptor) => ({
+        name: descriptor.tool_name,
+        label: descriptor.label,
+        description:
+          "Change one of the listener's own playlists on this Mac, only when they ask: name renames it, remove takes songs out, move puts songs before another song (before), or at the end without it, in the order given. To reorder a whole playlist, move every song in the new order. Songs go by title as listed; give the artist when two share a title. To add songs use moondog_collection_save. Say what changed; not_found names songs it did not find.",
+        parameters: Type.Object(
+          {
+            playlist_id: Type.String({ minLength: 1, maxLength: 128 }),
+            name: Type.Optional(Type.String({ minLength: 1, maxLength: 120 })),
+            remove: Type.Optional(Type.Array(LIBRARY_SONG, { minItems: 1, maxItems: 200 })),
+            move: Type.Optional(Type.Array(LIBRARY_SONG, { minItems: 1, maxItems: 200 })),
+            before: Type.Optional(LIBRARY_SONG),
+          },
+          { additionalProperties: false },
+        ),
+        executionMode: "sequential",
+        execute: executeDomain(
+          async (_toolCallId, parameters) => application.editLibraryPlaylist({ playlistId: parameters.playlist_id, name: parameters.name,
+            remove: parameters.remove, move: parameters.move, before: parameters.before }),
+          (value) => structuredClone(value),
         ),
       }),
     ],
@@ -6891,6 +6917,11 @@ const isOnAirRequest = (text) => {
 };
 const ON_AIR_NOTE = "The listener pressed On Air. Answer this message by starting Moondog's stream with moondog_start_stream: instrumental tracks made on this Mac from their taste and the moment, one after another, with a broad set of descriptors as that tool asks. Do not search, play or queue catalog music for it. If making music isn't available here, say so in one sentence.";
 
+const LIBRARY_SONG = Type.Object({
+  title: Type.String({ minLength: 1, maxLength: 200 }),
+  artist: Type.Optional(Type.String({ maxLength: 200 })),
+}, { additionalProperties: false });
+
 function sessionSection(application) {
   return sessionAvailability({
     spotifyReady: application.spotifyReady?.() ?? false,
@@ -6942,7 +6973,7 @@ Public web research rules:
 
 Grounding and evidence rules:
 - Before naming or selecting tracks as present in the user's library, call moondog_library_search.
-- The listener's collection in Moondog (Saved and their own playlists, which can hold songs and tracks Moondog made) is separate from their imported library and from Spotify. When they ask to save, keep, collect or like music (收藏, 存下来) without naming Spotify, use moondog_collection_save; use moondog_spotify_library_save only when they name Spotify or Liked Songs. To play one of their playlists, find it with moondog_collection_list and play it with moondog_collection_play. When they paste a playlist link and ask to import or add it, use moondog_collection_import.
+- The listener's collection in Moondog (Saved and their own playlists, which can hold songs and tracks Moondog made) is separate from their imported library and from Spotify. When they ask to save, keep, collect or like music (收藏, 存下来) without naming Spotify, use moondog_collection_save; use moondog_spotify_library_save only when they name Spotify or Liked Songs. To play one of their playlists, find it with moondog_collection_list and play it with moondog_collection_play. To rename one, take songs out or reorder it, use moondog_collection_edit. When they paste a playlist link and ask to import or add it, use moondog_collection_import.
 - When personalization matters, call moondog_profile_summary instead of assuming a profile.
 - Before saying how often, when, or whether the listener played something, check the listening coverage. Plays inside a gap, outside every source's span, or after recent_plays_checked_at are unknown, not zero. When a gap could hold the plays in question, lead with that boundary, for example "I have no records from August 30 to October 21", and do not conclude that the listener rarely plays it or only just found it.
 - The saved reading is enduring taste up to its listening date. Recent attention is the present: stored plays from the last four weeks, and Spotify's four-week top artists, which count listening on every device, including plays Moondog never stored and songs Moondog itself played or queued; stored plays count those apart as moondog_started_plays. When they disagree about what the listener plays lately, trust recent attention, and say which one you read.
@@ -8118,7 +8149,7 @@ export class PiAgentRuntime {
   // A finished reply keeps only its text, so the transcript, not this agent, says what was declared.
   #sessionUpdate(messages) {
     // An On Air reply carries the host's note in its session section; the next reply drops it again.
-    const session = [sessionSection(this.application), this.onAirTurn ? ON_AIR_NOTE : null].filter(Boolean).join("\n\n") || null;
+    const session = [sessionSection(this.application), this.onAirTurn ? ON_AIR_NOTE : null, this.libraryNote].filter(Boolean).join("\n\n") || null;
     if ((getCurrentSystemMessage(messages)?.sections?.session ?? null) === session) return [];
     return [{ role: "system", content: "", sections: { session }, timestamp: Date.now() }];
   }
@@ -8179,6 +8210,8 @@ export class PiAgentRuntime {
     this.#refreshSurface();
     this.loopSurfaceVersion = this.surfaceVersion;
     this.onAirTurn = isOnAirRequest(text);
+    // What this conversation's messages name with @, read fresh for this reply.
+    this.libraryNote = this.application?.libraryMentionNote?.([...this.agent.state.messages.filter((message) => message.role === "user").map(extractMessageText), text]) ?? null;
     const sessionUpdate = this.#sessionUpdate(this.agent.state.messages);
     if (sessionUpdate.length) this.agent.state.messages = [...this.agent.state.messages, ...sessionUpdate];
     const historyStartIndex = this.agent.state.messages.length;
