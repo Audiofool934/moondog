@@ -83,6 +83,10 @@ A model or music service chosen there lasts until the app quits, and sign-in and
   Under each message, while the pointer is on it, Copy copies its words.
   Your own saved messages also have Edit, as `/rewind` in the terminal: the message opens in its own place, Enter sends the new words there and the replies after it go, and Esc leaves it as it was.
   Moondog's saved replies also have Branch, as `/branch`: a new conversation goes on from that reply, and the original stays among the conversations.
+- Typing `@` lists Saved, the playlists and the folders, filtered as you type; the + at the composer's left offers the same as a menu.
+  The name stays in your words, and Moondog reads what it holds as it stands now, for each reply in that conversation, and can rename a playlist, take songs out or reorder it when you ask.
+  In a sent message, a playlist's name opens it.
+- Writing from an open playlist starts a new conversation about it.
 - Paste or drop up to four PNG, JPEG, WebP or GIF images, and they wait above the composer and go with the next message.
   A vision model chosen in Settings describes them for the chat model; otherwise a chat model that can see gets them as they are; otherwise the message comes back with what to change.
   The conversation keeps only text: the description, or a short stand-in for the image.
