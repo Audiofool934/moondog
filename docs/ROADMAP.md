@@ -1,6 +1,6 @@
 # Moondog Roadmap
 
-Moondog is a local-first personal music agent that shows its work.
+Moondog is a radio host just for you: a local-first personal music agent that shows its work.
 This roadmap separates what works today, the next outcomes, and decisions that only the project owner can make.
 It is a direction, not a release-date promise.
 
@@ -12,7 +12,7 @@ The product should feel useful before a model or music-service connection is req
 
 ## Current scope (2026-11-04)
 
-- The listening room in the terminal is the main product, launched with `npm start` from a checkout or `moondog` when installed.
+- The listening room in the terminal launches with `npm start` from a checkout or `moondog` when installed.
 - The desktop app in [`app/`](../app/README.md) is a native window on the same core, first for the owner's daily use and then for developers.
 - The project page in [`site/`](../site/README.md) plays a short scene in the desktop app's real window, in a browser, on made-up data.
 - The earlier browser Studio and static showcase were removed on 2026-10-22.
