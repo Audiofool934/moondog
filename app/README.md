@@ -292,15 +292,27 @@ To publish an update:
    `Publish release` checks it, publishes or verifies the npm version, and prepares a GitHub draft.
    A beta version publishes on its own; a stable version first waits for the owner's approval in the `release-approval` environment.
    The desktop updater continues to see the previous complete release while the draft is prepared.
-3. Right after pushing the tag, on the Mac mini, in a clean worktree at the tag, run `npm ci` at the root and here, then `npm run publish-app`.
-   It builds and verifies the artifacts while the workflow runs, then waits up to an hour for the npm version and the draft, so the approval can come before or after the build.
-   It uploads the ZIP, blockmap, DMG and release manifest to the draft together and the update metadata last, then publishes the complete release and rebuilds the project page.
-   `--skip-build` requires the recorded build manifest and verifies its artifacts again.
-   `--create` prepares a missing draft; it does not bypass npm or artifact verification.
-   Existing remote assets with identical hashes are reused.
-   An upload that GitHub answers with 408 or a 5xx, or that times out on the way, is tried up to three times in all, 30 and 60 seconds apart.
-   Each upload has a time limit sized to its file (a slow line, shared by the big files uploading at once, between ten minutes and an hour), so one that stalls without breaking is given up and tried again.
-   Different bytes under the same filename are rejected; release a new version instead of overwriting a published build.
+3. The same run then builds the app on a macOS runner, in two jobs.
+   `Build, sign and notarize the Mac app` keeps the ZIP, blockmap, DMG, release manifest and update metadata as a workflow artifact.
+   `Upload and publish the Mac app` verifies them again, uploads the first four to the draft together and the update metadata last, then publishes the complete release and rebuilds the project page.
+   If the upload fails, rerun only the failed job: it takes the same notarized bytes.
+   If the build fails, nothing is on the draft yet, so rerun that job.
+
+The runner signs with secrets in the `mac-signing` environment, which only `v*` tags can use.
+`MAC_CERT_P12` is the Developer ID Application certificate and its private key as a base64 `.p12`, and `MAC_CERT_PASSWORD` is its password.
+`MAC_NOTARY_KEY` is the text of the App Store Connect API key's `.p8` file, and `MAC_NOTARY_KEY_ID` and `MAC_NOTARY_ISSUER` are its key ID and issuer ID.
+
+To publish from a Mac instead, cancel the workflow's Mac jobs first, then in a clean worktree at the tag run `npm ci` at the root and here, and `npm run publish-app`.
+It builds and verifies the artifacts, waits up to an hour for the npm version and the draft, then uploads and publishes as the second job does.
+
+These hold for both ways:
+
+- `--skip-build` requires the recorded build manifest and verifies its artifacts again.
+- `--create` prepares a missing draft; it does not bypass npm or artifact verification.
+- Existing remote assets with identical hashes are reused.
+- An upload that GitHub answers with 408 or a 5xx, or that times out on the way, is tried up to three times in all, 30 and 60 seconds apart.
+- Each upload has a time limit sized to its file (a slow line, shared by the big files uploading at once, between ten minutes and an hour), so one that stalls without breaking is given up and tried again.
+- Different bytes under the same filename are rejected; release a new version instead of overwriting a published build.
 
 If publication tooling needs a fix after a version is tagged, keep its original artifacts and manifest.
 From a clean checkout of the repaired tooling at the same package version, place those files in `app/release/` and run `node publish.mjs --skip-build --from-tag vX.Y.Z` from `app/`.

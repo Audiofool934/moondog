@@ -73,3 +73,98 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: node scripts/release-npm.mjs "$RELEASE_TAG"
+
+  # Build and publish are two jobs, so a stalled upload is rerun alone, with the same notarized bytes.
+  # A rebuild makes different bytes, which the upload rejects under a filename already on the draft.
+  mac-build:
+    name: Build, sign and notarize the Mac app
+    needs: publish
+    # publish ran after a skipped approval on a prerelease, so look at its result, not at every ancestor's.
+    if: ${{ !cancelled() && needs.publish.result == 'success' }}
+    runs-on: macos-26
+    timeout-minutes: 150
+    environment: mac-signing
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+      - run: npm install --global npm@11.16.0
+      - run: npm ci --no-audit --no-fund
+      - run: npm ci --no-audit --no-fund
+        working-directory: app
+      - name: Put the signing certificate in a keychain for this run
+        env:
+          MAC_CERT_P12: ${{ secrets.MAC_CERT_P12 }}
+          MAC_CERT_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
+        run: |
+          umask 077
+          keychain="$RUNNER_TEMP/release.keychain-db"
+          keychain_password="$(uuidgen)"
+          printf '%s' "$MAC_CERT_P12" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          curl --fail --silent --show-error --location https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer --output "$RUNNER_TEMP/intermediate.cer"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$RUNNER_TEMP/intermediate.cer" -k "$keychain" -T /usr/bin/codesign
+          security import "$RUNNER_TEMP/certificate.p12" -k "$keychain" -f pkcs12 -P "$MAC_CERT_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$keychain" > /dev/null
+          security list-keychains -d user -s "$keychain" login.keychain
+          security default-keychain -d user -s "$keychain"
+          rm "$RUNNER_TEMP/certificate.p12" "$RUNNER_TEMP/intermediate.cer"
+      - name: Build, sign and notarize
+        working-directory: app
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MAC_NOTARY_KEY: ${{ secrets.MAC_NOTARY_KEY }}
+          MOONDOG_NOTARY_KEY_ID: ${{ secrets.MAC_NOTARY_KEY_ID }}
+          MOONDOG_NOTARY_ISSUER: ${{ secrets.MAC_NOTARY_ISSUER }}
+        run: |
+          umask 077
+          export MOONDOG_NOTARY_KEY="$RUNNER_TEMP/notary-key.p8"
+          printf '%s' "$MAC_NOTARY_KEY" > "$MOONDOG_NOTARY_KEY"
+          unset MAC_NOTARY_KEY
+          node pack.mjs --sign
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mac-release
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+          path: |
+            app/release/Moondog-*-arm64-mac.zip
+            app/release/Moondog-*-arm64-mac.zip.blockmap
+            app/release/Moondog-*-arm64.dmg
+            app/release/Moondog-*-release.json
+            app/release/latest-mac.yml
+
+  mac-publish:
+    name: Upload and publish the Mac app
+    needs: mac-build
+    if: ${{ !cancelled() && needs.mac-build.result == 'success' }}
+    runs-on: macos-26
+    timeout-minutes: 120
+    permissions:
+      contents: write
+      # To start pages.yml, which links the new download.
+      actions: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+      - uses: actions/download-artifact@v4
+        with:
+          name: mac-release
+          path: app/release
+      - name: Verify the build again, upload it to the draft, and publish
+        working-directory: app
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node publish.mjs --skip-build
