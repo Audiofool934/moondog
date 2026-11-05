@@ -6,7 +6,7 @@
 
 <p align="center">Source candidate 0.3.0-beta.11</p>
 
-<p align="center"><strong>A listening room that shows its work.</strong></p>
+<p align="center"><strong>On the air, just for you.</strong></p>
 
 <p align="center">
   <img src="assets/demo/moondog-tui-home.png" width="1000" alt="Moondog's listening room in charcoal: a lunar record beside the wordmark, a four-line tracklist, and the line Is there anybody out there">
@@ -14,11 +14,11 @@
 
 <p align="center"><sub>The real TUI, in charcoal, with fictional listening data.</sub></p>
 
-Moondog is a listening room in your terminal.
+Moondog is a radio host just for you, and it works from a listening room in your terminal or on your Mac.
 It reads the history your music services already keep, and turns it into a profile you can open, question, and correct.
 The profile works without a model, an API key, or a music-service login.
-When you want company, an agent can talk music with you, find songs you have not heard, and shape a playlist.
-Your data stays on your machine.
+When you want company, it can talk music with you, find songs you have not heard, shape a playlist, and on a Mac go on air with music it makes itself.
+It shows its work, and your data stays on your machine.
 The room is built on [Pi](https://github.com/earendil-works/pi).
 
 ## Open the room
@@ -40,7 +40,7 @@ The source version supports `moondog update` and `/update`, with stable (`latest
 Startup checks show a quiet notification; installation happens only when you request it.
 See [updating and release channels](docs/UPDATES.md), including the one-time upgrade needed for the older npm 0.1.0 package.
 
-## Other ways in
+## On your Mac
 
 [Moondog for Mac](app/README.md) is a native window on the same core as the terminal room.
 It shares your profile, settings, sign-ins, and conversations with `moondog`, and draws its own conversation, now playing, and up next.
