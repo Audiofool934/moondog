@@ -6,6 +6,7 @@ import { runUpdateCommand } from "../src/surfaces/cli/update-command.mjs";
 
 import { MoondogApplication } from "../src/core/moondog-application.mjs";
 import { openLocalMemoryStore } from "../src/memory/local-memory-store.mjs";
+import { openLibraryStore } from "../src/core/library-store.mjs";
 import {
   openAppleProjectionDomainServices,
   resolveAppleMusicSubjectId,
@@ -31,6 +32,7 @@ import { runCatalogCommand } from "../src/surfaces/cli/catalog-command.mjs";
 import { runProfileCommand } from "../src/surfaces/cli/profile-command.mjs";
 import { runListenerProfileCommand, savedProfileActions } from "../src/surfaces/cli/listener-profile-command.mjs";
 import { createWebResearch } from "../src/integrations/web/web-research.mjs";
+import { runModelRolesCommand } from "../src/surfaces/cli/model-roles-command.mjs";
 import { runWebCommand } from "../src/surfaces/cli/web-command.mjs";
 import { openSpotifyConnection } from "../src/integrations/spotify/connection.mjs";
 import { preferredIdleDevice, thisComputerName } from "../src/integrations/spotify/service.mjs";
@@ -43,6 +45,7 @@ import {
 import { runSpotifyCommand } from "../src/surfaces/cli/spotify-command.mjs";
 import { runListenBrainzCommand } from "../src/surfaces/cli/listenbrainz-command.mjs";
 import { openListeningHistoryStore } from "../src/profile/listening-history-store.mjs";
+import { musicHash, prepareMusicBundle } from "../src/profile/music-import-bundle.mjs";
 import { commitSpotifyQuickImport, prepareHistoryImport, prepareSpotifyQuickImport } from "../src/profile/history-import.mjs";
 import { persistAppleLibraryImport, refreshAppleLibraryImport } from "../src/profile/apple-library-import.mjs";
 import { IMPORT_GUIDE_URLS } from "../src/surfaces/cli/import-guides.mjs";
@@ -70,7 +73,8 @@ import {
   SPOTIFY_ARCHIVE_SET_MAXIMUM,
 } from "../src/profile/spotify-archive-taste.mjs";
 import { deriveArtistReleaseHintsFromSpotifyArchive } from "../src/profile/spotify-archive-catalog-hints.mjs";
-import { resolveListenerLocale, writeLanguagePreference } from "../src/i18n/preferences.mjs";
+import { createLanguageSelection, resolveListenerLocale, writeLanguagePreference } from "../src/i18n/preferences.mjs";
+import { createModelSwitch } from "../src/runtime/pi/model-switch.mjs";
 import { createPlaybackSelection, resolvePlaybackService, watchPlaybackPreference, writePlaybackPreference } from "../src/core/playback-preferences.mjs";
 import { createFirstRun } from "../src/core/first-run.mjs";
 
@@ -145,6 +149,28 @@ function parseArguments(argv) {
     from: fromArchives[0] ?? null,
     fromArchives,
   };
+}
+
+// A playlist imported into the library adds its songs to the listener's taste evidence, as a kept playlist, the
+// same way a public playlist imported from the Import guide does. Its source names where it came from.
+const PLAYLIST_TASTE_SOURCES = { spotify: "spotify_playlist", apple_music: "apple_music_playlist", netease: "netease", qq_music: "qq_music" };
+async function addPlaylistToTaste(found) {
+  const provider = PLAYLIST_TASTE_SOURCES[found.provider];
+  if (!provider) throw new Error("This playlist's service can't shape the profile.");
+  const historyStore = await openListeningHistoryStore();
+  try {
+    const appleSubjectId = await optionalAppleMusicSubjectId();
+    const subjectId = historyStore.localSubjectId({ ...(appleSubjectId ? { preferredSubjectId: appleSubjectId } : {}), create: true });
+    const rows = found.tracks.map((track, index) => ({ id: track.id, title: track.title, artist: track.artist, ...(track.album ? { album: track.album } : {}),
+      playlistId: found.id, playlistName: found.name, position: index + 1, member: "playlist-link.json", listenerMade: found.owned === true }));
+    const bytes = Buffer.from(JSON.stringify({ provider, id: found.id, name: found.name, rows }));
+    const prepared = prepareMusicBundle({ provider, subjectId, capturedAt: new Date().toISOString(), rows, digest: musicHash(bytes), size: bytes.length,
+      members: ["playlist-link.json"], fileName: found.name,
+      scopeNote: "A playlist the listener imported into their library. It shows what they keep, not what they played." });
+    return historyStore.ingestImport(prepared.bundle);
+  } finally {
+    historyStore.close();
+  }
 }
 
 async function optionalAppleMusicSubjectId() {
@@ -899,6 +925,9 @@ async function main() {
 
   const domainState = await loadDomainServices();
   const memoryStore = await openLocalMemoryStore();
+  // The listener's library: Saved, their playlists and folders, on one file the terminal and the window share.
+  // A library that can't open leaves the rest of Moondog working, without it.
+  const libraryStore = await openLibraryStore().catch(() => null);
   const spotifyConnection = await loadSpotifyConnection();
   const musicCatalog = createAppleMusicCatalog();
   const artistIdentityResolver = createWikidataArtistResolver();
@@ -924,7 +953,7 @@ async function main() {
   // that can play what it makes: Moondog's own install, downloaded when they ask, or their folder.
   // The terminal and the window each keep one generator, so each makes one track at a time; a
   // choice saved on one side is checked again on the other.
-  const localGenerator = previewPlayer ? createLocalGenerator() : null;
+  const localGenerator = previewPlayer ? createLocalGenerator({ keeps: (id) => libraryStore?.holdsMade(id) === true }) : null;
   const generationSetup = localGenerator ? createStableAudioSetup() : null;
   // A model set up or removed, here or on the other side, is checked again.
   const unwatchGenerationSetup = generationSetup?.subscribe(() => { void localGenerator.check().catch(() => {}); }) ?? (() => {});
@@ -946,6 +975,11 @@ async function main() {
   // stream runs it reads the Music app itself, and music the listener starts there ends the stream.
   const unwatchStreamMusicApp = atmosphereStream && !host ? watchMusicAppForStream(atmosphereStream, { musicApp }) : null;
   const playbackSelection = createPlaybackSelection({ service: playbackService, save: writePlaybackPreference });
+  // A reply language the listener asks for in words is saved like the picker's and reaches every surface.
+  const languageSelection = createLanguageSelection({ save: (locale) => writeLanguagePreference(locale) });
+  // The listener's model menu, shared by the window, the terminal and a model asked for in words.
+  const modelSettings = createModelSettings({ environment: process.env });
+  const modelSwitch = createModelSwitch({ list: () => modelSettings.list() });
   // The terminal and the window each run this core on one playback.json. A service chosen on the
   // other side reaches this side's picker and agents, and stops the Apple Music songs this side plays.
   // Moondog's stream is not a service: its made tracks play on.
@@ -958,9 +992,11 @@ async function main() {
   // Spotify's four-week top artists, as the listening upkeep last read them.
   const spotifyTopArtists = { read_at: null, artists: [] };
   const applicationOptions = ({ domainServices, domainServicesError, spotifyConnection, locale, playbackService }) => ({
-    domainServices, domainServicesError, spotifyConnection, locale, playbackService, playbackSelection,
+    domainServices, domainServicesError, spotifyConnection, locale, playbackService, playbackSelection, languageSelection, modelSwitch,
     webResearch, memoryStore, musicCatalog, musicPreviewPlayer: previewPlayer, neteasePlayer, localGenerator, atmosphereStream, musicSimilarity, artistIdentityResolver,
-    spotifyTopArtists, musicApp,
+    spotifyTopArtists, musicApp, libraryStore,
+    // A playlist that shapes the taste reloads the profile services at once, so the evidence counts in this session.
+    playlistTaste: async (found) => { const receipt = await addPlaylistToTaste(found); replaceDomainServices(await loadDomainServices()); return receipt; },
   });
   const application = new MoondogApplication(applicationOptions({
     ...domainState, spotifyConnection, locale: await resolveListenerLocale(), playbackService,
@@ -1195,12 +1231,16 @@ async function main() {
         return createConfiguredRuntime(target, process.env, { selection, toolTrace });
       },
       // The desktop window lists models and signs in here, with no terminal.
-      modelSettings: createModelSettings({ environment: process.env }),
+      modelSettings,
       // A model chosen or a sign-in made on the other surface. Model variables fix the model at
-      // launch, so a saved choice has nothing to change then.
-      watchModelSettings: (onChange) => (process.env.MOONDOG_PROVIDER !== undefined || process.env.MOONDOG_MODEL !== undefined
-        ? () => {}
-        : watchRuntimeSettings({ environment: process.env, onChange })),
+      // launch, so a saved choice has nothing to change then; a role chosen elsewhere still does.
+      watchModelSettings: (onChange) => {
+        const fixed = process.env.MOONDOG_PROVIDER !== undefined || process.env.MOONDOG_MODEL !== undefined;
+        return watchRuntimeSettings({ environment: process.env, onChange: (selection, changed) => {
+          if (changed === "roles") return void webResearch.refresh().then(() => onChange(selection, changed), () => {});
+          if (!fixed) onChange(selection, changed);
+        } });
+      },
       // The one-time music service and model setup, shared by the terminal and the window.
       firstRun: createFirstRun({ environment: process.env }),
       // A host with its own terminal streams takes the sign-in prompts. The
@@ -1226,6 +1266,7 @@ async function main() {
           }),
         }),
       runWeb: (args, options) => runWebCommand({ args, webResearch, ...options }),
+      runModelRoles: (args) => runModelRolesCommand({ args: args.map(String), modelSettings, webResearch }),
       runProfileAction: (args) => runProfileCommand({
         args,
         commandPrefix: "/profile",

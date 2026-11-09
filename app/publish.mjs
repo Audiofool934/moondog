@@ -9,7 +9,7 @@ import { pipeline } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
 import { command, commandFailure, digestFile, parseReleaseJson, phase, readJson, RELEASE_REPO, SIGNING_TEAM } from "./release-tools.mjs";
 import { releaseNames, verifyArtifacts } from "./release-artifacts.mjs";
-import { assertReleaseIdentity, findReleaseByTag, markAsLatest, publicationSource, uploadImmutableAssets, validateNpmRelease, waitFor } from "./release-publication.mjs";
+import { assertReleaseIdentity, findReleaseByTag, markAsLatest, publicationSource, retryTransientUpload, uploadImmutableAssets, uploadTimeoutMs, validateNpmRelease, waitFor } from "./release-publication.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url)), root = path.join(here, "..");
 const args = process.argv.slice(2), flags = new Set();
@@ -53,7 +53,8 @@ const assertNpm = async () => validateNpmRelease(await npmMetadata(version), { n
 const readNpm = () => npmMetadata(version).catch(error => { if (error.npmCodes?.includes("E404")) return null; throw error; });
 const deadline = Date.now() + 60 * 60_000;
 let npmRelease = await readNpm();
-if (!npmRelease) npmRelease = await phase(`Wait for npm ${version}: approve the npm environment on the Publish release run`, () => waitFor(readNpm, { deadline }));
+if (!npmRelease) npmRelease = await phase(beta ? `Wait for npm ${version} from the Publish release run`
+  : `Wait for npm ${version}: approve release-approval on the Publish release run`, () => waitFor(readNpm, { deadline }));
 if (!npmRelease) throw new Error(`npm ${version} is not published. Approve the npm environment on the Publish release run, then run the same command again.`);
 await phase("Verify the published npm version and commit", () => validateNpmRelease(npmRelease, { name, version, source }));
 
@@ -95,15 +96,16 @@ const remoteDigest = async asset => {
     return (await digestFile(file)).sha256;
   } finally { await rm(scratch, { recursive: true, force: true }); }
 };
-release = await phase("Upload and verify immutable release assets", () => uploadImmutableAssets({ items,
+// The ZIP and DMG upload at once and share the line, so each one's time limit counts the other big file too.
+const sharing = Math.max(1, items.filter(item => item.size > 10_000_000).length);
+release = await phase("Upload and verify immutable release assets", () => retryTransientUpload(() => uploadImmutableAssets({ items,
   getRelease, remoteDigest,
   upload: item => command("gh", ["api", "--method", "POST",
     `https://uploads.github.com/repos/${RELEASE_REPO}/${endpoint}/assets?name=${encodeURIComponent(item.name)}`,
     "-H", "Content-Type: application/octet-stream", "-H", `Content-Length: ${item.size}`,
-    // The ZIP and DMG upload at once and share the bandwidth, so each gets twice the time one had alone.
-    "--input", path.join(releaseDir, item.name)], { cwd: root, timeout: 2 * 60 * 60_000 }),
+    "--input", path.join(releaseDir, item.name)], { cwd: root, timeout: uploadTimeoutMs(item.size, { sharing: item.size > 10_000_000 ? sharing : 1 }) }),
   deleteAsset: asset => command("gh", ["api", "--method", "DELETE", `repos/${RELEASE_REPO}/releases/assets/${asset.id}`], { cwd: root }),
-}));
+})));
 
 // Recheck immediately before promotion. A newer release can finish while Apple processes this one.
 await assertNpm();

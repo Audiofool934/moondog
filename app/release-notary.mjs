@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { copyFile, rename, rm } from "node:fs/promises";
 import path from "node:path";
 import { command, digestFile, parseReleaseJson, phase, readJson, saveJson } from "./release-tools.mjs";
@@ -31,9 +33,34 @@ export async function prepareDmgUpload({ file, receipt, receiptFile, copy = copy
   return target;
 }
 
+// How notarytool signs in. An App Store Connect API key (a .p8 file, its key ID and the team's issuer ID) needs no
+// Keychain item and no app-specific password, and lasts until it is revoked; the Keychain profile it replaces went
+// missing three times on this Mac mini (2026-10-28, 2026-11-03, 2026-11-04). Without a key, the profile is used.
+// The key can also be named once for every app of the team in ~/.config/apple-notary/api-key.json:
+// { "key": "/full/path/AuthKey_XXXXXXXXXX.p8", "keyId": "XXXXXXXXXX", "issuer": "<issuer uuid>" }. The variables win.
+export const NOTARY_KEY_FILE = path.join(homedir(), ".config", "apple-notary", "api-key.json");
+export function notaryAuth(environment = process.env, { exists = existsSync, read = (file) => readFileSync(file, "utf8"), file = NOTARY_KEY_FILE } = {}) {
+  let saved = null;
+  // Each variable overrides only its own field, so moving the .p8 file needs just MOONDOG_NOTARY_KEY.
+  if (exists(file)) {
+    try { saved = JSON.parse(read(file)); } catch { throw new Error(`${file} is not valid JSON.`); }
+  }
+  const key = (environment.MOONDOG_NOTARY_KEY ?? saved?.key)?.trim();
+  if (key) {
+    const keyId = (environment.MOONDOG_NOTARY_KEY_ID ?? saved?.keyId)?.trim() ?? "";
+    const issuer = (environment.MOONDOG_NOTARY_ISSUER ?? saved?.issuer)?.trim() ?? "";
+    if (!path.isAbsolute(key) || !exists(key)) throw new Error("MOONDOG_NOTARY_KEY must name the API key's .p8 file by its full path.");
+    if (!/^[A-Z0-9]{10}$/u.test(keyId)) throw new Error("MOONDOG_NOTARY_KEY_ID must be the API key's 10-character key ID.");
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(issuer)) throw new Error("MOONDOG_NOTARY_ISSUER must be the team's issuer ID.");
+    return { kind: "api-key", args: ["--key", key, "--key-id", keyId, "--issuer", issuer] };
+  }
+  const profile = environment.MOONDOG_NOTARY_PROFILE ?? environment.APPLE_NOTARY_PROFILE ?? "mac-mini-notary";
+  return { kind: "keychain-profile", args: ["--keychain-profile", profile] };
+}
+
 // Separate upload from waiting so an interrupted wait never creates a second submission.
 // The unique, recorded filename lets history recover a response lost during submit.
-export async function notarizeFile({ file, receiptFile, profile, run = command, digest = digestFile,
+export async function notarizeFile({ file, receiptFile, profile, credentials = null, run = command, digest = digestFile,
   read = readJson, save = saveJson, report = phase }) {
   const artifact = await digest(file);
   let receipt = await read(receiptFile, true);
@@ -41,7 +68,7 @@ export async function notarizeFile({ file, receiptFile, profile, run = command, 
     throw new Error("The notarization input changed. Restore the recorded artifact; do not resubmit a rebuilt release.");
   }
   receipt ??= { schema: 1, name: path.basename(file), sha256: artifact.sha256, startedAt: new Date().toISOString() };
-  const auth = ["--keychain-profile", profile];
+  const auth = credentials?.args ?? ["--keychain-profile", profile];
   const json = async args => parseReleaseJson((await run("xcrun", ["notarytool", ...args, ...auth, "--output-format", "json"], { timeout: 60 * 60_000 })).stdout);
   if (!receipt.id && receipt.submitting) {
     const history = await json(["history"]);

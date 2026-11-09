@@ -11,6 +11,13 @@ import { mountRecord } from "./record.mjs";
 import { createSettings, EFFORTS } from "./settings.mjs";
 import { createSidebar } from "./sidebar.mjs";
 import { platform, shortcuts } from "./platform.mjs";
+import { coverUrl, createLibrary } from "./library.mjs";
+import { createMentions } from "./mentions.mjs";
+import { createShelf } from "./shelf.mjs";
+import { createTaste } from "./taste.mjs";
+import { createTasteList } from "./taste-list.mjs";
+import { createSidebarViews } from "./views.mjs";
+import { discButton } from "./disc.mjs";
 import { icon, make, marquee, name, scrollbar, setIcon, tooltips } from "./ui.mjs";
 import "./style.css";
 
@@ -25,7 +32,12 @@ const tr = () => t;
 // come back when opened. streaming is a reply being written; onAir is Moondog's own channel.
 const state = { sessions: [], folders: [], running: [], current: null, turns: [], model: null, spotify: null, spotifyAccount: null,
   playbackService: "spotify", locale, locales: [], player: null, streaming: null, ready: false, waiting: null, update: { phase: "idle" }, firstRun: null,
-  onAir: null };
+  onAir: null,
+  // The listener's library, and the playlist open in the room in the conversation's place ({ id, playlist }, or none).
+  library: { folders: [], playlists: [] }, shelf: null,
+  // The listener's taste: the core's latest page of it, for the taste view and the page, and the page open in the
+  // room in the conversation's place ({} while open, or none).
+  tasteData: null, taste: null };
 const store = {
   get: (key) => { try { return localStorage.getItem(key); } catch { return null; } },
   set: (key, value) => { try { localStorage.setItem(key, value); } catch { /* A private window keeps the default. */ } },
@@ -44,11 +56,20 @@ let port = null;
 const outbox = [];
 const send = (message) => (port ? port.postMessage(message) : outbox.push(message));
 const previews = createPreviews({ send, onChange: () => renderInspector() });
+// The composer's send button is a record button (disc.mjs), as the playlist's play button is.
+const sendDisc = discButton($("send"), { size: 26, glyph: "send" });
 const settings = createSettings({ state, send, t: tr,
   appleMusic: { status: () => previews.fullStatus(), check: (command) => previews.check(command) }, onHide: () => firstRun.update() });
 // The one-time first run asks for a music service, then a model, in the Settings sheet (first-run.mjs).
 const firstRun = createFirstRun({ settings, send, read: () => ({ run: state.firstRun, modelReady: state.model?.state === "configured" }) });
 const sidebar = createSidebar({ root: $("sessions"), state, send, t: tr, open: (id) => openSession(id), store, menuPoint: (event) => menuPoint(event) });
+const library = createLibrary({ root: $("library"), state, send, t: tr, open: (id) => openPlaylist(id), store, menuPoint: (event) => menuPoint(event),
+  onBusy: (value) => views.setBusy("library", value) });
+const shelf = createShelf({ root: $("shelf"), state, send, t: tr, menuPoint: (event) => menuPoint(event), onClose: () => closePlaylist() });
+const taste = createTaste({ root: $("taste"), state, send, t: tr, onClose: () => closeTaste() });
+// The taste view in the sidebar: a row unfolded there opens the page and lights that artist across its record.
+const tasteList = createTasteList({ root: $("taste-list"), state, send, t: tr, onAsk: (text) => askFromTaste(text),
+  onSelect: (name) => { if (name && !state.taste) openTaste({ fromView: true }); taste.pin(name); } });
 const tips = tooltips();
 // A native menu opens at the pointer, or under its control when the keyboard pressed it.
 function menuPoint(event) {
@@ -59,7 +80,19 @@ function menuPoint(event) {
   }
   return event ? { x: event.clientX, y: event.clientY } : undefined;
 }
-const menu = (items, event) => window.moondogApp?.showMenu?.(items, menuPoint(event));
+// A menu that is a control's own, such as a split header's switcher, opens as a native pop-up button does: over the
+// control, its current choice set on the control's words. The menu's text sits past its check column, so the menu
+// starts that far before the words. Any other menu opens at the pointer, or under its control from the keyboard.
+const MENU_TEXT_INSET = 21;
+const MENU_ROW = 22;
+function menuAt(event, anchor) {
+  const words = anchor?.element;
+  if (!words?.getBoundingClientRect) return menuPoint(event);
+  const box = words.getBoundingClientRect();
+  return { x: box.left - MENU_TEXT_INSET, y: box.top + box.height / 2 - MENU_ROW / 2,
+    ...(Number.isInteger(anchor.selected) && anchor.selected >= 0 ? { positioningItem: anchor.selected } : {}) };
+}
+const menu = (items, event, anchor) => window.moondogApp?.showMenu?.(items, menuAt(event, anchor));
 
 // Words
 function applyLanguage(next) {
@@ -67,10 +100,13 @@ function applyLanguage(next) {
   state.locale = next;
   t = windowStrings(locale);
   document.documentElement.lang = languageTag(locale);
-  input.placeholder = t("placeholder");
+  renderPlaceholder();
+  name($("library-add"), t("libraryAdd"), "@");
   name($("toggle-sidebar"), t("conversations"), shortcuts.sidebar);
   name($("toggle-inspector"), t("player"), shortcuts.player);
   name($("new"), t("newConversation"), shortcuts.new);
+  renderSidebarMode();
+  name($("keep"), t("saveToSaved"));
   // These self-explanatory controls keep accessible names without floating labels over the record.
   for (const [node, key] of [[recordButton, "foldRecord"], [barRecord, "showRecord"], [$("expand"), "immerse"], [$("pin"), "keepOnTop"], [$("immersive"), "restore"]]) {
     node.setAttribute("aria-label", t(key));
@@ -114,8 +150,103 @@ function renderTitle() {
   // The folded record sits before the title, so it moves when the title does.
   placeSoon();
 }
+// The sidebar's views, conversations and the library, as tabs or split (views.mjs). The bar's own switch only shows
+// and hides the sidebar; which view shows is the sidebar's business, so the two never fight.
+const views = createSidebarViews({ root: $("sidebar"), store, t: tr, menu: (items, event, anchor) => menu(items, event, anchor), onShow: (view) => {
+  // Back to the conversations as the one tab is back to the conversation, so a playlist open in the room closes.
+  if (view === "conversations" && views?.layout.mode === "tabs" && state.shelf) closePlaylist();
+  if (views?.showing("library")) library.render();
+  // The taste view asks the core for the profile; as the one tab, it brings the taste page into the room, and
+  // turning to another tab takes the page away, as the conversations take a playlist away.
+  if (view === "taste") { send({ type: "taste" }); tasteList.render(); if (views?.layout.mode === "tabs") openTaste({ fromView: true }); }
+  else if (views?.layout.mode === "tabs" && state.taste) closeTaste();
+},
+// Each view's +: a folder for the conversations, and the library's menu (playlist, folder, import).
+onAdd: (view, event) => {
+  if (view === "library") void library.newMenu(event);
+  else sidebar.startNewFolder();
+},
+addLabel: (view) => (view === "library" ? (library?.importing ? t("readingPlaylist") : t("libraryNew")) : t("newFolder")) });
+function renderSidebarMode() {
+  // A core without a library (the project page's scene) shows only the conversations.
+  views.setEnabled(state.libraryReady === true);
+  // Taste is a view of its own beside the library, on the same core; the project page's scene has neither.
+  views.enable("taste", state.libraryReady === true);
+  views.render();
+  if (views.showing("library")) library.render();
+  if (views.showing("taste")) tasteList.render();
+}
+// ⌥⌘L and the palette: the library's view, with the sidebar shown if it was folded away.
+function toggleLibrary() {
+  if (!shown("sidebar")) togglePanel("sidebar");
+  views.toggleLibrary();
+  (views.showing("library") && views.layout.active === "library" ? $("library") : $("sessions"))
+    .querySelector("[aria-current='true'] button, .row button")?.focus({ preventScroll: true });
+}
+// A playlist opens in the room in the conversation's place, and the conversation comes back when it closes.
+function openPlaylist(id) {
+  if (state.shelf?.id === id) { shelf.focus(); return; }
+  if (state.taste) closeTaste({ quiet: true });
+  state.shelf = { id, playlist: null };
+  shelf.reset();
+  send({ type: "library-open", id });
+  renderShelf();
+}
+function closePlaylist() {
+  if (!state.shelf) return;
+  state.shelf = null;
+  send({ type: "library-open", id: null });
+  renderShelf();
+  input.focus();
+}
+// The name a message from the open playlist goes by, as the sidebar shows it.
+function shelfName() {
+  if (!state.shelf) return null;
+  const open = state.shelf.playlist ?? state.library.playlists.find((each) => each.id === state.shelf.id);
+  return open ? (open.saved ? t("saved") : open.name) : null;
+}
+function renderPlaceholder() {
+  const about = shelfName();
+  input.placeholder = about ? t("askAbout", { name: about }) : t("placeholder");
+}
+function renderShelf() {
+  room.classList.toggle("shelving", Boolean(state.shelf || state.taste));
+  renderPlaceholder();
+  shelf.render();
+  taste.render();
+  library.render();
+  if (!state.shelf && !state.taste) { renderConversation({ redraw: true }); placeSoon(); }
+}
+// The taste page opens in the room as a playlist does, and asks the core for the profile each time it opens.
+// Opened from anywhere but its own view, it turns the sidebar to the taste view first, so the two show together.
+function openTaste({ fromView = false } = {}) {
+  if (!fromView && state.libraryReady === true && !views.showing("taste")) { views.show("taste"); if (state.taste) return; }
+  if (state.shelf) { state.shelf = null; send({ type: "library-open", id: null }); }
+  if (!state.taste) { state.taste = {}; taste.reset(); }
+  send({ type: "taste" });
+  renderShelf();
+}
+function closeTaste({ quiet = false } = {}) {
+  if (!state.taste) return;
+  state.taste = null;
+  if (quiet) return;
+  renderShelf();
+  input.focus();
+}
+const toggleTaste = () => (state.taste ? closeTaste() : openTaste());
+// Find more like this: the request waits in the composer with the track named, for the listener to edit and send.
+function askFromTaste(text) {
+  closeTaste();
+  input.value = text;
+  renderComposer();
+  input.focus();
+  input.setSelectionRange(0, text.indexOf("\n") < 0 ? text.length : text.indexOf("\n"));
+}
 // Another conversation can open while this one is still answering; it keeps going in the core.
 function openSession(id) {
+  // Opening a conversation, or a new one, puts the conversation back in the room.
+  if (state.shelf) closePlaylist();
+  if (state.taste) closeTaste();
   if (id && id === state.current) return;
   // An empty new conversation is already the new conversation.
   if (!id && !state.turns.length && !state.streaming) { input.focus(); return; }
@@ -133,7 +264,13 @@ function notice(text) {
 }
 const NOTICES = { too_many_running: "noticeTooMany", model_unknown: "noticeModelUnknown", waiting_for_import: "noticeWaitingForImport", message_busy: "noticeMessageBusy",
   delete_running: "noticeDeleteRunning", delete_open_elsewhere: "noticeDeleteElsewhere", delete_failed: "noticeDeleteFailed", transfer_failed: "noticeTransferFailed",
-  rewind_busy: "waitForReply", rewind_failed: "noticeFailed" };
+  rewind_busy: "waitForReply", rewind_failed: "noticeFailed",
+  library_nothing_playing: "noticeNothingToSave", library_too_deep: "noticeTooDeep", library_folder_cycle: "noticeFailed", library_full: "noticePlaylistFull",
+  library_playlist_not_found: "noticePlaylistGone", made_track_audio_not_kept: "receiptOnly", made_track_not_found: "receiptOnly",
+  spotify_not_ready: "noticeSpotifyNotReady", library_no_player: "noticePlaybackFailed", library_not_ready: "noticeFailed",
+  playlist_link_missing: "noticePlaylistLink", playlist_link_unsupported: "noticePlaylistLink", playlist_unavailable: "noticePlaylistUnavailable",
+  spotify_playlist_unavailable: "noticePlaylistUnavailable", playlist_unreachable: "noticePlaylistUnreachable", playlist_empty: "noticePlaylistUnavailable",
+  playlist_too_large: "noticePlaylistFull", playlist_preview_gone: "noticePlaylistLink" };
 
 // ── The conversation ─────────────────────────────────────────────────────────────────────────
 const KINDS = [
@@ -155,6 +292,9 @@ const KINDS = [
   [/^moondog_netease_search$/u, "search"],
   [/^moondog_netease_now_playing$/u, "status"],
   [/^moondog_listening_now$/u, "status"],
+  [/^moondog_collection_play$/u, "play"],
+  [/^moondog_collection_(?:save|edit)$/u, "keep"],
+  [/^moondog_collection_list$/u, "shelf"],
   [/^moondog_music_app_control$/u, (args) => ({ pause: "pause", next: "skip", previous: "skip" })[args?.action] ?? "play"],
   [/^moondog_(?:memory_|taste_choice$)/u, "memory"],
   [/^moondog_music_/u, "search"],
@@ -937,11 +1077,17 @@ function renderConversation({ redraw = false } = {}) {
   if (opened) { column.replaceChildren(); nodes = []; drawnAsks = null; chosen = null; rest(); }
   renderEmpty(!state.turns.length);
   state.turns.forEach((turn, index) => {
-    const key = turn.role === "user" ? `u|${turn.text}` : `a|${turn.id ?? index}|${turn.local ? "l" : ""}`;
+    const key = turn.role === "user" ? `u|${turn.text}|${turn.images?.length ?? 0}` : `a|${turn.id ?? index}|${turn.local ? "l" : ""}`;
     let entry = nodes[index];
     if (!entry || entry.key !== key) {
       const node = turn.role === "user" ? make("div", "you") : make("div", "turn reply");
-      if (turn.role === "user") node.append(make("p", "", turn.text));
+      // A message's images sit above its words, as they were attached.
+      if (turn.role === "user" && turn.images?.length) {
+        const pictures = make("div", "you-images");
+        for (const image of turn.images) pictures.append(imageButton(image, "you-image"));
+        node.append(pictures);
+      }
+      if (turn.role === "user" && turn.text) node.append(wordsOf(turn.text));
       // Only what just arrived moves; a conversation opened or redrawn stays still.
       if (!opened) node.classList.add("arrive");
       if (entry) entry.node.replaceWith(node); else column.append(node);
@@ -1052,12 +1198,158 @@ function syncMenu() {
   window.moondogApp?.setPlayback?.({ controllable: Boolean(now) && !now.making, streaming: Boolean(state.streaming),
     onAir: { available: onAirAvailable(), on: Boolean(state.onAir) } });
 }
+// ── Images on the next message ──
+// Pasted or dropped images wait above the composer and go with the next message. The core routes
+// them to a model that sees, or to the vision model chosen in Settings (Auxiliary models). Large ones
+// are scaled down here first, so a phone screenshot or a camera photo stays a reasonable request.
+const IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
+const IMAGE_LIMIT = 4;
+const IMAGE_SIDE = 2048;
+const IMAGE_KEEP_BYTES = 1_500_000;
+let attachments = [];
+const dataOf = (blob) => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.addEventListener("load", () => resolve(String(reader.result).split(",")[1] ?? ""), { once: true });
+  reader.addEventListener("error", () => reject(reader.error), { once: true });
+  reader.readAsDataURL(blob);
+});
+async function readImage(file) {
+  let blob = file;
+  let mimeType = file.type;
+  // A GIF may move, so it goes as it is; a large still is drawn again at most 2048 pixels on its long side.
+  if (mimeType !== "image/gif") {
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, IMAGE_SIDE / Math.max(bitmap.width, bitmap.height));
+    if (scale < 1 || file.size > IMAGE_KEEP_BYTES) {
+      const canvas = new OffscreenCanvas(Math.round(bitmap.width * scale), Math.round(bitmap.height * scale));
+      canvas.getContext("2d").drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      blob = await canvas.convertToBlob({ type: "image/jpeg", quality: 0.88 });
+      mimeType = "image/jpeg";
+    }
+    bitmap.close();
+  }
+  const data = await dataOf(blob);
+  // The window's content policy shows data: images, not blob: ones.
+  return { data, mimeType, name: file.name || t("image"), url: `data:${mimeType};base64,${data}` };
+}
+async function attachImages(files) {
+  const images = [...files].filter((file) => IMAGE_TYPES.has(file.type));
+  for (const file of images) {
+    if (attachments.length >= IMAGE_LIMIT) { notice(t("noticeImageLimit", { count: IMAGE_LIMIT })); break; }
+    try { attachments.push(await readImage(file)); } catch { notice(t("noticeImageUnreadable")); }
+  }
+  renderAttachments();
+  renderComposer();
+  input.focus();
+}
+// ── The library in the composer ──
+// What @ and the + offer: Saved, the playlists, then the folders, by the names the sidebar shows.
+function libraryItems() {
+  const { playlists, folders } = state.library;
+  const named = playlists.map((each) => ({ kind: "playlist", id: each.id, name: each.saved ? t("saved") : each.name, saved: each.saved, cover: each.cover,
+    note: each.count === 1 ? t("oneEntry") : t("entries", { count: each.count }) }));
+  const byName = (a, b) => a.name.localeCompare(b.name);
+  return [...named.filter((each) => each.saved), ...named.filter((each) => !each.saved).sort(byName),
+    ...folders.map((each) => ({ kind: "folder", id: each.id, name: each.name })).sort(byName)];
+}
+const mentions = createMentions({ input, anchor: $("form"), items: libraryItems, coverOf: (item) => coverUrl(item.cover) });
+// The + beside the words: the library as the sidebar lays it out, a folder opening onto what it holds.
+function libraryMenu(parent = null) {
+  const { playlists, folders } = state.library;
+  const here = [...folders.filter((each) => each.parentId === parent).map((each) => ({ folder: each, position: each.position })),
+    ...playlists.filter((each) => !each.saved && each.folderId === parent).map((each) => ({ playlist: each, position: each.position }))]
+    .sort((a, b) => a.position - b.position);
+  return here.map(({ folder, playlist }) => (playlist ? { id: `@${playlist.name}`, label: playlist.name } : { label: folder.name, submenu: [
+    { id: `@${folder.name}`, label: t("wholeFolder") }, { type: "separator" }, ...libraryMenu(folder.id)] }));
+}
+$("library-add").addEventListener("click", async (event) => {
+  const chosen = await menu([{ id: `@${t("saved")}`, label: t("saved") }, ...libraryMenu()], event, $("library-add"));
+  if (chosen?.startsWith("@")) mentions.insert(chosen.slice(1));
+});
+// A message's words, with what it names from the library in the words: a playlist opens from there.
+function wordsOf(text) {
+  const words = make("p");
+  const items = text.includes("@") ? libraryItems().sort((a, b) => b.name.length - a.name.length) : [];
+  let rest = text;
+  while (rest) {
+    const found = items.flatMap((item) => { const at = rest.indexOf(`@${item.name}`); return at < 0 ? [] : [{ item, at }]; })
+      .sort((a, b) => a.at - b.at)[0];
+    if (!found) { words.append(rest); break; }
+    words.append(rest.slice(0, found.at));
+    const label = `@${found.item.name}`;
+    if (found.item.kind === "playlist") {
+      const open = make("button", "mention", label);
+      open.type = "button";
+      open.addEventListener("click", () => openPlaylist(found.item.id));
+      words.append(open);
+    } else words.append(make("span", "mention", label));
+    rest = rest.slice(found.at + label.length);
+  }
+  return words;
+}
+// A picture that opens at full size over the window; a click anywhere or Escape closes it.
+function imageButton(image, className) {
+  const button = make("button", className);
+  button.type = "button";
+  const picture = make("img");
+  picture.alt = image.name ?? "";
+  picture.src = image.url;
+  button.append(picture);
+  name(button, t("viewImage"));
+  button.addEventListener("click", () => showImage(image));
+  return button;
+}
+let imageOpener = null;
+function showImage(image) {
+  const box = $("lightbox");
+  const picture = box.querySelector("img");
+  picture.src = image.url;
+  picture.alt = image.name ?? "";
+  imageOpener = document.activeElement;
+  box.hidden = false;
+}
+function closeImage() {
+  const box = $("lightbox");
+  if (box.hidden) return false;
+  box.hidden = true;
+  box.querySelector("img").removeAttribute("src");
+  imageOpener?.focus?.();
+  imageOpener = null;
+  return true;
+}
+$("lightbox").addEventListener("click", () => closeImage());
+// Escape closes the picture first, before it could stop a reply or close anything behind it.
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && closeImage()) { event.preventDefault(); event.stopImmediatePropagation(); }
+}, true);
+function renderAttachments() {
+  const tray = $("attachments");
+  tray.hidden = !attachments.length;
+  tray.replaceChildren(...attachments.map((image, index) => {
+    const item = make("div", "attachment");
+    const picture = imageButton(image, "attachment-open");
+    const remove = make("button", "attachment-remove");
+    remove.type = "button";
+    remove.append(icon("close"));
+    name(remove, t("removeImage"));
+    remove.addEventListener("click", () => {
+      attachments = attachments.filter((_, kept) => kept !== index);
+      renderAttachments();
+      renderComposer();
+      input.focus();
+    });
+    item.append(picture, remove);
+    return item;
+  }));
+}
 function renderComposer() {
   const button = $("send");
   const streaming = Boolean(state.streaming);
-  button.disabled = !streaming && (!input.value.trim() || Boolean(state.waiting && !state.ready));
+  button.disabled = !streaming && ((!input.value.trim() && !attachments.length) || Boolean(state.waiting && !state.ready));
   name(button, streaming ? t("stop") : t("send"), streaming ? shortcuts.stop : "↩");
-  setIcon(button, streaming ? "stop" : "up");
+  setIcon(button, streaming ? "stop" : "send");
+  // While Moondog writes its reply, the send button's glints turn, as the record's do while music plays.
+  sendDisc.setTurning(streaming);
   renderPicks();
   syncMenu();
 }
@@ -1104,44 +1396,69 @@ function renderPicks() {
 // The composer grows with its words up to 40% of the window (field-sizing in style.css), then scrolls.
 function clearComposer() {
   input.value = "";
+  // The sent message's bubble keeps its own copy of each picture.
+  attachments = [];
+  renderAttachments();
 }
-function submitText(text) {
+// A message's images as the core takes them, and as its bubble shows them.
+const imagesFor = (images) => (images.length ? { images: images.map(({ url, name: label }) => ({ url, name: label })),
+  attachments: images } : {});
+function submitText(text, images = [], { about = null } = {}) {
   // A message typed while the core starts waits for it, shown as sent; more stay in the composer.
+  // Images wait in the composer until the core is ready.
   if (!state.ready) {
-    if (state.waiting) return false;
+    if (state.waiting || images.length) return false;
     state.waiting = text;
     state.turns.push({ role: "user", text, waiting: true });
     renderConversation();
     return true;
   }
   if (state.model?.state !== "configured") {
-    state.turns.push({ role: "user", text }, { role: "assistant", text: t("offline"), failed: true, offline: true, local: true });
+    state.turns.push({ role: "user", text, ...imagesFor(images) }, { role: "assistant", text: t("offline"), failed: true, offline: true, local: true });
     renderConversation();
     return true;
   }
+  // Written from an open playlist, it asks about that playlist in a conversation of its own; a conversation with
+  // nothing in it yet is already one.
+  const fresh = Boolean(about && state.turns.length);
+  if (fresh) state.turns = [];
+  // A message sent while a playlist or the taste page is open brings the conversation back to show the reply.
+  if (state.shelf) closePlaylist();
+  if (state.taste) closeTaste();
   // The words show at once; the core's start of the turn adopts them.
-  state.turns.push({ role: "user", text, pending: true });
+  state.turns.push({ role: "user", text, pending: true, ...(fresh ? { fresh } : {}), ...imagesFor(images) });
   renderConversation();
-  send({ type: "prompt", text });
+  send({ type: "prompt", text, ...(fresh ? { fresh } : {}), ...(images.length ? { images: images.map(({ data, mimeType, name: label }) => ({ data, mimeType, name: label })) } : {}) });
   return true;
 }
 function submit() {
   if (state.streaming) { send({ type: "cancel" }); return; }
   const text = input.value.trim();
-  if (!text) return;
+  if (!text && !attachments.length) return;
   // A mistyped command stays in the composer instead of going to Moondog as a message.
   const command = text.match(/^\/([A-Za-z]+)$/u)?.[1];
   if (command && !COMMANDS.some((entry) => entry.name === command.toLowerCase())) { notice(t("unknownCommand", { name: command })); return; }
   rest();
-  if (submitText(text)) clearComposer();
+  const about = shelfName();
+  const said = about && !text.includes(`@${about}`) ? `@${about} ${text}`.trim() : text;
+  if (submitText(said, attachments, { about })) clearComposer();
   renderComposer();
 }
 $("form").addEventListener("submit", (event) => { event.preventDefault(); submit(); });
 input.addEventListener("input", () => renderComposer());
+// A pasted image waits above the composer; words pasted with it still go into the composer.
+input.addEventListener("paste", (event) => {
+  const files = [...(event.clipboardData?.files ?? [])].filter((file) => IMAGE_TYPES.has(file.type));
+  if (!files.length) return;
+  if (!event.clipboardData.types.includes("text/plain")) event.preventDefault();
+  void attachImages(files);
+});
 input.addEventListener("keydown", (event) => {
   // Enter sends; while a reply runs it does nothing, so a typed follow-up waits instead of stopping the reply.
   if (event.key === "Enter" && !event.shiftKey && !event.isComposing && event.keyCode !== 229) { event.preventDefault(); if (!state.streaming) submit(); }
   if (event.key === "Escape" && state.streaming) { event.preventDefault(); send({ type: "cancel" }); }
+  else if (event.key === "Escape" && state.shelf && !input.value) { event.preventDefault(); closePlaylist(); }
+  else if (event.key === "Escape" && state.taste && !input.value) { event.preventDefault(); closeTaste(); }
   // The conversation scrolls from the composer, so reading back never needs the mouse.
   if (event.key === "PageUp" || event.key === "PageDown") {
     event.preventDefault();
@@ -1162,11 +1479,19 @@ const COMMANDS = [
   { name: "service", label: "musicService", run: () => settings.show("playback") },
   { name: "device", label: "devices", run: () => pickDevice(null) },
   { name: "import", label: "importHistory", run: () => settings.show("library") },
+  { name: "taste", label: "taste", run: () => openTaste() },
+  { name: "profile", label: "taste", run: () => openTaste() },
   { name: "memory", label: "memory", run: () => settings.show("memory") },
   { name: "remember", label: "remember", argument: "cmdRememberArgument", run: (text) => { if (text) { send({ type: "remember", text }); notice(t("remembered")); } } },
   { name: "folder", label: "newFolder", run: () => {
     if (!shown("sidebar")) togglePanel("sidebar");
-    sidebar.startNewFolder();
+    if (views.showing("library") && views.layout.active === "library") library.startNew("folder", null); else sidebar.startNewFolder();
+  } },
+  { name: "library", label: "library", run: () => toggleLibrary() },
+  { name: "playlist", label: "newPlaylist", run: () => {
+    if (!views.showing("library")) toggleLibrary();
+    else if (!shown("sidebar")) togglePanel("sidebar");
+    library.startNew("playlist", null);
   } },
   { name: "settings", label: "settings", run: () => settings.show() },
   { name: "help", label: "shortcuts", run: () => settings.show("about") },
@@ -1543,9 +1868,23 @@ function drawControls(now, toggle, next) {
   set(toggle, "disabled", !can(now, now.playing ? "pausing" : "resuming"));
   set(next, "disabled", !can(now, "skipping_next"));
 }
+const SERVICE_OF_PLAYLIST = { spotify: "Spotify", apple_music: "Apple Music", netease: "netease", qq_music: "qqMusic" };
+async function askImport(preview) {
+  const service = SERVICE_OF_PLAYLIST[preview.provider] ?? "";
+  const from = service === "netease" || service === "qqMusic" ? t(service) : service;
+  const count = preview.total && preview.total > preview.read ? t("importReadOf", { read: preview.read, total: preview.total }) : t("entries", { count: preview.read });
+  const answer = await window.moondogApp?.ask?.({ message: t("importQuestion", { name: preview.name }), detail: `${count} · ${from}\n${preview.sample.join("\n")}`,
+    confirm: t("importConfirm"), cancel: t("cancel"), checkbox: t("importShapesTaste"), checked: preview.owned === true });
+  if (!answer?.confirmed) { library.importDone(); return; }
+  send({ type: "library-import", token: preview.token, taste: answer.checked === true, folderId: preview.folderId ?? null });
+}
+// The song the heart last kept, by title and artists, so its heart shows filled while it plays.
+let keptNow = null;
+const songKey = (now) => `${now.title}\u0000${now.generated ? "moondog" : (now.artists ?? []).join(",")}`;
 function renderInspector() {
   const now = nowPlaying();
   renderOnAir();
+  shelf.syncPlaying(now);
   const art = $("art");
   showCover(art, now?.image ?? null, "cover");
   showCover($("ambient"), now?.image ?? null, "glow");
@@ -1565,6 +1904,11 @@ function renderInspector() {
   set($("song"), "textContent", now?.title ?? "");
   set($("artist"), "textContent", now ? (now.generated ? t("madeByMoondog") : now.artists.join(", ")) : "");
   set($("album"), "textContent", now?.album ?? "");
+  // The heart keeps what plays now; it fills once this song is kept, until another one plays.
+  const keep = $("keep");
+  set(keep, "hidden", !now || Boolean(now.making) || !state.libraryReady || (!now.generated && !now.artists?.length));
+  setIcon(keep, now && keptNow === songKey(now) ? "saved-fill" : "saved");
+  keep.setAttribute("aria-pressed", String(Boolean(now) && keptNow === songKey(now)));
   renderProgress(now);
 
   // The record On Air is cutting can't be played, paused or skipped, so it offers no transport.
@@ -1891,10 +2235,24 @@ for (const panel of ["sidebar", "inspector"]) {
 $("toggle-sidebar").addEventListener("click", () => togglePanel("sidebar"));
 $("toggle-inspector").addEventListener("click", () => togglePanel("inspector"));
 $("new").addEventListener("click", () => openSession(null));
+// The heart beside the song keeps it in Saved; a right-click offers the listener's playlists, or a new one.
+$("keep").addEventListener("click", () => send({ type: "library-save", ...keepArtwork() }));
+$("keep").addEventListener("contextmenu", async (event) => {
+  event.preventDefault();
+  const playlists = state.library.playlists.filter((each) => !each.saved).sort((a, b) => a.name.localeCompare(b.name));
+  const chosen = await menu([{ id: "saved", label: t("saved") }, ...(playlists.length ? [{ type: "separator" }] : []),
+    ...playlists.map((each) => ({ id: `to:${each.id}`, label: each.name }))], event);
+  if (chosen === "saved") send({ type: "library-save", ...keepArtwork() });
+  if (chosen?.startsWith("to:")) send({ type: "library-save", playlistId: chosen.slice(3), ...keepArtwork() });
+});
+const keepArtwork = () => { const image = nowPlaying()?.image; return typeof image === "string" && image.startsWith("https://") ? { artwork: image } : {}; };
 scrollbar($("sessions"));
+scrollbar($("library"));
+scrollbar($("shelf").querySelector(".shelf-scroll"));
 scrollbar($("inspector-scroll"));
 // Long conversation names and long song lines roll into view under the pointer. A conversation's
 // name keeps clear of the ⋯ button that floats over its end; a branch's number already steps aside.
+marquee($("library"), ".row, .folder-head", { find: (row) => row.querySelector(".name"), tail: (line) => (line.closest(".row") ? 34 : 0) });
 marquee($("sessions"), ".row, .folder-head", {
   find: (row) => row.querySelector(".name .base") ?? row.querySelector(".name"),
   tail: (line) => (line.closest(".row") && !line.classList.contains("base") ? 34 : 0),
@@ -1902,16 +2260,27 @@ marquee($("sessions"), ".row, .folder-head", {
 marquee($("now"), ".song h2, .song p", { tail: () => 16 });
 
 // A music history file dropped anywhere goes to import, which shows what it read before saving.
+// Images go with the next message instead, and the hint says which will happen.
 let dragDepth = 0;
 const hasFiles = (event) => [...(event.dataTransfer?.types ?? [])].includes("Files");
-window.addEventListener("dragenter", (event) => { if (!hasFiles(event)) return; dragDepth += 1; $("drop").hidden = false; });
-window.addEventListener("dragleave", (event) => { if (!hasFiles(event)) return; dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) $("drop").hidden = true; });
+const onlyImages = (list) => list.length > 0 && [...list].every((entry) => IMAGE_TYPES.has(entry.type));
+const hideDrops = () => { $("drop").hidden = true; };
+window.addEventListener("dragenter", (event) => {
+  if (!hasFiles(event)) return;
+  dragDepth += 1;
+  const images = onlyImages(event.dataTransfer.items ?? []);
+  $("drop-hint").textContent = t(images ? "dropToAttach" : "dropToImport");
+  setIcon($("drop"), images ? "plus" : "record");
+  $("drop").hidden = false;
+});
+window.addEventListener("dragleave", (event) => { if (!hasFiles(event)) return; dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) hideDrops(); });
 window.addEventListener("dragover", (event) => { if (hasFiles(event)) event.preventDefault(); });
 window.addEventListener("drop", (event) => {
   if (!hasFiles(event)) return;
   event.preventDefault();
   dragDepth = 0;
-  $("drop").hidden = true;
+  hideDrops();
+  if (onlyImages(event.dataTransfer.files)) { void attachImages(event.dataTransfer.files); return; }
   const file = event.dataTransfer.files[0];
   const path = file ? window.moondogApp?.pathForFile?.(file) : null;
   if (path) { send({ type: "import-file", path }); settings.show("library"); }
@@ -1926,13 +2295,15 @@ document.addEventListener("keydown", (event) => {
   if (event.target === input || event.target.closest?.("input, textarea")) return;
   if (event.key === " " && event.target.closest?.("button, a, select, [role=button]")) return;
   if (event.key === "Escape" && state.streaming) { send({ type: "cancel" }); return; }
+  if (event.key === "Escape" && state.shelf) { closePlaylist(); return; }
+  if (event.key === "Escape" && state.taste) { closeTaste(); return; }
   if (event.key.length === 1 && !event.metaKey && !event.ctrlKey && !event.altKey) input.focus();
 });
 // Commands from the menu bar.
 window.moondogApp?.onCommand?.((command) => {
   if (settings.open && !["settings", "stop", "toggle-playback", "next", "previous", "on-air"].includes(command)) return;
   // A command that shows the conversation, a panel or Settings first brings the window back from the record alone.
-  if (immersed() && ["new", "settings", "toggle-sidebar", "toggle-inspector", "toggle-record"].includes(command)) immerse(false);
+  if (immersed() && ["new", "settings", "toggle-sidebar", "toggle-library", "toggle-taste", "toggle-inspector", "toggle-record"].includes(command)) immerse(false);
   if (command === "new") openSession(null);
   if (command === "stop" && state.streaming) send({ type: "cancel" });
   if (command === "settings") settings.show();
@@ -1941,6 +2312,8 @@ window.moondogApp?.onCommand?.((command) => {
   if (command === "previous") control("previous", "menu");
   if (command === "on-air") toggleOnAir();
   if (command === "toggle-sidebar") togglePanel("sidebar");
+  if (command === "toggle-library") toggleLibrary();
+  if (command === "toggle-taste") toggleTaste();
   if (command === "toggle-inspector") togglePanel("inspector");
   if (command === "toggle-record") toggleRecord();
 });
@@ -1953,7 +2326,7 @@ function streamingTurn(id) {
 }
 const onScreen = (data) => !data.session || data.session === state.current;
 const SIGN_IN_ERRORS = { connect_while_answering: "waitForReply", sign_in_busy: "signInBusy" };
-const SETTINGS_MESSAGES = new Set(["models", "provider-models", "model-list", "endpoint", "devices", "memories", "auth-prompt", "auth-prompt-closed", "auth-event", "sign-in", "import", "notice", "netease-checked", "generation-checked", "generation-setup"]);
+const SETTINGS_MESSAGES = new Set(["models", "provider-models", "model-list", "model-roles", "endpoint", "devices", "memories", "auth-prompt", "auth-prompt-closed", "auth-event", "sign-in", "import", "notice", "netease-checked", "generation-checked", "generation-setup"]);
 function receive({ data }) {
   if (!data?.type) return;
   if (data.type === "preview" || data.type === "preview-control" || data.type === "preview-enqueue") { previews.receive(data); renderInspector(); return; }
@@ -1964,9 +2337,50 @@ function receive({ data }) {
     else void showDevices(data.devices ?? []);
   }
   if (data.type === "player-error") notice(t("noticePlaybackFailed"));
+  if (data.type === "library") {
+    state.library = { folders: data.folders ?? [], playlists: data.playlists ?? [] };
+    // A message's @ names are drawn from the library, which comes after the conversation at launch.
+    if (!state.libraryReady) { state.libraryReady = true; renderSidebarMode(); renderInspector(); if (!state.shelf && !state.taste) renderConversation({ redraw: true }); }
+    set($("library-add"), "hidden", false);
+    renderPlaceholder();
+    library.render();
+    shelf.render();
+  }
+  if (data.type === "library-playlist" && state.shelf?.id === data.id) {
+    // A playlist deleted here, in the terminal or by Moondog closes, and the conversation comes back.
+    if (!data.playlist) closePlaylist();
+    else { state.shelf.playlist = data.playlist; shelf.render(); renderPlaceholder(); }
+  }
+  if (data.type === "library-made" && data.id) openPlaylist(data.id);
+  // A playlist link read: one question, with whether it shapes the listener's taste beside it. A playlist they made
+  // starts checked; one a service or someone else made starts unchecked.
+  if (data.type === "library-import-preview") void askImport(data);
+  if (data.type === "library-imported") {
+    library.importDone();
+    if (data.playlist?.id) openPlaylist(data.playlist.id);
+    notice(data.taste === "added" ? t("importedWithTaste", { name: data.playlist?.name ?? "" }) : data.taste === "failed" ? t("importedTasteFailed")
+      : t("importedPlaylist", { name: data.playlist?.name ?? "" }));
+  }
+  if (data.type === "notice") library.importDone();
+  if (data.type === "library-saved") {
+    const now = nowPlaying();
+    if (now && data.playlist?.saved) keptNow = songKey(now);
+    const where = data.playlist?.saved ? t("saved") : data.playlist?.name ?? "";
+    notice(data.added ? (data.playlist?.saved ? t("keptInSaved") : t("savedTo", { name: where })) : t("alreadyIn", { name: where }));
+    renderInspector();
+  }
+  if (data.type === "library-played") {
+    if (data.state === "not_found" || data.state === "empty") notice(t(data.state === "empty" ? "playlistEmpty" : "noticeNothingFound"));
+    else if (data.left_out_made) notice(t("madeLeftOut"));
+    else if (data.not_found) notice(t("notFoundSome"));
+  }
   // The sheet shows its own sign-in errors. sign_in_busy is the exception: the sheet keeps the running panel.
   if (data.type === "sign-in" && data.state === "error" && !(settings.open && data.code !== "sign_in_busy")) notice(SIGN_IN_ERRORS[data.code] ? t(SIGN_IN_ERRORS[data.code]) : t("signInFailed"));
   if (data.type === "import" && data.stage === "refresh-failed") notice(t("importRefreshFailed"));
+  // The taste view and page show the core's profile; they ask again after an import or a reply, which can change it.
+  if (data.type === "taste") { state.tasteData = data; tasteList.render(); if (state.taste) taste.render(); }
+  if (data.type === "taste-why" || (data.type === "notice" && String(data.code).startsWith("taste"))) tasteList.receive(data);
+  if ((state.taste || views.showing("taste")) && ((data.type === "import" && data.stage === "done") || (data.type === "turn" && data.state !== "start"))) send({ type: "taste" });
   if (data.type === "notice") {
     // The core did not take this message. Put it back so the listener can send it again.
     const pending = state.turns.findLastIndex((turn) => turn.pending && (!data.text || turn.text === data.text));
@@ -1974,6 +2388,8 @@ function receive({ data }) {
       const [turn] = state.turns.splice(pending, 1);
       renderConversation();
       if (!input.value.trim()) { input.value = turn.text; renderComposer(); }
+      // Its images go back above the composer too.
+      if (turn.attachments?.length && !attachments.length) { attachments = turn.attachments; renderAttachments(); renderComposer(); }
     }
     if (data.message) console.warn(`[moondog] ${data.code}: ${data.message}`);
     // A refused switch leaves the open conversation marked as open.
@@ -2004,7 +2420,8 @@ function receive({ data }) {
   }
   if (data.type === "ready" || data.type === "session") {
     // A message waiting for the core stays on screen until the core takes it.
-    const waiting = data.type === "ready" ? state.turns.filter((turn) => turn.waiting) : [];
+    // So does a message starting its own conversation, until that conversation's turn starts.
+    const waiting = state.turns.filter((turn) => (data.type === "ready" && turn.waiting) || (data.type === "session" && turn.pending && turn.fresh));
     state.current = data.current ?? null;
     state.turns = [...(data.transcript ?? []).map((turn) => ({ ...turn })), ...waiting];
     state.streaming = null;
@@ -2048,8 +2465,10 @@ function receive({ data }) {
       if (cue) cue.seen = true;
       if (onAirAsk) onAirAsk.seen = true;
       const pending = state.turns.findLastIndex((turn) => turn.pending && turn.text === data.text);
-      if (pending >= 0) state.turns.splice(pending, 1);
-      state.turns.push({ role: "user", text: data.text }, { role: "assistant", id: data.id, text: "", activity: [], streaming: true });
+      // The bubble keeps the images the listener attached.
+      const [sent] = pending >= 0 ? state.turns.splice(pending, 1) : [];
+      state.turns.push({ role: "user", text: data.text, ...(sent?.images ? { images: sent.images } : {}) },
+        { role: "assistant", id: data.id, text: "", activity: [], streaming: true });
     } else {
       const turn = streamingTurn(data.id);
       if (turn) {

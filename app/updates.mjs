@@ -3,8 +3,8 @@
 // until the listener asks: one click downloads it and restarts into it once it is ready, after macOS
 // has validated it on a Mac.
 // macOS takes only a build signed by the same developer, and the download must match the checksum
-// its release lists. A beta version follows the releases GitHub marks as prereleases; a stable one,
-// only the others.
+// its release lists. The listener picks the channel in Settings: beta also takes the releases GitHub
+// marks as prereleases, stable only the others. Until they pick, a beta version follows beta.
 
 const EVERY_MS = 6 * 60 * 60_000;
 
@@ -18,9 +18,16 @@ const EVERY_MS = 6 * 60 * 60_000;
  * quitAndInstall then installs the build and quits: autoUpdater's own by default, as macOS does;
  * Windows and Linux pass their own (lifecycle.mjs).
  */
-export function createUpdates({ autoUpdater, squirrel, onChange, onRestart, beforeInstall = () => {}, platform = process.platform,
+export function createUpdates({ autoUpdater, squirrel, onChange, onRestart, beforeInstall = () => {}, platform = process.platform, beta = false,
   quitAndInstall = () => autoUpdater.quitAndInstall() }) {
   let state = { phase: "idle" };
+  let followsBeta = beta === true;
+  // Each change of channel starts a new generation. A check reports only for the generation it
+  // began in; electron-updater hands a second caller the check already running, so one that began
+  // in an older generation is followed by a fresh check for the channel chosen last.
+  let generation = 0;
+  let checkingFor = 0;
+  let running = null;
   let installing = false;
   let preparing = false;
   let nativeReady = false;
@@ -79,6 +86,8 @@ export function createUpdates({ autoUpdater, squirrel, onChange, onRestart, befo
     // A newer build is the listener's to fetch: a 150 MB download and a restart should not start unasked.
     autoUpdater.autoDownload = false;
     autoUpdater.autoInstallOnAppQuit = false;
+    // The chosen channel, not the installed version, decides whether prereleases count.
+    autoUpdater.allowPrerelease = followsBeta;
     // Trying an update before it is published: MOONDOG_UPDATE_FEED names a folder served over HTTP
     // that holds a newer build's zip and its latest-mac.yml. That install quits without relaunching,
     // because the relaunched app has none of the test's settings and would open the listener's profile.
@@ -88,6 +97,8 @@ export function createUpdates({ autoUpdater, squirrel, onChange, onRestart, befo
       autoUpdater.autoRunAppAfterInstall = false;
     }
     autoUpdater.on("update-available", ({ version }) => {
+      // A build from a check that began before the channel changed is not the listener's channel.
+      if (checkingFor !== generation) return;
       if (state.phase === "idle" || state.phase === "available") set({ phase: "available", version });
     });
     autoUpdater.on("download-progress", ({ percent }) => {
@@ -107,13 +118,26 @@ export function createUpdates({ autoUpdater, squirrel, onChange, onRestart, befo
 
   // "available", "current" or "failed". A check while one is downloading or ready changes nothing;
   // one while a build is offered can find a newer one.
-  async function check() {
-    if (!enabled) return "failed";
-    if (state.phase === "downloading" || state.phase === "ready") return "available";
-    try {
-      const result = await autoUpdater.checkForUpdates();
-      return result?.isUpdateAvailable ? "available" : "current";
-    } catch { return "failed"; }
+  function check() {
+    if (!enabled) return Promise.resolve("failed");
+    if (state.phase === "downloading" || state.phase === "ready") return Promise.resolve("available");
+    running ??= (async () => {
+      try {
+        for (;;) {
+          const mine = generation;
+          checkingFor = mine;
+          let answer;
+          try {
+            const result = await autoUpdater.checkForUpdates();
+            answer = result?.isUpdateAvailable ? "available" : "current";
+          } catch { answer = "failed"; }
+          if (mine === generation) return answer;
+          // The channel changed while this check ran: drop what it offered and look again.
+          if (state.phase === "available") set({ phase: "idle" });
+        }
+      } finally { running = null; }
+    })();
+    return running;
   }
 
   // Download and validate the offered build, then save each conversation and stop the core
@@ -139,5 +163,19 @@ export function createUpdates({ autoUpdater, squirrel, onChange, onRestart, befo
     setInterval(() => void check(), EVERY_MS);
   }
 
-  return { enabled, state: () => ({ ...state, installing }), check, install, start };
+  // A change of channel takes back a build offered from the other one, unless it is already
+  // downloading or downloaded, and looks again at once.
+  function setBeta(next) {
+    if (Boolean(next) === followsBeta) return followsBeta;
+    followsBeta = Boolean(next);
+    if (!enabled) return followsBeta;
+    autoUpdater.allowPrerelease = followsBeta;
+    generation += 1;
+    if (state.phase === "available") set({ phase: "idle" });
+    // A check already running looks again for this channel when it ends.
+    void check();
+    return followsBeta;
+  }
+
+  return { enabled, state: () => ({ ...state, installing }), check, install, start, beta: () => followsBeta, setBeta };
 }

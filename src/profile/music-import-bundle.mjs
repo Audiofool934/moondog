@@ -58,7 +58,9 @@ export function prepareMusicBundle({ provider, subjectId, capturedAt, rows, dige
           label: title, ...(artist ? { artist_credit: artist } : {}), ...(album ? { release: album } : {}) },
         observed_at: capturedAt,
         attributes: row.playlistId ? { playlist_name: musicText(row.playlistName) || "Selected playlist",
-          playlist_position: row.position ?? 1, playlist_id: String(row.playlistId), selected_public_playlist: true } : {},
+          playlist_position: row.position ?? 1, playlist_id: String(row.playlistId),
+          // A playlist the service says the listener made is theirs; any other one is only one they chose.
+          ...(row.listenerMade === true ? { listener_made: true } : { selected_public_playlist: true }) } : {},
         provenance: { source_kind: "import", source_system: provider, source_member: row.member,
           profile_import_id: profileId, captured_at: capturedAt },
       });

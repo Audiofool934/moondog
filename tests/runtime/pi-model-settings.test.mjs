@@ -170,7 +170,7 @@ test("models refresh one provider's public catalog and list effort levels", asyn
   assert.match(requests[0], /\/providers\/deepseek\?/u);
   const byId = Object.fromEntries(result.models.map(model => [model.id, model]));
   assert.deepEqual(byId["deepseek-flash"], { id: "deepseek-flash", name: "DeepSeek V4.1 Flash", contextWindow: 1_000_000,
-    reasoning: true, effortLevels: ["off", "low", "high", "max"], retained: true });
+    reasoning: true, vision: true, effortLevels: ["off", "low", "high", "max"], retained: true });
   assert.equal(byId["fictional-current"].retained, undefined);
   assert.ok(Array.isArray(byId["fictional-current"].effortLevels));
 

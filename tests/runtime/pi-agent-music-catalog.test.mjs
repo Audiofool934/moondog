@@ -1075,3 +1075,24 @@ test("Pi agent never renders external discovery candidates without local plannin
   assert.match(result.text, /无法验证这次 playlist plan/u);
   application.close();
 });
+
+test("a reply in another language is restated before the host appends its citations", async () => {
+  const application = musicCatalogApplication();
+  const faux = fauxProvider();
+  const models = createModels();
+  models.setProvider(faux.provider);
+  faux.setResponses([
+    fauxAssistantMessage([fauxToolCall("moondog_music_artist_releases", { artist: "刘森", known_release: "华北浪革", limit: 4 })], { stopReason: "toolUse" }),
+    fauxAssistantMessage([fauxText("Apple Music US 显示刘森最新已发行单曲为《天长地久》。")]),
+  ]);
+  const runtime = new PiAgentRuntime({ application, models, model: faux.getModel(), provider: "faux", modelId: "faux-1" });
+  runtime.models = { completeSimple: async () => ({ stopReason: "stop", content: [{ type: "text", text: "Apple Music US lists 天长地久 as Liu Sen's latest released single." }] }) };
+  let rendered = "";
+  const result = await runtime.prompt("What is the latest single by this artist, please?", {
+    onTextDelta: (delta) => { rendered += delta; },
+    onTextReplace: (replacement) => { rendered = replacement; },
+  });
+  assert.match(result.text, /^Apple Music US lists 天长地久 as Liu Sen's latest released single\./u);
+  assert.ok(result.music_world_citations?.length > 0, "the host's citations stay");
+  assert.equal(rendered, result.text);
+});

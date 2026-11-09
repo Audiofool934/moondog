@@ -186,6 +186,41 @@ img { -webkit-user-drag: none; }
 /* ── Conversations ────────────────────────────────────────────────────────────────────────── */
 .sidebar { display: flex; flex-direction: column; padding-top: var(--bar); }
 .sidebar > .frame { flex: 1; }
+/* The sidebar's views. As tabs, a row of two quiet icons above the one showing; split, each has a caption-sized
+   header like the list's own captions, and a grip between them that is only a hairline on hover. */
+.view-tabs { flex: none; display: flex; gap: 2px; padding: 2px 10px 4px; }
+.view-tab[aria-selected="true"] { color: var(--text); background: var(--current); }
+/* As tabs, the library's new button sits at the row's end instead of the bar above its list. */
+.view-add { margin-inline-start: auto; }
+.view-add.busy .icon, .view-head-add.busy .icon { animation: breathe 1.6s ease-in-out infinite; }
+/* Split, each header ends in its view's +, the size of a row's ⋯. */
+.view-head-add { width: 22px; height: 22px; margin-inline-start: auto; margin-block: -3px; border-radius: var(--r-1); }
+.view-head-add .icon { width: 13px; height: 13px; }
+.view-head { display: flex; align-items: center; gap: 7px; }
+.view-head .icon { width: 13px; height: 13px; flex: none; }
+/* A header is its part's switcher: a small chevron after the name says it opens. */
+.view-head .view-chevron { width: 10px; height: 10px; margin-inline-start: -3px; color: var(--text-4); transform: rotate(90deg); }
+.view-head:hover .view-chevron { color: var(--text-3); }
+.view-head.drop-target { color: var(--text); }
+.views { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.view { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; }
+.view > .frame { flex: 1; min-height: 0; }
+.view-head { flex: none; margin: 4px 10px 0; padding: 4px 10px; border-radius: var(--r-2); font-size: var(--t-caption); font-weight: 600; color: var(--text-3);
+  letter-spacing: 0.01em; cursor: default; user-select: none; }
+.view-head:hover { color: var(--text-2); }
+.view-head:focus-visible { outline: none; color: var(--text); background: var(--hover); }
+.view-grip { flex: none; height: 9px; cursor: row-resize; position: relative; }
+/* The grip always shows its line, faintly, so the two parts read as two; it darkens under the pointer and while held. */
+.view-grip::after { content: ""; position: absolute; left: 20px; right: 20px; top: 4px; height: 1px; background: var(--line); transition: background-color var(--quick) var(--soft); }
+.view-grip:hover::after, .view-grip.dragging::after { background: var(--line-2); transition-delay: 80ms; }
+.view-grip.dragging::after { background: var(--text-4); }
+/* Dragging a view: the part of the sidebar it would land in takes a breath of ink. */
+.view-drop-top .views, .view-drop-bottom .views { position: relative; }
+.view-drop-top .views::before, .view-drop-bottom .views::before { content: ""; position: absolute; left: 6px; right: 6px; height: 50%; border-radius: var(--r-3);
+  background: var(--press); pointer-events: none; z-index: 1; }
+.view-drop-top .views::before { top: 0; }
+.view-drop-bottom .views::before { bottom: 0; }
+.view-drop-tabs .view-tabs, .views-split.view-drop-tabs .views { background: var(--hover); border-radius: var(--r-2); }
 /* The list fades out at its foot into whatever light is behind it. */
 .sessions { height: 100%; overflow-y: auto; scrollbar-width: none; overscroll-behavior: contain; padding: 6px 10px 16px;
   mask-image: linear-gradient(to bottom, #000 calc(100% - 18px), transparent); }
@@ -247,6 +282,196 @@ img { -webkit-user-drag: none; }
 .drag-ghost .count { flex: none; margin-inline-end: 10px; font-size: var(--t-caption); color: var(--text-3); font-variant-numeric: tabular-nums; }
 .sidebar > .connect-line { width: auto; align-self: flex-start; margin: 0 10px 12px 12px; }
 
+/* ── The library ──────────────────────────────────────────────────────────────────────────── */
+/* The same rows as the conversations. Each level steps in by the width of a folder's chevron, so a playlist's
+   sleeve sits under its folder's icon; Saved stands a little apart above the listener's own. */
+.tool[data-toggle-library][aria-pressed="true"] { color: var(--text); }
+.library .row .open { padding-inline-start: calc(10px + var(--depth, 0) * 18px); }
+.library .folder-toggle { padding-inline-start: calc(10px + var(--depth, 0) * 18px); }
+.library .folder, .library .folder + .folder { margin-top: 0; }
+.library .rename { width: calc(100% - var(--depth, 0) * 18px); margin-inline-start: calc(var(--depth, 0) * 18px); }
+.library .saved-row { margin-bottom: 10px; }
+.library .sleeve { width: 16px; height: 16px; flex: none; display: grid; place-items: center; border-radius: 3px; overflow: hidden; color: var(--text-3); }
+.library .sleeve img { width: 100%; height: 100%; object-fit: cover; display: block; box-shadow: var(--edge); }
+.library .sleeve .icon { width: 15px; height: 15px; }
+.library .loose { min-height: 48px; }
+/* While a playlist or folder is dragged, the row it would land before shows a hairline above it. */
+.drop-before { box-shadow: inset 0 2px 0 var(--text-4); }
+
+/* A playlist in the room, in the conversation's place. */
+.room.shelving > .frame { display: none; }
+.room.shelving > .stage { position: absolute; visibility: hidden; pointer-events: none; }
+.room.shelving.empty { justify-content: flex-start; padding-bottom: 0; }
+.shelf { position: relative; flex: 1; min-height: 0; }
+.shelf-scroll { height: 100%; overflow-y: auto; scrollbar-width: none; overscroll-behavior: contain; padding: calc(var(--bar) + 26px) 44px 28px;
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent); }
+.shelf-head, .shelf-tracks, .shelf-empty { max-width: var(--column); margin-inline: auto; }
+.shelf-head { display: flex; align-items: flex-end; gap: 24px; margin-bottom: 26px; }
+.shelf-art { position: relative; width: 168px; aspect-ratio: 1; flex: none; border-radius: var(--r-1); overflow: hidden; background: var(--hover); box-shadow: var(--sleeve); }
+.shelf-art img { width: 100%; height: 100%; object-fit: cover; display: block; animation: cover-in 420ms var(--out) both; }
+.shelf-art.blank-art { display: grid; place-items: center; color: var(--text-4); box-shadow: var(--edge); }
+.shelf-art.blank-art .icon { width: 44px; height: 44px; }
+.shelf-meta { min-width: 0; flex: 1; padding-bottom: 2px; }
+.shelf-name, .shelf-rename { margin: 0; font-size: 24px; font-weight: 600; line-height: 1.25; letter-spacing: -0.015em; color: var(--text);
+  overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.shelf-rename { width: 100%; margin-inline-start: -6px; padding: 0 6px; border: 0; outline: 0; border-radius: var(--r-2); font-family: inherit;
+  background: var(--glass); box-shadow: inset 0 0 0 1px var(--line-2); }
+.shelf-count { margin: 6px 0 0; font-size: var(--t-small); color: var(--text-3); font-variant-numeric: tabular-nums; }
+.shelf-actions { display: flex; align-items: center; gap: 6px; margin-top: 16px; }
+.shelf-play { width: 36px; height: 36px; display: grid; place-items: center; flex: none; border-radius: 50%; background: var(--solid); color: var(--on-solid);
+  transition: transform var(--quick) var(--soft), background-color var(--quick) var(--soft); }
+.shelf-play:hover { background: var(--text); transform: scale(1.04); transition: none; }
+.shelf-play:active { transform: scale(0.97); }
+.shelf-play:disabled { opacity: 0.35; transform: none; pointer-events: none; }
+.shelf-play.disc:hover { transform: none; }
+.shelf-play .icon:not(.disc-glyph) { width: 16px; height: 16px; }
+.shelf-tracks { list-style: none; margin-block: 0; padding: 0; display: grid; gap: 1px; min-height: 40px; }
+.shelf-row { position: relative; display: flex; align-items: center; border-radius: var(--r-2); outline: 0; transition: background-color var(--quick) var(--soft); }
+.shelf-row:hover { background: var(--hover); transition: none; }
+.shelf-row.selected { background: var(--current); }
+.shelf-open { flex: 1; min-width: 0; display: grid; grid-template-columns: 22px 36px minmax(0, 1fr); align-items: center; gap: 12px;
+  padding: 6px 38px 6px 6px; text-align: start; border-radius: var(--r-2); }
+.shelf-index { font-size: var(--t-small); color: var(--text-4); text-align: end; font-variant-numeric: tabular-nums; }
+.shelf-row .sleeve { width: 36px; height: 36px; border-radius: 3px; overflow: hidden; background: var(--hover); box-shadow: var(--edge); }
+.shelf-row .sleeve img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.shelf-words { display: grid; min-width: 0; }
+.shelf-words strong, .shelf-words span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.shelf-words strong { font-size: var(--t-ui); font-weight: 500; color: var(--text); }
+.shelf-words span { font-size: var(--t-small); color: var(--text-3); }
+.shelf-row .more { position: absolute; right: 8px; top: 50%; translate: 0 -50%; width: 22px; height: 22px; display: grid; place-items: center;
+  border-radius: var(--r-1); color: var(--text-3); opacity: 0; }
+.shelf-row:hover .more, .shelf-row.selected .more, .shelf-row .more:focus-visible { opacity: 1; }
+.shelf-row .more:hover { background: var(--press); color: var(--text); }
+/* A made track whose audio a stream already let go keeps its place and receipt, faded. */
+.shelf-row.gone .shelf-open { opacity: 0.45; }
+.shelf-empty { margin-top: 6px; padding-inline-start: 6px; font-size: var(--t-ui); color: var(--text-3); }
+
+/* The listener's taste, in the room in the conversation's place as a playlist is: the profile, the reading,
+   and the artists and tracks it rests on. Spacing groups it; nothing has a ground or a line of its own. */
+.taste { position: relative; flex: 1; min-height: 0; }
+/* The page fades under the title bar as the conversation does, so its words never run under the bar's controls. */
+.taste-scroll { height: 100%; overflow-y: auto; scrollbar-width: none; overscroll-behavior: contain; padding: calc(var(--bar) + 26px) 44px 28px;
+  mask-image: linear-gradient(to bottom, transparent 0, transparent calc(var(--bar) - 14px), #000 calc(var(--bar) + 14px), #000 calc(100% - 24px), transparent); }
+/* One left edge for the whole page: the column is as wide as the record and its notes, and the words in it
+   keep a reading width. */
+.taste-column { max-width: 960px; margin-inline: auto; }
+.taste-reading, .taste-filters, .taste-list, .taste-empty, .taste-column > .taste-note { max-width: var(--column); }
+.taste-scroll { container-type: inline-size; }
+.taste-head { margin-bottom: 26px; }
+.taste-title { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; }
+.taste-name { margin: 0; font-size: 24px; font-weight: 600; line-height: 1.25; letter-spacing: -0.015em; color: var(--text); }
+.taste-overview { max-width: var(--column); margin: 8px 0 0; font-size: var(--t-small); line-height: 1.6; color: var(--text-3); font-variant-numeric: tabular-nums; text-wrap: pretty; }
+.taste-heading { margin: 0 0 10px; font-size: var(--t-small); font-weight: 600; color: var(--text-2); }
+.taste-reading { margin-bottom: 34px; }
+.taste-summary { margin: 0 0 16px; font-family: var(--serif); font-size: var(--t-reply); line-height: 1.7; color: var(--text); text-wrap: pretty; }
+.taste-findings { margin: 0 0 14px; padding-inline-start: 22px; display: grid; gap: 10px; }
+.taste-findings li { font-size: var(--t-body); line-height: 1.55; color: var(--text); }
+.taste-findings li::marker { font-size: var(--t-small); color: var(--text-4); font-variant-numeric: tabular-nums; }
+.taste-findings p { margin: 0; text-wrap: pretty; }
+.taste-findings span { display: block; margin-top: 2px; font-size: var(--t-small); color: var(--text-3); }
+.taste-note { margin: 0; font-size: var(--t-small); line-height: 1.5; color: var(--text-3); }
+.taste-empty p { margin: 0 0 4px; font-size: var(--t-ui); color: var(--text-3); }
+.taste-filters { display: flex; flex-wrap: wrap; gap: 2px; margin-bottom: 8px; margin-inline-start: -8px; }
+.taste-filter { height: 26px; padding: 0 8px; display: inline-flex; align-items: center; gap: 6px; border-radius: var(--r-2); font-size: var(--t-small);
+  font-weight: 500; color: var(--text-3); transition: background-color var(--quick) var(--soft), color var(--quick) var(--soft); }
+.taste-filter:hover { background: var(--hover); color: var(--text); transition: none; }
+.taste-filter[aria-pressed="true"] { background: var(--current); color: var(--text); }
+.taste-count { color: var(--text-4); font-variant-numeric: tabular-nums; }
+.taste-filter[aria-pressed="true"] .taste-count { color: var(--text-3); }
+.taste-list { list-style: none; margin: 0 0 0 -8px; padding: 0; display: grid; gap: 1px; }
+.taste-row { border-radius: var(--r-2); transition: background-color var(--quick) var(--soft); }
+.taste-row:hover, .taste-row.open { background: var(--hover); transition: none; }
+.taste-open { width: 100%; min-height: 44px; padding: 6px 8px; display: flex; align-items: center; gap: 12px; border-radius: var(--r-2); text-align: start; }
+.taste-words { flex: 1; min-width: 0; display: grid; }
+.taste-words strong, .taste-words span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.taste-words strong { font-size: var(--t-ui); font-weight: 500; color: var(--text); }
+.taste-words span { font-size: var(--t-small); color: var(--text-3); }
+.taste-stance { flex: none; font-size: var(--t-small); color: var(--text-2); }
+.taste-stance.avoid { color: var(--text-3); }
+.taste-detail { padding: 0 8px 10px; display: grid; gap: 4px; }
+.taste-detail > p { margin: 0; font-size: var(--t-small); line-height: 1.5; color: var(--text-2); }
+.taste-why { margin-top: 6px; display: grid; gap: 4px; }
+.taste-why p { margin: 0; font-size: var(--t-small); line-height: 1.5; color: var(--text-2); text-wrap: pretty; }
+.taste-why .taste-label { margin-top: 4px; font-weight: 600; }
+.taste-why .taste-limit { color: var(--text-3); }
+.taste-actions { display: flex; flex-wrap: wrap; gap: 2px; margin: 6px 0 0 -9px; }
+.taste-list + .taste-note { margin-top: 6px; }
+
+/* Your taste in the sidebar: the artists and tracks the profile rests on, at the sidebar's own row size, with the
+   filters as a quiet row above them and a row's evidence and choices unfolding under it. */
+.taste-side .taste-filters { margin: 2px 0 8px; gap: 1px; max-width: none; }
+.taste-side .taste-filters { flex-wrap: nowrap; }
+.taste-side .taste-filter { height: 24px; padding: 0 7px; flex: none; }
+.taste-side .taste-count { display: none; }
+.taste-side .taste-list { margin: 0; max-width: none; }
+.taste-side .taste-row { margin-bottom: 1px; }
+.taste-side .taste-row[aria-current="true"], .taste-side .taste-row.open { background: var(--current); }
+.taste-side .taste-open { min-height: 40px; padding: 5px 10px; gap: 8px; }
+.taste-side .taste-words strong { font-size: var(--t-ui); font-weight: 400; color: var(--text-2); }
+.taste-side .taste-row:hover .taste-words strong, .taste-side .taste-row.open .taste-words strong { color: var(--text); }
+.taste-side .taste-words span { font-size: var(--t-caption); }
+/* Unfolded, a row's details say in full what its one line summed up. */
+.taste-side .taste-row.open .taste-words span { display: none; }
+.taste-side .taste-stance { font-size: var(--t-caption); }
+.taste-side .taste-detail { padding: 0 10px 10px; }
+.taste-side .taste-detail > p, .taste-side .taste-why p { font-size: var(--t-caption); }
+.taste-side .taste-actions { margin: 6px 0 0 -9px; }
+.taste-side-note { margin: 4px 10px; font-size: var(--t-small); line-height: 1.5; color: var(--text-3); }
+
+/* The record of the listener's history: wider than the words, up to the room's width, with its liner notes
+   beside it where the room has space and under it where it doesn't. */
+.pressing { margin: 0 0 52px; display: grid; gap: 22px 40px; align-items: start; }
+.pressing[hidden] { display: none; }
+@container (min-width: 760px) { .pressing { grid-template-columns: minmax(0, 1fr) 280px; } .pressing-notes { position: sticky; top: 0; } }
+.pressing-deck { min-width: 0; display: grid; justify-items: center; }
+.pressing-range { justify-self: stretch; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 16px; min-height: 28px; }
+.pressing-crumbs, .pressing-presets { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; margin-inline-start: -8px; }
+.pressing-presets { margin-inline: 0 -8px; }
+.pressing-range button { height: 26px; padding: 0 8px; border-radius: var(--r-2); font-size: var(--t-small); font-weight: 500; color: var(--text-3); font-variant-numeric: tabular-nums;
+  transition: background-color var(--quick) var(--soft), color var(--quick) var(--soft); }
+.pressing-range button:hover { background: var(--hover); color: var(--text); transition: none; }
+.pressing-crumbs button[aria-current="true"] { color: var(--text); cursor: default; }
+.pressing-crumbs button[aria-current="true"]:hover { background: none; }
+.pressing-presets button[aria-pressed="true"] { background: var(--current); color: var(--text); }
+.pressing-crumbs .chev { font-size: var(--t-small); color: var(--text-4); }
+.pressing-platter { position: relative; }
+.pressing-platter canvas { display: block; touch-action: none; outline: 0; transition: opacity 240ms var(--out), scale 420ms var(--out); }
+.pressing-platter canvas.grab { cursor: grab; }
+.pressing-platter canvas.dragging { cursor: grabbing; }
+.pressing-platter canvas.pressing-out { opacity: 0; scale: 0.97; transition-duration: 140ms; }
+.pressing-label { position: absolute; translate: -50% -50%; text-align: center; pointer-events: none; font-variant-numeric: tabular-nums; }
+.pressing-label strong { display: block; font-size: var(--t-small); font-weight: 600; color: var(--text-2); white-space: nowrap; }
+.pressing-label span { display: block; margin-top: 18px; font-size: var(--t-caption); color: var(--text-4); white-space: nowrap; }
+.pressing-readout { min-height: 40px; text-align: center; font-variant-numeric: tabular-nums; }
+.pressing-readout strong { display: block; font-size: var(--t-ui); font-weight: 500; color: var(--text); }
+.pressing-readout span { font-size: var(--t-small); color: var(--text-3); }
+.pressing-hint { margin: 8px 0 0; max-width: 460px; font-size: var(--t-caption); line-height: 1.5; color: var(--text-4); text-align: center; text-wrap: balance; }
+.pressing-notes { min-width: 0; padding-top: 34px; }
+.pressing-notes .era { font-size: 20px; font-weight: 600; letter-spacing: -0.012em; line-height: 1.2; color: var(--text); font-variant-numeric: tabular-nums; }
+.pressing-notes .era-sub { margin: 6px 0 0; font-size: var(--t-small); color: var(--text-3); font-variant-numeric: tabular-nums; }
+.pressing-notes .label { margin: 20px 0 8px; font-size: var(--t-small); font-weight: 600; color: var(--text-2); }
+.pressing-notes .song { margin: 0; font-family: var(--serif); font-size: var(--t-reply); line-height: 1.5; color: var(--text); }
+.pressing-notes .song span { display: block; font-family: var(--sans); font-size: var(--t-small); color: var(--text-3); }
+.pressing-notes .people { list-style: none; margin: 0 -8px; padding: 0; display: grid; gap: 1px; }
+.pressing-notes .person { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 4px 12px; padding: 6px 8px; border-radius: var(--r-2);
+  transition: background-color var(--quick) var(--soft); }
+.pressing-notes .person:hover, .pressing-notes .person.on { background: var(--hover); transition: none; }
+.pressing-notes .person strong { font-size: var(--t-ui); font-weight: 500; color: var(--text); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.pressing-notes .person em { font-style: normal; font-size: var(--t-small); color: var(--text-3); white-space: nowrap; }
+.pressing-notes .person canvas { grid-column: 1 / -1; display: block; }
+.pressing-notes .caption { margin: 10px 0 0; font-size: var(--t-caption); line-height: 1.5; color: var(--text-4); }
+.pressing-notes .toggle { margin: 12px 0 0 -9px; height: 26px; padding: 0 9px; border-radius: var(--r-2); font-size: var(--t-small); font-weight: 500; color: var(--text-3); }
+.pressing-notes .toggle:hover { background: var(--hover); color: var(--text); }
+.pressing-notes .toggle[aria-pressed="true"] { background: var(--current); color: var(--text); }
+@media (prefers-reduced-motion: reduce) { .pressing-platter canvas { transition: none; } }
+@media (max-width: 720px) {
+  .shelf-scroll { padding-inline: 24px; }
+  .shelf-art { width: 120px; }
+  .shelf-name, .shelf-rename { font-size: 20px; }
+  .taste-scroll { padding-inline: 24px; }
+  .taste-name { font-size: 20px; }
+}
+
 /* ── The conversation ─────────────────────────────────────────────────────────────────────── */
 .room { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .room > .frame { flex: 1; }
@@ -293,6 +518,17 @@ img { -webkit-user-drag: none; }
 
 .turn { margin: 0 0 30px; }
 .you { position: relative; display: flex; justify-content: flex-end; margin: 0 0 30px; }
+/* A message with images shows them above its words, on the same right edge. */
+.you:has(.you-images) { flex-direction: column; align-items: flex-end; gap: 6px; }
+.you-images { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; max-width: 78%; }
+/* An image opens at full size over the window, on the same scrim as Settings; a click or Escape closes it. */
+.you-image, .attachment-open { display: block; padding: 0; border: 0; background: none; cursor: zoom-in; border-radius: var(--r-4); }
+.attachment-open { width: 100%; height: 100%; border-radius: inherit; overflow: hidden; }
+.lightbox { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; padding: 48px; background: var(--scrim);
+  -webkit-backdrop-filter: blur(8px) saturate(1.1); backdrop-filter: blur(8px) saturate(1.1); -webkit-app-region: no-drag; cursor: zoom-out; }
+.lightbox[hidden] { display: none; }
+.lightbox img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: var(--r-3); box-shadow: 0 12px 48px rgb(0 0 0 / 0.35); }
+.you-images img { max-width: 180px; max-height: 180px; border-radius: var(--r-4) var(--r-4) var(--r-1) var(--r-4); box-shadow: var(--glass-edge); display: block; }
 /* Copy, Edit on your own messages and Branch on replies sit just under a message while the pointer is
    on it. They take no room of their own, so the conversation never shifts when they appear. */
 .message-tools { position: absolute; top: 100%; display: flex; gap: 2px; margin-top: 2px; opacity: 0;
@@ -382,9 +618,22 @@ img { -webkit-user-drag: none; }
 
 /* ── The composer ─────────────────────────────────────────────────────────────────────────── */
 .composer { position: relative; flex: none; padding: 4px 44px 18px; }
+/* Images waiting for the next message sit just above the field, their left edge where its words begin.
+   Each takes off with a mark just outside its top right corner, shown while the pointer is on it. */
+.attachments { max-width: var(--column); margin: 0 auto 8px; padding: 8px 16px 0; display: flex; flex-wrap: wrap; gap: 14px; }
+.attachments[hidden] { display: none; }
+.attachment { position: relative; width: 64px; height: 64px; border-radius: var(--r-3); background: var(--glass); box-shadow: var(--glass-edge); }
+.attachment img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.attachment-remove { position: absolute; top: -7px; right: -7px; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 50%; display: grid; place-items: center;
+  color: var(--canvas); background: var(--text); box-shadow: 0 0 0 2px var(--canvas); cursor: pointer; opacity: 0; transition: opacity var(--quick) var(--soft); }
+.attachment-remove .icon { width: 11px; height: 11px; stroke-width: 2.2; }
+.attachment:hover .attachment-remove, .attachment-remove:focus-visible { opacity: 1; transition: none; }
 .field { position: relative; max-width: var(--column); margin: 0 auto; display: flex; align-items: flex-end; gap: 4px; padding: 8px 8px 8px 16px;
   border-radius: var(--r-4); background: var(--glass); box-shadow: var(--glass-edge); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
   transition: box-shadow 160ms var(--soft); }
+/* The library's + stands where the words begin, so the field's left edge gives it the room. */
+.field:has(.library-add:not([hidden])) { padding-inline-start: 8px; }
+.library-add { margin-inline-end: 4px; }
 .field:focus-within { box-shadow: var(--glass-edge), inset 0 0 0 1px rgb(var(--ink-rgb) / 0.12); }
 .field textarea { flex: 1; min-width: 96px; resize: none; border: 0; outline: 0; background: transparent; color: var(--text); font-size: var(--t-body); line-height: 1.55;
   field-sizing: content; min-height: 28px; max-height: 40vh; padding: 3px 0 2px; overflow-y: auto; scrollbar-width: none; }
@@ -400,11 +649,30 @@ img { -webkit-user-drag: none; }
 .pick.needed { padding: 0 9px; color: var(--text); background: var(--hover); font-weight: 500; }
 .pick.needed:hover { background: var(--press); }
 .pick[hidden] { display: none; }
-.send { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; flex: none; background: var(--solid); color: var(--on-solid);
+.send { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; flex: none; background: var(--solid); color: var(--on-solid);
   transition: background-color 140ms var(--soft), transform 90ms var(--soft); }
 .send:active { transform: scale(0.92); }
 .send:disabled { background: rgb(var(--ink-rgb) / 0.12); color: var(--surface); }
-.send .icon { width: 15px; height: 15px; stroke-width: 2; }
+.send .icon:not(.disc-glyph) { width: 15px; height: 15px; stroke-width: 2; }
+
+/* A record button (disc.mjs): no ground of its own. Its grooves and label are ink, its glyph is paper, and the
+   label's edge is crisp against the dots around it. While what it started is going, two glints turn round the
+   grooves; with reduced motion they stay where they are. A disabled one is a pale blank disc. */
+.disc, .disc:hover, .disc:disabled { background: none; }
+.disc { color: var(--solid); }
+.disc-art { display: block; overflow: visible; }
+.disc-art circle { fill: currentColor; transition: fill-opacity 160ms var(--soft); }
+.disc-art .disc-label { fill: var(--solid); transition: fill 140ms var(--soft); }
+.disc .disc-glyph { color: var(--on-solid); }
+.disc-glyph.icon { stroke-width: 1.6; }
+.disc-glints { opacity: 0; transform-box: view-box; transform-origin: 50% 50%; transition: opacity 400ms var(--soft); }
+.disc.turning .disc-glints { opacity: 1; animation: disc-turn 4.8s linear infinite; }
+@keyframes disc-turn { to { rotate: 1turn; } }
+@media (prefers-reduced-motion: reduce) { .disc.turning .disc-glints { animation: none; } }
+.disc:disabled .disc-grooves, .disc:disabled .disc-glints { opacity: 0; }
+.disc:disabled .disc-label { fill: rgb(var(--ink-rgb) / 0.12); }
+.disc:disabled .disc-glyph { color: var(--surface); }
+.disc:hover:not(:disabled) .disc-label { fill: var(--text); }
 .jump { position: absolute; left: 50%; bottom: calc(100% + 8px); width: 32px; height: 32px; margin-left: -16px; border-radius: 50%; display: grid; place-items: center;
   background: var(--glass); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); color: var(--text-2); box-shadow: var(--glass-edge);
   z-index: 3; animation: pop var(--enter) var(--out) both; }
@@ -414,10 +682,17 @@ img { -webkit-user-drag: none; }
 
 /* Slash commands open above the composer, as a short menu. */
 .palette { position: absolute; inset: auto 0 calc(100% + 8px) 0; z-index: 4; max-height: 360px; overflow-y: auto; scrollbar-width: none; padding: 4px;
-  border-radius: var(--r-3); background: color-mix(in srgb, var(--raised) 82%, transparent); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
+  border-radius: var(--r-3); background: color-mix(in srgb, var(--raised) 97%, transparent); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
   box-shadow: var(--float); animation: rise 150ms var(--out) both; }
 .palette-item { display: flex; align-items: center; gap: 12px; height: 32px; padding: 0 10px; border-radius: var(--r-2); font-size: var(--t-ui); color: var(--text); }
 .palette-item.on { background: var(--current); }
+.mention-sleeve { width: 20px; height: 20px; flex: none; display: grid; place-items: center; border-radius: 3px; overflow: hidden; color: var(--text-3); }
+.mention-sleeve img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.mention-sleeve .icon { width: 14px; height: 14px; }
+.mention-name { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+/* What a message names from the library, in its own words. */
+.mention { display: inline; padding: 0; font: inherit; font-weight: 500; color: inherit; user-select: text; }
+button.mention:hover { text-decoration: underline; text-underline-offset: 2px; }
 .palette-command { font: 12.5px var(--mono); color: var(--text); white-space: nowrap; }
 .palette-name { min-width: 0; margin-inline-start: auto; font-size: var(--t-small); color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
@@ -444,10 +719,14 @@ img { -webkit-user-drag: none; }
 .corner[data-pin][aria-pressed="true"] .icon { transform: none; transition: none; }
 .corner[aria-pressed="true"] { color: var(--text); }
 .immersive.hovered .corner, .corner:focus-visible { opacity: 1; transition-duration: 160ms; }
+/* A file over the window blurs all of it, with no frame to meet the window's edge: a drop anywhere
+   works, an image going with the next message and anything else to import. */
 .drop { position: absolute; inset: 0; z-index: 20; display: grid; place-items: center; align-content: center; gap: 16px;
-  background: color-mix(in srgb, var(--canvas) 92%, transparent); pointer-events: none; animation: rise 160ms var(--out) both; }
-.drop::before { content: ""; position: absolute; inset: 16px; border: 1.5px dashed var(--line-2); border-radius: var(--r-4); }
+  background: color-mix(in srgb, var(--canvas) 62%, transparent); -webkit-backdrop-filter: blur(14px) saturate(1.1); backdrop-filter: blur(14px) saturate(1.1);
+  pointer-events: none; animation: drop-in 160ms var(--out) both; }
+@keyframes drop-in { from { opacity: 0; } }
 .drop .icon { width: 44px; height: 44px; color: var(--text-3); stroke-width: 1.2; }
+.drop[hidden] { display: none; }
 .drop p { margin: 0; font-family: var(--serif); font-size: 22px; color: var(--text); }
 
 /* ── What is playing ──────────────────────────────────────────────────────────────────────── */
@@ -465,7 +744,11 @@ img { -webkit-user-drag: none; }
 .art .blank { position: absolute; inset: 0; display: grid; place-items: center; padding: 0 24px; text-align: center; text-wrap: balance;
   font-size: var(--t-small); color: var(--text-3); }
 .song:has(h2:empty) { display: none; }
-.song { margin-top: 18px; min-width: 0; }
+.song { position: relative; margin-top: 18px; min-width: 0; }
+/* The heart keeps the song in Saved; it sits at the title's end and the title shortens before it. */
+.song .keep { position: absolute; right: -5px; top: -4px; }
+.song .keep[aria-pressed="true"] { color: var(--text); }
+.song:has(.keep:not([hidden])) h2 { padding-inline-end: 28px; }
 /* Each of the three lines stays one line; a long one rolls into view under the pointer (ui.mjs). */
 .song h2 { margin: 0; font-size: var(--t-song); font-weight: 600; line-height: 1.3; letter-spacing: -0.008em;
   overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }

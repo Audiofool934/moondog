@@ -8,6 +8,11 @@ const catalog = [
     agent_tool: { name: "moondog_playback_service", label: N_("Choose a music service") },
   },
   {
+    id: "settings", version: "1", state: "enabled", effect: "write_local",
+    description: "Read Moondog's own setup (model, music service, reply language) and change the settings the listener may change by asking.",
+    agent_tool: { name: "moondog_settings", label: N_("Read or change Moondog's settings") },
+  },
+  {
     id: "spotify.discovery.search", version: "1", state: "enabled", effect: "read_external", requires_spotify: true,
     description: "Verify open-world music hypotheses with bounded Spotify queries, retaining a shared candidate pool.",
     agent_tool: { name: "moondog_spotify_discover", label: N_("Discover verified Spotify tracks") },
@@ -599,6 +604,61 @@ const catalog = [
     agent_tool: {
       name: "moondog_spotify_playlist_write",
       label: N_("Save the playlist to Spotify"),
+    },
+  },
+  {
+    id: "collection.list",
+    version: "1",
+    state: "enabled",
+    effect: "read_local",
+    description: "Find playlists in the listener's own library on this Mac, by name, with what each holds.",
+    agent_tool: {
+      name: "moondog_collection_list",
+      label: N_("Look in the library"),
+    },
+  },
+  {
+    id: "collection.save",
+    version: "1",
+    state: "enabled",
+    effect: "write_local",
+    description: "Keep songs or tracks Moondog made in the listener's library on this Mac: in Saved, in one of their playlists, or in a new playlist.",
+    agent_tool: {
+      name: "moondog_collection_save",
+      label: N_("Save to the library"),
+    },
+  },
+  {
+    id: "collection.edit",
+    version: "1",
+    state: "enabled",
+    effect: "write_local",
+    description: "Rename one of the listener's playlists on this Mac, take songs out of it, or move songs within it, when they ask.",
+    agent_tool: {
+      name: "moondog_collection_edit",
+      label: N_("Change a playlist"),
+    },
+  },
+  {
+    id: "collection.import",
+    version: "1",
+    state: "enabled",
+    effect: "write_local",
+    description: "Import a playlist link from Spotify, Apple Music, NetEase Music or QQ Music into the listener's library on this Mac.",
+    agent_tool: {
+      name: "moondog_collection_import",
+      label: N_("Import a playlist"),
+    },
+  },
+  {
+    id: "collection.play",
+    version: "1",
+    state: "enabled",
+    effect: "play_library",
+    description: "Play a playlist from the listener's library on the music service they chose.",
+    agent_tool: {
+      name: "moondog_collection_play",
+      label: N_("Play from the library"),
     },
   },
   {

@@ -230,6 +230,8 @@ export function createSimulatedSpotify({ devices = [
     if (path === "/me/following") return json({ artists: { items: [], next: null, cursors: { after: null }, total: 0 } });
     if (path === "/me/playlists") return json({ items: [], total: 0, next: null });
     if (path.startsWith("/me/library")) return json(path.endsWith("/contains") ? [] : { items: [], total: 0, next: null });
+    // The listener's saved songs, albums, shows and episodes: none in this fictional account.
+    if (["/me/tracks", "/me/albums", "/me/shows", "/me/episodes", "/me/audiobooks"].includes(path)) return json({ items: [], total: 0, next: null, limit: 20, offset: 0 });
     state.unknown.push(`GET ${path}`);
     return json({ error: { status: 404, message: `No simulated route for GET ${path}` } }, 404);
   }

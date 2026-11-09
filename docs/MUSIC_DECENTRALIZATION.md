@@ -14,6 +14,7 @@ Revised again the same day with the owner's definition of decentralization, the 
 
 The first slice of stage 2 shipped on 2026-10-29, when the owner opened the scope: Moondog makes an instrumental track on this Mac with the listener's own Stable Audio 3 and plays it in its own player.
 The listener turns it on once, in Settings › Playback or with `/generation on`.
+Since 2026-11-02 Moondog can also download the pinned official model itself.
 The agent's `moondog_make_track` tool proposes sound descriptors with their sources, and the taste compiler (`src/profile/taste-compiler.mjs`) keeps only those it can trace to a saved finding, a Like, recent attention, the moment or the request, and none that names an artist, a song or an Avoid.
 A Stable Audio 3 adapter (`src/integrations/stable-audio/local-generator.mjs`) writes the prompt, runs the model offline, and keeps the WAV with a receipt of everything that shaped it in Moondog's state folder.
 Each play goes in the suggestions ledger as Moondog's own (`service` moondog, `action` generated.play), never as the listener's attention.
@@ -26,7 +27,7 @@ The listener can ask to hear a made track again; one they name is recorded as th
 The atmosphere stream followed the same day, when the owner opened it and so decided it fits Taste Over Volume.
 The listener asks for music to keep going, and Moondog plays one track made from their taste while it makes and queues the next, for up to three hours.
 Each track keeps the genres and features a different few of the other sounds, so the prompts differ; a track skipped within 30 seconds steers the stream away from what it featured, and a track played through counts for little in the background.
-Stopping it, other music Moondog plays (and, in the window, the Music app), or the time limit ends it, and only its newest tracks keep their audio, while every receipt stays.
+Stopping it, other music Moondog plays, music started in the Music app, and in the window, Spotify on this Mac or NetEase, or the time limit ends it, and only its newest tracks keep their audio, while every receipt stays.
 Without an analysis stack it does not yet score candidates against the profile before they play.
 Likes on generated tracks and the analysis stack are not built yet.
 
@@ -282,7 +283,7 @@ The evidence attaches to the measured sound, not to the prompt, because a model 
 This may be the most direct way to give the profile its sound dimension.
 
 In the background, a completed track says little.
-The listening loop plans outcome signals but has not built them yet ([Next slices](LISTENING_LOOP.md#next-slices)).
+The listening loop plans outcome signals for streaming songs; Moondog's own player already records them for the tracks it makes ([Next slices](LISTENING_LOOP.md#next-slices)).
 In that plan, a change within 30 seconds is a skip proxy, and a play to the end is a completion.
 A background track that plays to its end often means only that the listener did not notice it.
 So in the atmosphere stream, skips and saves are the signals, completions are mostly noise, and the calibration loop weights them that way.

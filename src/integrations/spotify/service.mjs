@@ -587,7 +587,8 @@ function refusedMove(error, target, player) {
   const refused = new SpotifyServiceError("spotify_device_refused",
     `Spotify would not move playback to ${clipText(target.name, 80)}, either as a transfer or as a song started there. ` +
     `${stayed ? `Playback stays on ${stayed}${player.is_playing === false ? ", paused" : ""}. ` : ""}` +
-    "The Spotify app on that device usually needs to be open and played once before it accepts remote control.");
+    "The Spotify app on that device usually needs to be open and played once before it accepts remote control. " +
+    "Both ways were already tried, so do not try another way in this turn; tell the listener.");
   refused.status = error?.status;
   refused.playbackStayedOn = stayed;
   return refused;
@@ -904,8 +905,33 @@ export function createSpotifyService(options = {}) {
       if (!playlist) fail("spotify_playlist_unavailable", "Spotify did not describe this playlist.");
       const page = await client.getPlaylistItems({ playlistId, limit: SPOTIFY_SERVICE_LIMITS.playlistItemsPageMax, offset: 0 }, { signal })
         .catch((error) => (signal?.aborted ? Promise.reject(error) : null));
-      return { name: playlist.name, uri: playlist.uri, tracks_total: playlist.tracks_total ?? null,
+      return { name: playlist.name, uri: playlist.uri, tracks_total: playlist.tracks_total ?? null, ...(playlist.image ? { image: playlist.image } : {}),
         tracks: page ? page.items.map((entry) => entry.item).filter(Boolean) : null };
+    },
+
+    // Only a playlist's cover, for one imported before Moondog kept it.
+    async readPlaylistCover({ playlistId } = {}, { signal } = {}) {
+      return (await client.getPlaylist({ playlistId: requiredPlaylistId(String(playlistId ?? "")) }, { signal }))?.image ?? null;
+    },
+
+    // A whole playlist for the listener's library: its name, whether the signed-in listener owns it, and its
+    // songs page by page, up to 2,000. Spotify's own editorial playlists answer most apps with not found.
+    async readPlaylist({ playlistId } = {}, { signal } = {}) {
+      const id = requiredPlaylistId(String(playlistId ?? ""));
+      const playlist = await client.getPlaylist({ playlistId: id }, { signal });
+      if (!playlist) fail("spotify_playlist_unavailable", "Spotify did not describe this playlist.");
+      const tracks = [];
+      const pageSize = SPOTIFY_SERVICE_LIMITS.playlistItemsPageMax;
+      for (let offset = 0; offset < 2000; offset += pageSize) {
+        const page = await client.getPlaylistItems({ playlistId: id, limit: pageSize, offset }, { signal });
+        // A local file on the owner's computer has no catalog song to play or name; it stays out.
+        tracks.push(...page.items.filter((entry) => entry.is_local !== true).map((entry) => entry.item)
+          .filter((item) => item?.type === "track" && item.name && item.artists?.length && /^spotify:track:/u.test(item.uri ?? "")));
+        if (!page.has_more || !page.items.length) break;
+      }
+      const account = await client.getAccount({ signal }).catch((error) => (signal?.aborted ? Promise.reject(error) : null));
+      return { name: playlist.name, uri: playlist.uri, tracks_total: playlist.tracks_total ?? null,
+        owned: account?.account_id && playlist.owner_id ? account.account_id === playlist.owner_id : null, tracks };
     },
 
     // One device decision for a whole queue request. An idle device cannot take a

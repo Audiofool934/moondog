@@ -14,6 +14,8 @@ export function accelerators(platform) {
   return {
     new: "CmdOrCtrl+N", settings: "CmdOrCtrl+,", stop: "CmdOrCtrl+.",
     sidebar: mac ? "CmdOrCtrl+Alt+S" : "Ctrl+Shift+S",
+    library: mac ? "CmdOrCtrl+Alt+L" : "Ctrl+Shift+L",
+    taste: mac ? "CmdOrCtrl+Alt+T" : "Ctrl+Shift+T",
     player: mac ? "CmdOrCtrl+Alt+P" : "Ctrl+Shift+P",
     record: mac ? "CmdOrCtrl+Alt+R" : "Ctrl+Shift+R",
     play: mac ? "Ctrl+Cmd+P" : "Alt+Shift+P",

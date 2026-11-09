@@ -10,13 +10,14 @@
 //                                                    MOONDOG_HARNESS_STATES when it names one
 //   MOONDOG_HARNESS_EVAL=check.js npm run harness    runs a script in the page after each state, before the
 //                                                    capture, and prints what it returns (for checks)
-import { app, BrowserWindow, nativeTheme, protocol } from "electron";
+import { app, BrowserWindow, ipcMain, Menu, nativeTheme, protocol } from "electron";
 import { readdirSync, readFileSync, rmSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { windowChrome } from "./platform.mjs";
+import { drawCover } from "../src/integrations/stable-audio/cover.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const out = process.env.MOONDOG_HARNESS_OUT || path.join(here, "release", "harness");
@@ -42,8 +43,19 @@ for (const name of readdirSync(os.tmpdir())) {
 }
 if (!show) setTimeout(() => { process.stderr.write("[harness] timed out\n"); app.exit(1); }, 240_000);
 
-// A track Moondog made plays from moondog-media: as in the app; here every id answers with two minutes of silence.
-protocol.registerSchemesAsPrivileged([{ scheme: "moondog-media", privileges: { standard: true, secure: true, stream: true } }]);
+// A track Moondog made plays from moondog-media: as in the app; here every id answers with two minutes of
+// silence, and its cover is drawn as main draws one, from a made-up receipt for that id.
+protocol.registerSchemesAsPrivileged([{ scheme: "moondog-media", privileges: { standard: true, secure: true, stream: true, corsEnabled: true } }]);
+const madeUpReceipt = (id) => {
+  const position = parseInt(id.slice(0, 2), 16) % 6 + 1;
+  return {
+    generated_track_id: id, created_at: "2026-11-02T21:40:00.000Z", bpm: 82,
+    shaped_by: [{ term: "dream pop", facet: "genre" }, { term: "reverb wash", facet: "texture" }, { term: "tape saturation", facet: "texture" }],
+    stream: { position, featured: ["dream pop", "reverb wash"] },
+    generator: { seed: parseInt(id.slice(0, 8), 16), seconds: 150 }, audio: { duration_seconds: 150,
+      loudness: Array.from({ length: 64 }, (_, index) => Math.min(1, index / 6) * (0.7 + 0.3 * Math.sin(index / (3 + position)))) },
+  };
+};
 const silence = (() => {
   const data = Buffer.alloc(120 * 44100 * 4);
   const header = Buffer.alloc(44);
@@ -55,7 +67,11 @@ const silence = (() => {
 })();
 
 app.whenReady().then(async () => {
-  protocol.handle("moondog-media", () => new Response(silence, { headers: { "Content-Type": "audio/wav" } }));
+  protocol.handle("moondog-media", (request) => {
+    const cover = /^\/([0-9a-f-]{36})\/cover\.svg$/u.exec(new URL(request.url).pathname);
+    if (cover) return new Response(drawCover(madeUpReceipt(cover[1])).svg, { headers: { "Content-Type": "image/svg+xml", "Access-Control-Allow-Origin": "*" } });
+    return new Response(silence, { headers: { "Content-Type": "audio/wav" } });
+  });
   const window = new BrowserWindow({
     width, height, useContentSize: true, show, title: "Moondog harness",
     ...windowChrome(process.env.MOONDOG_HARNESS_PLATFORM || process.platform),
@@ -70,6 +86,20 @@ app.whenReady().then(async () => {
   });
   const load = () => window.loadFile(path.join(here, "dist", "index.html"), { query: { locale } });
   if (show) {
+    // A window to try by hand opens real menus, as main.mjs builds them, so a menu's choices can be tried too.
+    const template = (items, choose) => items.map((item) => item.type === "separator" ? { type: "separator" } : item.type === "header" ? { type: "header", label: String(item.label ?? "") } : {
+      label: String(item.label ?? ""), enabled: item.enabled !== false,
+      ...(item.checked !== undefined ? { type: "checkbox", checked: item.checked === true } : {}),
+      ...(Array.isArray(item.submenu) ? { submenu: template(item.submenu, choose) } : { click: () => choose(item.id) }),
+    });
+    ipcMain.handle("harness-menu", (_event, { items, x, y, positioningItem }) => new Promise((resolve) => {
+      let chosen = null;
+      const list = Array.isArray(items) ? items : [];
+      const menu = Menu.buildFromTemplate(template(list, (id) => { chosen = id; resolve(id); }));
+      menu.popup({ window, ...(Number.isFinite(x) && Number.isFinite(y) ? { x: Math.round(x), y: Math.round(y) } : {}),
+        ...(Number.isInteger(positioningItem) && positioningItem >= 0 && positioningItem < list.length ? { positioningItem } : {}),
+        callback: () => setTimeout(() => resolve(chosen), 50) });
+    }));
     await load();
     const first = process.env.MOONDOG_HARNESS_STATES?.split(",")[0];
     if (first) { await wait(350); await window.webContents.executeJavaScript(`window.__harness.setState(${JSON.stringify(first)})`); }
@@ -96,8 +126,8 @@ app.whenReady().then(async () => {
         .catch((error) => { process.stderr.write(`[harness] ${entry}: ${error.message}\n`); return { skip: true }; });
       if (actions?.skip) continue;
       if (actions?.hover) {
-        // The page draws a state on its next frame; the pointer aims once it has.
-        await wait(250);
+        // The page draws a state on its next frame; the pointer aims once it has, or later when the state says so.
+        await wait(actions.hoverAfter ?? 250);
         const point = await window.webContents.executeJavaScript(`(() => { const r = document.querySelector(${JSON.stringify(actions.hover)})?.getBoundingClientRect();
           return r ? { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) } : null; })()`);
         if (point) window.webContents.sendInputEvent({ type: "mouseMove", ...point });

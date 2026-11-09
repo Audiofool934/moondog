@@ -19,6 +19,9 @@ const artwork = (url) => {
 const generatedMedia = (value) => /^moondog-media:\/\/generated\/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u
   .test(String(value ?? "")) ? value : null;
 
+// Its cover, which main draws from the track's receipt in characters (src/integrations/stable-audio/cover.mjs).
+const coverOf = (media) => (media ? `${media}/cover.svg` : null);
+
 // A catalog song's id is the i parameter of its music.apple.com link.
 const catalogId = (url) => { try { return new URL(url).searchParams.get("i") || null; } catch { return null; } };
 
@@ -36,7 +39,10 @@ export function createPreviews({ send, onChange }) {
   // "full" while the helper plays whole songs, "preview" while this window plays previews.
   let mode = "preview";
   const bridge = window.moondogApp?.appleMusic ?? null;
-  const full = { status: null, state: null, observedAt: 0, started: false, reported: "" };
+  const full = { status: null, state: null, observedAt: 0, started: false, reported: "", token: null };
+  // The songs the helper plays now, as positions in the queue: a playlist from the listener's library mixes
+  // catalog songs with tracks Moondog made, so the helper plays each run of songs and the window each made track.
+  let run = { start: 0, end: 0 };
 
   const current = () => queue[index] ?? null;
   const report = (type) => {
@@ -49,7 +55,7 @@ export function createPreviews({ send, onChange }) {
     const track = current();
     if (session && track) {
       session.metadata = new MediaMetadata({ title: track.title, artist: track.generated ? "Moondog" : track.artist_credit,
-        artwork: track.image ? [{ src: track.image, sizes: "600x600", type: "image/jpeg" }] : [] });
+        artwork: track.image && !track.generated ? [{ src: track.image, sizes: "600x600", type: "image/jpeg" }] : [] });
       session.playbackState = audio.paused ? "paused" : "playing";
     }
     onChange();
@@ -61,6 +67,43 @@ export function createPreviews({ send, onChange }) {
     void audio.play().catch(() => {});
     describe();
   };
+  // The end of the run of catalog songs that starts at a position.
+  const runEnd = (position) => {
+    let end = position;
+    while (end < queue.length && !queue[end].generated && catalogId(queue[end].catalog_url)) end += 1;
+    return end;
+  };
+  // Plays the queue from a position: a catalog song through the helper while it plays whole songs, with the
+  // songs after it up to the next made track; anything else in this window.
+  const playAt = (position) => {
+    index = Math.max(0, Math.min(queue.length - 1, position));
+    const track = current();
+    if (bridge && full.status?.canPlay && !track.generated && catalogId(track.catalog_url)) {
+      audio.pause();
+      run = { start: index, end: runEnd(index) };
+      mode = "full";
+      const token = `${id}:${index}`;
+      Object.assign(full, { state: null, started: false, reported: "", token });
+      report("loading");
+      // A helper that can't play this run stops whatever it began and hands the run to the previews.
+      void bridge({ type: "play", ids: queue.slice(run.start, run.end).map((each) => catalogId(each.catalog_url)), start: 0, token }).then((answer) => {
+        if (!answer?.error || full.token !== token) return;
+        void bridge({ type: "stop" });
+        mode = "preview";
+        full.token = null;
+        load(index);
+      });
+      onChange();
+      return;
+    }
+    if (mode === "full") void bridge?.({ type: "stop" });
+    mode = "preview";
+    full.state = null;
+    full.token = null;
+    load(index);
+  };
+  // After the helper's run, the queue goes on with the made track after it, or ends.
+  const afterRun = () => (run.end < queue.length ? playAt(run.end) : stop());
   const stop = (notify = true) => {
     if (!queue.length) return;
     if (notify) report("stopped");
@@ -69,6 +112,7 @@ export function createPreviews({ send, onChange }) {
     if (mode === "full") void bridge?.({ type: "stop" });
     mode = "preview";
     full.state = null;
+    full.token = null;
     audio.pause();
     audio.removeAttribute("src");
     audio.load();
@@ -82,13 +126,13 @@ export function createPreviews({ send, onChange }) {
   // A made track that played to its end is reported as finished, for the loop back from listening.
   audio.addEventListener("ended", () => {
     if (current()?.generated) report("finished");
-    return index + 1 < queue.length ? load(index + 1) : stop();
+    return index + 1 < queue.length ? playAt(index + 1) : stop();
   });
   audio.addEventListener("error", () => {
     if (!queue.length) return;
     report("failed");
     // A preview that won't load is skipped; three in a row end the queue.
-    if (++failures < 3 && index + 1 < queue.length) load(index + 1);
+    if (++failures < 3 && index + 1 < queue.length) playAt(index + 1);
     else stop();
   });
   // The helper reports its player; the core hears it as it hears previews. A report about another
@@ -96,22 +140,22 @@ export function createPreviews({ send, onChange }) {
   window.moondogApp?.onAppleMusic?.((message) => {
     if (mode !== "full" || !queue.length) return;
     if (message?.type === "exited") { stop(); return; }
-    if (message?.type !== "state" || message.token !== String(id)) return;
-    if (message.status === "ended") { stop(); return; }
+    if (message?.type !== "state" || message.token !== full.token) return;
+    if (message.status === "ended") { afterRun(); return; }
     // A report the helper sent before a pause or resume took hold still has the old status, so for a
     // moment after the listener's own press the window keeps what they chose.
     const held = full.hold && Date.now() < full.hold.until && ["playing", "paused"].includes(message.status) && message.status !== full.hold.status;
     if (held) message = { ...message, status: full.hold.status, positionMs: full.state?.positionMs ?? message.positionMs };
     full.state = message;
     full.observedAt = Date.now();
-    if (Number.isInteger(message.index)) index = Math.max(0, Math.min(queue.length - 1, message.index));
+    if (Number.isInteger(message.index)) index = Math.max(run.start, Math.min(run.end - 1, run.start + message.index));
     const key = `${message.status}|${index}`;
     if (key !== full.reported) {
       full.reported = key;
       if (message.status === "playing") { full.started = true; report("playing"); }
       else if (message.status === "paused") report("paused");
       // Stopped after it started is the end of the queue.
-      else if (message.status === "stopped" && full.started) { stop(); return; }
+      else if (message.status === "stopped" && full.started) { afterRun(); return; }
     }
     onChange();
   });
@@ -129,7 +173,7 @@ export function createPreviews({ send, onChange }) {
     receive(message) {
       if (message.type === "preview") {
         const tracks = (Array.isArray(message.tracks) ? message.tracks : []).map((track) => track.generated === true ? {
-          title: String(track.title ?? ""), artist_credit: "", preview_url: generatedMedia(track.media_url), catalog_url: null, image: null,
+          title: String(track.title ?? ""), artist_credit: "", preview_url: generatedMedia(track.media_url), catalog_url: null, image: coverOf(generatedMedia(track.media_url)),
           generated: true, generated_id: generatedMedia(track.media_url)?.split("/").at(-1) ?? null,
           duration_seconds: Number.isFinite(track.duration_seconds) ? track.duration_seconds : null,
         } : {
@@ -144,33 +188,15 @@ export function createPreviews({ send, onChange }) {
         id = message.id;
         index = 0;
         report("queue");
-        const ids = tracks.map((track) => catalogId(track.catalog_url));
-        // A track Moondog made has no catalog id, so this window plays it itself.
-        if (full.status?.canPlay && ids.every(Boolean) && !tracks.some((track) => track.generated)) {
-          mode = "full";
-          Object.assign(full, { state: null, started: false, reported: "" });
-          report("loading");
-          const queued = id;
-          // A helper that can't play this queue stops whatever it began and hands the queue to the previews.
-          void bridge({ type: "play", ids, start: 0, token: String(queued) }).then((answer) => {
-            if (!answer?.error || id !== queued) return;
-            void bridge({ type: "stop" });
-            mode = "preview";
-            load(0);
-          });
-          onChange();
-        } else {
-          mode = "preview";
-          load(0);
-          // A check that failed for a passing reason (the helper was slow, or went away) is asked again for the next queue.
-          if (full.status?.error && full.status.error !== "unavailable") void api.check();
-        }
+        playAt(0);
+        // A check that failed for a passing reason (the helper was slow, or went away) is asked again for the next queue.
+        if (mode === "preview" && full.status?.error && full.status.error !== "unavailable") void api.check();
       }
       // A made track queued behind this queue's last one, as Moondog's stream does.
       if (message.type === "preview-enqueue" && message.id === id && message.track?.generated === true) {
         const media = generatedMedia(message.track.media_url);
         if (!media || queue.some((track) => !track.generated)) return;
-        queue.push({ title: String(message.track.title ?? ""), artist_credit: "", preview_url: media, catalog_url: null, image: null,
+        queue.push({ title: String(message.track.title ?? ""), artist_credit: "", preview_url: media, catalog_url: null, image: coverOf(media),
           generated: true, generated_id: media.split("/").at(-1),
           duration_seconds: Number.isFinite(message.track.duration_seconds) ? message.track.duration_seconds : null });
         onChange();
@@ -213,11 +239,11 @@ export function createPreviews({ send, onChange }) {
       if (!queue.length) return;
       if (mode === "full") {
         if (!full.state) return;
-        // Past the last song the queue ends, as it does for previews.
-        if (index + 1 >= queue.length) return stop();
+        // Past the run's last song the queue goes on with the made track after it, or ends, as it does for previews.
+        if (index + 1 >= run.end) return afterRun();
         return void bridge({ type: "next" });
       }
-      if (index + 1 < queue.length) return load(index + 1);
+      if (index + 1 < queue.length) return playAt(index + 1);
       // A made track skipped past the end of its queue: Moondog's stream moves on once its next track is made.
       if (current()?.generated) report("skipped");
       stop();
@@ -234,8 +260,13 @@ export function createPreviews({ send, onChange }) {
     },
     previous() {
       if (!queue.length) return;
-      if (mode === "full") return void (full.state && bridge({ type: "previous" }));
-      audio.currentTime > 3 || index === 0 ? (audio.currentTime = 0) : load(index - 1);
+      if (mode === "full") {
+        if (!full.state) return;
+        // At the run's first song, early on, back goes to the made track before it.
+        if (index === run.start && index > 0 && (api.state()?.progressMs ?? 0) < 3000) return playAt(index - 1);
+        return void bridge({ type: "previous" });
+      }
+      audio.currentTime > 3 || index === 0 ? (audio.currentTime = 0) : playAt(index - 1);
     },
     state() {
       const track = current();

@@ -32,3 +32,27 @@ export async function writeLanguagePreference(locale, environment = process.env)
 export async function resolveListenerLocale(environment = process.env) {
   return normalizeLocale(environment.MOONDOG_LANGUAGE) ?? await readLanguagePreference(environment) ?? systemLocale(environment);
 }
+
+/**
+ * The reply language every surface and conversation of one core shares. A change, from the
+ * language picker or from the agent when the listener asks in words, is saved once and heard by
+ * each surface that shows the language.
+ */
+export function createLanguageSelection({ save } = {}) {
+  const listeners = new Set();
+  return {
+    async change(locale) {
+      const value = normalizeLocale(locale);
+      if (!value) throw new Error(`Unsupported language: ${locale}`);
+      await save?.(value);
+      for (const listener of listeners) {
+        try { listener(value); } catch { /* A surface cannot undo a saved choice. */ }
+      }
+      return value;
+    },
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+  };
+}

@@ -12,6 +12,8 @@ const READ_TIMEOUT_MS = 15_000;
 // A playlist longer than this is read as a window around the playing song.
 const PLAYLIST_WINDOW = 50;
 const PLAYLIST_BEFORE = 5;
+// Keeping the rest of a playlist reads up to as many songs as a library playlist holds.
+const REST_MAX = 2_000;
 const COLUMN_READ_MAX = 2_000;
 // Covers already drawn, by album, or by song for one without an album.
 const KNOWN_COVERS = 40;
@@ -47,13 +49,15 @@ function run(argv) {
     const playlist = music.currentPlaylist;
     answer.playlist = { id: playlist.persistentID(), name: playlist.name() };
     try { answer.playlist.special = playlist.specialKind(); } catch (error) {}
-    if (action === "tracks") {
+    if (action === "tracks" || action === "rest") {
       const tracks = playlist.tracks;
       const ids = tracks.persistentID();
       answer.playlist.count = ids.length;
       const at = answer.track ? ids.indexOf(answer.track.id) : -1;
-      const start = ids.length <= ${PLAYLIST_WINDOW} || at < 0 ? 0 : Math.max(0, Math.min(at - ${PLAYLIST_BEFORE}, ids.length - ${PLAYLIST_WINDOW}));
-      const end = Math.min(ids.length, start + ${PLAYLIST_WINDOW});
+      // "rest" reads from the playing song to the playlist's end, for keeping it in the library.
+      const start = action === "rest" ? Math.max(0, at)
+        : ids.length <= ${PLAYLIST_WINDOW} || at < 0 ? 0 : Math.max(0, Math.min(at - ${PLAYLIST_BEFORE}, ids.length - ${PLAYLIST_WINDOW}));
+      const end = Math.min(ids.length, start + (action === "rest" ? ${REST_MAX} : ${PLAYLIST_WINDOW}));
       answer.playlist.index = at;
       answer.playlist.start = start;
       answer.playlist.tracks = [];
@@ -198,6 +202,8 @@ export function createMusicAppPlayer({ platform = process.platform, environment 
   return {
     available,
     nowPlaying: ({ tracks = false } = {}) => read(tracks ? "tracks" : "read"),
+    // The playing song and the rest of its playlist, past the window nowPlaying reads, for keeping in the library.
+    remainingPlaylist: () => read("rest"),
     pause: () => read("pause"),
     resume: () => read("resume"),
     next: () => read("next"),

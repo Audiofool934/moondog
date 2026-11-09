@@ -4,8 +4,12 @@ import Ajv from "ajv";
 
 // Every web backend returns this one result shape, checked by the same rules,
 // so the agent and the screen never need to know which service answered.
+// After Hermes Agent's web tools: a search gives five sources unless the agent asks for up to ten,
+// and a read keeps the page's whole text, handing it out a window at a time; the agent asks for the
+// next window with next_offset instead of losing everything past the first.
 export const webLimits = Object.freeze({
-  sources: 5, snippetChars: 800, textChars: 12_000, cacheMs: 300_000, cacheEntries: 32, responseBytes: 2_000_000,
+  sources: 5, maxSources: 10, snippetChars: 1200, textChars: 15_000, fullTextChars: 200_000,
+  cacheMs: 300_000, cacheEntries: 32, responseBytes: 2_000_000,
 });
 
 // What each backend's text is, so the agent can tell a search engine's snippet from a model's summary.
@@ -19,13 +23,14 @@ export function webProviderName(provider) {
   return backends[provider]?.name ?? null;
 }
 
-const resultSchema = {
+// A backend's result holds a page's whole text; the agent's holds one window of it.
+const resultSchema = (textChars) => ({
   type: "object", additionalProperties: false,
   properties: {
     status: { type: "string", enum: ["found", "not_found", "unavailable"] },
-    summary: { type: "string", maxLength: webLimits.textChars },
+    summary: { type: "string", maxLength: textChars },
     sources: {
-      type: "array", maxItems: webLimits.sources,
+      type: "array", maxItems: webLimits.maxSources,
       items: {
         type: "object", additionalProperties: false,
         properties: {
@@ -39,8 +44,11 @@ const resultSchema = {
     },
   },
   required: ["status", "summary", "sources"],
-};
-const validate = new Ajv({ strict: false }).compile(resultSchema);
+});
+const ajv = new Ajv({ strict: false });
+const validate = ajv.compile(resultSchema(webLimits.fullTextChars));
+const validateWindow = ajv.compile(resultSchema(webLimits.textChars));
+const offsetOf = (value) => (Number.isInteger(value) && value >= 0 ? value : null);
 
 export function failure(code, message) {
   return Object.assign(new Error(message), { code });
@@ -101,7 +109,7 @@ export function webResult({ provider, kind, status, summary = "", sources = [], 
 export function projectWebResearchResult(value) {
   const payload = { status: value?.status, summary: value?.summary, sources: value?.sources };
   const backend = backends[value?.provider];
-  if (!validate(payload) || (payload.status === "found" && !payload.sources.length) ||
+  if (!validateWindow(payload) || (payload.status === "found" && !payload.sources.length) ||
       !backend?.content[value.kind] || value.evidence !== backend.evidence || !Number.isFinite(Date.parse(value.retrieved_at))) {
     throw failure("web_output_invalid", `${backend?.name ?? "The web service"} returned an invalid or unsourced research result.`);
   }
@@ -110,6 +118,9 @@ export function projectWebResearchResult(value) {
     retrieved_at: new Date(value.retrieved_at).toISOString(), from_cache: value.from_cache === true,
     content_kind: backend.content[value.kind], trust: "untrusted_web_content", evidence: backend.evidence,
     ...(value.truncated === true ? { truncated: true } : {}),
+    ...(value.kind === "read" && offsetOf(value.total_chars) !== null ? {
+      text_offset: offsetOf(value.text_offset) ?? 0, total_chars: value.total_chars, next_offset: offsetOf(value.next_offset),
+    } : {}),
     summary: cleanText(payload.summary), sources: projectSources(payload.sources),
   };
 }
@@ -131,14 +142,46 @@ export function searchSources(items) {
     if (snippet) seen.add(snippet);
     const date = typeof item.published_at === "string" ? cleanText(item.published_at).slice(0, 100) : "";
     sources.push({ title, url, snippet, published_at: date || null });
-    if (sources.length === webLimits.sources) break;
+    if (sources.length === webLimits.maxSources) break;
   }
   return sources;
 }
 
+// One window of a page's text, ending at a line or word break near the limit when there is one.
+function textWindow(text, offset) {
+  let end = Math.min(text.length, offset + webLimits.textChars);
+  if (end < text.length) {
+    const floor = offset + Math.floor(webLimits.textChars * 0.8);
+    const lineBreak = text.lastIndexOf("\n", end);
+    const space = text.lastIndexOf(" ", end);
+    end = lineBreak > floor ? lineBreak : space > floor ? space : end;
+  }
+  return { summary: text.slice(offset, end), end };
+}
+
+/** What one call asked for: up to `limit` sources of a search, or the window of a read from `offset`. */
+function windowed(result, kind, { limit, offset }) {
+  if (kind === "search") return { ...result, sources: result.sources.slice(0, limit) };
+  const text = result.summary;
+  if (offset > 0 && offset >= text.length) {
+    throw failure("web_input_invalid", `The page has ${text.length} characters, so offset ${offset} is past its end.`);
+  }
+  const { summary, end } = textWindow(text, offset);
+  const more = end < text.length;
+  return { ...result, summary, text_offset: offset, total_chars: text.length, next_offset: more ? end : null,
+    ...(more || result.truncated ? { truncated: true } : {}) };
+}
+
+function integerIn(value, minimum, maximum, fallback, message) {
+  if (value === undefined) return fallback;
+  if (!Number.isInteger(value) || value < minimum || value > maximum) throw failure("web_input_invalid", message);
+  return value;
+}
+
 /**
  * The parts every backend shares: one query or URL in, a cancellable request,
- * and a five-minute process-local cache of found results.
+ * and a five-minute process-local cache of found results. The cache keeps the whole result, so a
+ * smaller limit or a later window of the same page needs no second request.
  */
 export function createWebOperations({ unavailable = () => null, queryChars = 500, run, now = () => new Date() }) {
   const cache = new Map();
@@ -146,9 +189,14 @@ export function createWebOperations({ unavailable = () => null, queryChars = 500
   async function research(kind, input, { signal } = {}) {
     const blocked = unavailable(kind);
     if (blocked) throw blocked;
-    if (!input || typeof input !== "object" || Object.keys(input).some((key) => key !== (kind === "search" ? "query" : "url"))) {
+    const allowed = kind === "search" ? ["query", "limit"] : ["url", "offset"];
+    if (!input || typeof input !== "object" || Object.keys(input).some((key) => !allowed.includes(key))) {
       throw failure("web_input_invalid", "Supply one search query or public URL.");
     }
+    const view = {
+      limit: integerIn(input.limit, 1, webLimits.maxSources, webLimits.sources, `Ask for 1 to ${webLimits.maxSources} search results.`),
+      offset: integerIn(input.offset, 0, webLimits.fullTextChars, 0, "The offset must be a whole number of characters, from 0."),
+    };
     const value = kind === "read" ? publicWebUrl(input.url) : typeof input.query === "string" ? input.query.trim() : input.query;
     if (typeof value !== "string" || !value) throw failure("web_input_invalid", "The web query or URL is empty.");
     if (value.length > (kind === "search" ? queryChars : 2048)) {
@@ -158,7 +206,7 @@ export function createWebOperations({ unavailable = () => null, queryChars = 500
     const key = `${kind}:${value}`;
     const cached = cache.get(key);
     if (cached && now().getTime() - Date.parse(cached.retrieved_at) < webLimits.cacheMs) {
-      return { ...structuredClone(cached), from_cache: true };
+      return windowed({ ...structuredClone(cached), from_cache: true }, kind, view);
     }
     const controller = new AbortController();
     active.add(controller);
@@ -168,7 +216,7 @@ export function createWebOperations({ unavailable = () => null, queryChars = 500
         cache.set(key, result);
         if (cache.size > webLimits.cacheEntries) cache.delete(cache.keys().next().value);
       }
-      return structuredClone(result);
+      return windowed(structuredClone(result), kind, view);
     } finally {
       active.delete(controller);
     }

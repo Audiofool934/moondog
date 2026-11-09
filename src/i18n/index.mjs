@@ -134,6 +134,7 @@ const WORDS = {
     "künstler", "lautsprecher", "handy", "fernseher", "pausiere", "stoppe", "überspringe", "weiter", "zurück", "lauter",
     "leiser", "welche", "welcher", "welches", "heute", "abend", "oder", "aber", "sehr", "gut", "mal", "doch", "gern", "gerne"]),
   it: new Set(["il", "gli", "di", "della", "delle", "dello", "degli", "dei", "che", "per", "metti", "mettimi", "mettere", "suona",
+    "sposta", "spostare", "spostato", "trasferisci", "sul", "sulla", "sullo", "sui", "sugli", "ho", "hai", "fatto", "riproduzione",
     "suonami", "suonare", "riproduci", "aggiungi", "canzone", "canzoni", "brano", "brani", "coda", "qualcosa", "ancora",
     "grazie", "ciao", "favore", "ascoltare", "ascolta", "prossima", "prossimo", "chi", "perché", "sono", "è", "voglio",
     "vorrei", "puoi", "fammi", "dammi", "altra", "altro", "adesso", "anche", "molto", "bene", "mio", "mia", "miei", "mie",
@@ -148,7 +149,7 @@ const COMMANDS = {
   pt: new Set(["coloca", "coloque", "toque", "adiciona", "adicione", "bota", "põe", "procura", "mostra", "recomenda", "faz", "quero", "pula", "me"]),
   fr: new Set(["mets", "joue", "lance", "ajoute", "trouve", "cherche", "montre", "donne", "recommande", "propose", "fais", "arrête", "écoute", "je", "peux", "est"]),
   de: new Set(["spiel", "spiele", "füge", "füg", "gib", "zeig", "zeige", "suche", "finde", "mach", "empfiehl", "stell", "setz", "leg", "überspringe", "pausiere", "stoppe", "ich", "kannst", "bitte"]),
-  it: new Set(["metti", "mettimi", "suona", "suonami", "riproduci", "aggiungi", "trova", "consiglia", "consigliami", "fammi", "dammi", "fai", "proponi", "ferma", "voglio", "vorrei", "ascolta", "puoi"]),
+  it: new Set(["metti", "mettimi", "suona", "suonami", "riproduci", "aggiungi", "sposta", "trasferisci", "trova", "consiglia", "consigliami", "fammi", "dammi", "fai", "proponi", "ferma", "voglio", "vorrei", "ascolta", "puoi"]),
 };
 // Letters only one language writes are strong evidence; letters several share are weak evidence for each.
 const MARKS = [
@@ -179,13 +180,15 @@ function explicitLocale(prose) {
  * message's own script and words, then the listener's configured language.
  * Quoted titles never decide it, because song names travel across languages.
  */
-export function messageLocale(text, fallback = DEFAULT_LOCALE) {
+// explicit: false reads only the language a text is written in, for Moondog's own replies, where
+// "I'll answer in Spanish" is not a request.
+export function messageLocale(text, fallback = DEFAULT_LOCALE, { explicit: readRequest = true } = {}) {
   const configured = normalizeLocale(fallback) ?? DEFAULT_LOCALE;
   if (typeof text !== "string") return configured;
   const prose = text
     .replace(/^(?:Track|Artist): "(?:[^"\\\n]|\\.)*"[ \t]*$/gmu, "")
     .replace(/"(?:[^"\\]|\\.)*"|“[^”]*”|«[^»]*»|「[^」]*」|『[^』]*』|《[^》]*》/gu, "");
-  const explicit = explicitLocale(prose);
+  const explicit = readRequest ? explicitLocale(prose) : null;
   if (explicit) return explicit;
   // Hangul is only Korean and kana only Japanese; whichever the message uses more decides.
   const hangul = prose.match(/\p{Script=Hangul}/gu)?.length ?? 0;

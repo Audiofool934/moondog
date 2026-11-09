@@ -5,6 +5,9 @@ export const MUSIC_PROVIDER_LABELS = Object.freeze({
   lastfm: "Last.fm",
   qq_music: "QQ Music",
   netease: "NetEase Music",
+  // Playlists the listener imported into the library by their links.
+  spotify_playlist: "Spotify",
+  apple_music_playlist: "Apple Music",
 });
 
 export function musicProviderLabel(system) {

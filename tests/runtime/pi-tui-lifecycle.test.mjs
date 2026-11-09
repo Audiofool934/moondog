@@ -2825,3 +2825,51 @@ test("a model saved in the App gives the terminal's agent that model, and the sa
   } finally { signalTarget.emit("SIGTERM"); await running; }
   assert.equal(unwatched, true);
 });
+
+test("a model asked for in words takes over after the reply, before a message queued during it", async () => {
+  const terminal = new FakeTerminal();
+  const signalTarget = new EventEmitter();
+  const { createModelSwitch } = await import("../../src/runtime/pi/model-switch.mjs");
+  const modelSwitch = createModelSwitch({ list: async () => ({ models: [] }) });
+  const application = { ...fakeApplication(), modelSwitch };
+  const seen = [];
+  let finishFirst;
+  const firstHeld = new Promise((resolve) => { finishFirst = resolve; });
+  const oldRuntime = {
+    ...fakeRuntime(),
+    publicStatus: () => ({ state: "configured", provider: "deepseek", model: "deepseek-flash" }),
+    async prompt(text, callbacks) {
+      seen.push(`old: ${text}`);
+      if (text === "switch to pro") {
+        modelSwitch.request(application, { provider: "deepseek", model: "deepseek-v4-pro" });
+        await firstHeld;
+      }
+      callbacks.onTextDelta("ok");
+      return { status: "completed", text: "ok" };
+    },
+  };
+  let releaseRebuild;
+  const rebuildHeld = new Promise((resolve) => { releaseRebuild = resolve; });
+  const newRuntime = {
+    ...fakeRuntime(),
+    publicStatus: () => ({ state: "configured", provider: "deepseek", model: "deepseek-v4-pro" }),
+    async prompt(text, callbacks) { seen.push(`new: ${text}`); callbacks.onTextDelta("ok"); return { status: "completed", text: "ok" }; },
+  };
+  let rebuilt;
+  const running = runMoondogTui({ application, runtime: oldRuntime, terminal, signalTarget,
+    async rebuildRuntime(selection) { rebuilt = selection; await rebuildHeld; return newRuntime; } });
+  await waitForStart(terminal);
+  terminal.send("switch to pro"); terminal.send("\r");
+  await waitFor(() => seen.length === 1);
+  terminal.send("and now this"); terminal.send("\r");
+  finishFirst();
+  await waitFor(() => rebuilt !== undefined);
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.deepEqual(seen, ["old: switch to pro"], "the queued message waits for the new model");
+  releaseRebuild();
+  await waitFor(() => seen.length === 2);
+  assert.deepEqual(seen, ["old: switch to pro", "new: and now this"]);
+  assert.deepEqual(rebuilt, { provider: "deepseek", model: "deepseek-v4-pro" });
+  terminal.send("/quit"); terminal.send("\r");
+  await running;
+});

@@ -5,12 +5,13 @@ import path from "node:path";
 import test from "node:test";
 import { CombinedAutocompleteProvider, Editor } from "@earendil-works/pi-tui";
 import { FreshCompletionEditor } from "../../src/surfaces/cli/brand-components.mjs";
+import { EFFORT_SCALE } from "../../src/runtime/pi/runtime-settings.mjs";
 import { withCommandCompletions } from "../../src/surfaces/cli/command-completions.mjs";
 
 function fixture(basePath = process.cwd()) {
   const modelLookups = [];
   const commands = withCommandCompletions(
-    ["theme", "art", "motion", "web", "spotify", "model", "auth", "import", "remember"].map((name) => ({ name, description: name })),
+    ["theme", "art", "motion", "web", "spotify", "model", "effort", "library", "auth", "import", "remember"].map((name) => ({ name, description: name })),
     {
       providers: () => [
         { id: "openai-codex", name: "Codex", modelCount: 2 },
@@ -101,9 +102,26 @@ test("Pi applies enum and model completions to exactly the intended command argu
   assert.equal(result.cursorCol, "/spotify repeat track".length);
 });
 
+test("model roles, effort and the library complete what their commands accept", async () => {
+  const { suggestions, modelLookups } = fixture();
+  // A suggestion's value carries the arguments before it, because Pi replaces the whole prefix; its label is the choice.
+  const values = async (input) => (await suggestions(input))?.items.map((item) => item.label) ?? null;
+  assert.deepEqual(await values("/model vision "), ["auto", "openai-codex", "xai"]);
+  assert.deepEqual(await values("/model web "), ["auto", "deepseek", "brave", "codex"]);
+  assert.deepEqual(await values("/model vision xai "), ["grok-test"]);
+  assert.deepEqual(modelLookups, ["xai"]);
+  assert.equal(await values("/model vision auto x"), null);
+  assert.equal(await values("/model roles x"), null);
+  assert.equal(await values("/model web auto x"), null);
+  assert.deepEqual(await values("/effort "), ["default", ...EFFORT_SCALE]);
+  assert.equal(await values("/effort high x"), null);
+  assert.deepEqual(await values("/library "), ["play", "save", "import"]);
+  assert.equal(await values("/library play N"), null);
+});
+
 test("provider suggestions follow model availability and authentication support without probing unknown providers", async () => {
   const { suggestions, modelLookups } = fixture();
-  assert.deepEqual((await suggestions("/model ")).items.map((item) => item.value), ["refresh", "openai-codex", "xai"]);
+  assert.deepEqual((await suggestions("/model ")).items.map((item) => item.value), ["refresh", "roles", "vision", "web", "openai-codex", "xai"]);
   assert.deepEqual((await suggestions("/auth ")).items.map((item) => item.value), ["openai-codex", "empty"]);
   assert.equal(await suggestions("/model unknown g"), null);
   assert.equal(await suggestions("/model empty g"), null);

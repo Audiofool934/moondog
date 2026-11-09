@@ -260,7 +260,7 @@ The quality target is a plausible, multidimensional and internally coherent work
 Reasonable inference error and local factual imperfections are acceptable; neither exhaustive correctness nor exact agreement with a listener's self-description defines success.
 Long-term interests, recent attention, collection evidence and uncertainty should coexist in a coherent reading, with room for supported interpretation.
 Repeated owner review is a development and evaluation method, not the intended newcomer experience.
-A dedicated user-facing inspection workflow remains an undecided later feature.
+A dedicated user-facing inspection workflow was then an undecided later feature; the desktop app's taste page opened one on 2026-11-04.
 Existing evidence and correction commands remain available, but expanding that workflow must not substitute for improving the builder.
 
 One build can perform several internal passes without requiring another user request.

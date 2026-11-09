@@ -24,6 +24,8 @@ import { getPublicPiModelCatalog } from "../../runtime/pi/public-model-catalog.m
 import { serviceKeyProviders, supportedAuthProviderIds } from "../../runtime/pi/authentication.mjs";
 import { EFFORT_LEVELS, EFFORT_SCALE } from "../../runtime/pi/runtime-settings.mjs";
 import { runtimeBehindSelection } from "../../runtime/pi/runtime-selection.mjs";
+import { MODEL_ROLE_WORDS } from "./model-roles-command.mjs";
+import { imagesFromText } from "../../runtime/pi/image-input.mjs";
 import {
   formatLocalResult,
   helpText,
@@ -125,11 +127,12 @@ const slashCommands = [
   { name: "endpoint", description: N_("Add a model service by its address") },
   { name: "web", description: N_("Look things up on public music sites") },
   { name: "service", description: N_("Choose where Moondog plays music") },
+  { name: "library", description: N_("Your saved songs and playlists") },
   { name: "generation", description: N_("Let Moondog make music on this Mac") },
   { name: "onair", description: N_("Go on air: Moondog keeps making music from your taste") },
   { name: "spotify", description: N_("Connect and control Spotify") },
-  { name: "skip", description: N_("Skip to the next song preview") },
-  { name: "stop", description: N_("Stop the song previews") },
+  { name: "skip", description: N_("Skip to the next song preview or stream track") },
+  { name: "stop", description: N_("Stop the song previews or the stream") },
   { name: "reload", description: N_("Reload model settings and sign-ins") },
   { name: "remember", description: N_("Ask Moondog to remember something") },
   { name: "forget", description: N_("Forget one memory by ID") },
@@ -208,6 +211,7 @@ export async function runMoondogTui({
   runProfile,
   runProfileAction,
   runWeb,
+  runModelRoles,
   checkUpdates,
   runUpdate,
   lyrics,
@@ -250,7 +254,8 @@ export async function runMoondogTui({
   // /onair needs both: the room's own player and music making here.
   const onAirControls = previewControls && typeof generation?.save === "function";
   const commands = slashCommands.filter(({ name }) => (previewControls || !["skip", "stop"].includes(name)) &&
-    (name !== "generation" || typeof generation?.save === "function") && (name !== "onair" || onAirControls));
+    (name !== "generation" || typeof generation?.save === "function") && (name !== "onair" || onAirControls) &&
+    (name !== "library" || application.libraryReady?.() === true));
   const localizedCommands = commands.map(({ name, description }) => ({ name, get description() { return tr.marked(description); } }));
   let activeRuntime = runtime;
   application.startNewSession?.("tui_start");
@@ -317,6 +322,7 @@ export async function runMoondogTui({
   let busy = false;
   // A model chosen or a sign-in made in the window while a turn ran here; it applies once the turn ends.
   let modelChangedElsewhere = false;
+  let modelAskedFor = null;
   // A reply another Moondog window or terminal is writing in this conversation: { id, response, text }.
   let elsewhere = null;
   let watchTimer = null;
@@ -642,6 +648,7 @@ export async function runMoondogTui({
     }
     if (!cleanedUp) tui.requestRender();
     if (!value && modelChangedElsewhere) void followModel();
+    if (!value && modelAskedFor) void applyModelAskedFor();
   };
   const setFooter = (text, color = dim) => {
     if (cleanedUp) return;
@@ -1035,6 +1042,78 @@ export async function runMoondogTui({
     generationFooter(status);
   };
 
+  // /library lists Saved and the listener's folders and playlists, plays one by name, or keeps the song
+  // playing now, in Saved or in a playlist by name (made when there is none). The window shares this library.
+  const manageLibrary = async (args) => {
+    if (!application.libraryReady?.()) throw new Error(tr("The library isn't available here."));
+    const [action, ...rest] = args;
+    const words = rest.join(" ").trim();
+    const nameOf = (playlist) => (playlist.saved ? tr("Saved") : playlist.name);
+    if (!action) {
+      const { folders, playlists } = application.libraryView();
+      const count = (playlist) => tr.n(playlist.count, "{count} song", "{count} songs");
+      const lines = [];
+      const saved = playlists.find((playlist) => playlist.saved);
+      if (saved) lines.push(`- **${nameOf(saved)}** · ${count(saved)}`);
+      const walk = (parentId, depth) => {
+        const nodes = [...folders.filter((folder) => folder.parentId === parentId).map((node) => ["folder", node]),
+          ...playlists.filter((playlist) => !playlist.saved && playlist.folderId === parentId).map((node) => ["playlist", node])]
+          .sort((a, b) => a[1].position - b[1].position);
+        for (const [kind, node] of nodes) {
+          const indent = "  ".repeat(depth);
+          if (kind === "folder") { lines.push(`${indent}- ${node.name}/`); walk(node.id, depth + 1); }
+          else lines.push(`${indent}- **${node.name}** · ${count(node)}`);
+        }
+      };
+      walk(null, 0);
+      addMoondogMessage(`${lines.join("\n")}\n\n${tr("Play one with `/library play <name>`, or keep the song playing now with `/library save`.")}`);
+      return;
+    }
+    if (action === "play") {
+      const [playlist] = application.findLibraryPlaylists(words);
+      if (!playlist || !words) throw new Error(tr("No playlist is called “{name}”.", { name: words }));
+      const played = await application.playLibrary({ playlistId: playlist.id });
+      if (played.state !== "playing") {
+        addMoondogMessage(played.state === "empty" ? tr("{name} has nothing in it yet.", { name: nameOf(playlist) }) : tr("None of its songs could be found."));
+        return;
+      }
+      addMoondogMessage([tr("Playing {name}.", { name: nameOf(playlist) }),
+        played.left_out_made ? tr("Moondog's tracks were left out. They play with Apple Music chosen.") : "",
+        played.not_found ? tr("Some songs couldn't be found.") : ""].filter(Boolean).join(" "));
+      setFooter(tr("Playing {name}.", { name: nameOf(playlist) }), success);
+      return;
+    }
+    if (action === "save") {
+      const target = words ? application.findLibraryPlaylists(words).find((playlist) => playlist.name.toLocaleLowerCase() === words.toLocaleLowerCase() || (playlist.saved && /^saved$/iu.test(words))) : null;
+      const saved = await application.saveToLibrary({ from: "now_playing", ...(target ? { playlistId: target.id } : words ? { playlistName: words } : {}) });
+      const where = saved.playlist.saved ? tr("Saved") : saved.playlist.name;
+      const text = !saved.added ? tr("Already in {name}.", { name: where }) : saved.playlist.saved ? tr("Saved.") : tr("Saved to {name}.", { name: where });
+      addMoondogMessage(text);
+      setFooter(text, success);
+      return;
+    }
+    // A playlist link: a copy in the library, and its songs in the listener's taste when they made it or say taste.
+    if (action === "import") {
+      const choice = rest.find((word) => ["taste", "no-taste"].includes(word));
+      const link = rest.filter((word) => word !== choice).join(" ").trim();
+      if (!link) throw new Error(tr("Paste a playlist link after /library import."));
+      setFooter(tr("Reading the playlist…"));
+      const imported = await application.importPlaylistFromLink({ link, ...(choice ? { taste: choice === "taste" } : {}) });
+      const counted = imported.total && imported.total > imported.added
+        ? tr("{added} of {total} songs came in.", { added: imported.added, total: imported.total })
+        : tr.n(imported.added, "{count} song came in.", "{count} songs came in.");
+      const taste = imported.taste === "added" ? tr("It now shapes your taste.")
+        : imported.taste === "failed" ? tr("It couldn't shape your taste this time.")
+          : tr("It doesn't shape your taste; add taste after the link if it should.");
+      addMoondogMessage(`${tr("Imported {name}.", { name: imported.playlist.name })} ${counted} ${taste}`);
+      setFooter(tr("Imported {name}.", { name: imported.playlist.name }), success);
+      // A playlist that shapes the taste shows the profile it now reads, as any import into the profile does.
+      if (imported.taste === "added") await openProfile({ imported: true }).catch(() => {});
+      return;
+    }
+    throw new Error(tr("Use /library, /library play <name>, /library save [playlist], or /library import <link>."));
+  };
+
   const removeLifecycleListeners = () => {
     signalTarget.removeListener("SIGTERM", handleSigterm);
     signalTarget.removeListener("SIGHUP", handleSighup);
@@ -1050,6 +1129,7 @@ export async function runMoondogTui({
     cleanedUp = true;
     clearTimeout(watchTimer);
     stopWatchingModel?.();
+    stopModelSwitch?.();
     stopWatchingFirstRun?.();
     stopWatchingPreviews?.();
     stopWatchingStream?.();
@@ -1332,6 +1412,27 @@ export async function runMoondogTui({
     void refreshFirstRun();
     return nextStatus;
   };
+  // A model the listener asked the agent for in words, switched to as /model does once the reply ends.
+  // The terminal stays busy while it switches, so a message queued during the reply waits for the new model.
+  const applyModelAskedFor = async () => {
+    const selection = modelAskedFor;
+    modelAskedFor = null;
+    if (!selection || cleanedUp || busy) { modelAskedFor ??= selection; return; }
+    setBusy(true);
+    let status = null;
+    try {
+      status = await replaceRuntime(runtimeSelection(selection.provider, selection.model, selection.effort ?? runtimeStatus.effort)).catch(() => null);
+    } finally {
+      setBusy(false);
+    }
+    if (status?.state === "configured") setFooter(tr("Model ready."), success);
+    settleQueue();
+  };
+  const stopModelSwitch = application.modelSwitch?.subscribe?.(({ application: from, selection }) => {
+    if (from !== application) return;
+    modelAskedFor = selection;
+    if (!busy) void applyModelAskedFor();
+  });
   // The window saved another model, or a sign-in that lets this side answer. The terminal's own
   // choices rebuild at once, so their saves find this agent already on them.
   const followModel = async () => {
@@ -1342,7 +1443,7 @@ export async function runMoondogTui({
   // The window's endpoints reach /model here; an agent on an endpoint that changed is rebuilt, since its
   // address or key may have. The window's menu list and its per-conversation choices don't move this one.
   const stopWatchingModel = watchModelSettings?.((selection, changed) => {
-    if (changed === "models") return;
+    if (changed === "models" || changed === "roles") return;
     if (changed === "endpoints") void refreshEndpoints?.();
     const onEndpoint = changed === "endpoints" && String(runtimeStatus.provider ?? "").startsWith("endpoint-");
     if (!onEndpoint && !runtimeBehindSelection(runtimeStatus, selection)) return;
@@ -2414,6 +2515,8 @@ export async function runMoondogTui({
       application.locale = locale;
       // A chosen language also becomes the conversation's, so the next short reply follows it.
       application.conversationLocale = locale;
+      // A language chosen here ends one the listener asked the agent to keep.
+      application.replyLanguagePin = null;
       await saveLanguage?.(locale);
       const pinned = normalizeLocale(environment.MOONDOG_LANGUAGE);
       transcript.invalidate();
@@ -2450,6 +2553,13 @@ export async function runMoondogTui({
       return;
     }
     if (command === "model") {
+      // /model roles, vision, web and audio set what other models are for; the rest pick the chat model.
+      if (args[0] && Object.hasOwn(MODEL_ROLE_WORDS, args[0].toLowerCase())) {
+        if (typeof runModelRoles !== "function") throw new Error(tr("Model roles aren't available when Moondog is started this way."));
+        addMoondogMessage(await runModelRoles(args));
+        setFooter(tr("Done."), success);
+        return;
+      }
       await selectModel(args);
       return;
     }
@@ -2471,6 +2581,10 @@ export async function runMoondogTui({
     }
     if (command === "generation") {
       await manageGeneration(args);
+      return;
+    }
+    if (command === "library") {
+      await manageLibrary(args);
       return;
     }
     if (command === "spotify") {
@@ -2723,8 +2837,12 @@ export async function runMoondogTui({
     };
 
     try {
+      // An image path in the message goes with it, as Hermes Agent's terminal does; the words stay.
+      const images = await imagesFromText(value);
+      if (images.length) setFooter(tr("Looking at the attached images... Ctrl+C cancels."));
       const result = await activeRuntime.prompt(value, {
         ...(profileSeed ? { profileSeed } : {}),
+        ...(images.length ? { images } : {}),
         onTextDelta: (delta) => {
           if (cleanedUp) return;
           work.quiet();

@@ -506,6 +506,10 @@ export class ListeningProfileDomainServices {
     return this.#store.recentAttention?.({ subjectId: this.#subjectId }) ?? null;
   }
 
+  listeningDays() {
+    return this.#store.listeningDays?.({ subjectId: this.#subjectId }) ?? null;
+  }
+
   // Moondog's suggestions ledger and the declared mix (src/profile/moondog-suggestions.mjs).
   recordMoondogSuggestions(entries) {
     return this.#store.recordMoondogSuggestions?.({ entries }) ?? null;

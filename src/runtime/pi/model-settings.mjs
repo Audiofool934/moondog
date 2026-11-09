@@ -9,6 +9,7 @@ import {
 import { isEndpointProvider, removeEndpoint, saveEndpoint } from "./custom-endpoints.mjs";
 import { LEGACY_MODEL_ALIASES } from "./model-catalog.mjs";
 import { readConversationModels, readModelList, sameModel, writeConversationModel, writeModelList } from "./model-list.mjs";
+import { MODEL_ROLES, modelRole, readModelRoles, writeModelRole } from "./model-roles.mjs";
 import { chatgptProviderId } from "./provider-registry.mjs";
 import { createPersistentCredentialStore } from "./persistent-credential-store.mjs";
 import { getPublicPiModelCatalog } from "./public-model-catalog.mjs";
@@ -22,6 +23,8 @@ import { clampEffort, readPiRuntimeSelection } from "./runtime-settings.mjs";
 // key, then Anthropic, Google and xAI. Any other service is reached as an endpoint by address; Pi's
 // other providers show only once a key for one is saved or in the environment.
 const FEATURED = ["openai", "anthropic", "google", "xai"];
+// Whether a catalog model takes an input besides text, such as "image".
+const takes = (model, input) => Boolean(input) && Array.isArray(model?.input) && model.input.includes(input);
 // Moondog's own errors carry fixed text. Pi wraps them, and its own text may not be safe.
 const moondogErrorNames = new Set(["MoondogCredentialStoreError", "MoondogRuntimeSettingsError"]);
 
@@ -183,11 +186,69 @@ export function createModelSettings({
           const model = models.getModel(entry.provider, entry.model);
           return { provider: entry.provider, model: entry.model, name: model?.name ?? entry.model,
             providerName: names.get(entry.provider) ?? entry.provider, ready: Boolean(model) && ready.get(entry.provider) === true,
-            reasoning: thinks(model) };
+            reasoning: thinks(model), vision: takes(model, "image") };
         }),
         default: selection ? { provider: selection.provider, model: selection.model, effort: selection.effort ?? null,
           reasoning: thinks(defaultModel), thinking: selection.effort && defaultModel ? clampEffort(defaultModel, selection.effort) : null } : null,
       };
+    },
+
+    // What each model is for: the chat model from settings.json, then each other role's choice from
+    // model-roles.json, null for auto. Vision on auto uses the chat model when it can see images.
+    // web is the web research's services(), which knows the web services; Settings passes it in.
+    async roles({ web = null } = {}) {
+      const selection = await current();
+      let saved;
+      try {
+        saved = await readModelRoles(environment);
+      } catch (error) {
+        throw moondogError(error) ?? failure("model_roles_invalid", "Moondog could not read its model roles.");
+      }
+      const source = await catalog();
+      let models;
+      try {
+        models = withAuth(source);
+      } catch (error) {
+        throw moondogError(error) ?? failure("auth_status_failed", "Moondog could not read its saved sign-ins.");
+      }
+      const names = new Map(source.providers().map(provider => [provider.id, provider.name]));
+      const describe = (choice) => {
+        const model = models.getModel(choice.provider, choice.model);
+        return { provider: choice.provider, model: choice.model, name: model?.name ?? choice.model,
+          providerName: names.get(choice.provider) ?? choice.provider, known: Boolean(model), vision: takes(model, "image") };
+      };
+      const chat = selection ? describe(selection) : null;
+      return MODEL_ROLES.map((role) => {
+        const base = { id: role.id, kind: role.kind, state: role.state, ...(role.input ? { input: role.input } : {}) };
+        if (role.id === "chat") return { ...base, choice: chat };
+        if (role.id === "web_search") {
+          return { ...base, choice: saved.web_search ?? null,
+            ...(web ? { services: web.services, search: web.search?.provider ?? null, read: web.read?.provider ?? null } : {}) };
+        }
+        if (role.state !== "enabled") return { ...base, choice: null };
+        // Hermes Agent's auxiliary vision on auto: the main model when it takes images, else none.
+        return { ...base, choice: saved[role.id] ? describe(saved[role.id]) : null,
+          auto: chat && takes(models.getModel(selection.provider, selection.model), role.input) ? chat : null };
+      });
+    },
+
+    // Saves one role's choice; null puts it on auto. A model must be in the catalog and take the
+    // input its role is for.
+    async setRole(roleId, choice) {
+      const role = modelRole(String(roleId ?? ""));
+      if (!role || role.stored) throw failure("model_role_unknown", "Moondog has no such model role.");
+      if (role.state !== "enabled") throw failure("model_role_unavailable", "That model role isn't available yet.");
+      if (role.kind === "model" && choice) {
+        const provider = String(choice.provider ?? "").trim().toLowerCase();
+        const model = (await catalog()).createModels().getModel(provider, String(choice.model ?? "").trim());
+        if (!model) throw failure("model_unknown", "Moondog doesn't know that model.");
+        if (!takes(model, role.input)) throw failure("model_role_unsuitable", `That model can't take ${role.input} input.`);
+      }
+      try {
+        return await writeModelRole(role.id, choice ?? null, environment);
+      } catch (error) {
+        throw moondogError(error) ?? failure("model_roles_invalid", "Moondog could not save its model roles.");
+      }
     },
 
     // The model each conversation was given in the window's menu, and a change to one: null gives a
@@ -262,7 +323,7 @@ export function createModelSettings({
         refresh,
         models: source.models(providerId).filter(({ id }) => !LEGACY_MODEL_ALIASES.includes(id)).map(({ id, name, contextWindow, reasoning, catalogNote }) => {
           const model = full.getModel(providerId, id);
-          return { id, name, ...(contextWindow ? { contextWindow } : {}), reasoning,
+          return { id, name, ...(contextWindow ? { contextWindow } : {}), reasoning, vision: takes(model, "image"),
             effortLevels: model ? getSupportedThinkingLevels(model) : [],
             ...(catalogNote ? { retained: true } : {}) };
         }),

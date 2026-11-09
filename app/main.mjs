@@ -12,6 +12,7 @@ import path from "node:path";
 import { Readable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { resolveMoondogStateDirectory } from "../src/core/state-directory.mjs";
+import { trackFolderCover } from "../src/integrations/stable-audio/cover.mjs";
 import { windowLocale, windowStrings } from "./strings.mjs";
 import { createUpdates } from "./updates.mjs";
 import { accelerators, needsLoginShell, windowChrome } from "./platform.mjs";
@@ -40,10 +41,19 @@ if (process.env.MOONDOG_APP_DEBUG_PORT) app.commandLine.appendSwitch("remote-deb
 // The tracks Moondog makes on this Mac (src/integrations/stable-audio) play in the window from
 // moondog-media://generated/<id>. The scheme serves those files and nothing else, so the page never
 // holds a path or reads a folder; it answers byte ranges, so the listener can move in a track.
-protocol.registerSchemesAsPrivileged([{ scheme: "moondog-media", privileges: { standard: true, secure: true, stream: true } }]);
+// moondog-media://generated/<id>/cover.svg is the track's cover, drawn from its receipt (cover.mjs);
+// it allows a cross-origin read, so the window can take its colours as it does any cover's.
+protocol.registerSchemesAsPrivileged([{ scheme: "moondog-media", privileges: { standard: true, secure: true, stream: true, corsEnabled: true } }]);
 const generatedTrackId = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 async function generatedTrack(request) {
   const url = new URL(request.url);
+  const cover = /^\/([^/]+)\/cover\.svg$/u.exec(url.pathname);
+  if (cover) {
+    const svg = url.hostname === "generated" && generatedTrackId.test(cover[1])
+      ? await trackFolderCover(path.join(resolveMoondogStateDirectory(), "generated", cover[1])).catch(() => null) : null;
+    return svg ? new Response(svg, { headers: { "Content-Type": "image/svg+xml", "Access-Control-Allow-Origin": "*", "Cache-Control": "max-age=3600" } })
+      : new Response(null, { status: 404 });
+  }
   const id = url.pathname.slice(1);
   if (url.hostname !== "generated" || !generatedTrackId.test(id)) return new Response(null, { status: 404 });
   const file = path.join(resolveMoondogStateDirectory(), "generated", id, "track.wav");
@@ -115,7 +125,19 @@ const onAirItem = (t, extra = {}) => ({ id: "on-air", type: "checkbox", label: t
 // A newer Moondog from GitHub releases (updates.mjs): the window offers it at the top right and shows
 // its download, and the Moondog menu checks for one, downloads it, or restarts into it.
 let updatePhase = "idle";
+// The update channel the listener picked in Settings, kept beside the window's place. Until they
+// pick, a beta version follows beta and a stable one stable.
+const updateChannelFile = () => path.join(app.getPath("userData"), "updates.json");
+const savedBeta = () => {
+  try {
+    const saved = JSON.parse(readFileSync(updateChannelFile(), "utf8"));
+    if (typeof saved?.beta === "boolean") return saved.beta;
+  } catch { /* Nothing picked yet. */ }
+  return app.getVersion().includes("-");
+};
 const updates = createUpdates({
+  beta: savedBeta(),
+  // Only a packaged app updates; reading autoUpdater makes electron-updater's platform updater.
   // Linux updates run inside an AppImage, not an unpacked development or smoke-test directory.
   autoUpdater: app.isPackaged && process.env.MOONDOG_UPDATE_CHECK !== "off"
     && (process.platform !== "linux" || process.env.APPIMAGE) ? electronUpdater.autoUpdater : null,
@@ -198,6 +220,8 @@ function buildMenu() {
     ] },
     { label: t("menuView"), submenu: [
       { label: t("menuSidebar"), accelerator: keys.sidebar, click: command("toggle-sidebar") },
+      { label: t("menuLibrary"), accelerator: keys.library, click: command("toggle-library") },
+      { label: t("menuTaste"), accelerator: keys.taste, click: command("toggle-taste") },
       { label: t("menuPlayer"), accelerator: keys.player, click: command("toggle-inspector") },
       { label: t("menuRecord"), accelerator: keys.record, click: command("toggle-record") },
       { type: "separator" },
@@ -372,9 +396,13 @@ const menuTemplate = (items, choose) => items.map((item) => item.type === "separ
 });
 // On macOS the menu can report closing before the chosen item's click runs, so a click answers at
 // once and closing answers "nothing" only a moment later.
-ipcMain.handle("menu", (_event, { items, x, y }) => new Promise((resolve) => {
-  const menu = Menu.buildFromTemplate(menuTemplate(Array.isArray(items) ? items : [], (id) => resolve(id)));
+// A menu that belongs to a control can name the item to set at the point, so it opens over the control with its
+// current choice there, as a native pop-up button opens (positioningItem, macOS).
+ipcMain.handle("menu", (_event, { items, x, y, positioningItem }) => new Promise((resolve) => {
+  const list = Array.isArray(items) ? items : [];
+  const menu = Menu.buildFromTemplate(menuTemplate(list, (id) => resolve(id)));
   menu.popup({ window, ...(Number.isFinite(x) && Number.isFinite(y) ? { x: Math.round(x), y: Math.round(y) } : {}),
+    ...(Number.isInteger(positioningItem) && positioningItem >= 0 && positioningItem < list.length ? { positioningItem } : {}),
     callback: () => setTimeout(() => resolve(null), 150) });
 }));
 // A confirmation for something that cannot be undone, such as deleting a conversation.
@@ -382,6 +410,13 @@ ipcMain.handle("confirm", async (_event, { message, detail, confirm, cancel }) =
   const { response } = await dialog.showMessageBox(window, { type: "warning", message: String(message ?? ""), detail: String(detail ?? ""),
     buttons: [String(confirm ?? "OK"), String(cancel ?? "Cancel")], defaultId: 1, cancelId: 1 });
   return response === 0;
+});
+// A plain question with one choice beside it, such as importing a playlist and whether it shapes the listener's taste.
+ipcMain.handle("ask", async (_event, { message, detail, confirm, cancel, checkbox, checked } = {}) => {
+  const { response, checkboxChecked } = await dialog.showMessageBox(window, { type: "none", message: String(message ?? ""), detail: String(detail ?? ""),
+    buttons: [String(confirm ?? "OK"), String(cancel ?? "Cancel")], defaultId: 0, cancelId: 1,
+    ...(checkbox ? { checkboxLabel: String(checkbox), checkboxChecked: checked === true } : {}) });
+  return { confirmed: response === 0, checked: checkboxChecked === true };
 });
 ipcMain.handle("choose-file", async (_event, { title, filterName } = {}) => {
   const { canceled, filePaths } = await dialog.showOpenDialog(window, { title: String(title ?? ""), properties: ["openFile"],
@@ -398,6 +433,14 @@ ipcMain.handle("set-appearance", (_event, choice) => {
 });
 ipcMain.handle("update", () => updates.state());
 ipcMain.on("install-update", () => updates.install());
+ipcMain.handle("update-channel", () => ({ enabled: updates.enabled, beta: updates.beta() }));
+ipcMain.handle("set-update-channel", (_event, beta) => {
+  const next = updates.setBeta(beta === true);
+  try { writeFileSync(updateChannelFile(), JSON.stringify({ beta: next })); } catch { /* The choice holds until Moondog quits. */ }
+  return { enabled: updates.enabled, beta: next };
+});
+// Settings' own check answers in the sheet: "available", "current" or "failed".
+ipcMain.handle("check-update", () => updates.check());
 
 // Apple Music's whole songs come from a helper MusicKit knows as Moondog (native/music.swift): it sits
 // beside the app's own executable when packaged, and in its own bundle for development. It starts the

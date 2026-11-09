@@ -7,6 +7,7 @@ import { randomUUID } from "node:crypto";
 import { LOCALES, normalizeLocale, screenTranslator } from "../src/i18n/index.mjs";
 import { formatLocalResult } from "../src/surfaces/cli/format-output.mjs";
 import { HistoryImportView } from "../src/surfaces/cli/history-import-view.mjs";
+import { buildTasteProfileModel } from "../src/surfaces/cli/taste-profile-model.mjs";
 import { setAppleMusicStorefront } from "../src/integrations/apple-music/storefront.mjs";
 import { shortConversationTitle } from "../src/memory/local-memory-store.mjs";
 import { runtimeBehindSelection } from "../src/runtime/pi/runtime-selection.mjs";
@@ -108,6 +109,7 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
   // The saved transcript the window last got, so a look that finds nothing new sends nothing.
   let drawn = null;
   function lookForChanges() {
+    lookForLibrary();
     try {
       follow();
       const version = base.memoryStore?.dataVersion?.();
@@ -280,6 +282,8 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     if (behind.length) sendStatus();
     if (behind.length || changed !== "settings") await sendModels();
     await sendList();
+    // A new chat model changes what vision on auto means; a key or a role changes web search.
+    await sendRoles();
   }
 
   // On Air. The stream's last change, so a read that began before it is not taken for news about it.
@@ -575,9 +579,10 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     sendStatus();
   }
 
-  async function prompt(text) {
+  // Images come as {data, mimeType, name}; the agent checks them and routes them to a model that sees.
+  async function prompt(text, images = []) {
     const slot = current;
-    if (typeof text !== "string" || !text.trim()) return;
+    if (typeof text !== "string" || (!text.trim() && !images.length)) return;
     // A second message cannot start while the first is in a turn or waiting to start. The window
     // put the text back in the composer; dropping it here would lose it.
     if (slot.turn || slot.waiting) return send({ type: "notice", code: "message_busy", text });
@@ -619,6 +624,10 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     }) ?? (() => {});
     try {
       const result = await slot.runtime.prompt(text, {
+        ...(images.length ? { images } : {}),
+        // The conversation keeps the words with each image's stand-in or description, so the saved
+        // turn matches this live one by that text.
+        onImagesReady: ({ text: kept }) => { if (slot.live) slot.live.user = kept; },
         onTextDelta: (delta) => { if (slot.live) slot.live.text += delta; send({ type: "text", session, id, delta }); },
         onTextReplace: (replacement) => { if (slot.live) slot.live.text = replacement; send({ type: "text", session, id, replace: replacement }); },
         onModelRetry: ({ attempt, maxRetries }) => send({ type: "retry", session, id, attempt, maxRetries }),
@@ -704,8 +713,7 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     sendStatus();
   }
   // The shown conversation's own model. Choosing exactly the default gives it back to the default.
-  async function pick(selection) {
-    const slot = current;
+  async function pick(selection, slot = current) {
     const session = sessionOf(slot);
     const own = defaults && sameSelection(selection, defaults) ? null : selection;
     keep(session, own);
@@ -722,6 +730,7 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     forgetWhere((chosen) => sameSelection(chosen, selection));
     await rebuildAll();
     await sendList();
+    await sendRoles();
   }
   async function sendList() {
     if (!modelSettings?.list) return;
@@ -793,6 +802,29 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     } catch (error) {
       send({ type: "models", providers: [], error: errorText(error) });
     }
+  }
+  // What each model is for. Web search lists its services with whether each is set up.
+  async function sendRoles() {
+    if (!modelSettings?.roles) return send({ type: "model-roles", roles: [] });
+    try {
+      const web = await base.webResearch?.services?.().catch(() => null) ?? null;
+      send({ type: "model-roles", roles: await modelSettings.roles({ web }) });
+    } catch (error) {
+      send({ type: "model-roles", roles: [], error: errorText(error) });
+    }
+  }
+  async function setRole(data) {
+    const choice = data.choice === null || data.choice === "auto" || data.choice === undefined ? null
+      : data.choice.service !== undefined ? { service: String(data.choice.service) }
+        : { provider: String(data.choice.provider ?? ""), model: String(data.choice.model ?? "") };
+    try {
+      await modelSettings?.setRole?.(String(data.role ?? ""), choice);
+    } catch (error) {
+      send({ type: "notice", code: "model-role", message: errorText(error) });
+    }
+    // The web search service takes effect at once; every conversation shares one web research.
+    if (data.role === "web_search") await base.webResearch?.refresh?.().catch(() => {});
+    await sendRoles();
   }
   async function sendProviderModels(provider, force = false) {
     if (!modelSettings) return;
@@ -928,7 +960,8 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
   async function setLanguage(code) {
     const locale = normalizeLocale(code);
     if (!locale) return;
-    for (const slot of slots) { slot.application.locale = locale; slot.application.conversationLocale = locale; }
+    // A language chosen in the picker ends one the listener asked the agent to keep.
+    for (const slot of slots) { slot.application.locale = locale; slot.application.conversationLocale = locale; slot.application.replyLanguagePin = null; }
     await saveLanguage?.(locale);
     sendStatus();
   }
@@ -985,9 +1018,186 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
       id: memory.memory_id, text: memory.text, kind: memory.kind, updatedAt: memory.updated_at })) });
   }
 
+  // The listener's taste, for the taste page: the profile the terminal's /taste shows, built from the same
+  // view model, so the two say the same thing in the same words. The saved reading comes beside it. The window
+  // asks again each time the page opens and after anything that can change it: a reply, an import, a choice.
+  async function taste() {
+    const tr = screenTranslator(base.locale);
+    const empty = [tr("Nothing to look at yet."), tr("Import your history or library and it will show up here.")];
+    if (base.profileServicesReady?.() !== true) return send({ type: "taste", state: "empty", lines: empty });
+    // The overview's saved-reading line names terminal commands, so the page draws the reading itself.
+    const { listener_model: _saved, ...profile } = (await base.getProfileSummary({ maxItems: 10 })) ?? {};
+    const model = buildTasteProfileModel(profile, tr);
+    send({ type: "taste", state: model.subjects.length || model.summaryLines.length ? "ready" : "empty",
+      overview: model.summaryLines, lines: empty, reading: await savedReading(),
+      subjects: model.subjects.map(({ key, label, subtitle, kind, stance, correctionId, detailLines, evidence, target }) =>
+        ({ key, label, subtitle, kind, stance: stance ?? null, chosen: Boolean(correctionId), details: detailLines, evidence, target })),
+      canChoose: base.tasteChoicesReady?.() === true,
+      // The record: the listener's own plays a day at a time, and each year's song, as /taste picks it.
+      history: base.listeningDays?.() ?? null,
+      songs: (profile.listening_behavior?.time_capsule_tracks ?? []).filter((track) => Number.isSafeInteger(track?.capsule_year))
+        .map((track) => ({ year: track.capsule_year, title: track.label ?? "", artist: track.artist_credit ?? "" })),
+      // The request "Find more like this" starts in the composer, in the core's language as the terminal's.
+      ask: tr("Find me 3 songs to go to from here, and tell me why each one.") });
+  }
+  // The reading a connected model wrote with /profile build: its summary and the findings /profile saved shows.
+  async function savedReading() {
+    if (base.profileBuildReady?.() !== true) return null;
+    const value = await base.getListenerProfile?.();
+    if (!value || value.state === "missing") return { state: "missing" };
+    const findings = [...new Map([...(value.highlights ?? []), ...(value.listener_assertions ?? [])]
+      .map((claim) => [claim.claim_id, claim])).values()].sort((a, b) => a.finding_number - b.finding_number);
+    return { state: value.state === "stale" && value.newer_listening_only ? "current_through" : value.state,
+      version: value.sequence ?? null, builtAt: String(value.built_at ?? "").slice(0, 10) || null, summary: value.summary ?? "",
+      findings: findings.map((claim) => ({ number: claim.finding_number, statement: claim.statement, kind: claim.kind, scope: claim.scope ?? "" })) };
+  }
+  // A Like, an Avoid or its undoing, saved as /profile correct saves it, so the agent, the Avoid check and the
+  // terminal see it at once. The page then gets the profile again with the choice in it.
+  async function tasteChoice(data) {
+    const stance = ["like", "avoid", "retract"].includes(data.stance) ? data.stance : null;
+    const target = data.target ?? {};
+    if (!stance || !["artist", "track"].includes(target.entityType)) return;
+    base.recordTasteChoice({ entityType: target.entityType, label: String(target.label ?? ""),
+      ...(target.entityType === "track" ? { artistCredit: String(target.artistCredit ?? "") } : {}), stance });
+    send({ type: "taste-saved", key: data.key ?? null, stance });
+    await taste();
+  }
+  // Why an artist or track is in the profile, and what that evidence can't say, as the terminal's "Why it's here".
+  async function tasteWhy(data) {
+    const evidenceId = String(data.evidenceId ?? "");
+    const explanation = await base.explainProfileEvidence({ evidenceId });
+    send({ type: "taste-why", key: data.key ?? null, evidenceId, basis: explanation?.basis_summary ?? "",
+      limit: explanation?.interpretation_limit ?? "", confidence: Number.isFinite(explanation?.confidence) ? explanation.confidence : null });
+  }
+  // The whole report, in the conversation, as after an import.
+  async function tasteReport() {
+    if (base.profileServicesReady?.() !== true) return;
+    const tr = screenTranslator(base.locale);
+    const report = formatLocalResult("taste", await base.runLocalCommand("taste", current.runtime.publicStatus?.()), tr);
+    send({ type: "local", session: sessionOf(current), markdown: report });
+  }
+
+  // The listener's library: its tree for the sidebar, and the one playlist the room shows. The terminal's
+  // writes reach it through the data version, the agent's and this window's through the store's own listener.
+  const library = base.libraryStore ?? null;
+  let libraryShown = null;
+  let playlistOpen = null;
+  let playlistShown = null;
+  let libraryTimer = null;
+  async function sendPlaylist(force = false) {
+    const id = playlistOpen;
+    if (!library || !id) return;
+    const playlist = await base.libraryPlaylist(id);
+    // Another playlist opened while this one was read; its own read answers for it.
+    if (id !== playlistOpen) return;
+    const text = JSON.stringify(playlist);
+    if (!force && text === playlistShown) return;
+    playlistShown = text;
+    send({ type: "library-playlist", id, playlist });
+  }
+  async function sendLibrary(force = false) {
+    if (!library || closed) return;
+    const view = base.libraryView();
+    const text = JSON.stringify(view);
+    if (force || text !== libraryShown) {
+      libraryShown = text;
+      send({ type: "library", ...view });
+    }
+    await sendPlaylist(force);
+  }
+  const librarySoon = () => {
+    clearTimeout(libraryTimer);
+    libraryTimer = setTimeout(() => { void sendLibrary().catch(() => {}); }, 40);
+  };
+  const unsubscribeLibrary = library?.subscribe?.(librarySoon) ?? null;
+  let librarySeen = null;
+  function lookForLibrary() {
+    try {
+      const version = library?.dataVersion?.();
+      if (version === undefined || version === librarySeen) return;
+      const first = librarySeen === null;
+      librarySeen = version;
+      if (!first) librarySoon();
+    } catch { /* A busy or closing store; the next look tries again. */ }
+  }
+  const libraryNotice = (error) => send({ type: "notice", code: error?.code ?? "library_failed", message: errorText(error) });
+  const libraryHandlers = {
+    "library-open": async (data) => {
+      playlistOpen = data.id ? String(data.id) : null;
+      playlistShown = null;
+      void base.refreshLibraryCovers?.().catch(() => {});
+      if (playlistOpen) await sendPlaylist(true);
+    },
+    "library-folder-save": (data) => library.saveFolder({ ...(data.id ? { id: String(data.id) } : {}), ...(typeof data.name === "string" ? { name: data.name } : {}),
+      ...(data.parentId !== undefined ? { parentId: data.parentId } : {}), ...(data.beforeId !== undefined ? { beforeId: data.beforeId } : {}) }),
+    "library-folder-delete": (data) => library.deleteFolder(String(data.id ?? "")),
+    "library-playlist-save": (data) => {
+      const saved = library.savePlaylist({ ...(data.id ? { id: String(data.id) } : {}), ...(typeof data.name === "string" ? { name: data.name } : {}),
+        ...(data.folderId !== undefined ? { folderId: data.folderId } : {}), ...(data.beforeId !== undefined ? { beforeId: data.beforeId } : {}) });
+      // A playlist made here opens, so its name can be given and songs dropped on it.
+      if (!data.id) send({ type: "library-made", id: saved.id });
+    },
+    // The open playlist's next read finds it gone and closes it in the window.
+    "library-playlist-delete": (data) => { library.deletePlaylist(String(data.id ?? "")); },
+    "library-entries-remove": (data) => library.removeEntries(String(data.playlistId ?? ""), idsOf(data)),
+    "library-entries-move": (data) => library.moveEntries(String(data.playlistId ?? ""), idsOf(data), data.beforeId ? String(data.beforeId) : null),
+    // Entries dragged from one playlist onto another are copied there, as songs are in a music app.
+    "library-entries-copy": (data) => {
+      const source = library.playlist(String(data.fromPlaylistId ?? ""));
+      const wanted = new Set(idsOf(data));
+      const entries = (source?.entries ?? []).filter((entry) => wanted.has(entry.id)).map((entry) => (entry.kind === "made"
+        ? { kind: "made", id: entry.made_id, title: entry.title } : { ...entry, refs: entry.refs }));
+      if (entries.length) library.addEntries(String(data.playlistId ?? ""), entries, { addedBy: "listener" });
+    },
+    // The listener's own save: the song or made track playing now, into Saved or a playlist.
+    "library-save": async (data) => {
+      try {
+        const saved = await base.saveToLibrary({ from: data.from === "queue" ? "queue" : "now_playing", ...(data.playlistId ? { playlistId: String(data.playlistId) } : {}),
+          ...(typeof data.playlistName === "string" && data.playlistName.trim() ? { playlistName: data.playlistName } : {}),
+          ...(typeof data.artwork === "string" ? { artwork: data.artwork } : {}) }, { by: "listener" });
+        send({ type: "library-saved", playlist: saved.playlist, added: saved.added, already: saved.already });
+      } catch (error) { libraryNotice(error); }
+    },
+    // A pasted playlist link: read first, so the window can ask before anything is kept.
+    "library-import-preview": async (data) => {
+      const preview = await base.previewPlaylistLink({ link: String(data.link ?? "") });
+      send({ type: "library-import-preview", ...preview, folderId: data.folderId ?? null });
+    },
+    "library-import": async (data) => {
+      const imported = await base.importPlaylistLink({ token: String(data.token ?? ""), taste: data.taste === true,
+        ...(data.folderId ? { folderId: String(data.folderId) } : {}) });
+      send({ type: "library-imported", ...imported });
+    },
+    "library-play": async (data) => {
+      try {
+        const played = await base.playLibrary({ playlistId: String(data.playlistId ?? ""), ...(data.entryId ? { entryId: String(data.entryId) } : {}), shuffle: data.shuffle === true });
+        send({ type: "library-played", ...played });
+        await refreshPlayer({ queue: true });
+      } catch (error) { libraryNotice(error); }
+    },
+  };
+
+  // A refused library edit says why in the store's own words, so the window can name it.
+  for (const [type, handle] of Object.entries(libraryHandlers)) {
+    libraryHandlers[type] = async (data) => {
+      if (!library) return libraryNotice({ code: "library_not_ready" });
+      try { await handle(data); } catch (error) { libraryNotice(error); }
+    };
+  }
+
   const idsOf = (data) => (Array.isArray(data.ids) ? data.ids : [data.id ?? ""]).map(String);
   const handlers = {
-    prompt: (data) => prompt(String(data.text ?? "")),
+    ...libraryHandlers,
+    prompt: async (data) => {
+      const text = String(data.text ?? "");
+      // A message from an open playlist starts its own conversation. If none can open, it goes back to the composer.
+      if (data.fresh === true) {
+        const left = sessionOf(current);
+        await openSession(null);
+        if (sessionOf(current) === left) { send({ type: "notice", code: "message_busy", text }); return sendSession(current); }
+      }
+      return prompt(text, Array.isArray(data.images) ? data.images.slice(0, 8) : []);
+    },
     cancel: () => { if (current.turn) current.runtime.abort?.(); },
     new: () => openSession(null),
     open: (data) => openSession(String(data.id ?? "")),
@@ -1033,6 +1243,9 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     },
     // Settings' choices: the default, the thinking level it asks for, and which models the menu offers.
     "model-list": () => sendList(),
+    // What each model is for: vision and web search, with audio's place kept for later.
+    "model-roles": () => sendRoles(),
+    "model-role": (data) => setRole(data),
     "default-model": async (data) => {
       const provider = String(data.provider ?? "");
       const model = String(data.model ?? "");
@@ -1145,6 +1358,10 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     memories: () => memories(),
     remember: (data) => { const text = String(data.text ?? "").trim(); if (text) base.rememberMemory?.({ text, kind: "fact" }); memories(); },
     forget: (data) => { base.forgetMemory?.(String(data.id ?? "")); memories(); },
+    taste: () => taste(),
+    "taste-choice": (data) => tasteChoice(data),
+    "taste-why": (data) => tasteWhy(data),
+    "taste-report": () => tasteReport(),
     "import-file": (data) => prepare("file", String(data.path ?? "")),
     "import-lastfm": (data) => prepare("lastfm", String(data.username ?? "").trim()),
     "import-spotify": () => prepare("spotify"),
@@ -1167,6 +1384,17 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     schedulePlayer();
   }
   const unsubscribePlayback = base.onPlaybackServiceChange?.(playbackChanged);
+  // A model the listener asked a conversation's agent for in words: that conversation's own pick, as
+  // in the menu, taking over when its reply ends.
+  const unsubscribeModelSwitch = base.modelSwitch?.subscribe?.(({ application, selection }) => {
+    const slot = slots.find((candidate) => candidate.application === application);
+    if (slot) void pick({ ...selection, ...(defaults?.effort && !selection.effort ? { effort: defaults.effort } : {}) }, slot).catch(() => {});
+  });
+  // A language the agent set when the listener asked in words: every conversation and the window follow it.
+  const unsubscribeLanguage = base.languageSelection?.subscribe?.((locale) => {
+    for (const slot of slots) { slot.application.locale = locale; slot.application.conversationLocale = locale; }
+    sendStatus();
+  });
   // Music making turned on or off in the terminal reaches Settings here.
   const unwatchGeneration = generation?.subscribe?.(() => { if (!closed) sendStatus(); });
   // A download started here or in the terminal shows its progress here as it goes.
@@ -1195,11 +1423,15 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     const stop = () => stopping ??= (async () => {
       closed = true;
       unsubscribePlayback?.();
+      unsubscribeLanguage?.();
+      unsubscribeModelSwitch?.();
       unwatchGeneration?.();
       unwatchSetup?.();
       unwatchModel?.();
       unwatchFirstRun?.();
       unsubscribeStream?.();
+      unsubscribeLibrary?.();
+      clearTimeout(libraryTimer);
       clearTimeout(pollTimer);
       clearTimeout(sessionsTimer);
       const settling = slots.filter((slot) => slot.turn).map((slot) => { slot.runtime.abort?.(); return slot.turn.settled; });
@@ -1243,6 +1475,9 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     shown = JSON.stringify([saved, folderList]);
     drawn = JSON.stringify([sessionOf(current), transcript(current)]);
     send({ type: "ready", ...status(), sessions: saved, folders: folderList, current: sessionOf(current), running: [], transcript: [] });
+    lookForLibrary();
+    void sendLibrary(true).catch(() => {});
+    void base.refreshLibraryCovers?.().catch(() => {});
     void refreshFirstRun();
     void refreshPlayer();
     schedulePlayer();

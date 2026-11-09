@@ -2,22 +2,23 @@
 
 ## Status
 
-Moondog is a local listening room.
+Moondog is a radio host just for the listener, working from a local listening room.
 It turns the listening history and library data that a listener supplies into an evidence-based profile.
 With a connected model, an agent uses that profile to talk about music, find music, and plan playlists.
-It can also control Spotify after the listener connects Spotify.
+It can also control Spotify after the listener connects it, and play through Apple Music and NetEase Music.
 
 Moondog has three surfaces:
 
-- The terminal listening room is the main surface.
-  It is a local CLI and TUI built on Pi.
+- The terminal listening room is a local CLI and TUI built on Pi.
 - The desktop app in `app/` is a native client on the same core.
   It shares the profile, settings, and sign-ins with the terminal.
+  It shows the same taste, library and conversations in its own window.
 - The project page in `site/` plays a short scene in the desktop app's real window, in the browser, on made-up data.
 
 Pi supplies replaceable agent-loop, model, and terminal adapters, while Moondog owns profile, memory, policy, persistence, and connectors.
 
 Moondog has the M0 foundation and a working A1 curator, with bounded A2 memory, A3 external discovery, and A4 connected-action slices in active development.
+The first M4 creative tool, Stable Audio 3, makes instrumental tracks on the listener's Mac.
 The provider-neutral contract foundation, private listening-evidence projection, bounded Agent tools, prompt-local external candidates, conversational playlist revision, and guarded Spotify creation and existing-playlist editing exist, but the product contract is not complete.
 
 The current Spotify priority is a smooth conversational listening experience and useful device control.
@@ -119,7 +120,7 @@ Moondog should not claim to understand a listener more deeply than its data supp
 
 Users should be able to inspect, correct, reset, export, and revoke personal profile data.
 These controls do not make profile inspection or correction a mandatory onboarding step.
-A dedicated profile inspection experience remains a possible later product decision; first-build quality takes priority over expanding it.
+The desktop app's taste page is that inspection experience, beside the terminal's `/taste`; first-build quality takes priority over expanding it.
 
 ### Local-First Privacy
 
@@ -234,10 +235,4 @@ Add a stable tool interface and connect the first music analysis or generation c
 - What profile dimensions are useful without becoming reductive?
 - Which knowledge sources can provide reliable identity, release, credit, and relationship data?
 - How should each concrete product capability be classified for risk, confirmation, budget, and execution mode?
-- How should recommendation and profile quality be evaluated with a small Lab team?
-- Which generation model or tool protocol should be integrated first?
-
-## Repository Boundary
-
-Product code, connectors, agent runtime, evaluation, and technical demos belong here.
-求索育研 administration, presentations, meeting records, and Lab-wide sharing materials belong in the AI Music Lab integration repository.
+- How should recommendation and profile quality be evaluated?

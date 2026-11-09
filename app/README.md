@@ -86,8 +86,15 @@ A model or music service chosen there lasts until the app quits, and sign-in and
   Under each message, while the pointer is on it, Copy copies its words.
   Your own saved messages also have Edit, as `/rewind` in the terminal: the message opens in its own place, Enter sends the new words there and the replies after it go, and Esc leaves it as it was.
   Moondog's saved replies also have Branch, as `/branch`: a new conversation goes on from that reply, and the original stays among the conversations.
+- Typing `@` lists Saved, the playlists and the folders, filtered as you type; the + at the composer's left offers the same as a menu.
+  The name stays in your words, and Moondog reads what it holds as it stands now, for each reply in that conversation, and can rename a playlist, take songs out or reorder it when you ask.
+  In a sent message, a playlist's name opens it.
+- Writing from an open playlist starts a new conversation about it.
+- Paste or drop up to four PNG, JPEG, WebP or GIF images, and they wait above the composer and go with the next message.
+  A vision model chosen in Settings describes them for the chat model; otherwise a chat model that can see gets them as they are; otherwise the message comes back with what to change.
+  The conversation keeps only text: the description, or a short stand-in for the image.
 - What is playing on the right: a large cover that tints the panel with its own colours, the song, a progress line you can drag to move in the song (or focus it and use the arrow keys, five seconds a press, fifteen with Shift), previous, play or pause, and next.
-  Where the music plays, under it, opens Spotify's devices and the choice between Spotify and Apple Music; while Apple Music plays, it reads Apple Music.
+  Where the music plays, under it, opens Spotify's devices and the choice among the services that can play now; while Apple Music plays, it reads Apple Music.
   A control Spotify won't take right now, such as skipping on a free account, is dimmed.
   Music you play yourself in the Music app on this Mac shows here too, with the next songs of its playlist, and the buttons act on it there.
   When it and Spotify both play, the one that plays wins over a paused one, then the chosen service; a player you just pressed stays in view for 30 seconds.
@@ -106,11 +113,15 @@ A model or music service chosen there lasts until the app quits, and sign-in and
   The model's menu shows the models kept in Settings, flat, the one this conversation uses checked, and how hard it thinks.
   A model chosen there is that conversation's alone, and the conversation keeps it after a restart; a new conversation starts on the default, which Settings sets and the terminal uses.
   While the first run still asks for a service, the service reads "Choose a music service", as the model reads "Choose a model" until there is one.
-- Typing `/` lists commands by what they open (a mistyped one stays in the composer instead of going to Moondog): `/new`, `/model`, `/language`, `/service`, `/device`, `/import`, `/memory`, `/remember`, `/folder`, `/settings` and `/help`.
-- Settings (`⌘,`, or the button at the top right beside the player's) has Language, Model, Playback, Import, Memory and About.
+- Typing `/` lists commands by what they open (a mistyped one stays in the composer instead of going to Moondog): `/new`, `/model`, `/language`, `/appearance`, `/service`, `/device`, `/import`, `/taste` (or `/profile`), `/memory`, `/remember`, `/folder`, `/library`, `/playlist`, `/settings` and `/help`.
+- Settings (`⌘,`, or the button at the top right beside the player's) has Language, Appearance, Model, Playback, Import, Memory and About.
+  Appearance sets the theme (System, Light or Dark) and the app icon.
   Model lists the menu's models with the default named, one thinking scale for every model (a level a model lacks reaches it as the nearest lighter one), and the providers: OpenAI by a ChatGPT subscription or an API key, then Anthropic, Google and xAI by key, any other Pi provider once it has a key, and endpoints.
   An endpoint is any service that speaks OpenAI's Chat Completions or Anthropic's Messages, added by its address, an optional key and its model IDs (asked of the endpoint when left empty).
   Opening a provider lists its models, each ticked when the menu offers it.
+  Auxiliary models hold what a side task uses: Vision and Web search each open to Auto and their choices, and Audio holds its place for later.
+  Vision takes a model from the menu that can see images; Web search takes DeepSeek, Brave Search or the Codex CLI.
+  They are kept in `model-roles.json` beside `settings.json`, and `/model roles` shows them in the terminal.
   Playback has one row per music service, its state under its name and the one in use checked.
   A click on a row unfolds that service's setup or its own controls (Spotify's devices and Disconnect), one row at a time.
   With the pointer on a row, a service that can play shows a switch at its right that uses it, and one that can't yet shows Set up.
@@ -131,8 +142,27 @@ A model or music service chosen there lasts until the app quits, and sign-in and
   The menu's list is `models.json`, each conversation's own model is `conversation-models.json`, and endpoints are `endpoints.json` (mode 600, with their keys), beside `settings.json`, so older Moondogs that read `settings.json` by a fixed shape keep working.
   OpenAI keeps a ChatGPT sign-in or an API key in `auth.json`; Moondog 0.2.0-beta.7 and older can't read a ChatGPT sign-in there.
   A model or a sign-in saved in an open terminal reaches the window within a few seconds, and the other way round; a reply that is running keeps its model until it ends.
-- Import: choose a Spotify, Apple Music, ListenBrainz or Last.fm export, read recent Spotify listening, read a Last.fm account (the window asks for a Last.fm API key the first time), or drop a file anywhere on the window.
+- Import: choose a Spotify, Apple Music, YouTube Music, ListenBrainz or Last.fm export, read recent Spotify listening, read a Last.fm account (the window asks for your own API key only if Last.fm refuses Moondog's), or drop a file anywhere on the window.
   The preview uses the terminal's words, nothing is saved until you add it, and the updated profile then shows in the conversation.
+- The library is the sidebar's second view (`⌥⌘L`, `/library`): Saved, then folders and playlists, folders inside folders four levels deep, with songs and the tracks Moondog made side by side.
+  Its `+` makes a playlist or a folder, or imports a playlist from a Spotify, Apple Music, NetEase Music or QQ Music link; the window shows what it read and asks before it keeps the copy, and whether it should shape your taste.
+  A click opens a playlist in the room, and its `⋯` button or a right-click opens its menu.
+  It is the same library as `/library` in the terminal, in `library.sqlite` in Moondog's state folder.
+- The sidebar's views show as tabs or split in two.
+  Drag a tab or a header onto the upper or lower half of the sidebar to place it there, or onto the tab row or a header to stack them as tabs again; the layout is kept.
+- Taste is the sidebar's third view, beside Chats and the library, by the record's mark; as the one tab, it brings your taste page into the room in the conversation's place, as a playlist opens, and another tab takes it away. `/taste`, `/profile`, and `⌥⌘T` from the View menu turn to it too. Split, any two of the three views share the sidebar and the tab row goes: each part's header is its switcher, a click listing the three views with the one there checked, so the other part's view trades places with it, the third takes its place, and Show as tabs stacks them again. Each view shows once, as a tab or as a header. Split, the taste page opens from a row of the taste view rather than on its own, since the other part may be the one using the room.
+  The core builds it with the terminal's own `/taste` view, so both show the same artists and tracks in the same words.
+  At the top: plays, hours, the history it covers and how many choices you've made, with Full report, which posts the whole report in the conversation.
+  Then your history pressed as a record, in the record's own dots: one spiral groove from the rim to the label, a turn a year, a quarter, a month or a week, whichever gives between four and fourteen turns, so a short history is a small single and a long one an album.
+  A stretch of groove darkens with that stretch's plays. The arm is the needle in time and rests on now; the wheel scratches back through the years as the record turns and the arm swings out, a click drops the needle on a groove, and the arm drags.
+  A double-click, a pinch, or Enter opens one turn as its own record (a year in months, a month in days), and the trail above, or Esc, goes back out; Last 12 months and Last 3 months press a recent stretch.
+  Beside it, the liner notes follow the turn under the needle: its plays, the song of the year as `/taste` picks it, and who moved across the range, each with a dot a turn. Rising, fading and returning are read within the range only, and a range under two years says only more or less lately, since a season can look like a change.
+  A name lights that artist's plays across the whole record, and a finding in the reading that names an artist does the same. Moondog's picks shows the plays Moondog started as hollow dots, apart from your own.
+  The core counts the plays a local day at a time from the listening history (`listeningDays`), with the plays Moondog started kept apart as everywhere else; only counts and artist names reach the window.
+  Under it, the saved reading a model wrote with `/profile build`, its summary and its findings, each marked measured, interpretation or your choice; until there is one, it says so.
+  The taste view lists every artist and track the profile rests on, filtered by All, Artists, Tracks and Your choices.
+  A click or Enter there unfolds one row at a time, opens the page if it was closed, and lights that artist across the record: where it comes from, Why it's here (the evidence and what it can't tell), I like this, Keep it out and Undo my choice, saved as `/profile correct` saves them, and for a track, Find more like this, which starts a request in the composer.
+  The page asks the core again when it opens and after an import, a choice or a reply. Esc, a message sent or another conversation brings the conversation back; Up and Down move between rows.
 - Apple Music plays whole songs where it can and 30-second previews where it can't.
   Whole songs come from a small helper beside the app's executable (`native/music.swift`) that plays the Apple Music catalog through MusicKit, so they need an Apple Music subscription and the listener's permission, which Settings › Playback asks for once.
   Until the helper can play, the window plays previews in itself, with media keys and the system's Now Playing.
@@ -152,9 +182,9 @@ A model or music service chosen there lasts until the app quits, and sign-in and
 - Keys: Enter sends and Shift+Enter starts a new line. `⌘.` or Esc stops a reply.
   Typing anywhere goes to the composer. No plain key plays, pauses or skips, because a chat window is typed in all the time.
   `⌃⌘P` plays or pauses, and `⌃⌘→` and `⌃⌘←` skip, from the Playback menu; the media keys work too. `⌃⌘O` goes on or off the air.
-  `⌥⌘S` and `⌥⌘P` show or hide the conversations and the player; a narrow window folds them on its own. `⌥⌘R` folds or opens the record.
-  On Windows and Linux, Control replaces Command in editing shortcuts and in New, Settings and Stop.
-  There, Ctrl+Shift+S, Ctrl+Shift+P and Ctrl+Shift+R show or hide the conversations, the player and the record.
+  `⌥⌘S` and `⌥⌘P` show or hide the conversations and the player; a narrow window folds them on its own. `⌥⌘L` shows or hides the library. `⌥⌘R` folds or opens the record. `⌥⌘T` opens or closes your taste.
+  On Windows and Linux, Control replaces Command in editing shortcuts, in New, Settings and Stop, and in selecting or deleting several rows.
+  There, Ctrl+Shift+S, Ctrl+Shift+L, Ctrl+Shift+P, Ctrl+Shift+R and Ctrl+Shift+T show or hide the conversations, the library, the player, the record and your taste.
   Alt+Shift+P plays or pauses, and Alt+Shift+Right and Alt+Shift+Left skip.
   These keys avoid Control with Alt, which is AltGr on many Windows keyboards, and GNOME's keys for moving windows between workspaces (`platform.mjs`).
   Press Alt to open the application menu on Windows or Linux.
@@ -175,7 +205,7 @@ A model or music service chosen there lasts until the app quits, and sign-in and
   Every read counts against the listener's Spotify app quota; when Spotify answers that the quota is used up, the window reads nothing until the time Spotify gave and says so.
   Each conversation that answers beside the first gets its own application and agent from `openConversation`, on the same memory and Spotify.
   Settings go through the services the terminal uses: `modelSettings` for providers, sign-in, the menu's list and endpoints, `rebuildRuntime`, `saveRuntimeSelection` for the default, `saveLanguage`, `savePlaybackService` and the import services.
-- `renderer/` draws the window: `sidebar.mjs` (conversations and folders), `settings.mjs` (the Settings sheet), `palette.mjs` (slash commands), `previews.mjs`, `record.mjs` (the turning record), `ui.mjs` (icons, tooltips, the overlay scrollbar), and `renderer.mjs` for the rest.
+- `renderer/` draws the window: `views.mjs` (the sidebar's views, as tabs or split), `sidebar.mjs` (conversations and folders), `library.mjs` and `shelf.mjs` (the library and a playlist in the room), `taste.mjs`, `taste-list.mjs` and `pressing.mjs` (the taste page, the taste view and the pressed record), `settings.mjs` (the Settings sheet), `first-run.mjs`, `palette.mjs` (slash commands), `previews.mjs`, `record.mjs` (the turning record), `ui.mjs` (icons, tooltips, the overlay scrollbar), and `renderer.mjs` for the rest.
   Every colour, size, corner and duration is a token in `tokens.css`; `style.css` and `sheet.css` use only the tokens.
   Replies render from Markdown into DOM text nodes (`markdown.mjs`), so a reply can't inject markup.
 - Menus for a conversation and the model, device and service pickers are native menus, built in `main.mjs` from plain items the page sends.
@@ -249,9 +279,9 @@ Keep raw tool diagnostics private if a failed step needs further investigation.
 
 - The app carries the core exactly as the npm package ships it: `npm pack` decides the files, and `npm ci --omit=dev` adds their dependencies.
 - Signing needs the Developer ID Application certificate in the login keychain.
-  Notarization uses `MOONDOG_NOTARY_PROFILE`, then the shared `APPLE_NOTARY_PROFILE`, then `mac-mini-notary`.
-  The Mac mini stores one `mac-mini-notary` profile for all products in the same developer team.
-  To configure another machine, run `xcrun notarytool store-credentials mac-mini-notary --team-id <your team ID>` and enter the Apple ID and app-specific password at the secure prompts.
+  Notarization signs in with an App Store Connect API key when one is set up (see Updates below).
+  Without a key, it uses the Keychain profile named by `MOONDOG_NOTARY_PROFILE`, then `APPLE_NOTARY_PROFILE`, then `mac-mini-notary`.
+  To configure a profile on another machine, run `xcrun notarytool store-credentials mac-mini-notary --team-id <your team ID>` and enter the Apple ID and app-specific password at the secure prompts.
   `MOONDOG_SIGNING_IDENTITY` selects a different certificate.
   Keep passwords in Keychain; profile names and environment variables contain no password.
 - The app records its source commit, version, build number and signing team inside the signed bundle.
@@ -269,7 +299,11 @@ Keep raw tool diagnostics private if a failed step needs further investigation.
 The packaged app updates itself from this repository's GitHub releases (`updates.mjs`, with electron-updater).
 
 - It checks at launch and every six hours, and downloads nothing until you ask.
-  A beta version also takes releases marked as prereleases; a stable version takes only the others. It never goes back to an older version.
+  Settings › About chooses the channel: Beta also takes releases marked as prereleases, Stable only the others.
+  Until you choose, a beta version follows Beta and a stable one Stable; the choice is kept in `updates.json` beside the window's place.
+  A change of channel takes back a build offered from the other one, unless it is already downloading, and checks again.
+  It never goes back to an older version, so moving from Beta to Stable waits for a stable release newer than the installed beta.
+- Settings › About › Check for Updates checks at once and answers in the sheet, with a button that downloads and installs a newer build.
 - A newer build shows at the top right, before Settings, as a small solid button whose tooltip names the version.
   A click downloads it, the ring around the button fills as it arrives, and Moondog restarts into the new version when the download ends.
   A failed download leaves the installed app as it is and the button in place, so another click tries again.
@@ -284,24 +318,50 @@ The packaged app updates itself from this repository's GitHub releases (`updates
   A failure to stop it leaves the downloaded update available for another explicit attempt.
   On Linux the new version starts only after the old app has exited, so it never finds the old one still running.
 
+Notarization signs in with an App Store Connect API key when one is set up, and with the `mac-mini-notary` Keychain profile otherwise.
+The key needs no Keychain item and no app-specific password, and it works the same in a remote session; it lasts until it is revoked.
+To set it up once:
+
+1. In App Store Connect › Users and Access › Integrations › App Store Connect API, make a team key with the Developer role, and download its `.p8` file (Apple offers it only once).
+2. Put the file in `~/.config/apple-notary/` and run `chmod 600` on it.
+3. Write `~/.config/apple-notary/api-key.json` as `{ "key": "/Users/<you>/.config/apple-notary/AuthKey_<KEY ID>.p8", "keyId": "<KEY ID>", "issuer": "<Issuer ID>" }`; the issuer ID is shown above the keys.
+
+`MOONDOG_NOTARY_KEY`, `MOONDOG_NOTARY_KEY_ID` and `MOONDOG_NOTARY_ISSUER` override the file.
+The build says which of the two it notarizes with.
+
 To publish an update:
 
 1. Bump the version at the repository root (`package.json` and `package-lock.json`), commit and push it.
    The app compares versions, so a build with an unchanged version never reaches anyone.
 2. Push the tag, `v` and the version.
-   `Publish release` checks it, waits for the owner's approval in the `npm` environment, publishes or verifies the npm version, and prepares a GitHub draft.
+   `Publish release` checks it, publishes or verifies the npm version, and prepares a GitHub draft.
+   A beta version publishes on its own; a stable version first waits for the owner's approval in the `release-approval` environment.
    The desktop updater continues to see the previous complete release while the draft is prepared.
-3. Right after pushing the tag, on the Mac mini, in a clean worktree at the tag, run `npm ci` at the root and here, then `npm run publish-app`.
-   It builds and verifies the artifacts while the workflow runs, then waits up to an hour for the npm version and the draft, so the approval can come before or after the build.
-   It uploads the ZIP, blockmap, DMG and release manifest to the draft together and the update metadata last, then publishes the complete release and rebuilds the project page.
-   `--skip-build` requires the recorded build manifest and verifies its artifacts again.
-   `--create` prepares a missing draft; it does not bypass npm or artifact verification.
-   Existing remote assets with identical hashes are reused.
-   Different bytes under the same filename are rejected; release a new version instead of overwriting a published build.
+3. The same run then builds the app on a macOS runner, in two jobs.
+   `Build, sign and notarize the Mac app` keeps the ZIP, blockmap, DMG, release manifest and update metadata as a workflow artifact.
+   `Upload and publish the Mac app` verifies them again, uploads the first four to the draft together and the update metadata last, then publishes the complete release and rebuilds the project page.
+   If the upload fails, rerun only the failed job: it takes the same notarized bytes.
+   If the build fails, nothing is on the draft yet, so rerun that job.
 4. For Windows and Linux, build that same tag through the Desktop builds workflow or on a native host, and check the smoke results.
-   Once `publish-app` has published the release, upload the installer or AppImage and its blockmap, then that platform's update metadata last.
+   Once the Mac release is published, upload the installer or AppImage and its blockmap, then that platform's update metadata last.
    Rebuild the project page after uploading so it can offer the new platform downloads.
    CI artifacts alone do not establish a signed, published, or manually tested desktop release.
+
+The runner signs with secrets in the `mac-signing` environment, which only `v*` tags can use.
+`MAC_CERT_P12` is the Developer ID Application certificate and its private key as a base64 `.p12`, and `MAC_CERT_PASSWORD` is its password.
+`MAC_NOTARY_KEY` is the text of the App Store Connect API key's `.p8` file, and `MAC_NOTARY_KEY_ID` and `MAC_NOTARY_ISSUER` are its key ID and issuer ID.
+
+To publish from a Mac instead, cancel the workflow's Mac jobs first, then in a clean worktree at the tag run `npm ci` at the root and here, and `npm run publish-app`.
+It builds and verifies the artifacts, waits up to an hour for the npm version and the draft, then uploads and publishes as the second job does.
+
+These hold for both ways:
+
+- `--skip-build` requires the recorded build manifest and verifies its artifacts again.
+- `--create` prepares a missing draft; it does not bypass npm or artifact verification.
+- Existing remote assets with identical hashes are reused.
+- An upload that GitHub answers with 408 or a 5xx, or that times out on the way, is tried up to three times in all, 30 and 60 seconds apart.
+- Each upload has a time limit sized to its file (a slow line, shared by the big files uploading at once, between ten minutes and an hour), so one that stalls without breaking is given up and tried again.
+- Different bytes under the same filename are rejected; release a new version instead of overwriting a published build.
 
 If publication tooling needs a fix after a version is tagged, keep its original artifacts and manifest.
 From a clean checkout of the repaired tooling at the same package version, place those files in `app/release/` and run `node publish.mjs --skip-build --from-tag vX.Y.Z` from `app/`.
@@ -319,7 +379,7 @@ Extract test copies into a folder whose name ends in `.noindex`, so Spotlight do
 
 ## Not yet
 
-- The full taste report happens in the terminal (`moondog`).
+- A saved reading is built in the terminal (`/profile build`); the window shows it once it exists.
 - The terminal plays Apple Music previews; only the macOS window plays whole songs.
 - Builds from before the updater have none: install the first build with it by hand, as before.
 - Mac builds target Apple silicon; Windows and Linux builds target x64.

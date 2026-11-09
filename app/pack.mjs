@@ -5,7 +5,7 @@
 // Signed Mac QA builds use --no-notarize and never create a publishable manifest.
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { copyFile, mkdir, readdir, readFile, rename, rm } from "node:fs/promises";
+import { copyFile, mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Arch, build, Platform } from "electron-builder";
@@ -13,7 +13,7 @@ import { buildMusicHelper, MUSIC_USAGE } from "./native/build.mjs";
 import { desktopConfig, desktopTarget } from "./pack-config.mjs";
 import { builderSigningIdentity, command, digestFile, parseReleaseJson, phase, readJson, retryTimestampSigning, saveJson, signingIdentity, SIGNING_TEAM, RELEASE_REPO } from "./release-tools.mjs";
 import { assertProvenance, finalizeArtifacts, inspectApp, releaseNames, verifyArtifacts } from "./release-artifacts.mjs";
-import { notarizeFile, prepareDmgUpload } from "./release-notary.mjs";
+import { notarizeFile, notaryAuth, prepareDmgUpload } from "./release-notary.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(here, "..");
@@ -36,7 +36,9 @@ const output = path.join(release, notarize ? "apps.noindex" : "qa.noindex", vers
 const app = path.join(output, target.unpacked, "Moondog.app");
 const work = path.join(here, "build"), room = path.join(work, "room");
 const names = releaseNames(version), receiptFile = path.join(state, "build.json");
-const profile = process.env.MOONDOG_NOTARY_PROFILE ?? process.env.APPLE_NOTARY_PROFILE ?? "mac-mini-notary";
+// An App Store Connect API key when one is set (release-notary.mjs notaryAuth), else the Keychain profile.
+const credentials = notarize ? notaryAuth() : null;
+if (credentials) console.log(`Notarizing with the ${credentials.kind === "api-key" ? "App Store Connect API key" : "Keychain profile"}.`);
 let receipt = notarize ? await readJson(receiptFile, true) : null;
 if (receipt) assertProvenance(receipt, provenance);
 if (receipt?.phase === "ready") {
@@ -65,6 +67,8 @@ const npm = (args, options) => npmCli ? command(process.execPath, [npmCli, ...ar
 // would read the C: in an absolute path as a remote host.
 const tar = process.platform === "win32" ? path.join(process.env.SystemRoot || "C:\\Windows", "System32", "tar.exe") : "tar";
 const platform = { darwin: Platform.MAC, win32: Platform.WINDOWS, linux: Platform.LINUX }[target.platform];
+// What electron-builder wrote before 0.2.1; the cache folder keeps the name installed apps use.
+const UPDATE_CONFIG = "owner: Audiofool934\nrepo: moondog\nprovider: github\nupdaterCacheDirName: moondog-app-updater\n";
 
 if (!receipt) {
   await phase("Build and sign the app", async () => {
@@ -84,8 +88,13 @@ if (!receipt) {
     await rm(output, { recursive: true, force: true });
     // macOS signs and notarizes the app before packaging it. Windows and Linux package it at once.
     const targets = target.platform === "darwin" || flags.has("--dir") ? ["dir"] : target.targets;
+    // electron-builder writes the updater's app-update.yml only when it packs a zip, DMG, installer or
+    // AppImage, and the Mac's later prepackaged step never does, so write it here, before the app is
+    // signed. Without it every check for updates fails, as it did from 0.2.1 through 0.3.0-beta.6.
+    const afterPack = ({ appOutDir, packager }) => writeFile(path.join(packager.getResourcesDir(appOutDir), "app-update.yml"), UPDATE_CONFIG);
     // electron-builder mutates nested file patterns while normalizing its options.
-    await build({ projectDir: here, targets: platform.createTarget(targets, Arch[target.arch]), publish: "never", config: structuredClone(config) });
+    await build({ projectDir: here, targets: platform.createTarget(targets, Arch[target.arch]), publish: "never",
+      config: { ...structuredClone(config), ...(target.platform === "darwin" ? { afterPack } : {}) } });
   });
   if (notarize) {
     receipt = { schema: 1, ...provenance, appCdHash: await inspectApp(app, provenance, { notarized: false }),
@@ -126,7 +135,7 @@ if (["signed", "stapled"].includes(receipt.phase)) {
     }
     const archived = await readJson(path.join(state, "app-archive.json"));
     if ((await digestFile(upload)).sha256 !== archived.sha256) throw new Error("The saved app upload archive changed.");
-    await notarizeFile({ file: upload, receiptFile: path.join(state, "app-notary.json"), profile });
+    await notarizeFile({ file: upload, receiptFile: path.join(state, "app-notary.json"), credentials });
     await phase("Staple and verify the app", async () => {
       await command("xcrun", ["stapler", "staple", app], { live: true });
       await inspectApp(app, receipt);
@@ -157,7 +166,7 @@ if (receipt.phase === "packaged") {
 const stapled = await command("xcrun", ["stapler", "validate", dmg]).then(() => true, () => false);
 if (!stapled) {
   const upload = await prepareDmgUpload({ file: dmg, receipt, receiptFile });
-  await notarizeFile({ file: upload, receiptFile: path.join(state, "dmg-notary.json"), profile });
+  await notarizeFile({ file: upload, receiptFile: path.join(state, "dmg-notary.json"), credentials });
   await phase("Staple the DMG", () => command("xcrun", ["stapler", "staple", dmg], { live: true }));
 }
 await phase("Verify the exact ZIP and DMG and record their hashes", () => finalizeArtifacts(release, { ...provenance, appCdHash: receipt.appCdHash }, receipt.createdAt));

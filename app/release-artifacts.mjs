@@ -31,6 +31,7 @@ export async function inspectApp(app, expected, { notarized = true, run = comman
     if ((await readJson(path.join(app, relative))).version !== expected.version) throw new Error("The app and its core have different versions.");
   }
   if (!(await stat(path.join(app, "Contents/MacOS/moondog-music"))).isFile()) throw new Error("The release is missing its Apple Music helper.");
+  if (!(await stat(path.join(app, "Contents/Resources/app-update.yml")).catch(() => null))?.isFile()) throw new Error("The release is missing its update feed, app-update.yml.");
   if (expected.appCdHash && expected.appCdHash !== cdhash) throw new Error("The app signature differs from the recorded build.");
   if (notarized) {
     await run("xcrun", ["stapler", "validate", app]);
@@ -93,6 +94,8 @@ export async function inspectContainers(directory, expected, run = command) {
     await run("hdiutil", ["attach", path.join(directory, names.dmg), "-readonly", "-nobrowse", "-mountpoint", mounted]);
     attached = true;
     const dmgApp = path.join(mounted, "Moondog.app");
+    // The DMG keeps the build's permissions. An app only its builder may open fails for any other account on a Mac.
+    if (((await stat(dmgApp)).mode & 0o055) !== 0o055) throw new Error("The app's folders are not readable by other accounts.");
     await inspectApp(dmgApp, { ...expected, appCdHash }, { run });
     const appTreeSha256 = await appTreeDigest(zipApp);
     if (appTreeSha256 !== await appTreeDigest(dmgApp)) throw new Error("The ZIP and DMG contain different app contents.");

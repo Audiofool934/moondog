@@ -20,14 +20,25 @@ class FakeAudio extends EventTarget {
   removeAttribute(name) { if (name === "src") this.src = ""; }
 }
 window.Audio = FakeAudio;
-// The real preload's bridge, minus what needs the main process: menus and dialogs answer "nothing".
+// The real preload's bridge, minus what needs the main process: dialogs answer "nothing", and so do menus, except in
+// a window shown to try by hand, where harness.mjs opens real ones.
+const { ipcRenderer } = require("electron");
+const handsOn = process.env.MOONDOG_HARNESS_SHOW === "1";
 window.moondogApp = { platform: process.env.MOONDOG_HARNESS_PLATFORM || process.platform,
-  pathForFile: () => null, onCommand() {}, setLanguage() {}, setBusy() {}, setPlayback() {}, showMenu: async () => null,
-  confirm: async () => false, chooseFile: async () => null, version: async () => "0.2.0-beta.1" };
+  pathForFile: () => null, onCommand() {}, setLanguage() {}, setBusy() {}, setPlayback() {},
+  showMenu: handsOn ? (items, at) => ipcRenderer.invoke("harness-menu", { items, ...(at ?? {}) }) : async () => null,
+  confirm: async () => false, ask: async () => ({ confirmed: false, checked: false }), chooseFile: async () => null, version: async () => "0.2.0-beta.1" };
 // A newer Moondog, as the main process reports one; the states below push it.
 const updateListeners = [];
 const setUpdate = (update) => updateListeners.forEach((listener) => listener(update));
 Object.assign(window.moondogApp, { updateState: async () => null, onUpdate: (listener) => updateListeners.push(listener), installUpdate() {} });
+// The update channel as the main process keeps it, and what a check from Settings finds.
+const updateChannel = { enabled: true, beta: false, finds: "current" };
+Object.assign(window.moondogApp, {
+  updateChannel: async () => ({ enabled: updateChannel.enabled, beta: updateChannel.beta }),
+  setUpdateChannel: async (beta) => { updateChannel.beta = beta; return { enabled: true, beta }; },
+  checkUpdate: async () => updateChannel.finds,
+});
 // The window's look as the main process keeps it. The harness sets the theme itself, so a choice here only shows.
 let appearance = { theme: "system", icon: "light" };
 Object.assign(window.moondogApp, { appearance: async () => appearance, setAppearance: async (choice) => (appearance = { ...appearance, ...choice }) });
@@ -199,8 +210,21 @@ const modelName = (provider, model) => PROVIDER_MODELS[provider]?.find(([id]) =>
 let listed = [["anthropic", "claude-sonnet-5-5"], ["anthropic", "claude-opus-5-5"], ["deepseek", "deepseek-flash"], ["endpoint-home", "qwen3:32b"]];
 let defaultModel = { provider: "anthropic", model: "claude-sonnet-5-5", effort: "medium" };
 const sendList = () => send({ type: "model-list",
-  models: listed.map(([provider, model]) => ({ provider, model, name: modelName(provider, model), providerName: providerName(provider), ready: true, reasoning: provider !== "endpoint-home" })),
+  models: listed.map(([provider, model]) => ({ provider, model, name: modelName(provider, model), providerName: providerName(provider), ready: true, reasoning: provider !== "endpoint-home", vision: provider === "anthropic" })),
   default: { ...defaultModel, effort: defaultModel.effort ?? null, reasoning: true, thinking: defaultModel.provider === "deepseek" && defaultModel.effort === "medium" ? "low" : defaultModel.effort ?? null } });
+// What each model is for: vision on auto follows a chat model that sees images; web search lists its services.
+let roleChoices = { vision: null, web_search: null };
+const describe = ({ provider, model }) => ({ provider, model, name: modelName(provider, model), providerName: providerName(provider), known: true, vision: provider === "anthropic" });
+const sendRoles = () => send({ type: "model-roles", roles: [
+  { id: "chat", kind: "model", state: "enabled", choice: describe(defaultModel) },
+  { id: "vision", kind: "model", state: "enabled", input: "image", choice: roleChoices.vision && describe(roleChoices.vision),
+    auto: defaultModel.provider === "anthropic" ? describe(defaultModel) : null },
+  { id: "web_search", kind: "service", state: "enabled", choice: roleChoices.web_search, search: roleChoices.web_search?.service === "brave" ? "brave" : "deepseek", read: "deepseek",
+    services: [{ id: "deepseek", provider: "deepseek", name: "DeepSeek", ready: true, search: true, read: true },
+      { id: "brave", provider: "brave", name: "Brave Search", ready: true, search: true, read: false },
+      { id: "codex", provider: "codex_cli", name: "Codex CLI", ready: false, search: false, read: false }] },
+  { id: "audio", kind: "model", state: "planned", input: "audio", choice: null },
+] });
 // What Check again finds: NetEase ready, unless a state says otherwise.
 let neteaseCheck = { netease: "ready" };
 const send = (message) => {
@@ -212,6 +236,110 @@ let shown = [];
 function ready(extra = {}) {
   shown = extra.transcript ?? [];
   send({ type: "ready", ...STATUS, sessions: SESSIONS, folders: FOLDERS, current: "s1", running: [], transcript: [], ...extra });
+  sendLibrary();
+}
+
+// The listener's library, as the room sends it: Saved, folders inside folders, and playlists that hold songs
+// and Moondog's tracks side by side. Edits change it as the core would, so the sidebar and the room can be tried.
+const MADE_IDS = ["6f1c1b2e-3c4d-4e5f-8a9b-0c1d2e3f4a5b", "7a2d3c4e-5f60-4a71-9b82-1c2d3e4f5a6b", "8b3e4d5f-6a71-4b82-8c93-2d3e4f5a6b7c"];
+const song = (index, id) => ({ id, kind: "song", title: TRACKS[index].title, artist_credit: TRACKS[index].artists.join(", "), album: TRACKS[index].album,
+  refs: { artwork_url: COVERS[index] }, added_by: "listener", added_at: "2026-11-02T21:00:00.000Z" });
+const made = (index, id, title, kept = true) => ({ id, kind: "made", title, artist_credit: "Moondog", made_id: MADE_IDS[index], refs: {}, audio_kept: kept,
+  added_by: "listener", added_at: "2026-11-02T21:00:00.000Z" });
+const LIBRARY = {
+  folders: [
+    { id: "lf1", parentId: null, name: "Moods", position: 0 },
+    { id: "lf2", parentId: "lf1", name: "After dark", position: 1 },
+    { id: "lf3", parentId: null, name: "Work", position: 2 },
+  ],
+  playlists: {
+    saved: { id: "saved", folderId: null, name: "Saved", origin: "listener", saved: true, position: -1,
+      entries: [made(0, "e1", "Late window light"), song(3, "e2"), song(1, "e3"), song(5, "e4")] },
+    lp1: { id: "lp1", folderId: "lf2", name: "Rainy Tuesday", origin: "listener", position: 0,
+      entries: [song(1, "e5"), made(1, "e6", "Tide glass"), song(3, "e7"), song(0, "e8"), made(2, "e9", "Paper lanterns", false), song(4, "e10")] },
+    lp2: { id: "lp2", folderId: "lf1", name: "Sunday kitchen", origin: "moondog", position: 0, entries: [song(0, "e11"), song(2, "e12"), song(4, "e13")] },
+    lp3: { id: "lp3", folderId: "lf3", name: "Deep focus", origin: "listener", position: 0, entries: [song(5, "e14"), made(1, "e15", "Tide glass")] },
+    lp4: { id: "lp4", folderId: null, name: "Records Moondog cut for me", origin: "moondog", position: 3, entries: [made(0, "e16", "Late window light"), made(1, "e17", "Tide glass")] },
+    lp5: { id: "lp5", folderId: null, name: "Road trip, someday", origin: "listener", position: 4, entries: [] },
+  },
+};
+let libraryOpen = null;
+let entryCount = 100;
+const coverOf = (playlist) => {
+  for (const entry of playlist.entries) {
+    if (entry.made_id) return { made_id: entry.made_id };
+    if (entry.refs?.artwork_url) return { artwork_url: entry.refs.artwork_url };
+  }
+  return null;
+};
+function sendLibrary() {
+  send({ type: "library", folders: LIBRARY.folders, playlists: Object.values(LIBRARY.playlists).map(({ entries, ...playlist }) => ({
+    ...playlist, count: entries.length, made: entries.filter((entry) => entry.kind === "made").length, cover: coverOf({ entries }), updatedAt: "2026-11-02T21:00:00.000Z" })) });
+  if (libraryOpen) send({ type: "library-playlist", id: libraryOpen, playlist: LIBRARY.playlists[libraryOpen] ?? null });
+}
+// Places a folder or playlist in a parent before a sibling, renumbering the parent as the store does.
+function place(kind, id, parentId, beforeId) {
+  const nodes = [...LIBRARY.folders.filter((folder) => folder.parentId === parentId).map((node) => ["folder", node]),
+    ...Object.values(LIBRARY.playlists).filter((playlist) => !playlist.saved && playlist.folderId === parentId).map((node) => ["playlist", node])]
+    .sort((a, b) => a[1].position - b[1].position).filter(([, node]) => node.id !== id);
+  const node = kind === "folder" ? LIBRARY.folders.find((folder) => folder.id === id) : LIBRARY.playlists[id];
+  if (kind === "folder") node.parentId = parentId; else node.folderId = parentId;
+  const at = beforeId ? nodes.findIndex(([, each]) => each.id === beforeId) : -1;
+  nodes.splice(at < 0 ? nodes.length : at, 0, [kind, node]);
+  nodes.forEach(([, each], index) => { each.position = index; });
+}
+function library(data) {
+  if (data.type === "library-open") libraryOpen = data.id ?? null;
+  if (data.type === "library-folder-save") {
+    if (!data.id) { const id = `lf${LIBRARY.folders.length + 10}`; LIBRARY.folders.push({ id, parentId: data.parentId ?? null, name: data.name, position: 0 }); place("folder", id, data.parentId ?? null, LIBRARY.folders.find((folder) => (folder.parentId ?? null) === (data.parentId ?? null))?.id); }
+    else {
+      const folder = LIBRARY.folders.find((each) => each.id === data.id);
+      if (data.name) folder.name = data.name;
+      if (data.parentId !== undefined || data.beforeId !== undefined) place("folder", data.id, data.parentId === undefined ? folder.parentId : data.parentId, data.beforeId ?? null);
+    }
+  }
+  if (data.type === "library-folder-delete") {
+    const folder = LIBRARY.folders.find((each) => each.id === data.id);
+    for (const each of LIBRARY.folders) if (each.parentId === data.id) each.parentId = folder.parentId;
+    for (const each of Object.values(LIBRARY.playlists)) if (each.folderId === data.id) each.folderId = folder.parentId;
+    LIBRARY.folders.splice(LIBRARY.folders.indexOf(folder), 1);
+  }
+  if (data.type === "library-playlist-save") {
+    if (!data.id) {
+      const id = `lp${Object.keys(LIBRARY.playlists).length + 10}`;
+      LIBRARY.playlists[id] = { id, folderId: data.folderId ?? null, name: data.name, origin: "listener", position: 0, entries: [] };
+      place("playlist", id, data.folderId ?? null, null);
+      send({ type: "library-made", id });
+    } else {
+      const playlist = LIBRARY.playlists[data.id];
+      if (data.name) playlist.name = data.name;
+      if (data.folderId !== undefined || data.beforeId !== undefined) place("playlist", data.id, data.folderId === undefined ? playlist.folderId : data.folderId, data.beforeId ?? null);
+    }
+  }
+  if (data.type === "library-playlist-delete") delete LIBRARY.playlists[data.id];
+  const playlist = LIBRARY.playlists[data.playlistId];
+  if (data.type === "library-entries-remove" && playlist) playlist.entries = playlist.entries.filter((entry) => !data.ids.includes(entry.id));
+  if (data.type === "library-entries-move" && playlist) {
+    const moving = playlist.entries.filter((entry) => data.ids.includes(entry.id));
+    const rest = playlist.entries.filter((entry) => !data.ids.includes(entry.id));
+    const at = data.beforeId ? rest.findIndex((entry) => entry.id === data.beforeId) : -1;
+    rest.splice(at < 0 ? rest.length : at, 0, ...moving);
+    playlist.entries = rest;
+  }
+  if (data.type === "library-entries-copy" && playlist) {
+    const from = LIBRARY.playlists[data.fromPlaylistId];
+    playlist.entries.push(...from.entries.filter((entry) => data.ids.includes(entry.id)).map((entry) => ({ ...entry, id: `e${entryCount += 1}` })));
+  }
+  if (data.type === "library-save") {
+    const target = LIBRARY.playlists[data.playlistId ?? "saved"];
+    target.entries.unshift({ ...song(last.index, `e${entryCount += 1}`) });
+    send({ type: "library-saved", playlist: { id: target.id, name: target.name, ...(target.saved ? { saved: true } : {}) }, added: 1, already: 0 });
+  }
+  if (data.type === "library-play") {
+    send({ type: "library-played", state: "playing", player: "spotify", playlist: { id: data.playlistId }, playing: 4, left_out_made: 2 });
+    player({ index: 1, fraction: 0.05, playing: true });
+  }
+  sendLibrary();
 }
 // The last song the stand-in played, so pause, skip and seek answer about that song.
 let last = { fraction: 0.38, playing: true, index: 0, device: "Mac mini", queue: 5 };
@@ -245,6 +373,34 @@ const ON_AIR = [{ role: "user", text: "Go on air: make new music for right now a
 const played = (index) => [{ action: "playback.resume", state: "accepted", targets: [{ title: TRACKS[index].title, artist_credit: TRACKS[index].artists.join(", ") }] }];
 const conversation = (pairs) => pairs.flatMap(([user, reply], index) => [{ role: "user", text: user, entry: `e${index}` },
   { role: "assistant", id: `t${index}`, text: reply, entry: `e${index}`, receipts: index === 0 ? played(0) : [] }]);
+// Pastes made-up record sleeves into the composer, one per label, through a real paste event.
+async function pasteImages(labels) {
+  const transfer = new DataTransfer();
+  for (const [index, label] of labels.entries()) {
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = 480;
+    const context = canvas.getContext("2d");
+    const gradient = context.createLinearGradient(0, 0, 480, 480);
+    gradient.addColorStop(0, ["#c9653f", "#3f6fc9"][index % 2]);
+    gradient.addColorStop(1, ["#2b1d3a", "#1d3a2b"][index % 2]);
+    context.fillStyle = gradient;
+    context.fillRect(0, 0, 480, 480);
+    context.fillStyle = "rgba(255,255,255,0.9)";
+    context.font = "600 64px -apple-system, sans-serif";
+    context.fillText(label, 40, 420);
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+    transfer.items.add(new File([blob], `${label.toLowerCase()}.png`, { type: "image/png" }));
+  }
+  const input = document.querySelector("[data-input]");
+  input.focus();
+  input.dispatchEvent(new ClipboardEvent("paste", { clipboardData: transfer, bubbles: true, cancelable: true }));
+}
+// Brings a file over the window, as a drag from Finder would, without letting go.
+function dragOver(file) {
+  const transfer = new DataTransfer();
+  transfer.items.add(file);
+  window.dispatchEvent(new DragEvent("dragenter", { dataTransfer: transfer, bubbles: true }));
+}
 // Opens a settings section the way a listener can: a slash command typed into the composer.
 function slash(command) {
   const input = document.querySelector("[data-input]");
@@ -295,6 +451,75 @@ function download(model) {
 // Each state leaves the page settled; the main process captures after the entrances finish.
 // A state may return actions for the main process: { hover: selector } moves the real pointer there.
 // Set by the Spotify-limited states, so the devices answer the same way the core does.
+// A fictional listener's taste, in the shape the core's taste page sends: the terminal's /taste view, the saved
+// reading beside it, and choices that stick as the core would keep them.
+const taste = { reading: true, empty: false, choices: new Map([["artist:the hollow pines", "like"], ["track:paper boats|mira lune", "avoid"]]) };
+const tasteSubject = (kind, label, artist, details) => {
+  const key = kind === "track" ? `track:${label.toLowerCase()}|${artist.toLowerCase()}` : `artist:${label.toLowerCase()}`;
+  return { key, label, subtitle: kind === "track" ? artist : "Artist", kind, details, evidence: [{ id: `ev-${key}`, source: details[0].split(":")[0] }],
+    target: kind === "track" ? { entityType: "track", label, artistCredit: artist } : { entityType: "artist", label } };
+};
+const TASTE_SUBJECTS = [
+  tasteSubject("artist", "The Hollow Pines", null, ["Across the years: 1,284 plays · 96 tracks · last played 2026-11-01"]),
+  tasteSubject("track", "Lanterns on the Water", "Juniper & Vale", ["Most played: 212 plays · 182 heard properly · up to 9 in a row · last played 2026-10-30", "Your song of 2024: 88 plays"]),
+  tasteSubject("artist", "Mira Lune", null, ["Lately (last 28 days): 64 plays · 11 tracks"]),
+  tasteSubject("track", "Slow Static", "The Hollow Pines", ["Came back: came back 3 times · longest time away 412 days"]),
+  tasteSubject("artist", "Okara Strings", null, ["Gone quiet: 340 plays · quiet for 610 days"]),
+  tasteSubject("track", "Paper Boats", "Mira Lune", ["Played in a row: up to 6 in a row · 2 separate runs"]),
+  tasteSubject("track", "Northbound, 5 a.m.", "Delmar Frost", ["Saved in your Spotify library", "On your Spotify playlists: on 4 playlists"]),
+  tasteSubject("artist", "Juniper & Vale", null, ["Followed on Spotify", "Across the years: 702 plays · 41 tracks"]),
+];
+// A fictional listener's plays a day at a time, in the shape the core's listeningDays sends: by calendar year,
+// so a shorter history is the same listener's latest stretch.
+const TASTE_HISTORY = (() => {
+  const DAY = 86400000, end = Date.UTC(2026, 10, 2);
+  const yearly = {
+    "The Hollow Pines": [[120, 140, 130, 150, 135, 128, 140, 132, 138, 126, 120], "autumn"], "Okara Strings": [[10, 60, 180, 220, 160, 90, 40, 15, 6, 2, 0], "winter"],
+    "Mira Lune": [[0, 0, 0, 0, 0, 0, 5, 20, 60, 140, 230], "summer"], "Delmar Frost": [[80, 90, 40, 5, 0, 0, 0, 2, 30, 90, 80], "flat"],
+    "Juniper & Vale": [[40, 50, 60, 70, 80, 70, 60, 65, 70, 60, 55], "flat"], "Salt Harbor": [[0, 0, 0, 0, 210, 12, 0, 0, 0, 0, 0], "summer"],
+  };
+  const others = [520, 610, 760, 880, 960, 700, 640, 690, 760, 820, 760];
+  const season = { flat: (f) => 1 + 0.25 * Math.sin(Math.PI * 4 * f), winter: (f) => 1 + 0.85 * Math.cos(Math.PI * 2 * f),
+    summer: (f) => 1 - 0.7 * Math.cos(Math.PI * 2 * f), autumn: (f) => 1 + 0.8 * Math.cos(Math.PI * 2 * (f - 0.77)) };
+  return (startDay) => {
+    let seed = 7;
+    const rand = () => { seed = (seed + 0x6D2B79F5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t ^= t + Math.imul(t ^ (t >>> 7), 61 | t); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+    const start = Date.parse(`${startDay}T00:00:00Z`);
+    const iso = (ts) => new Date(ts).toISOString().slice(0, 10);
+    const totals = new Map(), byArtist = new Map(Object.keys(yearly).map((name) => [name, []])), moondog = [];
+    for (let ts = start; ts <= end; ts += DAY) {
+      const date = new Date(ts), y = date.getUTCFullYear(), f = (ts - Date.UTC(y, 0, 1)) / (365 * DAY), weekend = [0, 6].includes(date.getUTCDay()) ? 1.35 : 0.86;
+      const draw = (level, shape, gap = 1) => { const lambda = (level ?? 0) / 365 * season[shape](f) * weekend * gap; return rand() < 0.55 ? Math.round(lambda * (0.4 + rand() * 1.6) / 0.55) : 0; };
+      let day = draw(others[y - 2016], "flat", y === 2021 && date.getUTCMonth() >= 5 && date.getUTCMonth() <= 7 ? 0.15 : 1);
+      for (const [name, [levels, shape]] of Object.entries(yearly)) { const plays = draw(levels[y - 2016], shape); if (plays) byArtist.get(name).push([iso(ts), plays]); day += plays; }
+      if (day) totals.set(iso(ts), day);
+      if (ts >= Date.UTC(2025, 6, 1) && rand() < 0.4) moondog.push([iso(ts), 1 + Math.round(rand() * 2)]);
+    }
+    const artists = [...byArtist].map(([name, days]) => ({ name, plays: days.reduce((sum, [, n]) => sum + n, 0), days })).filter((a) => a.plays).sort((a, b) => b.plays - a.plays);
+    return { first_day: startDay, last_day: iso(end), days: [...totals], artists, moondog_days: moondog };
+  };
+})();
+function tastePage() {
+  if (taste.empty) return { type: "taste", state: "empty", lines: ["Nothing to look at yet.", "Import your history or library and it will show up here."] };
+  const subjects = TASTE_SUBJECTS.map((subject) => {
+    const stance = taste.choices.get(subject.key) ?? null;
+    const said = stance === "like" ? "You said: I like this · 2026-10-12" : stance === "avoid" ? "You said: keep this out · 2026-10-20" : null;
+    return { ...subject, stance, chosen: Boolean(stance), details: said ? [said, ...subject.details] : subject.details };
+  });
+  return { type: "taste", state: "ready", subjects, canChoose: true, ask: "Find me 3 songs to go to from here, and tell me why each one.",
+    history: TASTE_HISTORY(taste.from ?? "2016-02-03"),
+    songs: [[2016, "Northbound, 5 a.m.", "Delmar Frost"], [2017, "Paper Lanterns", "Delmar Frost"], [2018, "Cold Orchard", "Okara Strings"], [2019, "Cold Orchard", "Okara Strings"],
+      [2020, "Tidewater", "Salt Harbor"], [2021, "Slow Static", "The Hollow Pines"], [2022, "Pine Light", "The Hollow Pines"], [2023, "Lanterns on the Water", "Juniper & Vale"],
+      [2024, "Low Tide", "The Hollow Pines"], [2025, "Paper Boats", "Mira Lune"], [2026, "Glass Summer", "Mira Lune"]].map(([year, title, artist]) => ({ year, title, artist })),
+    overview: ["18,406 plays · 1,212.5 h · 3,904 tracks", "Spotify history · 2016-02-03 to 2026-11-02", `${taste.choices.size} choices you've made`],
+    reading: taste.reading ? { state: "current", version: 3, builtAt: "2026-10-28",
+      summary: "A listener who keeps a small circle of quiet, guitar-led bands for years and lets newer, brighter pop pass through in short bursts. Late evenings carry most of the listening, and old favourites come back after long gaps rather than fading for good.",
+      findings: [
+        { number: 1, statement: "The Hollow Pines are the steadiest thread: played in every year of the history, with no gap longer than three months.", kind: "observation", scope: "enduring" },
+        { number: 2, statement: "Recent attention leans to Mira Lune, but at four weeks this is a burst, not yet a change in enduring taste.", kind: "hypothesis", scope: "recent" },
+        { number: 4, statement: "Keeps Paper Boats out of suggestions, while still liking the artist's other work.", kind: "listener_assertion", scope: "track" },
+      ] } : { state: "missing" } };
+}
 let limitedUntil = 0;
 const STATES = {
   empty() { ready(); player(); },
@@ -322,6 +547,57 @@ const STATES = {
     setTimeout(() => send({ type: "status", ...status, firstRun: run }), 60);
   },
   "first-run-netease"() { STATES["first-run"](undefined, { netease: "ready" }); },
+  // The library in the sidebar's place, a playlist open in the room, Saved, and a playlist with nothing in it yet.
+  // The library's tab shows once the core has sent the library; the click waits for it.
+  library() {
+    STATES.reply();
+    const click = () => { const tab = document.querySelector('[data-view-tab="library"]'); if (tab && !tab.hidden) tab.click(); else setTimeout(click, 30); };
+    setTimeout(click, 60);
+  },
+  // Your taste from its own tab in the sidebar, as a listener finds it: the list beside, the record in the room.
+  "taste-view"() {
+    STATES.reply();
+    const click = () => { const tab = document.querySelector('[data-view-tab="taste"]'); if (tab && !tab.hidden) tab.click(); else setTimeout(click, 30); };
+    setTimeout(click, 60);
+  },
+  // A row of the taste view unfolded: its evidence and choices under it, and its artist lit across the record.
+  "taste-row"() {
+    STATES["taste-view"]();
+    const open = () => { const row = document.querySelector("[data-taste-list] .taste-open"); if (row) row.click(); else setTimeout(open, 30); };
+    setTimeout(open, 300);
+  },
+  // The library dragged by its tab to the lower part of the sidebar: conversations above, the library below.
+  // The taste view dragged by its tab to the lower part: conversations above, taste below, each named once.
+  "taste-split"() { STATES["library-split"]("taste"); },
+  "library-split"(view = "library") {
+    STATES.reply();
+    setTimeout(() => {
+      const tab = document.querySelector(`[data-view-tab="${view}"]`);
+      const sidebar = document.querySelector("[data-sidebar]");
+      const views = document.querySelector("[data-views]").getBoundingClientRect();
+      const transfer = new DataTransfer();
+      const at = { clientX: views.left + 40, clientY: views.bottom - 40, bubbles: true, dataTransfer: transfer };
+      tab.dispatchEvent(new DragEvent("dragstart", { bubbles: true, dataTransfer: transfer }));
+      sidebar.querySelector("[data-views]").dispatchEvent(new DragEvent("dragover", at));
+      sidebar.querySelector("[data-views]").dispatchEvent(new DragEvent("drop", at));
+      tab.dispatchEvent(new DragEvent("dragend", { bubbles: true }));
+    }, 160);
+  },
+  playlist(id = "lp1") {
+    STATES.library();
+    setTimeout(() => document.querySelector(`[data-library] .row[data-id="${id}"] .open`)?.click(), 260);
+  },
+  "playlist-saved"() { STATES.playlist("saved"); },
+  // The record buttons (disc.mjs): the playlist's play under the pointer, and the composer's send with words typed.
+  "play-hover"() { STATES.playlist(); return { hover: "[data-shelf] .shelf-play", hoverAfter: 900 }; },
+  "send-ready"() {
+    STATES.reply();
+    setTimeout(() => { const input = document.querySelector("[data-input]"); input.value = "Something for a slow Sunday"; input.dispatchEvent(new Event("input", { bubbles: true })); }, 200);
+    return { hover: "[data-send]", hoverAfter: 500 };
+  },
+  "playlist-empty"() { STATES.playlist("lp5"); },
+  // The heart beside the song in the player, after a click kept it.
+  "keep-song"() { STATES.reply(); setTimeout(() => document.querySelector("[data-toggle-inspector]")?.click(), 150); setTimeout(() => document.querySelector("[data-keep]")?.click(), 450); },
   "first-run-model"() { STATES["first-run"](); setTimeout(() => document.querySelector('[data-key="service:apple_music"]').click(), 400); },
   "first-run-model-only"() { STATES["first-run"]({ needed: true, service: "spotify", model: false }); },
   "first-run-key"() { STATES["first-run-model-only"](); setTimeout(() => document.querySelector('[data-key="sign-in:anthropic:api_key"]').click(), 500); },
@@ -396,6 +672,19 @@ const STATES = {
   },
   typing() { STATES.reply(); const input = document.querySelector("[data-input]"); input.focus(); input.value = "Something like this but with more piano, and nothing from before 1970"; input.dispatchEvent(new Event("input", { bubbles: true })); },
   "settings-general"() { STATES.reply(); slash("language"); },
+  "settings-about"() { STATES.reply(); slash("help"); },
+  "settings-about-beta"() { updateChannel.beta = true; STATES["settings-about"](); },
+  "settings-about-current"() {
+    STATES["settings-about"]();
+    setTimeout(() => document.querySelector('.sheet [data-key="update-check"]')?.click(), 300);
+  },
+  "settings-about-available"() {
+    updateChannel.beta = true;
+    updateChannel.finds = "available";
+    window.moondogApp.updateState = async () => ({ phase: "available", version: "0.3.0-beta.5" });
+    STATES["settings-about"]();
+    setTimeout(() => document.querySelector('.sheet [data-key="update-check"]')?.click(), 300);
+  },
   "settings-appearance"() { STATES.reply(); slash("appearance"); },
   "settings-model"() { STATES.reply(); slash("model"); },
   // A provider open to its models, each ticked when the menu offers it.
@@ -406,6 +695,38 @@ const STATES = {
   "settings-model-openai"() {
     STATES.reply(); slash("model");
     setTimeout(() => document.querySelector('[data-key="provider:openai"]')?.click(), 200);
+  },
+  // Images pasted into the composer, as a listener would, waiting above it for the next message.
+  "composer-images"() { STATES.reply(); setTimeout(() => void pasteImages(["LP", "Live"]), 200); },
+  // A message sent with an image: the picture sits above its words in the bubble, and the reply streams.
+  "reply-image"() {
+    STATES.reply();
+    setTimeout(async () => {
+      await pasteImages(["LP"]);
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      const field = document.querySelector("[data-input]");
+      field.value = "What record is this?";
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+      field.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    }, 200);
+  },
+  // A file dragged over the window blurs all of it, without a frame: an image goes with the next
+  // message, a history file to import.
+  "drop-image"() { STATES.reply(); setTimeout(() => dragOver(new File([new Uint8Array([137, 80, 78, 71])], "cover.png", { type: "image/png" })), 200); },
+  "drop-file"() { STATES.reply(); setTimeout(() => dragOver(new File(["{}"], "listening-history.zip", { type: "application/zip" })), 200); },
+  // The sent image opened at full size over the window.
+  "image-open"() {
+    STATES["reply-image"]();
+    setTimeout(() => document.querySelector(".you-image")?.click(), 1400);
+  },
+  // Auxiliary models, open to vision and to web search: auto first, then the models or services it can pick.
+  "settings-model-vision"() {
+    STATES.reply(); slash("model");
+    setTimeout(() => document.querySelector('[data-key="role:vision"]')?.click(), 200);
+  },
+  "settings-model-web"() {
+    STATES.reply(); slash("model");
+    setTimeout(() => document.querySelector('[data-key="role:web_search"]')?.click(), 200);
   },
   "settings-endpoint"() {
     STATES.reply(); slash("model");
@@ -490,6 +811,21 @@ const STATES = {
   },
   "settings-import"() { STATES.reply(); slash("import"); },
   "settings-memory"() { STATES.reply(); slash("memory"); },
+  taste() { STATES.reply(); slash("taste"); },
+  "taste-open"() {
+    STATES.taste();
+    setTimeout(() => document.querySelector('[data-key="subject:track:lanterns on the water|juniper & vale"]')?.click(), 250);
+    setTimeout(() => document.querySelector('[data-key="why:track:lanterns on the water|juniper & vale"]')?.click(), 450);
+  },
+  "taste-no-reading"() { taste.reading = false; STATES.taste(); },
+  "taste-empty"() { taste.empty = true; STATES.taste(); },
+  "taste-short"() { taste.from = "2026-04-06"; STATES.taste(); },
+  // The needle scratched back a few years from the keyboard, and one artist lit across the record.
+  "taste-back"() {
+    STATES.taste();
+    setTimeout(() => { const record = document.querySelector(".pressing canvas"); record?.focus(); for (let i = 0; i < 4; i += 1) record?.dispatchEvent(new KeyboardEvent("keydown", { key: "PageUp", bubbles: true })); }, 400);
+  },
+  "taste-focus"() { STATES.taste(); return { hover: ".pressing .person:nth-child(4)" }; },
   "settings-about"() { STATES.reply(); slash("help"); },
   "settings-offline"() { STATES.offline(); slash("service"); },
   // NetEase Cloud Music chosen and signed in, playing another artist's recording of a song.
@@ -597,10 +933,13 @@ core.onmessage = ({ data }) => {
   }
   if (data.type === "new") { shown = []; send({ type: "session", current: null, transcript: [] }); }
   if (["label", "delete", "folder-save"].includes(data.type)) relabel(data);
+  if (data.type.startsWith("library-")) library(data);
   if (data.type === "models") send({ type: "models", providers });
   if (data.type === "provider-models") send({ type: "provider-models", provider: data.provider,
     models: (PROVIDER_MODELS[data.provider] ?? []).map(([id, name]) => ({ id, name })) });
   if (data.type === "model-list") sendList();
+  if (data.type === "model-roles") sendRoles();
+  if (data.type === "model-role") { roleChoices[data.role] = data.choice ?? null; sendRoles(); }
   if (data.type === "list-model") {
     listed = listed.filter(([provider, model]) => provider !== data.provider || model !== data.model);
     if (data.listed) listed.push([data.provider, data.model]);
@@ -640,6 +979,18 @@ core.onmessage = ({ data }) => {
     { id: "m2", text: "Doesn't like live recordings unless asked.", kind: "preference" },
     { id: "m3", text: "Listens to Cantonese classics on Sunday mornings.", kind: "fact" } ] });
   if (data.type === "settings") send({ type: "status", ...status });
+  if (data.type === "taste") send(tastePage());
+  if (data.type === "taste-why") send({ type: "taste-why", key: data.key, evidenceId: data.evidenceId,
+    basis: "Counted from 212 plays in your Spotify history between 2019 and 2026; 182 of them ran past 30 seconds.",
+    limit: "Play counts show attention, not how much you like it. A song left on repeat while working counts the same as one you chose.",
+    confidence: 0.82 });
+  if (data.type === "taste-choice") {
+    const key = data.target.entityType === "track" ? `track:${data.target.label.toLowerCase()}|${data.target.artistCredit.toLowerCase()}` : `artist:${data.target.label.toLowerCase()}`;
+    if (data.stance === "retract") taste.choices.delete(key); else taste.choices.set(key, data.stance);
+    send({ type: "taste-saved", key: data.key, stance: data.stance });
+    send(tastePage());
+  }
+  if (data.type === "taste-report") send({ type: "local", session: "s1", markdown: "# Your listening\n\n18,406 plays · 1,212.5 h · 3,904 tracks\n\n## Across the years\n\n1. The Hollow Pines\n2. Juniper & Vale\n3. Okara Strings" });
   if (data.type === "control") {
     if (data.action === "pause" || data.action === "resume") player({ playing: data.action === "resume" });
     if (data.action === "next") player({ index: (last.index + 1) % TRACKS.length, fraction: 0, playing: true });
@@ -680,6 +1031,7 @@ core.onmessage = ({ data }) => {
     send({ type: "session", current: "s1-branch", transcript: shown });
     send({ type: "branched", session: "s1-branch" });
   }
+  if (data.type === "prompt" && data.fresh) send({ type: "session", current: "s-fresh", transcript: [] });
   if (data.type === "prompt" || data.type === "edit") {
     // A reply arriving word by word, so streaming can be watched rather than posed.
     const id = `live-${Math.random().toString(36).slice(2)}`;
