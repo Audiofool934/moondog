@@ -56,8 +56,9 @@ let port = null;
 const outbox = [];
 const send = (message) => (port ? port.postMessage(message) : outbox.push(message));
 const previews = createPreviews({ send, onChange: () => renderInspector() });
-// The composer's send button is a record button (disc.mjs), as the playlist's play button is.
+// The composer's send button and the player's play button are record buttons (disc.mjs), as the playlist's play button is.
 const sendDisc = discButton($("send"), { size: 26, glyph: "send" });
+const playerDisc = discButton($("toggle"), { size: 46, glyph: "pause", fill: true });
 const settings = createSettings({ state, send, t: tr,
   appleMusic: { status: () => previews.fullStatus(), check: (command) => previews.check(command) }, onHide: () => firstRun.update() });
 // The one-time first run asks for a music service, then a model, in the Settings sheet (first-run.mjs).
@@ -1345,7 +1346,8 @@ function renderAttachments() {
 function renderComposer() {
   const button = $("send");
   const streaming = Boolean(state.streaming);
-  button.disabled = !streaming && ((!input.value.trim() && !attachments.length) || Boolean(state.waiting && !state.ready));
+  // An empty field leaves the button drawn as it is; sending nothing does nothing.
+  button.disabled = !streaming && Boolean(state.waiting && !state.ready);
   name(button, streaming ? t("stop") : t("send"), streaming ? shortcuts.stop : "↩");
   setIcon(button, streaming ? "stop" : "send");
   // While Moondog writes its reply, the send button's glints turn, as the record's do while music plays.
@@ -1864,7 +1866,11 @@ function cuttingItem() {
 // The player's buttons and the bar's follow one rule: what the service won't do now is dimmed.
 function drawControls(now, toggle, next) {
   name(toggle, now.playing ? t("pause") : t("play"), shortcuts.play);
-  setIcon(toggle, now.playing ? "pause" : "play");
+  // The player's own button is a record button: its play glyph is the one drawn for the label, and its glints turn
+  // while the music plays.
+  const disc = toggle === $("toggle");
+  setIcon(toggle, now.playing ? "pause" : disc ? "play-disc" : "play");
+  if (disc) playerDisc.setTurning(now.playing);
   set(toggle, "disabled", !can(now, now.playing ? "pausing" : "resuming"));
   set(next, "disabled", !can(now, "skipping_next"));
 }

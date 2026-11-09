@@ -649,7 +649,9 @@ img { -webkit-user-drag: none; }
 .pick.needed { padding: 0 9px; color: var(--text); background: var(--hover); font-weight: 500; }
 .pick.needed:hover { background: var(--press); }
 .pick[hidden] { display: none; }
-.send { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; flex: none; background: var(--solid); color: var(--on-solid);
+/* As tall as the picks beside it, so the field's bottom line puts all three marks on one center line. Its dotted
+   rim is its edge, so it stands as far from the model's mark as that mark does from the service's. */
+.send { width: 28px; height: 28px; margin-inline-start: 4px; border-radius: 50%; display: grid; place-items: center; flex: none; background: var(--solid); color: var(--on-solid);
   transition: background-color 140ms var(--soft), transform 90ms var(--soft); }
 .send:active { transform: scale(0.92); }
 .send:disabled { background: rgb(var(--ink-rgb) / 0.12); color: var(--surface); }
@@ -777,10 +779,9 @@ button.mention:hover { text-decoration: underline; text-underline-offset: 2px; }
 .transport { display: flex; align-items: center; justify-content: center; gap: 22px; margin-top: 10px; }
 .transport .tool { width: 36px; height: 36px; border-radius: 50%; color: var(--text); }
 .transport .tool .icon { width: 20px; height: 20px; }
-.transport .play { width: 46px; height: 46px; background: var(--solid); color: var(--on-solid); transition: transform 90ms var(--soft), background-color var(--quick) var(--soft); }
-.transport .play:hover { background: var(--text); color: var(--on-solid); }
+/* A record button (disc.mjs), as the playlist's play button is. */
+.transport .play { width: 46px; height: 46px; color: var(--solid); transition: transform 90ms var(--soft); }
 .transport .play:active { transform: scale(0.94); }
-.transport .play .icon { width: 20px; height: 20px; }
 .transport .tool:disabled { opacity: 0.35; }
 
 .where { display: flex; align-items: center; gap: 2px; margin: 14px -8px 0; min-width: 0; }
