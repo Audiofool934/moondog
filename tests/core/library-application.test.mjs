@@ -148,6 +148,9 @@ test("the agent's library tools appear only with a library", async () => {
   const withLibrary = new MoondogApplication({ libraryStore });
   assert.deepEqual(withLibrary.agentCapabilityDescriptors().filter((descriptor) => descriptor.tool_name.startsWith("moondog_collection_"))
     .map((descriptor) => descriptor.tool_name).sort(), ["moondog_collection_edit", "moondog_collection_import", "moondog_collection_list", "moondog_collection_play", "moondog_collection_save"]);
+  // Exporting needs a service that takes a playlist: it appears once Spotify is connected.
+  withLibrary.spotifyReady = () => true;
+  assert.ok(withLibrary.agentCapabilityDescriptors().some((descriptor) => descriptor.tool_name === "moondog_collection_export"));
   withLibrary.close();
   without.close();
 });
@@ -240,5 +243,81 @@ test("an Apple Music playlist imported earlier gets its own cover from its page"
     entries: [{ kind: "song", title: "Song", artist_credit: "A", refs: { artwork_url: "https://is1-ssl.mzstatic.com/song/300x300bb.jpg" } }] });
   await application.refreshLibraryCovers();
   assert.deepEqual(libraryStore.view().playlists.find((playlist) => playlist.id === old.id).cover, { artwork_url: "https://is1-ssl.mzstatic.com/own/600x600SC.DN02.jpg?l=en-US" });
+});
+
+test("a library playlist is exported to Spotify as one copy that later exports bring up to date", async () => {
+  const { createSpotifyWebApiClient } = await import("../../src/integrations/spotify/web-api-client.mjs");
+  const { createSpotifyService } = await import("../../src/integrations/spotify/service.mjs");
+  // A made-up Spotify account: its playlists by id, and which of them are still in the listener's library.
+  const remote = new Map();
+  const kept = new Set();
+  const client = createSpotifyWebApiClient({ tokenProvider: async () => "fictional", refreshAccessToken: async () => "fictional", fetchImpl: async (url, init) => {
+    const u = new URL(url);
+    const id = u.pathname.match(/^\/v1\/playlists\/([^/]+)/u)?.[1];
+    const playlist = id ? remote.get(id) : null;
+    const described = (found) => ({ id: found.id, uri: `spotify:playlist:${found.id}`, name: found.name, owner: { id: "listener" }, public: false,
+      collaborative: false, snapshot_id: "s", items: { total: found.uris.length } });
+    if (u.pathname === "/v1/me") return Response.json({ id: "listener" });
+    if (u.pathname === "/v1/me/library/contains") return Response.json([kept.has(u.searchParams.get("uris").replace("spotify:playlist:", ""))]);
+    if (u.pathname === "/v1/me/playlists" && init.method === "POST") {
+      const made = { id: `copy${remote.size + 1}`, name: JSON.parse(init.body).name, uris: [] };
+      remote.set(made.id, made);
+      kept.add(made.id);
+      return Response.json(described(made));
+    }
+    if (u.pathname === "/v1/search") return Response.json({ tracks: { items: [] } });
+    if (!playlist) return new Response(null, { status: 404 });
+    if (u.pathname.endsWith("/items")) {
+      if (init.method === "POST") playlist.uris.push(...JSON.parse(init.body).uris);
+      else if (init.method === "PUT") playlist.uris = [...JSON.parse(init.body).uris];
+      else {
+        const offset = Number(u.searchParams.get("offset") ?? 0);
+        const limit = Number(u.searchParams.get("limit") ?? 50);
+        return Response.json({ items: playlist.uris.slice(offset, offset + limit).map((uri) => ({ item: { type: "track", id: uri.split(":")[2], uri,
+          name: "Song", artists: [{ name: "Artist" }], album: { name: "Album" }, is_local: false } })), total: playlist.uris.length, offset, limit,
+          next: offset + limit < playlist.uris.length ? "more" : null });
+      }
+      return Response.json({ snapshot_id: "s" });
+    }
+    if (init.method === "PUT") { playlist.name = JSON.parse(init.body).name; return new Response(null, { status: 200 }); }
+    return Response.json(described(playlist));
+  } });
+  const libraryStore = await openLibraryStore({ databasePath: ":memory:" });
+  const application = new MoondogApplication({ libraryStore, localGenerator: generator,
+    spotifyConnection: { ready: () => true, missingScopes: () => [], service: createSpotifyService({ client }), publicStatus: () => ({ provider: "spotify", state: "ready" }) } });
+  application.requireListenerAvoids = () => {};
+  application.avoidAllows = () => true;
+  const song = (index) => ({ kind: "song", title: `Song ${index}`, artist_credit: "Artist",
+    refs: { spotify_uri: `spotify:track:${String(index).padStart(22, "0")}`, spotify_title: `Song ${index}`, spotify_credit: "Artist" } });
+  // 120 songs Spotify has, one it doesn't, and a track Moondog made.
+  const { id } = libraryStore.savePlaylist({ name: "Night drive", entries: [...Array.from({ length: 120 }, (_, index) => song(index)),
+    { kind: "song", title: "Nowhere", artist_credit: "Nobody" }, { kind: "made", id: MADE, title: "Tide glass" }] });
+
+  const first = await application.exportLibraryPlaylist({ playlistId: id });
+  assert.deepEqual([first.state, first.exported, first.not_found, first.left_out_made], ["created", 120, 1, 1]);
+  assert.equal(first.url, "https://open.spotify.com/playlist/copy1");
+  assert.deepEqual([remote.get("copy1").name, remote.get("copy1").uris.length], ["Night drive", 120]);
+  assert.equal(libraryStore.playlist(id).exports[0].id, "copy1");
+
+  // The library is where the playlist is arranged: a song taken out and a new name reach the same copy.
+  libraryStore.removeEntries(id, [libraryStore.playlist(id).entries[0].id]);
+  libraryStore.savePlaylist({ id, name: "Night drive, late" });
+  const second = await application.exportLibraryPlaylist({ playlistId: id });
+  assert.deepEqual([second.state, second.exported, remote.size], ["updated", 119, 1]);
+  assert.deepEqual([remote.get("copy1").name, remote.get("copy1").uris.length], ["Night drive, late", 119]);
+
+  // A copy changed on Spotify is left alone until the listener says to replace it.
+  remote.get("copy1").uris.push("spotify:track:addedonspotify00000000");
+  const changed = await application.exportLibraryPlaylist({ playlistId: id });
+  assert.deepEqual([changed.state, changed.on_service, changed.would_export], ["changed_on_service", 120, 119]);
+  assert.equal(remote.get("copy1").uris.length, 120);
+  const replaced = await application.exportLibraryPlaylist({ playlistId: id, replace: true });
+  assert.deepEqual([replaced.state, remote.get("copy1").uris.length], ["updated", 119]);
+
+  // A copy the listener deleted on Spotify is made again.
+  kept.delete("copy1");
+  const again = await application.exportLibraryPlaylist({ playlistId: id });
+  assert.deepEqual([again.state, again.url, remote.get("copy2").uris.length], ["created", "https://open.spotify.com/playlist/copy2", 119]);
+  application.close();
 });
 

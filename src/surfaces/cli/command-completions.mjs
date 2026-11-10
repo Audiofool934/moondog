@@ -52,6 +52,7 @@ const libraryChoices = choices([
   ["play", N_("Play a playlist by name")],
   ["save", N_("Keep the song playing now")],
   ["import", N_("Copy a playlist from a link")],
+  ["export", N_("Send a playlist to Spotify")],
 ]);
 const modelRoleChoices = choices([
   ["roles", N_("See what side tasks use")],

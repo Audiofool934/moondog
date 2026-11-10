@@ -1168,6 +1168,13 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
         ...(data.folderId ? { folderId: String(data.folderId) } : {}) });
       send({ type: "library-imported", ...imported });
     },
+    // The playlist stays in the library; Spotify gets a copy, or the copy an earlier export made is brought up to date.
+    "library-export": async (data) => {
+      try {
+        const sent = await base.exportLibraryPlaylist({ playlistId: String(data.playlistId ?? ""), service: "spotify", replace: data.replace === true });
+        send({ type: "library-exported", ...sent, playlist: { ...sent.playlist, ...(sent.playlist?.id === "saved" ? { saved: true } : {}) } });
+      } catch (error) { libraryNotice(error); }
+    },
     "library-play": async (data) => {
       try {
         const played = await base.playLibrary({ playlistId: String(data.playlistId ?? ""), ...(data.entryId ? { entryId: String(data.entryId) } : {}), shuffle: data.shuffle === true });

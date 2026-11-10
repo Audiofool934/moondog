@@ -186,6 +186,7 @@ Read the [connection and data details](docs/TERMINAL_GUIDE.md) before you connec
 `/library save` keeps what is playing, and `/library play Night drive` plays a playlist on the service you chose.
 `/library import <link>` copies a Spotify, Apple Music, NetEase Music or QQ Music playlist into it.
 A playlist you made on Spotify also shapes your taste; for any other one, you decide.
+`/library export Night drive` puts a private copy of a playlist on Spotify, and exporting it again updates that copy.
 
 ## Music it makes
 

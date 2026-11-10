@@ -185,6 +185,7 @@ function agentCapabilityAllowed(descriptor) {
       spotifyCapabilityEffects.has(descriptor.effect)) ||
     (descriptor.capability_id === "music.preview.play" && descriptor.effect === "play_preview") ||
     (descriptor.capability_id === "collection.play" && descriptor.effect === "play_library") ||
+    (descriptor.capability_id === "collection.export" && descriptor.effect === "write_external") ||
     (["music.generate.local", "music.generate.replay", "music.generate.stream", "music.generate.stream.stop"].includes(descriptor.capability_id) &&
       descriptor.effect === "generate_local")
   );
@@ -6752,6 +6753,36 @@ function createToolFactories(
       }),
     ],
     [
+      "collection.export",
+      (descriptor) => ({
+        name: descriptor.tool_name,
+        label: descriptor.label,
+        description:
+          "Export a playlist from the listener's own library to Spotify, by its id from moondog_collection_list, only when they ask to export, send, sync or put it on Spotify. The library playlist stays theirs on this Mac; Spotify gets a private copy. The first export makes the playlist there (created); a later one brings that same copy up to date (updated). changed_on_service means the copy was changed on Spotify since the last export and nothing was written: tell the listener, and call again with replace true only after they say to replace it. Report how many songs went over, with not_found (songs Spotify doesn't have) and left_out_made (tracks Moondog made, which Spotify can't hold) when they are not zero.",
+        parameters: Type.Object(
+          {
+            playlist_id: Type.String({ minLength: 1, maxLength: 128 }),
+            replace: Type.Optional(Type.Boolean()),
+          },
+          { additionalProperties: false },
+        ),
+        executionMode: "sequential",
+        execute: executeDomain(
+          async (_toolCallId, parameters, signal) => application.exportLibraryPlaylist({ playlistId: parameters.playlist_id, service: "spotify", replace: parameters.replace === true }, { signal }),
+          (value) => ({
+            state: cleanOutputText(value.state, 32, "state"),
+            service: "spotify",
+            playlist: { id: cleanOutputText(value.playlist?.id, 128, "playlist_id"), name: cleanOutputText(value.playlist?.name, 120, "playlist_name") },
+            ...(Number.isInteger(value.exported) ? { exported: value.exported } : {}),
+            ...(Number.isInteger(value.on_service) ? { on_service: value.on_service, would_export: Number(value.would_export) || 0 } : {}),
+            not_found: Number(value.not_found) || 0,
+            left_out_made: Number(value.left_out_made) || 0,
+            ...(value.skipped_avoided_count ? { skipped_avoided_count: Number(value.skipped_avoided_count) } : {}),
+          }),
+        ),
+      }),
+    ],
+    [
       "playlist.plan",
       (descriptor) => ({
         name: descriptor.tool_name,
@@ -6973,7 +7004,7 @@ Public web research rules:
 
 Grounding and evidence rules:
 - Before naming or selecting tracks as present in the user's library, call moondog_library_search.
-- The listener's collection in Moondog (Saved and their own playlists, which can hold songs and tracks Moondog made) is separate from their imported library and from Spotify. When they ask to save, keep, collect or like music (收藏, 存下来) without naming Spotify, use moondog_collection_save; use moondog_spotify_library_save only when they name Spotify or Liked Songs. To play one of their playlists, find it with moondog_collection_list and play it with moondog_collection_play. To rename one, take songs out or reorder it, use moondog_collection_edit. When they paste a playlist link and ask to import or add it, use moondog_collection_import.
+- The listener's collection in Moondog (Saved and their own playlists, which can hold songs and tracks Moondog made) is separate from their imported library and from Spotify. When they ask to save, keep, collect or like music (收藏, 存下来) without naming Spotify, use moondog_collection_save; use moondog_spotify_library_save only when they name Spotify or Liked Songs. To play one of their playlists, find it with moondog_collection_list and play it with moondog_collection_play. To rename one, take songs out or reorder it, use moondog_collection_edit. When they paste a playlist link and ask to import or add it, use moondog_collection_import. A playlist is made and arranged in the collection; a music service only gets a copy of it. When they ask to put one of their playlists on Spotify, find it with moondog_collection_list and send it with moondog_collection_export; exporting it again updates that same Spotify playlist.
 - When personalization matters, call moondog_profile_summary instead of assuming a profile.
 - Before saying how often, when, or whether the listener played something, check the listening coverage. Plays inside a gap, outside every source's span, or after recent_plays_checked_at are unknown, not zero. When a gap could hold the plays in question, lead with that boundary, for example "I have no records from August 30 to October 21", and do not conclude that the listener rarely plays it or only just found it.
 - The saved reading is enduring taste up to its listening date. Recent attention is the present: stored plays from the last four weeks, and Spotify's four-week top artists, which count listening on every device, including plays Moondog never stored and songs Moondog itself played or queued; stored plays count those apart as moondog_started_plays. When they disagree about what the listener plays lately, trust recent attention, and say which one you read.

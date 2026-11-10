@@ -115,7 +115,7 @@ test("model roles, effort and the library complete what their commands accept", 
   assert.equal(await values("/model web auto x"), null);
   assert.deepEqual(await values("/effort "), ["default", ...EFFORT_SCALE]);
   assert.equal(await values("/effort high x"), null);
-  assert.deepEqual(await values("/library "), ["play", "save", "import"]);
+  assert.deepEqual(await values("/library "), ["play", "save", "import", "export"]);
   assert.equal(await values("/library play N"), null);
 });
 

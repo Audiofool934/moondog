@@ -1,6 +1,7 @@
 import { createSpotifyWebApiClient } from "./web-api-client.mjs";
 import { readSpotifyLibrarySnapshot } from "./library-snapshot.mjs";
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { hostname } from "node:os";
 import { setTimeout as delay } from "node:timers/promises";
 
@@ -13,6 +14,7 @@ export const SPOTIFY_SERVICE_LIMITS = Object.freeze({
   playlistTracksMax: 20,
   editablePlaylistsPageMax: 50,
   playlistEditTracksMax: 100,
+  playlistExportTracksMax: 2000,
   playlistItemsPageMax: 50,
   libraryTracksMax: 20,
   recentlyPlayedDefault: 20,
@@ -351,6 +353,11 @@ function searchLimit(value) {
     );
   }
   return value;
+}
+
+// What a playlist holds, in order, as one short value: two lists with the same signature hold the same songs.
+function playlistSignature(uris) {
+  return createHash("sha256").update(uris.join("\n")).digest("hex");
 }
 
 function actionReceipt(action) {
@@ -1504,6 +1511,71 @@ export function createSpotifyService(options = {}) {
         },
         ...(playlist.uri ? { playlist_uri: playlist.uri } : {}),
         ...(playlist.id ? { playlist_id: playlist.id } : {}),
+      };
+    },
+
+    // A library playlist's copy on Spotify: a new private playlist, or the copy an earlier export made, set to
+    // these songs in this order. previous names that copy and what the export left in it. A copy that holds
+    // something else was changed on Spotify and is replaced only when the listener says so; a copy that is gone
+    // from their Spotify library is made again.
+    async exportPlaylist(value, { signal } = {}) {
+      signal?.throwIfAborted();
+      const input = inputObject(value);
+      const nameMax = SPOTIFY_SERVICE_LIMITS.playlistNameLengthMax;
+      const name = cleanPlaylistText(Array.from(String(input.name ?? "")).slice(0, nameMax).join(""), nameMax, "invalid_playlist_name", "name");
+      const uris = requiredTrackUris(input.uris, "invalid_playlist_tracks", SPOTIFY_SERVICE_LIMITS.playlistExportTracksMax);
+      const batch = SPOTIFY_SERVICE_LIMITS.playlistEditTracksMax;
+      let copy = null;
+      if (isPlainObject(input.previous) && input.previous.playlistId) {
+        const playlistId = requiredPlaylistId(input.previous.playlistId);
+        const ownerId = accountId(await client.getAccount({ signal }));
+        const found = await client.getPlaylist({ playlistId }, { signal }).catch((error) => (error?.status === 404 ? null : Promise.reject(error)));
+        // Deleting a playlist on Spotify only takes it out of the listener's library; it still answers by its id.
+        const kept = found?.id === playlistId && found.owner_id === ownerId && found.uri
+          ? await client.checkSavedTracks({ uris: [found.uri] }, { signal }).then((saved) => saved[0] !== false, (error) => (signal?.aborted ? Promise.reject(error) : true))
+          : false;
+        if (kept) {
+          const there = [];
+          const pageSize = SPOTIFY_SERVICE_LIMITS.playlistItemsPageMax;
+          for (let offset = 0; offset < SPOTIFY_SERVICE_LIMITS.playlistExportTracksMax && found.tracks_total !== 0; offset += pageSize) {
+            const page = await client.getPlaylistItems({ playlistId, limit: pageSize, offset }, { signal });
+            there.push(...page.items.map((entry) => entry.item?.uri ?? ""));
+            if (!page.has_more || !page.items.length) break;
+          }
+          if (input.replace !== true && playlistSignature(there) !== input.previous.signature) {
+            return { provider: "spotify", ok: false, effect: "write_external", action: "playlist.export", state: "changed_on_spotify",
+              playlist: { name: found.name, track_count: there.length, is_public: found.is_public === true } };
+          }
+          copy = found;
+        }
+      }
+      signal?.throwIfAborted();
+      const updated = Boolean(copy);
+      let written = 0;
+      try {
+        if (copy) {
+          if (copy.name !== name) await client.renamePlaylist({ playlistId: copy.id, name }, { signal });
+          await client.replacePlaylistItems({ playlistId: copy.id, uris: uris.slice(0, batch) }, { signal });
+          written = Math.min(batch, uris.length);
+        } else {
+          copy = await client.createPlaylist({ name }, { signal });
+          if (!copy?.id) fail("playlist_creation_failed", "Spotify did not return the created playlist.", { outcomeUnknown: true });
+        }
+        for (; written < uris.length; written += batch) {
+          signal?.throwIfAborted();
+          await client.addPlaylistTracks({ playlistId: copy.id, uris: uris.slice(written, written + batch) }, { signal });
+        }
+      } catch (error) {
+        // The copy exists with the songs sent so far. The caller keeps it, so the next export goes on with this copy.
+        if (copy?.id && error && typeof error === "object") error.exportedCopy = { playlistId: copy.id, signature: playlistSignature(uris.slice(0, written)), track_count: written };
+        throw error;
+      }
+      return {
+        ...actionReceipt("playlist.export"),
+        state: updated ? "updated" : "created",
+        playlist: { name, track_count: uris.length, is_public: false },
+        playlist_id: copy.id,
+        signature: playlistSignature(uris),
       };
     },
 

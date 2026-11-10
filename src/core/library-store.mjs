@@ -7,6 +7,9 @@
 // tracks the listener kept, first in the list, never renamed or deleted. An entry keeps what names the song
 // (title, artist, album, ISRC) and the ids each service found for it, so the same playlist plays on whichever
 // service the listener chose, and any one service can be dropped without losing it.
+//
+// A playlist is made and arranged here. A service gets a copy when the listener exports it: library_exports keeps
+// where that copy is and what it held, so the next export brings the same copy up to date instead of making another.
 import { randomUUID } from "node:crypto";
 import { chmod, mkdir } from "node:fs/promises";
 import path from "node:path";
@@ -52,6 +55,16 @@ const schema = `
     refs_json TEXT NOT NULL DEFAULT '{}',
     added_by TEXT NOT NULL,
     added_at TEXT NOT NULL
+  ) STRICT;
+  CREATE TABLE IF NOT EXISTS library_exports (
+    playlist_id TEXT NOT NULL REFERENCES library_playlists(playlist_id) ON DELETE CASCADE,
+    provider TEXT NOT NULL,
+    remote_id TEXT NOT NULL,
+    url TEXT,
+    count INTEGER NOT NULL,
+    signature TEXT,
+    exported_at TEXT NOT NULL,
+    PRIMARY KEY (playlist_id, provider)
   ) STRICT;
   CREATE INDEX IF NOT EXISTS library_entries_by_playlist ON library_entries(playlist_id, position);
   CREATE INDEX IF NOT EXISTS library_entries_by_made ON library_entries(made_id) WHERE made_id IS NOT NULL;
@@ -270,9 +283,12 @@ export class LibraryStore {
     const row = this.#database.prepare("SELECT * FROM library_playlists WHERE playlist_id = ?").get(String(id ?? ""));
     if (!row) return null;
     const entries = this.#database.prepare("SELECT * FROM library_entries WHERE playlist_id = ? ORDER BY position, added_at").all(row.playlist_id).map(entryOf);
+    const exports = this.#database.prepare("SELECT provider, remote_id, url, count, signature, exported_at FROM library_exports WHERE playlist_id = ? ORDER BY provider")
+      .all(row.playlist_id).map((copy) => ({ provider: copy.provider, id: copy.remote_id, url: copy.url ?? null, count: copy.count,
+        signature: copy.signature ?? null, exportedAt: copy.exported_at }));
     return { id: row.playlist_id, folderId: row.folder_id ?? null, name: row.name, origin: row.origin,
       ...(row.source_json ? { source: JSON.parse(row.source_json) } : {}), createdAt: row.created_at, updatedAt: row.updated_at,
-      ...(row.playlist_id === SAVED_PLAYLIST_ID ? { saved: true } : {}), entries };
+      ...(row.playlist_id === SAVED_PLAYLIST_ID ? { saved: true } : {}), ...(exports.length ? { exports } : {}), entries };
   }
 
   /** Playlists whose names hold the words, best first, for the agent and the terminal. */
@@ -452,6 +468,22 @@ export class LibraryStore {
       const row = this.#database.prepare("SELECT source_json FROM library_playlists WHERE playlist_id = ?").get(id);
       if (!row?.source_json) return;
       this.#database.prepare("UPDATE library_playlists SET source_json = ? WHERE playlist_id = ?").run(JSON.stringify({ ...JSON.parse(row.source_json), cover }), id);
+    });
+  }
+
+  /**
+   * Keeps where a playlist's copy on a service is, after an export: the copy's id and link there, how many songs
+   * it took, and a signature of what it held, which tells a later export whether the copy was changed there.
+   */
+  rememberExport(playlistId, { provider, id, url, count, signature } = {}) {
+    return this.#transaction(() => {
+      const playlist = cleanId(playlistId, "Playlist");
+      this.#requirePlaylist(playlist);
+      this.#database.prepare(`INSERT INTO library_exports(playlist_id, provider, remote_id, url, count, signature, exported_at) VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(playlist_id, provider) DO UPDATE SET remote_id = excluded.remote_id, url = excluded.url, count = excluded.count,
+          signature = excluded.signature, exported_at = excluded.exported_at`)
+        .run(playlist, cleanId(provider, "Service"), cleanId(id, "Copy"), cleanText(url, 400, "Link", { optional: true }),
+          Number.isInteger(count) && count >= 0 ? count : 0, cleanText(signature, 128, "Signature", { optional: true }), this.#now());
     });
   }
 

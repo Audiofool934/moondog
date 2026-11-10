@@ -1111,7 +1111,30 @@ export async function runMoondogTui({
       if (imported.taste === "added") await openProfile({ imported: true }).catch(() => {});
       return;
     }
-    throw new Error(tr("Use /library, /library play <name>, /library save [playlist], or /library import <link>."));
+    // A copy on Spotify: made by the first export, brought up to date by a later one. replace overwrites a copy changed there.
+    if (action === "export") {
+      const replace = rest.at(-1) === "replace";
+      const wanted = (replace ? rest.slice(0, -1) : rest).join(" ").trim();
+      const [playlist] = application.findLibraryPlaylists(wanted);
+      if (!playlist || !wanted) throw new Error(tr("No playlist is called “{name}”.", { name: wanted }));
+      setFooter(tr("Sending {name} to Spotify…", { name: nameOf(playlist) }));
+      const sent = await application.exportLibraryPlaylist({ playlistId: playlist.id, service: "spotify", replace });
+      if (sent.state === "changed_on_service") {
+        addMoondogMessage(tr("{name} was changed on Spotify since the last export, so nothing was sent. Add replace after the name to overwrite it there.", { name: nameOf(playlist) }));
+        return;
+      }
+      if (!["created", "updated"].includes(sent.state)) {
+        addMoondogMessage(sent.state === "empty" ? tr("{name} has no songs to send.", { name: nameOf(playlist) }) : tr("None of its songs could be found."));
+        return;
+      }
+      const text = sent.state === "updated" ? tr("Updated {name} on Spotify.", { name: nameOf(playlist) }) : tr("{name} is now on Spotify, as a private playlist.", { name: nameOf(playlist) });
+      addMoondogMessage([text, tr.n(sent.exported, "{count} song went over.", "{count} songs went over."),
+        sent.not_found ? tr("Some songs couldn't be found.") : "",
+        sent.left_out_made ? tr("Moondog's tracks stay here; Spotify can't hold them.") : "", sent.url].filter(Boolean).join(" "));
+      setFooter(text, success);
+      return;
+    }
+    throw new Error(tr("Use /library, /library play <name>, /library save [playlist], /library import <link>, or /library export <name>."));
   };
 
   const removeLifecycleListeners = () => {

@@ -63,7 +63,8 @@ const settings = createSettings({ state, send, t: tr,
 const firstRun = createFirstRun({ settings, send, read: () => ({ run: state.firstRun, modelReady: state.model?.state === "configured" }) });
 const sidebar = createSidebar({ root: $("sessions"), state, send, t: tr, open: (id) => openSession(id), store, menuPoint: (event) => menuPoint(event) });
 const library = createLibrary({ root: $("library"), state, send, t: tr, open: (id) => openPlaylist(id), store, menuPoint: (event) => menuPoint(event),
-  onBusy: (value) => views.setBusy("library", value) });
+  onBusy: (value) => views.setBusy("library", value),
+  onExport: (playlist) => { notice(tr("exportSending")); send({ type: "library-export", playlistId: playlist.id }); } });
 const shelf = createShelf({ root: $("shelf"), state, send, t: tr, menuPoint: (event) => menuPoint(event), onClose: () => closePlaylist() });
 const taste = createTaste({ root: $("taste"), state, send, t: tr, onClose: () => closeTaste() });
 // The taste view in the sidebar: a row unfolded there opens the page and lights that artist across its record.
@@ -1882,6 +1883,19 @@ async function askImport(preview) {
   if (!answer?.confirmed) { library.importDone(); return; }
   send({ type: "library-import", token: preview.token, taste: answer.checked === true, folderId: preview.folderId ?? null });
 }
+// A playlist sent to Spotify. A copy changed there since the last export is replaced only when the listener says so.
+async function exported(data) {
+  const name = data.playlist?.saved ? t("saved") : data.playlist?.name ?? "";
+  if (data.state === "changed_on_service") {
+    const confirmed = await window.moondogApp?.confirm?.({ message: t("exportChangedQuestion", { name }), detail: t("exportChangedDetail"),
+      confirm: t("exportReplace"), cancel: t("cancel") });
+    if (confirmed) { notice(t("exportSending")); send({ type: "library-export", playlistId: data.playlist.id, replace: true }); }
+    else notice("");
+    return;
+  }
+  if (data.state !== "created" && data.state !== "updated") { notice(t(data.state === "empty" ? "playlistEmpty" : "noticeNothingFound")); return; }
+  notice([t(data.state === "updated" ? "exportUpdated" : "exportedPlaylist", { name }), data.not_found ? t("notFoundSome") : ""].filter(Boolean).join(" "));
+}
 // The song the heart last kept, by title and artists, so its heart shows filled while it plays.
 let keptNow = null;
 const songKey = (now) => `${now.title}\u0000${now.generated ? "moondog" : (now.artists ?? []).join(",")}`;
@@ -2373,6 +2387,7 @@ function receive({ data }) {
     notice(data.added ? (data.playlist?.saved ? t("keptInSaved") : t("savedTo", { name: where })) : t("alreadyIn", { name: where }));
     renderInspector();
   }
+  if (data.type === "library-exported") void exported(data);
   if (data.type === "library-played") {
     if (data.state === "not_found" || data.state === "empty") notice(t(data.state === "empty" ? "playlistEmpty" : "noticeNothingFound"));
     else if (data.left_out_made) notice(t("madeLeftOut"));

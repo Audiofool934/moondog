@@ -945,31 +945,7 @@ export class MoondogApplication {
     if (service === "spotify") {
       if (!this.spotifyPlaybackReady()) throw Object.assign(new Error("Spotify is not ready to play here."), { code: "spotify_not_ready" });
       const list = songs.slice(0, 100);
-      const refs = [];
-      const avoidedFound = [];
-      // A recording's own title and credit can name more than the entry does (a feature); an Avoid holds against it.
-      const allowed = (title, credit) => this.avoidAllows({ title, artist_credit: credit });
-      const uris = await mapLimited(list, 4, async (entry) => {
-        // A cached recording plays without a search, once its own credit passes today's Avoids.
-        if (entry.refs?.spotify_uri && entry.refs.spotify_credit) {
-          if (allowed(entry.refs.spotify_title ?? entry.title, entry.refs.spotify_credit)) return entry.refs.spotify_uri;
-          avoidedFound.push(entry.id);
-          return null;
-        }
-        const { matched } = await this.spotifyResolveSongs([{ title: entry.title, artist: entry.artist_credit }], { signal }).catch(() => ({ matched: [] }));
-        // A match reaches the model without its URI; the host keeps it under the match's reference.
-        const ref = matched[0]?.item_ref_id;
-        const known = ref ? this.spotifyHostReadItems().find((item) => item.item_ref_id === ref) : null;
-        const uri = typeof known?.uri === "string" ? known.uri : typeof matched[0]?.uri === "string" ? matched[0].uri : null;
-        if (!uri) return null;
-        const title = known?.name ?? matched[0]?.name ?? entry.title;
-        const credit = (known?.artists ?? matched[0]?.artists ?? []).join(", ") || entry.artist_credit;
-        refs.push({ entryId: entry.id, refs: { spotify_uri: uri, spotify_title: title, spotify_credit: credit } });
-        if (!allowed(title, credit)) { avoidedFound.push(entry.id); return null; }
-        return uri;
-      });
-      signal?.throwIfAborted();
-      this.libraryStore.rememberRefs(refs);
+      const { uris, avoidedFound } = await this.#spotifyUrisOf(list, { signal });
       const playable = uris.filter(Boolean);
       const skipped = avoided.length + avoidedFound.length;
       Object.assign(extra, skipped ? { skipped_avoided_count: skipped } : {});
@@ -990,6 +966,84 @@ export class MoondogApplication {
         playing: receipt?.songs?.length ?? 0, left_out_made: leftOut, ...extra };
     }
     throw Object.assign(new Error("No player here can play this playlist."), { code: "library_no_player" });
+  }
+
+  // The Spotify recording of each library song, in the songs' order: the one a play or an export found before, or a
+  // search by title and artist, kept on the entry for next time. null stands for a song Spotify doesn't have or an
+  // Avoid holds back; avoidedFound names the second kind.
+  async #spotifyUrisOf(list, { signal } = {}) {
+    const refs = [];
+    const avoidedFound = [];
+    // A recording's own title and credit can name more than the entry does (a feature); an Avoid holds against it.
+    const allowed = (title, credit) => this.avoidAllows({ title, artist_credit: credit });
+    const uris = await mapLimited(list, 4, async (entry) => {
+      // A cached recording needs no search, once its own credit passes today's Avoids.
+      if (entry.refs?.spotify_uri && entry.refs.spotify_credit) {
+        if (allowed(entry.refs.spotify_title ?? entry.title, entry.refs.spotify_credit)) return entry.refs.spotify_uri;
+        avoidedFound.push(entry.id);
+        return null;
+      }
+      signal?.throwIfAborted();
+      const { matched } = await this.spotifyResolveSongs([{ title: entry.title, artist: entry.artist_credit }], { signal }).catch(() => ({ matched: [] }));
+      // A match reaches the model without its URI; the host keeps it under the match's reference.
+      const ref = matched[0]?.item_ref_id;
+      const known = ref ? this.spotifyHostReadItems().find((item) => item.item_ref_id === ref) : null;
+      const uri = typeof known?.uri === "string" ? known.uri : typeof matched[0]?.uri === "string" ? matched[0].uri : null;
+      if (!uri) return null;
+      const title = known?.name ?? matched[0]?.name ?? entry.title;
+      const credit = (known?.artists ?? matched[0]?.artists ?? []).join(", ") || entry.artist_credit;
+      refs.push({ entryId: entry.id, refs: { spotify_uri: uri, spotify_title: title, spotify_credit: credit } });
+      if (!allowed(title, credit)) { avoidedFound.push(entry.id); return null; }
+      return uri;
+    });
+    signal?.throwIfAborted();
+    this.libraryStore.rememberRefs(refs);
+    return { uris, avoidedFound };
+  }
+
+  /**
+   * Exports a library playlist to a music service, as a copy there. The playlist stays the listener's own, here;
+   * the copy follows it: the first export makes a private playlist, and a later one brings that same playlist up
+   * to date. A copy changed on the service since the last export is left alone (changed_on_service) until the
+   * listener says to replace it. Spotify is the service that takes a playlist so far. Tracks Moondog made have
+   * no recording there, so they stay out (left_out_made).
+   */
+  async exportLibraryPlaylist({ playlistId, service = "spotify", replace = false } = {}, { signal } = {}) {
+    const library = this.requireLibrary();
+    if (service !== "spotify") throw Object.assign(new Error("Only Spotify takes a playlist from the library so far."), { code: "library_export_unsupported" });
+    const playlist = library.playlist(playlistId);
+    if (!playlist) throw Object.assign(new Error("That playlist is not in the library."), { code: "library_playlist_not_found" });
+    const named = { id: playlist.id, name: playlist.saved ? "Saved" : playlist.name };
+    if (!this.spotifyReady()) throw Object.assign(new Error("Connect Spotify first, so Moondog can make a playlist there."), { code: "spotify_not_ready" });
+    this.requireSpotifyWriteScopes(["playlist-modify-private"]);
+    const songs = playlist.entries.filter((entry) => entry.kind === "song");
+    const leftOut = playlist.entries.length - songs.length;
+    const avoided = songs.filter((entry) => !this.avoidAllows({ title: entry.title, artist_credit: entry.artist_credit }));
+    const list = songs.filter((entry) => !avoided.includes(entry));
+    const found = await this.#spotifyUrisOf(list, { signal });
+    // A song the playlist holds twice, or two entries Spotify answers with one recording, goes over once.
+    const uris = [...new Set(found.uris.filter(Boolean))];
+    const skipped = avoided.length + found.avoidedFound.length;
+    const counts = { not_found: found.uris.filter((uri) => !uri).length - found.avoidedFound.length, left_out_made: leftOut,
+      ...(skipped ? { skipped_avoided_count: skipped } : {}) };
+    if (!uris.length) return { state: songs.length ? "not_found" : "empty", service, playlist: named, ...counts };
+    const previous = playlist.exports?.find((copy) => copy.provider === service);
+    const remember = (copy) => library.rememberExport(playlist.id, { provider: service, id: copy.playlistId,
+      url: `https://open.spotify.com/playlist/${copy.playlistId}`, count: copy.track_count, signature: copy.signature });
+    this.invalidateSpotifyQuickEditContext();
+    let receipt;
+    try {
+      receipt = await this.requireSpotifyService().exportPlaylist({ name: named.name, uris, replace: replace === true,
+        ...(previous ? { previous: { playlistId: previous.id, signature: previous.signature } } : {}) }, { signal });
+    } catch (error) {
+      if (error?.exportedCopy) remember(error.exportedCopy);
+      throw error;
+    }
+    if (receipt.state === "changed_on_spotify") {
+      return { state: "changed_on_service", service, playlist: named, url: previous.url, on_service: receipt.playlist.track_count, would_export: uris.length, ...counts };
+    }
+    remember({ playlistId: receipt.playlist_id, track_count: uris.length, signature: receipt.signature });
+    return { state: receipt.state, service, playlist: named, url: `https://open.spotify.com/playlist/${receipt.playlist_id}`, exported: uris.length, ...counts };
   }
 
   // Makes one instrumental track from the listener's taste and plays it in Moondog's own player.

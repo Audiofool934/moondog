@@ -22,6 +22,9 @@ function application(libraryStore) {
       if (!link.includes("spotify")) throw Object.assign(new Error("unsupported"), { code: "playlist_link_unsupported" });
       return { token: "t1", provider: "spotify", name: "Night drive", read: 2, total: 2, owned: true, sample: ["Pink Moon - Nick Drake"] };
     },
+    async exportLibraryPlaylist({ playlistId, replace }) {
+      return { state: replace ? "updated" : "created", service: "spotify", playlist: { id: playlistId, name: "Saved" }, exported: 2, not_found: 0, left_out_made: 0 };
+    },
     async importPlaylistLink({ token, taste, folderId }) {
       return { playlist: { id: `imported-${token}-${taste}-${folderId}`, name: "Night drive" }, added: 2, taste: taste ? "added" : "not_added" };
     },
@@ -75,6 +78,11 @@ test("the window gets the library, edits it, and hears the terminal's changes", 
   listener({ data: { type: "library-import-preview", link: "https://example.com/x" } });
   await settle();
   assert.equal(last("notice").code, "playlist_link_unsupported");
+
+  // An export answers with what the core did, and Saved keeps its mark so the window can name it in its own language.
+  listener({ data: { type: "library-export", playlistId: "saved", replace: true } });
+  await settle();
+  assert.deepEqual([last("library-exported").state, last("library-exported").playlist.saved, last("library-exported").exported], ["updated", true, 2]);
 
   // A refused edit comes back as a notice with the store's code.
   listener({ data: { type: "library-playlist-delete", id: "saved" } });
