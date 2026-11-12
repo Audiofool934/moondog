@@ -1,4 +1,4 @@
-// Moondog's replies in the window: paragraphs, lists, short headings, emphasis, code and links.
+// Moondog's replies in the window: paragraphs, lists, tables, short headings, emphasis, code and links.
 // Everything becomes DOM nodes with text content, so a reply can never inject markup.
 // A backslash before a Markdown character shows the character, as the core escapes source titles.
 const INLINE = /(\\[\\`*_[\]<>]|\*\*[^*\n]+\*\*|__[^_\n]+__|`[^`\n]+`|\*[^*\n]+\*|_[^_\n]+_|\[(?:\\.|[^\]\\\n])+\]\(<?https?:\/\/[^\s)>]+>?\)|<https?:\/\/[^\s>]+>|https?:\/\/[^\s<>()]+[^\s<>().,;:!?，。！？；：）」』》])/u;
@@ -44,6 +44,26 @@ function inline(text, parent) {
   }
 }
 
+// Split only unescaped pipes. Keep other escapes for the inline renderer.
+function tableCells(line) {
+  const cells = [""];
+  let separators = 0;
+  for (let at = 0; at < line.length; at += 1) {
+    const char = line[at];
+    if (char === "\\" && at + 1 < line.length) {
+      const next = line[++at];
+      cells[cells.length - 1] += next === "|" ? "|" : `\\${next}`;
+    } else if (char === "|") {
+      cells.push("");
+      separators += 1;
+    } else cells[cells.length - 1] += char;
+  }
+  if (!separators) return null;
+  if (!cells[0].trim()) cells.shift();
+  if (!cells.at(-1).trim()) cells.pop();
+  return cells.map((cell) => cell.trim());
+}
+
 export function renderMarkdown(source) {
   const fragment = document.createDocumentFragment();
   const lines = String(source ?? "").replace(/\r\n?/gu, "\n").split("\n");
@@ -70,14 +90,50 @@ export function renderMarkdown(source) {
     }
   };
   const closeList = () => { list = null; };
-  for (const raw of lines) {
+  for (let at = 0; at < lines.length; at += 1) {
+    const raw = lines[at];
     const line = raw.replace(/\s+$/u, "");
     const bullet = line.match(/^\s{0,3}[-*•]\s+(.*)$/u);
     const numbered = line.match(/^\s{0,3}(\d{1,3})[.)]\s+(.*)$/u);
     const heading = line.match(/^\s{0,3}#{1,4}\s+(.*)$/u);
     const quoted = line.match(/^\s{0,3}>\s?(.*)$/u);
     if (!line.trim()) { flush(); closeList(); continue; }
-    if (quoted) {
+    const headers = tableCells(line);
+    const delimiters = tableCells(lines[at + 1] ?? "");
+    if (!quoted && !heading && !bullet && !numbered && headers?.length &&
+        delimiters?.length === headers.length && delimiters.every((cell) => /^:?-+:?$/u.test(cell))) {
+      flush(); closeList();
+      const wrapper = document.createElement("div");
+      wrapper.className = "markdown-table";
+      const table = document.createElement("table");
+      const head = document.createElement("thead");
+      const body = document.createElement("tbody");
+      const row = (cells, section, tag) => {
+        const tr = document.createElement("tr");
+        headers.forEach((_, column) => {
+          const cell = document.createElement(tag);
+          if (tag === "th") cell.scope = "col";
+          const delimiter = delimiters[column];
+          cell.style.textAlign = delimiter.endsWith(":") ? (delimiter.startsWith(":") ? "center" : "right") : "left";
+          inline(cells[column] ?? "", cell);
+          tr.append(cell);
+        });
+        section.append(tr);
+      };
+      row(headers, head, "th");
+      at += 1;
+      while (at + 1 < lines.length) {
+        const next = lines[at + 1];
+        if (/^\s{0,3}(?:>|#{1,4}\s|[-*•]\s|\d{1,3}[.)]\s)/u.test(next)) break;
+        const cells = tableCells(next);
+        if (!cells?.length) break;
+        row(cells, body, "td");
+        at += 1;
+      }
+      table.append(head, body);
+      wrapper.append(table);
+      fragment.append(wrapper);
+    } else if (quoted) {
       if (paragraph.length) flush();
       closeList();
       quote.push(quoted[1]);
