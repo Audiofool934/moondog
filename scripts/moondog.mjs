@@ -1046,6 +1046,8 @@ async function main() {
       process.stdout.write(
         `${options.json ? JSON.stringify(value, null, 2) : formatLocalResult(options.command, value)}\n`,
       );
+      // A failed required check makes the checkup fail, so scripts can rely on it.
+      if (options.command === "doctor" && !value.ok) process.exitCode = 1;
       return;
     }
 

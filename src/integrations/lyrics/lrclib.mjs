@@ -1,7 +1,7 @@
 import { lyricIdentity } from "../../core/lyric-profile.mjs";
+import { MOONDOG_USER_AGENT as userAgent } from "../user-agent.mjs";
 
 const origin = "https://lrclib.net";
-const userAgent = "Moondog/0.1.0 (https://github.com/Audiofool934/moondog)";
 
 export class LyricsProviderError extends Error {
   constructor(message, retryAfterMs = 60_000) {

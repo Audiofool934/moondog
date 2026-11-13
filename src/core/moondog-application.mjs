@@ -4656,6 +4656,11 @@ export class MoondogApplication {
     const source = await this.sourceStatus();
     const profile = await this.profileStatus();
     const spotify = this.spotifyStatus();
+    // A new install has imported nothing yet. That is a state to explain, not a failed check.
+    const noLibrary = !this.profileServicesReady() && source.state === "missing" &&
+      [null, "projection_subject_unavailable"].includes(this.domainServicesError);
+    const similarityReady = this.musicSimilarityReady();
+    const similarityWaits = noLibrary && !similarityReady && this.musicSimilarity !== null;
     const checks = [
       ...["search", "read"].map((kind) => {
         const lookup = this.webLookup(kind);
@@ -4675,14 +4680,15 @@ export class MoondogApplication {
       {
         id: "apple_music.source",
         ok: ["ready", "degraded"].includes(source.state),
-        state: source.state,
-        optional_for_local_commands: profile.state === "ready",
+        state: noLibrary ? "no_library" : source.state,
+        optional_for_local_commands: noLibrary || profile.state === "ready",
       },
       {
         id: "profile.projection",
         ok: profile.state === "ready",
-        state: profile.state,
-        ...(profile.error ? { error: profile.error } : {}),
+        state: noLibrary ? "no_library" : profile.state,
+        ...(profile.error && !noLibrary ? { error: profile.error } : {}),
+        ...(noLibrary ? { optional_for_local_commands: true } : {}),
       },
       {
         id: "agent.runtime",
@@ -4692,8 +4698,9 @@ export class MoondogApplication {
       },
       {
         id: "music.discovery.open_similarity",
-        ok: this.musicSimilarityReady(),
-        state: this.musicSimilarityReady() ? "configured" : "unavailable",
+        ok: similarityReady,
+        state: similarityReady ? "configured" : similarityWaits ? "waiting_for_library" : "unavailable",
+        ...(similarityWaits ? { optional_for_local_commands: true } : {}),
       },
       {
         id: "external.effects",
@@ -4730,6 +4737,7 @@ export class MoondogApplication {
       ok: checks
         .filter((check) => !check.optional_for_local_commands)
         .every((check) => check.ok),
+      ...(noLibrary ? { library: "none" } : {}),
       checks,
     };
   }

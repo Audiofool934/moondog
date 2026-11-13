@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
@@ -7,6 +8,8 @@ import {
   createOpenMusicSimilarity,
   createWikidataArtistResolver,
 } from "../../src/integrations/open-music-similarity/artist-radio.mjs";
+
+const packageVersion = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")).version;
 
 function jsonResponse(value, status = 200, headers = {}) {
   return new Response(JSON.stringify(value), {
@@ -107,7 +110,10 @@ test("Wikidata resolves one exact artist label to a MusicBrainz identity", async
   assert.deepEqual(result.wikidata_ids, ["Q191352"]);
   assert.deepEqual(result.apple_music_artist_ids, ["18756224"]);
   assert.equal(calls.length, 2);
-  assert.match(calls[0].options.headers["user-agent"], /^Moondog\/0\.1/u);
+  assert.equal(
+    calls[0].options.headers["user-agent"],
+    `Moondog/${packageVersion} (https://github.com/Audiofool934/moondog)`,
+  );
 
   await resolver.resolveArtist("Portishead");
   assert.equal(calls.length, 2, "identity reads should use the process cache");

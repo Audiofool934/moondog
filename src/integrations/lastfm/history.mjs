@@ -2,6 +2,7 @@ import { setTimeout as delay } from "node:timers/promises";
 
 import { musicHash, musicText, prepareMusicBundle } from "../../profile/music-import-bundle.mjs";
 import { readLastfmConfiguration } from "./settings.mjs";
+import { MOONDOG_USER_AGENT } from "../user-agent.mjs";
 
 // A listener's scrobbles (every play Last.fm counted) and loved tracks, read by username.
 // Last.fm lists scrobbles newest first; the read stops at the moment it started, so new
@@ -75,7 +76,7 @@ async function lastfmCall({ root, apiKey, method, params, fetchImpl, signal, sle
     try {
       response = await fetchImpl(url, {
         signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
-        headers: { "User-Agent": "Moondog (+https://github.com/Audiofool934/moondog)" },
+        headers: { "User-Agent": MOONDOG_USER_AGENT },
       });
       body = await response.json().catch(() => null);
     } catch (error) {

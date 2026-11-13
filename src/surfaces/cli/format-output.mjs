@@ -484,15 +484,27 @@ const doctorLabels = {
 };
 
 function formatDoctor(value, tr) {
+  const rows = [];
+  for (const check of value.checks) {
+    // A new install shows one library line in place of its Apple Music batch and profile.
+    if (check.state === "no_library") {
+      if (!rows.includes(null)) rows.push(null);
+      continue;
+    }
+    if (check.state === "waiting_for_library") {
+      rows.push(`- ${tr.marked(doctorLabels[check.id])}: ${tr("waits for your library")}`);
+      continue;
+    }
+    const state = check.ok ? tr("ok") : check.optional_for_local_commands ? tr("not set up (optional)") : tr("not working");
+    const detail = words(check.actual ?? check.state ?? "unknown");
+    const label = doctorLabels[check.id] ? tr.marked(doctorLabels[check.id]) : check.id;
+    rows.push(`- ${label}: ${state} · ${detail}`);
+  }
   return [
     `# ${tr("Checkup")}`,
     "",
-    ...value.checks.map((check) => {
-      const state = check.ok ? tr("ok") : check.optional_for_local_commands ? tr("not set up (optional)") : tr("not working");
-      const detail = words(check.actual ?? check.state ?? "unknown");
-      const label = doctorLabels[check.id] ? tr.marked(doctorLabels[check.id]) : check.id;
-      return `- ${label}: ${state} · ${detail}`;
-    }),
+    ...rows.map((row) => row ?? `- ${tr("No library yet")}\n  ${tr("Type `/import` in `moondog` to bring in your listening from Spotify, Apple Music, Last.fm or a playlist link.")}\n  ${
+      tr("To try it first, `moondog demo-history --output <absolute-file.zip>` makes a fictional Spotify history to import.")}`),
   ].join("\n");
 }
 
