@@ -1883,13 +1883,20 @@ function removeAt(at) {
   state.player.next = state.player.next.filter((_, each) => each !== at).map((each, index) => (index >= at && Number.isInteger(each.ahead) ? { ...each, ahead: each.ahead - 1 } : each));
   renderInspector();
 }
-const queueRow = (event) => event.target.closest?.("[data-queue] li[data-at]");
-$("queue").addEventListener("dblclick", (event) => { const row = queueRow(event); if (row) jumpTo(Number(row.dataset.at)); });
+// The rows of Up next: the songs queued, then the host's picks.
+const QUEUE_ROWS = "li[data-at], li[data-ref]";
+const queueRow = (event) => event.target.closest?.(`[data-queue] :is(${QUEUE_ROWS})`);
+$("queue").addEventListener("click", (event) => { const row = queueRow(event); if (row?.dataset.ref) addProposal(row.dataset.ref); });
+$("queue").addEventListener("dblclick", (event) => { const row = queueRow(event); if (row?.dataset.at) jumpTo(Number(row.dataset.at)); });
 $("queue").addEventListener("contextmenu", async (event) => {
   const row = queueRow(event);
   if (!row) return;
   event.preventDefault();
   row.focus();
+  if (row.dataset.ref) {
+    if (await menu([{ id: "add", label: t("addToUpNext") }], event) === "add") addProposal(row.dataset.ref);
+    return;
+  }
   const at = Number(row.dataset.at);
   const now = nowPlaying();
   const track = now?.next?.[at];
@@ -1899,26 +1906,72 @@ $("queue").addEventListener("contextmenu", async (event) => {
   if (chosen === "play") jumpTo(at);
   if (chosen === "remove") removeAt(at);
 });
-// Up and down move between the songs, Return plays one, Delete takes it out where the queue allows.
+// Up and down move between the rows; Return plays a queued song or adds a pick; Delete takes a song out where the queue allows.
 $("queue").addEventListener("keydown", (event) => {
   const row = queueRow(event);
   if (!row || event.metaKey || event.ctrlKey || event.altKey) return;
-  const at = Number(row.dataset.at);
-  const rows = [...$("queue").querySelectorAll("li[data-at]")];
+  const rows = [...$("queue").querySelectorAll(QUEUE_ROWS)];
   const step = { ArrowDown: 1, ArrowUp: -1 }[event.key];
   if (step) {
     event.preventDefault();
-    const to = rows[Math.max(0, Math.min(rows.length - 1, at + step))];
+    const to = rows[Math.max(0, Math.min(rows.length - 1, rows.indexOf(row) + step))];
     for (const each of rows) each.tabIndex = each === to ? 0 : -1;
     to.focus();
   } else if (event.key === "Enter") {
     event.preventDefault();
-    jumpTo(at);
-  } else if (event.key === "Delete" || event.key === "Backspace") {
+    if (row.dataset.ref) addProposal(row.dataset.ref);
+    else jumpTo(Number(row.dataset.at));
+  } else if ((event.key === "Delete" || event.key === "Backspace") && row.dataset.at) {
     event.preventDefault();
-    removeAt(at);
+    removeAt(Number(row.dataset.at));
   }
 });
+// Up next's picks: when the songs queued run low, the host offers what could come next, after them and quieter.
+// A click or Return adds one to the queue. The window asks once for each song that plays, so a pick added never
+// asks again; only the player Moondog can queue on is asked for, never the Music app the listener plays.
+let proposals = { key: null, songs: [] };
+let askedKey = null;
+const offered = [];
+const proposalWhere = (now) => (!now || now.making || now.generated || state.onAir ? null
+  : now.local ? (state.playbackService === "apple_music" ? "moondog" : null)
+    : now.service === "netease" ? "netease" : now.service === "apple_music" ? null : "spotify");
+const proposalKey = (now, where) => JSON.stringify([where, now.title, now.artists ?? []]);
+function askProposals(now, next) {
+  const where = proposalWhere(now);
+  if (!where || next.length > 2 || !shown("inspector") || document.hidden) return;
+  const key = proposalKey(now, where);
+  if (key === askedKey) return;
+  askedKey = key;
+  send({ type: "up-next-proposals", key, where, playing: { title: now.title, artists: now.artists ?? [] },
+    next: next.map((track) => ({ title: track.title, artists: track.artists ?? [] })), offered: offered.slice(-20) });
+}
+// The picks still worth offering: for the song playing now, and not queued already.
+function shownProposals(now, next) {
+  const where = proposalWhere(now);
+  if (!where || proposals.key !== proposalKey(now, where)) return [];
+  const queued = new Set(next.map((track) => track.title.toLowerCase()));
+  return proposals.songs.filter((song) => !queued.has(song.title.toLowerCase()));
+}
+function proposalItem(song) {
+  const item = make("li", "proposal");
+  item.dataset.ref = song.ref;
+  item.tabIndex = -1;
+  item.append(thumb(song.image, true));
+  const words = make("div");
+  words.append(make("strong", "", song.title), make("span", "", song.artists.join(", ")));
+  item.append(words);
+  item.dataset.tip = t("addToUpNext");
+  return item;
+}
+function addProposal(ref) {
+  const song = proposals.songs.find((each) => each.ref === ref);
+  if (!song) return;
+  proposals = { ...proposals, songs: proposals.songs.filter((each) => each !== song) };
+  send({ type: "up-next-queue", ref });
+  // Spotify and NetEase show it queued at once; the next read confirms it. The window's own player adds it itself.
+  if (!nowPlaying()?.local && state.player) state.player.next = [...(state.player.next ?? []), { title: song.title, artists: song.artists, image: song.image }];
+  renderInspector();
+}
 // The record On Air is cutting, after what is queued: a blank sleeve, quieter than a real one.
 function cuttingItem() {
   const item = make("li", "making");
@@ -2021,20 +2074,20 @@ function renderInspector() {
   const next = now?.next ?? [];
   // While On Air cuts its next record behind the one playing, that record waits at the end of Up next.
   const cutting = state.onAir?.phase === "making" && Boolean(now?.generated) && !now.making;
-  set($("next-panel"), "hidden", !next.length && !cutting);
-  const shownQueue = JSON.stringify([next.map((track) => [track.title, track.artists, track.image]), cutting && t("makingNext")]);
+  askProposals(now, next);
+  const picks = now ? shownProposals(now, next) : [];
+  set($("next-panel"), "hidden", !next.length && !cutting && !picks.length);
+  const shownQueue = JSON.stringify([next.map((track) => [track.title, track.artists, track.image]), cutting && t("makingNext"), picks.map((song) => song.ref)]);
   if (shownQueue !== drawnQueue) {
     drawnQueue = shownQueue;
-    // A song chosen from the keyboard keeps the focus on its row, or the row now in its place.
-    const focused = document.activeElement?.closest?.("[data-queue] li[data-at]");
-    const at = focused ? Number(focused.dataset.at) : -1;
-    $("queue").replaceChildren(...next.map(queueItem), ...(cutting ? [cuttingItem()] : []));
-    const rows = $("queue").querySelectorAll("li[data-at]");
-    if (at >= 0 && rows.length) {
-      const to = rows[Math.min(at, rows.length - 1)];
-      for (const each of rows) each.tabIndex = each === to ? 0 : -1;
-      to.focus();
-    }
+    // A row chosen from the keyboard keeps the focus, or the row now in its place.
+    const before = [...$("queue").querySelectorAll(QUEUE_ROWS)];
+    const at = before.indexOf(document.activeElement?.closest?.(QUEUE_ROWS));
+    $("queue").replaceChildren(...next.map(queueItem), ...(cutting ? [cuttingItem()] : []), ...picks.map(proposalItem));
+    const rows = [...$("queue").querySelectorAll(QUEUE_ROWS)];
+    const to = at >= 0 ? rows[Math.min(at, rows.length - 1)] : rows[0];
+    for (const each of rows) each.tabIndex = each === to ? 0 : -1;
+    if (at >= 0) to?.focus();
   }
   // With the player folded away, the song and its two most used controls stay in the bar.
   const mini = $("mini");
@@ -2417,6 +2470,14 @@ function receive({ data }) {
     else void showDevices(data.devices ?? []);
   }
   if (data.type === "player-error") notice(t("noticePlaybackFailed"));
+  // The host's picks for the song playing now; a pick that couldn't be added says so.
+  if (data.type === "up-next-proposals") {
+    proposals = { key: data.key, songs: Array.isArray(data.songs) ? data.songs : [] };
+    for (const song of proposals.songs) offered.push({ title: song.title, artists: song.artists });
+    offered.splice(0, Math.max(0, offered.length - 20));
+    renderInspector();
+  }
+  if (data.type === "up-next-queued" && ["failed", "not_found", "not_playing"].includes(data.state)) notice(t("noticeAddToUpNextFailed"));
   if (data.type === "library") {
     state.library = { folders: data.folders ?? [], playlists: data.playlists ?? [] };
     // A message's @ names are drawn from the library, which comes after the conversation at launch.

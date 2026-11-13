@@ -329,6 +329,13 @@ export function createNeteasePlayer({
       await beforePlay?.();
       await playAt(index + 1);
     },
+    /** One playable song for a title and artist, matched as play() matches, or null. play() takes it back by id. */
+    async find({ title, artist, intent } = {}) {
+      const wanted = { title: String(title ?? ""), artist: String(artist ?? "") };
+      if (!wanted.title.trim()) return null;
+      const result = pick(await player.search({ query: `${wanted.title} ${wanted.artist}`.trim(), limit: 10, intent }), wanted);
+      return result.song && !result.other_artist ? result.song : null;
+    },
     // A song in Up next, counted from the one after this (1 is the next): it plays now, past the ones before it.
     async jump({ ahead, beforePlay } = {}) {
       if (!Number.isInteger(ahead) || ahead < 1 || index + ahead >= queue.length) throw failure("netease_failed", "That song is no longer queued.");

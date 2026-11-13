@@ -808,6 +808,10 @@ button.mention:hover { text-decoration: underline; text-underline-offset: 2px; }
 .next li { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 11px; align-items: center; padding: 4px 6px; margin-inline: -6px; border-radius: var(--r-2); }
 /* A song in Up next plays on a double-click or Return; the row it rests on shows quietly, as the sidebar's rows do. */
 .next li[data-at]:hover, .next li[data-at]:focus-visible { background: var(--hover); outline: none; }
+/* The host's picks after the songs queued: the same rows, faint until the pointer or the keyboard rests on one. */
+.next li.proposal { opacity: 0.45; transition: opacity var(--quick) var(--soft); }
+.next li.proposal:hover, .next li.proposal:focus-visible { opacity: 1; background: var(--hover); outline: none; transition: none; }
+.next li.proposal img, .next li.proposal .thumb { box-shadow: none; }
 .next img, .next .thumb { width: 34px; height: 34px; border-radius: 3px; object-fit: cover; background: var(--hover); box-shadow: var(--edge); }
 .next strong { display: block; font-size: var(--t-ui); font-weight: 500; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .next span { display: block; font-size: var(--t-small); color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
