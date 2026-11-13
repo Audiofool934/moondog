@@ -4,13 +4,13 @@
 //
 //   node build.mjs              build once
 //   node build.mjs --serve      rebuild on change and serve at http://localhost:8737
-//   node build.mjs --offline    link the release list rather than ask GitHub for the newest Mac download
+//   node build.mjs --offline    link the release list rather than ask GitHub for desktop downloads
 import { createHash } from "node:crypto";
 import { cp, mkdir, readFile, rm, watch, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import * as esbuild from "esbuild";
-import { stableMacDownload } from "./download.mjs";
+import { desktopDownloads as chooseDownloads } from "./download.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "..");
@@ -48,9 +48,10 @@ function contentPolicy(document) {
 }
 const policyTag = (document) => `<meta http-equiv="Content-Security-Policy" content="${contentPolicy(document)}">`;
 
-// The default download stays on a complete stable release, even when a newer preview exists.
-async function macDownload() {
-  const fallback = { url: `${repository}/releases`, version: null };
+// Each platform's file can arrive separately. The Mac offers only a complete stable release; Windows and
+// Linux fall back to their newest beta until they have a stable one (download.mjs).
+async function desktopDownloads() {
+  const fallback = { mac: { url: `${repository}/releases`, version: null }, windows: null, linux: null };
   if (flags.has("--offline")) return fallback;
   try {
     const token = process.env.GITHUB_TOKEN;
@@ -59,13 +60,47 @@ async function macDownload() {
       signal: AbortSignal.timeout(10_000),
     });
     if (!response.ok) throw new Error(`GitHub answered ${response.status}`);
-    return stableMacDownload(await response.json()) ?? fallback;
+    const found = chooseDownloads(await response.json());
+    return { ...found, mac: found.mac ?? fallback.mac };
   } catch (error) {
-    console.warn(`The Mac download links to the release list: ${error.message}`);
+    console.warn(`Desktop downloads link to the release list: ${error.message}`);
   }
   return fallback;
 }
-const mac = await macDownload();
+const downloads = await desktopDownloads();
+const { mac } = downloads;
+const escapeHTML = (value) => String(value).replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+const versionLine = (download) => `Version ${escapeHTML(download.version)}, ${download.beta ? "a test build for x64" : "for x64"}.`;
+// Windows installers are not code-signed yet, so SmartScreen asks before the first run.
+const additionalDownloads = [
+  ["windows", "Windows", "Open the installer to install Moondog for your account. It isn't signed yet, so Windows asks before it runs: choose More info, then Run anyway. Spotify and Apple Music previews play here; whole Apple Music songs need a Mac."],
+  ["linux", "Linux", "Make the AppImage executable, then open it to start Moondog."],
+].map(([platform, label, instructions]) => {
+  const download = downloads[platform];
+  return download ? `<h3 id="${platform}">For ${label}</h3>\n<p>${instructions} Updates download only when you ask.</p>\n<p class="actions"><a class="button" href="${escapeHTML(download.url)}">Download for ${label}</a> <span class="fine">${versionLine(download)}</span></p>` : "";
+}).join("\n");
+// The intro's button follows the visitor's system (page.mjs). The Mac's line is the one shown without a
+// script; each line names the other systems the same way, so none reads as the main one. Linux goes to
+// the terminal until it has an AppImage.
+const places = {
+  mac: { name: "Mac", href: "#mac" },
+  windows: downloads.windows ? { name: "Windows", href: "#windows" } : null,
+  linux: { name: "Linux", href: downloads.linux ? "#linux" : "#terminal" },
+};
+const others = (platform) => {
+  const links = Object.entries(places).filter(([key, place]) => key !== platform && place)
+    .map(([, place]) => `<a href="${place.href}">${place.name}</a>`);
+  return links.length ? ` Moondog runs on ${links.join(" and ")} too.` : "";
+};
+const introLine = (platform, href, label, fine, shown) =>
+  `<p class="actions" data-platform="${platform}"${shown ? "" : " hidden"}>\n          <a class="button" href="${escapeHTML(href)}">${label}</a>\n          <span class="fine">${fine}${others(platform)}</span>\n        </p>`;
+const introActions = [
+  introLine("mac", mac.url, "Download for Mac", `${mac.version ? `Version ${escapeHTML(mac.version)}` : "From the releases page"}, for Apple silicon.`, true),
+  downloads.windows && introLine("windows", downloads.windows.url, "Download for Windows", versionLine(downloads.windows), false),
+  downloads.linux
+    ? introLine("linux", downloads.linux.url, "Download for Linux", versionLine(downloads.linux), false)
+    : introLine("linux", "#terminal", "Install on Linux", "In a terminal, with Node.js 22.19 or newer.", false),
+].filter(Boolean).join("\n        ");
 
 const browserPlugin = {
   name: "moondog-browser",
@@ -89,7 +124,9 @@ const documents = {
   "index.html": async () => (await readFile(path.join(here, "index.html"), "utf8"))
     .replace("<!-- policy -->", policyTag("page"))
     .replaceAll("{{mac.url}}", mac.url)
-    .replaceAll("{{mac.version}}", mac.version ? `Version ${mac.version}` : "From the releases page"),
+    .replaceAll("{{mac.version}}", mac.version ? `Version ${mac.version}` : "From the releases page")
+    .replace("{{intro.actions}}", introActions)
+    .replace("{{desktop.downloads}}", additionalDownloads),
   "window.html": async () => (await readFile(path.join(root, "app", "renderer", "index.html"), "utf8"))
     .replace(/<meta http-equiv="Content-Security-Policy"[^>]*>/u, `${policyTag("window")}\n  <meta name="referrer" content="no-referrer">`)
     .replace('href="renderer.css"', 'href="window.css"')

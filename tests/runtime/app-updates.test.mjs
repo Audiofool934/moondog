@@ -4,6 +4,7 @@ import { createRequire } from "node:module";
 import test from "node:test";
 
 import { createUpdates } from "../../app/updates.mjs";
+import { installDownloadedUpdate } from "../../app/lifecycle.mjs";
 import { createCoreShutdown } from "../../app/shutdown.mjs";
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 
@@ -37,6 +38,57 @@ test("a newer build is offered, and nothing downloads until the listener clicks"
   // Another check while it is only offered can find a newer one.
   await updates.check();
   assert.equal(autoUpdater.checks, 2);
+});
+
+// A core whose quit is recorded; it exits only when the test says so.
+function savingCore(events) {
+  const core = new EventEmitter();
+  core.postMessage = (message) => events.push(message.type);
+  core.kill = () => { throw new Error("A saved conversation must not be killed"); };
+  return core;
+}
+
+test("Windows and Linux install a downloaded update after the core exits, and Linux relaunches only after the app exits", async () => {
+  for (const platform of ["win32", "linux"]) {
+    const events = [];
+    const core = savingCore(events);
+    const beforeInstall = createCoreShutdown({ getCore: () => core, stopMusic() {} });
+    const autoUpdater = fakeUpdater();
+    autoUpdater.install = (silent, run) => {
+      events.push(`install silent=${silent} run=${run}`);
+      // A versioned AppImage name moves to the new version's name.
+      autoUpdater.emit("appimage-filename-updated", "/apps/Moondog-0.2.0-beta.4-linux-x86_64.AppImage");
+      return true;
+    };
+    const relaunches = [];
+    // What main.mjs passes on Windows and Linux.
+    const quitAndInstall = () => {
+      installDownloadedUpdate({ updater: autoUpdater, platform, relaunch: (options) => relaunches.push(options), appImage: "/apps/Moondog-0.2.0-linux-x86_64.AppImage" });
+      events.push("app-quit");
+    };
+    const updates = createUpdates({ autoUpdater, squirrel: new EventEmitter(), beforeInstall, quitAndInstall, platform, onChange() {}, onRestart() {} });
+    await updates.check();
+    updates.install();
+    autoUpdater.emit("update-downloaded", { version: "0.2.0-beta.4" });
+    await tick();
+    assert.deepEqual(events, ["quit"], platform);
+    core.emit("exit", 0);
+    await tick();
+    assert.deepEqual(events, ["quit", `install silent=true run=${platform === "win32"}`, "app-quit"], platform);
+    assert.equal(autoUpdater.installs, 0, "electron-updater's quitAndInstall would start the AppImage while this one runs");
+    assert.deepEqual(relaunches, platform === "linux" ? [{ execPath: "/apps/Moondog-0.2.0-beta.4-linux-x86_64.AppImage", args: [] }] : [], platform);
+    assert.equal(autoUpdater.listenerCount("appimage-filename-updated"), 0);
+  }
+});
+
+test("a failed Windows install opens the installed app again, and a test feed never relaunches", () => {
+  const relaunches = [];
+  const updater = Object.assign(new EventEmitter(), { autoRunAppAfterInstall: true, install: () => false });
+  installDownloadedUpdate({ updater, platform: "win32", relaunch: (options) => relaunches.push(options ?? "same app") });
+  assert.deepEqual(relaunches, ["same app"]);
+  updater.autoRunAppAfterInstall = false;
+  installDownloadedUpdate({ updater, platform: "linux", relaunch: (options) => relaunches.push(options), appImage: "/apps/Moondog.AppImage" });
+  assert.deepEqual(relaunches, ["same app"]);
 });
 
 test("one click downloads the build and restarts into it when the download ends", async () => {

@@ -1,6 +1,6 @@
 {
   "name": "@audiofool/moondog",
-  "version": "0.3.0-beta.15",
+  "version": "0.3.0-beta.16",
   "type": "module",
   "description": "A local-first AI radio host, just for you.",
   "license": "Apache-2.0",
@@ -71,7 +71,8 @@
     "@earendil-works/pi-tui": "1.0.1",
     "ajv": "8.20.0",
     "ajv-formats": "3.0.1",
-    "plist": "5.0.0"
+    "plist": "5.0.0",
+    "yauzl": "3.4.0"
   },
   "devDependencies": {
     "yaml": "2.9.0"

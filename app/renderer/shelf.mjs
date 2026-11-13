@@ -4,6 +4,7 @@
 // copy them there. The composer stays below, so the listener can go on talking to Moondog.
 import { coverUrl, ENTRY_DRAG } from "./library.mjs";
 import { discButton } from "./disc.mjs";
+import { primaryModifier } from "./platform.mjs";
 import { icon, make, name } from "./ui.mjs";
 
 const madeCover = (id) => `moondog-media://generated/${id}/cover.svg`;
@@ -152,7 +153,7 @@ export function createShelf({ root, state, send, t, menuPoint, onClose, onExport
       row = { item, button, number, thumb, song, by, more: rowMore, entry, cover: undefined };
       const self = row;
       button.addEventListener("click", (event) => {
-        if (event.metaKey) { if (selected.has(self.entry.id)) selected.delete(self.entry.id); else selected.add(self.entry.id); }
+        if (primaryModifier(event)) { if (selected.has(self.entry.id)) selected.delete(self.entry.id); else selected.add(self.entry.id); }
         else if (event.shiftKey && selected.size) {
           const ids = [...list.children].map((each) => each.dataset.id);
           const from = ids.findIndex((id) => selected.has(id));
@@ -173,7 +174,7 @@ export function createShelf({ root, state, send, t, menuPoint, onClose, onExport
           next?.querySelector(".shelf-open")?.focus();
           if (next) { selected.clear(); selected.add(next.dataset.id); paint(); }
         }
-        if ((event.key === "Backspace" && event.metaKey) || event.key === "Delete") { event.preventDefault(); remove(chosenWith(self.entry.id)); }
+        if ((event.key === "Backspace" && primaryModifier(event)) || event.key === "Delete") { event.preventDefault(); remove(chosenWith(self.entry.id)); }
         if (event.key === "ContextMenu" || (event.key === "F10" && event.shiftKey)) { event.preventDefault(); void entryMenu(self.entry, event); }
       });
       rowMore.addEventListener("click", (event) => { event.stopPropagation(); void entryMenu(self.entry, event); });

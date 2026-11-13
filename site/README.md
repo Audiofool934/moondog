@@ -18,7 +18,13 @@ npm run dev
 
 Then open <http://localhost:8737>.
 `npm run build` writes the page to `dist/`.
-The build asks GitHub for the newest stable release with a Mac download; if there is none, or with `node build.mjs --offline`, it links the release list.
+The build asks GitHub for each desktop platform's download, chosen in `download.mjs`.
+The Mac download is the newest stable release.
+Windows and Linux use their newest stable release, or their newest beta until they have one; the page calls a beta a test build.
+A platform appears only after its installer or AppImage has been uploaded.
+If there is no Mac download, or with `node build.mjs --offline`, the Mac link goes to the release list.
+The intro's button follows the visitor's system (`page.mjs`): Windows gets its download, and Linux the terminal install until it has an AppImage.
+Without a script, and on phones, the intro shows the Mac's line; each line names the other systems the same way.
 
 ## The scene
 

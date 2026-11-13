@@ -1,6 +1,7 @@
-// Moondog for Mac keeps itself current from the GitHub releases of Audiofool934/moondog. It looks
+// Moondog keeps itself current from the GitHub releases of Audiofool934/moondog. It looks
 // at launch and every six hours and shows a newer build at the top right, but downloads nothing
-// until the listener asks: one click downloads it and restarts after macOS validates the build.
+// until the listener asks: one click downloads it and restarts into it once it is ready, after macOS
+// has validated it on a Mac.
 // macOS takes only a build signed by the same developer, and the download must match the checksum
 // its release lists. The listener picks the channel in Settings: beta also takes the releases GitHub
 // marks as prereleases, stable only the others. Until they pick, a beta version follows beta.
@@ -11,11 +12,14 @@ const EVERY_MS = 6 * 60 * 60_000;
  * What the window and the menu show: { phase: "idle" }, { phase: "available", version },
  * { phase: "downloading", version, progress } with progress from 0 to 1, or { phase: "ready", version }.
  * installing is true once the listener asked. beforeInstall drains the old core before any installer
- * can start the new app. onRestart runs just before macOS closes the windows to
+ * can start the new app. onRestart runs just before the updater closes the windows to
  * install, and only then. autoUpdater is electron-updater's, or null when the app is not packaged;
- * squirrel is Electron's own autoUpdater, which installs the download.
+ * squirrel is Electron's own autoUpdater, which receives the restart event on every platform.
+ * quitAndInstall then installs the build and quits: autoUpdater's own by default, as macOS does;
+ * Windows and Linux pass their own (lifecycle.mjs).
  */
-export function createUpdates({ autoUpdater, squirrel, onChange, onRestart, beforeInstall = () => {}, platform = process.platform, beta = false }) {
+export function createUpdates({ autoUpdater, squirrel, onChange, onRestart, beforeInstall = () => {}, platform = process.platform, beta = false,
+  quitAndInstall = () => autoUpdater.quitAndInstall() }) {
   let state = { phase: "idle" };
   let followsBeta = beta === true;
   // Each change of channel starts a new generation. A check reports only for the generation it
@@ -48,7 +52,7 @@ export function createUpdates({ autoUpdater, squirrel, onChange, onRestart, befo
     preparing = true;
     try {
       await beforeInstall();
-      autoUpdater.quitAndInstall();
+      quitAndInstall();
     } catch (error) {
       process.stderr.write(`[update] ${error?.message ?? error}\n`);
       installing = false;
@@ -108,6 +112,7 @@ export function createUpdates({ autoUpdater, squirrel, onChange, onRestart, befo
     // installed app as it is and the newer build offered again, so another click tries again.
     // MacUpdater forwards native Squirrel errors to this event too.
     autoUpdater.on("error", downloadFailed);
+    // quitAndInstall emits this on Electron's autoUpdater as it closes the windows to install.
     squirrel?.on("before-quit-for-update", () => onRestart());
   }
 

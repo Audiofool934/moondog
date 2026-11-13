@@ -3,6 +3,7 @@
 // levels deep; a folder folds like a conversation folder, and its rows step in under its icon. Rows look and act
 // like conversation rows: a click opens the playlist in the room, the ⋯ button or a right-click opens its menu,
 // and dragging moves it, or drops songs dragged from a playlist into it.
+import { primaryModifier } from "./platform.mjs";
 import { icon, make } from "./ui.mjs";
 
 export const NODE_DRAG = "application/x-moondog-library-node";
@@ -239,7 +240,7 @@ export function createLibrary({ root, state, send, t, open, store, menuPoint, on
       button.addEventListener("keydown", (event) => {
         if (event.key === "ContextMenu" || (event.key === "F10" && event.shiftKey)) { event.preventDefault(); void playlistMenu(entry.playlist, event); }
         if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); step(button, event.key === "ArrowDown" ? 1 : -1); }
-        if (!entry.playlist.saved && ((event.key === "Backspace" && event.metaKey) || event.key === "Delete")) {
+        if (!entry.playlist.saved && ((event.key === "Backspace" && primaryModifier(event)) || event.key === "Delete")) {
           event.preventDefault();
           void confirmDelete(entry.playlist);
         }

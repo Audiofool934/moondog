@@ -45,6 +45,11 @@ export function upNext(queue, current) {
   return queue.filter((item, index) => !uri(item) || (uri(item) !== uri(current) && uri(item) !== uri(queue[index - 1])));
 }
 
+const upNextAhead = (queue, current) => {
+  const shown = new Set(upNext(queue, current));
+  return queue.flatMap((entry, at) => (shown.has(entry) ? [{ entry, ahead: at + 1 }] : []));
+};
+
 // A song's page in Spotify, where the listener can save it or add it to a playlist.
 const spotifyLink = (uri) => {
   const [, kind, id] = String(uri ?? "").match(/^spotify:(track|episode):([A-Za-z0-9]+)$/u) ?? [];
@@ -322,7 +327,7 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     return { type: "player", spotify,
       now: now.song ? { ...track(now.song), service: "netease", playing: now.state === "playing", progressMs: now.position_ms,
         device: null, deviceType: "computer", repeat: "off", shuffle: false, disallows: [], observedAt: Date.now() } : null,
-      next: now.next.slice(0, 8).map(track) };
+      next: now.next.slice(0, 8).map((song, at) => ({ ...track(song), ahead: at + 1 })) };
   }
   // While Spotify has asked Moondog to wait, the window reads nothing from it and says until when.
   let spotifyLimitedUntil = 0;
@@ -365,7 +370,8 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
         device: player.device?.name ?? null, deviceType: player.device?.type ?? null, repeat: player.repeat_state ?? "off", shuffle: player.shuffle_state === true,
         // What Spotify won't do right now, such as skip on a free account, so the window can say so before a press fails.
         disallows: player.disallowed_actions ?? [], observedAt: Date.now() } : null,
-      next: upNext(queue?.queue ?? [], item).slice(0, 8).map(trackOf) };
+      // Each with how many skips reach it, counting the repeats of the playing song that the list leaves out.
+      next: upNextAhead(queue?.queue ?? [], item).slice(0, 8).map(({ entry, ahead }) => ({ ...trackOf(entry), ahead })) };
   }
   // The Music app on this Mac, which the listener plays themselves. A new song reads its cover and,
   // without shuffle, the songs after it in its playlist.
@@ -398,7 +404,7 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     return {
       now: { ...track(now.song), image: musicAppSong.image, service: "apple_music", playing: now.state === "playing", progressMs: now.position_ms,
         device: "Apple Music", deviceType: "computer", repeat: now.repeat, shuffle: now.shuffle, disallows: [], observedAt: Date.now() },
-      next: musicAppSong.next.slice(0, 8).map(track),
+      next: musicAppSong.next.slice(0, 8).map((song, at) => ({ ...track(song), ahead: at + 1 })),
     };
   }
   // What the window shows: a song that plays wins over a paused one; between the two players, the
@@ -477,19 +483,26 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     pollTimer = setTimeout(() => void refreshPlayer({ chosen: Date.now() >= chosenDue - 500 }), Math.max(0, Math.min(chosenDue, musicDue) - now));
   };
 
-  async function control(action, via, positionMs) {
+  async function control(action, via, positionMs, ahead) {
     // The buttons act on the player the window shows.
     const musicApp = shownSource === "apple_music";
     const netease = !musicApp && base.playbackService === "netease";
     const service = musicApp ? base.musicApp : netease ? base.neteasePlayer : base.spotifyConnection?.service;
     const ready = musicApp || (netease ? base.neteaseReady?.() === true : base.spotifyReady?.() === true);
-    if (!service || !ready || !["pause", "resume", "next", "previous", "seek"].includes(action)) return;
+    if (!service || !ready || !["pause", "resume", "next", "previous", "seek", "jump", "remove"].includes(action)) return;
+    // A song in Up next, counted from the next one: Spotify and the Music app reach it skip by skip, NetEase at once;
+    // only NetEase's queue, which Moondog keeps, can take one out.
+    if ((action === "jump" || action === "remove") && !(Number.isInteger(ahead) && ahead >= 1 && ahead <= 20)) return;
+    if (action === "remove" && !netease) return;
     toolTrace?.record({ source: "window", tool: "player_control", state: "start", args: { action, via: via ?? "button" } });
     hold = { source: shownSource, until: Date.now() + CONTROL_HOLD_MS };
     try {
       if (action === "resume") await base.quietOtherPlayers?.(musicApp ? "music_app" : netease ? "netease" : "spotify");
       // A seek is a click on the song's progress; the rest are the transport buttons and the menu.
       if (action === "seek") await service.seek({ positionMs: Math.max(0, Math.round(Number(positionMs) || 0)) });
+      else if (action === "remove") service.remove({ ahead });
+      else if (action === "jump" && netease) await service.jump({ ahead });
+      else if (action === "jump") for (let skip = 0; skip < ahead; skip += 1) await service.next({});
       else await service[action]({});
     } catch (error) {
       if (noteLimit(error)) { send(limited()); schedulePlayer(); return; }
@@ -498,6 +511,47 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     // Spotify takes a moment to report a skip.
     await refreshPlayer({ chosen: !musicApp });
     setTimeout(() => void refreshPlayer({ chosen: !musicApp }), 900);
+  }
+
+  // Up next's picks: the window asks once for each song and queue it shows running low (key), and only while the
+  // player is open; a newer ask replaces one still on its way. Each pick is queued by the conversation that found it.
+  let proposing = null;
+  const proposalOwners = new Map();
+  const songOf = (track) => (track && typeof track.title === "string" && track.title.trim()
+    ? { title: track.title.slice(0, 200), artists: (Array.isArray(track.artists) ? track.artists : []).filter((name) => typeof name === "string").slice(0, 6) } : null);
+  const songsOf = (tracks, limit) => (Array.isArray(tracks) ? tracks : []).slice(0, limit).map(songOf).filter(Boolean);
+  async function proposeUpNext(data) {
+    const key = String(data.key ?? "").slice(0, 2000);
+    const where = ["moondog", "spotify", "netease"].includes(data.where) ? data.where : null;
+    if (!key || !where || proposing?.key === key) return;
+    proposing?.controller.abort();
+    const controller = new AbortController();
+    const slot = current;
+    proposing = { key, controller };
+    let songs = [];
+    try {
+      songs = await slot.runtime.proposeNextSongs?.({ playing: songOf(data.playing), next: songsOf(data.next, 10), offered: songsOf(data.offered, 20), where },
+        { signal: controller.signal }) ?? [];
+    } catch { songs = []; }
+    if (controller.signal.aborted) return;
+    for (const song of songs) proposalOwners.set(song.ref, slot.application);
+    while (proposalOwners.size > 30) proposalOwners.delete(proposalOwners.keys().next().value);
+    send({ type: "up-next-proposals", key, songs });
+  }
+  async function queueProposal(ref) {
+    const application = proposalOwners.get(ref);
+    if (!application) return send({ type: "up-next-queued", ref, state: "gone" });
+    proposalOwners.delete(ref);
+    toolTrace?.record({ source: "window", tool: "up_next_queue", state: "start", args: {} });
+    try {
+      const receipt = await application.queueUpNextProposal(ref);
+      send({ type: "up-next-queued", ref, state: receipt.state });
+    } catch (error) {
+      if (noteLimit(error)) { send(limited()); schedulePlayer(); return; }
+      send({ type: "up-next-queued", ref, state: "failed", message: errorText(error) });
+    }
+    await refreshPlayer();
+    setTimeout(() => void refreshPlayer(), 900);
   }
 
   // Devices keep their Spotify ids here; the window sees only a reference.
@@ -1210,7 +1264,9 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     open: (data) => openSession(String(data.id ?? "")),
     edit: (data) => edit(String(data.entry ?? ""), String(data.text ?? "")),
     branch: (data) => branch(String(data.entry ?? "")),
-    control: (data) => control(String(data.action ?? ""), data.via, data.positionMs),
+    control: (data) => control(String(data.action ?? ""), data.via, data.positionMs, data.ahead),
+    "up-next-proposals": (data) => proposeUpNext(data),
+    "up-next-queue": (data) => queueProposal(String(data.ref ?? "")),
     // Off air: the stream stops and nothing resumes; the song it paused shows again, paused, from a fresh read.
     "on-air-stop": async () => {
       const stopped = (current.application.stopStream ? current.application : base).stopStream?.();

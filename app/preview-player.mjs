@@ -29,6 +29,8 @@ export function createWindowPreviewPlayer(port) {
     if (data?.type === "whole-songs") { wholeSongs = data.canPlay === true; return; }
     if (closed || queueId === null || data?.type !== "preview-event" || data.id !== queueId) return;
     const event = data.event;
+    // A song taken out of Up next changes only what the room reads as queued; the stream hears nothing of it.
+    if (event?.type === "removed") { now.observe(event); return; }
     if (!["queue", "loading", "playing", "paused", "finished", "skipped", "failed", "stopped"].includes(event?.type)) return;
     if (event.type === "stopped") active = false;
     else if (event.type !== "failed") active = true;
@@ -120,6 +122,17 @@ export function createWindowPreviewPlayer(port) {
         track: { title: name, artist_credit: "", generated: true, media_url: `moondog-media://generated/${id}`,
           ...(Number.isFinite(seconds) && seconds > 0 ? { duration_seconds: seconds } : {}) },
       });
+    },
+    // An Apple Music song added at the end of what plays here, such as one the listener took from Up next's picks.
+    enqueue(track) {
+      if (closed || !active || queueId === null) return false;
+      const song = { title: String(track?.title ?? "").trim(), artist_credit: String(track?.artist_credit ?? "").trim(),
+        preview_url: https(track?.preview_url, "audio-ssl.itunes.apple.com"), catalog_url: https(track?.catalog_url, "music.apple.com"), artwork_url: track?.artwork_url };
+      if (!song.title || !song.preview_url || !song.catalog_url) return false;
+      catalog = true;
+      now.appended(song);
+      port.postMessage({ type: "preview-enqueue", id: queueId, track: song });
+      return true;
     },
     skip() {
       if (!active || closed) return false;

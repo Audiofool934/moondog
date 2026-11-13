@@ -4,7 +4,7 @@
 
 <h1 align="center">Moondog</h1>
 
-<p align="center">Source candidate 0.3.0-beta.15</p>
+<p align="center">Source candidate 0.3.0-beta.16</p>
 
 <p align="center"><strong>On the air, just for you.</strong></p>
 
@@ -42,10 +42,12 @@ See [updating and release channels](docs/UPDATES.md), including the one-time upg
 
 ## On your Mac
 
-[Moondog for Mac](app/README.md) is a native window on the same core as the terminal room.
+[Moondog desktop](app/README.md) is a native window on the same core as the terminal room, with build targets for macOS (Apple silicon), Windows (x64), and Linux (x64).
 It shares your profile, settings, sign-ins, and conversations with `moondog`, and draws its own conversation, now playing, and up next.
 Download the notarized build for Apple silicon from the [project page](https://moondog.audiofool.ai), or run it from this checkout with `cd app && npm ci && npm start`.
 It updates itself, on a Stable or Beta channel you choose in Settings.
+The Windows and Linux desktop builds use Spotify playback and Apple Music previews; full Apple Music songs and reading the Music app require macOS.
+Windows support applies to the desktop app; the terminal launcher and its updater remain supported on macOS and Linux.
 
 The [project page](https://moondog.audiofool.ai) plays a short scene in this window, in a browser, with a made-up listener ([how](site/README.md)).
 

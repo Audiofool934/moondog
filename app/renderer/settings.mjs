@@ -5,6 +5,7 @@ import { appIconSvg, iconShape } from "../../src/surfaces/brand/logo.mjs";
 import { languageTag, timeOfDay } from "../strings.mjs";
 import { icon, make, name, scrollbar, setIcon } from "./ui.mjs";
 import { SCRATCH_MS, scratchMark } from "./mark.mjs";
+import { isMac, shortcuts } from "./platform.mjs";
 
 const SECTIONS = ["general", "appearance", "model", "playback", "library", "memory", "about"];
 // The thinking levels offered for every model that thinks; the core gives each model the nearest it has.
@@ -18,7 +19,8 @@ const RING = 472;
 const REDIRECT_URI = "http://127.0.0.1:43821/callback";
 const SPOTIFY_DASHBOARD = "https://developer.spotify.com/dashboard";
 // NetEase plays through its own command line tool, installed and signed in from Terminal (app/README.md).
-const NETEASE_SETUP = "npm install -g @music163/ncm-cli && brew install mpv && ncm-cli login";
+const NETEASE_SETUP = isMac ? "npm install -g @music163/ncm-cli && brew install mpv && ncm-cli login"
+  : "npm install -g @music163/ncm-cli\nncm-cli login";
 // What NetEase's row says until ncm-cli is ready.
 const NETEASE_STATES = { missing: "neteaseMissing", signed_out: "neteaseSignedOut", unavailable: "neteaseUnavailable", unknown: "checking" };
 // What the Stable Audio 3 row says under its name, by what the core found at its folder.
@@ -54,8 +56,8 @@ const NOTICES = { model_unknown: ["model", "noticeModelUnknown", "model"], trans
 const ENDPOINT_ERRORS = { endpoint_url_invalid: "endpointUrlInvalid", endpoint_models_unavailable: "endpointModelsUnavailable",
   endpoint_models_missing: "endpointModelsUnavailable", endpoint_name_invalid: "endpointNameInvalid" };
 // Window keys on the left, player keys on the right.
-const SHORTCUTS = [["⌘N", "newConversation"], ["⌘,", "settings"], ["⌘.", "stopReply"], ["/", "commands"], ["⌥⌘S", "conversations"],
-  ["⌥⌘P", "player"], ["⌃⌘P", "playPause"], ["⌃⌘→", "nextSong"], ["⌃⌘←", "previousSong"], ["⌃⌘O", "onAir"]];
+const SHORTCUTS = [[shortcuts.new, "newConversation"], [shortcuts.settings, "settings"], [shortcuts.stop, "stopReply"], ["/", "commands"], [shortcuts.sidebar, "conversations"],
+  [shortcuts.player, "player"], [shortcuts.play, "playPause"], [shortcuts.next, "nextSong"], [shortcuts.previous, "previousSong"], [shortcuts.onAir, "onAir"]];
 const warn = (what, message) => { if (message) console.warn(`[moondog] ${what}: ${message}`); };
 
 // Each control carries a key, so the focus comes back to it when the section redraws. A button
@@ -445,7 +447,7 @@ export function createSettings({ state, send, t, appleMusic = null, onHide = nul
         + `<path class="icon-edge" d="${iconShape()}" clip-path="url(#${id}-inside)"/><path class="icon-ring" d="${iconShape(RING)}"/></svg>`;
       icons.append(option);
     }
-    return [sectionError(), group(say("theme"), themes), group(say("appIcon"), icons)].filter(Boolean);
+    return [sectionError(), group(say("theme"), themes), isMac ? group(say("appIcon"), icons) : null].filter(Boolean);
   }
 
   function signInPanel() {
@@ -823,7 +825,7 @@ export function createSettings({ state, send, t, appleMusic = null, onHide = nul
     const neteaseReady = state.netease === "ready";
     // Whole Apple Music songs need the listener's permission once; until then, and without it, previews play.
     const whole = appleMusic?.status();
-    const canAllowWhole = whole?.authorization === "notDetermined" && whole.reason !== "developerTokenRequestFailed";
+    const canAllowWhole = isMac && whole?.authorization === "notDetermined" && whole.reason !== "developerTokenRequestFailed";
     const rows = [
       { id: "spotify", label: "Spotify", detail: say(spotifyReady ? "connected" : "notConnected"), playable: spotifyReady },
       { id: "apple_music", label: "Apple Music", detail: say(whole?.canPlay ? "fullSongs" : "appleMusicNote"), playable: true, empty: !canAllowWhole },
@@ -1118,7 +1120,9 @@ export function createSettings({ state, send, t, appleMusic = null, onHide = nul
       : state.netease === "unavailable" && state.neteaseMessage ? alertLine(state.neteaseMessage)
         : failure(signIn ? "neteaseSignedOut" : "neteaseNotFound");
     const stack = make("div", "stack");
-    stack.append(note(say(signIn ? "neteaseSignIn" : "neteaseSetup")), copyChip(signIn ? "ncm-cli login" : NETEASE_SETUP, "netease", "chip", say("netease")),
+    stack.append(note(say(signIn ? "neteaseSignIn" : "neteaseSetup")),
+      ...(!isMac && !signIn ? [link(say("installMpv"), "https://mpv.io/installation/")] : []),
+      copyChip(signIn ? "ncm-cli login" : NETEASE_SETUP, "netease", "chip", say("netease")),
       again, ...(why ? [why] : []));
     return stack;
   }

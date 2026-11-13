@@ -149,3 +149,17 @@ for (const button of document.querySelectorAll("[data-copy]")) {
     setTimeout(() => { button.textContent = "Copy"; delete button.dataset.state; }, 2000);
   });
 }
+
+// The intro's button follows the visitor's system. Without this script the Mac's line shows, and the
+// downloads below name every system. Phones and Chromebooks keep the Mac's line: none of them runs Moondog.
+const system = (() => {
+  const name = `${navigator.userAgentData?.platform ?? ""} ${navigator.userAgent}`;
+  if (/Android|CrOS|iPhone|iPad/u.test(name)) return null;
+  if (/Win/u.test(name)) return "windows";
+  if (/Linux/u.test(name)) return "linux";
+  return null;
+})();
+const line = system && document.querySelector(`.intro [data-platform="${system}"]`);
+if (line) {
+  for (const each of document.querySelectorAll(".intro [data-platform]")) each.hidden = each !== line;
+}

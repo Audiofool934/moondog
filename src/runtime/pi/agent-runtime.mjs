@@ -18,6 +18,7 @@ import { prepareImageInput } from "./image-input.mjs";
 import { withArgumentRepair } from "./tool-arguments.mjs";
 import { restateInLanguage } from "./reply-language.mjs";
 import { chooseRecordName, RECORD_NAME_RULES } from "./record-name.mjs";
+import { chooseNextSongs } from "./next-songs.mjs";
 import {
   createModelConnectionError,
   createModelFetch,
@@ -8850,6 +8851,21 @@ To confirm, reply: ${preview.confirmation}`].join("\n\n");
       this.activePromptState.restatement?.abort();
     }
     this.agent.abort();
+  }
+
+  /**
+   * What could come next when Up next runs low, picked by this conversation's model and found on the listener's
+   * service by the application: up to three { ref, title, artists, image } the window offers, or [].
+   */
+  async proposeNextSongs({ playing, next = [], offered = [], where } = {}, { signal } = {}) {
+    if (typeof this.application.upNextProposals !== "function") return [];
+    const { models, model } = this;
+    const at = this.clock?.();
+    return this.application.upNextProposals({ playing, next, offered, where }, {
+      signal,
+      choose: (context) => chooseNextSongs({ models, model, signal,
+        context: { ...context, moment: at instanceof Date && Number.isFinite(at.getTime()) ? listenerClock(at) : null } }),
+    });
   }
 
   // Names the conversation in the background after its first reply; the turn has already returned.

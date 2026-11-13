@@ -1,9 +1,8 @@
-import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { lstat } from "node:fs/promises";
 import path from "node:path";
-import { promisify } from "node:util";
+import { openZipArchive } from "../../importers/zip-reader.mjs";
 
 import { isUuid, uuidV5 } from "../../core/uuid-v5.mjs";
 import {
@@ -30,7 +29,6 @@ export const SPOTIFY_EXTENDED_HISTORY_LIMITS = Object.freeze({
   maximumRecords: 500_000,
 });
 
-const execFileAsync = promisify(execFile);
 const historyMemberPattern =
   /^Spotify Extended Streaming History\/Streaming_History_(?:Audio|Video)_([0-9]{4})(?:_([0-9]+))?\.json$/u;
 const trackUriPattern = /^spotify:track:([A-Za-z0-9]{22})$/u;
@@ -402,14 +400,20 @@ async function sha256File(filePath) {
   return hash.digest("hex");
 }
 
-async function unzip(args, maximumBytes) {
+async function openArchive(archivePath) {
   try {
-    const { stdout } = await execFileAsync("/usr/bin/unzip", args, {
-      encoding: "utf8",
-      maxBuffer: maximumBytes,
-      windowsHide: true,
-    });
-    return stdout;
+    return await openZipArchive(archivePath);
+  } catch {
+    fail(
+      "The Spotify Extended History ZIP could not be read safely.",
+      "spotify_extended_history_archive_unreadable",
+    );
+  }
+}
+
+async function zipText(archive, maximumBytes, member) {
+  try {
+    return (await archive.read(member, maximumBytes)).toString("utf8");
   } catch {
     fail(
       "The Spotify Extended History ZIP could not be read safely.",
@@ -480,38 +484,42 @@ export async function readSpotifyExtendedStreamingHistoryArchive({
     fail("The Spotify Extended History ZIP is not a supported regular file.");
   }
 
-  const listing = await unzip(["-Z1", resolvedPath], 1024 * 1024);
-  const members = selectedHistoryMembers(listing);
+  // One open archive serves the listing and every member, and is closed even when a check fails.
+  const archive = await openArchive(resolvedPath);
+  let members;
   const records = [];
-  let totalJsonBytes = 0;
-  for (const member of members) {
-    const jsonText = await unzip(
-      ["-p", resolvedPath, member.name],
-      SPOTIFY_EXTENDED_HISTORY_LIMITS.maximumMemberBytes,
-    );
-    totalJsonBytes += Buffer.byteLength(jsonText, "utf8");
-    if (
-      totalJsonBytes > SPOTIFY_EXTENDED_HISTORY_LIMITS.maximumTotalJsonBytes
-    ) {
-      fail("Spotify Extended History JSON is too large to import safely.");
+  try {
+    const listing = archive.names.join("\n");
+    members = selectedHistoryMembers(listing);
+    let totalJsonBytes = 0;
+    for (const member of members) {
+      const jsonText = await zipText(archive, SPOTIFY_EXTENDED_HISTORY_LIMITS.maximumMemberBytes, member.name);
+      totalJsonBytes += Buffer.byteLength(jsonText, "utf8");
+      if (
+        totalJsonBytes > SPOTIFY_EXTENDED_HISTORY_LIMITS.maximumTotalJsonBytes
+      ) {
+        fail("Spotify Extended History JSON is too large to import safely.");
+      }
+      let parsed;
+      try {
+        parsed = JSON.parse(jsonText.replace(/^\uFEFF/u, ""));
+      } catch {
+        fail(
+          `Spotify Extended History audio/video file for ${member.year} is invalid JSON.`,
+        );
+      }
+      if (!Array.isArray(parsed)) {
+        fail(
+          `Spotify Extended History audio/video file for ${member.year} is not an array.`,
+        );
+      }
+      records.push(...parsed);
+      if (records.length > SPOTIFY_EXTENDED_HISTORY_LIMITS.maximumRecords) {
+        fail("Spotify Extended History contains too many records.");
+      }
     }
-    let parsed;
-    try {
-      parsed = JSON.parse(jsonText.replace(/^\uFEFF/u, ""));
-    } catch {
-      fail(
-        `Spotify Extended History audio/video file for ${member.year} is invalid JSON.`,
-      );
-    }
-    if (!Array.isArray(parsed)) {
-      fail(
-        `Spotify Extended History audio/video file for ${member.year} is not an array.`,
-      );
-    }
-    records.push(...parsed);
-    if (records.length > SPOTIFY_EXTENDED_HISTORY_LIMITS.maximumRecords) {
-      fail("Spotify Extended History contains too many records.");
-    }
+  } finally {
+    archive.close();
   }
 
   return projectSpotifyExtendedStreamingHistory({

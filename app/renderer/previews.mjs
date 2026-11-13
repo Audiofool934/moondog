@@ -45,6 +45,10 @@ export function createPreviews({ send, onChange }) {
   let run = { start: 0, end: 0 };
 
   const current = () => queue[index] ?? null;
+  // A song taken out of Up next keeps its place in the queue, so the helper's and the core's positions still
+  // match; playing passes over it. The song after a position, or the one before it, that still plays.
+  const following = (from) => { let at = from + 1; while (at < queue.length && queue[at].removed) at += 1; return at; };
+  const preceding = (from) => { let at = from - 1; while (at > 0 && queue[at].removed) at -= 1; return Math.max(0, at); };
   const report = (type) => {
     const track = current();
     if (id === null || !track) return;
@@ -70,13 +74,14 @@ export function createPreviews({ send, onChange }) {
   // The end of the run of catalog songs that starts at a position.
   const runEnd = (position) => {
     let end = position;
-    while (end < queue.length && !queue[end].generated && catalogId(queue[end].catalog_url)) end += 1;
+    while (end < queue.length && !queue[end].generated && !queue[end].removed && catalogId(queue[end].catalog_url)) end += 1;
     return end;
   };
   // Plays the queue from a position: a catalog song through the helper while it plays whole songs, with the
   // songs after it up to the next made track; anything else in this window.
   const playAt = (position) => {
     index = Math.max(0, Math.min(queue.length - 1, position));
+    if (queue[index].removed) index = following(index) < queue.length ? following(index) : preceding(index);
     const track = current();
     if (bridge && full.status?.canPlay && !track.generated && catalogId(track.catalog_url)) {
       audio.pause();
@@ -103,7 +108,7 @@ export function createPreviews({ send, onChange }) {
     load(index);
   };
   // After the helper's run, the queue goes on with the made track after it, or ends.
-  const afterRun = () => (run.end < queue.length ? playAt(run.end) : stop());
+  const afterRun = () => (following(run.end - 1) < queue.length ? playAt(following(run.end - 1)) : stop());
   const stop = (notify = true) => {
     if (!queue.length) return;
     if (notify) report("stopped");
@@ -126,13 +131,13 @@ export function createPreviews({ send, onChange }) {
   // A made track that played to its end is reported as finished, for the loop back from listening.
   audio.addEventListener("ended", () => {
     if (current()?.generated) report("finished");
-    return index + 1 < queue.length ? playAt(index + 1) : stop();
+    return following(index) < queue.length ? playAt(following(index)) : stop();
   });
   audio.addEventListener("error", () => {
     if (!queue.length) return;
     report("failed");
     // A preview that won't load is skipped; three in a row end the queue.
-    if (++failures < 3 && index + 1 < queue.length) playAt(index + 1);
+    if (++failures < 3 && following(index) < queue.length) playAt(following(index));
     else stop();
   });
   // The helper reports its player; the core hears it as it hears previews. A report about another
@@ -149,6 +154,8 @@ export function createPreviews({ send, onChange }) {
     full.state = message;
     full.observedAt = Date.now();
     if (Number.isInteger(message.index)) index = Math.max(run.start, Math.min(run.end - 1, run.start + message.index));
+    // The helper reached a song taken out after its run was loaded: the queue goes on past it.
+    if (queue[index]?.removed) { following(index) < queue.length ? playAt(following(index)) : stop(); return; }
     const key = `${message.status}|${index}`;
     if (key !== full.reported) {
       full.reported = key;
@@ -160,6 +167,10 @@ export function createPreviews({ send, onChange }) {
     onChange();
   });
   const fullState = () => full.state?.song ?? null;
+  // The next eight songs that still play, each with its place in the queue for jumping to it or taking it out.
+  const upNext = () => queue.map((item, position) => ({ item, position })).slice(index + 1).filter(({ item }) => !item.removed).slice(0, 8)
+    .map(({ item, position }) => ({ title: item.title, artists: item.artist_credit ? [item.artist_credit] : [], image: item.image, position,
+      ...(item.generated ? { generated: true } : {}) }));
   const fullPlaying = () => full.state?.status === "playing";
 
   if (session) {
@@ -191,6 +202,15 @@ export function createPreviews({ send, onChange }) {
         playAt(0);
         // A check that failed for a passing reason (the helper was slow, or went away) is asked again for the next queue.
         if (mode === "preview" && full.status?.error && full.status.error !== "unavailable") void api.check();
+      }
+      // An Apple Music song added at the end, as a pick from Up next is; the queue plays it once it gets there.
+      if (message.type === "preview-enqueue" && message.id === id && message.track && message.track.generated !== true) {
+        const song = { title: String(message.track.title ?? ""), artist_credit: String(message.track.artist_credit ?? ""),
+          preview_url: allowed(message.track.preview_url, "audio-ssl.itunes.apple.com"), catalog_url: allowed(message.track.catalog_url, "music.apple.com"),
+          image: artwork(message.track.artwork_url) };
+        if (!song.title || !song.preview_url) return;
+        queue.push(song);
+        onChange();
       }
       // A made track queued behind this queue's last one, as Moondog's stream does.
       if (message.type === "preview-enqueue" && message.id === id && message.track?.generated === true) {
@@ -239,11 +259,13 @@ export function createPreviews({ send, onChange }) {
       if (!queue.length) return;
       if (mode === "full") {
         if (!full.state) return;
-        // Past the run's last song the queue goes on with the made track after it, or ends, as it does for previews.
+        // Past the run's last song the queue goes on with the made track after it, or ends, as it does for previews;
+        // a song taken out after the run was loaded is passed over.
         if (index + 1 >= run.end) return afterRun();
+        if (queue[index + 1].removed) return following(index) < queue.length ? playAt(following(index)) : stop();
         return void bridge({ type: "next" });
       }
-      if (index + 1 < queue.length) return playAt(index + 1);
+      if (following(index) < queue.length) return playAt(following(index));
       // A made track skipped past the end of its queue: Moondog's stream moves on once its next track is made.
       if (current()?.generated) report("skipped");
       stop();
@@ -263,10 +285,22 @@ export function createPreviews({ send, onChange }) {
       if (mode === "full") {
         if (!full.state) return;
         // At the run's first song, early on, back goes to the made track before it.
-        if (index === run.start && index > 0 && (api.state()?.progressMs ?? 0) < 3000) return playAt(index - 1);
+        if (index === run.start && index > 0 && (api.state()?.progressMs ?? 0) < 3000) return playAt(preceding(index));
         return void bridge({ type: "previous" });
       }
-      audio.currentTime > 3 || index === 0 ? (audio.currentTime = 0) : playAt(index - 1);
+      audio.currentTime > 3 || index === 0 ? (audio.currentTime = 0) : playAt(preceding(index));
+    },
+    // A song in Up next, by its place in the queue: it plays now, past the ones before it.
+    jump(position) {
+      if (!queue.length || !Number.isInteger(position) || position <= index || position >= queue.length || queue[position].removed) return;
+      playAt(position);
+    },
+    // A song taken out of Up next. The one playing stays.
+    remove(position) {
+      if (!Number.isInteger(position) || position <= index || position >= queue.length || queue[position].removed) return;
+      queue[position].removed = true;
+      send({ type: "preview-event", id, event: { type: "removed", position: position + 1 } });
+      onChange();
     },
     state() {
       const track = current();
@@ -278,13 +312,13 @@ export function createPreviews({ send, onChange }) {
         return { title: song?.title ?? track.title, artists: [song?.artist ?? track.artist_credit].filter(Boolean),
           image: artwork(song?.artwork) ?? track.image, link: allowed(song?.link, "music.apple.com") ?? track.catalog_url, album: song?.album ?? null, full: true,
           playing, progressMs: song?.durationMs ? Math.min(progressMs, song.durationMs) : progressMs, durationMs: song?.durationMs ?? null,
-          next: queue.slice(index + 1, index + 9).map((item) => ({ title: item.title, artists: [item.artist_credit], image: item.image })) };
+          next: upNext() };
       }
       return { title: track.title, artists: track.artist_credit ? [track.artist_credit] : [], image: track.image, link: track.catalog_url,
         ...(track.generated ? { generated: true } : {}),
         playing: !audio.paused, progressMs: Math.round((audio.currentTime || 0) * 1000),
         durationMs: Math.round((Number.isFinite(audio.duration) ? audio.duration : track.duration_seconds ?? 30) * 1000),
-        next: queue.slice(index + 1, index + 9).map((item) => ({ title: item.title, artists: [item.artist_credit], image: item.image })) };
+        next: upNext() };
     },
   };
   return api;
