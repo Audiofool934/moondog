@@ -10,7 +10,7 @@ import { createMark, scratchMark } from "./mark.mjs";
 import { mountRecord } from "./record.mjs";
 import { createSettings, EFFORTS } from "./settings.mjs";
 import { createSidebar } from "./sidebar.mjs";
-import { platform, shortcuts } from "./platform.mjs";
+import { isMac, platform, shortcuts } from "./platform.mjs";
 import { coverUrl, createLibrary } from "./library.mjs";
 import { createMentions } from "./mentions.mjs";
 import { createShelf } from "./shelf.mjs";
@@ -74,26 +74,37 @@ const taste = createTaste({ root: $("taste"), state, send, t: tr, onClose: () =>
 const tasteList = createTasteList({ root: $("taste-list"), state, send, t: tr, onAsk: (text) => askFromTaste(text),
   onSelect: (name) => { if (name && !state.taste) openTaste({ fromView: true }); taste.pin(name); } });
 const tips = tooltips();
-// A native menu opens at the pointer, or under its control when the keyboard pressed it.
+// Native menus open as macOS opens them. A control's own menu, by a click, Enter or Space, drops below the
+// control, as a pull-down button's does (a row's ⋯, a view's +). A right-click opens at the pointer, and the
+// context menu key or Shift+F10 under the focused item. A handler that awaited has lost the event's
+// currentTarget, so the control is also found from the target.
 function menuPoint(event) {
-  const control = event?.currentTarget;
-  if (((event?.type === "click" && event.detail === 0) || event?.type === "keydown") && control?.getBoundingClientRect) {
-    const box = control.getBoundingClientRect();
-    return { x: box.left, y: box.bottom + 4 };
-  }
-  return event ? { x: event.clientX, y: event.clientY } : undefined;
+  if (!event) return undefined;
+  const control = event.type === "click" ? event.currentTarget ?? event.target?.closest?.("button, [role=button]")
+    : event.type === "keydown" ? event.currentTarget ?? event.target : null;
+  if (control?.getBoundingClientRect) return below(control);
+  return { x: event.clientX, y: event.clientY };
 }
-// A menu that is a control's own, such as a split header's switcher, opens as a native pop-up button does: over the
-// control, its current choice set on the control's words. The menu's text sits past its check column, so the menu
-// starts that far before the words. Any other menu opens at the pointer, or under its control from the keyboard.
+const below = (control) => { const box = control.getBoundingClientRect(); return { x: box.left, y: box.bottom + 4 }; };
+// A menu that chooses what its control shows, such as a split header's switcher or the composer's model, opens as
+// a native pop-up button does: over the control, its current choice set on the control's words. The menu's text
+// sits past its check column, so the menu starts that far before the words. Electron sets the choice there only
+// on macOS (positioningItem), so elsewhere the menu drops below the control.
 const MENU_TEXT_INSET = 21;
 const MENU_ROW = 22;
 function menuAt(event, anchor) {
   const words = anchor?.element;
   if (!words?.getBoundingClientRect) return menuPoint(event);
+  if (!isMac) return below(anchor.control ?? words);
   const box = words.getBoundingClientRect();
   return { x: box.left - MENU_TEXT_INSET, y: box.top + box.height / 2 - MENU_ROW / 2,
     ...(Number.isInteger(anchor.selected) && anchor.selected >= 0 ? { positioningItem: anchor.selected } : {}) };
+}
+// A picker's pop-up: its words, or its mark when it shows only that, and the item checked in its menu.
+function popUp(control, items) {
+  const words = control.querySelector("span");
+  return { control, element: words?.textContent ? words : control.querySelector(".icon") ?? control,
+    selected: Math.max(0, items.findIndex((item) => item.checked)) };
 }
 const menu = (items, event, anchor) => window.moondogApp?.showMenu?.(items, menuAt(event, anchor));
 
@@ -1520,7 +1531,7 @@ async function pickModel(event) {
       submenu: ["default", ...EFFORTS].map((level) => ({ id: `effort:${level}`, label: effortName(level), checked: asked === level })) });
   }
   items.push(...(items.length ? [{ type: "separator" }] : []), { id: "settings", label: t("modelSettings") });
-  const chosen = await menu(items, event);
+  const chosen = await menu(items, event, popUp($("model"), items));
   if (!chosen) return;
   if (chosen === "settings") return settings.show("model");
   if (chosen.startsWith("effort:")) return send({ type: "effort", effort: chosen.slice(7) });
@@ -1539,7 +1550,7 @@ async function pickService(event) {
   const now = sourceWanted ?? state.playbackService ?? "spotify";
   const items = playableServices(now).map((service) => ({ id: `service:${service}`, label: serviceName(service), checked: service === now }));
   items.push({ type: "separator" }, { id: "settings", label: t("playbackSettings") });
-  const chosen = await menu(items, event);
+  const chosen = await menu(items, event, popUp($("service"), items));
   if (!chosen) return;
   if (chosen === "settings") settings.show("playback");
   else chooseService(chosen.slice(8));
@@ -1559,13 +1570,13 @@ function chooseService(service) {
 // Where music plays: Spotify's devices, then the service itself. The menu opens once the devices are read.
 let devicePicker = null;
 function pickDevice(event) {
-  devicePicker = { at: menuPoint(event) ?? anchorPoint() };
+  devicePicker = { event };
   if (state.playbackService === "spotify" && state.spotify === "ready") send({ type: "devices" });
   else void showDevices([]);
 }
-const anchorPoint = () => { const box = $("form").getBoundingClientRect(); return { x: box.left + 12, y: box.top - 8 }; };
+// It opens as the device row's pop-up, the device or service in use set on the row's words.
 async function showDevices(devices) {
-  const at = devicePicker?.at;
+  const event = devicePicker?.event;
   devicePicker = null;
   const items = [];
   if (state.playbackService === "spotify" && state.spotify === "ready") {
@@ -1576,7 +1587,7 @@ async function showDevices(devices) {
   const now = state.playbackService ?? "spotify";
   items.push(...playableServices(now).map((service) => ({ id: `service:${service}`, label: serviceName(service), checked: service === now })));
   items.push({ type: "separator" }, { id: "settings", label: t("playbackSettings") });
-  const chosen = await window.moondogApp?.showMenu?.(items, at);
+  const chosen = await menu(items, event, popUp($("device-row"), items));
   if (chosen === "settings") settings.show("playback");
   else if (chosen?.startsWith("device:")) send({ type: "transfer", ref: chosen.slice(7) });
   else if (chosen?.startsWith("service:") && chosen.slice(8) !== state.playbackService) {
