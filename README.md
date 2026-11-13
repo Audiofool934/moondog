@@ -4,7 +4,7 @@
 
 <h1 align="center">Moondog</h1>
 
-<p align="center">Source candidate 0.3.0-beta.16</p>
+<p align="center">Source candidate 0.3.0-beta.17</p>
 
 <p align="center"><strong>On the air, just for you.</strong></p>
 

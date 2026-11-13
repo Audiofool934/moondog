@@ -10,10 +10,11 @@ A listener can bring authorized music history, understand the evidence behind Mo
 
 The product should feel useful before a model or music-service connection is required.
 
-## Current scope (2026-11-04)
+## Current scope (2026-11-13)
 
 - The listening room in the terminal launches with `npm start` from a checkout or `moondog` when installed.
 - The desktop app in [`app/`](../app/README.md) is a native window on the same core, first for the owner's daily use and then for developers.
+  The Mac build is signed and notarized; Windows has a test build since 0.3.0-beta.16, and Linux is built in CI but not offered yet.
 - The project page in [`site/`](../site/README.md) plays a short scene in the desktop app's real window, in a browser, on made-up data.
 - The earlier browser Studio and static showcase were removed on 2026-10-22.
   Git history keeps them for reference.
@@ -60,6 +61,8 @@ The product should feel useful before a model or music-service connection is req
 - [x] Show the listener's taste in the desktop app's room: the sidebar's taste view, the history pressed as a record, and the saved reading (`/taste`, `⌥⌘T`).
 - [x] Give side tasks their own models: a vision model and a web search service, with images in a message and web search that falls back to the next service.
 - [x] Change model, service and reply language by asking, and add any OpenAI- or Anthropic-style endpoint by its address.
+- [x] Manage Up next in the desktop app's player: play a queued song now, take one out where Moondog keeps the queue, and, when the queue runs low, choose from a few songs the host picks.
+- [x] Offer a Windows test build of the desktop app, with Spotify playback and Apple Music previews; the project page treats Mac, Windows and Linux as equals.
 - [x] Play a short scene in the desktop app's real window on the project page, on made-up data.
 - [x] Run a deterministic offline demo and generate a fictional Spotify history ZIP, with no personal data, model, or credential.
 - [x] Rebuild and verify the public source tree on Node 22.19.0 and Node 24 in CI, scan the full history for private material, and install the packed npm tarball into an empty project.
@@ -147,7 +150,7 @@ The owner's direction (2026-11-04): the window supports more than one form, and 
   Next for it are Likes on generated tracks, a listener's replay counted as their attention, and an analysis stack that can score a stream's candidates.
 - [ ] Carry listener intent and selected references into creative work without uploading raw history by default.
 - [ ] Write a SQLite schema migration path before any release that changes stored data.
-- [ ] Decide whether Windows belongs in the product; a port needs a player, paths, and the credential store.
+- [ ] Sign the Windows installer, so SmartScreen stops warning, and add an arm64 AppImage so Linux can be tested on an ARM machine and then offered.
 
 ## Owner gates
 
