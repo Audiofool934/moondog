@@ -109,6 +109,8 @@ img { -webkit-user-drag: none; }
 .window.animating .bar { transition: grid-template-columns var(--panel) var(--out); }
 .bar-start { display: flex; align-items: center; gap: 2px; padding-inline-start: 92px; }
 .bar-start { grid-column: 1; }
+/* Windows and Linux keep their native title bar above the room, so no traffic-light gap is needed. */
+:root[data-platform="win32"] .bar-start, :root[data-platform="linux"] .bar-start { padding-inline-start: 10px; }
 .bar-end { grid-column: 3; display: flex; align-items: center; justify-content: flex-end; gap: 2px; padding-inline-end: 10px; min-width: 0; }
 /* The record folds into the middle of the bar, centered on the conversation, and the open conversation's
    name follows the new-conversation button, where the folded list of conversations would show it.

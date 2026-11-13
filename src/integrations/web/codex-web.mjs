@@ -6,6 +6,7 @@ import path from "node:path";
 
 import Ajv from "ajv";
 
+import { environmentPathKey } from "../../core/host.mjs";
 import { createWebOperations, failure, webResult } from "./web-result.mjs";
 
 export { projectWebResearchResult, publicWebUrl } from "./web-result.mjs";
@@ -101,7 +102,8 @@ export async function runCodexProcess(binary, args, { environment, cwd, input = 
 async function findCodex(environment) {
   const candidates = environment.MOONDOG_CODEX_BIN
     ? [environment.MOONDOG_CODEX_BIN]
-    : (environment.PATH ?? "").split(path.delimiter).filter(Boolean).map((entry) => path.resolve(entry, "codex"));
+    : (environment[environmentPathKey(environment)] ?? "").split(path.delimiter).filter(Boolean)
+      .map((entry) => path.resolve(entry, process.platform === "win32" ? "codex.exe" : "codex"));
   for (const candidate of candidates) {
     if (!path.isAbsolute(candidate)) continue;
     try { await access(candidate, constants.X_OK); return candidate; } catch {}

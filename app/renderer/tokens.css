@@ -43,9 +43,9 @@
     0 1px 2px rgb(var(--shade-rgb) / 0.04), 0 10px 26px -14px rgb(var(--shade-rgb) / 0.16);
   --glass-blur: blur(24px) saturate(1.6);
 
-  --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "PingFang TC", "Hiragino Sans", "Apple SD Gothic Neo", sans-serif;
+  --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", "Noto Sans", "PingFang SC", "PingFang TC", "Hiragino Sans", "Apple SD Gothic Neo", sans-serif;
   --serif: "New York", ui-serif, "Songti SC", "Songti TC", "Hiragino Mincho ProN", "AppleMyungjo", Georgia, serif;
-  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "DejaVu Sans Mono", monospace;
 
   /* Type: UI text is small and steady; Moondog's replies are the one place that reads like a page. */
   --t-caption: 11px;

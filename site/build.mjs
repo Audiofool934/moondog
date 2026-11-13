@@ -4,13 +4,13 @@
 //
 //   node build.mjs              build once
 //   node build.mjs --serve      rebuild on change and serve at http://localhost:8737
-//   node build.mjs --offline    link the release list rather than ask GitHub for the newest Mac download
+//   node build.mjs --offline    link the release list rather than ask GitHub for desktop downloads
 import { createHash } from "node:crypto";
 import { cp, mkdir, readFile, rm, watch, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import * as esbuild from "esbuild";
-import { stableMacDownload } from "./download.mjs";
+import { stableDesktopDownloads } from "./download.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "..");
@@ -48,9 +48,10 @@ function contentPolicy(document) {
 }
 const policyTag = (document) => `<meta http-equiv="Content-Security-Policy" content="${contentPolicy(document)}">`;
 
-// The default download stays on a complete stable release, even when a newer preview exists.
-async function macDownload() {
-  const fallback = { url: `${repository}/releases`, version: null };
+// Each platform's file can arrive separately. Offer each download only on a complete stable release,
+// even when a newer preview exists.
+async function desktopDownloads() {
+  const fallback = { mac: { url: `${repository}/releases`, version: null }, windows: null, linux: null };
   if (flags.has("--offline")) return fallback;
   try {
     const token = process.env.GITHUB_TOKEN;
@@ -59,13 +60,23 @@ async function macDownload() {
       signal: AbortSignal.timeout(10_000),
     });
     if (!response.ok) throw new Error(`GitHub answered ${response.status}`);
-    return stableMacDownload(await response.json()) ?? fallback;
+    const found = stableDesktopDownloads(await response.json());
+    return { ...found, mac: found.mac ?? fallback.mac };
   } catch (error) {
-    console.warn(`The Mac download links to the release list: ${error.message}`);
+    console.warn(`Desktop downloads link to the release list: ${error.message}`);
   }
   return fallback;
 }
-const mac = await macDownload();
+const downloads = await desktopDownloads();
+const { mac } = downloads;
+const escapeHTML = (value) => String(value).replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+const additionalDownloads = [
+  ["windows", "Windows", "Open the installer to install Moondog for your account."],
+  ["linux", "Linux", "Make the AppImage executable, then open it to start Moondog."],
+].map(([platform, label, instructions]) => {
+  const download = downloads[platform];
+  return download ? `<h3>For ${label}</h3>\n<p>${instructions} Updates download only when you ask.</p>\n<p class="actions"><a class="button" href="${escapeHTML(download.url)}">Download for ${label}</a> <span class="fine">Version ${escapeHTML(download.version)}, for x64.</span></p>` : "";
+}).join("\n");
 
 const browserPlugin = {
   name: "moondog-browser",
@@ -89,7 +100,8 @@ const documents = {
   "index.html": async () => (await readFile(path.join(here, "index.html"), "utf8"))
     .replace("<!-- policy -->", policyTag("page"))
     .replaceAll("{{mac.url}}", mac.url)
-    .replaceAll("{{mac.version}}", mac.version ? `Version ${mac.version}` : "From the releases page"),
+    .replaceAll("{{mac.version}}", mac.version ? `Version ${mac.version}` : "From the releases page")
+    .replace("{{desktop.downloads}}", additionalDownloads),
   "window.html": async () => (await readFile(path.join(root, "app", "renderer", "index.html"), "utf8"))
     .replace(/<meta http-equiv="Content-Security-Policy"[^>]*>/u, `${policyTag("window")}\n  <meta name="referrer" content="no-referrer">`)
     .replace('href="renderer.css"', 'href="window.css"')
