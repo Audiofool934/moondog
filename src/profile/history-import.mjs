@@ -85,7 +85,9 @@ function literalPath(input) {
     if (quote && character === quote) {
       fail("history_import_path_invalid", "Paste one complete file path, not several quoted arguments.");
     }
-    if (character === "\\" && quote !== "'") {
+    // Windows paths use backslashes as separators, including paths from the desktop file picker.
+    // Only POSIX input uses backslashes to escape spaces or shell punctuation.
+    if (character === "\\" && quote !== "'" && process.platform !== "win32") {
       const next = value[index + 1];
       const allowed = quote === '"' ? /["\\$`]/u : /[ \t()\[\]{}!&;'"\\#$~`]/u;
       if (!next || !allowed.test(next)) {

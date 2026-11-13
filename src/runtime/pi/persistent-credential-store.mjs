@@ -281,6 +281,8 @@ function safeOpenFlags(base) {
 }
 
 async function syncDirectory(directory) {
+  // Windows cannot open a directory for fsync. The new file is still synced before rename.
+  if (process.platform === "win32") return;
   let handle;
   try {
     handle = await open(directory, fsConstants.O_RDONLY);

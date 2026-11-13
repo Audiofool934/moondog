@@ -2,16 +2,18 @@
   "name": "moondog-app",
   "private": true,
   "type": "module",
-  "description": "Moondog for Mac: a native window on the same core as the moondog command.",
+  "description": "Moondog desktop: a native window on the same core as the moondog command.",
   "license": "Apache-2.0",
   "main": "main.mjs",
   "scripts": {
     "build": "node build.mjs",
     "start": "node build.mjs && electron .",
     "pack": "node pack.mjs",
+    "pack:dir": "node pack.mjs --dir",
+    "smoke": "node smoke.mjs",
     "release": "node pack.mjs --sign",
     "publish-app": "node publish.mjs",
-    "simulated": "node build.mjs && MOONDOG_APP_SIMULATED=1 electron .",
+    "simulated": "node build.mjs && electron . --simulated",
     "harness": "node build.mjs && electron harness.mjs"
   },
   "devDependencies": {
