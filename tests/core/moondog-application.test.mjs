@@ -7,6 +7,7 @@ import test from "node:test";
 import { readAppleMusicSourceStatus } from "../../src/core/apple-library-source-status.mjs";
 import { MoondogApplication } from "../../src/core/moondog-application.mjs";
 import { createSyntheticDomainServices } from "../../src/core/synthetic-domain-services.mjs";
+import { formatLocalResult } from "../../src/surfaces/cli/format-output.mjs";
 
 const batchId = "11111111-2222-4333-8444-555555555555";
 
@@ -224,6 +225,28 @@ test("a projection startup failure is reported without leaking details", async (
     false,
   );
   assert.equal(JSON.stringify(profile).includes("/private/"), false);
+});
+
+test("a new install with nothing imported is a library to start, not a failed checkup", async () => {
+  const application = new MoondogApplication({
+    importsRoot: path.join(tmpdir(), "moondog-does-not-exist"),
+    domainServicesError: "projection_subject_unavailable",
+    musicSimilarity: {},
+  });
+
+  const doctor = await application.doctor();
+
+  assert.equal(doctor.ok, true);
+  assert.equal(doctor.checks.find((check) => check.id === "music.discovery.open_similarity").state, "waiting_for_library");
+  assert.equal(doctor.library, "none");
+  for (const id of ["apple_music.source", "profile.projection"]) {
+    const check = doctor.checks.find((item) => item.id === id);
+    assert.equal(check.state, "no_library");
+    assert.equal(check.optional_for_local_commands, true);
+  }
+  const text = formatLocalResult("doctor", doctor);
+  assert.match(text, /^- No library yet\n {2}Type `\/import`/mu);
+  assert.doesNotMatch(text, /Apple Music library|missing/u);
 });
 
 test("capability catalog keeps external effects disabled", async () => {

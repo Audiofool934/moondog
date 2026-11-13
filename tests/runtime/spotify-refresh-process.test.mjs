@@ -132,13 +132,21 @@ test("lock-wait cancellation is bounded and does not steal another process's loc
 
 test("a timed-out refresh is tried again, and its late response cannot write", async (t) => {
   const f = await fixture(t);
-  let release, requests = 0;
+  // The deadline also covers the lock and the disk, so on a slow runner real time could run out
+  // before the exchange starts. A mock clock runs it out only once the exchange is in flight,
+  // and the retry below never times out.
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  let release, exchanging, requests = 0;
+  const inFlight = new Promise((r) => { exchanging = r; });
   const auth = authFor(f.store, async () => {
     requests++;
-    if (requests === 1) await new Promise((r) => { release = r; });
+    if (requests === 1) await new Promise((r) => { release = r; exchanging(); });
     return response();
   }, { refreshTimeoutMs: 100 });
-  await assert.rejects(auth.refreshAccessToken(), { code: "spotify_refresh_timeout" });
+  const timedOut = assert.rejects(auth.refreshAccessToken(), { code: "spotify_refresh_timeout" });
+  await inFlight;
+  t.mock.timers.tick(100);
+  await timedOut;
   assert.equal((await f.store.read()).accessToken, "old-access");
   await f.store.write({ ...old(), accessToken: "explicit-replacement" });
   release(); await new Promise((r) => setImmediate(r));

@@ -80,10 +80,10 @@ The product should feel useful before a model or music-service connection is req
 ### Daily use
 
 - [ ] Use the desktop app daily on the owner's Mac and fix what that use finds.
-- [ ] Make `moondog doctor` exit non-zero when a required check fails, and describe an empty new install as "no library yet" with import hints instead of a missing Apple Music batch.
-- [ ] Fix the Spotify refresh timeout test that failed once on Node 24 in CI ("timeout fences a late response and explicit replacement").
-- [ ] Move `fast-uri` past its current security advisory, or move Ajv to a release that does, then rerun contract validation.
-- [ ] Replace the `Moondog/0.1 (https://ai.ruc.edu.cn/)` identity on Wikidata and ListenBrainz requests with the project's own contact.
+- [x] Make `moondog doctor` exit non-zero when a required check fails, and describe an empty new install as "no library yet" with import hints instead of a missing Apple Music batch.
+- [x] Fix the Spotify refresh timeout test that failed once on Node 24 in CI ("timeout fences a late response and explicit replacement").
+- [x] Move `fast-uri` past its current security advisory, or move Ajv to a release that does, then rerun contract validation.
+- [x] Replace the `Moondog/0.1 (https://ai.ruc.edu.cn/)` identity on Wikidata and ListenBrainz requests with the project's own contact.
 
 ### Library
 

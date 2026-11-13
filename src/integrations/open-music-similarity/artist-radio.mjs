@@ -1,4 +1,5 @@
 import { uuidV5 } from "../../core/uuid-v5.mjs";
+import { MOONDOG_USER_AGENT } from "../user-agent.mjs";
 
 export const LISTENBRAINZ_RECORDING_TRACK_NAMESPACE =
   "1ea3cad6-a0a2-58a5-a584-64953336f69f";
@@ -15,7 +16,6 @@ export const OPEN_MUSIC_SIMILARITY_LIMITS = Object.freeze({
 
 const wikidataOrigin = "https://www.wikidata.org";
 const listenBrainzOrigin = "https://api.listenbrainz.org";
-const defaultUserAgent = "Moondog/0.1 (https://ai.ruc.edu.cn/)";
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const modes = new Set(["easy", "medium", "hard"]);
@@ -209,7 +209,7 @@ export function createWikidataArtistResolver({
   fetchImpl = globalThis.fetch,
   now = Date.now,
   cacheTtlMs = OPEN_MUSIC_SIMILARITY_LIMITS.identityCacheTtlMs,
-  userAgent = defaultUserAgent,
+  userAgent = MOONDOG_USER_AGENT,
 } = {}) {
   if (typeof fetchImpl !== "function") {
     throw new TypeError("A fetch implementation is required.");
@@ -437,7 +437,7 @@ export function createListenBrainzArtistRadioClient({
   fetchImpl = globalThis.fetch,
   now = Date.now,
   cacheTtlMs = OPEN_MUSIC_SIMILARITY_LIMITS.cacheTtlMs,
-  userAgent = defaultUserAgent,
+  userAgent = MOONDOG_USER_AGENT,
 } = {}) {
   if (typeof fetchImpl !== "function") {
     throw new TypeError("A fetch implementation is required.");
