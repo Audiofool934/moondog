@@ -10,7 +10,7 @@ import { cp, mkdir, readFile, rm, watch, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import * as esbuild from "esbuild";
-import { stableDesktopDownloads } from "./download.mjs";
+import { desktopDownloads as chooseDownloads } from "./download.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "..");
@@ -48,8 +48,8 @@ function contentPolicy(document) {
 }
 const policyTag = (document) => `<meta http-equiv="Content-Security-Policy" content="${contentPolicy(document)}">`;
 
-// Each platform's file can arrive separately. Offer each download only on a complete stable release,
-// even when a newer preview exists.
+// Each platform's file can arrive separately. The Mac offers only a complete stable release; Windows and
+// Linux fall back to their newest beta until they have a stable one (download.mjs).
 async function desktopDownloads() {
   const fallback = { mac: { url: `${repository}/releases`, version: null }, windows: null, linux: null };
   if (flags.has("--offline")) return fallback;
@@ -60,7 +60,7 @@ async function desktopDownloads() {
       signal: AbortSignal.timeout(10_000),
     });
     if (!response.ok) throw new Error(`GitHub answered ${response.status}`);
-    const found = stableDesktopDownloads(await response.json());
+    const found = chooseDownloads(await response.json());
     return { ...found, mac: found.mac ?? fallback.mac };
   } catch (error) {
     console.warn(`Desktop downloads link to the release list: ${error.message}`);
@@ -70,13 +70,19 @@ async function desktopDownloads() {
 const downloads = await desktopDownloads();
 const { mac } = downloads;
 const escapeHTML = (value) => String(value).replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+// Windows installers are not code-signed yet, so SmartScreen asks before the first run.
 const additionalDownloads = [
-  ["windows", "Windows", "Open the installer to install Moondog for your account."],
+  ["windows", "Windows", "Open the installer to install Moondog for your account. It isn't signed yet, so Windows asks before it runs: choose More info, then Run anyway. Spotify and Apple Music previews play here; whole Apple Music songs need a Mac."],
   ["linux", "Linux", "Make the AppImage executable, then open it to start Moondog."],
 ].map(([platform, label, instructions]) => {
   const download = downloads[platform];
-  return download ? `<h3>For ${label}</h3>\n<p>${instructions} Updates download only when you ask.</p>\n<p class="actions"><a class="button" href="${escapeHTML(download.url)}">Download for ${label}</a> <span class="fine">Version ${escapeHTML(download.version)}, for x64.</span></p>` : "";
+  const build = download?.beta ? "a test build for x64" : "for x64";
+  return download ? `<h3 id="${platform}">For ${label}</h3>\n<p>${instructions} Updates download only when you ask.</p>\n<p class="actions"><a class="button" href="${escapeHTML(download.url)}">Download for ${label}</a> <span class="fine">Version ${escapeHTML(download.version)}, ${build}.</span></p>` : "";
 }).join("\n");
+// The intro names the other ways in: Windows once it has a download, and the terminal.
+const introMore = downloads.windows
+  ? 'Also <a href="#windows">for Windows</a>, or <a href="#terminal">run it in a terminal</a>.'
+  : 'See <a href="#get">all downloads</a> or <a href="#terminal">run it in a terminal</a>.';
 
 const browserPlugin = {
   name: "moondog-browser",
@@ -101,6 +107,7 @@ const documents = {
     .replace("<!-- policy -->", policyTag("page"))
     .replaceAll("{{mac.url}}", mac.url)
     .replaceAll("{{mac.version}}", mac.version ? `Version ${mac.version}` : "From the releases page")
+    .replace("{{intro.more}}", introMore)
     .replace("{{desktop.downloads}}", additionalDownloads),
   "window.html": async () => (await readFile(path.join(root, "app", "renderer", "index.html"), "utf8"))
     .replace(/<meta http-equiv="Content-Security-Policy"[^>]*>/u, `${policyTag("window")}\n  <meta name="referrer" content="no-referrer">`)

@@ -15,13 +15,14 @@ Version 0.1.0 predates the updater, so its installs need a one-time manual upgra
 A `v` tag publishes through npm trusted publishing with provenance. A prerelease tag publishes on its own; a stable tag waits for the owner's approval in the `release-approval` environment.
 The tagged release workflow runs the clean-source check before OIDC publication.
 It prepares a draft GitHub release; verified Mac artifacts must be uploaded before that release becomes public.
-The project page selects stable downloads and leaves preview releases on GitHub.
+The project page offers the newest stable Mac download; Windows and Linux use their newest beta until they have a stable release.
 
 The desktop app has native build targets in [`app/`](../app/README.md): Mac DMG and zip for Apple silicon, a Windows x64 installer, and a Linux x64 AppImage.
 Mac releases retain the Developer ID signing and Apple notarization workflow.
 The desktop workflow builds and checks the Windows and Linux packages on their own operating systems, then keeps the files as CI artifacts.
 Those artifacts are test builds, not a published release.
-The [project page](https://moondog.audiofool.ai) offers each platform's download only after its file exists on a stable GitHub release.
+The [project page](https://moondog.audiofool.ai) offers each platform's download only after its file exists on a GitHub release.
+The Windows installer first shipped on 0.3.0-beta.16 as a test build; it is not code-signed yet.
 Full Apple Music songs and Music app control remain macOS-only; Windows and Linux offer previews and Spotify playback.
 
 ## Source boundary
