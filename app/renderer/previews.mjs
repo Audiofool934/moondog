@@ -203,6 +203,15 @@ export function createPreviews({ send, onChange }) {
         // A check that failed for a passing reason (the helper was slow, or went away) is asked again for the next queue.
         if (mode === "preview" && full.status?.error && full.status.error !== "unavailable") void api.check();
       }
+      // An Apple Music song added at the end, as a pick from Up next is; the queue plays it once it gets there.
+      if (message.type === "preview-enqueue" && message.id === id && message.track && message.track.generated !== true) {
+        const song = { title: String(message.track.title ?? ""), artist_credit: String(message.track.artist_credit ?? ""),
+          preview_url: allowed(message.track.preview_url, "audio-ssl.itunes.apple.com"), catalog_url: allowed(message.track.catalog_url, "music.apple.com"),
+          image: artwork(message.track.artwork_url) };
+        if (!song.title || !song.preview_url) return;
+        queue.push(song);
+        onChange();
+      }
       // A made track queued behind this queue's last one, as Moondog's stream does.
       if (message.type === "preview-enqueue" && message.id === id && message.track?.generated === true) {
         const media = generatedMedia(message.track.media_url);

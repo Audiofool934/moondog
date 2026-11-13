@@ -246,6 +246,8 @@ export const CONVERSATION_NAME_TIMEOUT_MS = 20_000;
 export class MoondogApplication {
   // Model calls naming conversations, stopped when the application closes.
   #naming = new Set();
+  // Up next's picks the window offers now, by reference (upNextProposals).
+  #proposals = new Map();
 
   constructor({
     importsRoot = resolveAppleMusicImportsRoot(),
@@ -990,6 +992,76 @@ export class MoondogApplication {
         playing: receipt?.songs?.length ?? 0, left_out_made: leftOut, ...extra };
     }
     throw Object.assign(new Error("No player here can play this playlist."), { code: "library_no_player" });
+  }
+
+  // Up next's picks: when the songs queued run low, the host picks what could come next (choose, the
+  // conversation's model), and only the songs found playable on the player that plays now, past the listener's
+  // Avoids, are offered. where is that player: "moondog" (Moondog's own, for Apple Music), "spotify" or "netease".
+  // Each pick keeps what the player needs under a reference, so a click queues it without searching again.
+  async upNextProposals({ playing, next = [], offered = [], where } = {}, { choose, signal } = {}) {
+    const ready = where === "moondog" ? this.playbackService === "apple_music" && Boolean(this.musicCatalog) && typeof this.musicPreviewPlayer?.enqueue === "function"
+      : where === "spotify" ? this.playbackService === "spotify" && this.spotifyPlaybackReady()
+        : where === "netease" ? this.playbackService === "netease" && this.neteaseReady() : false;
+    if (!ready || typeof choose !== "function" || !playing?.title) return [];
+    const profile = await this.getListenerProfile().then(compactListenerProfile).catch(() => null);
+    const brief = profile?.summary ? JSON.stringify({ summary: profile.summary, claims: (profile.claims ?? []).slice(0, 8),
+      ...(profile.listener_choices ? { listener_choices: profile.listener_choices } : {}) }) : null;
+    const picks = await choose({ playing, next, offered, profile: brief });
+    signal?.throwIfAborted();
+    const taken = new Set([playing, ...next].map((track) => `${track?.title ?? ""}`.toLowerCase()));
+    const found = [];
+    for (const pick of picks) {
+      if (found.length >= 3) break;
+      if (taken.has(pick.title.toLowerCase()) || !this.avoidAllows({ title: pick.title, artist_credit: pick.artist })) continue;
+      const song = await this.#findUpNext(where, pick, { signal }).catch(() => null);
+      signal?.throwIfAborted();
+      if (!song || !this.avoidAllows({ title: song.title, artist_credit: song.artists.join(", "), artists: song.artists })) continue;
+      taken.add(song.title.toLowerCase());
+      const ref = `p${this.#proposals.size}-${Date.now().toString(36)}`;
+      this.#proposals.set(ref, { where, ...song });
+      while (this.#proposals.size > 30) this.#proposals.delete(this.#proposals.keys().next().value);
+      found.push({ ref, title: song.title, artists: song.artists, image: song.image ?? null });
+    }
+    return found;
+  }
+
+  async #findUpNext(where, { title, artist }, { signal } = {}) {
+    if (where === "moondog") {
+      const result = await this.musicCatalog.findPreview({ title, artist });
+      if (result?.state !== "resolved") return null;
+      const track = result.track;
+      return { title: track.title, artists: [track.artist_credit].filter(Boolean), image: track.artwork_url ?? null, track };
+    }
+    if (where === "spotify") {
+      const { matched } = await this.spotifyResolveSongs([{ title, artist }], { signal });
+      const ref = matched[0]?.item_ref_id;
+      const known = ref ? this.spotifyHostReadItems().find((item) => item.item_ref_id === ref) : null;
+      const uri = typeof known?.uri === "string" ? known.uri : typeof matched[0]?.uri === "string" ? matched[0].uri : null;
+      if (!uri) return null;
+      return { title: known?.name ?? matched[0].name ?? title, artists: known?.artists ?? matched[0].artists ?? [artist], image: known?.image ?? null, uri };
+    }
+    const song = await this.requireNetease().find({ title, artist, intent: "为听者挑接下来的歌" });
+    return song ? { title: song.title, artists: song.artists, image: song.image ?? null, id: song.id } : null;
+  }
+
+  /** One of Up next's picks, added after what is queued on its player; it goes in the ledger as Moondog's suggestion. */
+  async queueUpNextProposal(ref, { signal } = {}) {
+    const song = this.#proposals.get(String(ref ?? ""));
+    if (!song) return { state: "gone" };
+    this.#proposals.delete(String(ref));
+    if (song.where === "moondog") {
+      if (!this.musicPreviewPlayer.enqueue(song.track)) return { state: "not_playing" };
+      this.#noteSuggestions("apple_music", [{ action: "apple_music.queue.up_next", providerTrackId: song.track.catalog_id ? `apple_music:${song.track.catalog_id}` : null,
+        isrc: song.track.isrc, title: song.title, artistCredit: song.track.artist_credit }]);
+      return { state: "queued" };
+    }
+    if (song.where === "spotify") {
+      await this.requireSpotifyService().addToQueue({ uri: song.uri }, { signal });
+      this.#noteSuggestions("spotify", [{ action: "queue.up_next", providerTrackId: song.uri, title: song.title, artists: song.artists }]);
+      return { state: "queued" };
+    }
+    const receipt = await this.playNetease({ items: [{ id: song.id }], mode: "queue", intent: "加入听者的接下来" });
+    return { state: ["queued", "playing"].includes(receipt?.mode) ? "queued" : "not_found" };
   }
 
   // Makes one instrumental track from the listener's taste and plays it in Moondog's own player.

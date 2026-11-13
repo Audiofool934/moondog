@@ -513,6 +513,47 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     setTimeout(() => void refreshPlayer({ chosen: !musicApp }), 900);
   }
 
+  // Up next's picks: the window asks once for each song and queue it shows running low (key), and only while the
+  // player is open; a newer ask replaces one still on its way. Each pick is queued by the conversation that found it.
+  let proposing = null;
+  const proposalOwners = new Map();
+  const songOf = (track) => (track && typeof track.title === "string" && track.title.trim()
+    ? { title: track.title.slice(0, 200), artists: (Array.isArray(track.artists) ? track.artists : []).filter((name) => typeof name === "string").slice(0, 6) } : null);
+  const songsOf = (tracks, limit) => (Array.isArray(tracks) ? tracks : []).slice(0, limit).map(songOf).filter(Boolean);
+  async function proposeUpNext(data) {
+    const key = String(data.key ?? "").slice(0, 2000);
+    const where = ["moondog", "spotify", "netease"].includes(data.where) ? data.where : null;
+    if (!key || !where || proposing?.key === key) return;
+    proposing?.controller.abort();
+    const controller = new AbortController();
+    const slot = current;
+    proposing = { key, controller };
+    let songs = [];
+    try {
+      songs = await slot.runtime.proposeNextSongs?.({ playing: songOf(data.playing), next: songsOf(data.next, 10), offered: songsOf(data.offered, 20), where },
+        { signal: controller.signal }) ?? [];
+    } catch { songs = []; }
+    if (controller.signal.aborted) return;
+    for (const song of songs) proposalOwners.set(song.ref, slot.application);
+    while (proposalOwners.size > 30) proposalOwners.delete(proposalOwners.keys().next().value);
+    send({ type: "up-next-proposals", key, songs });
+  }
+  async function queueProposal(ref) {
+    const application = proposalOwners.get(ref);
+    if (!application) return send({ type: "up-next-queued", ref, state: "gone" });
+    proposalOwners.delete(ref);
+    toolTrace?.record({ source: "window", tool: "up_next_queue", state: "start", args: {} });
+    try {
+      const receipt = await application.queueUpNextProposal(ref);
+      send({ type: "up-next-queued", ref, state: receipt.state });
+    } catch (error) {
+      if (noteLimit(error)) { send(limited()); schedulePlayer(); return; }
+      send({ type: "up-next-queued", ref, state: "failed", message: errorText(error) });
+    }
+    await refreshPlayer();
+    setTimeout(() => void refreshPlayer(), 900);
+  }
+
   // Devices keep their Spotify ids here; the window sees only a reference.
   let listedDevices = new Map();
   async function devices() {
@@ -1217,6 +1258,8 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     edit: (data) => edit(String(data.entry ?? ""), String(data.text ?? "")),
     branch: (data) => branch(String(data.entry ?? "")),
     control: (data) => control(String(data.action ?? ""), data.via, data.positionMs, data.ahead),
+    "up-next-proposals": (data) => proposeUpNext(data),
+    "up-next-queue": (data) => queueProposal(String(data.ref ?? "")),
     // Off air: the stream stops and nothing resumes; the song it paused shows again, paused, from a fresh read.
     "on-air-stop": async () => {
       const stopped = (current.application.stopStream ? current.application : base).stopStream?.();

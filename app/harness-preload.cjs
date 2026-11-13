@@ -997,6 +997,11 @@ core.onmessage = ({ data }) => {
     if (data.action === "previous") player({ fraction: 0 });
     if (data.action === "seek") player({ fraction: data.positionMs / TRACKS[last.index].durationMs });
   }
+  // The host's picks for Up next, a moment later, as the model and the service search would take.
+  if (data.type === "up-next-proposals") {
+    setTimeout(() => send({ type: "up-next-proposals", key: data.key, songs: TRACKS.slice(4, 6).map((track, at) => ({ ref: `h${at}`, title: track.title, artists: track.artists, image: track.image })) }), 200);
+  }
+  if (data.type === "up-next-queue") send({ type: "up-next-queued", ref: data.ref, state: "queued" });
   // Choices made in Settings stick, as the core would keep them.
   if (data.type === "language") send({ type: "status", ...status, locale: data.locale });
   if (data.type === "music-service") send({ type: "status", ...status, playbackService: data.service, firstRun: over(status.firstRun && { ...status.firstRun, service: data.service }) });
