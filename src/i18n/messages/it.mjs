@@ -70,8 +70,9 @@ export default {
   "queue.notAddedHeading": "Non aggiunti:",
   "queue.earlierReceipt": "Questo è l'esito della richiesta di coda precedente; questo chiarimento non ha aggiunto di nuovo i brani.",
 
-  "playlist.partialUnknown": ({ name }) => `Spotify ha creato la playlist privata "${name}", ma l'aggiunta dei brani non è stata confermata. Controllala prima di decidere se riprovare.`,
-  "playlist.partialEmpty": ({ name }) => `Spotify ha creato la playlist privata "${name}", ma non ha aggiunto i brani. La playlist vuota ora esiste; controllala prima di decidere se riprovare.`,
+  "playlist.kept": ({ name, count }) => `Salvata nella tua libreria come "${name}" (${count} brani).`,
+  "playlist.copyUnknown": ({ name }) => `La copia di "${name}" su Spotify non è stata confermata. La playlist è nella tua libreria; controlla Spotify prima di esportarla di nuovo.`,
+  "playlist.copyFailed": ({ name }) => `La copia di "${name}" su Spotify non è stata creata. La playlist è nella tua libreria e puoi esportarla di nuovo.`,
   "playlist.saved": ({ name, count }) => `Salvata come playlist privata di Spotify "${name}" (${count} brani).`,
 
   "action.playback.resume": "richiesta di riproduzione",

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { openLibraryStore } from "../../src/core/library-store.mjs";
 
 import { createListeningProfileDomainServices } from "../../src/core/listening-profile-domain-services.mjs";
 import { MoondogApplication } from "../../src/core/moondog-application.mjs";
@@ -175,11 +176,13 @@ test("a plan reads a band's credit as the candidate gate did, and leaves out onl
   assert.equal(queued.skipped_avoided_count, 1);
 
   pending();
-  const saved = await application.spotifyCreatePendingPlaylist({ name: "Fictional Evening" });
+  // A saved plan is a playlist in the library, without the avoided song.
+  application.libraryStore = await openLibraryStore({ databasePath: ":memory:" });
+  const saved = await application.savePlaylistPlan({ name: "Fictional Evening", pending: true });
   assert.deepEqual(saved.skipped_avoided, leftOut);
-  assert.deepEqual(writes.at(-1), ["playlist", ["spotify:track:p1", "spotify:track:p2"]]);
+  assert.deepEqual(application.libraryStore.playlist(saved.playlist.id).entries.map((entry) => entry.title), ["Ember Song", "Harbor Lights"]);
   // The avoided song is never even looked up.
-  assert.deepEqual(resolvedRefs, [["p1", "p2"], ["p1", "p2"], ["p1", "p2"]]);
+  assert.deepEqual(resolvedRefs, [["p1", "p2"], ["p1", "p2"]]);
   assert.equal(recorded.some((entry) => entry.title === "Night Ferry"), false);
   assert.equal(recorded.filter((entry) => entry.title === "Ember Song").length, 3);
 

@@ -10,8 +10,6 @@ export const SPOTIFY_SERVICE_LIMITS = Object.freeze({
   playbackUrisMax: 100,
   positionMsMax: 86_400_000,
   playlistNameLengthMax: 100,
-  playlistDescriptionLengthMax: 200,
-  playlistTracksMax: 20,
   editablePlaylistsPageMax: 50,
   playlistEditTracksMax: 100,
   playlistExportTracksMax: 2000,
@@ -1447,71 +1445,6 @@ export function createSpotifyService(options = {}) {
       // Never dispatch the next write after the prompt has been cancelled.
       await client.addToQueue({ uri, deviceId }, { signal });
       return actionReceipt("playback.queue.add");
-    },
-
-    async createPlaylistWithTracks(value, { signal } = {}) {
-      signal?.throwIfAborted();
-      const input = inputObject(value);
-      const name = cleanPlaylistText(
-        input.name,
-        SPOTIFY_SERVICE_LIMITS.playlistNameLengthMax,
-        "invalid_playlist_name",
-        "name",
-      );
-      const description =
-        input.description === undefined
-          ? undefined
-          : cleanPlaylistText(
-              input.description,
-              SPOTIFY_SERVICE_LIMITS.playlistDescriptionLengthMax,
-              "invalid_playlist_description",
-              "description",
-            );
-      const uris = requiredTrackUris(
-        input.uris,
-        "invalid_playlist_tracks",
-        SPOTIFY_SERVICE_LIMITS.playlistTracksMax,
-      );
-      const playlist = await client.createPlaylist({
-        name,
-        ...(description ? { description } : {}),
-      }, { signal });
-      if (!playlist?.id) {
-        fail(
-          "playlist_creation_failed",
-          "Spotify did not return the created playlist.",
-          { outcomeUnknown: true },
-        );
-      }
-      try {
-        signal?.throwIfAborted();
-        await client.addPlaylistTracks({ playlistId: playlist.id, uris }, { signal });
-      } catch (error) {
-        const rejected = error?.outcomeUnknown === false ||
-          (Number.isInteger(error?.status) && error.status >= 400 && error.status < 500) ||
-          (error?.name === "AbortError" && signal?.aborted);
-        if (error?.outcomeUnknown === true || !rejected) {
-          fail(
-            "playlist_created_tracks_unknown",
-            "Spotify created the private playlist, but did not confirm whether its tracks were added. Check the playlist before trying again.",
-            { outcomeUnknown: true },
-          );
-        }
-        fail(
-          "playlist_created_without_tracks",
-          "Spotify created the private playlist but did not accept its tracks. Check the empty playlist before trying again.",
-        );
-      }
-      return {
-        ...actionReceipt("playlist.write"),
-        playlist: {
-          name: playlist.name ?? name,
-          track_count: uris.length,
-          is_public: false,
-        },
-        ...(playlist.uri ? { playlist_uri: playlist.uri } : {}),
-        ...(playlist.id ? { playlist_id: playlist.id } : {}),
-      };
     },
 
     // A library playlist's copy on Spotify: a new private playlist, or the copy an earlier export made, set to

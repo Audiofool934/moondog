@@ -905,7 +905,7 @@ export default {
   "Remove a playlist from your library": "ライブラリからプレイリストを外す",
   "Preview a playlist change": "プレイリストの変更をプレビュー",
   "Change a Spotify playlist": "Spotify のプレイリストを変更",
-  "Save the playlist to Spotify": "プレイリストを Spotify に保存",
+  "Save the playlist": "プレイリストを保存",
   "Choose how hard the model thinks": "モデルがどれだけ考えるかを選ぶ",
   "Use /effort, or /effort <level>.": "/effort か /effort <レベル> を使ってください。",
   "Choose a model with /model first.": "先に /model でモデルを選んでください。",

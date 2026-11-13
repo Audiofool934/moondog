@@ -70,8 +70,9 @@ export default {
   "queue.notAddedHeading": "추가하지 않은 곡:",
   "queue.earlierReceipt": "이것은 앞선 대기열 작업의 결과입니다. 이번 설명으로 곡을 다시 넣지는 않았습니다.",
 
-  "playlist.partialUnknown": ({ name }) => `Spotify에 비공개 플레이리스트 "${name}" 생성은 끝났지만, 곡 추가는 확인되지 않았습니다. 다시 시도할지 정하기 전에 확인해 주세요.`,
-  "playlist.partialEmpty": ({ name }) => `Spotify에 비공개 플레이리스트 "${name}" 생성은 끝났지만 곡은 추가하지 않았습니다. 빈 플레이리스트가 생겼으니 다시 시도할지 정하기 전에 확인해 주세요.`,
+  "playlist.kept": ({ name, count }) => `보관함에 플레이리스트 "${name}"(${count}곡)으로 저장했습니다.`,
+  "playlist.copyUnknown": ({ name }) => `Spotify의 "${name}" 사본은 확인되지 않았습니다. 플레이리스트는 보관함에 있습니다. 다시 내보내기 전에 Spotify를 확인해 주세요.`,
+  "playlist.copyFailed": ({ name }) => `Spotify의 "${name}" 사본은 만들어지지 않았습니다. 플레이리스트는 보관함에 있으며 다시 내보낼 수 있습니다.`,
   "playlist.saved": ({ name, count }) => `Spotify 비공개 플레이리스트 "${name}"(${count}곡)으로 저장했습니다.`,
 
   "action.playback.resume": "재생 요청",

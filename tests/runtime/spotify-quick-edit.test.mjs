@@ -508,8 +508,8 @@ test("exact quick intent cannot authorize other Spotify mutations or retained pl
   const f = fixture(t); await displayPlaylist(f);
   f.application.beginPrompt({ text: 'Rename my playlist to "Late Lights"' });
   for (const operation of [
-    () => f.application.spotifyCreatePlaylist({ name: "Unrequested", trackRefs: [] }),
-    () => f.application.spotifyCreatePendingPlaylist({ name: "Unrequested" }),
+    () => f.application.savePlaylistPlan({ name: "Unrequested", trackRefs: [] }),
+    () => f.application.savePlaylistPlan({ name: "Unrequested", pending: true, toSpotify: true }),
     () => f.application.spotifyControl({ action: "pause" }),
     () => f.application.spotifyTransfer({ deviceId: "fictionaldevice" }),
     () => f.application.spotifyPlayPendingPlan(),

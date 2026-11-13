@@ -152,30 +152,12 @@ function explicitQuickPlaylistIntent(text) {
   return match ? { action: "remove_track", playlistName: match[1], title: match[2], artist: match[3] } : null;
 }
 
-function spotifyPlaylistDetails({ name, description } = {}) {
-  if (
-    typeof name !== "string" ||
-    name.trim().length < 1 ||
-    Array.from(name).length > 100
-  ) {
-    throw spotifyResolutionError(
-      "invalid_playlist_name",
-      "The Spotify playlist name is invalid.",
-    );
+// The name a saved plan's playlist takes: Spotify's limit of 100 characters, so its copy there carries the same name.
+function planPlaylistName(name) {
+  if (typeof name !== "string" || name.trim().length < 1 || Array.from(name).length > 100) {
+    throw spotifyResolutionError("invalid_playlist_name", "The playlist name is invalid.");
   }
-  if (
-    description !== undefined &&
-    (typeof description !== "string" || Array.from(description).length > 200)
-  ) {
-    throw spotifyResolutionError(
-      "invalid_playlist_description",
-      "The Spotify playlist description is invalid.",
-    );
-  }
-  return {
-    name: name.trim(),
-    ...(description !== undefined ? { description: description.trim() } : {}),
-  };
+  return name.trim();
 }
 
 const requiredDomainServiceMethods = Object.freeze([
@@ -3772,30 +3754,6 @@ export class MoondogApplication {
     }
   }
 
-  async spotifyCreatePlaylist({ name, description, trackRefs } = {}, { signal } = {}) {
-    signal?.throwIfAborted();
-    this.requireSpotifyPlaylistCreationFlow();
-    if (
-      !Array.isArray(trackRefs) ||
-      !Array.isArray(this.validatedPlaylistTrackRefs) ||
-      trackRefs.length !== this.validatedPlaylistTrackRefs.length ||
-      trackRefs.some(
-        (trackRefId, index) =>
-          trackRefId !== this.validatedPlaylistTrackRefs[index],
-      )
-    ) {
-      throw spotifyResolutionError(
-        "spotify_playlist_plan_required",
-        "Spotify playlist writes require the exact validated playlist plan from this prompt.",
-      );
-    }
-    const details = spotifyPlaylistDetails({ name, description });
-    this.requireSpotifyWriteScopes(["playlist-modify-private"]);
-    const uris = this.requireSpotifyTrackUris(trackRefs);
-    const planned = new Map((this.pendingSpotifyPlaylist?.plan?.tracks ?? []).map((track) => [track.track_ref_id, track]));
-    return this.writeSpotifyPlaylist(details, uris, { signal, tracks: trackRefs.map((ref) => planned.get(ref) ?? null) });
-  }
-
   pendingSpotifyPlaylistStatus() {
     const plan = this.pendingSpotifyPlaylist?.plan;
     if (!plan) return { state: "none" };
@@ -3835,44 +3793,63 @@ export class MoondogApplication {
     return structuredClone(this.pendingSpotifyPlaylist.plan);
   }
 
-  async spotifyCreatePendingPlaylist({ name, description } = {}, { signal } = {}) {
+  /**
+   * Keeps the validated playlist plan as a playlist in the listener's library, which is where a playlist is made
+   * and arranged. The plan is this prompt's own (trackRefs, in its exact order) or the pending one the listener
+   * approved. toSpotify also sends the new playlist to Spotify as its copy, through the library's export, so a
+   * later export brings that same copy up to date. The library keeps the playlist even when the copy fails.
+   * onSaved hears of the library playlist before anything is sent.
+   */
+  async savePlaylistPlan({ name, trackRefs, pending = false, toSpotify = false } = {}, { signal, onSaved } = {}) {
     signal?.throwIfAborted();
     this.requireSpotifyPlaylistCreationFlow();
-    if (!this.pendingSpotifyPlaylist) {
-      throw spotifyResolutionError(
-        "spotify_pending_playlist_unavailable",
-        "There is no pending validated playlist plan to save. Create a playlist plan first.",
-      );
+    if (!pending && (!Array.isArray(trackRefs) || !Array.isArray(this.validatedPlaylistTrackRefs) ||
+        trackRefs.length !== this.validatedPlaylistTrackRefs.length ||
+        trackRefs.some((trackRefId, index) => trackRefId !== this.validatedPlaylistTrackRefs[index]))) {
+      throw spotifyResolutionError("spotify_playlist_plan_required", "A playlist is saved from the exact validated playlist plan of this prompt.");
     }
-    const details = spotifyPlaylistDetails({ name, description });
-    this.requireSpotifyScopes(["user-read-private"]);
-    this.requireSpotifyWriteScopes(["playlist-modify-private"]);
     const draft = this.pendingSpotifyPlaylist;
+    if (!draft?.plan) {
+      throw spotifyResolutionError("spotify_pending_playlist_unavailable", "There is no pending validated playlist plan to save. Create a playlist plan first.");
+    }
+    const playlistName = planPlaylistName(name);
+    const library = this.requireLibrary();
     const { kept, avoided } = this.#withoutAvoidedPlanTracks(draft.plan.tracks);
-    const result = await this.requireSpotifyResolver().resolve(
-      keptTrusted(draft, kept),
-      { signal },
-    );
-    signal?.throwIfAborted();
-    const resolvedByRef = new Map();
-    for (const resolution of result.resolutions ?? []) {
-      if (resolution.status === "resolved" && resolution.spotify?.uri) {
-        resolvedByRef.set(
-          resolution.track_ref_id,
-          resolution.spotify.uri,
-        );
+    // For the copy, the resolver finds each song's Spotify recording from the plan's own track, which knows more
+    // than a title and an artist. A song it can't place is searched by name at the export, and counted there.
+    const uris = new Map();
+    if (toSpotify && this.spotifyReady() && this.spotifyConnection?.resolver && draft.trustedTracks) {
+      const result = await this.requireSpotifyResolver().resolve(keptTrusted(draft, kept), { signal })
+        .catch((error) => (signal?.aborted ? Promise.reject(error) : { resolutions: [] }));
+      for (const resolution of result.resolutions ?? []) {
+        if (resolution.status === "resolved" && typeof resolution.spotify?.uri === "string") uris.set(resolution.track_ref_id, resolution.spotify.uri);
       }
     }
-    const uris = kept.map((track) =>
-      resolvedByRef.get(track.track_ref_id),
-    );
-    if (uris.some((uri) => typeof uri !== "string")) {
-      throw spotifyResolutionError(
-        "spotify_pending_playlist_unresolved",
-        "The pending playlist could not be fully resolved on Spotify, so no playlist was created.",
-      );
+    signal?.throwIfAborted();
+    if (this.pendingPlaylistPromptTransaction) this.pendingPlaylistPromptTransaction.playlistWriteAttempted = true;
+    const made = library.savePlaylist({ name: playlistName, origin: "moondog", addedBy: "moondog", entries: kept.map((track) => ({
+      kind: "song", title: track.title, artist_credit: track.artist_credit, ...(track.release ? { album: track.release } : {}),
+      ...(uris.has(track.track_ref_id) ? { refs: { spotify_uri: uris.get(track.track_ref_id), spotify_title: track.title, spotify_credit: track.artist_credit } } : {}),
+    })) });
+    // Moondog chose these songs, so they go in the ledger under the service the listener plays them on.
+    this.#noteSuggestions(toSpotify ? "spotify" : this.playbackService, kept.map((track) => ({ action: "playlist.write",
+      ...(uris.has(track.track_ref_id) ? { providerTrackId: uris.get(track.track_ref_id) } : {}), title: track.title, artistCredit: track.artist_credit })));
+    // The plan is a playlist now, so a cancelled prompt does not bring it back as pending.
+    if (this.pendingPlaylistPromptTransaction) this.pendingPlaylistPromptTransaction.externalized = true;
+    this.pendingSpotifyPlaylist = null;
+    this.pendingPlaylistRevisionCandidateSet = null;
+    const saved = { playlist: { id: made.id, name: library.playlist(made.id).name, track_count: made.added }, ...skippedAvoided(avoided) };
+    onSaved?.(structuredClone(saved));
+    if (!toSpotify) return saved;
+    try {
+      const sent = await this.exportLibraryPlaylist({ playlistId: made.id, service: "spotify" }, { signal });
+      return { ...saved, spotify: { state: sent.state, ...(Number.isInteger(sent.exported) ? { exported: sent.exported } : {}), not_found: sent.not_found ?? 0 } };
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      // The playlist is in the library either way; the copy can be sent again with an export.
+      return { ...saved, spotify: { state: error?.outcomeUnknown === true ? "unknown" : "failed",
+        code: /^[a-z][a-z0-9_]{1,63}$/u.test(error?.code ?? "") ? error.code : "spotify_export_failed" } };
     }
-    return this.writeSpotifyPlaylist(details, uris, { signal, tracks: kept, avoided });
   }
 
   async spotifyPlayPendingPlan({ deviceId } = {}, { signal } = {}) {
@@ -4055,41 +4032,6 @@ export class MoondogApplication {
       ...(stopped ? { stopped } : {}), ...(outcomeUnknown ? { outcome_unknown: true } : {}),
       ...(failure ? { failure } : {}),
       ...(signal?.aborted ? { cancelled: true } : {}) };
-  }
-
-  async writeSpotifyPlaylist(details, uris, { signal, tracks = [], avoided: leftOut = [] } = {}) {
-    signal?.throwIfAborted();
-    this.requireSpotifyPlaylistCreationFlow();
-    const { kept, avoided } = this.#withoutAvoidedPlanTracks(tracks);
-    if (avoided.length) {
-      uris = uris.filter((_uri, index) => kept.includes(tracks[index]));
-      tracks = kept;
-    }
-    if (this.pendingPlaylistPromptTransaction) this.pendingPlaylistPromptTransaction.playlistWriteAttempted = true;
-    this.invalidateSpotifyQuickEditContext();
-    try {
-      const receipt = await this.requireSpotifyService().createPlaylistWithTracks({
-        ...details,
-        uris,
-      }, { signal });
-      this.#noteSuggestions("spotify", tracks.flatMap((track, index) => track ? [{ action: "playlist.write",
-        providerTrackId: uris[index], title: track.title, artistCredit: track.artist_credit }] : []));
-      if (this.pendingPlaylistPromptTransaction) {
-        this.pendingPlaylistPromptTransaction.externalized = true;
-      }
-      this.pendingSpotifyPlaylist = null;
-      this.pendingPlaylistRevisionCandidateSet = null;
-      return { ...receipt, ...skippedAvoided([...leftOut, ...avoided]) };
-    } catch (error) {
-      if (error?.outcomeUnknown === true || ["playlist_created_without_tracks", "playlist_created_tracks_unknown"].includes(error?.code)) {
-        if (this.pendingPlaylistPromptTransaction) {
-          this.pendingPlaylistPromptTransaction.externalized = true;
-        }
-        this.pendingSpotifyPlaylist = null;
-        this.pendingPlaylistRevisionCandidateSet = null;
-      }
-      throw error;
-    }
   }
 
   async spotifySaveLibraryTracks({ trackRefs } = {}, { signal } = {}) {

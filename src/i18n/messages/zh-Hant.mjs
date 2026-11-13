@@ -70,8 +70,9 @@ export default {
   "queue.notAddedHeading": "沒有加入：",
   "queue.earlierReceipt": "這是上一次佇列操作的結果；這次說明沒有再次加入歌曲。",
 
-  "playlist.partialUnknown": ({ name }) => `Spotify 已建立私人播放清單「${name}」，但加入曲目的結果尚未確認。請先檢查再決定是否重試。`,
-  "playlist.partialEmpty": ({ name }) => `Spotify 已建立私人播放清單「${name}」，但沒有加入曲目；這個空的播放清單已經存在，請先檢查再決定是否重試。`,
+  "playlist.kept": ({ name, count }) => `已存進你的資料庫，播放清單「${name}」（${count} 首）。`,
+  "playlist.copyUnknown": ({ name }) => `Spotify 上「${name}」的副本是否建好尚未確認。播放清單已在你的資料庫裡；再次匯出前請先看一下 Spotify。`,
+  "playlist.copyFailed": ({ name }) => `Spotify 上「${name}」的副本沒有建成。播放清單已在你的資料庫裡，可以再匯出一次。`,
   "playlist.saved": ({ name, count }) => `已儲存為 Spotify 私人播放清單「${name}」（${count} 首）。`,
 
   "action.playback.resume": "播放請求",

@@ -233,7 +233,7 @@ test("capability catalog keeps external effects disabled", async () => {
   const tools = application.toolsStatus().capabilities;
 
   assert.equal(
-    tools.find((tool) => tool.id === "spotify.playlist.write").state,
+    tools.find((tool) => tool.id === "collection.plan_save").state,
     "blocked",
   );
   assert.equal(

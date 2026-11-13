@@ -71,8 +71,9 @@ export default {
   "queue.notAddedHeading": "Not added:",
   "queue.earlierReceipt": "This is the earlier queue receipt; this clarification did not add the songs again.",
 
-  "playlist.partialUnknown": ({ name }) => `Spotify created the private playlist "${name}", but adding its tracks was not confirmed. Inspect it before deciding whether to retry.`,
-  "playlist.partialEmpty": ({ name }) => `Spotify created the private playlist "${name}", but did not add its tracks. The empty playlist now exists; inspect it before deciding whether to retry.`,
+  "playlist.kept": ({ name, count }) => `Saved in your library as "${name}" (${count} songs).`,
+  "playlist.copyUnknown": ({ name }) => `The Spotify copy of "${name}" was not confirmed. The playlist is in your library; check Spotify before you export it again.`,
+  "playlist.copyFailed": ({ name }) => `The Spotify copy of "${name}" was not made. The playlist is in your library, and you can export it again.`,
   "playlist.saved": ({ name, count }) => `Saved as the private Spotify playlist "${name}" (${count} tracks).`,
 
   "action.playback.resume": "playback request",

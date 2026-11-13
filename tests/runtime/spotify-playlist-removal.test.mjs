@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { openLibraryStore } from "../../src/core/library-store.mjs";
 import { createModels, fauxProvider, fauxAssistantMessage, fauxToolCall, fauxText } from "@earendil-works/pi-ai";
 import { MoondogApplication } from "../../src/core/moondog-application.mjs";
 import { createSyntheticDomainServices } from "../../src/core/synthetic-domain-services.mjs";
@@ -7,7 +8,7 @@ import { createSpotifyWebApiClient } from "../../src/integrations/spotify/web-ap
 import { createSpotifyService } from "../../src/integrations/spotify/service.mjs";
 import { PiAgentRuntime } from "../../src/runtime/pi/agent-runtime.mjs";
 const use = (name, args = {}) => fauxAssistantMessage([fauxToolCall(name, args)], { stopReason: "toolUse" });
-function fixture(t) {
+function fixture(t, { libraryStore } = {}) {
   const state = { id: "fictionalplaylist", name: "Night Drive", owner: "fictionalowner", public: false, collaborative: false, snapshot: "first", missing: [], status: 200 };
   const writes = [];
   const metadata = () => ({ id: state.id, uri: `spotify:playlist:${state.id}`, name: state.name, owner: { id: state.owner }, public: state.public,
@@ -23,7 +24,7 @@ function fixture(t) {
       uri: `spotify:track:${name}`, name, artists: [{ name: "Fictional Artist" }], album: { name: "Fictional Album" }, is_local: false } })), total: 2, offset: 0, limit: 50 });
     return Response.json(metadata());
   } });
-  const application = new MoondogApplication({ importsRoot: "/tmp/moondog-fictional-no-imports",
+  const application = new MoondogApplication({ importsRoot: "/tmp/moondog-fictional-no-imports", ...(libraryStore ? { libraryStore } : {}),
     domainServices: createSyntheticDomainServices({ subjectScope: { subjectId: "trusted-synthetic-subject" } }),
     spotifyConnection: { ready: () => true, missingScopes: () => state.missing,
     resolver: { async resolve(tracks) { return { resolutions: tracks.map((track, index) => ({ track_ref_id: track.track_ref_id, status: "resolved", spotify: { uri: `spotify:track:fictional${index}` } })) }; } },
@@ -182,12 +183,13 @@ const removalResponses = () => [use("moondog_spotify_playlist_read", { action: "
 const endResponse = () => fauxAssistantMessage([fauxText("Done.")]);
 
 test("a removal preview replaces a retained new plan and its confirmation cannot create a playlist", async (t) => {
-  const f = fixture(t); f.faux.setResponses([...planResponses(), endResponse()]);
+  const f = fixture(t, { libraryStore: await openLibraryStore({ databasePath: ":memory:" }) }); f.faux.setResponses([...planResponses(), endResponse()]);
   const plan = await f.runtime.prompt("Recommend two night songs. Do not save them."); assert.equal(plan.playlist_plan.track_count, 2);
   f.faux.setResponses([...removalResponses(), endResponse()]); const removal = await f.runtime.prompt('Instead remove playlist "Night Drive".');
   assert.equal(f.application.pendingSpotifyPlaylistStatus().state, "none");
-  f.faux.setResponses([use("moondog_spotify_playlist_write", { name: "Unrequested Playlist", pending_plan: true }), endResponse()]);
+  f.faux.setResponses([use("moondog_playlist_save", { name: "Unrequested Playlist", pending_plan: true, to_spotify: true }), endResponse()]);
   const denied = await f.runtime.prompt(removal.spotify_removal_preview.confirmation); assert.equal(f.writes.length, 0);
+  assert.deepEqual(f.application.libraryStore.view().playlists.map((playlist) => playlist.id), ["saved"]);
   assert.match(denied.text, /No library removal was sent/); assert.doesNotMatch(denied.text, /Done/);
   assert.equal(denied.spotify_removal_confirmation.state, "not_sent");
   f.faux.setResponses([use("moondog_spotify_playlist_remove", { action: "confirm" }), endResponse()]);
@@ -205,12 +207,16 @@ for (const first of ["plan", "remove"]) test(`new-plan and removal previews are 
 });
 
 test("a later new plan replaces removal authority and can be explicitly saved", async (t) => {
-  const f = fixture(t); f.faux.setResponses([...removalResponses(), endResponse()]); await f.runtime.prompt('Remove playlist "Night Drive".');
+  const f = fixture(t, { libraryStore: await openLibraryStore({ databasePath: ":memory:" }) }); f.faux.setResponses([...removalResponses(), endResponse()]); await f.runtime.prompt('Remove playlist "Night Drive".');
   f.faux.setResponses([...planResponses(), endResponse()]); await f.runtime.prompt("Instead recommend two night songs.");
   assert.equal(f.application.spotifyRemovalStatus().state, "none");
-  f.faux.setResponses([use("moondog_spotify_playlist_write", { name: "Requested Night Songs", pending_plan: true }), endResponse()]);
-  await f.runtime.prompt('Save the shown plan as "Requested Night Songs".');
+  // The plan becomes a playlist in the library, and Spotify gets its copy because the listener named Spotify.
+  f.faux.setResponses([use("moondog_playlist_save", { name: "Requested Night Songs", pending_plan: true, to_spotify: true }), endResponse()]);
+  const saved = await f.runtime.prompt('Save the shown plan to Spotify as "Requested Night Songs".');
   assert.deepEqual(f.writes.map((write) => write.slice(0, 2)), [["POST", "/v1/me/playlists"], ["POST", "/v1/playlists/newfictionalplaylist/items"]]);
+  assert.deepEqual([saved.playlist_save.playlist.name, saved.playlist_save.playlist.track_count, saved.playlist_save.spotify.state], ["Requested Night Songs", 2, "created"]);
+  const kept = f.application.libraryStore.view().playlists.find((playlist) => playlist.name === "Requested Night Songs");
+  assert.equal(f.application.libraryStore.playlist(kept.id).exports[0].id, "newfictionalplaylist");
 });
 
 test("cancelled removal preview restores the prior displayed new plan without removal authority", async (t) => {
@@ -228,8 +234,7 @@ test("exact removal confirmation cannot authorize any other Spotify write arm", 
     () => f.application.spotifyControl({ action: "pause" }), () => f.application.spotifyTransfer({ deviceId: "fictionaldevice" }),
     () => f.application.spotifyAddToQueue({ itemRefId: item.item_ref_id }), () => f.application.spotifyQueueSimilar(),
     () => f.application.spotifyPlayPendingPlan(), () => f.application.spotifyQueuePendingPlan(),
-    () => f.application.spotifyCreatePlaylist({ name: "Wrong", trackRefs: [] }), () => f.application.spotifyCreatePendingPlaylist({ name: "Wrong" }),
-    () => f.application.writeSpotifyPlaylist({ name: "Wrong" }, [item.uri]),
+    () => f.application.savePlaylistPlan({ name: "Wrong", trackRefs: [] }), () => f.application.savePlaylistPlan({ name: "Wrong", pending: true, toSpotify: true }),
     () => f.application.spotifySaveLibraryTracks({ trackRefs: [] }), () => f.application.spotifySaveLibraryItems({ itemRefs: [item.item_ref_id] }),
     () => f.application.buildPlaylistPlan({}),
   ];

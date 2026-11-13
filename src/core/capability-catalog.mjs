@@ -593,20 +593,6 @@ const catalog = [
     },
   },
   {
-    id: "spotify.playlist.write",
-    version: "1",
-    state: "enabled",
-    effect: "write_external",
-    description:
-      "Create one private Spotify playlist from the exact validated playlist plan explicitly requested by the user.",
-    requires_spotify: true,
-    requires_playlist_services: true,
-    agent_tool: {
-      name: "moondog_spotify_playlist_write",
-      label: N_("Save the playlist to Spotify"),
-    },
-  },
-  {
     id: "collection.list",
     version: "1",
     state: "enabled",
@@ -659,6 +645,18 @@ const catalog = [
     agent_tool: {
       name: "moondog_collection_play",
       label: N_("Play from the library"),
+    },
+  },
+  {
+    id: "collection.plan_save",
+    version: "1",
+    state: "enabled",
+    effect: "write_external",
+    description: "Keep the exact validated playlist plan as a playlist in the listener's library, and send it to Spotify as that playlist's copy when the listener names Spotify.",
+    requires_playlist_services: true,
+    agent_tool: {
+      name: "moondog_playlist_save",
+      label: N_("Save the playlist"),
     },
   },
   {

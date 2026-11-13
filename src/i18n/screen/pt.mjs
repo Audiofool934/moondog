@@ -905,7 +905,7 @@ export default {
   "Remove a playlist from your library": "Remover uma playlist da sua biblioteca",
   "Preview a playlist change": "Prévia de uma mudança na playlist",
   "Change a Spotify playlist": "Mudar uma playlist do Spotify",
-  "Save the playlist to Spotify": "Salvar a playlist no Spotify",
+  "Save the playlist": "Salvar a playlist",
   "Choose how hard the model thinks": "Escolha quanto o modelo pensa",
   "Use /effort, or /effort <level>.": "Use /effort, ou /effort <nível>.",
   "Choose a model with /model first.": "Primeiro escolha um modelo com /model.",

@@ -70,8 +70,9 @@ export default {
   "queue.notAddedHeading": "还没加入：",
   "queue.earlierReceipt": "这是上次队列操作的结果；这次澄清没有再次添加歌曲。",
 
-  "playlist.partialUnknown": ({ name }) => `Spotify 已创建私有歌单「${name}」，但加入曲目的结果尚未确认。请检查歌单后再决定是否重试。`,
-  "playlist.partialEmpty": ({ name }) => `Spotify 已创建私有歌单「${name}」，但未能加入曲目；这个空歌单已经存在，请检查后再决定是否重试。`,
+  "playlist.kept": ({ name, count }) => `已存进你的资料库，歌单「${name}」（${count} 首）。`,
+  "playlist.copyUnknown": ({ name }) => `Spotify 上「${name}」的副本是否建好尚未确认。歌单已在你的资料库里；再次导出前请先看一下 Spotify。`,
+  "playlist.copyFailed": ({ name }) => `Spotify 上「${name}」的副本没有建成。歌单已在你的资料库里，可以再导出一次。`,
   "playlist.saved": ({ name, count }) => `已保存为 Spotify 私有歌单「${name}」（${count} 首）。`,
 
   "action.playback.resume": "播放请求",

@@ -9,7 +9,6 @@ export const SPOTIFY_WEB_API_LIMITS = Object.freeze({
   queueItemsMax: 50,
   artistsPerItemMax: 5,
   searchResultsMax: 10,
-  playlistTracksMax: 20,
   playlistsPageMax: 50,
   playlistItemsPageMax: 50,
   playlistEditTracksMax: 100,

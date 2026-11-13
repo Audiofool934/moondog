@@ -282,6 +282,7 @@ const KINDS = [
   [/^moondog_spotify_(?:player_status|now_playing|queue_status)$/u, "status"],
   [/^moondog_web_/u, "web"],
   [/^moondog_(?:playlist_plan|spotify_playlist_)/u, "playlist"],
+  [/^moondog_playlist_save$/u, "keep"],
   [/^moondog_music_preview$/u, "previews"],
   [/^moondog_make_track$/u, "make"],
   [/^moondog_play_made_track$/u, "play"],

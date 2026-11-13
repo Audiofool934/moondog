@@ -3,6 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { openLibraryStore } from "../../src/core/library-store.mjs";
 
 import { AppleProjectionDomainServices, exactTitleArtistMatch } from "../../src/core/apple-projection-domain-services.mjs";
 import { createListeningProfileDomainServices } from "../../src/core/listening-profile-domain-services.mjs";
@@ -344,7 +345,9 @@ test("Avoid keeps a song out of every Spotify play path, and nothing is sent", a
   application.pendingSpotifyPlaylist = { plan, trustedTracks: plan.tracks };
   await assert.rejects(application.spotifyPlayPendingPlan(), blocked);
   await assert.rejects(application.spotifyQueuePendingPlan(), blocked);
-  await assert.rejects(application.writeSpotifyPlaylist({ name: "Fictional" }, ["spotify:track:p1"], { tracks: plan.tracks }), blocked);
+  application.libraryStore = await openLibraryStore({ databasePath: ":memory:" });
+  await assert.rejects(application.savePlaylistPlan({ name: "Fictional", pending: true, toSpotify: true }), blocked);
+  assert.equal(application.libraryStore.view().playlists.length, 1);
   assert.equal(resolved, 0);
   assert.deepEqual(writes, []);
 });

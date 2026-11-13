@@ -70,8 +70,9 @@ export default {
   "queue.notAddedHeading": "まだ追加していない曲:",
   "queue.earlierReceipt": "これは前回のキュー操作の結果です。今回の補足では曲を再度追加していません。",
 
-  "playlist.partialUnknown": ({ name }) => `Spotify に非公開プレイリスト「${name}」を作成しましたが、曲の追加は確認できませんでした。再試行する前にプレイリストを確認してください。`,
-  "playlist.partialEmpty": ({ name }) => `Spotify に非公開プレイリスト「${name}」を作成しましたが、曲は追加されませんでした。空のプレイリストが残っています。再試行する前に確認してください。`,
+  "playlist.kept": ({ name, count }) => `ライブラリにプレイリスト「${name}」として保存しました（${count} 曲）。`,
+  "playlist.copyUnknown": ({ name }) => `Spotify 側の「${name}」のコピーは確認できませんでした。プレイリストはライブラリにあります。もう一度書き出す前に Spotify を確認してください。`,
+  "playlist.copyFailed": ({ name }) => `Spotify 側の「${name}」のコピーは作成されませんでした。プレイリストはライブラリにあり、もう一度書き出せます。`,
   "playlist.saved": ({ name, count }) => `Spotify の非公開プレイリスト「${name}」として保存しました（${count} 曲）。`,
 
   "action.playback.resume": "再生リクエスト",

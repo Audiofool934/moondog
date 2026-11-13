@@ -95,7 +95,8 @@ The product should feel useful before a model or music-service connection is req
 - [x] Export a library playlist to Spotify as a private copy, and let a later export bring that same copy up to date.
   A playlist is made and arranged in the library; a music service reads one in, plays it, or takes a copy of it, and is never where it lives.
   A copy changed on Spotify since the last export is replaced only when the listener says so.
-- [ ] Make the agent's playlist plan a library playlist, and remove the path that writes a plan straight to Spotify (`moondog_spotify_playlist_write`).
+- [x] Make the agent's playlist plan a library playlist: `moondog_playlist_save` keeps the plan in the library, and sends its copy to Spotify in the same call when the listener names Spotify.
+  The path that wrote a plan straight to Spotify is gone.
   The Spotify playlist tools that stay are for what already lives in the listener's Spotify account: read, exact edits, and removal.
   Saved and Spotify's Liked Songs stay separate.
 - [ ] Bring an imported playlist up to date from its link.

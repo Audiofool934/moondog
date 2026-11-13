@@ -905,7 +905,7 @@ export default {
   "Remove a playlist from your library": "把歌单从你的曲库移除",
   "Preview a playlist change": "预览歌单修改",
   "Change a Spotify playlist": "修改 Spotify 歌单",
-  "Save the playlist to Spotify": "把歌单保存到 Spotify",
+  "Save the playlist": "保存歌单",
   "Choose how hard the model thinks": "选择模型思考的程度",
   "Use /effort, or /effort <level>.": "使用 /effort，或 /effort <级别>。",
   "Choose a model with /model first.": "请先用 /model 选择模型。",
