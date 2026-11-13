@@ -551,6 +551,12 @@ img { -webkit-user-drag: none; }
 .reply .text > :first-child { margin-top: 0; }
 .reply .text > :last-child { margin-bottom: 0; }
 .reply .text p { margin: 0 0 0.85em; }
+.reply .text .markdown-table { max-width: 100%; overflow-x: auto; margin: 0 0 0.85em; }
+.reply .text table { width: 100%; border-collapse: collapse; text-wrap: wrap; }
+.reply .text th, .reply .text td { min-width: 6em; padding: 0.35em 0.8em; vertical-align: top; }
+.reply .text th { font-weight: 600; }
+.reply .text th:first-child, .reply .text td:first-child { padding-inline-start: 0; }
+.reply .text th:last-child, .reply .text td:last-child { padding-inline-end: 0; }
 .reply .text ul, .reply .text ol { margin: 0 0 0.85em; padding-inline-start: 1.35em; }
 .reply .text li { margin: 0.2em 0; padding-inline-start: 0.15em; }
 .reply .text li::marker { color: var(--text-3); }
