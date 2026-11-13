@@ -1164,7 +1164,7 @@ export default {
   "{name} was changed on Spotify since the last export, so nothing was sent. Add replace after the name to overwrite it there.": "「{name}」は前回の書き出しのあと Spotify 側で変更されたため、何も送りませんでした。上書きするには名前のあとに replace を付けてください。",
   "{name} has no songs to send.": "「{name}」には送れる曲がありません。",
   "Updated {name} on Spotify.": "Spotify の「{name}」を更新しました。",
-  "{name} is now on Spotify, as a private playlist.": "「{name}」を非公開プレイリストとして Spotify に送りました。",
+  "{name} is now on Spotify.": "「{name}」を Spotify に送りました。",
   "Moondog's tracks stay here; Spotify can't hold them.": "Moondog が作った曲はここに残ります。Spotify には置けません。",
   "Export a playlist": "プレイリストを書き出す",
   "{count} songs went over.": { one: "{count} 曲を送りました。", other: "{count} 曲を送りました。" },

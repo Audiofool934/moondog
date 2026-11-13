@@ -64,8 +64,9 @@ const firstRun = createFirstRun({ settings, send, read: () => ({ run: state.firs
 const sidebar = createSidebar({ root: $("sessions"), state, send, t: tr, open: (id) => openSession(id), store, menuPoint: (event) => menuPoint(event) });
 const library = createLibrary({ root: $("library"), state, send, t: tr, open: (id) => openPlaylist(id), store, menuPoint: (event) => menuPoint(event),
   onBusy: (value) => views.setBusy("library", value),
-  onExport: (playlist) => { notice(tr("exportSending")); send({ type: "library-export", playlistId: playlist.id }); } });
-const shelf = createShelf({ root: $("shelf"), state, send, t: tr, menuPoint: (event) => menuPoint(event), onClose: () => closePlaylist() });
+  onExport: (playlist) => exportPlaylist(playlist) });
+const shelf = createShelf({ root: $("shelf"), state, send, t: tr, menuPoint: (event) => menuPoint(event), onClose: () => closePlaylist(),
+  onExport: (playlist) => exportPlaylist(playlist) });
 const taste = createTaste({ root: $("taste"), state, send, t: tr, onClose: () => closeTaste() });
 // The taste view in the sidebar: a row unfolded there opens the page and lights that artist across its record.
 const tasteList = createTasteList({ root: $("taste-list"), state, send, t: tr, onAsk: (text) => askFromTaste(text),
@@ -1883,6 +1884,10 @@ async function askImport(preview) {
     confirm: t("importConfirm"), cancel: t("cancel"), checkbox: t("importShapesTaste"), checked: preview.owned === true });
   if (!answer?.confirmed) { library.importDone(); return; }
   send({ type: "library-import", token: preview.token, taste: answer.checked === true, folderId: preview.folderId ?? null });
+}
+function exportPlaylist(playlist) {
+  notice(t("exportSending"));
+  send({ type: "library-export", playlistId: playlist.id });
 }
 // A playlist sent to Spotify. A copy changed there since the last export is replaced only when the listener says so.
 async function exported(data) {

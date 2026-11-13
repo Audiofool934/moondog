@@ -664,7 +664,7 @@ const catalog = [
     version: "1",
     state: "enabled",
     effect: "write_external",
-    description: "Export a playlist from the listener's library to Spotify as a private playlist there, or bring the copy an earlier export made up to date.",
+    description: "Export a playlist from the listener's library to Spotify as a playlist there, or bring the copy an earlier export made up to date.",
     requires_spotify: true,
     agent_tool: {
       name: "moondog_collection_export",

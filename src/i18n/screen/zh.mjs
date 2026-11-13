@@ -1164,7 +1164,7 @@ export default {
   "{name} was changed on Spotify since the last export, so nothing was sent. Add replace after the name to overwrite it there.": "“{name}”在上次导出后在 Spotify 上被改过，所以这次没有发送。在名字后加 replace 可以覆盖那边的内容。",
   "{name} has no songs to send.": "“{name}”里没有可以发送的歌。",
   "Updated {name} on Spotify.": "已更新 Spotify 上的“{name}”。",
-  "{name} is now on Spotify, as a private playlist.": "“{name}”已发到 Spotify，是一个私密播放列表。",
+  "{name} is now on Spotify.": "“{name}”已发到 Spotify。",
   "Moondog's tracks stay here; Spotify can't hold them.": "Moondog 做的曲目留在这里，Spotify 放不了它们。",
   "Export a playlist": "导出歌单",
   "{count} songs went over.": { one: "发过去 {count} 首。", other: "发过去 {count} 首。" },

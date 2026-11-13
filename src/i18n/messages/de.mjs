@@ -73,7 +73,7 @@ export default {
   "playlist.kept": ({ name, count }) => `In deiner Mediathek als „${name}“ gespeichert (${count} Titel).`,
   "playlist.copyUnknown": ({ name }) => `Die Spotify-Kopie von „${name}“ wurde nicht bestätigt. Die Playlist ist in deiner Mediathek; prüfe Spotify, bevor du sie erneut exportierst.`,
   "playlist.copyFailed": ({ name }) => `Die Spotify-Kopie von „${name}“ wurde nicht erstellt. Die Playlist ist in deiner Mediathek, und du kannst sie erneut exportieren.`,
-  "playlist.saved": ({ name, count }) => `Als private Spotify-Playlist „${name}“ gespeichert (${count} Titel).`,
+  "playlist.saved": ({ name, count }) => `Auf Spotify als Playlist „${name}“ gespeichert (${count} Titel).`,
 
   "action.playback.resume": "Wiedergabe-Anfrage",
   "action.playback.pause": "Pause-Anfrage",

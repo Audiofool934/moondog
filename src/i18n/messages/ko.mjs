@@ -73,7 +73,7 @@ export default {
   "playlist.kept": ({ name, count }) => `보관함에 플레이리스트 "${name}"(${count}곡)으로 저장했습니다.`,
   "playlist.copyUnknown": ({ name }) => `Spotify의 "${name}" 사본은 확인되지 않았습니다. 플레이리스트는 보관함에 있습니다. 다시 내보내기 전에 Spotify를 확인해 주세요.`,
   "playlist.copyFailed": ({ name }) => `Spotify의 "${name}" 사본은 만들어지지 않았습니다. 플레이리스트는 보관함에 있으며 다시 내보낼 수 있습니다.`,
-  "playlist.saved": ({ name, count }) => `Spotify 비공개 플레이리스트 "${name}"(${count}곡)으로 저장했습니다.`,
+  "playlist.saved": ({ name, count }) => `Spotify에 플레이리스트 "${name}"(${count}곡)으로 저장했습니다.`,
 
   "action.playback.resume": "재생 요청",
   "action.playback.pause": "일시 정지 요청",

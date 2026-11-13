@@ -92,7 +92,8 @@ The product should feel useful before a model or music-service connection is req
 - [x] Import a playlist link (Spotify, Apple Music, NetEase Music, QQ Music) into the library as a copy that keeps its link, and let it shape the listener's taste: a playlist they made does by default, any other one only when they say so.
   Playlists are the most direct way for a listener to tell Moondog their taste without exporting their listening data, so this stays a focus.
 - [ ] Read a long Apple Music playlist past the songs its public page lists, through MusicKit in the window, and the same in the terminal.
-- [x] Export a library playlist to Spotify as a private copy, and let a later export bring that same copy up to date.
+- [x] Export a library playlist to Spotify as a copy, and let a later export bring that same copy up to date.
+  Spotify can show the copy as a public playlist, and its Web API cannot make one private; Moondog says so and never calls the copy private.
   A playlist is made and arranged in the library; a music service reads one in, plays it, or takes a copy of it, and is never where it lives.
   A copy changed on Spotify since the last export is replaced only when the listener says so.
 - [x] Make the agent's playlist plan a library playlist: `moondog_playlist_save` keeps the plan in the library, and sends its copy to Spotify in the same call when the listener names Spotify.

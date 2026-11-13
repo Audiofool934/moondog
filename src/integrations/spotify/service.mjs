@@ -1447,7 +1447,7 @@ export function createSpotifyService(options = {}) {
       return actionReceipt("playback.queue.add");
     },
 
-    // A library playlist's copy on Spotify: a new private playlist, or the copy an earlier export made, set to
+    // A library playlist's copy on Spotify: a new playlist, or the copy an earlier export made, set to
     // these songs in this order. previous names that copy and what the export left in it. A copy that holds
     // something else was changed on Spotify and is replaced only when the listener says so; a copy that is gone
     // from their Spotify library is made again.
@@ -1506,7 +1506,7 @@ export function createSpotifyService(options = {}) {
       return {
         ...actionReceipt("playlist.export"),
         state: updated ? "updated" : "created",
-        playlist: { name, track_count: uris.length, is_public: false },
+        playlist: { name, track_count: uris.length },
         playlist_id: copy.id,
         signature: playlistSignature(uris),
       };

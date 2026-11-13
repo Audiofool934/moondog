@@ -73,7 +73,7 @@ export default {
   "playlist.kept": ({ name, count }) => `ライブラリにプレイリスト「${name}」として保存しました（${count} 曲）。`,
   "playlist.copyUnknown": ({ name }) => `Spotify 側の「${name}」のコピーは確認できませんでした。プレイリストはライブラリにあります。もう一度書き出す前に Spotify を確認してください。`,
   "playlist.copyFailed": ({ name }) => `Spotify 側の「${name}」のコピーは作成されませんでした。プレイリストはライブラリにあり、もう一度書き出せます。`,
-  "playlist.saved": ({ name, count }) => `Spotify の非公開プレイリスト「${name}」として保存しました（${count} 曲）。`,
+  "playlist.saved": ({ name, count }) => `Spotify にプレイリスト「${name}」として保存しました（${count} 曲）。`,
 
   "action.playback.resume": "再生リクエスト",
   "action.playback.pause": "一時停止",

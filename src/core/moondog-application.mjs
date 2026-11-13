@@ -985,7 +985,7 @@ export class MoondogApplication {
 
   /**
    * Exports a library playlist to a music service, as a copy there. The playlist stays the listener's own, here;
-   * the copy follows it: the first export makes a private playlist, and a later one brings that same playlist up
+   * the copy follows it: the first export makes a playlist there, and a later one brings that same playlist up
    * to date. A copy changed on the service since the last export is left alone (changed_on_service) until the
    * listener says to replace it. Spotify is the service that takes a playlist so far. Tracks Moondog made have
    * no recording there, so they stay out (left_out_made).

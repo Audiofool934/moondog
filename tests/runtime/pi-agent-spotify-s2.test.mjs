@@ -734,7 +734,7 @@ test("agent plans a playlist, keeps it in the library, and sends its Spotify cop
   assert.match(result.text, /Saved in your library as "Night Drive" \(2 songs\)/u);
   assert.match(
     result.text,
-    /Saved as the private Spotify playlist "Night Drive" \(2 tracks\)/u,
+    /Saved on Spotify as the playlist "Night Drive" \(2 tracks\)/u,
   );
   assert.equal(
     result.text.includes("Saved the playlist to Spotify."),

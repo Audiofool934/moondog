@@ -73,7 +73,7 @@ export default {
   "playlist.kept": ({ name, count }) => `已存进你的资料库，歌单「${name}」（${count} 首）。`,
   "playlist.copyUnknown": ({ name }) => `Spotify 上「${name}」的副本是否建好尚未确认。歌单已在你的资料库里；再次导出前请先看一下 Spotify。`,
   "playlist.copyFailed": ({ name }) => `Spotify 上「${name}」的副本没有建成。歌单已在你的资料库里，可以再导出一次。`,
-  "playlist.saved": ({ name, count }) => `已保存为 Spotify 私有歌单「${name}」（${count} 首）。`,
+  "playlist.saved": ({ name, count }) => `已保存到 Spotify，歌单「${name}」（${count} 首）。`,
 
   "action.playback.resume": "播放请求",
   "action.playback.pause": "暂停请求",

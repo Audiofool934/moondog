@@ -248,7 +248,7 @@ test("Spotify service exports a playlist as a new private playlist and returns a
     effect: "write_external",
     action: "playlist.export",
     state: "created",
-    playlist: { name: "Night Drive", track_count: 2, is_public: false },
+    playlist: { name: "Night Drive", track_count: 2 },
     playlist_id: "playlist-1",
     signature: "string",
   });

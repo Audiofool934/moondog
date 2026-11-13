@@ -73,7 +73,7 @@ export default {
   "playlist.kept": ({ name, count }) => `Guardada en tu biblioteca como "${name}" (${count} canciones).`,
   "playlist.copyUnknown": ({ name }) => `No se confirmó la copia de "${name}" en Spotify. La playlist está en tu biblioteca; revisa Spotify antes de exportarla de nuevo.`,
   "playlist.copyFailed": ({ name }) => `No se hizo la copia de "${name}" en Spotify. La playlist está en tu biblioteca y puedes exportarla de nuevo.`,
-  "playlist.saved": ({ name, count }) => `Guardada como la playlist privada de Spotify "${name}" (${count} canciones).`,
+  "playlist.saved": ({ name, count }) => `Guardada en Spotify como la playlist "${name}" (${count} canciones).`,
 
   "action.playback.resume": "la petición de reproducción",
   "action.playback.pause": "la pausa",

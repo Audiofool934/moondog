@@ -1127,7 +1127,7 @@ export async function runMoondogTui({
         addMoondogMessage(sent.state === "empty" ? tr("{name} has no songs to send.", { name: nameOf(playlist) }) : tr("None of its songs could be found."));
         return;
       }
-      const text = sent.state === "updated" ? tr("Updated {name} on Spotify.", { name: nameOf(playlist) }) : tr("{name} is now on Spotify, as a private playlist.", { name: nameOf(playlist) });
+      const text = sent.state === "updated" ? tr("Updated {name} on Spotify.", { name: nameOf(playlist) }) : tr("{name} is now on Spotify.", { name: nameOf(playlist) });
       addMoondogMessage([text, tr.n(sent.exported, "{count} song went over.", "{count} songs went over."),
         sent.not_found ? tr("Some songs couldn't be found.") : "",
         sent.left_out_made ? tr("Moondog's tracks stay here; Spotify can't hold them.") : "", sent.url].filter(Boolean).join(" "));

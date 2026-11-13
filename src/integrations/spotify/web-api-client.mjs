@@ -904,9 +904,12 @@ export function createSpotifyWebApiClient({
         await request("/me/playlists", {
           method: "POST",
           signal,
+          // Spotify writes the word "null" as the description when none is sent, so an empty one always goes.
+          // public: false asks to keep the playlist off the listener's profile. Spotify's own apps can still show it
+          // as a public playlist, and the Web API has no way to make one private, so no receipt calls it private.
           body: {
             name,
-            ...(description ? { description } : {}),
+            description: description || "",
             public: false,
           },
         }),

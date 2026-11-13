@@ -74,7 +74,7 @@ export default {
   "playlist.kept": ({ name, count }) => `Saved in your library as "${name}" (${count} songs).`,
   "playlist.copyUnknown": ({ name }) => `The Spotify copy of "${name}" was not confirmed. The playlist is in your library; check Spotify before you export it again.`,
   "playlist.copyFailed": ({ name }) => `The Spotify copy of "${name}" was not made. The playlist is in your library, and you can export it again.`,
-  "playlist.saved": ({ name, count }) => `Saved as the private Spotify playlist "${name}" (${count} tracks).`,
+  "playlist.saved": ({ name, count }) => `Saved on Spotify as the playlist "${name}" (${count} tracks).`,
 
   "action.playback.resume": "playback request",
   "action.playback.pause": "pause request",

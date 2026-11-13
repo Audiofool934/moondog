@@ -1164,7 +1164,7 @@ export default {
   "{name} was changed on Spotify since the last export, so nothing was sent. Add replace after the name to overwrite it there.": "{name} cambió en Spotify desde la última exportación, así que no se envió nada. Añade replace después del nombre para sobrescribirla allí.",
   "{name} has no songs to send.": "{name} no tiene canciones que enviar.",
   "Updated {name} on Spotify.": "{name} se actualizó en Spotify.",
-  "{name} is now on Spotify, as a private playlist.": "{name} ya está en Spotify, como lista privada.",
+  "{name} is now on Spotify.": "{name} ya está en Spotify.",
   "Moondog's tracks stay here; Spotify can't hold them.": "Las pistas de Moondog se quedan aquí; Spotify no puede guardarlas.",
   "Export a playlist": "Exportar una lista",
   "{count} songs went over.": { one: "Se envió {count} canción.", other: "Se enviaron {count} canciones." },
