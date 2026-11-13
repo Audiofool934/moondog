@@ -2088,7 +2088,7 @@ function renderInspector() {
     setIcon($("device-row"), "laptop");
   }
   set($("repeat"), "hidden", !spotifyNow || now.repeat !== "track");
-  set($("stop-previews"), "hidden", !now?.local);
+  set($("stop-previews"), "hidden", !now?.local && !neteaseNow);
   name($("stop-previews"), now?.preview ? t("stopPreviews") : t("stop"));
   // The song's own page: Apple Music for a preview, Spotify for a song Spotify plays.
   const external = $("external");
@@ -2165,6 +2165,8 @@ function control(action, via = "button") {
   const rule = { toggle: playing.playing ? "pausing" : "resuming", next: "skipping_next", previous: "skipping_prev" }[action];
   if (!can(now, rule)) return;
   const at = { observedAt: Date.now() };
+  // A keyboard seek still waiting for the keys to rest belongs to the song being left; drop it.
+  if (action !== "toggle" && keySeek) { clearTimeout(keySeek.timer); keySeek = null; }
   if (action === "toggle") {
     // The button answers at once; the next read from Spotify confirms it.
     send({ type: "control", action: playing.playing ? "pause" : "resume", via });
@@ -2189,8 +2191,16 @@ $("mini-open").addEventListener("click", () => togglePanel("inspector"));
 $("mini-toggle").addEventListener("click", () => control("toggle"));
 $("mini-next").addEventListener("click", () => control("next"));
 // On air, the stop under a made track, or under the record being cut, takes the stream off the air too.
+// NetEase plays through ncm-cli, which keeps its own queue; stop ends that song and the queue.
 $("stop-previews").addEventListener("click", () => {
-  if (state.onAir && nowPlaying()?.generated) stopOnAir();
+  const now = nowPlaying();
+  if (!now?.local && now?.service === "netease") {
+    send({ type: "control", action: "stop", via: "button" });
+    state.player = { ...state.player, now: null, next: [] };
+    renderInspector();
+    return;
+  }
+  if (state.onAir && now?.generated) stopOnAir();
   previews.stop();
 });
 
