@@ -329,6 +329,17 @@ export function createNeteasePlayer({
       await beforePlay?.();
       await playAt(index + 1);
     },
+    // A song in Up next, counted from the one after this (1 is the next): it plays now, past the ones before it.
+    async jump({ ahead, beforePlay } = {}) {
+      if (!Number.isInteger(ahead) || ahead < 1 || index + ahead >= queue.length) throw failure("netease_failed", "That song is no longer queued.");
+      await beforePlay?.();
+      await playAt(index + ahead);
+    },
+    // A song taken out of Up next, counted the same way. The one playing stays.
+    remove({ ahead } = {}) {
+      if (!Number.isInteger(ahead) || ahead < 1 || index + ahead >= queue.length) return;
+      queue = [...queue.slice(0, index + ahead), ...queue.slice(index + ahead + 1)];
+    },
     // Back to the start of the song, or to the one before when it has only just begun.
     async previous({ beforePlay } = {}) {
       const now = await state();

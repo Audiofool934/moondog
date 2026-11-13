@@ -156,6 +156,11 @@ export function createPlayerNow() {
       if (event?.type === "queue" && Array.isArray(event.tracks)) { this.queued(event.tracks); return; }
       if (!queue) return;
       if (event?.type === "stopped") { queue = null; return; }
+      // A song the listener took out of Up next keeps its place, so the positions the player reports still match.
+      if (event?.type === "removed") {
+        if (Number.isInteger(event.position) && event.position > queue.index + 1 && event.position <= queue.tracks.length) queue.tracks[event.position - 1].removed = true;
+        return;
+      }
       if (Number.isInteger(event?.position) && event.position >= 1 && event.position <= queue.tracks.length) queue.index = event.position - 1;
       if (event?.type === "playing" || event?.type === "paused" || event?.type === "loading") queue.state = event.type;
     },
@@ -164,7 +169,7 @@ export function createPlayerNow() {
     },
     /** The song playing and every one after it, for keeping the whole queue: read() shows only ten. */
     remaining() {
-      return queue ? queue.tracks.slice(queue.index).map((track) => ({ ...track })) : [];
+      return queue ? queue.tracks.slice(queue.index).filter((track) => !track.removed).map((track) => ({ ...track })) : [];
     },
     /** null when nothing is queued, or { state, song, position, count, next } with up to ten songs after it. */
     read() {
@@ -175,7 +180,7 @@ export function createPlayerNow() {
         song: { ...queue.tracks[queue.index] },
         position: queue.index + 1,
         count: queue.tracks.length,
-        next: queue.tracks.slice(queue.index + 1, queue.index + 11).map((track) => ({ ...track })),
+        next: queue.tracks.slice(queue.index + 1).filter((track) => !track.removed).slice(0, 10).map((track) => ({ ...track })),
       };
     },
   };

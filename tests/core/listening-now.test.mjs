@@ -84,3 +84,16 @@ test("Moondog's own player is read first, with what it queued and the tracks it 
   assert.equal(result.active, "apple_music");
   assert.equal(result.sources.find((source) => source.service === "moondog").state, "stopped");
 });
+
+test("a song taken out of Up next leaves what the agent reads, and the player's positions still match", async () => {
+  const { createPlayerNow } = await import("../../src/core/listening-now.mjs");
+  const now = createPlayerNow();
+  now.queued([{ title: "One", artist_credit: "A" }, { title: "Two", artist_credit: "B" }, { title: "Three", artist_credit: "C" }]);
+  now.observe({ type: "playing", position: 1 });
+  now.observe({ type: "removed", position: 1 });
+  now.observe({ type: "removed", position: 2 });
+  assert.deepEqual(now.read().next.map((track) => track.title), ["Three"]);
+  assert.deepEqual(now.remaining().map((track) => track.title), ["One", "Three"]);
+  now.observe({ type: "playing", position: 3 });
+  assert.equal(now.read().song.title, "Three");
+});
