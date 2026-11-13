@@ -483,20 +483,25 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     pollTimer = setTimeout(() => void refreshPlayer({ chosen: Date.now() >= chosenDue - 500 }), Math.max(0, Math.min(chosenDue, musicDue) - now));
   };
 
+  // Transport presses reach the player one at a time, in the order pressed: a skip sent while a seek is still
+  // on its way could otherwise land first and move the wrong song.
+  let controlLine = Promise.resolve();
   async function control(action, via, positionMs, ahead) {
     // The buttons act on the player the window shows.
     const musicApp = shownSource === "apple_music";
     const netease = !musicApp && base.playbackService === "netease";
     const service = musicApp ? base.musicApp : netease ? base.neteasePlayer : base.spotifyConnection?.service;
     const ready = musicApp || (netease ? base.neteaseReady?.() === true : base.spotifyReady?.() === true);
-    if (!service || !ready || !["pause", "resume", "next", "previous", "seek", "jump", "remove"].includes(action)) return;
+    if (!service || !ready || !["pause", "resume", "next", "previous", "seek", "jump", "remove", "stop"].includes(action)) return;
     // A song in Up next, counted from the next one: Spotify and the Music app reach it skip by skip, NetEase at once;
     // only NetEase's queue, which Moondog keeps, can take one out.
     if ((action === "jump" || action === "remove") && !(Number.isInteger(ahead) && ahead >= 1 && ahead <= 20)) return;
     if (action === "remove" && !netease) return;
+    // Only NetEase's player, which Moondog runs, stops; Spotify and the Music app pause instead.
+    if (action === "stop" && !netease) return;
     toolTrace?.record({ source: "window", tool: "player_control", state: "start", args: { action, via: via ?? "button" } });
     hold = { source: shownSource, until: Date.now() + CONTROL_HOLD_MS };
-    try {
+    const act = async () => {
       if (action === "resume") await base.quietOtherPlayers?.(musicApp ? "music_app" : netease ? "netease" : "spotify");
       // A seek is a click on the song's progress; the rest are the transport buttons and the menu.
       if (action === "seek") await service.seek({ positionMs: Math.max(0, Math.round(Number(positionMs) || 0)) });
@@ -504,6 +509,11 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
       else if (action === "jump" && netease) await service.jump({ ahead });
       else if (action === "jump") for (let skip = 0; skip < ahead; skip += 1) await service.next({});
       else await service[action]({});
+    };
+    const done = controlLine.then(act);
+    controlLine = done.catch(() => {});
+    try {
+      await done;
     } catch (error) {
       if (noteLimit(error)) { send(limited()); schedulePlayer(); return; }
       send({ type: "player-error", action, message: errorText(error) });

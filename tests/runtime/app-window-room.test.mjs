@@ -883,3 +883,47 @@ test("Stable Audio 3's setup reaches the window as it goes, and a download start
     await harness.stop();
   }
 });
+
+test("transport presses reach NetEase one at a time, and the window's stop ends NetEase only", async () => {
+  mock.timers.enable({ apis: ["setTimeout", "Date"], now: 1_000_000 });
+  const calls = [];
+  const seekHeld = deferred();
+  const neteasePlayer = {
+    status() { return { state: "ready" }; },
+    async nowPlaying() { return { state: "playing", song: { id: "1", title: "Here", artists: ["N"], duration_ms: 200_000 }, position_ms: 0, next: [] }; },
+    async seek() { calls.push("seek start"); await seekHeld.promise; calls.push("seek end"); },
+    async next() { calls.push("next"); },
+    async stop() { calls.push("stop"); },
+  };
+  const desk = application("A");
+  desk.playbackService = "netease";
+  desk.neteasePlayer = neteasePlayer;
+  desk.neteaseReady = () => true;
+  const harness = await openRoom({ application: desk });
+  try {
+    await tick();
+    // A post waits for its press to finish, so these two go out together.
+    const seek = harness.post({ type: "control", action: "seek", positionMs: 60_000 });
+    const skip = harness.post({ type: "control", action: "next" });
+    await tick();
+    // The skip waits for the seek sent before it.
+    assert.deepEqual(calls, ["seek start"]);
+    seekHeld.resolve();
+    await Promise.all([seek, skip]);
+    assert.deepEqual(calls, ["seek start", "seek end", "next"]);
+    await harness.post({ type: "control", action: "stop" });
+    await tick();
+    assert.equal(calls.at(-1), "stop");
+    // Spotify has no stop here; the press changes nothing.
+    desk.playbackService = "spotify";
+    desk.ready = true;
+    desk.spotifyConnection = { service: { async stop() { calls.push("spotify stop"); },
+      async currentPlayer() { return { state: "available", is_playing: false }; }, async queue() { return { queue: [] }; } } };
+    await harness.post({ type: "control", action: "stop" });
+    await tick();
+    assert.equal(calls.includes("spotify stop"), false);
+  } finally {
+    mock.timers.reset();
+    await harness.stop();
+  }
+});
