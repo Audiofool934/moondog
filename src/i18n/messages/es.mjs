@@ -70,9 +70,10 @@ export default {
   "queue.notAddedHeading": "Sin añadir:",
   "queue.earlierReceipt": "Este es el resultado de la cola anterior; esta aclaración no volvió a añadir las canciones.",
 
-  "playlist.partialUnknown": ({ name }) => `Spotify creó la playlist privada "${name}", pero no confirmó que se añadieran las canciones. Revísala antes de decidir si lo intentas de nuevo.`,
-  "playlist.partialEmpty": ({ name }) => `Spotify creó la playlist privada "${name}", pero no añadió las canciones. La playlist vacía ya existe; revísala antes de decidir si lo intentas de nuevo.`,
-  "playlist.saved": ({ name, count }) => `Guardada como la playlist privada de Spotify "${name}" (${count} canciones).`,
+  "playlist.kept": ({ name, count }) => `Guardada en tu biblioteca como "${name}" (${count} canciones).`,
+  "playlist.copyUnknown": ({ name }) => `No se confirmó la copia de "${name}" en Spotify. La playlist está en tu biblioteca; revisa Spotify antes de exportarla de nuevo.`,
+  "playlist.copyFailed": ({ name }) => `No se hizo la copia de "${name}" en Spotify. La playlist está en tu biblioteca y puedes exportarla de nuevo.`,
+  "playlist.saved": ({ name, count }) => `Guardada en Spotify como la playlist "${name}" (${count} canciones).`,
 
   "action.playback.resume": "la petición de reproducción",
   "action.playback.pause": "la pausa",

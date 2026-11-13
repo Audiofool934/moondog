@@ -172,7 +172,7 @@ Songs Moondog chose for you do not count as your own taste.
 | --- | --- |
 | A model through Pi | Conversation, discovery, and playlists built together. |
 | A web search service | `/web` lookups with links to their sources, through DeepSeek (`/auth deepseek`, which also reads pages), Brave Search (`/auth brave`), or your own signed-in Codex CLI. |
-| Spotify sign-in | Playback, and private playlists made only when you ask. |
+| Spotify sign-in | Playback, and playlists made only when you ask. |
 | NetEase Music | Whole songs through its own `ncm-cli`, for listeners in mainland China. |
 
 Your profile never touches the network.
@@ -188,6 +188,7 @@ Read the [connection and data details](docs/TERMINAL_GUIDE.md) before you connec
 `/library save` keeps what is playing, and `/library play Night drive` plays a playlist on the service you chose.
 `/library import <link>` copies a Spotify, Apple Music, NetEase Music or QQ Music playlist into it.
 A playlist you made on Spotify also shapes your taste; for any other one, you decide.
+`/library export Night drive` puts a copy of a playlist on Spotify, and exporting it again updates that copy.
 
 ## Music it makes
 

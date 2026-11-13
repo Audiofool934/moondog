@@ -174,6 +174,11 @@ Songs by artists and the tracks Moondog made sit in it side by side, and each sa
 `/library import <link>` copies a Spotify, Apple Music, NetEase Music or QQ Music playlist into your library.
 A playlist you made on Spotify also shapes your taste; for any other one, add `taste` after the link if it should, or `no-taste` if yours shouldn't.
 A Spotify link needs Spotify connected; the others need no sign-in.
+`/library export Night drive` sends a playlist to Spotify as a playlist there.
+Spotify decides who can see it: the copy can show as a public playlist, and Spotify's Web API gives Moondog no way to make it private, so change that in Spotify if you want to.
+The playlist stays yours in the library, and Spotify holds a copy: exporting it again updates that same copy with the songs, order and name it has now.
+If you changed the copy on Spotify since the last export, nothing is sent; add `replace` after the name to overwrite it.
+Tracks Moondog made stay in the library, because Spotify can't hold them.
 With Apple Music, its songs and Moondog's tracks play in one queue in Moondog's player; with Spotify or NetEase, its songs play there and Moondog's tracks are left out.
 You can also ask in your own words, such as "save this" or "play my rainy-day playlist".
 The desktop app shows the same library in its sidebar (⌥⌘L), with folders inside folders, four levels deep.
@@ -1370,7 +1375,7 @@ An explicit request to queue more music like the current playback uses the curre
 
 Spotify reads have at most three total API attempts shared between rate-limit recovery and one reactive token refresh, with at most ten seconds of cancellable backoff per retry. Writes are not automatically replayed except for the single exact-target playback recovery from a definite `NO_ACTIVE_DEVICE` rejection described above. Queue, skip, transfer, authentication rejection and uncertain writes are never replayed. After a definite authentication rejection, credentials can refresh for a later explicit request while the rejected action remains unapplied. Concurrent requests within one authentication instance coordinate token refresh; cancelling one caller does not cancel other callers, and logout prevents that instance's late refresh from restoring credentials. Separate processes do not share refresh coordination.
 
-When Spotify is the only connected playlist-write provider, a direct request to create, save, or sync a playlist defaults to one private Spotify write in the same turn.
+A direct request to create or save a playlist keeps it in your library in the same turn, and also puts a copy on Spotify when you name Spotify.
 
 If a turn ends with a validated plan but no write, that provider-neutral plan remains pending in the current process so a follow-up such as `可以`, `就这个`, or `保存它` writes the exact prior order instead of planning again.
 

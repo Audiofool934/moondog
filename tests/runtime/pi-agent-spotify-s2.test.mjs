@@ -11,6 +11,7 @@ import {
 } from "@earendil-works/pi-ai";
 
 import { listAgentCapabilityDescriptors } from "../../src/core/capability-catalog.mjs";
+import { openLibraryStore } from "../../src/core/library-store.mjs";
 import { MoondogApplication } from "../../src/core/moondog-application.mjs";
 import {
   createSyntheticDomainServices,
@@ -182,21 +183,17 @@ function fakeSpotifyService() {
         previous_track_count: 2,
       };
     },
-    async createPlaylistWithTracks(input) {
-      calls.push(["playlist.write", input]);
+    async exportPlaylist(input) {
+      calls.push(["playlist.export", { name: input.name, uris: input.uris }]);
       return {
         provider: "spotify",
         ok: true,
         effect: "write_external",
-        action: "playlist.write",
-        state: "accepted",
-        playlist: {
-          name: input.name,
-          track_count: input.uris.length,
-          is_public: false,
-        },
-        playlist_uri: "spotify:playlist:fake-playlist",
+        action: "playlist.export",
+        state: "created",
+        playlist: { name: input.name, track_count: input.uris.length, is_public: false },
         playlist_id: "fake-playlist",
+        signature: "fake-signature",
       };
     },
     async saveTracks(input) {
@@ -246,10 +243,19 @@ function fakeSpotifyService() {
   };
 }
 
-function spotifyApplication({ missingScopes = [] } = {}) {
+// A saved plan is a playlist in the library, so the tests that save one start with a library.
+const library = () => openLibraryStore({ databasePath: ":memory:" });
+const libraryTitles = (application, name) => {
+  const store = application.libraryStore;
+  const found = store.view().playlists.find((playlist) => playlist.name === name);
+  return found ? store.playlist(found.id).entries.map((entry) => entry.title) : null;
+};
+
+function spotifyApplication({ missingScopes = [], libraryStore } = {}) {
   const service = fakeSpotifyService();
   return {
     application: new MoondogApplication({
+      ...(libraryStore ? { libraryStore } : {}),
       importsRoot: "/private/moondog-synthetic-missing-source",
       domainServices: createSyntheticDomainServices({
         subjectScope: { subjectId: "trusted-synthetic-subject" },
@@ -317,7 +323,7 @@ test("S2 Spotify catalog capabilities register only with Spotify and domain serv
     "moondog_spotify_resolve_tracks",
     "moondog_spotify_library_check",
     "moondog_spotify_library_save",
-    "moondog_spotify_playlist_write",
+    "moondog_collection_export",
     "moondog_spotify_playlist_read",
     "moondog_spotify_playlist_edit_preview",
     "moondog_spotify_playlist_edit_apply",
@@ -335,9 +341,15 @@ test("S2 Spotify catalog capabilities register only with Spotify and domain serv
   });
   assert.equal(
     noSpotify.some(
-      (descriptor) => descriptor.tool_name === "moondog_spotify_playlist_write",
+      (descriptor) => descriptor.tool_name === "moondog_collection_export",
     ),
     false,
+  );
+  assert.equal(
+    listAgentCapabilityDescriptors({ domainServicesReady: true, playlistServicesReady: true, spotifyReady: false })
+      .some((descriptor) => descriptor.tool_name === "moondog_playlist_save"),
+    true,
+    "a plan is saved in the library with or without Spotify",
   );
 
   const spotifyOnly = listAgentCapabilityDescriptors({
@@ -638,8 +650,8 @@ test("aborted existing-playlist preview restores the prior host-owned exact draf
   );
 });
 
-test("agent resolves, plans, and writes a private Spotify playlist in one prompt", async () => {
-  const { application, service } = spotifyApplication();
+test("agent plans a playlist, keeps it in the library, and sends its Spotify copy in one prompt", async () => {
+  const { application, service } = spotifyApplication({ libraryStore: await library() });
   const { faux, runtime } = configuredRuntime(application);
   faux.setResponses([
     fauxAssistantMessage(
@@ -696,11 +708,12 @@ test("agent resolves, plans, and writes a private Spotify playlist in one prompt
       const [search] = toolResults(context, "moondog_library_search");
       return fauxAssistantMessage(
         [
-          fauxToolCall("moondog_spotify_playlist_write", {
+          fauxToolCall("moondog_playlist_save", {
             name: "Night Drive",
             track_refs: search.tracks.map((track) => ({
               track_ref_id: track.track_ref_id,
             })),
+            to_spotify: true,
           }),
         ],
         { stopReason: "toolUse" },
@@ -715,11 +728,13 @@ test("agent resolves, plans, and writes a private Spotify playlist in one prompt
 
   assert.equal(result.status, "completed");
   assert.equal(result.playlist_plan.track_count, 2);
-  assert.equal(result.spotify_playlist_write.playlist.name, "Night Drive");
+  assert.deepEqual([result.playlist_save.playlist.name, result.playlist_save.playlist.track_count, result.playlist_save.spotify.state], ["Night Drive", 2, "created"]);
+  assert.deepEqual(libraryTitles(application, "Night Drive"), result.playlist_plan.tracks.map((track) => track.title));
   assert.match(result.text, /2-track plan from your library/u);
+  assert.match(result.text, /Saved in your library as "Night Drive" \(2 songs\)/u);
   assert.match(
     result.text,
-    /Saved as the private Spotify playlist "Night Drive" \(2 tracks\)/u,
+    /Saved on Spotify as the playlist "Night Drive" \(2 tracks\)/u,
   );
   assert.equal(
     result.text.includes("Saved the playlist to Spotify."),
@@ -728,7 +743,7 @@ test("agent resolves, plans, and writes a private Spotify playlist in one prompt
   );
   assert.deepEqual(service.calls, [
     [
-      "playlist.write",
+      "playlist.export",
       {
         name: "Night Drive",
         uris: [
@@ -740,8 +755,8 @@ test("agent resolves, plans, and writes a private Spotify playlist in one prompt
   ]);
 });
 
-test("agent saves the exact pending plan after a bare next-turn approval", async () => {
-  const { application, service } = spotifyApplication();
+test("agent saves the exact pending plan in the library after a bare next-turn approval", async () => {
+  const { application, service } = spotifyApplication({ libraryStore: await library() });
   const { faux, runtime } = configuredRuntime(application);
   faux.setResponses([
     fauxAssistantMessage(
@@ -781,7 +796,7 @@ test("agent saves the exact pending plan after a bare next-turn approval", async
   faux.setResponses([
     fauxAssistantMessage(
       [
-        fauxToolCall("moondog_spotify_playlist_write", {
+        fauxToolCall("moondog_playlist_save", {
           name: "Night Approval",
           pending_plan: true,
         }),
@@ -793,26 +808,17 @@ test("agent saves the exact pending plan after a bare next-turn approval", async
 
   const saved = await runtime.prompt("可以，就这个，保存它。 ");
 
-  assert.equal(saved.spotify_playlist_write.playlist.name, "Night Approval");
+  assert.equal(saved.playlist_save.playlist.name, "Night Approval");
+  assert.equal("spotify" in saved.playlist_save, false);
   assert.deepEqual(
     saved.playlist_plan.tracks.map((track) => track.title),
     proposed.playlist_plan.tracks.map((track) => track.title),
   );
-  assert.match(saved.text, /已保存为 Spotify 私有歌单/u);
+  assert.deepEqual(libraryTitles(application, "Night Approval"), proposed.playlist_plan.tracks.map((track) => track.title));
+  assert.match(saved.text, /已存进你的资料库，歌单「Night Approval」（2 首）/u);
   assert.doesNotMatch(saved.text, /different playlist/u);
   assert.equal(application.pendingSpotifyPlaylistStatus().state, "none");
-  assert.deepEqual(service.calls, [
-    [
-      "playlist.write",
-      {
-        name: "Night Approval",
-        uris: [
-          "spotify:track:midnight-lines",
-          "spotify:track:glass-highway",
-        ],
-      },
-    ],
-  ]);
+  assert.deepEqual(service.calls, []);
 });
 
 test("agent queues the pending plan in order without saving a playlist", async () => {
@@ -1092,7 +1098,7 @@ test("queueing one catalog track does not collapse into an unvalidated plan", as
 });
 
 test("agent revises a validated pending plan before exact later approval", async () => {
-  const { application, service } = spotifyApplication();
+  const { application, service } = spotifyApplication({ libraryStore: await library() });
   const { faux, runtime } = configuredRuntime(application);
   faux.setResponses([
     fauxAssistantMessage(
@@ -1290,9 +1296,10 @@ test("agent revises a validated pending plan before exact later approval", async
   faux.setResponses([
     fauxAssistantMessage(
       [
-        fauxToolCall("moondog_spotify_playlist_write", {
+        fauxToolCall("moondog_playlist_save", {
           name: "Revised Night",
           pending_plan: true,
+          to_spotify: true,
         }),
       ],
       { stopReason: "toolUse" },
@@ -1306,9 +1313,10 @@ test("agent revises a validated pending plan before exact later approval", async
     saved.playlist_plan.tracks.map((track) => track.title),
     ["Midnight Lines", "Blue Exit", "Distant Headlights"],
   );
+  assert.deepEqual(libraryTitles(application, "Revised Night"), ["Midnight Lines", "Blue Exit", "Distant Headlights"]);
   assert.deepEqual(service.calls, [
     [
-      "playlist.write",
+      "playlist.export",
       {
         name: "Revised Night",
         uris: [
@@ -1324,14 +1332,11 @@ test("agent revises a validated pending plan before exact later approval", async
 });
 
 for (const unknown of [false, true]) for (const cancelled of [false, true]) {
-test(`agent retains a created playlist receipt with ${unknown ? "unknown" : "rejected"} additions and cancellation=${cancelled}`, async () => {
-  const { application, service } = spotifyApplication();
-  service.createPlaylistWithTracks = async (input) => {
-    service.calls.push(["playlist.write", input]);
-    const error = new Error(
-      "Spotify created the private playlist but did not accept its tracks.",
-    );
-    error.code = unknown ? "playlist_created_tracks_unknown" : "playlist_created_without_tracks";
+test(`agent keeps the playlist in the library when its Spotify copy is ${unknown ? "unconfirmed" : "rejected"}, cancellation=${cancelled}`, async () => {
+  const { application, service } = spotifyApplication({ libraryStore: await library() });
+  service.exportPlaylist = async (input) => {
+    service.calls.push(["playlist.export", { name: input.name, uris: input.uris }]);
+    const error = Object.assign(new Error("Spotify did not take the playlist."), { code: "fictional_spotify_failure", outcomeUnknown: unknown });
     if (cancelled) runtime.abort();
     throw error;
   };
@@ -1376,11 +1381,12 @@ test(`agent retains a created playlist receipt with ${unknown ? "unknown" : "rej
       const [search] = toolResults(context, "moondog_library_search");
       return fauxAssistantMessage(
         [
-          fauxToolCall("moondog_spotify_playlist_write", {
+          fauxToolCall("moondog_playlist_save", {
             name: "Partial Night",
             track_refs: search.tracks.map((track) => ({
               track_ref_id: track.track_ref_id,
             })),
+            to_spotify: true,
           }),
         ],
         { stopReason: "toolUse" },
@@ -1396,19 +1402,19 @@ test(`agent retains a created playlist receipt with ${unknown ? "unknown" : "rej
   );
 
   assert.equal(result.status, cancelled ? "aborted" : "completed");
-  assert.equal(result.spotify_playlist_partial_effect.state, "partial");
-  assert.equal(
-    result.spotify_playlist_partial_effect.playlist.track_count,
-    unknown ? undefined : 0,
-  );
-  assert.equal("spotify_playlist_write" in result, false);
-  assert.match(result.text, unknown ? /adding its tracks was not confirmed/u : /empty playlist now exists/u);
-  if (unknown) assert.doesNotMatch(result.text, /empty playlist/u);
+  // The library playlist is there whatever happened to the copy.
+  assert.deepEqual(libraryTitles(application, "Partial Night"), ["Midnight Lines"]);
+  assert.equal(result.playlist_save.playlist.name, "Partial Night");
+  assert.match(result.text, /Saved in your library as "Partial Night" \(1 songs\)/u);
+  if (!cancelled) {
+    assert.equal(result.playlist_save.spotify.state, unknown ? "unknown" : "failed");
+    assert.match(result.text, unknown ? /was not confirmed/u : /was not made/u);
+  }
   assert.doesNotMatch(result.text, /no external effects/u);
   assert.doesNotMatch(result.text, /nothing changed/u);
   assert.deepEqual(service.calls, [
     [
-      "playlist.write",
+      "playlist.export",
       {
         name: "Partial Night",
         uris: ["spotify:track:midnight-lines"],
@@ -1418,8 +1424,8 @@ test(`agent retains a created playlist receipt with ${unknown ? "unknown" : "rej
 });
 }
 
-test("playlist write fails safely without a validated plan", async () => {
-  const { application, service } = spotifyApplication();
+test("a playlist save fails safely without a validated plan", async () => {
+  const { application, service } = spotifyApplication({ libraryStore: await library() });
   const { faux, runtime } = configuredRuntime(application);
   faux.setResponses([
     fauxAssistantMessage(
@@ -1430,7 +1436,7 @@ test("playlist write fails safely without a validated plan", async () => {
       const [search] = toolResults(context, "moondog_library_search");
       return fauxAssistantMessage(
         [
-          fauxToolCall("moondog_spotify_playlist_write", {
+          fauxToolCall("moondog_playlist_save", {
             name: "Skipped Resolution",
             track_refs: search.tracks.map((track) => ({
               track_ref_id: track.track_ref_id,
@@ -1444,7 +1450,7 @@ test("playlist write fails safely without a validated plan", async () => {
       const failed = context.messages.find(
         (message) =>
           message.role === "toolResult" &&
-          message.toolName === "moondog_spotify_playlist_write",
+          message.toolName === "moondog_playlist_save",
       );
       assert.equal(failed.isError, true);
       assert.match(
@@ -1461,9 +1467,10 @@ test("playlist write fails safely without a validated plan", async () => {
 
   assert.equal(result.status, "completed");
   assert.deepEqual(service.calls, []);
+  assert.deepEqual(application.libraryStore.view().playlists.map((playlist) => playlist.id), ["saved"]);
 });
 
-test("playlist write requires the exact validated order", async () => {
+test("a playlist save requires the exact validated order", async () => {
   const { application, service } = spotifyApplication();
   application.beginPrompt();
   try {
@@ -1482,7 +1489,7 @@ test("playlist write requires the exact validated order", async () => {
     });
 
     await assert.rejects(
-      application.spotifyCreatePlaylist({
+      application.savePlaylistPlan({
         name: "Wrong Order",
         trackRefs: [...trackRefs].reverse(),
       }),
@@ -1494,9 +1501,10 @@ test("playlist write requires the exact validated order", async () => {
   }
 });
 
-test("playlist write reports missing OAuth scopes instead of calling Spotify", async () => {
+test("a playlist save without the Spotify playlist scope keeps the playlist and calls Spotify for nothing", async () => {
   const { application, service } = spotifyApplication({
     missingScopes: ["playlist-modify-private"],
+    libraryStore: await library(),
   });
   const { faux, runtime } = configuredRuntime(application);
   faux.setResponses([
@@ -1539,25 +1547,21 @@ test("playlist write reports missing OAuth scopes instead of calling Spotify", a
       const [search] = toolResults(context, "moondog_library_search");
       return fauxAssistantMessage(
         [
-          fauxToolCall("moondog_spotify_playlist_write", {
+          fauxToolCall("moondog_playlist_save", {
             name: "No Scopes",
             track_refs: search.tracks.map((track) => ({
               track_ref_id: track.track_ref_id,
             })),
+            to_spotify: true,
           }),
         ],
         { stopReason: "toolUse" },
       );
     },
     (context) => {
-      const failed = context.messages.find(
-        (message) =>
-          message.role === "toolResult" &&
-          message.toolName === "moondog_spotify_playlist_write",
-      );
-      assert.equal(failed.isError, true);
-      assert.match(failed.content[0].text, /spotify_write_scopes_missing/u);
-      assert.match(failed.content[0].text, /playlist-modify-private/u);
+      const [kept] = toolResults(context, "moondog_playlist_save");
+      assert.equal(kept.playlist.name, "No Scopes");
+      assert.deepEqual(kept.spotify, { state: "failed", code: "spotify_write_scopes_missing" });
       return fauxAssistantMessage([
         fauxText("Re-login is required before writing playlists."),
       ]);
@@ -1567,6 +1571,7 @@ test("playlist write reports missing OAuth scopes instead of calling Spotify", a
   await runtime.prompt("Save this to a Spotify playlist.");
 
   assert.deepEqual(service.calls, []);
+  assert.equal(libraryTitles(application, "No Scopes").length, 1);
 });
 
 test("resolutions expire at prompt end and cannot be reused in the next prompt", async () => {

@@ -26,7 +26,7 @@ export function coverUrl(cover) {
   return cover?.artwork_url ?? null;
 }
 
-export function createLibrary({ root, state, send, t, open, store, menuPoint, onBusy = () => {} }) {
+export function createLibrary({ root, state, send, t, open, store, menuPoint, onBusy = () => {}, onExport = () => {} }) {
   const collapsed = new Set(JSON.parse(store.get("moondog.library.collapsed") ?? "[]"));
   const rows = new Map();
   const heads = new Map();
@@ -63,11 +63,14 @@ export function createLibrary({ root, state, send, t, open, store, menuPoint, on
     const items = [{ id: "play", label: t()("play") }, { id: "shuffle", label: t()("shufflePlaylist") }];
     if (!playlist.saved) {
       items.push({ type: "separator" }, { id: "rename", label: t()("renamePlaylist") },
-        { id: "move", label: t()("moveTo"), submenu: placesFor({ kind: "playlist", id: playlist.id, parentId: playlist.folderId }) },
-        { type: "separator" }, { id: "delete", label: t()("deletePlaylist") });
+        { id: "move", label: t()("moveTo"), submenu: placesFor({ kind: "playlist", id: playlist.id, parentId: playlist.folderId }) });
     }
+    // A service that takes a playlist is offered once it is connected: the playlist stays here, the service gets a copy.
+    if (state.spotify === "ready") items.push({ type: "separator" }, { id: "export", label: t()("exportToSpotify") });
+    if (!playlist.saved) items.push({ type: "separator" }, { id: "delete", label: t()("deletePlaylist") });
     const chosen = await menu(items, event);
     if (!chosen) return;
+    if (chosen === "export") onExport(playlist);
     if (chosen === "play" || chosen === "shuffle") send({ type: "library-play", playlistId: playlist.id, shuffle: chosen === "shuffle" });
     if (chosen === "rename") { naming = { kind: "playlist", id: playlist.id }; render(); }
     if (chosen.startsWith("into:")) send({ type: "library-playlist-save", id: playlist.id, folderId: chosen.slice(5) || null });

@@ -10,7 +10,7 @@ import { icon, make, name } from "./ui.mjs";
 const madeCover = (id) => `moondog-media://generated/${id}/cover.svg`;
 const entryCover = (entry) => (entry.kind === "made" ? madeCover(entry.made_id) : entry.refs?.artwork_url ?? null);
 
-export function createShelf({ root, state, send, t, menuPoint, onClose }) {
+export function createShelf({ root, state, send, t, menuPoint, onClose, onExport = () => {} }) {
   const menu = (items, event) => window.moondogApp?.showMenu?.(items, event ? menuPoint(event) : undefined);
   const scroller = make("div", "shelf-scroll");
   const head = make("header", "shelf-head");
@@ -61,11 +61,16 @@ export function createShelf({ root, state, send, t, menuPoint, onClose }) {
   async function playlistMenu(event) {
     const current = playlist();
     if (!current) return;
+    // The same export the sidebar's menu offers, once Spotify is connected.
+    const exporting = state.spotify === "ready" ? [{ id: "export", label: t()("exportToSpotify") }, { type: "separator" }] : [];
     const chosen = await menu([
-      ...(current.saved ? [] : [{ id: "rename", label: t()("renamePlaylist") }, { type: "separator" }, { id: "delete", label: t()("deletePlaylist") }]),
-      ...(current.saved ? [{ id: "close", label: t()("backToConversation") }] : [{ type: "separator" }, { id: "close", label: t()("backToConversation") }]),
+      ...(current.saved ? [] : [{ id: "rename", label: t()("renamePlaylist") }, { type: "separator" }]),
+      ...exporting,
+      ...(current.saved ? [] : [{ id: "delete", label: t()("deletePlaylist") }, { type: "separator" }]),
+      { id: "close", label: t()("backToConversation") },
     ], event);
     if (chosen === "rename") rename();
+    if (chosen === "export") onExport(current);
     if (chosen === "close") onClose();
     if (chosen === "delete") {
       const confirmed = await window.moondogApp?.confirm?.({ message: t()("deletePlaylistQuestion", { name: current.name }), detail: t()("deletePlaylistDetail"),

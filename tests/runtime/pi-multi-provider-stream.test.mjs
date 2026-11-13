@@ -32,7 +32,7 @@ const conditionalToolFields = {
   moondog_spotify_player_control: { required: ["action"], fields: ["action", "device_id", "device_name", "device_ref_id", "item_ref_id", "uri", "context_uri", "context_ref_id", "position_ms", "track_refs", "songs", "pending_plan", "percent", "state"] },
   moondog_spotify_queue_add: { required: [], fields: ["item_ref_id", "track_ref_id", "uri", "device_id", "device_name", "device_ref_id", "pending_plan"] },
   moondog_spotify_playlist_read: { required: ["action"], fields: ["action", "limit", "offset", "playlist_ref_id"] },
-  moondog_spotify_playlist_write: { required: ["name"], fields: ["name", "description", "track_refs", "pending_plan"] },
+  moondog_playlist_save: { required: ["name"], fields: ["name", "track_refs", "pending_plan", "to_spotify"] },
   moondog_spotify_device_transfer: { required: [], fields: ["device_name", "device_id", "device_ref_id", "play"] },
   moondog_spotify_library_save: { required: [], fields: ["track_refs", "item_refs"] },
   moondog_spotify_playlist_remove: { required: ["action"], fields: ["action", "playlist_ref_id", "item_ref_id"] },
@@ -391,8 +391,8 @@ test("production Spotify tools retain conditional validation before execution", 
       valid: [{ action: "list", limit: 10, offset: 0 }, { action: "inspect", playlist_ref_id: "fixture-playlist" }],
       invalid: [{ action: "inspect" }, { action: "list", playlist_ref_id: "fixture-playlist" }, { action: "inspect", playlist_ref_id: "fixture-playlist", limit: 10 }],
     },
-    moondog_spotify_playlist_write: {
-      valid: [{ name: "Fixture", track_refs: [{ track_ref_id: "fixture-track" }] }, { name: "Fixture", pending_plan: true }],
+    moondog_playlist_save: {
+      valid: [{ name: "Fixture", track_refs: [{ track_ref_id: "fixture-track" }] }, { name: "Fixture", pending_plan: true }, { name: "Fixture", pending_plan: true, to_spotify: true }],
       invalid: [{ name: "Fixture" }, { name: "Fixture", track_refs: [] }, { name: "Fixture", pending_plan: false }, { name: "Fixture", pending_plan: true, track_refs: [{ track_ref_id: "fixture-track" }] }],
     },
     moondog_spotify_device_transfer: {

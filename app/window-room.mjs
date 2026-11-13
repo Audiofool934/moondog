@@ -33,7 +33,7 @@ const FOCUS_READ_MS = 10_000;
 // while one of them answers in the conversation shown here.
 const LOOK_MS = { idle: 2_000, answering: 300 };
 // Tools whose results can change what Spotify or the Music app is playing, or what comes next.
-const PLAYER_TOOLS = /^moondog_(?:spotify_(?:player_control|queue_add|queue_batch|queue_similar|device_transfer|playlist_write)|music_app_control)$/u;
+const PLAYER_TOOLS = /^moondog_(?:spotify_(?:player_control|queue_add|queue_batch|queue_similar|device_transfer)|music_app_control)$/u;
 // At most this many conversations hold an agent at once; idle ones are reused first.
 const MAX_SLOTS = 4;
 
@@ -1221,6 +1221,13 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
       const imported = await base.importPlaylistLink({ token: String(data.token ?? ""), taste: data.taste === true,
         ...(data.folderId ? { folderId: String(data.folderId) } : {}) });
       send({ type: "library-imported", ...imported });
+    },
+    // The playlist stays in the library; Spotify gets a copy, or the copy an earlier export made is brought up to date.
+    "library-export": async (data) => {
+      try {
+        const sent = await base.exportLibraryPlaylist({ playlistId: String(data.playlistId ?? ""), service: "spotify", replace: data.replace === true });
+        send({ type: "library-exported", ...sent, playlist: { ...sent.playlist, ...(sent.playlist?.id === "saved" ? { saved: true } : {}) } });
+      } catch (error) { libraryNotice(error); }
     },
     "library-play": async (data) => {
       try {

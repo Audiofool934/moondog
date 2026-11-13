@@ -70,9 +70,10 @@ export default {
   "queue.notAddedHeading": "Nicht hinzugefügt:",
   "queue.earlierReceipt": "Das ist das Ergebnis der früheren Warteschlangen-Aktion; diese Klarstellung hat die Songs nicht erneut hinzugefügt.",
 
-  "playlist.partialUnknown": ({ name }) => `Spotify hat die private Playlist „${name}“ erstellt, aber das Hinzufügen der Titel wurde nicht bestätigt. Prüfe sie, bevor du entscheidest, ob du es erneut versuchst.`,
-  "playlist.partialEmpty": ({ name }) => `Spotify hat die private Playlist „${name}“ erstellt, aber keine Titel hinzugefügt. Die leere Playlist existiert jetzt; prüfe sie, bevor du entscheidest, ob du es erneut versuchst.`,
-  "playlist.saved": ({ name, count }) => `Als private Spotify-Playlist „${name}“ gespeichert (${count} Titel).`,
+  "playlist.kept": ({ name, count }) => `In deiner Mediathek als „${name}“ gespeichert (${count} Titel).`,
+  "playlist.copyUnknown": ({ name }) => `Die Spotify-Kopie von „${name}“ wurde nicht bestätigt. Die Playlist ist in deiner Mediathek; prüfe Spotify, bevor du sie erneut exportierst.`,
+  "playlist.copyFailed": ({ name }) => `Die Spotify-Kopie von „${name}“ wurde nicht erstellt. Die Playlist ist in deiner Mediathek, und du kannst sie erneut exportieren.`,
+  "playlist.saved": ({ name, count }) => `Auf Spotify als Playlist „${name}“ gespeichert (${count} Titel).`,
 
   "action.playback.resume": "Wiedergabe-Anfrage",
   "action.playback.pause": "Pause-Anfrage",
