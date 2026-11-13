@@ -348,7 +348,7 @@ function player(options = {}) {
   const now = TRACKS[index];
   send({ type: "player", spotify: "ready",
     now: { ...now, playing, progressMs: Math.round(now.durationMs * fraction), device, deviceType: "Computer", repeat: "off", shuffle: false, disallows: [], observedAt: Date.now() },
-    next: [...TRACKS.slice(index + 1), ...TRACKS.slice(0, index)].slice(0, queue) });
+    next: [...TRACKS.slice(index + 1), ...TRACKS.slice(0, index)].slice(0, queue).map((track, at) => ({ ...track, ahead: at + 1 })) });
 }
 const silent = () => send({ type: "player", spotify: "ready", now: null, next: [] });
 // On Air: the stream the stand-in core runs, as the window room reports it, and the tracks it made,
@@ -830,7 +830,7 @@ const STATES = {
   // NetEase Cloud Music chosen and signed in, playing another artist's recording of a song.
   netease() {
     ready({ transcript: conversation([["放一首周杰伦的稻香", "网易云上周杰伦的原版这里放不了，多半是版权原因。现在放的是 Jay 翻唱的《稻香》。"]]), playbackService: "netease", netease: "ready" });
-    send({ type: "player", spotify: "ready", next: TRACKS.slice(2, 4),
+    send({ type: "player", spotify: "ready", next: TRACKS.slice(2, 4).map((track, at) => ({ ...track, ahead: at + 1 })),
       now: { ...TRACKS[1], service: "netease", link: null, playing: true, progressMs: 61_000, device: null, deviceType: "computer", repeat: "off", shuffle: false, disallows: [], observedAt: Date.now() } });
   },
   "settings-netease"() { STATES.netease(); slash("service"); },
@@ -993,6 +993,7 @@ core.onmessage = ({ data }) => {
   if (data.type === "control") {
     if (data.action === "pause" || data.action === "resume") player({ playing: data.action === "resume" });
     if (data.action === "next") player({ index: (last.index + 1) % TRACKS.length, fraction: 0, playing: true });
+    if (data.action === "jump") player({ index: (last.index + data.ahead) % TRACKS.length, fraction: 0, playing: true });
     if (data.action === "previous") player({ fraction: 0 });
     if (data.action === "seek") player({ fraction: data.positionMs / TRACKS[last.index].durationMs });
   }

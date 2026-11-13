@@ -29,6 +29,8 @@ export function createWindowPreviewPlayer(port) {
     if (data?.type === "whole-songs") { wholeSongs = data.canPlay === true; return; }
     if (closed || queueId === null || data?.type !== "preview-event" || data.id !== queueId) return;
     const event = data.event;
+    // A song taken out of Up next changes only what the room reads as queued; the stream hears nothing of it.
+    if (event?.type === "removed") { now.observe(event); return; }
     if (!["queue", "loading", "playing", "paused", "finished", "skipped", "failed", "stopped"].includes(event?.type)) return;
     if (event.type === "stopped") active = false;
     else if (event.type !== "failed") active = true;

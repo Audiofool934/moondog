@@ -1844,14 +1844,79 @@ function thumb(src, lazy = false) {
   image.src = src;
   return image;
 }
-function queueItem(track) {
+function queueItem(track, at) {
   const item = make("li");
+  item.dataset.at = String(at);
+  item.tabIndex = at === 0 ? 0 : -1;
   item.append(thumb(track.image, true));
   const words = make("div");
-  words.append(make("strong", "", track.title), make("span", "", track.artists.join(", ")));
+  words.append(make("strong", "", track.title), make("span", "", track.generated ? t("madeByMoondog") : track.artists.join(", ")));
   item.append(words);
   return item;
 }
+// A song in Up next plays at once: in the window by its place in the queue, elsewhere by how many skips reach it.
+// Only queues Moondog keeps can let one go; Spotify's and the Music app's can't, so they never offer it.
+const queueSongs = () => nowPlaying()?.next ?? [];
+const canJump = (now) => Boolean(now) && !now.making && (now.local || can(now, "skipping_next"));
+const canRemove = (now, track) => Boolean(now) && !now.making && (now.local ? !(state.onAir && track?.generated) : now.service === "netease");
+function jumpTo(at) {
+  const now = nowPlaying();
+  const track = now?.next?.[at];
+  if (!track || !canJump(now)) return;
+  if (now.local) { previews.jump(track.position); return; }
+  if (!Number.isInteger(track.ahead)) return;
+  send({ type: "control", action: "jump", ahead: track.ahead, via: "queue" });
+  // The song shows at once; the next read from the player confirms it.
+  const rest = state.player.next.slice(at + 1).map((each) => (Number.isInteger(each.ahead) ? { ...each, ahead: each.ahead - track.ahead } : each));
+  state.player = { now: { ...state.player.now, ...track, playing: true, progressMs: 0, observedAt: Date.now() }, next: rest };
+  renderInspector();
+  renderProgress(nowPlaying(), { jump: true });
+}
+function removeAt(at) {
+  const now = nowPlaying();
+  const track = now?.next?.[at];
+  if (!track || !canRemove(now, track)) return;
+  if (now.local) { previews.remove(track.position); return; }
+  send({ type: "control", action: "remove", ahead: track.ahead, via: "queue" });
+  state.player.next = state.player.next.filter((_, each) => each !== at).map((each, index) => (index >= at && Number.isInteger(each.ahead) ? { ...each, ahead: each.ahead - 1 } : each));
+  renderInspector();
+}
+const queueRow = (event) => event.target.closest?.("[data-queue] li[data-at]");
+$("queue").addEventListener("dblclick", (event) => { const row = queueRow(event); if (row) jumpTo(Number(row.dataset.at)); });
+$("queue").addEventListener("contextmenu", async (event) => {
+  const row = queueRow(event);
+  if (!row) return;
+  event.preventDefault();
+  row.focus();
+  const at = Number(row.dataset.at);
+  const now = nowPlaying();
+  const track = now?.next?.[at];
+  if (!track) return;
+  const chosen = await menu([{ id: "play", label: t("playNow"), enabled: canJump(now) },
+    ...(canRemove(now, track) ? [{ id: "remove", label: t("removeFromQueue") }] : [])], event);
+  if (chosen === "play") jumpTo(at);
+  if (chosen === "remove") removeAt(at);
+});
+// Up and down move between the songs, Return plays one, Delete takes it out where the queue allows.
+$("queue").addEventListener("keydown", (event) => {
+  const row = queueRow(event);
+  if (!row || event.metaKey || event.ctrlKey || event.altKey) return;
+  const at = Number(row.dataset.at);
+  const rows = [...$("queue").querySelectorAll("li[data-at]")];
+  const step = { ArrowDown: 1, ArrowUp: -1 }[event.key];
+  if (step) {
+    event.preventDefault();
+    const to = rows[Math.max(0, Math.min(rows.length - 1, at + step))];
+    for (const each of rows) each.tabIndex = each === to ? 0 : -1;
+    to.focus();
+  } else if (event.key === "Enter") {
+    event.preventDefault();
+    jumpTo(at);
+  } else if (event.key === "Delete" || event.key === "Backspace") {
+    event.preventDefault();
+    removeAt(at);
+  }
+});
 // The record On Air is cutting, after what is queued: a blank sleeve, quieter than a real one.
 function cuttingItem() {
   const item = make("li", "making");
@@ -1958,7 +2023,16 @@ function renderInspector() {
   const shownQueue = JSON.stringify([next.map((track) => [track.title, track.artists, track.image]), cutting && t("makingNext")]);
   if (shownQueue !== drawnQueue) {
     drawnQueue = shownQueue;
+    // A song chosen from the keyboard keeps the focus on its row, or the row now in its place.
+    const focused = document.activeElement?.closest?.("[data-queue] li[data-at]");
+    const at = focused ? Number(focused.dataset.at) : -1;
     $("queue").replaceChildren(...next.map(queueItem), ...(cutting ? [cuttingItem()] : []));
+    const rows = $("queue").querySelectorAll("li[data-at]");
+    if (at >= 0 && rows.length) {
+      const to = rows[Math.min(at, rows.length - 1)];
+      for (const each of rows) each.tabIndex = each === to ? 0 : -1;
+      to.focus();
+    }
   }
   // With the player folded away, the song and its two most used controls stay in the bar.
   const mini = $("mini");
