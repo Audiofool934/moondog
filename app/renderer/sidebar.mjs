@@ -176,7 +176,8 @@ export function createSidebar({ root, state, send, t, open, store, menuPoint }) 
       const running = make("span", "running");
       running.setAttribute("aria-hidden", "true");
       button.append(label);
-      // The ⋯ button is for the pointer; the keyboard opens the same menu with the context menu key or Shift+F10.
+      // The ⋯ button is for the pointer and drops its menu below itself; the keyboard opens the same menu with the
+      // context menu key or Shift+F10.
       const more = make("button", "more");
       more.type = "button";
       more.tabIndex = -1;
