@@ -41,17 +41,22 @@ A request passes through to the upstream provider, which has its own retention t
 
 | Name | Kind | Meaning |
 | --- | --- | --- |
-| `UPSTREAM_BASE_URL` | var | The upstream's OpenAI-compatible base address, without `/chat/completions`. |
-| `UPSTREAM_MODEL` | var | The upstream model ID. |
+| `UPSTREAM_BASE_URL` | secret | The upstream's OpenAI-compatible base address, without `/chat/completions`. |
+| `UPSTREAM_MODEL` | secret | The upstream model ID. |
 | `UPSTREAM_EXTRA_BODY` | var, optional | A JSON object merged into each upstream request. |
 | `DAILY_TOKEN_LIMIT` | var | Tokens for one code in one day; 3,000,000 by default. |
 | `GLOBAL_DAILY_TOKEN_LIMIT` | var | Tokens for all codes in one day; 40,000,000 by default. |
+| `PER_MINUTE_LIMIT` | var | Requests for one code in one clock minute; 20 by default. |
 | `BETA_ENDS_AT` | var, optional | An ISO date and time after which every code is refused. |
 | `UPSTREAM_API_KEY` | secret | The upstream provider's key. |
 | `ADMIN_TOKEN` | secret | The owner's key for `/admin/invites`. |
 
-To change the upstream model, change `UPSTREAM_MODEL` and deploy the gateway.
+The upstream's address and model are secrets because this repository is public and the app never names the upstream.
+To change the upstream model, run `wrangler secret put UPSTREAM_MODEL`.
 The app needs no release.
+
+The gateway counts the per-minute limit itself, in D1.
+Cloudflare's rate limit binding let 37 requests through in 20 seconds against a limit of 20 when it was tried on 2026-11-14.
 
 ## Deploy
 
@@ -59,6 +64,8 @@ The app needs no release.
 cd gateway
 npx wrangler d1 create moondog-model          # put the database_id in wrangler.toml
 npx wrangler d1 execute moondog-model --remote --file schema.sql
+npx wrangler secret put UPSTREAM_BASE_URL
+npx wrangler secret put UPSTREAM_MODEL
 npx wrangler secret put UPSTREAM_API_KEY
 npx wrangler secret put ADMIN_TOKEN
 npx wrangler deploy

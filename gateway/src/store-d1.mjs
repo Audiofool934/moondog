@@ -27,6 +27,17 @@ export function createD1Store(database) {
       ).bind(inviteId, day, input, output).run();
     },
 
+    // Adds one request to the invite's count for this minute and returns the count. Older minutes go.
+    async countRequest(inviteId, minute) {
+      const [counted] = await database.batch([
+        database.prepare(
+          "INSERT INTO minute_requests (invite_id, minute, requests) VALUES (?1, ?2, 1) ON CONFLICT (invite_id, minute) DO UPDATE SET requests = requests + 1 RETURNING requests",
+        ).bind(inviteId, minute),
+        database.prepare("DELETE FROM minute_requests WHERE invite_id = ?1 AND minute < ?2").bind(inviteId, minute),
+      ]);
+      return counted.results[0]?.requests ?? 1;
+    },
+
     async createInvite({ hash, label, dailyTokenLimit, expiresAt, createdAt }) {
       const result = await database.prepare(
         "INSERT INTO invites (code_hash, label, status, daily_token_limit, expires_at, created_at) VALUES (?1, ?2, 'active', ?3, ?4, ?5)",

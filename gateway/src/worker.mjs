@@ -29,10 +29,10 @@ export default {
       limits: {
         dailyTokens: whole(env.DAILY_TOKEN_LIMIT, 3_000_000),
         globalDailyTokens: whole(env.GLOBAL_DAILY_TOKEN_LIMIT, 40_000_000),
+        perMinute: whole(env.PER_MINUTE_LIMIT, 20),
         endsAt: env.BETA_ENDS_AT ? Date.parse(env.BETA_ENDS_AT) || null : null,
       },
       adminToken: env.ADMIN_TOKEN,
-      allowRequest: async (inviteId) => (env.PER_MINUTE ? (await env.PER_MINUTE.limit({ key: String(inviteId) })).success : true),
     });
     return handle(request, context);
   },

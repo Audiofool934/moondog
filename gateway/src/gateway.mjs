@@ -113,11 +113,10 @@ export function relayEventStream(body, settle) {
  * @param {object} options
  * @param {object} options.store invites and daily token counts; see store-d1.mjs
  * @param {object} options.upstream { baseUrl, apiKey, model, extraBody }
- * @param {object} options.limits { dailyTokens, globalDailyTokens, endsAt }
+ * @param {object} options.limits { dailyTokens, globalDailyTokens, perMinute, endsAt }
  * @param {string} options.adminToken the owner's key for /admin
- * @param {(key: string) => Promise<boolean>} [options.allowRequest] per-minute limit; false refuses
  */
-export function createGateway({ store, upstream, limits, adminToken, allowRequest = async () => true, fetch = globalThis.fetch, now = Date.now }) {
+export function createGateway({ store, upstream, limits, adminToken, fetch = globalThis.fetch, now = Date.now }) {
   async function admit(request) {
     const code = bearer(request);
     if (!INVITE_PATTERN.test(code)) return { refused: refusal(401, "invite_invalid", "This invite code isn't one Moondog knows. Check it and enter it again.") };
@@ -151,8 +150,10 @@ export function createGateway({ store, upstream, limits, adminToken, allowReques
     if (totalUsed >= limits.globalDailyTokens) {
       return refusal(429, "beta_capacity_reached", "The Moondog model is at today's limit for all testers. It starts again at midnight, Beijing time.", { "retry-after": wait });
     }
-    if (!(await allowRequest(invite.id))) {
-      return refusal(429, "rate_limited", "Too many requests in a minute. Wait a moment and try again.", { "retry-after": "20" });
+    // The store counts this request in the clock minute it falls in, and answers with the count.
+    const minute = Math.floor(at / 60_000);
+    if (limits.perMinute && (await store.countRequest(invite.id, minute)) > limits.perMinute) {
+      return refusal(429, "rate_limited", "Too many requests in a minute. Wait a moment and try again.", { "retry-after": String(60 - Math.floor((at % 60_000) / 1000)) });
     }
 
     const raw = await request.text();

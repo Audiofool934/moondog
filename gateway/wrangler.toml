@@ -13,20 +13,17 @@ enabled = true
 [[d1_databases]]
 binding = "DB"
 database_name = "moondog-model"
-database_id = "REPLACE_WITH_D1_DATABASE_ID"
+database_id = "292845c7-378f-4cc4-b544-e88087d3052b"
 
-# 20 requests a minute for each invite code.
-[[ratelimits]]
-name = "PER_MINUTE"
-namespace_id = "1001"
-simple = { limit = 20, period = 60 }
-
+# The upstream is the owner's choice and can change without an app release. It is not written
+# here: this file is public, and the app never names the upstream. Set these with
+# `wrangler secret put`:
+#   UPSTREAM_BASE_URL  the upstream's OpenAI-compatible base address
+#   UPSTREAM_MODEL     the upstream model ID
+#   UPSTREAM_API_KEY   the upstream provider's key
+#   ADMIN_TOKEN        the owner's key for /admin/invites
 [vars]
-# The upstream is the owner's choice and can change without an app release.
-# Set UPSTREAM_BASE_URL and UPSTREAM_MODEL here; set the secrets with `wrangler secret put`:
-#   UPSTREAM_API_KEY  the upstream provider's key
-#   ADMIN_TOKEN       the owner's key for /admin/invites
-UPSTREAM_BASE_URL = "REPLACE_WITH_UPSTREAM_BASE_URL"
-UPSTREAM_MODEL = "REPLACE_WITH_UPSTREAM_MODEL"
 DAILY_TOKEN_LIMIT = "3000000"
 GLOBAL_DAILY_TOKEN_LIMIT = "40000000"
+# Requests for one invite code in one clock minute, counted in D1.
+PER_MINUTE_LIMIT = "20"

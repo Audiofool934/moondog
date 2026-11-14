@@ -43,7 +43,7 @@ export async function startLocalGateway({ port = 0, environment = process.env, l
     upstream: real
       ? { baseUrl: environment.UPSTREAM_BASE_URL.replace(/\/+$/u, ""), apiKey: environment.UPSTREAM_API_KEY, model: environment.UPSTREAM_MODEL, extraBody: {} }
       : { baseUrl: "http://upstream.invalid", apiKey: "none", model: "local", extraBody: {} },
-    limits: { dailyTokens: 3_000_000, globalDailyTokens: 40_000_000, endsAt: null, ...limits },
+    limits: { dailyTokens: 3_000_000, globalDailyTokens: 40_000_000, perMinute: 20, endsAt: null, ...limits },
     adminToken,
     ...(fetch || !real ? { fetch: fetch ?? cannedUpstream() } : {}),
   });

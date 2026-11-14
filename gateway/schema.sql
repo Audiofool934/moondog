@@ -21,3 +21,11 @@ CREATE TABLE IF NOT EXISTS usage (
 );
 
 CREATE INDEX IF NOT EXISTS usage_day ON usage (day);
+
+-- Requests per invite in the current clock minute, for the per-minute limit. Older rows are deleted.
+CREATE TABLE IF NOT EXISTS minute_requests (
+  invite_id INTEGER NOT NULL,
+  minute INTEGER NOT NULL,
+  requests INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (invite_id, minute)
+);
