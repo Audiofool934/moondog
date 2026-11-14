@@ -64,6 +64,17 @@ npx wrangler secret put ADMIN_TOKEN
 npx wrangler deploy
 ```
 
+The route in `wrangler.toml` is the custom domain `moondog-api.audiofool.ai`.
+`moondog.audiofool.ai` is the project page on GitHub Pages; the gateway does not use it.
+
+Check a deployment before any code goes to a tester:
+
+- `GET /` answers `{"service":"moondog-model","model":"moondog"}`.
+- `GET /v1/invite` with a made-up code answers 401 with the code `invite_invalid`.
+- A test code from `invite.mjs create` gets a streamed reply whose events name the model `moondog`, and `invite.mjs list` then shows its tokens for today.
+- After `invite.mjs revoke`, the test code answers 401 with the code `invite_revoked`.
+- From mainland China, the address answers in a usable time.
+
 ## Invite codes
 
 ```sh
