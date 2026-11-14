@@ -649,7 +649,9 @@ img { -webkit-user-drag: none; }
 .pick { height: 28px; min-width: 28px; max-width: 180px; padding: 0 6px; border-radius: var(--r-2); display: inline-flex; align-items: center; justify-content: center; flex: 0 1 auto;
   font-size: var(--t-small); color: var(--text-3); white-space: nowrap; transition: background-color var(--quick) var(--soft), color var(--quick) var(--soft); }
 .pick:hover { background: var(--hover); color: var(--text); transition: none; }
-.pick .icon { width: 15px; height: 15px; }
+.pick .icon, .pick .mark { width: 15px; height: 15px; }
+/* Beside the other makers' marks, Moondog's keeps to the text colour instead of the cover's. */
+.pick .mark { --groove-1: currentColor; --groove-2: currentColor; --groove-3: currentColor; --groove-4: currentColor; }
 .pick span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .pick span:empty, .pick.needed .icon { display: none; }
 .pick.needed { padding: 0 9px; color: var(--text); background: var(--hover); font-weight: 500; }

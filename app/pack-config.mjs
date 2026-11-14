@@ -23,6 +23,8 @@ export function desktopConfig({ root, version, buildNumber, output, target, sign
       "platform.mjs", "lifecycle.mjs", "dist/**/*", "!dist/**/*.map"],
     // GitHub prereleases use the same per-platform feed names as stable releases.
     publish: [{ provider: "github", owner: "Audiofool934", repo: "moondog", channel: "latest" }],
+    // Invite links for Moondog's own model: moondog://invite/<code>.
+    protocols: [{ name: "Moondog", schemes: ["moondog"] }],
     asar: false,
     forceCodeSigning: sign,
     extraResources: [
@@ -54,7 +56,7 @@ export function desktopConfig({ root, version, buildNumber, output, target, sign
       executableName: "moondog",
       category: "AudioVideo",
       artifactName: "Moondog-${version}-linux-${arch}.${ext}",
-      desktop: { entry: { Comment: "A personal listening room", Categories: "AudioVideo;Audio;" } },
+      desktop: { entry: { Comment: "A personal listening room", Categories: "AudioVideo;Audio;", MimeType: "x-scheme-handler/moondog;" } },
     },
   };
 }

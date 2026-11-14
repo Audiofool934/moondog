@@ -91,7 +91,7 @@
 .sheet .choice-detail { font-size: var(--t-small); line-height: 1.35; color: var(--text-3); overflow-wrap: anywhere; }
 .sheet .choice .check { width: 16px; height: 16px; color: var(--text); stroke-width: 1.7; }
 .sheet .choice .kind { color: var(--text-2); }
-.sheet .choice > .button { flex: none; margin-inline-end: 6px; }
+.sheet .choice > .button, .sheet .choice > .inline { flex: none; margin-inline-end: 6px; }
 .sheet .choice > .check { flex: none; margin: 0 10px 0 4px; }
 /* A provider unfolds its models; they sit under its name, not under its chevron. */
 .sheet .choice .disclose { width: 12px; height: 12px; margin-inline-end: -4px; color: var(--text-4); transition: transform var(--enter) var(--out); }

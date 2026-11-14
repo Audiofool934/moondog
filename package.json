@@ -63,7 +63,7 @@
     "verify": "npm run verify:release-tree && npm run verify:demo-history && npm run verify:demo && npm run verify:community && npm run verify:package && npm run validate:contracts && npm test",
     "doctor": "node --disable-warning=ExperimentalWarning scripts/moondog.mjs doctor",
     "validate:contracts": "node scripts/validate-contracts.mjs",
-    "test": "node --test tests/contracts/*.test.mjs tests/core/*.test.mjs tests/importers/*.test.mjs tests/runtime/*.test.mjs"
+    "test": "node --test tests/contracts/*.test.mjs tests/core/*.test.mjs tests/importers/*.test.mjs tests/runtime/*.test.mjs gateway/tests/*.test.mjs"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "1.0.1",

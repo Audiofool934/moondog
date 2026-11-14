@@ -27,6 +27,7 @@ import {
 } from "../src/surfaces/cli/format-output.mjs";
 import { runAuthCommand } from "../src/surfaces/cli/auth-command.mjs";
 import { runEndpointCommand } from "../src/surfaces/cli/endpoint-command.mjs";
+import { runInviteCommand } from "../src/surfaces/cli/invite-command.mjs";
 import { runDataCommand } from "../src/surfaces/cli/data-command.mjs";
 import { runCatalogCommand } from "../src/surfaces/cli/catalog-command.mjs";
 import { runProfileCommand } from "../src/surfaces/cli/profile-command.mjs";
@@ -767,6 +768,11 @@ async function main() {
     return;
   }
 
+  if (options.command === "invite") {
+    await runInviteCommand({ args: options.rest, json: options.json });
+    return;
+  }
+
   if (options.command === "spotify") {
     await runSpotifySurface({
       args: options.rest,
@@ -1267,6 +1273,8 @@ async function main() {
             progressOutput: host.terminalStreams.output,
           }),
         }),
+      // The room says what came of an invite code in its own words, so the command prints nothing.
+      runInvite: (args) => runInviteCommand({ args, output: { write() {} }, settings: modelSettings }),
       runWeb: (args, options) => runWebCommand({ args, webResearch, ...options }),
       runModelRoles: (args) => runModelRolesCommand({ args: args.map(String), modelSettings, webResearch }),
       runProfileAction: (args) => runProfileCommand({

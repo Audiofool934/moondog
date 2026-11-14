@@ -3,10 +3,15 @@
 const { contextBridge, ipcRenderer, webUtils } = require("electron");
 
 ipcRenderer.once("room", (event) => window.postMessage("moondog-room", "*", event.ports));
+// An invite link that opened the app. One that arrives before the page listens waits for it.
+let inviteListener = null;
+const waitingInvites = [];
+ipcRenderer.on("invite", (_event, code) => (inviteListener ? inviteListener(String(code)) : waitingInvites.push(String(code))));
 contextBridge.exposeInMainWorld("moondogApp", {
   platform: process.platform,
   pathForFile: (file) => webUtils.getPathForFile(file),
   onCommand: (callback) => ipcRenderer.on("command", (_event, name) => callback(String(name))),
+  onInvite: (callback) => { inviteListener = callback; for (const code of waitingInvites.splice(0)) callback(code); },
   setLanguage: (locale) => ipcRenderer.send("language", String(locale)),
   setBusy: (busy) => ipcRenderer.send("busy", busy === true),
   // The record alone in the window: whether it shows, whether it floats above other windows, and

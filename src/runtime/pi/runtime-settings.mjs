@@ -116,7 +116,9 @@ export function watchRuntimeSettings({ environment = process.env, interval = 200
   const files = { settings: resolveMoondogSettingsFile(environment), auth: resolveMoondogAuthFile(environment),
     endpoints: path.join(directory, "endpoints.json"), models: path.join(directory, "models.json"),
     roles: path.join(directory, "model-roles.json") };
-  const listeners = Object.entries(files).map(([changed, file]) => {
+  // The invite code for Moondog's own model changes what can answer, as an endpoint does.
+  const watched = [...Object.entries(files), ["endpoints", path.join(directory, "moondog-model.json")]];
+  const listeners = watched.map(([changed, file]) => {
     const listener = (now, before) => {
       if (now.mtimeMs === before.mtimeMs) return;
       void readPiRuntimeSelection(environment).then((selection) => onChange?.(selection, changed), () => {});

@@ -125,6 +125,7 @@ const slashCommands = [
   { name: "effort", description: N_("Choose how hard the model thinks") },
   { name: "auth", description: N_("Sign in to a model or web search service") },
   { name: "endpoint", description: N_("Add a model service by its address") },
+  { name: "invite", description: N_("Use an invite code for Moondog's own model") },
   { name: "web", description: N_("Look things up on public music sites") },
   { name: "service", description: N_("Choose where Moondog plays music") },
   { name: "library", description: N_("Your saved songs and playlists") },
@@ -207,6 +208,7 @@ export async function runMoondogTui({
   rebuildRuntime,
   runAuth,
   runEndpoint,
+  runInvite,
   runSpotify,
   runProfile,
   runProfileAction,
@@ -1468,7 +1470,7 @@ export async function runMoondogTui({
   const stopWatchingModel = watchModelSettings?.((selection, changed) => {
     if (changed === "models" || changed === "roles") return;
     if (changed === "endpoints") void refreshEndpoints?.();
-    const onEndpoint = changed === "endpoints" && String(runtimeStatus.provider ?? "").startsWith("endpoint-");
+    const onEndpoint = changed === "endpoints" && /^(?:endpoint-|moondog$)/u.test(String(runtimeStatus.provider ?? ""));
     if (!onEndpoint && !runtimeBehindSelection(runtimeStatus, selection)) return;
     modelChangedElsewhere = true;
     void followModel();
@@ -1711,6 +1713,26 @@ export async function runMoondogTui({
       say(tr("Signed in. Restart Moondog to use it."));
     }
     setFooter(tr("Signed in."), success);
+  };
+
+  // The invite code for Moondog's own model: saved once the gateway takes it, shown, or removed.
+  const manageInvite = async (args) => {
+    if (typeof runInvite !== "function") throw new Error(tr("Invite codes aren't available when Moondog is started this way."));
+    if (args.length > 1) throw new Error(tr("Use /invite, /invite <code>, or /invite remove."));
+    const result = await runInvite(args);
+    await refreshEndpoints?.();
+    if (result.action === "remove") {
+      addMoondogMessage(tr("Removed the invite code."));
+      setFooter(tr("Invite code removed."), success);
+    } else if (!result.saved) {
+      addMoondogMessage(tr("No invite code is saved. Type `/invite <code>` to use yours."));
+    } else if (result.action === "save") {
+      addMoondogMessage(result.becameDefault ? tr("Saved. Moondog's own model now answers.")
+        : tr("Saved. Type `/model moondog/moondog` to talk through Moondog's own model."));
+      setFooter(tr("Invite code saved."), success);
+    } else {
+      addMoondogMessage(tr("An invite code is saved. Moondog's own model can answer."));
+    }
   };
 
   // Endpoints: the list, one added on the paused terminal with its key out of sight, or one removed.
@@ -2596,6 +2618,10 @@ export async function runMoondogTui({
     }
     if (command === "endpoint") {
       await manageEndpoints(args);
+      return;
+    }
+    if (command === "invite") {
+      await manageInvite(args);
       return;
     }
     if (command === "service") {

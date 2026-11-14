@@ -276,7 +276,8 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
   async function followModel(selection, changed = "settings") {
     if (closed) return;
     defaults = selection ?? null;
-    const onEndpoint = (slot) => changed === "endpoints" && String(slot.runtime.publicStatus?.().provider ?? "").startsWith("endpoint-");
+    // An invite code for Moondog's own model changes as an endpoint's key does.
+    const onEndpoint = (slot) => changed === "endpoints" && /^(?:endpoint-|moondog$)/u.test(String(slot.runtime.publicStatus?.().provider ?? ""));
     const behind = slots.filter((slot) => !slot.stale && (onEndpoint(slot) ||
       (!picks.has(sessionOf(slot)) && runtimeBehindSelection(slot.runtime.publicStatus?.(), selection))));
     for (const slot of behind) {
@@ -703,7 +704,8 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
         receipts: (result.spotify_write_receipts ?? []).map((receipt) => ({ action: receipt.action, state: receipt.state,
           targets: receipt.targets ?? [], device: receipt.device?.name ?? null })) });
     } catch (error) {
-      send({ type: "turn", session, id, state: "error", message: errorText(error), connection: error?.code === "model_connection_failed", entry: latestEntry(slot) });
+      send({ type: "turn", session, id, state: "error", message: errorText(error), code: typeof error?.code === "string" ? error.code : null,
+        connection: error?.code === "model_connection_failed", entry: latestEntry(slot) });
     } finally {
       unsubscribe();
       slot.turn = null;
@@ -1342,6 +1344,29 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
         return send({ type: "endpoint", state: "error", code: error?.code ?? null, message: errorText(error) });
       }
       // An edited endpoint may have a new address or key, so its conversations get new agents.
+      await rebuildAll();
+      await sendModels();
+      await sendList();
+    },
+    // An invite code for Moondog's own model. The core checks it with the gateway before it saves it.
+    "invite-save": async (data) => {
+      let saved;
+      try {
+        saved = await modelSettings?.saveInvite?.(String(data.code ?? ""));
+        send({ type: "invite", state: "saved" });
+      } catch (error) {
+        return send({ type: "invite", state: "error", code: error?.code ?? null, message: errorText(error) });
+      }
+      // With no model that could answer, Moondog's own became the default.
+      if (saved?.becameDefault) defaults = { provider: "moondog", model: "moondog" };
+      await rebuildAll();
+      await refreshFirstRun();
+      await sendModels();
+      await sendList();
+    },
+    "invite-remove": async () => {
+      await modelSettings?.removeInvite?.();
+      forgetWhere((chosen) => chosen.provider === "moondog");
       await rebuildAll();
       await sendModels();
       await sendList();
