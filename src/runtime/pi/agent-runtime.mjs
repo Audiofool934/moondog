@@ -8036,6 +8036,9 @@ export class PiAgentRuntime {
             onFailure: (error) => {
               if (promptState) promptState.modelConnectionFailure = error;
             },
+            onRefusal: (error) => {
+              if (promptState) promptState.modelRefusal = error;
+            },
           }),
         });
       },
@@ -8249,6 +8252,7 @@ export class PiAgentRuntime {
       toolExecutionStarted: false,
       onModelRetry: callbacks.onModelRetry,
       modelConnectionFailure: null,
+      modelRefusal: null,
       abortRequested: false,
       // Stops a restatement in another language when the listener cancels the turn.
       restatement: new AbortController(),
@@ -8660,6 +8664,7 @@ export class PiAgentRuntime {
       }
 
       if (this.agent.state.errorMessage) {
+        if (promptState.modelRefusal) throw promptState.modelRefusal;
         const providerMessage = safeProviderErrorMessage(
           this.agent.state.errorMessage,
           this.runtimeStatus.provider,

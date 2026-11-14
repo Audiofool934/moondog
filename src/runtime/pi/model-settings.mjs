@@ -9,11 +9,12 @@ import {
 import { isEndpointProvider, removeEndpoint, saveEndpoint } from "./custom-endpoints.mjs";
 import { LEGACY_MODEL_ALIASES } from "./model-catalog.mjs";
 import { readConversationModels, readModelList, sameModel, writeConversationModel, writeModelList } from "./model-list.mjs";
+import { isMoondogProvider, MOONDOG_MODEL, MOONDOG_PROVIDER, removeInvite, saveInvite } from "./moondog-model.mjs";
 import { MODEL_ROLES, modelRole, readModelRoles, writeModelRole } from "./model-roles.mjs";
 import { chatgptProviderId } from "./provider-registry.mjs";
 import { createPersistentCredentialStore } from "./persistent-credential-store.mjs";
 import { getPublicPiModelCatalog } from "./public-model-catalog.mjs";
-import { clampEffort, readPiRuntimeSelection } from "./runtime-settings.mjs";
+import { clampEffort, readPiRuntimeSelection, writePiRuntimeSelection } from "./runtime-settings.mjs";
 
 // The desktop window picks models and signs in through this service, as the
 // terminal does with /model and /auth. It returns status shapes only: never a
@@ -44,6 +45,7 @@ const aborted = () => new DOMException("The sign-in was cancelled.", "AbortError
 
 function signInKind(providerId) {
   if (isEndpointProvider(providerId)) return "endpoint";
+  if (isMoondogProvider(providerId)) return "invite";
   return supportedAuthProviderIds.includes(providerId) ? "api_key" : "environment_only";
 }
 
@@ -149,17 +151,18 @@ export function createModelSettings({
   return {
     current,
 
-    // Settings' providers: the featured ones in their order, then any other provider that has a key or
+    // Settings' providers: Moondog's own model first, then the featured ones in their order, then any other provider that has a key or
     // is in use, by name, then the listener's endpoints in the order they were added.
     async providers({ current: currentProvider } = {}) {
       currentProvider ??= (await current().catch(() => null))?.provider;
       const source = await catalog();
       const all = await rows(source, listed(source));
       const featured = FEATURED.map(id => all.find(provider => provider.id === id)).filter(Boolean);
-      const others = all.filter(provider => !FEATURED.includes(provider.id) && provider.signIn !== "endpoint" &&
+      const own = all.filter(provider => provider.signIn === "invite");
+      const others = all.filter(provider => !FEATURED.includes(provider.id) && provider.signIn !== "endpoint" && provider.signIn !== "invite" &&
         (provider.signedIn || provider.id === currentProvider)).sort((left, right) => left.name.localeCompare(right.name));
       const endpoints = (source.endpoints ?? []).map(endpoint => all.find(provider => provider.id === endpoint.id)).filter(Boolean);
-      return [...featured, ...others, ...endpoints];
+      return [...own, ...featured, ...others, ...endpoints];
     },
 
     // The menu's models, each with its provider's name and whether it can answer now, and the default
@@ -287,6 +290,48 @@ export function createModelSettings({
       }
       await (await catalog()).readEndpoints?.();
       return saved.endpoint;
+    },
+
+    // Saves an invite code for Moondog's own model once the gateway takes it, and puts the model in
+    // the menu. It becomes the default when no model is chosen yet or the chosen one can't answer,
+    // so a listener with only a code can talk at once. Returns { label, dailyTokens, usedToday,
+    // becameDefault }, never the code.
+    async saveInvite(value) {
+      let allowance;
+      try {
+        allowance = await saveInvite(value, environment);
+      } catch (error) {
+        throw moondogError(error) ?? failure("invite_save_failed", "Moondog could not save that invite code.");
+      }
+      const source = await catalog();
+      await source.readEndpoints?.();
+      const own = { provider: MOONDOG_PROVIDER, model: MOONDOG_MODEL };
+      const selection = await current().catch(() => null);
+      const answers = Boolean(selection) && Boolean(await withAuth(source).checkAuth(selection.provider).catch(() => undefined));
+      const becameDefault = !answers;
+      try {
+        if (becameDefault) await writePiRuntimeSelection(own, environment);
+        const entries = await menu(becameDefault ? own : selection);
+        await writeModelList(entries.some(entry => sameModel(entry, own)) ? entries : [...entries, own].slice(0, 40), environment);
+      } catch (error) {
+        throw moondogError(error) ?? failure("model_list_invalid", "Moondog could not save its model list.");
+      }
+      return { ...allowance, becameDefault };
+    },
+
+    // Forgets the invite code. A default on Moondog's model stays saved, and asks for another model
+    // until one is chosen.
+    async removeInvite() {
+      try {
+        await removeInvite(environment);
+      } catch (error) {
+        throw moondogError(error) ?? failure("invite_remove_failed", "Moondog could not remove the invite code.");
+      }
+      const selection = await current().catch(() => null);
+      const entries = await menu(null);
+      const kept = entries.filter(entry => entry.provider !== MOONDOG_PROVIDER || sameModel(entry, selection));
+      if (kept.length !== entries.length) await writeModelList(kept, environment);
+      await (await catalog()).readEndpoints?.();
     },
 
     // Removes an endpoint, its key and its models from the menu. A default on it stays saved, and asks

@@ -1,5 +1,7 @@
 import { setTimeout as delay } from "node:timers/promises";
 
+import { isMoondogProvider, moondogRefusal } from "./moondog-model.mjs";
+
 const maximumRetries = 2;
 const retryableCodes = new Set([
   "ECONNRESET", "ECONNREFUSED", "EPIPE", "ETIMEDOUT", "EAI_AGAIN",
@@ -116,6 +118,7 @@ export function createModelFetch({
   wait = retryDelay,
   onRetry,
   onFailure,
+  onRefusal,
 } = {}) {
   return async (input, init) => {
     const signal = init?.signal ?? (input instanceof Request ? input.signal : undefined);
@@ -136,6 +139,12 @@ export function createModelFetch({
           onRetry?.({ attempt: overloadAttempts, maxRetries: maximumOverloadRetries, status: response.status });
           await wait(retryAfter, signal);
           continue;
+        }
+        // Moondog's gateway says why it refused, such as a used-up daily allowance. Pi still gets
+        // the response; the reason travels beside it so each surface can say it in its own words.
+        if (onRefusal && isMoondogProvider(provider)) {
+          const refusal = await moondogRefusal(response);
+          if (refusal) onRefusal(refusal);
         }
         return response;
       } catch (cause) {

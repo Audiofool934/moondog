@@ -116,6 +116,24 @@ const shutdownCore = createCoreShutdown({ getCore: () => core, stopMusic: () => 
 const playback = { controllable: false, streaming: false, onAir: { available: false, on: false } };
 let dockMenu = null;
 const command = (name) => () => window?.webContents.send("command", name);
+// An invite link, moondog://invite/<code>, opens Moondog with the code for its own model. The page
+// hands the code to the core, which checks it. A link that starts the app waits for the page.
+const INVITE_LINK = /^moondog:\/\/invite\/(md-[0-9a-z]{24})\/?$/iu;
+const inviteLink = (values) => values.find((value) => typeof value === "string" && value.toLowerCase().startsWith("moondog://"));
+let pageLoaded = false;
+let waitingInvite = null;
+function openInvite(link) {
+  const code = INVITE_LINK.exec(String(link ?? ""))?.[1]?.toLowerCase();
+  if (!code) return;
+  if (!window || !pageLoaded) { waitingInvite = code; return; }
+  if (window.isMinimized()) window.restore();
+  window.show();
+  window.focus();
+  window.webContents.send("invite", code);
+}
+app.on("open-url", (event, link) => { event.preventDefault(); openInvite(link); });
+// Windows and Linux hand a link to the app as an argument.
+if (process.platform !== "darwin") openInvite(inviteLink(process.argv));
 // On Air is checked while it is on. A click asks the page, whose answer sets the check, so the click
 // itself leaves the check as it was.
 const onAirItem = (t, extra = {}) => ({ id: "on-air", type: "checkbox", label: t("menuOnAir"), ...extra,
@@ -359,7 +377,11 @@ function createWindow() {
   window.on("focus", () => core?.postMessage({ type: "focus" }));
   // Automated checks open the window without taking focus from the listener.
   window.once("ready-to-show", () => (process.env.MOONDOG_APP_DEBUG_PORT ? window.showInactive() : window.show()));
-  window.webContents.once("did-finish-load", openCore);
+  window.webContents.once("did-finish-load", () => {
+    pageLoaded = true;
+    void openCore();
+    if (waitingInvite) { window.webContents.send("invite", waitingInvite); waitingInvite = null; }
+  });
   // A Mac can return through the Dock. Other desktops quit, so no unreachable player stays alive.
   window.on("close", (event) => {
     if (quitting) return;
@@ -613,16 +635,19 @@ app.on("before-quit", (event) => {
     dialog.showErrorBox("Moondog could not quit", error.message);
   });
 });
-app.on("second-instance", () => {
+app.on("second-instance", (_event, argv) => {
   if (!window || quitting) return;
   if (window.isMinimized()) window.restore();
   window.show();
   window.focus();
+  openInvite(inviteLink(argv ?? []));
 });
 app.on("activate", () => window?.show());
 app.whenReady().then(() => {
   if (!primary) return;
   protocol.handle("moondog-media", generatedTrack);
+  // Only an installed Moondog answers moondog:// links; a development run would point them at Electron.
+  if (app.isPackaged) app.setAsDefaultProtocolClient("moondog");
   locale = windowLocale(app.getPreferredSystemLanguages());
   try { appearance = appearanceOf(JSON.parse(readFileSync(appearanceFile(), "utf8"))); } catch { /* The system's look and the light icon. */ }
   applyAppearance({ starting: true });

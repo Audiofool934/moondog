@@ -1376,7 +1376,7 @@ const SERVICE_MARKS = { spotify: "spotify", apple_music: "apple-music", netease:
 // A model shows its maker's mark: by the account it comes through, or for OpenRouter by the maker its
 // model id begins with (anthropic/…, x-ai/…); a maker without a mark here shows OpenRouter's, or the model glyph.
 const MAKER_MARKS = { anthropic: "claude", openai: "openai", google: "gemini", deepseek: "deepseek",
-  moonshotai: "kimi", "moonshotai-cn": "kimi", xai: "grok", zai: "zai", openrouter: "openrouter" };
+  moonshotai: "kimi", "moonshotai-cn": "kimi", xai: "grok", zai: "zai", openrouter: "openrouter", moondog: "moondog" };
 const ROUTED_MARKS = { anthropic: "claude", openai: "openai", google: "gemini", deepseek: "deepseek", moonshotai: "kimi", "x-ai": "grok", "z-ai": "zai" };
 // An endpoint's model shows its maker's mark when its id names one, as most do.
 const NAMED_MARKS = [[/^claude/u, "claude"], [/^(?:gpt|chatgpt|o\d)/u, "openai"], [/^(?:gemini|gemma)/u, "gemini"], [/^deepseek/u, "deepseek"],
@@ -1396,8 +1396,17 @@ const serviceAsked = () => state.firstRun?.needed === true && !state.firstRun.se
 function drawPick(button, { mark, label, words }) {
   button.classList.toggle("needed", Boolean(words));
   set(button.lastChild, "textContent", words ?? "");
-  button.querySelector("svg").setAttribute("class", mark === "model" ? "icon" : "icon fill");
-  setIcon(button, mark);
+  // Moondog's own model shows Moondog's mark, drawn from the logo's figure as the title bar's is.
+  const own = mark === "moondog";
+  const glyph = button.querySelector("svg.icon");
+  let ownMark = button.querySelector("svg.mark");
+  if (own && !ownMark) { ownMark = createMark().node; glyph.after(ownMark); }
+  glyph.style.display = own ? "none" : "";
+  if (ownMark) ownMark.style.display = own ? "" : "none";
+  if (!own) {
+    glyph.setAttribute("class", mark === "model" ? "icon" : "icon fill");
+    setIcon(button, mark);
+  }
   if (words) { delete button.dataset.tip; button.setAttribute("aria-label", words); } else name(button, label);
 }
 function renderPicks() {
@@ -2491,16 +2500,24 @@ window.moondogApp?.onCommand?.((command) => {
   if (command === "toggle-inspector") togglePanel("inspector");
   if (command === "toggle-record") toggleRecord();
 });
+// An invite link, moondog://invite/<code>, brought the listener here.
+window.moondogApp?.onInvite?.((code) => {
+  if (immersed()) immerse(false);
+  settings.useInvite(code);
+});
 document.addEventListener("visibilitychange", () => send({ type: "visible", visible: !document.hidden }));
 window.addEventListener("focus", () => { if (!settings.open && !getSelection()?.toString() && !document.activeElement?.closest?.(".rename, .edit")) input.focus(); });
 
 // ── Messages from the core ───────────────────────────────────────────────────────────────────
+// Why Moondog's own model refused a turn, in the words Settings uses for the same reasons.
+const MODEL_REFUSALS = { moondog_invite_invalid: "inviteInvalid", moondog_invite_revoked: "inviteRevoked", moondog_beta_ended: "moondogBetaEnded",
+  moondog_daily_allowance_used: "moondogAllowanceUsed", moondog_beta_capacity_reached: "moondogCapacity", moondog_rate_limited: "moondogRateLimited" };
 function streamingTurn(id) {
   return state.turns.find((turn) => turn.role === "assistant" && turn.id === id);
 }
 const onScreen = (data) => !data.session || data.session === state.current;
 const SIGN_IN_ERRORS = { connect_while_answering: "waitForReply", sign_in_busy: "signInBusy" };
-const SETTINGS_MESSAGES = new Set(["models", "provider-models", "model-list", "model-roles", "endpoint", "devices", "memories", "auth-prompt", "auth-prompt-closed", "auth-event", "sign-in", "import", "notice", "netease-checked", "generation-checked", "generation-setup"]);
+const SETTINGS_MESSAGES = new Set(["models", "provider-models", "model-list", "model-roles", "endpoint", "invite", "devices", "memories", "auth-prompt", "auth-prompt-closed", "auth-event", "sign-in", "import", "notice", "netease-checked", "generation-checked", "generation-setup"]);
 function receive({ data }) {
   if (!data?.type) return;
   if (data.type === "preview" || data.type === "preview-control" || data.type === "preview-enqueue") { previews.receive(data); renderInspector(); return; }
@@ -2665,7 +2682,7 @@ function receive({ data }) {
           if (data.status === "aborted" && !data.text) turn.failed = true;
         } else {
           if (data.message) console.warn(`[moondog] turn failed: ${data.message}`);
-          turn.text = data.connection ? t("unreachable") : t("noticeFailed");
+          turn.text = data.connection ? t("unreachable") : t(MODEL_REFUSALS[data.code] ?? "noticeFailed");
           turn.failed = true;
         }
       }

@@ -4,6 +4,7 @@ import { lstat, mkdir, open, rename, unlink } from "node:fs/promises";
 import path from "node:path";
 import { addEndpoints, readEndpoints } from "./custom-endpoints.mjs";
 import { createPiModels, listPiModels, listPiProviders } from "./model-catalog.mjs";
+import { addMoondogModel, readInvite } from "./moondog-model.mjs";
 import { acquirePrivateFileLock, resolveMoondogAuthFile } from "./persistent-credential-store.mjs";
 import { supportedPiProviderIds } from "./provider-registry.mjs";
 
@@ -162,17 +163,23 @@ export class PublicPiModelCatalog {
     this.root = path.join(path.dirname(resolveMoondogAuthFile(environment)), "model-catalog");
     this.environment = environment;
     this.fetch = fetchImpl; this.now = now; this.timeoutMs = timeoutMs;
-    this.baseline = createPiModels(); this.records = new Map(); this.pending = new Set(); this.endpoints = [];
-    this.snapshot = this.baseline;
+    this.baseline = createPiModels(); this.records = new Map(); this.pending = new Set(); this.endpoints = []; this.invite = null;
+    this.snapshot = this.createModels();
     this.ready = this.restore();
   }
 
   file(id) { return path.join(this.root, `${id}.json`); }
   publish() { this.snapshot = this.createModels(); }
   // The listener's own endpoints join Pi's providers; their models are theirs, not from pi.dev.
-  createModels(options) { return addEndpoints(createPiModels({ ...options, catalogModels: new Map([...this.records].map(([id, record]) => [id, record.models])) }), this.endpoints); }
+  // Moondog's own model is always among them; it can answer once an invite code is saved.
+  createModels(options) {
+    const models = createPiModels({ ...options, catalogModels: new Map([...this.records].map(([id, record]) => [id, record.models])) });
+    return addEndpoints(addMoondogModel(models, this.invite, this.environment), this.endpoints);
+  }
+  // Reads what the listener added beside Pi's providers: their endpoints and their invite code.
   async readEndpoints() {
     try { this.endpoints = await readEndpoints(this.environment); } catch { this.endpoints = []; }
+    try { this.invite = await readInvite(this.environment); } catch { this.invite = null; }
     this.publish();
   }
   providers() { return listPiProviders(this.snapshot); }

@@ -23,6 +23,7 @@ test("only macOS carries MusicKit and all desktop packages carry the shared plat
     assert.ok(config.files.includes("shutdown.mjs"));
     assert.equal(config.publish[0].channel, "latest", "GitHub prereleases also need the standard per-OS feed");
     assert.equal(config.buildVersion, "12");
+    assert.deepEqual(config.protocols, [{ name: "Moondog", schemes: ["moondog"] }], "invite links open the installed app");
     assert.equal(config.mac.notarize, false, "pack.mjs notarizes so an interrupted submission can resume");
     assert.equal(config.nsis.deleteAppDataOnUninstall, false);
   }

@@ -57,10 +57,10 @@ test("providers list the /model picker with sign-in kinds and states, never a ke
   const providers = await settings.providers();
   assert.equal(JSON.stringify(providers).includes("SENTINEL"), false);
   assert.equal(requests.length, 0, "listing providers never fetches");
-  // OpenAI, Anthropic, Google and xAI always come first; any other provider shows only with a key,
-  // saved or from the environment, or while it is the one in use.
-  assert.deepEqual(providers.slice(0, 4).map(provider => provider.id), ["openai", "anthropic", "google", "xai"]);
-  assert.deepEqual(providers.slice(4).map(provider => provider.id).sort(), ["deepseek", "groq", "zai"]);
+  // Moondog's own model, then OpenAI, Anthropic, Google and xAI always come first; any other provider
+  // shows only with a key, saved or from the environment, or while it is the one in use.
+  assert.deepEqual(providers.slice(0, 5).map(provider => provider.id), ["moondog", "openai", "anthropic", "google", "xai"]);
+  assert.deepEqual(providers.slice(5).map(provider => provider.id).sort(), ["deepseek", "groq", "zai"]);
   assert.equal(providers.some(provider => provider.modelCount === 0), false);
   assert.equal(providers.some(provider => provider.id === "typesafe"), false);
   const byId = Object.fromEntries(providers.map(({ id, ...rest }) => [id, rest]));

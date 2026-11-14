@@ -55,6 +55,8 @@ const NOTICES = { model_unknown: ["model", "noticeModelUnknown", "model"], trans
 // The endpoint errors the listener can fix in the form; any other reads as a plain failure.
 const ENDPOINT_ERRORS = { endpoint_url_invalid: "endpointUrlInvalid", endpoint_models_unavailable: "endpointModelsUnavailable",
   endpoint_models_missing: "endpointModelsUnavailable", endpoint_name_invalid: "endpointNameInvalid" };
+// Why an invite code for Moondog's own model was not taken.
+const INVITE_ERRORS = { invite_invalid: "inviteInvalid", invite_revoked: "inviteRevoked", invite_unreachable: "inviteUnreachable", beta_ended: "moondogBetaEnded" };
 // Window keys on the left, player keys on the right.
 const SHORTCUTS = [[shortcuts.new, "newConversation"], [shortcuts.settings, "settings"], [shortcuts.stop, "stopReply"], ["/", "commands"], [shortcuts.sidebar, "conversations"],
   [shortcuts.player, "player"], [shortcuts.play, "playPause"], [shortcuts.next, "nextSong"], [shortcuts.previous, "previousSong"], [shortcuts.onAir, "onAir"]];
@@ -130,11 +132,11 @@ export function createSettings({ state, send, t, appleMusic = null, onHide = nul
   let copiedTimer = 0;
   // What the core told this sheet; the sheet asks again each time a section opens.
   const data = { providers: null, providersError: false, models: new Map(), modelsFailed: new Set(), expanded: undefined, signingOut: new Set(),
-    list: null, listError: false, toggles: new Map(), listPending: new Map(), endpoint: null,
+    list: null, listError: false, toggles: new Map(), listPending: new Map(), endpoint: null, invite: { busy: false, error: null },
     roles: null, rolesError: false, rolePending: new Map(), expandedRole: null,
     devices: null, devicesError: false, devicesLoading: false, memories: null, auth: null, error: null, importing: null, version: null, appearance: null, copied: null, focus: null, phaseOffset: null,
     lastfm: { username: "", needsKey: false, keyError: false, savingKey: false },
-    drafts: { remember: "", lastfm: "", lastfmKey: "", spotifyClientId: "", endpointName: "", endpointUrl: "", endpointKey: "", endpointModels: "", generationPath: "" } };
+    drafts: { remember: "", lastfm: "", lastfmKey: "", spotifyClientId: "", endpointName: "", endpointUrl: "", endpointKey: "", endpointModels: "", inviteCode: "", generationPath: "" } };
 
   // A choice stands until the core's next status, which always brings a new model object and says
   // what really happened.
@@ -506,6 +508,10 @@ export function createSettings({ state, send, t, appleMusic = null, onHide = nul
   // takes the whole place while it runs.
   const sameModel = (left, right) => Boolean(left && right) && left.provider === right.provider && left.model === right.model;
   const modelKey = (entry) => `${entry.provider}:${entry.model}`;
+  // Under a model's name: where it comes from, and whether that can answer. Moondog's own model
+  // has its provider's name, which is not said twice.
+  const modelDetail = (entry) => [entry.providerName === (entry.name ?? entry.model) ? null : entry.providerName, entry.ready === false ? say("notConnected") : null]
+    .filter(Boolean).join(" · ") || null;
   // A default or a thinking level stands until the core sends the list again.
   const expectList = (kind, value) => data.listPending.set(kind, value);
   const listExpected = (kind, actual) => (data.listPending.has(kind) ? data.listPending.get(kind) : actual);
@@ -560,7 +566,8 @@ export function createSettings({ state, send, t, appleMusic = null, onHide = nul
       const service = role.services?.find((entry) => entry.id === chosen.service);
       return service ? (service.ready ? service.name : `${service.name} · ${say("notSetUp")}`) : chosen.service;
     }
-    return `${chosen.name ?? chosen.model} · ${chosen.providerName ?? chosen.provider}`;
+    const from = chosen.providerName ?? chosen.provider;
+    return from === (chosen.name ?? chosen.model) ? from : `${chosen.name ?? chosen.model} · ${from}`;
   }
   function chooseRole(role, value) {
     data.rolePending.set(role.id, value);
@@ -586,7 +593,7 @@ export function createSettings({ state, send, t, appleMusic = null, onHide = nul
     for (const entry of fits) {
       const value = { provider: entry.provider, model: entry.model, name: entry.name, providerName: entry.providerName };
       const isChosen = sameRoleChoice(value, chosen);
-      rows.push(choice({ label: entry.name ?? entry.model, detail: entry.ready === false ? `${entry.providerName} · ${say("notConnected")}` : entry.providerName,
+      rows.push(choice({ label: entry.name ?? entry.model, detail: modelDetail(entry),
         chosen: isChosen, disabled: entry.ready === false && !isChosen, key: `role:${role.id}:${modelKey(entry)}`,
         onChoose: isChosen ? null : () => chooseRole(role, value) }));
     }
@@ -622,7 +629,7 @@ export function createSettings({ state, send, t, appleMusic = null, onHide = nul
         name(trailing, say("removeFromMenu"));
         trailing.addEventListener("click", () => toggle(entry, false));
       }
-      return choice({ label: entry.name ?? entry.model, detail: entry.ready === false ? `${entry.providerName} · ${say("notConnected")}` : entry.providerName,
+      return choice({ label: entry.name ?? entry.model, detail: modelDetail(entry),
         chosen: isDefault, check: false, disabled: entry.ready === false && !isDefault, trailing, key: `menu:${modelKey(entry)}`,
         onChoose: isDefault ? null : () => chooseDefault(entry) });
     }));
@@ -675,6 +682,12 @@ export function createSettings({ state, send, t, appleMusic = null, onHide = nul
         }
         continue;
       }
+      // Moondog's own model takes an invite code, asked for in its row until one is saved.
+      if (provider.signIn === "invite" && !provider.signedIn) {
+        rows.push(way({ label: provider.name, trailing: inviteForm(), indent: true }));
+        if (data.invite.error) rows.push(failure(data.invite.error));
+        continue;
+      }
       rows.push(choice({ label: provider.name, detail: provider.endpoint ? host(provider.endpoint.baseUrl) : accessDetail(provider), expanded,
         trailing: access(provider), key: `provider:${provider.id}`, lead: icon("chevron", "icon disclose"),
         onChoose: () => { data.expanded = expanded ? null : provider.id; render(); } }));
@@ -683,13 +696,28 @@ export function createSettings({ state, send, t, appleMusic = null, onHide = nul
     rows.push(choice({ label: say("addEndpoint"), action: true, key: "endpoint:add", lead: icon("plus", "icon lead"), onChoose: () => editEndpoint(null) }));
     return choices(rows);
   }
+  function inviteForm() {
+    const form = inlineForm({ key: "inviteCode", placeholder: say("inviteCode"), action: say("useInvite"), onSubmit: (value) => {
+      data.invite = { busy: true, error: null };
+      send({ type: "invite-save", code: value });
+      render();
+    } });
+    if (data.invite.busy) for (const control of form.querySelectorAll("input, button")) control.disabled = true;
+    return form;
+  }
   // A way in under its provider: words and what can be done about it, with nothing to choose.
-  function way({ label, detail, trailing }) {
+  // indent leaves the room a row's chevron takes, so its words line up with the rows that open.
+  function way({ label, detail, trailing, indent = false }) {
     const item = make("div", "choice static");
     const words = make("span", "choice-words");
     words.append(make("span", "choice-label", label));
     if (detail) words.append(make("span", "choice-detail", detail));
     const main = make("div", "choice-main");
+    if (indent) {
+      const room = icon("chevron", "icon disclose");
+      room.style.visibility = "hidden";
+      main.append(room);
+    }
     main.append(words);
     item.append(main);
     if (trailing) item.append(trailing);
@@ -702,6 +730,7 @@ export function createSettings({ state, send, t, appleMusic = null, onHide = nul
   // OpenAI keeps one of its two at a time, so signing in one way replaces the other.
   function access(provider, method = provider.signIn) {
     if (provider.signIn === "endpoint") return button(say("editMessage"), "button quiet small", () => editEndpoint(provider), `endpoint:edit:${provider.id}`);
+    if (provider.signIn === "invite") return button(say("removeInvite"), "button quiet small", () => send({ type: "invite-remove" }), "invite:remove");
     const oauth = method === "oauth";
     if (provider.signedIn && (!provider.chatgpt || provider.method === method)) {
       if (provider.source !== "saved") return null;
@@ -1422,6 +1451,19 @@ export function createSettings({ state, send, t, appleMusic = null, onHide = nul
         warn("endpoint", message.message);
       }
     }
+    // A saved code opens Moondog's own model; a refused one keeps the field with the reason.
+    if (message.type === "invite") {
+      if (message.state === "saved") {
+        data.invite = { busy: false, error: null };
+        data.drafts.inviteCode = "";
+        data.models.delete("moondog");
+        requested.delete("moondog");
+        data.expanded = "moondog";
+      } else {
+        data.invite = { busy: false, error: INVITE_ERRORS[message.code] ?? "inviteFailed" };
+        warn("invite", message.message);
+      }
+    }
     if (message.type === "devices") {
       data.devices = message.devices ?? [];
       data.devicesError = Boolean(message.error);
@@ -1519,5 +1561,13 @@ export function createSettings({ state, send, t, appleMusic = null, onHide = nul
     render();
   }
 
-  return { show, ask, hide, render, receive, get open() { return isOpen; }, get asking() { return Boolean(asking); } };
+  // An invite link opened the app. The code goes to the core, and the model section shows what came
+  // of it; the first run already shows that section when it asks for a model.
+  function useInvite(code) {
+    data.invite = { busy: true, error: null };
+    send({ type: "invite-save", code });
+    if (asking) render();
+    else show("model");
+  }
+  return { show, ask, hide, render, receive, useInvite, get open() { return isOpen; }, get asking() { return Boolean(asking); } };
 }
