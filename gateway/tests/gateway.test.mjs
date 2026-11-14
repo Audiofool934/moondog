@@ -19,16 +19,15 @@ const sse = (events) => new Response(
   { status: 200, headers: { "content-type": "text/event-stream" } },
 );
 
-async function setup({ upstreamReply, limits = {}, allowRequest, at = Date.UTC(2026, 10, 14, 10) } = {}) {
+async function setup({ upstreamReply, limits = {}, at = Date.UTC(2026, 10, 14, 10) } = {}) {
   const store = createMemoryStore();
   const calls = [];
   const pending = [];
   const handle = createGateway({
     store,
     upstream: { baseUrl: "https://upstream.example/v4", apiKey: "upstream-key", model: "secret-upstream-model", extraBody: {} },
-    limits: { dailyTokens: 1000, globalDailyTokens: 5000, endsAt: null, ...limits },
+    limits: { dailyTokens: 1000, globalDailyTokens: 5000, perMinute: 20, endsAt: null, ...limits },
     adminToken: "admin-token",
-    allowRequest,
     now: () => at,
     fetch: async (url, init) => {
       calls.push({ url, headers: init.headers, body: JSON.parse(init.body) });
@@ -114,10 +113,14 @@ test("the limit for all testers and the per-minute limit refuse with their own c
   const full = await everyone.call("/v1/chat/completions", { method: "POST", key: everyone.code, body: chatBody() });
   assert.equal((await full.json()).error.code, "beta_capacity_reached");
 
-  const fast = await setup({ upstreamReply: () => Response.json({}), allowRequest: async () => false });
-  const limited = await fast.call("/v1/chat/completions", { method: "POST", key: fast.code, body: chatBody() });
+  const fast = await setup({ upstreamReply: () => Response.json({ choices: [], usage: { prompt_tokens: 1, completion_tokens: 1 } }), limits: { perMinute: 3 } });
+  const send = () => fast.call("/v1/chat/completions", { method: "POST", key: fast.code, body: chatBody() });
+  assert.deepEqual([(await send()).status, (await send()).status, (await send()).status], [200, 200, 200]);
+  const limited = await send();
   assert.equal(limited.status, 429);
   assert.equal((await limited.json()).error.code, "rate_limited");
+  assert.equal(limited.headers.get("retry-after"), "60", "the wait runs to the end of the clock minute");
+  assert.equal(fast.calls.length, 3, "a refused request never reaches the upstream");
 });
 
 test("an upstream failure never passes the upstream's own words on", async () => {

@@ -3,6 +3,7 @@
 export function createMemoryStore() {
   const invites = [];
   const usage = new Map();
+  const minutes = new Map();
   const key = (id, day) => `${id} ${day}`;
   return {
     usage,
@@ -16,6 +17,11 @@ export function createMemoryStore() {
     async addUsage(id, day, { input, output }) {
       const row = usage.get(key(id, day)) ?? { input: 0, output: 0, requests: 0 };
       usage.set(key(id, day), { input: row.input + input, output: row.output + output, requests: row.requests + 1 });
+    },
+    async countRequest(id, minute) {
+      const name = `${id} ${minute}`;
+      minutes.set(name, (minutes.get(name) ?? 0) + 1);
+      return minutes.get(name);
     },
     async createInvite({ hash, label, dailyTokenLimit, expiresAt }) {
       invites.push({ id: invites.length + 1, hash, label, status: "active", dailyTokenLimit, expiresAt });
