@@ -636,7 +636,26 @@ export class MoondogApplication {
     for (const entry of playlist.entries) {
       if (entry.kind === "made") entry.audio_kept = Boolean(await this.localGenerator?.trackFile?.(entry.made_id));
     }
+    this.#findCovers(playlist.entries);
     return playlist;
+  }
+
+  // A song kept by its title and artist, as Moondog keeps what it picks, has no cover until one is found. The
+  // catalog finds it after the playlist is read; the store's change redraws each surface showing it. A song
+  // the catalog doesn't know is asked about once while the app runs.
+  #coverAsked = new Set();
+  #findCovers(entries) {
+    if (!this.musicCatalog?.findPreview) return;
+    const missing = entries.filter((entry) => entry.kind === "song" && !entry.refs?.artwork_url && entry.artist_credit &&
+      !this.#coverAsked.has(entry.id)).slice(0, 50);
+    if (!missing.length) return;
+    for (const entry of missing) this.#coverAsked.add(entry.id);
+    void mapLimited(missing, 4, async (entry) => {
+      const result = await this.musicCatalog.findPreview({ title: entry.title, artist: entry.artist_credit }).catch(() => null);
+      const track = result?.state === "resolved" ? result.track : null;
+      if (!track?.artwork_url) return null;
+      return { entryId: entry.id, refs: { artwork_url: track.artwork_url, ...(track.catalog_id && !entry.refs?.apple_music_id ? { apple_music_id: String(track.catalog_id) } : {}) } };
+    }).then((found) => { if (this.libraryReady()) this.libraryStore.rememberRefs(found.filter(Boolean)); }).catch(() => {});
   }
 
   // What the listener's @ names point at, as the model reads it: each playlist's songs as they stand now, and what a

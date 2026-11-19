@@ -141,6 +141,28 @@ test("an Avoid holds against the recording the catalog finds, not only the saved
   application.close();
 });
 
+test("a song Moondog keeps by name gets its cover once the playlist is read", async () => {
+  const libraryStore = await openLibraryStore({ databasePath: ":memory:" });
+  let asked = 0;
+  const counting = { findPreview: async (query) => { asked += 1; return query.title === "Unknown" ? { state: "not_found" } : catalog.findPreview(query); } };
+  const application = new MoondogApplication({ libraryStore, musicCatalog: counting });
+  const made = libraryStore.savePlaylist({ name: "Low outside", origin: "moondog",
+    entries: [{ kind: "song", title: "Space Song", artist_credit: "Beach House" }, { kind: "song", title: "Unknown", artist_credit: "Nobody" }] });
+  const changed = new Promise((resolve) => { const stop = libraryStore.subscribe(() => { stop(); resolve(); }); });
+  const first = await application.libraryPlaylist(made.id);
+  assert.equal(first.entries[0].refs?.artwork_url, undefined);
+  await changed;
+  const read = await application.libraryPlaylist(made.id);
+  assert.equal(read.entries[0].refs.artwork_url, "https://is1-ssl.mzstatic.com/a/100x100bb.jpg");
+  assert.equal(read.entries[0].refs.apple_music_id, "id-Space Song");
+  assert.equal(read.entries[1].refs?.artwork_url, undefined);
+  // The sidebar's sleeve takes the first cover in the playlist.
+  assert.equal(libraryStore.view().playlists.find((each) => each.id === made.id).cover.artwork_url, "https://is1-ssl.mzstatic.com/a/100x100bb.jpg");
+  // A song the catalog doesn't know is not asked about again on every read.
+  assert.equal(asked, 2);
+  application.close();
+});
+
 test("the agent's library tools appear only with a library", async () => {
   const without = new MoondogApplication({});
   assert.ok(!without.agentCapabilityDescriptors().some((descriptor) => descriptor.tool_name.startsWith("moondog_collection_")));
