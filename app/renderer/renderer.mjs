@@ -2328,11 +2328,11 @@ function showScratch(target, ms, durationMs) {
 }
 
 // ── Panels ───────────────────────────────────────────────────────────────────────────────────
-// A narrow window folds the player, then the conversations; a click always wins. The conversations
-// open as the listener last left them. The player opens only by hand: it starts folded, already in the
-// markup so it never shows before this runs, and folds again when nothing is left to play.
+// A narrow window folds the player, then the conversations; a click always wins. Both open only by
+// hand, so every launch starts on the bare room: they start folded, already in the markup so they never
+// show before this runs, and the player folds again when nothing is left to play.
 const layout = $("window");
-const panels = { sidebar: store.get("moondog.sidebar") !== "hidden", inspector: false };
+const panels = { sidebar: false, inspector: false };
 const roomFor = { sidebar: 820, inspector: 1060 };
 const forced = { sidebar: false, inspector: false };
 // Nothing playing: the player has nothing to hold.
@@ -2361,7 +2361,6 @@ function togglePanel(panel) {
   // A click overrides the width rule only where the width rule would hide the panel.
   forced[panel] = !visible && innerWidth < roomFor[panel];
   if (!visible) makeRoom(panel);
-  if (panel === "sidebar") store.set("moondog.sidebar", panels.sidebar ? "shown" : "hidden");
   slidePanels();
   renderInspector();
 }
