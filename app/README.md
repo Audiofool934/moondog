@@ -102,7 +102,7 @@ A model or music service chosen there lasts until the app quits, and sign-in and
   The player opens only when you open it: it starts folded, a song starting never opens it, and it folds again when nothing is left to play.
   With the player folded away, the song shows at the end of the title bar with play or pause and next; a click on the song opens the player.
 - Drag the inner edge of either side panel to change its width; a double-click puts it back.
-  The conversations open as you last left them.
+  The conversations also open only when you open them: every launch starts on the bare room.
 - Beside the send button, the music service and the model, each by its mark (from Simple Icons, and Lobe Icons for the model makers Simple Icons lacks), with its name in the tooltip.
   A model shows its maker's mark, through OpenRouter or an endpoint too, by the maker its id names; a maker the window has no mark for shows a plain model glyph.
   The service's menu switches among the services that can play now: Apple Music, Spotify once connected, and NetEase Music once ncm-cli is signed in, with the one in use always listed.
