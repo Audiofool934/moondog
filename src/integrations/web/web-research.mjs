@@ -1,25 +1,29 @@
 import { readModelRoles } from "../../runtime/pi/model-roles.mjs";
+import { moondogModelUrl, readInvite } from "../../runtime/pi/moondog-model.mjs";
 import { createPersistentCredentialStore } from "../../runtime/pi/persistent-credential-store.mjs";
 import { createBraveWebResearch } from "./brave-web.mjs";
 import { createCodexWebResearch } from "./codex-web.mjs";
 import { createDeepSeekWebResearch } from "./deepseek-web.mjs";
+import { createMoondogWebResearch } from "./moondog-web.mjs";
 import { failure, webProviderName } from "./web-result.mjs";
 
 // Search goes to the first backend that is set up; reading needs a backend that can open pages.
+// Moondog's own comes first: a listener with an invite code has it without a key of their own.
 // The web search role in Settings (model-roles.json) picks one instead, and MOONDOG_WEB_SEARCH_PROVIDER
 // and MOONDOG_WEB_READ_PROVIDER pick over that. As in Hermes Agent, a call that fails on the chosen
 // backend is tried once more on each other backend that is set up, so one service being down or out
 // of credit doesn't leave the agent without the web.
-const order = Object.freeze({ search: ["deepseek", "brave", "codex"], read: ["deepseek", "codex"] });
+const order = Object.freeze({ search: ["moondog", "deepseek", "brave", "codex"], read: ["moondog", "deepseek", "codex"] });
 // Failures that another backend would only repeat.
 const final = new Set(["web_cancelled", "web_input_invalid", "web_url_invalid"]);
-const providerIds = Object.freeze({ deepseek: "deepseek", brave: "brave", codex: "codex_cli" });
+const providerIds = Object.freeze({ moondog: "moondog", deepseek: "deepseek", brave: "brave", codex: "codex_cli" });
 const keys = Object.freeze({
   deepseek: { credential: "deepseek", variable: "DEEPSEEK_API_KEY" },
   brave: { credential: "brave", variable: "BRAVE_SEARCH_API_KEY" },
 });
 
 export const webSetupText = [
+  "- `/invite <code>` - Moondog's own search and page reading, on your invite code's daily allowance",
   "- `/auth deepseek` - DeepSeek Search and Fetch: search and page reading, $0.75 per 1,000 requests each",
   "- `/auth brave` - Brave Search: search only, with a free monthly credit",
   "- Install the Codex CLI and run `codex login` - search and reading through your ChatGPT plan",
@@ -40,6 +44,7 @@ export async function createWebResearch({
   fetch = globalThis.fetch,
   createCodex = createCodexWebResearch,
   readRoles = readModelRoles,
+  readCode = readInvite,
   now,
 } = {}) {
   let current = { backends: {}, choices: {}, found: {} };
@@ -52,11 +57,15 @@ export async function createWebResearch({
       return kept?.publicStatus().state === "configured" ? kept : createCodex({ environment, now });
     }
     const kept = previous?.backends[name] && previous.found[name]?.key === found[name]?.key;
-    return kept ? previous.backends[name] : { deepseek: createDeepSeekWebResearch, brave: createBraveWebResearch }[name]({ apiKey: found[name]?.key, fetch, now });
+    if (kept) return previous.backends[name];
+    if (name === "moondog") return createMoondogWebResearch({ baseUrl: moondogModelUrl(environment), apiKey: found.moondog?.key, fetch, now });
+    return { deepseek: createDeepSeekWebResearch, brave: createBraveWebResearch }[name]({ apiKey: found[name]?.key, fetch, now });
   }
 
   async function load(previous) {
+    const invite = await readCode(environment).catch(() => null);
     const found = {
+      moondog: invite?.code ? { key: invite.code, source: "your invite code" } : null,
       deepseek: await readKey(credentials, environment, keys.deepseek),
       brave: await readKey(credentials, environment, keys.brave),
     };
@@ -89,7 +98,16 @@ export async function createWebResearch({
     return names;
   }
 
+  // Settings, an invite code or a key can change in another window or the terminal, so each call
+  // reads them again first. A backend whose key did not change is kept.
+  async function reload() {
+    const previous = current;
+    current = await load(previous);
+    for (const [name, entry] of Object.entries(previous.backends)) if (current.backends[name] !== entry) entry.close();
+  }
+
   async function research(kind, input, options) {
+    await reload();
     const first = backend(kind);
     const name = current.choices[kind].name;
     let failed;
@@ -116,6 +134,7 @@ export async function createWebResearch({
 
   /** Each service, whether it is set up for each operation, and which one the role chose; for Settings. */
   async function services() {
+    await reload();
     const role = (await readRoles(environment).catch(() => ({}))).web_search?.service ?? null;
     current.backends.codex ??= await backendFor("codex", current.found, null);
     const codex = current.backends.codex.publicStatus().state === "configured";
@@ -174,9 +193,7 @@ export async function createWebResearch({
     read: (input, options) => research("read", input, options),
     /** Reads keys and settings again, after /auth or /reload. */
     async refresh() {
-      const previous = current;
-      current = await load(previous);
-      for (const [name, entry] of Object.entries(previous.backends)) if (current.backends[name] !== entry) entry.close();
+      await reload();
       return publicStatus();
     },
     close: closeAll,

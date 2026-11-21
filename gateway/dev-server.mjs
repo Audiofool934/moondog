@@ -6,8 +6,8 @@
 //   MOONDOG_MODEL_URL=http://127.0.0.1:8788/v1 moondog invite <the printed code>
 //
 // With UPSTREAM_BASE_URL, UPSTREAM_API_KEY and UPSTREAM_MODEL set, it calls that upstream.
-// Without them it answers each request with one fixed line, so the app's path can be checked
-// with no key.
+// Without them it answers each request, search and page read with one fixed line, so the app's
+// path can be checked with no key.
 
 import { createServer } from "node:http";
 import { Readable } from "node:stream";
@@ -19,6 +19,12 @@ import { createMemoryStore } from "./src/store-memory.mjs";
 function cannedUpstream() {
   return async (url, init) => {
     const body = JSON.parse(init.body);
+    if (String(url).endsWith("/web_search")) {
+      return Response.json({ search_result: [{ title: `Local result for ${body.search_query}`, link: "https://example.com/", content: "The local gateway answers searches with this one result.", publish_date: "" }] });
+    }
+    if (String(url).endsWith("/reader")) {
+      return Response.json({ reader_result: { title: "Local page", content: `The local gateway read ${body.url} as this one line.` } });
+    }
     const text = "This is the local Moondog gateway answering without an upstream model.";
     const usage = { prompt_tokens: Math.ceil(init.body.length / 3), completion_tokens: 20 };
     if (!body.stream) {
@@ -43,6 +49,9 @@ export async function startLocalGateway({ port = 0, environment = process.env, l
     upstream: real
       ? { baseUrl: environment.UPSTREAM_BASE_URL.replace(/\/+$/u, ""), apiKey: environment.UPSTREAM_API_KEY, model: environment.UPSTREAM_MODEL, extraBody: {} }
       : { baseUrl: "http://upstream.invalid", apiKey: "none", model: "local", extraBody: {} },
+    web: real
+      ? { search: `${environment.UPSTREAM_BASE_URL.replace(/\/+$/u, "")}/web_search`, read: `${environment.UPSTREAM_BASE_URL.replace(/\/+$/u, "")}/reader`, apiKey: environment.UPSTREAM_API_KEY, engine: environment.WEB_SEARCH_ENGINE || "search-prime" }
+      : { search: "http://upstream.invalid/web_search", read: "http://upstream.invalid/reader", apiKey: "none", engine: "search-prime" },
     limits: { dailyTokens: 3_000_000, globalDailyTokens: 40_000_000, perMinute: 20, endsAt: null, ...limits },
     adminToken,
     ...(fetch || !real ? { fetch: fetch ?? cannedUpstream() } : {}),

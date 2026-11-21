@@ -25,6 +25,7 @@ import { serviceKeyProviders, supportedAuthProviderIds } from "../../runtime/pi/
 import { EFFORT_LEVELS, EFFORT_SCALE } from "../../runtime/pi/runtime-settings.mjs";
 import { runtimeBehindSelection } from "../../runtime/pi/runtime-selection.mjs";
 import { MODEL_ROLE_WORDS } from "./model-roles-command.mjs";
+import { followChatModel } from "../../runtime/pi/model-roles.mjs";
 import { imagesFromText } from "../../runtime/pi/image-input.mjs";
 import {
   formatLocalResult,
@@ -1582,6 +1583,8 @@ export async function runMoondogTui({
     setBusy(true);
     setFooter(tr("Loading {model}...", { model: `${providerId}/${modelId}` }));
     const status = await replaceRuntime(runtimeSelection(providerId, modelId, runtimeStatus.effort));
+    // Moondog's own model brings its vision and web search, as choosing it in the window does.
+    const followed = await followChatModel({ provider: providerId, model: modelId }, environment).catch(() => []);
     say(
       status.state === "configured"
         ? tr("Now talking through `{model}`. This conversation and what I remember carry over.", { model: `${providerId}/${modelId}` })
@@ -1589,6 +1592,7 @@ export async function runMoondogTui({
           ? tr("Saved `{model}`, but you're not signed in yet. Run `/auth {provider}` to connect it.", { model: `${providerId}/${modelId}`, provider: providerId })
           : tr("Saved `{model}`, but I can't reach it yet (`{reason}`).", { model: `${providerId}/${modelId}`, reason: status.reason }),
     );
+    if (followed.length) say(tr("Vision and web search are back on auto, where Moondog sees images and searches the web itself. `/model roles` shows them."));
     setFooter(
       status.state === "configured" ? tr("Model ready.") : tr("Model saved, not connected yet."),
       status.state === "configured" ? success : warning,

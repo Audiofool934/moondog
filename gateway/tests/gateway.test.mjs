@@ -19,19 +19,20 @@ const sse = (events) => new Response(
   { status: 200, headers: { "content-type": "text/event-stream" } },
 );
 
-async function setup({ upstreamReply, limits = {}, at = Date.UTC(2026, 10, 14, 10) } = {}) {
+async function setup({ upstreamReply, limits = {}, at = Date.UTC(2026, 10, 14, 10), web = null, visionModel = null } = {}) {
   const store = createMemoryStore();
   const calls = [];
   const pending = [];
   const handle = createGateway({
     store,
-    upstream: { baseUrl: "https://upstream.example/v4", apiKey: "upstream-key", model: "secret-upstream-model", extraBody: {} },
+    upstream: { baseUrl: "https://upstream.example/v4", apiKey: "upstream-key", model: "secret-upstream-model", visionModel, extraBody: {} },
+    web,
     limits: { dailyTokens: 1000, globalDailyTokens: 5000, perMinute: 20, endsAt: null, ...limits },
     adminToken: "admin-token",
     now: () => at,
     fetch: async (url, init) => {
       calls.push({ url, headers: init.headers, body: JSON.parse(init.body) });
-      return upstreamReply();
+      return upstreamReply(url);
     },
   });
   const context = { waitUntil: (promise) => pending.push(promise) };
@@ -171,4 +172,49 @@ test("the admin page holds no data and asks for the key", async () => {
   const html = await page.text();
   assert.match(html, /Admin key/u);
   assert.ok(!html.includes("first tester"));
+});
+
+test("an image goes to the vision model when the owner set one apart, and to the chat model otherwise", async () => {
+  const image = { role: "user", content: [{ type: "text", text: "what is this cover?" }, { type: "image_url", image_url: { url: "data:image/png;base64,AAAA" } }] };
+  const answer = () => Response.json({ model: "x", choices: [{ message: { role: "assistant", content: "A record." } }], usage: { prompt_tokens: 10, completion_tokens: 2 } });
+  const apart = await setup({ upstreamReply: answer, visionModel: "secret-vision-model" });
+  await apart.call("/v1/chat/completions", { method: "POST", key: apart.code, body: chatBody({ messages: [image] }) });
+  await apart.call("/v1/chat/completions", { method: "POST", key: apart.code, body: chatBody() });
+  assert.deepEqual(apart.calls.map((call) => call.body.model), ["secret-vision-model", "secret-upstream-model"]);
+  assert.deepEqual(apart.calls[0].body.messages, [image]);
+  const same = await setup({ upstreamReply: answer });
+  await same.call("/v1/chat/completions", { method: "POST", key: same.code, body: chatBody({ messages: [image] }) });
+  assert.equal(same.calls[0].body.model, "secret-upstream-model");
+});
+
+test("web search and page reading answer in the app's shape and count against the allowance", async () => {
+  const web = { search: "https://upstream.example/v4/web_search", read: "https://upstream.example/v4/reader", apiKey: "upstream-key", engine: "engine-one" };
+  const { call, calls, code, store, settle, day } = await setup({
+    web, limits: { dailyTokens: 50_000, globalDailyTokens: 1_000_000 },
+    upstreamReply: (url) => url.endsWith("/web_search")
+      ? Response.json({ search_result: [{ title: "Moondog", link: "https://example.com/moondog", content: "Alan Freed's show", publish_date: "2026-11-01" }, { title: "No link" }] })
+      : Response.json({ reader_result: { title: "Moondog page", content: "# Moondog\n\nText." } }),
+  });
+  assert.equal((await call("/v1/web/search", { method: "POST", key: "md-wrong", body: { query: "x" } })).status, 401);
+  const found = await call("/v1/web/search", { method: "POST", key: code, body: { query: " moondog radio ", count: 50 } });
+  assert.equal(found.status, 200);
+  assert.deepEqual(await found.json(), { results: [{ title: "Moondog", url: "https://example.com/moondog", snippet: "Alan Freed's show", published_at: "2026-11-01" }] });
+  assert.deepEqual(calls[0].body, { search_engine: "engine-one", search_query: "moondog radio", count: 10 });
+  assert.equal(calls[0].headers.authorization, "Bearer upstream-key");
+  const page = await (await call("/v1/web/read", { method: "POST", key: code, body: { url: "https://example.com/moondog" } })).json();
+  assert.deepEqual(page, { status: "found", title: "Moondog page", content: "# Moondog\n\nText." });
+  assert.equal((await call("/v1/web/read", { method: "POST", key: code, body: { url: "file:///etc/passwd" } })).status, 400);
+  await settle();
+  assert.equal(store.usage.get(`1 ${day}`).input, 40_000);
+  // Two web calls used most of a 50,000-token day; the third finds it used up.
+  await call("/v1/web/search", { method: "POST", key: code, body: { query: "more" } });
+  await settle();
+  assert.equal((await call("/v1/web/search", { method: "POST", key: code, body: { query: "again" } })).status, 429);
+});
+
+test("a gateway without a web service says so", async () => {
+  const { call, code } = await setup({ upstreamReply: () => Response.json({}) });
+  const reply = await call("/v1/web/search", { method: "POST", key: code, body: { query: "x" } });
+  assert.equal(reply.status, 503);
+  assert.equal((await reply.json()).error.code, "web_unavailable");
 });

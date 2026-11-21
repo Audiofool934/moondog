@@ -160,7 +160,7 @@ export function withCommandCompletions(commands, {
         .map((provider) => ({ value: provider.id, label: provider.id, description: provider.name })) : [],
     },
     model: {
-      argumentHint: "[provider] [model] | refresh [provider] | roles | vision auto|<provider> <model> | web auto|deepseek|brave|codex",
+      argumentHint: "[provider] [model] | refresh [provider] | roles | vision auto|<provider> <model> | web auto|moondog|deepseek|brave|codex",
       choices: (previous) => {
         const available = providers().filter((provider) => provider.modelCount > 0);
         const asChoice = (provider) => ({ value: provider.id, label: provider.id, description: provider.name });

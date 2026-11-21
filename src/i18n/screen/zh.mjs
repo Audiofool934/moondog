@@ -1182,4 +1182,5 @@ export default {
   "Moondog's tracks stay here; Spotify can't hold them.": "Moondog 做的曲目留在这里，Spotify 放不了它们。",
   "Export a playlist": "导出歌单",
   "{count} songs went over.": { one: "发过去 {count} 首。", other: "发过去 {count} 首。" },
+  "Vision and web search are back on auto, where Moondog sees images and searches the web itself. `/model roles` shows them.": "视觉和网络搜索已改回自动，由 Moondog 自己看图、上网搜索。`/model roles` 可以查看。",
 };

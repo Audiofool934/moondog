@@ -11,6 +11,11 @@ export const INVITE_PATTERN = /^md-[0-9a-hjkmnp-tv-z]{24}$/u;
 const CODE_ALPHABET = "0123456789abcdefghjkmnpqrstvwxyz";
 const MAX_REQUEST_BYTES = 4 * 1024 * 1024;
 const MAX_LABEL = 80;
+// A web search or page read costs about as much as this many model tokens, so it counts this much
+// against the code's daily allowance and the day's total.
+export const WEB_CALL_TOKENS = 20_000;
+const WEB_TIMEOUT_MS = 30_000;
+const MAX_WEB_TEXT = 200_000;
 const MAX_NOTE = 1000;
 // The allowance day turns at midnight in Beijing, where most of the first listeners are.
 const DAY_OFFSET_MS = 8 * 60 * 60 * 1000;
@@ -44,6 +49,9 @@ async function sameSecret(given, expected) {
   const [a, b] = await Promise.all([hashInvite(given), hashInvite(expected)]);
   return a === b;
 }
+
+const hasImage = (messages) => messages.some((message) => Array.isArray(message?.content) &&
+  message.content.some((part) => part?.type === "image_url" || part?.type === "image"));
 
 const count = (value) => (Number.isSafeInteger(value) && value > 0 ? value : 0);
 const estimateTokens = (characters) => Math.ceil(characters / 3);
@@ -126,11 +134,12 @@ const adminPage = () => new Response(ADMIN_PAGE, {
 /**
  * @param {object} options
  * @param {object} options.store invites and daily token counts; see store-d1.mjs
- * @param {object} options.upstream { baseUrl, apiKey, model, extraBody }
+ * @param {object} options.upstream { baseUrl, apiKey, model, visionModel, extraBody }
+ * @param {object} [options.web] { search, read, apiKey, engine }: the web service's addresses, or null
  * @param {object} options.limits { dailyTokens, globalDailyTokens, perMinute, endsAt }
  * @param {string} options.adminToken the owner's key for /admin
  */
-export function createGateway({ store, upstream, limits, adminToken, fetch = globalThis.fetch, now = Date.now }) {
+export function createGateway({ store, upstream, web = null, limits, adminToken, fetch = globalThis.fetch, now = Date.now }) {
   async function admit(request) {
     const code = bearer(request);
     if (!INVITE_PATTERN.test(code)) return { refused: refusal(401, "invite_invalid", "This invite code isn't one Moondog knows. Check it and enter it again.") };
@@ -153,22 +162,31 @@ export function createGateway({ store, upstream, limits, adminToken, fetch = glo
     resets_in_seconds: secondsToNextDay(at),
   });
 
-  async function chat(request, context) {
+  // A code that may make one more request now: known, active, within today's allowance and the
+  // minute's limit. The model and the web share these.
+  async function allow(request) {
     const admitted = await admit(request);
-    if (admitted.refused) return admitted.refused;
-    const { invite, day, at, used, totalUsed, dailyTokens } = admitted;
+    if (admitted.refused) return admitted;
+    const { invite, at, used, totalUsed, dailyTokens } = admitted;
     const wait = String(secondsToNextDay(at));
     if (used >= dailyTokens) {
-      return refusal(429, "daily_allowance_used", "You've used today's Moondog allowance. It starts again at midnight, Beijing time.", { "retry-after": wait });
+      return { refused: refusal(429, "daily_allowance_used", "You've used today's Moondog allowance. It starts again at midnight, Beijing time.", { "retry-after": wait }) };
     }
     if (totalUsed >= limits.globalDailyTokens) {
-      return refusal(429, "beta_capacity_reached", "The Moondog model is at today's limit for all testers. It starts again at midnight, Beijing time.", { "retry-after": wait });
+      return { refused: refusal(429, "beta_capacity_reached", "The Moondog model is at today's limit for all testers. It starts again at midnight, Beijing time.", { "retry-after": wait }) };
     }
     // The store counts this request in the clock minute it falls in, and answers with the count.
     const minute = Math.floor(at / 60_000);
     if (limits.perMinute && (await store.countRequest(invite.id, minute)) > limits.perMinute) {
-      return refusal(429, "rate_limited", "Too many requests in a minute. Wait a moment and try again.", { "retry-after": String(60 - Math.floor((at % 60_000) / 1000)) });
+      return { refused: refusal(429, "rate_limited", "Too many requests in a minute. Wait a moment and try again.", { "retry-after": String(60 - Math.floor((at % 60_000) / 1000)) }) };
     }
+    return admitted;
+  }
+
+  async function chat(request, context) {
+    const admitted = await allow(request);
+    if (admitted.refused) return admitted.refused;
+    const { invite, day } = admitted;
 
     const raw = await request.text();
     if (raw.length > MAX_REQUEST_BYTES) return refusal(413, "request_too_large", "This request is too large for the Moondog model.");
@@ -178,7 +196,9 @@ export function createGateway({ store, upstream, limits, adminToken, fetch = glo
       return refusal(400, "request_invalid", "The request must be a Chat Completions body with messages.");
     }
     const streaming = body.stream === true;
-    const forwarded = { ...body, ...upstream.extraBody, model: upstream.model };
+    // A request with an image goes to the vision model when the owner set one apart.
+    const model = upstream.visionModel && hasImage(body.messages) ? upstream.visionModel : upstream.model;
+    const forwarded = { ...body, ...upstream.extraBody, model };
     if (streaming) forwarded.stream_options = { ...body.stream_options, include_usage: true };
     else delete forwarded.stream_options;
 
@@ -220,6 +240,53 @@ export function createGateway({ store, upstream, limits, adminToken, fetch = glo
     if (!completion) return refusal(502, "upstream_error", "The Moondog model couldn't answer this request. Try again in a moment.");
     if (typeof completion.model === "string") completion.model = MODEL_ID;
     return json(200, completion);
+  }
+
+  // Moondog's own web search and page reading, for the app's web search role. The answer has the
+  // app's shape, whatever the service behind it answers.
+  async function webCall(operation, request, context) {
+    if (!web?.[operation]) return refusal(503, "web_unavailable", "Moondog's web search isn't set up on this gateway.");
+    const admitted = await allow(request);
+    if (admitted.refused) return admitted.refused;
+    const input = await request.json().catch(() => null);
+    const query = typeof input?.query === "string" ? input.query.trim().slice(0, 400) : "";
+    const target = typeof input?.url === "string" ? input.url.trim() : "";
+    if (operation === "search" ? !query : !/^https?:\/\/[^\s]{1,2040}$/u.test(target)) {
+      return refusal(400, "request_invalid", operation === "search" ? "Send a query." : "Send a public http or https URL.");
+    }
+    const body = operation === "search"
+      ? { search_engine: web.engine, search_query: query, count: Math.min(Math.max(count(input.count) || 10, 1), 10) }
+      : { url: target, return_format: "markdown", retain_images: false, timeout: 20 };
+    let reply;
+    try {
+      reply = await fetch(web[operation], {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${web.apiKey}` },
+        body: JSON.stringify(body),
+        signal: AbortSignal.any([request.signal, AbortSignal.timeout(WEB_TIMEOUT_MS)].filter(Boolean)),
+      });
+    } catch {
+      return refusal(502, "web_unreachable", "Moondog's web search didn't answer. Try again in a moment.");
+    }
+    const data = await reply.json().catch(() => null);
+    // A page the service could not read is an answer, not a fault, and costs nothing.
+    if (operation === "read" && (!reply.ok || typeof data?.reader_result?.content !== "string")) {
+      if (reply.status === 429 || reply.status >= 500) return refusal(502, "web_failed", "Moondog's web search couldn't answer. Try again in a moment.");
+      return json(200, { status: "unavailable" });
+    }
+    if (!reply.ok || !data) return refusal(502, "web_failed", "Moondog's web search couldn't answer. Try again in a moment.");
+    context?.waitUntil?.(store.addUsage(admitted.invite.id, admitted.day, { input: WEB_CALL_TOKENS, output: 0 }).catch(() => {}));
+    if (operation === "read") {
+      const page = data.reader_result;
+      return json(200, { status: "found", title: typeof page.title === "string" ? page.title.slice(0, 300) : "", content: page.content.slice(0, MAX_WEB_TEXT) });
+    }
+    const results = (Array.isArray(data.search_result) ? data.search_result : []).slice(0, 10).map((item) => ({
+      title: String(item?.title ?? "").slice(0, 300),
+      url: String(item?.link ?? ""),
+      snippet: String(item?.content ?? "").slice(0, 1500),
+      published_at: typeof item?.publish_date === "string" && item.publish_date ? item.publish_date.slice(0, 100) : null,
+    })).filter((item) => item.title && /^https?:\/\//u.test(item.url));
+    return json(200, { results });
   }
 
   async function admin(request, url) {
@@ -270,6 +337,8 @@ export function createGateway({ store, upstream, limits, adminToken, fetch = glo
     const route = `${request.method} ${url.pathname.replace(/\/+$/u, "") || "/"}`;
     try {
       if (route === "POST /v1/chat/completions") return await chat(request, context);
+      if (route === "POST /v1/web/search") return await webCall("search", request, context);
+      if (route === "POST /v1/web/read") return await webCall("read", request, context);
       if (route === "GET /v1/models") {
         const admitted = await admit(request);
         return admitted.refused ?? json(200, { object: "list", data: [{ id: MODEL_ID, object: "model", owned_by: "moondog" }] });

@@ -14,6 +14,7 @@ export const webLimits = Object.freeze({
 
 // What each backend's text is, so the agent can tell a search engine's snippet from a model's summary.
 const backends = Object.freeze({
+  moondog: { name: "Moondog", evidence: "provider_api_response", content: { search: "search_engine_results", read: "fetched_page_text" } },
   codex_cli: { name: "Codex CLI", evidence: "native_web_operation_observed", content: { search: "model_generated_web_summary", read: "model_generated_web_summary" } },
   deepseek: { name: "DeepSeek", evidence: "provider_api_response", content: { search: "search_engine_results", read: "fetched_page_text" } },
   brave: { name: "Brave Search", evidence: "provider_api_response", content: { search: "search_engine_results" } },

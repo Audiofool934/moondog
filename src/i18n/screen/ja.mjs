@@ -1182,4 +1182,5 @@ export default {
   "Moondog's tracks stay here; Spotify can't hold them.": "Moondog が作った曲はここに残ります。Spotify には置けません。",
   "Export a playlist": "プレイリストを書き出す",
   "{count} songs went over.": { one: "{count} 曲を送りました。", other: "{count} 曲を送りました。" },
+  "Vision and web search are back on auto, where Moondog sees images and searches the web itself. `/model roles` shows them.": "ビジョンとウェブ検索を自動に戻しました。Moondog が自分で画像を見て、ウェブを検索します。`/model roles` で確認できます。",
 };

@@ -790,8 +790,11 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
   // A new default is saved first, so a reply that ends meanwhile, the terminal and a new conversation
   // all find it. Conversations without a model of their own follow it.
   async function setDefault(selection) {
+    const switched = !defaults || !sameSelection({ provider: defaults.provider, model: defaults.model }, { provider: selection.provider, model: selection.model });
     await saveRuntimeSelection?.(selection);
     defaults = selection;
+    // A new model, not a new thinking level, brings its roles: Moondog's own sees and searches.
+    if (switched) await modelSettings?.followChat?.(selection).catch(() => {});
     await modelSettings?.setListed?.(selection.provider, selection.model, true).catch(() => {});
     forgetWhere((chosen) => sameSelection(chosen, selection));
     await rebuildAll();
