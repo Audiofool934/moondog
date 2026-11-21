@@ -35,6 +35,8 @@ The agent is built on [Pi](https://github.com/earendil-works/pi).
 | Windows, x64 | A test build from the same places. It is not code-signed yet, so SmartScreen asks before it opens. |
 | Terminal, macOS or Linux | `npm install --global @audiofool/moondog`, then `moondog`. Needs Node.js 22.19.0 or newer. |
 
+The [getting-started guide](https://moondog.audiofool.ai/start.html) goes from the first run to the first song: the music service, the model, and your history.
+
 The desktop app updates itself, on a Stable or Beta channel you choose in Settings › About.
 The terminal updates with `moondog update` or `/update`, on the npm `latest` or `beta` channel.
 See [updating and release channels](docs/UPDATES.md).

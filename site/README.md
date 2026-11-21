@@ -63,6 +63,27 @@ Each song was made 32 seconds long and the ident 6, with `./sa3 --dit medium --d
 - `last-tram-home.m4a`, seed 21: "TrackType: Music, VocalType: Instrumental, Genre: Downtempo, Genre: Jazz. A late-night downtempo instrumental for the last tram home through a quiet city. A close-miked Rhodes electric piano plays soft, tired chords, a warm upright bass walks slowly, and brushed drums keep a relaxed swing. A distant city hum and the gentle rhythm of rails sit under the music, with warm tape saturation and soft reverb. Intimate, sleepy, tender, a little lonely. 76 BPM."
   Its first bar opens on a rough first frame, so the page's file starts 3.13 seconds in, just before the second bar's chord, with a 30 ms fade-in, and runs 28.9 seconds.
 
+## The guide
+
+`start.html` is the getting-started guide, at <https://moondog.audiofool.ai/start.html>.
+It goes from the download to the first song in five steps: install, the music service, the model, your history, and the first request.
+It follows the Mac desktop app, and it is words and pictures; its one script is the Copy buttons (`copy.mjs`).
+The page links it from its masthead and from Get Moondog.
+
+The pictures in `static/guide/` are the app's own window, drawn by a script and never edited by hand:
+
+```bash
+cd site
+node guide-pictures.mjs
+```
+
+It needs `npm ci` in `app/`, and `cwebp` (`brew install webp`).
+The script runs the app's harness (`app/harness.mjs`) on its sample data, in light and dark, and saves each state as WebP.
+Two harness states exist for these pictures: `first-run-fresh`, the model step of a new install, and `settings-spotify-setup`, Spotify's row before the listener has made a Spotify app.
+The taste page is drawn twice, and a phone gets the one from a narrow window.
+The last picture is the README's, the scene with its made-up listener (`assets/demo/`).
+Draw the pictures again when the first run, the Settings sheet, or the taste page changes.
+
 `build.mjs` bundles with esbuild, and swaps the Node built-ins the window's core imports for the stand-ins in `shims/`.
 Each published document asks for its script and styles by a hash of their content, because Cloudflare keeps them for hours.
 

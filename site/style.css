@@ -76,7 +76,10 @@ code, pre { font-family: var(--mono); font-size: 0.8em; }
 .masthead { display: flex; align-items: center; justify-content: space-between; gap: 16px; width: var(--page); margin: 0 auto; padding: 18px 0; }
 .brand { display: inline-flex; align-items: center; gap: 10px; font-size: 19px; text-decoration: none; }
 .masthead nav { display: flex; align-items: center; gap: 20px; font: 14px var(--sans); }
-.masthead nav a { color: var(--text-2); text-decoration: none; }
+.masthead nav a { color: var(--text-2); text-decoration: none; white-space: nowrap; }
+/* A phone's masthead keeps the logo, the guide and the download; Source is in the liner notes too. */
+@media (max-width: 480px) { .masthead nav { gap: 14px; } .masthead nav .aside { display: none; } }
+@media (max-width: 350px) { .brand span { display: none; } }
 .masthead nav a:hover { color: var(--text); }
 .masthead .pill { padding: 6px 12px; border-radius: 999px; background: var(--well); color: var(--text); }
 .masthead .pill:hover { background: var(--current); }
@@ -137,7 +140,7 @@ main, .liner { width: var(--page); margin-inline: auto; }
 }
 
 /* What it does, a part at a time: the name on the left, the words on the right */
-.part { display: grid; gap: 6px 48px; margin-top: clamp(64px, 9vw, 112px); }
+.part { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px 48px; margin-top: clamp(64px, 9vw, 112px); }
 .part h2 { margin: 0; font-size: 26px; font-weight: 400; line-height: 1.2; letter-spacing: -0.005em; text-wrap: balance; }
 .part h2 span { display: block; margin-top: 6px; color: var(--text-3); font: 14px var(--sans); letter-spacing: 0; }
 .part-body { max-width: var(--measure); }
@@ -173,6 +176,20 @@ main, .liner { width: var(--page); margin-inline: auto; }
   color: var(--text-2); font: 13px var(--sans); cursor: pointer; }
 .copy:hover { color: var(--text); }
 .copy[data-state="done"] { color: var(--text); }
+
+/* The getting-started guide (start.html): the same paper and type, a step at a time. Its pictures are
+   the app's own window, drawn by guide-pictures.mjs; one that shows the whole window takes the page's width. */
+.guide-head { padding: clamp(40px, 7vw, 88px) 0 0; }
+.guide-head h1 { margin: 0; font-size: clamp(34px, 5vw, 52px); font-weight: 400; line-height: 1.08; letter-spacing: -0.015em; }
+.guide-head p { margin: 16px 0 0; max-width: 46ch; color: var(--text-2); font-size: clamp(18px, 1.9vw, 20px); text-wrap: pretty; }
+.shot { margin: 24px 0 28px; }
+.shot img { display: block; width: 100%; height: auto; border-radius: 10px; box-shadow: var(--window); }
+.shot figcaption { margin-top: 12px; color: var(--text-2); font: 14px/1.5 var(--sans); }
+.part > .shot { grid-column: 1 / -1; margin: 22px 0; }
+.steps { margin: 0 0 16px; padding-left: 1.3em; }
+.steps li { margin: 0 0 8px; padding-left: 4px; }
+.steps .commands { margin: 10px 0 12px; }
+@media (min-width: 900px) { .part > .after-shot { grid-column: 2; } }
 
 /* Liner notes */
 .liner { display: flex; gap: 20px; align-items: flex-start; margin-top: clamp(80px, 12vw, 160px); padding: 0 0 56px; color: var(--text-3); font: 14px/1.6 var(--sans); }

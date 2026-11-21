@@ -607,6 +607,20 @@ const STATES = {
     setTimeout(() => document.querySelector('[data-key="sign-in:openai:oauth"]').click(), 550);
   },
   "first-run-skip-tip"() { STATES["first-run"](); return { hover: ".sheet-close" }; },
+  // A fresh install, as the getting-started guide's pictures show it (site/guide-pictures.mjs): the model
+  // step with Moondog's own model and its invite code first, then the providers every install lists
+  // (FEATURED in src/runtime/pi/model-settings.mjs), and Spotify's row in Settings › Playback before the
+  // listener has made a Spotify app.
+  "first-run-fresh"() {
+    STATES["first-run-model-only"]();
+    providers = [{ id: "moondog", name: "Moondog", signedIn: false, signIn: "invite" },
+      ...providers.filter((provider) => ["openai", "anthropic", "google", "xai"].includes(provider.id))];
+  },
+  "settings-spotify-setup"() {
+    ready({ spotify: "unavailable", spotifyAccount: { state: "unavailable", clientId: false }, netease: "missing", generation: NONE() });
+    send({ type: "player", spotify: "unavailable", now: null, next: [] });
+    slash("service");
+  },
   // The composer's own words for what isn't chosen yet: the model, and the service while the first run still asks for it.
   "first-launch-offline"() { send({ type: "ready", ...OFFLINE, sessions: [], folders: [], current: null, running: [], transcript: [] }); silent(); },
   "service-tip"() { STATES.reply(); return { hover: "[data-service]" }; },
