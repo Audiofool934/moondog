@@ -25,6 +25,7 @@ A platform appears only after its installer or AppImage has been uploaded.
 If there is no Mac download, or with `node build.mjs --offline`, the Mac link goes to the release list.
 The intro's button follows the visitor's system (`page.mjs`): Windows gets its download, and Linux the terminal install until it has an AppImage.
 Without a script, and on phones, the intro shows the Mac's line; each line names the other systems the same way.
+Each download links to its copy on `downloads.audiofool.ai`, a Cloudflare R2 bucket, when that copy has the same size as the GitHub file (`mirror.mjs`); otherwise it links to GitHub.
 
 ## The scene
 
@@ -77,3 +78,7 @@ Build `server/Dockerfile` from the repository root to run it.
 
 `.github/workflows/pages.yml` builds the page on pull requests and publishes `dist/` to GitHub Pages from `main`.
 `npm run publish-app` in `app/` runs it again once a release has its DMG, so the download button links the new version.
+On `main`, the build first copies each chosen download that the mirror lacks into the `moondog` R2 bucket (`node build.mjs --mirror`).
+It uses the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repository secrets; the token needs only Workers R2 Storage: Edit.
+Without them, or if a copy fails, that download links to GitHub.
+The bucket keeps old copies; they cost little, and deleting them is a manual step in the Cloudflare dashboard.
