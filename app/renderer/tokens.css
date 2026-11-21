@@ -15,6 +15,8 @@
   --text-2: rgb(var(--ink-rgb) / 0.66);
   --text-3: rgb(var(--ink-rgb) / 0.46);
   --text-4: rgb(var(--ink-rgb) / 0.3);
+  /* Spotify's and Apple's marks may be drawn only in plain black or white, never in a grey of the ink. */
+  --brand-mark: #000000;
   --line: rgb(var(--ink-rgb) / 0.085);
   --line-2: rgb(var(--ink-rgb) / 0.14);
   /* Hover is a breath and the open thing a clear fill, so pointing at a row never looks like opening it. */
@@ -92,6 +94,7 @@
     --text-2: rgb(var(--ink-rgb) / 0.62);
     --text-3: rgb(var(--ink-rgb) / 0.42);
     --text-4: rgb(var(--ink-rgb) / 0.26);
+    --brand-mark: #FFFFFF;
     --line: rgb(var(--ink-rgb) / 0.08);
     --line-2: rgb(var(--ink-rgb) / 0.14);
     --hover: rgb(var(--ink-rgb) / 0.045);

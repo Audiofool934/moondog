@@ -10,7 +10,7 @@ A listener can bring authorized music history, understand the evidence behind Mo
 
 The product should feel useful before a model or music-service connection is required.
 
-## Current scope (2026-11-13)
+## Current scope (2026-11-21)
 
 - The listening room in the terminal launches with `npm start` from a checkout or `moondog` when installed.
 - The desktop app in [`app/`](../app/README.md) is a native window on the same core, first for the owner's daily use and then for developers.
@@ -63,6 +63,7 @@ The product should feel useful before a model or music-service connection is req
 - [x] Change model, service and reply language by asking, and add any OpenAI- or Anthropic-style endpoint by its address.
 - [x] Manage Up next in the desktop app's player: play a queued song now, take one out where Moondog keeps the queue, and, when the queue runs low, choose from a few songs the host picks.
 - [x] Offer a Windows test build of the desktop app, with Spotify playback and Apple Music previews; the project page treats Mac, Windows and Linux as equals.
+- [x] Offer Moondog's own model to invited testers: one invite code per tester, through Moondog's gateway, with no account.
 - [x] Play a short scene in the desktop app's real window on the project page, on made-up data.
 - [x] Run a deterministic offline demo and generate a fictional Spotify history ZIP, with no personal data, model, or credential.
 - [x] Rebuild and verify the public source tree on Node 22.19.0 and Node 24 in CI, scan the full history for private material, and install the packed npm tarball into an empty project.
