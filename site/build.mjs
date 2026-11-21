@@ -5,12 +5,14 @@
 //   node build.mjs              build once
 //   node build.mjs --serve      rebuild on change and serve at http://localhost:8737
 //   node build.mjs --offline    link the release list rather than ask GitHub for desktop downloads
+//   node build.mjs --mirror     first copy missing downloads to the Cloudflare mirror (mirror.mjs)
 import { createHash } from "node:crypto";
 import { cp, mkdir, readFile, rm, watch, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import * as esbuild from "esbuild";
 import { desktopDownloads as chooseDownloads } from "./download.mjs";
+import { mirrorDownloads } from "./mirror.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "..");
@@ -60,7 +62,7 @@ async function desktopDownloads() {
       signal: AbortSignal.timeout(10_000),
     });
     if (!response.ok) throw new Error(`GitHub answered ${response.status}`);
-    const found = chooseDownloads(await response.json());
+    const found = await mirrorDownloads(chooseDownloads(await response.json()), { upload: flags.has("--mirror") });
     return { ...found, mac: found.mac ?? fallback.mac };
   } catch (error) {
     console.warn(`Desktop downloads link to the release list: ${error.message}`);

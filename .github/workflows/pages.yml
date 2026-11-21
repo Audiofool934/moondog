@@ -30,7 +30,8 @@ jobs:
   build:
     name: Build the page and the room
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # Room to copy a release's downloads to the mirror.
+    timeout-minutes: 20
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -52,9 +53,12 @@ jobs:
         run: node --disable-warning=ExperimentalWarning --test site/server/agent-server.test.mjs
       - name: Build the page and its scene
         # The token reads the release list, for the newest release with a Mac download.
+        # On main, the build first copies new downloads to the Cloudflare mirror (site/mirror.mjs).
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: node site/build.mjs
+          CLOUDFLARE_API_TOKEN: ${{ github.event_name != 'pull_request' && secrets.CLOUDFLARE_API_TOKEN || '' }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: node site/build.mjs ${{ github.event_name != 'pull_request' && '--mirror' || '' }}
       - name: Upload the page
         if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@v5

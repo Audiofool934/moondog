@@ -15,7 +15,7 @@ function newestDownload(releases, assetName, { beta }) {
     const isBeta = release.prerelease || version.includes("-");
     if (isBeta !== beta) return [];
     const asset = release.assets?.find(item => item.name === assetName(version) && item.state === "uploaded");
-    return asset ? [{ url: asset.browser_download_url, version, ...(beta ? { beta: true } : {}) }] : [];
+    return asset ? [{ url: asset.browser_download_url, name: asset.name, size: asset.size, version, ...(beta ? { beta: true } : {}) }] : [];
   });
   return candidates.sort((a, b) => compareReleaseVersions(b.version, a.version))[0] ?? null;
 }
