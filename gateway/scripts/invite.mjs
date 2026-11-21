@@ -5,6 +5,10 @@
 //   node gateway/scripts/invite.mjs list                           codes with today's use
 //   node gateway/scripts/invite.mjs revoke 12                      stop code 12
 //   node gateway/scripts/invite.mjs restore 12                     let code 12 work again
+//   node gateway/scripts/invite.mjs rename 12 "New name"           change code 12's name
+//   node gateway/scripts/invite.mjs note 12 "Sent by WeChat"       set code 12's note ("" clears it)
+//
+// The same work has a page: https://moondog-api.audiofool.ai/admin
 //
 // It reads MOONDOG_GATEWAY_ADMIN_TOKEN, and MOONDOG_GATEWAY_URL when the gateway is elsewhere.
 // A code is printed once, when it is made: the gateway keeps only its hash.
@@ -35,13 +39,17 @@ try {
     const { day, invites } = await call("/admin/invites");
     console.log(`Day ${day} (Beijing time)`);
     for (const invite of invites) {
-      console.log(`${invite.id}\t${invite.status}\t${millions(invite.input_today + invite.output_today)} today\t${invite.requests_today} requests\t${millions(invite.tokens_total)} in all\t${invite.label}`);
+      console.log(`${invite.id}\t${invite.status}\t${millions(invite.input_today + invite.output_today)} today\t${invite.requests_today} requests\t${millions(invite.tokens_total)} in all\t${invite.label}${invite.note ? `\t${invite.note}` : ""}`);
     }
   } else if ((command === "revoke" || command === "restore") && /^\d+$/u.test(rest[0] ?? "")) {
     const result = await call(`/admin/invites/${rest[0]}/${command}`, "POST");
     console.log(`${result.id}\t${result.status}`);
+  } else if ((command === "rename" || command === "note") && /^\d+$/u.test(rest[0] ?? "") && rest.length === 2) {
+    const field = command === "rename" ? "label" : "note";
+    const result = await call(`/admin/invites/${rest[0]}`, "PATCH", { [field]: rest[1] });
+    console.log(`${result.id}\t${result[field]}`);
   } else {
-    console.error("Usage: invite.mjs create <name>... | list | revoke <id> | restore <id>");
+    console.error("Usage: invite.mjs create <name>... | list | revoke <id> | restore <id> | rename <id> <name> | note <id> <text>");
     process.exitCode = 2;
   }
 } catch (error) {

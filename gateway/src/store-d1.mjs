@@ -38,18 +38,25 @@ export function createD1Store(database) {
       return counted.results[0]?.requests ?? 1;
     },
 
-    async createInvite({ hash, label, dailyTokenLimit, expiresAt, createdAt }) {
+    async createInvite({ hash, label, note = "", dailyTokenLimit, expiresAt, createdAt }) {
       const result = await database.prepare(
-        "INSERT INTO invites (code_hash, label, status, daily_token_limit, expires_at, created_at) VALUES (?1, ?2, 'active', ?3, ?4, ?5)",
-      ).bind(hash, label, dailyTokenLimit, expiresAt, createdAt).run();
+        "INSERT INTO invites (code_hash, label, note, status, daily_token_limit, expires_at, created_at) VALUES (?1, ?2, ?6, 'active', ?3, ?4, ?5)",
+      ).bind(hash, label, dailyTokenLimit, expiresAt, createdAt, note).run();
       return result.meta.last_row_id;
     },
 
     async listInvites(day) {
       const { results } = await database.prepare(
-        "SELECT i.id, i.label, i.status, i.daily_token_limit, i.expires_at, i.created_at, COALESCE(u.input_tokens, 0) AS input_today, COALESCE(u.output_tokens, 0) AS output_today, COALESCE(u.requests, 0) AS requests_today, COALESCE(t.tokens, 0) AS tokens_total FROM invites i LEFT JOIN usage u ON u.invite_id = i.id AND u.day = ?1 LEFT JOIN (SELECT invite_id, SUM(input_tokens + output_tokens) AS tokens FROM usage GROUP BY invite_id) t ON t.invite_id = i.id ORDER BY i.id",
+        "SELECT i.id, i.label, i.note, i.status, i.daily_token_limit, i.expires_at, i.created_at, COALESCE(u.input_tokens, 0) AS input_today, COALESCE(u.output_tokens, 0) AS output_today, COALESCE(u.requests, 0) AS requests_today, COALESCE(t.tokens, 0) AS tokens_total FROM invites i LEFT JOIN usage u ON u.invite_id = i.id AND u.day = ?1 LEFT JOIN (SELECT invite_id, SUM(input_tokens + output_tokens) AS tokens FROM usage GROUP BY invite_id) t ON t.invite_id = i.id ORDER BY i.id",
       ).bind(day).all();
       return results;
+    },
+
+    async editInvite(id, { label, note }) {
+      const result = await database.prepare(
+        "UPDATE invites SET label = COALESCE(?2, label), note = COALESCE(?3, note) WHERE id = ?1",
+      ).bind(id, label ?? null, note ?? null).run();
+      return result.meta.changes > 0;
     },
 
     async setStatus(id, status) {

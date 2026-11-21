@@ -3,11 +3,15 @@
 // model, so neither ships in the app, and it counts each code's tokens against a daily allowance.
 // It keeps no conversation: only token counts per code per day.
 
+import { ADMIN_PAGE } from "./admin-page.mjs";
+
 export const MODEL_ID = "moondog";
 export const INVITE_PATTERN = /^md-[0-9a-hjkmnp-tv-z]{24}$/u;
 
 const CODE_ALPHABET = "0123456789abcdefghjkmnpqrstvwxyz";
 const MAX_REQUEST_BYTES = 4 * 1024 * 1024;
+const MAX_LABEL = 80;
+const MAX_NOTE = 1000;
 // The allowance day turns at midnight in Beijing, where most of the first listeners are.
 const DAY_OFFSET_MS = 8 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -108,6 +112,16 @@ export function relayEventStream(body, settle) {
     },
   });
 }
+
+const adminPage = () => new Response(ADMIN_PAGE, {
+  headers: {
+    "content-type": "text/html; charset=utf-8",
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+    "referrer-policy": "no-referrer",
+    "x-robots-tag": "noindex",
+  },
+});
 
 /**
  * @param {object} options
@@ -213,25 +227,36 @@ export function createGateway({ store, upstream, limits, adminToken, fetch = glo
     const [, , resource, id, action] = url.pathname.split("/");
     if (resource !== "invites") return refusal(404, "not_found", "Not found.");
     if (request.method === "GET" && !id) {
-      return json(200, { day: quotaDay(now()), invites: await store.listInvites(quotaDay(now())) });
+      return json(200, { day: quotaDay(now()), daily_tokens: limits.dailyTokens, invites: await store.listInvites(quotaDay(now())) });
     }
     if (request.method === "POST" && !id) {
       const input = await request.json().catch(() => ({}));
       const labels = Array.isArray(input.labels) ? input.labels : [input.label];
+      const note = typeof input.note === "string" ? input.note.trim().slice(0, MAX_NOTE) : "";
       const created = [];
       for (const label of labels.slice(0, 200)) {
         const code = newInviteCode();
         const stored = await store.createInvite({
           hash: await hashInvite(code),
-          label: String(label ?? "").slice(0, 80),
+          label: String(label ?? "").slice(0, MAX_LABEL),
           dailyTokenLimit: count(input.daily_tokens) || null,
           expiresAt: count(input.expires_at) || null,
+          note,
           createdAt: now(),
         });
         // The code is shown here once; only its hash is kept.
-        created.push({ id: stored, label: String(label ?? "").slice(0, 80), code });
+        created.push({ id: stored, label: String(label ?? "").slice(0, MAX_LABEL), code });
       }
       return json(201, { invites: created });
+    }
+    if (request.method === "PATCH" && /^\d+$/u.test(id ?? "") && !action) {
+      const input = await request.json().catch(() => ({}));
+      const changes = {};
+      if (typeof input.label === "string") changes.label = input.label.trim().slice(0, MAX_LABEL);
+      if (typeof input.note === "string") changes.note = input.note.trim().slice(0, MAX_NOTE);
+      if (!("label" in changes) && !("note" in changes)) return refusal(400, "request_invalid", "Send a label or a note.");
+      const changed = await store.editInvite(Number(id), changes);
+      return changed ? json(200, { id: Number(id), ...changes }) : refusal(404, "not_found", "No such invite.");
     }
     if (request.method === "POST" && id && (action === "revoke" || action === "restore")) {
       const changed = await store.setStatus(Number(id), action === "revoke" ? "revoked" : "active");
@@ -253,6 +278,8 @@ export function createGateway({ store, upstream, limits, adminToken, fetch = glo
         const admitted = await admit(request);
         return admitted.refused ?? json(200, allowance(admitted));
       }
+      // The owner's page. It holds no data: it asks /admin/invites with the key the owner types.
+      if (route === "GET /admin") return adminPage();
       if (url.pathname.startsWith("/admin/")) return await admin(request, url);
       if (route === "GET /") return json(200, { service: "moondog-model", model: MODEL_ID });
       return refusal(404, "not_found", "Not found.");
