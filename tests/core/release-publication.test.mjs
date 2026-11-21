@@ -73,9 +73,9 @@ test("a newer release appearing during publication blocks draft promotion", asyn
 test("an unconfirmed npm publication never creates a GitHub draft", async () => {
   const f = fixture();
   f.options.publish = async () => { f.effects.push("publish"); throw new Error("registry unavailable"); };
-  await assert.rejects(prepareRelease(f.options), /could not be confirmed after 180s.*npm publish failed/u);
+  await assert.rejects(prepareRelease(f.options), /could not be confirmed after 900s.*npm publish failed/u);
   assert.deepEqual(f.effects, ["publish"]);
-  assert.equal(f.clock.elapsed, 180_000);
+  assert.equal(f.clock.elapsed, 900_000);
 });
 
 test("a verified preview creates a prerelease draft without moving stable", async () => {
@@ -109,19 +109,28 @@ test("publication waits through delayed metadata, tarball and channel without pu
   await prepareRelease(f.options);
   assert.equal(f.clock.elapsed, 100_000);
   assert.deepEqual(f.effects, ["publish", "draft:latest"]);
-  assert.ok(f.logs.some(line => line.includes("70/180s") && line.includes("metadata")));
+  assert.ok(f.logs.some(line => line.includes("70/900s") && line.includes("metadata")));
   assert.ok(f.logs.some(line => line.includes("npm publish exited successfully")));
   assert.ok(f.logs.some(line => line.includes("Verified npm 0.2.1 commit, tarball and latest after 100s")));
+});
+
+test("a version npm shows only after five minutes still gets its draft in the same run", async () => {
+  const f = fixture();
+  // 0.3.0-beta.8 showed about 330 s after its publish, past the old 180 s wait, and needed a rerun.
+  f.options.readVersion = async options => (options && f.clock.elapsed >= 330_000 ? metadata : null);
+  await prepareRelease(f.options);
+  assert.equal(f.clock.elapsed, 330_000);
+  assert.deepEqual(f.effects, ["publish", "draft:latest"]);
 });
 
 test("successful publish with no public version stops at the deadline without creating a draft", async () => {
   const f = fixture();
   let reads = 0;
   f.options.readVersion = async () => { reads++; return null; };
-  await assert.rejects(prepareRelease(f.options), /after 180s.*metadata is not visible.*publish exited successfully/u);
+  await assert.rejects(prepareRelease(f.options), /after 900s.*metadata is not visible.*publish exited successfully/u);
   assert.deepEqual(f.effects, ["publish"]);
-  assert.equal(f.clock.elapsed, 180_000);
-  assert.equal(reads, 19); // One preflight, then 18 polls, with no request after the deadline.
+  assert.equal(f.clock.elapsed, 900_000);
+  assert.equal(reads, 91); // One preflight, then 90 polls, with no request after the deadline.
 });
 
 test("slow transient reads share the same deadline rather than adding a timeout per retry", async () => {

@@ -56,7 +56,8 @@ jobs:
     # cancelled or failed approval stops it. Only a prerelease may skip the approval.
     if: ${{ always() && needs.verify.result == 'success' && (needs.approve-stable.result == 'success' || (needs.approve-stable.result == 'skipped' && contains(github.ref_name, '-'))) }}
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # Room for release-npm.mjs's 15-minute wait for npm to show the version.
+    timeout-minutes: 20
     environment: npm
     permissions:
       contents: write

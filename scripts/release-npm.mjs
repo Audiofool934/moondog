@@ -101,7 +101,7 @@ export async function readGithubRelease({ tag, prerelease, request }) {
 
 export async function prepareRelease({ version, head, integrity, readTags, readVersion, readTarball, latestGithubVersion,
   publish, readRelease, createDraft, log = () => {}, now = Date.now,
-  sleep = ms => new Promise(resolve => setTimeout(resolve, ms)), waitTimeoutMs = 180_000 }) {
+  sleep = ms => new Promise(resolve => setTimeout(resolve, ms)), waitTimeoutMs = 900_000 }) {
   const channel = releaseChannel({ name: UPDATE_PACKAGE, version, lockVersion: version, tag: `v${version}` });
   const checkNpmOrder = async options => {
     const tags = await readTags(options);
@@ -126,7 +126,8 @@ export async function prepareRelease({ version, head, integrity, readTags, readV
     } catch (error) { publicationStatus = publishFailureSummary(error); }
     log(`${publicationStatus} Verifying public registry visibility for up to ${waitTimeoutMs / 1000}s; no further publish request will be sent.`);
   } else log(`Checking the existing npm version ${version} before resuming.`);
-  // A successful PUT can precede public metadata, the tarball and dist-tags by over a minute.
+  // A successful PUT can precede public metadata, the tarball and dist-tags by minutes: from 0.2.1
+  // to 0.3.0, passing waits took 83-166 s and seven releases ran past the old 180 s (0.3.0-beta.8 about 330 s).
   // One deadline covers all of those reads. Immutable identity/content mismatches fail at once.
   const started = now(), deadline = started + waitTimeoutMs;
   const readOptions = () => ({ timeoutMs: Math.max(1, Math.min(20_000, deadline - now())) });

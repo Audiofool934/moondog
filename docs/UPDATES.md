@@ -53,7 +53,7 @@ One-time owner setup: configure the npm package's **trusted publisher** for GitH
 3. `Publish release` rechecks tag/version/lockfile identity and main ancestry, runs the clean-source suite on Node 22.19.0 and 24, then publishes with provenance to the matching `latest` or `beta` dist-tag.
    It rejects a release older than the current channel or GitHub latest.
    An existing npm version must match the source commit and both the local and remote package hashes before a retry can continue.
-   Publication confirmation waits up to three minutes for registry metadata, the tarball and the channel to become visible, without publishing again.
+   Publication confirmation waits up to 15 minutes for registry metadata, the tarball and the channel to become visible, without publishing again.
    It prepares a GitHub draft after npm confirms publication.
    Draft recovery finds the exact tag in the authenticated release list, then checks the release ID and channel again.
 4. The same run builds the Mac app on a macOS runner, as the [Mac publication procedure](../app/README.md#updates) describes.
