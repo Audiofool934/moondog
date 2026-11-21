@@ -9,22 +9,37 @@
 <p align="center"><strong>On the air, just for you.</strong></p>
 
 <p align="center">
-  <img src="assets/demo/moondog-tui-home.png" width="1000" alt="Moondog's listening room in charcoal: a lunar record beside the wordmark, a four-line tracklist, and the line Is there anybody out there">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/demo/moondog-desktop-dark.png">
+    <img src="assets/demo/moondog-desktop-light.png" width="1000" alt="Moondog's desktop window: a request for a late train home, the host's answer with three songs, and the player with the cover of Last Tram Home and two songs up next">
+  </picture>
 </p>
 
-<p align="center"><sub>The real TUI, in charcoal, with fictional listening data.</sub></p>
+<p align="center"><sub>The desktop app, with a made-up listener. The <a href="https://moondog.audiofool.ai">project page</a> plays the whole scene.</sub></p>
 
-Moondog is a radio host just for you, and it works from a listening room in your terminal or on your Mac.
-It reads the history your music services already keep, and turns it into a profile you can open, question, and correct.
-The profile works without a model, an API key, or a music-service login.
-When you want company, it can talk music with you, find songs you have not heard, shape a playlist, and on a Mac go on air with music it makes itself.
-It shows its work, and your data stays on your machine.
-The room is built on [Pi](https://github.com/earendil-works/pi).
+Moondog is a radio host just for you.
+It reads the history your music services already keep, learns your taste from it, and plays music for you on Spotify, Apple Music, or NetEase Music.
+Ask it for something, and it answers like a host: what it picked, and why each song is there.
+On a Mac it can also go on air with music it makes itself.
 
-## Open the room
+There are two clients on one core: a desktop app and a listening room in your terminal.
+They share your profile, settings, sign-ins, and conversations.
+Your profile works without a model, an API key, or a music-service login, and your data stays on your machine.
+The agent is built on [Pi](https://github.com/earendil-works/pi).
 
-You need Node.js 22.19.0 or newer, on macOS or Linux.
-Install from this checkout to run the room shown here.
+## Get Moondog
+
+| Where | How |
+| --- | --- |
+| Mac, Apple silicon | Download the signed, notarized app from the [project page](https://moondog.audiofool.ai) or [Releases](https://github.com/Audiofool934/moondog/releases/latest). |
+| Windows, x64 | A test build from the same places. It is not code-signed yet, so SmartScreen asks before it opens. |
+| Terminal, macOS or Linux | `npm install --global @audiofool/moondog`, then `moondog`. Needs Node.js 22.19.0 or newer. |
+
+The desktop app updates itself, on a Stable or Beta channel you choose in Settings › About.
+The terminal updates with `moondog update` or `/update`, on the npm `latest` or `beta` channel.
+See [updating and release channels](docs/UPDATES.md).
+
+To run from this checkout:
 
 ```bash
 git clone https://github.com/Audiofool934/moondog.git
@@ -33,65 +48,36 @@ npm ci
 npm start
 ```
 
-[@audiofool/moondog](https://www.npmjs.com/package/@audiofool/moondog) 0.3.0 is the published package; `npm install --global @audiofool/moondog` installs it.
-To see the agent work through fictional data, with no sign-in at all, run `npm run demo` from the checkout.
+`npm run demo` shows the agent at work on fictional data, with no sign-in at all.
+`cd app && npm ci && npm start` opens the desktop app; [app/README.md](app/README.md) covers its builds for macOS, Windows, and Linux.
 
-The source version supports `moondog update` and `/update`, with stable (`latest`) and preview (`beta`) channels.
-Startup checks show a quiet notification; installation happens only when you request it.
-See [updating and release channels](docs/UPDATES.md), including the one-time upgrade needed for the older npm 0.1.0 package.
+## Where it plays
 
-## On your Mac
-
-[Moondog desktop](app/README.md) is a native window on the same core as the terminal room, with build targets for macOS (Apple silicon), Windows (x64), and Linux (x64).
-It shares your profile, settings, sign-ins, and conversations with `moondog`, and draws its own conversation, now playing, and up next.
-Download the notarized build for Apple silicon from the [project page](https://moondog.audiofool.ai), or run it from this checkout with `cd app && npm ci && npm start`.
-It updates itself, on a Stable or Beta channel you choose in Settings.
-The Windows and Linux desktop builds use Spotify playback and Apple Music previews; full Apple Music songs and reading the Music app require macOS.
-Windows support applies to the desktop app; the terminal launcher and its updater remain supported on macOS and Linux.
-
-The [project page](https://moondog.audiofool.ai) plays a short scene in this window, in a browser, with a made-up listener ([how](site/README.md)).
-
-## The sleeve
-
-The opening is a record sleeve drawn in characters.
-Nothing in the terminal is a picture.
-On a wide screen the record sits beside the title, with the wordmark level with the dog's eye.
-On a tall or narrow screen the record stacks above the title.
-Moondog uses whichever arrangement leaves the record larger.
-A lyric rests midway between the record and the input box, with room on both sides.
-The input asks what you have been listening to.
-
-Until your library has a line of its own, the sleeve rotates three short ones: "Where have you been?", "Is there anybody out there?", and "Wish you were here."
-When a matching line from music you have played is available, that line takes the place.
-Moondog asks [LRCLIB](https://lrclib.net/) for the original words only, and does not send your profile, your history, or the conversation.
-
-The room is black and white, like the moon.
-Paper is black ink on white.
-Charcoal is moonlight on a black sky.
-`/theme terminal` keeps your own colors.
-The only other colors are the six from the prism on *The Dark Side of the Moon*.
-Red means a step failed, orange is a caution, green confirms, and the spectrum shows while Moondog is working.
-
-Press Tab on an empty input to step onto the tracklist, then use the arrow keys and Enter.
-
-| On the sleeve | Command |
+| Service | What you get |
 | --- | --- |
-| Listening profile | `/taste` |
-| Import your music | `/import` |
-| Appearance | `/theme` |
-| Help & commands | `/help` |
+| Apple Music | Whole songs in the Mac app with a subscription; 30-second previews elsewhere, each with a link to the full song. |
+| Spotify | Playback on your active device, after you connect your account. |
+| NetEase Music | Whole songs through NetEase's own `ncm-cli`, for listeners in mainland China. |
 
-While the room is idle, lunar marks travel the record, a highlight follows the groove, and the needle pulses.
-The dog and the wordmark stay still.
-`/motion off` holds the sleeve.
-`/art ascii` switches the drawing.
-`/home` returns here and leaves the conversation where it was.
+Pick the service beside the send button, or with `/service` in the terminal.
+Moondog also sees what you already play: the song and playlist in the Music app on a Mac, or on Spotify's active device, so “more like this playlist” needs no names.
+The Windows build plays Spotify and Apple Music previews; whole Apple Music songs and reading the Music app need macOS.
+
+## A model to talk through
+
+Testers with an invite code can use Moondog's own model, with no account and no API key.
+Enter the code in Settings, or type `/invite <code>` in the terminal.
+
+Or bring your own.
+GLM, Kimi, DeepSeek, Grok, GPT, Claude, Gemini, and OpenRouter are built in, and OpenAI takes your ChatGPT subscription or an API key.
+Any service that speaks OpenAI's or Anthropic's API can be added by its address, in Settings or with `/endpoint`.
+You can switch models in the middle of a conversation, or change settings by asking, such as the model or the language it replies in.
+The [model setup guide](docs/TERMINAL_GUIDE.md#enable-agent-conversation) lists each provider.
 
 ## Bring your history
 
-Type `/import` and pick a service.
-Moondog shows you what is inside before anything is saved.
-When the import finishes, your profile opens in the same TUI session.
+Import in the desktop app's Settings › Import, or drop the file on its window; in the terminal, type `/import`.
+Moondog shows you what is inside before anything is saved, and the original files are never touched.
 
 | Service | What you can bring |
 | --- | --- |
@@ -102,22 +88,11 @@ When the import finishes, your profile opens in the same TUI session.
 | QQ Music and NetEase | Any public playlist, from its share link. |
 | ListenBrainz | A saved listens file. |
 
-A Spotify ZIP can also go straight in.
-
-```text
-/import "/path/to/spotify-history.zip"
-```
-
-Importing the same file twice changes nothing, and your original files are never touched.
-Apple's privacy download, and full QQ or NetEase listening history, are not supported yet.
 The [terminal guide](docs/TERMINAL_GUIDE.md#import-and-inspect-listening-history) has every format.
 
-With a connected model, `/profile build` writes a reading of everything you imported, usually in a few minutes.
+With a model connected, Moondog writes a reading of everything you imported, usually in a few minutes.
 It names the threads in your listening, keeps what you played apart from what you saved, and marks its interpretations as interpretations.
 A second pass checks the draft for contradictions and invented claims, and the build fixes what it finds before saving.
-Use `/profile saved` to read it and `/profile explain 1` to trace a finding to its evidence, including after restarting.
-New imports or corrections mark it for an update; a cancelled build keeps its draft and your previous reading.
-The builder sends a compact summary of your music evidence to your configured model when you ask for it.
 
 ## Your profile
 
@@ -125,113 +100,74 @@ The profile says what you played, and what that cannot prove.
 Playing a song a lot does not, on its own, establish how much it matters to you.
 
 <p align="center">
-  <img src="assets/demo/moondog-tui-profile.png" width="1000" alt="The listening profile for the fictional track Midnight Lines by Mara Vale, with the plays on one side and the limit of that evidence on the other">
+  <img src="assets/demo/moondog-tui-profile.png" width="1000" alt="The listening profile in the terminal for the fictional track Midnight Lines by Mara Vale, with the plays, what they cannot tell, and how sure Moondog is">
 </p>
 
-<p align="center"><sub>Fictional data, with the evidence and the limit of that evidence.</sub></p>
+<p align="center"><sub>The terminal's profile, with fictional data: the evidence, and the limit of that evidence.</sub></p>
 
-| In the profile | What you can do |
+Open it from Taste in the desktop app's sidebar (⌥⌘T), or with `/taste` in the terminal.
+Find a song or artist, see why it is there, and choose **I like this** or **Keep it out**; the profile updates in place, and **Undo my choice** puts it back.
+You can also say it to the host, for example “never play this again”.
+`/taste report` walks the years one song at a time and ends on what play counts can never tell anyone; you can keep it as a private page that works offline.
+
+## On the air
+
+Ask for music in your own words, in any of ten languages.
+Each step shows in the conversation as it happens, and the host checks every recording on your service before it plays or queues it.
+What it reads about the wider music world stays separate from what it knows about you, and songs it chose for you do not count as your own taste.
+Under a set of songs, one line names the mix: how many you know well, how many come back after a while, and how many are new to you.
+
+- **Up next.** The desktop player shows the queue: play a song now, or take one out. When it runs low, the host offers a few picks.
+- **Your library.** Saved songs, your playlists, and the tracks Moondog made sit side by side. Import a Spotify, Apple Music, NetEase Music, or QQ Music playlist by its link, and export a playlist to Spotify.
+- **Music it makes.** On an Apple silicon Mac, Moondog makes instrumental tracks offline with Stable Audio 3, powered by Stability AI. Set it up once in Settings › Playback, or with `/generation download medium`, after you agree to its licenses.
+- **On Air.** Press the On Air mark, ⌃⌘O, or type `/onair`, and Moondog keeps making music from your taste until you stop it.
+
+## The terminal room
+
+<p align="center">
+  <img src="assets/demo/moondog-tui-home.png" width="1000" alt="Moondog's listening room in the terminal, in charcoal: the record sleeve drawn in characters beside the wordmark, a four-line tracklist, and the line Where have you been">
+</p>
+
+<p align="center"><sub>The real terminal room, in charcoal, with fictional data.</sub></p>
+
+The terminal opens on a record sleeve drawn in characters, with a lyric from music you have played.
+Moondog asks [LRCLIB](https://lrclib.net/) for the original words only, and sends nothing about you.
+The room is black and white, like the moon: `/theme paper`, `/theme charcoal`, or `/theme terminal` for your own colors.
+Tab on an empty input steps onto the tracklist, and Ctrl+P searches every command.
+
+| Command | What it does |
 | --- | --- |
-| Find a song or artist | Type to filter, then open it. |
-| See why it is there | Read what you played, what that cannot prove, and what you told Moondog, each on its own. |
-| Make a choice | Choose **I like this** (Like) or **Keep it out** (Avoid), and the profile updates in place. You can also say it to the agent, for example “never play this again”. |
-| Change your mind | Choose **Undo my choice**, and the original listening history never changes. |
-| Find more like this | Start an editable request for three songs, from the track you picked. |
+| `/taste` | Open your profile. |
+| `/import` | Bring your history. |
+| `/library` | Your saved songs and playlists. |
+| `/onair` | Go on air, or come off it. |
+| `/skip`, `/stop` | Skip to the next song or stream track, or stop. |
+| `/resume`, `/new` | Pick up a saved conversation, or start a fresh one. |
+| `/rewind`, `/branch` | Change an earlier message, or go on in a new conversation. |
+| `/home` | Back to the sleeve, without clearing the conversation. |
+| `/help` | Everything else. |
 
-Type `/taste report` for the long view.
-It walks the years one song at a time, names songs that went quiet and songs that came back, and ends on the dark side of the moon: what play counts can never tell anyone.
-You can save that report as a private page that works offline.
+The [terminal guide](docs/TERMINAL_GUIDE.md) has every command and key.
 
-## An agent, when you want one
-
-Sign in with `/auth`, then pick a model with `/model`.
-GLM, Kimi, DeepSeek, Grok, GPT, Claude, Gemini, and OpenRouter are there.
-OpenAI takes your ChatGPT subscription or an API key.
-In the Mac app, any service that speaks OpenAI's or Anthropic's API can be added as an endpoint by its address, and `/endpoint` does it in the terminal.
-You can switch models in the middle of a conversation.
-The [model setup guide](docs/TERMINAL_GUIDE.md#enable-agent-conversation) lists each provider and the environment variable it reads.
-`/model roles` shows the models and services behind side tasks: a vision model for images, and the web search service.
-Moondog takes images too: an image path in your message in the terminal, or a pasted or dropped image in the Mac app.
-You can also change settings in your own words, such as which model answers or the language it replies in.
-
-While an answer is on the way, each step appears in the conversation as it starts.
-The steps stay above the reply, with a count of what finished, what failed, and what was not confirmed.
-The agent can use musical knowledge and web research to find candidates, then verify the recordings on Spotify before playing or queueing them.
-Without Spotify, it plays 30-second Apple Music previews from the terminal instead, each next to a link to the full song.
-With NetEase Music, it plays whole songs through NetEase's own `ncm-cli`.
-In the Mac app, Apple Music plays whole songs with a subscription.
-`/service` chooses where Moondog plays.
-It also sees what you already play: the song and playlist in the Music app on a Mac, or on Spotify's active device, so “more like this playlist” needs no names.
-macOS asks once before Moondog may read the Music app.
-For example, “Pon doce de salsa clásica a la cola” asks it to add up to twelve verified songs directly; your history guides the choice without limiting it to your library.
-What it reads about the wider music world stays separate from what it knows about you.
-Under a queue or a set of songs, one line names the mix: how many you know well, how many come back after a while, and how many are new to you.
-Songs Moondog chose for you do not count as your own taste.
-
-| Optional connection | What it adds |
-| --- | --- |
-| A model through Pi | Conversation, discovery, and playlists built together. |
-| A web search service | `/web` lookups with links to their sources, through DeepSeek (`/auth deepseek`, which also reads pages), Brave Search (`/auth brave`), or your own signed-in Codex CLI. |
-| Spotify sign-in | Playback, and playlists made only when you ask. |
-| NetEase Music | Whole songs through its own `ncm-cli`, for listeners in mainland China. |
+## Your data
 
 Your profile never touches the network.
-The agent talks only to the services you set up.
-`/web` sends the question or the link you give it, and nothing from your profile, history, or files.
+The agent talks only to the services you set up, and the profile builder sends a compact summary of your music evidence to your model only when you ask for a build.
+Web search sends the question or the link you give it, and nothing from your profile, history, or files.
 An image you attach goes to the model that reads it.
 A Spotify ZIP does not need a Spotify sign-in.
 Read the [connection and data details](docs/TERMINAL_GUIDE.md) before you connect anything.
 
-## Your library
-
-`/library` keeps songs and the tracks Moondog made side by side: Saved, then your playlists.
-`/library save` keeps what is playing, and `/library play Night drive` plays a playlist on the service you chose.
-`/library import <link>` copies a Spotify, Apple Music, NetEase Music or QQ Music playlist into it.
-A playlist you made on Spotify also shapes your taste; for any other one, you decide.
-`/library export Night drive` puts a copy of a playlist on Spotify, and exporting it again updates that copy.
-
-## Music it makes
-
-On an Apple silicon Mac, Moondog can make instrumental tracks offline with Stable Audio 3, powered by Stability AI.
-`/generation download medium` sets it up after you agree to its licenses, and `/generation on` turns it on.
-Ask for a track, or type `/onair` and Moondog keeps making music from your taste until you stop it.
-
-## Getting around
-
-| Command or key | What it does |
-| --- | --- |
-| `/taste` | Open your profile. |
-| Type, arrow keys, Enter | Filter, pick a row, and see why it is there, or make a choice. |
-| Tab in the profile | Switch between All, Tracks, Artists, and Your choices. |
-| Tab on the sleeve | Step onto the tracklist, then press Escape to return to the line you were writing. |
-| Esc | Go back, and the draft stays put. |
-| Ctrl+P | Search every command. |
-| Page Up, Page Down | Move through the conversation while the header, the draft, and the status line stay put. |
-| Up and Down in the draft | Recall what you typed in this conversation. |
-| Enter while Moondog is working | Queue the next message. It sends when this one finishes. |
-| `/resume`, `/new` | Pick up a saved conversation, or start a fresh one. |
-| `/home` | Back to the sleeve, without clearing the conversation. |
-| `/skip`, `/stop` | Skip to the next song preview or stream track, or stop them. |
-| `/library` | Your saved songs and playlists. |
-| `/onair` | Go on air, or come off it. |
-| `/rewind`, `/branch` | Change an earlier message, or go on in a new conversation. |
-| `/lyrics` | See which line is on the sleeve, and which song it came from. |
-| `/theme paper` | Black ink on white. |
-| `/theme charcoal` | Moonlight on a black sky. |
-| `/theme terminal` | Your terminal's own colors. |
-| `/language` | Choose the language Moondog replies in: English, 简体中文, 繁體中文, 日本語, 한국어, Español, Français, Deutsch, Português (Brasil), or Italiano. Screens follow in English, Español, Português (Brasil), 日本語, and 简体中文. |
-
-Each launch starts a new conversation.
-Your profile, and anything Moondog remembers, carry over.
-
 ## Further
 
 - [Terminal guide](docs/TERMINAL_GUIDE.md): import formats, commands, appearance, models, Spotify, memory, and your local data.
+- [Desktop app](app/README.md): the window, its keys, builds, and updates.
+- [Project page](site/README.md): how the page plays the scene in the app's real window, in a browser, on made-up data.
 - [Private Tasteprint](docs/PRIVATE_TASTEPRINT.md): what the evidence can support, and what a report reveals about you.
 - [Product charter](docs/PRODUCT_CHARTER.md) and [public roadmap](docs/ROADMAP.md): where Moondog is headed, and what it will not do.
 - [Voice](docs/VOICE.md): how Moondog talks, and where Pink Floyd shows up.
 - [The listening loop](docs/LISTENING_LOOP.md): how the agent keeps your choices, your recent listening, and its own picks apart.
-- [The agent harness](docs/AGENT_HARNESS.md): how the tools keep the model's part small, so every supported model can play what you ask, and how each model is measured.
+- [The agent harness](docs/AGENT_HARNESS.md): how the tools keep the model's part small, so every supported model can play what you ask.
 - [Runtime architecture](docs/ADR_0001_AGENT_RUNTIME_AND_CLI.md) and [data contracts](contracts/README.md): how the pieces fit together.
 - [Contribution guide](CONTRIBUTING.md): local setup, checks, and how private data is kept out.
 - [Release status](docs/PUBLIC_RELEASE_READINESS.md): what is published, and what the checks cover.

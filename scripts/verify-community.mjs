@@ -121,24 +121,26 @@ assert(
   "README and LICENSE do not grant the Apache License 2.0",
 );
 
-const tuiMedia = [
+const readmeMedia = [
+  "assets/demo/moondog-desktop-light.png",
+  "assets/demo/moondog-desktop-dark.png",
   "assets/demo/moondog-tui-home.png",
   "assets/demo/moondog-tui-profile.png",
 ];
-for (const relativePath of tuiMedia) {
+for (const relativePath of readmeMedia) {
   assert(readme.includes(relativePath), `README does not show ${relativePath}`);
   const png = await readFile(path.join(repositoryRoot, relativePath));
   assert(
     png.length >= 20 * 1024 && png.length <= 4 * 1024 * 1024 &&
       png.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])) &&
       png.toString("ascii", 12, 16) === "IHDR",
-    `${relativePath} is not a bounded PNG terminal capture`,
+    `${relativePath} is not a bounded PNG capture`,
   );
   const width = png.readUInt32BE(16);
   const height = png.readUInt32BE(20);
   assert(
     width >= 800 && width <= 3200 && height >= 400 && height <= 2200,
-    `${relativePath} has implausible terminal-capture dimensions`,
+    `${relativePath} has implausible capture dimensions`,
   );
 }
 
