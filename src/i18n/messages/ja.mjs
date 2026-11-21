@@ -132,6 +132,7 @@ export default {
   "choice.avoid": ({ title, artist }) => { const name = title ? `${artist}の「${title}」` : artist; return `\n\n保存しました: ${name}は再生にもおすすめにも入れません。変えたいときはいつでも言ってください。`; },
   "choice.retract": ({ title, artist }) => { const name = title ? `${artist}の「${title}」` : artist; return `\n\n取り消しました: ${name}についての前の選択。`; },
   "generate.made": ({ title, length, seed }) => `この Mac の Stable Audio 3 で作りました：「${title}」（${length}、シード ${seed}）。`,
+  "generate.written": ({ title, length }) => `Moondog が楽譜として書きました：「${title}」（${length}）。`,
   "generate.stream": ({ minutes }) => `この Mac で一曲ずつ新しい曲を作り続けます（最長 ${minutes} 分）。いつでも止められます。`,
   "onAir.request": "オンエアして。今の気分に合わせて新しい音楽を作って、流し続けて",
   "turn.cancelled": "以降の処理をキャンセルしました。",

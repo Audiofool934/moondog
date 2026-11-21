@@ -685,12 +685,25 @@ const catalog = [
     },
   },
   {
+    id: "music.generate.score",
+    version: "1",
+    state: "enabled",
+    effect: "generate_local",
+    description:
+      "Write an instrumental track as a score and play it in Moondog's player. Moondog writes the chords, the beat and the lines; a renderer in Moondog plays them on this machine's processor, with no model to download. It is how Moondog makes music where Stable Audio 3 is not set up or cannot run.",
+    requires_score_generation: true,
+    agent_tool: {
+      name: "moondog_write_track",
+      label: N_("Write a track"),
+    },
+  },
+  {
     id: "music.generate.replay",
     version: "1",
     state: "enabled",
     effect: "generate_local",
     description: "Play again a track Moondog made on this Mac, from its own folder.",
-    requires_local_generation: true,
+    requires_made_tracks: true,
     agent_tool: {
       name: "moondog_play_made_track",
       label: N_("Play a track Moondog made"),
@@ -756,8 +769,16 @@ function withRuntimeAvailability(
   musicPreviewReady,
   tasteChoicesReady,
   localGenerationReady,
+  scoreGenerationReady,
 ) {
   if (capability.requires_local_generation && !localGenerationReady) {
+    return { ...capability, state: "blocked", blocked_by: "local_generation_not_ready" };
+  }
+  // Writing a track as a score is the way to make music only where Stable Audio 3 is not ready.
+  if (capability.requires_score_generation && !scoreGenerationReady) {
+    return { ...capability, state: "blocked", blocked_by: localGenerationReady ? "stable_audio_ready" : "score_generation_not_ready" };
+  }
+  if (capability.requires_made_tracks && !localGenerationReady && !scoreGenerationReady) {
     return { ...capability, state: "blocked", blocked_by: "local_generation_not_ready" };
   }
   if (capability.requires_taste_choices && !tasteChoicesReady) {
@@ -893,6 +914,7 @@ export function listCapabilities({
   musicPreviewReady = false,
   tasteChoicesReady = false,
   localGenerationReady = false,
+  scoreGenerationReady = false,
 } = {}) {
   return structuredClone(
     catalog.map((capability) =>
@@ -916,6 +938,7 @@ export function listCapabilities({
         musicPreviewReady,
         tasteChoicesReady,
         localGenerationReady,
+        scoreGenerationReady,
       ),
     ),
   );

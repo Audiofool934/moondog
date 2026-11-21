@@ -298,7 +298,7 @@ const KINDS = [
   [/^moondog_(?:playlist_plan|spotify_playlist_)/u, "playlist"],
   [/^moondog_playlist_save$/u, "keep"],
   [/^moondog_music_preview$/u, "previews"],
-  [/^moondog_make_track$/u, "make"],
+  [/^moondog_(?:make|write)_track$/u, "make"],
   [/^moondog_play_made_track$/u, "play"],
   [/^moondog_start_stream$/u, "make"],
   [/^moondog_stop_stream$/u, "pause"],

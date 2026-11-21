@@ -1078,6 +1078,7 @@ export default {
   "saving it": "guardándolo",
   "Let Moondog make music on this Mac": "Deja que Moondog haga música en este Mac",
   "Make a track": "Hacer una pista",
+  "Write a track": "Escribir una pista",
   "Play a track Moondog made": "Volver a poner una pista que hizo Moondog",
   "Start a stream": "Empezar un flujo",
   "Stop the stream": "Parar el flujo",

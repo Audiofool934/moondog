@@ -20,6 +20,7 @@
   "files": [
     "NOTICE",
     "licenses/stability-ai-community-license.md",
+    "licenses/dawn-sdk-mit.md",
     "assets/brand/moondog-logo.svg",
     "contracts/v1",
     "contracts/v2",
