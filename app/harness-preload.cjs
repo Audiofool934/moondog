@@ -945,6 +945,11 @@ core.onmessage = ({ data }) => {
     if (data.listed) listed.push([data.provider, data.model]);
     sendList();
   }
+  if (data.type === "order-models") {
+    const at = ([provider, model]) => data.models.findIndex((entry) => entry.provider === provider && entry.model === model);
+    listed = [...listed].sort((left, right) => at(left) - at(right));
+    setTimeout(sendList, 150);
+  }
   // A new default answers at once, which ends the first run's model step.
   if (data.type === "default-model") {
     defaultModel = { ...defaultModel, provider: data.provider, model: data.model };

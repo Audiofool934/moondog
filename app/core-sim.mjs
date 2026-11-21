@@ -94,7 +94,7 @@ async function openConversation({ sessionId = null, reason = "user_new" } = {}) 
 const settings = createModelSettings({ environment });
 const readOnly = () => { throw Object.assign(new Error("The simulated window doesn't change sign-ins."), { code: "auth_login_failed" }); };
 const modelSettings = Object.freeze({ providers: settings.providers, models: settings.models, current: settings.current, list: settings.list,
-  signIn: readOnly, signOut: readOnly, setListed: readOnly, saveEndpoint: readOnly, removeEndpoint: readOnly });
+  signIn: readOnly, signOut: readOnly, setListed: readOnly, setOrder: readOnly, saveEndpoint: readOnly, removeEndpoint: readOnly });
 const rebuildRuntime = (selection, target = application) => createConfiguredRuntime(target, environment, selection ? { selection } : {});
 
 // The music service choice also lasts only until the window closes.

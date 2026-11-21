@@ -84,6 +84,13 @@
 .sheet .choice:has(> .choice-main:active) { background: var(--press); }
 .sheet .choice.off { opacity: 0.45; }
 .sheet .choice.off:hover { background: none; }
+/* The model menu's order: a dragged row lifts over the others, which slide to make room. */
+.sheet .menu-order.sorting { cursor: grabbing; user-select: none; }
+.sheet .menu-order.sorting .choice { transition: transform var(--enter) var(--out); }
+.sheet .menu-order.sorting .choice:hover:not(.lifted) { background: none; }
+.sheet .menu-order .choice.lifted { position: relative; z-index: 1; transition: none; background: var(--canvas); box-shadow: var(--lift); }
+.sheet .menu-order .choice.lifted > .choice-main { pointer-events: none; }
+@media (prefers-reduced-motion: reduce) { .sheet .menu-order.sorting .choice:not(.lifted) { transition: none; } }
 .sheet .choice-main { flex: 1; min-width: 0; align-self: stretch; display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-radius: var(--r-2); text-align: start; }
 .sheet .choice-main:focus-visible { border-radius: var(--r-2); outline-offset: -2px; }
 .sheet .choice-words { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
