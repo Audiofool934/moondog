@@ -13,7 +13,8 @@ The gateway holds the upstream provider's key, picks the upstream model, and cou
   It sends the request to the upstream model and names the model `moondog` in every reply.
 - `GET /v1/models` lists the one model.
 - `GET /v1/invite` returns the code's name, its daily allowance and today's use.
-- `/admin/invites` makes, lists, stops and restores codes, with the owner's key.
+- `/admin/invites` makes, lists, renames, notes, stops and restores codes, with the owner's key.
+- `GET /admin` is the owner's page for the same work.
 
 It refuses a request with an OpenAI-style error and one of these codes:
 
@@ -31,7 +32,7 @@ The allowance day turns at midnight, Beijing time.
 
 ## What it keeps
 
-The gateway keeps the SHA-256 of each invite code, the name the owner gave it, and token and request counts for each code and day.
+The gateway keeps the SHA-256 of each invite code, the name and note the owner gave it, and token and request counts for each code and day.
 It does not keep or log any message, reply, or tool call.
 A request passes through to the upstream provider, which has its own retention terms.
 
@@ -64,6 +65,8 @@ Cloudflare's rate limit binding let 37 requests through in 20 seconds against a 
 cd gateway
 npx wrangler d1 create moondog-model          # put the database_id in wrangler.toml
 npx wrangler d1 execute moondog-model --remote --file schema.sql
+# A database made before 2026-11-21 needs the note column once:
+#   npx wrangler d1 execute moondog-model --remote --command "ALTER TABLE invites ADD COLUMN note TEXT NOT NULL DEFAULT ''"
 npx wrangler secret put UPSTREAM_BASE_URL
 npx wrangler secret put UPSTREAM_MODEL
 npx wrangler secret put UPSTREAM_API_KEY
@@ -84,14 +87,24 @@ Check a deployment before any code goes to a tester:
 
 ## Invite codes
 
+The owner's page is `https://moondog-api.audiofool.ai/admin`.
+It asks for the `ADMIN_TOKEN` secret and keeps it in that browser until **Lock**.
+It lists every code with today's use, and the owner can make codes, edit each name and note in place, and stop or restore a code.
+The page itself holds no data; it reads `/admin/invites` with the key.
+Keys: `/` finds a code, `n` starts new codes, `r` refreshes.
+
+The same work runs from the terminal:
+
 ```sh
 export MOONDOG_GATEWAY_ADMIN_TOKEN=...        # the ADMIN_TOKEN secret
 node gateway/scripts/invite.mjs create "Name one" "Name two"
 node gateway/scripts/invite.mjs list
 node gateway/scripts/invite.mjs revoke 12
+node gateway/scripts/invite.mjs rename 12 "New name"
+node gateway/scripts/invite.mjs note 12 "Sent by WeChat on Nov 21"
 ```
 
-`create` prints each code once, with its invite link.
+`create` (and the page) shows each code once, with its invite link.
 The gateway cannot show a code again.
 
 ## Tests

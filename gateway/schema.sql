@@ -5,6 +5,8 @@ CREATE TABLE IF NOT EXISTS invites (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   code_hash TEXT NOT NULL UNIQUE,
   label TEXT NOT NULL DEFAULT '',
+  -- The owner's own words about the code, such as whom it went to and when. Added 2026-11-21.
+  note TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL DEFAULT 'active',
   daily_token_limit INTEGER,
   expires_at INTEGER,

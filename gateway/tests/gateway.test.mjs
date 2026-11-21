@@ -141,3 +141,34 @@ test("the admin routes need the owner's key and never return a stored code", asy
   assert.ok(!JSON.stringify(listing).includes(code));
   assert.equal(typeof (await hashInvite(code)), "string");
 });
+
+test("the owner can rename a code and keep a note on it", async () => {
+  const { call, code } = await setup({ upstreamReply: () => Response.json({}) });
+  assert.equal((await call("/admin/invites/1", { method: "PATCH", key: code, body: { note: "x" } })).status, 401);
+  const edited = await call("/admin/invites/1", { method: "PATCH", key: "admin-token", body: { label: " Mei ", note: "Sent by WeChat on Nov 21" } });
+  assert.equal(edited.status, 200);
+  assert.deepEqual(await edited.json(), { id: 1, label: "Mei", note: "Sent by WeChat on Nov 21" });
+  assert.equal((await call("/admin/invites/1", { method: "PATCH", key: "admin-token", body: {} })).status, 400);
+  assert.equal((await call("/admin/invites/9", { method: "PATCH", key: "admin-token", body: { note: "x" } })).status, 404);
+  const made = await (await call("/admin/invites", { method: "POST", key: "admin-token", body: { labels: ["Ana"], note: "Apple Music" } })).json();
+  const { invites, daily_tokens } = await (await call("/admin/invites", { key: "admin-token" })).json();
+  assert.equal(daily_tokens, 1000);
+  assert.deepEqual(invites.map(({ id, label, note }) => ({ id, label, note })), [
+    { id: 1, label: "Mei", note: "Sent by WeChat on Nov 21" },
+    { id: made.invites[0].id, label: "Ana", note: "Apple Music" },
+  ]);
+  const invite = await (await call("/v1/invite", { key: code })).json();
+  assert.equal(invite.label, "Mei");
+  assert.equal(invite.note, undefined);
+});
+
+test("the admin page holds no data and asks for the key", async () => {
+  const { call } = await setup({ upstreamReply: () => Response.json({}) });
+  const page = await call("/admin");
+  assert.equal(page.status, 200);
+  assert.match(page.headers.get("content-type"), /text\/html/u);
+  assert.match(page.headers.get("content-security-policy"), /frame-ancestors 'none'/u);
+  const html = await page.text();
+  assert.match(html, /Admin key/u);
+  assert.ok(!html.includes("first tester"));
+});
