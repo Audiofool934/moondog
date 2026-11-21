@@ -1024,6 +1024,8 @@ test("every end of a stream says why, and a stream that gives way plays on until
   const begin = async () => {
     await until(() => !generator.busy());
     const started = await stream.start({ compiled: compiledTaste, title: "Late tide", seconds: 15, minutes: 10, receipt: {} });
+    // The second track is named before it is made, so an idle generator alone does not mean it exists yet.
+    await until(() => stream.status()?.tracks_made >= 2);
     await until(() => !generator.busy());
     return started;
   };
