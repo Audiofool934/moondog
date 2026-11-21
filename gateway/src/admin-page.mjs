@@ -201,7 +201,8 @@ tr.stopped td input, tr.stopped td textarea, tr.stopped td.num, tr.stopped td.me
   function render() {
     const active = state.invites.filter((invite) => invite.status === "active");
     const today = state.invites.reduce((sum, invite) => sum + invite.input_today + invite.output_today, 0);
-    $("summary").textContent = active.length + " active \\u00b7 " + millions(today) + " tokens today \\u00b7 " + state.day + " Beijing";
+    summary = active.length + " active \\u00b7 " + millions(today) + " tokens today";
+    showSummary();
 
     const query = $("filter").value.trim().toLowerCase();
     const showStopped = $("show-stopped").checked;
@@ -223,6 +224,25 @@ tr.stopped td input, tr.stopped td textarea, tr.stopped td.num, tr.stopped td.me
     for (const invite of shown) rows.append(row(invite));
     for (const area of rows.querySelectorAll("textarea")) fit(area);
   }
+
+  // The allowance day turns at midnight in Beijing (16:00 UTC). The page says when that is here.
+  let summary = "";
+  function nextReset(now = Date.now()) {
+    const day = new Date(now);
+    let at = Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), 16);
+    if (at <= now) at += 86400000;
+    return at;
+  }
+  function showSummary() {
+    if (!summary) return;
+    const at = nextReset();
+    const minutes = Math.max(1, Math.round((at - Date.now()) / 60000));
+    const wait = minutes >= 60 ? Math.floor(minutes / 60) + " h " + (minutes % 60) + " m" : minutes + " m";
+    const time = new Date(at).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+    $("summary").textContent = summary + " \\u00b7 resets " + time + ", in " + wait;
+    $("summary").title = "The allowance day turns at midnight in Beijing. It is " + state.day + " there.";
+  }
+  setInterval(showSummary, 30000);
 
   function fit(area) {
     area.style.height = "33px";
