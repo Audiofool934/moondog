@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import { repairToolArguments } from "../../src/runtime/pi/tool-arguments.mjs";
 
 const song = Type.Object({ title: Type.String({ minLength: 1 }), artist: Type.String({ minLength: 1 }) }, { additionalProperties: false });

@@ -102,7 +102,7 @@ test("an OpenAI runtime uses the saved ChatGPT sign-in", async (context) => {
   assert.deepEqual(runtime.publicStatus(), {
     state: "configured",
     adapter: "pi_agent_core",
-    pi_version: "1.0.1",
+    pi_version: "1.6.0",
     provider,
     model,
     effort_levels: runtime.publicStatus().effort_levels,

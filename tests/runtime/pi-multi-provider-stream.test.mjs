@@ -5,7 +5,8 @@ import path from "node:path";
 import test from "node:test";
 
 import { Agent } from "@earendil-works/pi-agent-core";
-import { Type, validateToolArguments } from "@earendil-works/pi-ai";
+import { validateToolArguments } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 
 import { listAgentCapabilityDescriptors } from "../../src/core/capability-catalog.mjs";
 import { PiAgentRuntime } from "../../src/runtime/pi/agent-runtime.mjs";
