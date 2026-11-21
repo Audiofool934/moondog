@@ -383,7 +383,7 @@ export class RecordSleeve {
     };
     if (rows < 7 || width < 34 || this.artMode === "off") {
       const compact = withNote([hang(theme.bold("MOONDOG  ◎")),
-        ...(rows >= 9 && width >= 30 ? [hang(theme.muted(tr("Your personal music agent."))), ""] : []),
+        ...(rows >= 9 && width >= 30 ? [hang(theme.muted(tr("On the air, just for you."))), ""] : []),
         ...tracklist(theme, { focused, selected, columns: width }),
       ], Math.max(1, width - 2), rows);
       const top = Math.max(0, Math.floor((rows - compact.length) / 2));
@@ -395,7 +395,7 @@ export class RecordSleeve {
       ? renderMoondogWordmark().map(theme.text) : [theme.bold(roomy ? "M O O N D O G" : "MOONDOG")];
     const copyBlock = (columns, budget, roomy, note = true, reserve = roomy) => (note ? withNote : (lines) => lines)([
       ...title(columns, budget, roomy).map(hang),
-      ...(budget >= 12 ? [...wrapDescription(tr("Your personal music agent."), columns).map((line) => hang(theme.muted(line))), ""] : [""]),
+      ...(budget >= 12 ? [...wrapDescription(tr("On the air, just for you."), columns).map((line) => hang(theme.muted(line))), ""] : [""]),
       ...tracklist(theme, { focused, selected, columns: columns + 2 }),
       ...(reserve ? ["", ...actionNote(focused ? homeActions[selected].description : "", columns).map((line) => hang(theme.muted(line)))] : []),
     ], columns, budget);

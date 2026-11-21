@@ -113,7 +113,7 @@ test("a first launch asks for the music service, then the model, and opens the h
   assert.match(fixture.screen(), /Apple Music\s+30-second previews, played here/u);
   assert.ok(!fixture.shows("NetEase"), "NetEase waits until ncm-cli is installed");
   assert.match(fixture.screen(), /esc skip setup/u);
-  assert.ok(!fixture.shows("Your personal music agent.") && !fixture.shows("What have you been listening to?"), "the sleeve and the draft wait behind the first run");
+  assert.ok(!fixture.shows("On the air, just for you.") && !fixture.shows("What have you been listening to?"), "the sleeve and the draft wait behind the first run");
 
   fixture.press(DOWN, "\r");
   await fixture.see("Which model should I talk through?");
@@ -174,7 +174,7 @@ test("Esc skips the rest for good, and the next launch opens on the sleeve", asy
   fixture.press(ESC);
   await fixture.see("Skipped. /service and /model are here when you want them.");
   assert.ok(!fixture.shows("Where should I play music?"));
-  assert.ok(fixture.shows("Your personal music agent.") && fixture.shows("What have you been listening to?"), "the sleeve and the draft are back");
+  assert.ok(fixture.shows("On the air, just for you.") && fixture.shows("What have you been listening to?"), "the sleeve and the draft are back");
   await first.stop();
   assert.equal((await firstRunFile(fixture.environment)).skipped, true);
   assert.equal(await readPlaybackPreference(fixture.environment), null, "skipping saves no service");
@@ -229,7 +229,7 @@ test("the window's choices reach an open first run, and the window can end it", 
   await window(skipped.environment).finish({ skipped: true });
   await until(skipped, () => !skipped.shows("Where should I play music?"), "the first run closes");
   assert.ok(skipped.shows("New conversation · /resume history"));
-  assert.ok(skipped.shows("Your personal music agent."));
+  assert.ok(skipped.shows("On the air, just for you."));
 });
 
 test("/service opens the same choices any time and saves the one picked", async (context) => {
