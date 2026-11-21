@@ -42,6 +42,15 @@ test("the menu starts as the default, keeps the default, and adds and drops the 
   assert.deepEqual((await settings.list()).models.map(entry => entry.model), ["claude-opus-5-5", "gpt-5"]);
 });
 
+test("the menu takes the order it is given, keeps models the order leaves out, and adds none", async t => {
+  const { environment, settings } = await fixture(t);
+  await writePiRuntimeSelection({ provider: "anthropic", model: "claude-opus-5-5" }, environment);
+  await settings.setListed("anthropic", "claude-sonnet-5-5", true);
+  await settings.setListed("openai", "gpt-5", true);
+  await settings.setOrder([{ provider: "openai", model: "gpt-5" }, { provider: "Anthropic", model: "claude-sonnet-5-5" }, { provider: "xai", model: "grok-9" }]);
+  assert.deepEqual((await settings.list()).models.map(entry => entry.model), ["gpt-5", "claude-sonnet-5-5", "claude-opus-5-5"]);
+});
+
 test("an endpoint keeps its key private, never sends it to a new address, and joins the catalog", async t => {
   const { root, environment, settings } = await fixture(t);
   await writePiRuntimeSelection({ provider: "anthropic", model: "claude-opus-5-5" }, environment);

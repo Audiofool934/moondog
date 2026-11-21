@@ -274,6 +274,22 @@ export function createModelSettings({
       }
     },
 
+    // Puts the menu's models in the order given. A model the order leaves out keeps its place after
+    // the ones it names, and a model the menu lacks is not added.
+    async setOrder(order) {
+      const entries = await menu(await current());
+      const wanted = (Array.isArray(order) ? order : [])
+        .map(entry => ({ provider: String(entry?.provider ?? "").trim().toLowerCase(), model: String(entry?.model ?? "").trim() }))
+        .map(entry => entries.find(kept => sameModel(kept, entry)))
+        .filter(Boolean);
+      const next = [...wanted, ...entries.filter(entry => !wanted.some(kept => sameModel(kept, entry)))];
+      try {
+        await writeModelList(next, environment);
+      } catch (error) {
+        throw moondogError(error) ?? failure("model_list_invalid", "Moondog could not save its model list.");
+      }
+    },
+
     // A new endpoint whose model IDs were typed goes straight into the menu with them; listed ones
     // wait to be chosen, since an endpoint such as OpenRouter lists hundreds.
     async saveEndpoint(input) {

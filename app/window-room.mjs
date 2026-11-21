@@ -1336,6 +1336,10 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
       await modelSettings?.setListed?.(String(data.provider ?? ""), String(data.model ?? ""), data.listed === true);
       await sendList();
     },
+    "order-models": async (data) => {
+      await modelSettings?.setOrder?.(Array.isArray(data.models) ? data.models.slice(0, 40) : []);
+      await sendList();
+    },
     "endpoint-save": async (data) => {
       try {
         const endpoint = await modelSettings?.saveEndpoint?.(data.endpoint ?? {});

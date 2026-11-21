@@ -48,7 +48,7 @@ const LASTFM_ACCESS = new Set(["lastfm_key_missing", "lastfm_key_invalid"]);
 const NOTICES = { model_unknown: ["model", "noticeModelUnknown", "model"], transfer_failed: ["playback", "noticeTransferFailed"],
   "sign-out": [null, "noticeFailed", "spotify"], "music-service": ["playback", "noticeFailed", "service"], language: ["general", "noticeFailed", "locale"],
   model: ["model", "noticeFailed", "model"], effort: ["model", "noticeFailed", "effort"], "default-model": ["model", "noticeFailed"],
-  "default-effort": ["model", "noticeFailed"], "list-model": ["model", "noticeFailed"], "endpoint-remove": ["model", "noticeFailed"],
+  "default-effort": ["model", "noticeFailed"], "list-model": ["model", "noticeFailed"], "order-models": ["model", "noticeFailed"], "endpoint-remove": ["model", "noticeFailed"],
   "model-role": ["model", "noticeFailed"],
   generation: ["playback", "noticeFailed", "generation"], "generation-check": ["playback", "noticeFailed"], "generation-cancel": ["playback", "noticeFailed"],
   "generation-remove": ["playback", "noticeFailed", "generation"], "generation-model": ["playback", "noticeFailed"] };
@@ -132,7 +132,7 @@ export function createSettings({ state, send, t, appleMusic = null, onHide = nul
   let copiedTimer = 0;
   // What the core told this sheet; the sheet asks again each time a section opens.
   const data = { providers: null, providersError: false, models: new Map(), modelsFailed: new Set(), expanded: undefined, signingOut: new Set(),
-    list: null, listError: false, toggles: new Map(), listPending: new Map(), endpoint: null, invite: { busy: false, error: null },
+    list: null, listError: false, toggles: new Map(), order: null, dragging: false, listPending: new Map(), endpoint: null, invite: { busy: false, error: null },
     roles: null, rolesError: false, rolePending: new Map(), expandedRole: null,
     devices: null, devicesError: false, devicesLoading: false, memories: null, auth: null, error: null, importing: null, version: null, appearance: null, copied: null, focus: null, phaseOffset: null,
     lastfm: { username: "", needsKey: false, keyError: false, savingKey: false },
@@ -242,6 +242,15 @@ export function createSettings({ state, send, t, appleMusic = null, onHide = nul
     }
     const target = event.target;
     const step = { ArrowDown: 1, ArrowUp: -1, ArrowRight: 1, ArrowLeft: -1 }[event.key];
+    // ⌥↑ and ⌥↓ move a model in the menu's order; the focus goes with it.
+    const order = event.altKey && !event.metaKey && !event.ctrlKey && !event.shiftKey && (event.key === "ArrowUp" || event.key === "ArrowDown")
+      && target.classList?.contains("choice-main") && target.closest(".menu-order") ? target.closest(".choice").dataset.order : undefined;
+    if (order !== undefined) {
+      event.preventDefault();
+      const from = Number(order);
+      reorder(menuModels(), from, from + step);
+      return;
+    }
     if (!step || event.metaKey || event.altKey || event.ctrlKey) return;
     const vertical = event.key === "ArrowDown" || event.key === "ArrowUp";
     // The first run has one place, so the arrows go from the sheet straight to its rows.
@@ -604,7 +613,10 @@ export function createSettings({ state, send, t, appleMusic = null, onHide = nul
   function menuModels() {
     const shown = (data.list?.models ?? []).filter((entry) => data.toggles.get(modelKey(entry))?.listed !== false);
     for (const { entry, listed } of data.toggles.values()) if (listed && !shown.some((kept) => sameModel(kept, entry))) shown.push(entry);
-    return shown;
+    if (!data.order) return shown;
+    // The order the listener just dragged to, until the core sends the list back in it.
+    const rank = (entry) => { const at = data.order.indexOf(modelKey(entry)); return at < 0 ? Infinity : at; };
+    return shown.sort((left, right) => rank(left) - rank(right));
   }
   const isListed = (entry) => data.toggles.get(modelKey(entry))?.listed ?? (data.list?.models ?? []).some((kept) => sameModel(kept, entry));
   function toggle(entry, listed) {
@@ -618,7 +630,7 @@ export function createSettings({ state, send, t, appleMusic = null, onHide = nul
     if (data.listError) return failure("noticeFailed");
     const models = menuModels();
     if (!models.length) return note(say("noModels"));
-    return choices(models.map((entry) => {
+    return sortable(choices(models.map((entry) => {
       const isDefault = sameModel(entry, chosen);
       let trailing = make("span", "choice-tag", say("default"));
       if (!isDefault) {
@@ -632,7 +644,75 @@ export function createSettings({ state, send, t, appleMusic = null, onHide = nul
       return choice({ label: entry.name ?? entry.model, detail: modelDetail(entry),
         chosen: isDefault, check: false, disabled: entry.ready === false && !isDefault, trailing, key: `menu:${modelKey(entry)}`,
         onChoose: isDefault ? null : () => chooseDefault(entry) });
-    }));
+    })), models);
+  }
+  // The menu offers its models in this order, so a row dragged up or down, or moved with ⌥↑ and ⌥↓,
+  // takes its new place at once and the core keeps it.
+  function reorder(models, from, to) {
+    if (from === to || to < 0 || to >= models.length) return false;
+    const next = [...models];
+    next.splice(to, 0, ...next.splice(from, 1));
+    data.order = next.map(modelKey);
+    send({ type: "order-models", models: next.map(({ provider, model }) => ({ provider, model })) });
+    render();
+    return true;
+  }
+  // A row follows the pointer once it has moved a few pixels, and the rows it passes make room.
+  // A press that does not move stays a click.
+  function sortable(list, models) {
+    if (models.length < 2) return list;
+    list.classList.add("menu-order");
+    const rows = [...list.children];
+    rows.forEach((row, index) => {
+      row.dataset.order = String(index);
+      row.querySelector(".choice-main")?.setAttribute("aria-keyshortcuts", "Alt+ArrowUp Alt+ArrowDown");
+      row.addEventListener("pointerdown", (down) => {
+        if (down.button !== 0 || down.target.closest(".choice-remove")) return;
+        const boxes = rows.map((each) => each.getBoundingClientRect());
+        const box = boxes[index];
+        const room = box.height + Math.max(0, (boxes[1]?.top ?? box.bottom) - boxes[0].bottom);
+        let moving = false;
+        let to = index;
+        const move = (event) => {
+          const travel = event.clientY - down.clientY;
+          if (!moving) {
+            if (Math.abs(travel) < 4) return;
+            moving = true;
+            data.dragging = true;
+            list.classList.add("sorting");
+            row.classList.add("lifted");
+          }
+          const offset = Math.max(boxes[0].top - box.top, Math.min(boxes.at(-1).bottom - box.bottom, travel));
+          row.style.transform = `translateY(${offset}px)`;
+          const middle = box.top + box.height / 2 + offset;
+          to = boxes.filter((other, at) => at !== index && other.top + other.height / 2 < middle).length;
+          rows.forEach((other, at) => {
+            if (at === index) return;
+            const shift = at > index && at <= to ? -room : at < index && at >= to ? room : 0;
+            other.style.transform = shift ? `translateY(${shift}px)` : "";
+          });
+        };
+        const end = (event) => {
+          window.removeEventListener("pointermove", move);
+          window.removeEventListener("pointerup", end);
+          window.removeEventListener("pointercancel", end);
+          if (!moving) return;
+          // The click that ends a drag does not also make the row the default.
+          const swallow = (click) => { click.stopPropagation(); click.preventDefault(); };
+          window.addEventListener("click", swallow, { capture: true, once: true });
+          setTimeout(() => window.removeEventListener("click", swallow, { capture: true }), 300);
+          data.dragging = false;
+          for (const each of rows) each.style.transform = "";
+          list.classList.remove("sorting");
+          row.classList.remove("lifted");
+          if (event.type === "pointercancel" || !reorder(models, index, to)) render();
+        };
+        window.addEventListener("pointermove", move);
+        window.addEventListener("pointerup", end);
+        window.addEventListener("pointercancel", end);
+      });
+    });
+    return list;
   }
   function chooseDefault(entry) {
     expectList("default", { provider: entry.provider, model: entry.model });
@@ -1367,6 +1447,8 @@ export function createSettings({ state, send, t, appleMusic = null, onHide = nul
 
   function render({ entering = false } = {}) {
     if (!isOpen) return;
+    // A row being dragged keeps its nodes; the drop draws whatever came meanwhile.
+    if (data.dragging) return;
     // The first run has no places to go to; its close button skips the rest and says so.
     card.classList.toggle("asking", Boolean(asking));
     card.setAttribute("aria-label", say(asking ? (asking.step === "model" ? "firstRunModel" : "firstRunService") : "settings"));
@@ -1431,6 +1513,7 @@ export function createSettings({ state, send, t, appleMusic = null, onHide = nul
       data.list = { models: message.models ?? [], default: message.default ?? null };
       data.listError = Boolean(message.error);
       data.toggles.clear();
+      data.order = null;
       data.listPending.clear();
       warn("model list", message.error);
     }
@@ -1554,6 +1637,7 @@ export function createSettings({ state, send, t, appleMusic = null, onHide = nul
         if (message.code === "sign-out") data.signingOut.clear();
         if (message.code === "generation" || message.code === "generation-check") data.generationCheck = null;
         if (message.code === "list-model") data.toggles.clear();
+        if (message.code === "order-models") data.order = null;
         if (message.code === "default-model") data.listPending.delete("default");
         if (message.code === "default-effort") data.listPending.delete("effort");
       } else return;
