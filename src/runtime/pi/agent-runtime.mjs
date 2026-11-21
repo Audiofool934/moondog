@@ -1,5 +1,6 @@
 import { Agent } from "@earendil-works/pi-agent-core";
-import { createInitialSystemMessage, getCurrentSystemMessage, toToolDeclaration, Type } from "@earendil-works/pi-ai";
+import { createInitialSystemMessage, getCurrentSystemMessage, toToolDeclaration } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import { readFileSync } from "node:fs";
 import { LOCALES, messageLocale, translator } from "../../i18n/index.mjs";
 import { PROFILE_SECTIONS, TRAJECTORIES } from "../../profile/profile-exploration.mjs";
@@ -7733,7 +7734,7 @@ export class PiAgentRuntime {
     this.runtimeStatus = {
       state: "configured",
       adapter: "pi_agent_core",
-      pi_version: "1.0.1",
+      pi_version: "1.6.0",
       provider,
       model: modelId,
       ...(effort ? { effort, thinking_level: thinkingLevel } : {}),

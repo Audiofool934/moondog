@@ -1,6 +1,6 @@
 import { LOCALES } from "../../i18n/index.mjs";
 import { Agent } from "@earendil-works/pi-agent-core";
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import { createConfiguredRuntime } from "./configured-runtime.mjs";
 import { createModelConnectionError, createModelFetch, isModelConnectionFailure, safeProviderErrorMessage } from "./model-transport.mjs";
 

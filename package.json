@@ -66,12 +66,13 @@
     "test": "node --test tests/contracts/*.test.mjs tests/core/*.test.mjs tests/importers/*.test.mjs tests/runtime/*.test.mjs gateway/tests/*.test.mjs"
   },
   "dependencies": {
-    "@earendil-works/pi-agent-core": "1.0.1",
-    "@earendil-works/pi-ai": "1.0.1",
-    "@earendil-works/pi-tui": "1.0.1",
+    "@earendil-works/pi-agent-core": "1.6.0",
+    "@earendil-works/pi-ai": "1.6.0",
+    "@earendil-works/pi-tui": "1.6.0",
     "ajv": "8.20.0",
     "ajv-formats": "3.0.1",
     "plist": "5.0.0",
+    "typebox": "1.3.27",
     "yauzl": "3.4.0"
   },
   "devDependencies": {

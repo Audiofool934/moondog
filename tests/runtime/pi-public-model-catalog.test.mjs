@@ -57,7 +57,7 @@ for (const provider of supportedPiProviderIds) {
     assert.equal(requests.length, 1);
     assert.equal(requests[0].url, `https://pi.dev/api/models/providers/${provider}?pi-version=${PI_CATALOG_VERSION}`);
     assert.equal(requests[0].headers.Accept, "application/json");
-    assert.match(requests[0].headers["User-Agent"], /^pi\/1\.0\.1 /u);
+    assert.match(requests[0].headers["User-Agent"], /^pi\/1\.6\.0 /u);
     assert.equal(requests[0].credentials, "omit");
     assert.equal(requests[0].redirect, "error");
     assert.equal(requests[0].body, undefined);
