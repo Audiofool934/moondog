@@ -9,8 +9,8 @@ Contribution information is in [CONTRIBUTING.md](../CONTRIBUTING.md).
 ## Distribution
 
 Moondog is distributed as a signed and notarized Mac app for Apple silicon, as the npm package for macOS or Linux on Node.js 22.19.0 or newer, and as a source checkout with locked npm dependencies.
-The source version is `0.3.0`.
-`@audiofool/moondog` is the public npm package name, and the registry serves 0.3.0 as `latest` and the newest beta as `beta`.
+The source version is `0.3.1`.
+`@audiofool/moondog` is the public npm package name, and the registry serves 0.3.1 as `latest` and the newest beta as `beta`.
 Version 0.1.0 predates the updater, so its installs need a one-time manual upgrade; see [updates and maintainer setup](UPDATES.md).
 A `v` tag publishes through npm trusted publishing with provenance. A prerelease tag publishes on its own; a stable tag waits for the owner's approval in the `release-approval` environment.
 The tagged release workflow runs the clean-source check before OIDC publication.

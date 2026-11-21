@@ -1,6 +1,6 @@
 {
   "name": "@audiofool/moondog",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "type": "module",
   "description": "A local-first AI radio host, just for you.",
   "license": "Apache-2.0",
