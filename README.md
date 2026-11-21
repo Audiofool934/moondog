@@ -4,7 +4,7 @@
 
 <h1 align="center">Moondog</h1>
 
-<p align="center">Source candidate 0.3.0-beta.17</p>
+<p align="center">Version 0.3.0</p>
 
 <p align="center"><strong>On the air, just for you.</strong></p>
 
@@ -33,7 +33,7 @@ npm ci
 npm start
 ```
 
-[@audiofool/moondog](https://www.npmjs.com/package/@audiofool/moondog) 0.2.2 is the published package; `npm install --global @audiofool/moondog` installs it.
+[@audiofool/moondog](https://www.npmjs.com/package/@audiofool/moondog) 0.3.0 is the published package; `npm install --global @audiofool/moondog` installs it.
 To see the agent work through fictional data, with no sign-in at all, run `npm run demo` from the checkout.
 
 The source version supports `moondog update` and `/update`, with stable (`latest`) and preview (`beta`) channels.
