@@ -50,7 +50,8 @@ const maximumUnpackedBytes = 5_210_000;
 // The portable ZIP reader and the shared host helpers add two entries for the Windows desktop.
 // The host's picks for Up next add one entry (2026-11-13).
 // Moondog's own model and the terminal's invite command add two entries and about 12 KB (2026-11-14).
-const maximumEntries = 177;
+// Moondog's own web search adds one entry and about 4 KB (2026-11-21).
+const maximumEntries = 178;
 const packageOnlyPrivateSentinelPattern = new RegExp(
   ["PRIVATE", "(?:IP|PLATFORM)", "SENTINEL"].join("_"),
   "u",

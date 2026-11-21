@@ -2,6 +2,7 @@ import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 
+import { isMoondogProvider } from "./moondog-model.mjs";
 import { resolveMoondogAuthFile } from "./persistent-credential-store.mjs";
 
 // What each model is for, after Hermes Agent's main model and auxiliary tasks: one chat model answers,
@@ -12,6 +13,10 @@ import { resolveMoondogAuthFile } from "./persistent-credential-store.mjs";
 //
 // kind "model" is a provider and model from the catalog; kind "service" is a web service by id.
 // A "planned" role holds its place in the settings and in this file, but nothing can choose it yet.
+//
+// Moondog's own model sees images and has Moondog's own web search, so choosing it as the chat model
+// puts vision and web search back on auto, where both use Moondog's (see followChatModel). The
+// listener can choose others again after.
 export const MODEL_ROLES = Object.freeze([
   Object.freeze({ id: "chat", kind: "model", state: "enabled", stored: "settings" }),
   Object.freeze({ id: "vision", kind: "model", state: "enabled", input: "image" }),
@@ -19,7 +24,7 @@ export const MODEL_ROLES = Object.freeze([
   Object.freeze({ id: "audio", kind: "model", state: "planned", input: "audio" }),
 ]);
 
-export const WEB_SERVICES = Object.freeze(["deepseek", "brave", "codex"]);
+export const WEB_SERVICES = Object.freeze(["moondog", "deepseek", "brave", "codex"]);
 
 const ROLES_VERSION = 1;
 const printable = (value, max) => typeof value === "string" && value.length > 0 && value.length <= max && !/[\p{C}\s]/u.test(value);
@@ -89,6 +94,18 @@ export async function readModelRoles(environment = process.env) {
     } catch {}
   }
   return roles;
+}
+
+/**
+ * The roles a new chat model brings with it. Moondog's own model puts vision and web search on auto,
+ * where vision uses the model itself and web search Moondog's own. Returns the roles it changed.
+ */
+export async function followChatModel(selection, environment = process.env) {
+  if (!isMoondogProvider(selection?.provider)) return [];
+  const saved = await readModelRoles(environment).catch(() => ({}));
+  const changed = ["vision", "web_search"].filter((roleId) => saved[roleId]);
+  for (const roleId of changed) await writeModelRole(roleId, null, environment);
+  return changed;
 }
 
 // One change at a time, so two quick choices never lose either.

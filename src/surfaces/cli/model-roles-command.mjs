@@ -5,7 +5,7 @@ import { MODEL_ROLES, WEB_SERVICES } from "../../runtime/pi/model-roles.mjs";
 export const MODEL_ROLE_WORDS = Object.freeze({ roles: null, vision: "vision", web: "web_search", audio: "audio" });
 
 const titles = { chat: "Chat", vision: "Vision", web_search: "Web search", audio: "Audio" };
-const usage = "Usage: /model roles, /model vision auto|<provider> <model>, or /model web auto|deepseek|brave|codex.";
+const usage = "Usage: /model roles, /model vision auto|<provider> <model>, or /model web auto|moondog|deepseek|brave|codex.";
 
 const modelName = (choice) => `${choice.name ?? choice.model} (${choice.providerName ?? choice.provider})`;
 
@@ -29,7 +29,7 @@ export function formatModelRoles(roles) {
   const lines = roles.map((role) => `- ${titles[role.id] ?? role.id}: ${describe(role)}`);
   return `# Chat and auxiliary models\n\n${lines.join("\n")}\n\n` +
     "`/model vision <provider> <model>` gives images a model of their own, and `/model vision auto` gives them back to the chat model when it can see.\n" +
-    "`/model web deepseek|brave|codex` picks the web search service, and `/model web auto` takes the first one set up.";
+    "`/model web moondog|deepseek|brave|codex` picks the web search service, and `/model web auto` takes the first one set up.";
 }
 
 export async function runModelRolesCommand({ args = [], modelSettings, webResearch } = {}) {

@@ -10,7 +10,7 @@ import { isEndpointProvider, removeEndpoint, saveEndpoint } from "./custom-endpo
 import { LEGACY_MODEL_ALIASES } from "./model-catalog.mjs";
 import { readConversationModels, readModelList, sameModel, writeConversationModel, writeModelList } from "./model-list.mjs";
 import { isMoondogProvider, MOONDOG_MODEL, MOONDOG_PROVIDER, removeInvite, saveInvite } from "./moondog-model.mjs";
-import { MODEL_ROLES, modelRole, readModelRoles, writeModelRole } from "./model-roles.mjs";
+import { followChatModel, MODEL_ROLES, modelRole, readModelRoles, writeModelRole } from "./model-roles.mjs";
 import { chatgptProviderId } from "./provider-registry.mjs";
 import { createPersistentCredentialStore } from "./persistent-credential-store.mjs";
 import { getPublicPiModelCatalog } from "./public-model-catalog.mjs";
@@ -254,6 +254,16 @@ export function createModelSettings({
       }
     },
 
+    // A new default chat model brings its roles with it: Moondog's own puts vision and web search on
+    // auto, where both use Moondog's. Returns the roles it changed.
+    async followChat(selection) {
+      try {
+        return await followChatModel(selection, environment);
+      } catch (error) {
+        throw moondogError(error) ?? failure("model_roles_invalid", "Moondog could not save its model roles.");
+      }
+    },
+
     // The model each conversation was given in the window's menu, and a change to one: null gives a
     // conversation back to the default.
     conversationModels: () => readConversationModels(environment),
@@ -311,7 +321,7 @@ export function createModelSettings({
     // Saves an invite code for Moondog's own model once the gateway takes it, and puts the model in
     // the menu. It becomes the default when no model is chosen yet or the chosen one can't answer,
     // so a listener with only a code can talk at once. Returns { label, dailyTokens, usedToday,
-    // becameDefault }, never the code.
+    // becameDefault }, never the code. As the default, it brings its vision and web search along.
     async saveInvite(value) {
       let allowance;
       try {
@@ -326,7 +336,10 @@ export function createModelSettings({
       const answers = Boolean(selection) && Boolean(await withAuth(source).checkAuth(selection.provider).catch(() => undefined));
       const becameDefault = !answers;
       try {
-        if (becameDefault) await writePiRuntimeSelection(own, environment);
+        if (becameDefault) {
+          await writePiRuntimeSelection(own, environment);
+          await followChatModel(own, environment);
+        }
         const entries = await menu(becameDefault ? own : selection);
         await writeModelList(entries.some(entry => sameModel(entry, own)) ? entries : [...entries, own].slice(0, 40), environment);
       } catch (error) {

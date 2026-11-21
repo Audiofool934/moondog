@@ -132,7 +132,8 @@ export function addMoondogModel(models, invite, environment = process.env) {
     id: MOONDOG_PROVIDER, name: "Moondog", baseUrl,
     models: [{
       id: MOONDOG_MODEL, name: "Moondog", provider: MOONDOG_PROVIDER, api: "openai-completions", baseUrl,
-      reasoning: false, input: ["text"],
+      // The gateway passes images through, so vision on auto is the model itself.
+      reasoning: false, input: ["text", "image"],
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
       contextWindow: 128_000, maxTokens: 8192,
     }],

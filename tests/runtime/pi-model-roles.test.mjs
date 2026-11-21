@@ -88,3 +88,22 @@ test("/model roles, vision and web show and set what each model is for", async (
   assert.match(await run(["audio"]), /isn't available yet/u);
   await assert.rejects(run(["web", "google"]), /Usage: \/model roles/u);
 });
+
+test("choosing Moondog's own model puts vision and web search back on auto, where both are Moondog's", async (t) => {
+  const { environment, settings } = await fixture(t);
+  await writeModelRole("vision", { provider: "anthropic", model: "claude-sonnet-4-5" }, environment);
+  await writeModelRole("web_search", { service: "brave" }, environment);
+  // Another chat model leaves the listener's choices alone.
+  assert.deepEqual(await settings.followChat({ provider: "anthropic", model: "claude-sonnet-4-5" }), []);
+  assert.equal((await readModelRoles(environment)).web_search.service, "brave");
+
+  assert.deepEqual(await settings.followChat({ provider: "moondog", model: "moondog" }), ["vision", "web_search"]);
+  assert.deepEqual(await readModelRoles(environment), {});
+  await writePiRuntimeSelection({ provider: "moondog", model: "moondog" }, environment);
+  const vision = (await settings.roles()).find((role) => role.id === "vision");
+  assert.equal(vision.choice, null);
+  assert.equal(vision.auto?.provider, "moondog");
+  // The listener can still choose another after.
+  await settings.setRole("web_search", { service: "deepseek" });
+  assert.equal((await readModelRoles(environment)).web_search.service, "deepseek");
+});

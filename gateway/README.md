@@ -11,6 +11,10 @@ The gateway holds the upstream provider's key, picks the upstream model, and cou
 
 - `POST /v1/chat/completions` takes an OpenAI Chat Completions request, with the invite code as the bearer key.
   It sends the request to the upstream model and names the model `moondog` in every reply.
+  A request with an image goes to `UPSTREAM_VISION_MODEL` when it is set, and to the same model otherwise, so the upstream model must see images.
+- `POST /v1/web/search` takes `{ query, count }` and answers `{ results: [{ title, url, snippet, published_at }] }`.
+- `POST /v1/web/read` takes `{ url }` and answers `{ status: "found", title, content }`, or `{ status: "unavailable" }` for a page it can't read.
+  These two are the app's web search role. Each search or read counts as 20,000 tokens against the code's day and the day's total.
 - `GET /v1/models` lists the one model.
 - `GET /v1/invite` returns the code's name, its daily allowance and today's use.
 - `/admin/invites` makes, lists, renames, notes, stops and restores codes, with the owner's key.
@@ -27,13 +31,15 @@ It refuses a request with an OpenAI-style error and one of these codes:
 | `beta_capacity_reached` | 429 | All testers together used today's tokens. |
 | `rate_limited` | 429 | More than 20 requests in a minute. |
 | `upstream_error` | 429 or 5xx | The upstream model failed; the upstream's own words are not passed on. |
+| `web_unavailable` | 503 | This gateway has no web service. |
+| `web_failed`, `web_unreachable` | 502 | The web service failed or did not answer. |
 
 The allowance day turns at midnight, Beijing time.
 
 ## What it keeps
 
 The gateway keeps the SHA-256 of each invite code, the name and note the owner gave it, and token and request counts for each code and day.
-It does not keep or log any message, reply, or tool call.
+It does not keep or log any message, reply, tool call, search, or page address.
 A request passes through to the upstream provider, which has its own retention terms.
 
 ## Settings
@@ -44,6 +50,12 @@ A request passes through to the upstream provider, which has its own retention t
 | --- | --- | --- |
 | `UPSTREAM_BASE_URL` | secret | The upstream's OpenAI-compatible base address, without `/chat/completions`. |
 | `UPSTREAM_MODEL` | secret | The upstream model ID. |
+| `UPSTREAM_VISION_MODEL` | secret, optional | A model for requests with an image, when the main one can't see. |
+| `WEB_SEARCH_URL` | secret, optional | The search service's address; by default the upstream's `/web_search`. |
+| `WEB_READ_URL` | secret, optional | The page reader's address; by default the upstream's `/reader`. |
+| `WEB_API_KEY` | secret, optional | The web service's key; by default the upstream's key. |
+| `WEB_SEARCH_ENGINE` | var, optional | The search engine the service is asked for; `search-prime` by default. |
+| `WEB_SEARCH` | var, optional | `off` turns web search off; the app then falls back to the listener's own service. |
 | `UPSTREAM_EXTRA_BODY` | var, optional | A JSON object merged into each upstream request. |
 | `DAILY_TOKEN_LIMIT` | var | Tokens for one code in one day; 3,000,000 by default. |
 | `GLOBAL_DAILY_TOKEN_LIMIT` | var | Tokens for all codes in one day; 40,000,000 by default. |
