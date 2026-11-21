@@ -101,9 +101,11 @@ function menuAt(event, anchor) {
     ...(Number.isInteger(anchor.selected) && anchor.selected >= 0 ? { positioningItem: anchor.selected } : {}) };
 }
 // A picker's pop-up: its words, or its mark when it shows only that, and the item checked in its menu.
+// The model's button holds two marks and shows one. A hidden mark has no box, so a menu set on it opens at the window's corner.
 function popUp(control, items) {
   const words = control.querySelector("span");
-  return { control, element: words?.textContent ? words : control.querySelector(".icon") ?? control,
+  const mark = [...control.querySelectorAll(".icon, .mark")].find((shown) => shown.getClientRects().length);
+  return { control, element: words?.textContent ? words : mark ?? control,
     selected: Math.max(0, items.findIndex((item) => item.checked)) };
 }
 const menu = (items, event, anchor) => window.moondogApp?.showMenu?.(items, menuAt(event, anchor));
