@@ -194,12 +194,13 @@ function tmuxRunner(socket) {
 
 async function waitForScreen(tmux, text, { timeout = 20_000 } = {}) {
   const deadline = Date.now() + timeout;
+  let screen = "";
   while (Date.now() < deadline) {
-    const screen = await tmux("capture-pane", "-p", "-t", "capture");
+    screen = await tmux("capture-pane", "-p", "-t", "capture");
     if (screen.includes(text)) return;
     await delay(150);
   }
-  throw new Error(`The TUI never showed "${text}".`);
+  throw new Error(`The TUI never showed "${text}". Its last screen:\n${screen}`);
 }
 
 async function type(tmux, text) {
@@ -241,6 +242,10 @@ async function captureTerminal({ root, browser, profile }) {
   try {
     await tmux("new-session", "-d", "-s", "capture", "-x", String(columns), "-y", String(rows), `env -i ${exports} ${command}`);
     await waitForScreen(tmux, "your listening room");
+    // A fresh home opens the first-run setup; skip it, as a listener can.
+    await waitForScreen(tmux, "skip setup");
+    await press(tmux, "Escape");
+    await delay(500);
     await type(tmux, `/import ${archivePath}`);
     await press(tmux, "Enter");
     await waitForScreen(tmux, "Review this import");
