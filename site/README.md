@@ -81,4 +81,4 @@ Build `server/Dockerfile` from the repository root to run it.
 On `main`, the build first copies each chosen download that the mirror lacks into the `moondog` R2 bucket (`node build.mjs --mirror`).
 It uses the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repository secrets; the token needs only Workers R2 Storage: Edit.
 Without them, or if a copy fails, that download links to GitHub.
-The bucket keeps old copies; they cost little, and deleting them is a manual step in the Cloudflare dashboard.
+After the page is published, `node mirror.mjs --prune` deletes every file in the bucket that the live page does not link, so the mirror holds only the offered version of each platform; GitHub keeps every version.
