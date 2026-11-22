@@ -649,9 +649,9 @@ img { -webkit-user-drag: none; }
 .pick { height: 28px; min-width: 28px; max-width: 180px; padding: 0; border-radius: var(--r-2); display: inline-flex; align-items: center; justify-content: center; flex: 0 1 auto;
   font-size: var(--t-small); color: var(--text-3); white-space: nowrap; transition: background-color var(--quick) var(--soft), color var(--quick) var(--soft); }
 .pick:hover { background: var(--hover); color: var(--text); transition: none; }
-.pick .icon { width: 23px; height: 23px; }
-/* Service and model logos align to the diameter of Moondog's record. */
-.pick .icon.fill { width: 22px; height: 22px; color: var(--brand-mark); }
+.pick .icon { width: 20px; height: 20px; }
+/* Give the solid logos a little room inside the send button's 22px dotted rim. */
+.pick .icon.fill { width: 19px; height: 19px; color: var(--brand-mark); }
 .pick[data-model] use[href="#i-kimi"],
 .pick[data-model] use[href="#i-deepseek"] { transform: translateX(1px); }
 .pick span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
