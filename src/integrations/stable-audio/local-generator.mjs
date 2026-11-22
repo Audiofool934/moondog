@@ -256,7 +256,8 @@ export function createLocalGenerator({
 } = {}) {
   // The build that makes the music here: "mlx" on Apple silicon's GPU, "tflite" on a CPU, null where none runs.
   const runtime = stableAudioRuntime({ platform, arch, environment });
-  let current = { state: "unknown", enabled: false, install: "unknown", path: null, source: null, model: DEFAULT_STABLE_AUDIO_MODEL, managed: false, runtime };
+  // The surfaces say "this Mac" or "this computer" by platform.
+  let current = { state: "unknown", enabled: false, install: "unknown", path: null, source: null, model: DEFAULT_STABLE_AUDIO_MODEL, managed: false, runtime, platform };
   let running = null;
   // The tracks made here, newest last, with what happened each time they played: the loop back
   // from listening reads them. Each track's outcomes.jsonl keeps them; the receipt never changes.
@@ -293,6 +294,7 @@ export function createLocalGenerator({
           model: settings.model,
           managed: settings.source === "managed",
           runtime,
+          platform,
         });
       } finally {
         checking = null;

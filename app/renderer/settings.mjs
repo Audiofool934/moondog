@@ -5,7 +5,7 @@ import { appIconSvg, iconShape } from "../../src/surfaces/brand/logo.mjs";
 import { languageTag, timeOfDay } from "../strings.mjs";
 import { icon, make, name, scrollbar, setIcon } from "./ui.mjs";
 import { SCRATCH_MS, scratchMark } from "./mark.mjs";
-import { isMac, shortcuts } from "./platform.mjs";
+import { isMac, platform, shortcuts } from "./platform.mjs";
 
 const SECTIONS = ["general", "appearance", "model", "playback", "library", "memory", "about"];
 // The thinking levels offered for every model that thinks; the core gives each model the nearest it has.
@@ -36,6 +36,12 @@ const GEMMA_TERMS = "https://huggingface.co/stabilityai/stable-audio-3-optimized
 // A download that stopped, by the setup's error code: the sentence that says why. Anything else reads as a plain stop.
 const SETUP_ERRORS = { setup_disk_full: "generationNoSpace", setup_verification_failed: "generationBadFile", setup_offline: "generationOffline",
   setup_busy: "generationBusy", setup_unsupported: "generationUnsupported" };
+// Off the Mac, Stable Audio 3 runs on the processor, and these texts say "this computer" (the key's Pc twin).
+const MACHINE_TEXTS = new Set(["generationNotFound", "generationUnsupported", "generationNote", "generationRemoveAsk", "generationNoSpace",
+  "generationNotInstalled", "generationNoWeights"]);
+const machineText = (key) => !isMac && MACHINE_TEXTS.has(key) ? `${key}Pc` : key;
+// What Stability's own folder runs to get Medium: install.bat on Windows.
+const INSTALL_COMMAND = platform === "win32" ? "install.bat --download medium" : "./install.sh --download medium";
 const LASTFM_KEY_PAGE = "https://www.last.fm/api/account/create";
 const SITE = "https://moondog.audiofool.ai";
 // The core's error codes the listener can act on. Anything else reads as a plain failure; the raw
@@ -1013,7 +1019,7 @@ export function createSettings({ state, send, t, appleMusic = null, onHide = nul
     const detail = job ? jobWords(job, setup)
       : enabled && ready ? say("generationOn") : ready ? say("generationOff")
         : setup?.supported !== false && status.install !== "unsupported" && !own ? say("generationNotDownloaded")
-          : say(GENERATION_STATES[status.install] ?? "checking");
+          : say(machineText(GENERATION_STATES[status.install] ?? "checking"));
     const expanded = data.generationPanel === true;
     let trailing;
     // Turning it on or off is not a choice between services, so it says so in words rather than the switch.
@@ -1031,7 +1037,7 @@ export function createSettings({ state, send, t, appleMusic = null, onHide = nul
     if (job) rows[0].querySelector(".choice-detail").dataset.progress = "generation:words";
     if (expanded) {
       // What it is, said once, until a model is on this Mac.
-      const list = !anyModel && !own ? [note(say("generationNote"))] : [];
+      const list = !anyModel && !own ? [note(say(machineText("generationNote")))] : [];
       if (setup?.supported !== false && status.install !== "unsupported") {
         for (const model of GENERATION_MODELS) list.push(...modelRows(model, status, setup, job));
       }
@@ -1074,7 +1080,7 @@ export function createSettings({ state, send, t, appleMusic = null, onHide = nul
     const words = make("span", "choice-words");
     words.append(make("span", "choice-label", model.name));
     const line = running ? jobWords(job, setup)
-      : removing ? say("generationRemoveAsk", { size: size(found.bytes || total) })
+      : removing ? say(machineText("generationRemoveAsk"), { size: size(found.bytes || total) })
         : found.state === "partial" && found.bytes ? `${say("generationPaused")} · ${percent(found.bytes / total)}`
           : `${say(model.detail)} · ${size(total)}`;
     const shown = make("span", "choice-detail", line);
@@ -1166,7 +1172,7 @@ export function createSettings({ state, send, t, appleMusic = null, onHide = nul
     // A download that stopped says why in one sentence, with the way to go on.
     if (failed && !running) {
       const panel = make("div", "panel");
-      panel.append(failure(SETUP_ERRORS[failed?.code ?? failed] ?? "generationFailed"),
+      panel.append(failure(machineText(SETUP_ERRORS[failed?.code ?? failed] ?? "generationFailed")),
         button(say("tryAgain"), "button small", download, `generation:retry:${model.id}`));
       rows.push(panel);
     }
@@ -1188,7 +1194,8 @@ export function createSettings({ state, send, t, appleMusic = null, onHide = nul
     }, "generation:check");
     again.disabled = checking;
     const why = data.generationCheck !== "done" || ready ? null
-      : failure(status.install === "incomplete" ? (status.missing === "weights" ? "generationNoWeights" : "generationNotInstalled") : "generationNotThere");
+      : failure(machineText(status.install === "incomplete" ? (status.missing === "weights" ? "generationNoWeights" : "generationNotInstalled") : "generationNotThere"),
+        { command: INSTALL_COMMAND });
     const stack = make("div", "stack");
     stack.append(inlineForm({ key: "generationPath", placeholder: own && status.path ? status.path : say("generationFolder"), action: say("save"),
       onSubmit: (value) => {
