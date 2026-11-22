@@ -57,7 +57,7 @@ const outbox = [];
 const send = (message) => (port ? port.postMessage(message) : outbox.push(message));
 const previews = createPreviews({ send, onChange: () => renderInspector() });
 // The composer's send button and the player's play button are record buttons (disc.mjs), as the playlist's play button is.
-const sendDisc = discButton($("send"), { size: 26, glyph: "send" });
+const sendDisc = discButton($("send"), { size: 25, glyph: "send" });
 const playerDisc = discButton($("toggle"), { size: 46, glyph: "pause", fill: true });
 const settings = createSettings({ state, send, t: tr,
   appleMusic: { status: () => previews.fullStatus(), check: (command) => previews.check(command) }, onHide: () => firstRun.update() });
@@ -101,10 +101,9 @@ function menuAt(event, anchor) {
     ...(Number.isInteger(anchor.selected) && anchor.selected >= 0 ? { positioningItem: anchor.selected } : {}) };
 }
 // A picker's pop-up: its words, or its mark when it shows only that, and the item checked in its menu.
-// The model's button holds two marks and shows one. A hidden mark has no box, so a menu set on it opens at the window's corner.
 function popUp(control, items) {
   const words = control.querySelector("span");
-  const mark = [...control.querySelectorAll(".icon, .mark")].find((shown) => shown.getClientRects().length);
+  const mark = control.querySelector(".icon");
   return { control, element: words?.textContent ? words : mark ?? control,
     selected: Math.max(0, items.findIndex((item) => item.checked)) };
 }
@@ -1398,17 +1397,9 @@ const serviceAsked = () => state.firstRun?.needed === true && !state.firstRun.se
 function drawPick(button, { mark, label, words }) {
   button.classList.toggle("needed", Boolean(words));
   set(button.lastChild, "textContent", words ?? "");
-  // Moondog's own model shows Moondog's mark, drawn from the logo's figure as the title bar's is.
-  const own = mark === "moondog";
   const glyph = button.querySelector("svg.icon");
-  let ownMark = button.querySelector("svg.mark");
-  if (own && !ownMark) { ownMark = createMark().node; glyph.after(ownMark); }
-  glyph.style.display = own ? "none" : "";
-  if (ownMark) ownMark.style.display = own ? "" : "none";
-  if (!own) {
-    glyph.setAttribute("class", mark === "model" ? "icon" : "icon fill");
-    setIcon(button, mark);
-  }
+  glyph.classList.toggle("fill", mark !== "model");
+  setIcon(button, mark);
   if (words) { delete button.dataset.tip; button.setAttribute("aria-label", words); } else name(button, label);
 }
 function renderPicks() {

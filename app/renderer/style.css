@@ -646,21 +646,20 @@ img { -webkit-user-drag: none; }
 .field textarea::placeholder { color: var(--text-4); }
 /* Where the music plays and which model answers, by their marks, beside the send button; the name
    is in the tooltip and the menu. One not chosen yet reads as the words that choose it. */
-.pick { height: 28px; min-width: 28px; max-width: 180px; padding: 0 6px; border-radius: var(--r-2); display: inline-flex; align-items: center; justify-content: center; flex: 0 1 auto;
+.pick { height: 28px; min-width: 28px; max-width: 180px; padding: 0; border-radius: var(--r-2); display: inline-flex; align-items: center; justify-content: center; flex: 0 1 auto;
   font-size: var(--t-small); color: var(--text-3); white-space: nowrap; transition: background-color var(--quick) var(--soft), color var(--quick) var(--soft); }
 .pick:hover { background: var(--hover); color: var(--text); transition: none; }
-.pick .icon, .pick .mark { width: 15px; height: 15px; }
-.pick[data-service] .icon { color: var(--brand-mark); }
-/* Beside the other makers' marks, Moondog's keeps to the text colour instead of the cover's. */
-.pick .mark { --groove-1: currentColor; --groove-2: currentColor; --groove-3: currentColor; --groove-4: currentColor; }
+.pick .icon { width: 23px; height: 23px; }
+/* Service and model logos align to the diameter of Moondog's record. */
+.pick .icon.fill { width: 22px; height: 22px; color: var(--brand-mark); }
+.pick[data-model] use[href="#i-kimi"],
+.pick[data-model] use[href="#i-deepseek"] { transform: translateX(1px); }
 .pick span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .pick span:empty, .pick.needed .icon { display: none; }
 .pick.needed { padding: 0 9px; color: var(--text); background: var(--hover); font-weight: 500; }
 .pick.needed:hover { background: var(--press); }
 .pick[hidden] { display: none; }
-/* As tall as the picks beside it, so the field's bottom line puts all three marks on one center line. Its dotted
-   rim is its edge, so it stands as far from the model's mark as that mark does from the service's. */
-.send { width: 28px; height: 28px; margin-inline-start: 4px; border-radius: 50%; display: grid; place-items: center; flex: none; background: var(--solid); color: var(--on-solid);
+.send { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; flex: none; background: var(--solid); color: var(--on-solid);
   transition: background-color 140ms var(--soft), transform 90ms var(--soft); }
 .send:active { transform: scale(0.92); }
 .send:disabled { background: rgb(var(--ink-rgb) / 0.12); color: var(--surface); }
