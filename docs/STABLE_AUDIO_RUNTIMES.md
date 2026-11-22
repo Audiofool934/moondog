@@ -94,14 +94,19 @@ Each run used one GPU, one instrumental piano prompt, the default eight steps an
 | --- | --- | ---: | ---: | ---: |
 | Small Music | PyTorch fallback | 0.39 s | 0.46 s | 1.79 GiB |
 | Small Music | Flash Attention 2.8.3 | 0.49 s | 0.57 s | 1.79 GiB |
-| Medium | PyTorch fallback | 1.21 s | 3.04 s | 6.50 GiB |
+| Medium | PyTorch fallback after compilation failed | 1.21 s | 3.04 s | 6.50 GiB |
+| Medium | PyTorch compiled FlexAttention | 0.56 s | 0.81 s | 5.17 GiB |
 | Medium | Flash Attention 2.8.3 | 0.76 s | 0.97 s | 5.17 GiB |
 
 Times are the mean of the second and third generations at each length, synchronized on the GPU, before writing the WAV.
 Loading a model from local weights took 14 to 29 s.
-The first 30 s generation took another 2.7 to 3.2 s with Flash Attention and 19 to 28 s with the fallback.
+The first 30 s generation took another 2.7 to 3.2 s with Flash Attention.
+Without Flash Attention, Small Music took 28 s on its first generation.
+For Medium, PyTorch initially failed to compile FlexAttention because the system Python headers were missing.
+With headers matching the same Python build, the compiler succeeded and the first generation took 12.4 s.
+This reduced the warm 120 s generation from 3.04 s to 0.81 s.
 Peak memory is the largest allocation total reported by PyTorch during generation.
-All 24 outputs had finite, non-silent stereo samples at 44.1 kHz and the requested length.
+All 30 outputs had finite, non-silent stereo samples at 44.1 kHz and the requested length.
 Audio quality was not listening-tested.
 The measurements cover the upstream Python package on Linux.
 Moondog's Linux installer still selects the CPU runtime.
@@ -146,8 +151,9 @@ Moondog's Linux installer still selects the CPU runtime.
    It is the only official path on Windows, it runs on every Windows and Linux computer whatever the GPU, and it could be verified on real hardware.
    Its setup work (uv per machine, Windows paths and processes, a build per machine) is what each later runtime needs too.
 2. NVIDIA on Linux with the official PyTorch package or TensorRT.
-   PyTorch with Flash Attention is the first verified GPU candidate for Medium on the A800.
-   Integrating it requires a way to download the gated weights and install a matching CUDA and Flash Attention build.
+   The PyTorch package generated audio on the A800 with both compiled FlexAttention and Flash Attention.
+   A listener-facing installer needs a way to download the gated weights and install a matching CUDA stack.
+   Audio quality still needs a listening comparison before choosing an attention implementation.
    Other NVIDIA cards still need hardware checks.
    TensorRT needs compatible engine files for each GPU architecture.
 3. A GPU path on Windows, for NVIDIA, AMD and Intel.
