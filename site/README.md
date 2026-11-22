@@ -84,6 +84,40 @@ The taste page is drawn twice, and a phone gets the one from a narrow window.
 The last picture is the README's, the scene with its made-up listener (`assets/demo/`).
 Draw the pictures again when the first run, the Settings sheet, or the taste page changes.
 
+## The film
+
+`film/` makes a film of about a minute for showing Moondog elsewhere: the needle's drop, the first run, an import, the taste page, a typed request, and the record turning in the whole window.
+The page does not link it, and `node build.mjs` leaves it out; `node build.mjs --film` adds its documents to `dist/`.
+
+```bash
+cd site
+node film/render.mjs --draft
+node film/render.mjs
+```
+
+The draft is 1920 by 1080 at 30 frames a second and takes about six minutes.
+The full cut is 3840 by 2160 at 60 frames a second, with a 1920 by 1080 copy beside it.
+The files go to `outputs/promo-video/`, which Git ignores, or to the folder `--out` names.
+It needs ffmpeg and a Chromium: `MOONDOG_FILM_BROWSER` names one, and Playwright's cached headless shell is found on its own.
+
+- `film/stage.mjs` is the cut: which window shows, what it does, and the line of words under it.
+  The stage is 1920 by 1080, with the app's window drawn 1136 points wide and shown 1.24 times larger, so its words read at film size.
+- `film/room.mjs` and `film/room-host.mjs` are the listening room: the app's window on the scene's core, with the page's made-up listener, songs and covers.
+- `film/harness.mjs` and `film/harness-shots.mjs` are the setup windows: the app's window on the harness's stand-in core (`app/harness-preload.cjs`), one window each for the first run, the import and the taste page.
+  The harness states `first-run-new` and `new-room` exist for them, and the harness answers an invite code and an import as the core would.
+- `film/shots.mjs` holds the gestures the windows share: the scene's pointer gliding to a control, a click, typing.
+- `film/recorder.mjs` plays the stage a frame at a time.
+  It moves the page's timers and clocks by hand and places every CSS animation and transition through the Web Animations API, then takes a picture; the real mouse follows the film's pointer, so controls light under it.
+  Chromium's own frame control is not supported on macOS.
+  Smooth scrolling and video would stay on real time; the window uses neither.
+  Every moment on its clock is a whole number of ticks, 1024 to a millisecond: on rounded times, a wait in the page could fail to end, and the render stalled.
+  A page that keeps asking for no time, or a browser call left unanswered for two minutes, now stops the render with an error.
+- `film/render.mjs` builds, records, and mixes the sound: the station's ident and the scene's two songs from `static/scene/`, each from the moment the stage noted.
+  The second song is asked for so that it starts under the last second of the first, because the first file is 32 seconds long.
+
+Typing and reading pace come from a seeded `Math.random`, so two renders of the same sources give the same film.
+After a change to the app's window, render again and watch the draft before the full cut.
+
 `build.mjs` bundles with esbuild, and swaps the Node built-ins the window's core imports for the stand-ins in `shims/`.
 Each published document asks for its script and styles by a hash of their content, because Cloudflare keeps them for hours.
 

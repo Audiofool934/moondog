@@ -3,7 +3,7 @@
 // answering, as in the app. The scene begins and ends on a new conversation with the arm up, and the
 // pointer beside the record, below its arm, so it plays again from where it ends. It runs only while
 // the window is on screen.
-const $ = (name) => document.querySelector(`[data-${name}]`);
+export const $ = (name) => document.querySelector(`[data-${name}]`);
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // Time that stops while nobody can see the window. With reduced motion every wait is a moment.
@@ -32,8 +32,8 @@ export function createClock({ quick = false } = {}) {
 
 // The pointer: macOS's arrow, gliding between the places the scene points at. It fades in where it
 // shows and out where it hides, over FADE_MS, however long its glide.
-const FADE_MS = 320;
-function createPointer(clock) {
+export const FADE_MS = 320;
+export function createPointer(clock) {
   const pointer = document.createElement("div");
   pointer.className = "pointer";
   pointer.setAttribute("aria-hidden", "true");
@@ -81,9 +81,9 @@ function createPointer(clock) {
 // A point on the record's arm, by the art module's own geometry (as app/check-ui.mjs aims): where it rests
 // while nothing plays, or on the record while music plays. The full-window record keeps a fixed number
 // of dots across (app/renderer/renderer.mjs, immerse).
-const RESTING = [1.07, -0.6];
-const PLAYING = [0.864, -0.706];
-function armPoint(canvas = $("record"), across = null, [ux, uy] = RESTING, box = canvas.getBoundingClientRect()) {
+export const RESTING = [1.07, -0.6];
+export const PLAYING = [0.864, -0.706];
+export function armPoint(canvas = $("record"), across = null, [ux, uy] = RESTING, box = canvas.getBoundingClientRect()) {
   const grid = across ?? Math.max(48, Math.round(Math.floor(canvas.clientWidth) / 8) * 4);
   const radius = (grid - 4) / 2.35;
   const [cx, cy] = [(grid - 1) / 2 - radius * 0.09, (grid - 1) / 2 + radius * 0.045];
@@ -91,14 +91,14 @@ function armPoint(canvas = $("record"), across = null, [ux, uy] = RESTING, box =
 }
 // Where the pointer comes in and where it leaves: beside the record, below and to the right of its arm,
 // in the record's unit coordinates, and always inside the window.
-const HOME = [1.9, 0.6];
-const inside = ({ x, y }) => ({ x: Math.min(innerWidth - 28, Math.max(28, x)), y: Math.min(innerHeight - 28, Math.max(28, y)) });
-const middle = (element, dx = 0) => {
+export const HOME = [1.9, 0.6];
+export const inside = ({ x, y }) => ({ x: Math.min(innerWidth - 28, Math.max(28, x)), y: Math.min(innerHeight - 28, Math.max(28, y)) });
+export const middle = (element, dx = 0) => {
   const box = element.getBoundingClientRect();
   return { x: box.left + box.width / 2 + dx, y: box.top + box.height / 2 };
 };
 // The window is ready for a message once no reply is being written.
-async function settled(clock) {
+export async function settled(clock) {
   while ($("send")?.querySelector("use")?.getAttribute("href") === "#i-stop") await clock.wait(100);
 }
 

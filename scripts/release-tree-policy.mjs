@@ -142,8 +142,10 @@ const forbiddenBasenames = new Set([
 // The Windows and Linux desktop adds twelve more (2026-11-08): 505 entries, still under it.
 // Raised on 2026-11-14 for Moondog's own model and its gateway (gateway/): main was at 509, and the
 // thirteen new files pass 520.
+// Raised on 2026-11-22 for the film's sources (site/film/): main was at 556, and the film's ten files
+// pass 560.
 // The ceilings still catch bulk accidents such as a data dump or a build folder.
-export const maximumReleaseEntries = 560;
+export const maximumReleaseEntries = 590;
 export const maximumReleaseFileBytes = 5 * 1024 * 1024;
 export const maximumReleaseTreeBytes = 20 * 1024 * 1024;
 
