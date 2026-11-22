@@ -684,8 +684,14 @@ export function createSettings({ state, send, t, appleMusic = null, onHide = nul
           }
           const offset = Math.max(boxes[0].top - box.top, Math.min(boxes.at(-1).bottom - box.bottom, travel));
           row.style.transform = `translateY(${offset}px)`;
-          const middle = box.top + box.height / 2 + offset;
-          to = boxes.filter((other, at) => at !== index && other.top + other.height / 2 < middle).length;
+          // A row gives up its place once the dragged row covers its middle. Half a row's travel is then a move,
+          // and the last place takes a row as the first does: the dragged row stops at the list's edge, where its
+          // own middle never passes the end row's.
+          const top = box.top + offset;
+          to = boxes.filter((other, at) => {
+            const middle = other.top + other.height / 2;
+            return at < index ? middle <= top : at > index && middle < top + box.height;
+          }).length;
           rows.forEach((other, at) => {
             if (at === index) return;
             const shift = at > index && at <= to ? -room : at < index && at >= to ? room : 0;
