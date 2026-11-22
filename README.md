@@ -4,7 +4,7 @@
 
 <h1 align="center">Moondog</h1>
 
-<p align="center">Version 0.3.1</p>
+<p align="center">Version 0.3.2</p>
 
 <p align="center"><strong>On the air, just for you.</strong></p>
 
@@ -20,7 +20,7 @@
 Moondog is a radio host just for you.
 It reads the history your music services already keep, learns your taste from it, and plays music for you on Spotify, Apple Music, or NetEase Music.
 Ask it for something, and it answers like a host: what it picked, and why each song is there.
-On a Mac it can also go on air with music it makes itself.
+It can also write you an instrumental track or go on air with music it makes itself.
 
 There are two clients on one core: a desktop app and a listening room in your terminal.
 They share your profile, settings, sign-ins, and conversations.
@@ -121,8 +121,10 @@ Under a set of songs, one line names the mix: how many you know well, how many c
 
 - **Up next.** The desktop player shows the queue: play a song now, or take one out. When it runs low, the host offers a few picks.
 - **Your library.** Saved songs, your playlists, and the tracks Moondog made sit side by side. Import a Spotify, Apple Music, NetEase Music, or QQ Music playlist by its link, and export a playlist to Spotify.
-- **Music it makes.** On an Apple silicon Mac, Moondog makes instrumental tracks offline with Stable Audio 3, powered by Stability AI. Set it up once in Settings › Playback, or with `/generation download medium`, after you agree to its licenses.
-- **On Air.** Press the On Air mark, ⌃⌘O, or type `/onair`, and Moondog keeps making music from your taste until you stop it.
+- **Music it makes.** Ask for an instrumental and Moondog can write a score and play it on its built-in synthesizer.
+  For Stable Audio 3, powered by Stability AI, choose Medium or Small Music in Settings › Playback or use `/generation download medium`.
+  After you accept the licenses and download a model, it runs offline on Apple silicon, Windows x64, or Linux x64 or ARM64.
+- **On Air.** With Stable Audio 3 ready, press the On Air mark, ⌃⌘O, or type `/onair`, and Moondog keeps making music from your taste until you stop it.
 
 ## The terminal room
 
