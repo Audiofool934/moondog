@@ -652,8 +652,8 @@ img { -webkit-user-drag: none; }
 .pick .icon { width: 23px; height: 23px; }
 /* Service and model logos align to the diameter of Moondog's record. */
 .pick .icon.fill { width: 22px; height: 22px; color: var(--brand-mark); }
-.pick[data-model] use[href="#i-kimi"] { transform: translateX(1px); }
-.pick[data-model] use[href="#i-deepseek"] { transform: translateX(1px) scaleY(1.12); transform-origin: center; }
+.pick[data-model] use[href="#i-kimi"],
+.pick[data-model] use[href="#i-deepseek"] { transform: translateX(1px); }
 .pick span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .pick span:empty, .pick.needed .icon { display: none; }
 .pick.needed { padding: 0 9px; color: var(--text); background: var(--hover); font-weight: 500; }
