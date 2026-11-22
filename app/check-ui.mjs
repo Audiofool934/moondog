@@ -1,5 +1,5 @@
 // Page-side interaction checks for the fictional-data harness, not shipped with the app.
-// MOONDOG_HARNESS_STATES=long,first-run,first-run-model-only,first-run-netease,on-air-available,on-air-tip,on-air-starting,on-air-playing,on-air-waiting,generation-setup-agreement,generation-setup-both,generation-setup-error MOONDOG_HARNESS_EVAL=check-ui.mjs npm run harness
+// MOONDOG_HARNESS_STATES=long,first-run,first-run-model-only,first-run-netease,first-run-fresh,on-air-available,on-air-tip,on-air-starting,on-air-playing,on-air-waiting,generation-setup-agreement,generation-setup-both,generation-setup-error MOONDOG_HARNESS_EVAL=check-ui.mjs npm run harness
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const assert = (ok, message) => { if (!ok) throw new Error(message); };
 const $ = (name) => document.querySelector(`[data-${name}]`);
@@ -30,6 +30,41 @@ if (harness.state?.startsWith("first-run")) {
     assert(!asking() && card.closest(".sheet").hidden, "A first run ended in the terminal closes here");
     assert(!sent("first-run-done").length, "Ending it from outside sends nothing back");
     return { ended: "outside" };
+  }
+
+  // A fresh install's model step: Moondog's own model, the four providers every install lists, and the
+  // rest folded under More providers. A key pasted for one of those moves it up and opens it to its
+  // models, and a model chosen there ends the first run.
+  if (harness.state === "first-run-fresh") {
+    const rows = () => [...card.querySelectorAll(".choice-label")].map((node) => node.textContent).join();
+    const more = () => card.querySelector('[data-key="providers:more"]');
+    assert(rows() === "Moondog,OpenAI,Anthropic,Google,xAI,More providers,Add endpoint", "A fresh install lists the short list, with the rest folded");
+    card.focus();
+    key(card, "ArrowDown");
+    assert(document.activeElement?.dataset.key === "provider:openai", "The first arrow passes the invite code's row to the first row that opens");
+    more().focus();
+    more().click();
+    await wait(100);
+    assert(more().getAttribute("aria-expanded") === "true" && document.activeElement === more(), "More providers unfolds and keeps the focus");
+    assert(["deepseek", "moonshotai", "moonshotai-cn", "openrouter", "zai"].every((id) => card.querySelector(`[data-key="sign-in:${id}:api_key"]`)),
+      "Every provider that takes a key offers Add key under More providers");
+    key(more(), "ArrowDown");
+    assert(document.activeElement?.dataset.key === "endpoint:add", "The arrows pass the rows that hold only a button");
+    card.querySelector('[data-key="sign-in:deepseek:api_key"]').click();
+    await wait(150);
+    const field = card.querySelector('[data-key="auth-field:key"]');
+    assert(field, "Add key under More providers asks for the key");
+    field.value = "sk-test";
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+    field.form.requestSubmit();
+    await wait(400);
+    assert(rows() === "Moondog,OpenAI,Anthropic,Google,xAI,DeepSeek,DeepSeek V4.1 Flash,DeepSeek V4 Pro,More providers,Add endpoint",
+      "A key moves the provider up among the others and opens it to its models");
+    card.querySelector('[data-key="model:deepseek:deepseek-flash"]').click();
+    await wait(400);
+    assert(sent("default-model").at(-1)?.provider === "deepseek", "A model chosen there is the default");
+    assert(!asking() && card.closest(".sheet").hidden, "With a model that answers, the first run is over");
+    return { ended: "more providers" };
   }
 
   assert(question() === "Where do you listen?", "The first run asks for the music service first");

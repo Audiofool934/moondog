@@ -58,14 +58,19 @@ test("providers list the /model picker with sign-in kinds and states, never a ke
   assert.equal(JSON.stringify(providers).includes("SENTINEL"), false);
   assert.equal(requests.length, 0, "listing providers never fetches");
   // Moondog's own model, then OpenAI, Anthropic, Google and xAI always come first; any other provider
-  // shows only with a key, saved or from the environment, or while it is the one in use.
-  assert.deepEqual(providers.slice(0, 5).map(provider => provider.id), ["moondog", "openai", "anthropic", "google", "xai"]);
-  assert.deepEqual(providers.slice(5).map(provider => provider.id).sort(), ["deepseek", "groq", "zai"]);
+  // joins them only with a key, saved or from the environment, or while it is the one in use.
+  const shown = providers.filter(provider => !provider.more);
+  assert.deepEqual(shown.slice(0, 5).map(provider => provider.id), ["moondog", "openai", "anthropic", "google", "xai"]);
+  assert.deepEqual(shown.slice(5).map(provider => provider.id).sort(), ["deepseek", "groq", "zai"]);
+  // The rest that take a saved key come last, by name, marked more: the window folds them under one row.
+  const more = providers.slice(shown.length);
+  assert.deepEqual(more.map(provider => provider.id), ["moonshotai", "moonshotai-cn", "openrouter"]);
+  assert.equal(more.every(provider => provider.more === true && provider.signIn === "api_key" && provider.signedIn === false), true);
   assert.equal(providers.some(provider => provider.modelCount === 0), false);
   assert.equal(providers.some(provider => provider.id === "typesafe"), false);
   const byId = Object.fromEntries(providers.map(({ id, ...rest }) => [id, rest]));
   for (const provider of providers) {
-    const optional = ["chatgpt", "method"].filter(key => key in provider);
+    const optional = ["chatgpt", "method", "more"].filter(key => key in provider);
     assert.deepEqual(Object.keys(provider), ["id", "name", "modelCount", "signIn", "signedIn", "source", ...optional]);
   }
   assert.deepEqual(byId.deepseek, { ...byId.deepseek, signIn: "api_key", signedIn: true, source: "saved", method: "api_key" });
@@ -74,7 +79,26 @@ test("providers list the /model picker with sign-in kinds and states, never a ke
   assert.deepEqual(byId.groq, { ...byId.groq, signIn: "environment_only", signedIn: true, source: "GROQ_API_KEY" });
   assert.deepEqual(byId.zai, { name: "Z.AI (GLM API)", modelCount: byId.zai.modelCount, signIn: "api_key", signedIn: false, source: null });
   // A provider in use stays listed without a key, so it can be given one.
-  assert.equal((await settings.providers({ current: "moonshotai" })).some(provider => provider.id === "moonshotai"), true);
+  assert.equal((await settings.providers({ current: "moonshotai" })).some(provider => provider.id === "moonshotai" && !provider.more), true);
+});
+
+test("a fresh install offers every provider that takes a saved key, and a key moves one up", async t => {
+  const { settings } = await fixture(t);
+  const ids = rows => rows.map(provider => `${provider.id}${provider.more ? " more" : ""}`);
+  assert.deepEqual(ids(await settings.providers()), ["moondog", "openai", "anthropic", "google", "xai",
+    "deepseek more", "moonshotai more", "moonshotai-cn more", "openrouter more", "zai more"]);
+
+  await settings.signIn("moonshotai-cn", scriptedWindow("sk-KIMI-SENTINEL").interaction);
+  const signedIn = await settings.providers();
+  assert.deepEqual(ids(signedIn), ["moondog", "openai", "anthropic", "google", "xai", "moonshotai-cn",
+    "deepseek more", "moonshotai more", "openrouter more", "zai more"]);
+  assert.deepEqual(signedIn[5], { ...signedIn[5], signIn: "api_key", signedIn: true, source: "saved", method: "api_key" });
+  assert.equal(JSON.stringify(signedIn).includes("SENTINEL"), false);
+  // Its models are the catalog's, as a featured provider's are.
+  assert.equal((await settings.models("moonshotai-cn")).models.length > 0, true);
+
+  await settings.signOut("moonshotai-cn");
+  assert.deepEqual(ids(await settings.providers()).slice(5), ["deepseek more", "moonshotai more", "moonshotai-cn more", "openrouter more", "zai more"]);
 });
 
 test("signIn saves an API key from a scripted window, and signOut removes it", async t => {

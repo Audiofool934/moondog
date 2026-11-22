@@ -117,6 +117,9 @@ A model or music service chosen there lasts until the app quits, and sign-in and
 - Settings (`⌘,`, or the button at the top right beside the player's) has Language, Appearance, Model, Playback, Import, Memory and About.
   Appearance sets the theme (System, Light or Dark) and the app icon.
   Model lists the menu's models with the default named, one thinking scale for every model (a level a model lacks reaches it as the nearest lighter one), and the providers: OpenAI by a ChatGPT subscription or an API key, then Anthropic, Google and xAI by key, any other Pi provider once it has a key, and endpoints.
+  More providers, one folded row after them, holds the other providers that take a key and have none yet: DeepSeek, Kimi (Moonshot AI, with its global and its China API), GLM (Z.AI) and OpenRouter, each with Add key.
+  A key saved there moves its provider up among the others and opens it to its models, and removing the key folds it away again.
+  The first run's model step shows the same row, so a new install can start on any of them without the terminal.
   An endpoint is any service that speaks OpenAI's Chat Completions or Anthropic's Messages, added by its address, an optional key and its model IDs (asked of the endpoint when left empty).
   Opening a provider lists its models, each ticked when the menu offers it.
   Auxiliary models hold what a side task uses: Vision and Web search each open to Auto and their choices, and Audio holds its place for later.
@@ -238,6 +241,7 @@ It needs no model, no music service and none of your data.
 `MOONDOG_HARNESS_STATES=empty,reply` picks states, `MOONDOG_HARNESS_SIZE=900x700` changes the size, `MOONDOG_HARNESS_LOCALE=zh` the language, and `MOONDOG_HARNESS_SHOW=1` opens a window to try by hand.
 `MOONDOG_HARNESS_STATES=long MOONDOG_HARNESS_EVAL=check-ui.mjs npm run harness` checks tooltip timing and themes, the record handoff and corner placement, and pin feedback in both themes.
 With `first-run`, `first-run-model-only` and `first-run-netease` among the states, it also checks the first run: both steps from the keyboard, one ended in the terminal, and one skipped with Esc.
+With `first-run-fresh`, it checks a new install's model step: More providers unfolds, a key added there moves its provider up, and a model chosen under it ends the first run.
 The `first-run-*` states draw its steps, sign-ins and skip tooltip on their own.
 With the `on-air-*` states among them (`on-air-available`, `on-air-tip`, `on-air-starting`, `on-air-playing`, `on-air-waiting`), it checks On Air: going on air, stopping while starting, stopping from the mark and from the player, and the song the stream paused showing again.
 An evaluation failure exits with a nonzero status.
