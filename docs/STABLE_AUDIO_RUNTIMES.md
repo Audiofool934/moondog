@@ -1,7 +1,7 @@
 # Stable Audio 3 beyond Apple silicon
 
 This note records which ways exist to run Stable Audio 3 on each machine Moondog ships to, what was verified on real hardware, and the order of work.
-It was checked on 2026-11-21 against `Stability-AI/stable-audio-3` at 790793b (2026-11-02) and the Hugging Face repository `stabilityai/stable-audio-3-optimized` at 30cb264 (2026-10-30).
+The CPU tests on 2026-11-21 and NVIDIA tests on 2026-11-22 used `Stability-AI/stable-audio-3` at 790793b (2026-11-02) and the Hugging Face repository `stabilityai/stable-audio-3-optimized` at 30cb264 (2026-10-30).
 
 ## What Moondog runs now
 
@@ -22,7 +22,7 @@ It was checked on 2026-11-21 against `Stability-AI/stable-audio-3` at 790793b (2
 | Linux x64, any GPU or none | LiteRT CPU (official) | In Moondog with this change | Yes, GitHub runner (4 vCPU) |
 | Linux ARM | LiteRT CPU (official) | In Moondog with this change | Yes, GitHub runner (4 vCPU) |
 | Linux x64, NVIDIA | TensorRT (official) | Not wired | No |
-| Linux x64, NVIDIA | PyTorch package with CUDA (official) | Not wired | No |
+| Linux x64, NVIDIA | PyTorch package with CUDA (official) | Standalone only | Yes, A800, both models |
 | Windows x64, NVIDIA | PyTorch package with CUDA | Undocumented upstream | No |
 | Windows x64, NVIDIA, AMD or Intel GPU | sa3.cpp with CUDA or Vulkan (community) | Not wired | No |
 | Windows x64, any DirectX 12 GPU | DirectML (community pull request #122) | Not merged upstream | No |
@@ -66,8 +66,12 @@ It was checked on 2026-11-21 against `Stability-AI/stable-audio-3` at 790793b (2
 - `optimized/tensorRT` stops on any OS but Linux.
 - Prebuilt engines on Hugging Face exist only for `sm_90` (H100, H200) and `sm_120` (RTX 50 series).
   The `sm_120` folder has only legacy SAME engines, which the runtime no longer loads.
-- Any other GPU, such as an A100, RTX 30 or RTX 40, builds engines from the ONNX files, about 30 minutes in all.
-- The build script asks for some ONNX file names that Hugging Face renamed on 2026-08-28; it was not run here, so whether the build still works is unknown.
+- The installer selects a local engine build on other architectures, including the A800 (compute capability 8.0).
+- The pinned builder requests `onnx/same-l/dec_fp16_chunkable_limiter.onnx` for Medium and `onnx/same-s/dec_bf16_chunkable_limiter.onnx` for Small Music.
+  Both paths returned HTTP 404 on the A800 host.
+  The published Small Music decoder path, `onnx/same-s/dec_bf16_limiter.onnx`, resolved on the same snapshot.
+  The stock build therefore lacks a required input for each model.
+  TensorRT generation on this card remains unverified.
 - It pins one exact TensorRT 10.15.1 build on CUDA 13, and engines do not load across TensorRT versions. NVIDIA says engines are not portable between Linux and Windows.
 - It is the fastest path: Stability reports 0.13 s for 120 s of Medium on an H200.
 
@@ -79,6 +83,28 @@ It was checked on 2026-11-21 against `Stability-AI/stable-audio-3` at 790793b (2
   The code falls back to PyTorch's own attention without it, but the README blames "static glitch" output on its absence.
 - Windows is not documented. A community one-click installer (upstream issue #56) runs on Windows with NVIDIA, through `stable-audio-tools` rather than this package.
 - There is no ROCm, Intel XPU or DirectML code.
+
+#### Linux A800 measurements
+
+The official Python package generated 30 s and 120 s tracks on an NVIDIA A800-SXM4-80GB with Python 3.10, PyTorch 2.7.1+cu126 and driver 580.65.06.
+The two model checkpoints and the shared T5Gemma encoder matched the SHA-256 digests published by Stability AI.
+Each run used one GPU, one instrumental piano prompt, the default eight steps and batch size one.
+
+| Model | Attention | 30 s track | 120 s track | Peak CUDA memory |
+| --- | --- | ---: | ---: | ---: |
+| Small Music | PyTorch fallback | 0.39 s | 0.46 s | 1.79 GiB |
+| Small Music | Flash Attention 2.8.3 | 0.49 s | 0.57 s | 1.79 GiB |
+| Medium | PyTorch fallback | 1.21 s | 3.04 s | 6.50 GiB |
+| Medium | Flash Attention 2.8.3 | 0.76 s | 0.97 s | 5.17 GiB |
+
+Times are the mean of the second and third generations at each length, synchronized on the GPU, before writing the WAV.
+Loading a model from local weights took 14 to 29 s.
+The first 30 s generation took another 2.7 to 3.2 s with Flash Attention and 19 to 28 s with the fallback.
+Peak memory is the largest allocation total reported by PyTorch during generation.
+All 24 outputs had finite, non-silent stereo samples at 44.1 kHz and the requested length.
+Audio quality was not listening-tested.
+The measurements cover the upstream Python package on Linux.
+Moondog's Linux installer still selects the CPU runtime.
 
 ### sa3.cpp (community, many GPUs)
 
@@ -120,8 +146,10 @@ It was checked on 2026-11-21 against `Stability-AI/stable-audio-3` at 790793b (2
    It is the only official path on Windows, it runs on every Windows and Linux computer whatever the GPU, and it could be verified on real hardware.
    Its setup work (uv per machine, Windows paths and processes, a build per machine) is what each later runtime needs too.
 2. NVIDIA on Linux with the official PyTorch package or TensorRT.
-   This needs a test on a real NVIDIA GPU before it can be wired.
-   PyTorch reaches every NVIDIA GPU but needs gated weights and Flash Attention for clean Medium output; TensorRT is fastest but has prebuilt engines only for H100, H200 and RTX 50.
+   PyTorch with Flash Attention is the first verified GPU candidate for Medium on the A800.
+   Integrating it requires a way to download the gated weights and install a matching CUDA and Flash Attention build.
+   Other NVIDIA cards still need hardware checks.
+   TensorRT needs compatible engine files for each GPU architecture.
 3. A GPU path on Windows, for NVIDIA, AMD and Intel.
    sa3.cpp (CUDA and Vulkan) is the strongest candidate, and the DirectML pull request is the other; both are community code, so the owner decides first.
 4. Windows on ARM with LiteRT 2.4.0, once Moondog ships an ARM Windows build.
