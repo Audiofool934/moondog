@@ -57,7 +57,7 @@ const outbox = [];
 const send = (message) => (port ? port.postMessage(message) : outbox.push(message));
 const previews = createPreviews({ send, onChange: () => renderInspector() });
 // The composer's send button and the player's play button are record buttons (disc.mjs), as the playlist's play button is.
-const sendDisc = discButton($("send"), { size: 26, glyph: "send" });
+const sendDisc = discButton($("send"), { size: 25, glyph: "send" });
 const playerDisc = discButton($("toggle"), { size: 46, glyph: "pause", fill: true });
 const settings = createSettings({ state, send, t: tr,
   appleMusic: { status: () => previews.fullStatus(), check: (command) => previews.check(command) }, onHide: () => firstRun.update() });
