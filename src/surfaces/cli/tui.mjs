@@ -791,7 +791,7 @@ export async function runMoondogTui({
     }
     // Music making can be turned off, here or in the window, after the room opened.
     if (!application.streamReady?.()) {
-      setFooter(tr("Turn on music making first: /generation on."), warning);
+      setFooter(tr("Turn on Stable Audio 3 first: /generation on."), warning);
       return null;
     }
     return translator(application.locale)("onAir.request");
@@ -808,8 +808,8 @@ export async function runMoondogTui({
   const setup = typeof generation?.setup?.install === "function" ? generation.setup : null;
   // A generator that doesn't name its platform is the Mac's, the only one before the CPU build.
   const onMac = () => (generation?.status?.()?.platform ?? "darwin") === "darwin";
-  const unsupportedText = () => onMac() ? tr("Stable Audio 3 needs a Mac with Apple silicon, so Moondog can't make music here.")
-    : tr("Stable Audio 3 doesn't run on this computer, so Moondog can't make music here. It runs on Windows or Linux on x64, Linux on ARM, and Macs with Apple silicon.");
+  const unsupportedText = () => onMac() ? tr("Stable Audio 3 needs a Mac with Apple silicon, so it doesn't run here. Moondog writes its tracks as scores instead.")
+    : tr("Stable Audio 3 doesn't run on this computer: it needs Windows or Linux on x64, Linux on ARM, or a Mac with Apple silicon. Moondog writes its tracks as scores instead.");
   // The two models offered, by the word the listener types; sizes are the weights in all, before the
   // setup reports its own.
   const sa3Models = {
@@ -923,23 +923,23 @@ export async function runMoondogTui({
     // Moondog's own install, or nothing anywhere yet: a download sets it up.
     if (setup && status?.install !== "ready" && (status?.managed || (status?.source === "default" && status?.install === "missing"))) {
       if (status?.state === "off") {
-        return onMac() ? tr("Making music on this Mac is off. Get Stable Audio 3 with /generation download medium, or small for a lighter model; music making turns on when it's done.")
-          : tr("Making music on this computer is off. Get Stable Audio 3 with /generation download medium, or small for a lighter, faster model; music making turns on when it's done.");
+        return onMac() ? tr("Stable Audio 3 is off on this Mac. Get it with /generation download medium, or small for a lighter model; it turns on when it's done. Until then, Moondog writes a track as a score when you ask.")
+          : tr("Stable Audio 3 is off on this computer. Get it with /generation download medium, or small for a lighter, faster model; it turns on when it's done. Until then, Moondog writes a track as a score when you ask.");
       }
       const model = status?.model in sa3Models ? status.model : "medium";
       return tr("Stable Audio 3 {model} isn't downloaded yet. Get it with /generation download {choice}.", { model: modelName(model), choice: sa3Models[model].choice });
     }
     if (status?.state === "off") {
       if (!onMac()) {
-        if (status.install === "ready" && status.managed) return tr("Making music on this computer is off. Stable Audio 3 {model} is ready; turn it on with /generation on.", { model: modelName(status.model) });
-        if (status.install === "ready") return tr("Making music on this computer is off. Stable Audio 3 is ready at {folder}; turn it on with /generation on.", { folder });
-        if (status.install === "incomplete") return tr("Making music on this computer is off, and Stable Audio 3 at {folder} isn't fully installed. Run ./install.sh --download medium there, then use /generation on.", { folder });
-        return tr("Making music on this computer is off, and Stable Audio 3 isn't at {folder}. Install Stability AI's CPU build (optimized/tflite) from github.com/Stability-AI/stable-audio-3, then use /generation on with its folder.", { folder });
+        if (status.install === "ready" && status.managed) return tr("Stable Audio 3 is off on this computer, and {model} is ready; turn it on with /generation on. Until then, Moondog writes a track as a score when you ask.", { model: modelName(status.model) });
+        if (status.install === "ready") return tr("Stable Audio 3 is off on this computer, and ready at {folder}; turn it on with /generation on. Until then, Moondog writes a track as a score when you ask.", { folder });
+        if (status.install === "incomplete") return tr("Stable Audio 3 is off on this computer, and the one at {folder} isn't fully installed. Run ./install.sh --download medium there, then use /generation on. Until then, Moondog writes a track as a score when you ask.", { folder });
+        return tr("Stable Audio 3 is off on this computer, and it isn't at {folder}. Install Stability AI's CPU build (optimized/tflite) from github.com/Stability-AI/stable-audio-3, then use /generation on with its folder. Until then, Moondog writes a track as a score when you ask.", { folder });
       }
-      if (status.install === "ready" && status.managed) return tr("Making music on this Mac is off. Stable Audio 3 {model} is ready; turn it on with /generation on.", { model: modelName(status.model) });
-      if (status.install === "ready") return tr("Making music on this Mac is off. Stable Audio 3 is ready at {folder}; turn it on with /generation on.", { folder });
-      if (status.install === "incomplete") return tr("Making music on this Mac is off, and Stable Audio 3 at {folder} isn't fully installed. Run ./install.sh --download medium there, then use /generation on.", { folder });
-      return tr("Making music on this Mac is off, and Stable Audio 3 isn't at {folder}. Install Stability AI's MLX build from github.com/Stability-AI/stable-audio-3, then use /generation on with its folder.", { folder });
+      if (status.install === "ready" && status.managed) return tr("Stable Audio 3 is off on this Mac, and {model} is ready; turn it on with /generation on. Until then, Moondog writes a track as a score when you ask.", { model: modelName(status.model) });
+      if (status.install === "ready") return tr("Stable Audio 3 is off on this Mac, and ready at {folder}; turn it on with /generation on. Until then, Moondog writes a track as a score when you ask.", { folder });
+      if (status.install === "incomplete") return tr("Stable Audio 3 is off on this Mac, and the one at {folder} isn't fully installed. Run ./install.sh --download medium there, then use /generation on. Until then, Moondog writes a track as a score when you ask.", { folder });
+      return tr("Stable Audio 3 is off on this Mac, and it isn't at {folder}. Install Stability AI's MLX build from github.com/Stability-AI/stable-audio-3, then use /generation on with its folder. Until then, Moondog writes a track as a score when you ask.", { folder });
     }
     if (status?.state === "incomplete") {
       return status.missing === "weights"
@@ -948,7 +948,7 @@ export async function runMoondogTui({
     }
     return tr("Stable Audio 3 isn't at {folder}. Use /generation on with the folder that holds its sa3 script.", { folder });
   };
-  const generationFooter = (status) => setFooter(status.state === "ready" ? tr("Music making on.") : status.state === "off" ? tr("Music making off.") : tr("Music making isn't ready."),
+  const generationFooter = (status) => setFooter(status.state === "ready" ? tr("Stable Audio 3 on.") : status.state === "off" ? tr("Stable Audio 3 off.") : tr("Stable Audio 3 isn't ready."),
     status.state === "ready" || status.state === "off" ? dim : warning);
   const setupUsage = () => tr("Use /generation download, use or remove with medium or small, or /generation cancel.");
   // /generation download, use, remove and cancel. A first download asks for the licenses with --agree;
@@ -964,7 +964,7 @@ export async function runMoondogTui({
     const status = await readSetup();
     if (status?.supported === false) {
       addMoondogMessage(unsupportedText());
-      setFooter(tr("Music making isn't ready."), warning);
+      setFooter(tr("Stable Audio 3 isn't ready."), warning);
       return;
     }
     const running = status?.job && !status.job.error ? status.job : null;
@@ -1016,7 +1016,7 @@ export async function runMoondogTui({
     if (action === "use") {
       if (entry.state !== "ready") {
         addMoondogMessage(tr("Stable Audio 3 {model} isn't downloaded yet. Get it with /generation download {choice}.", { model: name, choice }));
-        setFooter(tr("Music making isn't ready."), warning);
+        setFooter(tr("Stable Audio 3 isn't ready."), warning);
         return;
       }
       const result = await generation.save({ enabled: true, source: "managed", model });
@@ -1054,7 +1054,7 @@ export async function runMoondogTui({
     await readSetup().catch(() => null);
     const after = await generation.check().catch(() => null);
     addMoondogMessage(onMac() ? tr("Removed Stable Audio 3 {model} from this Mac.", { model: name }) : tr("Removed Stable Audio 3 {model} from this computer.", { model: name }));
-    setFooter(after?.state === "ready" ? tr("Removed.") : tr("Removed. Music making isn't ready."), after?.state === "ready" ? success : warning);
+    setFooter(after?.state === "ready" ? tr("Removed.") : tr("Removed. Stable Audio 3 isn't ready."), after?.state === "ready" ? success : warning);
   };
   const manageGeneration = async (args) => {
     const [action, ...rest] = args;

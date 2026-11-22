@@ -85,7 +85,7 @@ test("/generation downloads a model after the licenses, shows its progress, and 
 
   fixture.submit("/generation");
   await until(() => fixture.body().includes("Small Music"));
-  assert.match(fixture.body(), /Get Stable Audio 3 with \/generation download medium/u);
+  assert.match(fixture.body(), /Stable Audio 3 is off on this Mac\. Get it with \/generation download medium/u);
   assert.match(fixture.body(), /Stable Audio 3 Medium · best sound · 5\.2 GB · not downloaded/u);
   assert.match(fixture.body(), /Stable Audio 3 Small Music · faster, lighter · 1\.7 GB · not downloaded/u);
 
@@ -198,7 +198,7 @@ test("off the Mac, /generation says this computer and that the CPU build takes a
 
   fixture.submit("/generation");
   await until(() => fixture.body().includes("Small Music"));
-  assert.match(fixture.body(), /Making music on this computer is off\./u);
+  assert.match(fixture.body(), /Stable Audio 3 is off on this computer\.[\s\S]*Moondog writes a track as a score when you ask\./u);
   assert.doesNotMatch(fixture.body(), /this Mac/u);
 
   generation.setup.emit({ job: { model: "medium", step: "weights", received: 0, total: 10, error: { code: "setup_disk_full", message: "There is not enough space on this computer." } } });
