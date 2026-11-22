@@ -186,3 +186,21 @@ test("with the core's real setup, an offline download fails in one sentence and 
   fixture.submit("/generation");
   await until(() => fixture.body().includes("download stopped on an error"));
 });
+
+test("off the Mac, /generation says this computer and that the CPU build takes a little while", async (context) => {
+  const generation = fakeGeneration();
+  const status = generation.status;
+  generation.status = () => ({ ...status(), platform: "linux", runtime: "tflite" });
+  const check = generation.check;
+  generation.check = async () => ({ ...(await check.call(generation)), platform: "linux", runtime: "tflite" });
+  const fixture = launch(context, generation);
+  await until(() => fixture.body().includes("New conversation"));
+
+  fixture.submit("/generation");
+  await until(() => fixture.body().includes("Small Music"));
+  assert.match(fixture.body(), /Making music on this computer is off\./u);
+  assert.doesNotMatch(fixture.body(), /this Mac/u);
+
+  generation.setup.emit({ job: { model: "medium", step: "weights", received: 0, total: 10, error: { code: "setup_disk_full", message: "There is not enough space on this computer." } } });
+  await until(() => fixture.status().includes("There isn't enough free space on this computer for the download."));
+});
