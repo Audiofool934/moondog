@@ -677,7 +677,7 @@ const catalog = [
     state: "enabled",
     effect: "generate_local",
     description:
-      "Make an instrumental track on this Mac with the listener's own Stable Audio 3 install, shaped by their taste, and play it in Moondog's player. Stable Audio 3 runs offline; the track stays on this Mac.",
+      "Make an instrumental track on this computer with the listener's own Stable Audio 3 install, shaped by their taste, and play it in Moondog's player. Stable Audio 3 runs offline; the track stays on this computer.",
     requires_local_generation: true,
     agent_tool: {
       name: "moondog_make_track",
@@ -702,7 +702,7 @@ const catalog = [
     version: "1",
     state: "enabled",
     effect: "generate_local",
-    description: "Play again a track Moondog made on this Mac, from its own folder.",
+    description: "Play again a track Moondog made on this computer, from its own folder.",
     requires_made_tracks: true,
     agent_tool: {
       name: "moondog_play_made_track",
@@ -714,7 +714,7 @@ const catalog = [
     version: "1",
     state: "enabled",
     effect: "generate_local",
-    description: "Keep making instrumental tracks on this Mac from the listener's taste, one after another, until they stop it or the time runs out.",
+    description: "Keep making instrumental tracks on this computer from the listener's taste, one after another, until they stop it or the time runs out.",
     requires_local_generation: true,
     agent_tool: {
       name: "moondog_start_stream",
@@ -726,7 +726,7 @@ const catalog = [
     version: "1",
     state: "enabled",
     effect: "generate_local",
-    description: "Stop Moondog's stream of tracks made on this Mac.",
+    description: "Stop Moondog's stream of tracks made on this computer.",
     requires_local_generation: true,
     agent_tool: {
       name: "moondog_stop_stream",

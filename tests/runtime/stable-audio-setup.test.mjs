@@ -10,9 +10,11 @@ import test from "node:test";
 
 import { createLocalGenerator, readGenerationSettings, writeGenerationSettings } from "../../src/integrations/stable-audio/local-generator.mjs";
 import { createStableAudioSetup } from "../../src/integrations/stable-audio/setup.mjs";
-import { STABLE_AUDIO_SOURCES } from "../../src/integrations/stable-audio/sources.mjs";
+import { STABLE_AUDIO_SOURCES, STABLE_AUDIO_TFLITE_SOURCES } from "../../src/integrations/stable-audio/sources.mjs";
 
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
+// The MLX tests stand in for a Mac with Apple silicon, whatever machine runs them.
+const mac = { platform: "darwin", arch: "arm64" };
 const COMMIT = "0123456789abcdef0123456789abcdef01234567";
 
 const run = async (command, args, options) => {
@@ -31,7 +33,8 @@ const until = async (condition, { timeout = 5000 } = {}) => {
 
 // Small stand-ins for the official downloads, with their real sizes and sha256 in the sources, served
 // by a local server that honors Range like GitHub and Hugging Face do. No test reaches the network.
-async function fakeSources(t, { tamperCode = false } = {}) {
+// build "tflite" stands in for the CPU build: its code folder, and weights in folders under models/tflite.
+async function fakeSources(t, { tamperCode = false, build = "mlx" } = {}) {
   const folder = await mkdtemp(path.join(tmpdir(), "moondog-sa3-setup-"));
   t.after(() => rm(folder, { recursive: true, force: true }));
 
@@ -53,16 +56,18 @@ exit 0
 
   // The code: a few files under the repository's top folder, with a file the run must not reach.
   const top = `stable-audio-3-${COMMIT}`;
-  const code = { "scripts/sa3_mlx.py": "# stand-in\n", "models/defs/__init__.py": "", "README.md": "Stable Audio 3\n" };
+  const code = build === "tflite"
+    ? { "scripts/sa3_tflite.py": "# stand-in\n", "models/tflite/.gitkeep": "", "README.md": "Stable Audio 3\n" }
+    : { "scripts/sa3_mlx.py": "# stand-in\n", "models/defs/__init__.py": "", "README.md": "Stable Audio 3\n" };
   for (const [file, text] of Object.entries(code)) {
-    await mkdir(path.dirname(path.join(folder, "code-src", top, "optimized", "mlx", file)), { recursive: true });
-    await writeFile(path.join(folder, "code-src", top, "optimized", "mlx", file), tamperCode && file === "README.md" ? "changed\n" : text);
+    await mkdir(path.dirname(path.join(folder, "code-src", top, "optimized", build, file)), { recursive: true });
+    await writeFile(path.join(folder, "code-src", top, "optimized", build, file), tamperCode && file === "README.md" ? "changed\n" : text);
   }
   await writeFile(path.join(folder, "code-src", top, "LICENSE"), "MIT\n");
   await run("/usr/bin/tar", ["-czf", path.join(folder, "code.tar.gz"), "-C", path.join(folder, "code-src"), top]);
   const codeTarball = await readFile(path.join(folder, "code.tar.gz"));
 
-  const weights = Object.fromEntries(Object.keys(STABLE_AUDIO_SOURCES.weights.files).map((name) => [name, randomBytes(4096)]));
+  const weights = Object.fromEntries(Object.keys((build === "tflite" ? STABLE_AUDIO_TFLITE_SOURCES : STABLE_AUDIO_SOURCES).weights.files).map((name) => [name, randomBytes(4096)]));
   const served = new Map([["/uv.tar.gz", uv], ["/code.tar.gz", codeTarball], ...Object.entries(weights).map(([name, bytes]) => [`/w/${name}`, bytes])]);
   const requests = [];
   // Per path: "tamper" serves other bytes of the same size; "full" ignores Range; "stall" sends 2000 bytes and waits.
@@ -94,7 +99,7 @@ exit 0
 
   const sources = {
     uv: { version: "0.9.7", url: `${base}/uv.tar.gz`, size: uv.length, sha256: sha256(uv) },
-    code: { commit: COMMIT, url: `${base}/code.tar.gz`, folder: `${top}/optimized/mlx`,
+    code: { commit: COMMIT, url: `${base}/code.tar.gz`, folder: `${top}/optimized/${build}`,
       files: Object.entries(code).map(([file, text]) => [file, Buffer.byteLength(text), sha256(text)]) },
     python: { version: "3.11.14", packages: ["mlx==0.32.4", "numpy==2.4.6"] },
     weights: { url: (name) => `${base}/w/${name}`, files: Object.fromEntries(Object.entries(weights).map(([name, bytes]) => [name, { size: bytes.length, sha256: sha256(bytes) }])) },
@@ -109,7 +114,8 @@ exit 0
     UV_INDEX_URL: "https://elsewhere.invalid/simple",
   };
   const root = path.join(folder, "state", "stable-audio-3");
-  const setup = (options = {}) => createStableAudioSetup({ environment, sources, platform: "darwin", arch: "arm64", ...options });
+  const machine = build === "tflite" ? { platform: "linux", arch: "x64" } : { platform: "darwin", arch: "arm64" };
+  const setup = (options = {}) => createStableAudioSetup({ environment, sources, ...machine, ...options });
   const fetched = (prefix) => requests.filter((entry) => entry.path.startsWith(prefix));
   const uvLog = () => readFile(path.join(folder, "uv.log"), "utf8").catch(() => "");
   return { folder, root, environment, sources, weights, setup, requests, fetched, behavior, stalled, uvLog };
@@ -151,7 +157,7 @@ test("the first download waits for the licenses, then sets up uv, the code, Pyth
   assert.match(log, /^pip install --python \S+\/\.venv\/bin\/python mlx==0\.32\.4 numpy==2\.4\.6 \|/mu);
   assert.doesNotMatch(log, /elsewhere/u);
 
-  const settings = await readGenerationSettings(fake.environment);
+  const settings = await readGenerationSettings(fake.environment, mac);
   assert.deepEqual([settings.enabled, settings.source, settings.model, settings.path], [true, "managed", "medium", path.join(fake.root, "mlx")]);
   const generator = createLocalGenerator({ environment: fake.environment, platform: "darwin", arch: "arm64" });
   const status = await generator.check();
@@ -163,7 +169,7 @@ test("the first download waits for the licenses, then sets up uv, the code, Pyth
   const both = await setup.wait();
   assert.deepEqual(fake.requests.slice(before).map((entry) => entry.path).sort(), ["/w/dit_sm-music_f16.npz", "/w/same_s_decoder_f32.npz"]);
   assert.equal(both.models["small-music"].state, "ready");
-  assert.equal((await readGenerationSettings(fake.environment)).model, "medium");
+  assert.equal((await readGenerationSettings(fake.environment, mac)).model, "medium");
 });
 
 test("a download resumes from its .part file, a server that ignores Range starts over, and a file that fails its sha256 is deleted", async (t) => {
@@ -188,7 +194,7 @@ test("a download resumes from its .part file, a server that ignores Range starts
   assert.equal(await exists(path.join(fake.root, "downloads", "same_l_decoder_f32.npz.part")), false, "a file that failed is deleted");
   assert.equal(failed.models.medium.state, "partial");
   assert.equal(await exists(path.join(fake.root, "setup.lock")), false);
-  assert.notEqual((await readGenerationSettings(fake.environment)).source, "managed", "nothing switches to a broken install");
+  assert.notEqual((await readGenerationSettings(fake.environment, mac)).source, "managed", "nothing switches to a broken install");
 
   // Try again downloads only what is still missing.
   fake.behavior.delete("/w/same_l_decoder_f32.npz");
@@ -308,14 +314,14 @@ test("remove deletes a model's own files, moves music making to what is left, an
   const afterMedium = await setup.remove("medium");
   assert.equal(afterMedium.models.medium.state, "absent");
   assert.equal(afterMedium.models["small-music"].state, "ready", "the shared text encoder stays");
-  const switched = await readGenerationSettings(fake.environment);
+  const switched = await readGenerationSettings(fake.environment, mac);
   assert.deepEqual([switched.source, switched.model], ["managed", "small-music"]);
 
   const afterAll = await setup.remove("small-music");
   assert.equal(await exists(fake.root), false, "uv, the code, Python and the caches go with the last model");
   assert.deepEqual(afterAll.base, { uv: "absent", code: "absent", python: "absent" });
   assert.equal(afterAll.licenses.accepted, true, "the agreement is kept");
-  assert.notEqual((await readGenerationSettings(fake.environment)).source, "managed");
+  assert.notEqual((await readGenerationSettings(fake.environment, mac)).source, "managed");
 });
 
 test("the listener's own folder is kept when a download finishes, and stays chosen until they pick a model", async (t) => {
@@ -329,26 +335,26 @@ test("the listener's own folder is kept when a download finishes, and stays chos
   await chmod(path.join(own, ".venv", "bin", "python"), 0o755);
   await mkdir(path.join(own, "models", "mlx"), { recursive: true });
   for (const name of ["t5gemma_f16.npz", "dit_medium_f16.npz", "same_l_decoder_f32.npz"]) await writeFile(path.join(own, "models", "mlx", name), Buffer.alloc(2048));
-  await writeGenerationSettings({ enabled: true, path: own }, fake.environment);
+  await writeGenerationSettings({ enabled: true, path: own }, fake.environment, mac);
 
   const setup = fake.setup();
   await setup.install("small-music", { accepted: true });
   await setup.wait();
-  assert.equal((await readGenerationSettings(fake.environment)).source, "settings", "a folder that runs stays in use");
+  assert.equal((await readGenerationSettings(fake.environment, mac)).source, "settings", "a folder that runs stays in use");
 
   // Choosing an installed model switches to Moondog's install; the folder stays saved for later.
-  const chosen = await writeGenerationSettings({ model: "small-music" }, fake.environment);
+  const chosen = await writeGenerationSettings({ model: "small-music" }, fake.environment, mac);
   assert.deepEqual([chosen.source, chosen.path, chosen.folder], ["managed", path.join(fake.root, "mlx"), own]);
-  const back = await writeGenerationSettings({ source: "settings" }, fake.environment);
+  const back = await writeGenerationSettings({ source: "settings" }, fake.environment, mac);
   assert.deepEqual([back.source, back.path], ["settings", own]);
 
   await setup.remove("small-music");
   assert.ok(await exists(path.join(own, "models", "mlx", "dit_medium_f16.npz")), "the listener's folder is never deleted");
 });
 
-test("the setup refuses a Mac without Apple silicon", async (t) => {
+test("the setup refuses a machine no Stability AI build runs on, such as an Intel Mac", async (t) => {
   const fake = await fakeSources(t);
-  const setup = fake.setup({ platform: "linux", arch: "x64" });
+  const setup = fake.setup({ platform: "darwin", arch: "x64" });
   assert.equal(setup.status().supported, false);
   await assert.rejects(setup.install("medium", { accepted: true }), { code: "setup_unsupported" });
 });
@@ -380,14 +386,14 @@ test("removing the last managed model goes back to the listener's folder with a 
   await writeFile(path.join(own, ".venv", "bin", "python"), "#!/bin/sh\n");
   await chmod(path.join(own, ".venv", "bin", "python"), 0o755);
   for (const name of ["t5gemma_f16.npz", "dit_medium_f16.npz", "same_l_decoder_f32.npz"]) await writeFile(path.join(own, "models", "mlx", name), randomBytes(2048));
-  await writeGenerationSettings({ enabled: true, path: own }, environment);
+  await writeGenerationSettings({ enabled: true, path: own }, environment, mac);
   // Then managed Small Music, in use.
   const setup = createStableAudioSetup({ environment, platform: "darwin", arch: "arm64" });
   await mkdir(path.join(setup.root, "mlx", "models", "mlx"), { recursive: true });
   await writeFile(path.join(setup.root, "mlx", "models", "mlx", "dit_sm-music_f16.npz"), "partial");
-  await writeGenerationSettings({ source: "managed", model: "small-music" }, environment);
+  await writeGenerationSettings({ source: "managed", model: "small-music" }, environment, mac);
   await setup.remove("small-music");
-  const settings = await readGenerationSettings(environment);
+  const settings = await readGenerationSettings(environment, mac);
   assert.deepEqual([settings.source, settings.path, settings.model], ["settings", own, "medium"]);
   const generator = createLocalGenerator({ environment, platform: "darwin", arch: "arm64" });
   assert.equal((await generator.check()).state, "ready", "the folder that worked before still works");
@@ -452,12 +458,12 @@ test("a save made while MOONDOG_SA3_DIR pins a folder never writes that folder's
   t.after(() => rm(home, { recursive: true, force: true }));
   const pinned = await ownFolder(home, "pinned", ["medium"]);
   const plain = { MOONDOG_STATE_HOME: home, MOONDOG_CONFIG_HOME: home };
-  await writeGenerationSettings({ enabled: true, source: "managed", model: "small-music" }, plain);
+  await writeGenerationSettings({ enabled: true, source: "managed", model: "small-music" }, plain, mac);
   // /generation off and on in a terminal started with the variable.
   const pinnedEnvironment = { ...plain, MOONDOG_SA3_DIR: pinned };
   await writeGenerationSettings({ enabled: false }, pinnedEnvironment, { platform: "darwin", arch: "arm64" });
   await writeGenerationSettings({ enabled: true }, pinnedEnvironment, { platform: "darwin", arch: "arm64" });
-  const file = await readGenerationSettings(plain);
+  const file = await readGenerationSettings(plain, mac);
   assert.deepEqual([file.source, file.model, file.enabled], ["managed", "small-music", true], "the window without the variable still runs Moondog's install");
 });
 
@@ -474,5 +480,38 @@ test("the listener's own folder runs a model it has, whatever model the file nam
   // A folder typed before it is installed gets Medium, the model the install steps download.
   const empty = path.join(home, "empty", "mlx");
   await generator.save({ path: empty });
-  assert.equal((await readGenerationSettings(environment)).model, "medium");
+  assert.equal((await readGenerationSettings(environment, mac)).model, "medium");
+});
+
+test("off the Mac, the setup gets the CPU build, with each model's weights in their folders and the shared ones kept for the other", async (t) => {
+  const fake = await fakeSources(t, { build: "tflite" });
+  const setup = fake.setup();
+  assert.equal(setup.status().runtime, "tflite");
+  await setup.install("small-music", { accepted: true });
+  const done = await setup.wait();
+  assert.equal(done.job, null);
+  assert.deepEqual([done.models["small-music"].state, done.models.medium.state], ["ready", "absent"], "the shared encoder and decoder alone are no model");
+  const build = path.join(fake.root, "tflite");
+  assert.ok(await exists(path.join(build, "scripts", "sa3_tflite.py")));
+  assert.ok(await exists(path.join(build, "models", "tflite", "sa3-sm-music", "dit_w8a8.tflite")));
+  assert.ok(!(await exists(path.join(fake.root, "mlx"))), "no MLX build off the Mac");
+  const linux = { platform: "linux", arch: "x64" };
+  const settings = await readGenerationSettings(fake.environment, linux);
+  assert.deepEqual([settings.source, settings.enabled, settings.model, settings.path], ["managed", true, "small-music", build]);
+
+  // Medium downloads only its own model; the text encoder and the decoder are already there.
+  const before = fake.fetched("/w/").length;
+  await setup.install("medium");
+  assert.equal((await setup.wait()).models.medium.state, "ready");
+  assert.deepEqual(fake.fetched("/w/").slice(before).map((entry) => entry.path), ["/w/sa3-m/dit_w8a8.tflite"]);
+
+  // The CPU build's weight cache, written on a model's first track, goes with that model.
+  await writeFile(path.join(build, "models", "tflite", "sa3-sm-music", "dit_w8a8.tflite.xnnwc"), "cache");
+  await setup.remove("small-music");
+  assert.ok(!(await exists(path.join(build, "models", "tflite", "sa3-sm-music", "dit_w8a8.tflite.xnnwc"))));
+  assert.ok(await exists(path.join(build, "models", "tflite", "same-s", "dec_w8a8.tflite")), "Medium still needs the shared decoder");
+  assert.ok(!(await exists(path.join(build, "models", "tflite", "sa3-sm-music", "dit_w8a8.tflite"))));
+  assert.equal((await readGenerationSettings(fake.environment, linux)).model, "medium", "music making moves to the model that is left");
+  await setup.remove("medium");
+  assert.ok(!(await exists(fake.root)), "the last model takes the whole folder with it");
 });

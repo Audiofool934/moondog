@@ -85,7 +85,7 @@ test("/generation downloads a model after the licenses, shows its progress, and 
 
   fixture.submit("/generation");
   await until(() => fixture.body().includes("Small Music"));
-  assert.match(fixture.body(), /Get Stable Audio 3 with \/generation download medium/u);
+  assert.match(fixture.body(), /Stable Audio 3 is off on this Mac\. Get it with \/generation download medium/u);
   assert.match(fixture.body(), /Stable Audio 3 Medium · best sound · 5\.2 GB · not downloaded/u);
   assert.match(fixture.body(), /Stable Audio 3 Small Music · faster, lighter · 1\.7 GB · not downloaded/u);
 
@@ -185,4 +185,36 @@ test("with the core's real setup, an offline download fails in one sentence and 
   assert.equal((await core.status()).licenses.accepted, true);
   fixture.submit("/generation");
   await until(() => fixture.body().includes("download stopped on an error"));
+});
+
+test("off the Mac, /generation says this computer and that the CPU build takes a little while", async (context) => {
+  const generation = fakeGeneration();
+  const status = generation.status;
+  generation.status = () => ({ ...status(), platform: "linux", runtime: "tflite" });
+  const check = generation.check;
+  generation.check = async () => ({ ...(await check.call(generation)), platform: "linux", runtime: "tflite" });
+  const fixture = launch(context, generation);
+  await until(() => fixture.body().includes("New conversation"));
+
+  fixture.submit("/generation");
+  await until(() => fixture.body().includes("Small Music"));
+  assert.match(fixture.body(), /Stable Audio 3 is off on this computer\.[\s\S]*Moondog writes a track as a score when you ask\./u);
+  assert.doesNotMatch(fixture.body(), /this Mac/u);
+
+  generation.setup.emit({ job: { model: "medium", step: "weights", received: 0, total: 10, error: { code: "setup_disk_full", message: "There is not enough space on this computer." } } });
+  await until(() => fixture.status().includes("There isn't enough free space on this computer for the download."));
+});
+
+test("on Windows, /generation gives the batch command to finish a custom install", async (context) => {
+  const generation = fakeGeneration();
+  const status = { ...generation.status(), platform: "win32", runtime: "tflite", source: "settings", install: "incomplete" };
+  generation.status = () => status;
+  generation.check = async () => status;
+  const fixture = launch(context, generation);
+  await until(() => fixture.body().includes("New conversation"));
+
+  fixture.submit("/generation");
+  await until(() => fixture.body().includes("isn't fully installed"));
+  assert.match(fixture.body().replace(/\s+/gu, " "), /\.\\install\.bat --download medium/u);
+  assert.match(fixture.body(), /writes a track as a score/u);
 });

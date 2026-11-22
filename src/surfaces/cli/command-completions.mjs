@@ -24,14 +24,22 @@ const serviceChoices = choices([
   ["apple_music", N_("30-second previews, played here")],
   ["netease", N_("Whole songs through ncm-cli")],
 ]);
-const generationChoices = choices([["on", N_("Make music on this Mac with Stable Audio 3")], ["off", N_("Stop making music here")]]);
+// Off the Mac, Stable Audio 3 is its CPU build: "this computer", and its smaller downloads.
+const onMac = process.platform === "darwin";
+const generationChoices = choices([
+  ["on", onMac ? N_("Make music on this Mac with Stable Audio 3") : N_("Make music on this computer with Stable Audio 3")],
+  // Off turns Stable Audio 3 off; Moondog still writes a track as a score when asked.
+  ["off", N_("Turn Stable Audio 3 off")],
+]);
 const generationSetupChoices = choices([
   ["download", N_("Download a Stable Audio 3 model from Stability AI")],
   ["use", N_("Make music with a downloaded model")],
-  ["remove", N_("Delete a downloaded model from this Mac")],
+  ["remove", onMac ? N_("Delete a downloaded model from this Mac") : N_("Delete a downloaded model from this computer")],
   ["cancel", N_("Stop the download")],
 ]);
-const sa3ModelChoices = choices([["medium", N_("Medium: best sound, about 5.2 GB")], ["small", N_("Small Music: faster, lighter, about 1.7 GB")]]);
+const sa3ModelChoices = choices(onMac
+  ? [["medium", N_("Medium: best sound, about 5.2 GB")], ["small", N_("Small Music: faster, lighter, about 1.7 GB")]]
+  : [["medium", N_("Medium: best sound, about 2.3 GB")], ["small", N_("Small Music: faster, lighter, about 1.2 GB")]]);
 const webChoices = choices([
   ["search", N_("Search public music sites")],
   ["read", N_("Read a public page")],

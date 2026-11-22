@@ -301,7 +301,7 @@ test("/onair points to /generation on when music making is off, and needs music 
     runtime: { async prompt(text) { asked.push(text); return { status: "completed", text: "" }; } } });
   await until(() => fixture.body().includes("New conversation"));
   fixture.submit("/onair");
-  await until(() => fixture.status().includes("Turn on music making first: /generation on."));
+  await until(() => fixture.status().includes("Turn on Stable Audio 3 first: /generation on."));
   assert.deepEqual(asked, []);
 
   const elsewhere = launch(context, { previewPlayer: previewPlayer() });

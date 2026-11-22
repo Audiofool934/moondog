@@ -1,6 +1,7 @@
 // Moondog's own Stable Audio 3 install. Only when the listener asks, it downloads uv, Stability AI's
 // code, a Python environment and the chosen model's weights into one folder Moondog manages, only
 // from the pinned official sources (sources.mjs), and checks every file before anything runs it.
+// The build is the one that runs here: MLX on a Mac with Apple silicon, the CPU build on Windows and Linux.
 // The terminal and the window are separate processes on that folder: a lock file names the process
 // that runs the job, and that process writes its progress to a status file the other one reads.
 import { spawn } from "node:child_process";
@@ -10,8 +11,8 @@ import { access, constants, lstat, mkdir, open, readdir, rename, rm, stat, statf
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { checkStableAudioInstall, readGenerationSettings, readSavedSettings, resolveGenerationSettingsFile, resolveStableAudioManagedRoot, writeGenerationSettings } from "./local-generator.mjs";
-import { DEFAULT_STABLE_AUDIO_MODEL, isStableAudioModel, SHARED_WEIGHTS, STABLE_AUDIO_MODELS, STABLE_AUDIO_SOURCES } from "./sources.mjs";
+import { checkStableAudioInstall, createLocalGenerator, readGenerationSettings, readSavedSettings, resolveGenerationSettingsFile, resolveStableAudioManagedRoot, stableAudioPrompt, stableAudioPython, writeGenerationSettings } from "./local-generator.mjs";
+import { DEFAULT_STABLE_AUDIO_MODEL, isStableAudioModel, STABLE_AUDIO_SOURCES, stableAudioRuntime, stableAudioRuntimeModels, stableAudioSources } from "./sources.mjs";
 
 const MB = 1024 ** 2;
 // Room kept free after each step, so a download never fills the disk.
@@ -91,11 +92,18 @@ export function createStableAudioSetup({
   platform = process.platform,
   arch = process.arch,
   now = () => new Date(),
-  sources = STABLE_AUDIO_SOURCES,
+  // The build that runs here, and what it downloads; none where no Stability AI build runs.
+  runtime = stableAudioRuntime({ platform, arch, environment }),
+  sources = stableAudioSources(runtime, { platform, arch }),
   freeSpace = async (folder) => { const info = await statfs(folder); return info.bavail * info.bsize; },
 } = {}) {
-  const supported = platform === "darwin" && arch === "arm64";
+  const supported = Boolean(runtime && sources);
+  // Where nothing runs, the status still names the models and their sizes; install refuses.
+  if (!supported) sources = STABLE_AUDIO_SOURCES;
+  const build = supported ? runtime : "mlx";
+  const { models: buildModels, shared, weightsFolder } = stableAudioRuntimeModels(build);
   const root = resolveStableAudioManagedRoot(environment);
+  const uvName = platform === "win32" ? "uv.exe" : "uv";
   const files = {
     lock: path.join(root, "setup.lock"),
     job: path.join(root, "job.json"),
@@ -103,16 +111,22 @@ export function createStableAudioSetup({
     downloads: path.join(root, "downloads"),
     uv: path.join(root, "uv"),
     uvMarker: path.join(root, "uv", ".moondog.json"),
-    mlx: path.join(root, "mlx"),
-    codeMarker: path.join(root, "mlx", ".moondog-code.json"),
-    venv: path.join(root, "mlx", ".venv"),
-    envMarker: path.join(root, "mlx", ".venv", ".moondog-env.json"),
-    weights: path.join(root, "mlx", "models", "mlx"),
+    // Each build in a folder of its own name: mlx, or tflite for the CPU build.
+    build: path.join(root, build),
+    codeMarker: path.join(root, build, ".moondog-code.json"),
+    venv: path.join(root, build, ".venv"),
+    envMarker: path.join(root, build, ".venv", ".moondog-env.json"),
+    weights: path.join(root, build, ...weightsFolder),
     licenses: resolveStableAudioLicenseFile(environment),
   };
-  const weightFiles = (model) => [...SHARED_WEIGHTS, ...STABLE_AUDIO_MODELS[model].weights];
+  const weightFiles = (model) => [...shared, ...buildModels[model].weights];
   const weightSize = (name) => sources.weights.files[name].size;
-  const part = (name) => path.join(files.downloads, `${name}.part`);
+  // The CPU build's weights sit in folders; their partial downloads stay side by side.
+  const part = (name) => path.join(files.downloads, `${name.replaceAll("/", "--")}.part`);
+  // The machine's own tar, which on Windows also opens uv's zip.
+  const tar = platform === "win32" ? path.join(environment.SystemRoot ?? environment.SYSTEMROOT ?? "C:\\Windows", "System32", "tar.exe")
+    : platform === "darwin" ? "/usr/bin/tar" : "tar";
+  const here = platform === "darwin" ? "this Mac" : "this computer";
   const pythonPins = { python: sources.python.version, packages: [...sources.python.packages] };
 
   // The job this process runs, or null.
@@ -123,7 +137,7 @@ export function createStableAudioSetup({
   let poll = null;
 
   const base = () => ({
-    uv: readJson(files.uvMarker)?.version === sources.uv.version && sizeOf(path.join(files.uv, "uv")) !== null ? "ready" : "absent",
+    uv: readJson(files.uvMarker)?.version === sources.uv.version && sizeOf(path.join(files.uv, uvName)) !== null ? "ready" : "absent",
     code: readJson(files.codeMarker)?.commit === sources.code.commit ? "ready" : "absent",
     python: JSON.stringify(readJson(files.envMarker)) === JSON.stringify(pythonPins) ? "ready" : "absent",
   });
@@ -149,11 +163,11 @@ export function createStableAudioSetup({
     const steps = base();
     const current = jobView();
     const baseReady = Object.values(steps).every((state) => state === "ready");
-    const ownFiles = (model) => STABLE_AUDIO_MODELS[model].weights.some((name) => sizeOf(path.join(files.weights, name)) !== null || sizeOf(part(name)) !== null);
+    const ownFiles = (model) => buildModels[model].weights.some((name) => sizeOf(path.join(files.weights, name)) !== null || sizeOf(part(name)) !== null);
     // A first setup stopped before any model's own weights arrived still left uv, Python, caches or the
     // shared encoder: the model it was for reads as partial, so its Remove can take them away.
-    const leftover = !Object.keys(STABLE_AUDIO_MODELS).some(ownFiles) && existsSync(root) ? (current?.model ?? DEFAULT_STABLE_AUDIO_MODEL) : null;
-    const models = Object.fromEntries(Object.keys(STABLE_AUDIO_MODELS).map((model) => {
+    const leftover = !Object.keys(buildModels).some(ownFiles) && existsSync(root) ? (current?.model ?? DEFAULT_STABLE_AUDIO_MODEL) : null;
+    const models = Object.fromEntries(Object.keys(buildModels).map((model) => {
       let bytes = 0;
       let complete = true;
       for (const name of weightFiles(model)) {
@@ -170,6 +184,7 @@ export function createStableAudioSetup({
     return {
       supported,
       root,
+      runtime,
       licenses: { accepted: Boolean(agreement?.accepted_at), at: agreement?.accepted_at ?? null, links: sources.licenses.map((license) => ({ ...license })) },
       job: current,
       models,
@@ -247,7 +262,7 @@ export function createStableAudioSetup({
     const free = await freeSpace(root);
     const needed = bytes + SPACE_MARGIN;
     if (free < needed) {
-      throw setupError("setup_disk_full", `There is not enough space on this Mac: ${gigabytes(needed)} is needed and ${gigabytes(free)} is free.`, { needed, free });
+      throw setupError("setup_disk_full", `There is not enough space on ${here}: ${gigabytes(needed)} is needed and ${gigabytes(free)} is free.`, { needed, free });
     }
   };
 
@@ -255,7 +270,7 @@ export function createStableAudioSetup({
   const runCommand = (command, args, { env = environment, code, message }) => new Promise((resolve, reject) => {
     const { signal } = job.controller;
     if (signal.aborted) return reject(cancelled());
-    const child = spawnImpl(command, args, { stdio: ["ignore", "ignore", "pipe"], env });
+    const child = spawnImpl(command, args, { stdio: ["ignore", "ignore", "pipe"], env, windowsHide: true });
     let tail = "";
     child.stderr?.setEncoding("utf8");
     child.stderr?.on("data", (chunk) => { tail = (tail + chunk).slice(-4000); });
@@ -371,18 +386,21 @@ export function createStableAudioSetup({
   };
 
   const setUpUv = async () => {
-    if ((await executable(path.join(files.uv, "uv"))) && readJson(files.uvMarker)?.version === sources.uv.version) return;
+    if ((await executable(path.join(files.uv, uvName))) && readJson(files.uvMarker)?.version === sources.uv.version) return;
     step("uv", sources.uv.size);
     await ensureSpace(sources.uv.size * 2 + STEP_SPACE.uv);
-    const archive = await download({ url: sources.uv.url, name: "uv.tar.gz", size: sources.uv.size, sha256: sources.uv.sha256,
-      target: path.join(files.downloads, "uv.tar.gz"), onBytes: progress });
+    const archiveName = sources.uv.url.endsWith(".zip") ? "uv.zip" : "uv.tar.gz";
+    const archive = await download({ url: sources.uv.url, name: archiveName, size: sources.uv.size, sha256: sources.uv.sha256,
+      target: path.join(files.downloads, archiveName), onBytes: progress });
     const temporary = `${files.uv}.tmp-${job.token}`;
     try {
       await rm(temporary, { recursive: true, force: true });
       await mkdir(temporary, { recursive: true, mode: 0o700 });
-      await runCommand("/usr/bin/tar", ["-xzf", archive, "-C", temporary, "--strip-components", "1"],
+      // Windows' zip holds uv.exe at its top; the tarballs hold uv in a folder.
+      const strip = sources.uv.strip ?? 1;
+      await runCommand(tar, [archiveName === "uv.zip" ? "-xf" : "-xzf", archive, "-C", temporary, ...(strip ? ["--strip-components", String(strip)] : [])],
         { code: "setup_verification_failed", message: "uv could not be unpacked. Try again." });
-      if (!(await executable(path.join(temporary, "uv")))) throw setupError("setup_verification_failed", "uv was not in its download. Try again.");
+      if (!(await executable(path.join(temporary, uvName)))) throw setupError("setup_verification_failed", "uv was not in its download. Try again.");
       await writeJson(path.join(temporary, ".moondog.json"), { version: sources.uv.version });
       await rm(files.uv, { recursive: true, force: true });
       await rename(temporary, files.uv);
@@ -397,25 +415,27 @@ export function createStableAudioSetup({
     step("code");
     await ensureSpace(STEP_SPACE.code);
     const archive = await download({ url: sources.code.url, name: "code.tar.gz", target: path.join(files.downloads, "code.tar.gz"), onBytes: progress });
-    const temporary = `${files.mlx}.tmp-${job.token}`;
+    const temporary = `${files.build}.tmp-${job.token}`;
     try {
       await rm(temporary, { recursive: true, force: true });
       await mkdir(temporary, { recursive: true, mode: 0o700 });
       step("verifying");
       const strip = String(sources.code.folder.split("/").length);
-      await runCommand("/usr/bin/tar", ["-xzf", archive, "-C", temporary, "--strip-components", strip, sources.code.folder],
+      await runCommand(tar, ["-xzf", archive, "-C", temporary, "--strip-components", strip, sources.code.folder],
         { code: "setup_verification_failed", message: "Stable Audio 3's code could not be unpacked. Try again." });
       await verifyTree(temporary);
       // Weights and the environment from an earlier install move into the new tree.
-      for (const kept of [path.join("models", "mlx"), ".venv"]) {
-        if ((await stat(path.join(files.mlx, kept)).catch(() => null))?.isDirectory()) {
+      for (const kept of [path.join(...weightsFolder), ".venv"]) {
+        if ((await stat(path.join(files.build, kept)).catch(() => null))?.isDirectory()) {
+          // The code's own empty models/tflite folder gives way to the weights already there.
+          await rm(path.join(temporary, kept), { recursive: true, force: true });
           await mkdir(path.dirname(path.join(temporary, kept)), { recursive: true });
-          await rename(path.join(files.mlx, kept), path.join(temporary, kept));
+          await rename(path.join(files.build, kept), path.join(temporary, kept));
         }
       }
       await writeJson(path.join(temporary, ".moondog-code.json"), { commit: sources.code.commit });
-      await rm(files.mlx, { recursive: true, force: true });
-      await rename(temporary, files.mlx);
+      await rm(files.build, { recursive: true, force: true });
+      await rename(temporary, files.build);
     } finally {
       await rm(temporary, { recursive: true, force: true });
       await rm(archive, { force: true });
@@ -423,7 +443,7 @@ export function createStableAudioSetup({
   };
 
   const setUpPython = async () => {
-    const python = path.join(files.venv, "bin", "python");
+    const python = stableAudioPython(files.build, platform);
     if ((await executable(python)) && JSON.stringify(readJson(files.envMarker)) === JSON.stringify(pythonPins)) return;
     step("python");
     await ensureSpace(STEP_SPACE.python);
@@ -432,7 +452,7 @@ export function createStableAudioSetup({
     const env = Object.fromEntries(Object.entries(environment).filter(([name]) => !/^(UV_|PIP_|VIRTUAL_ENV$|CONDA_|PYTHON)/u.test(name)));
     Object.assign(env, { UV_CACHE_DIR: path.join(root, "uv-cache"), UV_PYTHON_INSTALL_DIR: path.join(root, "python"),
       UV_PYTHON_PREFERENCE: "only-managed", UV_NO_CONFIG: "1", UV_NO_PROGRESS: "1" });
-    const uv = path.join(files.uv, "uv");
+    const uv = path.join(files.uv, uvName);
     const failed = { code: "setup_python_failed", message: "The Python environment could not be set up. Check the connection, then try again." };
     await runCommand(uv, ["venv", "--clear", "--python", sources.python.version, files.venv], { env, ...failed });
     await runCommand(uv, ["pip", "install", "--python", python, ...sources.python.packages], { env, ...failed });
@@ -445,7 +465,10 @@ export function createStableAudioSetup({
     const missing = names.filter((name) => sizeOf(path.join(files.weights, name)) !== weightSize(name));
     if (!missing.length) return;
     step("weights", total);
-    await ensureSpace(missing.reduce((sum, name) => sum + weightSize(name) - Math.min(weightSize(name), sizeOf(part(name)) ?? 0), 0));
+    // The CPU build writes a weight cache beside each model file the first time it runs it (.xnnwc), at
+    // most about the file's own size, so the room for those caches is kept too.
+    const caches = build === "tflite" ? missing.reduce((sum, name) => sum + weightSize(name), 0) : 0;
+    await ensureSpace(caches + missing.reduce((sum, name) => sum + weightSize(name) - Math.min(weightSize(name), sizeOf(part(name)) ?? 0), 0));
     let done = total - missing.reduce((sum, name) => sum + weightSize(name), 0);
     for (const name of missing) {
       const { size, sha256 } = sources.weights.files[name];
@@ -457,19 +480,19 @@ export function createStableAudioSetup({
 
   const finish = async (model) => {
     step("verifying");
-    const install = await checkStableAudioInstall(files.mlx, { model, platform, arch });
+    const install = await checkStableAudioInstall(files.build, { model, platform, arch, environment });
     if (install.state !== "ready") throw setupError("setup_verification_failed", "Stable Audio 3 was set up but is not ready to run. Try again.");
     // The download was the listener's ask, so this model is turned on, unless a folder they chose
     // themselves runs now (they can still pick this one with Use) or MOONDOG_SA3_DIR decides.
-    const settings = await readGenerationSettings(environment);
+    const settings = await readGenerationSettings(environment, { platform, arch });
     if (settings.source === "environment") return;
     // A choice the listener made while this ran, here or in the other window or terminal, stands.
     if (JSON.stringify(await readSavedSettings(environment)) !== job.settingsAtStart) return;
-    const runsNow = async () => (await checkStableAudioInstall(settings.path, { model: settings.model, platform, arch })).state === "ready";
+    const runsNow = async () => (await checkStableAudioInstall(settings.path, { model: settings.model, platform, arch, environment })).state === "ready";
     // A folder they chose, or one turned on that runs (~/Developer included), or a model of Moondog's
     // own already in use stays in use.
     if ((settings.source === "settings" || settings.enabled) && (await runsNow())) return;
-    await writeGenerationSettings({ source: "managed", model, enabled: true }, environment);
+    await writeGenerationSettings({ source: "managed", model, enabled: true }, environment, { platform, arch });
   };
 
   const run = async (model, { baseOnly }) => {
@@ -498,7 +521,7 @@ export function createStableAudioSetup({
      */
     async install(model, { accepted = false, baseOnly = false } = {}) {
       if (!isStableAudioModel(model)) throw setupError("setup_model_unknown", "Choose medium or small-music.");
-      if (!supported) throw setupError("setup_unsupported", "Stable Audio 3 needs a Mac with Apple silicon.");
+      if (!supported) throw setupError("setup_unsupported", "Stable Audio 3 needs a Mac with Apple silicon, or Windows or Linux on an x64 computer, or Linux on ARM.");
       if (job) throw setupError("setup_busy", "Stable Audio 3 is already being set up.");
       if (!readJson(files.licenses)?.accepted_at) {
         if (accepted !== true) {
@@ -572,14 +595,16 @@ export function createStableAudioSetup({
       if (!(await stat(root).catch(() => null))) return status();
       const token = randomBytes(8).toString("hex");
       await takeLock(model, token);
-      const other = Object.keys(STABLE_AUDIO_MODELS).find((name) => name !== model);
+      const other = Object.keys(buildModels).find((name) => name !== model);
       try {
-        for (const name of STABLE_AUDIO_MODELS[model].weights) {
+        for (const name of buildModels[model].weights) {
           await rm(path.join(files.weights, name), { force: true });
+          // The CPU build's weight cache of that file goes with it.
+          await rm(path.join(files.weights, `${name}.xnnwc`), { force: true });
           await rm(part(name), { force: true });
         }
         await rm(files.job, { force: true });
-        const otherLeft = STABLE_AUDIO_MODELS[other].weights.some((name) => sizeOf(path.join(files.weights, name)) !== null || sizeOf(part(name)) !== null);
+        const otherLeft = buildModels[other].weights.some((name) => sizeOf(path.join(files.weights, name)) !== null || sizeOf(part(name)) !== null);
         if (!otherLeft) await rm(root, { recursive: true, force: true });
       } finally {
         await releaseLock(token);
@@ -588,14 +613,14 @@ export function createStableAudioSetup({
       // model that folder has, so a working own install is never checked for weights it never had.
       const settings = await readGenerationSettings({ ...environment, MOONDOG_SA3_DIR: "" }, { platform, arch });
       if (settings.source === "managed" && settings.model === model) {
-        if (status().models[other].state === "ready") await writeGenerationSettings({ model: other }, environment);
+        if (status().models[other].state === "ready") await writeGenerationSettings({ model: other }, environment, { platform, arch });
         else {
-          const candidates = [DEFAULT_STABLE_AUDIO_MODEL, ...Object.keys(STABLE_AUDIO_MODELS).filter((name) => name !== DEFAULT_STABLE_AUDIO_MODEL)];
+          const candidates = [DEFAULT_STABLE_AUDIO_MODEL, ...Object.keys(buildModels).filter((name) => name !== DEFAULT_STABLE_AUDIO_MODEL)];
           let found = DEFAULT_STABLE_AUDIO_MODEL;
           for (const name of candidates) {
-            if ((await checkStableAudioInstall(settings.folder, { model: name, platform, arch })).state === "ready") { found = name; break; }
+            if ((await checkStableAudioInstall(settings.folder, { model: name, platform, arch, environment })).state === "ready") { found = name; break; }
           }
-          await writeGenerationSettings({ source: "settings", model: found }, environment);
+          await writeGenerationSettings({ source: "settings", model: found }, environment, { platform, arch });
         }
       }
       push();
@@ -622,10 +647,30 @@ export function createStableAudioSetup({
 
 // A developer's way to try the real downloads from a terminal, into the state folder
 // MOONDOG_STATE_HOME names: node src/integrations/stable-audio/setup.mjs status | install
-// medium|small-music [--agree] [--base-only] | remove medium|small-music. --base-only stops before
-// the weights, so uv, the code and Python can be tried without gigabytes.
+// medium|small-music [--agree] [--base-only] | use medium|small-music | remove medium|small-music | make [seconds]. --base-only
+// stops before the weights, so uv, the code and Python can be tried without gigabytes; make makes one
+// track with the install music making uses, as a listener's request would, and prints what it measured.
+// MOONDOG_SA3_RUNTIME=tflite tries the CPU build on a Mac with Apple silicon.
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const [command = "status", model, ...flags] = process.argv.slice(2);
+  if (command === "make") {
+    const generator = createLocalGenerator();
+    const status = await generator.check();
+    const seconds = Number(model ?? 30);
+    console.log(`${status.runtime ?? "no runtime"} | ${status.model} | ${status.state}`);
+    try {
+      const made = await generator.generate({ prompt: stableAudioPrompt({ descriptors: [
+        { facet: "genre", term: "ambient" }, { facet: "instrument", term: "rhodes piano" }, { facet: "texture", term: "warm tape" }, { facet: "mood", term: "unhurried" },
+      ], bpm: 84 }), seconds, title: "Setup check" }, { onProgress: ({ stage }) => console.log(`stage ${stage}`) });
+      const receipt = await generator.receipt(made.id);
+      console.log(JSON.stringify({ id: made.id, seconds: made.seconds, duration_seconds: made.duration_seconds, elapsed_ms: made.elapsed_ms,
+        measured: made.measured ?? null, generator: receipt?.generator, audio: receipt?.audio && { ...receipt.audio, loudness: undefined } }, null, 2));
+    } catch (error) {
+      console.error(`${error.code ?? "error"}: ${error.message}`);
+      process.exitCode = 1;
+    }
+    process.exit();
+  }
   const setup = createStableAudioSetup();
   const line = (snapshot) => {
     const { job } = snapshot;
@@ -643,6 +688,10 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
       process.exitCode = end.job?.error ? 1 : 0;
     } else if (command === "remove") {
       console.log(line(await setup.remove(model)));
+    } else if (command === "use") {
+      // As /generation use does: music making turns on with this model of Moondog's own install.
+      if (!isStableAudioModel(model) || setup.status().models[model].state !== "ready") throw setupError("setup_model_unknown", `${model} isn't downloaded.`);
+      console.log(JSON.stringify(await writeGenerationSettings({ enabled: true, source: "managed", model })));
     } else {
       console.log(JSON.stringify(setup.status(), null, 2));
     }
