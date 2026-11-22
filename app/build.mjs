@@ -9,8 +9,9 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const outdir = path.join(here, "dist");
 
 await rm(outdir, { recursive: true, force: true });
-await mkdir(outdir, { recursive: true });
+await mkdir(path.join(outdir, "static"), { recursive: true });
 await copyFile(path.join(here, "renderer", "index.html"), path.join(outdir, "index.html"));
+await copyFile(path.join(here, "..", "assets", "brand", "moondog-logo-small.svg"), path.join(outdir, "static", "moondog-logo-small.svg"));
 // The Apple Music helper for `npm start`, built again only when its source changed.
 if (process.platform === "darwin") {
   const { buildMusicHelper } = await import("./native/build.mjs");

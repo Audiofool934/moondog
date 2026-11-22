@@ -649,10 +649,9 @@ img { -webkit-user-drag: none; }
 .pick { height: 28px; min-width: 28px; max-width: 180px; padding: 0; border-radius: var(--r-2); display: inline-flex; align-items: center; justify-content: center; flex: 0 1 auto;
   font-size: var(--t-small); color: var(--text-3); white-space: nowrap; transition: background-color var(--quick) var(--soft), color var(--quick) var(--soft); }
 .pick:hover { background: var(--hover); color: var(--text); transition: none; }
-/* Match the visible diameter of the send disc. Moondog's SVG includes space around the record. */
+/* Match the visible diameter of the send disc. */
 .pick .icon { width: 23px; height: 23px; }
-.pick .icon.fill, .pick .mark { color: var(--brand-mark); }
-.pick .mark { width: 24px; height: 24px; --groove-1: currentColor; --groove-2: currentColor; --groove-3: currentColor; --groove-4: currentColor; }
+.pick .icon.fill { color: var(--brand-mark); }
 .pick span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .pick span:empty, .pick.needed .icon { display: none; }
 .pick.needed { padding: 0 9px; color: var(--text); background: var(--hover); font-weight: 500; }
