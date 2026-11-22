@@ -41,7 +41,7 @@ const MACHINE_TEXTS = new Set(["generationNotFound", "generationUnsupported", "g
   "generationNotInstalled", "generationNoWeights"]);
 const machineText = (key) => !isMac && MACHINE_TEXTS.has(key) ? `${key}Pc` : key;
 // What Stability's own folder runs to get Medium: install.bat on Windows.
-const INSTALL_COMMAND = platform === "win32" ? "install.bat --download medium" : "./install.sh --download medium";
+const INSTALL_COMMAND = platform === "win32" ? ".\\install.bat --download medium" : "./install.sh --download medium";
 const LASTFM_KEY_PAGE = "https://www.last.fm/api/account/create";
 const SITE = "https://moondog.audiofool.ai";
 // The core's error codes the listener can act on. Anything else reads as a plain failure; the raw

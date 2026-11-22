@@ -204,3 +204,17 @@ test("off the Mac, /generation says this computer and that the CPU build takes a
   generation.setup.emit({ job: { model: "medium", step: "weights", received: 0, total: 10, error: { code: "setup_disk_full", message: "There is not enough space on this computer." } } });
   await until(() => fixture.status().includes("There isn't enough free space on this computer for the download."));
 });
+
+test("on Windows, /generation gives the batch command to finish a custom install", async (context) => {
+  const generation = fakeGeneration();
+  const status = { ...generation.status(), platform: "win32", runtime: "tflite", source: "settings", install: "incomplete" };
+  generation.status = () => status;
+  generation.check = async () => status;
+  const fixture = launch(context, generation);
+  await until(() => fixture.body().includes("New conversation"));
+
+  fixture.submit("/generation");
+  await until(() => fixture.body().includes("isn't fully installed"));
+  assert.match(fixture.body().replace(/\s+/gu, " "), /\.\\install\.bat --download medium/u);
+  assert.match(fixture.body(), /writes a track as a score/u);
+});

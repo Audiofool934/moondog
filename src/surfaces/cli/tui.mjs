@@ -915,6 +915,7 @@ export async function runMoondogTui({
   };
   const generationMessage = (status) => {
     const folder = shownFolder(status?.path);
+    const command = status?.platform === "win32" ? ".\\install.bat --download medium" : "./install.sh --download medium";
     if (status?.install === "unsupported") return unsupportedText();
     if (status?.state === "ready") {
       return onMac() ? tr("Moondog makes music on this Mac with Stable Audio 3, powered by Stability AI. Ask for a track. Stable Audio 3 runs offline, and the track stays on this Mac.")
@@ -933,18 +934,18 @@ export async function runMoondogTui({
       if (!onMac()) {
         if (status.install === "ready" && status.managed) return tr("Stable Audio 3 is off on this computer, and {model} is ready; turn it on with /generation on. Until then, Moondog writes a track as a score when you ask.", { model: modelName(status.model) });
         if (status.install === "ready") return tr("Stable Audio 3 is off on this computer, and ready at {folder}; turn it on with /generation on. Until then, Moondog writes a track as a score when you ask.", { folder });
-        if (status.install === "incomplete") return tr("Stable Audio 3 is off on this computer, and the one at {folder} isn't fully installed. Run ./install.sh --download medium there, then use /generation on. Until then, Moondog writes a track as a score when you ask.", { folder });
+        if (status.install === "incomplete") return tr("Stable Audio 3 is off on this computer, and the one at {folder} isn't fully installed. Run {command} there, then use /generation on. Until then, Moondog writes a track as a score when you ask.", { folder, command });
         return tr("Stable Audio 3 is off on this computer, and it isn't at {folder}. Install Stability AI's CPU build (optimized/tflite) from github.com/Stability-AI/stable-audio-3, then use /generation on with its folder. Until then, Moondog writes a track as a score when you ask.", { folder });
       }
       if (status.install === "ready" && status.managed) return tr("Stable Audio 3 is off on this Mac, and {model} is ready; turn it on with /generation on. Until then, Moondog writes a track as a score when you ask.", { model: modelName(status.model) });
       if (status.install === "ready") return tr("Stable Audio 3 is off on this Mac, and ready at {folder}; turn it on with /generation on. Until then, Moondog writes a track as a score when you ask.", { folder });
-      if (status.install === "incomplete") return tr("Stable Audio 3 is off on this Mac, and the one at {folder} isn't fully installed. Run ./install.sh --download medium there, then use /generation on. Until then, Moondog writes a track as a score when you ask.", { folder });
+      if (status.install === "incomplete") return tr("Stable Audio 3 is off on this Mac, and the one at {folder} isn't fully installed. Run {command} there, then use /generation on. Until then, Moondog writes a track as a score when you ask.", { folder, command });
       return tr("Stable Audio 3 is off on this Mac, and it isn't at {folder}. Install Stability AI's MLX build from github.com/Stability-AI/stable-audio-3, then use /generation on with its folder. Until then, Moondog writes a track as a score when you ask.", { folder });
     }
     if (status?.state === "incomplete") {
       return status.missing === "weights"
-        ? tr("Stable Audio 3 at {folder} doesn't have the Medium model yet. Run ./install.sh --download medium there, then use /generation again.", { folder })
-        : tr("Stable Audio 3 at {folder} isn't installed yet. Run ./install.sh --download medium there, then use /generation again.", { folder });
+        ? tr("Stable Audio 3 at {folder} doesn't have the Medium model yet. Run {command} there, then use /generation again.", { folder, command })
+        : tr("Stable Audio 3 at {folder} isn't installed yet. Run {command} there, then use /generation again.", { folder, command });
     }
     return tr("Stable Audio 3 isn't at {folder}. Use /generation on with the folder that holds its sa3 script.", { folder });
   };
