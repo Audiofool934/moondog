@@ -4,7 +4,7 @@
 
 <h1 align="center">Moondog</h1>
 
-<p align="center">Version 0.3.2</p>
+<p align="center">Version 0.3.3</p>
 
 <p align="center"><strong>On the air, just for you.</strong></p>
 
