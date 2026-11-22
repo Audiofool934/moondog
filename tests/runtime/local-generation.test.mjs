@@ -299,7 +299,7 @@ test("a track Moondog makes is shaped only by traceable taste, plays as its own,
   ]);
   const reply = await runtime.prompt("make me something for late tonight");
   const [track] = room.played;
-  assert.match(reply.text, /^Something unhurried for late at night, out of your love of North Window\.\n\nMade on this Mac with Stable Audio 3: "Unhurried dream pop" \(0:15, seed \d+\)\.$/u);
+  assert.match(reply.text, /^Something unhurried for late at night, out of your love of North Window\.\n\nMade on this computer with Stable Audio 3: "Unhurried dream pop" \(0:15, seed \d+\)\.$/u);
   assert.ok(path.isAbsolute(track.file) && track.file.endsWith(path.join(track.id, "track.wav")), "the terminal gets the file; the window asks by id");
   assert.deepEqual(recorded, [{ service: "moondog", action: "generated.play", providerTrackId: `moondog:generated:${track.id}`,
     title: "Unhurried dream pop", artistCredit: "", requestedAt: recorded[0].requestedAt }]);
@@ -874,8 +874,8 @@ test("the agent starts a stream when the listener asks for music to keep going, 
   app.locale = "zh";
   const reply = await runtime.prompt("keep some quiet music going while I work");
   // The first track carries the stream's own name, unnumbered, and the reply was not cut short.
-  assert.equal(reply.text, "Something quiet to work to; stop it whenever.\n\nMade on this Mac with Stable Audio 3: \"退潮的窗\" (1:00, seed " +
-    `${/seed (\d+)/u.exec(reply.text)?.[1]}).\nThe stream keeps going on this Mac, a new track each time, for up to 30 minutes. Stop it any time.`);
+  assert.equal(reply.text, "Something quiet to work to; stop it whenever.\n\nMade on this computer with Stable Audio 3: \"退潮的窗\" (1:00, seed " +
+    `${/seed (\d+)/u.exec(reply.text)?.[1]}).\nThe stream keeps going on this computer, a new track each time, for up to 30 minutes. Stop it any time.`);
   assert.match(named[0], /^Name this track\. Write the name in Simplified Chinese \(zh\), even if the listener's words/u);
   assert.match(named[0], /<draft_name>Low tide window<\/draft_name>/u, "the agent's English title is carried into Chinese");
   assert.ok(app.streamStatus());
