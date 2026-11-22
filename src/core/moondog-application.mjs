@@ -571,6 +571,19 @@ export class MoondogApplication {
     return this.localGenerator?.ready?.() === true && typeof this.musicPreviewPlayer?.playGenerated === "function";
   }
 
+  // Where Stable Audio 3 is not set up or cannot run, Moondog writes its music as a score instead
+  // (src/integrations/score). That needs nothing but this process, so any room that can play a
+  // local track can do it. With Stable Audio 3 ready, that model makes the music.
+  scoreGenerationReady() {
+    return !this.localGenerationReady() && typeof this.localGenerator?.compose === "function" &&
+      typeof this.musicPreviewPlayer?.playGenerated === "function";
+  }
+
+  // The tracks Moondog made are kept, listed and played again alike, however each was made.
+  madeTracksReady() {
+    return this.localGenerationReady() || this.scoreGenerationReady();
+  }
+
   generationStatus() {
     return this.localGenerator?.status?.() ?? null;
   }
@@ -579,11 +592,11 @@ export class MoondogApplication {
   // are outcomes of Moondog's own picks, never the listener's taste.
   // Each reply reads the made tracks again, so the other surface's tracks and outcomes show too.
   async refreshMadeTracks() {
-    if (this.localGenerationReady()) await this.localGenerator.load?.();
+    if (this.madeTracksReady()) await this.localGenerator.load?.();
   }
 
   madeTracks() {
-    if (!this.localGenerationReady()) return null;
+    if (!this.madeTracksReady()) return null;
     const tracks = this.localGenerator.recentTracks?.(5) ?? [];
     return tracks.length ? tracks : null;
   }
@@ -591,7 +604,7 @@ export class MoondogApplication {
   // Plays a track Moondog made again. A track the listener named in their own words is their pick:
   // it stays out of the ledger and counts as their replay. Otherwise it is Moondog's pick again.
   async playMadeTrack({ id } = {}, { request = null, signal } = {}) {
-    if (!this.localGenerationReady()) throw Object.assign(new Error("Local generation is not ready. The listener can turn it on in Settings or with /generation."), { code: "generation_not_ready" });
+    if (!this.madeTracksReady()) throw Object.assign(new Error("Local generation is not ready. The listener can turn it on in Settings or with /generation."), { code: "generation_not_ready" });
     const receipt = await this.localGenerator.receipt(id);
     if (!receipt) throw Object.assign(new Error("There is no track Moondog made with that id on this Mac."), { code: "made_track_not_found" });
     const file = await this.localGenerator.trackFile(id);
@@ -1148,9 +1161,45 @@ export class MoondogApplication {
       ...(compiled.bpm ? { bpm: compiled.bpm } : {}), elapsed_ms: made.elapsed_ms };
   }
 
+  // Writes one instrumental track as a score and plays it in Moondog's own player: how Moondog
+  // makes music where Stable Audio 3 is not set up or cannot run. The agent writes a lead sheet (the
+  // chords, the beat and the lines); the score builder turns it into notes and checks them, and a
+  // renderer in this process plays them into a file, with no model, GPU or download. A sheet that
+  // cannot be played goes back with what to fix. One whose notes the lint hears as wrong goes back
+  // once (lenient is the second try), then plays as written. The descriptors say what of the
+  // listener's taste shaped it; they are traced as for a made track and shape nothing by themselves.
+  async writeTrack({ sheet, descriptors = [], title } = {}, { moment = null, request = null, transient = false, lenient = false, signal, onProgress, nameRecord } = {}) {
+    if (!this.scoreGenerationReady()) throw Object.assign(new Error("Moondog can't write a track in this room."), { code: "generation_not_ready" });
+    const { buildTrackScore, describeScore } = await import("../integrations/score/track-score.mjs");
+    const built = buildTrackScore(sheet);
+    if (!built.ok) return { state: "not_made", reason: "score_needs_fixing", problems: built.problems };
+    const wrong = built.notes.filter((entry) => entry.severity === "error");
+    if (wrong.length && !lenient) return { state: "not_made", reason: "wrong_notes", problems: wrong.map((entry) => ({ where: entry.where, problem: entry.problem })) };
+    const { compiled, receipt } = await this.#compileTaste({ descriptors, bpm: Math.round(built.summary.tempo), title }, { moment, request, transient });
+    const prompt = describeScore(built.summary);
+    const endedStream = await this.#endStream("replaced");
+    const named = await this.#titleInSettingLanguage(compiled, nameRecord, signal);
+    const made = await this.localGenerator.compose({ score: built.score, sheet: structuredClone(sheet), summary: built.summary, prompt, title: named, receipt },
+      { signal, onProgress });
+    await this.quietOtherPlayers("apple_music", { signal });
+    const file = await this.localGenerator.trackFile(made.id);
+    // A reply stopped while the track was written keeps the track but plays nothing.
+    if (signal?.aborted) throw Object.assign(new Error("The track was made but not played, because the reply was stopped."), { code: "generation_stopped" });
+    if (endedStream) this.localGenerator.discard?.();
+    this.musicPreviewPlayer.playGenerated({ id: made.id, title: made.title, seconds: made.duration_seconds, file });
+    this.#noteGeneratedPlay(made);
+    return { state: "playing", written_as_score: true, track: { id: made.id, title: made.title, seconds: made.duration_seconds },
+      prompt, score: built.summary, score_notes: built.notes, shaped_by: compiled.descriptors, sources: tasteSources(compiled.descriptors),
+      left_out: compiled.dropped, bpm: Math.round(built.summary.tempo), elapsed_ms: made.elapsed_ms };
+  }
+
   // The taste compiled for a track or a stream, and what its receipts keep of why.
   async #compileForGeneration({ descriptors, bpm, bpmSource, title }, { moment, request, transient }) {
     if (!this.localGenerationReady()) throw Object.assign(new Error("Local generation is not ready. The listener can turn it on in Settings or with /generation."), { code: "generation_not_ready" });
+    return this.#compileTaste({ descriptors, bpm, bpmSource, title }, { moment, request, transient });
+  }
+
+  async #compileTaste({ descriptors, bpm, bpmSource, title }, { moment, request, transient }) {
     this.requireListenerAvoids();
     const context = await this.#tasteContext({ descriptors, moment, request });
     const compiled = compileTaste({ descriptors, bpm, bpm_source: bpmSource, title }, context);
@@ -4207,6 +4256,7 @@ export class MoondogApplication {
       musicPreviewReady: this.musicPreviewReady(),
       tasteChoicesReady: this.tasteChoicesReady(),
       localGenerationReady: this.localGenerationReady(),
+      scoreGenerationReady: this.scoreGenerationReady(),
       }).map(capability => capability.state === "enabled" && this.#playbackServiceExcludes(capability.id)
         ? { ...capability, state: "blocked", blocked_by: capability.id === "listening.now" ? "no_readable_player" : capability.id === "music_app.control" ? "no_music_app" : capability.id === "playback.service" ? "no_playback_service"
           : neteaseCapabilities.has(capability.id) ? "netease_not_ready" : capability.id.startsWith("music.generate.stream") ? "stream_not_ready"
@@ -4245,6 +4295,7 @@ export class MoondogApplication {
       musicPreviewReady: this.musicPreviewReady(),
       tasteChoicesReady: this.tasteChoicesReady(),
       localGenerationReady: this.localGenerationReady(),
+      scoreGenerationReady: this.scoreGenerationReady(),
     }).filter(descriptor => !this.#playbackServiceExcludes(descriptor.capability_id) &&
       (this.libraryReady() || !descriptor.capability_id.startsWith("collection.")));
   }

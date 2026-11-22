@@ -6,6 +6,7 @@ import { LOCALES, messageLocale, translator } from "../../i18n/index.mjs";
 import { PROFILE_SECTIONS, TRAJECTORIES } from "../../profile/profile-exploration.mjs";
 import { compactListenerProfile } from "../../profile/listener-profile-build.mjs";
 import { BPM_RANGE, DESCRIPTOR_FACETS, DESCRIPTOR_LIMITS, DESCRIPTOR_SOURCES } from "../../profile/taste-compiler.mjs";
+import { SCORE_DRUM_VOICES, SCORE_LIMITS, SCORE_ROLES, SCORE_SOUNDS, SCORE_STYLES } from "../../integrations/score/sheet.mjs";
 import { GENERATION_SECONDS } from "../../integrations/stable-audio/local-generator.mjs";
 import { avoidKey } from "../../core/listener-avoids.mjs";
 import { foldedWords, isCjkText, textNames, textNamesArtist } from "../../core/track-title.mjs";
@@ -188,7 +189,7 @@ function agentCapabilityAllowed(descriptor) {
     (descriptor.capability_id === "music.preview.play" && descriptor.effect === "play_preview") ||
     (descriptor.capability_id === "collection.play" && descriptor.effect === "play_library") ||
     (["collection.export", "collection.plan_save"].includes(descriptor.capability_id) && descriptor.effect === "write_external") ||
-    (["music.generate.local", "music.generate.replay", "music.generate.stream", "music.generate.stream.stop"].includes(descriptor.capability_id) &&
+    (["music.generate.local", "music.generate.score", "music.generate.replay", "music.generate.stream", "music.generate.stream.stop"].includes(descriptor.capability_id) &&
       descriptor.effect === "generate_local")
   );
 }
@@ -3208,7 +3209,14 @@ function projectGeneratedTrack(value) {
     term: cleanOutputText(entry?.term || "-", 64, "generated_left_out_term"),
     reason: cleanOutputText(entry?.reason, 32, "generated_left_out_reason"),
   }));
-  if (value.state === "not_made") return { state: "not_made", reason: cleanOutputText(value.reason, 64, "generated_reason"), left_out: leftOut };
+  // A score that could not be played, or whose notes the lint heard as wrong: what to fix, in plain sentences.
+  const problems = (Array.isArray(value.problems) ? value.problems : []).slice(0, 8).map((entry) => ({
+    where: cleanOutputText(entry?.where || "score", 64, "generated_problem_where"),
+    problem: cleanOutputText(entry?.problem, 320, "generated_problem"),
+  }));
+  if (value.state === "not_made") {
+    return { state: "not_made", reason: cleanOutputText(value.reason, 64, "generated_reason"), left_out: leftOut, ...(problems.length ? { problems } : {}) };
+  }
   const source = (entry) => ({
     kind: cleanOutputText(entry?.kind, 16, "generated_source_kind"),
     ...(entry?.claim_id ? { claim_id: cleanOutputText(entry.claim_id, 64, "generated_claim") } : {}),
@@ -3216,6 +3224,36 @@ function projectGeneratedTrack(value) {
     ...(entry?.artist ? { artist: cleanOutputText(entry.artist, 256, "generated_artist") } : {}),
     ...(entry?.part_of_day ? { part_of_day: cleanOutputText(entry.part_of_day, 32, "generated_part_of_day") } : {}),
   });
+  const shapedBy = (Array.isArray(value.shaped_by) ? value.shaped_by : []).slice(0, DESCRIPTOR_LIMITS.total).map((entry) => ({
+    term: cleanOutputText(entry?.term, 64, "generated_term"), facet: cleanOutputText(entry?.facet, 16, "generated_facet"), source: source(entry?.source),
+  }));
+  if (value.written_as_score === true) {
+    const score = isPlainObject(value.score) ? value.score : {};
+    return {
+      state: "playing",
+      written_as_score: true,
+      made_with: "Moondog's own score, played by its built-in synthesizer on this machine",
+      track: {
+        id: cleanOutputText(value.track?.id, 64, "generated_id"),
+        title: cleanOutputText(value.track?.title, 128, "generated_title"),
+        seconds: safeNonnegativeInteger(Math.round(value.track?.seconds ?? 0), "generated_seconds"),
+      },
+      score: {
+        key: cleanOutputText(score.key, 32, "generated_score_key"),
+        tempo: safeNonnegativeInteger(Math.round(score.tempo ?? 0), "generated_score_tempo"),
+        bars: safeNonnegativeInteger(score.bars ?? 0, "generated_score_bars"),
+        form: cleanOutputText(score.form || "-", 400, "generated_score_form"),
+        sounds: (Array.isArray(score.parts) ? score.parts : []).slice(0, SCORE_LIMITS.parts).map((part) => cleanOutputText(part?.sound, 24, "generated_score_sound")),
+      },
+      // What the lint still hears in it, for the next track; the listener is not told.
+      score_notes: (Array.isArray(value.score_notes) ? value.score_notes : []).slice(0, 6).map((entry) => ({
+        where: cleanOutputText(entry?.where || "score", 64, "generated_note_where"), problem: cleanOutputText(entry?.problem, 200, "generated_note"),
+      })),
+      shaped_by: shapedBy,
+      left_out: leftOut,
+      seconds_to_make: Math.round((value.elapsed_ms ?? 0) / 100) / 10,
+    };
+  }
   return {
     state: "playing",
     made_with: "Stable Audio 3 Medium, on this Mac",
@@ -3226,9 +3264,7 @@ function projectGeneratedTrack(value) {
       seed: safeNonnegativeInteger(value.track?.seed ?? 0, "generated_seed"),
     },
     prompt: cleanOutputText(value.prompt, 1_024, "generated_prompt"),
-    shaped_by: (Array.isArray(value.shaped_by) ? value.shaped_by : []).slice(0, DESCRIPTOR_LIMITS.total).map((entry) => ({
-      term: cleanOutputText(entry?.term, 64, "generated_term"), facet: cleanOutputText(entry?.facet, 16, "generated_facet"), source: source(entry?.source),
-    })),
+    shaped_by: shapedBy,
     left_out: leftOut,
     ...(Number.isInteger(value.bpm) ? { bpm: value.bpm } : {}),
     seconds_to_make: Math.round((value.elapsed_ms ?? 0) / 100) / 10,
@@ -3242,6 +3278,7 @@ function renderGeneratedTrack(value, t) {
     return [t("generate.made", { title: value.track.title, length: trackLength(value.track.seconds), seed: value.track.seed }),
       t("generate.stream", { minutes: value.minutes })].join("\n");
   }
+  if (value?.state === "playing" && value.track && value.written_as_score) return t("generate.written", { title: value.track.title, length: trackLength(value.track.seconds) });
   return value?.state === "playing" && value.track
     ? t("generate.made", { title: value.track.title, length: trackLength(value.track.seconds), seed: value.track.seed }) : null;
 }
@@ -5323,6 +5360,93 @@ function createToolFactories(
       },
     ],
     [
+      "music.generate.score",
+      (descriptor) => {
+        const literals = (values) => Type.Union(values.map((value) => Type.Literal(value)));
+        const descriptorSchema = Type.Object(
+          {
+            term: Type.String({ minLength: 1, maxLength: DESCRIPTOR_LIMITS.characters }),
+            facet: literals(DESCRIPTOR_FACETS),
+            source: literals(DESCRIPTOR_SOURCES),
+            from: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
+          },
+          { additionalProperties: false },
+        );
+        const grid = Type.Optional(Type.String({ minLength: 1, maxLength: 80 }));
+        const partSchema = Type.Object(
+          {
+            name: Type.String({ minLength: 1, maxLength: 24 }),
+            role: literals(SCORE_ROLES),
+            sound: literals([...new Set(Object.values(SCORE_SOUNDS).flat())]),
+            style: Type.Optional(literals([...SCORE_STYLES.chords, ...SCORE_STYLES.bass])),
+            beat: Type.Optional(Type.Object(Object.fromEntries(SCORE_DRUM_VOICES.map((voice) => [voice, grid])), { additionalProperties: false })),
+            level: Type.Optional(Type.Number({ minimum: 0.2, maximum: 1.2 })),
+          },
+          { additionalProperties: false },
+        );
+        const sectionSchema = Type.Object(
+          {
+            name: Type.String({ minLength: 1, maxLength: 32 }),
+            chords: Type.String({ minLength: 1, maxLength: 240 }),
+            plays: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 24 }), { minItems: 1, maxItems: SCORE_LIMITS.parts })),
+            repeat: Type.Optional(Type.Integer({ minimum: 1, maximum: SCORE_LIMITS.repeat })),
+            lines: Type.Optional(Type.Array(
+              Type.Object({ part: Type.String({ minLength: 1, maxLength: 24 }), notes: Type.String({ minLength: 1, maxLength: SCORE_LIMITS.lineCharacters }) }, { additionalProperties: false }),
+              { maxItems: SCORE_LIMITS.parts },
+            )),
+          },
+          { additionalProperties: false },
+        );
+        return {
+          name: descriptor.tool_name,
+          label: descriptor.label,
+          description:
+            "Write one instrumental track as a score and play it at once in Moondog's player, whatever the music service. Use it only when the listener asks Moondog to make, compose or generate music; never to play existing songs. No music model runs here, so you are the composer: Moondog's own synthesizer plays exactly what you write. It needs no web research, search, candidate set or playlist plan: read the profile if it helps, then call this tool once. " +
+            `sheet is a lead sheet. tempo is beats a minute (${SCORE_LIMITS.tempo.min} to ${SCORE_LIMITS.tempo.max}). key is a tonic and a scale, such as Db major, A minor or D dorian. beats_per_bar is 4, or 3 for a waltz. ` +
+            `parts are the instruments, 1 to ${SCORE_LIMITS.parts}, each with a name, a role and a sound. role chords plays each bar's chord (sound ${SCORE_SOUNDS.chords.join(", ")}; style ${SCORE_STYLES.chords.join(", ")}). role bass plays the chord's root (sound ${SCORE_SOUNDS.bass.join(", ")}; style long for one note a bar, push for the root and a pickup, pulse for every beat, root-fifth). role drums plays its beat (sound, the kit: ${SCORE_SOUNDS.drums.join(", ")}): beat gives a grid of sixteenth steps for each drum (${SCORE_DRUM_VOICES.join(", ")}), 16 steps for a bar of 4 beats or 12 for 3, where x is a hit, X an accent, o a soft hit and . a rest, such as kick x.........x....., rim ....x.......x..., hat x.o.x.o.x.o.x.o.; a grid of 1 to ${SCORE_LIMITS.drumBars} bars loops. role line plays the notes you write (sound ${SCORE_SOUNDS.line.join(", ")}). level is a part's loudness, 1 when left out. ` +
+            `sections play in order, 1 to ${SCORE_LIMITS.sections}. chords has one chord symbol for each bar, 1 to ${SCORE_LIMITS.sectionBars} bars, separated by spaces, such as Dbmaj7 Bbm7 Gbmaj7 Ab7sus4; repeat a symbol to hold a chord for more bars. plays names the parts that sound in the section, all of them when left out. repeat plays the section again, up to ${SCORE_LIMITS.repeat} times in all. lines gives each line part its notes for the section as pitch:beats, one after another, with - for a rest: Ab4:1 F5:1.5 -:0.5 Eb5:1 is three notes and a rest over four beats. A line may be shorter than its section and never longer; count its beats. ` +
+            `The whole track runs ${SCORE_LIMITS.seconds.min} to ${SCORE_LIMITS.seconds.max} seconds, which is bars times beats_per_bar times 60 divided by tempo. Aim for 60 to 120 seconds unless they ask for another length. ` +
+            "Write real music, not a loop: give it a form with an opening, a change and an ending, such as intro, A, B, A, ending; thin the parts out in the quiet sections; let the last section end on the home chord with a long note. Write a melody a person could hum: mostly chord tones on the strong beats, steps between them, rests to breathe, and a short motif that comes back with a small change. Keep every written note in the key unless the bar's chord holds it. Choose the tempo, the key, the sounds and the beat for the listener: their reading, what they play lately, the hour, and their words in this message. " +
+            "descriptors is optional and shapes no sound: it records what of the listener's taste you wrote toward, each in a few plain words with its source, as reading (from = a claim_id of the saved reading), choice (from = an artist or song they marked Like), recent (from = an artist in recent_attention.stored_plays), moment (the listener_clock) or request (their words in this message). Never put an artist or song name in a term or the title. " +
+            "title is Moondog's own name for the record. " + RECORD_NAME_RULES.join(" ") + " Write it in product.record_name_language, even when the listener writes in another language or mixes languages. product.made_tracks has the names Moondog gave before, and how those tracks landed: lean away from the sound of tracks the listener skipped. " +
+            "If state is not_made, problems says exactly what to fix: change those places, keep the rest, and call the tool once more. Writing a track takes a few seconds; write at most one per message. Call the record by the result's track.title, never by the title you proposed. Once it plays, say in one or two sentences what you wrote and why it suits them, in everyday words; you chose the key, the tempo and the instruments, so you may name them. Do not recite the sheet or the score_notes; the host writes its own line under the reply. If they ask how it was made, say plainly that Moondog wrote the notes and its own synthesizer played them, so it sounds simpler than a recording.",
+          parameters: Type.Object(
+            {
+              sheet: Type.Object(
+                {
+                  tempo: Type.Integer({ minimum: SCORE_LIMITS.tempo.min, maximum: SCORE_LIMITS.tempo.max }),
+                  key: Type.String({ minLength: 3, maxLength: 32 }),
+                  beats_per_bar: Type.Optional(Type.Integer({ minimum: 3, maximum: 4 })),
+                  parts: Type.Array(partSchema, { minItems: 1, maxItems: SCORE_LIMITS.parts }),
+                  sections: Type.Array(sectionSchema, { minItems: 1, maxItems: SCORE_LIMITS.sections }),
+                },
+                { additionalProperties: false },
+              ),
+              descriptors: Type.Optional(Type.Array(descriptorSchema, { maxItems: DESCRIPTOR_LIMITS.total })),
+              title: Type.Optional(Type.String({ minLength: 1, maxLength: 60 })),
+            },
+            { additionalProperties: false },
+          ),
+          executionMode: "sequential",
+          execute: executeDomain(
+            async (_toolCallId, parameters, signal, onUpdate) => {
+              // The moment and the listener's words come from the host, never from the model.
+              const context = generationContext?.() ?? {};
+              return application.writeTrack({ sheet: parameters.sheet, descriptors: parameters.descriptors ?? [], title: parameters.title }, {
+                ...context,
+                // A first score with wrong notes goes back to be fixed; the second plays as written.
+                lenient: (context.attempt ?? 1) >= 2,
+                signal,
+                onProgress: ({ stage }) => onUpdate?.({ content: [{ type: "text", text: stage }], details: { stage } }),
+              });
+            },
+            projectGeneratedTrack,
+            onGeneratedTrack,
+          ),
+        };
+      },
+    ],
+    [
       "music.generate.stream",
       (descriptor) => {
         const literals = (values) => Type.Union(values.map((value) => Type.Literal(value)));
@@ -6870,10 +6994,13 @@ function toolForModel(tool) {
 const SERVICE_NAMES = { apple_music: "Apple Music", netease: "NetEase Music (网易云音乐)" };
 
 // Making a track plays in Moondog's own player under every music service.
+// Where Stable Audio 3 is not set up or cannot run, Moondog writes its tracks as scores instead.
+const SCORE_LINE = "- moondog_write_track writes an instrumental track as a score, which Moondog's own synthesizer plays in its player, whatever the music service. You compose it: the chords, the beat and the melody. Use it only when they ask Moondog to make, compose or generate music, not to play songs that exist. moondog_play_made_track plays again one Moondog already made (product.made_tracks).";
 const GENERATION_LINE = "- moondog_make_track makes an instrumental track on this Mac from the listener's taste and plays it in Moondog's own player, whatever the music service. Use it only when they ask Moondog to make, compose or generate music, not to play songs that exist. moondog_play_made_track plays again one Moondog already made (product.made_tracks). When the stream tools are offered, moondog_start_stream keeps making tracks one after another for background listening, and moondog_stop_stream ends it.";
 
-function sessionAvailability({ spotifyReady, spotifyPlaybackReady = spotifyReady, previewReady, playbackService = "apple_music", neteaseReady = false, localGenerationReady = false }) {
-  if (spotifyPlaybackReady) return localGenerationReady ? `\n\nSession availability:\n${GENERATION_LINE}` : "";
+function sessionAvailability({ spotifyReady, spotifyPlaybackReady = spotifyReady, previewReady, playbackService = "apple_music", neteaseReady = false, localGenerationReady = false, scoreGenerationReady = false }) {
+  const makingLine = localGenerationReady ? GENERATION_LINE : scoreGenerationReady ? SCORE_LINE : null;
+  if (spotifyPlaybackReady) return makingLine ? `\n\nSession availability:\n${makingLine}` : "";
   const lines = [
     "Session availability:",
     spotifyReady
@@ -6903,10 +7030,12 @@ function sessionAvailability({ spotifyReady, spotifyPlaybackReady = spotifyReady
     );
   } else if (localGenerationReady) {
     lines.push("- No music service can play or queue songs in this session. Say so once, briefly, when the listener asks for songs; moondog_make_track can still make them a track of Moondog's own.");
+  } else if (scoreGenerationReady) {
+    lines.push("- No music service can play or queue songs in this session. Say so once, briefly, when the listener asks for songs; moondog_write_track can still write them a track of Moondog's own.");
   } else {
     lines.push("- You cannot play or queue music in this session. Say so once, briefly, then help with what you can: the song, its story, and what to try next.");
   }
-  if (localGenerationReady) lines.push(GENERATION_LINE);
+  if (makingLine) lines.push(makingLine);
   if (previewReady || neteaseReady) {
     lines.push(
       "- Playback verification belongs to the selected music service. Its play tool resolves and checks recordings. Use the returned songs and outcome to answer directly; do not run another catalog search or playlist planner just to recheck a successful playback result. A Spotify player or queue read cannot verify playback on another service.",
@@ -6942,6 +7071,7 @@ function sessionSection(application) {
     playbackService: application.playbackService ?? "apple_music",
     neteaseReady: application.neteaseReady?.() ?? false,
     localGenerationReady: application.localGenerationReady?.() ?? false,
+    scoreGenerationReady: application.scoreGenerationReady?.() ?? false,
   }).trim() || null;
 }
 
@@ -6955,6 +7085,7 @@ function playbackSurfaceKey(application) {
     application.neteaseReady?.() ?? false,
     application.listeningReadable?.() ?? false,
     application.localGenerationReady?.() ?? false,
+    application.scoreGenerationReady?.() ?? false,
   ]);
 }
 
@@ -7106,7 +7237,7 @@ Output rules:
 - For a playlist with a stated size, return that many tracks. When the candidates cannot fill it with good fits, say so and ask before planning fewer. For a queue or an open pick, see Fewer, better.
 - For a library or history plan, explain the order and give a concrete reason for every selected track. The host shows an external plan as the songs plus one source line.
 - State uncertainty or ask to broaden the search when results are sparse.
-- Spotify playback controls, library saves, and private playlist writes may be used through the registered tools. When the listener has turned it on, moondog_make_track makes music on this Mac, which nothing leaves. Publishing, messaging, deletion, paid or online generation, and all other external effects remain disabled.
+- Spotify playback controls, library saves, and private playlist writes may be used through the registered tools. When the listener has turned it on, moondog_make_track makes music on this Mac, which nothing leaves. Where moondog_write_track is offered instead, Moondog writes a track as a score and plays it on this machine, which nothing leaves either. Publishing, messaging, deletion, paid or online generation, and all other external effects remain disabled.
 
 Curation craft:
 - Start from an anchor the listener already knows (a thread in the saved reading, an artist in recent attention, what is playing now) and move outward one step at a time: the same scene, era, producer, label, players or lineage. Name the anchor once.
@@ -7853,6 +7984,7 @@ export class PiAgentRuntime {
         state.generationAttempts += 1;
         const now = this.clock?.();
         return {
+          attempt: state.generationAttempts,
           moment: now instanceof Date && Number.isFinite(now.getTime()) ? listenerClock(now) : null,
           request: state.promptText,
           // A conversation that read Spotify keeps the listener's words out of the receipt, as out of memory.

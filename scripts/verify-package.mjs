@@ -51,7 +51,9 @@ const maximumUnpackedBytes = 5_210_000;
 // The host's picks for Up next add one entry (2026-11-13).
 // Moondog's own model and the terminal's invite command add two entries and about 12 KB (2026-11-14).
 // Moondog's own web search adds one entry and about 4 KB (2026-11-21).
-const maximumEntries = 178;
+// Writing a track as a score adds five entries and about 1.2 MB, nearly all of it the bundled DAWN SDK
+// renderer (src/integrations/score/vendor) with its MIT license copy (2026-11-21).
+const maximumEntries = 183;
 const packageOnlyPrivateSentinelPattern = new RegExp(
   ["PRIVATE", "(?:IP|PLATFORM)", "SENTINEL"].join("_"),
   "u",
@@ -60,6 +62,7 @@ const requiredPackagePaths = new Set([
   "LICENSE",
   "NOTICE",
   "licenses/stability-ai-community-license.md",
+  "licenses/dawn-sdk-mit.md",
   "README.md",
   "assets/brand/moondog-logo.svg",
   "contracts/v1/definitions.schema.json",
@@ -107,6 +110,7 @@ const exactAllowedPackagePaths = new Set([
   "LICENSE.txt",
   "NOTICE",
   "licenses/stability-ai-community-license.md",
+  "licenses/dawn-sdk-mit.md",
   "package.json",
   "assets/brand/moondog-logo.svg",
   "scripts/contract-lib.mjs",

@@ -82,6 +82,8 @@ const exactAllowedPaths = new Set([
   "README.md",
   // The Stability AI Community License, whose attribution terms the NOTICE file follows.
   "licenses/stability-ai-community-license.md",
+  // The MIT license of the DAWN SDK, whose renderer is bundled in src/integrations/score/vendor.
+  "licenses/dawn-sdk-mit.md",
   "package-lock.json",
   "package.json",
   // The showcase was removed, but its page stays in the public history the release check scans.
@@ -158,6 +160,7 @@ export const requiredReleasePaths = new Set([
   "NOTICE",
   "README.md",
   "licenses/stability-ai-community-license.md",
+  "licenses/dawn-sdk-mit.md",
   "assets/brand/README.md",
   "assets/brand/moondog-app-icon.png",
   "assets/brand/moondog-logo.svg",

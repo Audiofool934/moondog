@@ -231,6 +231,8 @@ export function createLocalGenerator({
   now = () => new Date(),
   // Whether the listener's library holds a made track: a stream never drops the audio of one they kept.
   keeps = () => false,
+  // Plays a score into a WAV (src/integrations/score), loaded only when a track is written as one.
+  renderScore = async (score, file, options) => (await import("../score/render-score.mjs")).renderScore(score, file, options),
 } = {}) {
   let current = { state: "unknown", enabled: false, install: "unknown", path: null, source: null, model: DEFAULT_STABLE_AUDIO_MODEL, managed: false };
   let running = null;
@@ -370,6 +372,8 @@ export function createLocalGenerator({
       made_at: receipt.created_at,
       seconds: receipt.audio?.duration_seconds ?? receipt.generator?.seconds ?? null,
       sound: (Array.isArray(receipt.shaped_by) ? receipt.shaped_by : []).map((entry) => entry?.term).filter((term) => typeof term === "string").slice(0, 8),
+      // A track written as a score: its key, tempo and the sounds that play it.
+      ...(receipt.generator?.adapter === "dawn-score" ? { written_as_score: receipt.generator.score ?? {} } : {}),
       ...(receipt.stream ? { stream: true } : {}),
       // A stream keeps only its newest tracks' audio; the agent must not offer the rest again.
       ...(audioKept ? {} : { audio_kept: false }),
@@ -563,6 +567,62 @@ export function createLocalGenerator({
         await rename(temporary, path.join(folder, id));
         remember(document);
         return { id, title, seconds, seed, prompt, elapsed_ms: elapsed, duration_seconds: audio.duration_seconds, ...(measured ? { measured } : {}) };
+      } catch (error) {
+        await rm(temporary, { recursive: true, force: true }).catch(() => {});
+        throw error;
+      } finally {
+        running = null;
+      }
+    },
+    /**
+     * Keeps a track written as a score (src/integrations/score): score is what the renderer plays,
+     * sheet what the agent wrote, summary its key, tempo and sounds. The track gets the same folder,
+     * receipt and outcomes as one Stable Audio 3 made, so replay, the library and the cover treat it
+     * alike. It needs no install, so it does not ask whether Stable Audio 3 is on or ready.
+     * Returns { id, title, seconds, prompt, elapsed_ms, duration_seconds }.
+     */
+    async compose({ score, sheet, summary = {}, prompt, title, receipt = {} }, { signal, onProgress } = {}) {
+      if (running) throw generationError("generation_busy", "Moondog is already making a track. Wait for it to finish.");
+      if (!score || typeof score !== "object") throw generationError("generation_prompt_empty", "Nothing was made: there is no score.");
+      const id = randomUUID();
+      running = { id };
+      const folder = tracksDirectory();
+      const temporary = path.join(folder, `.${id}.tmp-${process.pid}-${randomBytes(6).toString("hex")}`);
+      const started = Date.now();
+      try {
+        if (signal?.aborted) throw stopped();
+        await mkdir(folder, { recursive: true, mode: 0o700 });
+        await chmod(folder, 0o700);
+        await mkdir(temporary, { mode: 0o700 });
+        const wav = path.join(temporary, "track.wav");
+        onProgress?.({ stage: "composing" });
+        const rendered = await renderScore(score, wav, { signal });
+        const audio = await wavInfo(wav).catch(() => null);
+        if (!audio || audio.duration_seconds <= 0) throw generationError("generation_failed", "The score was rendered but wrote no playable track.");
+        await chmod(wav, 0o600);
+        onProgress?.({ stage: "writing" });
+        const loudness = await readLoudness(wav).catch(() => null);
+        const elapsed = Date.now() - started;
+        const document = {
+          receipt_version: "moondog-generated-track/1",
+          generated_track_id: id,
+          moondog_id: `moondog:generated:${id}`,
+          created_at: now().toISOString(),
+          title,
+          ...receipt,
+          generator: {
+            adapter: "dawn-score", adapter_version: 1, renderer: "DAWN SDK offline renderer",
+            // The sheet is the track: Moondog can render it again or change a bar of it later.
+            prompt, score: summary, sheet, seconds: Math.round(audio.duration_seconds), elapsed_ms: elapsed,
+            ...(rendered?.clipped ? { clipped_samples: rendered.clipped } : {}),
+            license: "Written by Moondog and rendered with the DAWN SDK (MIT License); outputs belong to the listener",
+          },
+          audio: { file: "track.wav", ...audio, ...(loudness ? { loudness } : {}) },
+        };
+        await writeFile(path.join(temporary, "receipt.json"), `${JSON.stringify(document, null, 2)}\n`, { encoding: "utf8", mode: 0o600, flag: "wx" });
+        await rename(temporary, path.join(folder, id));
+        remember(document);
+        return { id, title, seconds: document.generator.seconds, prompt, elapsed_ms: elapsed, duration_seconds: audio.duration_seconds };
       } catch (error) {
         await rm(temporary, { recursive: true, force: true }).catch(() => {});
         throw error;

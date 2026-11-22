@@ -132,6 +132,7 @@ export default {
   "choice.avoid": ({ title, artist }) => { const name = title ? `"${title}" de ${artist}` : artist; return `\n\nSalvo: vou deixar ${name} fora do que eu toco e sugiro. É só me dizer quando quiser mudar.`; },
   "choice.retract": ({ title, artist }) => { const name = title ? `"${title}" de ${artist}` : artist; return `\n\nDesfeito: sua escolha anterior sobre ${name}.`; },
   "generate.made": ({ title, length, seed }) => `Feito neste Mac com o Stable Audio 3: "${title}" (${length}, semente ${seed}).`,
+  "generate.written": ({ title, length }) => `Escrita pelo Moondog como partitura: "${title}" (${length}).`,
   "generate.stream": ({ minutes }) => `O fluxo continua neste Mac, com uma faixa nova a cada vez, por até ${minutes} minutos. Pare quando quiser.`,
   "onAir.request": "Entre no ar: crie música nova para agora e mantenha tocando",
   "turn.cancelled": "Cancelei o resto.",

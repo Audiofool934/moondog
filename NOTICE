@@ -10,3 +10,7 @@ A copy of the Stability AI Community License is in licenses/stability-ai-communi
 
 Stable Audio 3 uses the T5Gemma text encoder.
 Gemma is provided under and subject to the Gemma Terms of Use found at ai.google.dev/gemma/terms
+
+Where Stable Audio 3 is not set up, Moondog writes its music as a score and plays it with the DAWN SDK's renderer.
+Moondog includes parts of the DAWN SDK, Copyright (c) 2026 XTE Industries LLC, under the MIT License.
+A copy of that license is in licenses/dawn-sdk-mit.md.
