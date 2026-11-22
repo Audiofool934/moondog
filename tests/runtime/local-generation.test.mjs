@@ -85,7 +85,7 @@ test("music making stays off until the listener turns it on, and says what the i
   assert.equal(generator.status().install, "ready");
   assert.equal(generator.ready(), false);
   assert.equal((await generator.save({ enabled: true })).state, "ready");
-  assert.equal((await readGenerationSettings(ready.env)).source, "environment", "MOONDOG_SA3_DIR points at the install but never turns it on");
+  assert.equal((await readGenerationSettings(ready.env, { platform: "darwin", arch: "arm64" })).source, "environment", "MOONDOG_SA3_DIR points at the install but never turns it on");
 
   const noWeights = await fakeInstall(t, { weights: false });
   const missingModel = noWeights.generator();
@@ -156,7 +156,7 @@ test("the chosen model's weights are checked, and a track is made with its flags
   const again = (await both.args()).args;
   assert.deepEqual([again[again.indexOf("--dit") + 1], again[again.indexOf("--decoder") + 1]], ["medium", "same-l"]);
   // MOONDOG_SA3_DIR still wins over Moondog's own install.
-  assert.equal((await readGenerationSettings(both.env)).source, "environment");
+  assert.equal((await readGenerationSettings(both.env, { platform: "darwin", arch: "arm64" })).source, "environment");
   await assert.rejects(switching.save({ model: "small" }), { code: "generation_model_invalid" });
 });
 

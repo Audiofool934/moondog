@@ -484,7 +484,7 @@ export function createStableAudioSetup({
     if (install.state !== "ready") throw setupError("setup_verification_failed", "Stable Audio 3 was set up but is not ready to run. Try again.");
     // The download was the listener's ask, so this model is turned on, unless a folder they chose
     // themselves runs now (they can still pick this one with Use) or MOONDOG_SA3_DIR decides.
-    const settings = await readGenerationSettings(environment);
+    const settings = await readGenerationSettings(environment, { platform, arch });
     if (settings.source === "environment") return;
     // A choice the listener made while this ran, here or in the other window or terminal, stands.
     if (JSON.stringify(await readSavedSettings(environment)) !== job.settingsAtStart) return;
@@ -492,7 +492,7 @@ export function createStableAudioSetup({
     // A folder they chose, or one turned on that runs (~/Developer included), or a model of Moondog's
     // own already in use stays in use.
     if ((settings.source === "settings" || settings.enabled) && (await runsNow())) return;
-    await writeGenerationSettings({ source: "managed", model, enabled: true }, environment);
+    await writeGenerationSettings({ source: "managed", model, enabled: true }, environment, { platform, arch });
   };
 
   const run = async (model, { baseOnly }) => {
@@ -613,14 +613,14 @@ export function createStableAudioSetup({
       // model that folder has, so a working own install is never checked for weights it never had.
       const settings = await readGenerationSettings({ ...environment, MOONDOG_SA3_DIR: "" }, { platform, arch });
       if (settings.source === "managed" && settings.model === model) {
-        if (status().models[other].state === "ready") await writeGenerationSettings({ model: other }, environment);
+        if (status().models[other].state === "ready") await writeGenerationSettings({ model: other }, environment, { platform, arch });
         else {
           const candidates = [DEFAULT_STABLE_AUDIO_MODEL, ...Object.keys(buildModels).filter((name) => name !== DEFAULT_STABLE_AUDIO_MODEL)];
           let found = DEFAULT_STABLE_AUDIO_MODEL;
           for (const name of candidates) {
             if ((await checkStableAudioInstall(settings.folder, { model: name, platform, arch, environment })).state === "ready") { found = name; break; }
           }
-          await writeGenerationSettings({ source: "settings", model: found }, environment);
+          await writeGenerationSettings({ source: "settings", model: found }, environment, { platform, arch });
         }
       }
       push();
