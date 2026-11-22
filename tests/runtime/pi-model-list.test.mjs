@@ -69,7 +69,8 @@ test("an endpoint keeps its key private, never sends it to a new address, and jo
   assert.deepEqual(list.models.map(entry => `${entry.provider}/${entry.model}`),
     ["anthropic/claude-opus-5-5", "endpoint-gateway/deepseek-flash", "endpoint-gateway/house-model"]);
   const providers = await settings.providers();
-  const row = providers.at(-1);
+  // An endpoint follows the providers on show; only the ones folded under More providers come after it.
+  const row = providers.filter(provider => !provider.more).at(-1);
   assert.equal(row.id, "endpoint-gateway");
   assert.equal(row.signIn, "endpoint");
   assert.equal(JSON.stringify(providers).includes("SENTINEL"), false);

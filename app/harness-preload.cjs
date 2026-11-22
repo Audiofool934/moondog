@@ -196,11 +196,22 @@ const PROVIDERS = [
   { id: "deepseek", name: "DeepSeek", signedIn: true, signIn: "api_key", source: "saved" },
   { id: "endpoint-home", name: "Home server", signedIn: true, signIn: "endpoint", source: "saved",
     endpoint: { format: "openai", baseUrl: "http://localhost:11434/v1", keySaved: false, models: ["qwen3:32b", "gemma-4-31b-it"] } },
+  // The other providers that take a key, without one yet: marked more, they wait under one folded row.
+  { id: "moonshotai", name: "Moonshot AI (Kimi)", signedIn: false, signIn: "api_key", more: true },
+  { id: "moonshotai-cn", name: "Moonshot AI China (Kimi)", signedIn: false, signIn: "api_key", more: true },
+  { id: "openrouter", name: "OpenRouter", signedIn: false, signIn: "api_key", more: true },
+  { id: "zai", name: "Z.AI (GLM API)", signedIn: false, signIn: "api_key", more: true },
 ];
+// The providers every install lists up front, as FEATURED in src/runtime/pi/model-settings.mjs.
+const FEATURED = ["openai", "anthropic", "google", "xai"];
 const PROVIDER_MODELS = {
   anthropic: [["claude-opus-5-5", "Claude Opus 5.5"], ["claude-sonnet-5-5", "Claude Sonnet 5.5"], ["claude-haiku-5-5", "Claude Haiku 5.5"]],
   deepseek: [["deepseek-flash", "DeepSeek V4.1 Flash"], ["deepseek-v4-pro", "DeepSeek V4 Pro"]],
   "endpoint-home": [["qwen3:32b", "qwen3:32b"], ["gemma-4-31b-it", "Gemma 4 31B IT"]],
+  moonshotai: [["kimi-k3", "Kimi K3"], ["kimi-k3.1-pro", "Kimi K3.1 Pro"]],
+  "moonshotai-cn": [["kimi-k3", "Kimi K3"], ["kimi-k3.1-pro", "Kimi K3.1 Pro"]],
+  openrouter: [["anthropic/claude-sonnet-5.5", "Anthropic: Claude Sonnet 5.5"], ["deepseek/deepseek-flash", "DeepSeek: DeepSeek V4.1 Flash"]],
+  zai: [["glm-5.3", "GLM-5.3"], ["glm-5.3-flash", "GLM-5.3-Flash"]],
 };
 // A first-run state signs out of them all, and then signs in to them for real.
 let providers = PROVIDERS;
@@ -540,7 +551,10 @@ const STATES = {
   // in; the model alone when the terminal already saved a service; NetEase among the services once it is
   // ready; the model's sign-in by key and in the browser; and the close button that skips the rest.
   "first-run"(run = { needed: true, service: null, model: false }, extra = {}) {
-    providers = PROVIDERS.map((provider) => ({ ...provider, signedIn: false, source: undefined }));
+    // Signed out, a provider that is not one of the featured ones waits under More providers.
+    providers = PROVIDERS.map((provider) => ({ ...provider, signedIn: false, source: undefined,
+      ...(provider.signIn === "api_key" && !FEATURED.includes(provider.id) ? { more: true } : {}) }));
+    providers = [...providers.filter((provider) => !provider.more), ...providers.filter((provider) => provider.more)];
     // As the core does: unknown in "ready", then read.
     send({ type: "ready", ...OFFLINE, sessions: [], folders: [], current: null, running: [], transcript: [], ...extra });
     silent();
@@ -609,12 +623,28 @@ const STATES = {
   "first-run-skip-tip"() { STATES["first-run"](); return { hover: ".sheet-close" }; },
   // A fresh install, as the getting-started guide's pictures show it (site/guide-pictures.mjs): the model
   // step with Moondog's own model and its invite code first, then the providers every install lists
-  // (FEATURED in src/runtime/pi/model-settings.mjs), and Spotify's row in Settings › Playback before the
-  // listener has made a Spotify app.
+  // (FEATURED in src/runtime/pi/model-settings.mjs) and the rest folded under More providers, and
+  // Spotify's row in Settings › Playback before the listener has made a Spotify app.
   "first-run-fresh"() {
     STATES["first-run-model-only"]();
     providers = [{ id: "moondog", name: "Moondog", signedIn: false, signIn: "invite" },
-      ...providers.filter((provider) => ["openai", "anthropic", "google", "xai"].includes(provider.id))];
+      ...providers.filter((provider) => FEATURED.includes(provider.id) || provider.more)];
+  },
+  // More providers unfolded on that fresh install: each of the rest with its Add key. Then a key pasted
+  // for DeepSeek, which moves up among the providers and opens to its models.
+  "first-run-more"() {
+    STATES["first-run-fresh"]();
+    setTimeout(() => document.querySelector('[data-key="providers:more"]')?.click(), 450);
+  },
+  "first-run-more-key"() {
+    STATES["first-run-more"]();
+    setTimeout(() => document.querySelector('[data-key="sign-in:deepseek:api_key"]')?.click(), 550);
+    setTimeout(() => {
+      const field = document.querySelector('[data-key^="auth-field:"]');
+      field.value = "sk-harness";
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+      field.closest("form").requestSubmit();
+    }, 680);
   },
   "settings-spotify-setup"() {
     ready({ spotify: "unavailable", spotifyAccount: { state: "unavailable", clientId: false }, netease: "missing", generation: NONE() });
@@ -709,6 +739,13 @@ const STATES = {
   "settings-model-openai"() {
     STATES.reply(); slash("model");
     setTimeout(() => document.querySelector('[data-key="provider:openai"]')?.click(), 200);
+  },
+  // More providers unfolded: the providers without a key yet, each with its Add key. The providers
+  // are the last group, so the sheet scrolls down to them.
+  "settings-model-more"() {
+    STATES.reply(); slash("model");
+    setTimeout(() => document.querySelector('[data-key="providers:more"]')?.click(), 200);
+    setTimeout(() => document.querySelector('[data-key="endpoint:add"]')?.scrollIntoView({ block: "end" }), 300);
   },
   // Images pasted into the composer, as a listener would, waiting above it for the next message.
   "composer-images"() { STATES.reply(); setTimeout(() => void pasteImages(["LP", "Live"]), 200); },
@@ -984,7 +1021,12 @@ core.onmessage = ({ data }) => {
   if (data.type === "sign-in-cancel") send({ type: "sign-in", provider: null, state: "cancelled" });
   if (data.type === "auth-answer") {
     const provider = providers.find((entry) => entry.id === signingIn);
-    providers = providers.map((entry) => (entry === provider ? { ...entry, signedIn: true, source: "saved", method: "api_key" } : entry));
+    const { more, ...signed } = { ...provider, signedIn: true, source: "saved", method: "api_key" };
+    // As the core lists them: a provider that waited under More providers moves up, before the endpoints.
+    const rest = providers.filter((entry) => entry !== provider);
+    const before = more ? rest.findIndex((entry) => entry.signIn === "endpoint" || entry.more) : providers.indexOf(provider);
+    rest.splice(before < 0 ? rest.length : before, 0, signed);
+    providers = rest;
     send({ type: "sign-in", provider: provider.id, state: "done" });
   }
   if (data.type === "first-run-done") send({ type: "status", ...status, firstRun: { ...status.firstRun, needed: false } });

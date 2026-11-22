@@ -55,8 +55,11 @@ const NOTICES = { model_unknown: ["model", "noticeModelUnknown", "model"], trans
 // The endpoint errors the listener can fix in the form; any other reads as a plain failure.
 const ENDPOINT_ERRORS = { endpoint_url_invalid: "endpointUrlInvalid", endpoint_models_unavailable: "endpointModelsUnavailable",
   endpoint_models_missing: "endpointModelsUnavailable", endpoint_name_invalid: "endpointNameInvalid" };
+// The row that unfolds the providers without a key yet. It opens as a provider's row does, one at a
+// time, and no provider's ID has a colon.
+const MORE_PROVIDERS = "providers:more";
 // Why an invite code for Moondog's own model was not taken.
-const INVITE_ERRORS = { invite_invalid: "inviteInvalid", invite_revoked: "inviteRevoked", invite_unreachable: "inviteUnreachable", beta_ended: "moondogBetaEnded" };
+const INVITE_ERRORS ={ invite_invalid: "inviteInvalid", invite_revoked: "inviteRevoked", invite_unreachable: "inviteUnreachable", beta_ended: "moondogBetaEnded" };
 // Window keys on the left, player keys on the right.
 const SHORTCUTS = [[shortcuts.new, "newConversation"], [shortcuts.settings, "settings"], [shortcuts.stop, "stopReply"], ["/", "commands"], [shortcuts.sidebar, "conversations"],
   [shortcuts.player, "player"], [shortcuts.play, "playPause"], [shortcuts.next, "nextSong"], [shortcuts.previous, "previousSong"], [shortcuts.onAir, "onAir"]];
@@ -253,9 +256,12 @@ export function createSettings({ state, send, t, appleMusic = null, onHide = nul
     }
     if (!step || event.metaKey || event.altKey || event.ctrlKey) return;
     const vertical = event.key === "ArrowDown" || event.key === "ArrowUp";
+    // The arrows move between the rows that can be chosen. A row with only words and a button of its
+    // own, such as a provider under More providers, is passed over; Tab reaches its button.
+    const chosen = () => [...scroller.querySelectorAll("button.choice-main:not(:disabled)")];
     // The first run has one place, so the arrows go from the sheet straight to its rows.
     if (vertical && target === card && asking) {
-      const rows = [...scroller.querySelectorAll(".choice-main:not(:disabled)")];
+      const rows = chosen();
       const next = step > 0 ? rows[0] : rows.at(-1);
       if (next) { event.preventDefault(); next.focus(); }
     } else if (vertical && (target === card || target.closest?.(".sheet-nav"))) {
@@ -264,7 +270,7 @@ export function createSettings({ state, send, t, appleMusic = null, onHide = nul
       go(next);
       tabs.get(next).tab.focus();
     } else if (vertical && target.classList?.contains("choice-main")) {
-      const rows = [...scroller.querySelectorAll(".choice-main:not(:disabled)")];
+      const rows = chosen();
       const next = rows[rows.indexOf(target) + step];
       if (next) { event.preventDefault(); next.focus(); }
     } else if (!vertical && target.parentElement?.getAttribute("role") === "radiogroup") {
@@ -513,7 +519,8 @@ export function createSettings({ state, send, t, appleMusic = null, onHide = nul
 
   // Model: the models the menu offers, the default among them and how hard it thinks, then where
   // models come from: OpenAI by a ChatGPT subscription or an API key, Anthropic, Google and xAI by key,
-  // and any other service as an endpoint by its address. A sign-in, or an endpoint being edited,
+  // the other providers that take a key under More providers until one has a key, and any other
+  // service as an endpoint by its address. A sign-in, or an endpoint being edited,
   // takes the whole place while it runs.
   const sameModel = (left, right) => Boolean(left && right) && left.provider === right.provider && left.model === right.model;
   const modelKey = (entry) => `${entry.provider}:${entry.model}`;
@@ -749,13 +756,15 @@ export function createSettings({ state, send, t, appleMusic = null, onHide = nul
     return track;
   }
   // Where models come from. OpenAI is one row with its two ways in; every provider opens to its
-  // models, each ticked when the menu offers it.
+  // models, each ticked when the menu offers it. The providers the core marks more, which take a key
+  // and have none yet, wait folded under one row, so the list stays short; a key moves one up.
   function providerList(chosen) {
     if (!data.providers) return waiting();
     if (data.providersError) return failure("noProviders");
     const usable = data.providers.filter((provider) => provider.signedIn === true || provider.signIn !== "environment_only");
+    const more = usable.filter((provider) => provider.more === true);
     const rows = [];
-    for (const provider of usable) {
+    for (const provider of usable.filter((entry) => !more.includes(entry))) {
       const expanded = data.expanded === provider.id;
       // OpenAI opens to its two ways in, a ChatGPT subscription or an API key, over its models.
       if (provider.chatgpt) {
@@ -778,6 +787,12 @@ export function createSettings({ state, send, t, appleMusic = null, onHide = nul
         trailing: access(provider), key: `provider:${provider.id}`, lead: icon("chevron", "icon disclose"),
         onChoose: () => { data.expanded = expanded ? null : provider.id; render(); } }));
       if (expanded) rows.push(modelList(provider, chosen));
+    }
+    if (more.length) {
+      const expanded = data.expanded === MORE_PROVIDERS;
+      rows.push(choice({ label: say("moreProviders"), expanded, key: MORE_PROVIDERS, lead: icon("chevron", "icon disclose"),
+        onChoose: () => { data.expanded = expanded ? null : MORE_PROVIDERS; render(); } }));
+      if (expanded) rows.push(choices(more.map((provider) => way({ label: provider.name, trailing: access(provider) })), "choices inner"));
     }
     rows.push(choice({ label: say("addEndpoint"), action: true, key: "endpoint:add", lead: icon("plus", "icon lead"), onChoose: () => editEndpoint(null) }));
     return choices(rows);

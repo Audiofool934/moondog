@@ -20,9 +20,11 @@ import { clampEffort, readPiRuntimeSelection, writePiRuntimeSelection } from "./
 // terminal does with /model and /auth. It returns status shapes only: never a
 // credential, a prompt answer or raw provider text.
 
-// The providers every listener is offered, in this order: OpenAI by a ChatGPT subscription or an API
-// key, then Anthropic, Google and xAI. Any other service is reached as an endpoint by address; Pi's
-// other providers show only once a key for one is saved or in the environment.
+// The providers every listener is offered up front, in this order: OpenAI by a ChatGPT subscription or
+// an API key, then Anthropic, Google and xAI. Pi's other providers join them once a key for one is
+// saved or in the environment. Until then, the ones that take a saved key (DeepSeek, Kimi, GLM,
+// OpenRouter) are marked more, and the window keeps them folded under one row. Any other service is
+// reached as an endpoint by address.
 const FEATURED = ["openai", "anthropic", "google", "xai"];
 // Whether a catalog model takes an input besides text, such as "image".
 const takes = (model, input) => Boolean(input) && Array.isArray(model?.input) && model.input.includes(input);
@@ -152,17 +154,21 @@ export function createModelSettings({
     current,
 
     // Settings' providers: Moondog's own model first, then the featured ones in their order, then any other provider that has a key or
-    // is in use, by name, then the listener's endpoints in the order they were added.
+    // is in use, by name, then the listener's endpoints in the order they were added. Last, marked more: the rest that take a
+    // saved key, by name, for the window's one folded row. A key saved for one moves it up among the others.
     async providers({ current: currentProvider } = {}) {
       currentProvider ??= (await current().catch(() => null))?.provider;
       const source = await catalog();
       const all = await rows(source, listed(source));
       const featured = FEATURED.map(id => all.find(provider => provider.id === id)).filter(Boolean);
       const own = all.filter(provider => provider.signIn === "invite");
-      const others = all.filter(provider => !FEATURED.includes(provider.id) && provider.signIn !== "endpoint" && provider.signIn !== "invite" &&
-        (provider.signedIn || provider.id === currentProvider)).sort((left, right) => left.name.localeCompare(right.name));
+      const rest = all.filter(provider => !FEATURED.includes(provider.id) && provider.signIn !== "endpoint" && provider.signIn !== "invite")
+        .sort((left, right) => left.name.localeCompare(right.name));
+      const shown = provider => provider.signedIn || provider.id === currentProvider;
+      const others = rest.filter(shown);
+      const more = rest.filter(provider => !shown(provider) && provider.signIn === "api_key").map(provider => ({ ...provider, more: true }));
       const endpoints = (source.endpoints ?? []).map(endpoint => all.find(provider => provider.id === endpoint.id)).filter(Boolean);
-      return [...own, ...featured, ...others, ...endpoints];
+      return [...own, ...featured, ...others, ...endpoints, ...more];
     },
 
     // The menu's models, each with its provider's name and whether it can answer now, and the default
