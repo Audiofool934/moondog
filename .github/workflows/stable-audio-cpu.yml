@@ -1,0 +1,95 @@
+name: Stable Audio CPU build
+
+# Off the Mac, Moondog makes music with Stability AI's LiteRT CPU build. This sets it up the way a
+# listener's click does, from the pinned official sources, and makes real tracks on each machine the
+# build runs on. It downloads about 3.5 GB from GitHub, PyPI and Hugging Face, so it runs only when
+# the Stable Audio integration changes, or by hand.
+on:
+  pull_request:
+    paths:
+      - src/integrations/stable-audio/**
+      - .github/workflows/stable-audio-cpu.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stable-audio-cpu-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  make:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    # bash everywhere, Git Bash on Windows, so a failed command stops its step.
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: Windows x64
+            slug: windows-x64
+          - os: ubuntu-24.04
+            name: Linux x64
+            slug: linux-x64
+          - os: ubuntu-24.04-arm
+            name: Linux ARM
+            slug: linux-arm64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+      - run: npm install --global npm@11.16.0
+      # The npm package lists macOS and Linux only; the Windows desktop carries the same core.
+      - run: npm ci --ignore-scripts --no-audit --no-fund ${{ runner.os == 'Windows' && '--force' || '' }}
+      - name: Describe the machine
+        run: node -e "const os = require('node:os'); console.log(process.platform, process.arch, os.cpus().length + ' CPUs', os.cpus()[0]?.model, Math.round(os.totalmem() / 2 ** 30) + ' GB')"
+      - name: Set up Small Music, as a listener's download does
+        run: node src/integrations/stable-audio/setup.mjs install small-music --agree
+        env:
+          MOONDOG_STATE_HOME: ${{ runner.temp }}/moondog-state
+          MOONDOG_CONFIG_HOME: ${{ runner.temp }}/moondog-config
+      # The first track also writes the CPU build's weight cache; the second shows the usual time.
+      - name: Make two two-minute tracks with Small Music
+        run: |
+          node src/integrations/stable-audio/setup.mjs make 120
+          node src/integrations/stable-audio/setup.mjs make 120
+        env:
+          MOONDOG_STATE_HOME: ${{ runner.temp }}/moondog-state
+          MOONDOG_CONFIG_HOME: ${{ runner.temp }}/moondog-config
+      - name: Set up Medium
+        run: node src/integrations/stable-audio/setup.mjs install medium
+        env:
+          MOONDOG_STATE_HOME: ${{ runner.temp }}/moondog-state
+          MOONDOG_CONFIG_HOME: ${{ runner.temp }}/moondog-config
+      - name: Make two two-minute tracks with Medium
+        run: |
+          node src/integrations/stable-audio/setup.mjs use medium
+          node src/integrations/stable-audio/setup.mjs make 120
+          node src/integrations/stable-audio/setup.mjs make 120
+        env:
+          MOONDOG_STATE_HOME: ${{ runner.temp }}/moondog-state
+          MOONDOG_CONFIG_HOME: ${{ runner.temp }}/moondog-config
+      - name: Remove both models
+        run: |
+          node src/integrations/stable-audio/setup.mjs remove small-music
+          node src/integrations/stable-audio/setup.mjs remove medium
+          node -e "const fs = require('node:fs'); const root = require('node:path').join(process.env.MOONDOG_STATE_HOME, 'stable-audio-3'); if (fs.existsSync(root)) { console.error('left behind: ' + root); process.exit(1); }"
+        env:
+          MOONDOG_STATE_HOME: ${{ runner.temp }}/moondog-state
+          MOONDOG_CONFIG_HOME: ${{ runner.temp }}/moondog-config
+      - name: Keep the tracks to listen to
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stable-audio-cpu-${{ matrix.slug }}
+          path: ${{ runner.temp }}/moondog-state/generated/
+          if-no-files-found: ignore
+          retention-days: 14

@@ -1,5 +1,6 @@
-// Makes music on this Mac with a local Stable Audio 3 install (Stability AI's optimized MLX
-// build). The listener turns it on once, in Settings or with /generation; until then nothing
+// Makes music on this computer with a local Stable Audio 3 install: Stability AI's optimized MLX
+// build on a Mac with Apple silicon, its LiteRT CPU build on Windows and Linux (sources.mjs). The
+// listener turns it on once, in Settings or with /generation; until then nothing
 // runs. Each track is a WAV and a receipt in Moondog's state directory, and nothing leaves the
 // machine: a run never downloads anything, and the receipt keeps no absolute path. Moondog's own
 // install (setup.mjs) downloads only when the listener asks, from the pinned official sources.
@@ -7,29 +8,38 @@ import { spawn } from "node:child_process";
 import { randomBytes, randomInt, randomUUID } from "node:crypto";
 import { unwatchFile, watchFile } from "node:fs";
 import { access, appendFile, chmod, constants, mkdir, open, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
+import { availableParallelism, homedir } from "node:os";
 import path from "node:path";
 
 import { resolveMoondogStateDirectory } from "../../core/state-directory.mjs";
 import { streamVariation } from "../../profile/taste-compiler.mjs";
 import { resolveMoondogAuthFile } from "../../runtime/pi/persistent-credential-store.mjs";
 import { readLoudness } from "./cover.mjs";
-import { DEFAULT_STABLE_AUDIO_MODEL, isStableAudioModel, SHARED_WEIGHTS, STABLE_AUDIO_MODELS } from "./sources.mjs";
+import { DEFAULT_STABLE_AUDIO_MODEL, isStableAudioModel, stableAudioMaxSeconds, stableAudioRuntime, stableAudioRuntimeModels } from "./sources.mjs";
 
-// The weights a model needs for text to music: the text encoder, the model and its decoder.
-export const stableAudioWeights = (model = DEFAULT_STABLE_AUDIO_MODEL) => [...SHARED_WEIGHTS, ...STABLE_AUDIO_MODELS[model].weights];
+// The weights a model needs for text to music on a runtime: the text encoder, the model and its decoder.
+export const stableAudioWeights = (model = DEFAULT_STABLE_AUDIO_MODEL, runtime = "mlx") => {
+  const { models, shared } = stableAudioRuntimeModels(runtime);
+  return [...shared, ...models[model].weights];
+};
 // Medium and Small Music were trained on up to 380 seconds; very short clips come out rough.
 export const GENERATION_SECONDS = Object.freeze({ min: 15, max: 380, default: 120 });
-// A cold start reads about 4.8 GB of weights before the first step; a 380-second track then takes about 35 seconds.
-const generationTimeoutMs = 10 * 60_000;
+// A cold start reads about 4.8 GB of weights before the first step; a 380-second track then takes about 35
+// seconds on Apple silicon. The CPU build is many times slower, so it has longer.
+const generationTimeoutMs = { mlx: 10 * 60_000, tflite: 40 * 60_000 };
 const stoppingGraceMs = 3_000;
 const trackIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 
 export const isGeneratedTrackId = (value) => typeof value === "string" && trackIdPattern.test(value);
 
-/** Where Stability's own install script puts the MLX build when it runs from ~/Developer. */
-export function defaultStableAudioRoot() {
-  return path.join(homedir(), "Developer", "stable-audio-3", "optimized", "mlx");
+/** Where Stability's own install script puts a runtime's build when it runs from ~/Developer. */
+export function defaultStableAudioRoot(runtime = "mlx") {
+  return path.join(homedir(), "Developer", "stable-audio-3", "optimized", runtime === "tflite" ? "tflite" : "mlx");
+}
+
+/** The Python of an install's environment: Windows keeps it in Scripts. */
+export function stableAudioPython(root, platform = process.platform) {
+  return platform === "win32" ? path.join(root, ".venv", "Scripts", "python.exe") : path.join(root, ".venv", "bin", "python");
 }
 
 /** The install Moondog downloads and manages itself; the MLX build is in its mlx folder. */
@@ -73,22 +83,24 @@ export async function readSavedSettings(environment) {
  */
 export async function readGenerationSettings(environment = process.env, { platform = process.platform, arch = process.arch } = {}) {
   const saved = await readSavedSettings(environment);
+  const runtime = stableAudioRuntime({ platform, arch, environment }) ?? "mlx";
   const fromEnvironment = literalFolder(environment.MOONDOG_SA3_DIR);
   const fromFile = literalFolder(saved.path);
   const managed = !fromEnvironment && saved.source === "managed";
-  const folder = fromFile ?? defaultStableAudioRoot();
+  const folder = fromFile ?? defaultStableAudioRoot(runtime);
   let model = isStableAudioModel(saved.model) ? saved.model : DEFAULT_STABLE_AUDIO_MODEL;
   // A folder Moondog doesn't manage (MOONDOG_SA3_DIR, a typed folder, ~/Developer) runs the saved model
   // only if it has it, otherwise the first model it can run; a model chosen for Moondog's own install
   // waits until that install is chosen again. A folder that runs nothing keeps the saved model.
   if (!managed) {
-    for (const name of [...new Set([model, DEFAULT_STABLE_AUDIO_MODEL, ...Object.keys(STABLE_AUDIO_MODELS)])]) {
-      if ((await checkStableAudioInstall(fromEnvironment ?? folder, { model: name, platform, arch })).state === "ready") { model = name; break; }
+    for (const name of [...new Set([model, DEFAULT_STABLE_AUDIO_MODEL, ...Object.keys(stableAudioRuntimeModels(runtime).models)])]) {
+      if ((await checkStableAudioInstall(fromEnvironment ?? folder, { model: name, platform, arch, environment })).state === "ready") { model = name; break; }
     }
   }
   return {
     enabled: saved.enabled === true,
-    path: fromEnvironment ?? (managed ? path.join(resolveStableAudioManagedRoot(environment), "mlx") : folder),
+    // Moondog's own install keeps each runtime's build in a folder of its own name.
+    path: fromEnvironment ?? (managed ? path.join(resolveStableAudioManagedRoot(environment), runtime) : folder),
     source: fromEnvironment ? "environment" : managed ? "managed" : fromFile ? "settings" : "default",
     model,
     folder,
@@ -123,11 +135,11 @@ export async function writeGenerationSettings({ enabled, path: folder, source, m
   let chosen = model ?? current.model;
   if (model === undefined && !managed && (typed || source === "settings")) {
     const folderRoot = savedFolder ?? current.folder;
-    const candidates = [current.model, DEFAULT_STABLE_AUDIO_MODEL, ...Object.keys(STABLE_AUDIO_MODELS)];
+    const candidates = [current.model, DEFAULT_STABLE_AUDIO_MODEL, ...Object.keys(stableAudioRuntimeModels(stableAudioRuntime({ platform, arch, environment })).models)];
     // A folder that runs nothing yet gets Medium, the model the install steps Moondog shows download.
     chosen = DEFAULT_STABLE_AUDIO_MODEL;
     for (const name of [...new Set(candidates)]) {
-      if ((await checkStableAudioInstall(folderRoot, { model: name, platform, arch })).state === "ready") { chosen = name; break; }
+      if ((await checkStableAudioInstall(folderRoot, { model: name, platform, arch, environment })).state === "ready") { chosen = name; break; }
     }
   }
   const document = {
@@ -157,16 +169,19 @@ const isFile = async (file, { executable = false, minimumBytes = 0 } = {}) => {
 
 /**
  * Whether an install can make music now with a model, without running it: "ready", "unsupported"
- * (MLX needs Apple silicon), "missing" (no install at the folder) or "incomplete" (no Python
- * environment or not that model's weights, which Moondog's setup or Stability's ./install.sh fetches).
+ * (no Stability AI build runs on this machine, as on an Intel Mac), "missing" (no install at the folder)
+ * or "incomplete" (no Python environment or not that model's weights, which Moondog's setup or
+ * Stability's install script fetches). The runtime decides the layout: MLX on Apple silicon, LiteRT elsewhere.
  */
-export async function checkStableAudioInstall(root, { model = DEFAULT_STABLE_AUDIO_MODEL, platform = process.platform, arch = process.arch } = {}) {
-  if (platform !== "darwin" || arch !== "arm64") return { state: "unsupported" };
+export async function checkStableAudioInstall(root, { model = DEFAULT_STABLE_AUDIO_MODEL, platform = process.platform, arch = process.arch, environment = process.env } = {}) {
+  const runtime = stableAudioRuntime({ platform, arch, environment });
+  if (!runtime) return { state: "unsupported" };
   if (!root || !path.isAbsolute(root)) return { state: "missing" };
-  if (!(await isFile(path.join(root, "scripts", "sa3_mlx.py")))) return { state: "missing" };
-  if (!(await isFile(path.join(root, ".venv", "bin", "python"), { executable: true }))) return { state: "incomplete", missing: "environment" };
-  for (const weight of stableAudioWeights(isStableAudioModel(model) ? model : DEFAULT_STABLE_AUDIO_MODEL)) {
-    if (!(await isFile(path.join(root, "models", "mlx", weight), { minimumBytes: 1024 }))) return { state: "incomplete", missing: "weights" };
+  const { script, weightsFolder } = stableAudioRuntimeModels(runtime);
+  if (!(await isFile(path.join(root, "scripts", script)))) return { state: "missing" };
+  if (!(await isFile(stableAudioPython(root, platform), { executable: platform !== "win32" }))) return { state: "incomplete", missing: "environment" };
+  for (const weight of stableAudioWeights(isStableAudioModel(model) ? model : DEFAULT_STABLE_AUDIO_MODEL, runtime)) {
+    if (!(await isFile(path.join(root, ...weightsFolder, weight), { minimumBytes: 1024 }))) return { state: "incomplete", missing: "weights" };
   }
   return { state: "ready" };
 }
@@ -175,9 +190,14 @@ export async function checkStableAudioInstall(root, { model = DEFAULT_STABLE_AUD
 const SKIP_SECONDS = 30;
 const OUTCOMES = Object.freeze(["completed", "skipped", "stopped", "replayed"]);
 
-// The stage lines the script always prints, which are the only progress a pipe receives.
-const STAGES = new Map([["1", "reading"], ["2", "reading"], ["3", "composing"], ["4", "decoding"], ["5", "writing"]]);
-const doneLine = /done\s+([\d.]+)s\s+wall\s+\S+\s+([\d.]+)s\s+audio.*?peak\s+RAM\s+([\d.]+)\s+(MB|GB)/u;
+// The stage lines each script always prints, which are the only progress a pipe receives: five in the
+// MLX build, three in the CPU build (text encoder, the model's eight steps, then the decoder and the WAV).
+const STAGES = new Map([["1/5", "reading"], ["2/5", "reading"], ["3/5", "composing"], ["4/5", "decoding"], ["5/5", "writing"],
+  ["1/3", "reading"], ["2/3", "composing"], ["3/3", "decoding"]]);
+// The CPU build's last line has no peak RAM.
+const doneLine = /done\s+([\d.]+)s\s+wall\s+\S+\s+([\d.]+)s\s+audio(?:.*?peak\s+RAM\s+([\d.]+)\s+(MB|GB))?/u;
+// The CPU build's threads: Stability's default of eight, or fewer on a smaller machine.
+const cpuThreads = () => Math.max(1, Math.min(8, availableParallelism()));
 
 const generationError = (code, message) => Object.assign(new Error(message), { code });
 
@@ -234,7 +254,9 @@ export function createLocalGenerator({
   // Plays a score into a WAV (src/integrations/score), loaded only when a track is written as one.
   renderScore = async (score, file, options) => (await import("../score/render-score.mjs")).renderScore(score, file, options),
 } = {}) {
-  let current = { state: "unknown", enabled: false, install: "unknown", path: null, source: null, model: DEFAULT_STABLE_AUDIO_MODEL, managed: false };
+  // The build that makes the music here: "mlx" on Apple silicon's GPU, "tflite" on a CPU, null where none runs.
+  const runtime = stableAudioRuntime({ platform, arch, environment });
+  let current = { state: "unknown", enabled: false, install: "unknown", path: null, source: null, model: DEFAULT_STABLE_AUDIO_MODEL, managed: false, runtime };
   let running = null;
   // The tracks made here, newest last, with what happened each time they played: the loop back
   // from listening reads them. Each track's outcomes.jsonl keeps them; the receipt never changes.
@@ -260,7 +282,7 @@ export function createLocalGenerator({
     checking ??= (async () => {
       try {
         const settings = await readGenerationSettings(environment, { platform, arch });
-        const install = await checkStableAudioInstall(settings.path, { model: settings.model, platform, arch });
+        const install = await checkStableAudioInstall(settings.path, { model: settings.model, platform, arch, environment });
         return publish({
           state: !settings.enabled ? "off" : install.state,
           enabled: settings.enabled,
@@ -270,6 +292,7 @@ export function createLocalGenerator({
           source: settings.source,
           model: settings.model,
           managed: settings.source === "managed",
+          runtime,
         });
       } finally {
         checking = null;
@@ -303,15 +326,22 @@ export function createLocalGenerator({
     if (signal?.aborted) return reject(stopped());
     // The Python script itself, not Stability's ./sa3 wrapper: the wrapper wants uv on PATH and a
     // terminal, and its exec would leave a shell between this process and the one to stop.
-    const child = spawnImpl(path.join(root, ".venv", "bin", "python"), [
-      "scripts/sa3_mlx.py", "--prompt", prompt, "--dit", STABLE_AUDIO_MODELS[model].dit, "--decoder", STABLE_AUDIO_MODELS[model].decoder,
-      "--seconds", String(seconds), "--seed", String(seed), "--steps", "8", "--out", out,
-    ], {
+    const spec = stableAudioRuntimeModels(runtime).models[model];
+    const args = runtime === "tflite"
+      // The CPU build's precisions are named too, so the files Moondog downloaded are the ones it loads.
+      ? ["scripts/sa3_tflite.py", "--prompt", prompt, "--dit", spec.dit, "--decoder", spec.decoder,
+        "--dit-precision", spec.precision, "--decoder-precision", spec.precision,
+        "--seconds", String(seconds), "--seed", String(seed), "--steps", "8", "--threads", String(cpuThreads()), "--out", out]
+      : ["scripts/sa3_mlx.py", "--prompt", prompt, "--dit", spec.dit, "--decoder", spec.decoder,
+        "--seconds", String(seconds), "--seed", String(seed), "--steps", "8", "--out", out];
+    const child = spawnImpl(stableAudioPython(root, platform), args, {
       cwd: root,
       // Every choice is passed, so the script never waits on stdin for a missing one.
       stdio: ["ignore", "pipe", "pipe"],
       // Unbuffered, so stage lines arrive as they happen; offline, so missing weights fail instead of downloading.
       env: { ...environment, PYTHONUNBUFFERED: "1", HF_HUB_OFFLINE: "1" },
+      // No console window flashes up on Windows while the track is made.
+      windowsHide: true,
     });
     let output = "";
     let measured = null;
@@ -336,7 +366,7 @@ export function createLocalGenerator({
       stopping = setTimeout(() => child.kill("SIGKILL"), stoppingGraceMs);
     };
     const stop = () => kill(stopped());
-    const timer = setTimeout(() => kill(generationError("generation_timed_out", "Stable Audio 3 took too long, so the track was stopped.")), generationTimeoutMs);
+    const timer = setTimeout(() => kill(generationError("generation_timed_out", "Stable Audio 3 took too long, so the track was stopped.")), generationTimeoutMs[runtime] ?? generationTimeoutMs.mlx);
     signal?.addEventListener("abort", stop, { once: true });
     child.stdout.setEncoding("utf8");
     child.stdout.on("data", (chunk) => {
@@ -344,12 +374,12 @@ export function createLocalGenerator({
       const lines = output.split("\n");
       output = lines.pop();
       for (const line of lines) {
-        const stage = /\[(\d)\/5\]/u.exec(line)?.[1];
+        const stage = /\[(\d\/\d)\]/u.exec(line)?.[1];
         if (stage && STAGES.has(stage)) onProgress?.({ stage: STAGES.get(stage) });
         const done = doneLine.exec(line);
         if (done) {
-          const peak = Number(done[3]) * (done[4] === "GB" ? 1024 : 1);
-          measured = { wall_seconds: Number(done[1]), audio_seconds: Number(done[2]), peak_memory_mb: Math.round(peak) };
+          const peak = done[3] === undefined ? null : Number(done[3]) * (done[4] === "GB" ? 1024 : 1);
+          measured = { wall_seconds: Number(done[1]), audio_seconds: Number(done[2]), ...(peak === null ? {} : { peak_memory_mb: Math.round(peak) }) };
         }
       }
     });
@@ -542,13 +572,16 @@ export function createLocalGenerator({
         const wav = path.join(temporary, "track.wav");
         onProgress?.({ stage: "starting" });
         const model = isStableAudioModel(status.model) ? status.model : DEFAULT_STABLE_AUDIO_MODEL;
-        const measured = await run({ root: status.path, model, prompt, seconds, seed, out: wav }, { signal, onProgress });
+        // The CPU build's small model stops at two minutes, so a longer track is made as long as it can be.
+        const length = Math.min(seconds, stableAudioMaxSeconds(runtime, model));
+        const measured = await run({ root: status.path, model, prompt, seconds: length, seed, out: wav }, { signal, onProgress });
         const audio = await wavInfo(wav).catch(() => null);
         if (!audio || audio.duration_seconds <= 0) throw generationError("generation_failed", "Stable Audio 3 finished but wrote no playable track.");
         await chmod(wav, 0o600);
         // How loud it runs from start to end, which its cover draws (cover.mjs); kept after a stream drops the audio.
         const loudness = await readLoudness(wav).catch(() => null);
         const elapsed = Date.now() - started;
+        const spec = stableAudioRuntimeModels(runtime).models[model];
         const document = {
           receipt_version: "moondog-generated-track/1",
           generated_track_id: id,
@@ -557,8 +590,10 @@ export function createLocalGenerator({
           title,
           ...receipt,
           generator: {
-            adapter: "stable-audio-3", adapter_version: 1, model: STABLE_AUDIO_MODELS[model].receipt, decoder: STABLE_AUDIO_MODELS[model].decoder,
-            prompt, seconds, seed, steps: 8, cfg: 1, elapsed_ms: elapsed, ...(measured ? { measured } : {}),
+            adapter: "stable-audio-3", adapter_version: 1, model: spec.receipt, decoder: spec.decoder,
+            // Receipts without a runtime were made by the MLX build, the only one before.
+            ...(runtime === "tflite" ? { runtime: "tflite", precision: spec.precision } : {}),
+            prompt, seconds: length, seed, steps: 8, cfg: 1, elapsed_ms: elapsed, ...(measured ? { measured } : {}),
             license: "Stability AI Community License; outputs belong to the listener",
           },
           audio: { file: "track.wav", ...audio, ...(loudness ? { loudness } : {}) },
@@ -566,7 +601,7 @@ export function createLocalGenerator({
         await writeFile(path.join(temporary, "receipt.json"), `${JSON.stringify(document, null, 2)}\n`, { encoding: "utf8", mode: 0o600, flag: "wx" });
         await rename(temporary, path.join(folder, id));
         remember(document);
-        return { id, title, seconds, seed, prompt, elapsed_ms: elapsed, duration_seconds: audio.duration_seconds, ...(measured ? { measured } : {}) };
+        return { id, title, seconds: length, seed, prompt, elapsed_ms: elapsed, duration_seconds: audio.duration_seconds, ...(measured ? { measured } : {}) };
       } catch (error) {
         await rm(temporary, { recursive: true, force: true }).catch(() => {});
         throw error;

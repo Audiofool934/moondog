@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { chmod, mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
@@ -11,7 +11,7 @@ import { createModels, fauxAssistantMessage, fauxProvider, fauxText, fauxToolCal
 import { createWindowPreviewPlayer } from "../../app/preview-player.mjs";
 import { MoondogApplication } from "../../src/core/moondog-application.mjs";
 import { createTerminalPreviewPlayer } from "../../src/integrations/apple-music/terminal-preview-player.mjs";
-import { createAtmosphereStream, createLocalGenerator, readGenerationSettings } from "../../src/integrations/stable-audio/local-generator.mjs";
+import { checkStableAudioInstall, createAtmosphereStream, createLocalGenerator, readGenerationSettings } from "../../src/integrations/stable-audio/local-generator.mjs";
 import { PiAgentRuntime } from "../../src/runtime/pi/agent-runtime.mjs";
 import { cleanRecordName } from "../../src/runtime/pi/record-name.mjs";
 import { acceptableRecordTitle } from "../../src/profile/taste-compiler.mjs";
@@ -97,8 +97,8 @@ test("music making stays off until the listener turns it on, and says what the i
 
   const elsewhere = createLocalGenerator({ environment: { ...ready.env, MOONDOG_SA3_DIR: path.join(ready.root, "nothing") }, platform: "darwin", arch: "arm64" });
   assert.equal((await elsewhere.check()).install, "missing");
-  const linux = createLocalGenerator({ environment: ready.env, platform: "linux", arch: "x64" });
-  assert.equal((await linux.check()).install, "unsupported");
+  const intelMac = createLocalGenerator({ environment: ready.env, platform: "darwin", arch: "x64" });
+  assert.equal((await intelMac.check()).install, "unsupported", "no Stability AI build runs on an Intel Mac");
 });
 
 test("a track is made with every choice passed, offline, and kept with a receipt that holds no path", async (t) => {
@@ -1273,4 +1273,93 @@ test("On Air's request tells the agent, for that reply only, to start the stream
   assert.match(seen[0], /The listener pressed On Air\. Answer this message by starting Moondog's stream with moondog_start_stream/u);
   assert.match(seen[1], /The listener pressed On Air/u, "in every language On Air sends its request in");
   assert.doesNotMatch(seen[2], /pressed On Air/u, "the next reply is an ordinary one again");
+});
+
+// A stand-in for Stability AI's CPU build (optimized/tflite): three stage lines, a last line without peak
+// RAM, and the weights in their folders under models/tflite. Off the Mac, Moondog runs this build.
+async function fakeCpuInstall(t, { models = ["medium", "small-music"], windows = false } = {}) {
+  const root = await mkdtemp(path.join(tmpdir(), "moondog-generation-cpu-"));
+  t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
+  const install = path.join(root, "tflite");
+  await mkdir(path.join(install, "scripts"), { recursive: true });
+  await writeFile(path.join(install, "scripts", "sa3_tflite.py"), "# stand-in\n");
+  const python = windows ? path.join(install, ".venv", "Scripts", "python.exe") : path.join(install, ".venv", "bin", "python");
+  await mkdir(path.dirname(python), { recursive: true });
+  await writeFile(python, `#!/usr/bin/env node
+const fs = require("node:fs");
+const args = process.argv.slice(2);
+const value = (flag) => args[args.indexOf(flag) + 1];
+fs.writeFileSync(${JSON.stringify(path.join(root, "args.json"))}, JSON.stringify({ args, offline: process.env.HF_HUB_OFFLINE }));
+console.log("  [1/3] T5Gemma (tokenize + encode) ···· 300 ms");
+console.log("  [2/3] DiT \\u2014 load + sample (8 steps, \\u03c3max=1.00)");
+console.log("        sampling step 8/8  900 ms");
+console.log("  [3/3] Decoder (same-s, audio-out) + WAV");
+const seconds = Number(value("--seconds"));
+const data = Buffer.alloc(Math.round(seconds * 44100) * 4);
+const header = Buffer.alloc(44);
+header.write("RIFF", 0, "ascii"); header.writeUInt32LE(36 + data.length, 4); header.write("WAVE", 8, "ascii");
+header.write("fmt ", 12, "ascii"); header.writeUInt32LE(16, 16); header.writeUInt16LE(1, 20); header.writeUInt16LE(2, 22);
+header.writeUInt32LE(44100, 24); header.writeUInt32LE(176400, 28); header.writeUInt16LE(4, 32); header.writeUInt16LE(16, 34);
+header.write("data", 36, "ascii"); header.writeUInt32LE(data.length, 40);
+fs.writeFileSync(value("--out"), Buffer.concat([header, data]));
+console.log("  done   9.50s wall  \\u2192  " + seconds.toFixed(1) + "s audio  \\u2192  3.16\\u00d7 realtime   seed " + value("--seed"));
+console.log("  \\u25b8 saved  " + value("--out"));
+`);
+  await chmod(python, 0o755);
+  const names = { medium: ["sa3-m/dit_w8a8.tflite"], "small-music": ["sa3-sm-music/dit_w8a8.tflite"] };
+  for (const name of ["t5gemma/encoder_fp16.tflite", "same-s/dec_w8a8.tflite", ...models.flatMap((model) => names[model])]) {
+    await mkdir(path.dirname(path.join(install, "models", "tflite", name)), { recursive: true });
+    await writeFile(path.join(install, "models", "tflite", name), Buffer.alloc(2048));
+  }
+  const env = { PATH: process.env.PATH, MOONDOG_CONFIG_HOME: path.join(root, "config"), MOONDOG_STATE_HOME: path.join(root, "state"), MOONDOG_SA3_DIR: install };
+  const args = async () => JSON.parse(await readFile(path.join(root, "args.json"), "utf8"));
+  return { root, install, env, args };
+}
+
+test("off the Mac, the CPU build makes the track with its own flags, and a small model stops at two minutes", async (t) => {
+  const install = await fakeCpuInstall(t);
+  const generator = createLocalGenerator({ environment: install.env, platform: "linux", arch: "x64" });
+  const status = await generator.save({ enabled: true, source: "settings", model: "small-music" });
+  assert.deepEqual([status.state, status.runtime, status.model], ["ready", "tflite", "small-music"]);
+
+  const stages = [];
+  const made = await generator.generate({ prompt: "TrackType: Music, VocalType: Instrumental, Genre: Ambient.", seconds: 200, seed: 7, title: "Long night" },
+    { onProgress: ({ stage }) => stages.push(stage) });
+  assert.deepEqual(stages, ["starting", "reading", "composing", "decoding"]);
+  assert.equal(made.seconds, 120, "the small model's longest track");
+  assert.equal(made.duration_seconds, 120);
+  assert.deepEqual(made.measured, { wall_seconds: 9.5, audio_seconds: 120 }, "the CPU build reports no peak RAM");
+
+  const { args, offline } = await install.args();
+  assert.equal(args[0], "scripts/sa3_tflite.py");
+  assert.equal(offline, "1");
+  for (const [flag, value] of [["--dit", "sm-music"], ["--decoder", "same-s"], ["--dit-precision", "w8a8"], ["--decoder-precision", "w8a8"],
+    ["--seconds", "120"], ["--seed", "7"], ["--steps", "8"]]) {
+    assert.equal(args[args.indexOf(flag) + 1], value, flag);
+  }
+  const threads = Number(args[args.indexOf("--threads") + 1]);
+  assert.ok(threads >= 1 && threads <= 8);
+  const receipt = await generator.receipt(made.id);
+  assert.deepEqual([receipt.generator.runtime, receipt.generator.precision, receipt.generator.model, receipt.generator.decoder, receipt.generator.seconds],
+    ["tflite", "w8a8", "sa3-sm-music-ARC", "same-s", 120]);
+
+  // Medium runs the full length on the CPU too.
+  await generator.save({ model: "medium", source: "settings" });
+  const long = await generator.generate({ prompt: "ambient", seconds: 300, seed: 8, title: "Longer" });
+  assert.equal(long.seconds, 300);
+  assert.equal((await install.args()).args[(await install.args()).args.indexOf("--dit") + 1], "medium");
+});
+
+test("an install's layout follows the machine: Windows keeps Python in Scripts, and an Intel Mac runs nothing", async (t) => {
+  const windows = await fakeCpuInstall(t, { windows: true, models: ["small-music"] });
+  assert.deepEqual(await checkStableAudioInstall(windows.install, { model: "small-music", platform: "win32", arch: "x64", environment: {} }), { state: "ready" });
+  assert.deepEqual(await checkStableAudioInstall(windows.install, { model: "medium", platform: "win32", arch: "x64", environment: {} }), { state: "incomplete", missing: "weights" });
+  assert.deepEqual(await checkStableAudioInstall(windows.install, { model: "small-music", platform: "linux", arch: "x64", environment: {} }), { state: "incomplete", missing: "environment" });
+  assert.deepEqual(await checkStableAudioInstall(windows.install, { model: "small-music", platform: "darwin", arch: "x64", environment: {} }), { state: "unsupported" });
+  // A Mac with Apple silicon keeps the MLX build; the CPU build there is for development only.
+  assert.deepEqual(await checkStableAudioInstall(windows.install, { model: "small-music", platform: "darwin", arch: "arm64", environment: {} }), { state: "missing" });
+  const linux = await fakeCpuInstall(t, { models: ["small-music"] });
+  assert.deepEqual(await checkStableAudioInstall(linux.install, { model: "small-music", platform: "darwin", arch: "arm64", environment: { MOONDOG_SA3_RUNTIME: "tflite" } }), { state: "ready" });
+  assert.equal((await readGenerationSettings({ ...linux.env, MOONDOG_SA3_DIR: "" }, { platform: "win32", arch: "x64" })).folder,
+    path.join(homedir(), "Developer", "stable-audio-3", "optimized", "tflite"), "Stability's own folder for the CPU build");
 });
