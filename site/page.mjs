@@ -1,6 +1,7 @@
 // The project page's script: the scene's light and music, and the copy button beside the install commands.
 // The window's scene runs in its own frame (window/host.mjs).
 import { moodColours } from "../app/renderer/mood.mjs";
+import "./copy.mjs";
 
 // The cover that is playing lights the whole page, as it lights the window in the app: its colours, read
 // in the frame, become the page's three faint fields, drifting in as the last ones fade.
@@ -135,20 +136,6 @@ new IntersectionObserver(([entry]) => { inView = entry.isIntersecting; follow();
 document.addEventListener("visibilitychange", follow);
 // The frame may have loaded first; it answers that it's ready.
 toScene({ ask: true });
-
-for (const button of document.querySelectorAll("[data-copy]")) {
-  button.addEventListener("click", async () => {
-    const text = document.getElementById(button.dataset.copy).textContent.trim();
-    try {
-      await navigator.clipboard.writeText(text);
-      button.textContent = "Copied";
-      button.dataset.state = "done";
-    } catch {
-      button.textContent = "Select and copy";
-    }
-    setTimeout(() => { button.textContent = "Copy"; delete button.dataset.state; }, 2000);
-  });
-}
 
 // The intro's button follows the visitor's system. Without this script the Mac's line shows, and the
 // downloads below name every system. Phones and Chromebooks keep the Mac's line: none of them runs Moondog.

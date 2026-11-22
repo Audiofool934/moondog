@@ -1,6 +1,6 @@
-// Builds the project page into dist/: the page, and window.html, the desktop app's own window
-// (app/renderer) playing the page's scene. Node built-ins the window's core imports are swapped for
-// the small stand-ins in shims/. Neither document makes a request beyond the page's own files.
+// Builds the project page into dist/: the page, start.html, the getting-started guide, and window.html,
+// the desktop app's own window (app/renderer) playing the page's scene. Node built-ins the window's core
+// imports are swapped for the small stand-ins in shims/. No document makes a request beyond the page's own files.
 //
 //   node build.mjs              build once
 //   node build.mjs --serve      rebuild on change and serve at http://localhost:8737
@@ -26,21 +26,22 @@ const builtins = {
   perf_hooks: "misc.mjs", "timers/promises": "misc.mjs", sqlite: "sqlite.mjs",
 };
 
-// What each document may load: its own files, drawn covers, and for the page, the window's frame, the
-// scene's music, and Cloudflare's Web Analytics, which Cloudflare adds to each page it serves and which
-// reports to the site's own /cdn-cgi/rum. The window's frame reloads with each play of the scene, so it
-// keeps the beacon out rather than count a visit each time.
+// What each document may load: its own files, drawn covers, and for the page, the window's frame and the
+// scene's music. The page and the guide also take Cloudflare's Web Analytics, which Cloudflare adds to
+// each page it serves and which reports to the site's own /cdn-cgi/rum. The window's frame reloads with
+// each play of the scene, so it keeps the beacon out rather than count a visit each time.
 const analytics = "https://static.cloudflareinsights.com";
 function contentPolicy(document) {
   const page = document === "page";
+  const visited = document !== "window";
   const sources = {
     "default-src": ["'self'"],
-    "script-src": ["'self'", ...(page ? [analytics] : [])],
+    "script-src": ["'self'", ...(visited ? [analytics] : [])],
     "style-src": ["'self'", "'unsafe-inline'"],
     "img-src": ["'self'", "data:"],
     "media-src": page ? ["'self'"] : ["'none'"],
     "font-src": ["'self'"],
-    "connect-src": page ? ["'self'", "https://cloudflareinsights.com"] : ["'none'"],
+    "connect-src": visited ? ["'self'", "https://cloudflareinsights.com"] : ["'none'"],
     "frame-src": page ? ["'self'"] : ["'none'"],
     "object-src": ["'none'"],
     "base-uri": ["'none'"],
@@ -119,16 +120,19 @@ const browserPlugin = {
   },
 };
 
-// The documents. The window's markup is the app's own index.html, with this page's policy and bundle,
-// three resting traffic lights where the app's sit, and its composer set aside from the first frame,
-// where the page's cover speaks (window/host.css).
+// The documents. The page and the guide name the Mac download. The window's markup is the app's own
+// index.html, with this page's policy and bundle, three resting traffic lights where the app's sit, and
+// its composer set aside from the first frame, where the page's cover speaks (window/host.css).
+const withMac = (html) => html
+  .replaceAll("{{mac.url}}", mac.url)
+  .replaceAll("{{mac.version}}", mac.version ? `Version ${mac.version}` : "From the releases page");
 const documents = {
-  "index.html": async () => (await readFile(path.join(here, "index.html"), "utf8"))
+  "index.html": async () => withMac(await readFile(path.join(here, "index.html"), "utf8"))
     .replace("<!-- policy -->", policyTag("page"))
-    .replaceAll("{{mac.url}}", mac.url)
-    .replaceAll("{{mac.version}}", mac.version ? `Version ${mac.version}` : "From the releases page")
     .replace("{{intro.actions}}", introActions)
     .replace("{{desktop.downloads}}", additionalDownloads),
+  "start.html": async () => withMac(await readFile(path.join(here, "start.html"), "utf8"))
+    .replace("<!-- policy -->", policyTag("guide")),
   "window.html": async () => (await readFile(path.join(root, "app", "renderer", "index.html"), "utf8"))
     .replace(/<meta http-equiv="Content-Security-Policy"[^>]*>/u, `${policyTag("window")}\n  <meta name="referrer" content="no-referrer">`)
     .replace('href="renderer.css"', 'href="window.css"')
@@ -161,6 +165,7 @@ await writeDocuments();
 const options = {
   entryPoints: {
     page: path.join(here, "page.mjs"),
+    start: path.join(here, "start.mjs"),
     window: path.join(here, "window", "window.mjs"),
   },
   bundle: true,
@@ -183,7 +188,7 @@ if (flags.has("--serve")) {
   const { port } = await context.serve({ servedir: outdir, port: Number(process.env.PORT ?? 8737) });
   console.log(`Serving the page at http://localhost:${port}`);
   // esbuild watches the bundles; the documents and static files are written again when they change.
-  const sources = [path.join(here, "index.html"), path.join(here, "style.css"), path.join(root, "app", "renderer", "index.html"), path.join(here, "static")];
+  const sources = [path.join(here, "index.html"), path.join(here, "start.html"), path.join(here, "style.css"), path.join(root, "app", "renderer", "index.html"), path.join(here, "static")];
   for await (const { filename } of watch(root, { recursive: true })) {
     const file = path.join(root, filename ?? "");
     if (sources.some((source) => file === source || file.startsWith(`${source}${path.sep}`))) await writeDocuments().catch(() => {});

@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- policy -->
+  <meta name="referrer" content="no-referrer">
+  <meta name="color-scheme" content="light dark">
+  <meta name="description" content="Getting started with Moondog: install it, choose where you listen, choose a model, bring your history, and ask for music.">
+  <meta property="og:title" content="Getting started with Moondog">
+  <meta property="og:description" content="From the download to the first song, in five steps.">
+  <meta property="og:image" content="https://moondog.audiofool.ai/static/moondog-og.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <title>Getting started · Moondog</title>
+  <link rel="icon" href="static/moondog-logo-small.svg" type="image/svg+xml">
+  <link rel="icon" href="static/favicon-64.png" type="image/png" sizes="64x64">
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="start.js"></script>
+</head>
+<body>
+  <header class="masthead">
+    <a class="brand" href="./" aria-label="Moondog, the project page"><img src="static/moondog-logo-small.svg" width="32" height="32" alt=""><span>Moondog</span></a>
+    <nav aria-label="Page">
+      <a class="aside" href="https://github.com/Audiofool934/moondog">Source</a>
+      <a class="pill" href="./#get">Get Moondog</a>
+    </nav>
+  </header>
+
+  <main>
+    <header class="guide-head">
+      <h1>Getting started</h1>
+      <p>From the download to the first song, in five steps. When it first opens, Moondog asks two things: where you listen, and which model it talks through.</p>
+    </header>
+
+    <section class="part" aria-labelledby="install-title">
+      <h2 id="install-title">1. Install Moondog</h2>
+      <div class="part-body">
+        <p>On a Mac with Apple silicon, open the download and drag Moondog to Applications. It's notarized by Apple.</p>
+        <p class="actions"><a class="button" href="{{mac.url}}">Download for Mac</a> <span class="fine">{{mac.version}}, for Apple silicon.</span></p>
+        <p>Other systems and the terminal are under <a href="./#get">Get Moondog</a>. This guide follows the Mac app; the first run asks the same two questions everywhere.</p>
+      </div>
+    </section>
+
+    <section class="part" aria-labelledby="service-title">
+      <h2 id="service-title">2. Choose where you listen</h2>
+      <div class="part-body">
+        <p>Moondog plays on one music service at a time. Pick one now. You can change it later in Settings (⌘,), under Playback.</p>
+        <figure class="shot">
+          <picture>
+            <source media="(prefers-color-scheme: dark)" srcset="static/guide/service-dark.webp">
+            <img src="static/guide/service-light.webp" width="1120" height="600" alt="The first question of the first run, Where do you listen, with Spotify, not connected, and Apple Music, 30-second previews">
+          </picture>
+        </figure>
+
+        <h3 id="apple-music">Apple Music</h3>
+        <p>There is nothing to set up. Songs play as 30-second previews, each with a link to the whole song.</p>
+        <p>On a Mac with an Apple Music subscription, Moondog plays whole songs. Open Settings, then Playback, and choose Play full songs under Apple Music.</p>
+
+        <h3 id="spotify">Spotify</h3>
+        <p>Spotify asks each listener to register an app of their own, and asks that its owner has Premium. This is the longest step, and you do it once.</p>
+        <ol class="steps">
+          <li>Open the <a href="https://developer.spotify.com/dashboard">Spotify Developer Dashboard</a> and create an app. Any name will do.</li>
+          <li>Give the app this redirect URI:
+            <div class="commands">
+              <pre id="redirect-uri"><code>http://127.0.0.1:43821/callback</code></pre>
+              <button type="button" class="copy" data-copy="redirect-uri">Copy</button>
+            </div>
+          </li>
+          <li>Copy the app's client ID.</li>
+          <li>In Moondog, open Settings, then Playback. Paste the client ID under Spotify and choose Connect Spotify. Your browser opens for Spotify's own sign-in.</li>
+        </ol>
+        <figure class="shot">
+          <picture>
+            <source media="(prefers-color-scheme: dark)" srcset="static/guide/spotify-dark.webp">
+            <img src="static/guide/spotify-light.webp" width="1600" height="1200" loading="lazy" alt="Settings, Playback: under Spotify, the redirect URI to copy, a field for the client ID, and the Connect Spotify button">
+          </picture>
+        </figure>
+        <p>Music then plays on your active Spotify device, so open Spotify on a computer, a phone or a speaker first.</p>
+
+        <h3 id="netease">NetEase Music</h3>
+        <p>For listeners in mainland China. Whole songs play through NetEase's own command line tool, which needs Node.js. The first run lists NetEase Music once that tool is installed, so pick Apple Music for now, or close the question.</p>
+        <p>Then open Settings, Playback, NetEase Music. It shows the command for your system. On a Mac with Homebrew:</p>
+        <div class="commands">
+          <pre id="netease-setup"><code>npm install -g @music163/ncm-cli &amp;&amp; brew install mpv &amp;&amp; ncm-cli login</code></pre>
+          <button type="button" class="copy" data-copy="netease-setup">Copy</button>
+        </div>
+        <p>Run it in Terminal, then choose Check again.</p>
+      </div>
+    </section>
+
+    <section class="part" aria-labelledby="model-title">
+      <h2 id="model-title">3. Choose a model</h2>
+      <div class="part-body">
+        <p>Moondog talks through a language model. Your history and your taste page work without one, so the close button can skip this step.</p>
+        <figure class="shot">
+          <picture>
+            <source media="(prefers-color-scheme: dark)" srcset="static/guide/model-dark.webp">
+            <img src="static/guide/model-light.webp" width="1120" height="880" loading="lazy" alt="The second question, Which model should Moondog use: Moondog with a field for an invite code, then OpenAI, Anthropic, Google and xAI, and Add endpoint">
+          </picture>
+        </figure>
+
+        <h3 id="invite">With an invite code</h3>
+        <p>Moondog's own model is in a closed test. If you have a code, type it beside Moondog and choose Use code. It needs no account and no API key.</p>
+
+        <h3 id="own-model">With your own model</h3>
+        <p>OpenAI takes a ChatGPT subscription, with a sign-in in your browser, or an API key. Anthropic, Google and xAI take an API key: choose Add key.</p>
+        <p>Any other service that speaks OpenAI's or Anthropic's API goes in with Add endpoint: its address, its key and its model names. A model that runs on your own computer goes in the same way.</p>
+        <p>The first run ends once a model can answer. To change the model later, open Settings, then Model.</p>
+      </div>
+    </section>
+
+    <section class="part" aria-labelledby="history-title">
+      <h2 id="history-title">4. Bring your history</h2>
+      <div class="part-body">
+        <p>Open Settings, then Import, or drop a file anywhere on the window. Moondog shows what's inside before anything is saved, and it never changes the file.</p>
+        <figure class="shot">
+          <picture>
+            <source media="(prefers-color-scheme: dark)" srcset="static/guide/import-dark.webp">
+            <img src="static/guide/import-light.webp" width="1600" height="576" loading="lazy" alt="Settings, Import, before anything is saved: a Spotify history of 41,208 plays from March 2014 to October 2026, with Add to profile and Cancel">
+          </picture>
+        </figure>
+        <dl class="sources">
+          <dt>Spotify, every year</dt>
+          <dd>On Spotify's <a href="https://www.spotify.com/account/privacy/">account privacy page</a>, use Download your data and ask for your extended streaming history. Spotify emails a link when the ZIP is ready, which can take days. Choose the ZIP as it is. It needs no Spotify sign-in.</dd>
+          <dt>Spotify, right now</dt>
+          <dd>With Spotify connected, Recent Spotify listening reads your top tracks, your recent plays and your saved music.</dd>
+          <dt>Apple Music</dt>
+          <dd>In Music on a Mac, choose File, Library, Export Library, then choose the file it saves.</dd>
+          <dt>YouTube Music</dt>
+          <dd>A <a href="https://takeout.google.com/">Google Takeout</a> export of YouTube and YouTube Music.</dd>
+          <dt>Last.fm</dt>
+          <dd>Type your username. Your recent listening must be public on Last.fm.</dd>
+          <dt>ListenBrainz</dt>
+          <dd>A saved listens file.</dd>
+          <dt>A playlist</dt>
+          <dd>Open the library (⌥⌘L), choose +, then Import a playlist, and paste the link of a public playlist on Spotify, Apple Music, NetEase Music or QQ Music. Tick Let it shape my taste if it should count.</dd>
+        </dl>
+        <p>Choose Add to profile, and your profile shows in the conversation. The <a href="https://github.com/Audiofool934/moondog/blob/main/docs/TERMINAL_GUIDE.md#import-and-inspect-listening-history">terminal guide</a> has every format.</p>
+        <p>Then open Taste (⌥⌘T). It presses your history as a record, darker where you played more, and it lists the artists and songs behind it.</p>
+      </div>
+      <figure class="shot">
+        <picture>
+          <source media="(max-width: 640px) and (prefers-color-scheme: dark)" srcset="static/guide/taste-narrow-dark.webp" width="900" height="1200">
+          <source media="(max-width: 640px)" srcset="static/guide/taste-narrow-light.webp" width="900" height="1200">
+          <source media="(prefers-color-scheme: dark)" srcset="static/guide/taste-dark.webp">
+          <img src="static/guide/taste-light.webp" width="2480" height="1600" loading="lazy" alt="The taste page: eleven years of listening pressed as a record with the needle on now. In a wide window, the artists who are rising, steady, returning and fading are listed beside it">
+        </picture>
+      </figure>
+      <div class="part-body after-shot">
+        <p>With a model set up, ask Moondog to build your profile. It writes a reading of everything you imported, usually in a few minutes, and it marks what is its own interpretation.</p>
+      </div>
+    </section>
+
+    <section class="part" aria-labelledby="ask-title">
+      <h2 id="ask-title">5. Ask for music</h2>
+      <div class="part-body">
+        <p>Type what you want to hear, in your own words, in any of ten languages. Or click the record's arm, and Moondog picks something for right now.</p>
+      </div>
+      <figure class="shot">
+        <picture>
+          <source media="(prefers-color-scheme: dark)" srcset="static/guide/room-dark.webp">
+          <img src="static/guide/room-light.webp" width="1600" height="1041" loading="lazy" alt="Moondog's window: a request for a late train home, the host's answer with three songs, and the player with what's playing and two songs up next">
+        </picture>
+        <figcaption>A request for a late train home, from the scene on the <a href="./">project page</a>. Its listener is made up.</figcaption>
+      </figure>
+      <div class="part-body after-shot">
+        <p>The reply says what Moondog picked, and why each song is there. The player shows what's playing and what's up next: play a song now, or take one out.</p>
+        <p>When Moondog gets you wrong, say so. “Never play this again” is enough. Or open Taste, pick a song or an artist, and choose I like this or Keep it out.</p>
+        <p>On a Mac with Apple silicon, Moondog can also make music itself. Set up Stable Audio 3 once in Settings, under Playback. Then press the On Air mark (⌃⌘O), and Moondog keeps making music from your taste until you stop it.</p>
+        <p>The terminal has the same room, with the same profile, sign-ins and conversations. The <a href="https://github.com/Audiofool934/moondog/blob/main/docs/TERMINAL_GUIDE.md">terminal guide</a> covers it.</p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="liner">
+    <img src="static/moondog-logo.svg" width="72" height="72" alt="The Moondog logo: a dog in headphones inside a moon that is also a record">
+    <div>
+      <p>The pictures show Moondog's own window on sample data. No real listener is in them.</p>
+      <p class="liner-links">
+        <a href="./">Project page</a>
+        <a href="https://github.com/Audiofool934/moondog">Source</a>
+        <a href="https://github.com/Audiofool934/moondog/releases">Releases</a>
+        <a href="https://github.com/Audiofool934/moondog/issues">Report a problem</a>
+      </p>
+    </div>
+  </footer>
+</body>
+</html>
