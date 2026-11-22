@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="color-scheme" content="light">
+  <title>Moondog, the film</title>
+  <link rel="stylesheet" href="film.css">
+  <script type="module" src="film.js"></script>
+</head>
+<body>
+  <div class="mood" aria-hidden="true" data-mood></div>
+  <div class="windows">
+    <iframe data-window="room" class="on" src="room.html" tabindex="-1" title="The listening room"></iframe>
+    <iframe data-window="setup" src="harness.html?shot=setup" tabindex="-1" title="The first run"></iframe>
+    <iframe data-window="history" src="harness.html?shot=history" tabindex="-1" title="An import"></iframe>
+    <iframe data-window="taste" src="harness.html?shot=taste" tabindex="-1" title="The taste page"></iframe>
+  </div>
+  <p class="caption" data-caption></p>
+  <div class="card on" data-card="open">
+    <img src="static/moondog-logo.svg" alt="">
+    <h1>Moondog</h1>
+    <p>On the air, just for you.</p>
+  </div>
+  <div class="card" data-card="close">
+    <img src="static/moondog-logo.svg" alt="">
+    <h1>Moondog</h1>
+    <p>On the air, just for you.</p>
+    <p class="where">moondog.audiofool.ai</p>
+    <p class="fine">Open source, for Mac, Windows, Linux and the terminal.</p>
+  </div>
+</body>
+</html>

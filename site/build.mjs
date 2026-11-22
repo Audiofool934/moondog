@@ -6,6 +6,7 @@
 //   node build.mjs --serve      rebuild on change and serve at http://localhost:8737
 //   node build.mjs --offline    link the release list rather than ask GitHub for desktop downloads
 //   node build.mjs --mirror     first copy missing downloads to the Cloudflare mirror (mirror.mjs)
+//   node build.mjs --film       also build the film's stage and windows (film/), which the page never links
 import { createHash } from "node:crypto";
 import { cp, mkdir, readFile, rm, watch, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -109,9 +110,12 @@ const browserPlugin = {
   name: "moondog-browser",
   setup(build) {
     build.onResolve({ filter: /^(node:)?[a-z_/]+$/ }, ({ path: spec }) => {
+      // The film's setup windows run the app's harness core, which asks for Electron's bridge to open menus.
+      if (spec === "electron") return { path: "electron", namespace: "film-bridge" };
       const name = builtins[spec.replace(/^node:/, "")];
       return name ? { path: shim(name) } : undefined;
     });
+    build.onLoad({ filter: /.*/, namespace: "film-bridge" }, () => ({ contents: "module.exports = { ipcRenderer: { invoke: async () => null } };", loader: "js" }));
     // pi-tui unrefs its timers so Node can exit; browser timers are plain numbers.
     build.onLoad({ filter: /[\\/]@earendil-works[\\/]pi-tui[\\/]dist[\\/].+\.js$/ }, async ({ path: file }) => ({
       contents: (await readFile(file, "utf8")).replaceAll(".unref()", ".unref?.()"),
@@ -141,6 +145,19 @@ const documents = {
     .replace('<script type="module" src="renderer.js"></script>',
       '<div class="lights" aria-hidden="true"><i></i><i></i><i></i></div>\n  <script type="module" src="window.js"></script>'),
 };
+// The film (film/): its stage, and the app's window on the scene's core and on the harness's core. They
+// are built only when asked for, and nothing on the page links them.
+const filmWindow = (name) => async () => (await readFile(path.join(root, "app", "renderer", "index.html"), "utf8"))
+  .replace(/<meta http-equiv="Content-Security-Policy"[^>]*>/u, policyTag("window"))
+  .replace('href="renderer.css"', `href="${name}.css"`)
+  .replace(/(<textarea[^>]*?) autofocus/u, "$1")
+  .replace('<script type="module" src="renderer.js"></script>',
+    `<div class="lights" aria-hidden="true"><i></i><i></i><i></i></div>\n  <script type="module" src="${name}.js"></script>`);
+if (flags.has("--film")) Object.assign(documents, {
+  "film.html": () => readFile(path.join(here, "film", "film.html"), "utf8"),
+  "room.html": filmWindow("room"),
+  "harness.html": filmWindow("harness"),
+});
 // Cloudflare keeps scripts and styles for hours, so a published document asks for each one by its
 // content: a new deploy never pairs new markup with an old stylesheet.
 const fingerprint = async (html) => {
@@ -167,6 +184,7 @@ const options = {
     page: path.join(here, "page.mjs"),
     start: path.join(here, "start.mjs"),
     window: path.join(here, "window", "window.mjs"),
+    ...(flags.has("--film") ? { film: path.join(here, "film", "stage.mjs"), room: path.join(here, "film", "room.mjs"), harness: path.join(here, "film", "harness.mjs") } : {}),
   },
   bundle: true,
   format: "esm",

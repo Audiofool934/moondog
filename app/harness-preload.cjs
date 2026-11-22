@@ -646,6 +646,19 @@ const STATES = {
       field.closest("form").requestSubmit();
     }, 680);
   },
+  // A new install just after its first run: Apple Music chosen, Moondog's own model, no conversation yet
+  // and nothing playing.
+  "new-room"() {
+    ready({ sessions: [], folders: [], current: null, playbackService: "apple_music", spotify: "unavailable", spotifyAccount: { state: "unavailable", clientId: false },
+      model: { ...STATUS.model, provider: "moondog", model: "moondog", effort: null, thinking: null, effortLevels: [] } });
+    send({ type: "player", spotify: "unavailable", now: null, next: [] });
+  },
+  // The whole first run of a new install: the service, then that model step, with the same providers.
+  "first-run-new"() {
+    STATES["first-run"]();
+    providers = [{ id: "moondog", name: "Moondog", signedIn: false, signIn: "invite" },
+      ...providers.filter((provider) => FEATURED.includes(provider.id) || provider.more)];
+  },
   "settings-spotify-setup"() {
     ready({ spotify: "unavailable", spotifyAccount: { state: "unavailable", clientId: false }, netease: "missing", generation: NONE() });
     send({ type: "player", spotify: "unavailable", now: null, next: [] });
@@ -1030,6 +1043,21 @@ core.onmessage = ({ data }) => {
     send({ type: "sign-in", provider: provider.id, state: "done" });
   }
   if (data.type === "first-run-done") send({ type: "status", ...status, firstRun: { ...status.firstRun, needed: false } });
+  // An invite code for Moondog's own model: any code is taken, and the model answers at once, which ends
+  // the first run's model step.
+  if (data.type === "invite-save") {
+    providers = providers.map((entry) => (entry.signIn === "invite" ? { ...entry, signedIn: true, source: "saved" } : entry));
+    send({ type: "invite", state: "saved" });
+    send({ type: "status", ...status, model: { ...status.model, state: "configured", provider: "moondog", model: "moondog" }, firstRun: over(status.firstRun && { ...status.firstRun, model: true }) });
+  }
+  // An import added to the profile: saved a moment later, and the profile posted in the conversation.
+  if (data.type === "import-commit") {
+    send({ type: "import", stage: "saving" });
+    setTimeout(() => {
+      send({ type: "import", stage: "done", receipt: { plays: 41208, duplicates: 0, tracks: null, evidence: null, already: false } });
+      send({ type: "local", session: "s1", markdown: PROFILE });
+    }, 1200);
+  }
   if (data.type === "devices" && limitedUntil) send({ type: "devices", devices: [], error: "limited", resumeAt: limitedUntil });
   else if (data.type === "devices") send({ type: "devices", devices: [
     { ref: "0", name: "Mac mini", type: "Computer", active: true, restricted: false },
