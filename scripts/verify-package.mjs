@@ -53,7 +53,8 @@ const maximumUnpackedBytes = 5_210_000;
 // Moondog's own web search adds one entry and about 4 KB (2026-11-21).
 // Writing a track as a score adds five entries and about 1.2 MB, nearly all of it the bundled DAWN SDK
 // renderer (src/integrations/score/vendor) with its MIT license copy (2026-11-21).
-const maximumEntries = 183;
+// The iPhone host and CLI share one profile-service loader (2026-11-24).
+const maximumEntries = 184;
 const packageOnlyPrivateSentinelPattern = new RegExp(
   ["PRIVATE", "(?:IP|PLATFORM)", "SENTINEL"].join("_"),
   "u",

@@ -98,6 +98,7 @@ const allowedPathPrefixes = [
   "contracts/",
   "docs/",
   "gateway/",
+  "mobile/",
   "scripts/",
   "site/",
   "src/",

@@ -220,7 +220,7 @@ function normalizeRelease(raw, expectedArtistId) {
   return release;
 }
 
-function normalizeTrack(raw) {
+function normalizeTrack(raw, fullSongs) {
   if (
     !isPlainObject(raw) ||
     raw.wrapperType !== "track" ||
@@ -248,6 +248,7 @@ function normalizeTrack(raw) {
   ) {
     track.duration_ms = raw.trackTimeMillis;
   }
+  if (fullSongs) track.catalog_id = catalogId;
   const primaryGenre = safeText(raw.primaryGenreName, 128);
   const catalogUrl = safeAppleMusicUrl(raw.trackViewUrl);
   const date = releaseDate(raw.releaseDate);
@@ -394,6 +395,7 @@ async function parseJsonResponse(response) {
 }
 
 export function createAppleMusicCatalogClient({
+  fullSongs = false,
   fetchImpl = globalThis.fetch,
   now = Date.now,
   cacheTtlMs = APPLE_MUSIC_CATALOG_LIMITS.cacheTtlMs,
@@ -479,7 +481,7 @@ export function createAppleMusicCatalogClient({
           limit: APPLE_MUSIC_CATALOG_LIMITS.trackSearchResultsMax,
           explicit: "No",
         });
-        return results.map(normalizeTrack).filter(Boolean);
+        return results.map(raw => normalizeTrack(raw, fullSongs)).filter(Boolean);
       });
     },
 
@@ -508,7 +510,7 @@ export function createAppleMusicCatalogClient({
         }
         return songs
           .sort((left, right) => order(left) - order(right))
-          .map(normalizeTrack)
+          .map(raw => normalizeTrack(raw, fullSongs))
           .filter(Boolean);
       });
     },
@@ -544,7 +546,7 @@ export function createAppleMusicCatalogClient({
     },
 
     async artistSongs(artistId) {
-      return (await artistSongResults(artistId)).map(normalizeTrack).filter(Boolean);
+      return (await artistSongResults(artistId)).map(raw => normalizeTrack(raw, fullSongs)).filter(Boolean);
     },
   });
 }
@@ -560,10 +562,12 @@ function candidateSummary(artist, releases = []) {
 }
 
 export function createAppleMusicCatalog({
+  fullSongs = false,
   storefront = appleMusicStorefront,
-  client = createAppleMusicCatalogClient({ storefront }),
+  client = createAppleMusicCatalogClient({ storefront, fullSongs }),
   now = Date.now,
 } = {}) {
+  const playable = (track) => fullSongs ? Boolean(track.catalog_id) : Boolean(track.preview_url);
   if (
     !client ||
     typeof client.searchTracks !== "function" ||
@@ -648,7 +652,7 @@ export function createAppleMusicCatalog({
       const wantedTitle = normalizeForMatch(cleanedTitle);
       const wantedArtist = normalizeForMatch(cleanedArtist);
       const pick = (tracks) => {
-        const results = tracks.filter((track) => track.preview_url && normalizeForMatch(track.artist_credit).includes(wantedArtist));
+        const results = tracks.filter((track) => playable(track) && normalizeForMatch(track.artist_credit).includes(wantedArtist));
         return results.find((candidate) => normalizeForMatch(candidate.title) === wantedTitle) ??
           results.find((candidate) => normalizeForMatch(candidate.title).startsWith(wantedTitle));
       };
@@ -688,7 +692,7 @@ export function createAppleMusicCatalog({
           break;
         }
       }
-      const tracks = album ? (await client.albumTracks(album.catalog_id)).filter((track) => track.preview_url).slice(0, 30) : [];
+      const tracks = album ? (await client.albumTracks(album.catalog_id)).filter(playable).slice(0, 30) : [];
       return {
         state: tracks.length ? "resolved" : "not_found",
         source: sourceMetadata(now, storefront),

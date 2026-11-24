@@ -22,8 +22,8 @@ It reads the history your music services already keep, learns your taste from it
 Ask it for something, and it answers like a host: what it picked, and why each song is there.
 It can also write you an instrumental track or go on air with music it makes itself.
 
-There are two clients on one core: a desktop app and a listening room in your terminal.
-They share your profile, settings, sign-ins, and conversations.
+The desktop app and terminal share your profile, settings, sign-ins, and conversations.
+A personal iPhone client connects to the same core on your Mac.
 Your profile works without a model, an API key, or a music-service login, and your data stays on your machine.
 The agent is built on [Pi](https://github.com/earendil-works/pi).
 
@@ -53,17 +53,20 @@ npm start
 `npm run demo` shows the agent at work on fictional data, with no sign-in at all.
 `cd app && npm ci && npm start` opens the desktop app; [app/README.md](app/README.md) covers its builds for macOS, Windows, and Linux.
 
+A personal [iPhone client](mobile/README.md) plays Apple Music on the phone and connects to the agent on your Mac over Tailscale.
+It builds from source with React Native and Xcode.
+
 ## Where it plays
 
 | Service | What you get |
 | --- | --- |
-| Apple Music | Whole songs in the Mac app with a subscription; 30-second previews elsewhere, each with a link to the full song. |
+| Apple Music | The Mac and iPhone apps play whole songs with your subscription. The Windows app and terminal play 30-second previews with a link to the full song. |
 | Spotify | Playback on your active device, after you connect your account. |
 | NetEase Music | Whole songs through NetEase's own `ncm-cli`, for listeners in mainland China. |
 
 Pick the service beside the send button, or with `/service` in the terminal.
 Moondog also sees what you already play: the song and playlist in the Music app on a Mac, or on Spotify's active device, so “more like this playlist” needs no names.
-The Windows build plays Spotify and Apple Music previews; whole Apple Music songs and reading the Music app need macOS.
+The Windows build supports Spotify playback and Apple Music previews.
 
 ## A model to talk through
 

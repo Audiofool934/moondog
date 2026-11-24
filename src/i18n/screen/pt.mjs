@@ -878,6 +878,7 @@ export default {
   "Control NetEase Music": "Controlar o NetEase Music",
   "See what is playing": "Ver o que está tocando",
   "See what you're listening to": "Ver o que você está ouvindo",
+  "Control playback": "Controlar a reprodução",
   "Control the Music app": "Controlar o app Música",
   "Choose a music service": "Escolher um serviço de música",
   "Read or change Moondog's settings": "Ver ou mudar as configurações do Moondog",

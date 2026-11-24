@@ -289,6 +289,11 @@ const catalog = [
     agent_tool: { name: "moondog_listening_now", label: N_("See what you're listening to") },
   },
   {
+    id: "player.control", version: "1", state: "enabled", effect: "write_local",
+    description: "Control the listening room's own player and read its resulting state.",
+    agent_tool: { name: "moondog_player_control", label: N_("Control playback") },
+  },
+  {
     id: "music_app.control",
     version: "1",
     state: "enabled",
@@ -770,7 +775,11 @@ function withRuntimeAvailability(
   tasteChoicesReady,
   localGenerationReady,
   scoreGenerationReady,
+  playerControlsReady,
 ) {
+  if (capability.id === "player.control" && !playerControlsReady) {
+    return { ...capability, state: "blocked", blocked_by: "no_player_controls" };
+  }
   if (capability.requires_local_generation && !localGenerationReady) {
     return { ...capability, state: "blocked", blocked_by: "local_generation_not_ready" };
   }
@@ -915,6 +924,7 @@ export function listCapabilities({
   tasteChoicesReady = false,
   localGenerationReady = false,
   scoreGenerationReady = false,
+  playerControlsReady = false,
 } = {}) {
   return structuredClone(
     catalog.map((capability) =>
@@ -939,6 +949,7 @@ export function listCapabilities({
         tasteChoicesReady,
         localGenerationReady,
         scoreGenerationReady,
+        playerControlsReady,
       ),
     ),
   );

@@ -5639,6 +5639,23 @@ function createToolFactories(
       }),
     ],
     [
+      "player.control",
+      (descriptor) => ({
+        name: descriptor.tool_name,
+        label: descriptor.label,
+        description: "Pause, resume, skip or go back in Moondog's own playback queue. Returns the observed state after the device confirms the action.",
+        parameters: Type.Object(
+          { action: Type.Union(["pause", "resume", "next", "previous"].map((action) => Type.Literal(action))) },
+          { additionalProperties: false },
+        ),
+        executionMode: "sequential",
+        execute: executeDomain(async (_toolCallId, { action }) => {
+          await application.musicPreviewPlayer.control(action);
+          return application.listeningNow();
+        }, projectListeningNow),
+      }),
+    ],
+    [
       "music_app.control",
       (descriptor) => ({
         name: descriptor.tool_name,

@@ -878,6 +878,7 @@ export default {
   "Control NetEase Music": "NetEase Music を操作",
   "See what is playing": "再生中の曲を確認",
   "See what you're listening to": "聴いている曲を確認",
+  "Control playback": "再生を操作",
   "Control the Music app": "ミュージックAppを操作",
   "Choose a music service": "音楽サービスを選ぶ",
   "Read or change Moondog's settings": "Moondog の設定を確認・変更",

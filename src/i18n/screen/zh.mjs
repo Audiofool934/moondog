@@ -878,6 +878,7 @@ export default {
   "Control NetEase Music": "控制网易云音乐",
   "See what is playing": "查看正在播放的歌",
   "See what you're listening to": "查看你在听什么",
+  "Control playback": "控制播放",
   "Control the Music app": "控制“音乐”App",
   "Choose a music service": "选择音乐服务",
   "Read or change Moondog's settings": "读取或更改 Moondog 的设置",
