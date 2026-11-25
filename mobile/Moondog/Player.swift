@@ -62,6 +62,8 @@ final class Player {
   @ObservationIgnored private var paletteFor: URL?
   @ObservationIgnored private var palettes: [URL: [Tone]] = [:]
   @ObservationIgnored var changed: ((PlayerState) -> Void)?
+  /// Each step of starting a queue, for the Mac host's log, so a song that never plays says where it stopped.
+  @ObservationIgnored var log: ((String) -> Void)?
 
   /// Simulator has no Apple Music playback, so there the queue is acted out without sound.
   static let simulated: Bool = {
@@ -123,6 +125,7 @@ final class Player {
       simulatePalette()
       return state
     }
+    log?("asked to play \(ids.count) songs")
     guard MusicAuthorization.currentStatus == .authorized else {
       throw PlayerError(String(localized: "Allow Apple Music on this iPhone first."))
     }
@@ -132,18 +135,47 @@ final class Player {
     let request = MusicCatalogResourceRequest<Song>(matching: \.id, memberOf: ids.map { MusicItemID($0) })
     let found = try await request.response().items
     let songs = ids.compactMap { id in found.first { $0.id.rawValue == id } }
-    guard !songs.isEmpty, songs.count == ids.count else {
+    // Songs this region's catalog lacks are left out; the rest still play.
+    let missing = ids.enumerated().filter { _, id in !songs.contains { $0.id.rawValue == id } }
+      .map { index, id in tracks.indices.contains(index) ? tracks[index].title : id }
+    log?("found \(songs.count) of \(ids.count) in the \(storefront ?? "unknown") catalog" + (missing.isEmpty ? "" : "; missing: \(missing.joined(separator: ", "))"))
+    guard !songs.isEmpty else {
       throw PlayerError(String(localized: "A song isn't available in this Apple Music region."))
     }
     state.queueID = queueID
     player.queue = ApplicationMusicPlayer.Queue(for: songs)
     watch()
-    do { try await player.play() } catch {
-      publish()
-      throw error
-    }
+    log?("queue set, starting")
+    try await startQueue()
     publish()
     return state
+  }
+
+  /// Starts the queue and waits until it plays, at most 20 seconds. Apple Music's play() can wait a long
+  /// time without an answer; music that is already playing counts, and a start that never comes says so.
+  private func startQueue() async throws {
+    final class Outcome { var error: (any Error)?; var done = false }
+    let outcome = Outcome()
+    Task {
+      do { try await player.play() } catch { outcome.error = error }
+      outcome.done = true
+    }
+    for _ in 0..<80 {
+      if let error = outcome.error {
+        publish()
+        log?("play failed: \(error.localizedDescription)")
+        throw error
+      }
+      if outcome.done || player.state.playbackStatus == .playing {
+        log?("playing")
+        return
+      }
+      try await Task.sleep(for: .milliseconds(250))
+    }
+    publish()
+    let status = String(describing: player.state.playbackStatus)
+    log?("no sound after 20 seconds; Apple Music reports \(status)")
+    throw PlayerError(String(localized: "Apple Music didn't start playing within 20 seconds."))
   }
 
   func control(_ action: String) async throws -> PlayerState {

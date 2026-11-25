@@ -41,6 +41,16 @@
         }
       }
     },
+    "Apple Music didn't start playing within 20 seconds.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple Music 在 20 秒内没有开始播放。"
+          }
+        }
+      }
+    },
     "Apple Music is off for Moondog": {
       "localizations": {
         "zh-Hans": {

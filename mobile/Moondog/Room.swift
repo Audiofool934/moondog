@@ -57,6 +57,7 @@ final class Room {
   var online: Bool { link == .online }
 
   init() {
+    player.log = { [weak self] text in self?.send(["type": "log", "text": text]) }
     player.changed = { [weak self] state in
       if state.playing { self?.cued = false }
       self?.send(["type": "state", "state": state.report])
@@ -255,6 +256,7 @@ final class Room {
       notice = message.text
     case "play", "control":
       guard let id = message.id else { return }
+      if message.type == "play" { send(["type": "log", "text": "received the request"]) }
       // A request the Mac stopped waiting for: it holds a song for the listener's return and sends it again.
       if let expires = message.expires, Date.now.timeIntervalSince1970 * 1000 > expires { return }
       do {

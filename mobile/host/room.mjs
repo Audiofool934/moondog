@@ -190,6 +190,9 @@ export function createPhoneRoom() {
           case 'state':
             observe(msg.state);
             break;
+          case 'log':
+            if (typeof msg.text === 'string') note(msg.text.slice(0, 400));
+            break;
           case 'receipt':
             if (pending && pending.id === msg.id && msg.deferred === true) {
               // The phone was away and keeps the request until the listener is back.
