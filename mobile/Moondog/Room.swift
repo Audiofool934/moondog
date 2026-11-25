@@ -113,6 +113,18 @@ struct TasteWhy: Equatable {
   var confidence: Double?
 }
 
+/// A playlist link the Mac has read, waiting for the listener to say whether to keep it.
+struct ImportPreview: Identifiable, Equatable {
+  var id: String { token }
+  var token: String
+  var name: String
+  var read: Int
+  var total: Int?
+  var owned: Bool
+  var sample: [String]
+  var folderID: String?
+}
+
 /// The listening room on the Mac, reached over Tailscale. The phone is one more window on Moondog's core
 /// there: it speaks the desktop window's own protocol (app/window-room.mjs), so the conversations, the
 /// models, the library and On Air are the Mac's, shared with the desktop app and the terminal. The phone
@@ -140,6 +152,9 @@ final class Room {
   private(set) var playlists: [Playlist] = []
   private(set) var openPlaylist: PlaylistDetail?
   private(set) var taste: Taste?
+  /// A playlist link being read, and then what it holds, until the listener keeps it or not.
+  private(set) var importing = false
+  var importPreview: ImportPreview?
   /// Explanations asked for, by evidence id.
   private(set) var tasteWhy: [String: TasteWhy] = [:]
   var notice: String?
@@ -343,6 +358,61 @@ final class Room {
     send(["type": "label", "ids": [id], "patch": ["title": title]])
   }
 
+  /// A conversation folder, as the desktop's + on its conversations makes one.
+  func newFolder(_ name: String) {
+    let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !name.isEmpty else { return }
+    send(["type": "folder-save", "name": name])
+  }
+
+  func renameFolder(_ id: String, _ name: String) {
+    let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !name.isEmpty else { return }
+    send(["type": "folder-save", "id": id, "name": name])
+  }
+
+  /// A folder goes; its conversations stay, out of any folder.
+  func deleteFolder(_ id: String) { send(["type": "folder-delete", "id": id]) }
+
+  /// A conversation into a folder, or out of any with nil.
+  func move(_ id: String, to folder: String?) {
+    let place: Any = folder ?? NSNull()
+    send(["type": "label", "ids": [id], "patch": ["folderId": place]])
+  }
+
+  /// The library's +: a playlist or a folder by name, as the desktop's menu makes them.
+  func newPlaylist(_ name: String) {
+    let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !name.isEmpty else { return }
+    send(["type": "library-playlist-save", "name": name])
+  }
+
+  func newLibraryFolder(_ name: String) {
+    let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !name.isEmpty else { return }
+    send(["type": "library-folder-save", "name": name])
+  }
+
+  /// A playlist link from Spotify, Apple Music, NetEase or QQ Music: the Mac reads it first, and the listener
+  /// is asked before it is kept.
+  func previewImport(_ link: String) {
+    let link = link.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !link.isEmpty, send(["type": "library-import-preview", "link": link, "folderId": NSNull()]) else { return }
+    importing = true
+  }
+
+  func keepImport(_ preview: ImportPreview, shapingTaste: Bool) {
+    importPreview = nil
+    var value: [String: Any] = ["type": "library-import", "token": preview.token, "taste": shapingTaste]
+    value["folderId"] = preview.folderID
+    if !send(value) { importing = false }
+  }
+
+  func dropImport() {
+    importPreview = nil
+    importing = false
+  }
+
   /// The shown conversation's model, as the desktop composer's menu chooses it.
   func choose(_ choice: ModelChoice) { send(["type": "model", "provider": choice.provider, "model": choice.model]) }
 
@@ -453,7 +523,22 @@ final class Room {
       } else if let delta = message["delta"] as? String {
         turn?.assistant += delta
       }
+    case "library-import-preview":
+      guard let token = message["token"] as? String else { importing = false; return }
+      importPreview = ImportPreview(token: token, name: message["name"] as? String ?? "", read: message["read"] as? Int ?? 0,
+                                    total: message["total"] as? Int, owned: message["owned"] as? Bool == true,
+                                    sample: message["sample"] as? [String] ?? [], folderID: message["folderId"] as? String)
+    case "library-imported":
+      importing = false
+      let name = (message["playlist"] as? [String: Any])?["name"] as? String ?? ""
+      notice = switch message["taste"] as? String {
+      case "added": String(localized: "Imported \(name). It now shapes your taste.")
+      case "failed": String(localized: "Imported \(name). Your taste didn't update.")
+      default: String(localized: "Imported \(name).")
+      }
     case "notice":
+      // A link that couldn't be read ends the import with the Mac's reason.
+      importing = false
       if message["code"] as? String == "message_busy", let text = message["text"] as? String {
         // The Mac couldn't take it yet; the words go back to the composer.
         turn = nil

@@ -1,12 +1,32 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "%lld of %lld songs": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%2$lld 首中的 %1$lld 首"
+          }
+        }
+      }
+    },
     "%lld songs": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "%lld 首"
+          }
+        }
+      }
+    },
+    "A playlist from Spotify, Apple Music, NetEase Cloud Music or QQ Music.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "来自 Spotify、Apple Music、网易云音乐或 QQ 音乐的歌单。"
           }
         }
       }
@@ -221,12 +241,42 @@
         }
       }
     },
+    "Delete folder": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除文件夹"
+          }
+        }
+      }
+    },
     "Delete this conversation?": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "删除这段对话？"
+          }
+        }
+      }
+    },
+    "Deleting a folder keeps its conversations.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除文件夹会保留里面的对话。"
+          }
+        }
+      }
+    },
+    "Empty. Press a conversation to move it here.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "空的。长按一段对话，就能把它移到这里。"
           }
         }
       }
@@ -381,6 +431,76 @@
         }
       }
     },
+    "Import": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "导入"
+          }
+        }
+      }
+    },
+    "Import a playlist…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "导入歌单…"
+          }
+        }
+      }
+    },
+    "Import and let it shape my taste": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "导入，并用它来了解我的口味"
+          }
+        }
+      }
+    },
+    "Import “%@”?": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "导入“%@”？"
+          }
+        }
+      }
+    },
+    "Imported %@.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已导入“%@”。"
+          }
+        }
+      }
+    },
+    "Imported %@. It now shapes your taste.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已导入“%@”，它现在会影响你的口味。"
+          }
+        }
+      }
+    },
+    "Imported %@. Your taste didn't update.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已导入“%@”，但口味没有更新。"
+          }
+        }
+      }
+    },
     "It is deleted on your Mac too.": {
       "localizations": {
         "zh-Hans": {
@@ -461,6 +581,16 @@
         }
       }
     },
+    "Make": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新建"
+          }
+        }
+      }
+    },
     "Max": {
       "localizations": {
         "zh-Hans": {
@@ -531,6 +661,16 @@
         }
       }
     },
+    "Move to folder": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移到文件夹"
+          }
+        }
+      }
+    },
     "Name": {
       "localizations": {
         "zh-Hans": {
@@ -557,6 +697,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "新对话"
+          }
+        }
+      }
+    },
+    "New folder": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新建文件夹"
+          }
+        }
+      }
+    },
+    "New in the library": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在资料库新建"
+          }
+        }
+      }
+    },
+    "New playlist": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新建歌单"
           }
         }
       }
@@ -671,6 +841,16 @@
         }
       }
     },
+    "Out of the folder": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移出文件夹"
+          }
+        }
+      }
+    },
     "Pair": {
       "localizations": {
         "zh-Hans": {
@@ -727,6 +907,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "配对密钥未被接受"
+          }
+        }
+      }
+    },
+    "Paste a playlist link": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "粘贴歌单链接"
           }
         }
       }
@@ -841,6 +1031,16 @@
         }
       }
     },
+    "Read it": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "读取"
+          }
+        }
+      }
+    },
     "Reading the room": {
       "localizations": {
         "zh-Hans": {
@@ -857,6 +1057,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "重命名"
+          }
+        }
+      }
+    },
+    "Rename folder": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重命名文件夹"
           }
         }
       }
@@ -957,6 +1167,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "随机播放"
+          }
+        }
+      }
+    },
+    "Sidebar": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "侧栏"
           }
         }
       }
