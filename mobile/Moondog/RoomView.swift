@@ -103,8 +103,8 @@ struct RoomView: View {
 
   private var record: some View {
     Button { room.record() } label: {
-      RecordMark(playing: room.player.state.playing, armDown: armDown)
-        .frame(width: empty ? 220 : 150)
+      DotRecord(playing: room.player.state.playing, armDown: armDown)
+        .frame(width: empty ? 240 : 170)
         .contentShape(.circle)
     }
     .buttonStyle(.plain)
@@ -112,7 +112,7 @@ struct RoomView: View {
     .sensoryFeedback(.impact(weight: .light), trigger: armDown)
     .accessibilityLabel(Text(room.player.state.current == nil ? "Play something" : room.player.state.playing ? "Pause" : "Play"))
     .frame(maxWidth: .infinity)
-    .frame(height: empty ? max(260, viewport - 60) : 150)
+    .frame(height: empty ? max(280, viewport - 60) : 170)
     .padding(.top, empty ? 0 : 12)
     .padding(.bottom, empty ? 0 : 28)
     .onScrollVisibilityChange(threshold: 0.2) { visible in recordGone = !visible }

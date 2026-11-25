@@ -214,6 +214,7 @@ final class Room {
         let state = message.type == "play"
           ? try await player.play(ids: message.ids ?? [], tracks: message.tracks ?? [], queueID: id)
           : try await player.control(message.action ?? "")
+        if state.playing { cued = false }
         send(["type": "receipt", "id": id, "state": state.report])
       } catch {
         notice = error.localizedDescription

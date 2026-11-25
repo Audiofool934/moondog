@@ -6,6 +6,8 @@ import UIKit
 // lines and fills always agree (app/renderer/tokens.css).
 extension Color {
   static let paper = Color(light: 0xF7F6F2, dark: 0x141413)
+  /// The ink itself, for drawings that set their own strengths.
+  static let ink = ink(1, dark: 1)
   static let text = ink(0.93, dark: 0.92)
   static let text2 = ink(0.66, dark: 0.62)
   static let text3 = ink(0.50, dark: 0.46)

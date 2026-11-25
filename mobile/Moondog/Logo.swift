@@ -174,3 +174,134 @@ enum HostLine {
   ]
   static func any() -> LocalizedStringResource { all.randomElement()! }
 }
+
+/// The lunar record the terminal opens with, as dots: the frames `npm run logo` writes from
+/// src/surfaces/cli/terminal-art.mjs, the same ones the desktop window draws above the words.
+final class RecordDots {
+  static let shared = RecordDots()
+  /// Each layer's ink, as on the desktop: grooves, surface, the dog and the arm.
+  static let ink: [Double] = [0, 0.22, 0.5, 0.93]
+  static let frameCount = 64
+
+  let width: Int
+  let lifted: Double
+  private let frames: [Data]
+  private let arms: [Data]
+  private var frameDots: [Int: [[Int]]] = [:]
+  private var armDots: [Int: [Int]] = [:]
+
+  private struct File: Decodable {
+    var width: Int
+    var lifted: Double
+    var frames: [String]
+    var arm: [String]
+  }
+
+  private init() {
+    let url = Bundle.main.url(forResource: "record-dots", withExtension: "json")!
+    let file = try! JSONDecoder().decode(File.self, from: Data(contentsOf: url))
+    width = file.width
+    lifted = file.lifted
+    frames = file.frames.map { Data(base64Encoded: $0)! }
+    arms = file.arm.map { Data(base64Encoded: $0)! }
+  }
+
+  /// The cells each layer inks in one frame of the turn, worked out once and kept.
+  func layers(_ frame: Int) -> [[Int]] {
+    if let known = frameDots[frame] { return known }
+    var layers: [[Int]] = [[], [], [], []]
+    unpack(frames[frame]) { at, layer in layers[layer].append(at) }
+    frameDots[frame] = layers
+    return layers
+  }
+
+  /// The arm's cells at a step of its swing, 0 on the record to the last step lifted off it.
+  var armSteps: Int { arms.count - 1 }
+  func arm(_ step: Int) -> [Int] {
+    if let known = armDots[step] { return known }
+    var cells: [Int] = []
+    unpack(arms[step]) { at, _ in cells.append(at) }
+    armDots[step] = cells
+    return cells
+  }
+
+  private func unpack(_ data: Data, _ each: (Int, Int) -> Void) {
+    for (index, byte) in data.enumerated() where byte != 0 {
+      for slot in 0..<4 {
+        let layer = Int(byte >> (slot * 2) & 3)
+        if layer != 0 { each(index * 4 + slot, layer) }
+      }
+    }
+  }
+
+  /// Dots as one path, each centered on a pixel so rows of them never beat against the screen.
+  func path(_ cells: [Int], size: CGFloat, scale: CGFloat) -> Path {
+    let pitch = size / CGFloat(width)
+    let radius = pitch * 0.32
+    let snap: (CGFloat) -> CGFloat = pitch * scale >= 1.9 ? { (($0 * scale - 0.5).rounded() + 0.5) / scale } : { $0 }
+    var path = Path()
+    for at in cells {
+      let x = snap((CGFloat(at % width) + 0.5) * pitch)
+      let y = snap((CGFloat(at / width) + 0.5) * pitch)
+      path.addEllipse(in: CGRect(x: x - radius, y: y - radius, width: radius * 2, height: radius * 2))
+    }
+    return path
+  }
+}
+
+/// The record above the conversation, drawn in dots as on the desktop. It turns a frame every eighth
+/// of a second while music plays and rests where it stopped; its arm rests on it while music plays
+/// and swings off when the music stops.
+struct DotRecord: View {
+  var playing: Bool
+  var armDown: Bool
+
+  private static let interval: TimeInterval = 0.125
+  @State private var since = Date.now
+  @State private var rest = 0
+  @Environment(\.displayScale) private var scale
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  var body: some View {
+    TimelineView(.periodic(from: since, by: Self.interval)) { timeline in
+      let frame = turning ? frame(at: timeline.date) : rest
+      Canvas { context, size in
+        let dots = RecordDots.shared
+        let layers = dots.layers(frame)
+        for layer in 1...3 {
+          context.fill(dots.path(layers[layer], size: size.width, scale: scale), with: .color(.ink.opacity(RecordDots.ink[layer])))
+        }
+      }
+    }
+    .overlay { Arm(swing: armDown ? 0 : 1, scale: scale) }
+    .animation(reduceMotion ? nil : .easeInOut(duration: 0.56), value: armDown)
+    .aspectRatio(1, contentMode: .fit)
+    .onChange(of: turning) { _, now in
+      if now { since = .now } else { rest = frame(at: .now) }
+    }
+  }
+
+  private var turning: Bool { playing && !reduceMotion }
+
+  private func frame(at date: Date) -> Int {
+    (rest + Int(max(0, date.timeIntervalSince(since)) / Self.interval)) % RecordDots.frameCount
+  }
+
+  /// The arm on its own, so it can swing: 0 rests it on the record, 1 lifts it off.
+  private struct Arm: View, Animatable {
+    var swing: Double
+    var scale: CGFloat
+    var animatableData: Double {
+      get { swing }
+      set { swing = newValue }
+    }
+
+    var body: some View {
+      Canvas { context, size in
+        let dots = RecordDots.shared
+        let step = Int((swing * Double(dots.armSteps)).rounded())
+        context.fill(dots.path(dots.arm(step), size: size.width, scale: scale), with: .color(.ink.opacity(RecordDots.ink[3])))
+      }
+    }
+  }
+}

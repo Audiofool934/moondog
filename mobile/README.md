@@ -34,8 +34,8 @@ The app uses the bundle ID `ai.audiofool.moondog` and team `DAK5S3455A`.
 Playing whole songs needs the MusicKit service on that App ID in the Apple Developer portal.
 To build under another team, change the team and bundle ID in the target's Signing settings, and turn on MusicKit for your own App ID.
 
-The record is drawn from the logo's own numbers.
-After a change to `src/surfaces/brand/logo.mjs`, run `npm run logo` here to write `Moondog/logo-figure.json`, and `node scripts/generate-logo.mjs` from the root for the app icon.
+The record above the conversation is the terminal's lunar record in dots, the same frames the desktop window draws; the small mark in the bar is the logo's vector form.
+After a change to `src/surfaces/cli/terminal-art.mjs` or `src/surfaces/brand/logo.mjs`, run `npm run logo` here to write `Moondog/record-dots.json` and `Moondog/logo-figure.json`, and `node scripts/generate-logo.mjs` from the root for the app icon.
 
 ## Try it in Simulator
 

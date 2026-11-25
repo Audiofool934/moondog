@@ -17,8 +17,8 @@ struct SetupView: View {
     ScrollView {
       VStack(alignment: .leading, spacing: 0) {
         if !again {
-          RecordMark(playing: false, armDown: false)
-            .frame(width: 96)
+          DotRecord(playing: false, armDown: false)
+            .frame(width: 120)
             .padding(.top, 48)
             .padding(.bottom, 28)
             .accessibilityHidden(true)
