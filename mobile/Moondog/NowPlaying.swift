@@ -5,6 +5,8 @@ import SwiftUI
 struct Sleeve: View {
   var artwork: Artwork?
   var size: CGFloat
+  /// Its corners; a sleeve inside a rounded bar takes the bar's radius less its inset, so the curves stay parallel.
+  var corner: CGFloat?
 
   var body: some View {
     Group {
@@ -20,7 +22,7 @@ struct Sleeve: View {
       }
     }
     .frame(width: size, height: size)
-    .clipShape(.rect(cornerRadius: size > 100 ? 8 : 4))
+    .clipShape(.rect(cornerRadius: corner ?? (size > 100 ? 8 : 4)))
     .shadow(color: .black.opacity(size > 100 ? 0.22 : 0.1), radius: size > 100 ? 18 : 3, y: size > 100 ? 12 : 1)
     .accessibilityHidden(true)
   }
@@ -30,13 +32,16 @@ struct Sleeve: View {
 struct NowPlayingBar: View {
   @Environment(Room.self) private var room
   var open: () -> Void
+  // The cover sits the same distance from the bar's top, bottom and left edges.
+  private static let inset: CGFloat = 8
+  private static let radius: CGFloat = 22
 
   var body: some View {
     let state = room.player.state
     HStack(spacing: 12) {
       Button(action: open) {
         HStack(spacing: 12) {
-          Sleeve(artwork: room.player.artwork, size: 40)
+          Sleeve(artwork: room.player.artwork, size: 44, corner: Self.radius - Self.inset)
           VStack(alignment: .leading, spacing: 1) {
             Text(state.current?.title ?? "")
               .font(.subheadline.weight(.medium))
@@ -58,10 +63,10 @@ struct NowPlayingBar: View {
       PlayerButton(symbol: "forward.fill", label: "Next song") { room.control("next") }
         .disabled(state.upNext.isEmpty)
     }
-    .padding(.leading, 8)
+    .padding(.leading, Self.inset)
     .padding(.trailing, 4)
-    .padding(.vertical, 6)
-    .glassEffect(.regular, in: .rect(cornerRadius: 20))
+    .padding(.vertical, Self.inset)
+    .glassEffect(.regular, in: .rect(cornerRadius: Self.radius))
   }
 }
 
@@ -146,7 +151,13 @@ struct NowPlayingView: View {
       .padding(.horizontal, 32)
       .padding(.bottom, 32)
     }
-    .background(Color.paper)
+    .background {
+      ZStack {
+        Color.paper
+        Mood(palette: room.player.palette, playing: state.playing)
+      }
+      .ignoresSafeArea()
+    }
     .presentationDragIndicator(.visible)
     .presentationBackground(Color.paper)
     .onChange(of: state.current == nil) { _, gone in if gone { dismiss() } }

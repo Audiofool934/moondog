@@ -39,7 +39,7 @@ After a change to `src/surfaces/cli/terminal-art.mjs` or `src/surfaces/brand/log
 
 ## Try it in Simulator
 
-Simulator can't play Apple Music, so there the app acts out the queue without sound.
+Simulator can't play Apple Music, so there the app acts out the queue without sound, and each made-up song lights the room with colours taken from its title rather than a cover.
 
 ```sh
 npm run demo
@@ -53,6 +53,7 @@ It prints a pairing link; copy it into Simulator with `xcrun simctl pbcopy boote
 Paste the pairing link or type the address and key, then allow Apple Music when the room asks.
 Ask for something, or tap the record and Moondog picks.
 Tap the song above the composer to see where it is and what comes next.
+As on the desktop, the playing cover's colours tint the record's grooves and light the room faintly.
 The system player keeps playing in the background, and the lock screen controls report back to the Mac.
 New requests need the Mac online; a queue already playing keeps playing when the connection drops.
 

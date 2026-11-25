@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import UIKit
 @preconcurrency import MusicKit
 
 struct Track: Codable, Equatable, Hashable {
@@ -53,6 +54,10 @@ final class Player {
   private(set) var access = MusicAccess.checking
   private(set) var storefront: String?
   private(set) var artwork: Artwork?
+  /// The playing cover's colours, for the grooves and the room's light; nil until read.
+  private(set) var palette: [Tone]?
+  @ObservationIgnored private var paletteFor: URL?
+  @ObservationIgnored private var palettes: [URL: [Tone]] = [:]
   @ObservationIgnored var changed: ((PlayerState) -> Void)?
 
   /// Simulator has no Apple Music playback, so there the queue is acted out without sound.
@@ -106,6 +111,7 @@ final class Player {
       let named = tracks.isEmpty ? ids.map { Track(id: $0, title: $0, artist: "") } : tracks
       state = PlayerState(status: "playing", queueID: queueID, index: 0, tracks: named)
       resetClock(running: true)
+      simulatePalette()
       return state
     }
     guard MusicAuthorization.currentStatus == .authorized else {
@@ -142,6 +148,7 @@ final class Player {
       case "next": break
       default: throw PlayerError("Unknown player control.")
       }
+      simulatePalette()
       changed?(state)
       return state
     }
@@ -173,10 +180,40 @@ final class Player {
     started = running ? .now : nil
   }
 
+  /// Reads the cover at the size the palette needs, once per cover.
+  private func readPalette() {
+    guard let url = artwork?.url(width: CoverPalette.size, height: CoverPalette.size) else {
+      if state.current == nil { palette = nil }
+      return
+    }
+    guard url != paletteFor else { return }
+    paletteFor = url
+    if let known = palettes[url] {
+      palette = known
+      return
+    }
+    Task {
+      guard let (data, _) = try? await URLSession.shared.data(from: url),
+            let image = UIImage(data: data)?.cgImage, let tones = CoverPalette.of(image)
+      else { return }
+      if palettes.count > 40 { palettes.removeAll() }
+      palettes[url] = tones
+      if paletteFor == url { palette = tones }
+    }
+  }
+
+  /// Simulator has no covers, so each made-up song gets steady colours of its own from its title.
+  private func simulatePalette() {
+    guard let title = state.current?.title else { palette = nil; return }
+    let hue = Double(title.unicodeScalars.reduce(0) { ($0 * 31 + Int($1.value)) % 360 })
+    palette = [0, 70, 150].map { Tone(h: (hue + $0).truncatingRemainder(dividingBy: 360), s: 0.6, l: 0.5) }
+  }
+
   /// Reads the system player after each change and passes the result on when it differs.
   private func publish() {
     let next = snapshot()
     artwork = player.queue.currentEntry?.artwork
+    readPalette()
     guard next != state else { return }
     state = next
     changed?(next)

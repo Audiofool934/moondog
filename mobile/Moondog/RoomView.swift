@@ -11,6 +11,7 @@ struct RoomView: View {
   @State private var recordGone = false
   @State private var viewport: CGFloat = 0
   @FocusState private var composing: Bool
+  @Environment(\.colorScheme) private var scheme
 
   var body: some View {
     ScrollView {
@@ -47,7 +48,22 @@ struct RoomView: View {
     .defaultScrollAnchor(.bottom)
     .defaultScrollAnchor(.bottom, for: .sizeChanges)
     .scrollDismissesKeyboard(.interactively)
-    .background(Color.paper)
+    // Words fade out under the bar, with no line to mark where it ends, and the room's light shows through.
+    .mask {
+      VStack(spacing: 0) {
+        LinearGradient(stops: [.init(color: .clear, location: 0.62), .init(color: .black, location: 1)], startPoint: .top, endPoint: .bottom)
+          .frame(height: 140)
+        Color.black
+      }
+      .ignoresSafeArea()
+    }
+    .background {
+      ZStack {
+        Color.paper
+        Mood(palette: lit, playing: room.player.state.playing)
+      }
+      .ignoresSafeArea()
+    }
     .safeAreaBar(edge: .bottom, spacing: 0) {
       VStack(spacing: 6) {
         if room.player.state.current != nil {
@@ -88,14 +104,10 @@ struct RoomView: View {
     .foregroundStyle(Color.text)
     .padding(.horizontal, 16)
     .padding(.bottom, 4)
-    .background {
-      // Words fade out under the bar, with no line to mark where it ends.
-      LinearGradient(stops: [.init(color: .paper, location: 0.7), .init(color: .paper.opacity(0), location: 1)], startPoint: .top, endPoint: .bottom)
-        .padding(.bottom, -36)
-        .ignoresSafeArea(edges: .top)
-        .allowsHitTesting(false)
-    }
   }
+
+  /// The cover's colours light the room while its song is loaded.
+  private var lit: [Tone]? { room.player.state.current == nil ? nil : room.player.palette }
 
   private var armDown: Bool { room.player.state.playing || room.cued }
 
@@ -103,7 +115,7 @@ struct RoomView: View {
 
   private var record: some View {
     Button { room.record() } label: {
-      DotRecord(playing: room.player.state.playing, armDown: armDown)
+      DotRecord(playing: room.player.state.playing, armDown: armDown, grooves: lit.map { CoverPalette.grooves($0, dark: scheme == .dark) })
         .frame(width: empty ? 240 : 170)
         .contentShape(.circle)
     }

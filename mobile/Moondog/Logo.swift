@@ -185,6 +185,9 @@ final class RecordDots {
 
   let width: Int
   let lifted: Double
+  /// The record's center and radius on the grid, in dots.
+  let center: [Double]
+  let radius: Double
   private let frames: [Data]
   private let arms: [Data]
   private var frameDots: [Int: [[Int]]] = [:]
@@ -193,6 +196,8 @@ final class RecordDots {
   private struct File: Decodable {
     var width: Int
     var lifted: Double
+    var center: [Double]
+    var radius: Double
     var frames: [String]
     var arm: [String]
   }
@@ -202,6 +207,8 @@ final class RecordDots {
     let file = try! JSONDecoder().decode(File.self, from: Data(contentsOf: url))
     width = file.width
     lifted = file.lifted
+    center = file.center
+    radius = file.radius
     frames = file.frames.map { Data(base64Encoded: $0)! }
     arms = file.arm.map { Data(base64Encoded: $0)! }
   }
@@ -255,6 +262,8 @@ final class RecordDots {
 struct DotRecord: View {
   var playing: Bool
   var armDown: Bool
+  /// The playing cover's colours for the grooves, rim inward, or nil for ink.
+  var grooves: [Color]? = nil
 
   private static let interval: TimeInterval = 0.125
   @State private var since = Date.now
@@ -265,14 +274,21 @@ struct DotRecord: View {
   var body: some View {
     TimelineView(.periodic(from: since, by: Self.interval)) { timeline in
       let frame = turning ? frame(at: timeline.date) : rest
-      Canvas { context, size in
-        let dots = RecordDots.shared
-        let layers = dots.layers(frame)
-        for layer in 1...3 {
-          context.fill(dots.path(layers[layer], size: size.width, scale: scale), with: .color(.ink.opacity(RecordDots.ink[layer])))
+      ZStack {
+        // The grooves alone, so a new cover's colours can drift in over the last ones.
+        Grooves(frame: frame, colours: grooves, scale: scale)
+          .id(grooves)
+          .transition(.opacity)
+        Canvas { context, size in
+          let dots = RecordDots.shared
+          let layers = dots.layers(frame)
+          for layer in 2...3 {
+            context.fill(dots.path(layers[layer], size: size.width, scale: scale), with: .color(.ink.opacity(RecordDots.ink[layer])))
+          }
         }
       }
     }
+    .animation(reduceMotion ? nil : .easeInOut(duration: 2.4), value: grooves)
     .overlay { Arm(swing: armDown ? 0 : 1, scale: scale) }
     .animation(reduceMotion ? nil : .easeInOut(duration: 0.56), value: armDown)
     .aspectRatio(1, contentMode: .fit)
@@ -285,6 +301,30 @@ struct DotRecord: View {
 
   private func frame(at date: Date) -> Int {
     (rest + Int(max(0, date.timeIntervalSince(since)) / Self.interval)) % RecordDots.frameCount
+  }
+
+  /// The grooves in ink, or in a cover's three colours from the rim inward, a little stronger so the colour reads.
+  private struct Grooves: View {
+    var frame: Int
+    var colours: [Color]?
+    var scale: CGFloat
+
+    var body: some View {
+      Canvas { context, size in
+        let dots = RecordDots.shared
+        let path = dots.path(dots.layers(frame)[1], size: size.width, scale: scale)
+        guard let colours, colours.count == 3 else {
+          context.fill(path, with: .color(.ink.opacity(RecordDots.ink[1])))
+          return
+        }
+        let pitch = size.width / CGFloat(dots.width)
+        let center = CGPoint(x: (dots.center[0] + 0.5) * pitch, y: (dots.center[1] + 0.5) * pitch)
+        let radius = dots.radius * pitch
+        let gradient = Gradient(stops: [.init(color: colours[2], location: 0), .init(color: colours[1], location: 0.55), .init(color: colours[0], location: 1)])
+        context.opacity = 0.6
+        context.fill(path, with: .radialGradient(gradient, center: center, startRadius: radius * 0.45, endRadius: radius))
+      }
+    }
   }
 
   /// The arm on its own, so it can swing: 0 rests it on the record, 1 lifts it off.
