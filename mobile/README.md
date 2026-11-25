@@ -68,9 +68,11 @@ Ask for something, or tap the record and Moondog picks.
 Once there are words, the record moves into the bar, small and still turning; it plays and pauses there too.
 A tap on the conversation, or sending a message, puts the keyboard away.
 Tap the song above the composer to see where it is and what comes next; tap a song in Up next to play it, or press it to take it out, and the bookmark keeps what plays in Saved.
-The list button at the top left shows every conversation on the Mac, pinned first and then by folder, with the library and Settings above them.
-Swipe a conversation to pin or delete it, or press it to rename it; the pencil beside the list starts a new one.
+The list button at the top left opens the sidebar, as on the desktop: Chats, Library and Taste in a row of glass, with a new conversation beside Chats and Settings at the end.
+Chats lists every conversation on the Mac, pinned first and then by folder; swipe one to pin or delete it, or press it to rename it.
+The pencil beside the list button starts a new conversation too.
 The library plays a playlist from the top, shuffled, or from any song in it.
+Taste lists the artists and tracks your profile rests on, as the desktop's taste view does; open one to see why it's there, like it, keep it out, or find more like a track.
 The model beside the send button is this conversation's, from the models set up on the Mac, with its thinking levels.
 When the Mac can make music, the radio button goes on air as the desktop's does, by asking Moondog; while it is on, the On Air mark stops it.
 As on the desktop, the playing cover's colours tint the record's grooves and light the room faintly.

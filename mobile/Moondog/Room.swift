@@ -81,6 +81,38 @@ struct PlaylistDetail: Equatable {
   var entries: [PlaylistEntry]
 }
 
+/// One artist or track the listener's profile rests on, as the desktop's taste view lists it.
+struct TasteSubject: Identifiable, Equatable {
+  var id: String
+  var label: String
+  var subtitle: String
+  var kind: String
+  var stance: String?
+  var chosen: Bool
+  var details: [String]
+  var evidenceID: String?
+  /// What a choice is about, sent back as it came.
+  var target: [String: String]
+}
+
+/// The listener's taste, as the core reads it for the desktop's taste view.
+struct Taste: Equatable {
+  var ready: Bool
+  /// What to say when there is nothing to show yet.
+  var lines: [String]
+  var subjects: [TasteSubject]
+  var canChoose: Bool
+  /// The request Find more like this starts, in the core's language.
+  var ask: String?
+}
+
+/// Why something is in the profile, and what that can't tell.
+struct TasteWhy: Equatable {
+  var basis: String
+  var limit: String
+  var confidence: Double?
+}
+
 /// The listening room on the Mac, reached over Tailscale. The phone is one more window on Moondog's core
 /// there: it speaks the desktop window's own protocol (app/window-room.mjs), so the conversations, the
 /// models, the library and On Air are the Mac's, shared with the desktop app and the terminal. The phone
@@ -107,6 +139,9 @@ final class Room {
   private(set) var libraryFolders: [LibraryFolder] = []
   private(set) var playlists: [Playlist] = []
   private(set) var openPlaylist: PlaylistDetail?
+  private(set) var taste: Taste?
+  /// Explanations asked for, by evidence id.
+  private(set) var tasteWhy: [String: TasteWhy] = [:]
   var notice: String?
   /// Words the Mac gave back because it couldn't take them yet, for the composer.
   var returned: String?
@@ -328,6 +363,29 @@ final class Room {
     send(["type": "library-save", "from": "queue", "playlistId": playlist])
   }
 
+  /// The profile, asked for each time the taste view opens, as on the desktop.
+  func refreshTaste() { send(["type": "taste"]) }
+
+  /// I like this, Keep it out, or Undo my choice: saved on the Mac as the desktop saves it.
+  func choose(_ stance: String, for subject: TasteSubject) {
+    send(["type": "taste-choice", "key": subject.id, "target": subject.target, "stance": stance])
+  }
+
+  func explain(_ subject: TasteSubject) {
+    guard let evidence = subject.evidenceID else { return }
+    send(["type": "taste-why", "key": subject.id, "evidenceId": evidence])
+  }
+
+  /// Find more like this: the core's own request, about this track.
+  @discardableResult
+  func findMore(like subject: TasteSubject) -> Bool {
+    guard let ask = taste?.ask else { return false }
+    let quoted = { (text: String) -> String in
+      (try? String(data: JSONSerialization.data(withJSONObject: text, options: .fragmentsAllowed), encoding: .utf8)) ?? "\"\(text)\""
+    }
+    return prompt("\(ask)\n\nTrack: \(quoted(subject.target["label"] ?? subject.label))\nArtist: \(quoted(subject.target["artistCredit"] ?? subject.subtitle))")
+  }
+
   /// On Air starts as the desktop's button starts it: by asking Moondog in words.
   func goOnAir() {
     _ = prompt(String(localized: "Go on air: make new music for right now and keep it going"))
@@ -439,6 +497,24 @@ final class Room {
       case "not_found": notice = String(localized: "That playlist is gone.")
       default: break
       }
+    case "taste":
+      taste = Taste(
+        ready: message["state"] as? String == "ready",
+        lines: message["lines"] as? [String] ?? [],
+        subjects: (message["subjects"] as? [[String: Any]] ?? []).compactMap { raw in
+          guard let key = raw["key"] as? String else { return nil }
+          let evidence = (raw["evidence"] as? [[String: Any]])?.first?["id"] as? String
+          let target = (raw["target"] as? [String: Any] ?? [:]).compactMapValues { $0 as? String }
+          return TasteSubject(id: key, label: raw["label"] as? String ?? "", subtitle: raw["subtitle"] as? String ?? "",
+                              kind: raw["kind"] as? String ?? "", stance: raw["stance"] as? String, chosen: raw["chosen"] as? Bool == true,
+                              details: (raw["details"] as? [String] ?? []).filter { !$0.isEmpty }, evidenceID: evidence, target: target)
+        },
+        canChoose: message["canChoose"] as? Bool == true,
+        ask: message["ask"] as? String)
+    case "taste-why":
+      guard let evidence = message["evidenceId"] as? String else { return }
+      tasteWhy[evidence] = TasteWhy(basis: message["basis"] as? String ?? "", limit: message["limit"] as? String ?? "",
+                                    confidence: message["confidence"] as? Double)
     case "preview", "preview-enqueue", "preview-control":
       player.receive(message)
     default:

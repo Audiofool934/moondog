@@ -1,7 +1,8 @@
 import SwiftUI
 
-/// The listener's library on the Mac, the desktop's shelf: Saved first, then each playlist, by folder.
-/// A playlist plays here, on the phone, through the same core as on the desktop.
+/// The listener's library on the Mac, the desktop's shelf: Saved first, then each playlist, by folder. It
+/// shows in the sidebar beside the conversations, and a playlist plays here, on the phone, through the same
+/// core as on the desktop.
 struct LibraryView: View {
   @Environment(Room.self) private var room
 
@@ -23,8 +24,6 @@ struct LibraryView: View {
     .listStyle(.plain)
     .scrollContentBackground(.hidden)
     .background(Color.paper)
-    .navigationTitle("Library")
-    .navigationBarTitleDisplayMode(.inline)
   }
 
   private func row(_ playlist: Playlist) -> some View {
@@ -113,6 +112,8 @@ private struct PlaylistView: View {
     }
     .navigationTitle(playlist.saved ? String(localized: "Saved") : playlist.name)
     .navigationBarTitleDisplayMode(.inline)
+    // The sidebar's own row of glass stands in for a bar; a playlist has one, with the way back.
+    .toolbarVisibility(.visible, for: .navigationBar)
     .onAppear { room.openPlaylistOnMac(playlist.id) }
     .onDisappear { room.openPlaylistOnMac(nil) }
   }

@@ -45,7 +45,7 @@ struct RoomView: View {
     }
     .statusBarHidden(immersed)
     .persistentSystemOverlays(immersed ? .hidden : .automatic)
-    .sheet(isPresented: $conversations) { ConversationsView() }
+    .sheet(isPresented: $conversations) { SidebarView() }
     .sheet(isPresented: $settings) { SettingsView() }
     .confirmationDialog("Go off air?", isPresented: $offAir, titleVisibility: .visible) {
       Button("Go off air", role: .destructive) { room.goOffAir() }

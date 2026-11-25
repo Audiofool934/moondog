@@ -1,6 +1,6 @@
 // A host for trying the iPhone app in Simulator without your profile, a model, or a key: the desktop's
-// window room (app/window-room.mjs) on made-up songs, in-memory conversations and library, and a
-// scripted model, on 127.0.0.1. Nothing is read from or kept in your Moondog folders.
+// window room (app/window-room.mjs) on made-up songs, a made-up profile, in-memory conversations and
+// library, and a scripted model, on 127.0.0.1. Nothing is read from or kept in your Moondog folders.
 import { randomUUID } from 'node:crypto';
 import { rmSync } from 'node:fs';
 import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
@@ -10,6 +10,7 @@ import { createModels, fauxAssistantMessage, fauxProvider, fauxText, fauxToolCal
 import { MoondogApplication } from '../../src/core/moondog-application.mjs';
 import { openLibraryStore } from '../../src/core/library-store.mjs';
 import { createPlaybackSelection } from '../../src/core/playback-preferences.mjs';
+import { createSyntheticDomainServices } from '../../src/core/synthetic-domain-services.mjs';
 import { createAppleMusicCatalog, createAppleMusicCatalogClient } from '../../src/integrations/apple-music/catalog.mjs';
 import { PiAgentRuntime } from '../../src/runtime/pi/agent-runtime.mjs';
 import { createWindowPreviewPlayer } from '../../app/preview-player.mjs';
@@ -47,7 +48,9 @@ const shared = {
   musicCatalog, libraryStore, musicPreviewPlayer: createWindowPreviewPlayer(port),
   playbackService: 'apple_music', playbackSelection: createPlaybackSelection({ service: 'apple_music' }),
 };
-const application = new MoondogApplication(shared);
+// A made-up listening profile, the one the desktop's simulated window uses, for the taste view.
+const domainServices = createSyntheticDomainServices({ subjectScope: { subjectId: 'iphone-demo' } });
+const application = new MoondogApplication({ ...shared, domainServices });
 
 // A made track, as Moondog's stream hands one to the player: eight seconds of a soft tone, written where
 // the Mac keeps what it makes, so the phone fetches it from the host the way On Air's tracks come.
@@ -97,7 +100,7 @@ function scripted(target, modelId = MODELS[0].model) {
 
 const conversations = new Set();
 async function openConversation({ sessionId = null, reason = 'user_new' } = {}) {
-  const conversationApplication = new MoondogApplication({ ...shared, ownsServices: false });
+  const conversationApplication = new MoondogApplication({ ...shared, domainServices: domainServices.fork(), ownsServices: false });
   conversationApplication.localConversations = application.localConversations;
   const conversation = { application: conversationApplication, runtime: null,
     close() { conversations.delete(conversation); conversationApplication.close(); } };

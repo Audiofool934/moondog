@@ -21,6 +21,16 @@
         }
       }
     },
+    "All": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全部"
+          }
+        }
+      }
+    },
     "Allow Apple Music": {
       "localizations": {
         "zh-Hans": {
@@ -81,6 +91,16 @@
         }
       }
     },
+    "Artists": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "艺人"
+          }
+        }
+      }
+    },
     "Ask Moondog": {
       "localizations": {
         "zh-Hans": {
@@ -111,6 +131,16 @@
         }
       }
     },
+    "Chats": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "对话"
+          }
+        }
+      }
+    },
     "Checking the request line": {
       "localizations": {
         "zh-Hans": {
@@ -127,6 +157,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "正在检查…"
+          }
+        }
+      }
+    },
+    "Choices": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择"
           }
         }
       }
@@ -221,6 +261,16 @@
         }
       }
     },
+    "Find more like this": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "找更多类似的"
+          }
+        }
+      }
+    },
     "Finding the cue": {
       "localizations": {
         "zh-Hans": {
@@ -311,12 +361,52 @@
         }
       }
     },
+    "How sure: %lld%%": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "把握：%lld%%"
+          }
+        }
+      }
+    },
+    "I like this": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "我喜欢"
+          }
+        }
+      }
+    },
     "It is deleted on your Mac too.": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "你 Mac 上的这段对话也会删除。"
+          }
+        }
+      }
+    },
+    "Keep it out": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不再推荐"
+          }
+        }
+      }
+    },
+    "Kept out": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已不再推荐"
           }
         }
       }
@@ -507,6 +597,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "这里还没有歌"
+          }
+        }
+      }
+    },
+    "Nothing here yet. Open an artist or a track to like it or keep it out.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这里还没有内容。打开一位艺人或一首歌，就可以标记喜欢或不再推荐。"
           }
         }
       }
@@ -891,6 +991,16 @@
         }
       }
     },
+    "Taste": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "品味"
+          }
+        }
+      }
+    },
     "That code isn't a Moondog pairing code.": {
       "localizations": {
         "zh-Hans": {
@@ -941,6 +1051,26 @@
         }
       }
     },
+    "Tracks": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "歌曲"
+          }
+        }
+      }
+    },
+    "Undo my choice": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "撤销我的选择"
+          }
+        }
+      }
+    },
     "Unpin": {
       "localizations": {
         "zh-Hans": {
@@ -971,12 +1101,42 @@
         }
       }
     },
+    "What it can't tell me": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "它说明不了什么"
+          }
+        }
+      }
+    },
+    "Why it's here": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "为什么在这里"
+          }
+        }
+      }
+    },
     "Working the decks": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "搓碟中"
+          }
+        }
+      }
+    },
+    "You like this": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你喜欢"
           }
         }
       }
