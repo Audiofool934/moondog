@@ -22,6 +22,7 @@ private struct Inbound: Decodable {
   var tracks: [Track]?
   var action: String?
   var expires: Double?
+  var now: Double?
 }
 
 /// The listening room on the Mac, reached over Tailscale. The Mac owns the conversation and the agent;
@@ -46,6 +47,8 @@ final class Room {
   @ObservationIgnored private var attempts = 0
   @ObservationIgnored private var retry: Task<Void, Never>?
   @ObservationIgnored private var active = false
+  /// How far this phone's clock runs ahead of the Mac's, in milliseconds; the two can differ by minutes.
+  @ObservationIgnored private var skew: Double = 0
   @ObservationIgnored private var lift: Task<Void, Never>?
   @ObservationIgnored private var live: OnAirLive?
   /// The time iOS gives an app that has just left the screen, kept while a reply is still coming.
@@ -240,6 +243,7 @@ final class Room {
     }
     switch message.type {
     case "room":
+      if let now = message.now { skew = Date.now.timeIntervalSince1970 * 1000 - now }
       messages = message.messages ?? []
       let ended = turn != nil && message.turn == nil
       if turn == nil && message.turn != nil { hostLine = HostLine.any() }
@@ -258,7 +262,10 @@ final class Room {
       guard let id = message.id else { return }
       if message.type == "play" { send(["type": "log", "text": "received the request"]) }
       // A request the Mac stopped waiting for: it holds a song for the listener's return and sends it again.
-      if let expires = message.expires, Date.now.timeIntervalSince1970 * 1000 > expires { return }
+      if let expires = message.expires, Date.now.timeIntervalSince1970 * 1000 - skew > expires {
+        if message.type == "play" { send(["type": "log", "text": "dropped the request: it expired before it arrived"]) }
+        return
+      }
       do {
         let state = message.type == "play"
           ? try await player.play(ids: message.ids ?? [], tracks: message.tracks ?? [], queueID: id)

@@ -22,7 +22,8 @@ export function createPhoneRoom() {
   const send = (message) => {
     if (socket?.readyState === 1) socket.send(JSON.stringify(message));
   };
-  const snapshot = () => send({ type: 'room', messages, turn: turn ?? null });
+  // The Mac's clock rides along so the phone can read the expiry on each request by it, not by its own clock.
+  const snapshot = () => send({ type: 'room', messages, turn: turn ?? null, now: Date.now() });
   function settle(error) {
     if (!pending) return;
     clearTimeout(pending.timer);
