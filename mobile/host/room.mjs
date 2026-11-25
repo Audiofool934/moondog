@@ -2,6 +2,14 @@ import { randomUUID } from 'node:crypto';
 import { setAppleMusicStorefront } from '../../src/integrations/apple-music/storefront.mjs';
 
 // One listener and one physical player. Playback completes only after the phone replies.
+// What the phone did with each request, one line each, so a song that never plays says why in the terminal.
+const note = (text) => {
+  if (process.env.NODE_TEST_CONTEXT) return;
+  const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  console.log(`${time} iPhone: ${text}`);
+};
+const songs = (value) => (value.tracks ?? []).map((t) => `${t.title} by ${t.artist}`).join(', ') || value.action || '';
+
 export function createPhoneRoom() {
   let socket, runtime, readHistory, turn, pending, playback, held;
   let access = false;
@@ -20,16 +28,20 @@ export function createPhoneRoom() {
     clearTimeout(pending.timer);
     const request = pending;
     pending = null;
-    if (error) request.reject(new Error(error));
-    else request.resolve();
+    if (error) {
+      note(`${request.type} failed: ${error}`);
+      request.reject(new Error(error));
+    } else request.resolve();
   }
   function hold(value, id) {
     held = { value, id };
+    note(`away; holding ${songs(value)} until Moondog is open again`);
   }
   function release() {
     if (!held || !socket || !present || !access) return;
     const { value, id } = held;
     held = null;
+    note(`back; sending ${songs(value)}`);
     send({ ...value, id, expires: Date.now() + 25000 });
   }
   function observe(value) {
@@ -104,6 +116,7 @@ export function createPhoneRoom() {
         reject,
         timer: setTimeout(() => settle('Playback was not confirmed by the iPhone.'), 25000),
       };
+      note(`${value.type} ${songs(value)}`);
       send({ ...value, id, expires: Date.now() + 25000 });
     });
   }
@@ -138,6 +151,7 @@ export function createPhoneRoom() {
       }
       socket = client;
       present = true;
+      note('connected');
       refreshHistory(true);
       snapshot();
       client.on('message', (bytes) => {
@@ -152,6 +166,11 @@ export function createPhoneRoom() {
         switch (msg.type) {
           case 'access':
             access = msg.ready === true;
+            note(
+              access
+                ? `Apple Music ready, storefront ${msg.storefront ?? 'unknown'}${msg.problem ? `; catalog problem: ${msg.problem}` : ''}`
+                : 'Apple Music not ready on the phone',
+            );
             if (access) {
               known = true;
               setAppleMusicStorefront(msg.storefront);
@@ -159,6 +178,7 @@ export function createPhoneRoom() {
             }
             break;
           case 'presence':
+            if (present !== (msg.active === true)) note(msg.active === true ? 'Moondog open' : 'Moondog left');
             present = msg.active === true;
             // A song the phone was about to start when the listener left waits for their return.
             if (!present && pending?.type === 'play') {
@@ -186,7 +206,10 @@ export function createPhoneRoom() {
                   ? null
                   : String(msg.error || 'The phone did not confirm playback.').slice(0, 400),
               );
-            } else if (msg.state) observe(msg.state);
+            } else {
+              if (msg.error) note(`a held request failed on the phone: ${String(msg.error).slice(0, 400)}`);
+              if (msg.state) observe(msg.state);
+            }
             break;
           case 'prompt': {
             const text = typeof msg.text === 'string' ? msg.text.trim() : '';
@@ -207,6 +230,7 @@ export function createPhoneRoom() {
       });
       client.on('error', () => client.terminate());
       client.once('close', () => {
+        note('disconnected');
         socket = null;
         playback = null;
         access = false;

@@ -8,7 +8,11 @@ struct RoomView: View {
   @State private var draft = ""
   @State private var settings = false
   @State private var nowPlaying = false
+  /// The record alone: whether it is open, and how far, from 0 in the room to 1 filling the screen.
   @State private var immersed = false
+  @State private var openness: CGFloat = 0
+  /// Where the record sits on screen, for the record alone to grow out of and return to.
+  @State private var recordFrame = CGRect.zero
   @State private var viewport = CGSize.zero
   /// Where the top bar ends and the bottom bar begins on screen, which the words fade toward.
   @State private var topEdge: CGFloat = 0
@@ -21,6 +25,39 @@ struct RoomView: View {
   private static let small: CGFloat = 64
 
   var body: some View {
+    ZStack {
+      ZStack {
+        Color.paper
+        Mood(palette: lit, playing: room.player.state.playing)
+      }
+      .ignoresSafeArea()
+      conversation
+        // The room steps back while the record has the screen.
+        .opacity(1 - openness)
+        .scaleEffect(1 - openness * 0.04)
+        .allowsHitTesting(!immersed)
+        .accessibilityHidden(immersed)
+      if immersed {
+        ImmersiveLayer(openness: $openness, from: recordFrame, close: closeRecord)
+      }
+    }
+    .statusBarHidden(immersed)
+    .persistentSystemOverlays(immersed ? .hidden : .automatic)
+    .sheet(isPresented: $settings) { SettingsView() }
+    .sheet(isPresented: $nowPlaying) { NowPlayingView() }
+  }
+
+  private func openRecord() {
+    composing = false
+    immersed = true
+    withAnimation(.spring(duration: 0.55, bounce: 0.16)) { openness = 1 }
+  }
+
+  private func closeRecord() {
+    withAnimation(.spring(duration: 0.5, bounce: 0.12)) { openness = 0 } completion: { immersed = false }
+  }
+
+  private var conversation: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: 0) {
         if empty { record(width: quietWidth) }
@@ -79,13 +116,6 @@ struct RoomView: View {
       }
       .ignoresSafeArea()
     }
-    .background {
-      ZStack {
-        Color.paper
-        Mood(palette: lit, playing: room.player.state.playing)
-      }
-      .ignoresSafeArea()
-    }
     .safeAreaBar(edge: .bottom, spacing: 0) {
       VStack(spacing: 6) {
         if room.player.state.current != nil {
@@ -101,12 +131,6 @@ struct RoomView: View {
       bar.onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).maxY } action: { topEdge = $0 }
     }
     .animation(.smooth(duration: 0.5), value: empty)
-    .sheet(isPresented: $settings) { SettingsView() }
-    .sheet(isPresented: $nowPlaying) { NowPlayingView() }
-    .fullScreenCover(isPresented: $immersed) {
-      ImmersiveView()
-        .navigationTransition(.zoom(sourceID: "record", in: space))
-    }
   }
 
   // MARK: Parts
@@ -117,7 +141,7 @@ struct RoomView: View {
       HStack {
         BarButton(symbol: "gearshape", label: "Settings") { settings = true }
         Spacer()
-        BarButton(symbol: "arrow.up.left.and.arrow.down.right", label: "The record alone") { immersed = true }
+        BarButton(symbol: "arrow.up.left.and.arrow.down.right", label: "The record alone") { openRecord() }
       }
       if !empty { record(width: Self.small) }
     }
@@ -153,7 +177,9 @@ struct RoomView: View {
     }
     .buttonStyle(.plain)
     .matchedGeometryEffect(id: "record", in: space)
-    .matchedTransitionSource(id: "record", in: space)
+    // The record alone grows out of this one, which steps aside meanwhile.
+    .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { recordFrame = $0 }
+    .opacity(immersed ? 0 : 1)
     .disabled(!room.online && room.player.state.current == nil)
     .sensoryFeedback(.impact(weight: .light), trigger: armDown)
     .accessibilityLabel(Text(room.player.state.current == nil ? "Play something" : room.player.state.playing ? "Pause" : "Play"))

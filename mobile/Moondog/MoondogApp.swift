@@ -17,7 +17,9 @@ struct MoondogApp: App {
       }
       .environment(room)
       .tint(Color.text)
-      .onChange(of: phase, initial: true) { _, phase in room.setActive(phase == .active) }
+      // Only leaving the app counts as away. A system alert, Control Center or the app switcher makes the
+      // scene inactive for a moment while the app keeps running, and must not hold back a song.
+      .onChange(of: phase, initial: true) { _, phase in room.setActive(phase != .background) }
       // The code `npm run pair` shows opens here from the Camera. A phone already paired with another
       // Mac asks first, so no link can move it without the listener.
       .onOpenURL { url in

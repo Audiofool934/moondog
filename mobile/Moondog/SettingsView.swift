@@ -29,7 +29,13 @@ struct SettingsView: View {
             .buttonStyle(.glass)
           }
           section("Apple Music") {
-            row(Text(access), detail: nil, symbol: room.player.access == .ready ? "checkmark.circle.fill" : "music.note")
+            row(Text(access), detail: nil, symbol: room.player.access == .ready && room.player.problem == nil ? "checkmark.circle.fill" : "music.note")
+            if let problem = room.player.problem {
+              Text("Apple Music's catalog can't be reached from Moondog: \(problem)")
+                .font(.subheadline)
+                .foregroundStyle(Color.text2)
+                .textSelection(.enabled)
+            }
             if room.player.access == .notDetermined {
               Button {
                 Task { await room.player.refreshAccess(request: true); room.setActive(true) }

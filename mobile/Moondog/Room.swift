@@ -120,7 +120,10 @@ final class Room {
     if let waiting {
       self.waiting = nil
       Task {
-        do { _ = try await player.play(ids: waiting.ids, tracks: waiting.tracks, queueID: waiting.id) } catch { notice = error.localizedDescription }
+        do { _ = try await player.play(ids: waiting.ids, tracks: waiting.tracks, queueID: waiting.id) } catch {
+          notice = error.localizedDescription
+          send(["type": "receipt", "id": waiting.id, "error": error.localizedDescription])
+        }
       }
     }
     Task {
@@ -196,6 +199,7 @@ final class Room {
   private func sendAccess() {
     var value: [String: Any] = ["type": "access", "ready": player.access == .ready]
     value["storefront"] = player.storefront
+    value["problem"] = player.problem
     send(value)
   }
 

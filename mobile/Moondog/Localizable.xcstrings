@@ -51,6 +51,16 @@
         }
       }
     },
+    "Apple Music's catalog can't be reached from Moondog: %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Moondog 连不上 Apple Music 曲库：%@"
+          }
+        }
+      }
+    },
     "Ask Moondog": {
       "localizations": {
         "zh-Hans": {

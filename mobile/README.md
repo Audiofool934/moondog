@@ -26,6 +26,7 @@ Once paired, `npm run host` starts the host without the code.
 To type the key by hand, `npm run --silent host -- --show-key` prints it.
 
 Keep the host running while you use the phone.
+It prints a line for each song it sends, holds or loses, with the phone's own error when one comes back.
 It asks Tailscale for this Mac's IPv4 address and listens on port `47831` on that address only.
 Both devices need to be on the same tailnet, and the phone needs access to that port.
 
@@ -63,7 +64,8 @@ Once there are words, the record moves into the bar, small and still turning; it
 A tap on the conversation, or sending a message, puts the keyboard away.
 Tap the song above the composer to see where it is and what comes next.
 As on the desktop, the playing cover's colours tint the record's grooves and light the room faintly.
-The button at the top right shows the record alone, large over the cover's light, and keeps the screen on; tap the record to play or pause, and anywhere else to go back.
+The button at the top right opens the record alone: it grows out of its place to fill the screen over the cover's light, and keeps the screen on.
+Tap the record to play or pause; swipe down, or tap beside it, to send it back.
 Away from the app, a Live Activity puts the logo in the Dynamic Island and on the Lock Screen with the song and what the host is doing or last said.
 The system player keeps playing in the background, and the lock screen controls report back to the Mac.
 Leave the app while Moondog works and the reply still arrives for a short while; a song it picks starts if iOS allows, and otherwise the moment you are back.

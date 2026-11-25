@@ -53,6 +53,9 @@ final class Player {
   private(set) var state = PlayerState()
   private(set) var access = MusicAccess.checking
   private(set) var storefront: String?
+  /// Why Apple Music can't be reached from this app, when it can't: most often the MusicKit service missing
+  /// on the App ID, which leaves the app without the token Apple Music's catalog asks for.
+  private(set) var problem: String?
   private(set) var artwork: Artwork?
   /// The playing cover's colours, for the grooves and the room's light; nil until read.
   private(set) var palette: [Tone]?
@@ -98,7 +101,13 @@ final class Player {
     case .authorized:
       let subscription = try? await MusicSubscription.current
       access = subscription?.canPlayCatalogContent == true ? .ready : .needsSubscription
-      storefront = try? await MusicDataRequest.currentCountryCode
+      do {
+        storefront = try await MusicDataRequest.currentCountryCode
+        problem = nil
+      } catch {
+        storefront = nil
+        problem = error.localizedDescription
+      }
     case .notDetermined: access = .notDetermined
     case .restricted: access = .restricted
     default: access = .denied
