@@ -40,7 +40,13 @@ export async function listen({ host, port, token, room }) {
     });
   });
   await new Promise((resolve, reject) => {
-    server.once('error', reject);
+    server.once('error', (error) =>
+      reject(
+        error.code === 'EADDRINUSE'
+          ? new Error(`Another Moondog host is already listening on ${host}:${port}. Stop it (Ctrl-C in its terminal), then start this one again.`)
+          : error,
+      ),
+    );
     server.listen(port, host, resolve);
   });
   return {
