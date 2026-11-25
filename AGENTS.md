@@ -2,7 +2,7 @@
 
 ## Current Product Surface
 
-- Moondog is a radio host just for the listener, working from a listening room with two clients on one core: the Pi-based terminal and the desktop app.
+- Moondog is a radio host just for the listener, working from a listening room with three clients on one core: the Pi-based terminal, the desktop app, and the iPhone app.
   Build and evaluate the personal listening loop there.
 - The browser Studio and the static showcase were removed on 2026-10-22; Git history keeps them for reference.
   Do not rebuild a separate browser product unless the project owner reopens that scope.
@@ -11,6 +11,10 @@
 - The desktop app in `app/` is in scope, first for the project owner's daily use and then for developers.
   It is a native client on the same core as the terminal, as a desktop app is to its command line: share the application, agent, Spotify, profile and memory services, and let the window draw its own conversation, now playing and up next.
   Keep it minimal and keyboard-first: few controls, no accent color, no decorative cards or divider lines.
+- The iPhone app in `mobile/` is in scope, for the project owner's daily use.
+  It is a native SwiftUI client that reaches the agent on the listener's Mac through the host in `mobile/host` over Tailscale, and plays Apple Music on the phone.
+  Keep the agent, profile and conversation on the Mac; the phone owns only its player and reports what actually plays.
+  Follow the desktop app's look: the record drawn from the logo, paper and ink with no accent color, and no decorative cards or divider lines.
 - Reuse the shared profile, correction, import, and agent services when adding terminal interactions.
 - Present the listening-profile result immediately after a successful TUI import, in the same terminal session; do not require a browser or a separate command to see it.
 
