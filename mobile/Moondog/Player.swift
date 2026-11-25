@@ -148,6 +148,7 @@ final class Player {
     log?("queue set, starting")
     try await startQueue()
     publish()
+    log?("reporting \(state.status), song \((state.index ?? -1) + 1) of \(state.tracks.count)")
     return state
   }
 
@@ -166,7 +167,8 @@ final class Player {
         log?("play failed: \(error.localizedDescription)")
         throw error
       }
-      if outcome.done || player.state.playbackStatus == .playing {
+      // play() can return a moment before Apple Music says it plays, and the Mac waits for "playing".
+      if player.state.playbackStatus == .playing {
         log?("playing")
         return
       }
@@ -174,7 +176,7 @@ final class Player {
     }
     publish()
     let status = String(describing: player.state.playbackStatus)
-    log?("no sound after 20 seconds; Apple Music reports \(status)")
+    log?("no sound after 20 seconds; Apple Music reports \(status)" + (outcome.done ? " though play() returned" : ""))
     throw PlayerError(String(localized: "Apple Music didn't start playing within 20 seconds."))
   }
 
