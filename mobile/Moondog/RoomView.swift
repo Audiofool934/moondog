@@ -10,6 +10,9 @@ struct RoomView: View {
   @State private var nowPlaying = false
   @State private var immersed = false
   @State private var viewport = CGSize.zero
+  /// Where the top bar ends and the bottom bar begins on screen, which the words fade toward.
+  @State private var topEdge: CGFloat = 0
+  @State private var bottomEdge: CGFloat = .infinity
   @Namespace private var space
   @FocusState private var composing: Bool
   @Environment(\.colorScheme) private var scheme
@@ -59,19 +62,22 @@ struct RoomView: View {
     .defaultScrollAnchor(.bottom, for: .sizeChanges)
     .scrollDismissesKeyboard(.interactively)
     // Words fade out as they reach the bars, with no line to mark where they end, and the room's light shows through.
+    // The fades follow the bars' own places on screen, which the keyboard moves, rather than safe-area numbers,
+    // which iOS versions count differently while the keyboard is up.
     .mask {
       GeometryReader { proxy in
+        let frame = proxy.frame(in: .global)
+        let top = min(max(0, topEdge - frame.minY), frame.height)
+        let bottom = min(max(0, frame.maxY - bottomEdge - 4), frame.height)
         VStack(spacing: 0) {
-          LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom)
-            .frame(height: 24)
-            .padding(.top, max(0, proxy.safeAreaInsets.top - 10))
+          Color.clear.frame(height: top)
+          LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom).frame(height: 24)
           Color.black
-          LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom)
-            .frame(height: 28)
-            .padding(.bottom, max(0, proxy.safeAreaInsets.bottom - 24))
+          LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom).frame(height: 28)
+          Color.clear.frame(height: bottom)
         }
-        .ignoresSafeArea()
       }
+      .ignoresSafeArea()
     }
     .background {
       ZStack {
@@ -89,8 +95,11 @@ struct RoomView: View {
       }
       .padding(.horizontal, 12)
       .padding(.bottom, 6)
+      .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: { bottomEdge = $0 }
     }
-    .safeAreaBar(edge: .top, spacing: 0) { bar }
+    .safeAreaBar(edge: .top, spacing: 0) {
+      bar.onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).maxY } action: { topEdge = $0 }
+    }
     .animation(.smooth(duration: 0.5), value: empty)
     .sheet(isPresented: $settings) { SettingsView() }
     .sheet(isPresented: $nowPlaying) { NowPlayingView() }
