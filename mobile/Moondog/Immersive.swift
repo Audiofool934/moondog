@@ -27,7 +27,7 @@ struct ImmersiveView: View {
         .disabled(!room.online && state.current == nil)
         .sensoryFeedback(.impact(weight: .light), trigger: state.playing)
         .accessibilityLabel(Text(state.current == nil ? "Play something" : state.playing ? "Pause" : "Play"))
-        .padding(.top, disc * DotRecord.reach.top)
+        .padding(.top, DotRecord.reach(disc))
 
         // The song, quietly, at the same height whether or not one is loaded, so the record never moves.
         VStack(spacing: 3) {

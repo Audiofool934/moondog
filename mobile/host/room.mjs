@@ -3,8 +3,12 @@ import { setAppleMusicStorefront } from '../../src/integrations/apple-music/stor
 
 // One listener and one physical player. Playback completes only after the phone replies.
 export function createPhoneRoom() {
-  let socket, runtime, readHistory, turn, pending, playback;
+  let socket, runtime, readHistory, turn, pending, playback, held;
   let access = false;
+  // Whether Moondog is in front on the phone. iOS stops an app soon after the listener leaves it, so a
+  // song asked for meanwhile is held and sent when the phone is back, rather than failing.
+  let present = false;
+  let known = false;
   let running;
   const messages = [];
   const send = (message) => {
@@ -18,6 +22,15 @@ export function createPhoneRoom() {
     pending = null;
     if (error) request.reject(new Error(error));
     else request.resolve();
+  }
+  function hold(value, id) {
+    held = { value, id };
+  }
+  function release() {
+    if (!held || !socket || !present || !access) return;
+    const { value, id } = held;
+    held = null;
+    send({ ...value, id, expires: Date.now() + 25000 });
   }
   function observe(value) {
     if (
@@ -75,6 +88,10 @@ export function createPhoneRoom() {
     }
   }
   async function command(value) {
+    if (value.type === 'play' && known && (!socket || !present)) {
+      hold(value, randomUUID());
+      return;
+    }
     if (!socket || !access) throw new Error('Connect the iPhone and enable Apple Music there first.');
     if (pending) throw new Error('The iPhone is completing another playback command.');
     const id = randomUUID();
@@ -82,6 +99,7 @@ export function createPhoneRoom() {
       pending = {
         id,
         type: value.type,
+        value,
         resolve,
         reject,
         timer: setTimeout(() => settle('Playback was not confirmed by the iPhone.'), 25000),
@@ -119,6 +137,7 @@ export function createPhoneRoom() {
         return;
       }
       socket = client;
+      present = true;
       refreshHistory(true);
       snapshot();
       client.on('message', (bytes) => {
@@ -133,13 +152,29 @@ export function createPhoneRoom() {
         switch (msg.type) {
           case 'access':
             access = msg.ready === true;
-            if (access) setAppleMusicStorefront(msg.storefront);
+            if (access) {
+              known = true;
+              setAppleMusicStorefront(msg.storefront);
+              release();
+            }
+            break;
+          case 'presence':
+            present = msg.active === true;
+            // A song the phone was about to start when the listener left waits for their return.
+            if (!present && pending?.type === 'play') {
+              hold(pending.value, pending.id);
+              settle(null);
+            }
+            release();
             break;
           case 'state':
             observe(msg.state);
             break;
           case 'receipt':
-            if (pending && pending.id === msg.id) {
+            if (pending && pending.id === msg.id && msg.deferred === true) {
+              // The phone was away and keeps the request until the listener is back.
+              settle(null);
+            } else if (pending && pending.id === msg.id) {
               if (msg.state) observe(msg.state);
               const confirmed =
                 !msg.error &&
@@ -151,7 +186,7 @@ export function createPhoneRoom() {
                   ? null
                   : String(msg.error || 'The phone did not confirm playback.').slice(0, 400),
               );
-            }
+            } else if (msg.state) observe(msg.state);
             break;
           case 'prompt': {
             const text = typeof msg.text === 'string' ? msg.text.trim() : '';
@@ -175,7 +210,11 @@ export function createPhoneRoom() {
         socket = null;
         playback = null;
         access = false;
-        settle('The iPhone disconnected before confirming playback.');
+        present = false;
+        if (pending?.type === 'play') {
+          hold(pending.value, pending.id);
+          settle(null);
+        } else settle('The iPhone disconnected before confirming playback.');
       });
     },
     async close() {

@@ -178,7 +178,11 @@ enum HostLine {
 /// The lunar record the terminal opens with, as dots: the frames `npm run logo` writes from
 /// src/surfaces/cli/terminal-art.mjs, the same ones the desktop window draws above the words.
 final class RecordDots {
-  static let shared = RecordDots()
+  static let shared = RecordDots("record-dots")
+  /// The same record on a coarser grid, so a record drawn small keeps dots rather than a grey haze.
+  static let small = RecordDots("record-dots-small")
+  /// The grid that draws a disc this wide.
+  static func drawing(_ disc: CGFloat) -> RecordDots { disc < 150 ? small : shared }
   /// Each layer's ink, as on the desktop: grooves, surface, the dog and the arm.
   static let ink: [Double] = [0, 0.22, 0.5, 0.93]
   static let frameCount = 64
@@ -202,8 +206,8 @@ final class RecordDots {
     var arm: [String]
   }
 
-  private init() {
-    let url = Bundle.main.url(forResource: "record-dots", withExtension: "json")!
+  private init(_ resource: String) {
+    let url = Bundle.main.url(forResource: resource, withExtension: "json")!
     let file = try! JSONDecoder().decode(File.self, from: Data(contentsOf: url))
     width = file.width
     lifted = file.lifted
@@ -259,14 +263,13 @@ final class RecordDots {
 /// The record above the conversation, drawn in dots as on the desktop. It turns a frame every eighth
 /// of a second while music plays and rests where it stopped; its arm rests on it while music plays
 /// and swings off when the music stops. Its frame is the disc alone, so the record sits centered where
-/// it is placed; the arm reaches past the frame, above and to the right, by `reach` of its width.
+/// it is placed; the arm reaches past the frame, above and to the right, by `reach`.
 struct DotRecord: View {
-  /// How far the arm reaches past the disc, as parts of its diameter.
-  static let reach: (top: CGFloat, trailing: CGFloat) = {
-    let dots = RecordDots.shared
-    let across = 2 * dots.radius
-    return ((dots.center[1] + 0.5 - dots.radius) / across, (Double(dots.width) - dots.center[0] - 0.5 - dots.radius) / across)
-  }()
+  /// How far the arm reaches above a disc this wide, in points.
+  static func reach(_ disc: CGFloat) -> CGFloat {
+    let dots = RecordDots.drawing(disc)
+    return disc * (dots.center[1] + 0.5 - dots.radius) / (2 * dots.radius)
+  }
 
   var playing: Bool
   var armDown: Bool
@@ -284,11 +287,11 @@ struct DotRecord: View {
       .aspectRatio(1, contentMode: .fit)
       .overlay {
         GeometryReader { proxy in
-          let dots = RecordDots.shared
+          let dots = RecordDots.drawing(proxy.size.width)
           let pitch = proxy.size.width / (2 * dots.radius)
           let grid = pitch * CGFloat(dots.width)
           // The whole grid, placed so the disc's center lands on the frame's center.
-          record
+          record(dots)
             .frame(width: grid, height: grid)
             .position(x: proxy.size.width / 2 + (grid / 2 - (dots.center[0] + 0.5) * pitch),
                       y: proxy.size.height / 2 + (grid / 2 - (dots.center[1] + 0.5) * pitch))
@@ -299,16 +302,15 @@ struct DotRecord: View {
       }
   }
 
-  private var record: some View {
+  private func record(_ dots: RecordDots) -> some View {
     TimelineView(.periodic(from: since, by: Self.interval)) { timeline in
       let frame = turning ? frame(at: timeline.date) : rest
       ZStack {
         // The grooves alone, so a new cover's colours can drift in over the last ones.
-        Grooves(frame: frame, colours: grooves, scale: scale)
+        Grooves(dots: dots, frame: frame, colours: grooves, scale: scale)
           .id(grooves)
           .transition(.opacity)
         Canvas { context, size in
-          let dots = RecordDots.shared
           let layers = dots.layers(frame)
           for layer in 2...3 {
             context.fill(dots.path(layers[layer], size: size.width, scale: scale), with: .color(.ink.opacity(RecordDots.ink[layer])))
@@ -317,7 +319,7 @@ struct DotRecord: View {
       }
     }
     .animation(reduceMotion ? nil : .easeInOut(duration: 2.4), value: grooves)
-    .overlay { Arm(swing: armDown ? 0 : 1, scale: scale) }
+    .overlay { Arm(dots: dots, swing: armDown ? 0 : 1, scale: scale) }
     .animation(reduceMotion ? nil : .easeInOut(duration: 0.56), value: armDown)
   }
 
@@ -329,13 +331,13 @@ struct DotRecord: View {
 
   /// The grooves in ink, or in a cover's three colours from the rim inward, a little stronger so the colour reads.
   private struct Grooves: View {
+    var dots: RecordDots
     var frame: Int
     var colours: [Color]?
     var scale: CGFloat
 
     var body: some View {
       Canvas { context, size in
-        let dots = RecordDots.shared
         let path = dots.path(dots.layers(frame)[1], size: size.width, scale: scale)
         guard let colours, colours.count == 3 else {
           context.fill(path, with: .color(.ink.opacity(RecordDots.ink[1])))
@@ -353,6 +355,7 @@ struct DotRecord: View {
 
   /// The arm on its own, so it can swing: 0 rests it on the record, 1 lifts it off.
   private struct Arm: View, Animatable {
+    var dots: RecordDots
     var swing: Double
     var scale: CGFloat
     var animatableData: Double {
@@ -362,7 +365,6 @@ struct DotRecord: View {
 
     var body: some View {
       Canvas { context, size in
-        let dots = RecordDots.shared
         let step = Int((swing * Double(dots.armSteps)).rounded())
         context.fill(dots.path(dots.arm(step), size: size.width, scale: scale), with: .color(.ink.opacity(RecordDots.ink[3])))
       }

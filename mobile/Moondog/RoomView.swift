@@ -1,24 +1,26 @@
 import MusicKit
 import SwiftUI
 
-/// The listening room: the record above the conversation, the song and the composer at the bottom.
+/// The listening room. Before anything is said the record stands alone in the middle; once there are
+/// words, it moves into the bar, small and still turning, and the conversation has the room.
 struct RoomView: View {
   @Environment(Room.self) private var room
   @State private var draft = ""
   @State private var settings = false
   @State private var nowPlaying = false
   @State private var immersed = false
-  @State private var recordGone = false
   @State private var viewport = CGSize.zero
-  @State private var position = ScrollPosition(edge: .bottom)
   @Namespace private var space
   @FocusState private var composing: Bool
   @Environment(\.colorScheme) private var scheme
 
+  /// The record's width in the bar over a conversation.
+  private static let small: CGFloat = 64
+
   var body: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: 0) {
-        record
+        if empty { record(width: quietWidth) }
         status
         ForEach(Array(room.messages.enumerated()), id: \.offset) { _, message in
           MessageView(message: message)
@@ -40,11 +42,14 @@ struct RoomView: View {
         }
       }
       .padding(.horizontal, 22)
+      .padding(.top, empty ? 0 : 8)
       .padding(.bottom, 16)
-      // A short conversation hangs from the record rather than sinking to the composer.
+      // A short conversation hangs from the bar rather than sinking to the composer.
       .frame(minHeight: viewport.height, alignment: .top)
+      // A tap anywhere in the conversation puts the keyboard away.
+      .contentShape(.rect)
+      .onTapGesture { composing = false }
     }
-    .scrollPosition($position)
     // The mask below fades the words; the system's own edges would draw a line where the bars end.
     .scrollEdgeEffectHidden(true, for: [.top, .bottom])
     .onScrollGeometryChange(for: CGSize.self) { $0.containerSize } action: { _, size in
@@ -86,6 +91,7 @@ struct RoomView: View {
       .padding(.bottom, 6)
     }
     .safeAreaBar(edge: .top, spacing: 0) { bar }
+    .animation(.smooth(duration: 0.5), value: empty)
     .sheet(isPresented: $settings) { SettingsView() }
     .sheet(isPresented: $nowPlaying) { NowPlayingView() }
     .fullScreenCover(isPresented: $immersed) {
@@ -96,34 +102,20 @@ struct RoomView: View {
 
   // MARK: Parts
 
-  // Settings on the left, clear of the arm; the record alone on the right.
+  // Settings on the left, the record alone on the right, and over a conversation the record between them.
   private var bar: some View {
-    HStack {
-      BarButton(symbol: "gearshape", label: "Settings") { settings = true }
-      Spacer()
-      BarButton(symbol: "arrow.up.left.and.arrow.down.right", label: "The record alone") { immersed = true }
-    }
-    .overlay {
-      // The record folds into the bar, under the camera, once it scrolls out of view; a tap brings it back.
-      Button {
-        withAnimation(.smooth(duration: 0.5)) { position.scrollTo(edge: .top) }
-      } label: {
-        RecordMark(playing: room.player.state.playing, armDown: armDown)
-          .frame(width: 30, height: 30)
-          .frame(width: 44, height: 44)
-          .contentShape(.rect)
+    ZStack {
+      HStack {
+        BarButton(symbol: "gearshape", label: "Settings") { settings = true }
+        Spacer()
+        BarButton(symbol: "arrow.up.left.and.arrow.down.right", label: "The record alone") { immersed = true }
       }
-      .buttonStyle(.plain)
-      .opacity(recordGone ? 1 : 0)
-      .scaleEffect(recordGone ? 1 : 0.6)
-      .animation(.smooth(duration: 0.3), value: recordGone)
-      .allowsHitTesting(recordGone)
-      .accessibilityHidden(!recordGone)
-      .accessibilityLabel(Text("Back to the record"))
+      if !empty { record(width: Self.small) }
     }
     .foregroundStyle(Color.text)
     .padding(.horizontal, 16)
-    .padding(.bottom, 4)
+    .padding(.top, empty ? 0 : DotRecord.reach(Self.small))
+    .padding(.bottom, 6)
   }
 
   /// The cover's colours light the room while its song is loaded.
@@ -133,42 +125,33 @@ struct RoomView: View {
 
   private var empty: Bool { room.messages.isEmpty && room.turn == nil }
 
-  /// The disc's width: most of the screen while the room is quiet, a little over half once there are words.
-  private var disc: CGFloat {
-    let room = max(0, viewport.width - 44)
-    return empty ? min(room * 0.8, 340) : min(room * 0.66, 260)
+  /// The record's width in a quiet room: most of the screen, less while the keyboard is up.
+  private var quietWidth: CGFloat {
+    min(max(0, viewport.width - 44) * 0.8, viewport.height * 0.5, 340)
   }
 
-  private var record: some View {
-    let disc = disc
-    let reach = disc * DotRecord.reach.top
-    return Button { room.record() } label: {
+  /// The record, wherever it is: a tap plays or pauses what is loaded, or with nothing loaded asks Moondog to pick.
+  private func record(width: CGFloat) -> some View {
+    let quiet = width > Self.small
+    let reach = DotRecord.reach(width)
+    return Button {
+      composing = false
+      room.record()
+    } label: {
       DotRecord(playing: room.player.state.playing, armDown: armDown, grooves: lit.map { CoverPalette.grooves($0, dark: scheme == .dark) })
-        .frame(width: disc)
+        .frame(width: width)
         .contentShape(.circle)
     }
     .buttonStyle(.plain)
+    .matchedGeometryEffect(id: "record", in: space)
     .matchedTransitionSource(id: "record", in: space)
     .disabled(!room.online && room.player.state.current == nil)
     .sensoryFeedback(.impact(weight: .light), trigger: armDown)
     .accessibilityLabel(Text(room.player.state.current == nil ? "Play something" : room.player.state.playing ? "Pause" : "Play"))
-    // Room above for the arm, clear of the bar's fade; in a quiet room as much below, so the disc itself sits in the middle.
-    .padding(.top, reach + 14)
-    .padding(.bottom, empty ? reach + 14 : 24)
-    .frame(maxWidth: .infinity)
-    .frame(minHeight: empty ? max(0, viewport.height - 60) : 0)
-    .onScrollVisibilityChange(threshold: 0.16) { visible in recordGone = !visible }
-    .visualEffect { content, proxy in
-      // Scrolled up, the record stays under the bar and shrinks just ahead of the words, rising into the
-      // bar's center, where the mark takes over. The scroll view's space starts below the bar.
-      let frame = proxy.frame(in: .scrollView)
-      let scrolled = max(0, -frame.minY)
-      let under = min(1, scrolled / max(frame.height, 1))
-      return content
-        .scaleEffect(max(0.001, 1 - under), anchor: .top)
-        .offset(y: scrolled - under * 44)
-        .opacity(min(1, max(0, (0.86 - under) / 0.16)))
-    }
+    // In a quiet room the disc itself sits in the middle, with as much room below it as the arm takes above.
+    .padding(.vertical, quiet ? reach + 14 : 0)
+    .frame(maxWidth: quiet ? .infinity : nil)
+    .frame(minHeight: quiet ? max(0, viewport.height - 60) : nil)
   }
 
   @ViewBuilder private var status: some View {
@@ -249,6 +232,8 @@ struct RoomView: View {
   private func send() {
     if room.prompt(draft) {
       draft = ""
+      // The reply is what to read next, not the keyboard.
+      composing = false
     }
   }
 }

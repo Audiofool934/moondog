@@ -158,6 +158,15 @@ test(
     const reconnected = phone(url);
     assert.equal((await receive(reconnected, (m) => m.type === 'room')).messages.length, 4);
     assert.equal(room.player.nowPlaying(), null);
+    // Away from the app, a song waits for the listener and starts when they are back.
+    const again = (msg) => reconnected.send(JSON.stringify(msg));
+    again({ type: 'access', ready: true, storefront: 'US' });
+    again({ type: 'presence', active: false });
+    await new Promise((done) => setTimeout(done, 20));
+    await room.player.play([{ catalog_id: '44', title: 'Low Tide', artist_credit: 'Test Trio' }]);
+    const held = receive(reconnected, (m) => m.type === 'play');
+    again({ type: 'presence', active: true });
+    assert.deepEqual((await held).ids, ['44']);
     reconnected.close();
     await once(reconnected, 'close');
   },

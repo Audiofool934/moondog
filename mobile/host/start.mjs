@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 import { privateHost } from './address.mjs';
+import { qrLines } from './qr.mjs';
 import { createPhoneRoom } from './room.mjs';
 import { listen } from './server.mjs';
 import { MoondogApplication } from '../../src/core/moondog-application.mjs';
@@ -58,9 +59,14 @@ if (!privateHost(host) || !assigned) {
     'Connect Tailscale on this Mac, or set MOONDOG_PHONE_HOST to its Tailscale IPv4 address. Use 127.0.0.1 for Simulator.',
   );
 }
+const link = `moondog://pair?host=${host}&key=${token}`;
+if (process.argv.includes('--qr')) {
+  // The iPhone's Camera, or the app's own scanner, opens this link in Moondog and pairs.
+  console.log(['', ...qrLines(link), ''].join('\n'));
+  console.log('Scan this code with your iPhone to pair it with Moondog.');
+}
 if (process.argv.includes('--copy')) {
   // The phone's Paste button reads this link through Universal Clipboard.
-  const link = `moondog://pair?host=${host}&key=${token}`;
   execFileSync('pbcopy', { input: link });
   console.log('Copied the pairing link. Paste it in Moondog on your iPhone.');
 }

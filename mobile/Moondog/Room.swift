@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 
 struct Message: Decodable, Equatable {
   var role: String
@@ -47,6 +48,10 @@ final class Room {
   @ObservationIgnored private var active = false
   @ObservationIgnored private var lift: Task<Void, Never>?
   @ObservationIgnored private var live: OnAirLive?
+  /// The time iOS gives an app that has just left the screen, kept while a reply is still coming.
+  @ObservationIgnored private var grace = UIBackgroundTaskIdentifier.invalid
+  /// A song the Mac sent while the phone was away and could not start, played when the listener is back.
+  @ObservationIgnored private var waiting: (id: String, ids: [String], tracks: [Track])?
   private let session = URLSession(configuration: .ephemeral)
 
   var online: Bool { link == .online }
@@ -105,7 +110,19 @@ final class Room {
   /// keeps the app running, as it does while music plays, but no new attempts start.
   func setActive(_ value: Bool) {
     active = value
-    guard value else { return }
+    send(["type": "presence", "active": value])
+    guard value else {
+      // iOS stops an app soon after it leaves the screen unless it plays; a reply still coming keeps it a little longer.
+      if turn != nil || cued { stayForReply() }
+      return
+    }
+    letGo()
+    if let waiting {
+      self.waiting = nil
+      Task {
+        do { _ = try await player.play(ids: waiting.ids, tracks: waiting.tracks, queueID: waiting.id) } catch { notice = error.localizedDescription }
+      }
+    }
     Task {
       await player.refreshAccess()
       sendAccess()
@@ -214,6 +231,7 @@ final class Room {
       attempts = 0
       sendAccess()
       send(["type": "state", "state": player.state.report])
+      send(["type": "presence", "active": active])
     }
     switch message.type {
     case "room":
@@ -221,7 +239,10 @@ final class Room {
       let ended = turn != nil && message.turn == nil
       if turn == nil && message.turn != nil { hostLine = HostLine.any() }
       turn = message.turn
-      if ended { liftWhenSilent() }
+      if ended {
+        liftWhenSilent()
+        if !active { letGo() }
+      }
     case "delta":
       turn?.assistant += message.text ?? ""
     case "reply":
@@ -230,15 +251,18 @@ final class Room {
       notice = message.text
     case "play", "control":
       guard let id = message.id else { return }
+      // A request the Mac stopped waiting for: it holds a song for the listener's return and sends it again.
+      if let expires = message.expires, Date.now.timeIntervalSince1970 * 1000 > expires { return }
       do {
-        if let expires = message.expires, Date.now.timeIntervalSince1970 * 1000 > expires {
-          throw PlayerError(String(localized: "The request expired while the phone was away."))
-        }
         let state = message.type == "play"
           ? try await player.play(ids: message.ids ?? [], tracks: message.tracks ?? [], queueID: id)
           : try await player.control(message.action ?? "")
         if state.playing { cued = false }
         send(["type": "receipt", "id": id, "state": state.report])
+      } catch where message.type == "play" && !active {
+        // iOS may not let a song start from the background; it starts when the listener is back.
+        waiting = (id, message.ids ?? [], message.tracks ?? [])
+        send(["type": "receipt", "id": id, "deferred": true])
       } catch {
         notice = error.localizedDescription
         send(["type": "receipt", "id": id, "error": error.localizedDescription])
@@ -246,6 +270,17 @@ final class Room {
     default:
       break
     }
+  }
+
+  private func stayForReply() {
+    guard grace == .invalid else { return }
+    grace = UIApplication.shared.beginBackgroundTask(withName: "Moondog reply") { [weak self] in self?.letGo() }
+  }
+
+  private func letGo() {
+    guard grace != .invalid else { return }
+    UIApplication.shared.endBackgroundTask(grace)
+    grace = .invalid
   }
 
   /// A reply that started no music lifts the arm again after a moment.

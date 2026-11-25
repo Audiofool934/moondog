@@ -7,27 +7,42 @@ struct SettingsView: View {
   @Environment(\.dismiss) private var dismiss
   @Environment(\.openURL) private var openURL
   @State private var pairAgain = false
+  @State private var detent = PresentationDetent.medium
 
   var body: some View {
     NavigationStack {
       ScrollView {
         VStack(alignment: .leading, spacing: 36) {
           section("Mac") {
-            row(Text(verbatim: room.pairing?.host ?? ""), detail: link)
-            Button("Pair again") { pairAgain = true }
-            Button("Forget this Mac", role: .destructive) {
-              room.forget()
-              dismiss()
+            row(Text(verbatim: room.pairing?.host ?? ""), detail: link, symbol: room.online ? "checkmark.circle.fill" : "circle.dotted")
+            HStack(spacing: 10) {
+              Button { pairAgain = true } label: {
+                Label("Pair again", systemImage: "qrcode.viewfinder")
+              }
+              Button(role: .destructive) {
+                room.forget()
+                dismiss()
+              } label: {
+                Label("Forget this Mac", systemImage: "xmark.circle")
+              }
             }
+            .buttonStyle(.glass)
           }
           section("Apple Music") {
-            row(Text(access), detail: nil)
+            row(Text(access), detail: nil, symbol: room.player.access == .ready ? "checkmark.circle.fill" : "music.note")
             if room.player.access == .notDetermined {
-              Button("Allow Apple Music") {
+              Button {
                 Task { await room.player.refreshAccess(request: true); room.setActive(true) }
+              } label: {
+                Label("Allow Apple Music", systemImage: "music.note")
               }
+              .buttonStyle(.glassProminent)
+              .foregroundStyle(Color.paper)
             } else if room.player.access == .denied || room.player.access == .needsSubscription {
-              Button("Open Settings") { openURL(URL(string: UIApplication.openSettingsURLString)!) }
+              Button { openURL(URL(string: UIApplication.openSettingsURLString)!) } label: {
+                Label("Open Settings", systemImage: "gear")
+              }
+              .buttonStyle(.glass)
             }
           }
         }
@@ -44,7 +59,8 @@ struct SettingsView: View {
       .navigationDestination(isPresented: $pairAgain) { SetupView(again: true) }
     }
     .tint(Color.text)
-    .presentationDetents([.medium, .large])
+    .presentationDetents([.medium, .large], selection: $detent)
+    .onChange(of: pairAgain) { _, again in if again { detent = .large } }
     .presentationBackground(Color.paper)
   }
 
@@ -79,11 +95,17 @@ struct SettingsView: View {
     }
   }
 
-  private func row(_ title: Text, detail: LocalizedStringKey?) -> some View {
-    VStack(alignment: .leading, spacing: 2) {
-      title.foregroundStyle(Color.text)
-      if let detail {
-        Text(detail).font(.subheadline).foregroundStyle(Color.text2)
+  /// What is set up, with a mark that says whether it works; the buttons under it are what can be done.
+  private func row(_ title: Text, detail: LocalizedStringKey?, symbol: String) -> some View {
+    HStack(alignment: .firstTextBaseline, spacing: 10) {
+      Image(systemName: symbol)
+        .foregroundStyle(Color.text2)
+        .accessibilityHidden(true)
+      VStack(alignment: .leading, spacing: 2) {
+        title.foregroundStyle(Color.text)
+        if let detail {
+          Text(detail).font(.subheadline).foregroundStyle(Color.text2)
+        }
       }
     }
   }

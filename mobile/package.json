@@ -5,6 +5,7 @@
   "description": "The Mac side of Moondog for iPhone: a private connection from the phone to the agent on this Mac.",
   "scripts": {
     "host": "node host/start.mjs",
+    "pair": "node host/start.mjs --qr --copy",
     "demo": "node host/demo-host.mjs",
     "logo": "node scripts/write-logo.mjs",
     "test": "node --test host/room.test.mjs"

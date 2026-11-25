@@ -71,12 +71,12 @@
         }
       }
     },
-    "Back to the record": {
+    "Cancel": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "回到唱片"
+            "value": "取消"
           }
         }
       }
@@ -111,22 +111,22 @@
         }
       }
     },
-    "Connect to your Mac": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "连接你的 Mac"
-          }
-        }
-      }
-    },
     "Connected": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "已连接"
+          }
+        }
+      }
+    },
+    "Enter the pairing link": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "输入配对链接"
           }
         }
       }
@@ -197,6 +197,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "试麦中"
+          }
+        }
+      }
+    },
+    "Moondog lives on your Mac": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Moondog 住在你的 Mac 上"
+          }
+        }
+      }
+    },
+    "Moondog will talk to the Mac at %@ instead of %@.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Moondog 将改为连接 %@ 这台 Mac，不再连接 %@。"
           }
         }
       }
@@ -281,12 +301,42 @@
         }
       }
     },
+    "Pair": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "配对"
+          }
+        }
+      }
+    },
     "Pair again": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "重新配对"
+          }
+        }
+      }
+    },
+    "Pair another way": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用其他方式配对"
+          }
+        }
+      }
+    },
+    "Pair with this Mac?": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "与这台 Mac 配对？"
           }
         }
       }
@@ -381,6 +431,16 @@
         }
       }
     },
+    "Point the camera at the code on your Mac.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "把相机对准 Mac 上的二维码。"
+          }
+        }
+      }
+    },
     "Previous song": {
       "localizations": {
         "zh-Hans": {
@@ -417,6 +477,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "调调推子"
+          }
+        }
+      }
+    },
+    "Run this in Moondog's mobile folder there, then scan the code it shows.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在那里的 Moondog mobile 文件夹里运行这条命令，然后扫描它显示的二维码。"
+          }
+        }
+      }
+    },
+    "Scan the code": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "扫描二维码"
           }
         }
       }
@@ -461,22 +541,22 @@
         }
       }
     },
-    "Start the Moondog host on your Mac, then paste the pairing link it copies.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "在 Mac 上启动 Moondog 主机，再粘贴它复制的配对链接。"
-          }
-        }
-      }
-    },
     "Stop": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "停止"
+          }
+        }
+      }
+    },
+    "That code isn't a Moondog pairing code.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这不是 Moondog 的配对二维码。"
           }
         }
       }
@@ -497,16 +577,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "只留唱片"
-          }
-        }
-      }
-    },
-    "The request expired while the phone was away.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "手机离线期间，这个请求已过期。"
           }
         }
       }
@@ -547,6 +617,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "你的 Mac 没有接受这个配对密钥。"
+          }
+        }
+      }
+    },
+    "`npm run --silent host -- --show-key` shows the key on your Mac.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在 Mac 上运行 `npm run --silent host -- --show-key` 可以看到配对密钥。"
+          }
+        }
+      }
+    },
+    "`npm run pair` also copies the link; with the same Apple ID on both, it is ready to paste here.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "`npm run pair` 也会拷贝配对链接；两台设备登录同一个 Apple ID 时，可以直接粘贴到这里。"
           }
         }
       }
