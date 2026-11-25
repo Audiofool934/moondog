@@ -1,41 +1,115 @@
 import Foundation
 import UIKit
 
-struct Message: Decodable, Equatable {
+struct Message: Equatable {
   var role: String
   var text: String
 }
 
-struct Turn: Decodable, Equatable {
+/// A reply being written: what the listener said and what Moondog has said so far.
+struct Turn: Equatable {
   var user: String
   var assistant: String
 }
 
-/// One message from the Mac host (mobile/host/room.mjs). Each type fills its own fields.
-private struct Inbound: Decodable {
-  var type: String
-  var messages: [Message]?
-  var turn: Turn?
-  var text: String?
-  var id: String?
-  var ids: [String]?
-  var tracks: [Track]?
-  var action: String?
-  var expires: Double?
-  var now: Double?
+/// A conversation on the Mac, as the desktop's sidebar lists it.
+struct Conversation: Identifiable, Equatable {
+  var id: String
+  var title: String
+  var updatedAt: Date?
+  var pinned: Bool
+  var folderID: String?
 }
 
-/// The listening room on the Mac, reached over Tailscale. The Mac owns the conversation and the agent;
-/// the phone owns the player and answers each playback request with what actually plays.
+struct ConversationFolder: Identifiable, Equatable {
+  var id: String
+  var name: String
+}
+
+/// The model the shown conversation answers with, and its thinking levels.
+struct ModelStatus: Equatable {
+  var configured = false
+  var provider: String?
+  var model: String?
+  var effort: String?
+  var effortLevels: [String] = []
+}
+
+/// A model the Mac's menu offers.
+struct ModelChoice: Identifiable, Equatable {
+  var provider: String
+  var model: String
+  var name: String
+  var providerName: String
+  var id: String { provider + "/" + model }
+}
+
+/// Moondog's own channel while it runs: its phase, and when it ends at the latest.
+struct OnAirStream: Equatable {
+  var phase: String
+  var endsAt: Date?
+  var tracks: Int
+}
+
+struct LibraryFolder: Identifiable, Equatable {
+  var id: String
+  var parentID: String?
+  var name: String
+}
+
+struct Playlist: Identifiable, Equatable {
+  var id: String
+  var folderID: String?
+  var name: String
+  var count: Int
+  var made: Int
+  var cover: URL?
+  var saved: Bool
+}
+
+struct PlaylistEntry: Identifiable, Equatable {
+  var id: String
+  var title: String
+  var artist: String
+  var made: Bool
+  var cover: URL?
+}
+
+struct PlaylistDetail: Equatable {
+  var id: String
+  var name: String
+  var entries: [PlaylistEntry]
+}
+
+/// The listening room on the Mac, reached over Tailscale. The phone is one more window on Moondog's core
+/// there: it speaks the desktop window's own protocol (app/window-room.mjs), so the conversations, the
+/// models, the library and On Air are the Mac's, shared with the desktop app and the terminal. The phone
+/// owns its player, and tells the Mac what actually plays.
 @Observable
 final class Room {
   enum Link: Equatable { case connecting, online, refused }
 
   private(set) var pairing = PairingStore.load()
   private(set) var link = Link.connecting
+  /// The conversation shown, by its id on the Mac.
+  private(set) var current: String?
   private(set) var messages: [Message] = []
   private(set) var turn: Turn?
+  private(set) var conversations: [Conversation] = []
+  private(set) var folders: [ConversationFolder] = []
+  /// Conversations answering now, here or on another surface.
+  private(set) var running: Set<String> = []
+  private(set) var model = ModelStatus()
+  private(set) var models: [ModelChoice] = []
+  private(set) var onAir: OnAirStream?
+  /// Whether this Mac can make music now, which On Air needs.
+  private(set) var canMakeMusic = false
+  private(set) var libraryFolders: [LibraryFolder] = []
+  private(set) var playlists: [Playlist] = []
+  private(set) var openPlaylist: PlaylistDetail?
   var notice: String?
+  /// Words the Mac gave back because it couldn't take them yet, for the composer.
+  var returned: String?
   /// Set when the listener asks Moondog to pick: the arm goes down and waits for the music.
   private(set) var cued = false
   /// What the host says while it works on this request, as a radio host would; a new line for each.
@@ -47,33 +121,29 @@ final class Room {
   @ObservationIgnored private var attempts = 0
   @ObservationIgnored private var retry: Task<Void, Never>?
   @ObservationIgnored private var active = false
-  /// How far this phone's clock runs ahead of the Mac's, in milliseconds; the two can differ by minutes.
-  @ObservationIgnored private var skew: Double = 0
   @ObservationIgnored private var lift: Task<Void, Never>?
   @ObservationIgnored private var live: OnAirLive?
   /// The time iOS gives an app that has just left the screen, kept while a reply is still coming.
   @ObservationIgnored private var grace = UIBackgroundTaskIdentifier.invalid
-  /// A song the Mac sent while the phone was away and could not start, played when the listener is back.
-  @ObservationIgnored private var waiting: (id: String, ids: [String], tracks: [Track])?
   private let session = URLSession(configuration: .ephemeral)
 
   var online: Bool { link == .online }
 
   init() {
-    player.log = { [weak self] text in self?.send(["type": "log", "text": text]) }
-    player.changed = { [weak self] state in
-      if state.playing { self?.cued = false }
-      self?.send(["type": "state", "state": state.report])
+    player.send = { [weak self] message in
+      if let event = (message["event"] as? [String: Any])?["type"] as? String, event == "playing" { self?.cued = false }
+      self?.send(message)
     }
     player.start()
+    setMedia()
     live = OnAirLive()
     live?.follow(self)
   }
 
   /// What the Live Activity shows, or nil while there is nothing on: no song loaded and no request.
-  var onAir: OnAirAttributes.ContentState? {
+  var liveState: OnAirAttributes.ContentState? {
     let current = player.state.current
-    guard pairing != nil, current != nil || turn != nil else { return nil }
+    guard pairing != nil, current != nil || turn != nil || onAir != nil else { return nil }
     let reply = messages.last { $0.role == "assistant" }.map { Self.gist($0.text) }
     return .init(title: current?.title, artist: current?.artist, playing: player.state.playing, working: turn != nil,
                  line: turn != nil ? String(localized: hostLine) : reply)
@@ -92,9 +162,8 @@ final class Room {
   func pair(_ pairing: Pairing) {
     PairingStore.save(pairing)
     self.pairing = pairing
-    messages = []
-    turn = nil
-    notice = nil
+    clear()
+    setMedia()
     disconnect()
     attempts = 0
     connect()
@@ -104,8 +173,19 @@ final class Room {
     PairingStore.clear()
     disconnect()
     pairing = nil
+    clear()
+  }
+
+  private func clear() {
     messages = []
     turn = nil
+    current = nil
+    conversations = []
+    notice = nil
+  }
+
+  private func setMedia() {
+    player.media = pairing.flatMap { pairing in URL(string: "http://\(pairing.host):\(Pairing.port)/").map { ($0, pairing.key) } }
   }
 
   // MARK: Lifecycle
@@ -114,25 +194,18 @@ final class Room {
   /// keeps the app running, as it does while music plays, but no new attempts start.
   func setActive(_ value: Bool) {
     active = value
-    send(["type": "presence", "active": value])
+    player.active = value
+    send(["type": "visible", "visible": value])
     guard value else {
       // iOS stops an app soon after it leaves the screen unless it plays; a reply still coming keeps it a little longer.
       if turn != nil || cued { stayForReply() }
       return
     }
     letGo()
-    if let waiting {
-      self.waiting = nil
-      Task {
-        do { _ = try await player.play(ids: waiting.ids, tracks: waiting.tracks, queueID: waiting.id) } catch {
-          notice = error.localizedDescription
-          send(["type": "receipt", "id": waiting.id, "error": error.localizedDescription])
-        }
-      }
-    }
+    player.becameActive()
     Task {
       await player.refreshAccess()
-      sendAccess()
+      player.announce()
     }
     if task == nil {
       attempts = 0
@@ -146,6 +219,7 @@ final class Room {
     var request = URLRequest(url: pairing.url, timeoutInterval: 10)
     request.setValue("Bearer \(pairing.key)", forHTTPHeaderField: "Authorization")
     let task = session.webSocketTask(with: request)
+    task.maximumMessageSize = 8 * 1024 * 1024
     generation += 1
     let current = generation
     self.task = task
@@ -167,7 +241,7 @@ final class Room {
       do {
         let message = try await task.receive()
         guard current == generation else { return }
-        if case .string(let text) = message { await handle(Data(text.utf8)) }
+        if case .string(let text) = message { handle(Data(text.utf8)) }
       } catch {
         guard current == generation else { return }
         dropped(refused: (task.response as? HTTPURLResponse)?.statusCode == 401)
@@ -189,7 +263,7 @@ final class Room {
     }
   }
 
-  // MARK: Messages
+  // MARK: Asking the Mac
 
   @discardableResult
   private func send(_ value: [String: Any]) -> Bool {
@@ -200,22 +274,66 @@ final class Room {
     return true
   }
 
-  private func sendAccess() {
-    var value: [String: Any] = ["type": "access", "ready": player.access == .ready]
-    value["storefront"] = player.storefront
-    value["problem"] = player.problem
-    send(value)
-  }
-
   @discardableResult
   func prompt(_ text: String) -> Bool {
     let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !text.isEmpty, turn == nil, send(["type": "prompt", "text": text]) else { return false }
     notice = nil
+    // Drawn at once; the Mac's start of the turn confirms it.
+    turn = Turn(user: text, assistant: "")
+    hostLine = HostLine.any()
     return true
   }
 
   func cancel() { send(["type": "cancel"]) }
+
+  /// A new conversation, as the desktop's New button and /new start one.
+  func newConversation() {
+    guard turn == nil else { return }
+    send(["type": "new"])
+  }
+
+  func open(_ id: String) {
+    guard id != current else { return }
+    send(["type": "open", "id": id])
+  }
+
+  func delete(_ id: String) { send(["type": "delete", "ids": [id]]) }
+
+  func setPinned(_ id: String, _ pinned: Bool) { send(["type": "label", "ids": [id], "patch": ["pinned": pinned]]) }
+
+  func rename(_ id: String, _ title: String) {
+    let title = title.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !title.isEmpty else { return }
+    send(["type": "label", "ids": [id], "patch": ["title": title]])
+  }
+
+  /// The shown conversation's model, as the desktop composer's menu chooses it.
+  func choose(_ choice: ModelChoice) { send(["type": "model", "provider": choice.provider, "model": choice.model]) }
+
+  func choose(effort: String) { send(["type": "effort", "effort": effort]) }
+
+  func refreshModels() { send(["type": "model-list"]) }
+
+  func openPlaylistOnMac(_ id: String?) { send(["type": "library-open", "id": id ?? NSNull()]) }
+
+  func play(playlist: String, from entry: String? = nil, shuffle: Bool = false) {
+    var value: [String: Any] = ["type": "library-play", "playlistId": playlist, "shuffle": shuffle]
+    value["entryId"] = entry
+    send(value)
+  }
+
+  /// What plays now, kept in a playlist: Saved by default, as the desktop's save button does.
+  func savePlaying(to playlist: String = "saved") {
+    send(["type": "library-save", "from": "queue", "playlistId": playlist])
+  }
+
+  /// On Air starts as the desktop's button starts it: by asking Moondog in words.
+  func goOnAir() {
+    _ = prompt(String(localized: "Go on air: make new music for right now and keep it going"))
+  }
+
+  func goOffAir() { send(["type": "on-air-stop"]) }
 
   /// The record: a playing song pauses, a paused one resumes, and with nothing loaded Moondog picks.
   func record() {
@@ -226,63 +344,169 @@ final class Room {
     }
   }
 
-  func control(_ action: String) {
-    Task {
-      do { _ = try await player.control(action) } catch { notice = error.localizedDescription }
-    }
-  }
+  func control(_ action: String) { player.control(action) }
 
-  private func handle(_ data: Data) async {
-    guard let message = try? JSONDecoder().decode(Inbound.self, from: data) else { return }
+  // MARK: What the Mac says
+
+  private func handle(_ data: Data) {
+    guard let message = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+          let type = message["type"] as? String
+    else { return }
     if link != .online {
       link = .online
       attempts = 0
-      sendAccess()
-      send(["type": "state", "state": player.state.report])
-      send(["type": "presence", "active": active])
+      send(["type": "visible", "visible": active])
+      player.announce()
     }
-    switch message.type {
-    case "room":
-      if let now = message.now { skew = Date.now.timeIntervalSince1970 * 1000 - now }
-      messages = message.messages ?? []
-      let ended = turn != nil && message.turn == nil
-      if turn == nil && message.turn != nil { hostLine = HostLine.any() }
-      turn = message.turn
-      if ended {
-        liftWhenSilent()
-        if !active { letGo() }
+    let session = message["session"] as? String
+    switch type {
+    case "ready":
+      status(message)
+      conversations(message)
+      showConversation(message)
+      refreshModels()
+    case "status":
+      status(message)
+    case "sessions":
+      conversations(message)
+    case "session":
+      showConversation(message)
+    case "turn" where session == nil || session == current:
+      switch message["state"] as? String {
+      case "start":
+        let text = message["text"] as? String ?? turn?.user ?? ""
+        if turn == nil || turn?.user != text { hostLine = HostLine.any() }
+        turn = Turn(user: text, assistant: turn?.user == text ? turn?.assistant ?? "" : "")
+      case "end":
+        let reply = (message["text"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? turn?.assistant ?? ""
+        if let turn { messages.append(Message(role: "user", text: turn.user)) }
+        if !reply.isEmpty { messages.append(Message(role: "assistant", text: reply)) }
+        endTurn()
+      case "error":
+        if let turn { messages.append(Message(role: "user", text: turn.user)) }
+        if let text = message["message"] as? String { messages.append(Message(role: "notice", text: text)) }
+        endTurn()
+      default:
+        break
       }
-    case "delta":
-      turn?.assistant += message.text ?? ""
-    case "reply":
-      turn?.assistant = message.text ?? ""
+    case "text" where session == nil || session == current:
+      if let replace = message["replace"] as? String {
+        turn?.assistant = replace
+      } else if let delta = message["delta"] as? String {
+        turn?.assistant += delta
+      }
     case "notice":
-      notice = message.text
-    case "play", "control":
-      guard let id = message.id else { return }
-      if message.type == "play" { send(["type": "log", "text": "received the request"]) }
-      // A request the Mac stopped waiting for: it holds a song for the listener's return and sends it again.
-      if let expires = message.expires, Date.now.timeIntervalSince1970 * 1000 - skew > expires {
-        if message.type == "play" { send(["type": "log", "text": "dropped the request: it expired before it arrived"]) }
+      if message["code"] as? String == "message_busy", let text = message["text"] as? String {
+        // The Mac couldn't take it yet; the words go back to the composer.
+        turn = nil
+        returned = text
+      }
+      notice = (message["message"] as? String) ?? notice
+    case "on-air":
+      onAir = Self.stream(message["onAir"])
+    case "model-list":
+      models = (message["models"] as? [[String: Any]] ?? []).compactMap { raw in
+        guard raw["ready"] as? Bool == true, let provider = raw["provider"] as? String, let model = raw["model"] as? String else { return nil }
+        return ModelChoice(provider: provider, model: model, name: raw["name"] as? String ?? model,
+                           providerName: raw["providerName"] as? String ?? provider)
+      }
+    case "library":
+      libraryFolders = (message["folders"] as? [[String: Any]] ?? []).compactMap { raw in
+        guard let id = raw["id"] as? String else { return nil }
+        return LibraryFolder(id: id, parentID: raw["parentId"] as? String, name: raw["name"] as? String ?? "")
+      }
+      playlists = (message["playlists"] as? [[String: Any]] ?? []).compactMap { raw in
+        guard let id = raw["id"] as? String else { return nil }
+        let cover = (raw["cover"] as? [String: Any])?["artwork_url"] as? String
+        return Playlist(id: id, folderID: raw["folderId"] as? String, name: raw["name"] as? String ?? "",
+                        count: raw["count"] as? Int ?? 0, made: raw["made"] as? Int ?? 0,
+                        cover: cover.flatMap(URL.init(string:)), saved: raw["saved"] as? Bool == true)
+      }
+    case "library-playlist":
+      guard let raw = message["playlist"] as? [String: Any], let id = raw["id"] as? String else {
+        openPlaylist = nil
         return
       }
-      do {
-        let state = message.type == "play"
-          ? try await player.play(ids: message.ids ?? [], tracks: message.tracks ?? [], queueID: id)
-          : try await player.control(message.action ?? "")
-        if state.playing { cued = false }
-        send(["type": "receipt", "id": id, "state": state.report])
-      } catch where message.type == "play" && !active {
-        // iOS may not let a song start from the background; it starts when the listener is back.
-        waiting = (id, message.ids ?? [], message.tracks ?? [])
-        send(["type": "receipt", "id": id, "deferred": true])
-      } catch {
-        notice = error.localizedDescription
-        send(["type": "receipt", "id": id, "error": error.localizedDescription])
+      openPlaylist = PlaylistDetail(id: id, name: raw["name"] as? String ?? "", entries: (raw["entries"] as? [[String: Any]] ?? []).compactMap { entry in
+        guard let id = entry["id"] as? String else { return nil }
+        let refs = entry["refs"] as? [String: Any]
+        return PlaylistEntry(id: id, title: entry["title"] as? String ?? "", artist: entry["artist_credit"] as? String ?? "",
+                             made: entry["kind"] as? String == "made", cover: (refs?["artwork_url"] as? String).flatMap(URL.init(string:)))
+      })
+    case "library-played":
+      switch message["state"] as? String {
+      case "empty": notice = String(localized: "Nothing in this playlist can play here.")
+      case "not_found": notice = String(localized: "That playlist is gone.")
+      default: break
       }
+    case "preview", "preview-enqueue", "preview-control":
+      player.receive(message)
     default:
       break
     }
+  }
+
+  private func endTurn() {
+    turn = nil
+    liftWhenSilent()
+    if !active { letGo() }
+  }
+
+  private func status(_ message: [String: Any]) {
+    if let raw = message["model"] as? [String: Any] {
+      model = ModelStatus(configured: raw["state"] as? String == "configured", provider: raw["provider"] as? String,
+                          model: raw["model"] as? String, effort: raw["effort"] as? String,
+                          effortLevels: raw["effortLevels"] as? [String] ?? [])
+    }
+    if message.keys.contains("onAir") { onAir = Self.stream(message["onAir"]) }
+    if let generation = message["generation"] as? [String: Any] {
+      canMakeMusic = generation["state"] as? String == "ready"
+    } else if message.keys.contains("generation") {
+      canMakeMusic = false
+    }
+  }
+
+  private func conversations(_ message: [String: Any]) {
+    let dates = ISO8601DateFormatter()
+    dates.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    if let list = message["sessions"] as? [[String: Any]] {
+      conversations = list.compactMap { raw in
+        guard let id = raw["id"] as? String else { return nil }
+        return Conversation(id: id, title: raw["title"] as? String ?? "", updatedAt: (raw["updatedAt"] as? String).flatMap(dates.date(from:)),
+                            pinned: raw["pinned"] as? Bool == true, folderID: raw["folderId"] as? String)
+      }
+    }
+    if let list = message["folders"] as? [[String: Any]] {
+      folders = list.compactMap { raw in
+        (raw["id"] as? String).map { ConversationFolder(id: $0, name: raw["name"] as? String ?? "") }
+      }
+    }
+    if let list = message["running"] as? [String] { running = Set(list) }
+  }
+
+  private func showConversation(_ message: [String: Any]) {
+    guard message.keys.contains("current") else { return }
+    let next = message["current"] as? String
+    let shown = (message["transcript"] as? [[String: Any]] ?? []).compactMap { raw -> Message? in
+      guard let role = raw["role"] as? String, let text = raw["text"] as? String else { return nil }
+      return Message(role: role, text: text)
+    }
+    if next != current { notice = nil }
+    current = next
+    messages = shown
+    // A reply still being written, here or on another surface, is drawn from where it stands.
+    turn = (message["live"] as? [String: Any]).map { Turn(user: $0["user"] as? String ?? "", assistant: $0["text"] as? String ?? "") }
+  }
+
+  private static func stream(_ value: Any?) -> OnAirStream? {
+    guard let raw = value as? [String: Any], let phase = raw["phase"] as? String else { return nil }
+    let ends = (raw["endsAt"] as? Double).map { Date(timeIntervalSince1970: $0 / 1000) }
+      ?? (raw["endsAt"] as? String).flatMap { text in
+        let dates = ISO8601DateFormatter()
+        dates.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return dates.date(from: text)
+      }
+    return OnAirStream(phase: phase, endsAt: ends, tracks: raw["tracks"] as? Int ?? 0)
   }
 
   private func stayForReply() {

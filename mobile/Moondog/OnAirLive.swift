@@ -18,7 +18,7 @@ final class OnAirLive {
   }
 
   func follow(_ room: Room) {
-    let state = withObservationTracking { room.onAir } onChange: { [weak self, weak room] in
+    let state = withObservationTracking { room.liveState } onChange: { [weak self, weak room] in
       Task { @MainActor in
         guard let self, let room else { return }
         self.follow(room)

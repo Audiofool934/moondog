@@ -4,6 +4,8 @@ import SwiftUI
 /// The album sleeve: the cover is the one picture of what plays, nearly square, resting on the paper.
 struct Sleeve: View {
   var artwork: Artwork?
+  /// The catalog's picture, for a song played as a preview or listed in the library.
+  var cover: URL? = nil
   var size: CGFloat
   /// Its corners; a sleeve inside a rounded bar takes the bar's radius less its inset, so the curves stay parallel.
   var corner: CGFloat?
@@ -12,6 +14,12 @@ struct Sleeve: View {
     Group {
       if let artwork {
         ArtworkImage(artwork, width: size, height: size)
+      } else if let cover {
+        AsyncImage(url: cover) { image in
+          image.resizable().scaledToFill()
+        } placeholder: {
+          Color.wash
+        }
       } else {
         // No cover yet, as in Simulator: the record stands in for the sleeve.
         Color.wash.overlay {
@@ -41,7 +49,7 @@ struct NowPlayingBar: View {
     HStack(spacing: 12) {
       Button(action: open) {
         HStack(spacing: 12) {
-          Sleeve(artwork: room.player.artwork, size: 44, corner: Self.radius - Self.inset)
+          Sleeve(artwork: room.player.artwork, cover: room.player.coverURL, size: 44, corner: Self.radius - Self.inset)
           VStack(alignment: .leading, spacing: 1) {
             Text(state.current?.title ?? "")
               .font(.subheadline.weight(.medium))
@@ -100,7 +108,7 @@ struct NowPlayingView: View {
     ScrollView {
       VStack(alignment: .leading, spacing: 0) {
         GeometryReader { proxy in
-          Sleeve(artwork: room.player.artwork, size: proxy.size.width)
+          Sleeve(artwork: room.player.artwork, cover: room.player.coverURL, size: proxy.size.width)
         }
         .aspectRatio(1, contentMode: .fit)
         .padding(.top, 36)
@@ -137,14 +145,26 @@ struct NowPlayingView: View {
             .foregroundStyle(Color.text3)
             .padding(.top, 28)
             .padding(.bottom, 6)
-          ForEach(Array(state.upNext.enumerated()), id: \.offset) { _, track in
-            HStack(spacing: 6) {
-              Text(track.title).foregroundStyle(Color.text)
-              Text(track.artist).foregroundStyle(Color.text2)
+          ForEach(state.upNext, id: \.position) { position, track in
+            // A tap plays it now; a long press takes it out, as on the desktop.
+            Button { room.player.jump(to: position) } label: {
+              HStack(spacing: 6) {
+                if track.made { Image(systemName: "waveform").foregroundStyle(Color.text3) }
+                Text(track.title).foregroundStyle(Color.text)
+                Text(track.artist).foregroundStyle(Color.text2)
+                Spacer(minLength: 0)
+              }
+              .font(.subheadline)
+              .lineLimit(1)
+              .padding(.vertical, 7)
+              .contentShape(.rect)
             }
-            .font(.subheadline)
-            .lineLimit(1)
-            .padding(.vertical, 7)
+            .buttonStyle(.plain)
+            .contextMenu {
+              Button(role: .destructive) { room.player.remove(at: position) } label: {
+                Label("Take out of Up next", systemImage: "minus.circle")
+              }
+            }
           }
         }
       }

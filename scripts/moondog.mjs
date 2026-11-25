@@ -880,7 +880,10 @@ async function main() {
   // NetEase Cloud Music plays through ncm-cli in the terminal and the window alike. Its tools
   // appear once ncm-cli says it is signed in; only listeners who chose it wait for that check.
   const neteasePlayer = createNeteasePlayer();
-  const playbackService = await resolvePlaybackService();
+  // A host may play on a service of its own, as the iPhone plays Apple Music whatever this Mac chose; it
+  // then neither saves a choice nor follows one made elsewhere.
+  const ownPlayback = typeof host?.playbackService === "string" ? host.playbackService : null;
+  const playbackService = ownPlayback ?? await resolvePlaybackService();
   if (playbackService === "netease") await neteasePlayer.check();
   // Moondog makes music on this Mac with Stable Audio 3 once the listener turns it on, in a room
   // that can play what it makes: Moondog's own install, downloaded when they ask, or their folder.
@@ -907,7 +910,7 @@ async function main() {
   // The window watches the Music app for its own stream; the terminal has no window, so while its
   // stream runs it reads the Music app itself, and music the listener starts there ends the stream.
   const unwatchStreamMusicApp = atmosphereStream && !host ? watchMusicAppForStream(atmosphereStream, { musicApp }) : null;
-  const playbackSelection = createPlaybackSelection({ service: playbackService, save: writePlaybackPreference });
+  const playbackSelection = createPlaybackSelection({ service: playbackService, save: ownPlayback ? async () => {} : writePlaybackPreference });
   // A reply language the listener asks for in words is saved like the picker's and reaches every surface.
   const languageSelection = createLanguageSelection({ save: (locale) => writeLanguagePreference(locale) });
   // The listener's model menu, shared by the window, the terminal and a model asked for in words.
@@ -916,7 +919,7 @@ async function main() {
   // The terminal and the window each run this core on one playback.json. A service chosen on the
   // other side reaches this side's picker and agents, and stops the Apple Music songs this side plays.
   // Moondog's stream is not a service: its made tracks play on.
-  const unwatchPlayback = watchPlaybackPreference(playbackSelection, {
+  const unwatchPlayback = ownPlayback ? () => {} : watchPlaybackPreference(playbackSelection, {
     onChange: (service) => { if (service !== "apple_music" && previewPlayer?.holdsCatalogSongs?.() !== false) previewPlayer?.stop?.(); },
   });
   // The main application and every conversation the window opens beside it are built from
@@ -928,6 +931,8 @@ async function main() {
     domainServices, domainServicesError, spotifyConnection, locale, playbackService, playbackSelection, languageSelection, modelSwitch,
     webResearch, memoryStore, musicCatalog, musicPreviewPlayer: previewPlayer, neteasePlayer, localGenerator, atmosphereStream, musicSimilarity, artistIdentityResolver,
     spotifyTopArtists, musicApp, libraryStore,
+    // What the host says of itself to the agent, such as where its music plays.
+    agentHostNotes: Array.isArray(host?.agentNotes) ? host.agentNotes : [],
     // A playlist that shapes the taste reloads the profile services at once, so the evidence counts in this session.
     playlistTaste: async (found) => { const receipt = await addPlaylistToTaste(found); replaceDomainServices(await loadDomainServices()); return receipt; },
   });

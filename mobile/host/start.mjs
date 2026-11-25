@@ -1,3 +1,7 @@
+// The Mac side of Moondog for iPhone. It runs Moondog's core, the `moondog` command, as the desktop
+// app does (app/core-process.mjs), with the paired phone as its window: the same conversations,
+// models, library and On Air, through the window's own room (app/window-room.mjs) and player
+// (app/preview-player.mjs), over a private WebSocket on this Mac's Tailscale address.
 import { networkInterfaces } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
@@ -5,21 +9,12 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 import { privateHost } from './address.mjs';
 import { qrLines } from './qr.mjs';
-import { createPhoneRoom } from './room.mjs';
+import { createPhonePort } from './phone-port.mjs';
 import { listen } from './server.mjs';
-import { MoondogApplication } from '../../src/core/moondog-application.mjs';
-import { loadDomainServices } from '../../src/core/open-domain-services.mjs';
-import { openLocalMemoryStore } from '../../src/memory/local-memory-store.mjs';
-import { openLibraryStore } from '../../src/core/library-store.mjs';
-import { createConfiguredRuntime } from '../../src/runtime/pi/configured-runtime.mjs';
+import { createWindowPreviewPlayer } from '../../app/preview-player.mjs';
+import { runWindowRoom } from '../../app/window-room.mjs';
 import { resolveMoondogAuthFile } from '../../src/runtime/pi/persistent-credential-store.mjs';
-import { createAppleMusicCatalog } from '../../src/integrations/apple-music/catalog.mjs';
-import {
-  createOpenMusicSimilarity,
-  createWikidataArtistResolver,
-} from '../../src/integrations/open-music-similarity/artist-radio.mjs';
-import { createWebResearch } from '../../src/integrations/web/web-research.mjs';
-import { resolveListenerLocale } from '../../src/i18n/preferences.mjs';
+import { resolveMoondogStateDirectory } from '../../src/core/state-directory.mjs';
 
 const folder = dirname(resolveMoondogAuthFile());
 await mkdir(folder, { recursive: true, mode: 0o700 });
@@ -70,38 +65,31 @@ if (process.argv.includes('--copy')) {
   execFileSync('pbcopy', { input: link });
   console.log('Copied the pairing link. Paste it in Moondog on your iPhone.');
 }
-const room = createPhoneRoom();
-const artistIdentityResolver = createWikidataArtistResolver();
-const application = new MoondogApplication({
-  ...(await loadDomainServices()),
-  memoryStore: await openLocalMemoryStore(),
-  libraryStore: await openLibraryStore(),
-  locale: await resolveListenerLocale(),
-  musicCatalog: createAppleMusicCatalog({ fullSongs: true }),
-  musicSimilarity: createOpenMusicSimilarity({ identityResolver: artistIdentityResolver }),
-  artistIdentityResolver,
-  webResearch: await createWebResearch(),
-  musicPreviewPlayer: room.player,
+const time = () => new Date().toLocaleTimeString();
+const port = createPhonePort({ note: (text) => console.log(`${time()} iPhone: ${text}`) });
+const server = await listen({ host, port: 47831, token, room: port, generated: join(resolveMoondogStateDirectory(), 'generated') });
+console.log(
+  `Moondog for iPhone is listening on ${host}:47831. Run npm run --silent host -- --show-key to view the pairing key.`,
+);
+// Ctrl-C lets running replies stop and be saved before the core closes, as quitting the desktop app does.
+const quit = new AbortController();
+process.once('SIGINT', () => quit.abort());
+process.once('SIGTERM', () => quit.abort());
+
+globalThis[Symbol.for('moondog.host')] = {
+  runRoom: (services) => runWindowRoom(services, { port, send: (message) => port.postMessage(message), quit: quit.signal }),
+  musicPreviewPlayer: createWindowPreviewPlayer(port),
+  // Songs play on the phone through Apple Music, whatever this Mac plays on.
   playbackService: 'apple_music',
-  agentHostNotes: [
-    'The listener uses the native iPhone room. Apple Music plays on the phone. Use moondog_listening_now for its reported queue.',
+  agentNotes: [
+    'The listener is on the Moondog iPhone app. Apple Music plays whole songs on the phone, not on this Mac, and the tracks you make play there too.',
   ],
-});
-try {
-  const runtime = await createConfiguredRuntime(application, process.env);
-  room.configure(runtime, (connecting) => {
-    if (connecting && application.followActiveConversation()) runtime.restoreSession();
-    return application.currentConversationTurns({ limit: 40 }).map(({ role, text }) => ({ role, text }));
-  });
-  const server = await listen({ host, port: 47831, token, room });
-  console.log(
-    `Moondog for iPhone is listening on ${host}:47831. Run npm run --silent host -- --show-key to view the pairing key.`,
-  );
-  await new Promise((done) => {
-    process.once('SIGTERM', done);
-    process.once('SIGINT', done);
-  });
-  await server.close();
-} finally {
-  application.close();
-}
+  closed: async () => {
+    await server.close();
+    process.exit(process.exitCode ?? 0);
+  },
+};
+
+// The core is the `moondog` command with no arguments.
+process.argv.splice(2);
+await import('../../scripts/moondog.mjs');
