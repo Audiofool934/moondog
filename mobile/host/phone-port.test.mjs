@@ -61,3 +61,13 @@ test('a phone that leaves tells the room it shows nothing', () => {
   socket.terminate();
   assert.deepEqual(heard, [{ type: 'visible', visible: false }]);
 });
+
+test('a phone that connects gets the conversation shown as it stands now', () => {
+  const port = createPhonePort();
+  const heard = [];
+  port.on('message', ({ data }) => heard.push(data));
+  port.postMessage({ type: 'ready', current: 'a', transcript: [] });
+  port.postMessage({ type: 'sessions', current: 'b' });
+  port.attach(phone());
+  assert.deepEqual(heard, [{ type: 'open', id: 'b' }]);
+});

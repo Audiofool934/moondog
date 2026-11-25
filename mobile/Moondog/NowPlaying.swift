@@ -3,7 +3,7 @@ import SwiftUI
 
 /// The album sleeve: the cover is the one picture of what plays, nearly square, resting on the paper.
 struct Sleeve: View {
-  var artwork: Artwork?
+  var artwork: Artwork? = nil
   /// The catalog's picture, for a song played as a preview or listed in the library.
   var cover: URL? = nil
   var size: CGFloat
@@ -102,6 +102,8 @@ struct PlayerButton: View {
 struct NowPlayingView: View {
   @Environment(Room.self) private var room
   @Environment(\.dismiss) private var dismiss
+  /// The song last saved from here, so its button shows it is kept.
+  @State private var saved: Track?
 
   var body: some View {
     let state = room.player.state
@@ -114,13 +116,23 @@ struct NowPlayingView: View {
         .padding(.top, 36)
         .padding(.bottom, 28)
 
-        Text(state.current?.title ?? "")
-          .font(.title)
-          .foregroundStyle(Color.text)
-        Text(state.current?.artist ?? "")
-          .font(.body)
-          .foregroundStyle(Color.text2)
-          .padding(.top, 2)
+        HStack(alignment: .top) {
+          VStack(alignment: .leading, spacing: 2) {
+            Text(state.current?.title ?? "")
+              .font(.title)
+              .foregroundStyle(Color.text)
+            Text(state.current?.artist ?? "")
+              .font(.body)
+              .foregroundStyle(Color.text2)
+          }
+          Spacer(minLength: 12)
+          // What plays, kept in Saved on the Mac, as the desktop's save button does.
+          PlayerButton(symbol: saved == state.current ? "bookmark.fill" : "bookmark", label: "Save to the library", size: 20) {
+            room.savePlaying()
+            saved = state.current
+          }
+          .disabled(!room.online || state.current == nil)
+        }
 
         Progress(player: room.player, playing: state.playing)
           .padding(.top, 22)

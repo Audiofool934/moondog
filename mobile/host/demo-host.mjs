@@ -1,8 +1,9 @@
 // A host for trying the iPhone app in Simulator without your profile, a model, or a key: the desktop's
 // window room (app/window-room.mjs) on made-up songs, in-memory conversations and library, and a
 // scripted model, on 127.0.0.1. Nothing is read from or kept in your Moondog folders.
+import { randomUUID } from 'node:crypto';
 import { rmSync } from 'node:fs';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createModels, fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall } from '@earendil-works/pi-ai';
@@ -48,6 +49,25 @@ const shared = {
 };
 const application = new MoondogApplication(shared);
 
+// A made track, as Moondog's stream hands one to the player: eight seconds of a soft tone, written where
+// the Mac keeps what it makes, so the phone fetches it from the host the way On Air's tracks come.
+async function madeTrack() {
+  const id = randomUUID();
+  const rate = 22050;
+  const samples = rate * 8;
+  const wav = Buffer.alloc(44 + samples * 2);
+  wav.write('RIFF', 0); wav.writeUInt32LE(36 + samples * 2, 4); wav.write('WAVEfmt ', 8);
+  wav.writeUInt32LE(16, 16); wav.writeUInt16LE(1, 20); wav.writeUInt16LE(1, 22); wav.writeUInt32LE(rate, 24);
+  wav.writeUInt32LE(rate * 2, 28); wav.writeUInt16LE(2, 32); wav.writeUInt16LE(16, 34); wav.write('data', 36); wav.writeUInt32LE(samples * 2, 40);
+  for (let i = 0; i < samples; i++) {
+    const fade = Math.min(1, i / rate, (samples - i) / rate);
+    wav.writeInt16LE(Math.round(Math.sin((2 * Math.PI * 220 * i) / rate) * 6000 * fade), 44 + i * 2);
+  }
+  await mkdir(join(state, 'generated', id), { recursive: true });
+  await writeFile(join(state, 'generated', id, 'track.wav'), wav);
+  shared.musicPreviewPlayer.playGenerated({ id, title: 'Demo tone', seconds: 8 });
+}
+
 // Two made-up models, so the model menu has a choice; both answer from the same script.
 const MODELS = [
   { provider: 'faux', model: 'demo-quick', name: 'Demo Quick', providerName: 'Demo', ready: true, reasoning: false, vision: false },
@@ -61,6 +81,11 @@ function scripted(target, modelId = MODELS[0].model) {
   const prompt = runtime.prompt.bind(runtime);
   runtime.prompt = async (text, options) => {
     await new Promise((resolve) => setTimeout(resolve, 1200));
+    if (/make/i.test(text)) {
+      await madeTrack();
+      faux.setResponses([fauxAssistantMessage([fauxText('Made a short tone on the Mac for this demo; it plays from there.')])]);
+      return prompt(text, options);
+    }
     faux.setResponses([
       fauxAssistantMessage([fauxToolCall('moondog_music_preview', { tracks: songs.slice(0, 3).map((s) => ({ title: s.trackName, artist: s.artistName })) })], { stopReason: 'toolUse' }),
       fauxAssistantMessage([fauxText(`Starting quiet: **Night Walk** by Test Trio, then *Low Tide* and Paper Moon Radio. All made up for this demo, answered by ${modelId}.`)]),

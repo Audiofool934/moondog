@@ -172,8 +172,9 @@ final class Player {
     let id = message["id"] as? Int
     switch message["type"] as? String {
     case "preview":
-      // A queue the phone already plays, sent again after a reconnect, goes on as it is.
-      guard let id, id != queueID else { return }
+      // A queue the phone already plays, sent again after a reconnect, goes on as it is. A restarted Mac
+      // numbers its queues from 1 again, so only a resent one is matched by its number.
+      guard let id, !(message["replay"] as? Bool == true && id == queueID) else { return }
       let tracks = (message["tracks"] as? [[String: Any]] ?? []).compactMap(track)
       guard !tracks.isEmpty else {
         send?(["type": "preview-event", "id": id, "event": ["type": "stopped"]])

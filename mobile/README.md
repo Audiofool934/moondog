@@ -1,9 +1,10 @@
 # Moondog for iPhone
 
-A native SwiftUI app that plays Apple Music on the iPhone and talks to the Moondog agent on your Mac over Tailscale.
-The Mac reads its own model settings, listening profile, library, and memory.
-On connection, the phone opens the conversation that is selected on the Mac.
-Messages use the same conversation store and agent turn lock as the desktop app and the terminal.
+A native SwiftUI app that plays Apple Music on the iPhone and talks to Moondog on your Mac over Tailscale.
+The phone is one more window on Moondog's core there, as the desktop app is.
+The host runs the `moondog` command with the phone as its window, through the desktop window's own room (`app/window-room.mjs`) and player (`app/preview-player.mjs`).
+So the conversations, the models, the library and On Air are the Mac's, shared with the desktop app and the terminal.
+A conversation opened or started on the phone is the one the desktop shows too.
 When a request comes from the phone, Apple Music plays on the phone, and the phone tells the Mac what actually plays.
 The phone keeps the pairing in Keychain.
 
@@ -26,7 +27,10 @@ Once paired, `npm run host` starts the host without the code.
 To type the key by hand, `npm run --silent host -- --show-key` prints it.
 
 Keep the host running while you use the phone.
-It prints a line for each song it sends, holds or loses, with the phone's own error when one comes back.
+It reads the same settings, profile, library and memory as the desktop app, and the phone always plays on Apple Music, whatever the Mac plays on.
+It prints a line for each queue it sends, and each step of starting songs on the phone, with the phone's own error when one comes back.
+Music sent while the phone is away waits for it, for up to ten minutes.
+Tracks Moondog makes on the Mac, as On Air does, reach the paired phone from the host, by id and with the pairing key.
 It asks Tailscale for this Mac's IPv4 address and listens on port `47831` on that address only.
 Both devices need to be on the same tailnet, and the phone needs access to that port.
 
@@ -53,7 +57,8 @@ Simulator can't play Apple Music, so there the app acts out the queue without so
 npm run demo
 ```
 
-The demo host listens on `127.0.0.1` with made-up songs and a scripted host, and uses no profile, model, or key of yours.
+The demo host runs the desktop's window room on `127.0.0.1` with made-up songs, two made-up models and a scripted host, and uses no profile, model, or key of yours.
+Ask it to make something, and it writes a short tone as a made track and plays it from the host, the way On Air's tracks come.
 It prints a pairing link; open it in Simulator with `xcrun simctl openurl booted '<link>'`, or copy it with `xcrun simctl pbcopy booted` and paste it in the app.
 
 ## Listen
@@ -62,13 +67,18 @@ Scan the pairing code, then allow Apple Music when the room asks.
 Ask for something, or tap the record and Moondog picks.
 Once there are words, the record moves into the bar, small and still turning; it plays and pauses there too.
 A tap on the conversation, or sending a message, puts the keyboard away.
-Tap the song above the composer to see where it is and what comes next.
+Tap the song above the composer to see where it is and what comes next; tap a song in Up next to play it, or press it to take it out, and the bookmark keeps what plays in Saved.
+The list button at the top left shows every conversation on the Mac, pinned first and then by folder, with the library and Settings above them.
+Swipe a conversation to pin or delete it, or press it to rename it; the pencil beside the list starts a new one.
+The library plays a playlist from the top, shuffled, or from any song in it.
+The model beside the send button is this conversation's, from the models set up on the Mac, with its thinking levels.
+When the Mac can make music, the radio button goes on air as the desktop's does, by asking Moondog; while it is on, the On Air mark stops it.
 As on the desktop, the playing cover's colours tint the record's grooves and light the room faintly.
 The button at the top right opens the record alone: it grows out of its place to fill the screen over the cover's light, and keeps the screen on.
 Tap the record to play or pause; swipe down, or tap beside it, to send it back.
 Away from the app, a Live Activity puts the logo in the Dynamic Island and on the Lock Screen with the song and what the host is doing or last said.
-The system player keeps playing in the background, and the lock screen controls report back to the Mac.
-Leave the app while Moondog works and the reply still arrives for a short while; a song it picks starts if iOS allows, and otherwise the moment you are back.
+The system player keeps playing in the background, and the Lock Screen controls report back to the Mac.
+Leave the app while Moondog works and the reply still arrives for a short while; songs it picks start if iOS allows, and otherwise the moment you are back.
 New requests need the Mac online; a queue already playing keeps playing when the connection drops.
 
-`npm test` runs the host's test: the private connection, a Pi tool call, the phone's receipt, and a reconnect, with made-up music and a test model.
+`npm test` runs the host's tests: the phone's port (the room drawn again on connect, music kept while the phone is away, messages both ways) and the made-track route (paired phone only, byte ranges).

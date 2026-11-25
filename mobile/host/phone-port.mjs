@@ -62,8 +62,13 @@ export function createPhonePort({ note = () => {} } = {}) {
       socket = client;
       note('connected');
       for (const message of kept.values()) write(message);
+      // The room sends a conversation only when one opens, so what was kept may miss replies since; opening
+      // the one shown again sends it as it stands, with any reply still being written.
+      const shown = kept.get('session')?.current ?? kept.get('sessions')?.current ?? kept.get('ready')?.current;
+      if (shown) deliver({ type: 'open', id: shown });
       // Music the room sent meanwhile, if it is still recent.
-      if (missed && Date.now() - missed.at < MUSIC_KEPT_MS) for (const message of missed.messages) write(message);
+      // Marked as resent, so a phone that already plays that queue goes on with it.
+      if (missed && Date.now() - missed.at < MUSIC_KEPT_MS) for (const message of missed.messages) write({ ...message, replay: true });
       missed = null;
       client.on('message', (raw) => {
         let data;

@@ -6,7 +6,9 @@ import SwiftUI
 struct RoomView: View {
   @Environment(Room.self) private var room
   @State private var draft = ""
+  @State private var conversations = false
   @State private var settings = false
+  @State private var offAir = false
   @State private var nowPlaying = false
   /// The record alone: whether it is open, and how far, from 0 in the room to 1 filling the screen.
   @State private var immersed = false
@@ -43,7 +45,19 @@ struct RoomView: View {
     }
     .statusBarHidden(immersed)
     .persistentSystemOverlays(immersed ? .hidden : .automatic)
+    .sheet(isPresented: $conversations) { ConversationsView() }
     .sheet(isPresented: $settings) { SettingsView() }
+    .confirmationDialog("Go off air?", isPresented: $offAir, titleVisibility: .visible) {
+      Button("Go off air", role: .destructive) { room.goOffAir() }
+    } message: {
+      Text("Moondog stops making music for the stream.")
+    }
+    // Words the Mac couldn't take yet come back to the composer.
+    .onChange(of: room.returned) { _, words in
+      guard let words else { return }
+      draft = words
+      room.returned = nil
+    }
     .sheet(isPresented: $nowPlaying) { NowPlayingView() }
   }
 
@@ -135,12 +149,40 @@ struct RoomView: View {
 
   // MARK: Parts
 
-  // Settings on the left, the record alone on the right, and over a conversation the record between them.
+  // Conversations and a new one on the left, On Air and the record alone on the right, and over a
+  // conversation the record between them.
   private var bar: some View {
     ZStack {
-      HStack {
-        BarButton(symbol: "gearshape", label: "Settings") { settings = true }
+      HStack(spacing: 8) {
+        BarButton(symbol: "list.bullet", label: "Conversations") { conversations = true }
+        // A room with nothing said is already a new conversation.
+        if !empty {
+          BarButton(symbol: "square.and.pencil", label: "New conversation") {
+            composing = false
+            room.newConversation()
+          }
+          .disabled(!room.online || room.turn != nil)
+        }
         Spacer()
+        if room.onAir != nil {
+          Button { offAir = true } label: {
+            HStack(spacing: 6) {
+              Circle().fill(Color.text).frame(width: 7, height: 7)
+              Text("On Air").font(.subheadline.weight(.semibold))
+            }
+            .padding(.horizontal, 14)
+            .frame(height: 44)
+          }
+          .buttonStyle(.plain)
+          .glassEffect(.regular.interactive(), in: .capsule)
+          .accessibilityHint(Text("Goes off air"))
+        } else if room.canMakeMusic && room.model.configured {
+          BarButton(symbol: "dot.radiowaves.left.and.right", label: "Go on air") {
+            composing = false
+            room.goOnAir()
+          }
+          .disabled(!room.online || room.turn != nil)
+        }
         BarButton(symbol: "arrow.up.left.and.arrow.down.right", label: "The record alone") { openRecord() }
       }
       if !empty { record(width: Self.small) }
@@ -244,6 +286,8 @@ struct RoomView: View {
         .padding(.vertical, 13)
         .submitLabel(.send)
         .onSubmit(send)
+      ModelMenu()
+        .padding(.bottom, 5)
       Group {
         if room.turn != nil {
           Button(action: room.cancel) {
@@ -339,5 +383,75 @@ struct MessageView: View {
   static func markdown(_ text: String) -> AttributedString {
     let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
     return (try? AttributedString(markdown: text, options: options)) ?? AttributedString(text)
+  }
+}
+
+/// The shown conversation's model, as the desktop composer's menu offers it: the models set up on the
+/// Mac, and the thinking levels of the one chosen.
+private struct ModelMenu: View {
+  @Environment(Room.self) private var room
+
+  var body: some View {
+    if !room.models.isEmpty || room.model.model != nil {
+      Menu {
+        Section {
+          ForEach(room.models) { choice in
+            Button {
+              room.choose(choice)
+            } label: {
+              if choice.provider == room.model.provider && choice.model == room.model.model {
+                Label(label(choice), systemImage: "checkmark")
+              } else {
+                Text(label(choice))
+              }
+            }
+          }
+        }
+        if room.model.effortLevels.count > 1 {
+          Picker("Thinking", selection: Binding(get: { room.model.effort ?? "default" }, set: { room.choose(effort: $0) })) {
+            Text("Default").tag("default")
+            ForEach(room.model.effortLevels, id: \.self) { level in
+              Text(Self.effortName(level)).tag(level)
+            }
+          }
+          .pickerStyle(.menu)
+        }
+      } label: {
+        HStack(spacing: 3) {
+          Text(verbatim: shown)
+            .lineLimit(1)
+          Image(systemName: "chevron.up.chevron.down")
+            .font(.system(size: 9, weight: .semibold))
+        }
+        .font(.footnote)
+        .foregroundStyle(Color.text2)
+        .frame(maxWidth: 120, minHeight: 44)
+        .fixedSize(horizontal: true, vertical: false)
+      }
+      .accessibilityLabel(Text("Model"))
+      .accessibilityValue(Text(verbatim: shown))
+      .onAppear { if room.models.isEmpty { room.refreshModels() } }
+    }
+  }
+
+  /// The model's own name, with its provider's when two share one, as on the desktop.
+  private func label(_ choice: ModelChoice) -> String {
+    room.models.filter { $0.name == choice.name }.count > 1 ? "\(choice.name) · \(choice.providerName)" : choice.name
+  }
+
+  private var shown: String {
+    room.models.first { $0.provider == room.model.provider && $0.model == room.model.model }?.name ?? room.model.model ?? ""
+  }
+
+  private static func effortName(_ level: String) -> String {
+    switch level {
+    case "off": String(localized: "Off")
+    case "low": String(localized: "Low")
+    case "medium": String(localized: "Medium")
+    case "high": String(localized: "High")
+    case "xhigh": String(localized: "Extra high")
+    case "max": String(localized: "Max")
+    default: level
+    }
   }
 }

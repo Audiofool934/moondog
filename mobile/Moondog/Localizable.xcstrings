@@ -1,6 +1,16 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "%lld songs": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 首"
+          }
+        }
+      }
+    },
     "A song isn't available in this Apple Music region.": {
       "localizations": {
         "zh-Hans": {
@@ -21,12 +31,12 @@
         }
       }
     },
-    "Allow Apple Music on this iPhone first.": {
+    "Answering": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "请先在这台 iPhone 上允许使用 Apple Music。"
+            "value": "正在回复"
           }
         }
       }
@@ -141,6 +151,46 @@
         }
       }
     },
+    "Conversations": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "对话"
+          }
+        }
+      }
+    },
+    "Default": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "默认"
+          }
+        }
+      }
+    },
+    "Delete": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除"
+          }
+        }
+      }
+    },
+    "Delete this conversation?": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除这段对话？"
+          }
+        }
+      }
+    },
     "Enter the pairing link": {
       "localizations": {
         "zh-Hans": {
@@ -157,6 +207,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "请输入 Mac 的 Tailscale 地址（100.x.y.z）和主机显示的 32 位密钥。"
+          }
+        }
+      }
+    },
+    "Extra high": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "超高"
           }
         }
       }
@@ -191,6 +251,96 @@
         }
       }
     },
+    "Go off air": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停止播出"
+          }
+        }
+      }
+    },
+    "Go off air?": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停止播出？"
+          }
+        }
+      }
+    },
+    "Go on air": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "开始播出"
+          }
+        }
+      }
+    },
+    "Go on air: make new music for right now and keep it going": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "开播吧：按现在的感觉做新的音乐，一直放下去"
+          }
+        }
+      }
+    },
+    "Goes off air": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停止播出"
+          }
+        }
+      }
+    },
+    "High": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "高"
+          }
+        }
+      }
+    },
+    "It is deleted on your Mac too.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你 Mac 上的这段对话也会删除。"
+          }
+        }
+      }
+    },
+    "Library": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "资料库"
+          }
+        }
+      }
+    },
+    "Low": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "低"
+          }
+        }
+      }
+    },
     "Mac": {
       "localizations": {
         "zh-Hans": {
@@ -211,12 +361,52 @@
         }
       }
     },
+    "Made by Moondog": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Moondog 做的"
+          }
+        }
+      }
+    },
+    "Max": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最高"
+          }
+        }
+      }
+    },
+    "Medium": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "中"
+          }
+        }
+      }
+    },
     "Mic check": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "试麦中"
+          }
+        }
+      }
+    },
+    "Model": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "模型"
           }
         }
       }
@@ -231,12 +421,32 @@
         }
       }
     },
+    "Moondog stops making music for the stream.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Moondog 会停止为这次播出做音乐。"
+          }
+        }
+      }
+    },
     "Moondog will talk to the Mac at %@ instead of %@.": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "Moondog 将改为连接 %@ 这台 Mac，不再连接 %@。"
+          }
+        }
+      }
+    },
+    "Name": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "名称"
           }
         }
       }
@@ -251,12 +461,32 @@
         }
       }
     },
+    "New conversation": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新对话"
+          }
+        }
+      }
+    },
     "Next song": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "下一首"
+          }
+        }
+      }
+    },
+    "No conversations yet": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有对话"
           }
         }
       }
@@ -271,22 +501,32 @@
         }
       }
     },
-    "Nothing is playing.": {
+    "Nothing here yet": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "现在没有在播放。"
+            "value": "这里还没有歌"
           }
         }
       }
     },
-    "Nothing to play.": {
+    "Nothing in this playlist can play here.": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "没有可以播放的歌。"
+            "value": "这个歌单里没有能在这里播放的歌。"
+          }
+        }
+      }
+    },
+    "Off": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关闭"
           }
         }
       }
@@ -297,6 +537,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Moondog 无权使用"
+          }
+        }
+      }
+    },
+    "On Air": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "播出中"
           }
         }
       }
@@ -391,6 +641,26 @@
         }
       }
     },
+    "Pin": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "置顶"
+          }
+        }
+      }
+    },
+    "Pinned": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已置顶"
+          }
+        }
+      }
+    },
     "Planning the segue": {
       "localizations": {
         "zh-Hans": {
@@ -481,6 +751,16 @@
         }
       }
     },
+    "Rename": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重命名"
+          }
+        }
+      }
+    },
     "Restricted on this iPhone": {
       "localizations": {
         "zh-Hans": {
@@ -507,6 +787,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "在那里的 Moondog mobile 文件夹里运行这条命令，然后扫描它显示的二维码。"
+          }
+        }
+      }
+    },
+    "Save to the library": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "收藏到资料库"
+          }
+        }
+      }
+    },
+    "Saved": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已收藏"
           }
         }
       }
@@ -551,6 +851,16 @@
         }
       }
     },
+    "Shuffle": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "随机播放"
+          }
+        }
+      }
+    },
     "Simulated in Simulator, without sound": {
       "localizations": {
         "zh-Hans": {
@@ -567,6 +877,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "停止"
+          }
+        }
+      }
+    },
+    "Take out of Up next": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "从接下来移除"
           }
         }
       }
@@ -591,12 +911,42 @@
         }
       }
     },
+    "That playlist is gone.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个歌单已经不在了。"
+          }
+        }
+      }
+    },
     "The record alone": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "只留唱片"
+          }
+        }
+      }
+    },
+    "Thinking": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "思考"
+          }
+        }
+      }
+    },
+    "Unpin": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取消置顶"
           }
         }
       }
