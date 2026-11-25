@@ -258,8 +258,16 @@ final class RecordDots {
 
 /// The record above the conversation, drawn in dots as on the desktop. It turns a frame every eighth
 /// of a second while music plays and rests where it stopped; its arm rests on it while music plays
-/// and swings off when the music stops.
+/// and swings off when the music stops. Its frame is the disc alone, so the record sits centered where
+/// it is placed; the arm reaches past the frame, above and to the right, by `reach` of its width.
 struct DotRecord: View {
+  /// How far the arm reaches past the disc, as parts of its diameter.
+  static let reach: (top: CGFloat, trailing: CGFloat) = {
+    let dots = RecordDots.shared
+    let across = 2 * dots.radius
+    return ((dots.center[1] + 0.5 - dots.radius) / across, (Double(dots.width) - dots.center[0] - 0.5 - dots.radius) / across)
+  }()
+
   var playing: Bool
   var armDown: Bool
   /// The playing cover's colours for the grooves, rim inward, or nil for ink.
@@ -272,6 +280,26 @@ struct DotRecord: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
+    Color.clear
+      .aspectRatio(1, contentMode: .fit)
+      .overlay {
+        GeometryReader { proxy in
+          let dots = RecordDots.shared
+          let pitch = proxy.size.width / (2 * dots.radius)
+          let grid = pitch * CGFloat(dots.width)
+          // The whole grid, placed so the disc's center lands on the frame's center.
+          record
+            .frame(width: grid, height: grid)
+            .position(x: proxy.size.width / 2 + (grid / 2 - (dots.center[0] + 0.5) * pitch),
+                      y: proxy.size.height / 2 + (grid / 2 - (dots.center[1] + 0.5) * pitch))
+        }
+      }
+      .onChange(of: turning) { _, now in
+        if now { since = .now } else { rest = frame(at: .now) }
+      }
+  }
+
+  private var record: some View {
     TimelineView(.periodic(from: since, by: Self.interval)) { timeline in
       let frame = turning ? frame(at: timeline.date) : rest
       ZStack {
@@ -291,10 +319,6 @@ struct DotRecord: View {
     .animation(reduceMotion ? nil : .easeInOut(duration: 2.4), value: grooves)
     .overlay { Arm(swing: armDown ? 0 : 1, scale: scale) }
     .animation(reduceMotion ? nil : .easeInOut(duration: 0.56), value: armDown)
-    .aspectRatio(1, contentMode: .fit)
-    .onChange(of: turning) { _, now in
-      if now { since = .now } else { rest = frame(at: .now) }
-    }
   }
 
   private var turning: Bool { playing && !reduceMotion }

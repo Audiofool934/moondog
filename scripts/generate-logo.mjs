@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 // Writes Moondog's logo files from src/surfaces/brand/logo.mjs: the logo and its small version as
-// SVG, the Mac and iPhone app icons, and the project page's icon and link preview. Headless Chrome draws the
+// SVG, the Mac and iPhone app icons, the iPhone's Dynamic Island mark, and the project page's icon and link preview. Headless Chrome draws the
 // PNGs, as it draws the README's screenshots; set MOONDOG_CAPTURE_BROWSER to use another Chrome.
 //
 //   node scripts/generate-logo.mjs
@@ -19,6 +19,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const brand = path.join(root, "assets", "brand");
 const site = path.join(root, "site", "static");
 const iphoneIcons = path.join(root, "mobile", "Moondog", "Assets.xcassets", "AppIcon.appiconset");
+const islandMark = path.join(root, "mobile", "MoondogActivity", "Assets.xcassets", "Mark.imageset", "mark.png");
 const INK = "#141414";
 
 const logo = logoSvg({ standalone: true });
@@ -39,15 +40,18 @@ const iphoneIconSvg = ({ dark = false } = {}) => {
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024"><rect width="1024" height="1024" fill="${tile}"/>`
     + `<g transform="translate(512 512) scale(0.9) translate(-512 -512)">${art}</g></svg>`;
 };
-// Each PNG: the page that draws it, its size, and whether it keeps a transparent background.
-const page = (body, background = "transparent") => `<!doctype html><meta charset="utf-8"><style>html,body{margin:0;background:${background}}
-body{display:grid;place-items:center;width:100vw;height:100vh}svg{display:block}</style>${body}`;
+// Each PNG: the page that draws it, its size, and whether it keeps a transparent background. Chrome may lay
+// out a small window wider than it shoots, so a picture that fills its window sits in the corner, not the middle.
+const page = (body, background = "transparent", { corner = false } = {}) => `<!doctype html><meta charset="utf-8"><style>html,body{margin:0;background:${background}}
+body{${corner ? "display:block" : "display:grid;place-items:center;width:100vw;height:100vh"}}svg{display:block}</style>${body}`;
 const sized = (svg, width) => svg.replace("<svg ", `<svg width="${width}" height="${width}" `);
 const images = [
   { file: path.join(brand, "moondog-app-icon.png"), size: [1024, 1024], html: page(sized(appIconSvg(), 1024)) },
   { file: path.join(brand, "moondog-app-icon-dark.png"), size: [1024, 1024], html: page(sized(appIconSvg({ dark: true }), 1024)) },
   { file: path.join(iphoneIcons, "icon.png"), size: [1024, 1024], html: page(sized(iphoneIconSvg(), 1024)), opaque: true },
   { file: path.join(iphoneIcons, "icon-dark.png"), size: [1024, 1024], html: page(sized(iphoneIconSvg({ dark: true }), 1024)), opaque: true },
+  // The small logo for the Live Activity, a template the island and the Lock Screen tint, at three times 32 points.
+  { file: islandMark, size: [96, 96], html: page(sized(logoSvg({ small: true, ink: INK }), 96), "transparent", { corner: true }) },
   { file: path.join(site, "favicon-64.png"), size: [64, 64], html: page(sized(logoSvg({ small: true, ink: INK }), 64)) },
   // The link preview: the logo on white, at the size link previews ask for.
   { file: path.join(site, "moondog-og.png"), size: [1200, 630], html: page(sized(logoSvg({ ink: INK }), 560), "#ffffff"), opaque: true },

@@ -61,6 +61,26 @@
         }
       }
     },
+    "Back to the conversation": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "回到对话"
+          }
+        }
+      }
+    },
+    "Back to the record": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "回到唱片"
+          }
+        }
+      }
+    },
     "Checking the request line": {
       "localizations": {
         "zh-Hans": {
@@ -467,6 +487,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "这不是 Moondog 的配对链接。"
+          }
+        }
+      }
+    },
+    "The record alone": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "只留唱片"
           }
         }
       }

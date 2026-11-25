@@ -36,6 +36,8 @@ final class Room {
   var notice: String?
   /// Set when the listener asks Moondog to pick: the arm goes down and waits for the music.
   private(set) var cued = false
+  /// What the host says while it works on this request, as a radio host would; a new line for each.
+  private(set) var hostLine = HostLine.any()
   let player = Player()
 
   @ObservationIgnored private var task: URLSessionWebSocketTask?
@@ -44,6 +46,7 @@ final class Room {
   @ObservationIgnored private var retry: Task<Void, Never>?
   @ObservationIgnored private var active = false
   @ObservationIgnored private var lift: Task<Void, Never>?
+  @ObservationIgnored private var live: OnAirLive?
   private let session = URLSession(configuration: .ephemeral)
 
   var online: Bool { link == .online }
@@ -54,6 +57,25 @@ final class Room {
       self?.send(["type": "state", "state": state.report])
     }
     player.start()
+    live = OnAirLive()
+    live?.follow(self)
+  }
+
+  /// What the Live Activity shows, or nil while there is nothing on: no song loaded and no request.
+  var onAir: OnAirAttributes.ContentState? {
+    let current = player.state.current
+    guard pairing != nil, current != nil || turn != nil else { return nil }
+    let reply = messages.last { $0.role == "assistant" }.map { Self.gist($0.text) }
+    return .init(title: current?.title, artist: current?.artist, playing: player.state.playing, working: turn != nil,
+                 line: turn != nil ? String(localized: hostLine) : reply)
+  }
+
+  /// A reply as one plain run of words, short enough for the Lock Screen.
+  private static func gist(_ text: String) -> String {
+    let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+    let plain = (try? AttributedString(markdown: text, options: options)).map { String($0.characters) } ?? text
+    let words = plain.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+    return words.count > 200 ? String(words.prefix(200)) + "…" : words
   }
 
   // MARK: Pairing
@@ -197,6 +219,7 @@ final class Room {
     case "room":
       messages = message.messages ?? []
       let ended = turn != nil && message.turn == nil
+      if turn == nil && message.turn != nil { hostLine = HostLine.any() }
       turn = message.turn
       if ended { liftWhenSilent() }
     case "delta":

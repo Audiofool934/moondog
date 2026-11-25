@@ -6,9 +6,39 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		A1000000000000000000001C /* MoondogActivity.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = A10000000000000000000011 /* MoondogActivity.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		A1000000000000000000001E /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A10000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A10000000000000000000015;
+			remoteInfo = MoondogActivity;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		A1000000000000000000001D /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				A1000000000000000000001C /* MoondogActivity.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
 		A10000000000000000000005 /* Moondog.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Moondog.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A10000000000000000000010 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		A10000000000000000000011 /* MoondogActivity.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = MoondogActivity.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		A10000000000000000000012 /* MoondogActivity-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "MoondogActivity-Info.plist"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -17,10 +47,27 @@
 			path = Moondog;
 			sourceTree = "<group>";
 		};
+		A10000000000000000000014 /* MoondogActivity */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = MoondogActivity;
+			sourceTree = "<group>";
+		};
+		A10000000000000000000013 /* Shared */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Shared;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		A10000000000000000000008 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A10000000000000000000017 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -34,7 +81,10 @@
 			isa = PBXGroup;
 			children = (
 				A10000000000000000000004 /* Moondog */,
+				A10000000000000000000013 /* Shared */,
+				A10000000000000000000014 /* MoondogActivity */,
 				A10000000000000000000010 /* Info.plist */,
+				A10000000000000000000012 /* MoondogActivity-Info.plist */,
 				A10000000000000000000003 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -43,6 +93,7 @@
 			isa = PBXGroup;
 			children = (
 				A10000000000000000000005 /* Moondog.app */,
+				A10000000000000000000011 /* MoondogActivity.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -57,13 +108,16 @@
 				A10000000000000000000007 /* Sources */,
 				A10000000000000000000008 /* Frameworks */,
 				A10000000000000000000009 /* Resources */,
+				A1000000000000000000001D /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				A1000000000000000000001F /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				A10000000000000000000004 /* Moondog */,
+				A10000000000000000000013 /* Shared */,
 			);
 			name = Moondog;
 			packageProductDependencies = (
@@ -71,6 +125,29 @@
 			productName = Moondog;
 			productReference = A10000000000000000000005 /* Moondog.app */;
 			productType = "com.apple.product-type.application";
+		};
+		A10000000000000000000015 /* MoondogActivity */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A10000000000000000000019 /* Build configuration list for PBXNativeTarget "MoondogActivity" */;
+			buildPhases = (
+				A10000000000000000000016 /* Sources */,
+				A10000000000000000000017 /* Frameworks */,
+				A10000000000000000000018 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				A10000000000000000000014 /* MoondogActivity */,
+				A10000000000000000000013 /* Shared */,
+			);
+			name = MoondogActivity;
+			packageProductDependencies = (
+			);
+			productName = MoondogActivity;
+			productReference = A10000000000000000000011 /* MoondogActivity.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -83,6 +160,9 @@
 				LastUpgradeCheck = 2720;
 				TargetAttributes = {
 					A10000000000000000000006 = {
+						CreatedOnToolsVersion = 27.2;
+					};
+					A10000000000000000000015 = {
 						CreatedOnToolsVersion = 27.2;
 					};
 				};
@@ -103,12 +183,20 @@
 			projectRoot = "";
 			targets = (
 				A10000000000000000000006 /* Moondog */,
+				A10000000000000000000015 /* MoondogActivity */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		A10000000000000000000009 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A10000000000000000000018 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -125,7 +213,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A10000000000000000000016 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		A1000000000000000000001F /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A10000000000000000000015 /* MoondogActivity */;
+			targetProxy = A1000000000000000000001E /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		A1000000000000000000000B /* Debug */ = {
@@ -236,6 +339,56 @@
 			};
 			name = Release;
 		};
+		A1000000000000000000001A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = DAK5S3455A;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "MoondogActivity-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = Moondog;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = ai.audiofool.moondog.activity;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		A1000000000000000000001B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = DAK5S3455A;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "MoondogActivity-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = Moondog;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = ai.audiofool.moondog.activity;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -253,6 +406,15 @@
 			buildConfigurations = (
 				A1000000000000000000000E /* Debug */,
 				A1000000000000000000000F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A10000000000000000000019 /* Build configuration list for PBXNativeTarget "MoondogActivity" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A1000000000000000000001A /* Debug */,
+				A1000000000000000000001B /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

@@ -27,15 +27,17 @@ Both devices need to be on the same tailnet, and the phone needs access to that 
 ## Build the app
 
 Open `Moondog.xcodeproj` in Xcode, choose your iPhone, and run the Moondog scheme.
-The project has no packages or generated files; the Swift sources are in `Moondog/`.
+The project has no packages or generated files.
+The app's Swift sources are in `Moondog/`, the Live Activity's in `MoondogActivity/`, and what both use in `Shared/`.
 It needs iOS 26 or later.
 
 The app uses the bundle ID `ai.audiofool.moondog` and team `DAK5S3455A`.
 Playing whole songs needs the MusicKit service on that App ID in the Apple Developer portal.
-To build under another team, change the team and bundle ID in the target's Signing settings, and turn on MusicKit for your own App ID.
+The Live Activity extension uses `ai.audiofool.moondog.activity`.
+To build under another team, change the team and bundle IDs in both targets' Signing settings, and turn on MusicKit for your own App ID.
 
 The record above the conversation is the terminal's lunar record in dots, the same frames the desktop window draws; the small mark in the bar is the logo's vector form.
-After a change to `src/surfaces/cli/terminal-art.mjs` or `src/surfaces/brand/logo.mjs`, run `npm run logo` here to write `Moondog/record-dots.json` and `Moondog/logo-figure.json`, and `node scripts/generate-logo.mjs` from the root for the app icon.
+After a change to `src/surfaces/cli/terminal-art.mjs` or `src/surfaces/brand/logo.mjs`, run `npm run logo` here to write `Moondog/record-dots.json` and `Moondog/logo-figure.json`, and `node scripts/generate-logo.mjs` from the root for the app icon and the Live Activity's mark.
 
 ## Try it in Simulator
 
@@ -54,6 +56,9 @@ Paste the pairing link or type the address and key, then allow Apple Music when 
 Ask for something, or tap the record and Moondog picks.
 Tap the song above the composer to see where it is and what comes next.
 As on the desktop, the playing cover's colours tint the record's grooves and light the room faintly.
+Scrolled into the conversation, the record folds into the bar; tap the small record there to bring it back.
+The button at the top right shows the record alone, large over the cover's light, and keeps the screen on; tap the record to play or pause, and anywhere else to go back.
+Away from the app, a Live Activity puts the logo in the Dynamic Island and on the Lock Screen with the song and what the host is doing or last said.
 The system player keeps playing in the background, and the lock screen controls report back to the Mac.
 New requests need the Mac online; a queue already playing keeps playing when the connection drops.
 
