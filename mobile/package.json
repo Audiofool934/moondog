@@ -1,18 +1,15 @@
 {
-  "name": "moondog-iphone",
+  "name": "moondog-iphone-host",
   "version": "0.1.0",
   "private": true,
-  "main": "index.js",
+  "description": "The Mac side of Moondog for iPhone: a private connection from the phone to the agent on this Mac.",
   "scripts": {
-    "ios": "expo run:ios",
-    "host": "node host/start.mjs"
+    "host": "node host/start.mjs",
+    "demo": "node host/demo-host.mjs",
+    "logo": "node scripts/write-logo.mjs",
+    "test": "node --test host/room.test.mjs"
   },
   "dependencies": {
-    "expo": "~58.0.26",
-    "expo-secure-store": "~58.0.0",
-    "react": "19.3.0",
-    "react-native": "0.88.1",
-    "react-native-safe-area-context": "^5.6.0",
     "ws": "^8.23.0"
   }
 }

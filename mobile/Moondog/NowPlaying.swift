@@ -1,0 +1,188 @@
+import MusicKit
+import SwiftUI
+
+/// The album sleeve: the cover is the one picture of what plays, nearly square, resting on the paper.
+struct Sleeve: View {
+  var artwork: Artwork?
+  var size: CGFloat
+
+  var body: some View {
+    Group {
+      if let artwork {
+        ArtworkImage(artwork, width: size, height: size)
+      } else {
+        // No cover yet, as in Simulator: the record stands in for the sleeve.
+        Color.wash.overlay {
+          RecordMark(playing: false, armDown: false, ink: .text3)
+            .padding(size * 0.22)
+            .opacity(0.5)
+        }
+      }
+    }
+    .frame(width: size, height: size)
+    .clipShape(.rect(cornerRadius: size > 100 ? 8 : 4))
+    .shadow(color: .black.opacity(size > 100 ? 0.22 : 0.1), radius: size > 100 ? 18 : 3, y: size > 100 ? 12 : 1)
+    .accessibilityHidden(true)
+  }
+}
+
+/// The song and its two most used controls, in reach above the composer.
+struct NowPlayingBar: View {
+  @Environment(Room.self) private var room
+  var open: () -> Void
+
+  var body: some View {
+    let state = room.player.state
+    HStack(spacing: 12) {
+      Button(action: open) {
+        HStack(spacing: 12) {
+          Sleeve(artwork: room.player.artwork, size: 40)
+          VStack(alignment: .leading, spacing: 1) {
+            Text(state.current?.title ?? "")
+              .font(.subheadline.weight(.medium))
+              .foregroundStyle(Color.text)
+            Text(state.current?.artist ?? "")
+              .font(.footnote)
+              .foregroundStyle(Color.text2)
+          }
+          .lineLimit(1)
+          Spacer(minLength: 0)
+        }
+        .contentShape(.rect)
+      }
+      .buttonStyle(.plain)
+      .accessibilityHint(Text("Shows the song and what comes next"))
+      PlayerButton(symbol: state.playing ? "pause.fill" : "play.fill", label: state.playing ? "Pause" : "Play") {
+        room.control(state.playing ? "pause" : "resume")
+      }
+      PlayerButton(symbol: "forward.fill", label: "Next song") { room.control("next") }
+        .disabled(state.upNext.isEmpty)
+    }
+    .padding(.leading, 8)
+    .padding(.trailing, 4)
+    .padding(.vertical, 6)
+    .glassEffect(.regular, in: .rect(cornerRadius: 20))
+  }
+}
+
+struct PlayerButton: View {
+  var symbol: String
+  var label: LocalizedStringKey
+  var size: CGFloat = 17
+  var action: () -> Void
+
+  var body: some View {
+    Button(action: action) {
+      Image(systemName: symbol)
+        .font(.system(size: size))
+        .contentTransition(.symbolEffect(.replace))
+        .frame(width: max(44, size * 2.2), height: max(44, size * 2.2))
+        .contentShape(.rect)
+    }
+    .buttonStyle(.plain)
+    .foregroundStyle(Color.text)
+    .accessibilityLabel(Text(label))
+  }
+}
+
+/// The song in full: the sleeve, where the song is, the controls, and what comes next.
+struct NowPlayingView: View {
+  @Environment(Room.self) private var room
+  @Environment(\.dismiss) private var dismiss
+
+  var body: some View {
+    let state = room.player.state
+    ScrollView {
+      VStack(alignment: .leading, spacing: 0) {
+        GeometryReader { proxy in
+          Sleeve(artwork: room.player.artwork, size: proxy.size.width)
+        }
+        .aspectRatio(1, contentMode: .fit)
+        .padding(.top, 36)
+        .padding(.bottom, 28)
+
+        Text(state.current?.title ?? "")
+          .font(.title)
+          .foregroundStyle(Color.text)
+        Text(state.current?.artist ?? "")
+          .font(.body)
+          .foregroundStyle(Color.text2)
+          .padding(.top, 2)
+
+        Progress(player: room.player, playing: state.playing)
+          .padding(.top, 22)
+
+        HStack {
+          Spacer()
+          PlayerButton(symbol: "backward.fill", label: "Previous song", size: 24) { room.control("previous") }
+          Spacer()
+          PlayerButton(symbol: state.playing ? "pause.fill" : "play.fill", label: state.playing ? "Pause" : "Play", size: 34) {
+            room.control(state.playing ? "pause" : "resume")
+          }
+          Spacer()
+          PlayerButton(symbol: "forward.fill", label: "Next song", size: 24) { room.control("next") }
+            .disabled(state.upNext.isEmpty)
+          Spacer()
+        }
+        .padding(.vertical, 12)
+
+        if !state.upNext.isEmpty {
+          Text("Up next")
+            .font(.footnote)
+            .foregroundStyle(Color.text3)
+            .padding(.top, 28)
+            .padding(.bottom, 6)
+          ForEach(Array(state.upNext.enumerated()), id: \.offset) { _, track in
+            HStack(spacing: 6) {
+              Text(track.title).foregroundStyle(Color.text)
+              Text(track.artist).foregroundStyle(Color.text2)
+            }
+            .font(.subheadline)
+            .lineLimit(1)
+            .padding(.vertical, 7)
+          }
+        }
+      }
+      .padding(.horizontal, 32)
+      .padding(.bottom, 32)
+    }
+    .background(Color.paper)
+    .presentationDragIndicator(.visible)
+    .presentationBackground(Color.paper)
+    .onChange(of: state.current == nil) { _, gone in if gone { dismiss() } }
+  }
+}
+
+/// Where the song is: a hairline that fills, with the time on either side.
+private struct Progress: View {
+  var player: Player
+  var playing: Bool
+
+  var body: some View {
+    TimelineView(.periodic(from: .now, by: 0.5)) { _ in
+      let (elapsed, duration) = player.position()
+      VStack(spacing: 6) {
+        GeometryReader { proxy in
+          ZStack(alignment: .leading) {
+            Capsule().fill(Color.wash)
+            Capsule().fill(Color.text2)
+              .frame(width: proxy.size.width * min(1, duration.map { elapsed / max($0, 1) } ?? 0))
+          }
+        }
+        .frame(height: 3)
+        HStack {
+          Text(Self.time(elapsed))
+          Spacer()
+          if let duration { Text("-" + Self.time(max(0, duration - elapsed))) }
+        }
+        .font(.caption.monospacedDigit())
+        .foregroundStyle(Color.text3)
+      }
+    }
+    .accessibilityElement(children: .combine)
+  }
+
+  static func time(_ seconds: TimeInterval) -> String {
+    Duration.seconds(seconds.rounded(.down)).formatted(.time(pattern: .minuteSecond))
+  }
+}

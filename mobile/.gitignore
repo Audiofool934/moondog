@@ -1,3 +1,5 @@
-.expo/
-/ios/
-dist/
+node_modules/
+build/
+DerivedData/
+xcuserdata/
+*.xcuserstate

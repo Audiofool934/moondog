@@ -145,8 +145,10 @@ const forbiddenBasenames = new Set([
 // thirteen new files pass 520.
 // Raised on 2026-11-22 for the film's sources (site/film/): main was at 556, and the film's ten files
 // pass 560.
+// Raised on 2026-11-24 for the native iPhone app (mobile/): the branch was at 584, and the app's
+// Swift sources, Xcode project and icons bring it to 596.
 // The ceilings still catch bulk accidents such as a data dump or a build folder.
-export const maximumReleaseEntries = 590;
+export const maximumReleaseEntries = 620;
 export const maximumReleaseFileBytes = 5 * 1024 * 1024;
 export const maximumReleaseTreeBytes = 20 * 1024 * 1024;
 

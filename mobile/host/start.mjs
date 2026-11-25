@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
-import { privateHost } from '../address.mjs';
+import { privateHost } from './address.mjs';
 import { createPhoneRoom } from './room.mjs';
 import { listen } from './server.mjs';
 import { MoondogApplication } from '../../src/core/moondog-application.mjs';
@@ -57,6 +57,12 @@ if (!privateHost(host) || !assigned) {
   throw new Error(
     'Connect Tailscale on this Mac, or set MOONDOG_PHONE_HOST to its Tailscale IPv4 address. Use 127.0.0.1 for Simulator.',
   );
+}
+if (process.argv.includes('--copy')) {
+  // The phone's Paste button reads this link through Universal Clipboard.
+  const link = `moondog://pair?host=${host}&key=${token}`;
+  execFileSync('pbcopy', { input: link });
+  console.log('Copied the pairing link. Paste it in Moondog on your iPhone.');
 }
 const room = createPhoneRoom();
 const artistIdentityResolver = createWikidataArtistResolver();

@@ -1,0 +1,526 @@
+{
+  "sourceLanguage": "en",
+  "strings": {
+    "A song isn't available in this Apple Music region.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "有首歌在这个 Apple Music 地区不可用。"
+          }
+        }
+      }
+    },
+    "Allow Apple Music": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "允许使用 Apple Music"
+          }
+        }
+      }
+    },
+    "Allow Apple Music on this iPhone first.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请先在这台 iPhone 上允许使用 Apple Music。"
+          }
+        }
+      }
+    },
+    "Apple Music": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple Music"
+          }
+        }
+      }
+    },
+    "Apple Music is off for Moondog": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Moondog 无法使用 Apple Music"
+          }
+        }
+      }
+    },
+    "Ask Moondog": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "和 Moondog 说点什么"
+          }
+        }
+      }
+    },
+    "Checking the request line": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "看看点歌单"
+          }
+        }
+      }
+    },
+    "Checking…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在检查…"
+          }
+        }
+      }
+    },
+    "Connect": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接"
+          }
+        }
+      }
+    },
+    "Connect to your Mac": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接你的 Mac"
+          }
+        }
+      }
+    },
+    "Connected": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已连接"
+          }
+        }
+      }
+    },
+    "Enter your Mac's Tailscale address (100.x.y.z) and the 32-character key the host shows.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请输入 Mac 的 Tailscale 地址（100.x.y.z）和主机显示的 32 位密钥。"
+          }
+        }
+      }
+    },
+    "Finding the cue": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "找切入点"
+          }
+        }
+      }
+    },
+    "Finding the groove": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "找找律动"
+          }
+        }
+      }
+    },
+    "Forget this Mac": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "忘记这台 Mac"
+          }
+        }
+      }
+    },
+    "Mac": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mac"
+          }
+        }
+      }
+    },
+    "Mac address": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mac 地址"
+          }
+        }
+      }
+    },
+    "Mic check": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "试麦中"
+          }
+        }
+      }
+    },
+    "Needs an Apple Music subscription": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要 Apple Music 订阅"
+          }
+        }
+      }
+    },
+    "Next song": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下一首"
+          }
+        }
+      }
+    },
+    "Not allowed yet": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "尚未允许"
+          }
+        }
+      }
+    },
+    "Nothing is playing.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "现在没有在播放。"
+          }
+        }
+      }
+    },
+    "Nothing to play.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有可以播放的歌。"
+          }
+        }
+      }
+    },
+    "Off for Moondog": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Moondog 无权使用"
+          }
+        }
+      }
+    },
+    "Open Settings": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开设置"
+          }
+        }
+      }
+    },
+    "Or type them": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "或者手动输入"
+          }
+        }
+      }
+    },
+    "Pair again": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重新配对"
+          }
+        }
+      }
+    },
+    "Pairing key": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "配对密钥"
+          }
+        }
+      }
+    },
+    "Pairing key not accepted": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "配对密钥未被接受"
+          }
+        }
+      }
+    },
+    "Pause": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暂停"
+          }
+        }
+      }
+    },
+    "Planning the segue": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "琢磨怎么接歌"
+          }
+        }
+      }
+    },
+    "Play": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "播放"
+          }
+        }
+      }
+    },
+    "Play something": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "放点音乐"
+          }
+        }
+      }
+    },
+    "Play something for right now": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "放点适合现在听的"
+          }
+        }
+      }
+    },
+    "Playing whole songs needs an Apple Music subscription.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "播放完整歌曲需要 Apple Music 订阅。"
+          }
+        }
+      }
+    },
+    "Plays whole songs on this iPhone": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在这台 iPhone 上播放完整歌曲"
+          }
+        }
+      }
+    },
+    "Previous song": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上一首"
+          }
+        }
+      }
+    },
+    "Reading the room": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "看看现场气氛"
+          }
+        }
+      }
+    },
+    "Restricted on this iPhone": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这台 iPhone 上受限制"
+          }
+        }
+      }
+    },
+    "Riding the faders": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "调调推子"
+          }
+        }
+      }
+    },
+    "Send": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发送"
+          }
+        }
+      }
+    },
+    "Settings": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "设置"
+          }
+        }
+      }
+    },
+    "Shows the song and what comes next": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示这首歌和接下来的歌"
+          }
+        }
+      }
+    },
+    "Simulated in Simulator, without sound": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在模拟器中模拟播放，没有声音"
+          }
+        }
+      }
+    },
+    "Start the Moondog host on your Mac, then paste the pairing link it copies.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在 Mac 上启动 Moondog 主机，再粘贴它复制的配对链接。"
+          }
+        }
+      }
+    },
+    "Stop": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停止"
+          }
+        }
+      }
+    },
+    "That isn't a Moondog pairing link.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这不是 Moondog 的配对链接。"
+          }
+        }
+      }
+    },
+    "The request expired while the phone was away.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "手机离线期间，这个请求已过期。"
+          }
+        }
+      }
+    },
+    "Up next": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "接下来"
+          }
+        }
+      }
+    },
+    "Waiting for your Mac": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在等你的 Mac"
+          }
+        }
+      }
+    },
+    "Working the decks": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "搓碟中"
+          }
+        }
+      }
+    },
+    "Your Mac didn't accept this pairing key.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的 Mac 没有接受这个配对密钥。"
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}

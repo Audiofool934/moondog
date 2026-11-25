@@ -54,7 +54,7 @@ npm start
 `cd app && npm ci && npm start` opens the desktop app; [app/README.md](app/README.md) covers its builds for macOS, Windows, and Linux.
 
 A personal [iPhone client](mobile/README.md) plays Apple Music on the phone and connects to the agent on your Mac over Tailscale.
-It builds from source with React Native and Xcode.
+It is a native SwiftUI app that builds from source with Xcode.
 
 ## Where it plays
 

@@ -96,7 +96,9 @@ export function createPhoneRoom() {
       const ids = tracks.map((track) => track.catalog_id);
       if (!ids.length || ids.some((id) => !/^\d+$/.test(id ?? '')))
         throw new Error('The selection has no playable Apple Music catalog ID.');
-      await command({ type: 'play', ids });
+      // The titles let Simulator, which cannot play Apple Music, act out the queue.
+      const names = tracks.map((track) => ({ title: track.title, artist: track.artist_credit }));
+      await command({ type: 'play', ids, tracks: names });
     },
     async control(action) {
       if (!playback) throw new Error('The iPhone has no active queue.');

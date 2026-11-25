@@ -17,7 +17,7 @@ import {
 import { PiAgentRuntime } from '../../src/runtime/pi/agent-runtime.mjs';
 import { createPhoneRoom } from './room.mjs';
 import { listen } from './server.mjs';
-import { privateHost } from '../address.mjs';
+import { privateHost } from './address.mjs';
 
 const token = 'fictional-phone-key';
 function phone(url) {

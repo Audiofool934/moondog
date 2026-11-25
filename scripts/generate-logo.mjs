@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 // Writes Moondog's logo files from src/surfaces/brand/logo.mjs: the logo and its small version as
-// SVG, the Mac app icons, and the project page's icon and link preview. Headless Chrome draws the
+// SVG, the Mac and iPhone app icons, and the project page's icon and link preview. Headless Chrome draws the
 // PNGs, as it draws the README's screenshots; set MOONDOG_CAPTURE_BROWSER to use another Chrome.
 //
 //   node scripts/generate-logo.mjs
@@ -18,6 +18,7 @@ import { appIconSvg, logoSvg } from "../src/surfaces/brand/logo.mjs";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const brand = path.join(root, "assets", "brand");
 const site = path.join(root, "site", "static");
+const iphoneIcons = path.join(root, "mobile", "Moondog", "Assets.xcassets", "AppIcon.appiconset");
 const INK = "#141414";
 
 const logo = logoSvg({ standalone: true });
@@ -30,6 +31,14 @@ const files = {
   [path.join(site, "moondog-logo.svg")]: logo,
   [path.join(site, "moondog-logo-small.svg")]: small,
 };
+// The iPhone icon fills its square, and iOS rounds the corners; the logo keeps the Mac tile's proportions.
+const iphoneIconSvg = ({ dark = false } = {}) => {
+  const [tile, ink] = dark ? ["#151515", "#f2f2f2"] : ["#ffffff", "#141414"];
+  const id = dark ? "moondog-iphone-dark" : "moondog-iphone";
+  const art = logoSvg({ ink, id, reach: 340, line: 1.8 }).replace(/^<svg[^>]*>/u, "").replace(/<\/svg>$/u, "");
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024"><rect width="1024" height="1024" fill="${tile}"/>`
+    + `<g transform="translate(512 512) scale(0.9) translate(-512 -512)">${art}</g></svg>`;
+};
 // Each PNG: the page that draws it, its size, and whether it keeps a transparent background.
 const page = (body, background = "transparent") => `<!doctype html><meta charset="utf-8"><style>html,body{margin:0;background:${background}}
 body{display:grid;place-items:center;width:100vw;height:100vh}svg{display:block}</style>${body}`;
@@ -37,6 +46,8 @@ const sized = (svg, width) => svg.replace("<svg ", `<svg width="${width}" height
 const images = [
   { file: path.join(brand, "moondog-app-icon.png"), size: [1024, 1024], html: page(sized(appIconSvg(), 1024)) },
   { file: path.join(brand, "moondog-app-icon-dark.png"), size: [1024, 1024], html: page(sized(appIconSvg({ dark: true }), 1024)) },
+  { file: path.join(iphoneIcons, "icon.png"), size: [1024, 1024], html: page(sized(iphoneIconSvg(), 1024)), opaque: true },
+  { file: path.join(iphoneIcons, "icon-dark.png"), size: [1024, 1024], html: page(sized(iphoneIconSvg({ dark: true }), 1024)), opaque: true },
   { file: path.join(site, "favicon-64.png"), size: [64, 64], html: page(sized(logoSvg({ small: true, ink: INK }), 64)) },
   // The link preview: the logo on white, at the size link previews ask for.
   { file: path.join(site, "moondog-og.png"), size: [1200, 630], html: page(sized(logoSvg({ ink: INK }), 560), "#ffffff"), opaque: true },
