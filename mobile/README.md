@@ -48,6 +48,7 @@ To build under another team, change the team and bundle IDs in both targets' Sig
 
 The record is the terminal's lunar record in dots, the same frames the desktop window draws; drawn small, it uses a coarser grid of the same record so its dots stay dots.
 After a change to `src/surfaces/cli/terminal-art.mjs` or `src/surfaces/brand/logo.mjs`, run `npm run logo` here to write `Moondog/record-dots.json`, `Moondog/record-dots-small.json` and `Moondog/logo-figure.json`, and `node scripts/generate-logo.mjs` from the root for the app icon and the Live Activity's mark.
+The model makers' marks are the desktop window's own symbols in `app/renderer/index.html` (Simple Icons, CC0; Lobe Icons, MIT); after a change there, `npm run marks` writes them to `Moondog/Assets.xcassets`.
 
 ## Try it in Simulator
 
@@ -73,7 +74,7 @@ Chats lists every conversation on the Mac, pinned first and then by folder; swip
 The pencil beside the list button starts a new conversation too.
 The library plays a playlist from the top, shuffled, or from any song in it.
 Taste lists the artists and tracks your profile rests on, as the desktop's taste view does; open one to see why it's there, like it, keep it out, or find more like a track.
-The model beside the send button is this conversation's, from the models set up on the Mac, with its thinking levels.
+The mark beside the send button is this conversation's model, by its maker's mark as on the desktop; tap it for the models set up on the Mac and their thinking levels.
 When the Mac can make music, the radio button goes on air as the desktop's does, by asking Moondog; while it is on, the On Air mark stops it.
 As on the desktop, the playing cover's colours tint the record's grooves and light the room faintly.
 The button at the top right opens the record alone: it grows out of its place to fill the screen over the cover's light, and keeps the screen on.

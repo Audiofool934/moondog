@@ -8,7 +8,8 @@
     "pair": "node host/start.mjs --qr --copy",
     "demo": "node host/demo-host.mjs",
     "logo": "node scripts/write-logo.mjs",
-    "test": "node --test host/phone-port.test.mjs host/server.test.mjs"
+    "test": "node --test host/phone-port.test.mjs host/server.test.mjs",
+    "marks": "node scripts/write-marks.mjs"
   },
   "dependencies": {
     "ws": "^8.23.0"

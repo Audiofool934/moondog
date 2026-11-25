@@ -386,27 +386,28 @@ struct MessageView: View {
   }
 }
 
-/// The shown conversation's model, as the desktop composer's menu offers it: the models set up on the
-/// Mac, and the thinking levels of the one chosen.
+/// The shown conversation's model, as the desktop composer shows it: its maker's mark beside the send
+/// button, and a menu of the models set up on the Mac, each by its mark and name, with the thinking levels
+/// of the one chosen.
 private struct ModelMenu: View {
   @Environment(Room.self) private var room
 
   var body: some View {
     if !room.models.isEmpty || room.model.model != nil {
       Menu {
-        Section {
+        Picker("Model", selection: Binding(get: { current?.id ?? "" }, set: { id in
+          if let choice = room.models.first(where: { $0.id == id }) { room.choose(choice) }
+        })) {
           ForEach(room.models) { choice in
-            Button {
-              room.choose(choice)
-            } label: {
-              if choice.provider == room.model.provider && choice.model == room.model.model {
-                Label(label(choice), systemImage: "checkmark")
-              } else {
-                Text(label(choice))
-              }
+            Label {
+              Text(verbatim: label(choice))
+            } icon: {
+              ModelMarks.image(provider: choice.provider, model: choice.model)
             }
+            .tag(choice.id)
           }
         }
+        .pickerStyle(.inline)
         if room.model.effortLevels.count > 1 {
           Picker("Thinking", selection: Binding(get: { room.model.effort ?? "default" }, set: { room.choose(effort: $0) })) {
             Text("Default").tag("default")
@@ -417,16 +418,11 @@ private struct ModelMenu: View {
           .pickerStyle(.menu)
         }
       } label: {
-        HStack(spacing: 3) {
-          Text(verbatim: shown)
-            .lineLimit(1)
-          Image(systemName: "chevron.up.chevron.down")
-            .font(.system(size: 9, weight: .semibold))
-        }
-        .font(.footnote)
-        .foregroundStyle(Color.text2)
-        .frame(maxWidth: 120, minHeight: 44)
-        .fixedSize(horizontal: true, vertical: false)
+        ModelMark(provider: room.model.provider ?? "", model: room.model.model ?? "")
+          .frame(width: 19, height: 19)
+          .foregroundStyle(Color.text2)
+          .frame(width: 40, height: 44)
+          .contentShape(.rect)
       }
       .accessibilityLabel(Text("Model"))
       .accessibilityValue(Text(verbatim: shown))
@@ -434,14 +430,16 @@ private struct ModelMenu: View {
     }
   }
 
+  private var current: ModelChoice? {
+    room.models.first { $0.provider == room.model.provider && $0.model == room.model.model }
+  }
+
   /// The model's own name, with its provider's when two share one, as on the desktop.
   private func label(_ choice: ModelChoice) -> String {
     room.models.filter { $0.name == choice.name }.count > 1 ? "\(choice.name) · \(choice.providerName)" : choice.name
   }
 
-  private var shown: String {
-    room.models.first { $0.provider == room.model.provider && $0.model == room.model.model }?.name ?? room.model.model ?? ""
-  }
+  private var shown: String { current?.name ?? room.model.model ?? "" }
 
   private static func effortName(_ level: String) -> String {
     switch level {

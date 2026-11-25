@@ -71,16 +71,18 @@ async function madeTrack() {
   shared.musicPreviewPlayer.playGenerated({ id, title: 'Demo tone', seconds: 8 });
 }
 
-// Two made-up models, so the model menu has a choice; both answer from the same script.
+// Two made-up models, so the model menu has a choice. They carry real makers' names only so their marks
+// show; both answer from the same script and reach no one.
 const MODELS = [
-  { provider: 'faux', model: 'demo-quick', name: 'Demo Quick', providerName: 'Demo', ready: true, reasoning: false, vision: false },
-  { provider: 'faux', model: 'demo-deep', name: 'Demo Deep', providerName: 'Demo', ready: true, reasoning: true, vision: false },
+  { provider: 'anthropic', model: 'demo-quick', name: 'Demo Quick', providerName: 'Demo', ready: true, reasoning: false, vision: false },
+  { provider: 'deepseek', model: 'demo-deep', name: 'Demo Deep', providerName: 'Demo', ready: true, reasoning: true, vision: false },
 ];
 function scripted(target, modelId = MODELS[0].model) {
+  const provider = MODELS.find((m) => m.model === modelId)?.provider ?? MODELS[0].provider;
   const faux = fauxProvider();
   const models = createModels();
   models.setProvider(faux.provider);
-  const runtime = new PiAgentRuntime({ application: target, models, model: faux.getModel(), provider: 'faux', modelId });
+  const runtime = new PiAgentRuntime({ application: target, models, model: faux.getModel(), provider, modelId });
   const prompt = runtime.prompt.bind(runtime);
   runtime.prompt = async (text, options) => {
     await new Promise((resolve) => setTimeout(resolve, 1200));
@@ -114,7 +116,7 @@ let chosen = null;
 const modelSettings = {
   list: async () => ({ models: MODELS, default: { ...MODELS[0], effort: null, thinking: null } }),
   models: async (provider) => ({ models: MODELS.filter((m) => m.provider === provider).map((m) => ({ id: m.model })) }),
-  current: async () => ({ provider: 'faux', model: MODELS[0].model }),
+  current: async () => ({ provider: MODELS[0].provider, model: MODELS[0].model }),
   conversationModels: async () => ({}),
   setConversationModel: async () => {},
 };
