@@ -67,6 +67,8 @@
     <symbol id="i-edit" viewBox="0 0 16 16"><path d="M10.6 2.9a1.45 1.45 0 0 1 2.05 2.05L6 11.6l-2.75.7.7-2.75z"/><path d="M9.4 4.1l2.5 2.5"/></symbol>
     <symbol id="i-settings" viewBox="0 0 16 16"><path d="M6.55 3.27L7.03 1.52A6.55 6.55 0 0 1 8.97 1.52L9.45 3.27A4.95 4.95 0 0 1 10.32 3.63L11.90 2.73A6.55 6.55 0 0 1 13.27 4.10L12.37 5.68A4.95 4.95 0 0 1 12.73 6.55L14.48 7.03A6.55 6.55 0 0 1 14.48 8.97L12.73 9.45A4.95 4.95 0 0 1 12.37 10.32L13.27 11.90A6.55 6.55 0 0 1 11.90 13.27L10.32 12.37A4.95 4.95 0 0 1 9.45 12.73L8.97 14.48A6.55 6.55 0 0 1 7.03 14.48L6.55 12.73A4.95 4.95 0 0 1 5.68 12.37L4.10 13.27A6.55 6.55 0 0 1 2.73 11.90L3.63 10.32A4.95 4.95 0 0 1 3.27 9.45L1.52 8.97A6.55 6.55 0 0 1 1.52 7.03L3.27 6.55A4.95 4.95 0 0 1 3.63 5.68L2.73 4.10A6.55 6.55 0 0 1 4.10 2.73L5.68 3.63A4.95 4.95 0 0 1 6.55 3.27Z"/><circle cx="8" cy="8" r="2.1"/></symbol>
     <symbol id="i-expand" viewBox="0 0 16 16"><path d="M6 2.5H2.5V6M2.5 2.5l4 4M10 13.5h3.5V10M13.5 13.5l-4-4"/></symbol>
+    <!-- The mini player: a window with a small one in its corner. -->
+    <symbol id="i-mini" viewBox="0 0 16 16"><rect x="2.25" y="3.25" width="11.5" height="9.5" rx="1.75"/><rect x="4.25" y="8.25" width="4.25" height="2.75" rx="0.75" fill="currentColor" stroke="none"/></symbol>
     <symbol id="i-restore" viewBox="0 0 16 16"><path d="M2.5 6.5h4v-4M6.5 6.5l-4-4M13.5 9.5h-4v4M9.5 9.5l4 4"/></symbol>
     <symbol id="i-pin" viewBox="0 0 16 16"><path d="M5.75 2.25h4.5M6.6 2.25v3.6L4.6 8.9h6.8L9.4 5.85v-3.6"/><path d="M8 8.9v4.85"/></symbol>
     <symbol id="i-pin-filled" viewBox="0 0 16 16"><path d="M5.75 2.25h4.5M6.6 2.25v3.6L4.6 8.9h6.8L9.4 5.85v-3.6Z" fill="currentColor"/><path d="M8 8.9v4.85"/></symbol>
@@ -124,7 +126,7 @@
     </aside>
 
     <main class="room" data-room>
-      <div class="stage" data-stage><div class="record-frame" data-record-frame><button type="button" class="record-button" data-record-button tabindex="-1"><canvas class="record" aria-hidden="true" data-record></canvas></button><button type="button" class="tool expand" data-expand tabindex="-1"><svg class="icon" aria-hidden="true"><use href="#i-expand"/></svg></button></div></div>
+      <div class="stage" data-stage><div class="record-frame" data-record-frame><button type="button" class="record-button" data-record-button tabindex="-1"><canvas class="record" aria-hidden="true" data-record></canvas></button><button type="button" class="tool mini-player" data-mini-player tabindex="-1"><svg class="icon" aria-hidden="true"><use href="#i-mini"/></svg></button><button type="button" class="tool expand" data-expand tabindex="-1"><svg class="icon" aria-hidden="true"><use href="#i-expand"/></svg></button></div></div>
       <div class="frame"><div class="scroll" data-scroll><div class="lead" aria-hidden="true" data-lead></div><div class="column" data-column></div></div></div>
       <section class="shelf" data-shelf hidden></section>
       <section class="taste" data-taste hidden></section>

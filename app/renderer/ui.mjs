@@ -90,9 +90,10 @@ export function tooltips() {
 
 // An overlay scrollbar for a scrolling element whose parent is its positioned frame. The native bar
 // is hidden; this thumb appears while the list scrolls or when the pointer nears the edge, and can be dragged.
-export function scrollbar(scroller, { inset = 6, onGrab = null, onRelease = null } = {}) {
+// A list whose right edge is a panel's resize edge keeps its thumb at the left instead.
+export function scrollbar(scroller, { inset = 6, onGrab = null, onRelease = null, left = false } = {}) {
   const frame = scroller.parentElement;
-  const rail = make("div", "rail");
+  const rail = make("div", left ? "rail left" : "rail");
   const thumb = make("div", "thumb");
   rail.append(thumb);
   frame.append(rail);

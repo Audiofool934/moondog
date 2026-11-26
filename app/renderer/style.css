@@ -53,6 +53,10 @@ img { -webkit-user-drag: none; }
 .thumb { width: 3px; margin-left: auto; margin-right: 2px; border-radius: 2px; background: var(--thumb);
   transition: width var(--quick) var(--soft), background-color var(--quick) var(--soft); }
 .rail:hover .thumb, .rail.held .thumb { width: 5px; background: var(--thumb-held); }
+/* At the left, beside the window's edge and away from the resize edge, the thumb is thinner still. */
+.rail.left { right: auto; left: 1px; }
+.rail.left .thumb { width: 2px; margin-left: 2px; margin-right: auto; }
+.rail.left:hover .thumb, .rail.left.held .thumb { width: 4px; }
 
 /* ── The room's light ─────────────────────────────────────────────────────────────────────── */
 /* The cover playing lights the whole window, edge to edge: its strongest colours as three soft
@@ -153,11 +157,11 @@ img { -webkit-user-drag: none; }
 .mini-song span { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mini .tool { color: var(--text-2); }
 .mini .tool .icon { width: 14px; height: 14px; }
-/* On Air, Moondog's own channel, sits with the music, so the gap before the window's own controls comes
-   after it. Lit in ink while on air or on its way there, with no fill or background of its own; while it
-   waits for a record, renderer.mjs adds one short dip every few seconds, so nothing loops. */
-.on-air { margin-inline-end: 10px; animation: rise var(--enter) var(--out) both; }
-.mini:has(+ .on-air:not([hidden])) { margin-inline-end: 0; }
+/* On Air, Moondog's own channel, stands evenly spaced with the window's own controls after it, so the
+   three icons at the right read as one row. Lit in ink while on air or on its way there, with no fill or
+   background of its own; while it waits for a record, renderer.mjs adds one short dip every few seconds,
+   so nothing loops. */
+.on-air { animation: rise var(--enter) var(--out) both; }
 .on-air.lit { color: var(--text); }
 .on-air.pulse .icon { animation: on-air-dip 400ms ease-in-out; }
 @keyframes on-air-dip { 50% { opacity: 0.5; } }
@@ -178,8 +182,15 @@ img { -webkit-user-drag: none; }
 .grip { position: absolute; top: var(--bar); bottom: 0; width: 7px; z-index: 4; cursor: col-resize; }
 .grip[data-grip="sidebar"] { left: calc(var(--sidebar) - 3px); }
 .grip[data-grip="inspector"] { right: calc(var(--inspector) - 3px); }
-.grip::after { content: ""; position: absolute; top: 0; bottom: 0; left: 3px; width: 1px; background: transparent; transition: background-color 160ms var(--soft); }
-.grip:hover::after, .grip.dragging::after { background: var(--line-2); transition-delay: 80ms; }
+/* The edge shows only where the pointer is: a short line that fades out above and below it and follows
+   the pointer along the edge. Held, it darkens; dragged far enough inward, the panel dims and folds on release. */
+.grip { --y: 50%; color: var(--line-2); }
+.grip::after { content: ""; position: absolute; top: clamp(0px, calc(var(--y) - 64px), calc(100% - 128px)); left: 3px; width: 1px; height: 128px;
+  background: linear-gradient(to bottom, transparent, currentColor 35%, currentColor 65%, transparent); opacity: 0; transition: opacity 160ms var(--soft); }
+.grip:hover::after, .grip.dragging::after { opacity: 1; transition-delay: 80ms; }
+.grip.dragging { color: var(--text-4); }
+.grip.folding::after { opacity: 0.35; }
+.window.folding-sidebar .sidebar, .window.folding-inspector .inspector { opacity: 0.45; transition: opacity 160ms var(--soft); }
 .window.no-sidebar .grip[data-grip="sidebar"], .window.no-inspector .grip[data-grip="inspector"] { display: none; }
 .window.resizing, .window.resizing * { cursor: col-resize !important; user-select: none; }
 
@@ -498,17 +509,22 @@ img { -webkit-user-drag: none; }
 .room:not(.empty) .record-frame { position: absolute; left: 0; top: 0; width: var(--record, 240px); translate: none; transform-origin: 0 0; will-change: transform; }
 .room:not(.empty) .record-frame:has(.record-button:not(.away)) { pointer-events: auto; }
 /* The square hover target keeps the corner reachable without putting the button on the disc. Two arrows
-   say what it does, with no frame of their own; pointing at them darkens and opens them a little. */
-.expand { position: absolute; right: 0; bottom: 0; z-index: 1; color: var(--text-3); opacity: 0; pointer-events: none;
+   say what it does, with no frame of their own; pointing at them darkens and opens them a little.
+   The mini player takes the other corner, a small window in a large one. */
+:is(.expand, .mini-player) { position: absolute; bottom: 0; z-index: 1; color: var(--text-3); opacity: 0; pointer-events: none;
   transition: opacity 240ms var(--soft), color var(--quick) var(--soft); }
-.expand .icon { transition: transform var(--quick) var(--soft); }
-.expand:hover { background: none; color: var(--text); }
-.expand:hover .icon { transform: scale(1.12); transition-timing-function: var(--out); }
-.expand:active .icon { transform: scale(0.96); }
-.record-frame:hover .record-button:not(.away) ~ .expand, .expand:focus-visible { opacity: 1; pointer-events: auto; transition: none; }
-.record-button.away ~ .expand { display: none; }
-/* Shrunk above the history, the record keeps its corner button at full size. */
-.expand { scale: calc(1 / var(--shown, 1)); transform-origin: 100% 100%; }
+.expand { right: 0; }
+.mini-player { left: 0; }
+:is(.expand, .mini-player) .icon { transition: transform var(--quick) var(--soft); }
+:is(.expand, .mini-player):hover { background: none; color: var(--text); }
+:is(.expand, .mini-player):hover .icon { transform: scale(1.12); transition-timing-function: var(--out); }
+:is(.expand, .mini-player):active .icon { transform: scale(0.96); }
+.record-frame:hover .record-button:not(.away) ~ :is(.expand, .mini-player), :is(.expand, .mini-player):focus-visible { opacity: 1; pointer-events: auto; transition: none; }
+.record-button.away ~ :is(.expand, .mini-player) { display: none; }
+/* Shrunk above the history, the record keeps its corner buttons at full size. */
+:is(.expand, .mini-player) { scale: calc(1 / var(--shown, 1)); }
+.expand { transform-origin: 100% 100%; }
+.mini-player { transform-origin: 0 100%; }
 /* While the record is scratched, its place in the song shows just above it, and fades once the music goes there. */
 .scratch { position: fixed; left: 0; top: 0; z-index: 31; transform: translate(-50%, -100%); pointer-events: none; white-space: nowrap;
   font-size: var(--t-small); font-variant-numeric: tabular-nums; color: var(--text-2); opacity: 0; transition: opacity 600ms var(--soft); }
@@ -650,8 +666,10 @@ img { -webkit-user-drag: none; }
   font-size: var(--t-small); color: var(--text-3); white-space: nowrap; transition: background-color var(--quick) var(--soft), color var(--quick) var(--soft); }
 .pick:hover { background: var(--hover); color: var(--text); transition: none; }
 .pick .icon { width: 23px; height: 23px; }
-/* Service and model logos align to the diameter of Moondog's record. */
-.pick .icon.fill { width: 22px; height: 22px; color: var(--brand-mark); }
+/* Service and model logos are quiet marks in the words' grey, smaller than the send record beside
+   them, so the record is the one solid thing at the end of the field; they come up to ink under the pointer. */
+.pick .icon.fill { width: 17px; height: 17px; color: var(--text-3); transition: color var(--quick) var(--soft); }
+.pick:hover .icon.fill { color: var(--text); transition: none; }
 .pick[data-model] use[href="#i-kimi"],
 .pick[data-model] use[href="#i-deepseek"] { transform: translateX(1px); }
 .pick span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
@@ -659,7 +677,7 @@ img { -webkit-user-drag: none; }
 .pick.needed { padding: 0 9px; color: var(--text); background: var(--hover); font-weight: 500; }
 .pick.needed:hover { background: var(--press); }
 .pick[hidden] { display: none; }
-.send { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; flex: none; background: var(--solid); color: var(--on-solid);
+.send { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; flex: none; background: var(--solid); color: var(--on-solid);
   transition: background-color 140ms var(--soft), transform 90ms var(--soft); }
 .send:active { transform: scale(0.92); }
 .send:disabled { background: rgb(var(--ink-rgb) / 0.12); color: var(--surface); }
