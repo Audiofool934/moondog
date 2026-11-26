@@ -53,6 +53,28 @@ function runtime(model = "m") {
   };
 }
 
+// A runtime whose replies end when the test says: finish() as a reply does, fail() as an unreachable model does.
+function gatedRuntime() {
+  const calls = [];
+  const ended = (status) => ({ status, text: status === "completed" ? "ok" : "", spotify_write_receipts: [] });
+  return {
+    ...runtime(),
+    calls,
+    abort() { calls.find((call) => !call.done)?.end(ended("aborted")); },
+    finish() { calls.find((call) => !call.done)?.end(ended("completed")); },
+    fail() { calls.find((call) => !call.done)?.end(null, Object.assign(new Error("offline"), { code: "model_connection_failed" })); },
+    prompt(text) {
+      return new Promise((resolve, reject) => {
+        const call = { text, done: false, end(result, error) { call.done = true; if (error) reject(error); else resolve(result); } };
+        calls.push(call);
+      });
+    },
+  };
+}
+// The waiting messages of a conversation, as the window last heard them.
+const queuedIn = (harness, session) => harness.messages.findLast((message) => message.type === "queued" && message.session === session)?.items.map((item) => item.text) ?? null;
+const startsOf = (harness) => harness.messages.filter((message) => message.type === "turn" && message.state === "start").map((message) => message.text);
+
 async function openRoom(extras = {}) {
   const messages = [];
   let listener = null;
@@ -152,14 +174,16 @@ test("a message waiting on a new model stays in that conversation", async () => 
     await tick();
     const secondJob = harness.post({ type: "prompt", text: "not yet" });
     await tick();
-    assert.equal(harness.messages.findLast((message) => message.code === "message_busy")?.text, "not yet");
+    assert.deepEqual(queuedIn(harness, "A"), ["not yet"]);
     const openJob = harness.post({ type: "open", id: "B" });
     await tick();
     assert.equal(harness.opened[0]?.application.sessionId, "B");
     harness.releaseBuild();
     await Promise.all([modelJob, promptJob, secondJob, openJob]);
+    await tick();
+    // The message that waited goes after the first, in the conversation it was typed in.
     const starts = harness.messages.filter((message) => message.type === "turn" && message.state === "start");
-    assert.deepEqual(starts.map((message) => [message.session, message.text]), [["A", "typed in A"]]);
+    assert.deepEqual(starts.map((message) => [message.session, message.text]), [["A", "typed in A"], ["A", "not yet"]]);
   } finally {
     await harness.stop();
   }
@@ -186,16 +210,113 @@ test("a message typed while an import saves is not sent in the conversation open
     assert.equal(harness.messages.some((message) => message.code === "waiting_for_import"), true);
     const secondJob = harness.post({ type: "prompt", text: "not yet" });
     await tick();
-    assert.equal(harness.messages.findLast((message) => message.code === "message_busy")?.text, "not yet");
+    assert.deepEqual(queuedIn(harness, "A"), ["not yet"]);
     const openJob = harness.post({ type: "open", id: "B" });
     await tick();
     assert.equal(harness.opened[0]?.application.sessionId, "B");
     gate.resolve();
     await Promise.all([commitJob, promptJob, openJob, secondJob]);
+    await tick();
     const starts = harness.messages.filter((message) => message.type === "turn" && message.state === "start");
-    assert.deepEqual(starts.map((message) => [message.session, message.text]), [["A", "typed in A"]]);
+    assert.deepEqual(starts.map((message) => [message.session, message.text]), [["A", "typed in A"], ["A", "not yet"]]);
   } finally {
     gate.resolve();
+    await harness.stop();
+  }
+});
+
+test("messages sent while a reply runs wait in order, and each goes when the reply before it ends or is stopped", async () => {
+  const held = gatedRuntime();
+  const harness = await openRoom({ runtime: held });
+  try {
+    harness.post({ type: "prompt", text: "first" });
+    await tick();
+    harness.post({ type: "prompt", text: "second", key: "k2", images: [{ data: "AAAA", mimeType: "image/png", name: "cover.png" }] });
+    harness.post({ type: "prompt", text: "third", key: "k3" });
+    await tick();
+    assert.deepEqual(held.calls.map((call) => call.text), ["first"], "one reply at a time");
+    assert.deepEqual(harness.messages.findLast((message) => message.type === "queued"), { type: "queued", session: "A",
+      items: [{ id: "k2", text: "second", images: ["cover.png"] }, { id: "k3", text: "third", images: [] }] });
+
+    held.finish();
+    await tick();
+    assert.deepEqual(startsOf(harness), ["first", "second"]);
+    assert.equal(harness.messages.findLast((message) => message.type === "turn" && message.state === "start").queued, "k2", "the window knows which waiting message started");
+    assert.deepEqual(queuedIn(harness, "A"), ["third"]);
+
+    // Stop ends the reply that runs, and the next waiting message goes.
+    harness.post({ type: "cancel" });
+    await tick();
+    assert.deepEqual(startsOf(harness), ["first", "second", "third"]);
+    assert.deepEqual(queuedIn(harness, "A"), []);
+    held.finish();
+    await tick();
+  } finally {
+    await harness.stop();
+  }
+});
+
+test("after a reply that failed the waiting messages stay, and go on after the next reply that ends", async () => {
+  const held = gatedRuntime();
+  const harness = await openRoom({ runtime: held });
+  try {
+    harness.post({ type: "prompt", text: "first" });
+    await tick();
+    harness.post({ type: "prompt", text: "second" });
+    await tick();
+    held.fail();
+    await tick();
+    assert.equal(harness.messages.findLast((message) => message.type === "turn").state, "error");
+    assert.deepEqual(startsOf(harness), ["first"], "an unreachable model does not fail the waiting messages one by one");
+    assert.deepEqual(queuedIn(harness, "A"), ["second"]);
+
+    harness.post({ type: "prompt", text: "try again" });
+    await tick();
+    assert.deepEqual(startsOf(harness), ["first", "try again"]);
+    held.finish();
+    await tick();
+    assert.deepEqual(startsOf(harness), ["first", "try again", "second"]);
+    held.finish();
+    await tick();
+  } finally {
+    await harness.stop();
+  }
+});
+
+test("a waiting message can be dropped or taken back, the queue stays with its conversation, and a full one gives the message back", async () => {
+  const held = gatedRuntime();
+  const harness = await openRoom({ runtime: held });
+  try {
+    harness.post({ type: "prompt", text: "first" });
+    await tick();
+    for (const key of ["k2", "k3", "k4"]) harness.post({ type: "prompt", text: `message ${key}`, key });
+    await tick();
+
+    await harness.post({ type: "unqueue", id: "k3" });
+    assert.deepEqual(queuedIn(harness, "A"), ["message k2", "message k4"]);
+    assert.equal(harness.messages.some((message) => message.type === "unqueued"), false, "a dropped message is not handed back");
+    await harness.post({ type: "unqueue", id: "k4", back: true });
+    assert.deepEqual(harness.messages.findLast((message) => message.type === "unqueued"), { type: "unqueued", session: "A", id: "k4", text: "message k4" });
+    assert.deepEqual(queuedIn(harness, "A"), ["message k2"]);
+
+    // Another conversation shows no waiting messages; coming back shows them again.
+    await harness.post({ type: "open", id: "B" });
+    assert.deepEqual(harness.messages.findLast((message) => message.type === "session").queued, []);
+    // The reply ends while the other conversation shows; the waiting message still goes in its own.
+    held.finish();
+    await tick();
+    assert.deepEqual(harness.messages.findLast((message) => message.type === "turn" && message.state === "start"), { type: "turn", session: "A", id: harness.messages.findLast((message) => message.type === "turn" && message.state === "start").id, state: "start", text: "message k2", queued: "k2" });
+    await harness.post({ type: "open", id: "A" });
+    assert.deepEqual(harness.messages.findLast((message) => message.type === "session").queued, []);
+
+    // At most 30 wait; one more comes back for the composer.
+    for (let index = 0; index < 30; index += 1) harness.post({ type: "prompt", text: `waiting ${index}` });
+    await tick();
+    assert.equal(harness.messages.findLast((message) => message.type === "queued").items.length, 30);
+    await harness.post({ type: "prompt", text: "one too many" });
+    assert.deepEqual(harness.messages.findLast((message) => message.type === "notice"), { type: "notice", code: "message_busy", text: "one too many", session: "A" });
+    assert.equal(harness.messages.findLast((message) => message.type === "queued").items.length, 30);
+  } finally {
     await harness.stop();
   }
 });
@@ -531,9 +652,10 @@ test("the window follows the conversation the terminal opened and draws the term
     await look(() => { reply = { ...reply, assistant_text: "Here is" }; });
     assert.deepEqual(harness.messages.filter((message) => message.type === "text").at(-1), { type: "text", session: "T", id: "e1", replace: "Here is" });
 
-    // One reply at a time: the window gives the message back while the terminal answers.
+    // One reply at a time: a message sent while the terminal answers waits, and goes when that reply ends.
     await harness.post({ type: "prompt", text: "and louder" });
-    assert.deepEqual(harness.messages.filter((message) => message.type === "notice").at(-1), { type: "notice", code: "message_busy", text: "and louder" });
+    assert.deepEqual(queuedIn(harness, "T"), ["and louder"]);
+    assert.equal(harness.messages.some((message) => message.type === "turn"), false);
 
     await look(() => {
       reply = null;
@@ -541,6 +663,9 @@ test("the window follows the conversation the terminal opened and draws the term
     });
     assert.equal(lastSession().live, null);
     assert.deepEqual(lastSession().transcript.map((turn) => turn.text), ["play something calm", "Here is a calm set."]);
+    await tick();
+    assert.deepEqual(queuedIn(harness, "T"), []);
+    assert.deepEqual(harness.messages.filter((message) => message.type === "turn" && message.state === "start").map((message) => [message.session, message.text]), [["T", "and louder"]]);
   } finally {
     await harness.stop();
   }

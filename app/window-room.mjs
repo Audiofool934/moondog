@@ -36,6 +36,8 @@ const LOOK_MS = { idle: 2_000, answering: 300 };
 const PLAYER_TOOLS = /^moondog_(?:spotify_(?:player_control|queue_add|queue_batch|queue_similar|device_transfer)|music_app_control)$/u;
 // At most this many conversations hold an agent at once; idle ones are reused first.
 const MAX_SLOTS = 4;
+// At most this many messages wait in one conversation, as in the terminal.
+const QUEUE_LIMIT = 30;
 
 const coverOf = (item) => (typeof item?.image === "string" ? item.image : null);
 // Spotify pads the queue of a one-song play with that same song, and lists a repeated song once per
@@ -82,6 +84,14 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
   const sessionOf = (slot) => slot.application.ensureMemorySession?.()?.session_id ?? null;
   const slotFor = (sessionId) => slots.find((slot) => sessionOf(slot) === sessionId) ?? null;
   const busy = () => slots.some((slot) => slot.turn);
+  // Messages sent while a conversation answers wait here, by conversation, and go one at a time as each
+  // reply ends, as the terminal's queue does. They last as long as the room.
+  const messageQueues = new Map();
+  const queuedOf = (session) => messageQueues.get(session) ?? [];
+  const setQueued = (session, items) => { if (items.length) messageQueues.set(session, items); else messageQueues.delete(session); };
+  // The window gets each waiting message's words and its images' names; the room keeps the images.
+  const queuedShown = (session) => queuedOf(session).map(({ id, text, images }) => ({ id, text, images: images.map((image) => String(image?.name ?? "")) }));
+  const sendQueued = (session) => send({ type: "queued", session, items: queuedShown(session) });
   const sessions = () => (base.listSavedSessions?.({ limit: 200 }) ?? []).map((session) => ({
     id: session.session_id, title: String(session.title ?? "").replace(/\s+/gu, " ").trim(),
     updatedAt: session.updated_at ?? session.started_at, branch: Boolean(session.parent_session_id),
@@ -163,6 +173,7 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     const ended = remote !== null;
     remote = reply ? { session, live: { id: reply.entry_id, user: reply.user_text, text: reply.assistant_text, activity: [] } } : null;
     if (reply || ended || JSON.stringify([session, transcript(slot)]) !== drawn) sendSession(slot);
+    if (ended && !reply) drain(slot);
   }
 
   // A running turn is kept live in its slot; the saved entry for it is still "running", so the
@@ -190,7 +201,7 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     const turns = transcript(slot);
     if (slot === current) drawn = JSON.stringify([sessionOf(slot), turns]);
     const live = liveOf(slot);
-    send({ type: "session", current: sessionOf(slot), transcript: turns, live: live ? structuredClone(live) : null });
+    send({ type: "session", current: sessionOf(slot), transcript: turns, live: live ? structuredClone(live) : null, queued: queuedShown(sessionOf(slot)) });
   };
 
   // A model chosen while the shown conversation answers applies when its reply ends; the window shows it already.
@@ -644,16 +655,33 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
     sendStatus();
   }
 
-  // Images come as {data, mimeType, name}; the agent checks them and routes them to a model that sees.
-  async function prompt(text, images = []) {
-    const slot = current;
-    if (typeof text !== "string" || (!text.trim() && !images.length)) return;
-    // A second message cannot start while the first is in a turn or waiting to start. The window
-    // put the text back in the composer; dropping it here would lose it.
-    if (slot.turn || slot.waiting) return send({ type: "notice", code: "message_busy", text });
-    // The terminal is answering in this conversation; one reply at a time.
-    if (slot.application.replyElsewhere?.()) return send({ type: "notice", code: "message_busy", text });
+  // A message joins its conversation's queue. Past the limit the window gets it back for its composer.
+  function enqueue(session, item, { first = false } = {}) {
+    const waiting = queuedOf(session);
+    if (!first && waiting.length >= QUEUE_LIMIT) return send({ type: "notice", code: "message_busy", text: item.text, session });
+    setQueued(session, first ? [item, ...waiting] : [...waiting, item]);
+    sendQueued(session);
+  }
+  // The next waiting message of a conversation starts once nothing answers in it.
+  function drain(slot) {
+    if (closed || slot.turn || slot.waiting || slot.application.replyElsewhere?.()) return;
     const session = sessionOf(slot);
+    const [next, ...rest] = queuedOf(session);
+    if (!next) return;
+    setQueued(session, rest);
+    sendQueued(session);
+    void prompt(next.text, next.images, { slot, key: next.id, waited: true });
+  }
+
+  // Images come as {data, mimeType, name}; the agent checks them and routes them to a model that sees.
+  // `key` is the window's name for the message, its id if it has to wait; `waited` says it comes from the queue.
+  async function prompt(text, images = [], { slot = current, key = null, waited = false } = {}) {
+    if (typeof text !== "string" || (!text.trim() && !images.length)) return;
+    const session = sessionOf(slot);
+    const item = { id: key ?? randomUUID(), text, images };
+    // One reply at a time in a conversation. A message sent while it answers, here or in the terminal,
+    // or while an earlier message waits to start, waits its turn in the queue.
+    if (slot.turn || slot.waiting || slot.application.replyElsewhere?.()) return enqueue(session, item);
     // A new agent being built, or an import replacing the profile under every agent, finishes first.
     // The slot stays reserved for this conversation until the message starts.
     if (saving || slot.rebuilding) {
@@ -662,16 +690,19 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
       while (slot.rebuilding || saving) await (slot.rebuilding ?? saving).catch(() => {});
       if (closed || sessionOf(slot) !== session || slot.turn) {
         slot.waiting = false;
-        if (!closed) send({ type: "notice", code: "message_busy", text, session });
+        // A message that already waited in the queue goes back to its front; the window no longer holds it.
+        if (!closed && waited) enqueue(session, item, { first: true });
+        else if (!closed) send({ type: "notice", code: "message_busy", text, session });
         return;
       }
     }
     slot.waiting = false;
     const id = randomUUID();
     const settled = Promise.withResolvers();
+    let failed = false;
     slot.turn = { id, settled: settled.promise };
     slot.live = { id, user: text, text: "", activity: [] };
-    send({ type: "turn", session, id, state: "start", text });
+    send({ type: "turn", session, id, state: "start", text, ...(waited ? { queued: item.id } : {}) });
     sendSessions();
     const unsubscribe = slot.runtime.agent?.subscribe?.((event) => {
       if (event.type === "tool_execution_start") {
@@ -704,6 +735,7 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
         receipts: (result.spotify_write_receipts ?? []).map((receipt) => ({ action: receipt.action, state: receipt.state,
           targets: receipt.targets ?? [], device: receipt.device?.name ?? null })) });
     } catch (error) {
+      failed = true;
       send({ type: "turn", session, id, state: "error", message: errorText(error), code: typeof error?.code === "string" ? error.code : null,
         connection: error?.code === "model_connection_failed", entry: latestEntry(slot) });
     } finally {
@@ -718,6 +750,10 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
       if (slot === current) sendStatus();
       sendSessions();
       void refreshPlayer();
+      // A reply that ended, or that the listener stopped, lets the next waiting message go. After one that
+      // failed the rest keep waiting, so a model out of reach does not fail them one by one; they go on
+      // after the next reply that ends.
+      if (!failed) drain(slot);
     }
   }
 
@@ -844,7 +880,7 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
       }
       if (holder === current) shown = true;
     }
-    for (const id of ids) if (!slotFor(id)) keep(id, null);
+    for (const id of ids) if (!slotFor(id)) { keep(id, null); messageQueues.delete(id); }
     if (refusal) send({ type: "notice", ...refusal });
     if (shown) sendSession(current);
     sendSessions();
@@ -1272,7 +1308,17 @@ export function runWindowRoom(services, { port, send, quit = null, focus = null 
         await openSession(null);
         if (sessionOf(current) === left) { send({ type: "notice", code: "message_busy", text }); return sendSession(current); }
       }
-      return prompt(text, Array.isArray(data.images) ? data.images.slice(0, 8) : []);
+      return prompt(text, Array.isArray(data.images) ? data.images.slice(0, 8) : [], { key: typeof data.key === "string" && data.key ? data.key.slice(0, 64) : null });
+    },
+    // A waiting message leaves the queue: dropped, or taken back into the composer. One that started
+    // meanwhile stays sent, and the window draws the queue as it is.
+    unqueue: (data) => {
+      const session = sessionOf(current);
+      const waiting = queuedOf(session);
+      const taken = waiting.find((item) => item.id === String(data.id ?? ""));
+      if (taken) setQueued(session, waiting.filter((item) => item !== taken));
+      sendQueued(session);
+      if (taken && data.back === true) send({ type: "unqueued", session, id: taken.id, text: taken.text });
     },
     cancel: () => { if (current.turn) current.runtime.abort?.(); },
     new: () => openSession(null),
