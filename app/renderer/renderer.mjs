@@ -57,7 +57,8 @@ const outbox = [];
 const send = (message) => (port ? port.postMessage(message) : outbox.push(message));
 const previews = createPreviews({ send, onChange: () => renderInspector() });
 // The composer's send button and the player's play button are record buttons (disc.mjs), as the playlist's play button is.
-const sendDisc = discButton($("send"), { size: 25, glyph: "send" });
+// Two grooves round a full label, as the player's record button has, at the size of the field's other marks.
+const sendDisc = discButton($("send"), { size: 30, glyph: "send", label: 0.3 });
 const playerDisc = discButton($("toggle"), { size: 46, glyph: "pause", fill: true });
 const settings = createSettings({ state, send, t: tr,
   appleMusic: { status: () => previews.fullStatus(), check: (command) => previews.check(command) }, onHide: () => firstRun.update() });
@@ -123,7 +124,7 @@ function applyLanguage(next) {
   renderSidebarMode();
   name($("keep"), t("saveToSaved"));
   // These self-explanatory controls keep accessible names without floating labels over the record.
-  for (const [node, key] of [[recordButton, "foldRecord"], [barRecord, "showRecord"], [$("expand"), "immerse"], [$("mini"), "miniPlayer"], [$("pin"), "keepOnTop"], [$("immersive"), "restore"]]) {
+  for (const [node, key] of [[recordButton, "foldRecord"], [barRecord, "showRecord"], [$("expand"), "immerse"], [$("mini-player"), "miniPlayer"], [$("pin"), "keepOnTop"], [$("immersive"), "restore"]]) {
     node.setAttribute("aria-label", t(key));
   }
   name($("settings-button"), t("settings"), shortcuts.settings);
@@ -616,7 +617,7 @@ const recordFrame = $("record-frame");
 const recordButton = $("record-button");
 const barRecord = $("bar-record");
 const expand = $("expand");
-const mini = $("mini");
+const miniPlayer = $("mini-player");
 const lead = $("lead");
 const mark = createMark();
 barRecord.append(mark.node);
@@ -816,7 +817,7 @@ function placeRecord() {
     recordButton.style.opacity = (1 - handoff).toFixed(3);
     barRecord.style.opacity = handoff.toFixed(3);
     recordButton.classList.toggle("away", away);
-    expand.tabIndex = mini.tabIndex = away ? -1 : 0;
+    expand.tabIndex = miniPlayer.tabIndex = away ? -1 : 0;
     recordButton.tabIndex = away ? -1 : 0;
     const docked = at.dock > 0.9 && !barRecord.classList.contains("cramped");
     barRecord.classList.toggle("docked", docked);
@@ -908,7 +909,7 @@ function cueing(now) {
   return Boolean(cue);
 }
 recordFrame.addEventListener("click", (event) => {
-  if (event.target.closest("[data-expand], [data-mini]")) return;
+  if (event.target.closest("[data-expand], [data-mini-player]")) return;
   // A key on the focused record has no place to point at; it folds.
   if (event.detail && onArm(record, event)) setArm();
   else if (event.target.closest("[data-record-button]")) foldRecord(true);
@@ -1013,7 +1014,7 @@ function immerse(on, { small = false } = {}) {
   deep?.turn(on && Boolean(nowPlaying()?.playing));
 }
 expand.addEventListener("click", () => immerse(true));
-mini.addEventListener("click", () => immerse(true, { small: true }));
+miniPlayer.addEventListener("click", () => immerse(true, { small: true }));
 // The main process moves the window while the button is held; a press that barely moved is a click.
 // A press on the arm stays with the arm, which plays and pauses here as it does above the words,
 // and the wheel anywhere scratches the record.
@@ -1069,7 +1070,7 @@ function renderEmpty(empty) {
     room.style.removeProperty("--record");
     recordButton.classList.remove("away");
     recordButton.tabIndex = -1;
-    expand.tabIndex = mini.tabIndex = 0;
+    expand.tabIndex = miniPlayer.tabIndex = 0;
     leadHeight = 0;
     lead.style.height = "";
     scroller.style.removeProperty("--veil");
@@ -2379,8 +2380,10 @@ addEventListener("resize", () => {
   placeSoon();
 });
 
-// Dragging a panel's inner edge sets its width; a double-click restores the default.
+// Dragging a panel's inner edge sets its width; a double-click restores the default. Dragged this far
+// past its narrowest, the panel dims, and a release there folds it, keeping the width it had.
 const widths = { sidebar: [200, 420], inspector: [272, 460] };
+const FOLD_PAST = 80;
 for (const panel of ["sidebar", "inspector"]) {
   const property = `--${panel}-width`;
   const saved = Number(store.get(`moondog.${panel}.width`));
@@ -2391,20 +2394,32 @@ for (const panel of ["sidebar", "inspector"]) {
     grip.setPointerCapture(event.pointerId);
     grip.classList.add("dragging");
     layout.classList.add("resizing");
+    const before = layout.style.getPropertyValue(property);
+    let folding = false;
     const move = (moved) => {
       const width = panel === "sidebar" ? moved.clientX : innerWidth - moved.clientX;
+      folding = width < widths[panel][0] - FOLD_PAST;
+      grip.classList.toggle("folding", folding);
+      layout.classList.toggle(`folding-${panel}`, folding);
       layout.style.setProperty(property, `${Math.round(Math.min(widths[panel][1], Math.max(widths[panel][0], width)))}px`);
     };
     const up = () => {
       grip.removeEventListener("pointermove", move);
-      grip.classList.remove("dragging");
-      layout.classList.remove("resizing");
+      grip.classList.remove("dragging", "folding");
+      layout.classList.remove("resizing", `folding-${panel}`);
+      if (folding) {
+        if (before) layout.style.setProperty(property, before); else layout.style.removeProperty(property);
+        togglePanel(panel);
+        return;
+      }
       store.set(`moondog.${panel}.width`, String(parseInt(getComputedStyle(layout).getPropertyValue(property), 10) || ""));
     };
     grip.addEventListener("pointermove", move);
     grip.addEventListener("pointerup", up, { once: true });
     grip.addEventListener("pointercancel", up, { once: true });
   });
+  // The line follows the pointer along the edge.
+  grip.addEventListener("pointermove", (event) => grip.style.setProperty("--y", `${Math.round(event.clientY - grip.getBoundingClientRect().top)}px`));
   grip.addEventListener("dblclick", () => {
     layout.style.removeProperty(property);
     store.set(`moondog.${panel}.width`, "");
@@ -2424,8 +2439,8 @@ $("keep").addEventListener("contextmenu", async (event) => {
   if (chosen?.startsWith("to:")) send({ type: "library-save", playlistId: chosen.slice(3), ...keepArtwork() });
 });
 const keepArtwork = () => { const image = nowPlaying()?.image; return typeof image === "string" && image.startsWith("https://") ? { artwork: image } : {}; };
-scrollbar($("sessions"));
-scrollbar($("library"));
+scrollbar($("sessions"), { left: true });
+scrollbar($("library"), { left: true });
 scrollbar($("shelf").querySelector(".shelf-scroll"));
 scrollbar($("inspector-scroll"));
 // Long conversation names and long song lines roll into view under the pointer. A conversation's
