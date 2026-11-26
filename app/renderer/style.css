@@ -650,6 +650,20 @@ img { -webkit-user-drag: none; }
   color: var(--canvas); background: var(--text); box-shadow: 0 0 0 2px var(--canvas); cursor: pointer; opacity: 0; transition: opacity var(--quick) var(--soft); }
 .attachment-remove .icon { width: 11px; height: 11px; stroke-width: 2.2; }
 .attachment:hover .attachment-remove, .attachment-remove:focus-visible { opacity: 1; transition: none; }
+/* Messages sent while Moondog answers wait above the field in the order they go, their words where
+   the field's begin. Past four they scroll. Each leaves by the mark at its right, shown while the
+   pointer is on it. */
+.queued-messages { max-width: var(--column); margin: 0 auto 6px; padding: 0 8px 0 16px; max-height: 104px; overflow-y: auto; scrollbar-width: none; }
+.queued-messages[hidden] { display: none; }
+.queued-message { height: 26px; display: flex; align-items: center; gap: 8px; }
+.queued-words { flex: 1; min-width: 0; height: 100%; text-align: start; font-size: var(--t-small); color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  transition: color var(--quick) var(--soft); }
+.queued-message:hover .queued-words, .queued-words:focus-visible { color: var(--text); transition: none; }
+.queued-remove { flex: none; width: 28px; height: 22px; border-radius: var(--r-2); display: grid; place-items: center; color: var(--text-3); opacity: 0;
+  transition: opacity var(--quick) var(--soft), background-color var(--quick) var(--soft), color var(--quick) var(--soft); }
+.queued-remove .icon { width: 12px; height: 12px; }
+.queued-message:hover .queued-remove, .queued-remove:focus-visible { opacity: 1; transition: none; }
+.queued-remove:hover { background: var(--hover); color: var(--text); }
 .field { position: relative; max-width: var(--column); margin: 0 auto; display: flex; align-items: flex-end; gap: 4px; padding: 8px 8px 8px 16px;
   border-radius: var(--r-4); background: var(--glass); box-shadow: var(--glass-edge); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
   transition: box-shadow 160ms var(--soft); }

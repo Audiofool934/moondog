@@ -1,5 +1,5 @@
 // Page-side interaction checks for the fictional-data harness, not shipped with the app.
-// MOONDOG_HARNESS_STATES=long,first-run,first-run-model-only,first-run-netease,first-run-fresh,on-air-available,on-air-tip,on-air-starting,on-air-playing,on-air-waiting,generation-setup-agreement,generation-setup-both,generation-setup-error MOONDOG_HARNESS_EVAL=check-ui.mjs npm run harness
+// MOONDOG_HARNESS_STATES=long,first-run,first-run-model-only,first-run-netease,first-run-fresh,on-air-available,on-air-tip,on-air-starting,on-air-playing,on-air-waiting,queued,generation-setup-agreement,generation-setup-both,generation-setup-error MOONDOG_HARNESS_EVAL=check-ui.mjs npm run harness
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const assert = (ok, message) => { if (!ok) throw new Error(message); };
 const $ = (name) => document.querySelector(`[data-${name}]`);
@@ -171,6 +171,58 @@ if (harness.state?.startsWith("on-air")) {
     assert(sent("on-air-stop").length === 1, "The player's stop takes it off the air");
     return { onAir: "stopped from the player" };
   }
+}
+
+// Messages sent while a reply runs: they wait above the composer in order, Enter adds one without
+// stopping the reply, Up or a click takes one back to be changed, the mark drops one, and the next goes
+// when the reply ends. MOONDOG_HARNESS_STATES=queued
+if (harness.state === "queued") {
+  await wait(500);
+  const input = $("input");
+  const list = $("queued-messages");
+  const rows = () => [...list.querySelectorAll(".queued-words")].map((node) => node.textContent);
+  const sent = (type) => harness.sent.filter((message) => message.type === type);
+  const key = (name) => input.dispatchEvent(new KeyboardEvent("keydown", { key: name, bubbles: true, cancelable: true }));
+  const type = (text) => { input.value = text; input.dispatchEvent(new Event("input", { bubbles: true })); };
+  const bubbles = () => [...document.querySelectorAll("[data-column] .you")].length;
+  assert(!list.hidden && rows().length === 2 && rows()[0] === "Keep it instrumental if you can", "The waiting messages show above the composer, the first one first");
+  const row = list.querySelector(".queued-message");
+  assert(row.offsetHeight === 26 && list.querySelector(".queued-words").scrollWidth <= list.clientWidth, "Each waiting message takes one line");
+  const markShown = (node) => getComputedStyle(node.querySelector(".queued-remove")).opacity;
+  assert(markShown(row) === "0" && markShown(list.querySelector(".queued-message:last-child")) === "1", "The mark that drops one shows only on the message under the pointer");
+
+  // Enter queues the next one and leaves the reply running.
+  const before = bubbles();
+  type("One more for the last stop");
+  key("Enter");
+  await wait(150);
+  assert(sent("prompt").at(-1)?.text === "One more for the last stop" && !sent("cancel").length, "Enter while a reply runs sends the message and stops nothing");
+  assert(input.value === "" && rows().length === 3 && rows()[2] === "One more for the last stop", "The message waits last in the queue, and the composer is clear");
+  assert(bubbles() === before, "A waiting message is not drawn in the conversation yet");
+
+  // Up in the empty composer takes the last one back; with words in the composer it moves the caret as always.
+  key("ArrowUp");
+  await wait(150);
+  assert(input.value === "One more for the last stop" && rows().length === 2, "Up takes the last waiting message back into the composer");
+  key("ArrowUp");
+  await wait(100);
+  assert(rows().length === 2 && sent("unqueue").length === 1, "With words in the composer, Up takes nothing more");
+  type("");
+
+  // A click on a waiting message takes that one back; its mark drops one.
+  list.querySelectorAll(".queued-words")[1].click();
+  await wait(150);
+  assert(input.value.startsWith("And after that") && rows().length === 1, "A click on a waiting message takes it back");
+  type("");
+  list.querySelector(".queued-remove").click();
+  await wait(150);
+  assert(list.hidden && !rows().length && sent("unqueue").at(-1)?.back !== true, "The mark drops a waiting message, and the empty queue takes no room");
+
+  // The send button still stops the reply.
+  $("send").click();
+  await wait(100);
+  assert(sent("cancel").length === 1, "The send button stops the running reply");
+  return { queued: "checked" };
 }
 
 // One-click Stable Audio 3: the licenses asked for once, in the row, before the first download; progress

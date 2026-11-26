@@ -68,7 +68,7 @@ A model or music service chosen there lasts until the app quits, and sign-in and
   An edit made in either, with Edit here or `/rewind` there, shows in the other.
   A branch carries its place in the conversation's lineage until it is renamed, "Late night #2"; the number stays in sight when the title is cut short.
   A message sent in the terminal appears here, and its reply grows here as it is written; the other way round too.
-  One of them answers at a time: a message sent while the other answers comes back to the composer here and waits in the queue there.
+  One of them answers at a time: a message sent while the other answers waits in the queue, here as there, and goes when that reply ends.
   Pinned ones come first, then folders, then the rest by day.
   A row's `⋯` button or a right-click renames, pins, moves it to a folder, or deletes it after asking.
   Dragging a row onto a folder files it there. `⌘N` or the pencil in the title bar starts a new conversation.
@@ -90,6 +90,10 @@ A model or music service chosen there lasts until the app quits, and sign-in and
   The name stays in your words, and Moondog reads what it holds as it stands now, for each reply in that conversation, and can rename a playlist, take songs out or reorder it when you ask.
   In a sent message, a playlist's name opens it.
 - Writing from an open playlist starts a new conversation about it.
+- A message sent while Moondog answers waits above the composer and goes when the reply ends, the first one first, as in the terminal's queue; up to 30 wait in a conversation.
+  The reply goes on: Enter never stops it. Stopping a reply lets the next waiting message go; after a reply that failed, the rest wait until the next reply that ends.
+  Up in an empty composer takes the last waiting message back to be changed, a click on one takes that one back, and the mark at its right, shown under the pointer, drops it.
+  The queue belongs to its conversation and goes on while another one shows. It is kept until the app quits, not after.
 - Paste or drop up to four PNG, JPEG, WebP or GIF images, and they wait above the composer and go with the next message.
   A vision model chosen in Settings describes them for the chat model; otherwise a chat model that can see gets them as they are; otherwise the message comes back with what to change.
   The conversation keeps only text: the description, or a short stand-in for the image.
@@ -182,7 +186,7 @@ A model or music service chosen there lasts until the app quits, and sign-in and
   Moving to another button waits again; the record, expand, restore and pin controls keep accessible names without explanatory tooltips.
 - Controls for the whole window sit in the title bar, which never folds: the conversations and new conversation at the top left, Settings and the player at the top right.
   The side panels hold only their own content.
-- Keys: Enter sends and Shift+Enter starts a new line. `⌘.` or Esc stops a reply.
+- Keys: Enter sends, or queues the message while a reply runs, and Shift+Enter starts a new line. `⌘.` or Esc stops a reply.
   Typing anywhere goes to the composer. No plain key plays, pauses or skips, because a chat window is typed in all the time.
   `⌃⌘P` plays or pauses, and `⌃⌘→` and `⌃⌘←` skip, from the Playback menu; the media keys work too. `⌃⌘O` goes on or off the air.
   `⌥⌘S` and `⌥⌘P` show or hide the conversations and the player; a narrow window folds them on its own. `⌥⌘L` shows or hides the library. `⌥⌘R` folds or opens the record. `⌥⌘T` opens or closes your taste.
@@ -243,6 +247,7 @@ It needs no model, no music service and none of your data.
 With `first-run`, `first-run-model-only` and `first-run-netease` among the states, it also checks the first run: both steps from the keyboard, one ended in the terminal, and one skipped with Esc.
 With `first-run-fresh`, it checks a new install's model step: More providers unfolds, a key added there moves its provider up, and a model chosen under it ends the first run.
 The `first-run-*` states draw its steps, sign-ins and skip tooltip on their own.
+With `queued`, it checks the messages that wait while a reply runs: Enter adds one and stops nothing, Up and a click take one back, the mark drops one, and the send button still stops the reply.
 With the `on-air-*` states among them (`on-air-available`, `on-air-tip`, `on-air-starting`, `on-air-playing`, `on-air-waiting`), it checks On Air: going on air, stopping while starting, stopping from the mark and from the player, and the song the stream paused showing again.
 An evaluation failure exits with a nonzero status.
 

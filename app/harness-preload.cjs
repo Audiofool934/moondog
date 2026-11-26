@@ -244,8 +244,14 @@ const send = (message) => {
 };
 // The conversation on screen, so Branch can go on from one of its replies.
 let shown = [];
+// Messages sent while a reply runs wait their turn, as the room keeps them: a posed reply counts as running.
+let answering = false;
+let queued = [];
+const sendQueued = () => send({ type: "queued", session: null, items: queued.map(({ id, text }) => ({ id, text, images: [] })) });
 function ready(extra = {}) {
   shown = extra.transcript ?? [];
+  answering = Boolean(extra.live);
+  queued = (extra.queued ?? []).map(({ id, text }) => ({ id, text }));
   send({ type: "ready", ...STATUS, sessions: SESSIONS, folders: FOLDERS, current: "s1", running: [], transcript: [], ...extra });
   sendLibrary();
 }
@@ -704,6 +710,17 @@ const STATES = {
           { call: 3, tool: "moondog_spotify_queue_add", args: {}, state: "running" }] } });
     player({ index: 0, fraction: 0.2 });
   },
+  // Two messages sent while the reply runs wait above the composer.
+  queued() {
+    ready({ transcript: conversation([["Play something for a late train home", SHORT]]),
+      live: { id: "t9", user: "Find me something that sounds like a streetlamp at 2am", text: "Two candidates so far. The first is a record you have never played, from a session",
+        activity: [{ call: 1, tool: "moondog_spotify_search", args: {}, state: "done" }, { call: 2, tool: "moondog_spotify_queue_add", args: {}, state: "running" }] },
+      queued: [{ id: "q1", text: "Keep it instrumental if you can", images: [] },
+        { id: "q2", text: "And after that, one long record for the walk from the station, something that takes its time and never hurries, even when the street is empty and the last train has gone", images: [] }] });
+    player({ index: 0, fraction: 0.2 });
+    // The pointer rests on the second one, so its mark shows.
+    return { hover: ".queued-message:last-child" };
+  },
   thinking() {
     ready({ transcript: [], live: { id: "t9", user: "Something for cooking dinner, not too slow", text: "", activity: [] } });
     player({ index: 2, fraction: 0.55 });
@@ -1127,24 +1144,41 @@ core.onmessage = ({ data }) => {
     send({ type: "branched", session: "s1-branch" });
   }
   if (data.type === "prompt" && data.fresh) send({ type: "session", current: "s-fresh", transcript: [] });
-  if (data.type === "prompt" || data.type === "edit") {
-    // A reply arriving word by word, so streaming can be watched rather than posed.
-    const id = `live-${Math.random().toString(36).slice(2)}`;
-    send({ type: "turn", state: "start", id, text: data.text, session: null });
-    send({ type: "activity", id, call: 1, tool: "moondog_spotify_search", args: {}, state: "running", session: null });
-    const words = REPLY.split(" ");
-    let sent = 0;
-    const timer = setInterval(() => {
-      if (sent === 9) send({ type: "activity", id, call: 1, tool: "moondog_spotify_search", args: {}, state: "done", session: null });
-      send({ type: "text", id, delta: `${words.slice(sent, sent + 3).join(" ")} `, session: null });
-      sent += 3;
-      if (sent >= words.length) {
-        clearInterval(timer);
-        send({ type: "turn", state: "end", id, text: REPLY, status: "complete", receipts: played(1), session: null });
-      }
-    }, 60);
+  // A waiting message leaves the queue, dropped or taken back into the composer.
+  if (data.type === "unqueue") {
+    const taken = queued.find((item) => item.id === data.id);
+    queued = queued.filter((item) => item !== taken);
+    sendQueued();
+    if (taken && data.back) send({ type: "unqueued", id: taken.id, text: taken.text, session: null });
   }
+  // A message sent while a reply runs waits its turn.
+  if (data.type === "prompt" && answering && !data.fresh) {
+    queued.push({ id: data.key, text: data.text });
+    sendQueued();
+  } else if (data.type === "prompt" || data.type === "edit") reply(data.text);
 };
+// A reply arriving word by word, so streaming can be watched rather than posed. The next waiting
+// message goes when it ends.
+function reply(text, waited = null) {
+  const id = `live-${Math.random().toString(36).slice(2)}`;
+  answering = true;
+  send({ type: "turn", state: "start", id, text, session: null, ...(waited ? { queued: waited } : {}) });
+  send({ type: "activity", id, call: 1, tool: "moondog_spotify_search", args: {}, state: "running", session: null });
+  const words = REPLY.split(" ");
+  let sent = 0;
+  const timer = setInterval(() => {
+    if (sent === 9) send({ type: "activity", id, call: 1, tool: "moondog_spotify_search", args: {}, state: "done", session: null });
+    send({ type: "text", id, delta: `${words.slice(sent, sent + 3).join(" ")} `, session: null });
+    sent += 3;
+    if (sent >= words.length) {
+      clearInterval(timer);
+      send({ type: "turn", state: "end", id, text: REPLY, status: "complete", receipts: played(1), session: null });
+      answering = false;
+      const next = queued.shift();
+      if (next) { sendQueued(); reply(next.text, next.id); }
+    }
+  }, 60);
+}
 
 window.__harness = {
   states: Object.keys(STATES),

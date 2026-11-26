@@ -33,6 +33,8 @@ const tr = () => t;
 const state = { sessions: [], folders: [], running: [], current: null, turns: [], model: null, spotify: null, spotifyAccount: null,
   playbackService: "spotify", locale, locales: [], player: null, streaming: null, ready: false, waiting: null, update: { phase: "idle" }, firstRun: null,
   onAir: null,
+  // The messages sent while this conversation answers, waiting their turn: [{ id, text, images: [name] }].
+  queued: [],
   // The listener's library, and the playlist open in the room in the conversation's place ({ id, playlist }, or none).
   library: { folders: [], playlists: [] }, shelf: null,
   // The listener's taste: the core's latest page of it, for the taste view and the page, and the page open in the
@@ -1447,16 +1449,54 @@ function submitText(text, images = [], { about = null } = {}) {
   // A message sent while a playlist or the taste page is open brings the conversation back to show the reply.
   if (state.shelf) closePlaylist();
   if (state.taste) closeTaste();
-  // The words show at once; the core's start of the turn adopts them.
-  state.turns.push({ role: "user", text, pending: true, ...(fresh ? { fresh } : {}), ...imagesFor(images) });
-  renderConversation();
-  send({ type: "prompt", text, ...(fresh ? { fresh } : {}), ...(images.length ? { images: images.map(({ data, mimeType, name: label }) => ({ data, mimeType, name: label })) } : {}) });
+  // The core names the message by this key if it has to wait in the queue.
+  const key = crypto.randomUUID();
+  // While this conversation answers, the message waits above the composer; the core says so.
+  if (state.streaming && !fresh) { if (images.length) queuedImages.set(key, images); }
+  // Otherwise the words show at once; the core's start of the turn adopts them.
+  else { state.turns.push({ role: "user", text, pending: true, key, ...(fresh ? { fresh } : {}), ...imagesFor(images) }); renderConversation(); }
+  send({ type: "prompt", text, key, ...(fresh ? { fresh } : {}), ...(images.length ? { images: images.map(({ data, mimeType, name: label }) => ({ data, mimeType, name: label })) } : {}) });
   return true;
 }
-function submit() {
-  if (state.streaming) { send({ type: "cancel" }); return; }
+// ── Messages waiting their turn ──
+// A message sent while Moondog answers waits above the composer and goes when the reply ends, the
+// first one first, as in the terminal. Each leaves by its mark; a click on its words, or Up in an
+// empty composer for the last one, takes it back to be changed.
+const QUEUED_LIMIT = 30;
+// The pictures of each waiting message, by its key: its bubble shows them, and they go back with it.
+const queuedImages = new Map();
+const composerEmpty = () => !input.value.trim() && !attachments.length;
+function takeBack(id) {
+  input.focus();
+  if (composerEmpty()) send({ type: "unqueue", id, back: true });
+}
+function renderQueued() {
+  const list = $("queued-messages");
+  list.hidden = !state.queued.length;
+  list.replaceChildren(...state.queued.map((item) => {
+    const row = make("div", "queued-message");
+    const words = make("button", "queued-words");
+    words.type = "button";
+    words.textContent = (item.text || (item.images ?? []).join(", ")).replace(/\s+/gu, " ").trim();
+    words.addEventListener("click", () => takeBack(item.id));
+    const remove = make("button", "queued-remove");
+    remove.type = "button";
+    remove.append(icon("close"));
+    name(remove, t("remove"));
+    remove.addEventListener("click", () => { queuedImages.delete(item.id); send({ type: "unqueue", id: item.id }); input.focus(); });
+    row.append(words, remove);
+    return row;
+  }));
+  // More than a few scroll; the last one, which Up takes back, stays next to the composer.
+  list.scrollTop = list.scrollHeight;
+}
+// `stop` is the send button's press: while a reply runs the button stops it. Enter never stops a reply.
+function submit({ stop = true } = {}) {
+  if (state.streaming && stop) { send({ type: "cancel" }); return; }
   const text = input.value.trim();
   if (!text && !attachments.length) return;
+  // A full queue leaves the words in the composer.
+  if (state.streaming && state.queued.length >= QUEUED_LIMIT) return;
   // A mistyped command stays in the composer instead of going to Moondog as a message.
   const command = text.match(/^\/([A-Za-z]+)$/u)?.[1];
   if (command && !COMMANDS.some((entry) => entry.name === command.toLowerCase())) { notice(t("unknownCommand", { name: command })); return; }
@@ -1476,8 +1516,10 @@ input.addEventListener("paste", (event) => {
   void attachImages(files);
 });
 input.addEventListener("keydown", (event) => {
-  // Enter sends; while a reply runs it does nothing, so a typed follow-up waits instead of stopping the reply.
-  if (event.key === "Enter" && !event.shiftKey && !event.isComposing && event.keyCode !== 229) { event.preventDefault(); if (!state.streaming) submit(); }
+  // Enter sends. While a reply runs, the message waits its turn in the queue, and the reply goes on.
+  if (event.key === "Enter" && !event.shiftKey && !event.isComposing && event.keyCode !== 229) { event.preventDefault(); submit({ stop: false }); }
+  // Up in an empty composer takes the last waiting message back.
+  if (event.key === "ArrowUp" && state.queued.length && composerEmpty() && !event.isComposing) { event.preventDefault(); takeBack(state.queued.at(-1).id); }
   if (event.key === "Escape" && state.streaming) { event.preventDefault(); send({ type: "cancel" }); }
   else if (event.key === "Escape" && state.shelf && !input.value) { event.preventDefault(); closePlaylist(); }
   else if (event.key === "Escape" && state.taste && !input.value) { event.preventDefault(); closeTaste(); }
@@ -2601,6 +2643,8 @@ function receive({ data }) {
       // Its images go back above the composer too.
       if (turn.attachments?.length && !attachments.length) { attachments = turn.attachments; renderAttachments(); renderComposer(); }
     }
+    // A message the full queue did not take had no bubble; its words go back as well.
+    else if (data.code === "message_busy" && data.text && onScreen(data) && !input.value.trim()) { input.value = data.text; renderComposer(); }
     if (data.message) console.warn(`[moondog] ${data.code}: ${data.message}`);
     // A refused switch leaves the open conversation marked as open.
     if (data.code === "too_many_running") renderSessions();
@@ -2634,6 +2678,8 @@ function receive({ data }) {
     const waiting = state.turns.filter((turn) => (data.type === "ready" && turn.waiting) || (data.type === "session" && turn.pending && turn.fresh));
     state.current = data.current ?? null;
     state.turns = [...(data.transcript ?? []).map((turn) => ({ ...turn })), ...waiting];
+    state.queued = data.queued ?? [];
+    renderQueued();
     state.streaming = null;
     if (data.live) {
       state.turns.push({ role: "user", text: data.live.user },
@@ -2668,6 +2714,26 @@ function receive({ data }) {
     state.turns.push({ role: "assistant", text: data.markdown, local: true });
     renderConversation();
   }
+  if (data.type === "queued" && onScreen(data)) {
+    state.queued = data.items ?? [];
+    // A message the window drew as sent, which the core put in the queue: its bubble leaves the
+    // conversation, and its pictures wait with it.
+    const ids = new Set(state.queued.map((item) => item.id));
+    const drawn = state.turns.filter((turn) => turn.pending && ids.has(turn.key));
+    for (const turn of drawn) if (turn.attachments?.length) queuedImages.set(turn.key, turn.attachments);
+    if (drawn.length) { state.turns = state.turns.filter((turn) => !drawn.includes(turn)); renderConversation(); }
+    renderQueued();
+  }
+  // A waiting message taken back: its words and pictures are the composer's again.
+  if (data.type === "unqueued" && onScreen(data)) {
+    const images = queuedImages.get(data.id) ?? [];
+    queuedImages.delete(data.id);
+    input.value = [data.text, input.value].filter(Boolean).join("\n");
+    if (images.length && !attachments.length) { attachments = images; renderAttachments(); }
+    renderComposer();
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+  }
   if (data.type === "turn" && onScreen(data)) {
     if (data.state === "start") {
       state.streaming = data.id;
@@ -2675,9 +2741,11 @@ function receive({ data }) {
       if (cue) cue.seen = true;
       if (onAirAsk) onAirAsk.seen = true;
       const pending = state.turns.findLastIndex((turn) => turn.pending && turn.text === data.text);
-      // The bubble keeps the images the listener attached.
+      // The bubble keeps the images the listener attached, also on a message that waited in the queue.
       const [sent] = pending >= 0 ? state.turns.splice(pending, 1) : [];
-      state.turns.push({ role: "user", text: data.text, ...(sent?.images ? { images: sent.images } : {}) },
+      const waited = queuedImages.get(data.queued);
+      queuedImages.delete(data.queued);
+      state.turns.push({ role: "user", text: data.text, ...(sent?.images ? { images: sent.images } : waited?.length ? { images: imagesFor(waited).images } : {}) },
         { role: "assistant", id: data.id, text: "", activity: [], streaming: true });
     } else {
       const turn = streamingTurn(data.id);
