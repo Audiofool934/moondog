@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { inspect } from "node:util";
-import { assertProvenance, releaseNames, updateFeed, verifyArtifacts } from "../../app/release-artifacts.mjs";
+import { assertProvenance, releaseNames, updateFeed, verifyArtifacts, verifyPlatformArtifacts } from "../../app/release-artifacts.mjs";
 import { notarizeFile, prepareDmgUpload } from "../../app/release-notary.mjs";
 import { assertReleaseIdentity, findReleaseByTag, markAsLatest, publicationSource, uploadImmutableAssets, validateNpmRelease, waitFor } from "../../app/release-publication.mjs";
 import { builderSigningIdentity, command, commandFailure, digestFile, ELECTRON_DATA_SIGN_IGNORE, parseReleaseJson, readJson, retryTimestampSigning, saveJson, SIGNING_TEAM } from "../../app/release-tools.mjs";
@@ -427,4 +427,41 @@ test("npm provenance and latest promotion do not accept a wrong commit or downgr
   assert.equal(markAsLatest("0.2.1", ["0.2.2"]), false);
   assert.equal(markAsLatest("0.2.2-beta.1", ["0.2.1"]), false);
   assert.throws(() => markAsLatest("0.2.1", ["unknown"]), /Cannot compare/u);
+});
+
+test("every platform's update feed goes up after every installer, archive and blockmap", async () => {
+  const names = ["app.zip", "app.dmg", "latest-mac.yml", "Moondog-1-win-x64.exe", "latest.yml", "Moondog-1-linux-x86_64.AppImage", "latest-linux.yml"];
+  const items = names.map((name, i) => ({ name, size: i + 1, sha256: name }));
+  const release = { draft: true, assets: [] }, order = [];
+  await uploadImmutableAssets({ items, getRelease: async () => structuredClone(release), remoteDigest: async asset => asset.hash,
+    upload: async item => {
+      order.push(item.name);
+      release.assets.push({ name: item.name, size: item.size, hash: item.sha256, state: "uploaded" });
+    } });
+  assert.deepEqual(order.slice(-3).sort(), ["latest-linux.yml", "latest-mac.yml", "latest.yml"]);
+});
+
+test("Windows and Linux builds must match their update feeds exactly", async () => {
+  const folder = await mkdtemp(path.join(os.tmpdir(), "moondog-platforms-"));
+  try {
+    const version = "0.4.0";
+    const exe = `Moondog-${version}-win-x64.exe`, appImage = `Moondog-${version}-linux-x86_64.AppImage`;
+    await writeFile(path.join(folder, exe), "windows installer");
+    await writeFile(path.join(folder, `${exe}.blockmap`), "blockmap");
+    await writeFile(path.join(folder, appImage), "linux appimage");
+    const feed = async (name, file, feedVersion = version) => {
+      const { size, sha512 } = await digestFile(path.join(folder, file));
+      await writeFile(path.join(folder, name), `version: ${feedVersion}\nfiles:\n  - url: ${file}\n    sha512: ${sha512}\n    size: ${size}\n    blockMapSize: 10\npath: ${file}\nsha512: ${sha512}\nreleaseDate: '2026-11-26T00:00:00.000Z'\n`);
+    };
+    await feed("latest.yml", exe);
+    await feed("latest-linux.yml", appImage);
+    const items = await verifyPlatformArtifacts(folder, version);
+    assert.deepEqual(items.map(item => item.name), [exe, `${exe}.blockmap`, appImage, "latest.yml", "latest-linux.yml"]);
+    await assert.rejects(verifyPlatformArtifacts(folder, "0.4.1"), /missing latest\.yml|describes 0\.4\.0/u);
+    await writeFile(path.join(folder, appImage), "a different appimage");
+    await assert.rejects(verifyPlatformArtifacts(folder, version), /does not describe/u);
+    await feed("latest-linux.yml", appImage);
+    await writeFile(path.join(folder, "Moondog-0.3.9-win-x64.exe"), "old build");
+    await assert.rejects(verifyPlatformArtifacts(folder, version), /Unexpected files/u);
+  } finally { await rm(folder, { recursive: true, force: true }); }
 });

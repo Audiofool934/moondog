@@ -130,3 +130,40 @@ export async function verifyArtifacts(directory, provenance, { inspect = inspect
   await inspect(directory, manifest);
   return manifest;
 }
+
+// Windows and Linux ship unsigned, so their check is that each update feed names this version and
+// describes exactly the installer beside it, by size and SHA-512. Windows keeps a separate blockmap;
+// the AppImage carries its own. Nothing else may sit in the folder.
+export function platformNames(version) {
+  return [
+    { platform: "Windows", feed: "latest.yml", installer: `Moondog-${version}-win-x64.exe`, blockmap: `Moondog-${version}-win-x64.exe.blockmap` },
+    { platform: "Linux", feed: "latest-linux.yml", installer: `Moondog-${version}-linux-x86_64.AppImage` },
+  ];
+}
+
+export function readUpdateFeed(text) {
+  const field = (block, key) => block.match(new RegExp(`^\\s*${key}: '?([^'\\n]+)'?$`, "mu"))?.[1];
+  const [head, ...entries] = text.split(/^ {2}- url: /mu);
+  const files = entries.map(entry => ({ url: entry.split("\n", 1)[0].trim(), sha512: field(entry, "sha512"), size: Number(field(entry, "size")) }));
+  return { version: field(head, "version"), files };
+}
+
+export async function verifyPlatformArtifacts(directory, version) {
+  const binaries = [], feeds = [];
+  const expected = new Set();
+  for (const { platform, feed, installer, blockmap } of platformNames(version)) {
+    const feedFile = await digestFile(path.join(directory, feed)).catch(() => { throw new Error(`The ${platform} build is missing ${feed}.`); });
+    const described = readUpdateFeed(await readFile(path.join(directory, feed), "utf8"));
+    if (described.version !== version) throw new Error(`${feed} describes ${described.version}, not ${version}.`);
+    if (described.files.length !== 1 || described.files[0].url !== installer) throw new Error(`${feed} must describe exactly ${installer}.`);
+    const actual = await digestFile(path.join(directory, installer)).catch(() => { throw new Error(`The ${platform} build is missing ${installer}.`); });
+    if (actual.size !== described.files[0].size || actual.sha512 !== described.files[0].sha512) throw new Error(`${feed} does not describe this ${installer}.`);
+    binaries.push(actual);
+    if (blockmap) binaries.push(await digestFile(path.join(directory, blockmap)).catch(() => { throw new Error(`The ${platform} build is missing ${blockmap}.`); }));
+    feeds.push(feedFile);
+    for (const name of [feed, installer, blockmap]) if (name) expected.add(name);
+  }
+  const extra = (await readdir(directory)).filter(name => !expected.has(name) && name !== ".DS_Store");
+  if (extra.length) throw new Error(`Unexpected files beside the Windows and Linux builds: ${extra.join(", ")}.`);
+  return [...binaries, ...feeds];
+}

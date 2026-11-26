@@ -64,7 +64,7 @@ export async function waitFor(read, { deadline, now = Date.now, sleep = ms => ne
 
 // Check every existing asset before uploading anything. Public releases are immutable;
 // incomplete drafts can resume, but changed bytes require a new release version.
-// The other assets upload together; the last item, the update feed, goes up only after they are verified.
+// The other assets upload together; the update feeds go up only after they are verified.
 // GitHub's upload host answers 408 or a 5xx, or the connection times out, when the line to it is
 // slow. Each attempt checks what is already there by its hash and removes the empty placeholder a
 // broken upload leaves, so trying the whole step again changes nothing that was already uploaded.
@@ -91,6 +91,9 @@ export function uploadTimeoutMs(bytes, { sharing = 1 } = {}) {
   const seconds = 120 + (Number(bytes) || 0) * Math.max(1, sharing) / SLOW_LINE_BYTES_PER_SECOND;
   return Math.round(Math.min(60 * 60, Math.max(10 * 60, seconds)) * 1000);
 }
+
+// latest-mac.yml, latest.yml (Windows) and latest-linux.yml: what each platform's updater reads.
+export const isUpdateFeed = item => /^latest(?:-[a-z]+)?\.yml$/u.test(item.name);
 
 export async function uploadImmutableAssets({ items, getRelease, upload, remoteDigest, deleteAsset }) {
   let release = await getRelease();
@@ -140,8 +143,9 @@ export async function uploadImmutableAssets({ items, getRelease, upload, remoteD
     const failure = (await Promise.allSettled(group.map(put))).find(result => result.status === "rejected");
     if (failure) throw failure.reason;
   };
-  const feed = items.at(-1);
-  await putAll(missing.filter(item => item !== feed));
-  if (missing.includes(feed)) await putAll([feed]);
+  // Every platform's update metadata goes up after every installer, archive and blockmap of the release.
+  const feeds = items.filter(isUpdateFeed);
+  await putAll(missing.filter(item => !feeds.includes(item)));
+  await putAll(missing.filter(item => feeds.includes(item)));
   return missing.length ? getRelease() : release;
 }

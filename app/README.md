@@ -269,10 +269,11 @@ It removes provider credentials from its environment and disables the system Mus
 
 `MOONDOG_SMOKE_EXECUTABLE` points the smoke check at an installed `Moondog.exe` or an AppImage instead.
 
-The [Desktop builds workflow](../.github/workflows/desktop.yml) builds on Windows and Linux, and saves the installers and update metadata as workflow artifacts.
+The [Desktop builds workflow](../.github/workflows/desktop.yml) builds on Windows and Linux for pull requests and `main`, and saves the installers and update metadata as workflow artifacts.
+A `v*` tag builds them in [Publish release](../.github/workflows/release.yml) instead, which publishes them with the Mac app.
 It runs the smoke check on what a listener gets: the app that the Windows installer installs, and the AppImage in extract-and-run mode.
 It does not publish a GitHub release.
-Windows CI builds are unsigned; a signed Windows release needs the maintainer's signing certificate configured through electron-builder's `CSC_LINK` and `CSC_KEY_PASSWORD`.
+Windows builds, released ones included, are unsigned; a signed Windows release needs the maintainer's signing certificate configured through electron-builder's `CSC_LINK` and `CSC_KEY_PASSWORD`.
 
 On a Mac, `node pack.mjs --dir --sign --no-notarize` leaves a signed QA app in `release/qa.noindex/<version>/` without submitting it to Apple.
 `npm run release` builds a signed, notarized app, ZIP and DMG, verifies the exact files, and records a release manifest in `release/`.
@@ -341,22 +342,23 @@ To publish an update:
    `Publish release` checks it, publishes or verifies the npm version, and prepares a GitHub draft.
    A beta version publishes on its own; a stable version first waits for the owner's approval in the `release-approval` environment.
    The desktop updater continues to see the previous complete release while the draft is prepared.
-3. The same run then builds the app on a macOS runner, in two jobs.
-   `Build, sign and notarize the Mac app` keeps the ZIP, blockmap, DMG, release manifest and update metadata as a workflow artifact.
-   `Upload and publish the Mac app` verifies them again, uploads the first four to the draft together and the update metadata last, then publishes the complete release and rebuilds the project page.
-   If the upload fails, rerun only the failed job: it takes the same notarized bytes.
-   If the build fails, nothing is on the draft yet, so rerun that job.
-4. For Windows and Linux, build that same tag through the Desktop builds workflow or on a native host, and check the smoke results.
-   Once the Mac release is published, upload the installer or AppImage and its blockmap, then that platform's update metadata last.
-   Rebuild the project page after uploading so it can offer the new platform downloads.
-   CI artifacts alone do not establish a signed, published, or manually tested desktop release.
+3. The same run builds all three platforms at once, each as a workflow artifact.
+   `Build, sign and notarize the Mac app` keeps the ZIP, blockmap, DMG, release manifest and `latest-mac.yml`.
+   `Build the windows x64 app` and `Build the linux x64 app` start right after the checks, unsigned; each runs the smoke check on what a listener gets, the installed app or the AppImage, and keeps the installer, its blockmap (Windows only; the AppImage carries its own) and `latest.yml` or `latest-linux.yml`.
+4. `Upload and publish the release` waits for all three builds.
+   It verifies the Mac artifacts again, checks that each Windows and Linux update file describes exactly the installer beside it, uploads every installer, ZIP, DMG, blockmap and the manifest together, and every platform's update metadata last.
+   Then it publishes the complete release and rebuilds the project page once.
+   If a build fails, nothing is on the draft yet: use Re-run failed jobs, which rebuilds only that platform and then uploads.
+   If the upload fails, rerun only that job: it takes the same built bytes, reuses what is already on the draft, and rejects different bytes under a name already there.
+   CI smoke checks do not establish a manually tested desktop release.
 
 The runner signs with secrets in the `mac-signing` environment, which only `v*` tags can use.
 `MAC_CERT_P12` is the Developer ID Application certificate and its private key as a base64 `.p12`, and `MAC_CERT_PASSWORD` is its password.
 `MAC_NOTARY_KEY` is the text of the App Store Connect API key's `.p8` file, and `MAC_NOTARY_KEY_ID` and `MAC_NOTARY_ISSUER` are its key ID and issuer ID.
 
-To publish from a Mac instead, cancel the workflow's Mac jobs first, then in a clean worktree at the tag run `npm ci` at the root and here, and `npm run publish-app`.
-It builds and verifies the artifacts, waits up to an hour for the npm version and the draft, then uploads and publishes as the second job does.
+To publish from a Mac instead, cancel the workflow's Mac build and upload jobs first, then in a clean worktree at the tag run `npm ci` at the root and here, and `npm run publish-app`.
+It builds and verifies the artifacts, waits up to an hour for the npm version and the draft, then uploads and publishes as the upload job does.
+To include Windows and Linux, download the run's `release-windows-x64` and `release-linux-x64` artifacts into one folder outside the checkout and add `-- --platforms <folder>`; without it the release has the Mac app only.
 
 These hold for both ways:
 
