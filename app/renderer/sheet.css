@@ -14,7 +14,7 @@
 .sheet-card { position: relative; width: min(760px, calc(100vw - 48px)); height: min(560px, calc(100vh - 80px));
   display: grid; grid-template-columns: 200px minmax(0, 1fr); overflow: hidden; border-radius: var(--r-3);
   background: color-mix(in srgb, var(--canvas) 58%, transparent); box-shadow: var(--glass-edge), var(--float);
-  -webkit-backdrop-filter: blur(40px) saturate(1.8); backdrop-filter: blur(40px) saturate(1.8);
+  -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
   animation: sheet-in 180ms var(--out) both; }
 .sheet-card:focus, .sheet-card:focus-visible { outline: none; }
 /* Closing is quicker than opening and never blocks a click on the window behind. */
