@@ -98,6 +98,8 @@ const allowedPathPrefixes = [
   "contracts/",
   "docs/",
   "gateway/",
+  // The iPhone app, the third client on the same core (SwiftUI, Xcode project).
+  "mobile/",
   "scripts/",
   "site/",
   "src/",
