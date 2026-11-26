@@ -551,18 +551,48 @@ const MIN_SIZE = { width: 760, height: 520 };
 const RECORD_MIN = 140;
 const MINI_SIZE = 200;
 let immersed = null;
+// Growing or shrinking the window as a native animation lays the whole page out again at every step,
+// and it stutters. The window instead fades out, takes its new size at once, and fades back in
+// after the page has drawn at that size. The fade is the system's, so the page's work never shows.
+let fading = 0;
+const fadeWindow = (from, to, ms) => new Promise((resolve) => {
+  const start = Date.now();
+  const step = () => {
+    if (!window) return resolve();
+    const t = Math.min(1, (Date.now() - start) / ms);
+    window.setOpacity(from + (to - from) * (to > from ? 1 - (1 - t) ** 3 : t * t));
+    if (t < 1) setTimeout(step, 8); else resolve();
+  };
+  step();
+});
+async function resizeFaded(bounds) {
+  const turn = ++fading;
+  if (!isMac && process.platform !== "win32") { window.setBounds(bounds); return; }
+  await fadeWindow(window.getOpacity(), 0, 110);
+  if (turn !== fading || !window) return;
+  window.setBounds(bounds);
+  // The page changes views once the window is out of sight (MINI_FADE in renderer.mjs), then needs a
+  // few frames to lay out and draw at the new size.
+  await new Promise((resolve) => setTimeout(resolve, 90));
+  if (turn !== fading || !window) return;
+  await fadeWindow(0, 1, 200);
+}
 ipcMain.on("immersive", (_event, on, mini) => {
   if (!window) return;
   if (on === true && !immersed) {
-    immersed = { bounds: window.getBounds(), timer: null, inside: null };
+    immersed = { bounds: window.getBounds(), timer: null, inside: null, mini: false };
     window.setMinimumSize(RECORD_MIN, RECORD_MIN);
     // A full-screen window has no corner to shrink to, so there the mini player is the record alone.
     if (mini === true && !window.isFullScreen()) {
       const { x, y, width } = immersed.bounds;
-      window.setBounds({ x: x + width - MINI_SIZE, y, width: MINI_SIZE, height: MINI_SIZE }, true);
+      immersed.mini = true;
+      void resizeFaded({ x: x + width - MINI_SIZE, y, width: MINI_SIZE, height: MINI_SIZE });
     }
     if (mini === true) window.setAlwaysOnTop(true, "floating");
     const watch = () => {
+      // While the page moves the window, the pointer is over it by definition. Showing or hiding the
+      // traffic lights makes macOS fit the window back on the screen, which would fight the drag.
+      if (dragging) return;
       const point = screen.getCursorScreenPoint();
       const box = window.getBounds();
       const inside = window.isVisible() && point.x >= box.x && point.x < box.x + box.width && point.y >= box.y && point.y < box.y + box.height;
@@ -582,23 +612,53 @@ ipcMain.on("immersive", (_event, on, mini) => {
     window.setMinimumSize(MIN_SIZE.width, MIN_SIZE.height);
     // A window shrunk while it held only the record goes back to the size it had.
     const now = window.getBounds();
-    if (now.width < MIN_SIZE.width || now.height < MIN_SIZE.height) window.setBounds(bounds, true);
+    if (now.width < MIN_SIZE.width || now.height < MIN_SIZE.height) void resizeFaded(bounds);
   }
 });
 // In the record alone the page moves the window itself, so a click can return to the conversation:
-// while the button is held the window follows the pointer, and the end says how far it went.
+// while the button is held the window follows the pointer, and the end says how far it went. The mini
+// player stays whole on the screen the pointer is on, so it can be pushed into a corner and rest there.
+// macOS may also keep a window off part of a screen, as Stage Manager does with its strip, and it moves
+// the window back about 100 ms after it was placed there. Pushed again on every small move, the window
+// would flicker between the two places, so where the system put it back becomes that screen's edge.
 let dragging = null;
+const systemEdges = new Map();
+const placeWithin = (x, y, at) => {
+  const display = screen.getDisplayNearestPoint(at);
+  const [width, height] = window.getSize();
+  const area = immersed?.mini ? display.workArea : { x: -Infinity, y: -Infinity, width: Infinity, height: Infinity };
+  const edges = systemEdges.get(display.id) ?? {};
+  const left = Math.max(area.x, edges.left ?? -Infinity), top = Math.max(area.y, edges.top ?? -Infinity);
+  const right = Math.min(area.x + area.width - width, edges.right ?? Infinity);
+  const bottom = Math.min(area.y + area.height - height, edges.bottom ?? Infinity);
+  return { x: Math.round(Math.min(Math.max(x, left), right)), y: Math.round(Math.min(Math.max(y, top), bottom)), display };
+};
+// Called before each move: a window that is not where it was last put was moved back by the system.
+const learnSystemEdge = (last) => {
+  const [x, y] = window.getPosition();
+  if (!last || (x === last.x && y === last.y)) return;
+  const edges = systemEdges.get(last.display.id) ?? {};
+  if (x > last.x) edges.left = x; else if (x < last.x) edges.right = x;
+  if (y > last.y) edges.top = y; else if (y < last.y) edges.bottom = y;
+  systemEdges.set(last.display.id, edges);
+};
 ipcMain.handle("drag-window", (_event, phase) => {
   if (!window) return 0;
   if (phase === "start") {
     clearInterval(dragging?.timer);
     const from = screen.getCursorScreenPoint();
     const [x, y] = window.getPosition();
-    dragging = { from, x, y, moved: 0, timer: setInterval(() => {
+    dragging = { from, x, y, moved: 0, last: null, timer: setInterval(() => {
       const at = screen.getCursorScreenPoint();
       const dx = at.x - from.x, dy = at.y - from.y;
       dragging.moved = Math.max(dragging.moved, Math.hypot(dx, dy));
-      if (dragging.moved >= 4) window.setPosition(x + dx, y + dy);
+      if (dragging.moved < 4) return;
+      learnSystemEdge(dragging.last);
+      const to = placeWithin(x + dx, y + dy, at);
+      const [nowX, nowY] = window.getPosition();
+      if (to.x === nowX && to.y === nowY) { dragging.last = to; return; }
+      dragging.last = to;
+      window.setPosition(to.x, to.y);
     }, 8) };
     return 0;
   }

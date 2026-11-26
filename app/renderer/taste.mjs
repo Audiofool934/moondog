@@ -3,7 +3,7 @@
 // tracks it rests on are the taste view in the sidebar beside it (taste-list.mjs); a row unfolded there lights
 // that artist across the record here. The composer stays below.
 import { createPressing } from "./pressing.mjs";
-import { make } from "./ui.mjs";
+import { make, scrollbar } from "./ui.mjs";
 
 const KIND_LABELS = { observation: "tasteMeasured", hypothesis: "tasteInterpretation", listener_assertion: "tasteYourChoice" };
 
@@ -13,6 +13,7 @@ export function createTaste({ root, state, send, t, onClose }) {
   const column = make("div", "taste-column");
   scroller.append(column);
   root.append(scroller);
+  scrollbar(scroller, { inset: 50 });
   // The record of the listener's history, built once so its needle and range stay while the page redraws.
   const pressing = createPressing({ t, locale: () => state.locale });
   let pressed = null;
