@@ -498,17 +498,22 @@ img { -webkit-user-drag: none; }
 .room:not(.empty) .record-frame { position: absolute; left: 0; top: 0; width: var(--record, 240px); translate: none; transform-origin: 0 0; will-change: transform; }
 .room:not(.empty) .record-frame:has(.record-button:not(.away)) { pointer-events: auto; }
 /* The square hover target keeps the corner reachable without putting the button on the disc. Two arrows
-   say what it does, with no frame of their own; pointing at them darkens and opens them a little. */
-.expand { position: absolute; right: 0; bottom: 0; z-index: 1; color: var(--text-3); opacity: 0; pointer-events: none;
+   say what it does, with no frame of their own; pointing at them darkens and opens them a little.
+   The mini player takes the other corner, a small window in a large one. */
+:is(.expand, .mini) { position: absolute; bottom: 0; z-index: 1; color: var(--text-3); opacity: 0; pointer-events: none;
   transition: opacity 240ms var(--soft), color var(--quick) var(--soft); }
-.expand .icon { transition: transform var(--quick) var(--soft); }
-.expand:hover { background: none; color: var(--text); }
-.expand:hover .icon { transform: scale(1.12); transition-timing-function: var(--out); }
-.expand:active .icon { transform: scale(0.96); }
-.record-frame:hover .record-button:not(.away) ~ .expand, .expand:focus-visible { opacity: 1; pointer-events: auto; transition: none; }
-.record-button.away ~ .expand { display: none; }
-/* Shrunk above the history, the record keeps its corner button at full size. */
-.expand { scale: calc(1 / var(--shown, 1)); transform-origin: 100% 100%; }
+.expand { right: 0; }
+.mini { left: 0; }
+:is(.expand, .mini) .icon { transition: transform var(--quick) var(--soft); }
+:is(.expand, .mini):hover { background: none; color: var(--text); }
+:is(.expand, .mini):hover .icon { transform: scale(1.12); transition-timing-function: var(--out); }
+:is(.expand, .mini):active .icon { transform: scale(0.96); }
+.record-frame:hover .record-button:not(.away) ~ :is(.expand, .mini), :is(.expand, .mini):focus-visible { opacity: 1; pointer-events: auto; transition: none; }
+.record-button.away ~ :is(.expand, .mini) { display: none; }
+/* Shrunk above the history, the record keeps its corner buttons at full size. */
+:is(.expand, .mini) { scale: calc(1 / var(--shown, 1)); }
+.expand { transform-origin: 100% 100%; }
+.mini { transform-origin: 0 100%; }
 /* While the record is scratched, its place in the song shows just above it, and fades once the music goes there. */
 .scratch { position: fixed; left: 0; top: 0; z-index: 31; transform: translate(-50%, -100%); pointer-events: none; white-space: nowrap;
   font-size: var(--t-small); font-variant-numeric: tabular-nums; color: var(--text-2); opacity: 0; transition: opacity 600ms var(--soft); }

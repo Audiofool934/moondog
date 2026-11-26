@@ -16,7 +16,8 @@ contextBridge.exposeInMainWorld("moondogApp", {
   setBusy: (busy) => ipcRenderer.send("busy", busy === true),
   // The record alone in the window: whether it shows, whether it floats above other windows, and
   // whether the pointer is over the window, which the page cannot see over its drag region.
-  setImmersive: (on) => ipcRenderer.send("immersive", on === true),
+  // The mini player enters it with the window shrunk to a small square, kept above the others.
+  setImmersive: (on, mini) => ipcRenderer.send("immersive", on === true, mini === true),
   setPinned: (on) => ipcRenderer.invoke("pin", on === true),
   // Moves the window while the record alone is held: "start", then "end", which answers how far it went.
   dragWindow: (phase) => ipcRenderer.invoke("drag-window", phase === "start" ? "start" : "end"),

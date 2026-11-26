@@ -545,14 +545,23 @@ ipcMain.on("busy", (_event, busy) => {
 // The record alone: the page fills the window with it, and the window may shrink to a small square
 // and float above the others. The traffic lights and the page's two corner buttons show only while
 // the pointer is over the window. The main process watches the pointer, because the page sees no
-// pointer over the drag region that fills it.
+// pointer over the drag region that fills it. The mini player is the same record, entered with the
+// window shrunk to a small square at its top right corner and kept above the others.
 const MIN_SIZE = { width: 760, height: 520 };
+const RECORD_MIN = 140;
+const MINI_SIZE = 200;
 let immersed = null;
-ipcMain.on("immersive", (_event, on) => {
+ipcMain.on("immersive", (_event, on, mini) => {
   if (!window) return;
   if (on === true && !immersed) {
     immersed = { bounds: window.getBounds(), timer: null, inside: null };
-    window.setMinimumSize(240, 240);
+    window.setMinimumSize(RECORD_MIN, RECORD_MIN);
+    // A full-screen window has no corner to shrink to, so there the mini player is the record alone.
+    if (mini === true && !window.isFullScreen()) {
+      const { x, y, width } = immersed.bounds;
+      window.setBounds({ x: x + width - MINI_SIZE, y, width: MINI_SIZE, height: MINI_SIZE }, true);
+    }
+    if (mini === true) window.setAlwaysOnTop(true, "floating");
     const watch = () => {
       const point = screen.getCursorScreenPoint();
       const box = window.getBounds();

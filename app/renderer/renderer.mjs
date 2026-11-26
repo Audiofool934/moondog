@@ -123,7 +123,7 @@ function applyLanguage(next) {
   renderSidebarMode();
   name($("keep"), t("saveToSaved"));
   // These self-explanatory controls keep accessible names without floating labels over the record.
-  for (const [node, key] of [[recordButton, "foldRecord"], [barRecord, "showRecord"], [$("expand"), "immerse"], [$("pin"), "keepOnTop"], [$("immersive"), "restore"]]) {
+  for (const [node, key] of [[recordButton, "foldRecord"], [barRecord, "showRecord"], [$("expand"), "immerse"], [$("mini"), "miniPlayer"], [$("pin"), "keepOnTop"], [$("immersive"), "restore"]]) {
     node.setAttribute("aria-label", t(key));
   }
   name($("settings-button"), t("settings"), shortcuts.settings);
@@ -616,6 +616,7 @@ const recordFrame = $("record-frame");
 const recordButton = $("record-button");
 const barRecord = $("bar-record");
 const expand = $("expand");
+const mini = $("mini");
 const lead = $("lead");
 const mark = createMark();
 barRecord.append(mark.node);
@@ -815,7 +816,7 @@ function placeRecord() {
     recordButton.style.opacity = (1 - handoff).toFixed(3);
     barRecord.style.opacity = handoff.toFixed(3);
     recordButton.classList.toggle("away", away);
-    expand.tabIndex = away ? -1 : 0;
+    expand.tabIndex = mini.tabIndex = away ? -1 : 0;
     recordButton.tabIndex = away ? -1 : 0;
     const docked = at.dock > 0.9 && !barRecord.classList.contains("cramped");
     barRecord.classList.toggle("docked", docked);
@@ -907,7 +908,7 @@ function cueing(now) {
   return Boolean(cue);
 }
 recordFrame.addEventListener("click", (event) => {
-  if (event.target.closest("[data-expand]")) return;
+  if (event.target.closest("[data-expand], [data-mini]")) return;
   // A key on the focused record has no place to point at; it folds.
   if (event.detail && onArm(record, event)) setArm();
   else if (event.target.closest("[data-record-button]")) foldRecord(true);
@@ -983,13 +984,14 @@ function renderPin() {
   $("pin").setAttribute("aria-pressed", String(pinned));
   setIcon($("pin"), pinned ? "pin-filled" : "pin");
 }
-function immerse(on) {
+// The mini player is the record alone in a small square that floats above the others, pinned.
+function immerse(on, { small = false } = {}) {
   if (on === immersed()) return;
   immersive.hidden = !on;
   layout.classList.toggle("immersed", on);
-  window.moondogApp?.setImmersive?.(on);
+  window.moondogApp?.setImmersive?.(on, small);
   pinChange += 1;
-  pinned = false;
+  pinned = on && small;
   renderPin();
   if (on) {
     record?.turn(false);
@@ -1011,6 +1013,7 @@ function immerse(on) {
   deep?.turn(on && Boolean(nowPlaying()?.playing));
 }
 expand.addEventListener("click", () => immerse(true));
+mini.addEventListener("click", () => immerse(true, { small: true }));
 // The main process moves the window while the button is held; a press that barely moved is a click.
 // A press on the arm stays with the arm, which plays and pauses here as it does above the words,
 // and the wheel anywhere scratches the record.
@@ -1066,7 +1069,7 @@ function renderEmpty(empty) {
     room.style.removeProperty("--record");
     recordButton.classList.remove("away");
     recordButton.tabIndex = -1;
-    expand.tabIndex = 0;
+    expand.tabIndex = mini.tabIndex = 0;
     leadHeight = 0;
     lead.style.height = "";
     scroller.style.removeProperty("--veil");
