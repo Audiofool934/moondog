@@ -120,8 +120,33 @@ The owner's direction (2026-11-04): the window supports more than one form, and 
   It opens from its control as a macOS pop-up or pull-down button does: over or under the control, with the current choice set on the control's words, not at the pointer.
   Only a right-click or context-menu-key menu opens at the pointer.
   The split sidebar's header switcher already works this way: `menuAt` in `app/renderer/renderer.mjs` anchors the menu to the control, and `positioningItem` sets its choice.
-- [ ] Add a record wall as a form of its own: one click turns the room from the conversation and its record to a wall of the library's sleeves, as a wall turning round, and back.
-  Saved, folders and playlists stand as sleeves; one opens to its playlist. With reduced motion it fades instead of turning.
+- The record wall planned here on 2026-11-04 became the library face of 0.4.0 (below).
+
+### 0.4.0: Library face
+
+The owner's direction (2026-11-26): the listener's own library stands level with the conversation.
+Moondog is then a music app with a host in it, not a harness for an agent.
+The room flips between two faces, the conversation and the library.
+The sidebar, the record, now playing and Up next stay where they are on both faces, and so does the composer.
+This is not a wall-first or collection-first app like Roon: the flip raises the library to the conversation's level, and no higher.
+
+- [ ] Add the flip: a two-icon switch centered in the title bar over the room, and ⌥⌘L, turn the room between the conversation and the library and back.
+  The sidebar's tabs keep switching only the sidebar.
+  The window opens on the face the listener left.
+  With reduced motion the room fades instead of turning.
+- [ ] Make the library face work without typing: a top level of Saved, folders, playlists and made tracks; albums and artists from what the library holds; search, play, queue and keep.
+  The playlist view the room shows today becomes one level inside it.
+  The sidebar's library tab stays for now, and a playlist clicked there flips the room and opens it.
+- [ ] Let the listener write from the library face into the current conversation, the one the conversation face shows.
+  Each message names what the listener was looking at, as `@name` does.
+  This replaces starting a new conversation when the listener writes from an open playlist; New Conversation still starts one.
+- [ ] Keep the listener on the library when a turn only acts (play, queue, sort, make or edit a playlist), with a short host line above the composer.
+  Flip to the conversation when the reply grows into a real answer.
+  The reply decides, not a guess at send time.
+- [ ] Give the terminal the same core: library queries by album and artist, and the context of what the listener is looking at, so `/library` can grow to match.
+  The terminal needs no flip of its own.
+
+Later layers, not in 0.4.0: local files and their playback, MuQ-MuLan analysis and a layout by sound, music databases such as MusicBrainz, and the flip in the iPhone app ([MUSIC_DECENTRALIZATION.md](MUSIC_DECENTRALIZATION.md)).
 
 ### First-run journey
 
