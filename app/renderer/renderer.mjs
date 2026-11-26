@@ -988,13 +988,25 @@ function renderPin() {
   setIcon($("pin"), pinned ? "pin-filled" : "pin");
 }
 // The mini player is the record alone in a small square that floats above the others, pinned.
+// Going in or out of it, the main process fades the window out, resizes it and fades it back in;
+// the page changes only once the window is out of sight, so neither view is seen squeezed.
+const MINI_FADE = 120;
+let mini = false;
+let miniSwitch = 0;
 function immerse(on, { small = false } = {}) {
-  if (on === immersed()) return;
+  if (on === immersed() || miniSwitch) return;
+  const resizing = on ? small : mini;
+  mini = on && small;
+  window.moondogApp?.setImmersive?.(on, small);
+  if (resizing) {
+    miniSwitch = setTimeout(() => { miniSwitch = 0; showImmersed(on); }, MINI_FADE);
+  } else showImmersed(on);
+}
+function showImmersed(on) {
   immersive.hidden = !on;
   layout.classList.toggle("immersed", on);
-  window.moondogApp?.setImmersive?.(on, small);
   pinChange += 1;
-  pinned = on && small;
+  pinned = mini;
   renderPin();
   if (on) {
     record?.turn(false);

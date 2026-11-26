@@ -8,8 +8,9 @@
 </head>
 <body>
   <svg width="0" height="0" style="position:absolute" aria-hidden="true">
-    <symbol id="i-sidebar" viewBox="0 0 16 16"><rect x="1.75" y="2.75" width="12.5" height="10.5" rx="2.25"/><path d="M5.75 3v10"/></symbol>
-    <symbol id="i-panel" viewBox="0 0 16 16"><rect x="1.75" y="2.75" width="12.5" height="10.5" rx="2.25"/><path d="M10.25 3v10"/></symbol>
+    <!-- Icons draw in a translucent ink, so a mark whose strokes meet is one path: two shapes would paint the joint twice and show it brighter. -->
+    <symbol id="i-sidebar" viewBox="0 0 16 16"><path d="M4 2.75h8a2.25 2.25 0 0 1 2.25 2.25v6a2.25 2.25 0 0 1-2.25 2.25H4a2.25 2.25 0 0 1-2.25-2.25V5A2.25 2.25 0 0 1 4 2.75zM5.75 2.75v10.5"/></symbol>
+    <symbol id="i-panel" viewBox="0 0 16 16"><path d="M4 2.75h8a2.25 2.25 0 0 1 2.25 2.25v6a2.25 2.25 0 0 1-2.25 2.25H4a2.25 2.25 0 0 1-2.25-2.25V5A2.25 2.25 0 0 1 4 2.75zM10.25 2.75v10.5"/></symbol>
     <symbol id="i-compose" viewBox="0 0 16 16"><path d="M13.25 8.5v3.75a1.5 1.5 0 0 1-1.5 1.5h-8a1.5 1.5 0 0 1-1.5-1.5v-8a1.5 1.5 0 0 1 1.5-1.5H7.5"/><path d="M11.6 2.15a1.27 1.27 0 0 1 1.8 1.8L8.25 9.1l-2.35.6.6-2.35z"/></symbol>
     <symbol id="i-up" viewBox="0 0 16 16"><path d="M8 12.75v-9.5M4 7.1 8 3.1l4 4"/></symbol>
     <!-- On the record buttons (disc.mjs): the send arrow, short and even, and a play triangle with rounded corners at
@@ -26,7 +27,7 @@
          The tonearm extends beyond this box. -->
     <symbol id="i-moondog" viewBox="85.3 85.3 853.4 853.4" overflow="visible"><image href="static/moondog-logo-small.svg" x="40" y="40" width="944" height="944"/></symbol>
     <!-- Taste: a record with its arm reaching in from the top right, as the taste page draws it. -->
-    <symbol id="i-taste" viewBox="0 0 16 16"><circle cx="7" cy="9" r="5.25"/><circle cx="7" cy="9" r="1.5"/><path d="M13.5 2.25 9.6 7.4"/></symbol>
+    <symbol id="i-taste" viewBox="0 0 16 16"><path d="M1.75 9a5.25 5.25 0 1 0 10.5 0a5.25 5.25 0 1 0-10.5 0zM5.5 9a1.5 1.5 0 1 0 3 0a1.5 1.5 0 1 0-3 0zM13.5 2.25 9.6 7.4"/></symbol>
     <symbol id="i-record" viewBox="0 0 48 48"><circle cx="24" cy="24" r="17"/><circle cx="24" cy="24" r="11.5" opacity=".45"/><circle cx="24" cy="24" r="5"/><circle cx="24" cy="24" r=".9" fill="currentColor" stroke="none"/></symbol>
     <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5.6v12.8a1 1 0 0 0 1.52.85l10.24-6.4a1 1 0 0 0 0-1.7L9.52 4.75A1 1 0 0 0 8 5.6z"/></symbol>
     <symbol id="i-pause" viewBox="0 0 24 24"><rect x="6.5" y="5" width="3.8" height="14" rx="1.2"/><rect x="13.7" y="5" width="3.8" height="14" rx="1.2"/></symbol>
@@ -38,7 +39,7 @@
     <!-- Conversations: a speech balloon, for the sidebar's conversations view. -->
     <symbol id="i-chat" viewBox="0 0 16 16"><path d="M3.25 3.25h9.5a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H7.5l-2.75 2.25v-2.25h-1.5a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1z"/></symbol>
     <!-- The library: records standing on a shelf, the newest leaning out. -->
-    <symbol id="i-library" viewBox="0 0 16 16"><path d="M3 2.75v10.5M6 2.75v10.5"/><path d="M8.6 3.4l2.5-.6 2.6 10.2-2.5.6z"/><path d="M2 13.25h12"/></symbol>
+    <symbol id="i-library" viewBox="0 0 16 16"><path d="M2 13.25h12M3.5 2.75v10.5M6.25 2.75v10.5M11.5 13.25 8.98 12.62 11.3 3.31l2.52.63z"/></symbol>
     <!-- Saved: a heart; filled once the song is kept. -->
     <symbol id="i-saved" viewBox="0 0 16 16"><path d="M8 13.1S2.4 9.9 2.4 6.1a2.85 2.85 0 0 1 5.6-.8 2.85 2.85 0 0 1 5.6.8c0 3.8-5.6 7-5.6 7z"/></symbol>
     <symbol id="i-saved-fill" viewBox="0 0 16 16"><path d="M8 13.1S2.4 9.9 2.4 6.1a2.85 2.85 0 0 1 5.6-.8 2.85 2.85 0 0 1 5.6.8c0 3.8-5.6 7-5.6 7z" fill="currentColor"/></symbol>

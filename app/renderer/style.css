@@ -54,7 +54,7 @@ img { -webkit-user-drag: none; }
   transition: width var(--quick) var(--soft), background-color var(--quick) var(--soft); }
 .rail:hover .thumb, .rail.held .thumb { width: 5px; background: var(--thumb-held); }
 /* At the left, beside the window's edge and away from the resize edge, the thumb is thinner still. */
-.rail.left { right: auto; left: 1px; }
+.rail.left { right: auto; left: 4px; }
 .rail.left .thumb { width: 2px; margin-left: 2px; margin-right: auto; }
 .rail.left:hover .thumb, .rail.left.held .thumb { width: 4px; }
 
@@ -180,12 +180,13 @@ img { -webkit-user-drag: none; }
 .update.solid[aria-disabled="true"] { opacity: 0.55; }
 
 .grip { position: absolute; top: var(--bar); bottom: 0; width: 7px; z-index: 4; cursor: col-resize; }
-.grip[data-grip="sidebar"] { left: calc(var(--sidebar) - 3px); }
+/* The sidebar's edge has nothing beside it to collide with, so its grip is wider and easy to find. */
+.grip[data-grip="sidebar"] { left: calc(var(--sidebar) - 6px); width: 13px; }
 .grip[data-grip="inspector"] { right: calc(var(--inspector) - 3px); }
 /* The edge shows only where the pointer is: a short line that fades out above and below it and follows
    the pointer along the edge. Held, it darkens; dragged far enough inward, the panel dims and folds on release. */
 .grip { --y: 50%; color: var(--line-2); }
-.grip::after { content: ""; position: absolute; top: clamp(0px, calc(var(--y) - 64px), calc(100% - 128px)); left: 3px; width: 1px; height: 128px;
+.grip::after { content: ""; position: absolute; top: clamp(0px, calc(var(--y) - 64px), calc(100% - 128px)); left: calc(50% - 0.5px); width: 1px; height: 128px;
   background: linear-gradient(to bottom, transparent, currentColor 35%, currentColor 65%, transparent); opacity: 0; transition: opacity 160ms var(--soft); }
 .grip:hover::after, .grip.dragging::after { opacity: 1; transition-delay: 80ms; }
 .grip.dragging { color: var(--text-4); }
@@ -682,7 +683,7 @@ img { -webkit-user-drag: none; }
 .pick .icon { width: 23px; height: 23px; }
 /* Service and model logos are quiet marks in the words' grey, smaller than the send record beside
    them, so the record is the one solid thing at the end of the field; they come up to ink under the pointer. */
-.pick .icon.fill { width: 17px; height: 17px; color: var(--text-3); transition: color var(--quick) var(--soft); }
+.pick .icon.fill { width: 21px; height: 21px; color: var(--text-3); transition: color var(--quick) var(--soft); }
 .pick:hover .icon.fill { color: var(--text); transition: none; }
 .pick[data-model] use[href="#i-kimi"],
 .pick[data-model] use[href="#i-deepseek"] { transform: translateX(1px); }
