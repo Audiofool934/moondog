@@ -75,7 +75,7 @@ jobs:
           RELEASE_TAG: ${{ github.ref_name }}
         run: node scripts/release-npm.mjs "$RELEASE_TAG"
 
-  # Build and publish are two jobs, so a stalled upload is rerun alone, with the same notarized bytes.
+  # Build and publish are separate jobs, so a stalled upload is rerun alone, with the same built bytes.
   # A rebuild makes different bytes, which the upload rejects under a filename already on the draft.
   mac-build:
     name: Build, sign and notarize the Mac app
@@ -143,15 +143,89 @@ jobs:
             app/release/Moondog-*-release.json
             app/release/latest-mac.yml
 
-  mac-publish:
-    name: Upload and publish the Mac app
-    needs: mac-build
-    if: ${{ !cancelled() && needs.mac-build.result == 'success' }}
+  # Windows and Linux build next to the Mac, unsigned, and are checked by running what a listener gets:
+  # the app the Windows installer puts in place, and the AppImage itself. Building needs no approval;
+  # nothing reaches the release until publish-release, which waits for all three platforms.
+  desktop-build:
+    name: Build the ${{ matrix.platform }} x64 app
+    needs: verify
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: windows
+          - os: ubuntu-24.04
+            platform: linux
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+      - run: npm install --global npm@11.16.0
+      # The npm package lists macOS and Linux only, because its terminal launcher is a shell script.
+      # The Windows desktop carries the same core, so its install skips that platform check.
+      - run: npm ci --ignore-scripts --no-audit --no-fund ${{ runner.os == 'Windows' && '--force' || '' }}
+      - run: npm ci --no-audit --no-fund
+        working-directory: app
+      - name: Build the installer
+        run: npm run pack
+        working-directory: app
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Install and exercise the Windows installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        working-directory: app
+        run: |
+          $installer = Get-ChildItem release -Filter 'Moondog-*-win-x64.exe' | Select-Object -First 1
+          Start-Process -FilePath $installer.FullName -ArgumentList '/S' -Wait
+          $installed = Get-ChildItem "$env:LOCALAPPDATA\Programs" -Recurse -Filter 'Moondog.exe' | Select-Object -First 1
+          if (-not $installed) { throw 'The installer did not install Moondog.exe.' }
+          $env:MOONDOG_SMOKE_EXECUTABLE = $installed.FullName
+          npm run smoke
+      - name: Exercise the Linux AppImage
+        if: runner.os == 'Linux'
+        working-directory: app
+        run: |
+          appimage="$(ls "$PWD"/release/Moondog-*-linux-x86_64.AppImage)"
+          chmod +x "$appimage"
+          # Runners have no FUSE; the AppImage runtime can extract itself and run instead.
+          MOONDOG_SMOKE_EXECUTABLE="$appimage" APPIMAGE_EXTRACT_AND_RUN=1 xvfb-run -a npm run smoke
+      - name: Save smoke evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-smoke-${{ matrix.platform }}-x64
+          path: app/release/smoke/
+          if-no-files-found: ignore
+      # Only this version's files: the release check rejects anything else in the folder.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.platform }}-x64
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+          path: |
+            app/release/Moondog-*-win-x64.exe
+            app/release/Moondog-*-win-x64.exe.blockmap
+            app/release/Moondog-*-linux-x86_64.AppImage
+            app/release/latest.yml
+            app/release/latest-linux.yml
+
+  publish-release:
+    name: Upload and publish the release
+    needs: [mac-build, desktop-build]
+    if: ${{ !cancelled() && needs.mac-build.result == 'success' && needs.desktop-build.result == 'success' }}
     runs-on: macos-26
     timeout-minutes: 120
     permissions:
       contents: write
-      # To start pages.yml, which links the new download.
+      # To start pages.yml, which links the new downloads.
       actions: write
     steps:
       - uses: actions/checkout@v4
@@ -168,8 +242,14 @@ jobs:
         with:
           name: mac-release
           path: app/release
-      - name: Verify the build again, upload it to the draft, and publish
+      # Outside the checkout, which publish.mjs requires to be clean.
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*-x64
+          merge-multiple: true
+          path: ${{ runner.temp }}/platforms
+      - name: Verify the builds again, upload them to the draft, and publish
         working-directory: app
         env:
           GH_TOKEN: ${{ github.token }}
-        run: node publish.mjs --skip-build
+        run: node publish.mjs --skip-build --platforms "$RUNNER_TEMP/platforms"

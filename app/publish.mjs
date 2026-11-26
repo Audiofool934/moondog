@@ -1,4 +1,5 @@
-// Publish only a complete, verified Mac release. A failed upload leaves the draft private.
+// Publish only a complete, verified release. A failed upload leaves the draft private.
+// --platforms <folder> adds the Windows and Linux builds of the same tag to the same upload (Publish release does).
 // Start it right after the tag push: after the build it waits up to an hour for the npm approval and the draft.
 // Repeat the same command to resume; --skip-build requires the recorded final artifacts.
 import { spawn } from "node:child_process";
@@ -8,17 +9,20 @@ import path from "node:path";
 import { pipeline } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
 import { command, commandFailure, digestFile, parseReleaseJson, phase, readJson, RELEASE_REPO, SIGNING_TEAM } from "./release-tools.mjs";
-import { releaseNames, verifyArtifacts } from "./release-artifacts.mjs";
+import { releaseNames, verifyArtifacts, verifyPlatformArtifacts } from "./release-artifacts.mjs";
 import { assertReleaseIdentity, findReleaseByTag, markAsLatest, publicationSource, retryTransientUpload, uploadImmutableAssets, uploadTimeoutMs, validateNpmRelease, waitFor } from "./release-publication.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url)), root = path.join(here, "..");
 const args = process.argv.slice(2), flags = new Set();
-let fromTag;
+let fromTag, platformsDir;
 for (let i = 0; i < args.length; i++) {
   const flag = args[i];
   if (flag === "--from-tag") {
     if (fromTag !== undefined || !args[i + 1] || args[i + 1].startsWith("--")) throw new Error("Provide --from-tag once with an exact release tag.");
     fromTag = args[++i];
+  } else if (flag === "--platforms") {
+    if (platformsDir !== undefined || !args[i + 1] || args[i + 1].startsWith("--")) throw new Error("Provide --platforms once with the folder of Windows and Linux builds.");
+    platformsDir = path.resolve(args[++i]);
   } else if (["--skip-build", "--create", "--verify-only"].includes(flag)) flags.add(flag);
   else throw new Error(`Unknown publish option: ${flag}`);
 }
@@ -45,6 +49,8 @@ if (!flags.has("--skip-build") && !flags.has("--verify-only")) {
   await command(process.execPath, [path.join(here, "pack.mjs"), "--sign"], { cwd: here, live: true, timeout: 3 * 60 * 60_000 });
 }
 const manifest = await phase("Validate release provenance, hashes, signatures and containers", () => verifyArtifacts(releaseDir, provenance));
+const platformItems = platformsDir ? await phase("Check the Windows and Linux builds against their update metadata",
+  () => verifyPlatformArtifacts(platformsDir, version)) : [];
 if (flags.has("--verify-only")) { console.log(`Verified ${tag}; nothing was uploaded.`); process.exit(0); }
 
 const npmMetadata = async selector => parseReleaseJson((await command("npm", ["view", `${name}@${selector}`, "--json", "--prefer-online", "--registry", "https://registry.npmjs.org"], { cwd: root })).stdout);
@@ -72,8 +78,10 @@ const endpoint = `releases/${identity.id}`;
 const getRelease = async () => assertReleaseIdentity(await api(endpoint), identity);
 release = await getRelease();
 
+// Each item carries its folder. uploadImmutableAssets sends every update feed after everything else.
 const items = [...manifest.files.filter(file => file.name !== names.feed), await digestFile(path.join(releaseDir, names.manifest)),
-  manifest.files.find(file => file.name === names.feed)];
+  manifest.files.find(file => file.name === names.feed)].map(item => ({ ...item, dir: releaseDir }))
+  .concat(platformItems.map(item => ({ ...item, dir: platformsDir })));
 const remoteDigest = async asset => {
   if (/^sha256:[a-f0-9]{64}$/u.test(asset.digest || "")) return asset.digest.slice(7);
   const parent = path.join(releaseDir, ".state", version);
@@ -96,14 +104,14 @@ const remoteDigest = async asset => {
     return (await digestFile(file)).sha256;
   } finally { await rm(scratch, { recursive: true, force: true }); }
 };
-// The ZIP and DMG upload at once and share the line, so each one's time limit counts the other big file too.
+// The big files (ZIP, DMG, and the Windows and Linux installers) upload at once and share the line, so each one's time limit counts the other big file too.
 const sharing = Math.max(1, items.filter(item => item.size > 10_000_000).length);
 release = await phase("Upload and verify immutable release assets", () => retryTransientUpload(() => uploadImmutableAssets({ items,
   getRelease, remoteDigest,
   upload: item => command("gh", ["api", "--method", "POST",
     `https://uploads.github.com/repos/${RELEASE_REPO}/${endpoint}/assets?name=${encodeURIComponent(item.name)}`,
     "-H", "Content-Type: application/octet-stream", "-H", `Content-Length: ${item.size}`,
-    "--input", path.join(releaseDir, item.name)], { cwd: root, timeout: uploadTimeoutMs(item.size, { sharing: item.size > 10_000_000 ? sharing : 1 }) }),
+    "--input", path.join(item.dir, item.name)], { cwd: root, timeout: uploadTimeoutMs(item.size, { sharing: item.size > 10_000_000 ? sharing : 1 }) }),
   deleteAsset: asset => command("gh", ["api", "--method", "DELETE", `repos/${RELEASE_REPO}/releases/assets/${asset.id}`], { cwd: root }),
 })));
 

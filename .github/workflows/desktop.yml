@@ -2,9 +2,9 @@ name: Desktop builds
 
 on:
   pull_request:
+  # A v* tag builds Windows and Linux in Publish release (release.yml), so tags are not built here too.
   push:
     branches: [main]
-    tags: ['v*']
   workflow_dispatch:
 
 permissions:
